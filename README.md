@@ -5,7 +5,7 @@
 | Principle | What it means |
 | --- | --- |
 | **Agents live, runs don't** | An agent keeps its identity, obligations, schedules and memory for as long as it's in service. Each piece of work is a short run that starts fresh from those records. |
-| **Policy decides, not the model** | Every tool and model call is checked outside the model. Anything not allowed is denied, and if the check can't run, nothing runs. What an agent must never do, it never has the rights to do. |
+| **Policy decides, not the model** | Every tool and model call is checked outside the model, and is allowed, held for a person or denied. Anything not allowed is denied, and if the check can't run, nothing runs. What an agent must never do, it never has the rights to do. |
 | **People decide, agents propose** | How far an agent may act is a setting that the owner of each part of the business approves, for each type of action. |
 | **Every action leaves evidence** | An append-only ledger records what each agent did, for whom, under which policy and with what result. |
 | **Change is a release** | An agent changes only through a tested, approved release, never by itself. |
