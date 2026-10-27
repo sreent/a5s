@@ -2,66 +2,78 @@
 
 **Status:** Draft v0.1 · **Under:** [Architecture](architecture.md)
 
-## Definitions, instances and runs
+## Definitions, releases, instances and runs
 
 | Object | What it is | Lasts | In the lean scenario |
 | --- | --- | --- | --- |
-| Definition | A kind of agent: its job, instructions, skills, tools, model, triggers and limits, released as tested versions | Until it's retired | The owner assistant, release 0.3 |
-| Instance | A definition serving one scope, with its own identity, autonomy, obligations, memory and status | As long as the scope needs it | The owner assistant for supplier general data |
-| Run | One piece of work by an instance, from a trigger until it's done or waiting for a person | Minutes of work, then parked while it waits | Preparing the case for one routed request |
+| Definition | A kind of agent and its job | Until it's retired | The owner assistant |
+| Release | A tested, approved version of a definition. It fixes the agent's instructions, skills, tools and their definitions, model, triggers, obligations, memory rules and limits. | Until a newer one replaces it | The owner assistant, release 0.3 |
+| Instance | A definition at work in a scope, with its own identity, obligations, memory and status | As long as the scope needs it | The owner assistant for supplier general data |
+| Run | One piece of work by an instance, from a trigger until it's done | Minutes of work, parked while a person decides | Preparing the case pack for one routed request |
 
-Four terms connect a5s to a scenario:
+## Terms that connect a5s to a scenario
 
 | Term | Means | In the lean scenario |
 | --- | --- | --- |
-| Scope | The part of the business an instance serves | A part of a domain |
-| Scope owner | The person who approves an instance for their scope, and how far it may act there | The part's attribute owner |
-| Settings | Where the scope owner keeps what a5s reads live: autonomy, thresholds, sensitive fields and classes of data | The domain profile, in the unified master data app |
-| Decision surface | Where people decide proposals | The unified master data app |
+| Part | A piece of the business with one owner. Every record an agent acts on belongs to one part. | A part of a domain, by subdomain, business unit or group of fields |
+| Part owner | Approves agents to act in the part, and how far. Decides their proposals there, or names delegates for the decisions the scenario lets delegates take. | The part's attribute owner |
+| Scope | The parts an instance may act in: one part, several, or none | One part, a domain's parts, or none, for agents that don't touch master data |
+| Type of action | A kind of action that autonomy is set for | A type of change, as the domain profile names it |
+| Settings | Where part owners keep what a5s reads live: who owns what, how far each agent may act, thresholds, sensitive fields and classes of data | The domain profiles and ownership settings, in the unified master data app |
+| Governed process | A system's own way of making and approving changes, which agents hand requests to instead of changing data themselves | Requests in the unified app |
+| Decision surface | Where people take decisions on agents' proposals | The unified app |
 
 ## Roles
 
 | Role | Does |
 | --- | --- |
-| Agent owner, with a deputy | Builds and runs a definition and its instances. Reviews level-2 actions and can reverse them, and approves memory entries [TBC]. |
-| Scope owner, and their delegates | The scope owner approves an instance for their scope and how far it may act there. They or their delegates decide its proposals. |
-| Release approver | Approves each release after its tests and design review. Never someone who built it. The scenario says who. |
+| Platform owner | Accountable for a5s and the agents it runs. Names each agent owner and deputy, and can suspend any instance. |
+| Agent owner, with a deputy | Builds and runs a definition and its instances. Reviews level-2 actions and can reverse them, and approves memory entries [TBC]. Can suspend the agent's instances, and lower their cap. |
+| Part owner, and their delegates | The part owner approves an instance for the part, sets how far it may act there, and moves it up or down. They or their delegates decide its proposals, as the scenario allows. Decisions about the agent itself are never a delegate's. |
+| Instance approver | Approves an instance to run. For each part in its scope, the part owner. For an instance with no parts, whoever the scenario names. |
+| Release approver | Approves each release after its tests and design review. Never someone who built it. The scenario names who. |
 | Assurance | Reads the ledger and the samples, and reviews what the scenario asks it to |
 
 ## Lifecycle
 
-| Status | Means | Next |
-| --- | --- | --- |
-| Draft | Being built or changed | Approved, once its tests pass and the release approver approves it |
-| Approved | Ready, but not running | Active, once a scope owner approves it for their scope |
-| Active | Running in its scope | Suspended or retired |
-| Suspended | No trigger wakes it, and every tool call is denied, including in a run already going | Active again, when its agent owner or scope owner resumes it, or retired |
-| Retired | Its identity is disabled, its grants removed, its evidence archived and its memory deleted under the retention rules | Nothing |
+| A release is | Means |
+| --- | --- |
+| Draft | Being built or changed |
+| Approved | Passed its tests and design review, and approved. Instances can run it. |
+| Withdrawn | No instance may run it, and instances still on it are suspended |
 
-- Any change to a release is a new release, back to draft: its instructions, skills, tools or their definitions, model, triggers, memory rules or limits.
-- An instance runs only while its definition has an owner or a deputy. If both leave, it's suspended until a new owner is named.
-- The agent owner, the deputy and the scope owner can suspend an instance, and the agent owner and deputy can suspend every instance of a definition at once. The scenario can add others.
+| An instance is | Means | Who moves it on |
+| --- | --- | --- |
+| Active | Working, in the parts whose owners have approved it, or, with no parts, once the scenario's approver has approved it | The agent owner, the deputy or the platform owner can suspend it. The agent owner or the platform owner can retire it. |
+| Suspended | No trigger wakes it, every call is denied, even in a run already going, and its pending proposals are withdrawn | Whoever suspended it, or the platform owner, can resume it, but never while it has no agent owner or deputy |
+| Retired | Its identity is disabled, its grants removed, its evidence archived and its memory deleted under the retention rules | Nobody. It's gone. |
+
+- The agent owner, the deputy and the platform owner can also suspend every instance of a definition at once.
+- A part owner can stop an instance acting in their part at any time, by withdrawing its approval in the settings.
+- If the agent owner and the deputy both leave, the instance is suspended until the platform owner names a new owner.
+- An instance moves to a newer approved release when its agent owner moves it. Settings carry over, and a type of action the new release adds starts at the definition's starting level.
 
 ## Autonomy
 
 | Level | The agent may | People |
 | --- | --- | --- |
 | 0. Observe | Read, measure and report | Read what it reports |
-| 1. Propose | Prepare an action for a person to decide | The scope owner or a delegate decides each one |
-| 2. Act and notify | Take actions of a type the scope owner has approved, within the scenario's limits | The agent owner reviews them and can reverse any of them |
+| 1. Propose | Prepare drafts, hand requests to a governed process, and hold proposals for a person to decide ([how](architecture.md#proposals-and-approvals)) | The part owner or a delegate decides each one |
+| 2. Act and notify | Take actions of a type the part owner has approved, within the scenario's limits, through the governed process where there is one | The agent owner reviews them and can reverse any of them |
 
-- Autonomy is set for each instance and type of action, in the scope's settings. Where it isn't set, the definition's starting level applies.
+- The level is set for each instance, part and type of action, in the settings. Where it isn't set, the definition's starting level applies.
+- a5s also keeps a cap for each instance and type of action, which can only lower the level. Failing samples or the agent owner set it, and the part owner is told. The instance works at the lower of the two.
 - Reminding, chasing and routing are allowed at every level, within the contact rules, because they change no data.
-- An agent moves up a level only when its scope owner approves, on evidence from sampled work. Anyone who can move it up can move it down.
+- An agent moves up a level only when the part owner approves, on evidence from sampled work. The part owner can move it down at any time.
 - There's no level above 2. An agent that acts always tells someone.
 
 ## The definition format
 
-A definition is a folder in git:
+A definition is a folder in git, and each release is a tagged version of it:
 
 ```text
 agents/owner-assistant/
-  agent.yaml     what the register holds
+  agent.yaml     the definition
   AGENTS.md      instructions, read on every run
   skills/        Agent Skills, one folder each
   tests/         regression and scenario tests
@@ -79,10 +91,10 @@ does: >-
   of automatic approvals.
 owner: "[TBC]"
 deputy: "[TBC]"
-scope: domain-part               # one instance, identity and memory per part
+scope: one-part                  # an instance, identity and memory per part
 model: "[TBC: from the approved AI tools list]"
 autonomy:
-  start: 1
+  start: 1                       # where a part's settings say nothing
   max: 1                         # it changes no master data
 tools:
   unified-app: [get_case, list_cases, attach_case_pack]
@@ -93,13 +105,10 @@ triggers:
   - schedule: first working day of the month   # the approval sample
   - sweep: weekdays at 08:00
 obligations:
-  - source: unified-app.cases
+  - type: overdue-case
+    source: unified-app.cases
     due: turnaround              # from the domain profile
-    escalate: [delegates, attribute-owner, gpdo]
-channels:
-  via: [teams, email]            # [TBC]
-  digest: daily
-  max_per_person_per_day: 2      # [TBC]
+channels: [teams, email]         # [TBC]; contact rules come from the scenario
 memory:
   writes: review
   expires_after: 90d             # [TBC]
@@ -108,4 +117,4 @@ budget:
   per_day: "[TBC]"
 ```
 
-The register adds what changes without a release: each instance, its identity, its status and its approvals.
+The register adds what changes without a release: each instance, its identity, status and approvals.
