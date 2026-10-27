@@ -733,7 +733,7 @@ Each requirement is tagged **[Stated]** when the documents require it directly, 
 Model approval itself is covered by AOS-13 (pre-start gate) and AOS-56 (approval evidence). The outside-model route for Confidential or Restricted data is covered by AOS-40, AOS-46 and AOS-56, with the R-21 vs R-22 tension noted in section 3. A change of model, provider or version counts as an agent change under AOS-15. Data residency is AOS-47.
 
 ### Inferences
-- *Inference:* About two thirds of the requirements are **[Stated]**. The biggest inferred areas are agent identity design (AOS-01, AOS-04, AOS-07, AOS-08), log masking against completeness (AOS-43 vs AOS-53/54), anti-splitting of level-2 runs (AOS-34), and treating agent memory as an extract (AOS-44).
+- *Tally:* Of the 80 requirements, 44 are fully **[Stated]**, 24 combine a stated rule with an inferred application or mechanism, and 12 are pure **[Inference]**. *Inference:* The biggest inferred areas are agent identity design (AOS-01, AOS-04, AOS-07, AOS-08), log masking against completeness (AOS-43 vs AOS-53/54), anti-splitting of level-2 runs (AOS-34), and treating agent memory as an extract (AOS-44).
 - *Inference:* The framework puts much of the enforcement burden on the **unified app**: holding sensitive changes, auto-approving, routing, logging settings, blocking. The agent OS does not need to duplicate those checks, but it must not offer agents a route around them. In practice the agent OS's own enforcement duties are:
   - identity;
   - the deny-list;
