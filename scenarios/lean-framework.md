@@ -23,7 +23,7 @@ The lean framework governs master data, with AI agents doing the coordination an
 | Release approver | Information security [TBC: who], outside the data team and the platform owner's reporting line. It also runs the design review, with the agent owner and the attribute owners of the parts the agent touches. |
 | Model approver | Information security, with the data protection officer for personal data, keeping the approved AI tools list [TBC] |
 | Sample graders | The part's delegates, never on items they decided, and internal controls for samples of sensitive changes [TBC] |
-| Agreement to loosen | Information security for releases, packs, overrides and raising a cap by hand. Internal controls for loosening a fraud threshold, or stopping a check that detects, such as the change reconciler. A GPDO to resume an agent someone else suspended or to replace an agent owner who hasn't left. Each is reported to internal controls. |
+| Agreement to loosen | Information security for releases, packs, overrides and raising a cap by hand. Internal controls for loosening a threshold on bank and payee changes, or stopping a check that detects, such as the change reconciler. A GPDO to resume an agent someone else suspended or to replace an agent owner who hasn't left. Each is reported to internal controls. |
 | Told when an agent's approval is withdrawn | The GPDO |
 | Assurance | Internal controls |
 
@@ -67,7 +67,7 @@ The framework's [agent register](https://github.com/sreent/lean-framework/blob/m
 | R-06 and R-13: nobody approves their own request or confirms their own change | A request an agent raises names the agent and everyone it acted for, including anyone whose reply or note it came from. None of them may decide it, nor may the agent's owner or deputy, and a request that came from a person's words never goes through at level 2. The request carries the level a5s applied and the source of each value. Before approving anything automatically, the app checks the agent's level and status with a5s, and it never approves a value from a document automatically. |
 | R-06: the monthly sample | Code draws the monthly sample of automatic approvals, records what it was drawn from and how, and leaves out anything the reviewer requested or decided. a5s also watches requesters and confirmers who keep handling each other's sensitive changes. |
 | R-08: traceability | Every change an agent makes is a request in the unified app. The change reconciler matches by code, on request, record, field, value and time, against an extract of SAP change documents that internal controls owns. A match counts only if its decider was the part's owner or a delegate at the time, wasn't the requester and isn't in the data team. Every match on a sensitive field goes to internal controls, each report says how much of the period it covered, and an incomplete run alerts internal controls, who can run it again. Internal controls approve its releases and draw its samples. |
-| R-15: bank details | Code chooses the call-back contact: one unchanged in SAP for 90 days, or else the one a newer contact replaced. The call-back is blind, and the pack never says one was done. The same applies to every change to where payments go, not just bank details ([collusion, forgery and ownership](#collusion-forgery-and-ownership)). This goes further than the rulebook, whose "weren't changed along with it" misses a contact changed weeks before, and which covers only bank details [TBC: for the framework's owners]. |
+| R-15: bank details | Code chooses the call-back contact: one unchanged in SAP for 90 days, or else the one a newer contact replaced. The call-back is blind, and the pack never says one was done. The same applies to every bank and payee change, not just bank details ([bank details, forgery and ownership](#bank-details-forgery-and-ownership)). This goes further than the rulebook, whose "weren't changed along with it" misses a contact changed weeks before, and which covers only bank details [TBC: for the framework's owners]. |
 | R-16: classification and access | Classes of data come from the profiles. Agent identities see classified fields only as the attribute owner approves, and are in the access reviews. Agents share only what everyone they act for may see. The ledger, the agents' context, traces and evaluation sets are masked, and messages link to records instead of quoting them. |
 | R-17: personal data | Conversations, notebooks and the ledger hold tokens instead of supplier or customer personal data, so deleting a token's mapping when retention ends removes the data without breaking the ledger |
 | R-19: tested before release | Every change to anything in an agent's release, including its schedules, context rules and skills, is tested before it's approved. So is every change to a5s itself, its policy packs and the app's agent tools, approved by someone outside the data team. |
@@ -76,32 +76,30 @@ The framework's [agent register](https://github.com/sreent/lean-framework/blob/m
 | R-22: outside content | Documents, email from outside the organisation, and free text that suppliers write, such as comments on portal requests, go only through the extractor. Values from them never become a verification contact, a recipient or a link. |
 | The charter and the operating model: who approves agents | Nobody approves their own agent (the charter), so nobody in the data team approves a release of an agent the data team built, or a change to the enforcement around it. Attribute owners approve how far an agent may act in their part, and the GPDOs approve agents that don't touch master data, at the owner review (the operating model). |
 
-## Collusion, forgery and ownership
+## Bank details, forgery and ownership
 
-These risks sit with people and the governed process, not with the agents, so agents can't close them alone. a5s computes the facts and does the detecting, and the unified app and the framework's owners hold the rest.
+a5s makes no payments, and no agent holds payment rights. If a scenario ever needs a payment, it goes through a dedicated payment tool with its own controls. What the lean framework protects here is master data that payments later rely on: bank details and the other fields that decide who a supplier is paid. R-13 to R-15 put people in charge of changes to them, and a5s makes sure agents can't be used to get round those people.
 
-**Changes to where payments go rest on facts nobody in the case controls.** That means a change to any field that decides where a supplier's money goes: bank details, an alternative payee, payment methods, and one-time accounts or payees entered in a document [TBC: as the profile marks payment data]. For each one, code computes:
+**Bank and payee changes come with facts.** A bank or payee change is a change to any field that decides who a supplier is paid: bank details, an alternative payee, payment methods, and one-time accounts or payees entered in a document [TBC: as the profile marks payment data]. For each one, code computes these facts, and the decision surface shows them apart from any agent's narrative:
 
-- whether the account holder matches the supplier whose invoices will be paid, as its name and country stood 90 days before, through the organisation's bank or a verification service [TBC], like the check banks run for the EU's Verification of Payee. A close match, or no answer for an account the service can't check, confirms nothing: the call-back has to confirm the account holder instead, and internal controls re-perform it before the change is used;
-- whether the supplier's name, country or verification contacts changed in the last 12 months, which makes the change high risk;
 - the contact to call back: one unchanged for 90 days, or else the one a newer contact replaced, or for a new supplier the one verified when it was set up;
-- the channel it came by, which can only add risk. A change in the supplier portal soon after a password reset, or from a new device, counts as high risk;
+- whether the supplier's name, country or verification contacts changed in the last 12 months;
+- whether the change came through the supplier portal soon after a password reset, or from a new device;
 - whether the account is already used by another supplier or customer (R-15), or sits in a different country from the supplier;
-- the extractor's flags on any document, such as hidden text, or a layout unlike the supplier's earlier letters.
+- the extractor's flags on any document, such as hidden text, or a layout unlike the supplier's earlier letters;
+- where the organisation has a check for it [TBC], whether the account holder matches the supplier as its name stood 90 days before. A close match, or no answer, confirms nothing.
 
-A forged letter is never the evidence: these facts are.
+A holder that doesn't match, a recent change to the supplier's name, country or contacts, or a portal change after a reset marks the change as high risk. A forged letter is never the evidence: these facts are.
 
 **The call-back is blind.** The confirmer calls the contact code offered, types in the account number and holder the supplier reads out, and code compares them with the change. The app accepts no other call-back record.
 
-**High-risk changes need two confirmers and an independent call.** A high-risk change needs the attribute owner and a second confirmer drawn at random, and it can't be used until internal controls have re-performed the call-back, on a number they take from outside SAP [TBC: such as the supplier's registered details].
-
-**The app picks the confirmer.** It draws each sensitive change at random from the people eligible to confirm it who are at work, checking live that none of them can buy or pay (R-14). The draw stays with the record and field for 90 days, so withdrawing a change and raising it again doesn't draw again. A change nobody has opened by half its turnaround is drawn again, and every redraw is logged. The attribute owner has a standing alternate [TBC].
-
-**Internal controls check independently.** They re-perform the call-back on a sample of confirmed bank changes that code draws, as well as on every high-risk one and every one the bank couldn't confirm. a5s sends them the requesters and confirmers who handle more of each other's sensitive changes than random drawing would explain, counting withdrawals and rejections too.
-
-**Collusion is looked for afterwards, by code internal controls own.** These checks don't run in an agent an attribute owner could switch off, and their flags go straight to internal controls. They look for supplier bank accounts, addresses, phone numbers and tax IDs that match an employee's, compared as keyed hashes [TBC: with the data protection officer and HR], and for changes followed soon after by a large payment [TBC: with finance].
-
 **Ownership changes are checked for conflicts.** Before agents act on fields that move between parts, and whenever someone is named a delegate, a5s checks the change against a list of rights that conflict [TBC: from access management], such as sales owning credit limits, and sends any conflict to internal controls and the other GPDOs. Agents stay at level 1 on moved fields until the new owner sets their level, and every confirmation on fields moved with a conflict goes to internal controls until they've reviewed the move.
+
+**For the framework's owners to decide.** These go beyond the charter, so they're options rather than a5s defaults [TBC]:
+
+- what a high-risk change triggers, such as a second confirmer, or internal controls' own call-back before the change is used;
+- drawing confirmers at random from eligible people at work, and keeping the draw with the record, so a requester can't steer a change to a friend;
+- internal controls re-performing call-backs on a sample, and looking for collusion afterwards, such as supplier bank accounts or addresses that match an employee's.
 
 ## Until a request type moves
 
@@ -113,7 +111,7 @@ The [transition notes](https://github.com/sreent/lean-framework/blob/main/delive
 - wakes agents on schedules and data-platform events, because the unified app has no events for it yet;
 - sends what agents flag, such as likely duplicates, to a delegate, and the vendor acts only on the recorded decision. The transition notes ask the vendor to act on the flags directly, so the framework's owners should confirm this [TBC];
 - sends anything else for a person to decide to [TBC: a decision surface for the transition, such as the current app];
-- can't rely on the app's controls in [collusion, forgery and ownership](#collusion-forgery-and-ownership), which start for a request type only when it moves. Until then, a5s computes what it can from SAP and the verification service, such as the account-holder check and how recently the supplier's name or contacts changed, and sends it with each flag to the delegate. Internal controls re-perform the call-back on every bank change for that request type [TBC].
+- can't rely on the app's controls in [bank details, forgery and ownership](#bank-details-forgery-and-ownership), which start for a request type only when it moves. Until then, a5s computes what it can from SAP, such as the contact's age and how recently the supplier's name or contacts changed, and sends it with each flag to the delegate.
 
 ## What a5s adds
 
@@ -127,6 +125,7 @@ The framework leaves these open. a5s sets them as its own defaults:
 - **Contact.** Each person gets one digest a day from all the agents together, and urgent items go at once to someone in the chain who's at work, in their own time zone [TBC: limits].
 - **Cost.** Budgets per source of triggers and per person, reserved before each run, with a share kept for obligations [TBC].
 - **Retention.** The ledger is kept for [TBC], and traces for [TBC: 14 days].
+- **No payments.** No agent holds payment rights, and a5s's base pack never grants a tool that makes, approves or releases a payment.
 - **Agents asking agents.** Only registered agents, over A2A. The people the caller acts for travel with the call, and authority doesn't pass from one agent to the other.
 - **Colleagues' data.** What agents remember about colleagues is visible to them, and deleted when they leave [TBC: with the data protection officer].
 
@@ -173,14 +172,14 @@ a5s passes the baseline when it runs all five agents and these tests pass. Each 
 
 **Collusion, forgery and trust**
 
-26. A change to where a supplier's payments go, through its bank details or an alternative payee, to an account whose holder doesn't match the supplier as it stood 90 days before, is high risk. It needs the attribute owner and a second confirmer drawn at random, and it can't be used until internal controls have re-performed the call-back.
-27. A supplier renamed last month, or whose verification phone changed in the last year, makes its next bank change high risk, and the call-back goes to the contact the new one replaced.
+26. A bank or payee change, an alternative payee included, comes with its computed facts, shown apart from any agent's narrative, and one whose holder doesn't match is flagged as high risk.
+27. A supplier renamed last month, or whose verification phone changed in the last year, has its next bank or payee change flagged as high risk, and the call-back goes to the contact the new one replaced.
 28. A call-back record that doesn't match the account and holder the supplier read out, or that's for a contact code didn't offer, is refused.
-29. The app draws each sensitive change's confirmer at random from eligible people at work. Withdrawing and resubmitting doesn't draw again, and a change nobody opens is drawn again and logged.
+29. No agent holds payment rights, and no tool that makes, approves or releases a payment can be granted to one.
 30. A decision on a sensitive change is signed on the decider's own device, for that one decision, showing the supplier and the account's last digits. A signature can't be used twice, and a decision without one is refused.
 31. A value an agent drafts with no source is flagged as the agent's own, and a summary that drops a record key, an amount or a date is caught.
 32. An ownership change that would put credit limits with sales reaches internal controls and the other GPDOs, and every confirmation on the moved fields goes to internal controls until they've reviewed it.
-33. Suspending the change reconciler, or switching off a check that looks for collusion, needs internal controls' agreement.
+33. Suspending the change reconciler needs internal controls' agreement.
 34. A new release takes on level-1 work at once and runs dry in shadow for level 2 while the old one keeps working. An instance can go straight back to the release before, and a security fix replaces an affected release at once, at level 1.
 35. A busy request assistant keeps working through the counting backstop, because case packs don't count and the backstop counts per person acted for and change type.
 
@@ -192,10 +191,8 @@ The data team builds the unified app too. For a5s, it needs:
 - **Agent requests** that name the agent and everyone it acted for, and carry the level a5s applied, the source of each value, and a key that makes a repeated request harmless. The app approves them automatically only after checking the agent's level and status with a5s, never for a value from a document, and never lets the people named on them, or the agent's owner or deputy, decide them.
 - **Mass-change requests** from agents, for the attribute owner's sign-off, with a test and a rollback plan (R-07).
 - **Withdrawal:** a way for a5s to withdraw or flag an agent's open requests when it's suspended or loses its approval, with confirmation as each is done.
-- **Verification:** the date each verification contact last changed and the contact it replaced, the contact verified when each supplier was set up, the supplier's name and country as they stood 90 days before, the account-holder check, and a blind call-back record, checked against the account the supplier read out.
-- **Payment fields as one class:** every field that decides where payments go treated the same way as bank details.
-- **Assignment:** each sensitive change drawn at random from the eligible people at work, checked live against buying and payment rights, kept with the record and field for 90 days, drawn again and logged if nobody opens it by half its turnaround, and not taken by anyone else.
-- **High-risk changes** held until the attribute owner and a second confirmer drawn at random have confirmed them, and internal controls have re-performed the call-back.
+- **Verification:** the date each verification contact last changed and the contact it replaced, the contact verified when each supplier was set up, the supplier's name and country as they stood 90 days before, the account-holder check where there is one, and a blind call-back record, checked against the account the supplier read out.
+- **Bank and payee fields as one class:** every field that decides who a supplier is paid, treated the same way as bank details.
 - **Signed decisions:** each decision on a sensitive change signed for that one decision, on the decider's own device through the identity provider, which shows the supplier and the last digits of the account. Each signature works once, a decision without one is refused, and decision records can't be written except through the app's own path.
 - **Facts apart from narrative:** the decision surface shows the computed facts, such as the account-holder check, the contact's age and the channel, in their own place, apart from the agent's narrative.
 - **Record links,** built by the app, for agents' messages and packs.
