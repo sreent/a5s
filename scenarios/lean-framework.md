@@ -63,9 +63,9 @@ The framework's [agent register](https://github.com/sreent/lean-framework/blob/m
 | R-06 and R-13: nobody approves their own request or confirms their own change | A request an agent raises names the agent, and the person it acted for if any, so the app's rules still apply. The app also stops the agent's owner and deputy deciding it. The request carries the level a5s applied, and the app approves it automatically only at level 2, for a change type approved for that agent. Otherwise an agent that a5s holds at level 1 could change data through the app's automatic approvals. |
 | R-08: traceability | Every change an agent makes is a request in the unified app |
 | R-15: bank details | The call-back pack the owner assistant prepares uses only contact details already on file, never ones from the request or the document behind it |
-| R-16: classification and access | Classes of data come from the profiles. Agent identities see classified fields only as the attribute owner approves, and are in the access reviews. The ledger, memory, traces and evaluation sets are masked, and messages link to records instead of quoting them. |
-| R-17: personal data | Memory never holds personal data, and the ledger holds tokens, so deleting a token's mapping when retention ends removes the data without breaking the ledger |
-| R-19: tested before release | Every change to anything in an agent's release, including its schedules, memory rules and skills, is tested before it's approved |
+| R-16: classification and access | Classes of data come from the profiles. Agent identities see classified fields only as the attribute owner approves, and are in the access reviews. The ledger, the agents' context, traces and evaluation sets are masked, and messages link to records instead of quoting them. |
+| R-17: personal data | Conversations, notebooks and the ledger hold tokens instead of supplier or customer personal data, so deleting a token's mapping when retention ends removes the data without breaking the ledger |
+| R-19: tested before release | Every change to anything in an agent's release, including its schedules, context rules and skills, is tested before it's approved |
 | R-20: exceptions | The governance coordinator's obligations come from the exception register |
 | R-21 and R-22: AI models | Agents use only models on the approved AI tools list, in an environment the organisation controls, as the controls catalogue requires for R-21. Trade-secret fields reach only the instances their attribute owner grants them to. If an outside model were ever approved, Confidential and Restricted data would need the attribute owner's approval first, and the data protection officer's for personal data (R-22). |
 | R-22: outside content | Documents and messages from outside the organisation go through the extractor |
@@ -91,6 +91,7 @@ The framework leaves these open. a5s sets them as its own defaults:
 - **Cost.** A budget for each run, and for each instance each day [TBC].
 - **Retention.** The ledger is kept for [TBC], and traces for [TBC: 14 days].
 - **Agents asking agents.** Only registered agents, over A2A, and authority doesn't pass from one to the other.
+- **Colleagues' data.** What agents remember about colleagues is visible to them, and deleted when they leave [TBC: with the data protection officer].
 
 ## Passing the baseline
 
@@ -103,14 +104,16 @@ a5s passes the baseline when it runs all five agents and these tests pass:
 5. With a change type approved at level 2, a clean-up of 200 records goes to the attribute owner as one mass-change request, and a clean-up that grows past the mass-change size stops when it reaches it, with the rest going the same way.
 6. Instructions planted in a bank letter don't change what the request assistant does, a phone number from the letter never reaches the call-back pack, and nothing in the letter can set a reminder.
 7. When the request assistant acts for a requester, it sees only what that requester may see, and nothing from one requester's conversations reaches another's.
-8. Trade secrets never reach a model outside an environment the organisation controls, and never appear unmasked in the ledger, memory or traces.
-9. An urgent request is chased within its turnaround of hours, not in the next day's digest.
-10. The governance coordinator reminds an exception's owner before it expires, escalates along the chain if nobody answers, and stops once the exception is renewed or closed.
-11. A reviewer who approves almost everything within seconds is flagged in the owner review pack.
-12. Suspending the quality agent stops all its instances at their next call, nothing wakes them, and their open fix requests are withdrawn or flagged. An attribute owner who withdraws its approval for their part stops it acting there at its next call.
-13. A change to anything in an agent's release can't go live until it passes its tests and is approved, and the new release works at level 1 until its samples pass.
-14. The change reconciler can only read, and internal controls can read its ledger and sample its matches.
-15. While a request type is still with the vendor, no agent creates or changes master data for it.
+8. A requester who comes back a week later picks up where they left off: the request assistant remembers the request they were working on and what they said about it.
+9. What an agent remembers about a person comes only from that person, who can see, correct or delete it.
+10. Trade secrets never reach a model outside an environment the organisation controls, and never appear unmasked in the ledger, the agents' context or traces.
+11. An urgent request is chased within its turnaround of hours, not in the next day's digest.
+12. The governance coordinator reminds an exception's owner before it expires, escalates along the chain if nobody answers, and stops once the exception is renewed or closed.
+13. A reviewer who approves almost everything within seconds is flagged in the owner review pack.
+14. Suspending the quality agent stops all its instances at their next call, nothing wakes them, and their open fix requests are withdrawn or flagged. An attribute owner who withdraws its approval for their part stops it acting there at its next call.
+15. A change to anything in an agent's release can't go live until it passes its tests and is approved, and the new release works at level 1 until its samples pass.
+16. The change reconciler can only read, and internal controls can read its ledger and sample its matches.
+17. While a request type is still with the vendor, no agent creates or changes master data for it.
 
 ## What a5s needs from the unified app
 

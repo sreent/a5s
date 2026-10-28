@@ -7,9 +7,10 @@
 | Object | What it is | Lasts | In the lean scenario |
 | --- | --- | --- | --- |
 | Definition | A kind of agent and its job | Until it's retired | The owner assistant |
-| Release | A tested, approved version of a definition. It fixes the agent's instructions, skills, tools and their definitions, model, triggers, obligation and reminder types, memory rules and limits. | Until it's withdrawn | The owner assistant, release 0.3.0 |
-| Instance | A definition at work in a scope, with its own identity, obligations, memory and status | As long as the scope needs it | The owner assistant for supplier general data |
-| Run | One piece of work by an instance, from a trigger until it's done | Minutes of work, parked while a person decides | Preparing the case pack for one routed request |
+| Release | A tested, approved version of a definition. It fixes the agent's instructions, skills, tools and their definitions, model, triggers, obligation and reminder types, context rules and limits. | Until it's withdrawn | The owner assistant, release 0.3.0 |
+| Instance | A definition at work in a scope, with its own identity, obligations, context and status | As long as the scope needs it | The owner assistant for supplier general data |
+| Thread | An ongoing conversation with one person, or the history of one case | As long as the person or the case needs it | The owner assistant's conversation with one delegate |
+| Run | One piece of work by an instance, on a thread, from a trigger until it's done | Minutes | Preparing the case pack for one routed request |
 
 ## Terms that connect a5s to a scenario
 
@@ -30,7 +31,7 @@
 | Role | Does |
 | --- | --- |
 | Platform owner | Accountable for a5s and the agents it runs. Names each agent owner and deputy, and can suspend any instance and withdraw any release. |
-| Agent owner, with a deputy | Builds and runs a definition and its instances. Reviews level-2 actions and can reverse them, reviews runs that were cut off, and approves memory entries [TBC]. Can suspend the agent's instances, lower their cap and withdraw its releases. |
+| Agent owner, with a deputy | Builds and runs a definition and its instances. Reviews level-2 actions and can reverse them, reviews runs that were cut off, and samples its notebooks. Can suspend the agent's instances, lower their cap and withdraw its releases. |
 | Part owner, and their delegates | The part owner approves an instance for the part, sets how far it may act there, and moves it up or down. They or their delegates decide its proposals, as the scenario allows. Decisions about the agent itself are never a delegate's. |
 | Instance approver | Approves an instance to run. For each part in its scope, the part owner. For an instance with no parts, whoever the scenario names, who also sets its level and can withdraw its approval. |
 | Release approver | Approves each release after its tests and design review, and can withdraw it. Never someone who built it. The scenario names who. |
@@ -49,7 +50,7 @@
 | Proposed | Created by its agent owner, waiting for approval | Its approvers: each part's owner, in the settings, or the scenario's approver for an instance with no parts |
 | Active | Working, in the parts whose owners have approved it, or, with no parts, while the scenario's approval stands | The agent owner, the deputy or the platform owner can suspend it. The agent owner or the platform owner can retire it. |
 | Suspended | No trigger wakes it, every call is denied, even in a run already going, its pending proposals are withdrawn, and its open requests are withdrawn or flagged | Whoever suspended it, or the platform owner, can resume it, but not while the agent has neither an owner nor a deputy |
-| Retired | Its identity is disabled, its grants removed, its evidence archived and its memory deleted under the retention rules | Nobody. It's gone. |
+| Retired | Its identity is disabled, its grants removed, its evidence archived and its context deleted under the retention rules | Nobody. It's gone. |
 
 - The agent owner, the deputy and the platform owner can also suspend every instance of a definition at once.
 - A part owner can stop an instance acting in their part at any time, by withdrawing its approval in the settings.
@@ -95,7 +96,7 @@ does: >-
   of automatic approvals.
 owner: "[TBC]"
 deputy: "[TBC]"
-scope: one-part                  # an instance, identity and memory per part
+scope: one-part                  # an instance, identity and context per part
 model: "[TBC: from the approved AI tools list]"
 autonomy:
   start: 1                       # 0 or 1; level 2 comes only from settings
@@ -114,9 +115,10 @@ obligations:
     due: turnaround              # from the domain profile; urgent ones in hours
 reminders: [follow-up-on-case]   # what people can ask it to remind them of
 channels: [teams, email]         # [TBC]; contact rules come from the scenario
-memory:
-  writes: review
-  expires_after: 90d             # [TBC]
+context:
+  conversations: one per person  # kept for [TBC], summarised as they grow
+  profiles: yes                  # what it knows about each person, visible to them
+  notebook_expires_after: 90d    # [TBC]
 budget:
   per_run: "[TBC]"
   per_day: "[TBC]"

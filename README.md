@@ -4,7 +4,7 @@
 
 | Principle | What it means |
 | --- | --- |
-| **Agents live, runs don't** | An agent keeps its identity, obligations, schedules and memory for as long as it's in service. Each piece of work is a short run that starts fresh from those records. |
+| **Agents live and remember** | An agent keeps its identity, its conversations, what it knows about the people it works with, and what it owes them, for as long as it's in service. Compute comes and goes, and the context stays. |
 | **Policy decides, not the model** | Every tool and model call is checked outside the model, and is allowed, held for a person or denied. Anything not allowed is denied, and if the check can't run, nothing runs. What an agent must never do, it never has the rights to do. |
 | **People decide, agents propose** | How far an agent may act is a setting that the owner of each part of the business approves, for each type of action. |
 | **Every action leaves evidence** | An append-only ledger records what each agent did, for whom, under which policy and with what result. |
@@ -27,7 +27,7 @@ a5s takes the agent loop from Deep Agents, the plumbing from the cloud and the p
 | --- | --- | --- |
 | Define | Agent definitions, kept in git | Say what each agent is for, whom it works for, and its instructions, skills, tools, model, triggers and limits. Each version is a tested release. |
 | Govern | The a5s kernel | Registers agents and their owners, gives each one an identity, checks every tool and model call against policy and the approved autonomy, and gets proposals to the people who decide them. |
-| Live | Scheduler, memory and channels | Wakes an agent when something happens or falls due, runs it from its records, and lets it talk to people within contact rules. |
+| Live | Scheduler, context and channels | Wakes an agent when something happens or falls due, picks up the conversation or case where it left off, and lets it talk to people within contact rules. |
 | Prove | Ledger and assurance | Records every action, measures how people review proposals, and builds the evidence for moving an agent up or down a level. |
 | Host | Deep Agents on LangGraph, in the cloud | Runs each piece of work. Identity, sandboxes, gateways and telemetry come from the host through adapters. |
 
@@ -51,5 +51,5 @@ The [lean framework](https://github.com/sreent/lean-framework) for master data g
 - **Host:** where runs execute, in a5s's own workers or in AWS AgentCore, Microsoft Foundry or Google Agent Runtime. It decides the identity and gateway adapters ([hosting](docs/architecture.md#hosting)).
 - **Policy language:** Cedar, unless there's a reason for another. AgentCore Policy uses it too.
 - **Channels:** Teams, email or both.
-- **Evidence:** how long the ledger is kept, and where, so that the team that runs a5s can't change it.
+- **Retention:** how long conversations, profiles and the ledger are kept, and where the ledger is stored so that the team that runs a5s can't change it.
 - **Numbers:** contact limits, budgets, how long a proposal waits before it's chased and escalated, and the window for counting actions.

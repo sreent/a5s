@@ -8,15 +8,15 @@ a5s runs agents the way an operating system runs programs. It installs them, giv
 | --- | --- |
 | Programs | Agent definitions, released as tested versions |
 | User accounts | An identity for each agent instance, with a named owner |
-| Processes | Runs: one piece of work, started fresh from the agent's records |
+| Processes | Runs: one piece of work, on the thread it belongs to |
 | A scheduler | Triggers: events, schedules, obligations falling due, and messages |
 | System calls and permissions | Tool and model calls, each checked against policy |
-| A file system | Scratch space for each run, memory for each instance, and shared knowledge that agents only read |
+| Memory and files | Scratch space for each run, the agent's conversations and notes, and shared knowledge that agents only read |
 | Drivers | Tool servers, over MCP, for the systems agents use |
 | Messages between processes | A2A between agents, and channels to people |
 | An audit log | The evidence ledger |
 
-The [agent model](agent-model.md) defines definitions, releases, instances and runs, and the terms used here: parts and their owners, grants, types of action, settings, governed processes, the decision surface, and whom an agent acts for.
+The [agent model](agent-model.md) defines definitions, releases, instances, threads and runs, and the terms used here: parts and their owners, grants, types of action, settings, governed processes, the decision surface, and whom an agent acts for.
 
 ## The kernel
 
@@ -25,10 +25,10 @@ The [agent model](agent-model.md) defines definitions, releases, instances and r
 | Register | Holds definitions and their releases in git, and instances, with their identities, status and any approval the scenario's settings don't hold, in its database [TBC]. Every change goes in the ledger. | Git, copied to the host's registry for discovery only |
 | Identity | Gives each instance its own identity, and gets short-lived credentials for each call. The model never sees them. | The host's agent identity ([hosting](#hosting)) |
 | Policy | Decides each tool and model call: allow, hold for a person, or deny. Reads the scenario's settings live for every call. | Cedar [TBC] |
-| Gateways | The only routes from an agent to systems and to models. They ask policy for every call, hold the credentials, and let a held call through only with its approval. | MCP, and the host's gateway where it has one |
-| Approvals | Gets a person's decision on each held proposal, on the decision surface, and follows the requests agents hand to governed processes | LangGraph interrupts |
-| Scheduler | Wakes instances on triggers, works out what they owe people, runs them within budget, resumes them when decisions arrive, and stops them when they're suspended | Its own code, with parked runs held by LangGraph's checkpointer |
-| Memory | Keeps each instance's memory, versioned, masked and reviewed | Deep Agents' store backend |
+| Gateways | The only routes from an agent to systems and to models. They ask policy for every call, and hold the credentials. | MCP, and the host's gateway where it has one |
+| Approvals | Holds each call that needs a person's decision, gets the decision on the decision surface, makes the call once it's approved, and follows the requests agents hand to governed processes | Its own store of held calls |
+| Scheduler | Wakes instances on triggers, works out what they owe people, runs them within budget, tells them when decisions arrive, and stops them when they're suspended | Its own code, with threads kept by LangGraph's checkpointer |
+| Context | Keeps each instance's conversations, what it knows about the people it works with, and its notebook, with sources, masking and expiry | LangGraph threads and store, and Deep Agents' summarisation |
 | Channels | Lets agents talk to people, under the agent's own identity and the scenario's contact rules | Teams or email [TBC] |
 | Ledger | Records every action, append-only, where the team that runs a5s can't change it | Immutable storage [TBC], OpenTelemetry |
 | Assurance | Tests each release, measures how people review proposals, and samples work as the evidence for each agent's level | LangSmith evaluations and annotation queues |
@@ -69,15 +69,17 @@ At level 1 an agent prepares and people decide. Its work reaches a person in one
 | --- | --- | --- | --- |
 | Draft | The agent prepares something for a person to use, such as a pre-filled request or a case pack. No governed data changes. | The person who uses it, or doesn't | Allows it, and records it |
 | Request | The action belongs to a governed process, such as a request in the unified app | The process routes it to a person, and makes the change if they approve | Allows it, marked with the level a5s applied, so the process approves it automatically only at level 2. Follows the decision through events, for the measures. |
-| Held proposal | The action has no governed process of its own | The owner of the fields it touches, or a delegate where the scenario allows, on the decision surface | Pauses the run, gets the decision, and lets exactly the approved call through, once |
+| Held proposal | The action has no governed process of its own | The owner of the fields it touches, or a delegate where the scenario allows, on the decision surface | Holds the call, gets the decision, and makes exactly that call once it's approved |
 
-A held proposal goes like this:
+A held proposal never pauses the agent. A colleague who's waiting for sign-off gets on with other work, and so does an agent:
 
-1. a5s's middleware pauses the run with a LangGraph interrupt for that one call. a5s raises its own interrupts rather than using Deep Agents' `interrupt_on`, whose batched mode matches decisions to calls by position. The checkpointer parks the run, and the instance is free for other work.
+1. When policy answers hold, a5s's middleware stores the exact call with the approvals service instead of making it, and tells the agent it's waiting for a decision. The agent carries on, and can tell the person it's working with.
 2. The approvals service posts the proposal to the decision surface. It shows the actual call and its arguments, with the agent's evidence and summary beside them, never instead of them.
 3. The decider approves, edits or rejects it there. The service checks who they are, and refuses a decision from anyone the scenario forbids, such as the person the agent acted for, or the agent's owner and deputy. Edited arguments go through policy again.
-4. On approval, the service records the decision, the decider and the timings, issues a single-use approval for that instance, tool and exact arguments, and queues the run to resume. The approval names the version of each record the call changes. The gateway lets a held call through only with a matching approval, and only if those records haven't changed since, so neither a bypassed agent nor an edited checkpoint can run something nobody approved.
+4. On approval, a5s makes the stored call itself, through the gateway, unless the records it changes have changed since the proposal was made. It records the decision, the decider and the timings, and tells the agent the outcome on the thread the proposal came from.
 5. If nobody decides in time, the proposal is chased, then escalated along the chain the scenario sets, and in the end it expires as rejected [TBC: timings]. Suspending the instance, or moving it to another release, withdraws its pending proposals.
+
+Because a5s makes the approved call itself, the agent can't change it after approval, and nothing waits inside a LangGraph run. That avoids two of LangGraph's interrupt behaviours: an interrupted step runs again when it resumes, and Deep Agents' batched interrupts match decisions to calls by position.
 
 When an instance is suspended, or a part owner withdraws its approval, a5s also asks each governed process to withdraw or flag the instance's open requests there, and flags its drafts that nobody has used yet.
 
@@ -85,47 +87,57 @@ Decisions on proposals are taken only on the decision surface, never in a chat w
 
 ## How an agent lives
 
-An instance lives in records: its identity, its register entry, its obligations, its triggers and its memory. Compute is the only temporary part. Each piece of work goes like this:
+An instance lives in records: its identity, its register entry, its obligations, its triggers and its context. Compute is the only temporary part. Each piece of work goes like this:
 
-1. **Wake.** A trigger arrives: an event from a system, a message from a person, a schedule, an obligation falling due, a sweep, or a decision on a held proposal. A sweep is a fallback schedule that runs only while the instance is idle, and starts no model when nothing has changed.
-2. **Prepare.** The scheduler checks that the instance is active, has budget left and has no other run active. Then it works out what has fallen due, and loads the instance's latest memory snapshot.
-3. **Build.** It creates the agent with `create_deep_agent` on a fresh thread: the release's instructions and skills, only the granted tools, the memory snapshot to read, and a5s's policy, ledger, masking and budget middleware.
+1. **Wake.** A trigger arrives: a message from a person, an event from a system, a schedule, an obligation falling due, a sweep, or a decision on a held proposal. A sweep is a fallback schedule that runs only while the instance is idle, and starts no model when nothing has changed.
+2. **Prepare.** The scheduler checks that the instance is active and has budget left, and that the thread the work belongs to has no other run active. Then it works out what has fallen due, and gathers the context: the thread, the person's profile, a brief of the case built from records, and the notebook.
+3. **Build.** It creates the agent with `create_deep_agent` on that thread: the person's conversation, the case's thread, or a new one for a sweep. The agent gets the release's instructions and skills, only the granted tools, its context, and a5s's policy, ledger, masking and budget middleware.
 4. **Work.** The agent plans, reads, drafts and hands parts to subagents. Every call passes policy in the middleware and again at a gateway.
-5. **Propose or act.** Drafts and requests go to people as they're made. A held proposal parks the run until a person decides. A level-2 action runs and is reported.
-6. **Remember.** The agent can propose memory entries. a5s masks them and holds them for review before they join the next snapshot.
-7. **Sleep.** The run ends. Its credentials expire, its sandbox is discarded, and its obligations and contact log are updated.
+5. **Propose or act.** Drafts and requests go to people as they're made, and held proposals go to the approvals service. A level-2 action runs and is reported.
+6. **Remember.** The agent updates the person's profile and its notebook through typed tools, which check sources, size and masking.
+7. **Sleep.** The run ends. Its credentials expire, its sandbox is discarded, and its obligations and contact log are updated. The thread stays, for next time.
 
 - **Obligations** are worked out by code from the scenario's records, such as cases past their turnaround time or exceptions near expiry, never inferred by the model. Each has a due time, an escalation chain and a contact log, and the scheduler wakes the instance when one falls due. The model drafts and summarises. It doesn't decide what's owed.
 - **Reminders** that people ask for go through a typed tool. The agent offers one, and the person confirms it with a control the model can't use, such as a button in the chat client. It must be of a type the release lists, and content from outside the organisation can't set one.
 - **Triggers and schedules** are part of the release, and an agent can't create its own.
-- **One active run** for each instance. A parked run doesn't count, and new triggers and resumes queue behind the active run. A parked run resumes on the release and memory snapshot it started with, while policy still reads the settings and the instance's status live at every call.
-- **Repeats are safe.** LangGraph re-runs the interrupted step when a run resumes, so tools are idempotent and ledger entries are keyed by tool call. A scheduled run fires at most once, and a run that's cut off waits for its agent owner to review it instead of restarting.
+- **One active run for each thread.** An agent can talk to many people at once, but each conversation or case runs one thing at a time, and new messages and triggers for it queue behind the active run. Policy reads the settings and the instance's status live at every call.
+- **Repeats are safe.** If a run crashes, LangGraph re-runs the step it was in, so tools are idempotent and ledger entries are keyed by tool call. A scheduled run fires at most once, and a run that's cut off waits for its agent owner to review it instead of restarting.
 
-## Memory
+## Context and memory
 
-| Store | Holds | Kept for | Written by |
+An agent is only a colleague if it remembers. a5s keeps five kinds of context, each governed in proportion to its risk:
+
+| Context | What it is | Written by | Checked by |
 | --- | --- | --- | --- |
-| Scratch | Working files for one run | The run | The agent |
-| Memory | What the instance has learned: preferences, patterns and open threads | The instance's life, each entry until it expires | a5s, from entries the agent proposes and a reviewer approves [TBC: the agent owner] |
-| Knowledge | The scenario's documents and settings | As their owners decide | Their owners, in their own systems. Agents only read it. |
-| History | What the instance did and said | As long as the ledger | The ledger and contact log. The instance can search its own. |
+| Conversations | One ongoing conversation with each person, whichever channel they use. Older turns are summarised as it grows, and the full history stays searchable. | The conversation itself | The person, who can see all of it |
+| Profiles | What the agent knows about each person it works with: their role, parts, preferences and open topics, in about a page | The agent, only from what that person says or does | The person, who can see, correct or delete it |
+| Case briefs | The state and history of each case, request or exception, built fresh for every run | Code, from the scenario's records | Nobody needs to: the records are the source |
+| Notebook | What the instance has learned doing its job, such as the usual causes of a recurring failure, each entry with its source | The agent | The agent owner, by sampling. Entries expire [TBC: 90 days]. |
+| Instructions and skills | How the agent works | Only a release | The release approver |
 
-Memory entries are structured: what, why, source, class of data and expiry. They hold record keys, never classified values. An instance that serves many people, such as a request assistant, keeps memory and history separate for each person. Each run reads a frozen, versioned snapshot, and the ledger records which one, so a poisoned entry can be traced and removed. An agent recalls what it said weeks ago by searching its history, not by keeping one conversation open for weeks.
+- **One conversation per person.** People pick up where they left off, a week or a month later, on Teams, email or the decision surface. In a group conversation, the agent shares only what everyone present may see.
+- **Profiles come only from the person themselves.** An agent never records what others say about someone. Profiles hold no classified values, and are deleted when the person leaves [TBC: with the data protection officer].
+- **Records beat recollection.** Commitments, decisions and obligations live in records, never only in a conversation, so summarising can't lose them. When the agent's recollection and a record disagree, the record wins.
+- **Notes aren't instructions.** A notebook entry that would change how the agent works becomes a proposal for its next release. Entries that came from outside content are marked as such, and are never taken as instructions.
+- **Classified values are tokenised** in conversations and notes at rest, and shown back only to people who may see them. Conversations are kept for [TBC].
+- **Versions.** Each run reads fixed versions of the profile and the notebook, and the ledger records which, so a poisoned entry can be traced and removed.
+
+Rich context is safe enough because a5s's controls don't live in it. However a conversation or note is poisoned, the agent still can't approve, confirm or reach data outside its grant, every call is still checked outside the model, and its drafts and requests still go to people. The worst a poisoned context can do is mislead: a poor draft, a misleading message, or at level 2 a wrong change of an approved type within its limits, all recorded and reversible.
 
 ## Channels
 
-Each instance talks to people under its own identity, such as its own mailbox or bot account, never a person's, and says it's an AI agent. The scenario sets the contact rules and the escalation chain, and a release can tighten them but not loosen them. By default, an agent sends routine items in one digest a day and urgent ones at once, only in working hours, and within a limit per person. A message takes the classification of what it quotes, so it links to records instead of quoting classified values. Replies wake the agent.
+Each instance talks to people under its own identity, such as its own mailbox or bot account, never a person's, and says it's an AI agent. The scenario sets the contact rules and the escalation chain, and a release can tighten them but not loosen them. By default, an agent sends routine items in one digest a day and urgent ones at once, only in working hours, and within a limit per person. A message takes the classification of what it quotes, so it links to records instead of quoting classified values. Replies continue the conversation.
 
 ## Data protection
 
 - **Classes come from the scenario.** Each field's class comes from the scenario's settings, and decides what's masked and which models may see it.
-- **Masking.** The ledger, memory, traces and evaluation sets hold masked or tokenised values with their record keys, so evidence stays usable without holding restricted data outside live systems.
-- **Models by grant.** An instance can reach only the models approved for the classes of data it's granted, and the model gateway enforces this by the instance's identity. Managed features that call a model, such as memory extraction or evaluation, count as models too.
+- **Masking.** The ledger, the context, traces and evaluation sets hold masked or tokenised values with their record keys, so evidence stays usable without holding restricted data outside live systems.
+- **Models by grant.** An instance can reach only the models approved for the classes of data it's granted, and the model gateway enforces this by the instance's identity. Managed features that call a model, such as summarisation or evaluation, count as models too.
 - **Outside content.** Documents and messages from outside the organisation go through an extractor that has no tools. It returns typed fields tagged with their source, and policy can refuse to use a value for a purpose because of where it came from. Classifiers such as Prompt Shields, Model Armor or Bedrock Guardrails add signals. They're never the boundary.
 
 ## Evidence
 
-For every action, the ledger records the instance and its release, the person it acted for, the trigger, the tool or model and its masked arguments, the policy decision and policy version, any approval with its decider and review time, the memory snapshot and the outcome. Entries are append-only and hash-chained, kept where the team that runs a5s can't change them, and readable by whoever assures the scenario, such as internal controls. Because the ledger holds tokens rather than personal data, deleting a token's mapping when its retention ends removes the data without breaking the chain.
+For every action, the ledger records the instance and its release, the person it acted for, the trigger, the tool or model and its masked arguments, the policy decision and policy version, any approval with its decider and review time, the versions of the profile and notebook it read, and the outcome. Entries are append-only and hash-chained, kept where the team that runs a5s can't change them, and readable by whoever assures the scenario, such as internal controls. Because the ledger holds tokens rather than personal data, deleting a token's mapping when its retention ends removes the data without breaking the chain.
 
 The same events go out as OpenTelemetry spans, using the GenAI conventions (`invoke_agent`, `execute_tool`), plus a5s attributes for what those lack, such as the person acted for and the policy decision. The conventions are still at Development stability, so a5s pins a version. Traces in LangSmith or elsewhere are for debugging and are kept briefly. They aren't the evidence.
 
@@ -141,10 +153,10 @@ The same events go out as OpenTelemetry spans, using the GenAI conventions (`inv
 | a5s needs | Deep Agents and LangGraph give | a5s adds |
 | --- | --- | --- |
 | The agent loop | `create_deep_agent`: a virtual filesystem, subagents, skills, summarisation, and planning if wanted | Nothing. It's used as it is. |
-| Proposals that wait for days | LangGraph's `interrupt()` and a Postgres checkpointer | Its own interrupt for each call, routing, single-use approvals tied to arguments and record versions, timings, escalation and expiry |
+| Context that lasts | Threads kept by a Postgres checkpointer, a store, summarisation and offloading of large results, and `AGENTS.md` memory | One conversation per person across channels, profiles people can see and correct, case briefs from records, and a notebook with sources and expiry |
+| Proposals that wait for days | Interrupts, which park a run until it's resumed | Held calls kept outside the run, so nothing parks and the agent can't change an approved call |
 | A check on every call | Middleware hooks such as `wrap_tool_call`, and filesystem permissions that allow by default | Policy that denies by default, on every agent and subagent, and again at the gateways |
-| Memory | `StoreBackend`, `CompositeBackend` and `AGENTS.md` memory | One writer, review, masking, expiry and versioned snapshots |
-| Durable state | A Postgres checkpointer and store, which run anywhere | One active run for each instance, with resumes queued |
+| Durable state | A Postgres checkpointer and store, which run anywhere | One active run for each thread, with the rest queued |
 | Tools | The MCP client in `langchain` 1.4 and later | Registered tool servers, pinned tool definitions and risk attributes |
 | Tracing and evaluation | LangSmith and OpenTelemetry | The ledger, measures and samples |
 | Personal data | PII middleware, with five built-in regex types | Masking by class, from the scenario's settings |
@@ -159,7 +171,7 @@ Agents call each other over A2A, and only between registered instances. The agen
 
 ## Hosting
 
-The kernel runs as a set of services on the host's container platform, and adapters connect it to the host. A parked run holds no session: its state is in a5s's checkpointer, so a host's session limits don't matter to proposals that wait for days.
+The kernel runs as a set of services on the host's container platform, and adapters connect it to the host. Nothing waits inside a host's session: threads live in a5s's checkpointer and held calls in its approvals store, so session limits don't matter to conversations and proposals that last for weeks.
 
 | Host | Runs execute in | Identity | Gateways | Notes |
 | --- | --- | --- | --- | --- |
