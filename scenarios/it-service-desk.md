@@ -9,10 +9,10 @@ An internal IT service desk helps people with accounts, devices, access and the 
 | Interface | In the service desk |
 | --- | --- |
 | Directory | The identity provider, including pre-start accounts for new joiners, which the HR system creates. The ITSM says who may see each ticket. |
-| Settings | a5s's own settings store. The parts are service areas, such as accounts and access, devices, and collaboration tools. |
+| Settings | a5s's own settings store. The parts are service areas, such as accounts and access, devices, and collaboration tools, and the audience includes new joiners, from their pre-start accounts. |
 | Tools | The ITSM's tickets, comments and request catalogue, the knowledge base, the identity provider's self-service flows, and device management, read only |
 | Records | Tickets with their response and resolution targets, and joiners' start dates from the HR system |
-| Governed process | The ITSM's request fulfilment and access approvals, which already keep requester and approver apart |
+| Governed process | The ITSM's request fulfilment and access approvals, which already keep requester and approver apart, and the identity provider's own self-service flows |
 | Decision surface | The ITSM's approvals |
 | Policy pack | [The service desk pack](#the-service-desk-pack) |
 | Tests | [On paper](#tests-on-paper), against a fake ITSM, knowledge base and identity provider |
@@ -31,7 +31,7 @@ The service desk adds these to a5s's base pack:
 - **Self-service can run at level 2,** for catalogue items the service owner approves, when the person it's for asked for it and the identity provider verifies them in its own flow. The agent starts the flow and never sees the secret.
 - **Only for the person asking.** A request for anyone else goes to the ITSM's approvals.
 - **Authenticators go to a person.** Registering a new authenticator, or removing one, always goes to a resolver, because that's how account takeovers start.
-- **New joiners are in the audience** from their pre-start account, and see only their own joiner record.
+- **New joiners see only their own joiner record** until their first day.
 - **No admin rights.** No agent grants privileged access, at any level.
 
 ## The agents
@@ -44,7 +44,7 @@ The service desk adds these to a5s's base pack:
 
 ## What it shows about a5s
 
-- **Level-2 limits belong to scenarios.** The lean pack rules out level 2 for anything that came from a person's words, because nobody may approve their own change. Here, a person asking for their own password reset is the normal case. So a5s's base pack only records who a run acts for and keeps them from deciding what they're named on, and each pack sets the rest.
+- **Level-2 limits belong to scenarios.** The lean pack rules out level 2 for anything that came from a person's words, because nobody may approve their own change. Here, a person asking for their own password reset is the normal case. So a5s's base pack doesn't rule on it. It records who a run acts for and keeps them from deciding what they're named on, and each pack sets the rest.
 - **The audience is a setting.** Lean's agents talk only to people inside the organisation, while the joiner coordinator must reach people who haven't started.
 - **The default settings store matters.** The service desk has nothing like lean's domain profiles, so it uses a5s's.
 - **Each scenario answers who may see a record.** a5s asks the directory interface, and here the ITSM answers for its tickets.

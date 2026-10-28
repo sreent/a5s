@@ -10,8 +10,9 @@ Phase 1 builds the smallest a5s that's useful: the trusted core, conversations, 
 | --- | --- |
 | Cloud and identity provider | The ones the organisation's identity estate already runs on, with Postgres |
 | Channel | Teams |
-| Settings store | a5s's own, with signed versions [TBC: edited through a simple app, or in git] |
-| Outside approver | Information security, for releases that widen an agent and changes to the trusted core |
+| Settings store | a5s's own, with signed versions [TBC: edited through a simple app, or in git]. The lean scenario keeps agents' approvals and levels there until the unified app holds them. |
+| Platform owner | Named once for a5s [TBC: for the lean organisation, the Head of Data, AI & Development] |
+| Outside approver | Information security, as the release approver for the trusted core, and for anything else that loosens a5s that a scenario names nobody else for |
 | Model | One approved model, pinned by provider, deployment, region and version |
 | The lean contract | Interfaces for the directory, settings, tools and records, and a fake of each. That includes where the exception register and the ownership settings live during the transition [TBC]. |
 
@@ -27,12 +28,12 @@ Each step ends with something running and its tests passing.
    - replies in Teams through the channel gateway;
    - a switch that suspends an instance at its next call.
 2. **A release pipeline:** pinned dependencies, the regression suite in CI, and protected branches, with an attested build and outside approval for the trusted core. Releases are [proportionate](architecture.md#independence).
-3. **Context:** conversations in topics, structured summaries that code checks, profiles, case briefs from records, search over past turns, promises and reminders, and the context budget for each run ([context](architecture.md#context-and-memory)).
+3. **Context:** conversations in topics, structured summaries that code checks, profiles, case briefs from records, search over past turns, promises and reminders, and the context budget for each run ([context](architecture.md#context-and-memory)). Summaries keep facts by handle, so this step also prototypes [handles](architecture.md#provenance-who-said-what) and the exact matching of typed values.
 4. **The first two agents,** against the fake and then the real systems in test:
    - the governance coordinator at level 1, with no parts. Its obligations come from the exception register, and it sends digests and chases and drafts the owner review pack;
    - the change reconciler at level 0. It only reads, matches by code and reports to internal controls, which makes it a cheap test of the plumbing, watched by the team whose job is checking.
 5. **Running it properly, then production:** tokens for classified values, masked traces, budgets at the model gateway, the hourly ledger anchor with assurance, dashboards, objectives, runbooks and on-call ([operations](architecture.md#operations)). Then the first two agents go to production.
-6. **The owner assistant, for one part,** at level 1: live settings, a level for each part, case briefs and chasing. Its part has no Restricted fields, and its tools return no outside content, since the extractor comes in phase 2. Alongside it, a prototype of [handles](architecture.md#provenance-who-said-what), the first test of value provenance.
+6. **The owner assistant, for one part,** at level 1: live settings, a level for each part, case briefs and chasing. Its part has no Restricted fields, and its tools return no outside content, since the extractor comes in phase 2.
 
 ## Done means
 
@@ -44,7 +45,7 @@ Each step ends with something running and its tests passing.
 
 | Phase | Adds | Because |
 | --- | --- | --- |
-| 2 | The extractor and value provenance, then the request assistant. Held proposals, counts, signed decisions, level 2 with samples and sequential tests, and the quality agent. | They're needed only once agents read outside content or act |
+| 2 | The extractor, with handles for the values it reads, then the request assistant. Held proposals, counts, signed decisions, level 2 with samples and sequential tests, and the quality agent. | They're needed only once agents read outside content or act |
 | 3 | Group conversations, a notebook of what agents learn from records, agent to agent over A2A, and adapters for managed runtimes | Each builds on phase 2's evidence |
 
 ## Costs

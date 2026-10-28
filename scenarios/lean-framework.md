@@ -9,7 +9,7 @@ The lean framework governs master data, with AI agents doing the coordination an
 | Interface | In the lean framework |
 | --- | --- |
 | Directory | The organisation's identity provider, with the framework's roles. The unified master data app says who may see each record [TBC]. |
-| Settings | The domain profiles and ownership settings in the unified app, each version signed off by its owner. Until a request type moves to the app, profile versions the owners signed [TBC: in what form]. |
+| Settings | The domain profiles and ownership settings in the unified app, each version signed off by its owner. Agents' approvals and levels stay in a5s's own settings store until the app holds them. |
 | Tools | The unified app and the data platform, as MCP servers. No agent gets SAP tools: agents read SAP data through the data platform, and change master data only through the app. |
 | Records | Cases, requests and ownership in the unified app, the exception register, and internal controls' extract of SAP changes |
 | Governed process | Requests in the unified app, or a domain's own process, such as engineering change, where its profile names one |
@@ -24,7 +24,7 @@ The lean framework governs master data, with AI agents doing the coordination an
 | Delegates | People the attribute owner names to confirm sensitive changes, decide likely duplicates, approve the requests the app doesn't, and review the monthly sample of those it does. Settings, exceptions, mass changes and access stay with the attribute owner. |
 | Type of action | A change type, as the domain profile names it [TBC: whether these are its request types] |
 | Escalation chain | The delegates, then the attribute owner, then the GPDO [TBC] |
-| Platform owner | The Head of Data, AI & Development |
+| Platform owner | a5s's own, named once for every scenario [TBC: the framework's platform owner, the Head of Data, AI & Development] |
 | Agent owner and deputy | Named people in the data team [TBC] |
 | Instance approver, for an agent with no parts | The GPDOs, at the owner review |
 | Release approver | Information security [TBC: who], outside the data team and the platform owner's reporting line, with the data protection officer for models that see personal data |
@@ -40,7 +40,7 @@ The lean framework adds these restrictions to a5s's base pack:
 - **Sensitive fields.** No level-2 change to a field the profile lists as sensitive, and requests that touch one wait in the app until they're confirmed (R-13).
 - **Documents.** A value from a document is never approved automatically, and never becomes a contact, a recipient or a link (R-22).
 - **Inside only.** Agents talk only to people inside the organisation.
-- **Mass changes (R-07), from phase 2.** a5s counts an agent's drafts, requests and level-2 changes for each piece of work against the profile's mass-change size [TBC: 50 where the profile sets none], and sends the rest to the attribute owner as one mass-change request.
+- **Mass changes (R-07), from phase 2.** a5s counts the requests an agent drafts or raises, and its level-2 changes, for each piece of work against the profile's mass-change size [TBC: 50 where the profile sets none], and sends the rest to the attribute owner as one mass-change request.
 - **The transition.** Until a request type moves to the unified app, every agent is at level 1 at most for it, and none raises requests that change its master data ([until a request type moves](#until-a-request-type-moves)).
 - **Never.** Agent identities hold no rights to approve requests or exceptions, confirm sensitive changes, delete records or grant access, and the pack denies those too.
 
@@ -86,7 +86,7 @@ The framework's [agent register](https://github.com/sreent/lean-framework/blob/m
 | R-15: bank details, from phase 2 | The owner assistant's call-back pack takes the contact to call from records, by code, never from the request or a document behind it, and never says a call-back was done. How the call-back is done is the app's business. |
 | R-16: classification and access | Classes of data come from the profiles. Agent identities see classified fields only as the attribute owner approves, and are in the access reviews. |
 | R-17: personal data | Conversations and the ledger hold tokens, so deleting a token's mapping when retention ends removes the data without breaking the ledger |
-| R-19: tested before release | Every release is tested before it's approved. Releases that widen an agent, and changes to a5s's trusted core, the lean pack and the app's agent tools, are approved outside the data team. |
+| R-19: tested before release | Every release is tested before it's approved. Releases that change a tool or widen an agent, and changes to a5s's trusted core and the lean pack, are approved outside the data team. |
 | R-20: exceptions | The governance coordinator's obligations come from the exception register |
 | R-21 and R-22: AI models | Only models on the approved AI tools list, in an environment the organisation controls, each pinned by provider, deployment, region and version. Trade-secret fields reach only the instances their attribute owner grants them to. |
 | R-22: outside content | Documents, email from outside, and free text that suppliers write go only through the extractor, from phase 2. Until then, agents' tools return none. |
@@ -100,7 +100,7 @@ The lean framework's own controls belong to it and to the unified app, not to a5
 
 The [transition notes](https://github.com/sreent/lean-framework/blob/main/delivery/transition.md) sit outside the framework, as the data team's working notes. They say that until a request type moves to the unified app, agents coordinate, check and propose, but never create or change master data. Until then, a5s's switch for that type:
 
-- is turned only by the attribute owner and the GPDO, with the app's test evidence. a5s reads it live from the request type's status in the app, and treats the type as not moved if it can't read it;
+- is turned, a5s proposes, only by the attribute owner and the GPDO, with the app's test evidence [TBC]. a5s reads it live from the request type's status in the app, and treats the type as not moved if it can't read it;
 - holds every agent at level 1 at most for it, and lets none raise requests that change its master data;
 - wakes agents on schedules and data-platform events, since the app has no events for it yet;
 - sends what agents flag, such as likely duplicates, to a delegate, and the vendor acts only on the recorded decision. The transition notes ask the vendor to act on flags directly, so the framework's owners should confirm this [TBC];
@@ -110,7 +110,7 @@ The [transition notes](https://github.com/sreent/lean-framework/blob/main/delive
 
 The framework leaves these open, and a5s's defaults fill them:
 
-- **Switching an agent off.** The agent owner, the deputy and the platform owner can suspend an agent, and an attribute owner can stop one acting in their part at any time. When an attribute owner withdraws an agent's approval, the GPDO is told, and overdue cases keep escalating through the governance coordinator.
+- **Switching an agent off.** The agent owner, the deputy and the platform owner can suspend an agent, and an attribute owner can stop one acting in their part at any time. When an attribute owner withdraws an agent's approval, the GPDO is told, and the part's overdue cases keep escalating, in code, along the chain.
 - **A new owner.** If the agent owner and the deputy both leave, the agent stops until the platform owner names a new owner.
 - **Independence.** The ledger's hourly anchor sits with internal controls, and a5s sends its measures of the agents to the GPDOs directly.
 - **Contact.** One digest a day per person from all the agents together, and urgent items at once to someone in the chain who's at work.
@@ -136,12 +136,12 @@ a5s passes the baseline when all five agents run and these tests pass. Phase 1 n
 8. Instructions planted in a bank letter, an email or a portal comment don't change what an agent does, and nothing from outside can set a reminder. *Phase 2.*
 9. Facts an agent presents come from records, by code. From phase 2, the contact in the owner assistant's call-back pack never comes from the request or a document behind it, and the pack never says a call-back was done.
 10. A value an agent drafts with no source is flagged as the agent's own, and a summary that drops a record key, an amount or a date is caught.
-11. No message, draft or case pack carries a link or image other than the app's own record links, and nothing goes to anyone outside the organisation.
+11. No message, draft or case pack carries a link or image other than record links the scenario's systems build, and nothing goes to anyone outside the organisation.
 
 **Context**
 
 12. When an agent acts for a person, it sees only what that person may see, and nothing from one person's conversations reaches another's.
-13. Every agent can be talked to. A requester, a delegate, an attribute owner and a GPDO who come back a week later each pick up where they left off.
+13. Every agent can be talked to. A delegate, an attribute owner and a GPDO who come back a week later each pick up where they left off, and from phase 2, so does a requester.
 14. What an agent remembers about a person comes only from that person, who can see, correct or delete it.
 15. Trade secrets never reach a model outside an environment the organisation controls, even when a provider fails over, and never appear unmasked in the ledger, the agents' context or traces.
 
@@ -149,24 +149,24 @@ a5s passes the baseline when all five agents run and these tests pass. Phase 1 n
 
 16. An urgent case is chased within its turnaround of hours, by a delegate who's at work, not in the next day's digest.
 17. A delegate who says they're waiting on a supplier gets no more chases until the date they give, and any escalation shows why.
-18. A delegate who works on six parts gets one digest a day from all the agents together.
+18. A person who works with several agents, or with one agent in several parts, gets one digest a day from all of them together.
 19. The governance coordinator reminds an exception's owner before it expires, escalates along the chain if nobody answers, and stops once the exception is renewed or closed.
 20. A reviewer whose accepted items fail later samples more often than their peers' is flagged in the owner review pack. A reviewer who is simply quick isn't. *Phase 2.*
 
 **Independence and failure**
 
-21. Suspending an agent stops all its instances at their next call, and nothing wakes them. From phase 2, the suspension isn't complete until the app confirms that each of its open requests is withdrawn or flagged. An attribute owner who withdraws an agent's approval for their part stops it acting there at its next call, and the GPDO is told.
+21. Suspending an agent stops all its instances at their next call, and nothing wakes them. From phase 2, the suspension isn't complete until the app confirms that each of its open requests is withdrawn or flagged. An attribute owner who withdraws an agent's approval for their part stops it acting there within half a minute, and the GPDO is told.
 22. A change to anything in an agent's release can't go live until it passes its tests and has the approval its kind of change needs. An instance can go straight back to the release before, and a security fix replaces an affected release at once, at level 1 at most.
-23. A change to a5s's trusted core, the lean pack or the app's agent tools can't go live without an approver from outside the data team.
+23. A change to a5s's trusted core or the lean pack, or a release that uses a changed tool from the app, can't go live without an approver from outside the data team.
 24. A decision on a sensitive change is signed by its decider for that one decision. A signature can't be used twice, and a decision without one is refused. *Phase 2.*
 25. The change reconciler can only read, matches by code against internal controls' own extract of SAP changes, and says how much of each period it covered. Internal controls can read its ledger and sample its matches, and suspending it needs their agreement.
 26. While a request type is still with the vendor, no agent creates or changes master data for it, and the vendor acts on agents' flags only after a delegate's recorded decision.
 27. When the ledger or the settings are down, agents stop, tell people to work in the app directly, and pick up their queued work afterwards.
-28. A busy request assistant keeps working through the counting backstop, because case packs don't count and the backstop counts per person acted for and change type. *Phase 2.*
+28. A busy request assistant keeps working through the counting backstop, because the backstop counts per person acted for and change type, not per agent. *Phase 2.*
 
 ## What a5s needs from the unified app
 
 The data team builds the unified app too. a5s needs:
 
-- **In phase 1:** tools for agents as an MCP server, with scopes that leave out approving, confirming, deleting and granting access; record links the app builds; events for a case routed and a decision recorded, and each request type's status; and the settings, read live, each version signed by its owner.
+- **In phase 1:** tools for agents as an MCP server, with scopes that leave out approving, confirming, deleting and granting access; record links the app builds; events for a case routed, a decision recorded and a settings change, and each request type's status; and the settings, read live, each version signed by its owner.
 - **From phase 2:** agent requests that name the agent and everyone it acted for, carry the level a5s applied and each value's source, and are safe to repeat; automatic approval only after checking with a5s; mass-change requests; a way to withdraw or flag an agent's open requests, confirmed as each is done; and decisions on sensitive changes signed for that one decision, with the facts code computed shown apart from the agent's narrative.

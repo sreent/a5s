@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | Definition | A kind of agent: its job, and whom it works for | Until it's retired |
 | Release | A tested, approved version of a definition. It fixes the instructions, skills, tools, model, triggers, obligations, the preferences people can set, the context budget and the limits. | Until it's withdrawn |
-| Instance | A definition at work in a scope, with its own identity, grant, obligations and status | As long as the scope needs it |
+| Instance | A definition at work in a scope, with its own identity, grant and status | As long as the scope needs it |
 | Conversation | Everything one person and one agent have said to each other, in topics, whichever of the agent's instances did the work | As long as they work together, then as the retention rules say |
 | Run | One piece of work, from a trigger until it's done, on a LangGraph thread that ends with it | Minutes |
 
@@ -18,16 +18,18 @@ In the lean scenario, the owner assistant is a definition, and its release 0.3.0
 
 | Term | Means |
 | --- | --- |
-| Part | A piece of the business with one owner. Every field an agent touches belongs to one part. |
+| Part | A piece of the business with one owner. Every field an agent changes belongs to one part. |
 | Part owner | Approves agents to act in the part, and how far. Decides their proposals there, or names delegates to. |
 | Scope | The parts an instance may act in: one, several, or none, for an agent that acts on no part's data |
 | Grant | The tools, data and models an instance may use: what its release lists, as far as its parts' owners approve |
-| Type of action | A kind of action that a level is set for, defined by the fields it changes and the check it serves |
+| Type of action | A kind of action that a level is set for, as the scenario defines it, such as a change type or a catalogue item |
 | Acts for | Everyone whose words a run serves: whoever sent the message, set the reminder, or wrote the reply a request came from. A run started only by an event or a schedule acts for nobody. |
 
 The [scenario contract](architecture.md#the-scenario-contract) says where the settings, the governed process and the decision surface come from. Each scenario's page maps these terms, as the [lean framework](../scenarios/lean-framework.md) and the [IT service desk](../scenarios/it-service-desk.md) do.
 
 ## Roles
+
+The platform owner and the release approver for the trusted core are a5s's own, named once in [phase 1](phase-1.md#decide-first). Each scenario names the rest.
 
 | Role | Does |
 | --- | --- |
@@ -35,7 +37,7 @@ The [scenario contract](architecture.md#the-scenario-contract) says where the se
 | Agent owner, with a deputy | Builds and runs a definition and its instances. Reviews level-2 actions and can reverse them. Can suspend the agent's instances, lower their cap and withdraw its releases. |
 | Part owner, and delegates | The part owner approves an instance for the part, sets how far it may act there, and moves it up or down. They or their delegates decide its proposals, as the scenario allows. Decisions about the agent itself are never a delegate's. |
 | Instance approver | For each part in an instance's scope, its owner. For an instance with no parts, whoever the scenario names, who also sets its level. |
-| Release approver | Approves releases that widen what an agent may do, and changes to the trusted core. Never from the team that runs a5s, or its manager's reporting line. The scenario names who. |
+| Release approver | Approves what loosens a5s: releases that change a tool or widen what an agent may do, changes to the trusted core, and anything else the scenario names nobody else for. Never from the team that runs a5s, or its manager's reporting line. |
 | Graders, from phase 2 | Grade samples of an agent's work. Never from the team that built it. |
 | Assurance | Holds the ledger's anchor, reads the ledger, and is told of everything that loosens a5s |
 
@@ -50,7 +52,7 @@ The [scenario contract](architecture.md#the-scenario-contract) says where the se
 | An instance is | Means | Who moves it on |
 | --- | --- | --- |
 | Proposed | Created by its agent owner, waiting for approval | Its instance approvers |
-| Active | Working, in the parts whose owners approve it | The agent owner, the deputy or the platform owner can suspend it. The agent owner or the platform owner can retire it. |
+| Active | Working, in the parts whose owners approve it | The agent owner, the deputy or the platform owner can suspend it, except that stopping an agent the scenario marks as a check needs the scenario's assurance. The agent owner or the platform owner can retire it. |
 | Suspended | No trigger wakes it, its next call is denied, even in a run already going, and its open work is withdrawn or flagged in the scenario's process | Whoever suspended it can resume it. Anyone else needs someone outside the team, because resuming loosens. Never while it has neither an owner nor a deputy. |
 | Retired | Its identity is disabled, its grant removed and its evidence archived. Conversations follow the retention rules. | Nobody |
 
@@ -67,12 +69,12 @@ The [scenario contract](architecture.md#the-scenario-contract) says where the se
 | 1. Propose | Prepare drafts, raise requests in a governed process, and, from phase 2, hold proposals ([how](architecture.md#proposals-and-approvals)) | A person decides each one |
 | 2. Act and notify, from phase 2 | Take actions of a type the part owner has approved, within the scenario's limits, through the governed process where there is one | The agent owner reviews them and can reverse any |
 
-- The level is set for each instance, part and type of action, in the settings. Where none is set, the release's starting level applies, which can only be 0 or 1, so level 2 always comes from a part owner. The release's maximum caps whatever the settings say.
+- The level is set for each instance, part and type of action, in the settings. Where none is set, the release's starting level applies, which can only be 0 or 1, so level 2 always comes from the settings, never from the release. The release's maximum caps whatever the settings say.
 - A level-2 setting records who approved it and the version of the part. If either changes, it drops to level 1 until the new owner sets it.
 - From phase 2, a5s also keeps a cap for each instance and type of action, and the instance works at the lower of the cap and the setting. The cap rises only when samples pass ([starting values](starting-values.md)), and falls when they fail or the agent owner lowers it. Raising it by hand loosens, so it needs someone outside the team.
 - An action that touches several parts works at the lowest of their levels.
 - Reminding, chasing and routing are allowed at every level, within the contact rules, because they change no data.
-- A scenario's policy pack can rule out level 2 for some actions altogether. The lean pack does for any request that came from a person's words, while the IT service desk's allows it for self-service that the identity provider verifies.
+- A scenario's policy pack can rule out level 2 for some actions altogether. The lean pack does for any request that came from a person's words, while the IT service desk's limits it to self-service that the identity provider verifies.
 - There's no level above 2. An agent that acts always tells someone.
 
 ## The definition format

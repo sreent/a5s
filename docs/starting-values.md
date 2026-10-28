@@ -2,7 +2,7 @@
 
 **Status:** Draft v0.2 · **Under:** [Architecture](architecture.md)
 
-These are the numbers a5s starts from, by the phase that needs them. They're starting values, not decisions: each is baselined in the first months and then set, and loosening one later needs someone outside the team ([independence](architecture.md#independence)). Who approves what is each scenario's to name in its contract, as the [lean framework](../scenarios/lean-framework.md#the-contract) does. A scenario can also bring numbers of its own, such as the lean framework's mass-change size.
+These are the numbers a5s starts from, by the phase that needs them. They're starting values, not decisions: each is baselined in the first months and then set, and loosening one later needs someone outside the team ([independence](architecture.md#independence)). a5s's own approvers are named in [phase 1](phase-1.md#decide-first), and each scenario names the rest in its contract, as the [lean framework](../scenarios/lean-framework.md#the-contract) does. A scenario can also bring numbers of its own, such as the lean framework's mass-change size.
 
 ## Phase 1
 
@@ -13,7 +13,7 @@ These are the numbers a5s starts from, by the phase that needs them. They're sta
 | Ledger anchor | Every hour, with assurance | A rewritten history shows within the hour | Assurance |
 | Digest | One a day per person from all the agents together, at a time they choose, 09:00 by default | One place to look, at a time that suits them | Each person |
 | Urgent messages | Up to 5 per person per day across all agents, then batched hourly | Urgent stays urgent without becoming noise | The platform owner |
-| Chases | In the last digest before half the turnaround has passed. Escalation when it's due, but no sooner than a working day after the chase. | People get a chance to act before anyone above them hears | Each part owner |
+| Chases | Routine items in the last digest before half the turnaround has passed, then escalated when due, but no sooner than a working day after the chase. Urgent items by urgent message at half the turnaround, then escalated when due. | People get a chance to act before anyone above them hears | Each part owner |
 | Conversations | Kept for 12 months after the last message, and archived when someone leaves | Covers a yearly cycle | The data protection officer |
 | Ledger | As long as the records it supports, which the scenario sets | It's evidence | Assurance |
 | Traces | 14 days | For debugging only | The agent owner |
