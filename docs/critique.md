@@ -1,6 +1,6 @@
 # Design Critique
 
-**Status:** Round 1 and its follow-up, 28 October 2026 · **Design:** [a5s](../README.md)
+**Status:** Rounds 1 and 2, 28 October 2026 · **Design:** [a5s](../README.md)
 
 Every change to the design gets an adversarial review before it settles. Reviewers who didn't write the design read it cold, each from one angle, and look for loopholes: ways to get round it, abuse it, or make it fail. Each finding is checked against the documents before it's accepted. This page records what each round found and how the design answers it.
 
@@ -33,8 +33,8 @@ Two earlier fresh reads checked the design's consistency and its faithfulness to
 
 | # | Loophole | Severity | How the design answers it | Status |
 | --- | --- | --- | --- | --- |
-| A1 | A fraudster gets a supplier's verification phone changed first, then sends the bank letter weeks later, so the call-back reaches them | Critical | Code chooses the call-back contact, only from fields unchanged for [TBC: 90 days], and a newer one blocks the pack ([R-15](../scenarios/lean-framework.md#how-the-rules-map); test 6) | Closed |
-| A2 | Outside text arrives as a record, such as a portal comment claiming the call-back was done | Critical | Outside free text reaches agents only through the extractor, facts people decide on are computed, and the app needs the confirmer's own call-back record ([provenance](architecture.md#provenance-who-said-what); test 7) | Closed |
+| A1 | A fraudster gets a supplier's verification phone changed first, then sends the bank letter weeks later, so the call-back reaches them | Critical | Code chooses the call-back contact: one unchanged for 90 days, or else the one a newer contact replaced, and a recent change makes the payment change high risk ([R-15](../scenarios/lean-framework.md#how-the-rules-map); test 6) | Closed |
+| A2 | Outside text arrives as a record, such as a portal comment claiming the call-back was done | Critical | Outside free text reaches agents only through the extractor, facts people decide on are computed, and the app needs a blind call-back record ([provenance](architecture.md#provenance-who-said-what); test 7) | Closed |
 | A3 | Data leaves through a link or image that a preview fetches, with no click | Critical | Messages carry only text and the app's record links, nothing goes outside the organisation, and values are shown only in fields code fills in ([channels](architecture.md#channels); test 10) | Closed |
 | A4 | Planted text steers the change reconciler's matches and the monthly sample | Critical | Code computes matches and draws samples, and every match on a sensitive field goes to internal controls ([R-08 and R-06](../scenarios/lean-framework.md#how-the-rules-map); test 23) | Closed |
 | A5 | Deep Agents' own files and `AGENTS.md` become a memory nobody governs | High | Instructions and skills load read-only, file tools write only to scratch space wiped after each run, and attachments go to the extractor ([how an agent lives](architecture.md#how-an-agent-lives)) | Closed |
@@ -94,18 +94,6 @@ Two earlier fresh reads checked the design's consistency and its faithfulness to
 | C9 | A group chat has no thread of its own | Medium | Each group has its own thread, and the agent shares only what everyone present may see ([context](architecture.md#context-and-memory)) | Closed |
 | C10 | The extractor can't answer questions about a document, so people paste it into other tools | Medium | The extractor can answer in free text, marked as outside content, and never used as an instruction or a value ([data protection](architecture.md#data-protection)) | Closed |
 
-## For the lean framework's owners
-
-a5s answers these for itself, without changing the framework, but the framework's owners may want to address them in it:
-
-- **R-15** verifies bank details with "contact details that weren't changed along with it". A contact changed weeks before passes, and so does a change to the verification contact itself, which needs confirming under R-13 but no call-back (A1).
-- **Level 1 and the request assistant.** The rulebook's level 1 has the attribute owner or a delegate approve each proposal, while the request assistant's drafts are submitted by requesters, as their own requests.
-- **The transition.** The transition notes ask the vendor to act on what agents flag. a5s sends flags to a delegate first (F3).
-- **Who approves.** Nobody is named to run an agent's design review, approve its model, or approve changes to the enforcement around it (I3, I10). The [starting values](starting-values.md) propose information security.
-- **Payment runs.** Keep Verification of Payee switched on for supplier payment files, which banks let companies opt into for bulk payments, so a name that doesn't match the account shows before money moves.
-- **Four eyes for the largest.** Consider a second confirmer for bank changes on the suppliers with the largest payments.
-- **Ownership conflicts.** Consider making internal controls' review a rule for ownership changes that put a sensitive field with people who hold conflicting rights.
-
 ## Round 1 follow-up
 
 Round 1 left seven risks open. Each now has an answer:
@@ -120,19 +108,69 @@ Round 1 left seven risks open. Each now has an answer:
 | Summaries and trust | Summaries are structured and checked, answers about the past retrieve the original turns, and new releases earn trust in shadow | [Context](architecture.md#context-and-memory); [lifecycle](agent-model.md#lifecycle); tests 29 and 31 |
 | Names and numbers | Each has a starting value, for its owner to confirm | [Starting values](starting-values.md) |
 
+Round 2 then attacked these answers and found gaps in the first four, closed [below](#what-round-2-found).
+
+## What round 2 found
+
+Round 2 attacked the follow-up's new controls from two angles, fraud and control, and operations and colleagues. It found 21 problems: 7 critical, 10 high and 4 medium. Most showed the first answers were too narrow: they covered bank details but not other ways to redirect a payment, compared against data a fraudster could change first, sent the riskiest changes to one predictable person, and signed a sign-in rather than a decision. All 21 are now closed.
+
+### Fraud and control
+
+| # | Loophole | Severity | How the design answers it | Status |
+| --- | --- | --- | --- | --- |
+| D1 | Payments redirected through an alternative payee, without touching bank details | Critical | Every change to where payments go gets the same facts, matched against the supplier whose invoices are paid ([collusion, forgery and ownership](../scenarios/lean-framework.md#collusion-forgery-and-ownership); test 26) | Closed |
+| D2 | The supplier's name and country are changed first, so a later account in the new name matches | Critical | The account holder is matched against the name and country as they stood 90 days before, a recent change to either makes the change high risk, and a close match or no answer confirms nothing (test 27) | Closed |
+| D3 | Patience beats the contact's age: a contact a forged letter changed 91 days before passes | Critical | Call-backs go to the contact a newer one replaced, any contact change in the last 12 months makes a payment change high risk, and internal controls call a number from outside SAP (test 27) | Closed |
+| D4 | The riskiest changes go to one predictable person, and internal controls' re-call has no deadline | Critical | A high-risk change needs the attribute owner and a second confirmer drawn at random, and can't be used until internal controls have re-performed the call-back. Eligibility is checked live against buying and payment rights, and naming a delegate goes through the conflict check (test 26) | Closed |
+| D5 | A signed sign-in doesn't sign the decision, so it can be reused for another | Critical | Each decision is signed on the decider's own device, for that one decision, showing the supplier and the account's last digits, and signatures work once ([independence](architecture.md#independence); test 30) | Closed |
+| D6 | The builders build the new controls and the tests that judge them | High | The app's assignment, account-holder check, risk scoring and call-back enforcement change like enforcement, and assurance holds their tests ([independence](architecture.md#independence)) | Closed |
+| D7 | Withdrawing and resubmitting re-rolls the random draw, and the pair alert misses a single fraud | High | The draw stays with the record and field for 90 days, redraws are logged, pair alerts count withdrawals and rejections, and every change the bank can't confirm gets internal controls' call before use (test 29) | Closed |
+| D8 | The people being watched can switch the detection off | High | Collusion checks run as code internal controls own, their flags go straight to internal controls, hashes are keyed, and stopping anything that detects counts as loosening (test 33) | Closed |
+| D9 | The channel score rewards account takeover | High | The channel can only add risk, and a portal change soon after a password reset or from a new device is high risk | Closed |
+
+### Operations and colleagues
+
+| # | Loophole | Severity | How the design answers it | Status |
+| --- | --- | --- | --- | --- |
+| O1 | A blocked call-back pack leaves no safe way forward, so the owner rings the number on file | Critical | Code offers the contact a newer one replaced, or the one verified when the supplier was set up, and the app accepts call-back records only for contacts code offered (test 28) | Closed |
+| O2 | High-risk changes get a predictable confirmer and a late re-call | Critical | As D4 | Closed |
+| O3 | Confirmation stalls when the person drawn is away, and the bank can't check many accounts | High | The draw is only from people at work, it's drawn again if nobody opens it by half the turnaround, the owner has a standing alternate, and a close match or no answer goes to the normal draw, with the holder confirmed on the call-back and by internal controls | Closed |
+| O4 | The counting backstop switches busy assistants off mid-month | High | Case packs and reports don't count, and the backstop counts per person acted for and change type, or per check ([policy](architecture.md#policy); test 35) | Closed |
+| O5 | Releases can't be rolled back or patched fast | High | An instance can go straight back to the release before, new releases take level-0 and level-1 work at once, shadow runs are dry, and information security decides in advance which advisories withdraw a release ([lifecycle](agent-model.md#lifecycle); test 34) | Closed |
+| O6 | The measures of people flag diligent reviewers, and need consent | High | Reviewers are flagged on outcomes, not speed, pair alerts fire only beyond what random drawing explains, and the measures are agreed with the data protection officer and works councils before they start ([assurance](architecture.md#assurance)) | Closed |
+| O7 | The context cap has no rule for what happens when it's reached | High | A budget for each part of the context, tested at release, only the instructions and skills for the parts in play, and an offer to take a long paste as a document ([context](architecture.md#context-and-memory)) | Closed |
+| O8 | The samples prove little and cost a lot | High | A sequential test at 95% confidence, pooled across a release's instances, and ongoing samples sized to what they need to detect ([starting values](starting-values.md)) | Closed |
+| O9 | Chases arrive with the escalation | Medium | A chase goes in the last digest before half the turnaround, and escalation waits at least a working day after it ([channels](architecture.md#channels)) | Closed |
+| O10 | A sign-in for every decision breeds approval fatigue | Medium | Payment changes are signed one at a time, other sensitive changes as a reviewed batch, and every signature is bound to what it signs ([independence](architecture.md#independence)) | Closed |
+| O11 | The second model has no rule for outages or disagreement | Medium | It never holds up a decision, the decision surface shows when it didn't run, and a checker whose flags rarely hold up is replaced ([provenance](architecture.md#provenance-who-said-what)) | Closed |
+| O12 | A quiet December sets the budgets | Medium | The first budgets come from current request volumes, with a warning at 80% and obligations protected at 100% ([when things fail](architecture.md#when-things-fail)) | Closed |
+
 ## Accepted risks
 
-Some risk no design removes. These remain, and each needs its owner to accept it:
+Some risk no design removes. These remain after round 2, and each needs its owner to accept it:
 
 | # | Risk | Why it stays | Accepted by |
 | --- | --- | --- | --- |
-| R1 | Three or more people colluding, including the confirmer the app picked and someone who checks them | Every control relies on someone in it being honest | The GPDOs |
-| R2 | A supplier that is itself the fraudster, with a genuine account in its own name | The account-holder check and the call-back confirm what the supplier says | The GPDOs |
-| R3 | The identity provider, or the environment the organisation's own models run in, being compromised | Signed decisions and pinned models rest on them | Information security |
-| R4 | A person misled by an agent despite the facts, the source flags and the second model's check | People still decide | The GPDOs, with training on deciding from the facts |
-| R5 | A forged document for a field that isn't sensitive, where a person decides with the value flagged as coming from a document | Not every field justifies independent verification | Each attribute owner, through what their profile marks as sensitive |
-| R6 | The GPDOs choosing, in plain sight, an ownership that creates a conflict | It's their right under the charter | The GPDOs, with internal controls told |
+| R1 | Three or more people colluding, including someone who checks them, such as internal controls' caller | Every control relies on someone in it being honest | The GPDOs |
+| R2 | A supplier that is itself the fraudster, with a genuine account in its own name. It's narrowed by matching new suppliers' addresses, phone numbers and tax IDs against employees'. | The account-holder check and the call-back confirm what the supplier says | The GPDOs |
+| R3 | The identity provider, or the environment the organisation's own models run in, being compromised. It's narrowed by holding decisions for 24 hours after an authenticator is reset. | Signed decisions and pinned models rest on them | The executive the GPDOs and the platform owner report to, since information security approves the models |
+| R4 | A person misled by an agent despite the facts, the source flags and the second model's check. It's narrowed by the blind call-back, which doesn't depend on what the person believes. | People still decide | The GPDOs, with training on deciding from the facts |
+| R5 | A forged document for a field that isn't sensitive and feeds no other control, where a person decides with the value flagged as coming from a document | Not every field justifies independent verification | Each attribute owner, through what their profile marks as sensitive |
+| R6 | The GPDOs choosing, in plain sight, an ownership that creates a conflict | It's their right under the charter | The executive the GPDOs report to, as the charter's escalation already has it, with internal controls told |
+
+## For the lean framework's owners
+
+a5s answers these for itself, without changing the framework, but the framework's owners may want to address them in it:
+
+- **R-15** verifies bank details with "contact details that weren't changed along with it". A contact changed weeks before passes, and so does a change to the verification contact itself, which needs confirming under R-13 but no call-back (A1, D3). R-15 also covers only bank details, while an alternative payee or a payment method can redirect payments just as well (D1). a5s applies its checks to every field that decides where payments go, and calls back the contact a newer one replaced.
+- **High-risk payment changes.** a5s's defaults need a second confirmer, drawn at random, and internal controls' call-back before a high-risk change is used (D4). That goes beyond the charter's two people for a sensitive change.
+- **Level 1 and the request assistant.** The rulebook's level 1 has the attribute owner or a delegate approve each proposal, while the request assistant's drafts are submitted by requesters, as their own requests.
+- **The transition.** The transition notes ask the vendor to act on what agents flag. a5s sends flags to a delegate first (F3).
+- **Who approves.** Nobody is named to run an agent's design review, approve its model, or approve changes to the enforcement around it (I3, I10). The [starting values](starting-values.md) propose information security.
+- **Payment runs.** Keep Verification of Payee switched on for supplier payment files, which banks let companies opt into for bulk payments, so a name that doesn't match the account shows before money moves.
+- **Ownership conflicts.** Consider making internal controls' review a rule for ownership changes that put a sensitive field with people who hold conflicting rights.
+- **Measures of people.** The operating model's own measures of how many decisions owners make and how long requests wait watch people too, and need the same agreement with the data protection officer and works councils (O6).
 
 ## Next round
 
-Round 2 reviews the follow-up's new controls. Later rounds start from the accepted risks, from any change to the design, and from the code once it exists.
+Round 3 starts from the accepted risks, from any change to the design since round 2, and from the code once it exists.

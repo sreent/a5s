@@ -44,7 +44,7 @@
 | --- | --- |
 | Draft | Being built or changed |
 | Approved | Passed its tests and design review, and approved. Instances can run it until it's withdrawn. |
-| Withdrawn | No instance may run it. The agent owner, the release approver or the platform owner can withdraw a release, and a security advisory withdraws every release that pins the affected version. Instances still on it are suspended until they move to another. |
+| Withdrawn | No instance may run it. The agent owner, the release approver or the platform owner can withdraw a release, and a security advisory withdraws every release that pins the affected version. Instances still on it are suspended until they move to another, which can be the release they ran before. |
 
 | An instance is | Means | Who moves it on |
 | --- | --- | --- |
@@ -57,7 +57,9 @@
 - A part owner can stop an instance acting in their part at any time, by withdrawing its approval in the settings.
 - If the agent owner and the deputy both leave, the instance is suspended until the platform owner names a new owner. Replacing an agent owner who hasn't left needs the agreement the scenario requires.
 - When a part is split or merged, its instances' context and obligations follow the records into the new parts.
-- An instance moves to another approved release, newer or older, when its agent owner moves it, and its thread state moves with tested migrations. A release that changes only dependencies keeps the instance's cap, if its tests pass and the last graded samples still pass when re-run. Any other release runs in shadow first, on the same work as the release it replaces, while that one keeps working at its level. The move happens once the new release's samples pass and the part owner approves level 2 again, so nobody loses service.
+- An instance moves to another approved release when its agent owner moves it, and its thread state moves with tested migrations. It can always go straight back to the release it ran before, at the level it had then.
+- A new release takes on level-0 and level-1 work as soon as it's approved, because people decide that work anyway. Level 2 waits for samples of the new release: it runs in shadow on the same work while the release it replaces keeps working at level 2, and moves up once its samples pass and the part owner approves level 2 again, so nobody loses service. Shadow runs are dry: they change nothing, send nothing, count towards nothing, and have their own budget.
+- Two kinds of release skip the wait. One that changes only dependencies keeps the cap if its tests pass and the last graded samples still pass when re-run, and information security pre-approves such releases. One that fixes a security advisory replaces the affected release at once, at level 1.
 
 ## Autonomy
 
