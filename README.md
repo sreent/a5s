@@ -7,8 +7,9 @@
 | **Agents live and remember** | An agent keeps its identity, its conversations, what it knows about the people it works with, and what it owes them, for as long as it's in service. Compute comes and goes, and the context stays. |
 | **Policy decides, not the model** | Every tool and model call is checked outside the model, and is allowed, held for a person or denied. Anything not allowed is denied, and if the check can't run, nothing runs. What an agent must never do, it never has the rights to do. |
 | **People decide, agents propose** | How far an agent may act is a setting that the owner of each part of the business approves, for each type of action. |
-| **Every action leaves evidence** | An append-only ledger records what each agent did, for whom, under which policy and with what result. |
-| **Change is a release** | An agent changes only through a tested, approved release, never by itself. |
+| **Know whose words they are** | Every value an agent handles carries its source, in code. Outside words never steer an agent, and the facts people decide on are computed, never asserted by the model. |
+| **Every action leaves evidence** | An append-only ledger records what each agent did, for whom, under which policy and with what result, where the team that runs a5s can't change it. |
+| **Change is a release** | An agent changes only through a tested, approved release, never by itself. So does a5s's own enforcement, and nobody approves what they built. |
 | **Own the rules, rent the plumbing** | Identity, sandboxes, gateways and telemetry come from the host cloud, through adapters and open standards. a5s keeps the rules, so it can move between clouds. |
 
 ## The problem
@@ -39,10 +40,13 @@ The [lean framework](https://github.com/sreent/lean-framework) for master data g
 
 | Document | What it holds |
 | --- | --- |
-| [Architecture](docs/architecture.md) | The kernel's components, policy, proposals, how an agent lives, what comes from Deep Agents and what a5s adds, and hosting |
-| [Agent model](docs/agent-model.md) | Definitions, releases, instances and runs, the terms that connect a5s to a scenario, roles, lifecycle, autonomy, and the definition format |
+| [Architecture](docs/architecture.md) | The kernel's components, policy, provenance, proposals, how an agent lives, context, independence, failure, what comes from Deep Agents and what a5s adds, and hosting |
+| [Agent model](docs/agent-model.md) | Definitions, releases, instances, threads and runs, the terms that connect a5s to a scenario, roles, lifecycle, autonomy, and the definition format |
 | [Lean framework scenario](scenarios/lean-framework.md) | The baseline: the five agents in a5s, how the framework's rules map, and the tests |
+| [Critique](docs/critique.md) | The loopholes each adversarial review found, how the design answers them, and what's still open |
 | [Research](docs/research/platform-lessons.md) | What Deep Agents, Microsoft, AWS, Google and Hermes Agent offer, with the [notes](docs/research/notes/) behind it |
+
+Every change to the design gets an adversarial review before it settles: reviewers who didn't write it look for loopholes as an outside attacker, as insiders, as things failing, and as the colleagues who'd work with the agents. The [critique](docs/critique.md) records each round.
 
 ## Open decisions
 
@@ -50,6 +54,7 @@ The [lean framework](https://github.com/sreent/lean-framework) for master data g
 
 - **Host:** where runs execute, in a5s's own workers or in AWS AgentCore, Microsoft Foundry or Google Agent Runtime. It decides the identity and gateway adapters ([hosting](docs/architecture.md#hosting)).
 - **Policy language:** Cedar, unless there's a reason for another. AgentCore Policy uses it too.
+- **Approvers:** who approves releases of agents and of a5s's own enforcement, from outside the team that runs a5s and its manager's reporting line.
 - **Channels:** Teams, email or both.
 - **Retention:** how long conversations, profiles and the ledger are kept, and where the ledger is stored so that the team that runs a5s can't change it.
 - **Numbers:** contact limits, budgets, how long a proposal waits before it's chased and escalated, and the window for counting actions.
