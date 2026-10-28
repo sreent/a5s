@@ -1,0 +1,31 @@
+# Approved models. The model gateway refuses any model that isn't listed here.
+# These two are for development with synthetic data only: both are hosted by
+# their providers, outside the organisation.
+
+models:
+  deepseek-v4-pro:
+    provider: deepseek
+    api: openai
+    base_url: https://api.deepseek.com
+    model: deepseek-v4-pro
+    key_env: DEEPSEEK_API_KEY
+    region: provider-hosted
+    data_classes: [synthetic]
+
+  qwen3.7-max:
+    provider: alibaba
+    api: openai
+    base_url: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+    model: qwen3.7-max-2026-06-08
+    key_env: QWEN_API_KEY
+    region: singapore
+    data_classes: [synthetic]
+
+  deepseek-v4-pro-anthropic:     # the same model, through the Anthropic-compatible API
+    provider: deepseek
+    api: anthropic
+    base_url: https://api.deepseek.com/anthropic
+    model: deepseek-v4-pro
+    key_env: DEEPSEEK_API_KEY
+    region: provider-hosted
+    data_classes: [synthetic]

@@ -1,0 +1,27 @@
+id: assistant
+release: 0.1.0
+works_for: The people its instance is assigned to
+does: >-
+  Keeps one conversation with each person, drafts on request, records the
+  follow-ups it offers and the reminders people ask for, and chases what
+  falls due.
+owner: ana
+deputy: ben
+scope: none                      # it changes no part's data
+model: deepseek-v4-pro           # from config/models.yaml, the approved list
+autonomy:
+  start: 1
+  max: 1                         # it drafts, and people decide
+tools:
+  records: [search_records, get_record]    # the scenario's records, read only
+  documents: [create_draft]
+triggers:
+  - message: from the people it works for
+reminders: false                 # phase 1, step 3
+preferences: [digest-time, channel]
+channels: [teams]
+context:
+  budget_tokens: 50000           # split by part, tested at release
+budget:
+  per_run: "[TBC]"
+  per_person_per_day: "[TBC]"

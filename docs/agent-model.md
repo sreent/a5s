@@ -79,17 +79,18 @@ Roles are held by people, never by job titles. An organisation assigns people to
 
 ## The definition format
 
-A definition is a folder in git, and each release is a tagged version of it:
+A definition is a folder in git. A hash of everything in it is part of the release, so any change to the folder is a new release:
 
 ```text
 agents/assistant/
   agent.yaml     the definition
   AGENTS.md      instructions, loaded read-only on every run
-  skills/        Agent Skills, one folder each, pinned by hash
-  tests/         regression and scenario tests
+  tools.lock     the schema of each tool it uses, pinned by hash
+  skills/        Agent Skills, one folder each, from a later step
+  tests/         regression and scenario tests, from a later step
 ```
 
-This is `agent.yaml` for the assistant, one of the two reference agents [phase 1](phase-1.md) builds. Field names will settle as the code is written.
+This is [`agent.yaml`](../agents/assistant/agent.yaml) for the assistant, one of the two reference agents [phase 1](phase-1.md) builds. Fields marked for later steps are read but not yet used.
 
 ```yaml
 id: assistant
@@ -99,10 +100,10 @@ does: >-
   Keeps one conversation with each person, drafts on request, records the
   follow-ups it offers and the reminders people ask for, and chases what
   falls due.
-owner: "[TBC]"
-deputy: "[TBC]"
+owner: ana
+deputy: ben
 scope: none                      # it changes no part's data
-model: "[TBC: from the approved models list]"
+model: deepseek-v4-pro           # from config/models.yaml, the approved list
 autonomy:
   start: 1
   max: 1                         # it drafts, and people decide
@@ -111,12 +112,7 @@ tools:
   documents: [create_draft]
 triggers:
   - message: from the people it works for
-  - schedule: weekdays at 08:00              # a sweep for what fell due
-obligations:
-  - type: follow-up
-    source: reminders            # a5s's own records, confirmed by the person
-    due: the date they agreed
-reminders: yes                   # follow-ups it offers, and reminders people ask for
+reminders: false                 # phase 1, step 3
 preferences: [digest-time, channel]
 channels: [teams]
 context:

@@ -1,0 +1,9 @@
+# The sample scenario's settings: which instances exist, whom each serves,
+# and how far each may act. In a real deployment, each version is signed by
+# its owner, and an unsigned one doesn't count.
+
+instances:
+  assistant-finance:
+    definition: assistant
+    serves: [ana, ben]
+    level: 1

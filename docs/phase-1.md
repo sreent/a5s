@@ -41,6 +41,29 @@ Each step ends with something running and its tests passing.
 5. **Running it properly, then production:** tokens for classified values, masked traces, budgets at the model gateway, the hourly ledger anchor with assurance, dashboards, objectives, runbooks and on-call, on all three clouds ([operations](architecture.md#operations)). Then the reference agents go to production, used first by the team that builds a5s.
 6. **Parts and levels:** the sample scenario gets parts with owners, and the reference agents work within them, with live settings, a level for each part, case briefs from records, and checks on what each person may see. Tools return no outside content, since the extractor comes in phase 2. With this comes the settings web app, where owners review a whole version before they sign it.
 
+## Progress
+
+Step 1, the walking skeleton, runs locally against the sample scenario, with DeepSeek and Qwen as models:
+
+| Built | Where |
+| --- | --- |
+| Definitions in git, with a hash of the folder in each release and tools' schemas pinned | [`agents/`](../agents/), [`definitions.py`](../src/a5s/definitions.py) |
+| Instances, runs and the ledger in Postgres. Each ledger entry is written in the same transaction as its decision and chained by hash. The database refuses to change an entry, and verification shows where a rewritten one breaks the chain. | [`core/`](../src/a5s/core/) |
+| Cedar policy with a5s's base pack and a schema, denying by default and failing closed | [`core/policies/`](../src/a5s/core/policies/) |
+| The gateway for tools, for models in both API styles, and for outgoing messages, which keep only the scenario's record links. Workers hold only a run token, never a provider's key. | [`core/gateway.py`](../src/a5s/core/gateway.py) |
+| The scheduler, with a lease per conversation, and conversations that each fresh run reads | [`services/`](../src/a5s/services/) |
+| A Deep Agents worker with no credentials and no shell, whose thread ends with the run | [`worker.py`](../src/a5s/worker.py) |
+| Suspension that stops the next call, even in a running run, and resuming only by whoever suspended | [`core/registry.py`](../src/a5s/core/registry.py) |
+| The sample scenario, with three people, customer questions and a store for drafts | [`scenarios/sample/`](../scenarios/sample/) |
+| 36 tests against a real Postgres and a scripted model, and live tests through DeepSeek's and Qwen's OpenAI-compatible APIs and DeepSeek's Anthropic-compatible one | [`tests/`](../tests/) |
+
+Still to do in step 1:
+
+- signed settings, so an unsigned version doesn't count;
+- the Teams channel, which needs a bot registered in your Entra ID tenant. With it, the core checks each message's sender against the channel's signed identity. Until then, the local channel trusts the scheduler's word for who sent a message, so it's for development only;
+- deploying the same build to Azure, Google Cloud and AWS, which needs your accounts there;
+- the middleware that asks the gateway to explain a call before making it. The gateway's explain endpoint is built.
+
 ## Done means
 
 - a5s's own suite passes on all three clouds, against the sample scenario in CI and in test. Among its tests: every call is in the ledger; calls are denied when policy, the settings or the ledger is down; a suspended instance's next call is denied; a change to the trusted core can't deploy without the outside approval; and a person who comes back a week later picks up where they left off.

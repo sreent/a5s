@@ -1,0 +1,12 @@
+# Made-up people and records for a5s's sample scenario.
+
+people:
+  - {id: ana, name: Ana Ortiz, team: finance}
+  - {id: ben, name: Ben Okafor, team: finance}
+  - {id: chen, name: Chen Wei, team: operations}
+
+records:
+  - {key: Q-1001, title: Invoice sent to the wrong address, status: open, customer: Northwind, owner: ana, due: "2026-11-04"}
+  - {key: Q-1002, title: Refund for a duplicate payment, status: waiting on finance, customer: Contoso, owner: ben, due: "2026-11-06"}
+  - {key: Q-1003, title: Delivery date for order 7781, status: open, customer: Fabrikam, owner: chen, due: "2026-11-02"}
+  - {key: Q-1004, title: Change of billing contact, status: closed, customer: Northwind, owner: ana, due: "2026-10-20"}

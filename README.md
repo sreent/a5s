@@ -2,7 +2,7 @@
 
 **An agent OS on LangChain Deep Agents, for agents that live and work alongside people, under the rules people set.**
 
-**Status:** Design only, v0.2. Nothing is built yet, and [phase 1](docs/phase-1.md) is the plan for the first version.
+**Status:** Phase 1 has started. Its first step, a walking skeleton, runs locally against a sample scenario with real models ([progress](docs/phase-1.md#progress)).
 
 a5s runs agents the way an operating system runs programs. It installs them, gives each one an identity and only the rights it needs, wakes it when there's work, checks every call it makes, and records what happened. Unlike a task runner, it keeps agents alive between tasks: each one remembers its conversations with people, keeps track of what it owes them, and picks up where it left off, for months.
 
@@ -67,6 +67,22 @@ a5s is the small layer they leave out: levels that business owners set, conversa
 | Build | [TBC: about three engineers for two quarters, for phase 1] |
 | Models | About $0.50 a run before caching, at illustrative prices ([phase 1](docs/phase-1.md#costs)) |
 | People | Agent owners' time, the outside approver for widening and core releases, and from phase 2 graders, at about 5 hours a quarter for each type of action at level 2 |
+
+## Run it
+
+You need Python 3.12 or later, [uv](https://docs.astral.sh/uv/), Postgres 16, and a key for a model with an OpenAI- or Anthropic-compatible API. The approved models are in [`config/models.yaml`](config/models.yaml), and need `DEEPSEEK_API_KEY` or `QWEN_API_KEY`.
+
+```sh
+uv sync
+uv run a5s up        # a local Postgres, the schema and a service token
+uv run a5s apply     # the assistant, from agents/ and the sample scenario's settings
+uv run a5s gateway & # the gateway, on port 8700
+uv run a5s say --as ana assistant "Which customer questions are still open?"
+uv run a5s ledger tail
+uv run a5s ledger verify
+```
+
+`uv run pytest` runs the tests against a scripted model, and `uv run pytest -m live` against the real providers.
 
 ## Documents
 
