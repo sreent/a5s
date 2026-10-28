@@ -76,7 +76,6 @@ a5s is the small layer they leave out: levels that business owners set, conversa
 | [Agent model](docs/agent-model.md) | Definitions, releases, instances, conversations and runs, roles, lifecycle, autonomy, and the definition format |
 | [Phase 1](docs/phase-1.md) | What to decide, what to build in what order, what done means, and costs |
 | [IT service desk](scenarios/it-service-desk.md) | A scenario on paper, to check the contract is general |
-| [Lean framework](scenarios/lean-framework.md) | A master data governance scenario, mapped onto a5s |
 | [Critique](docs/critique.md) | What each adversarial review found, how the design answers it, and what each round removed |
 | [Starting values](docs/starting-values.md) | The numbers a5s starts from, by phase |
 | [Research](docs/research/platform-lessons.md) | What Deep Agents, Microsoft, AWS, Google and Hermes Agent offer, with the [notes](docs/research/notes/) behind it |

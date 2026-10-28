@@ -2,7 +2,7 @@
 
 **Status:** On paper only, to check that the [scenario contract](../docs/architecture.md#the-scenario-contract) is general. There's no plan to build it.
 
-An internal IT service desk helps people with accounts, devices, access and the organisation's tools. People raise tickets, resolvers work them in the IT service management tool (ITSM), and new joiners need accounts and equipment ready before their first day. It differs from the [lean framework](lean-framework.md) where it matters: much of its work is self-service, which a person asks for and the identity provider verifies, and some of the people it serves haven't joined yet.
+An internal IT service desk helps people with accounts, devices, access and the organisation's tools. People raise tickets, resolvers work them in the IT service management tool (ITSM), and new joiners need accounts and equipment ready before their first day. It tests a5s where scenarios differ most: much of its work is self-service, which a person asks for and the identity provider verifies, and some of the people it serves haven't joined yet.
 
 ## The contract
 
@@ -44,9 +44,9 @@ The service desk adds these to a5s's base pack:
 
 ## What it shows about a5s
 
-- **Level-2 limits belong to scenarios.** The lean pack rules out level 2 for anything that came from a person's words, because nobody may approve their own change. Here, a person asking for their own password reset is the normal case. So a5s's base pack doesn't rule on it. It records who a run acts for and keeps them from deciding what they're named on, and each pack sets the rest.
-- **The audience is a setting.** Lean's agents talk only to people inside the organisation, while the joiner coordinator must reach people who haven't started.
-- **The default settings store matters.** The service desk has nothing like lean's domain profiles, so it uses a5s's.
+- **Level-2 limits belong to scenarios.** Some scenarios rule out level 2 for anything that came from a person's words, because nobody may approve their own change. Here, a person asking for their own password reset is the normal case. So a5s's base pack doesn't rule on it. It records who a run acts for and keeps them from deciding what they're named on, and each pack sets the rest.
+- **The audience is a setting.** Most scenarios talk only to people inside the organisation, while the joiner coordinator must reach people who haven't started.
+- **The default settings store matters.** The service desk keeps no settings of its own for agents, so it uses a5s's.
 - **Each scenario answers who may see a record.** a5s asks the directory interface, and here the ITSM answers for its tickets.
 - **Where it strains:** a major incident brings thousands of people to the desk assistant at once, and per-person budgets don't help. The channel service would need a known-incident answer it can give without a run [TBC: phase 2].
 
