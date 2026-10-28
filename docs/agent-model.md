@@ -57,7 +57,7 @@
 - A part owner can stop an instance acting in their part at any time, by withdrawing its approval in the settings.
 - If the agent owner and the deputy both leave, the instance is suspended until the platform owner names a new owner. Replacing an agent owner who hasn't left needs the agreement the scenario requires.
 - When a part is split or merged, its instances' context and obligations follow the records into the new parts.
-- An instance moves to another approved release, newer or older, when its agent owner moves it, and its thread state moves with tested migrations. A release that changes only dependencies keeps the instance's cap, if its tests pass and the last graded samples still pass when re-run. Any other release starts at level 1 until samples of it pass and the part owner approves level 2 again. It can earn its samples in shadow runs before the move.
+- An instance moves to another approved release, newer or older, when its agent owner moves it, and its thread state moves with tested migrations. A release that changes only dependencies keeps the instance's cap, if its tests pass and the last graded samples still pass when re-run. Any other release runs in shadow first, on the same work as the release it replaces, while that one keeps working at its level. The move happens once the new release's samples pass and the part owner approves level 2 again, so nobody loses service.
 
 ## Autonomy
 
@@ -69,7 +69,7 @@
 
 - The level is set for each instance, part and type of action, in the settings. Where it isn't set, the definition's starting level applies. That can only be 0 or 1, so level 2 always comes from a part owner. A release's maximum is the highest level it allows, whatever the settings say.
 - Each level-2 setting records who approved it and the version of the part. If either changes, because the owner leaves, the part is split or a field moves to another part, the level drops to 1 until the new owner sets it, and the old owner is told.
-- a5s also keeps a cap for each instance and type of action, and the instance works at the lower of the cap and the setting. The cap follows the release rules above, rises only when samples pass [TBC: how many], and falls when samples fail, a drift test fails, or the agent owner lowers it. The part owner is told of every change.
+- a5s also keeps a cap for each instance and type of action, and the instance works at the lower of the cap and the setting. The cap follows the release rules above, rises only when samples pass ([starting values](starting-values.md)), and falls when samples fail, a drift test fails, or the agent owner lowers it. Raising it by hand is loosening, which needs someone outside the team ([independence](architecture.md#independence)). The part owner is told of every change.
 - An action that touches fields in several parts works at the lowest of their levels.
 - Reminding, chasing and routing are allowed at every level, within the contact rules, because they change no data.
 - An agent moves up a level only when its part owner approves, with the samples as evidence. The part owner can move it down at any time.

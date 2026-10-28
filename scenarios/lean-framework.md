@@ -20,9 +20,10 @@ The lean framework governs master data, with AI agents doing the coordination an
 | Platform owner | The Head of Data, AI & Development |
 | Agent owner and deputy | Named people in the data team [TBC in the framework] |
 | Instance approver, for an agent with no parts | The GPDOs, at the owner review |
-| Release approver | [TBC]: someone outside the data team and the platform owner's reporting line. The framework doesn't say who runs the design review or approves an agent's model. |
-| Sample graders | [TBC], never from the data team |
-| Agreement to resume or replace | A GPDO's, reported to internal controls, to resume an agent someone else suspended or to replace an agent owner who hasn't left |
+| Release approver | Information security [TBC: who], outside the data team and the platform owner's reporting line. It also runs the design review, with the agent owner and the attribute owners of the parts the agent touches. |
+| Model approver | Information security, with the data protection officer for personal data, keeping the approved AI tools list [TBC] |
+| Sample graders | The part's delegates, never on items they decided, and internal controls for samples of sensitive changes [TBC] |
+| Agreement to loosen | Information security for releases, packs and overrides, and a GPDO to resume an agent someone else suspended or to replace an agent owner who hasn't left. Each is reported to internal controls. |
 | Told when an agent's approval is withdrawn | The GPDO |
 | Assurance | Internal controls |
 
@@ -75,6 +76,28 @@ The framework's [agent register](https://github.com/sreent/lean-framework/blob/m
 | R-22: outside content | Documents, email from outside the organisation, and free text that suppliers write, such as comments on portal requests, go only through the extractor. Values from them never become a verification contact, a recipient or a link. |
 | The charter and the operating model: who approves agents | Nobody approves their own agent (the charter), so nobody in the data team approves a release of an agent the data team built, or a change to the enforcement around it. Attribute owners approve how far an agent may act in their part, and the GPDOs approve agents that don't touch master data, at the owner review (the operating model). |
 
+## Collusion, forgery and ownership
+
+These risks sit with people and the governed process, not with the agents, so agents can't close them alone. a5s computes the facts and does the detecting, and the unified app and the framework's owners hold the rest.
+
+**Bank changes rest on facts nobody in the case controls.** For every bank-detail change, code computes:
+
+- whether the account holder's name matches the supplier, through the organisation's bank or a verification service [TBC], like the check banks run for the EU's Verification of Payee;
+- how long the call-back contact has been unchanged in SAP;
+- the channel the change came by. The supplier portal, where the supplier signs in, counts for more than a letter by email [TBC];
+- whether the bank account is already used by another supplier or customer (R-15), or sits in a different country from the supplier;
+- the extractor's flags on the document, such as hidden text, or a layout unlike the supplier's earlier letters.
+
+A forged letter is never the evidence: these facts are. A change whose account holder doesn't match, or that scores high on the rest, goes to the attribute owner rather than a delegate, which the profile's "Sensitive changes confirmed by" setting allows [TBC: the attribute owner sets it].
+
+**The app picks the confirmer.** It assigns each sensitive change at random to one of the people eligible to confirm it, and nobody can take a change assigned to someone else, so a requester can't steer their change to a friend.
+
+**Internal controls check independently.** They re-perform the call-back on a sample of confirmed bank changes that code draws, and on every high-risk one. a5s sends them the requesters and confirmers who keep handling each other's sensitive changes.
+
+**Collusion is looked for afterwards too.** The quality agent flags supplier bank accounts that match an employee's, compared as hashes [TBC: with the data protection officer and HR], and bank changes followed soon after by a large payment [TBC: with finance].
+
+**Ownership changes are checked for conflicts.** Before agents act on fields that move between parts, a5s checks the move against a list of rights that conflict [TBC: from access management], such as sales owning credit limits, and sends any conflict to internal controls and the other GPDOs. Agents stay at level 1 on moved fields until the new owner sets their level.
+
 ## Until a request type moves
 
 The [transition notes](https://github.com/sreent/lean-framework/blob/main/delivery/transition.md) sit outside the framework, as the data team's working notes. They say that until a request type moves to the unified app, agents coordinate, check and propose, but never create or change master data, and that attribute owners prepare their own cases until the request assistant and the owner assistant start. Until a request type moves, a5s's switch for it:
@@ -103,7 +126,7 @@ The framework leaves these open. a5s sets them as its own defaults:
 
 ## Passing the baseline
 
-a5s passes the baseline when it runs all five agents and these tests pass. Each traces to a rule, or to a loophole in the [critique](../docs/critique.md).
+a5s passes the baseline when it runs all five agents and these tests pass. Each traces to a rule, or to a loophole or open risk in the [critique](../docs/critique.md).
 
 **Rules and fraud**
 
@@ -142,6 +165,15 @@ a5s passes the baseline when it runs all five agents and these tests pass. Each 
 24. While a request type is still with the vendor, no agent creates or changes master data for it, and the vendor acts on agents' flags only after a delegate's recorded decision.
 25. When the ledger or the settings are down, agents stop, tell people to work in the app directly, and pick up their queued work afterwards.
 
+**Collusion, forgery and trust**
+
+26. A bank change whose account holder doesn't match the supplier's name goes to the attribute owner, and a convincing forged letter on its own can't get a change confirmed.
+27. The app assigns each sensitive change to a confirmer at random, nobody can take one assigned to someone else, and internal controls re-perform the call-back on a sample.
+28. A decision on a sensitive change without its decider's fresh, signed sign-in is flagged, and so is any decision record written outside the app's own path.
+29. A value an agent drafts with no source is flagged as the agent's own, and a summary that drops a record key, an amount or a date is caught.
+30. An ownership change that would put credit limits with sales reaches internal controls and the other GPDOs before any agent acts on the moved fields.
+31. A new release runs in shadow while the old one keeps working, so nobody loses service when it moves.
+
 ## What a5s needs from the unified app
 
 The data team builds the unified app too. For a5s, it needs:
@@ -150,7 +182,10 @@ The data team builds the unified app too. For a5s, it needs:
 - **Agent requests** that name the agent and everyone it acted for, and carry the level a5s applied, the source of each value, and a key that makes a repeated request harmless. The app approves them automatically only after checking the agent's level and status with a5s, never for a value from a document, and never lets the people named on them, or the agent's owner or deputy, decide them.
 - **Mass-change requests** from agents, for the attribute owner's sign-off, with a test and a rollback plan (R-07).
 - **Withdrawal:** a way for a5s to withdraw or flag an agent's open requests when it's suspended or loses its approval, with confirmation as each is done.
-- **Verification:** the date each verification contact last changed, and a call-back record the confirmer fills in themselves before confirming a bank change.
+- **Verification:** the date each verification contact last changed, the account-holder check, and a call-back record the confirmer fills in themselves before confirming a bank change.
+- **Assignment:** each sensitive change assigned at random to one of the people eligible to confirm it, and not taken by anyone else.
+- **Signed decisions:** a fresh sign-in for each decision on a sensitive change, with the identity provider's signed assertion stored with the decision, and no way to write decision records except through the app's own path.
+- **Facts apart from narrative:** the decision surface shows the computed facts, such as the account-holder check, the contact's age and the channel, in their own place, apart from the agent's narrative.
 - **Record links,** built by the app, for agents' messages and packs.
 - **Events:** a request routed, a decision recorded with the decider and the timings, an exception nearing expiry, a profile changed, and each request type's status, for the transition switch.
 - **Settings,** read live, each version with its owner's authenticated sign-off: who owns each part and field, which agents each attribute owner approves and how far, sensitive fields, classes of data, the mass-change size and turnaround times.
