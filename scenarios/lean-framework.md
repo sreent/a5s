@@ -24,11 +24,11 @@ The lean framework governs master data, with AI agents doing the coordination an
 | Delegates | People the attribute owner names to confirm sensitive changes, decide likely duplicates, approve the requests the app doesn't, and review the monthly sample of those it does. Settings, exceptions, mass changes and access stay with the attribute owner. |
 | Type of action | A change type, as the domain profile names it [TBC: whether these are its request types] |
 | Escalation chain | The delegates, then the attribute owner, then the GPDO [TBC] |
-| Platform owner | a5s's own, named once for every scenario [TBC: the framework's platform owner, the Head of Data, AI & Development] |
+| Platform owner | a5s's own role, held once for all of a5s. Whoever holds the framework's own platform owner role is the natural choice [TBC]. |
 | Agent owner and deputy | Named people in the data team [TBC] |
 | Instance approver, for an agent with no parts | The GPDOs, at the owner review |
-| Release approver | Information security [TBC: who], outside the data team and the platform owner's reporting line, with the data protection officer for models that see personal data |
-| Agreement to loosen | Information security, except that stopping a check that detects, such as the change reconciler, needs internal controls, and resuming an agent someone else suspended, or replacing an agent owner who hasn't left, needs a GPDO |
+| Release approver | A person assigned the role from outside the data team and the platform owner's reporting line [TBC: who], with the data protection officer for models that see personal data |
+| Agreement to loosen | The release approver, except that stopping a check that detects, such as the change reconciler, needs internal controls, and resuming an agent someone else suspended, or replacing an agent owner who hasn't left, needs a GPDO |
 | Graders, from phase 2 | The part's delegates, never on items they decided, and internal controls for sensitive changes [TBC] |
 | Assurance | Internal controls |
 
@@ -48,12 +48,12 @@ The lean framework adds these restrictions to a5s's base pack:
 
 The framework's [agent register](https://github.com/sreent/lean-framework/blob/main/operating-model.md#agents) lists them. In a5s:
 
-| Agent | Scope | Starts at | From | Its work reaches people as |
+| Agent | Scope | Starts at | Needs a5s's | Its work reaches people as |
 | --- | --- | --- | --- | --- |
 | Governance coordinator | None, approved by the GPDOs | Level 1 | Phase 1 | Drafts: the review pack, the scorecard and changes to documents. From phase 2, requests to change profiles. |
 | Change reconciler | None, approved by the GPDOs | Level 0: it only reports | Phase 1 | A report to internal controls, with its matches computed by code |
-| Owner assistant | One part | Level 1. It changes no master data. | Phase 1, for one part | Drafts: case packs, and from phase 2 the monthly sample, for the attribute owner or a delegate |
-| Request assistant | Every domain's parts [TBC: one instance, so a requester has one assistant for a whole request] | Level 1 | Phase 2, with the extractor | Drafts: requests it pre-fills, which the requester checks and submits |
+| Owner assistant | One part | Level 1. It changes no master data. | Phase 1 | Drafts: case packs, and from phase 2 the monthly sample, for the attribute owner or a delegate |
+| Request assistant | Every domain's parts [TBC: one instance, so a requester has one assistant for a whole request] | Level 1 | Phase 2, for the extractor | Drafts: requests it pre-fills, which the requester checks and submits |
 | Quality agent | One part | Level 1, and level 2 for the change types the attribute owner approves | Phase 2 | Requests: fix requests and proposed checks |
 
 | Agent | Woken by | Keeps track of | Uses |
@@ -119,7 +119,7 @@ The framework leaves these open, and a5s's defaults fill them:
 
 ## Passing the baseline
 
-a5s passes the baseline when all five agents run and these tests pass. Phase 1 needs those not marked phase 2, which wait for the features they test. Each traces to a rule, or to a loophole in the [critique](../docs/critique.md).
+The scenario runs on a5s when all five agents run and these tests pass. Those marked phase 2 need a5s's phase-2 features. Each traces to a rule, or to a loophole in the [critique](../docs/critique.md).
 
 **Rules**
 

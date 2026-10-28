@@ -2,7 +2,7 @@
 
 **Status:** Draft v0.2 · **Under:** [Architecture](architecture.md)
 
-These are the numbers a5s starts from, by the phase that needs them. They're starting values, not decisions: each is baselined in the first months and then set, and loosening one later needs someone outside the team ([independence](architecture.md#independence)). a5s's own approvers are named in [phase 1](phase-1.md#decide-first), and each scenario names the rest in its contract, as the [lean framework](../scenarios/lean-framework.md#the-contract) does. A scenario can also bring numbers of its own, such as the lean framework's mass-change size.
+These are the numbers a5s starts from, by the phase that needs them. They're starting values, not decisions: each is baselined in the first months and then set, and loosening one later needs someone outside the team ([independence](architecture.md#independence)). People hold [roles](agent-model.md#roles) as each deployment assigns them, and a scenario can bring numbers of its own, such as a limit on how many records one piece of work may change.
 
 ## Phase 1
 
@@ -31,7 +31,7 @@ These are the numbers a5s starts from, by the phase that needs them. They're sta
 | Held proposals | Chased and escalated as above, and expired after 10 business days | Nothing waits forever | Each part owner |
 | Rubber-stamping flag | A reviewer whose accepted items fail later samples more often than their peers' accepted items do | Quick reviews of good work aren't a problem | Assurance |
 | Outside senders | 20 requests a day per outside sender, then the rest wait for review | Stops a flood without blocking a busy supplier | Each part owner |
-| After an authenticator reset | The person's decisions wait 24 hours before they take effect | A reset is how a stolen identity usually starts | Information security |
+| After an authenticator reset | The person's decisions wait 24 hours before they take effect | A reset is how a stolen identity usually starts | The release approver |
 
 ## Phase 3
 

@@ -2,7 +2,7 @@
 
 **Status:** Draft v0.2, design only · **Under:** [a5s](../README.md)
 
-a5s runs agents the way an operating system runs programs. It installs them, gives each one an identity and only the rights it needs, wakes it when there's work, checks every call it makes, and keeps a record of what happened. Agents run on LangChain Deep Agents. Each scenario, such as the [lean framework](../scenarios/lean-framework.md), plugs in through a [contract](#the-scenario-contract) and brings its own people, systems and rules.
+a5s runs agents the way an operating system runs programs. It installs them, gives each one an identity and only the rights it needs, wakes it when there's work, checks every call it makes, and keeps a record of what happened. Agents run on LangChain Deep Agents. Each scenario plugs in through a [contract](#the-scenario-contract) and brings its own people, systems and rules.
 
 ```mermaid
 flowchart LR
@@ -47,7 +47,7 @@ A scenario plugs into a5s by providing these, or by taking a5s's defaults:
 
 | Interface | Gives a5s | a5s's default |
 | --- | --- | --- |
-| Directory | People, their roles and working hours, and what each may see, for any record | The organisation's identity provider, with roles the scenario maps |
+| Directory | People, the roles they hold, their teams, reporting lines and working hours, and what each may see, for any record | The organisation's identity provider, such as Entra ID, Google Cloud Identity or Okta, with roles assigned as groups |
 | Settings | Parts and their owners and delegates, how far each agent may act in each part and type of action, limits, sensitive fields, classes of data, the escalation chain, who agents may talk to, and the scenario's switches. Each version is signed by its owner, and an unsigned one doesn't count. | a5s's settings store, with signed versions [TBC: edited through a simple app, or in git] |
 | Tools | The systems agents use, as MCP servers, with each tool's risk attributes | None |
 | Records | Where obligations come from, such as cases past their due time, and the events that wake agents | None |
@@ -56,7 +56,7 @@ A scenario plugs into a5s by providing these, or by taking a5s's defaults:
 | Policy pack | The scenario's own restrictions, which can only add to a5s's base pack | None |
 | Tests | The scenario's tests, run against its systems or a fake of them | None |
 
-Each scenario starts with a fake of its contract: fake systems, records and settings. The fake is also the test bench for building locally. The [IT service desk](../scenarios/it-service-desk.md) is a second scenario on paper, to check the contract is general.
+Each scenario starts with a fake of its contract: fake systems, records and settings, which are also its test bench. a5s has a sample scenario of its own, a fake of every interface with synthetic data, for phase 1 and for building locally. Scenarios on paper, such as an [IT service desk](../scenarios/it-service-desk.md), check that the contract is general.
 
 ## A call, step by step
 
@@ -153,7 +153,7 @@ Each agent talks to people under one identity, never a person's, and says it's a
 
 - **Classes** of data come from the scenario's settings, and decide what's masked and which models may see it.
 - **Tokens.** The ledger, conversations, traces and test data hold tokens with record keys, not classified values.
-- **Models.** Each approved model names its provider, deployment, region and version. The model gateway refuses anything else, including a failover to an unapproved model.
+- **Models.** Each approved model names its provider, deployment, region and version: a dated version where the provider offers one, and otherwise the version each response reports, checked every time. The model gateway refuses anything else, including a failover to an unapproved model. It speaks both OpenAI-compatible and Anthropic-compatible APIs, so a model from any provider that offers either can be approved, including open-weight models an organisation hosts in its own cloud.
 - **Outside content,** from phase 2. Until then, agents' tools return none. Documents from outside go through an extractor that has no tools and fixed schemas. It can also answer a person's question about a document in free text, marked as outside content and never used as an instruction. Classifiers such as Prompt Shields, Model Armor or Bedrock Guardrails add signals. They're never the boundary.
 - **Supply chain.** Skills are copied into the release and pinned by hash, and so are the schemas of the tools it uses, so the gateway refuses a tool whose schema has changed. It also refuses tool servers' requests to ask people for input or to run the agent's model.
 
@@ -171,7 +171,7 @@ The same events go out as OpenTelemetry spans, using the GenAI conventions at a 
 
 ## Independence
 
-- **Loosening needs someone else.** Anyone with the role can make a5s safer alone: suspend an instance, lower a cap or withdraw a release. Anything that loosens it needs someone outside the team that runs a5s and its manager's reporting line, and is reported to assurance. That covers resuming someone else's suspension, raising a level or cap by hand, widening a grant, and changing the trusted core. A scenario can also mark an agent as a check, such as lean's change reconciler. Stopping or changing it then needs the scenario's assurance to agree.
+- **Loosening needs someone else.** Anyone with the role can make a5s safer alone: suspend an instance, lower a cap or withdraw a release. Anything that loosens it needs someone outside the team that runs a5s and its manager's reporting line, and is reported to assurance. That covers resuming someone else's suspension, raising a level or cap by hand, widening a grant, and changing the trusted core. A scenario can also mark an agent as a check, such as one that reconciles changes for auditors. Stopping or changing it then needs the scenario's assurance to agree.
 - **Releases are proportionate.**
 
   | A release that | Needs |
@@ -201,7 +201,7 @@ Phase 1 sets these up [TBC]:
 
 ## Hosting
 
-Phase 1 runs a5s's own services and workers on one cloud, with Postgres [TBC: which cloud, following the organisation's identity estate]. Nothing waits inside a host's session: conversations and held calls live in a5s's records, so a5s can move hosts or use a managed runtime later.
+Phase 1 runs a5s's own services and workers on Azure, Google Cloud and AWS at once, each with managed Postgres, so nothing ties a5s to one cloud. Nothing waits inside a host's session: conversations and held calls live in a5s's records, so a5s can move hosts or use a managed runtime later.
 
 | Host | Runs on | Identity | Gateway |
 | --- | --- | --- | --- |
@@ -231,6 +231,8 @@ From phase 3. Agents will call each other over A2A, only between registered inst
 | For | Standard |
 | --- | --- |
 | Tools | MCP, specification 2026-07-28 |
+| Models | OpenAI-compatible and Anthropic-compatible APIs |
+| People's identity | OpenID Connect |
 | Agent to agent | A2A v1.0 |
 | Skills | Agent Skills |
 | Identity and delegation | OAuth as MCP uses it, and token exchange (RFC 8693) |

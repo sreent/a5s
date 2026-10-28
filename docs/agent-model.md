@@ -12,7 +12,7 @@
 | Conversation | Everything one person and one agent have said to each other, in topics, whichever of the agent's instances did the work | As long as they work together, then as the retention rules say |
 | Run | One piece of work, from a trigger until it's done, on a LangGraph thread that ends with it | Minutes |
 
-In the lean scenario, the owner assistant is a definition, and its release 0.3.0 a release. The owner assistant for supplier general data is an instance. A delegate's exchanges with the owner assistant are a conversation, and preparing the case pack for one routed request is a run.
+For example, a5s's own assistant is a definition, and its release 0.3.0 a release. The assistant for the finance team is an instance. One person's exchanges with it are a conversation, and answering one of their messages is a run.
 
 ## Terms a scenario fills in
 
@@ -25,11 +25,11 @@ In the lean scenario, the owner assistant is a definition, and its release 0.3.0
 | Type of action | A kind of action that a level is set for, as the scenario defines it, such as a change type or a catalogue item |
 | Acts for | Everyone whose words a run serves: whoever sent the message, set the reminder, or wrote the reply a request came from. A run started only by an event or a schedule acts for nobody. |
 
-The [scenario contract](architecture.md#the-scenario-contract) says where the settings, the governed process and the decision surface come from. Each scenario's page maps these terms, as the [lean framework](../scenarios/lean-framework.md) and the [IT service desk](../scenarios/it-service-desk.md) do.
+The [scenario contract](architecture.md#the-scenario-contract) says where the settings, the governed process and the decision surface come from. Each scenario's page maps these terms, as the [IT service desk](../scenarios/it-service-desk.md) does.
 
 ## Roles
 
-The platform owner and the release approver for the trusted core are a5s's own, named once in [phase 1](phase-1.md#decide-first). Each scenario names the rest.
+Roles are held by people, never by job titles. An organisation assigns people to roles in its directory, and a5s checks each role's rules in code whenever the role is used, such as an approver coming from outside the team that runs a5s and its manager's reporting line. The platform owner and the release approver for the trusted core are a5s's own roles, held once for all of it. Each scenario assigns the rest.
 
 | Role | Does |
 | --- | --- |
@@ -74,7 +74,7 @@ The platform owner and the release approver for the trusted core are a5s's own, 
 - From phase 2, a5s also keeps a cap for each instance and type of action, and the instance works at the lower of the cap and the setting. The cap rises only when samples pass ([starting values](starting-values.md)), and falls when they fail or the agent owner lowers it. Raising it by hand loosens, so it needs someone outside the team.
 - An action that touches several parts works at the lowest of their levels.
 - Reminding, chasing and routing are allowed at every level, within the contact rules, because they change no data.
-- A scenario's policy pack can rule out level 2 for some actions altogether. The lean pack does for any request that came from a person's words, while the IT service desk's limits it to self-service that the identity provider verifies.
+- A scenario's policy pack can rule out level 2 for some actions, such as anything a person asked for in their own words, or narrow it, such as to self-service that the identity provider verifies.
 - There's no level above 2. An agent that acts always tells someone.
 
 ## The definition format
@@ -82,41 +82,40 @@ The platform owner and the release approver for the trusted core are a5s's own, 
 A definition is a folder in git, and each release is a tagged version of it:
 
 ```text
-agents/governance-coordinator/
+agents/assistant/
   agent.yaml     the definition
   AGENTS.md      instructions, loaded read-only on every run
   skills/        Agent Skills, one folder each, pinned by hash
   tests/         regression and scenario tests
 ```
 
-This is `agent.yaml` for the governance coordinator, the first agent [phase 1](phase-1.md) builds. Field names will settle as the code is written.
+This is `agent.yaml` for the assistant, one of the two reference agents [phase 1](phase-1.md) builds. Field names will settle as the code is written.
 
 ```yaml
-id: governance-coordinator
+id: assistant
 release: 0.1.0
-works_for: The GPDOs, and the owners of exceptions and decisions
+works_for: The people its instance is assigned to
 does: >-
-  Tracks exceptions before they expire, ownership gaps and open decisions.
-  Reminds and chases their owners, and drafts the owner review pack.
+  Keeps one conversation with each person, drafts on request, records the
+  follow-ups it offers and the reminders people ask for, and chases what
+  falls due.
 owner: "[TBC]"
 deputy: "[TBC]"
-scope: none                      # it acts on no part's fields
+scope: none                      # it changes no part's data
 model: "[TBC: from the approved models list]"
 autonomy:
   start: 1
   max: 1                         # it drafts, and people decide
 tools:
-  exception-register: [list_exceptions, get_exception]
-  ownership: [get_owners, list_gaps]
-  document-library: [create_draft]
+  records: [search_records, get_record]    # the scenario's records, read only
+  documents: [create_draft]
 triggers:
   - message: from the people it works for
-  - schedule: weekdays at 08:00              # a sweep for new gaps
-  - schedule: two weeks before the owner review
+  - schedule: weekdays at 08:00              # a sweep for what fell due
 obligations:
-  - type: exception-expiring
-    source: exception-register
-    due: 14 days before expiry   # [TBC]
+  - type: follow-up
+    source: reminders            # a5s's own records, confirmed by the person
+    due: the date they agreed
 reminders: yes                   # follow-ups it offers, and reminders people ask for
 preferences: [digest-time, channel]
 channels: [teams]

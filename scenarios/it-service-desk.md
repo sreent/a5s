@@ -21,8 +21,8 @@ An internal IT service desk helps people with accounts, devices, access and the 
 | --- | --- |
 | Part owner | The service owner for an area |
 | Type of action | An item in the request catalogue, such as a password reset or a software install |
-| Release approver | Information security |
-| Assurance | Internal audit [TBC] |
+| Release approver | A person assigned the role from outside the team that runs a5s and its reporting line [TBC: who] |
+| Assurance | People assigned the role, independent of IT [TBC: who] |
 
 ## The service desk pack
 

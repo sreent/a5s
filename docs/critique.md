@@ -169,7 +169,7 @@ Two readers who hadn't seen the design read it whole: an owner, for generality, 
 | S4 | One LangGraph thread forever meant custom summaries, and migrations on every upgrade | A fresh thread for each run, with conversations as a5s's own records ([context](architecture.md#context-and-memory)) |
 | S5 | "Enforcement" covered everything, so every change needed outside approval | A small [trusted core](architecture.md#the-trusted-core-and-the-rest), and [proportionate releases](architecture.md#independence) |
 | S6 | The path each call takes was unspecified, and no ledger can be impossible to change | [A call, step by step](architecture.md#a-call-step-by-step), and a hash-chained ledger anchored every hour, which makes it tamper-evident ([evidence](architecture.md#evidence)) |
-| S7 | There was no first version: all five agents and 28 tests at once | [Phase 1](phase-1.md): the core, conversations and three low-risk agents, with the tests marked by phase |
+| S7 | There was no first version: all five agents and 28 tests at once | [Phase 1](phase-1.md): the core, conversations and two reference agents of a5s's own, against its sample scenario |
 | S8 | Agents couldn't keep their own promises, or learn how people like to work | Promises and reminders as typed tools that people confirm, and a "how I like to work" note in each profile |
 | S9 | A person talked to a separate memory for each part | One conversation per person per agent, with each part's scope enforced at the tools |
 | S10 | News waited in the digest with the chases | Outcomes people are waiting for go at once, within a limit per person |
@@ -221,7 +221,7 @@ These are about the framework's own controls, not a5s. The critique raised them 
 - **Level 1 and the request assistant.** The rulebook's level 1 has the attribute owner or a delegate approve each proposal, while the request assistant's drafts are submitted by requesters, as their own requests.
 - **Releases that widen nothing.** a5s lets the agent owner and a second engineer approve a release that changes only instructions or skills, after its tests. The charter says nobody approves their own agent, so the framework's owners should confirm that reading.
 - **The transition.** The transition notes ask the vendor to act on what agents flag, while a5s sends flags to a delegate first (F3). They also don't say who decides that a request type has moved, and a5s proposes the attribute owner and the GPDO, with the app's test evidence (I9).
-- **Who approves.** Nobody is named to approve agents' releases and models, or changes to the enforcement around them (I3, I10). The [lean contract](../scenarios/lean-framework.md#the-contract) proposes information security.
+- **Who approves.** Nobody is named to approve agents' releases and models, or changes to the enforcement around them (I3, I10). In a5s, each is a role a person holds, assigned in the directory and checked in code, and the [lean contract](../scenarios/lean-framework.md#the-contract) sets out who qualifies.
 - **Measures of people.** The operating model's own measures of how many decisions owners make and how long requests wait watch people too, and need agreement with the data protection officer and works councils (O6).
 
 ## Next round
