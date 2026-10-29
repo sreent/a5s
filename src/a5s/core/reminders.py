@@ -66,15 +66,17 @@ def offer(call: Call) -> dict:
         raise Refused("a reminder can be a year ahead at most")
     if record and record not in {r.key for r in call.scenario.watched()}:
         raise Refused(f"there's no record {record}")
-    again = call.conn.execute(  # the same offer, made before: it waits for their yes
-        "select id from reminders where person = %s and agent = %s and due_at = %s "
-        "and record is not distinct from %s and confirmed_at is null and cancelled_at is null "
-        "and asked_at > %s", (person.id, call.run["definition"], at, record,
-                              call.asked_at - CONFIRM_WITHIN)).fetchone()
+    again = call.conn.execute(  # the same reminder, offered before: it waits for their yes,
+        # or has it, such as when a model confirms it in the same breath, in parallel
+        "select id, confirmed_at from reminders where person = %s and agent = %s and due_at = %s "
+        "and record is not distinct from %s and cancelled_at is null and reminded_at is null "
+        "and (confirmed_at is not null or asked_at > %s)",
+        (person.id, call.run["definition"], at, record, call.asked_at - CONFIRM_WITHIN)).fetchone()
     if again is not None:
         return {"reminder": f"R-{again['id']}", "when": say(person, at), "about": about,
-                "record": record, "status": "you offered this already: if they've said yes, "
-                                            "confirm it with confirm_reminder"}
+                "record": record,
+                "status": "they've said yes to this already: it's set" if again["confirmed_at"]
+                else "you offered this already: if they've said yes, confirm it with confirm_reminder"}
     in_digest = "T" not in str(call.args["on"])  # a day, not a particular time
     number = call.conn.execute(
         "insert into reminders (person, agent, instance_id, about, record, due_at, offered_at, "

@@ -78,6 +78,16 @@ def test_offering_the_same_reminder_again_waits_for_the_same_yes(stack):
     assert reminder["confirmed_at"] is not None
 
 
+def test_offering_one_they_said_yes_to_makes_no_other(stack):
+    asked_and_confirmed(stack)  # as when a model confirms it before offering it, in parallel
+    stack.model.reply(None, ("offer_reminder", {"about": ABOUT, "on": "2026-10-30", "record": "Q-1001"}))
+    stack.model.reply("It's set already.")
+    stack.say("Remind me on Friday to check whether Northwind has answered.")
+    assert "they've said yes to this already" in last_tool_result(stack)
+    [reminder] = kept(stack)
+    assert reminder["confirmed_at"] is not None
+
+
 def test_only_a_run_answering_their_own_message_can_offer_one(stack):
     stack.at("2026-11-02T09:30:00+00:00")  # half the time for Ana's question has passed
     stack.scheduler().due()
