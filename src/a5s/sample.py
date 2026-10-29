@@ -70,6 +70,9 @@ class SampleScenario:
     def holders(self, role: str) -> list[Person]:
         return [p for p in self._people.values() if role in p.roles]
 
+    def team(self, name: str) -> list[Person]:
+        return [p for p in self._people.values() if p.team == name]
+
     # Obligations, from the records
 
     def obligations(self) -> list[Obligation]:

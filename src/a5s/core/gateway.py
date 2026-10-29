@@ -31,7 +31,7 @@ from pydantic import BaseModel
 from a5s import db
 from a5s.config import Config, ModelConfig
 from a5s.contract import Scenario, Signature, Tool, ToolCall, parse_settings
-from a5s.core import ledger, models, obligations, registry, schedules
+from a5s.core import ledger, models, obligations, registry, releases, schedules
 from a5s.core.identity import IdentityError, UnknownPerson, Verifier, signed_in
 from a5s.core.policy import Decision, PolicyEngine
 from a5s.core.teams import Teams
@@ -93,6 +93,7 @@ class Gateway:
     identity: Verifier | None = None  # for the local channel's sign-in; else development only
     teams: Teams | None = None
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)  # when obligations and schedules are due
+    releases: releases.Releases | None = None  # the release a5s is, which must be approved here
     _checked: dict = field(default_factory=dict)  # settings versions whose signatures checked out
 
     @property
@@ -147,6 +148,12 @@ class Gateway:
             log.error("instance %s's status doesn't match the ledger", inst["id"])
             return [f"{inst['id']}'s status doesn't match the ledger"]
         return []
+
+    def release_problems(self, conn: psycopg.Connection) -> list[str]:
+        """Why the release a5s is can't run here, if it can't: in development, it always can."""
+        if self.releases is None or self.cfg.development:
+            return []
+        return self.releases.problems(conn, self.scenario, self.cfg.team)
 
     @staticmethod
     def take_message(conn: psycopg.Connection, inbound: str) -> tuple[dict | None, str | None]:
@@ -418,7 +425,7 @@ def create_app(gw: Gateway) -> FastAPI:
                 reasons.append(f"{body.instance} is {inst['status']}")
             if any(p not in inst["serves"] for p in opening.acts_for):
                 reasons.append(f"{body.instance} doesn't serve {', '.join(opening.acts_for)}")
-            reasons += gw.check_instance(conn, inst)
+            reasons += gw.check_instance(conn, inst) + gw.release_problems(conn)
             if opening.due and not opening.used:  # a schedule fires once for each time, run or not
                 fired = conn.execute(
                     "insert into schedule_fires (instance_id, schedule, due_at, fired_at, run_id, "
@@ -501,7 +508,8 @@ def create_app(gw: Gateway) -> FastAPI:
                 return []  # another sweep is at work
             obligations.sync(conn, gw.scenario.name, owed, gw.definitions, now)
             instances = {i["id"]: i for i in conn.execute("select * from instances")}
-            able = {iid: inst["status"] == "active" and not gw.check_instance(conn, inst)
+            runs = not gw.release_problems(conn)  # else no agent can act, and code escalates
+            able = {iid: runs and inst["status"] == "active" and not gw.check_instance(conn, inst)
                     for iid, inst in instances.items()}
             rows = conn.execute(
                 "select o.*, i.definition as agent from obligations o "

@@ -1,15 +1,17 @@
 #!/bin/sh
 # Starts a5s's containers with stand-ins for the model, the identity provider
-# and locked storage, then checks that a person must sign in, that a message
-# runs end to end, that the core works obligations out from the records, that a
-# worker reaches only the gateway, and that the ledger is copied, locked, and
-# verifies against its copies.
+# and locked storage, then checks that the core runs only a release its people
+# approved, that a person must sign in, that a message runs end to end, that the
+# core works obligations out from the records, that a worker reaches only the
+# gateway, and that the ledger is copied, locked, and verifies against its copies.
 # Needs the image first: docker build -t a5s:dev .
 set -eu
 cd "$(dirname "$0")/.."
 
 env_file=$(mktemp)
 reply=$(mktemp)
+work=$(mktemp -d)
+chmod a+rx "$work"  # for the containers that sign and record the release
 random() { head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9'; }
 idp_password=$(random)
 printf 'A5S_DB_PASSWORD=%s\nA5S_SERVICE_TOKEN=%s\nA5S_IDP_PASSWORD=%s\n' \
@@ -21,9 +23,25 @@ echo "A5S_ANCHOR_STORE=s3://a5s-ledger/sample" >> "$env_file"
 compose() { docker compose -p a5s-smoke --env-file "$env_file" -f deploy/compose.yaml \
               -f deploy/compose.stub.yaml -f deploy/compose.identity.yaml \
               -f deploy/compose.storage.yaml "$@"; }
-trap 'compose down -v >/dev/null 2>&1; rm -f "$env_file" "$reply"' EXIT
+trap 'compose down -v >/dev/null 2>&1; rm -rf "$env_file" "$reply" "$work"' EXIT
 
 compose up -d
+
+# The core runs only a release this deployment's people approved. Here they're the
+# sample's made-up people, whose keys are in the repository; a real deployment's
+# approvers sign with keys only they hold.
+if compose exec -T gateway a5s release status > "$reply" 2>&1; then
+  echo "The core would run a release nobody here approved."; exit 1
+fi
+grep -q "nobody here has approved it yet" "$reply"
+compose exec -T gateway a5s release show > "$work/release.yaml"
+for person in priya tomas rosa kofi; do
+  docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/scenarios/sample/keys:/keys:ro" \
+    -v "$work:/work" -w /work "${A5S_IMAGE:-a5s:dev}" release sign --as "$person" --key "/keys/$person.key"
+done
+compose run --rm -T -v "$work:/work" -w /work setup release approve > /dev/null
+compose exec -T gateway a5s release status | tail -1
+echo "The core waited for the release to be approved here, by the people its changes need."
 
 sign_in() {  # a token from the stand-in identity provider
   curl -sf --retry 60 --retry-all-errors --retry-delay 2 \

@@ -69,6 +69,9 @@ class Config:
     development: bool = False
     anchor_store: str | None = None  # where the ledger's locked copies go, such as s3://bucket/a5s
     anchor_retain_days: int = 365  # how long each copy stays locked: assurance's to set [TBC]
+    # The directory's team that runs a5s. Its approvals of a release count as an engineer's,
+    # and never as the release approver's.
+    team: str = "platform"
     # The scenario a5s serves: a class built from its folder and a5s's database URL.
     scenario: str = "a5s.sample:SampleScenario"
     scenario_folder: Path | None = None  # by default, scenarios/sample
@@ -102,6 +105,7 @@ class Config:
             development=os.environ.get("A5S_DEVELOPMENT", "").lower() in ("1", "true", "yes"),
             anchor_store=os.environ.get("A5S_ANCHOR_STORE"),
             anchor_retain_days=int(os.environ.get("A5S_ANCHOR_RETAIN_DAYS", "365")),
+            team=os.environ.get("A5S_TEAM", "platform"),
             scenario=os.environ.get("A5S_SCENARIO", "a5s.sample:SampleScenario"),
             scenario_folder=Path(os.environ["A5S_SCENARIO_DIR"]) if os.environ.get("A5S_SCENARIO_DIR")
             else None,

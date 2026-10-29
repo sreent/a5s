@@ -5,7 +5,7 @@
 
 services:
   localstack:
-    image: localstack/localstack:4.0
+    image: localstack/localstack:4.0@sha256:17c2f79ca4e1f804eb912291a19713d4134806325ef0d21d4c1053161dfa72d0
     environment:
       SERVICES: s3
     volumes: ["./storage/bucket.sh:/etc/localstack/init/ready.d/bucket.sh:ro"]

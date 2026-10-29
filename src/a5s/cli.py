@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import logging
 import os
@@ -18,7 +19,8 @@ import yaml
 
 from a5s import build, db, definitions, devdb, worker
 from a5s.config import DEFAULT_DATABASE_URL, Config
-from a5s.core import anchor, inbox, ledger, registry, signing
+from a5s.contract import Signature
+from a5s.core import anchor, inbox, ledger, registry, releases, signing
 from a5s.services.scheduler import Scheduler, remote_worker
 
 log = logging.getLogger("a5s")
@@ -193,6 +195,59 @@ def _verify(cfg: Config) -> None:
         sys.exit(1)
 
 
+def _release(cfg: Config, args: argparse.Namespace) -> None:
+    """Approving releases: each organisation's people sign what a5s is in their deployment."""
+    if args.what == "manifest":  # of a source tree, such as when an image is built
+        root = args.root or Path.cwd()
+        sys.stdout.buffer.write(releases.manifest(root, root / "scenarios" / "sample"))
+        return
+    if args.what == "sign":
+        raw = args.manifest.read_bytes()
+        digest = hashlib.sha256(raw).hexdigest()
+        key = args.key or cfg.scenario_dir / "keys" / f"{args.person}.key"
+        value = signing.sign(key.read_text().strip(), raw, signing.RELEASE)
+        signed = yaml.safe_load(args.out.read_text()) if args.out.exists() else None
+        if signed and signed.get("release") != digest:
+            sys.exit(f"{args.out} holds signatures for another release.")
+        others = [s for s in (signed or {}).get("signatures", []) if s["signer"] != args.person]
+        args.out.write_text(
+            "# Signatures over a release of a5s, made with `a5s release sign`.\n"
+            + yaml.safe_dump({"release": digest, "signatures": [
+                *others, {"signer": args.person, "value": value}]}, sort_keys=False))
+        print(f"{args.person} signed release {yaml.safe_load(raw)['version']} ({digest[:12]}).")
+        return
+    sc = build.scenario(cfg)
+    if args.what == "approve":  # as the database's administrator
+        raw = args.manifest.read_bytes()
+        signed = yaml.safe_load(args.signatures.read_text()) or {}
+        if signed.get("release") != hashlib.sha256(raw).hexdigest():
+            sys.exit(f"{args.signatures} holds signatures for another release.")
+        with db.transaction(cfg.database_url) as conn:
+            verdict = releases.record(conn, raw, [Signature(s["signer"], s["value"])
+                                                  for s in signed.get("signatures", [])],
+                                      sc, cfg.team, args.advisory, baseline=args.baseline)
+    else:
+        current = releases.running(cfg.root, cfg.scenario_dir)
+        if args.what == "show":
+            sys.stdout.buffer.write(current.raw)
+            return
+        print(f"Release {current.version} of a5s, {current.digest}.")
+        if current.problems:
+            sys.exit("It can't run: " + "; ".join(current.problems))
+        with db.transaction(cfg.database_url) as conn:
+            verdict = releases.check(conn, current.digest, sc, cfg.team)
+            if not verdict.needs:  # nobody has signed it here yet: say what it needs
+                need = releases.needs(yaml.safe_load(current.raw), releases.last_approved(conn))
+                verdict = releases.Verdict(False, tuple(need), verdict.missing)
+    for need in verdict.needs:
+        print(f"- It needs {releases.who(need.role)}, because {need.why}.")
+    if verdict.signed_by:
+        print(f"Signed by {', '.join(verdict.signed_by)}.")
+    if not verdict.ok:
+        sys.exit("Not approved here: " + "; ".join(verdict.missing))
+    print("Approved here.")
+
+
 def _admin(cfg: Config, path: str, body: dict | None = None) -> dict:
     headers = {"Authorization": f"Bearer {cfg.service_token}"}
     with httpx.Client(base_url=cfg.gateway_url, headers=headers, timeout=30) as gw:
@@ -239,6 +294,26 @@ def main(argv: list[str] | None = None) -> None:
         p.add_argument("--by", help="who you are, in development; else your sign-in in A5S_TOKEN")
     copy = sub.add_parser("anchor", help="copy the ledger to locked storage")
     copy.add_argument("--every", type=int, metavar="SECONDS", help="keep copying, this often")
+    rel = sub.add_parser("release", help="approve a release of a5s for this deployment")
+    rel_sub = rel.add_subparsers(dest="what", required=True)
+    manifest = rel_sub.add_parser("manifest", help="print the manifest of a source tree, as an "
+                                                   "image is built with")
+    manifest.add_argument("--root", type=Path)
+    rel_sub.add_parser("show", help="print the release a5s is here, for its approvers to sign")
+    rel_sign = rel_sub.add_parser("sign", help="sign a release's manifest, as a person")
+    rel_sign.add_argument("--as", dest="person", required=True)
+    rel_sign.add_argument("--manifest", type=Path, default=Path("release.yaml"))
+    rel_sign.add_argument("--key", type=Path, help="their private key (default: the sample's)")
+    rel_sign.add_argument("--out", type=Path, default=Path("release.sig"))
+    approve = rel_sub.add_parser("approve", help="record signatures over a release, as the "
+                                                 "administrator")
+    approve.add_argument("--manifest", type=Path, default=Path("release.yaml"))
+    approve.add_argument("--signatures", type=Path, default=Path("release.sig"))
+    approve.add_argument("--advisory", help="the security advisory it fixes, such as GHSA-...")
+    approve.add_argument("--baseline", action="store_true",
+                         help="weigh it against nothing, so it needs everyone: for when someone "
+                              "who approved an earlier release has left")
+    rel_sub.add_parser("status", help="whether this deployment approved the release a5s is")
     led = sub.add_parser("ledger", help="read or verify the ledger, against its copies too")
     led.add_argument("what", choices=["tail", "verify"])
     led.add_argument("-n", type=int, default=20)
@@ -283,6 +358,8 @@ def main(argv: list[str] | None = None) -> None:
                      {"by": args.by, "identity": os.environ.get("A5S_TOKEN")}))
     elif args.command == "anchor":
         _anchor(cfg, args.every)
+    elif args.command == "release":
+        _release(cfg, args)
     elif args.command == "ledger" and args.what == "verify":
         _verify(cfg)
     elif args.command == "ledger":

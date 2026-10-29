@@ -18,6 +18,9 @@ import yaml
 from a5s.core.ledger import canonical
 
 INSTANCE_APPROVER = "instance-approver"  # approves instances with no parts, and sets their level
+# a5s's own roles, for approving its releases. An agent's owner holds agent-owner:<agent>.
+RELEASE_APPROVER = "release-approver"  # never from the team that runs a5s, nor above it
+ASSURANCE = "assurance"
 
 
 @dataclass(frozen=True)
@@ -153,6 +156,9 @@ class Scenario(Protocol):
 
     def holders(self, role: str) -> list[Person]:
         """The people the directory assigns a role to."""
+
+    def team(self, name: str) -> list[Person]:
+        """The people in a team, such as the one that runs a5s."""
 
     def setup(self, conn: Any, tools_role: str) -> None:
         """Set up anything the scenario keeps in a5s's database, such as a fake system's

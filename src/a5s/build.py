@@ -13,6 +13,7 @@ from a5s.contract import Scenario
 from a5s.core.gateway import Gateway, create_app
 from a5s.core.identity import verifier_from_env
 from a5s.core.policy import PolicyEngine
+from a5s.core.releases import Releases, running
 from a5s.core.stores import Store, store_from_url
 from a5s.core.teams import Teams, TeamsConfig
 
@@ -35,6 +36,7 @@ def gateway(cfg: Config, http: httpx.Client | None = None) -> Gateway:
         http=http or httpx.Client(),
         identity=verifier_from_env(),
         teams=Teams(teams) if (teams := TeamsConfig.from_env()) else None,
+        releases=Releases(running(cfg.root, cfg.scenario_dir)),
     )
 
 

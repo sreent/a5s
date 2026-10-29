@@ -20,7 +20,7 @@ x-teams: &teams  # the bot's registration in Entra ID, if a5s talks to people in
 
 services:
   postgres:
-    image: postgres:16
+    image: postgres:16@sha256:1beaa3084eee2676f20a9cd9928f0bf2c5bf674f8e49f81017912183d377c61c
     environment:
       POSTGRES_USER: a5s
       POSTGRES_PASSWORD: ${A5S_DB_PASSWORD:?set A5S_DB_PASSWORD}

@@ -155,7 +155,7 @@ Each agent talks to people under one identity, never a person's, and says it's a
 - **Tokens.** The ledger, conversations, traces and test data hold tokens with record keys, not classified values.
 - **Models.** Each approved model names its provider, deployment, region and version: a dated version where the provider offers one, and otherwise the version each response reports, checked every time. The model gateway refuses anything else, including a failover to an unapproved model. It speaks both OpenAI-compatible and Anthropic-compatible APIs, so a model from any provider that offers either can be approved, including open-weight models an organisation hosts in its own cloud or on its own premises. A server on the organisation's own network may need no key.
 - **Outside content,** from phase 2. Until then, agents' tools return none. Documents from outside go through an extractor that has no tools and fixed schemas. It can also answer a person's question about a document in free text, marked as outside content and never used as an instruction. Classifiers such as Prompt Shields, Model Armor or Bedrock Guardrails add signals. They're never the boundary.
-- **Supply chain.** Skills are copied into the release and pinned by hash, and so are the schemas of the tools it uses, so the gateway refuses a tool whose schema has changed. It also refuses tool servers' requests to ask people for input or to run the agent's model.
+- **Supply chain.** Skills are copied into the release and pinned by hash, and so are the schemas of the tools it uses, so the gateway refuses a tool whose schema has changed. a5s's image pins its base images by digest and its packages by hash, its build's provenance is signed, and the actions that build it are pinned by commit. It also refuses tool servers' requests to ask people for input or to run the agent's model.
 
 ## Evidence
 
@@ -180,6 +180,8 @@ The same events go out as OpenTelemetry spans, using the GenAI conventions at a 
   | Changes a tool, or widens a grant, trigger, model, class of data or cap | The release approver, from outside the team |
   | Fixes a security advisory | Nothing more: it goes in at once, at level 1 at most |
   | Changes the trusted core | The release approver, an attested build, and assurance's tests |
+
+  Each organisation's people approve each release for their own deployment, by signing what it is there. The core works out what changed since the release they approved before, checks the signatures against the directory, and opens no run until the release has what it needs ([lifecycle](agent-model.md#lifecycle)).
 
 - **Evidence and grading** sit outside the team. The ledger's anchor is with assurance, and nobody from the team that built an agent grades its work.
 

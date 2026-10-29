@@ -13,6 +13,14 @@ people:
   - {id: omar, name: Omar Haddad, team: operations, timezone: Asia/Singapore,
      identities: ["entra:0a5a0000-0000-4000-8000-00000000d0d4"]}
 
+  # The team that runs a5s, and the people from outside it who approve its releases.
+  - {id: priya, name: Priya Nair, team: platform, manager: lena, timezone: Europe/London,
+     roles: [agent-owner:assistant]}
+  - {id: tomas, name: Tomas Berg, team: platform, manager: lena, timezone: Europe/London}
+  - {id: lena, name: Lena Fischer, team: technology, timezone: Europe/London}
+  - {id: rosa, name: Rosa Mendes, team: risk, timezone: Europe/London, roles: [release-approver]}
+  - {id: kofi, name: Kofi Mensah, team: audit, timezone: Europe/London, roles: [assurance]}
+
 # Each open record is an obligation for its owner, from the start of their working
 # day when it opened to the end of their working day when it's due.
 records:

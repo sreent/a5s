@@ -1,6 +1,6 @@
 # Phase 1
 
-**Status:** Step 1 under way ([progress](#progress)) · **Under:** [Architecture](architecture.md)
+**Status:** Steps 1 and 2 under way ([progress](#progress)) · **Under:** [Architecture](architecture.md)
 
 Phase 1 builds the smallest a5s that's useful: the trusted core, conversations, and two reference agents of a5s's own, at levels 0 and 1. They're proven against a5s's sample scenario, and used first by the team that builds a5s. In phase 1, agents read, report, draft and remind. None of them changes data. Which real scenario comes first is a separate decision [TBC].
 
@@ -63,9 +63,23 @@ Step 1, the walking skeleton, runs locally against the sample scenario, with Dee
 | Sign-in through the organisation's identity provider, with OpenID Connect, built for Entra ID, Google Cloud Identity and Okta and tested with Keycloak and a fake provider. Every message arrives at the core, which checks the token, finds the person in the directory, and records the message. A run that answers it takes its sender from there, so the token goes no further. | [`core/identity.py`](../src/a5s/core/identity.py) |
 | The ledger's copies in locked storage, made every hour, with an adapter for each cloud's: S3 Object Lock, Azure's immutable Blob Storage and Google Cloud Storage's object retention. Verifying the ledger checks it against its copies, so a history rewritten with every hash recomputed shows, as do deleted entries, a replaced copy, a fork, a planted copy and copying that has stopped. A planted copy can't stop the copying, and a copier that finds the ledger rewritten stops with an error, so the platform notices. | [`core/anchor.py`](../src/a5s/core/anchor.py), [`core/stores.py`](../src/a5s/core/stores.py) |
 | Teams, through the Bot Framework, with each agent its own bot. The core receives each message itself, because Teams' token doesn't cover what a message says: it checks the token, its key's endorsement for Teams, the service URL and the organisation, and finds the sender by their Entra ID. The scheduler answers from the core's queue, and replies and a5s's own notices reach Teams only through the core, which alone holds the bot's credentials. | [`core/teams.py`](../src/a5s/core/teams.py) |
-| The sample scenario, with four people in two reporting lines and two time zones, customer questions with owners and due dates, and a store for drafts. a5s serves whichever scenario its configuration names, and keeps none of a scenario's people in its own definitions. | [`scenarios/sample/`](../scenarios/sample/) |
+| The sample scenario, with nine people in two time zones, including the team that runs a5s and the people outside it who approve its releases, customer questions with owners and due dates, and a store for drafts. a5s serves whichever scenario its configuration names, and keeps none of a scenario's people in its own definitions. | [`scenarios/sample/`](../scenarios/sample/) |
 | One container image that runs as the gateway, the scheduler or a worker, and a compose stack whose networks enforce the design: a worker holds no secrets and reaches only the gateway, never the database or the internet. A smoke test runs the stack in CI with stand-ins for the model, the identity provider and locked storage: Keycloak, with the sample's people, and LocalStack, whose S3 enforces object lock as Amazon's does. | [`Dockerfile`](../Dockerfile), [`deploy/`](../deploy/) |
-| 192 tests against a real Postgres and a scripted model and a fake Bot Framework, with a clock the tests set, with emulators for Azure's and Google's storage, and live tests through DeepSeek's and Qwen's OpenAI-compatible APIs and DeepSeek's Anthropic-compatible one, including a reminder | [`tests/`](../tests/) |
+| 222 tests against a real Postgres and a scripted model and a fake Bot Framework, with a clock the tests set, with emulators for Azure's and Google's storage, and live tests through DeepSeek's and Qwen's OpenAI-compatible APIs and DeepSeek's Anthropic-compatible one, including a reminder | [`tests/`](../tests/) |
+
+Step 2, the release pipeline, has started:
+
+| Built | Where |
+| --- | --- |
+| Releases that each organisation approves for its own deployment. A release's manifest lists every file a5s runs and what each agent and model may do, and the people its changes need sign it with their own keys, anywhere and offline: the release approver, from outside the team that runs a5s and its reporting line, and assurance, for the trusted core or what its image is built from; the release approver for the scenario, or anything that widens what an agent or a model may do; the agent's owner and a second engineer for instructions alone; an engineer for the services alone, or for a security fix that changes only dependencies. The core checks the signatures against the directory, and opens no run until the release has what it needs, so a change to the trusted core can't run without the outside approval. An image whose code isn't what it was built with doesn't run. | [`core/releases.py`](../src/a5s/core/releases.py) |
+| A release pipeline. On a version tag, the full suite runs, then the image is built, smoke-tested, pushed with its provenance signed, and published with the manifest it was built with. Base images, actions and test images are pinned by digest or commit, and a test fails if any isn't. The smoke test shows the core refusing a release nobody approved, then running it once the sample's people have signed. | [`.github/workflows/`](../.github/workflows/) |
+| Rules that protect the main branch and release tags, ready for the repository's settings: changes through reviewed pull requests with the suite passing, and tags nobody can move or delete | [`.github/rulesets/`](../.github/rulesets/) |
+
+Still to do in step 2:
+
+- deploying each release to the three clouds, which waits for step 1's infrastructure code;
+- applying the rules to the repository, which needs a second maintainer to review changes: `gh api --method POST repos/<owner>/a5s/rulesets --input .github/rulesets/main.json`, and the same for `releases.json`;
+- each agent's own regression suite, run against real models, which grows with the reference agents in step 4.
 
 Still to do in step 1:
 
