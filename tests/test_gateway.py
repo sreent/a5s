@@ -255,3 +255,23 @@ def test_a_call_that_ran_but_couldnt_be_recorded_isnt_called_denied(stack, monke
     with stack.client(token) as c:
         r = c.post("/run/tools/search_records", json={"args": {"query": "invoice"}})
     assert r.status_code == 200 and r.json()["recorded"] is False and r.json()["result"]
+
+
+def test_a_model_on_the_organisations_own_network_needs_no_key(stack, monkeypatch):
+    local = replace(stack.gateway.models["fake"], key_env=None, base_url="http://llm.internal:8000/v1")
+    monkeypatch.setitem(stack.gateway.models, "fake", local)
+    stack.model.reply("Hello from our own server.")
+    _, token = stack.open_run()
+    with stack.client(token) as c:
+        r = c.post("/v1/chat/completions", json={"model": "fake", "messages": []})
+    assert r.status_code == 200
+    [sent] = stack.model.requests
+    assert "authorization" not in sent["headers"] and token not in str(sent)
+
+
+def test_a_missing_key_is_refused_not_left_out(stack, monkeypatch):
+    monkeypatch.delenv("A5S_TEST_PROVIDER_KEY")
+    _, token = stack.open_run()
+    with stack.client(token) as c:
+        r = c.post("/v1/chat/completions", json={"model": "fake", "messages": []})
+    assert r.status_code == 503 and not stack.model.requests

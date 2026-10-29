@@ -100,6 +100,22 @@ For Teams, register a bot in your Entra ID tenant, and set `A5S_TEAMS_APP_ID`, `
 
 To change the settings, edit [`settings.yaml`](scenarios/sample/settings.yaml), raise its serial, and sign the new version with `uv run a5s sign --as ana` before applying it. `uv run pytest` runs the tests against a scripted model, and `uv run pytest -m live` against the real providers. To serve another scenario, set `A5S_SCENARIO` to its class, such as `a5s.sample:SampleScenario`, and `A5S_SCENARIO_DIR` to its folder.
 
+### On your own premises, with any provider
+
+a5s ties itself to no cloud and no identity provider. It runs on your own premises, even on a network with no way out:
+
+| Part | On your own premises |
+| --- | --- |
+| Hosts | The one image, on any container host, with your own Postgres 16 or later. [`compose.yaml`](deploy/compose.yaml) is the reference. |
+| Sign-in | Any provider that speaks OpenID Connect, such as Keycloak, Authentik, Zitadel or Active Directory Federation Services. Active Directory or another LDAP directory on its own connects through Keycloak or Dex. Set `A5S_OIDC_METADATA_URL` if the provider's metadata isn't at the issuer's well-known address. |
+| Models | Any server that speaks the OpenAI- or Anthropic-compatible API, such as vLLM, Ollama, llama.cpp or SGLang, with a model that supports tool calling. Leave out `key_env` if it needs no key. [`models.yaml`](config/models.yaml) has an example. |
+| The ledger's copies | Any S3-compatible store with object lock in compliance mode, run by assurance, such as Ceph or NetApp StorageGRID. Point the copier at it with `AWS_ENDPOINT_URL_S3`. |
+| Your own certificate authority | `SSL_CERT_FILE`, a bundle with your CA, for sign-in, models and Teams; `AWS_CA_BUNDLE` for the ledger's copies; and `sslrootcert` in the database's URL |
+| Channels | Teams needs Microsoft 365 and the internet. Elsewhere, people use the core's local channel, which takes sign-in from any provider: the command line for now. |
+| The image | Built where the internet is, then brought in through your own registry, or with `docker save` and `docker load` |
+
+The smoke test runs this way: Keycloak for sign-in, a model inside the stack that needs no key, locked storage that speaks S3, and workers that can't reach the internet.
+
 ## Documents
 
 | Document | What it holds |

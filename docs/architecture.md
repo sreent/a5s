@@ -47,7 +47,7 @@ A scenario plugs into a5s by providing these, or by taking a5s's defaults:
 
 | Interface | Gives a5s | a5s's default |
 | --- | --- | --- |
-| Directory | People, the roles they hold, their teams, reporting lines and working hours, and what each may see, for any record | The organisation's identity provider, such as Entra ID, Google Cloud Identity or Okta, with roles assigned as groups |
+| Directory | People, the roles they hold, their teams, reporting lines and working hours, and what each may see, for any record | The organisation's identity provider, such as Entra ID, Google Cloud Identity, Okta or Keycloak, or its own directory, such as Active Directory, with roles assigned as groups |
 | Settings | Parts and their owners and delegates, how far each agent may act in each part and type of action, limits, sensitive fields, classes of data, the escalation chain, who agents may talk to, and the scenario's switches. Each version is signed by its owner, and an unsigned one doesn't count. Its serial only rises, so an older version can't be replayed. | a5s's settings store, with signed versions [TBC: edited through a simple app, or in git] |
 | Tools | The systems agents use, as MCP servers, with each tool's risk attributes | None |
 | Records | Where obligations come from, such as cases past their due time, and the events that wake agents | None |
@@ -153,7 +153,7 @@ Each agent talks to people under one identity, never a person's, and says it's a
 
 - **Classes** of data come from the scenario's settings, and decide what's masked and which models may see it.
 - **Tokens.** The ledger, conversations, traces and test data hold tokens with record keys, not classified values.
-- **Models.** Each approved model names its provider, deployment, region and version: a dated version where the provider offers one, and otherwise the version each response reports, checked every time. The model gateway refuses anything else, including a failover to an unapproved model. It speaks both OpenAI-compatible and Anthropic-compatible APIs, so a model from any provider that offers either can be approved, including open-weight models an organisation hosts in its own cloud.
+- **Models.** Each approved model names its provider, deployment, region and version: a dated version where the provider offers one, and otherwise the version each response reports, checked every time. The model gateway refuses anything else, including a failover to an unapproved model. It speaks both OpenAI-compatible and Anthropic-compatible APIs, so a model from any provider that offers either can be approved, including open-weight models an organisation hosts in its own cloud or on its own premises. A server on the organisation's own network may need no key.
 - **Outside content,** from phase 2. Until then, agents' tools return none. Documents from outside go through an extractor that has no tools and fixed schemas. It can also answer a person's question about a document in free text, marked as outside content and never used as an instruction. Classifiers such as Prompt Shields, Model Armor or Bedrock Guardrails add signals. They're never the boundary.
 - **Supply chain.** Skills are copied into the release and pinned by hash, and so are the schemas of the tools it uses, so the gateway refuses a tool whose schema has changed. It also refuses tool servers' requests to ask people for input or to run the agent's model.
 
@@ -201,11 +201,11 @@ Phase 1 sets these up [TBC]:
 
 ## Hosting
 
-Phase 1 runs a5s's own services and workers on Azure, Google Cloud and AWS at once, each with managed Postgres, so nothing ties a5s to one cloud. They run as one container image, and the networks keep workers away from everything but the gateway ([deploy](../deploy/)). Nothing waits inside a host's session: conversations and held calls live in a5s's records, so a5s can move hosts or use a managed runtime later.
+Phase 1 runs a5s's own services and workers on Azure, Google Cloud and AWS at once, each with managed Postgres, so nothing ties a5s to one cloud. The same image runs on the organisation's own premises, even on a network with no way out, with its own Postgres, identity provider, models and locked storage. They run as one container image, and the networks keep workers away from everything but the gateway ([deploy](../deploy/)). Nothing waits inside a host's session: conversations and held calls live in a5s's records, so a5s can move hosts or use a managed runtime later.
 
 | Host | Runs on | Identity | Gateway |
 | --- | --- | --- | --- |
-| Any | a5s's own workers | The organisation's identity provider | An MCP gateway such as agentgateway, with a5s's policy |
+| Any, including the organisation's own premises | a5s's own workers | The organisation's identity provider, through OpenID Connect | An MCP gateway such as agentgateway, with a5s's policy |
 | AWS | AgentCore Runtime | AgentCore Identity | AgentCore Gateway |
 | Microsoft | Foundry hosted agents | Entra Agent ID | a5s's own |
 | Google | Agent Runtime | Agent Identity | Agent Gateway, managed only for Agent Runtime so far |

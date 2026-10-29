@@ -1,6 +1,8 @@
 """Calls to model providers, in the OpenAI-compatible or Anthropic-compatible style.
 
 Only the gateway calls providers, with the provider's key. Workers never see it.
+A model the organisation hosts itself, such as with vLLM, Ollama or llama.cpp on
+its own network, speaks the same API, and may need no key at all.
 """
 
 from __future__ import annotations
@@ -40,15 +42,15 @@ def screen(api: str, body: dict[str, Any]) -> tuple[dict[str, Any], list[str], s
 
 def forward(model: ModelConfig, body: dict[str, Any], http: httpx.Client) -> tuple[int, dict]:
     key = model.api_key
-    if not key:
+    if model.key_env and not key:
         raise ModelUnavailable(f"{model.key_env} isn't set")
     payload = {**body, "model": model.model}
     if model.api == "openai":
         url = f"{model.base_url}/chat/completions"
-        headers = {"Authorization": f"Bearer {key}"}
+        headers = {"Authorization": f"Bearer {key}"} if key else {}
     else:
         url = f"{model.base_url}/v1/messages"
-        headers = {"x-api-key": key, "anthropic-version": "2023-06-01"}
+        headers = {"anthropic-version": "2023-06-01", **({"x-api-key": key} if key else {})}
     try:
         response = http.post(url, json=payload, headers=headers, timeout=180)
     except httpx.HTTPError as exc:

@@ -23,14 +23,14 @@ class ModelConfig:
     api: str  # "openai" or "anthropic": the API style the provider speaks
     base_url: str
     model: str  # the provider's model id, dated where the provider offers one
-    key_env: str
+    key_env: str | None = None  # where its key is; a server on the organisation's network may need none
     region: str = "[TBC]"
     data_classes: tuple[str, ...] = ("synthetic",)
     reported_model: str | None = None  # what every response must report, if not `model`
 
     @property
     def api_key(self) -> str | None:
-        return os.environ.get(self.key_env)
+        return os.environ.get(self.key_env) if self.key_env else None
 
 
 def load_models(path: Path) -> dict[str, ModelConfig]:
@@ -48,7 +48,7 @@ def load_models(path: Path) -> dict[str, ModelConfig]:
             api=m["api"],
             base_url=m["base_url"].rstrip("/"),
             model=m["model"],
-            key_env=m["key_env"],
+            key_env=m.get("key_env"),
             region=m.get("region", "[TBC]"),
             data_classes=tuple(m.get("data_classes", ["synthetic"])),
             reported_model=m.get("reported_model"),

@@ -1,7 +1,11 @@
 """People's identity: tokens from the organisation's identity provider, checked in the core.
 
-Entra ID, Google Cloud Identity, Okta and Keycloak all issue OpenID Connect
-tokens, so one check works with any of them. The gateway checks each message's
+Any provider that speaks OpenID Connect works, because one check fits them all:
+Entra ID, Google Cloud Identity and Okta, and as well Keycloak, Auth0, Ping,
+OneLogin, JumpCloud, Authentik, Zitadel or Active Directory Federation Services
+on the organisation's own network. A directory that speaks only LDAP or SAML,
+such as Active Directory on its own, connects through a bridge that speaks
+OpenID Connect, such as Keycloak or Dex. The gateway checks each message's
 sender itself, so no service can claim that a message came from someone else.
 """
 
@@ -18,7 +22,8 @@ import jwt
 from jwt import PyJWK, PyJWKSet
 
 # Asymmetric algorithms only: a token signed with a shared secret, or with none, is refused.
-_ALGORITHMS = ["RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384"]
+_ALGORITHMS = ["RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384", "ES512",
+               "EdDSA"]
 
 
 class IdentityError(Exception):
@@ -34,7 +39,7 @@ class IdentityConfig:
     issuer: str
     audience: str | tuple[str, ...]  # a token for any of them is accepted
     # Which claim holds the person's id in the directory. Pick one people can't change:
-    # Entra ID's oid, Google's or Okta's sub, or Keycloak's preferred_username.
+    # sub, which OpenID Connect never lets a provider reassign, or Entra ID's oid.
     person_claim: str = "preferred_username"
     metadata_url: str | None = None  # if it isn't at the issuer's well-known address
     required: tuple[str, ...] = ("exp", "iat", "iss", "aud")
@@ -52,6 +57,7 @@ class IdentityConfig:
             issuer=issuer,  # exactly as the provider writes it: Entra ID's v1 issuer ends in a slash
             audience=os.environ.get("A5S_OIDC_AUDIENCE", "a5s"),
             person_claim=os.environ.get("A5S_OIDC_PERSON_CLAIM", "preferred_username"),
+            metadata_url=os.environ.get("A5S_OIDC_METADATA_URL") or None,
             directory_prefix=os.environ.get("A5S_OIDC_DIRECTORY_PREFIX") or None,
         )
 

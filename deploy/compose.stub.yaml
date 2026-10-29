@@ -10,6 +10,4 @@ services:
     networks: [egress]
 
   gateway:
-    environment:
-      STUB_MODEL_KEY: stand-in
     volumes: ["./stub/models.yaml:/app/config/models.yaml:ro"]

@@ -229,3 +229,31 @@ def test_without_sign_in_only_development_takes_a_typed_name(stack):
                            headers={"Authorization": f"Bearer {SERVICE_TOKEN}"})
         assert r.status_code == expected
     assert stack.ledger()[-1]["args"]["identity"] == "unverified (development)"
+
+
+def test_any_openid_connect_provider_works_even_with_edwards_curve_keys(monkeypatch):
+    """Such as Keycloak, Authentik or Zitadel on the organisation's own network, signing with
+    Ed25519, whose metadata isn't at the issuer's well-known address."""
+    from cryptography.hazmat.primitives.asymmetric import ed25519
+    from jwt.algorithms import OKPAlgorithm
+
+    key = ed25519.Ed25519PrivateKey.generate()
+    issuer, metadata = "https://id.corp.internal/realms/staff", "https://id.corp.internal/meta"
+
+    def provider(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == metadata:
+            return httpx.Response(200, json={"issuer": issuer, "jwks_uri": f"{issuer}/keys"})
+        if str(request.url) == f"{issuer}/keys":
+            return httpx.Response(200, json={"keys": [
+                {**OKPAlgorithm.to_jwk(key.public_key(), as_dict=True), "kid": "ed", "use": "sig"}]})
+        return httpx.Response(404)
+
+    monkeypatch.setenv("A5S_OIDC_ISSUER", issuer)
+    monkeypatch.setenv("A5S_OIDC_AUDIENCE", "a5s")
+    monkeypatch.setenv("A5S_OIDC_PERSON_CLAIM", "sub")
+    monkeypatch.setenv("A5S_OIDC_METADATA_URL", metadata)
+    verifier = Verifier(IdentityConfig.from_env(), httpx.Client(transport=httpx.MockTransport(provider)))
+    now = int(time.time())
+    token = jwt.encode({"iss": issuer, "aud": "a5s", "iat": now, "exp": now + 60, "sub": "u-42"},
+                       key, algorithm="EdDSA", headers={"kid": "ed"})
+    assert verifier.person(token) == "u-42"
