@@ -90,7 +90,7 @@ def apply(
             raise ValueError(f"instance {s.id}: no definition {s.definition}")
         wanted = definition.autonomy.start if s.level is None else s.level
         level = min(wanted, definition.autonomy.max)
-        grants = definition.tool_names
+        grants = definition.grants
         was = conn.execute("select status from instances where id = %s", (s.id,)).fetchone()
         if was and was["status"] == "retired":
             ledger.append(conn, {"kind": "admin", "action": "restore", "instance": s.id,

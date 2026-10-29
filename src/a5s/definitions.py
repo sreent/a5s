@@ -10,6 +10,9 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+# a5s's own tools, for an agent whose release records reminders (core/reminders.py)
+REMINDER_TOOLS = ("offer_reminder", "confirm_reminder", "list_reminders", "cancel_reminder",
+                  "note_waiting")
 _DAY_NAMES = {f"{d}{rest}": d for d, rest in zip(DAYS, ("day", "sday", "nesday", "rsday", "day",
                                                        "urday", "day"), strict=True)}
 
@@ -115,6 +118,12 @@ class Definition(BaseModel):
     @property
     def tool_names(self) -> list[str]:
         return [name for names in self.tools.values() for name in names]
+
+    @property
+    def grants(self) -> list[str]:
+        """The tools its instances may use: the scenario's it names, and a5s's own for
+        reminders, if it records them."""
+        return [*self.tool_names, *(REMINDER_TOOLS if self.reminders else ())]
 
     @property
     def release_id(self) -> str:

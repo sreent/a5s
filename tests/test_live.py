@@ -5,6 +5,7 @@ import os
 import httpx
 import pytest
 
+from a5s import db
 from conftest import ROOT, FakeModel, build_root, running
 
 
@@ -60,4 +61,28 @@ def test_a_real_model_tells_someone_what_changed_in_their_records(database, tmp_
         [changed] = stack.inbox("ana")
         assert "Q-1001" in changed["text"] and "waiting on" in changed["text"].lower()
         print(first["text"], changed["text"], sep="\n---\n")
+        assert stack.verify().ok
+
+
+@pytest.mark.live
+def test_a_real_model_offers_a_reminder_and_keeps_it_once_its_person_says_yes(database, tmp_path):
+    if not os.environ.get("DEEPSEEK_API_KEY"):
+        pytest.skip("DEEPSEEK_API_KEY isn't set")
+    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text())
+    with running(database, root, httpx.Client(), FakeModel()) as stack:
+        offered = stack.say("Please remind me on 2026-10-30 to check whether Northwind has "
+                            "answered about Q-1001.")
+        with db.transaction(stack.admin) as conn:
+            [row] = conn.execute("select * from reminders").fetchall()
+        assert row["confirmed_at"] is None and row["record"] == "Q-1001"
+        confirmed = stack.say("Yes please.")
+        with db.transaction(stack.admin) as conn:
+            [row] = conn.execute("select * from reminders").fetchall()
+        assert row["confirmed_at"] is not None
+
+        stack.at("2026-10-30T09:30:00+00:00")
+        assert stack.scheduler().work_due() == 1
+        [reminder] = stack.inbox("ana")
+        assert "Northwind" in reminder["text"] or "Q-1001" in reminder["text"]
+        print(offered, confirmed, reminder["text"], sep="\n---\n")
         assert stack.verify().ok

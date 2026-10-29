@@ -17,7 +17,7 @@ triggers:
   - message: from the people it works for
 obligations: [records]           # it reminds its people of what falls due in the records
 schedules: []                    # none: what it does, it does for someone
-reminders: false                 # phase 1, step 3
+reminders: true                  # it offers reminders, and keeps those people confirm
 preferences: [digest-time, channel]
 channels: [teams]
 context:

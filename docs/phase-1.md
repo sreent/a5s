@@ -1,6 +1,6 @@
 # Phase 1
 
-**Status:** Steps 1 and 2 under way, and step 4's watcher built ([progress](#progress)) · **Under:** [Architecture](architecture.md)
+**Status:** Steps 1, 2 and 4 under way ([progress](#progress)) · **Under:** [Architecture](architecture.md)
 
 Phase 1 builds the smallest a5s that's useful: the trusted core, conversations, and two reference agents of a5s's own, at levels 0 and 1. They're proven against a5s's sample scenario, and used first by the team that builds a5s. In phase 1, agents read, report, draft and remind. None of them changes data. Which real scenario comes first is a separate decision [TBC].
 
@@ -68,7 +68,7 @@ Step 1, the walking skeleton, runs locally against the sample scenario, with Dee
 | Each deployment turns on the chats its people use by setting each one's settings, any number at once, and compose passes them on from its environment | [`deploy/compose.yaml`](../deploy/compose.yaml) |
 | The sample scenario, with nine people in two time zones, including the team that runs a5s and the people outside it who approve its releases, customer questions with owners and due dates, and a store for drafts. a5s serves whichever scenario its configuration names, and keeps none of a scenario's people in its own definitions. | [`scenarios/sample/`](../scenarios/sample/) |
 | One container image that runs as the gateway, the scheduler or a worker, and a compose stack whose networks enforce the design: a worker holds no secrets and reaches only the gateway, never the database or the internet. A smoke test runs the stack in CI with stand-ins for the model, the identity provider, a Matrix homeserver and locked storage: Keycloak and Synapse, with the sample's people, and LocalStack, whose S3 enforces object lock as Amazon's does. | [`Dockerfile`](../Dockerfile), [`deploy/`](../deploy/) |
-| 259 tests against a real Postgres and a scripted model, fakes of the Bot Framework, a Matrix homeserver and an identity provider, and the web chat in Chromium, with a clock the tests set, with emulators for Azure's and Google's storage, and live tests through DeepSeek's and Qwen's OpenAI-compatible APIs and DeepSeek's Anthropic-compatible one, including a reminder and the watcher's reports | [`tests/`](../tests/) |
+| 270 tests against a real Postgres and a scripted model, fakes of the Bot Framework, a Matrix homeserver and an identity provider, and the web chat in Chromium, with a clock the tests set, with emulators for Azure's and Google's storage, and live tests through DeepSeek's and Qwen's OpenAI-compatible APIs and DeepSeek's Anthropic-compatible one, including a reminder, the watcher's reports, and a reminder offered and confirmed | [`tests/`](../tests/) |
 
 Step 2, the release pipeline, has started:
 
@@ -84,14 +84,15 @@ Still to do in step 2:
 - applying the rules to the repository, which needs a second maintainer to review changes: `gh api --method POST repos/<owner>/a5s/rulesets --input .github/rulesets/main.json`, and the same for `releases.json`;
 - each agent's own regression suite, run against real models, which grows with the reference agents in step 4.
 
-Step 4, the reference agents, has started with the watcher:
+Step 4, the reference agents, is under way:
 
 | Built | Where |
 | --- | --- |
 | The watcher, at level 0, which reads and changes nothing. Each working morning, at nine in each person's own time zone and within their working hours, it tells each person it serves what changed in the records they own since it last told them, and what fell due. The first time, it tells them what's open. Code works the facts out from the records and from the obligations the core keeps, so the model only puts them into words, and a morning with nothing new starts no model at all. Each report acts for its person alone, goes once a day, and is skipped, not made up, while the watcher is suspended, so what changed waits for the next one. People can also ask it about their records, and it writes to them only as its own bot. | [`agents/watcher/`](../agents/watcher/), [`core/reports.py`](../src/a5s/core/reports.py) |
 | The scenario contract gives each person's records as they stand, for reports | [`contract.py`](../src/a5s/contract.py) |
+| The assistant's promises and reminders. It offers a reminder, or to follow something up, with a5s's own typed tools, and a5s keeps it only once the person says yes, in a later message of their own: a reminder is theirs alone, set only in answer to their own message, and never by a run that has read content from outside. On the day, the assistant reminds them, checking the record first, and if it can't act, the core reminds them itself. People can list and cancel theirs, and say what they're waiting on for one of their records, which pauses reminders about it until the date they give, and tells whoever an escalation reaches why. | [`core/reminders.py`](../src/a5s/core/reminders.py) |
 
-Still to do in step 4: digests, which gather each person's messages from all the agents into one a day, at a time they choose; the assistant's promises and reminders; and approval cards in Teams.
+Still to do in step 4: digests, which gather each person's messages from all the agents into one a day, at a time they choose; and approval cards in Teams.
 
 Still to do in step 1:
 

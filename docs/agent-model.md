@@ -114,7 +114,7 @@ triggers:
   - message: from the people it works for
 obligations: [records]           # it reminds its people of what falls due in the records
 schedules: []                    # none: what it does, it does for someone
-reminders: false                 # phase 1, step 3
+reminders: true                  # it offers reminders, and keeps those people confirm
 preferences: [digest-time, channel]
 channels: [teams]
 context:
@@ -125,6 +125,8 @@ budget:
 ```
 
 A schedule names its times, in the time zone of the instance's owner, its days, and the task a5s gives the agent each time, such as `{name: morning, at: "09:00", days: weekdays, task: Look through the open questions.}`. Times need quotes, because YAML reads an unquoted 9:00 as a number.
+
+An agent whose release keeps reminders gets a5s's own tools for them: it offers a reminder, or to follow something up, and a5s keeps it only once the person says yes in a later message of their own. Its people can list and cancel theirs, and say what they're waiting on for one of their records, which pauses reminders about it until the date they give.
 
 A report names a kind of record and a time, such as `{source: records, at: "09:00"}`, as the [watcher's](../agents/watcher/agent.yaml) does. Each working morning, at that time in each person's own time zone and within their working hours, the agent tells each person it serves what changed in their records of that kind since it last told them, and what fell due. The first time, it tells them what's open. Code works the facts out from the records, and the agent only puts them into words, so a morning with nothing new starts no model. The run acts for that person alone.
 

@@ -31,7 +31,17 @@ from pydantic import BaseModel
 from a5s import db
 from a5s.config import Config, ModelConfig
 from a5s.contract import Scenario, Signature, Tool, ToolCall, parse_settings
-from a5s.core import chats, ledger, models, obligations, registry, releases, reports, schedules
+from a5s.core import (
+    chats,
+    ledger,
+    models,
+    obligations,
+    registry,
+    releases,
+    reminders,
+    reports,
+    schedules,
+)
 from a5s.core.identity import IdentityError, UnknownPerson, Verifier, signed_in
 from a5s.core.matrix import Matrix
 from a5s.core.policy import Decision, PolicyEngine
@@ -137,7 +147,7 @@ class Gateway:
             return [f"{inst['id']}'s release isn't in this gateway"]
         level = min(release.autonomy.start if signed.level is None else signed.level,
                     release.autonomy.max)
-        expected = (signed.definition, sorted(signed.serves), level, sorted(release.tool_names),
+        expected = (signed.definition, sorted(signed.serves), level, sorted(release.grants),
                     release.model, release.pins, signed.owner or release.owner,
                     signed.deputy or release.deputy)
         actual = (inst["definition"], sorted(inst["serves"]), inst["level"], sorted(inst["grants"]),
@@ -348,6 +358,37 @@ class Gateway:
             opening.task, opening.due, opening.seen = reports.task(person, news), due, news.records
         return opening
 
+    def following_up(self, conn: psycopg.Connection, inst: dict, trigger: dict,
+                     now: datetime) -> Opening:
+        """A run that reminds someone of what they agreed to be reminded of, acting for them."""
+        try:
+            number = int(trigger.get("reminder"))
+        except (TypeError, ValueError):
+            raise HTTPException(400, "name the reminder the run is for") from None
+        row = conn.execute("select * from reminders where id = %s for update", (number,)).fetchone()
+        if row is None:
+            return Opening({"kind": "reminder", "reminder": number}, [], {"reminder": number},
+                           ["there's no such reminder"])
+        person = self.scenario.person(row["person"])
+        opening = Opening(
+            trigger={"kind": "reminder", "reminder": number, "person": row["person"]},
+            acts_for=[row["person"]], args={"reminder": number}, reasons=[],
+            task=reminders.task(row, person) if person and row["confirmed_at"] else None,
+            used=row["reminded_at"] is not None)
+        if person is None:
+            opening.reasons.append("the directory doesn't know them")
+        if row["confirmed_at"] is None:
+            opening.reasons.append("they never confirmed it")
+        if row["cancelled_at"]:
+            opening.reasons.append("it was cancelled")
+        if opening.used:
+            opening.reasons.append("they've been reminded already")
+        if row["instance_id"] != inst["id"]:
+            opening.reasons.append(f"{inst['id']} didn't take it")
+        if now < row["due_at"]:
+            opening.reasons.append("it isn't due yet")
+        return opening
+
     # Cedar entities, built from the core's own records for every call.
 
     @staticmethod
@@ -363,6 +404,14 @@ class Gateway:
             },
             "parents": [],
         }
+
+    @staticmethod
+    def core_tool_entity(name: str) -> dict:
+        """One of a5s's own tools: part of the trusted core's release, and changing no part's data."""
+        return {"uid": {"type": "Tool", "id": name},
+                "attrs": {"name": name, "known": True, "pinned": True, "reads": False,
+                          "writes": False, "destructive": False, "sends_outside": False},
+                "parents": []}
 
     @staticmethod
     def tool_entity(name: str, tool: Tool | None, pins: dict) -> dict:
@@ -492,10 +541,11 @@ def create_app(gw: Gateway) -> FastAPI:
     def open_run(body: OpenRun) -> dict:
         kind = body.trigger.get("kind")
         opens = {"message": gw.answering, "obligation": gw.reminding, "schedule": gw.scheduled,
-                 "report": gw.reporting}
+                 "report": gw.reporting, "reminder": gw.following_up}
         if kind not in opens:
-            raise HTTPException(400, "a run answers a message, reminds someone of an obligation, "
-                                     "works on a schedule, or tells someone about their records")
+            raise HTTPException(400, "a run answers a message, reminds someone of an obligation "
+                                     "or of what they asked, works on a schedule, or tells "
+                                     "someone about their records")
         token = secrets.token_urlsafe(32)
         run_id = str(uuid.uuid4())
         now = gw.clock()
@@ -526,6 +576,9 @@ def create_app(gw: Gateway) -> FastAPI:
                 if fired is None:
                     reasons.append(f"{opening.trigger['schedule']} has fired already")
                     opening.used = True
+            if kind == "reminder" and not reasons:
+                conn.execute("update reminders set reminded_at = %s where id = %s",
+                             (now, opening.trigger["reminder"]))
             if kind == "obligation" and not reasons:
                 conn.execute("update obligations set chased_at = %s, updated_at = %s where id = %s",
                              (now, now, opening.trigger["obligation"]))
@@ -710,6 +763,46 @@ def create_app(gw: Gateway) -> FastAPI:
                         reports.fire(conn, inst["id"], who, report.source, at, now, "nothing new")
         return due
 
+    @app.post("/reminders/sweep", dependencies=[Depends(service)])
+    def sweep_reminders() -> list[dict]:
+        """The reminders people agreed to that are due now, for their agents to give. If an
+        agent can't act, the core reminds them itself, in code, so nothing they asked for is
+        lost to a suspension or a withdrawn release."""
+        now, due, sends = gw.clock(), [], []
+        with db.transaction(gw.url) as conn:
+            runs = not gw.release_problems(conn)
+            for row in conn.execute(
+                    "select * from reminders where confirmed_at is not null and reminded_at is null "
+                    "and cancelled_at is null and due_at <= %s order by due_at, id for update",
+                    (now,)).fetchall():
+                inst = conn.execute("select * from instances where id = %s",
+                                    (row["instance_id"],)).fetchone()
+                if runs and inst["status"] == "active" and not gw.check_instance(conn, inst):
+                    due.append({"kind": "reminder", "reminder": row["id"], "instance": inst["id"],
+                                "agent": row["agent"], "person": row["person"]})
+                    continue
+                conn.execute("update reminders set reminded_at = %s where id = %s", (now, row["id"]))
+                person = gw.scenario.person(row["person"])
+                if person is None or not person.in_audience:
+                    continue  # a5s may not write to them now
+                status = inst["status"] if inst["status"] != "active" else "unable to act"
+                text = reminders.notice(row, person, status)
+                route = gw.reach(conn, person.id, row["agent"])
+                ledger.append(conn, {
+                    "kind": "notice", "action": "remind", "run": None, "instance": inst["id"],
+                    "acts_for": [person.id], "decision": "record",
+                    "args": {"reminder": row["id"], "channel": route["channel"], "chars": len(text),
+                             "sha256": hashlib.sha256(text.encode()).hexdigest()}})
+                if route["channel"] in PUSHED:
+                    sends.append((route, text, inst["id"]))
+                else:  # they collect it from the local channel's inbox
+                    conn.execute("insert into outbox (instance_id, agent, person, channel, text) "
+                                 "values (%s, %s, %s, 'local', %s)",
+                                 (inst["id"], row["agent"], person.id, text))
+        for route, text, instance in sends:
+            deliver(route, text, None, instance)
+        return due
+
     # Instances: anyone with the role can make a5s safer alone.
 
     def who_asks(body: StatusChange) -> tuple[str, str]:
@@ -760,7 +853,7 @@ def create_app(gw: Gateway) -> FastAPI:
         if definition is None or definition.release_id != row["release"]:
             raise HTTPException(409, f"release {row['release']} isn't loaded in this gateway")
         model = gw.models.get(row["model"])
-        tools = gw.scenario.tools()
+        tools = {**gw.scenario.tools(), **reminders.TOOLS}  # a5s's own first
         return {
             "run": row["run"],
             "instance": row["id"],
@@ -782,20 +875,24 @@ def create_app(gw: Gateway) -> FastAPI:
 
     @app.post("/run/tools/{name}")
     def call_tool(name: str, body: ToolArgs, token: str = Depends(run_token)) -> Any:
-        tool = gw.scenario.tools().get(name)
+        core = reminders.TOOLS.get(name)  # a5s's own, on its own records
+        tool = None if core else gw.scenario.tools().get(name)
         args, removed = dict(body.args), 0
-        for field_name in tool.text_fields if tool else ():
+        for field_name in (core or tool).text_fields if (core or tool) else ():
             if isinstance(args.get(field_name), str):
                 args[field_name], dropped = sanitize(args[field_name], gw.scenario.record_links)
                 removed += dropped
         with db.transaction(gw.url) as conn:
             row = load_run(conn, token)
-            decision = gw.decide(row, "call_tool", gw.tool_entity(name, tool, row["pins"]), [])
+            entity = gw.core_tool_entity(name) if core else gw.tool_entity(name, tool, row["pins"])
+            decision = gw.decide(row, "call_tool", entity, [])
             seq = ledger.append(conn, gw.entry(row, "tool", name, decision, args=ledger.mask(args),
                                                links_removed=removed))
         if not decision.allowed:
             return JSONResponse(status_code=403,
                                 content={"denied": True, **decision.as_dict(explain=True)})
+        if core is not None:
+            return call_core_tool(core, args, row, seq)
         try:
             result = tool.run(ToolCall(args=args, instance=row["id"], run=row["run"],
                                        acts_for=tuple(row["acts_for"])))
@@ -806,6 +903,28 @@ def create_app(gw: Gateway) -> FastAPI:
                            "decision": "record", "of": seq, "outcome": outcome})
         if outcome["status"] != "ok":
             return JSONResponse(status_code=502, content={"error": outcome["error"]})
+        return {"result": result, "recorded": recorded}
+
+    def call_core_tool(core: reminders.CoreTool, args: dict, row: dict, seq: int) -> Any:
+        """One of a5s's own tools, in one transaction with what it changes. A rule of a5s's
+        it would break is a denial, in words the agent passes on."""
+        try:
+            with db.transaction(gw.url) as conn:
+                result = core.run(reminders.Call(conn, row, args, gw.clock(), gw.scenario))
+        except reminders.Refused as exc:
+            record({"kind": "tool", "action": core.name, "run": row["run"], "instance": row["id"],
+                    "decision": "record", "of": seq,
+                    "outcome": {"status": "refused", "reason": str(exc)}})
+            return JSONResponse(status_code=403, content={"denied": True, "reasons": [str(exc)],
+                                                          "explanations": [str(exc)]})
+        except Exception as exc:  # noqa: BLE001 - recorded and reported, as for any tool
+            outcome = {"status": "error", "error": f"{type(exc).__name__}: {exc}"[:200]}
+            record({"kind": "tool", "action": core.name, "run": row["run"], "instance": row["id"],
+                    "decision": "record", "of": seq, "outcome": outcome})
+            return JSONResponse(status_code=502, content={"error": outcome["error"]})
+        recorded = record({"kind": "tool", "action": core.name, "run": row["run"],
+                           "instance": row["id"], "decision": "record", "of": seq,
+                           "outcome": {"status": "ok", "result_sha256": ledger.digest(result)}})
         return {"result": result, "recorded": recorded}
 
     @app.post("/run/messages")

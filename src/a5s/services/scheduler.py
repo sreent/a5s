@@ -151,7 +151,7 @@ class Scheduler:
     def _take(self, item: dict) -> dict | None:
         """What's due, with what it needs leased: the person's conversation, for a reminder or
         a report, or the schedule itself."""
-        if item["kind"] in ("obligation", "report"):
+        if item["kind"] in ("obligation", "report", "reminder"):
             key = f"{item['person']}/{item['agent']}/{context.GENERAL}"
         else:
             key = f"schedule/{item['instance']}/{item['schedule']}"
@@ -359,7 +359,7 @@ class Scheduler:
         people, schedules to fire, and reports with something to tell. The core escalates
         overdue obligations as it works this out."""
         found: list[dict] = []
-        for path in ("/obligations/sweep", "/schedules/sweep", "/reports/sweep"):
+        for path in ("/obligations/sweep", "/schedules/sweep", "/reports/sweep", "/reminders/sweep"):
             try:
                 response = self.gw.post(path, headers=self.service)
                 response.raise_for_status()

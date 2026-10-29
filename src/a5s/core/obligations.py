@@ -7,7 +7,8 @@ run that acts for them. If it's still open when due, the core escalates it
 itself, along the person's reporting line, in each recipient's working hours,
 and no sooner than a working day after the reminder or the last escalation. It
 escalates whether or not an agent can act, so suspending or withdrawing an
-agent never silences what's owed.
+agent never silences what's owed. A person who says they're waiting on something
+until a date hears no reminder about it until then, and an escalation says why.
 """
 
 from __future__ import annotations
@@ -149,6 +150,9 @@ def escalation(row: dict, scenario: Scenario, recipient: Person, inst: dict | No
     person = scenario.person(row["person"])
     said = [(f"{row['record']}, {row['title']}, was due on {day(recipient, row['due_at'])} "
              "and is still open."), f"It's {person.name if person else row['person']}'s."]
+    if row.get("waiting_on") and row.get("waiting_noted_at"):
+        said.append(f"On {day(recipient, row['waiting_noted_at'])}, they said they were waiting on "
+                    f"{row['waiting_on']} until {day(recipient, row['waiting_until'])}.")
     if row["chased_at"]:
         said.append(f"The {inst['definition'] if inst else 'agent'} reminded them on "
                     f"{day(recipient, row['chased_at'])}.")
@@ -177,11 +181,13 @@ def chase(row: dict, person: Person) -> str:
 def to_chase(rows: list[dict[str, Any]], scenario: Scenario, now: datetime,
              able: dict[str, bool]) -> list[dict]:
     """The obligations whose agents should remind their people now: half their time has
-    passed, nobody has reminded them or escalated them yet, and it's their working hours."""
+    passed, nobody has reminded them or escalated them yet, they aren't waiting on something
+    until later, and it's their working hours."""
     due = []
     for row in rows:
         person = scenario.person(row["person"])
-        if (person and able.get(row["instance_id"]) and row["chased_at"] is None
+        waiting = row.get("waiting_until") is not None and now < row["waiting_until"]
+        if (person and able.get(row["instance_id"]) and row["chased_at"] is None and not waiting
                 and not row["escalations"] and now >= halfway(row) and working(person, now)):
             due.append({"kind": "obligation", "obligation": row["id"], "instance": row["instance_id"],
                         "agent": row["agent"], "person": row["person"]})
