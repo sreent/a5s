@@ -18,7 +18,7 @@ from zoneinfo import ZoneInfo
 
 import psycopg
 
-from a5s.contract import Person, Scenario
+from a5s.contract import Obligation, Person, Scenario
 from a5s.definitions import Definition
 
 LOCK = 0x0A5_0B16  # one sweep at a time
@@ -61,21 +61,22 @@ def halfway(row: dict) -> datetime:
 
 
 def chain(scenario: Scenario, person: str) -> list[Person]:
-    """The person's reporting line, nearest first."""
+    """The person's reporting line, nearest first, leaving out anyone a5s may not write to."""
     line: list[Person] = []
     seen = {person}
     current = scenario.person(person)
     while current and current.manager and current.manager not in seen:
         seen.add(current.manager)
         current = scenario.person(current.manager)
-        if current:
+        if current and current.in_audience:
             line.append(current)
     return line
 
 
-def sync(conn: psycopg.Connection, scenario: Scenario, definitions: dict[str, Definition],
-         now: datetime) -> None:
-    """Bring the obligations in line with the records, each naming the instance that acts on it.
+def sync(conn: psycopg.Connection, scenario: str, owed: list[Obligation],
+         definitions: dict[str, Definition], now: datetime) -> None:
+    """Bring the obligations in line with what the records owe now, each naming the
+    instance that acts on it.
 
     A new due date, or a record that's open again, is owed afresh. One the
     records no longer give is done.
@@ -91,7 +92,6 @@ def sync(conn: psycopg.Connection, scenario: Scenario, definitions: dict[str, De
         return None
 
     afresh = "(obligations.due_at <> excluded.due_at or obligations.done_at is not null)"
-    owed = scenario.obligations()
     for o in owed:
         conn.execute(
             f"""
@@ -107,13 +107,13 @@ def sync(conn: psycopg.Connection, scenario: Scenario, definitions: dict[str, De
               escalated_to = case when {afresh} then null else obligations.escalated_to end,
               due_at = excluded.due_at, done_at = null
             """,
-            (scenario.name, o.source, o.record, o.person, o.title, o.link, o.opened, o.due,
+            (scenario, o.source, o.record, o.person, o.title, o.link, o.opened, o.due,
              acting(o.source, o.person), now),
         )
     conn.execute(
         "update obligations set done_at = %s, updated_at = %s "
         "where scenario = %s and done_at is null and not (source || '/' || record || '/' || person = any(%s))",
-        (now, now, scenario.name, [f"{o.source}/{o.record}/{o.person}" for o in owed]),
+        (now, now, scenario, [f"{o.source}/{o.record}/{o.person}" for o in owed]),
     )
 
 

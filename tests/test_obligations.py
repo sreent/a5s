@@ -201,3 +201,26 @@ def test_a_withdrawn_instance_leaves_its_obligations_to_escalate(stack):
     stack.scheduler().work_due()
     assert {r["instance_id"] for r in owed(stack).values()} == {None}
     assert not stack.model.requests
+
+
+def test_escalation_skips_anyone_a5s_may_not_write_to(stack, monkeypatch):
+    people = stack.gateway.scenario._people
+    monkeypatch.setitem(people, "omar", replace(people["omar"], in_audience=False))
+    stack.at("2026-11-03T01:00:00+00:00")  # Q-1003 is overdue, and it's working hours in Singapore
+    stack.scheduler().work_due()
+    assert escalations(stack) == [] and stack.inbox("omar") == []
+
+
+def test_records_that_cant_be_read_leave_obligations_as_they_were(stack, monkeypatch):
+    stack.at("2026-10-29T10:00:00+00:00")
+    stack.scheduler().work_due()
+
+    def down():
+        raise ConnectionError("the records system isn't answering")
+
+    monkeypatch.setattr(stack.gateway.scenario, "obligations", down)
+    with stack.client() as c:
+        swept = c.post("/obligations/sweep")
+    assert swept.status_code == 503 and "ConnectionError" in swept.json()["detail"]
+    assert stack.scheduler().work_due() == 0
+    assert all(r["done_at"] is None for r in owed(stack).values())  # nothing owed went unseen

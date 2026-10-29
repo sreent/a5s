@@ -162,7 +162,8 @@ class Scenario(Protocol):
 
     def obligations(self) -> list[Obligation]:
         """What people owe now, from the records: one for each record and person.
-        Something that's done, such as a closed case, owes nothing."""
+        Something that's done, such as a closed case, owes nothing. If the records
+        can't be read, raise: an empty list means nothing is owed."""
 
     def settings(self) -> Settings: ...
 

@@ -490,11 +490,16 @@ def create_app(gw: Gateway) -> FastAPI:
         scheduler to run.
         """
         now, sends, escalated = gw.clock(), [], set()
+        try:
+            owed = gw.scenario.obligations()
+        except Exception as exc:  # the scenario's own systems: nothing changes until they answer
+            log.exception("couldn't read what the records owe")
+            raise HTTPException(503, f"the records can't be read: {type(exc).__name__}") from None
         with db.transaction(gw.url) as conn:
             if not conn.execute("select pg_try_advisory_xact_lock(%s) as got",
                                 (obligations.LOCK,)).fetchone()["got"]:
                 return []  # another sweep is at work
-            obligations.sync(conn, gw.scenario, gw.definitions, now)
+            obligations.sync(conn, gw.scenario.name, owed, gw.definitions, now)
             instances = {i["id"]: i for i in conn.execute("select * from instances")}
             able = {iid: inst["status"] == "active" and not gw.check_instance(conn, inst)
                     for iid, inst in instances.items()}
