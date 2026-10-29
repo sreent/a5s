@@ -1,6 +1,8 @@
 # The sample scenario's settings: which instances exist, whom each serves,
-# and how far each may act. In a real deployment, each version is signed by
-# its owner, and an unsigned one doesn't count.
+# and how far each may act. A version counts only when an instance approver
+# signs it (`a5s sign`), and its serial must rise with every new version.
+
+serial: 1
 
 instances:
   assistant-finance:

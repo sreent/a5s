@@ -11,6 +11,7 @@ entity Instance = {
 
 entity Tool = {
   name: String,
+  known: Bool,
   pinned: Bool,
   reads: Bool,
   writes: Bool,

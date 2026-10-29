@@ -8,16 +8,63 @@ run's LangGraph thread ends with the run: nothing is checkpointed.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from typing import Any
 
 import httpx
 from deepagents import HarnessProfile, create_deep_agent, register_harness_profile
+from langchain.agents.middleware import AgentMiddleware
 from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models.chat_models import BaseChatModel
+from langchain_core.messages import ToolMessage
 from langchain_core.tools import StructuredTool
 from langchain_openai import ChatOpenAI
 
-_NO_SHELL = frozenset({"execute"})
+
+def denial(verdict: dict[str, Any]) -> str:
+    why = verdict.get("explanations") or verdict.get("reasons") or ["not permitted"]
+    return f"Not allowed: {'; '.join(why)}."
+
+
+class GatewayTool(StructuredTool):
+    """A tool that runs at the gateway, which decides each call and records it."""
+
+    gateway: Any = None  # the run's httpx client, holding only the run token
+
+    def explain(self) -> dict[str, Any]:
+        """What policy would say about calling this tool now. If the gateway can't say, no."""
+        try:
+            response = self.gateway.post("/run/explain", json={"action": "call_tool", "name": self.name})
+        except httpx.HTTPError as exc:
+            return {"decision": "deny", "explanations": [f"the gateway couldn't be asked ({exc})"]}
+        if response.status_code != 200:
+            return {"decision": "deny",
+                    "explanations": [f"the gateway couldn't explain it ({response.status_code})"]}
+        return response.json()
+
+
+class ExplainFirst(AgentMiddleware):
+    """Asks the gateway what policy would say before a gateway tool runs.
+
+    A call policy would deny never runs, and the agent gets the reason in words,
+    so it can change course. The gateway still decides every call itself, so
+    this helps the agent and isn't the boundary.
+    """
+
+    def wrap_tool_call(self, request: Any, handler: Callable[[Any], Any]) -> Any:
+        tool = request.tool
+        if isinstance(tool, GatewayTool):
+            verdict = tool.explain()
+            if verdict.get("decision") != "allow":
+                return ToolMessage(content=denial(verdict), tool_call_id=request.tool_call["id"],
+                                   name=tool.name, status="error")
+        return handler(request)
+
+
+# The same for every agent and every subagent, because deepagents passes a
+# profile's middleware to subagents but not an agent's own.
+_PROFILE = HarnessProfile(excluded_tools=frozenset({"execute"}),  # no shell
+                          extra_middleware=(ExplainFirst(),))
 _profiles: set[str] = set()
 
 
@@ -34,29 +81,25 @@ def chat_model(gateway_url: str, token: str, model: dict[str, str]) -> BaseChatM
             disable_streaming=True, max_retries=0, max_tokens=4096,
         )
     key = f"{api}:{alias}"
-    if key not in _profiles:  # a5s workers have no shell to offer the model
-        register_harness_profile(key, HarnessProfile(excluded_tools=_NO_SHELL))
+    if key not in _profiles:
+        register_harness_profile(key, _PROFILE)
         _profiles.add(key)
     return chat
 
 
-def gateway_tool(gw: httpx.Client, definition: dict[str, Any]) -> StructuredTool:
+def gateway_tool(gw: httpx.Client, definition: dict[str, Any]) -> GatewayTool:
     name = definition["name"]
 
     def call(**args: Any) -> str:
         response = gw.post(f"/run/tools/{name}", json={"args": args})
         if response.status_code == 403:
-            body = response.json()
-            why = ", ".join(body.get("reasons") or body.get("errors") or ["not permitted"])
-            return f"Denied by policy ({why})."
+            return denial(response.json())
         if response.status_code >= 400:
             return f"The tool failed: {response.text[:300]}"
         return json.dumps(response.json()["result"], ensure_ascii=False)
 
-    return StructuredTool(
-        name=name, description=definition["description"],
-        args_schema=definition["schema"], func=call,
-    )
+    return GatewayTool(name=name, description=definition["description"],
+                       args_schema=definition["schema"], func=call, gateway=gw)
 
 
 def text_of(message: Any) -> str:

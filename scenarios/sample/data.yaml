@@ -1,7 +1,7 @@
 # Made-up people and records for a5s's sample scenario.
 
 people:
-  - {id: ana, name: Ana Ortiz, team: finance}
+  - {id: ana, name: Ana Ortiz, team: finance, roles: [instance-approver]}
   - {id: ben, name: Ben Okafor, team: finance}
   - {id: chen, name: Chen Wei, team: operations}
 

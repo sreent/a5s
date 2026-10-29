@@ -15,7 +15,7 @@ def instance(status="active", level=1, grants=("search_records", "create_draft")
 def tool(name="search_records", writes=False, pinned=True):
     return {
         "uid": {"type": "Tool", "id": name},
-        "attrs": {"name": name, "pinned": pinned, "reads": True, "writes": writes,
+        "attrs": {"name": name, "known": True, "pinned": pinned, "reads": True, "writes": writes,
                   "destructive": False, "sends_outside": False},
         "parents": [],
     }

@@ -75,14 +75,14 @@ You need Python 3.12 or later, [uv](https://docs.astral.sh/uv/), Postgres 16, an
 ```sh
 uv sync
 uv run a5s up        # a local Postgres, the schema and a service token
-uv run a5s apply     # the assistant, from agents/ and the sample scenario's settings
+uv run a5s apply     # the assistant, from agents/ and the sample's signed settings
 uv run a5s gateway & # the gateway, on port 8700
 uv run a5s say --as ana assistant "Which customer questions are still open?"
 uv run a5s ledger tail
 uv run a5s ledger verify
 ```
 
-`uv run pytest` runs the tests against a scripted model, and `uv run pytest -m live` against the real providers.
+To change the settings, edit [`settings.yaml`](scenarios/sample/settings.yaml), raise its serial, and sign the new version with `uv run a5s sign --as ana` before applying it. `uv run pytest` runs the tests against a scripted model, and `uv run pytest -m live` against the real providers.
 
 ## Documents
 

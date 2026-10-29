@@ -13,19 +13,23 @@ from typing import Any
 
 import cedarpy
 
+_DEFAULT_DENY = "nothing permits it, such as a tool outside the instance's grant"
+
 
 @dataclass(frozen=True)
 class Decision:
     allowed: bool
     reasons: tuple[str, ...]  # the names of the policies that decided
     errors: tuple[str, ...] = ()
+    explanations: tuple[str, ...] = ()  # the same, in words, for the agent and for people
 
     @property
     def label(self) -> str:
         return "allow" if self.allowed else "deny"
 
-    def as_dict(self) -> dict[str, Any]:
-        return {"decision": self.label, "reasons": list(self.reasons), "errors": list(self.errors)}
+    def as_dict(self, explain: bool = False) -> dict[str, Any]:
+        out = {"decision": self.label, "reasons": list(self.reasons), "errors": list(self.errors)}
+        return {**out, "explanations": list(self.explanations)} if explain else out
 
 
 def base_pack() -> str:
@@ -55,10 +59,9 @@ class PolicyEngine:
             raise ValueError(f"the policies don't match a5s's schema: {problems}")
         self._schema = cedarpy.Schema.from_str(schema())
         self.version = hashlib.sha256(self.text.encode()).hexdigest()[:16]
-        self._names = {
-            pid: p.get("annotations", {}).get("id", pid)
-            for pid, p in _statements(self.text).items()
-        }
+        statements = _statements(self.text)
+        self._names = {pid: p.get("annotations", {}).get("id", pid) for pid, p in statements.items()}
+        self._words = {pid: p.get("annotations", {}).get("reason") for pid, p in statements.items()}
         self._policies = cedarpy.PolicySet.from_str(self.text)
 
     def decide(
@@ -79,9 +82,13 @@ class PolicyEngine:
         try:
             result = cedarpy.is_authorized(request, self._policies, entities, schema=self._schema)
         except Exception as exc:  # noqa: BLE001 - anything unexpected fails closed
-            return Decision(False, (), (f"policy could not run: {exc}",))
-        reasons = tuple(self._names.get(pid, pid) for pid in result.diagnostics.reasons)
+            return Decision(False, (), (f"policy could not run: {exc}",),
+                            ("a5s couldn't check the call, so it's denied",))
+        pids = result.diagnostics.reasons
+        reasons = tuple(self._names.get(pid, pid) for pid in pids)
+        words = tuple(self._words.get(pid) or self._names.get(pid, pid) for pid in pids)
         errors = tuple(str(e) for e in result.diagnostics.errors)
         if errors:
-            return Decision(False, reasons, errors)
-        return Decision(bool(result.allowed), reasons)
+            return Decision(False, reasons, errors, ("a5s couldn't check the call, so it's denied",))
+        allowed = bool(result.allowed)
+        return Decision(allowed, reasons, (), words or (() if allowed else (_DEFAULT_DENY,)))

@@ -48,7 +48,7 @@ A scenario plugs into a5s by providing these, or by taking a5s's defaults:
 | Interface | Gives a5s | a5s's default |
 | --- | --- | --- |
 | Directory | People, the roles they hold, their teams, reporting lines and working hours, and what each may see, for any record | The organisation's identity provider, such as Entra ID, Google Cloud Identity or Okta, with roles assigned as groups |
-| Settings | Parts and their owners and delegates, how far each agent may act in each part and type of action, limits, sensitive fields, classes of data, the escalation chain, who agents may talk to, and the scenario's switches. Each version is signed by its owner, and an unsigned one doesn't count. | a5s's settings store, with signed versions [TBC: edited through a simple app, or in git] |
+| Settings | Parts and their owners and delegates, how far each agent may act in each part and type of action, limits, sensitive fields, classes of data, the escalation chain, who agents may talk to, and the scenario's switches. Each version is signed by its owner, and an unsigned one doesn't count. Its serial only rises, so an older version can't be replayed. | a5s's settings store, with signed versions [TBC: edited through a simple app, or in git] |
 | Tools | The systems agents use, as MCP servers, with each tool's risk attributes | None |
 | Records | Where obligations come from, such as cases past their due time, and the events that wake agents | None |
 | Governed process | Where agents' requests to change data go, and who decides them | Held proposals in a5s itself, from phase 2 |

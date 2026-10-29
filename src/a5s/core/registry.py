@@ -2,12 +2,40 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
+from dataclasses import dataclass, field
+
 import psycopg
 from psycopg.types.json import Jsonb
 
-from a5s.contract import Settings, Tool
-from a5s.core import ledger
+from a5s.contract import INSTANCE_APPROVER, Person, Settings, Tool
+from a5s.core import ledger, signing
 from a5s.definitions import Definition
+
+Directory = Callable[[str], Person | None]
+
+
+def signers(settings: Settings, directory: Directory) -> tuple[list[str], list[str]]:
+    """Who validly signed this version, and what's wrong with any other signature."""
+    valid, problems = [], []
+    for sig in settings.signatures:
+        person = directory(sig.signer)
+        if person is None:
+            problems.append(f"{sig.signer} isn't in the directory")
+        elif INSTANCE_APPROVER not in person.roles:
+            problems.append(f"{sig.signer} doesn't hold the {INSTANCE_APPROVER} role")
+        elif not person.public_key or not signing.verify(person.public_key, settings.raw, sig.value):
+            problems.append(f"{sig.signer}'s signature isn't for this version")
+        else:
+            valid.append(sig.signer)
+    return valid, problems
+
+
+@dataclass
+class Applied:
+    instances: list[str] = field(default_factory=list)
+    signers: list[str] = field(default_factory=list)
+    refused: list[str] = field(default_factory=list)  # why this version doesn't count
 
 
 def apply(
@@ -15,13 +43,39 @@ def apply(
     definitions: dict[str, Definition],
     settings: Settings,
     tools: dict[str, Tool],
-) -> list[str]:
-    """Bring instances in line with the settings and the current releases.
+    directory: Directory,
+    scenario: str,
+) -> Applied:
+    """Bring instances in line with a signed version of the settings and the current releases.
 
-    An instance's status is the core's own data, so applying settings never
-    resumes a suspended instance.
+    An unsigned version doesn't count, and neither does one older than the
+    version in force. An instance's status is the core's own data, so applying
+    settings never resumes a suspended instance.
     """
-    applied = []
+    valid, problems = signers(settings, directory)
+    refused = [] if valid else [f"no {INSTANCE_APPROVER} signed this version", *problems]
+    last = conn.execute(
+        "select serial, version from settings_versions where scenario = %s "
+        "order by serial desc limit 1",
+        (scenario,),
+    ).fetchone()
+    if last and settings.serial < last["serial"]:
+        refused.append(f"serial {settings.serial} is older than {last['serial']}, the version in force")
+    if last and settings.serial == last["serial"] and settings.version != last["version"]:
+        refused.append(f"serial {settings.serial} already belongs to another version")
+    version = {"settings": settings.version, "serial": settings.serial}
+    if refused:
+        ledger.append(conn, {"kind": "admin", "action": "apply", "decision": "deny",
+                             "reasons": refused, "args": version})
+        return Applied(signers=valid, refused=refused)
+    if not last or last["serial"] != settings.serial:
+        conn.execute(
+            "insert into settings_versions (scenario, serial, version, signers) "
+            "values (%s, %s, %s, %s)",
+            (scenario, settings.serial, settings.version, valid),
+        )
+
+    applied = Applied(signers=valid)
     for s in settings.instances:
         definition = definitions.get(s.definition)
         if definition is None:
@@ -56,15 +110,17 @@ def apply(
                 "instance": s.id,
                 "decision": "record",
                 "args": {
+                    **version,
+                    "signed_by": valid,
+                    "ignored_signatures": problems,
                     "release": definition.release_id,
                     "level": level,
                     "grants": grants,
                     "model": definition.model,
-                    "settings": settings.version,
                 },
             },
         )
-        applied.append(s.id)
+        applied.instances.append(s.id)
     return applied
 
 

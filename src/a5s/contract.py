@@ -13,6 +13,8 @@ from typing import Any, Protocol
 
 from a5s.core.ledger import canonical
 
+INSTANCE_APPROVER = "instance-approver"  # approves instances with no parts, and sets their level
+
 
 @dataclass(frozen=True)
 class Person:
@@ -20,6 +22,8 @@ class Person:
     name: str
     team: str
     in_audience: bool = True  # whether agents may message them at all
+    roles: tuple[str, ...] = ()
+    public_key: str | None = None  # for checking what they sign
 
 
 @dataclass(frozen=True)
@@ -77,9 +81,18 @@ class InstanceSettings:
 
 
 @dataclass(frozen=True)
+class Signature:
+    signer: str
+    value: str
+
+
+@dataclass(frozen=True)
 class Settings:
     version: str
     instances: tuple[InstanceSettings, ...] = field(default_factory=tuple)
+    serial: int = 0  # rises with every version, so an older one can't be replayed
+    raw: bytes = b""  # exactly what was signed
+    signatures: tuple[Signature, ...] = ()
 
 
 class Scenario(Protocol):

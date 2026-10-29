@@ -54,15 +54,16 @@ Step 1, the walking skeleton, runs locally against the sample scenario, with Dee
 | The scheduler, with a lease per conversation, and conversations that each fresh run reads | [`services/`](../src/a5s/services/) |
 | A Deep Agents worker with no credentials and no shell, whose thread ends with the run | [`worker.py`](../src/a5s/worker.py) |
 | Suspension that stops the next call, even in a running run, and resuming only by whoever suspended | [`core/registry.py`](../src/a5s/core/registry.py) |
+| Signed settings: a version counts only when someone the directory names as an instance approver signs it, and its serial must rise, so an older, looser version can't be replayed. A run won't open for an instance whose settings nobody signed. | [`core/signing.py`](../src/a5s/core/signing.py), [`core/registry.py`](../src/a5s/core/registry.py) |
+| The middleware that asks the gateway to explain a tool call before making it. A call policy would deny never runs, the agent hears why in words, and the denial is recorded. It reaches subagents too. | [`worker.py`](../src/a5s/worker.py) |
 | The sample scenario, with three people, customer questions and a store for drafts | [`scenarios/sample/`](../scenarios/sample/) |
-| 36 tests against a real Postgres and a scripted model, and live tests through DeepSeek's and Qwen's OpenAI-compatible APIs and DeepSeek's Anthropic-compatible one | [`tests/`](../tests/) |
+| 48 tests against a real Postgres and a scripted model, and live tests through DeepSeek's and Qwen's OpenAI-compatible APIs and DeepSeek's Anthropic-compatible one | [`tests/`](../tests/) |
 
 Still to do in step 1:
 
-- signed settings, so an unsigned version doesn't count;
 - the Teams channel, which needs a bot registered in your Entra ID tenant. With it, the core checks each message's sender against the channel's signed identity. Until then, the local channel trusts the scheduler's word for who sent a message, so it's for development only;
-- deploying the same build to Azure, Google Cloud and AWS, which needs your accounts there;
-- the middleware that asks the gateway to explain a call before making it. The gateway's explain endpoint is built.
+- container images for the gateway and the agents, run and tested as a stack here, which are what each cloud runs;
+- deploying those images to Azure, Google Cloud and AWS, which needs your accounts there.
 
 ## Done means
 

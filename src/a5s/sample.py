@@ -13,7 +13,7 @@ from typing import Any
 import yaml
 
 from a5s import db
-from a5s.contract import InstanceSettings, Person, Settings, Tool, ToolCall
+from a5s.contract import InstanceSettings, Person, Settings, Signature, Tool, ToolCall
 
 LINK = "https://sample.a5s.dev/"
 
@@ -26,10 +26,17 @@ class SampleScenario:
         self.folder = folder
         self.database_url = database_url
         data = yaml.safe_load((folder / "data.yaml").read_text())
-        self._people = {p["id"]: Person(**p) for p in data["people"]}
+        self._people = {p["id"]: self._person(p) for p in data["people"]}
         self._records = {r["key"]: r for r in data["records"]}
 
     # Directory
+
+    def _person(self, entry: dict) -> Person:
+        key = self.folder / "keys" / f"{entry['id']}.pub"
+        return Person(
+            **{**entry, "roles": tuple(entry.get("roles", ()))},
+            public_key=key.read_text().strip() if key.exists() else None,
+        )
 
     def person(self, person_id: str) -> Person | None:
         return self._people.get(person_id)
@@ -39,8 +46,14 @@ class SampleScenario:
     def settings(self) -> Settings:
         raw = (self.folder / "settings.yaml").read_bytes()
         data = yaml.safe_load(raw)
+        sig_file = self.folder / "settings.sig"
+        signed = yaml.safe_load(sig_file.read_text()) if sig_file.exists() else None
         return Settings(
             version=hashlib.sha256(raw).hexdigest()[:16],
+            serial=int(data.get("serial", 0)),
+            raw=raw,
+            signatures=tuple(Signature(s["signer"], s["value"])
+                             for s in (signed or {}).get("signatures", [])),
             instances=tuple(
                 InstanceSettings(
                     id=iid,

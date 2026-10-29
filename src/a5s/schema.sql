@@ -32,6 +32,16 @@ create table if not exists runs (
   outcome text
 );
 
+-- Signed versions of each scenario's settings. Serials only ever rise.
+create table if not exists settings_versions (
+  scenario text not null,
+  serial bigint not null,
+  version text not null,
+  signers text[] not null,
+  applied_at timestamptz not null default now(),
+  primary key (scenario, serial)
+);
+
 -- Each entry is canonical JSON, chained to the one before by its hash.
 create table if not exists ledger (
   seq bigint primary key,

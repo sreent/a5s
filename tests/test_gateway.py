@@ -128,3 +128,30 @@ def test_when_the_database_is_down_calls_are_denied(stack):
 def test_sanitize_drops_lookalike_links():
     text, removed = sanitize("https://sample.a5s.dev.evil.example/x", ("https://sample.a5s.dev/",))
     assert removed == 1 and "evil" not in text
+
+
+def test_explain_says_why_in_words_and_records_only_denials(stack):
+    run, token = stack.open_run()
+    with db.transaction(stack.cfg.database_url) as conn:
+        conn.execute("update instances set level = 0")
+    with stack.client(token) as c:
+        allowed = c.post("/run/explain", json={"action": "call_tool", "name": "search_records"})
+        denied = c.post("/run/explain", json={"action": "call_tool", "name": "create_draft"})
+        unknown = c.post("/run/explain", json={"action": "call_tool", "name": "delete_everything"})
+    assert allowed.json()["decision"] == "allow"
+    assert denied.json()["reasons"] == ["level-0-only-observes"]
+    assert denied.json()["explanations"] == [
+        "at level 0 the agent only observes, so it can't use a tool that writes"]
+    assert unknown.json()["explanations"] == [
+        "nothing permits it, such as a tool outside the instance's grant"]
+    recorded = [(e["kind"], e["action"]) for e in stack.ledger(run) if e["kind"] == "explain"]
+    assert recorded == [("explain", "create_draft"), ("explain", "delete_everything")]
+
+
+def test_a_granted_tool_the_scenario_no_longer_has_is_refused(stack):
+    with db.transaction(stack.cfg.database_url) as conn:
+        conn.execute("update instances set grants = array_append(grants, 'retired_tool')")
+    _, token = stack.open_run()
+    with stack.client(token) as c:
+        r = c.post("/run/tools/retired_tool", json={"args": {}})
+    assert r.status_code == 403 and r.json()["reasons"] == []

@@ -64,9 +64,11 @@ def test_suspending_mid_run_stops_the_next_call(stack):
 
     assert reply.startswith("I couldn't finish that.")
     assert len(stack.model.requests) == 1  # the model is never called again
-    denied = [e for e in stack.ledger() if e["decision"] == "deny"]
-    assert denied and denied[0]["kind"] == "tool"
-    assert "only-active-instances-act" in denied[0]["reasons"]
+    denied = [(e["kind"], e["action"], e["reasons"]) for e in stack.ledger() if e["decision"] == "deny"]
+    assert denied == [
+        ("explain", "search_records", ["only-active-instances-act"]),  # so the tool never ran
+        ("model", "fake", ["only-active-instances-act"]),
+    ]
 
 
 def test_a_suspended_agent_answers_from_code_not_the_model(stack):
@@ -83,3 +85,44 @@ def test_people_outside_the_directory_or_the_instance_get_no_agent(stack):
     assert scheduler.handle_message(person="chen", agent="assistant", text="hi") == (
         "There's no assistant for you yet.")
     assert not stack.model.requests
+
+
+def set_level(stack, level: int) -> None:
+    with db.transaction(stack.cfg.database_url) as conn:
+        conn.execute("update instances set level = %s", (level,))
+
+
+def tool_calls(stack, name: str) -> list[dict]:
+    return [e for e in stack.ledger() if e["kind"] == "tool" and e["action"] == name]
+
+
+def test_a_call_policy_would_deny_never_runs_and_the_agent_hears_why(stack):
+    set_level(stack, 0)
+    stack.model.reply(None, ("create_draft", {"title": "Re: Q-1001", "body": "Sorry about that."}))
+    stack.model.reply("I can't save drafts at the moment.")
+
+    reply = stack.scheduler().handle_message(person="ana", agent="assistant", text="Draft a reply")
+
+    assert reply == "I can't save drafts at the moment."
+    assert tool_calls(stack, "create_draft") == []  # the gateway never ran it
+    explained = [e for e in stack.ledger() if e["kind"] == "explain"]
+    assert [e["reasons"] for e in explained] == [["level-0-only-observes"]]
+    told = str(stack.model.requests[1]["body"]["messages"])
+    assert "at level 0 the agent only observes" in told
+
+
+def test_subagents_ask_first_too(stack):
+    set_level(stack, 0)
+    stack.model.reply(None, ("task", {"description": "Save a draft reply about Q-1001.",
+                                      "subagent_type": "general-purpose"}))
+    stack.model.reply(None, ("create_draft", {"title": "Re: Q-1001", "body": "Sorry."}))
+    stack.model.reply("I wasn't allowed to save the draft.")
+    stack.model.reply("The draft couldn't be saved.")
+
+    reply = stack.scheduler().handle_message(person="ana", agent="assistant", text="Draft it")
+
+    assert reply == "The draft couldn't be saved."
+    offered_to_subagent = stack.model.tool_names(1)
+    assert "create_draft" in offered_to_subagent and "execute" not in offered_to_subagent
+    assert tool_calls(stack, "create_draft") == []
+    assert [e["action"] for e in stack.ledger() if e["kind"] == "explain"] == ["create_draft"]

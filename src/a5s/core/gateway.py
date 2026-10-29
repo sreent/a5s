@@ -86,7 +86,7 @@ class Gateway:
         pinned = tool is not None and pins.get(name) == tool.schema_hash
         return {
             "uid": {"type": "Tool", "id": name},
-            "attrs": {"name": name, "pinned": pinned, **risk},
+            "attrs": {"name": name, "known": tool is not None, "pinned": pinned, **risk},
             "parents": [],
         }
 
@@ -199,6 +199,10 @@ def create_app(gw: Gateway) -> FastAPI:
                 reasons.append(f"{body.instance} is {inst['status']}")
             if any(p not in inst["serves"] for p in acts_for):
                 reasons.append(f"{body.instance} doesn't serve {sender}")
+            signed = conn.execute("select 1 from settings_versions where version = %s",
+                                  (inst["settings_version"],)).fetchone()
+            if signed is None:
+                reasons.append(f"{body.instance}'s settings aren't a signed version")
             if not reasons:
                 conn.execute(
                     "insert into runs (id, instance_id, token_hash, trigger, acts_for) "
@@ -281,13 +285,16 @@ def create_app(gw: Gateway) -> FastAPI:
 
     @app.post("/run/explain")
     def explain(body: Explain, token: str = Depends(run_token)) -> dict:
-        """What policy would say, without making or recording the call."""
-        with db.transaction(gw.url) as conn:
-            row = load_run(conn, token)
+        """What policy would say about a call, without making it. Denials are recorded."""
         if body.action != "call_tool":
             raise HTTPException(400, "phase 1 explains tool calls only")
         tool = gw.scenario.tools().get(body.name)
-        return gw.decide(row, "call_tool", gw.tool_entity(body.name, tool, row["pins"]), []).as_dict()
+        with db.transaction(gw.url) as conn:
+            row = load_run(conn, token)
+            decision = gw.decide(row, "call_tool", gw.tool_entity(body.name, tool, row["pins"]), [])
+            if not decision.allowed:
+                ledger.append(conn, gw.entry(row, "explain", body.name, decision))
+        return decision.as_dict(explain=True)
 
     @app.post("/run/tools/{name}")
     def call_tool(name: str, body: ToolArgs, token: str = Depends(run_token)) -> Any:
@@ -297,7 +304,8 @@ def create_app(gw: Gateway) -> FastAPI:
             decision = gw.decide(row, "call_tool", gw.tool_entity(name, tool, row["pins"]), [])
             seq = ledger.append(conn, gw.entry(row, "tool", name, decision, args=ledger.mask(body.args)))
         if not decision.allowed:
-            return JSONResponse(status_code=403, content={"denied": True, **decision.as_dict()})
+            return JSONResponse(status_code=403,
+                                content={"denied": True, **decision.as_dict(explain=True)})
         try:
             result = tool.run(ToolCall(args=body.args, instance=row["id"], run=row["run"],
                                        acts_for=tuple(row["acts_for"])))
@@ -335,7 +343,8 @@ def create_app(gw: Gateway) -> FastAPI:
                     (row["run"], row["id"], body.to, row["trigger"].get("channel", "local"), text),
                 )
         if not decision.allowed:
-            return JSONResponse(status_code=403, content={"denied": True, **decision.as_dict()})
+            return JSONResponse(status_code=403,
+                                content={"denied": True, **decision.as_dict(explain=True)})
         return {"sent": True, "text": text, "links_removed": removed}
 
     # The model gateway, in both API styles.
@@ -362,7 +371,7 @@ def create_app(gw: Gateway) -> FastAPI:
             }, provider=model.provider if model else None))
         if not decision.allowed:
             return JSONResponse(status_code=403, content=models.error_body(
-                api, "denied by policy: " + (", ".join(decision.reasons or decision.errors) or "not permitted")))
+                api, "denied by policy: " + "; ".join(decision.explanations)))
         try:
             status, data = models.forward(model, body, gw.http)
         except models.ModelUnavailable as exc:

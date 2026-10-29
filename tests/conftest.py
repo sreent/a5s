@@ -179,7 +179,9 @@ def running(database: str, root: Path, http: httpx.Client, model: FakeModel) -> 
     gw = Gateway(cfg, scenario, PolicyEngine(), load_models(cfg.models_file),
                  definitions.load_all(cfg.agents_dir), http)
     with db.transaction(database) as conn:
-        registry.apply(conn, gw.definitions, scenario.settings(), scenario.tools())
+        applied = registry.apply(conn, gw.definitions, scenario.settings(), scenario.tools(),
+                                 scenario.person, scenario.name)
+    assert not applied.refused, applied.refused
     with serve(create_app(gw), port):
         yield Stack(cfg, gw, model)
 

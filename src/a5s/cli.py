@@ -9,10 +9,11 @@ import sys
 from pathlib import Path
 
 import httpx
+import yaml
 
 from a5s import build, db, definitions, devdb
 from a5s.config import DEFAULT_DATABASE_URL, Config
-from a5s.core import ledger, registry
+from a5s.core import ledger, registry, signing
 from a5s.services import channels
 from a5s.services.scheduler import Scheduler
 
@@ -34,8 +35,38 @@ def _dev_up(root: Path) -> None:
 def _apply(cfg: Config) -> None:
     sc = build.scenario(cfg)
     with db.transaction(cfg.database_url) as conn:
-        applied = registry.apply(conn, definitions.load_all(cfg.agents_dir), sc.settings(), sc.tools())
-    print("Applied:", ", ".join(applied))
+        result = registry.apply(conn, definitions.load_all(cfg.agents_dir), sc.settings(),
+                                sc.tools(), sc.person, sc.name)
+    if result.refused:
+        sys.exit("Not applied, because " + "; ".join(result.refused) + ".")
+    print(f"Applied {', '.join(result.instances)}, signed by {', '.join(result.signers)}.")
+
+
+def _keygen(person: str, folder: Path) -> None:
+    private, public = signing.keypair()
+    folder.mkdir(parents=True, exist_ok=True)
+    key = folder / f"{person}.key"
+    key.write_text(private + "\n")
+    key.chmod(0o600)
+    (folder / f"{person}.pub").write_text(public + "\n")
+    print(f"Wrote {key}, which stays with {person}, and {person}.pub for the directory.")
+
+
+def _sign(cfg: Config, person: str, key: Path | None) -> None:
+    folder = cfg.scenario_dir
+    key = key or folder / "keys" / f"{person}.key"
+    raw = (folder / "settings.yaml").read_bytes()
+    value = signing.sign(key.read_text().strip(), raw)
+    sig_file = folder / "settings.sig"
+    current = yaml.safe_load(sig_file.read_text()) if sig_file.exists() else None
+    others = [s for s in (current or {}).get("signatures", []) if s["signer"] != person]
+    sig_file.write_text(
+        "# Signatures over settings.yaml, made with `a5s sign`. Change the settings,\n"
+        "# and these no longer match: the new version needs signing again.\n"
+        + yaml.safe_dump({"signatures": [*others, {"signer": person, "value": value}]},
+                         sort_keys=False)
+    )
+    print(f"{person} signed this version of the settings.")
 
 
 def _pin(cfg: Config, agent: str) -> None:
@@ -70,6 +101,12 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("apply", help="bring instances in line with the settings and releases")
     pin = sub.add_parser("pin", help="pin the schemas of an agent's tools in its release")
     pin.add_argument("agent")
+    keygen = sub.add_parser("keygen", help="make a signing key for a person")
+    keygen.add_argument("person")
+    keygen.add_argument("--out", type=Path, default=Path("keys"))
+    sign = sub.add_parser("sign", help="sign the current settings, as a person")
+    sign.add_argument("--as", dest="person", required=True)
+    sign.add_argument("--key", type=Path, help="their private key (default: the sample's)")
     gateway = sub.add_parser("gateway", help="run the gateway")
     gateway.add_argument("--port", type=int, default=8700)
     say = sub.add_parser("say", help="send an agent a message, as a person")
@@ -90,6 +127,8 @@ def main(argv: list[str] | None = None) -> None:
         return _dev_up(root)
     if args.command == "down":
         return devdb.stop(root / ".a5s" / "pg")
+    if args.command == "keygen":
+        return _keygen(args.person, args.out)
     cfg = Config.from_env()
     if args.command == "migrate":
         db.migrate(cfg.database_url)
@@ -97,6 +136,8 @@ def main(argv: list[str] | None = None) -> None:
         _apply(cfg)
     elif args.command == "pin":
         _pin(cfg, args.agent)
+    elif args.command == "sign":
+        _sign(cfg, args.person, args.key)
     elif args.command == "gateway":
         import uvicorn
 
