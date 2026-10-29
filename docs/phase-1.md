@@ -66,8 +66,9 @@ Step 1, the walking skeleton, runs locally against the sample scenario, with Dee
 
 Still to do in step 1:
 
-- registering a5s's bot in your Entra ID tenant and adding it to Teams, which needs your tenant. Until then, Teams is tested against a fake of the Bot Framework, and people can send messages through the local channel, signed in through the identity provider;
-- deploying the image to Azure, Google Cloud and AWS, on each one's container service with managed Postgres, which needs your accounts there.
+- schedules and obligations: the scheduler answers messages only, so far;
+- registering a5s's bots in your Entra ID tenant and adding them to Teams, which needs your tenant. Until then, Teams is tested against a fake of the Bot Framework, and people can send messages through the local channel, signed in through the identity provider;
+- the infrastructure code that deploys the image to Azure, Google Cloud and AWS with managed Postgres, which needs your accounts there to test. The containers run locally with compose, and whether the clouds run them on Kubernetes or on each cloud's own container service is still to decide.
 
 ## Done means
 

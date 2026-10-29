@@ -409,17 +409,6 @@ def create_app(gw: Gateway) -> FastAPI:
             raise HTTPException(403, problem)
         return {"resumed": instance, "by": by}
 
-    @app.get("/ledger", dependencies=[Depends(service)])
-    def read_ledger(run: str | None = None, limit: int = 100) -> list[dict]:
-        with db.transaction(gw.url) as conn:
-            return ledger.entries(conn, run=run, limit=limit)
-
-    @app.get("/ledger/verify", dependencies=[Depends(service)])
-    def verify_ledger() -> dict:
-        with db.transaction(gw.url) as conn:
-            result = ledger.verify(conn)
-        return result.__dict__
-
     # What a worker may ask, with its run token.
 
     @app.get("/run")

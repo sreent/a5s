@@ -1,6 +1,6 @@
 # Agent Model
 
-**Status:** Draft v0.2, design only · **Under:** [Architecture](architecture.md)
+**Status:** Draft v0.3. Phase 1's first step is built ([progress](phase-1.md#progress)) · **Under:** [Architecture](architecture.md)
 
 ## Definitions, releases, instances, conversations and runs
 

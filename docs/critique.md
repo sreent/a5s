@@ -1,10 +1,11 @@
 # Design Critique
 
-**Status:** Rounds 1 to 3, 28 October 2026 · **Design:** [a5s](../README.md)
+**Status:** Rounds 1 to 4, 29 October 2026 · **Design:** [a5s](../README.md)
 
 Every change to the design gets an adversarial review before it settles. Reviewers who didn't write the design read it cold, each from one angle, and each finding is checked against the documents before it's accepted. This page records the findings about a5s, how the design answers them now, and what each round removed.
 
-- **Designed** means the design stops it, and a test in a5s's own suite will show it once it's built. Nothing is built yet, so nothing is closed.
+- **Designed** means the design stops it, and a test in a5s's own suite will show it once it's built.
+- **Fixed** means the code stops it, and a test in a5s's own suite shows it. Round 4 is the first round of findings about code.
 - **Phase 2** and **Phase 3** mean it's designed for a feature that comes in that phase. Until then, neither the feature nor the loophole exists.
 - **Accepted** marks what's left once the design has done what it can: a risk its owner accepts under [accepted risks](#accepted-risks).
 - **Removed** means a later round removed the control the finding was about.
@@ -27,6 +28,7 @@ Every round reports the rules it added and the rules it removed, and proposes cu
 - **Round 1** found 45 loopholes and **round 2** found 21. Both read a5s through its first scenario, a master data governance framework, so many findings were about that scenario's own controls, and every answer added rules to a5s. Neither removed anything, and the design doubled in size.
 - **Round 3** read the design with fresh eyes and found it had drifted into that scenario. It cut a5s back to a small trusted core, a scenario contract and a phase-1 plan ([below](#round-3-fresh-eyes)). A consistency read then fixed the gaps between the documents.
 - **Then the scenario was removed** from a5s, with the findings that were only about its controls, so that a5s's design depends on no one scenario. The findings below are those about a5s itself, in general terms.
+- **Round 4** read the code phase 1's first step built, with three reviewers who hadn't written it, from all six angles. It found 22 problems, two of them critical, and removed the parts that let services stand between people and the core ([below](#round-4-the-code)).
 
 ## Findings about a5s
 
@@ -145,6 +147,42 @@ What round 3 and what followed changed:
 - **The consistency read** found that a compromised worker could claim whom a run acts for, so the core now keeps each run's envelope itself, and that a check could be stopped without its assurance agreeing, so a scenario can now mark an agent as a check.
 - **The first scenario,** its findings and its accepted risks then left a5s altogether.
 
+## Round 4: the code
+
+Three reviewers who hadn't written the code read it cold: one as an outside attacker and an insider, one for failure and for the team that builds and runs it, and one as a colleague and the author of a second scenario. Each traced every finding to the code and reproduced most of them in tests. Where two or three reviewers found the same thing, it's one finding here.
+
+| # | Finding | Severity | How the code answers it | Status |
+| --- | --- | --- | --- | --- |
+| B1 | Every part connected as the Postgres superuser that owns the core's tables, so a compromised service could forge a Teams message, open a run with its own token, lift a suspension or truncate the ledger | Critical | Each part connects as its own role, with only the rights its job needs. The core's tables belong to a role nobody logs in as, and no role may change, delete or truncate the ledger | Fixed |
+| B2 | The core never checked signed settings itself. An instance the settings left out kept running, an older signed version could be put back, and editing the database widened an instance (found by all three) | Critical | The core checks the signed bytes whenever a run opens, requires the latest version, and refuses an instance whose record differs from them, its release or the ledger's last status change. A version that leaves an instance out retires it | Fixed |
+| B3 | Without an identity provider, the core took anyone's word. Workers could reach the local channel, and sign-in tokens passed through the scheduler could be replayed | High | Every message arrives at the core, which checks the sender and records the message. A run takes its sender from that record, the scheduler has no port, and taking people's word must be asked for, in development | Fixed |
+| B4 | Anyone with the service token could lift anyone's suspension, by typing their name (found by two) | High | Suspending and resuming take the person from their sign-in, and the first suspender's suspension stands | Fixed |
+| B5 | A run with no sender could answer anyone's Teams message, again and again | High | A run answers a message the core recorded, takes its sender from it, and can use it once | Fixed |
+| B6 | A message the scheduler had claimed vanished, without a word, if the scheduler stopped, the gateway was down or a call failed (found by two) | High | Taking a message takes its conversation's lease, renewed while the scheduler works. A lapsed lease puts the message back, and when the core can't be reached, the message waits and is tried again | Fixed |
+| B7 | Nothing let another scenario plug in: a5s always built the sample, and the reference agent named the sample's people | High | A5S_SCENARIO names the scenario, each instance's owner and deputy come from the signed settings, and a release that needs tools the scenario lacks is refused | Fixed; tools from a scenario's own MCP servers come next |
+| B8 | Teams reached only one agent | High | Each agent can be its own bot | Fixed |
+| B9 | Schema changes never reached an existing database | Medium | Numbered migrations, applied once each, under a lock | Fixed |
+| B10 | Run tokens never expired, and runs whose scheduler stopped stayed open (found by two) | Medium | Runs expire after an hour, and a run that outlives its time is closed and its person told | Fixed |
+| B11 | The model gateway forwarded the whole request, so a worker could turn on a provider's own web search | Medium | Providers get only known fields and the agent's own function tools | Fixed |
+| B12 | Links escaped the sanitizer in other cases and forms, and drafts weren't filtered | Medium | Outgoing text keeps only words and the scenario's record links, whatever the form, and tools' text arguments, such as a draft's body, are cleaned too | Fixed |
+| B13 | Every release broke runs until the gateway restarted | Medium | Releases ship in the gateway's image, the attested build, so applying a release goes with deploying that image: the setup step runs with the new image before the gateways start | Kept by design |
+| B14 | Notices named the wrong person or nobody, an outage read as a failure, and the agent saw old requests a5s had turned away, without times (found by two) | Medium | a5s names someone who can help, never the person asking, says when the model is down, and the agent sees when each turn was said and what a5s told the person, within a budget | Fixed |
+| B15 | Sign-in ignored how the directory knows people, so an Entra ID object id found nobody | Medium | Sign-in finds people through the directory, as Teams does | Fixed |
+| B16 | A copier that found the ledger rewritten only logged it, and nothing recovers from restoring the database to an earlier point | Medium | The copier exits with an error, so the platform notices | Fixed; restoring is a runbook for step 5 |
+| B17 | Teams' check for a resent message spanned conversations, so one person's message could be taken for another's | Medium | It's keyed by the conversation and the message | Fixed |
+| B18 | A tool could change its risk flags, such as claiming it no longer writes, without a new release (found while fixing B12) | Medium | A tool's whole definition is pinned | Fixed |
+| B19 | One planted head object stopped every later copy of the ledger | Low | The copier follows the copies that continue the chain and match the ledger, and the check reports anything else | Fixed; R5 accepted |
+| B20 | DeepSeek's undated model was never checked against what answered | Low | Every response must report the approved version, and an undated model must name it | Fixed; R6 accepted |
+| B21 | A call that ran but couldn't be recorded was reported as denied, so it might be made again | Low | It's reported as made but not recorded | Fixed |
+| B22 | The docs overstated what's built | Low | The progress table and status lines say what's built, and what's still to do | Fixed |
+
+What round 4 changed:
+
+- **Removed:** the local channel in the scheduler, the scheduler's port, its wait for a busy conversation and the notice that went with it, sign-in tokens passing through the scheduler, the separate Teams endpoint (now the core's channels), the gateway's own ledger endpoints, outbox rows for Teams, the sample's people in the reference agent, taking people's word by default, and a schema that couldn't change.
+- **Added:** a role for each part, migrations, the core's checks on signed settings, one front door for every channel, a queue the scheduler works through, run expiry, the model gateway's allowlist, a sturdier sanitizer, a bot per agent, and the scenario loader.
+- **Proposed, for you to decide:** two reviewers proposed removing the middleware that asks the core to explain a tool call before making it, and its endpoint, until held proposals arrive in phase 2. In phase 1 a denied call already never runs and the agent hears why, so explaining adds a round trip and a policy check to every tool call. It stays until you decide, because you asked for it.
+- **Deferred:** a connection pool, checkpoints so the copier needn't read every head each hour, and heads signed by the copier, which would stop R5.
+
 ## Accepted risks
 
 Some risk no design removes. These remain, and each needs its owner to accept it.
@@ -153,7 +191,9 @@ Some risk no design removes. These remain, and each needs its owner to accept it
 | --- | --- | --- | --- |
 | R3 | The identity provider, or the environment the organisation's own models run in, being compromised. It's narrowed by holding decisions for 24 hours after an authenticator is reset. | Signed decisions and pinned models rest on them | The executive the platform owner reports to |
 | R4 | A person misled by an agent despite the computed facts and the source flags. It's narrowed by showing the facts apart from the agent's narrative. | People still decide | Each scenario's owners, with training on deciding from the facts |
+| R5 | Someone who can write to the ledger's store can plant a copy that continues the chain in good form, which stops the copying until assurance moves it to a new prefix. It can't hide a change, which the check reports. | Telling a5s's copies from good forgeries needs heads the copier signs, which are deferred | Assurance |
+| R6 | A provider that offers no dated version, such as DeepSeek, can change the model behind its name unseen. Each response must still report the approved name. | Only the provider can pin it | The platform owner, for development with synthetic data only |
 
 ## Next round
 
-Round 4 starts from the accepted risks and from the code as phase 1 builds it. It reads from all six angles, and reports what it removes.
+Round 5 starts from the accepted risks, round 4's proposals and deferrals, and the code that phase 1's next steps build. It reads from all six angles, and reports what it removes.
