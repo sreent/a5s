@@ -153,10 +153,13 @@ def _anchor(cfg: Config, every: int | None) -> None:
                 made = anchor.anchor(conn, store)
             print(f"Copied entries {made[0].first} to {made[-1].seq}." if made
                   else "Nothing new to copy.", flush=True)
+        except anchor.AnchorError as exc:  # the ledger doesn't match its copies: stop, loudly
+            log.error("%s", exc)
+            sys.exit(1)
         except Exception:
             if every is None:
                 raise
-            log.exception("copying the ledger failed")  # it's tried again next time
+            log.exception("copying the ledger failed")  # such as the store being down: try again
         if every is None:
             return
         time.sleep(every)

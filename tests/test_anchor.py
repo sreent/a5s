@@ -78,7 +78,7 @@ def test_a_rewritten_history_shows_even_with_every_hash_recomputed(database, fol
     result = check(database, folder)
     assert not result.ok
     assert result.problems == ("entry 3 was changed after it was copied",)
-    with pytest.raises(anchor.AnchorError, match="no longer matches its copy at entry 6"):
+    with pytest.raises(anchor.AnchorError, match="no longer matches its copy heads/000000000006"):
         copy(database, folder)  # and a5s won't copy the rewritten history
 
 
@@ -185,3 +185,41 @@ def test_google_cloud_copies(database, monkeypatch):
     with pytest.raises(Exists):
         store.put(head.segment, b"forged")
     assert check(database, store).ok
+
+
+def plant(store, key: str, **head) -> None:
+    """What someone with write access to the store could add."""
+    defaults = {"first": 1, "seq": 1, "hash": "00" * 32, "segment": "segments/none.jsonl",
+                "segment_sha256": "00" * 32, "at": datetime.now(UTC).isoformat()}
+    store.put(key, ledger.canonical({**defaults, **head}).encode())
+
+
+def test_a_planted_head_neither_stops_the_copying_nor_hides_anything(database, folder):
+    write(database, 3)
+    [first] = copy(database, folder)
+    plant(folder, "heads/999999999999.json", first=4, seq=999999999999, prev=first.hash)  # past the end
+    plant(folder, "heads/000000000005.json", first=4, seq=5, prev=first.hash)  # where the next goes
+    write(database, 2)
+    [second] = copy(database, folder)
+    assert (second.first, second.seq) == (4, 5)
+    result = check(database, folder)
+    assert result.copied_through == 5
+    assert sorted(result.problems) == [
+        "heads/000000000005.json doesn't continue the copies before it",
+        "heads/999999999999.json doesn't continue the copies before it"]
+    assert copy(database, folder) == []  # and the next copy carries on from entry 5
+
+
+def test_a_copier_that_finds_a_rewritten_history_stops_loudly(database, folder, monkeypatch):
+    from a5s import cli
+    from a5s.config import Config
+
+    def rewritten(conn, store):
+        raise anchor.AnchorError("the ledger no longer matches its copy heads/000000000006.json")
+
+    monkeypatch.setattr(anchor, "anchor", rewritten)
+    cfg = Config(database_url=database, gateway_url="http://unused", service_token="",
+                 root=folder, anchor_store=f"file://{folder}")
+    with pytest.raises(SystemExit) as stopped:
+        cli._anchor(cfg, every=3600)  # it doesn't wait an hour to try again
+    assert stopped.value.code == 1
