@@ -30,7 +30,7 @@ from psycopg.types.json import Jsonb
 from pydantic import BaseModel
 
 from a5s import db
-from a5s.core import ledger, matrix
+from a5s.core import chats, ledger, matrix
 from a5s.core.identity import IdentityError, UnknownPerson, signed_in
 from a5s.core.teams import ONE_TO_ONE, UNKNOWN, Refused
 
@@ -131,7 +131,7 @@ def webchat(gw: Any) -> bool:
     return bool(gw.cfg.webchat_client_id)
 
 
-def chats(gw: Any) -> list[str]:
+def chats_on(gw: Any) -> list[str]:
     """The chats a deployment has turned on, each by setting its own settings."""
     on = {"the command line": True, "the web chat": webchat(gw), "Teams": gw.teams is not None,
           "Matrix": gw.matrix is not None}
@@ -143,7 +143,7 @@ def create_app(gw: Any) -> FastAPI:
     app = FastAPI(title="a5s channels")
 
     app.add_middleware(Small)
-    log.info("people reach a5s through %s", ", ".join(chats(gw)))
+    log.info("people reach a5s through %s", ", ".join(chats_on(gw)))
 
     # Teams
 
@@ -163,6 +163,11 @@ def create_app(gw: Any) -> FastAPI:
         except Refused as exc:  # not recorded: anyone on the internet can send these
             log.warning("refused a message for Teams: %s", exc.reason)
             raise HTTPException(exc.status, exc.reason) from None
+        if (installed := gw.teams.installed(activity, gw.scenario, bot)) is not None:
+            person, reply_to, added = installed  # its bot may write to them first, or no more
+            with db.transaction(gw.url) as conn:
+                (chats.started if added else chats.left)(conn, "teams", person, bot.agent, reply_to)
+            return Response(status_code=200)
         message = gw.teams.message(activity, gw.scenario, bot)
         if message is None:
             return Response(status_code=200)
@@ -227,6 +232,9 @@ def create_app(gw: Any) -> FastAPI:
                     record(conn, channel="matrix", source_id=event["event_id"], person=detail.person,
                            agent=detail.agent, text=detail.text, reply_to=detail.reply_to,
                            identity="verified by matrix")
+            elif what == "left":  # so a5s writes to them elsewhere, and doesn't ask them back
+                with db.transaction(gw.url) as conn:
+                    chats.left(conn, "matrix", *detail)
         return {}
 
     @app.get("/channels/matrix/_matrix/app/v1/users/{user}")

@@ -12,6 +12,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 from jwt.algorithms import RSAAlgorithm
 
+from a5s import db
 from a5s.core import inbox, teams
 from a5s.core.teams import Bot, Teams, TeamsConfig
 from conftest import free_port, serve
@@ -89,8 +90,6 @@ def bot(stack):
 
 
 def queued(stack) -> list[dict]:
-    from a5s import db
-
     with db.transaction(stack.admin) as conn:
         return conn.execute("select * from inbound order by received_at").fetchall()
 
@@ -289,6 +288,80 @@ def test_a_reminder_goes_to_the_teams_chat_the_person_last_wrote_in(stack, bot):
     assert reminder["text"] == "Ana, Q-1001 is due on Wednesday." and reminder["as"] == APP_ID
     assert "replyToId" not in reminder and reminder["conversation"] == {"id": "a:1-chat"}
     assert [m["text"] for m in stack.inbox("ben")] == ["Ben, Q-1002 is due on Friday."]  # no chat yet
+
+
+def installation(action: str) -> dict:
+    """Ana adding the watcher's app for herself, or taking it away, as Teams tells its bot."""
+    return {"type": "installationUpdate", "action": action, "id": f"f:{uuid.uuid4().hex[:8]}",
+            "channelId": "msteams", "serviceUrl": SERVICE_URL,
+            "from": {"id": "29:1-person-for-the-watcher", "aadObjectId": ANA},
+            "recipient": {"id": f"28:{WATCHER_APP}"},
+            "conversation": {"id": "a:1-watcher-chat", "conversationType": "personal",
+                             "tenantId": TENANT},
+            "channelData": {"tenant": {"id": TENANT}}}
+
+
+def test_an_agent_writes_first_in_teams_only_to_people_who_added_its_app(stack, bot):
+    stack.add_watcher()  # it chases what falls due for Ana and Ben now, not the assistant
+    stack.model.reply("Hello, Ana.")
+    httpx.post(bot.url, json=activity("Hello"), headers=bot.auth()).raise_for_status()
+    stack.scheduler().answer_waiting()
+
+    stack.at("2026-11-02T09:30:00+00:00")  # half the time for Ana's and Ben's questions has passed
+    stack.model.reply("Ana, Q-1001 is due on Wednesday.")
+    stack.model.reply("Ben, Q-1002 is due on Friday.")
+    assert stack.scheduler().work_due() == 2
+    assert [m["as"] for m in bot.sent] == [APP_ID]  # the assistant's answer, and nothing as it since
+    assert [m["text"] for m in stack.inbox("ana")] == ["Ana, Q-1001 is due on Wednesday."]
+
+    added = installation("add")
+    assert httpx.post(bot.url, json=added, headers=bot.auth(aud=WATCHER_APP)).status_code == 200
+    stack.at("2026-11-09T09:00:00+00:00")  # Ben's was due on Friday, so Ana, his manager, hears
+    stack.scheduler().work_due()
+    escalated = bot.sent[-1]
+    assert (escalated["as"], escalated["conversation"]) == (WATCHER_APP, {"id": "a:1-watcher-chat"})
+    assert escalated["text"].startswith("Q-1002, Refund for a duplicate payment, was due")
+    assert escalated["from"] == {"id": f"28:{WATCHER_APP}"} and "replyToId" not in escalated
+
+    removed = installation("remove")
+    assert httpx.post(bot.url, json=removed, headers=bot.auth(aud=WATCHER_APP)).status_code == 200
+    with db.transaction(stack.cfg.database_url) as conn:
+        assert stack.gateway.reach(conn, "ana", "watcher") == {"channel": "local", "reply_to": {}}
+        assert stack.gateway.reach(conn, "ana", "assistant")["reply_to"]["app_id"] == APP_ID
+
+
+def test_teams_also_tells_a_bot_its_app_was_added_by_adding_it_to_the_chat(stack, bot):
+    joined = {**installation("add"), "type": "conversationUpdate",
+              "membersAdded": [{"id": f"28:{WATCHER_APP}"}]}
+    del joined["action"]
+    assert httpx.post(bot.url, json=joined, headers=bot.auth(aud=WATCHER_APP)).status_code == 200
+    with db.transaction(stack.cfg.database_url) as conn:
+        assert stack.gateway.reach(conn, "ana", "watcher")["reply_to"]["conversation"] == "a:1-watcher-chat"
+    left = {**joined, "membersAdded": [], "membersRemoved": [{"id": f"28:{WATCHER_APP}"}]}
+    assert httpx.post(bot.url, json=left, headers=bot.auth(aud=WATCHER_APP)).status_code == 200
+    with db.transaction(stack.cfg.database_url) as conn:
+        assert stack.gateway.reach(conn, "ana", "watcher")["channel"] == "local"
+
+
+def test_once_a_chat_is_turned_off_its_people_hear_in_their_inbox(stack, bot):
+    stack.model.reply("Hello, Ana.")
+    httpx.post(bot.url, json=activity("Hello"), headers=bot.auth()).raise_for_status()
+    stack.scheduler().answer_waiting()
+    stack.gateway.teams = None  # the deployment stops using Teams
+    with db.transaction(stack.cfg.database_url) as conn:
+        assert stack.gateway.reach(conn, "ana", "assistant") == {"channel": "local", "reply_to": {}}
+
+
+def test_an_app_added_by_someone_the_directory_doesnt_know_or_to_a_team_changes_nothing(stack, bot):
+    stranger, team = installation("add"), installation("add")
+    stranger["from"] = {"id": "29:1-stranger", "aadObjectId": "0a5a0000-0000-4000-8000-0000000000ff"}
+    team["conversation"] = {**team["conversation"], "id": "19:team-channel", "conversationType": "channel"}
+    for added in (stranger, team):
+        assert httpx.post(bot.url, json=added, headers=bot.auth(aud=WATCHER_APP)).status_code == 200
+    with db.transaction(stack.admin) as conn:
+        assert conn.execute("select count(*) as n from chats").fetchone()["n"] == 0
+    forged = installation("add")
+    assert httpx.post(bot.url, json=forged).status_code == 401  # only Teams can say so
 
 
 def test_an_escalation_reaches_teams_too(stack, bot):

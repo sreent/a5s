@@ -276,6 +276,23 @@ class Stack:
             return registry.apply(conn, self.gateway.definitions, scenario.settings(),
                                   scenario.tools(), scenario.person, scenario.name)
 
+    def add_watcher(self) -> None:
+        """A second agent, the watcher, which chases what falls due for Ana and Ben in place
+        of the assistant, in a new release, signed in and applied."""
+        agents = self.cfg.agents_dir
+        shutil.copytree(agents / "assistant", agents / "watcher")
+        for agent, chases in (("assistant", []), ("watcher", ["records"])):
+            spec = agents / agent / "agent.yaml"
+            spec.write_text(yaml.safe_dump({**yaml.safe_load(spec.read_text()), "id": agent,
+                                            "obligations": chases}, sort_keys=False))
+        found = definitions.load_all(agents)
+        self.gateway.definitions.clear()  # in place, so the core's channels know it too
+        self.gateway.definitions.update(found)
+        settings = yaml.safe_load((self.cfg.scenario_dir / "settings.yaml").read_text())
+        finance = settings["instances"]["assistant-finance"]
+        assert not self.settle(instances={"assistant-finance": finance,
+                                          "watcher-finance": {**finance, "definition": "watcher"}}).refused
+
 
 def build_root(tmp: Path, model_alias: str, models_yaml: str) -> Path:
     root = tmp / "root"

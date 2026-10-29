@@ -31,7 +31,7 @@ from pydantic import BaseModel
 from a5s import db
 from a5s.config import Config, ModelConfig
 from a5s.contract import Scenario, Signature, Tool, ToolCall, parse_settings
-from a5s.core import ledger, models, obligations, registry, releases, schedules
+from a5s.core import chats, ledger, models, obligations, registry, releases, schedules
 from a5s.core.identity import IdentityError, UnknownPerson, Verifier, signed_in
 from a5s.core.matrix import Matrix
 from a5s.core.policy import Decision, PolicyEngine
@@ -183,18 +183,52 @@ class Gateway:
         return conn.execute("select id::text, person, channel, reply_to from inbound where id = %s",
                             (inbound,)).fetchone()
 
-    @staticmethod
-    def reach(conn: psycopg.Connection, person: str, agent: str | None) -> dict:
-        """How to write to someone who isn't waiting for an answer: in the conversation they
-        last wrote in, to this agent if they have. Otherwise they collect it from the local
+    def reach(self, conn: psycopg.Connection, person: str, agent: str | None) -> dict:
+        """How to write to someone who isn't waiting for an answer, as the agent's own bot and
+        never another's: in the conversation they last had with this agent, whoever started
+        it, or else in the chat they last wrote in, where the agent's bot starts one if the
+        chat lets it. a5s's own notices, about no agent, go in the conversation they last had.
+        Otherwise, and where they've left the conversation, they collect it from the local
         channel's inbox."""
-        row = conn.execute("select channel, reply_to from inbound where person = %s "
-                           "order by (agent = %s) desc nulls last, received_at desc limit 1",
-                           (person, agent)).fetchone()
-        if row is None or row["channel"] not in PUSHED:
-            return {"channel": "local", "reply_to": {}}
-        return {"channel": row["channel"],  # a new message in that conversation, not a reply
-                "reply_to": {k: v for k, v in row["reply_to"].items() if k != "activity"}}
+        local = {"channel": "local", "reply_to": {}}
+        if agent is not None:
+            had = conn.execute(
+                """
+                select channel, reply_to, at from (
+                  select channel, reply_to, received_at as at from inbound
+                  where person = %(person)s and agent = %(agent)s
+                  union all
+                  select channel, reply_to, started_at from chats
+                  where person = %(person)s and agent = %(agent)s and started_at is not null
+                ) had order by at desc limit 1
+                """, {"person": person, "agent": agent}).fetchone()
+            if had is not None:
+                return self._in(conn, had) or local
+        last = conn.execute("select channel, reply_to, received_at as at from inbound "
+                            "where person = %s order by received_at desc limit 1",
+                            (person,)).fetchone()
+        if last is None or agent is None:
+            return (last and self._in(conn, last)) or local
+        who = self.scenario.person(person)
+        if (last["channel"] == "matrix" and self.matrix is not None and who is not None
+                and (user := self.matrix.user_of(who))):
+            return {"channel": "matrix", "reply_to": {},
+                    "start": {"person": person, "agent": agent, "user": user}}
+        return local  # such as in Teams, where only people who added the agent's app can hear it
+
+    def _in(self, conn: psycopg.Connection, conversation: dict) -> dict | None:
+        """A new message in a conversation, not a reply, unless it's local, its chat is off
+        here now, or the person left it."""
+        channel = conversation["channel"]
+        if (channel not in PUSHED or self.chat(channel) is None
+                or chats.gone(conn, channel, conversation["reply_to"], conversation["at"])):
+            return None
+        return {"channel": channel,
+                "reply_to": {k: v for k, v in conversation["reply_to"].items() if k != "activity"}}
+
+    def chat(self, channel: str) -> Teams | Matrix | None:
+        """A chat a5s writes to itself, if it's on here."""
+        return {"teams": self.teams, "matrix": self.matrix}.get(channel)
 
     # What each kind of run brings when it opens.
 
@@ -538,7 +572,7 @@ def create_app(gw: Gateway) -> FastAPI:
                              "channel": route["channel"], "chars": len(text),
                              "sha256": hashlib.sha256(text.encode()).hexdigest()}})
                 if route["channel"] in PUSHED:
-                    sends.append((route["channel"], route["reply_to"], text, row["instance_id"]))
+                    sends.append((route, text, row["instance_id"]))
                 else:  # people collect it from the local channel's inbox
                     conn.execute("insert into outbox (instance_id, agent, person, channel, text) "
                                  "values (%s, %s, %s, 'local', %s)",
@@ -546,8 +580,8 @@ def create_app(gw: Gateway) -> FastAPI:
                 escalated.add(row["id"])
             due = [d for d in obligations.to_chase(rows, gw.scenario, now, able)
                    if d["obligation"] not in escalated]
-        for channel, reply_to, text, instance in sends:
-            deliver(channel, reply_to, text, None, instance)
+        for route, text, instance in sends:
+            deliver(route, text, None, instance)
         return due
 
     @app.post("/schedules/sweep", dependencies=[Depends(service)])
@@ -716,27 +750,47 @@ def create_app(gw: Gateway) -> FastAPI:
             return JSONResponse(status_code=403,
                                 content={"denied": True, **decision.as_dict(explain=True)})
         if route["channel"] in PUSHED:
-            problem = deliver(route["channel"], route["reply_to"], text, row["run"], row["id"])
+            problem = deliver(route, text, row["run"], row["id"])
             if problem:
                 return JSONResponse(status_code=502, content={"error": problem})
         return {"sent": True, "text": text, "links_removed": removed}
 
-    def deliver(channel: str, reply_to: dict, text: str, run: str | None,
-                instance: str | None) -> str | None:
-        """Send text through a chat a5s writes to itself, such as Teams or Matrix, and record
-        whether it got there. The problem, if not."""
-        problem, chat = None, {"teams": gw.teams, "matrix": gw.matrix}.get(channel)
+    def deliver(route: dict, text: str, run: str | None, instance: str | None) -> str | None:
+        """Send text through a chat a5s writes to itself, such as Teams or Matrix, starting the
+        conversation first if the route says to, and record whether it got there. The problem,
+        if not."""
+        channel, problem, started = route["channel"], None, False
+        chat = gw.chat(channel)
         if chat is None:
             problem = f"{channel} isn't set up in this gateway"
         else:
             try:
+                reply_to = route["reply_to"]
+                if "start" in route:
+                    reply_to, started = start(channel, chat, **route["start"])
                 chat.send(reply_to, text)
             except (httpx.HTTPError, ValueError) as exc:
                 problem = f"{channel} didn't take it: {type(exc).__name__}: {exc}"[:200]
         record({"kind": "message", "action": "deliver", "run": run, "instance": instance,
                 "decision": "record", "outcome": {"status": "error", "error": problem} if problem
-                else {"status": "ok", "channel": channel}})
+                else {"status": "ok", "channel": channel, **({"started": True} if started else {})}})
         return problem
+
+    def start(channel: str, chat: Any, person: str, agent: str, user: str) -> tuple[dict, bool]:
+        """The conversation an agent's bot starts with someone, unless another delivery started
+        it first. Where to send to it, and whether this started it."""
+        with db.transaction(gw.url) as conn:
+            conn.execute("select pg_advisory_xact_lock(hashtext(%s))",
+                         (f"start {channel} {person} {agent}",))
+            row = conn.execute(
+                "select reply_to from chats where channel = %s and person = %s and agent = %s "
+                "and started_at is not null and left_at is null order by started_at desc limit 1",
+                (channel, person, agent)).fetchone()
+            if row is not None:
+                return row["reply_to"], False
+            reply_to = chat.start(user, agent)
+            chats.started(conn, channel, person, agent, reply_to)
+            return reply_to, True
 
     @app.post("/notices", dependencies=[Depends(service)])
     def notice(body: Notice) -> dict:
@@ -764,7 +818,7 @@ def create_app(gw: Gateway) -> FastAPI:
         if row is None:
             raise HTTPException(403, "a5s only answers a message someone sent, and briefly")
         if row["channel"] in PUSHED:
-            problem = deliver(row["channel"], row["reply_to"], text, None, body.instance)
+            problem = deliver(row, text, None, body.instance)
             if problem:
                 raise HTTPException(502, problem)
         return {"sent": True, "text": text}

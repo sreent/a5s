@@ -140,6 +140,32 @@ class Teams:
             personal=conversation.get("conversationType", "personal") == "personal",
         )
 
+    def installed(self, activity: dict[str, Any], scenario: Scenario,
+                  bot: Bot) -> tuple[str, dict[str, str], bool] | None:
+        """Someone in the directory adding an agent's app for themselves, which lets its bot
+        write to them first, or taking it away: who, the conversation, and whether it's added.
+        Teams says so with an installationUpdate, and with the bot joining or leaving their chat."""
+        conversation, kind = activity.get("conversation") or {}, activity.get("type")
+        bot_id = (activity.get("recipient") or {}).get("id")
+        joined = {m.get("id") for m in activity.get("membersAdded") or []}
+        gone = {m.get("id") for m in activity.get("membersRemoved") or []}
+        if kind == "installationUpdate" and activity.get("action") in ("add", "add-upgrade"):
+            added = True
+        elif kind == "installationUpdate" and activity.get("action") in ("remove", "remove-upgrade"):
+            added = False
+        elif kind == "conversationUpdate" and bot_id and bot_id in joined | gone:
+            added = bot_id in joined
+        else:
+            return None
+        if not conversation.get("id") or conversation.get("conversationType", "personal") != "personal":
+            return None  # such as the app being added to a team: a5s talks one to one
+        entra_id = (activity.get("from") or {}).get("aadObjectId") or ""
+        person = scenario.find(f"entra:{entra_id}") if entra_id else None
+        if person is None:
+            return None
+        return person.id, {"service_url": activity["serviceUrl"], "conversation": conversation["id"],
+                           "bot": bot_id or "", "app_id": bot.app_id}, added
+
     def _bot_token(self, bot: Bot) -> str:
         with self._lock:
             cached = self._tokens.get(bot.app_id)

@@ -4,9 +4,11 @@ The homeserver sends a5s the events in rooms its agents' bots are in, and proves
 each delivery with its token, which only the core holds. Each agent is its own
 bot, @a5s-<agent>:<server>. A person invites one to a direct chat, and the core
 joins it if the directory knows them by their Matrix id, as matrix:@them:<server>.
-People on other servers, rooms with more people, and encrypted messages, which a5s
-can't read yet, are turned away. Replies, and a5s's own notices, reach Matrix only
-through the core, which alone holds the token that lets it speak as the bots.
+An agent that writes to someone first, such as with a reminder, starts a direct
+chat itself, as its own bot. People on other servers, rooms with more people, and
+encrypted messages, which a5s can't read yet, are turned away. Replies, and a5s's
+own notices, reach Matrix only through the core, which alone holds the token that
+lets it speak as the bots.
 """
 
 from __future__ import annotations
@@ -84,9 +86,19 @@ class Matrix:
 
     def person_of(self, user: str, scenario: Scenario) -> Person | None:
         """Who in the directory a Matrix id is: only people on the organisation's own server."""
-        if not user.endswith(f":{self.cfg.server_name}") or self.agent_of(user):
+        if not self.local(user):
             return None
         return scenario.find(f"matrix:{user}")
+
+    def user_of(self, person: Person) -> str | None:
+        """A person's Matrix id on the organisation's own server, from the directory."""
+        users = (i.removeprefix("matrix:") for i in person.identities if i.startswith("matrix:"))
+        return next((user for user in users if self.local(user)), None)
+
+    def local(self, user: str) -> bool:
+        """Whether a Matrix id is a person's on the organisation's own server."""
+        return user.startswith("@") and user.endswith(f":{self.cfg.server_name}") \
+            and not self.agent_of(user)
 
     # Speaking as a bot, with a5s's token
 
@@ -130,6 +142,19 @@ class Matrix:
                 return self._rooms[room]
         return None
 
+    def start(self, user: str, agent: str) -> dict[str, str]:
+        """A direct chat an agent's bot starts with someone, inviting them to it. Where to
+        send to it."""
+        if not self.local(user):
+            raise ValueError("a5s starts chats only with people on the organisation's own server")
+        bot = self.bot(agent)
+        self.register(bot)
+        made = self._call("POST", "/createRoom", bot, json={
+            "is_direct": True, "invite": [user], "preset": "trusted_private_chat"})
+        made.raise_for_status()
+        self._rooms[made.json()["room_id"]] = bot
+        return {"room": made.json()["room_id"], "bot": bot}
+
     def send(self, reply_to: dict[str, str], text: str) -> None:
         """Send text into a room, as the bot that's in it."""
         if self.agent_of(reply_to.get("bot", "")) is None:
@@ -142,7 +167,8 @@ class Matrix:
 
     def event(self, event: dict[str, Any], scenario: Scenario, agents: list[str]) -> tuple[str, Any]:
         """What to do about one event: ("join", (room, bot)), ("message", Message),
-        ("turn away", (reason, people, reply, reply_to)), or ("ignore", None)."""
+        ("turn away", (reason, people, reply, reply_to)), ("left", (person, agent, reply_to)),
+        or ("ignore", None)."""
         sender, room, kind = event.get("sender", ""), event.get("room_id", ""), event.get("type")
         content = event.get("content") or {}
         if (kind == "m.room.member" and self.agent_of(event.get("state_key", ""))
@@ -151,10 +177,14 @@ class Matrix:
         if self.agent_of(sender):  # a5s's own bots: never answer them
             return "ignore", None
         if kind == "m.room.member":
-            invited = event.get("state_key", "")
+            target, membership = event.get("state_key", ""), content.get("membership")
             known = self.person_of(sender, scenario) is not None
-            if content.get("membership") == "invite" and self.agent_of(invited) in agents and known:
-                return "join", (room, invited)
+            if membership == "invite" and self.agent_of(target) in agents and known:
+                return "join", (room, target)
+            if membership in ("leave", "ban") and (person := self.person_of(target, scenario)):
+                bot = self.bot_in(room, agents)  # still there: they left it, or turned it down
+                if bot is not None:
+                    return "left", (person.id, self.agent_of(bot), {"room": room, "bot": bot})
             return "ignore", None
         if kind not in ("m.room.message", "m.room.encrypted"):
             return "ignore", None

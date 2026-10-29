@@ -137,7 +137,7 @@ def test_the_web_chat_is_off_where_nobody_could_sign_in_to_it(stack):
         found = [httpx.get(f"{url}{path}").status_code for path in ("/", "/chat/", "/chat/config",
                                                                      "/chat/app.js")]
     assert found == [404] * 4
-    assert inbox.chats(replace(stack.gateway, cfg=deployed)) == ["the command line"]
+    assert inbox.chats_on(replace(stack.gateway, cfg=deployed)) == ["the command line"]
 
 
 def test_people_sign_in_through_the_organisations_own_provider(signing_in, provider):
