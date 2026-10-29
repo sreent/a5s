@@ -58,6 +58,17 @@ services:
     ports: ["127.0.0.1:${A5S_CHANNEL_PORT:-8701}:8701"]
     depends_on: [gateway, worker]
 
+  anchor:  # copies the ledger to locked storage every hour, so a rewritten history shows
+    <<: *a5s
+    command: ["anchor", "--every", "3600"]
+    environment:
+      <<: *database
+      A5S_ANCHOR_STORE: ${A5S_ANCHOR_STORE:?set A5S_ANCHOR_STORE, such as s3://bucket/a5s}
+      A5S_ANCHOR_RETAIN_DAYS: ${A5S_ANCHOR_RETAIN_DAYS:-365}
+    networks: [data, egress]
+    depends_on:
+      setup: {condition: service_completed_successfully}
+
   worker:  # no secrets, no database, no internet
     <<: *a5s
     command: ["worker", "--host", "0.0.0.0"]

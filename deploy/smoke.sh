@@ -1,7 +1,8 @@
 #!/bin/sh
-# Starts a5s's containers with a stand-in model and a stand-in identity
-# provider, then checks that a person must sign in, that a message runs end to
-# end, that a worker reaches only the gateway, and that the ledger verifies.
+# Starts a5s's containers with stand-ins for the model, the identity provider
+# and locked storage, then checks that a person must sign in, that a message
+# runs end to end, that a worker reaches only the gateway, and that the ledger
+# is copied, locked, and verifies against its copies.
 # Needs the image first: docker build -t a5s:dev .
 set -eu
 cd "$(dirname "$0")/.."
@@ -12,8 +13,10 @@ random() { head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9'; }
 idp_password=$(random)
 printf 'A5S_DB_PASSWORD=%s\nA5S_SERVICE_TOKEN=%s\nA5S_IDP_PASSWORD=%s\n' \
   "$(random)" "$(random)" "$idp_password" > "$env_file"
+echo "A5S_ANCHOR_STORE=s3://a5s-ledger/sample" >> "$env_file"
 compose() { docker compose -p a5s-smoke --env-file "$env_file" -f deploy/compose.yaml \
-              -f deploy/compose.stub.yaml -f deploy/compose.identity.yaml "$@"; }
+              -f deploy/compose.stub.yaml -f deploy/compose.identity.yaml \
+              -f deploy/compose.storage.yaml "$@"; }
 trap 'compose down -v >/dev/null 2>&1; rm -f "$env_file" "$reply"' EXIT
 
 compose up -d
@@ -56,12 +59,27 @@ def reach(host, port):
     except OSError:
         return False
 assert reach("gateway", 8700), "the worker can't reach the gateway"
-for host, port in (("postgres", 5432), ("keycloak", 8080), ("api.deepseek.com", 443), ("1.1.1.1", 443)):
+for host, port in (("postgres", 5432), ("keycloak", 8080), ("localstack", 4566),
+                   ("api.deepseek.com", 443), ("1.1.1.1", 443)):
     assert not reach(host, port), f"the worker can reach {host}:{port}"
 print("The worker holds no secrets, and reaches only the gateway.")
 PY
 
 compose exec -T gateway a5s ledger tail -n 50 | grep -q '"identity": "verified"'
 echo "The core checked Ana's identity itself, and recorded it."
-compose exec -T gateway a5s ledger verify | tee /dev/stderr | grep -q "ok=True"
+compose exec -T anchor a5s anchor
+compose exec -T anchor python - <<'PY'
+import boto3
+s3 = boto3.client("s3")
+versions = s3.list_object_versions(Bucket="a5s-ledger", Prefix="sample/segments/")["Versions"]
+for v in versions:
+    try:
+        s3.delete_object(Bucket="a5s-ledger", Key=v["Key"], VersionId=v["VersionId"])
+    except s3.exceptions.ClientError as exc:
+        assert exc.response["Error"]["Code"] == "AccessDenied", exc
+    else:
+        raise AssertionError(f"{v['Key']} could be deleted")
+print(f"The ledger's {len(versions)} copies are locked: deleting them is refused.")
+PY
+compose exec -T anchor a5s ledger verify
 echo "Smoke test passed."

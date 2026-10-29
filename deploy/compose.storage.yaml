@@ -1,0 +1,25 @@
+# A stand-in for locked storage: LocalStack's S3, which enforces object lock
+# the way Amazon S3 does, for trying a5s's ledger copies without a cloud:
+#   A5S_ANCHOR_STORE=s3://a5s-ledger/sample docker compose -f deploy/compose.yaml \
+#     -f deploy/compose.storage.yaml ... up
+
+services:
+  localstack:
+    image: localstack/localstack:4.0
+    environment:
+      SERVICES: s3
+    volumes: ["./storage/bucket.sh:/etc/localstack/init/ready.d/bucket.sh:ro"]
+    networks: [egress]
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf localhost:4566/_localstack/init/ready | grep -q '\"completed\": true'"]
+      interval: 2s
+      retries: 60
+
+  anchor:
+    environment:
+      AWS_ENDPOINT_URL_S3: http://localstack:4566
+      AWS_ACCESS_KEY_ID: stand-in
+      AWS_SECRET_ACCESS_KEY: stand-in
+      AWS_REGION: us-east-1
+    depends_on:
+      localstack: {condition: service_healthy}

@@ -4,9 +4,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import os
 import secrets
 import sys
+import time
 from pathlib import Path
 
 import httpx
@@ -14,10 +16,12 @@ import yaml
 
 from a5s import build, db, definitions, devdb, worker
 from a5s.config import DEFAULT_DATABASE_URL, Config
-from a5s.core import ledger, registry, signing
+from a5s.core import anchor, ledger, registry, signing
 from a5s.core.identity import verifier_from_env
 from a5s.services import channels
 from a5s.services.scheduler import Scheduler, remote_worker
+
+log = logging.getLogger("a5s")
 
 
 def _dev_up(root: Path) -> None:
@@ -107,6 +111,39 @@ def _service(cfg: Config, name: str):
     return channels.create_app(scheduler, cfg.database_url, verifier_from_env())
 
 
+def _anchor(cfg: Config, every: int | None) -> None:
+    store = build.store(cfg)
+    if store is None:
+        sys.exit("Set A5S_ANCHOR_STORE to a locked store, such as s3://bucket/a5s.")
+    while True:
+        try:
+            with db.transaction(cfg.database_url) as conn:
+                made = anchor.anchor(conn, store)
+            print(f"Copied entries {made[0].first} to {made[-1].seq}." if made
+                  else "Nothing new to copy.", flush=True)
+        except Exception:
+            if every is None:
+                raise
+            log.exception("copying the ledger failed")  # it's tried again next time
+        if every is None:
+            return
+        time.sleep(every)
+
+
+def _verify(cfg: Config) -> None:
+    store = build.store(cfg)
+    with db.transaction(cfg.database_url) as conn:
+        chain = ledger.verify(conn)
+        copies = anchor.check(conn, store) if store else None
+    print(chain)
+    if copies:
+        print(copies)
+    elif cfg.anchor_store is None:
+        print("The ledger has no copies to check against: set A5S_ANCHOR_STORE.")
+    if not chain.ok or (copies and not copies.ok):
+        sys.exit(1)
+
+
 def _admin(cfg: Config, path: str, body: dict | None = None) -> dict:
     headers = {"Authorization": f"Bearer {cfg.service_token}"}
     with httpx.Client(base_url=cfg.gateway_url, headers=headers, timeout=30) as gw:
@@ -146,7 +183,9 @@ def main(argv: list[str] | None = None) -> None:
         p = sub.add_parser(verb, help=f"{verb} an instance")
         p.add_argument("instance")
         p.add_argument("--by", required=True)
-    led = sub.add_parser("ledger", help="read or verify the ledger")
+    copy = sub.add_parser("anchor", help="copy the ledger to locked storage")
+    copy.add_argument("--every", type=int, metavar="SECONDS", help="keep copying, this often")
+    led = sub.add_parser("ledger", help="read or verify the ledger, against its copies too")
     led.add_argument("what", choices=["tail", "verify"])
     led.add_argument("-n", type=int, default=20)
     args = parser.parse_args(argv)
@@ -178,9 +217,10 @@ def main(argv: list[str] | None = None) -> None:
         _say(cfg, args.person, args.agent, args.text)
     elif args.command in ("suspend", "resume"):
         print(_admin(cfg, f"/instances/{args.instance}/{args.command}", {"by": args.by}))
+    elif args.command == "anchor":
+        _anchor(cfg, args.every)
     elif args.command == "ledger" and args.what == "verify":
-        with db.transaction(cfg.database_url) as conn:
-            print(ledger.verify(conn))
+        _verify(cfg)
     elif args.command == "ledger":
         with db.transaction(cfg.database_url) as conn:
             for entry in ledger.entries(conn, limit=args.n):

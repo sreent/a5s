@@ -17,13 +17,21 @@ dependencies = [
     "pydantic>=2",
     "pyyaml",
     "pyjwt[crypto]>=2.15.1",
+    "boto3>=1.43.121",
+    "azure-storage-blob>=12.31.0",
+    "azure-identity>=1.27.0",
+    "google-cloud-storage>=3.17.1",
 ]
 
 [project.scripts]
 a5s = "a5s.cli:main"
 
 [dependency-groups]
-dev = ["pytest", "ruff"]
+dev = [
+    "moto[s3]>=5.2.5",
+    "pytest",
+    "ruff",
+]
 
 [build-system]
 requires = ["hatchling"]

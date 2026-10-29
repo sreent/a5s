@@ -19,8 +19,16 @@ jobs:
           --health-interval 5s --health-timeout 5s --health-retries 10
     env:
       A5S_TEST_DATABASE_URL: postgresql://a5s@127.0.0.1:5432/postgres
+      A5S_TEST_AZURITE: UseDevelopmentStorage=true
+      A5S_TEST_GCS: http://127.0.0.1:4443
     steps:
       - uses: actions/checkout@v4
+      - name: Start emulators for Azure's and Google's storage
+        run: |
+          docker run -d -p 10000:10000 mcr.microsoft.com/azure-storage/azurite:3.37.0 \
+            azurite-blob --blobHost 0.0.0.0 --skipApiVersionCheck --loose
+          docker run -d -p 4443:4443 mirror.gcr.io/fsouza/fake-gcs-server:1.52 \
+            -scheme http -port 4443 -external-url http://127.0.0.1:4443
       - uses: astral-sh/setup-uv@v6
       - run: uv sync --locked
       - run: uv run ruff check .

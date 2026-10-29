@@ -15,7 +15,7 @@ These are the numbers a5s starts from, by the phase that needs them. They're sta
 | Urgent messages | Up to 5 per person per day across all agents, then batched hourly | Urgent stays urgent without becoming noise | The platform owner |
 | Chases | Routine items in the last digest before half the turnaround has passed, then escalated when due, but no sooner than a working day after the chase. Urgent items by urgent message at half the turnaround, then escalated when due. | People get a chance to act before anyone above them hears | Each part owner |
 | Conversations | Kept for 12 months after the last message, and archived when someone leaves | Covers a yearly cycle | The data protection officer |
-| Ledger | As long as the records it supports, which the scenario sets | It's evidence | Assurance |
+| Ledger | As long as the records it supports, which the scenario sets, with its copies locked for as long [TBC: a year until it's set] | It's evidence | Assurance |
 | Traces | 14 days | For debugging only | The agent owner |
 | Budgets | Set from current volumes, with 20% kept for obligations, a warning at 80%, and routine work waiting at 100% | Not from a quiet first month | The platform owner |
 | Circuit breaker | Opens after 3 failures in a row, and retries every 5 minutes | Stops quickly, and recovers without anyone stepping in | The agent owner |

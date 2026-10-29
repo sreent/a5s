@@ -59,6 +59,8 @@ class Config:
     root: Path
     scheduler_url: str | None = None  # set when the scheduler runs as a service
     worker_url: str | None = None  # set when workers run as a service
+    anchor_store: str | None = None  # where the ledger's locked copies go, such as s3://bucket/a5s
+    anchor_retain_days: int = 365  # how long each copy stays locked: assurance's to set [TBC]
 
     @property
     def agents_dir(self) -> Path:
@@ -86,4 +88,6 @@ class Config:
             root=root,
             scheduler_url=os.environ.get("A5S_SCHEDULER_URL"),
             worker_url=os.environ.get("A5S_WORKER_URL"),
+            anchor_store=os.environ.get("A5S_ANCHOR_STORE"),
+            anchor_retain_days=int(os.environ.get("A5S_ANCHOR_RETAIN_DAYS", "365")),
         )
