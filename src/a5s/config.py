@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -25,7 +26,7 @@ class ModelConfig:
     key_env: str
     region: str = "[TBC]"
     data_classes: tuple[str, ...] = ("synthetic",)
-    reported_model: str | None = None  # what every response must report, if set
+    reported_model: str | None = None  # what every response must report, if not `model`
 
     @property
     def api_key(self) -> str | None:
@@ -38,6 +39,9 @@ def load_models(path: Path) -> dict[str, ModelConfig]:
     for alias, m in data["models"].items():
         if m["api"] not in ("openai", "anthropic"):
             raise ValueError(f"model {alias}: api must be openai or anthropic, not {m['api']}")
+        if not re.search(r"\d{4}-?\d{2}-?\d{2}", m["model"]) and not m.get("reported_model"):
+            raise ValueError(f"model {alias}: {m['model']} isn't a dated version, so set "
+                             "reported_model to what the provider reports for it")
         models[alias] = ModelConfig(
             alias=alias,
             provider=m["provider"],

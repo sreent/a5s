@@ -49,6 +49,7 @@ class Tool:
     writes: bool = False
     destructive: bool = False
     sends_outside: bool = False
+    text_fields: tuple[str, ...] = ()  # arguments that are outgoing text, such as a draft's body
 
     @property
     def risk(self) -> dict[str, bool]:
@@ -61,8 +62,9 @@ class Tool:
 
     @property
     def schema_hash(self) -> str:
-        """Pinned in releases, so a changed tool needs a new release."""
-        payload = {"name": self.name, "description": self.description, "schema": self.schema}
+        """Pinned in releases, so a changed tool, its risk flags included, needs a new release."""
+        payload = {"name": self.name, "description": self.description, "schema": self.schema,
+                   "risk": self.risk, "text_fields": list(self.text_fields)}
         return hashlib.sha256(canonical(payload).encode()).hexdigest()
 
     def definition(self) -> dict[str, Any]:
@@ -71,6 +73,7 @@ class Tool:
             "description": self.description,
             "schema": self.schema,
             "risk": self.risk,
+            "text_fields": list(self.text_fields),
             "schema_hash": self.schema_hash,
         }
 

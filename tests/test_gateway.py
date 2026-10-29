@@ -1,9 +1,12 @@
 from dataclasses import replace
 
 import httpx
+import psycopg
+import pytest
 
 from a5s import db
 from a5s.config import Config, load_models
+from a5s.core import ledger
 from a5s.core.gateway import Gateway, create_app, sanitize
 from a5s.core.policy import PolicyEngine
 from conftest import PROVIDER_KEY, SERVICE_TOKEN, free_port, serve
@@ -159,3 +162,98 @@ def test_a_granted_tool_the_scenario_no_longer_has_is_refused(stack, monkeypatch
     with stack.client(token) as c:
         r = c.post("/run/tools/create_draft", json={"args": {"title": "x", "body": "y"}})
     assert r.status_code == 403 and r.json()["reasons"] == []
+
+
+@pytest.mark.parametrize("text", [
+    "[x](HTTPS://evil.example/?d=1)", "[x](//evil.example/a)", "[x](https:/\\evil.example/a)",
+    '<img src="//evil.example/p.png?d=1">', "HTTPS://EVIL.example/x", "see //evil.example/y",
+    "www.evil.example", "<https://evil.example/auto>", "[1]: https://evil.example/ref",
+    "![p](https://evil.example/pixel.png)",
+])
+def test_no_link_survives_in_any_form(text):
+    cleaned, removed = sanitize(text, ("https://sample.a5s.dev/",))
+    assert removed >= 1 and "evil" not in cleaned.lower()
+
+
+def test_plain_text_and_record_links_survive():
+    text = ("a < b and c > d, 3/4 of them, at 10:30. "
+            "See [Q-1001](https://sample.a5s.dev/records/Q-1001) and https://sample.a5s.dev/records/Q-1003.")
+    assert sanitize(text, ("https://sample.a5s.dev/",)) == (text, 0)
+
+
+def test_drafts_keep_only_text_and_record_links(stack):
+    _, token = stack.open_run()
+    with stack.client(token) as c:
+        r = c.post("/run/tools/create_draft", json={"args": {
+            "title": "Re: Q-1001", "body": "Pay at https://evil.example/pay"}})
+    assert r.status_code == 200
+    with db.transaction(stack.admin) as conn:
+        assert conn.execute("select body from sample.drafts").fetchone()["body"] == (
+            "Pay at [link removed]")
+    allowed = [e for e in stack.ledger() if e["kind"] == "tool" and e["decision"] == "allow"]
+    assert [e["links_removed"] for e in allowed] == [1]
+
+
+def test_a_tool_that_changes_its_risk_needs_a_new_release(stack, monkeypatch):
+    _, token = stack.open_run()
+    tools = stack.gateway.scenario.tools()
+    quiet = replace(tools["create_draft"], writes=False)  # it claims it no longer writes
+    monkeypatch.setattr(stack.gateway.scenario, "tools", lambda: {**tools, "create_draft": quiet})
+    with stack.client(token) as c:
+        r = c.post("/run/tools/create_draft", json={"args": {"title": "x", "body": "y"}})
+    assert r.status_code == 403 and r.json()["reasons"] == ["tools-match-the-release"]
+
+
+def test_providers_get_only_known_fields_and_never_their_own_tools(stack):
+    stack.model.reply("Hello")
+    run, token = stack.open_run()
+    say = [{"role": "user", "content": "Hi"}]
+    with stack.client(token) as c:
+        searching = c.post("/v1/chat/completions", json={
+            "model": "fake", "messages": say, "tools": [{"type": "web_search"}]})
+        anthropic = c.post("/v1/messages", json={"model": "fake", "max_tokens": 10, "messages": say,
+                                                 "tools": [{"type": "web_search_20250305",
+                                                            "name": "web_search"}]})
+        quiet = c.post("/v1/chat/completions", json={
+            "model": "fake", "messages": say, "enable_search": True, "temperature": 0})
+    assert searching.status_code == 403 and anthropic.status_code == 403
+    assert quiet.status_code == 200 and len(stack.model.requests) == 1
+    sent = stack.model.requests[0]["body"]
+    assert "enable_search" not in sent and sent["temperature"] == 0
+    decided = [e for e in stack.ledger(run) if e["kind"] == "model" and e["decision"] != "record"]
+    assert [e["reasons"] for e in decided[:2]] == [["agents-use-their-own-tools"]] * 2
+    assert decided[2]["args"]["left_out"] == ["enable_search"]
+    assert decided[2]["args"]["params"] == {"temperature": 0}
+
+
+@pytest.mark.parametrize("reports", ["fake-2", ""], ids=["another model", "no model"])
+def test_a_response_must_report_the_approved_version(stack, reports):
+    stack.model.reply("Hello")
+    stack.model.reports = reports
+    _, token = stack.open_run()
+    with stack.client(token) as c:
+        r = c.post("/v1/chat/completions", json={"model": "fake", "messages": []})
+    assert r.status_code == 502 and r.json()["error"]["code"] == "model_mismatch"
+
+
+def test_an_undated_model_must_say_what_its_provider_reports(tmp_path):
+    path = tmp_path / "models.yaml"
+    path.write_text("models:\n  latest:\n    provider: p\n    api: openai\n"
+                    "    base_url: https://p.test\n    model: something-latest\n    key_env: K\n")
+    with pytest.raises(ValueError, match="isn't a dated version"):
+        load_models(path)
+
+
+def test_a_call_that_ran_but_couldnt_be_recorded_isnt_called_denied(stack, monkeypatch):
+    _, token = stack.open_run()
+    append = ledger.append
+
+    def outcomes_fail(conn, entry):
+        if entry.get("decision") == "record":
+            raise psycopg.OperationalError("the database went away")
+        return append(conn, entry)
+
+    monkeypatch.setattr(ledger, "append", outcomes_fail)
+    with stack.client(token) as c:
+        r = c.post("/run/tools/search_records", json={"args": {"query": "invoice"}})
+    assert r.status_code == 200 and r.json()["recorded"] is False and r.json()["result"]

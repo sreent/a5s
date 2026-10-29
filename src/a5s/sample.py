@@ -116,6 +116,7 @@ class SampleScenario:
                 },
                 run=self._create_draft,
                 writes=True,
+                text_fields=("title", "body"),  # drafts keep only text and record links
             ),
         ]
         return {t.name: t for t in tools}

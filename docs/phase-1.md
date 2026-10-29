@@ -47,11 +47,11 @@ Step 1, the walking skeleton, runs locally against the sample scenario, with Dee
 
 | Built | Where |
 | --- | --- |
-| Definitions in git, with a hash of the folder in each release and tools' schemas pinned | [`agents/`](../agents/), [`definitions.py`](../src/a5s/definitions.py) |
+| Definitions in git, with a hash of the folder in each release, and each tool's whole definition pinned, its risk flags included | [`agents/`](../agents/), [`definitions.py`](../src/a5s/definitions.py) |
 | Instances, runs and the ledger in Postgres. Each ledger entry is written in the same transaction as its decision and chained by hash. The database refuses to change an entry, and verification shows where a rewritten one breaks the chain. | [`core/`](../src/a5s/core/) |
 | Each part connects to Postgres as its own role, with only the rights its job needs, so a compromised service can't write the core's records. The core's tables belong to a role nobody logs in as, no role may change, delete or truncate the ledger, and the schema changes through numbered migrations. | [`migrations/`](../src/a5s/migrations/) |
 | Cedar policy with a5s's base pack and a schema, denying by default and failing closed | [`core/policies/`](../src/a5s/core/policies/) |
-| The gateway for tools, for models in both API styles, and for outgoing messages, which keep only the scenario's record links. Workers hold only a run token, never a provider's key. | [`core/gateway.py`](../src/a5s/core/gateway.py) |
+| The gateway for tools, for models in both API styles, and for outgoing messages. Outgoing text, in messages and in tools' text such as drafts, keeps only words and the scenario's record links: no images, HTML or other links in any form. Providers get only known fields and the agent's own function tools, never their own web search, and every response must report the approved version. Workers hold only a run token, never a provider's key. | [`core/gateway.py`](../src/a5s/core/gateway.py) |
 | The scheduler, which takes each message from the core's queue together with its conversation's lease, and renews the lease while it works. A message outlives a scheduler that stops, and waits while the core can't be reached. The scheduler has no port of its own. Runs expire, and a run that outlives its time is closed and its person told. Each fresh run reads the conversation. | [`services/`](../src/a5s/services/) |
 | A Deep Agents worker with no credentials and no shell, whose thread ends with the run | [`worker.py`](../src/a5s/worker.py) |
 | Suspension that stops the next call, even in a running run. Who suspends and resumes comes from their sign-in, the first suspender's suspension stands, and only they can resume it. | [`core/registry.py`](../src/a5s/core/registry.py) |
@@ -62,7 +62,7 @@ Step 1, the walking skeleton, runs locally against the sample scenario, with Dee
 | Teams, through the Bot Framework. The core receives each message itself, because Teams' token doesn't cover what a message says: it checks the token, its key's endorsement for Teams, the service URL and the organisation, and finds the sender by their Entra ID. The scheduler answers from the core's queue, and replies and a5s's own notices reach Teams only through the core, which alone holds the bot's credentials. | [`core/teams.py`](../src/a5s/core/teams.py) |
 | The sample scenario, with three people, customer questions and a store for drafts | [`scenarios/sample/`](../scenarios/sample/) |
 | One container image that runs as the gateway, the scheduler or a worker, and a compose stack whose networks enforce the design: a worker holds no secrets and reaches only the gateway, never the database or the internet. A smoke test runs the stack in CI with stand-ins for the model, the identity provider and locked storage: Keycloak, with the sample's people, and LocalStack, whose S3 enforces object lock as Amazon's does. | [`Dockerfile`](../Dockerfile), [`deploy/`](../deploy/) |
-| 135 tests against a real Postgres and a scripted model and a fake Bot Framework, with emulators for Azure's and Google's storage, and live tests through DeepSeek's and Qwen's OpenAI-compatible APIs and DeepSeek's Anthropic-compatible one | [`tests/`](../tests/) |
+| 153 tests against a real Postgres and a scripted model and a fake Bot Framework, with emulators for Azure's and Google's storage, and live tests through DeepSeek's and Qwen's OpenAI-compatible APIs and DeepSeek's Anthropic-compatible one | [`tests/`](../tests/) |
 
 Still to do in step 1:
 

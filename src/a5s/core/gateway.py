@@ -34,8 +34,13 @@ from a5s.definitions import Definition
 log = logging.getLogger(__name__)
 RUN_MINUTES = 60  # the longest a run may last [TBC]; its token dies with it
 _STATUS_AFTER = {"suspend": "suspended", "retire": "retired"}  # resume and restore: active
-_LINK = re.compile(r"https?://[^\s)>\]]+")
+# Outgoing text keeps only words and the scenario's own record links. Anything that
+# could fetch or point somewhere else goes: images, HTML, and links in any form,
+# whatever their case, slashes or scheme.
 _IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
+_TAG = re.compile(r"</?[A-Za-z][^>]*>")  # HTML, and autolinks such as <https://...>
+_MARKDOWN_LINK = re.compile(r"\[([^\]]*)\]\(\s*([^)\s]*)[^)]*\)")
+_URL = re.compile(r"(?i)(?:\b[a-z][a-z0-9+.-]*:[/\\]+|(?<![\w:/\\])//|\bwww\.)[^\s)>\]]*")
 
 
 def token_hash(token: str) -> bytes:
@@ -43,18 +48,32 @@ def token_hash(token: str) -> bytes:
 
 
 def sanitize(text: str, allowed: tuple[str, ...]) -> tuple[str, int]:
-    """Keep text and the scenario's own record links. Drop images and other links."""
+    """Keep text and the scenario's own record links. Drop images, HTML and other links."""
     removed = 0
 
-    def drop(match: re.Match) -> str:
+    def kept(url: str) -> bool:
+        return any(url.startswith(prefix) for prefix in allowed)
+
+    def link(match: re.Match) -> str:
         nonlocal removed
-        if any(match.group(0).startswith(prefix) for prefix in allowed):
+        if kept(match.group(2)):
+            return match.group(0)
+        removed += 1
+        return f"{match.group(1)} [link removed]"
+
+    def url(match: re.Match) -> str:
+        nonlocal removed
+        if kept(match.group(0)):
             return match.group(0)
         removed += 1
         return "[link removed]"
 
-    without_images, images = _IMAGE.subn("[image removed]", text)
-    return _LINK.sub(drop, without_images), removed + images
+    text, images = _IMAGE.subn("[image removed]", text)
+    text, tags = _TAG.subn("[removed]", text)
+    text = _MARKDOWN_LINK.sub(link, text)
+    parts = re.split(r"(\[[^\]]*\]\([^)]*\))", text)  # record links already kept stay whole
+    text = "".join(p if _MARKDOWN_LINK.fullmatch(p) else _URL.sub(url, p) for p in parts)
+    return text, removed + images + tags
 
 
 @dataclass
@@ -433,29 +452,43 @@ def create_app(gw: Gateway) -> FastAPI:
                 ledger.append(conn, gw.entry(row, "explain", body.name, decision))
         return decision.as_dict(explain=True)
 
+    def record(entry: dict) -> bool:
+        """Record what happened after a call was made. If that fails, the call still happened."""
+        try:
+            with db.transaction(gw.url) as conn:
+                ledger.append(conn, entry)
+            return True
+        except psycopg.Error:
+            log.exception("couldn't record the outcome of %s %s", entry["kind"], entry["action"])
+            return False
+
     @app.post("/run/tools/{name}")
     def call_tool(name: str, body: ToolArgs, token: str = Depends(run_token)) -> Any:
         tool = gw.scenario.tools().get(name)
+        args, removed = dict(body.args), 0
+        for field_name in tool.text_fields if tool else ():
+            if isinstance(args.get(field_name), str):
+                args[field_name], dropped = sanitize(args[field_name], gw.scenario.record_links)
+                removed += dropped
         with db.transaction(gw.url) as conn:
             row = load_run(conn, token)
             decision = gw.decide(row, "call_tool", gw.tool_entity(name, tool, row["pins"]), [])
-            seq = ledger.append(conn, gw.entry(row, "tool", name, decision, args=ledger.mask(body.args)))
+            seq = ledger.append(conn, gw.entry(row, "tool", name, decision, args=ledger.mask(args),
+                                               links_removed=removed))
         if not decision.allowed:
             return JSONResponse(status_code=403,
                                 content={"denied": True, **decision.as_dict(explain=True)})
         try:
-            result = tool.run(ToolCall(args=body.args, instance=row["id"], run=row["run"],
+            result = tool.run(ToolCall(args=args, instance=row["id"], run=row["run"],
                                        acts_for=tuple(row["acts_for"])))
             outcome = {"status": "ok", "result_sha256": ledger.digest(result)}
         except Exception as exc:  # noqa: BLE001 - the tool's own failure, recorded and reported
             result, outcome = None, {"status": "error", "error": f"{type(exc).__name__}: {exc}"[:200]}
-        with db.transaction(gw.url) as conn:
-            ledger.append(conn, {"kind": "tool", "action": name, "run": row["run"],
-                                 "instance": row["id"], "decision": "record", "of": seq,
-                                 "outcome": outcome})
+        recorded = record({"kind": "tool", "action": name, "run": row["run"], "instance": row["id"],
+                           "decision": "record", "of": seq, "outcome": outcome})
         if outcome["status"] != "ok":
             return JSONResponse(status_code=502, content={"error": outcome["error"]})
-        return {"result": result}
+        return {"result": result, "recorded": recorded}
 
     @app.post("/run/messages")
     def send_message(body: Message, token: str = Depends(run_token)) -> Any:
@@ -502,11 +535,9 @@ def create_app(gw: Gateway) -> FastAPI:
                 gw.teams.send(reply_to, text)
             except (httpx.HTTPError, ValueError) as exc:
                 problem = f"Teams didn't take it: {type(exc).__name__}: {exc}"[:200]
-        with db.transaction(gw.url) as conn:
-            ledger.append(conn, {"kind": "message", "action": "deliver", "run": run,
-                                 "instance": instance, "decision": "record",
-                                 "outcome": {"status": "error", "error": problem} if problem
-                                 else {"status": "ok", "channel": "teams"}})
+        record({"kind": "message", "action": "deliver", "run": run, "instance": instance,
+                "decision": "record", "outcome": {"status": "error", "error": problem} if problem
+                else {"status": "ok", "channel": "teams"}})
         return problem
 
     @app.post("/notices", dependencies=[Depends(service)])
@@ -554,32 +585,41 @@ def create_app(gw: Gateway) -> FastAPI:
             "parents": [],
         }
         prompt = {"system": body.get("system"), "messages": body.get("messages")}
+        forwarded, dropped, refusal = models.screen(api, body)
         with db.transaction(gw.url) as conn:
             row = load_run(conn, token)
-            decision = gw.decide(row, "call_model", approved, [])
+            if refusal:
+                decision = Decision(False, ("agents-use-their-own-tools",), explanations=(refusal,))
+            else:
+                decision = gw.decide(row, "call_model", approved, [])
             seq = ledger.append(conn, gw.entry(row, "model", alias, decision, args={
                 "prompt_sha256": ledger.digest(prompt),
                 "messages": len(body.get("messages") or []),
                 "tools": len(body.get("tools") or []),
+                "tools_sha256": ledger.digest(forwarded.get("tools")),
+                "params": {k: v for k, v in forwarded.items()
+                           if k not in ("model", "messages", "system", "tools")},
+                "left_out": dropped,
             }, provider=model.provider if model else None))
         if not decision.allowed:
             return JSONResponse(status_code=403, content=models.error_body(
                 api, "denied by policy: " + "; ".join(decision.explanations)))
         try:
-            status, data = models.forward(model, body, gw.http)
+            status, data = models.forward(model, forwarded, gw.http)
         except models.ModelUnavailable as exc:
             status, data = 503, models.error_body(api, str(exc), "model_unavailable")
         reported = data.get("model") if isinstance(data, dict) else None
-        if status < 400 and model.reported_model and reported != model.reported_model:
+        expected = model.reported_model or model.model
+        if status < 400 and reported != expected:
             status, data = 502, models.error_body(
-                api, f"the provider reported {reported}, not the approved {model.reported_model}",
+                api, f"the provider reported {reported}, not the approved {expected}",
                 "model_mismatch")
-        with db.transaction(gw.url) as conn:
-            ledger.append(conn, {"kind": "model", "action": alias, "run": row["run"],
-                                 "instance": row["id"], "decision": "record", "of": seq,
-                                 "outcome": {"status": status, "reported_model": reported,
-                                             "usage": data.get("usage") if isinstance(data, dict) else None}})
-        return JSONResponse(status_code=status, content=data)
+        recorded = record({"kind": "model", "action": alias, "run": row["run"], "instance": row["id"],
+                           "decision": "record", "of": seq,
+                           "outcome": {"status": status, "reported_model": reported,
+                                       "usage": data.get("usage") if isinstance(data, dict) else None}})
+        return JSONResponse(status_code=status, content=data,
+                            headers=None if recorded else {"x-a5s-recorded": "false"})
 
     @app.post("/v1/chat/completions")
     def openai_style(body: dict[str, Any], token: str = Depends(run_token)) -> JSONResponse:

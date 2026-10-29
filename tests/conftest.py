@@ -78,6 +78,7 @@ class FakeModel:
     script: list[tuple[str | None, list[tuple[str, dict]]]] = field(default_factory=list)
     requests: list[dict] = field(default_factory=list)
     on_request: Callable[[int], None] | None = None
+    reports: str | None = None  # the model it says answered, if not the one asked for; "" for none
 
     def reply(self, content: str | None = None, *tools: tuple[str, dict]) -> None:
         self.script.append((content, list(tools)))
@@ -95,9 +96,9 @@ class FakeModel:
                  "function": {"name": name, "arguments": json.dumps(args)}}
                 for i, (name, args) in enumerate(tools)
             ]
+        reported = {} if self.reports == "" else {"model": self.reports or body["model"]}
         return httpx.Response(200, json={
-            "id": "chatcmpl-test", "object": "chat.completion", "created": 0,
-            "model": body["model"],
+            "id": "chatcmpl-test", "object": "chat.completion", "created": 0, **reported,
             "choices": [{"index": 0, "message": message,
                          "finish_reason": "tool_calls" if tools else "stop"}],
             "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
@@ -300,6 +301,7 @@ models:
     api: openai
     base_url: https://fake.test/v1
     model: fake-1
+    reported_model: fake-1
     key_env: A5S_TEST_PROVIDER_KEY
 """
 

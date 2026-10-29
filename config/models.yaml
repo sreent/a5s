@@ -8,6 +8,9 @@ models:
     api: openai
     base_url: https://api.deepseek.com
     model: deepseek-v4-pro
+    # DeepSeek offers no dated version, so a5s can only check that every response
+    # reports this name. A change behind the name can't be seen.
+    reported_model: deepseek-v4-pro
     key_env: DEEPSEEK_API_KEY
     region: provider-hosted
     data_classes: [synthetic]
@@ -26,6 +29,7 @@ models:
     api: anthropic
     base_url: https://api.deepseek.com/anthropic
     model: deepseek-v4-pro
+    reported_model: deepseek-v4-pro
     key_env: DEEPSEEK_API_KEY
     region: provider-hosted
     data_classes: [synthetic]
