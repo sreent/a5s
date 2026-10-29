@@ -33,12 +33,16 @@ from a5s.config import Config, ModelConfig
 from a5s.contract import Scenario, Signature, Tool, ToolCall, parse_settings
 from a5s.core import ledger, models, obligations, registry, releases, schedules
 from a5s.core.identity import IdentityError, UnknownPerson, Verifier, signed_in
+from a5s.core.matrix import Matrix
 from a5s.core.policy import Decision, PolicyEngine
 from a5s.core.teams import Teams
 from a5s.definitions import Definition
 
 log = logging.getLogger(__name__)
 RUN_MINUTES = 60  # the longest a run may last [TBC]; its token dies with it
+# The chats a5s writes to itself, as each agent's bot. People collect from the local
+# channel, the command line's and the web chat's, instead.
+PUSHED = ("teams", "matrix")
 _STATUS_AFTER = {"suspend": "suspended", "retire": "retired"}  # resume and restore: active
 # Outgoing text keeps only words and the scenario's own record links. Anything that
 # could fetch or point somewhere else goes: images, HTML, and links in any form,
@@ -92,6 +96,7 @@ class Gateway:
     http: httpx.Client
     identity: Verifier | None = None  # for the local channel's sign-in; else development only
     teams: Teams | None = None
+    matrix: Matrix | None = None
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)  # when obligations and schedules are due
     releases: releases.Releases | None = None  # the release a5s is, which must be approved here
     _checked: dict = field(default_factory=dict)  # settings versions whose signatures checked out
@@ -186,9 +191,9 @@ class Gateway:
         row = conn.execute("select channel, reply_to from inbound where person = %s "
                            "order by (agent = %s) desc nulls last, received_at desc limit 1",
                            (person, agent)).fetchone()
-        if row is None or row["channel"] != "teams":
+        if row is None or row["channel"] not in PUSHED:
             return {"channel": "local", "reply_to": {}}
-        return {"channel": "teams",  # a new message in that conversation, not a reply to one
+        return {"channel": row["channel"],  # a new message in that conversation, not a reply
                 "reply_to": {k: v for k, v in row["reply_to"].items() if k != "activity"}}
 
     # What each kind of run brings when it opens.
@@ -532,8 +537,8 @@ def create_app(gw: Gateway) -> FastAPI:
                              "person": row["person"], "to": to.id, "step": row["escalations"] + 1,
                              "channel": route["channel"], "chars": len(text),
                              "sha256": hashlib.sha256(text.encode()).hexdigest()}})
-                if route["channel"] == "teams":
-                    sends.append((route["reply_to"], text, row["instance_id"]))
+                if route["channel"] in PUSHED:
+                    sends.append((route["channel"], route["reply_to"], text, row["instance_id"]))
                 else:  # people collect it from the local channel's inbox
                     conn.execute("insert into outbox (instance_id, agent, person, channel, text) "
                                  "values (%s, %s, %s, 'local', %s)",
@@ -541,8 +546,8 @@ def create_app(gw: Gateway) -> FastAPI:
                 escalated.add(row["id"])
             due = [d for d in obligations.to_chase(rows, gw.scenario, now, able)
                    if d["obligation"] not in escalated]
-        for reply_to, text, instance in sends:
-            deliver(reply_to, text, None, instance)
+        for channel, reply_to, text, instance in sends:
+            deliver(channel, reply_to, text, None, instance)
         return due
 
     @app.post("/schedules/sweep", dependencies=[Depends(service)])
@@ -701,7 +706,7 @@ def create_app(gw: Gateway) -> FastAPI:
                 "to": body.to, "chars": len(text), "sha256": hashlib.sha256(text.encode()).hexdigest(),
                 "links_removed": removed,
             }))
-            if decision.allowed and route["channel"] != "teams":  # people collect it from here
+            if decision.allowed and route["channel"] not in PUSHED:  # people collect it from here
                 conn.execute(
                     "insert into outbox (run_id, instance_id, agent, inbound_id, person, channel, "
                     "text) values (%s, %s, %s, %s, %s, %s, %s)",
@@ -710,25 +715,27 @@ def create_app(gw: Gateway) -> FastAPI:
         if not decision.allowed:
             return JSONResponse(status_code=403,
                                 content={"denied": True, **decision.as_dict(explain=True)})
-        if route["channel"] == "teams":
-            problem = deliver(route["reply_to"], text, row["run"], row["id"])
+        if route["channel"] in PUSHED:
+            problem = deliver(route["channel"], route["reply_to"], text, row["run"], row["id"])
             if problem:
                 return JSONResponse(status_code=502, content={"error": problem})
         return {"sent": True, "text": text, "links_removed": removed}
 
-    def deliver(reply_to: dict, text: str, run: str | None, instance: str | None) -> str | None:
-        """Send text to Teams, and record whether it got there. The problem, if not."""
-        problem = None
-        if gw.teams is None:
-            problem = "Teams isn't set up in this gateway"
+    def deliver(channel: str, reply_to: dict, text: str, run: str | None,
+                instance: str | None) -> str | None:
+        """Send text through a chat a5s writes to itself, such as Teams or Matrix, and record
+        whether it got there. The problem, if not."""
+        problem, chat = None, {"teams": gw.teams, "matrix": gw.matrix}.get(channel)
+        if chat is None:
+            problem = f"{channel} isn't set up in this gateway"
         else:
             try:
-                gw.teams.send(reply_to, text)
+                chat.send(reply_to, text)
             except (httpx.HTTPError, ValueError) as exc:
-                problem = f"Teams didn't take it: {type(exc).__name__}: {exc}"[:200]
+                problem = f"{channel} didn't take it: {type(exc).__name__}: {exc}"[:200]
         record({"kind": "message", "action": "deliver", "run": run, "instance": instance,
                 "decision": "record", "outcome": {"status": "error", "error": problem} if problem
-                else {"status": "ok", "channel": "teams"}})
+                else {"status": "ok", "channel": channel}})
         return problem
 
     @app.post("/notices", dependencies=[Depends(service)])
@@ -749,15 +756,15 @@ def create_app(gw: Gateway) -> FastAPI:
                                      "decision": "allow", "args": {
                                          "inbound": inbound, "chars": len(text),
                                          "sha256": hashlib.sha256(text.encode()).hexdigest()}})
-                if row["channel"] != "teams":
+                if row["channel"] not in PUSHED:
                     conn.execute(
                         "insert into outbox (instance_id, agent, inbound_id, person, channel, text) "
                         "values (%s, %s, %s, %s, %s, %s)",
                         (body.instance, row["agent"], inbound, row["person"], row["channel"], text))
         if row is None:
             raise HTTPException(403, "a5s only answers a message someone sent, and briefly")
-        if row["channel"] == "teams":
-            problem = deliver(row["reply_to"], text, None, body.instance)
+        if row["channel"] in PUSHED:
+            problem = deliver(row["channel"], row["reply_to"], text, None, body.instance)
             if problem:
                 raise HTTPException(502, problem)
         return {"sent": True, "text": text}

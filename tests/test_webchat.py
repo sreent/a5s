@@ -131,6 +131,15 @@ def test_in_development_the_page_asks_who_you_are(stack):
     assert config == {"signin": None, "development": True, "agents": ["assistant"]}
 
 
+def test_the_web_chat_is_off_where_nobody_could_sign_in_to_it(stack):
+    deployed = replace(stack.as_role("channels"), development=False)  # no provider, no client id
+    with serve(inbox.create_app(replace(stack.gateway, cfg=deployed)), free_port()) as url:
+        found = [httpx.get(f"{url}{path}").status_code for path in ("/", "/chat/", "/chat/config",
+                                                                     "/chat/app.js")]
+    assert found == [404] * 4
+    assert inbox.chats(replace(stack.gateway, cfg=deployed)) == ["the command line"]
+
+
 def test_people_sign_in_through_the_organisations_own_provider(signing_in, provider):
     config = httpx.get(f"{signing_in}/chat/config").json()
     assert config["development"] is False

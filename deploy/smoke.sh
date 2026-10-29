@@ -1,12 +1,15 @@
 #!/bin/sh
-# Starts a5s's containers with stand-ins for the model, the identity provider
-# and locked storage, then checks that the core runs only a release its people
-# approved, that a person must sign in, that a message runs end to end, that the
-# core works obligations out from the records, that a worker reaches only the
-# gateway, and that the ledger is copied, locked, and verifies against its copies.
+# Starts a5s's containers with stand-ins for the model, the identity provider, a
+# Matrix homeserver and locked storage, then checks that the core runs only a
+# release its people approved, that a person must sign in, that a message runs end
+# to end from the command line and from Matrix, that the core works obligations out
+# from the records, that a worker reaches only the gateway, and that the ledger is
+# copied, locked, and verifies against its copies.
 # Needs the image first: docker build -t a5s:dev .
+# With --keep, it leaves the stack running afterwards, to try the web chat and Matrix.
 set -eu
 cd "$(dirname "$0")/.."
+keep=$([ "${1:-}" = --keep ] && echo 1 || echo 0)
 
 env_file=$(mktemp)
 reply=$(mktemp)
@@ -20,9 +23,10 @@ for part in GATEWAY CHANNELS SCHEDULER ANCHOR; do
   echo "A5S_DB_${part}_PASSWORD=$(random)" >> "$env_file"
 done
 echo "A5S_ANCHOR_STORE=s3://a5s-ledger/sample" >> "$env_file"
+python3 deploy/matrix/configure.py "$work/matrix" >> "$env_file"
 compose() { docker compose -p a5s-smoke --env-file "$env_file" -f deploy/compose.yaml \
               -f deploy/compose.stub.yaml -f deploy/compose.identity.yaml \
-              -f deploy/compose.storage.yaml "$@"; }
+              -f deploy/compose.storage.yaml -f deploy/compose.matrix.yaml "$@"; }
 trap 'compose down -v >/dev/null 2>&1; rm -rf "$env_file" "$reply" "$work"' EXIT
 
 compose up -d
@@ -86,6 +90,48 @@ curl -sf -o "$reply" -H "authorization: Bearer $ana" \
 echo "Reply: $(field '["replies"]')"
 grep -q "Q-1001" "$reply"
 
+# The same question from Ana's own Matrix account, in a direct chat with the assistant
+for person in ana ben chen; do
+  compose exec -T synapse register_new_matrix_user -c /config/homeserver.yaml -u "$person" \
+    -p "$idp_password" --no-admin http://localhost:8008 > /dev/null
+done
+A5S_PASSWORD="$idp_password" python3 - <<'PY'
+import json, os, time, uuid
+from urllib.parse import quote
+from urllib.request import Request, urlopen
+
+HOMESERVER, BOT = "http://127.0.0.1:8008/_matrix/client/v3", "@a5s-assistant:a5s.test"
+
+def call(method, path, body=None, token=None):
+    headers = {"Content-Type": "application/json"} | ({"Authorization": f"Bearer {token}"} if token else {})
+    data = None if body is None else json.dumps(body).encode()
+    with urlopen(Request(HOMESERVER + path, data, headers, method=method), timeout=30) as answer:
+        return json.load(answer)
+
+def until(what, found, seconds=120):
+    for _ in range(seconds):
+        if result := found():
+            return result
+        time.sleep(1)
+    raise SystemExit(f"In Matrix, {what} didn't happen within {seconds} seconds.")
+
+ana = call("POST", "/login", {"type": "m.login.password", "password": os.environ["A5S_PASSWORD"],
+                               "identifier": {"type": "m.id.user", "user": "ana"}})["access_token"]
+room = call("POST", "/createRoom", {"is_direct": True, "invite": [BOT], "preset": "trusted_private_chat"},
+            ana)["room_id"]
+at = f"/rooms/{quote(room, safe='')}"
+until("the assistant joining Ana's chat", lambda: BOT in call("GET", f"{at}/joined_members", token=ana)["joined"])
+call("PUT", f"{at}/send/m.room.message/{uuid.uuid4().hex}",
+     {"msgtype": "m.text", "body": "Which questions mention an invoice?"}, ana)
+said = until("the assistant answering", lambda: [
+    e["content"]["body"] for e in call("GET", f"{at}/messages?dir=b&limit=20", token=ana)["chunk"]
+    if e["sender"] == BOT and e["type"] == "m.room.message"])
+print(f"Reply in Matrix: {said[0]}")
+assert "Q-1001" in said[0], said
+PY
+compose exec -T gateway a5s ledger tail -n 50 | grep -q '"identity": "verified by matrix"'
+echo "The homeserver vouched for Ana in Matrix, and the core recorded it."
+
 curl -sf -o "$reply" -H "authorization: Bearer $ana" http://127.0.0.1:8703/channels/local/inbox
 field '["messages"]' > /dev/null  # reminders and escalations, which the clock decides
 compose exec -T gateway python - <<'PY'
@@ -114,7 +160,7 @@ def reach(host, port):
     except OSError:
         return False
 assert reach("gateway", 8700), "the worker can't reach the gateway"
-for host, port in (("postgres", 5432), ("channels", 8703), ("keycloak", 8080),
+for host, port in (("postgres", 5432), ("channels", 8703), ("keycloak", 8080), ("synapse", 8008),
                    ("localstack", 4566), ("api.deepseek.com", 443), ("1.1.1.1", 443)):
     assert not reach(host, port), f"the worker can reach {host}:{port}"
 print("The worker holds no secrets, and reaches only the gateway.")
@@ -153,3 +199,17 @@ print(f"The ledger's {len(versions)} copies are locked: deleting them is refused
 PY
 compose exec -T anchor a5s ledger verify
 echo "Smoke test passed."
+
+if [ "$keep" = 1 ]; then
+  trap - EXIT
+  rm -f "$reply"
+  cat <<EOF
+
+The stack is still running, to try. Sign in as ana, ben or chen, with the password
+A5S_IDP_PASSWORD in $env_file:
+  the web chat: http://127.0.0.1:8703/chat/
+  Matrix:       http://127.0.0.1:8008, in a Matrix app such as Element, as @ana:a5s.test, say.
+                Start a chat with @a5s-assistant:a5s.test, with encryption off.
+To stop it: docker compose -p a5s-smoke down -v; rm -rf $env_file $work
+EOF
+fi

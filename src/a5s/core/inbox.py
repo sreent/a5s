@@ -30,7 +30,7 @@ from psycopg.types.json import Jsonb
 from pydantic import BaseModel
 
 from a5s import db
-from a5s.core import ledger
+from a5s.core import ledger, matrix
 from a5s.core.identity import IdentityError, UnknownPerson, signed_in
 from a5s.core.teams import ONE_TO_ONE, UNKNOWN, Refused
 
@@ -124,11 +124,26 @@ def turned_away(conn: Any, channel: str, reason: str, people: list[str], text: s
                          "args": {"chars": len(text)}})
 
 
+def webchat(gw: Any) -> bool:
+    """The web chat is on where people can sign in to it, or in development."""
+    if gw.identity is None:
+        return gw.cfg.development
+    return bool(gw.cfg.webchat_client_id)
+
+
+def chats(gw: Any) -> list[str]:
+    """The chats a deployment has turned on, each by setting its own settings."""
+    on = {"the command line": True, "the web chat": webchat(gw), "Teams": gw.teams is not None,
+          "Matrix": gw.matrix is not None}
+    return [chat for chat, is_on in on.items() if is_on]
+
+
 def create_app(gw: Any) -> FastAPI:
     """The core's endpoints for channels: the only part of the core people reach."""
     app = FastAPI(title="a5s channels")
 
     app.add_middleware(Small)
+    log.info("people reach a5s through %s", ", ".join(chats(gw)))
 
     # Teams
 
@@ -167,7 +182,76 @@ def create_app(gw: Any) -> FastAPI:
                        identity="verified by teams")
         return Response(status_code=200)
 
-    # The local channel, for the command line and, later, a web app
+    # Matrix: the homeserver sends what happens in the rooms the agents' bots are in
+
+    def matrix_check(authorization: str | None, access_token: str | None) -> None:
+        if gw.matrix is None:
+            raise HTTPException(404, "Matrix isn't set up")
+        try:
+            gw.matrix.check(authorization, access_token)
+        except matrix.Refused as exc:  # not recorded: anyone could send these
+            log.warning("refused a delivery from Matrix: %s", exc.reason)
+            raise HTTPException(exc.status, {"errcode": "M_FORBIDDEN", "error": exc.reason}) from None
+
+    def tell_in_matrix(reply_to: dict[str, str], text: str) -> None:
+        try:
+            gw.matrix.send(reply_to, text)
+        except Exception:
+            log.exception("couldn't answer in Matrix")
+
+    @app.put("/channels/matrix/_matrix/app/v1/transactions/{txn}")
+    def matrix_transaction(txn: str, body: dict[str, Any], background: BackgroundTasks,
+                           authorization: str | None = Header(default=None),
+                           access_token: str | None = None) -> dict:
+        matrix_check(authorization, access_token)
+        agents = sorted(gw.definitions)
+        for event in body.get("events") or []:
+            try:
+                what, detail = gw.matrix.event(event, gw.scenario, agents)
+                if what == "join":
+                    gw.matrix.join(*detail)
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code >= 500:  # the homeserver sends it all again later
+                    raise
+                # It sends nothing more until this delivery is taken, so one event it won't
+                # let a5s act on, such as an invitation withdrawn before a5s joined, is skipped
+                log.warning("skipped a Matrix event the homeserver refused: %s", exc)
+                continue
+            if what == "turn away":
+                reason, people, reply, reply_to = detail
+                with db.transaction(gw.url) as conn:
+                    turned_away(conn, "matrix", reason, people, "")
+                background.add_task(tell_in_matrix, reply_to, reply)
+            elif what == "message":
+                with db.transaction(gw.url) as conn:  # a resent delivery counts once
+                    record(conn, channel="matrix", source_id=event["event_id"], person=detail.person,
+                           agent=detail.agent, text=detail.text, reply_to=detail.reply_to,
+                           identity="verified by matrix")
+        return {}
+
+    @app.get("/channels/matrix/_matrix/app/v1/users/{user}")
+    def matrix_user(user: str, authorization: str | None = Header(default=None),
+                    access_token: str | None = None) -> JSONResponse:
+        """Whether a bot exists, made on demand, such as when someone first invites it."""
+        matrix_check(authorization, access_token)
+        if gw.matrix.agent_of(user) not in gw.definitions:
+            return JSONResponse(status_code=404, content={"errcode": "M_NOT_FOUND"})
+        gw.matrix.register(user)
+        return JSONResponse({})
+
+    @app.get("/channels/matrix/_matrix/app/v1/rooms/{alias}")
+    def matrix_room(alias: str, authorization: str | None = Header(default=None),
+                    access_token: str | None = None) -> JSONResponse:
+        matrix_check(authorization, access_token)
+        return JSONResponse(status_code=404, content={"errcode": "M_NOT_FOUND"})
+
+    @app.post("/channels/matrix/_matrix/app/v1/ping")
+    def matrix_ping(authorization: str | None = Header(default=None),
+                    access_token: str | None = None) -> dict:
+        matrix_check(authorization, access_token)
+        return {}
+
+    # The local channel, for the command line and the web chat
 
     def sender(authorization: str | None, claimed: str | None) -> tuple[str, str]:
         """Who's writing, and how a5s knows."""
@@ -267,13 +351,17 @@ def create_app(gw: Any) -> FastAPI:
 
     # The web chat
 
-    @app.get("/", include_in_schema=False)
-    def home() -> RedirectResponse:
-        return RedirectResponse("/chat/")
-
     def page(name: str) -> Response:
+        if not webchat(gw):
+            raise HTTPException(404, "the web chat isn't set up here")
         path = WEBCHAT / name
         return Response(path.read_bytes(), media_type=_TYPES[path.suffix], headers=_PAGE_HEADERS)
+
+    @app.get("/", include_in_schema=False)
+    def home() -> RedirectResponse:
+        if not webchat(gw):
+            raise HTTPException(404, "the web chat isn't set up here")
+        return RedirectResponse("/chat/")
 
     @app.get("/chat/", include_in_schema=False)
     def chat() -> Response:
@@ -282,6 +370,8 @@ def create_app(gw: Any) -> FastAPI:
     @app.get("/chat/config")
     def chat_config() -> dict:
         """How the page signs people in, and which agents they can talk to."""
+        if not webchat(gw):
+            raise HTTPException(404, "the web chat isn't set up here")
         signin = None
         if gw.identity is not None and gw.cfg.webchat_client_id:
             try:

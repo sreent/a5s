@@ -13,10 +13,21 @@ x-a5s: &a5s
 x-admin: &admin
   A5S_DATABASE_URL: postgresql://a5s:${A5S_DB_PASSWORD:?set A5S_DB_PASSWORD}@postgres:5432/postgres
 
-x-teams: &teams  # the bot's registration in Entra ID, if a5s talks to people in Teams
-  A5S_TEAMS_APP_ID: ${A5S_TEAMS_APP_ID:-}
-  A5S_TEAMS_APP_SECRET: ${A5S_TEAMS_APP_SECRET:-}
-  A5S_TEAMS_TENANT_ID: ${A5S_TEAMS_TENANT_ID:-}
+# How people reach a5s. Each chat is on where its settings are set, and passed on
+# from the environment: the command line always, and any of the others.
+x-people: &people
+  A5S_OIDC_ISSUER:  # the identity provider people sign in with
+  A5S_OIDC_AUDIENCE:
+  A5S_OIDC_PERSON_CLAIM:
+  A5S_OIDC_METADATA_URL:
+  A5S_WEBCHAT_CLIENT_ID:  # the web chat, signing people in through that provider
+  A5S_TEAMS_APP_ID:  # the bot's registration in Entra ID, for Teams
+  A5S_TEAMS_APP_SECRET:
+  A5S_TEAMS_TENANT_ID:
+  A5S_MATRIX_HOMESERVER:  # a5s's registration on the organisation's homeserver, for Matrix
+  A5S_MATRIX_SERVER_NAME:
+  A5S_MATRIX_AS_TOKEN:
+  A5S_MATRIX_HS_TOKEN:
 
 services:
   postgres:
@@ -41,6 +52,7 @@ services:
       A5S_DB_CHANNELS_PASSWORD: ${A5S_DB_CHANNELS_PASSWORD:?set A5S_DB_CHANNELS_PASSWORD}
       A5S_DB_SCHEDULER_PASSWORD: ${A5S_DB_SCHEDULER_PASSWORD:?set A5S_DB_SCHEDULER_PASSWORD}
       A5S_DB_ANCHOR_PASSWORD: ${A5S_DB_ANCHOR_PASSWORD:?set A5S_DB_ANCHOR_PASSWORD}
+      A5S_TEAM:  # the directory's team that runs a5s, platform if not set
     networks: [data]
     depends_on:
       postgres: {condition: service_healthy}
@@ -49,9 +61,10 @@ services:
     <<: *a5s
     command: ["gateway", "--host", "0.0.0.0"]
     environment:
-      <<: *teams
+      <<: *people
       A5S_DATABASE_URL: postgresql://a5s_gateway:${A5S_DB_GATEWAY_PASSWORD}@postgres:5432/postgres
       A5S_SERVICE_TOKEN: ${A5S_SERVICE_TOKEN:?set A5S_SERVICE_TOKEN}
+      A5S_TEAM:
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       QWEN_API_KEY: ${QWEN_API_KEY:-}
     networks: [data, work, egress]
@@ -62,10 +75,10 @@ services:
     <<: *a5s
     command: ["channels", "--host", "0.0.0.0"]
     environment:
-      <<: *teams
+      <<: *people
       A5S_DATABASE_URL: postgresql://a5s_channels:${A5S_DB_CHANNELS_PASSWORD}@postgres:5432/postgres
     networks: [data, egress, edge]
-    ports: ["127.0.0.1:${A5S_CHANNELS_PORT:-8703}:8703"]  # for Teams, behind your ingress
+    ports: ["127.0.0.1:${A5S_CHANNELS_PORT:-8703}:8703"]  # behind your ingress, for people and Teams
     depends_on:
       setup: {condition: service_completed_successfully}
 

@@ -8,7 +8,7 @@ a5s runs agents the way an operating system runs programs. It installs them, giv
 
 ```mermaid
 flowchart LR
-  people["People, in Teams"] <--> services
+  people["People, in Teams, Matrix or the web chat"] <--> services
   subgraph a5s["a5s"]
     direction TB
     services["Services: scheduler, context, channels, approvals"]
@@ -86,22 +86,37 @@ uv run a5s ledger verify
 
 `a5s dev` takes people's word for who they are, and runs whatever release it is, which is for development only. Everywhere else, people sign in, and the core runs only a release its deployment's people have approved. Every minute, the scheduler also asks the core what falls due: the assistant reminds people of their open records once half the time allowed has passed, the core escalates what's overdue along each person's reporting line, and schedules in a release fire at their times.
 
-To run it as containers, the way each cloud would, build the image and run the [smoke test](deploy/smoke.sh). It starts the stack with stand-ins for the model, the identity provider and locked storage, and checks it end to end, from sign-in to the ledger's locked copies:
+To run it as containers, the way each cloud would, build the image and run the [smoke test](deploy/smoke.sh). It starts the stack with stand-ins for the model, the identity provider, a Matrix homeserver and locked storage, and checks it end to end, from sign-in and a chat in Matrix to the ledger's locked copies. With `--keep`, it leaves the stack running, to try the web chat and Matrix as the sample's people:
 
 ```sh
 docker build -t a5s:dev .
-sh deploy/smoke.sh
+sh deploy/smoke.sh          # or: sh deploy/smoke.sh --keep
 ```
 
 With a real model, start [`deploy/compose.yaml`](deploy/compose.yaml) with `A5S_DB_PASSWORD`, `A5S_SERVICE_TOKEN`, a provider's key, `A5S_ANCHOR_STORE`, the locked store for the ledger's copies, such as `s3://bucket/a5s`, and a password for each part's database role (`A5S_DB_GATEWAY_PASSWORD`, `A5S_DB_CHANNELS_PASSWORD`, `A5S_DB_SCHEDULER_PASSWORD` and `A5S_DB_ANCHOR_PASSWORD`) set, and send messages to the core's channels with `A5S_TOKEN=<a sign-in token> uv run a5s say ...`.
 
 Before the core runs a release, the people its changes need approve it. In the stack, `a5s release show` prints the release, each approver signs it with `a5s release sign --as <their id> --key <their private key>`, wherever they are, and the administrator records the signatures with `a5s release approve`. `a5s release status` says what it still needs, and why. Set `A5S_TEAM` to the directory's team that runs a5s, `platform` by default: nobody in it, or above it in its reporting line, can approve as the release approver. The smoke test does this with the sample's made-up people.
 
-To have people sign in, point a5s at your identity provider with `A5S_OIDC_ISSUER`, `A5S_OIDC_AUDIENCE` and `A5S_OIDC_PERSON_CLAIM`, the claim that holds each person's id in the directory, such as `oid` for Entra ID. [`compose.identity.yaml`](deploy/compose.identity.yaml) does this with Keycloak in place of Entra ID, Google Cloud Identity or Okta. `a5s say` then sends the person's token from `A5S_TOKEN`.
-
-For Teams, register a bot in your Entra ID tenant, and set `A5S_TEAMS_APP_ID`, `A5S_TEAMS_APP_SECRET` and `A5S_TEAMS_TENANT_ID` for the gateway and for `a5s channels`, the core's endpoints where messages arrive. Point the bot's messaging endpoint at `/channels/teams/messages` there, through your cloud's ingress. Each agent can be its own bot: list them in `A5S_TEAMS_BOTS`, as JSON with each bot's agent, app id and the variable that holds its secret. Compose publishes the channels only on localhost, so while developing, reach them through a tunnel.
-
 To change the settings, edit [`settings.yaml`](scenarios/sample/settings.yaml), raise its serial, and sign the new version with `uv run a5s sign --as ana` before applying it. `uv run pytest` runs the tests against a scripted model, and `uv run pytest -m live` against the real providers. To serve another scenario, set `A5S_SCENARIO` to its class, such as `a5s.sample:SampleScenario`, and `A5S_SCENARIO_DIR` to its folder.
+
+### Chats
+
+Each deployment turns on the chats its people use, by setting each one's settings for the gateway and for `a5s channels`, the core's endpoints where messages arrive. Compose passes them on from its environment. Any number can be on at once, and `a5s channels` logs which are on when it starts.
+
+| Chat | On where these are set | What it needs |
+| --- | --- | --- |
+| The command line | Always on | `a5s say` and `a5s inbox`, with the person's sign-in token in `A5S_TOKEN` |
+| The web chat | `A5S_WEBCHAT_CLIENT_ID`, or in development | A public client at your identity provider, using PKCE, that may return to the page at `/chat/` on the channels' address, over HTTPS or on localhost |
+| Matrix | `A5S_MATRIX_HOMESERVER`, `A5S_MATRIX_SERVER_NAME`, `A5S_MATRIX_AS_TOKEN` and `A5S_MATRIX_HS_TOKEN` | A homeserver of your own, such as Synapse, with a5s registered on it as an application service |
+| Teams | `A5S_TEAMS_APP_ID`, `A5S_TEAMS_APP_SECRET` and `A5S_TEAMS_TENANT_ID`, or `A5S_TEAMS_BOTS` | Microsoft 365, a bot registered in your Entra ID tenant, and the internet |
+
+A reply goes back through the chat the message came from, and a reminder through the one the person last wrote in. The directory names each person in each chat they use, such as `entra:<object id>` for Teams and `matrix:@ana:example.org` for Matrix. The command line and the web chat share the core's local channel, so the web chat shows what was said in either.
+
+To have people sign in, to the command line and the web chat, point a5s at your identity provider with `A5S_OIDC_ISSUER`, `A5S_OIDC_AUDIENCE` and `A5S_OIDC_PERSON_CLAIM`, the claim that holds each person's id in the directory, such as `oid` for Entra ID. [`compose.identity.yaml`](deploy/compose.identity.yaml) does this with Keycloak in place of Entra ID, Google Cloud Identity or Okta, and with a client for the web chat. `a5s say` sends the person's token from `A5S_TOKEN`.
+
+For Matrix, register a5s on your homeserver as an application service, with a registration file like the one [`configure.py`](deploy/matrix/configure.py) writes for the stand-in. The homeserver sends what happens in a5s's rooms to `/channels/matrix` on the channels' address, and a5s speaks as each agent's bot, `@a5s-<agent>:<your server>`. A person starts a direct chat with an agent's bot, and a5s joins if the directory knows them. For now it talks one to one, and reads only rooms without encryption: anywhere else, it says so and does nothing more. [`compose.matrix.yaml`](deploy/compose.matrix.yaml) runs Synapse as a stand-in that federates with nobody.
+
+For Teams, register a bot in your Entra ID tenant, and point its messaging endpoint at `/channels/teams/messages` on the channels' address, through your cloud's ingress. Each agent can be its own bot: list them in `A5S_TEAMS_BOTS`, as JSON with each bot's agent, app id and the variable that holds its secret. Compose publishes the channels only on localhost, so while developing, reach them through a tunnel.
 
 ### On your own premises, with any provider
 
@@ -114,10 +129,10 @@ a5s ties itself to no cloud and no identity provider. It runs on your own premis
 | Models | Any server that speaks the OpenAI- or Anthropic-compatible API, such as vLLM, Ollama, llama.cpp or SGLang, with a model that supports tool calling. Leave out `key_env` if it needs no key. [`models.yaml`](config/models.yaml) has an example. |
 | The ledger's copies | Any S3-compatible store with object lock in compliance mode, run by assurance, such as Ceph or NetApp StorageGRID. Point the copier at it with `AWS_ENDPOINT_URL_S3`. |
 | Your own certificate authority | `SSL_CERT_FILE`, a bundle with your CA, for sign-in, models and Teams; `AWS_CA_BUNDLE` for the ledger's copies; and `sslrootcert` in the database's URL |
-| Channels | Teams needs Microsoft 365 and the internet. Elsewhere, people use the core's local channel, which takes sign-in from any provider: the command line for now. |
+| Chats | The web chat, which the core serves, and Matrix, on a homeserver of your own, need nothing outside your network. Teams needs Microsoft 365 and the internet. |
 | The image | Built where the internet is, then brought in through your own registry, or with `docker save` and `docker load` |
 
-The smoke test runs this way: Keycloak for sign-in, a model inside the stack that needs no key, locked storage that speaks S3, and workers that can't reach the internet.
+The smoke test runs this way: Keycloak for sign-in, Synapse for Matrix, a model inside the stack that needs no key, locked storage that speaks S3, and workers that can't reach the internet.
 
 ## Documents
 
@@ -135,4 +150,4 @@ Every change to the design gets an adversarial review before it settles, from si
 
 ## Open decisions
 
-Phase 1's [first decisions](docs/phase-1.md#decide-first) are made: all three clouds and identity providers at once, Teams, three ways to change settings, roles held by people rather than job titles, and models through OpenAI- or Anthropic-compatible APIs. `[TBC]` marks what's still to confirm, such as who holds each role in a deployment. Since then, the clouds run a5s on each one's own container service rather than Kubernetes, it runs on premises too, with any identity provider that speaks OpenID Connect and models the organisation hosts itself, and the middleware that asked the core to explain a tool call first is gone until phase 2, as [round 4](docs/critique.md#round-4-the-code) proposed. Still open: which channel people use where there's no Microsoft 365, such as a web app of a5s's own or a chat they host themselves.
+Phase 1's [first decisions](docs/phase-1.md#decide-first) are made: all three clouds and identity providers at once, Teams, three ways to change settings, roles held by people rather than job titles, and models through OpenAI- or Anthropic-compatible APIs. `[TBC]` marks what's still to confirm, such as who holds each role in a deployment. Since then, the clouds run a5s on each one's own container service rather than Kubernetes, it runs on premises too, with any identity provider that speaks OpenID Connect and models the organisation hosts itself, and the middleware that asked the core to explain a tool call first is gone until phase 2, as [round 4](docs/critique.md#round-4-the-code) proposed. People reach a5s through a web chat of its own and Matrix as well as Teams, each deployment turning on the chats it uses, and test and development use the web chat and Matrix.

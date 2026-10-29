@@ -1,17 +1,18 @@
 # Made-up people and records for a5s's sample scenario.
 
-# Their identities are made-up Entra ID object ids, which Teams sends with each message.
+# Their identities are made-up Entra ID object ids, which Teams sends with each message,
+# and their Matrix ids on the development stack's homeserver, a5s.test.
 # Everyone works 09:00 to 17:00, Monday to Friday, in their own time zone, unless
 # their entry says otherwise with hours: [start, end] and workdays: [1, ..., 5].
 people:
   - {id: ana, name: Ana Ortiz, team: finance, roles: [instance-approver], timezone: Europe/London,
-     identities: ["entra:0a5a0000-0000-4000-8000-00000000a0a1"]}
+     identities: ["entra:0a5a0000-0000-4000-8000-00000000a0a1", "matrix:@ana:a5s.test"]}
   - {id: ben, name: Ben Okafor, team: finance, manager: ana, timezone: Europe/London,
-     identities: ["entra:0a5a0000-0000-4000-8000-00000000b0b2"]}
+     identities: ["entra:0a5a0000-0000-4000-8000-00000000b0b2", "matrix:@ben:a5s.test"]}
   - {id: chen, name: Chen Wei, team: operations, manager: omar, timezone: Asia/Singapore,
-     identities: ["entra:0a5a0000-0000-4000-8000-00000000c0c3"]}
+     identities: ["entra:0a5a0000-0000-4000-8000-00000000c0c3", "matrix:@chen:a5s.test"]}
   - {id: omar, name: Omar Haddad, team: operations, timezone: Asia/Singapore,
-     identities: ["entra:0a5a0000-0000-4000-8000-00000000d0d4"]}
+     identities: ["entra:0a5a0000-0000-4000-8000-00000000d0d4", "matrix:@omar:a5s.test"]}
 
   # The team that runs a5s, and the people from outside it who approve its releases.
   - {id: priya, name: Priya Nair, team: platform, manager: lena, timezone: Europe/London,

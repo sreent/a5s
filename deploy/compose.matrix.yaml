@@ -1,0 +1,49 @@
+# A stand-in Matrix homeserver, Synapse, for trying a5s in Matrix without the
+# organisation's own. `sh deploy/smoke.sh --keep` starts it with the rest of the
+# stack, and leaves it running. By hand, give it new secrets first, then start it:
+#   python3 deploy/matrix/configure.py .a5s/matrix >> .a5s/compose.env
+#   docker compose --env-file .a5s/compose.env -f deploy/compose.yaml ... \
+#     -f deploy/compose.matrix.yaml up
+# and give the sample's people accounts on it:
+#   docker compose ... exec synapse register_new_matrix_user -c /config/homeserver.yaml \
+#     -u ana --no-admin http://localhost:8008
+# Then sign in at http://127.0.0.1:8008 with a Matrix app, as @ana:a5s.test, and
+# start a chat with @a5s-assistant:a5s.test, with encryption off. It federates
+# with nobody, so it's for development and tests only.
+
+x-matrix: &matrix
+  A5S_MATRIX_HOMESERVER: http://synapse:8008
+  A5S_MATRIX_SERVER_NAME: a5s.test
+  A5S_MATRIX_AS_TOKEN: ${A5S_MATRIX_AS_TOKEN:?run deploy/matrix/configure.py first}
+  A5S_MATRIX_HS_TOKEN: ${A5S_MATRIX_HS_TOKEN:?run deploy/matrix/configure.py first}
+
+services:
+  synapse:
+    image: matrixdotorg/synapse:v1.164.1@sha256:fa4aa980f279bcf26d4e7ecc2a2c9a701c73f2ebe8841da9bdcf3b2fdf693d75
+    entrypoint: ["sh", "-c", "chown -R 991:991 /data && exec /start.py"]  # then it runs as 991
+    environment:
+      SYNAPSE_CONFIG_PATH: /config/homeserver.yaml
+    volumes:
+      - ${A5S_MATRIX_CONFIG:?run deploy/matrix/configure.py first}:/config:ro
+      - synapse:/data
+    networks: [egress, edge]
+    ports: ["127.0.0.1:${A5S_MATRIX_PORT:-8008}:8008"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8008/health"]
+      interval: 2s
+      retries: 60
+
+  gateway:  # sends the agents' answers and reminders into people's rooms
+    environment:
+      <<: *matrix
+    depends_on:
+      synapse: {condition: service_healthy}
+
+  channels:  # where the homeserver sends what people say to the agents' bots
+    environment:
+      <<: *matrix
+    depends_on:
+      synapse: {condition: service_healthy}
+
+volumes:
+  synapse: {}
