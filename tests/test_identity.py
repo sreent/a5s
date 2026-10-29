@@ -5,6 +5,8 @@ import hashlib
 import hmac
 import json
 import time
+import uuid
+from dataclasses import replace
 
 import httpx
 import jwt
@@ -13,8 +15,8 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from a5s import db
+from a5s.core import inbox
 from a5s.core.identity import IdentityConfig, IdentityError, Verifier
-from a5s.services import channels
 from conftest import FakeIssuer, free_port, serve
 
 
@@ -113,68 +115,84 @@ def test_nobody_is_let_in_when_the_identity_provider_cant_be_reached_or_misleads
             verifier.person(issuer.token("ana"))
 
 
-def open_run(stack, sender: str, identity: str | None) -> httpx.Response:
-    with stack.client() as c:
-        return c.post("/runs", json={"instance": "assistant-finance", "trigger": {
-            "kind": "message", "channel": "local", "sender": sender, "identity": identity}})
+@pytest.fixture
+def signing_in(stack, issuer):
+    """The core's channels with sign-in through the fake identity provider, as deployed."""
+    endpoint = replace(stack.gateway, identity=issuer.verifier(), cfg=stack.as_role("channels"))
+    with serve(inbox.create_app(endpoint), free_port()) as url:
+        yield f"{url}/channels/local/messages"
 
 
-def test_the_core_opens_a_run_only_for_the_person_the_token_names(stack, issuer):
-    stack.gateway.identity = issuer.verifier()
-    tokens = {"ana": issuer.token("ana"), "ben": issuer.token("ben"),
-              "expired": issuer.token("ana", exp=int(time.time()) - 120)}
-
-    opened = open_run(stack, "ana", tokens["ana"])
-    assert opened.status_code == 200
-    run = opened.json()["run"]
-    assert stack.ledger(run)[0]["args"]["identity"] == "verified"
-    with db.transaction(stack.admin) as conn:
-        trigger = conn.execute("select trigger from runs where id = %s", (run,)).fetchone()["trigger"]
-    assert "identity" not in trigger  # the token is checked, never kept
-
-    for token, reason in [(tokens["ben"], "the identity is ben's, not ana's"),
-                          (None, "the sender's identity wasn't given"),
-                          (tokens["expired"], "the sender's identity doesn't check out")]:
-        refused = open_run(stack, "ana", token)
-        assert refused.status_code == 409
-        assert any(r.startswith(reason) for r in refused.json()["detail"]["reasons"])
-        assert stack.ledger()[-1]["decision"] == "deny"
-
-    recorded = json.dumps(stack.ledger())
-    assert all(token not in recorded for token in tokens.values())
-    assert stack.verify().ok
+def bearer(token: str) -> dict[str, str]:
+    return {"Authorization": f"Bearer {token}"}
 
 
-def test_without_an_identity_provider_the_ledger_says_senders_went_unchecked(stack):
-    run, _ = stack.open_run()
-    assert stack.ledger(run)[0]["args"]["identity"] == "unverified (development)"
-
-
-def test_the_channel_asks_people_to_sign_in_and_the_core_checks_them_again(stack, issuer):
+def test_the_core_asks_people_to_sign_in_and_records_who_did(stack, issuer, signing_in):
     stack.model.reply("Hello, Ana.")
-    stack.gateway.identity = issuer.verifier()
-    channel = channels.create_app(stack.scheduler(), stack.as_role("scheduler").database_url,
-                                  issuer.verifier())
-    as_ana = {"Authorization": f"Bearer {issuer.token('ana')}"}
-    as_ben = {"Authorization": f"Bearer {issuer.token('ben')}"}
     message = {"agent": "assistant", "text": "Hi"}
+    assert httpx.post(signing_in, json=message).status_code == 401
+    assert httpx.post(signing_in, json={**message, "person": "ana"},
+                      headers=bearer(issuer.token("ben"))).status_code == 403
+    expired = issuer.token("ana", exp=int(time.time()) - 120)
+    assert httpx.post(signing_in, json=message, headers=bearer(expired)).status_code == 401
 
-    with serve(channel, free_port()) as url, httpx.Client(base_url=url, timeout=60) as person:
-        assert person.post("/channels/local/messages", json=message).status_code == 401
-        assert person.post("/channels/local/messages", json={**message, "person": "ana"},
-                           headers=as_ben).status_code == 403
-        reply = person.post("/channels/local/messages", json=message, headers=as_ana)
-        assert reply.json()["reply"] == "Hello, Ana."
-        assert person.get("/channels/local/outbox/ana", headers=as_ben).status_code == 403
-        outbox = person.get("/channels/local/outbox/ana", headers=as_ana).json()
-    assert [m["text"] for m in outbox] == ["Hello, Ana."]
+    sent = httpx.post(signing_in, json=message, headers=bearer(issuer.token("ana")))
+    assert sent.status_code == 202
+    stack.scheduler().answer_waiting()
+    mine = httpx.get(f"{signing_in}/{sent.json()['message']}", headers=bearer(issuer.token("ana")))
+    bens = httpx.get(f"{signing_in}/{sent.json()['message']}", headers=bearer(issuer.token("ben")))
+    assert mine.json()["replies"] == ["Hello, Ana."] and bens.status_code == 404
 
-    opened = [e for e in stack.ledger() if e["kind"] == "run" and e["action"] == "open"]
-    assert [e["args"]["identity"] for e in opened] == ["verified"]
+    [received] = [e for e in stack.ledger() if e["kind"] == "inbound"]
+    assert received["args"]["identity"] == "verified" and received["acts_for"] == ["ana"]
+    recorded = json.dumps(stack.ledger())
+    assert issuer.token("ana").split(".")[2] not in recorded  # the token is checked, never kept
 
 
-def test_a_scheduler_that_doesnt_pass_the_token_on_opens_no_run(stack, issuer):
-    stack.gateway.identity = issuer.verifier()
-    reply = stack.scheduler().handle_message(person="ana", agent="assistant", text="Hi")
-    assert reply.startswith("a5s couldn't confirm it's you")
-    assert not stack.model.requests
+def test_sign_in_finds_people_through_the_directory_as_teams_does(stack, issuer):
+    entra = Verifier(IdentityConfig(issuer=issuer.url, audience="a5s", person_claim="oid",
+                                    directory_prefix="entra"),
+                     httpx.Client(transport=httpx.MockTransport(issuer.handler)))
+    endpoint = replace(stack.gateway, identity=entra, cfg=stack.as_role("channels"))
+    ana = issuer.token(None, oid="0a5a0000-0000-4000-8000-00000000a0a1")  # Ana's Entra ID
+    stranger = issuer.token(None, oid="0a5a0000-0000-4000-8000-0000000000ff")
+    with serve(inbox.create_app(endpoint), free_port()) as url:
+        message = {"agent": "assistant", "text": "Hi"}
+        assert httpx.post(f"{url}/channels/local/messages", json=message,
+                          headers=bearer(ana)).status_code == 202
+        refused = httpx.post(f"{url}/channels/local/messages", json=message,
+                             headers=bearer(stranger))
+    assert refused.status_code == 403 and "doesn't know who you are" in refused.json()["detail"]
+    assert [e["acts_for"] for e in stack.ledger() if e["kind"] == "inbound"] == [["ana"]]
+
+
+def test_without_an_identity_provider_only_development_takes_peoples_word(stack):
+    message = stack.send("Hi")
+    with db.transaction(stack.admin) as conn:
+        assert conn.execute("select 1 from inbound where id = %s", (message,)).fetchone()
+    assert stack.ledger()[-1]["args"]["identity"] == "unverified (development)"
+
+    production = replace(stack.gateway, cfg=replace(stack.as_role("channels"), development=False))
+    with serve(inbox.create_app(production), free_port()) as url:
+        refused = httpx.post(f"{url}/channels/local/messages",
+                             json={"person": "ana", "agent": "assistant", "text": "Hi"})
+    assert refused.status_code == 503
+
+
+def test_the_scheduler_cant_say_who_a_message_is_from(stack):
+    message = stack.send("Hi from Ana")
+    with stack.client() as c:
+        opened = c.post("/runs", json={"instance": "assistant-finance", "trigger": {
+            "kind": "message", "inbound": message, "sender": "ben", "channel": "teams"}})
+        assert opened.status_code == 200
+        unknown = c.post("/runs", json={"instance": "assistant-finance", "trigger": {
+            "kind": "message", "inbound": str(uuid.uuid4())}})
+        again = c.post("/runs", json={"instance": "assistant-finance", "trigger": {
+            "kind": "message", "inbound": message}})
+        bare = c.post("/runs", json={"instance": "assistant-finance", "trigger": {
+            "kind": "message", "sender": "ana"}})
+    [opening] = [e for e in stack.ledger(opened.json()["run"]) if e["action"] == "open"]
+    assert opening["acts_for"] == ["ana"] and opening["args"]["channel"] == "local"
+    assert unknown.json()["detail"]["reasons"] == ["the message it answers isn't one the core received"]
+    assert again.json()["detail"]["reasons"] == ["the message it answers has been answered already"]
+    assert bare.status_code == 400

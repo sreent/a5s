@@ -34,11 +34,12 @@ sign_in() {  # a token from the stand-in identity provider
 ana=$(sign_in ana)
 ben=$(sign_in ben)
 
-channel=http://127.0.0.1:8701/channels/local/messages
+channel=http://127.0.0.1:8703/channels/local/messages
 send() {  # prints the status, and writes the body to $reply
   curl -s -o "$reply" -w '%{http_code}' --retry 60 --retry-all-errors --retry-delay 1 \
     -X POST "$channel" -H 'content-type: application/json' "$@"
 }
+field() { python3 -c "import json, sys; print(json.load(open(sys.argv[1]))$1)" "$reply"; }
 
 status=$(send -d '{"agent": "assistant", "text": "Hi"}')
 [ "$status" = 401 ] || { echo "A message without a token got $status, not 401."; exit 1; }
@@ -48,7 +49,10 @@ echo "A message needs a token, and the token must be the sender's."
 
 status=$(send -H "authorization: Bearer $ana" \
   -d '{"agent": "assistant", "text": "Which questions mention an invoice?"}')
-echo "Reply ($status): $(cat "$reply")"
+[ "$status" = 202 ] || { echo "Ana's message got $status, not 202."; exit 1; }
+curl -sf -o "$reply" -H "authorization: Bearer $ana" \
+  "$channel/$(field '["message"]')?wait=120"
+echo "Reply: $(field '["replies"]')"
 grep -q "Q-1001" "$reply"
 
 compose exec -T worker python - <<'PY'
@@ -62,8 +66,8 @@ def reach(host, port):
     except OSError:
         return False
 assert reach("gateway", 8700), "the worker can't reach the gateway"
-for host, port in (("postgres", 5432), ("keycloak", 8080), ("localstack", 4566),
-                   ("api.deepseek.com", 443), ("1.1.1.1", 443)):
+for host, port in (("postgres", 5432), ("channels", 8703), ("keycloak", 8080),
+                   ("localstack", 4566), ("api.deepseek.com", 443), ("1.1.1.1", 443)):
     assert not reach(host, port), f"the worker can reach {host}:{port}"
 print("The worker holds no secrets, and reaches only the gateway.")
 PY

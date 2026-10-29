@@ -25,8 +25,8 @@ def test_a_run_token_is_needed_and_dies_with_the_run(stack):
 
 def test_runs_open_only_for_people_the_instance_serves(stack):
     with stack.client() as c:
-        r = c.post("/runs", json={"instance": "assistant-finance",
-                                  "trigger": {"kind": "message", "sender": "chen"}})
+        r = c.post("/runs", json={"instance": "assistant-finance", "trigger": {
+            "kind": "message", "inbound": stack.send("Hello", "chen")}})
     assert r.status_code == 409
     assert stack.ledger()[-1]["decision"] == "deny"
 

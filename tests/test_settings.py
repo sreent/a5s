@@ -125,7 +125,7 @@ def test_runs_dont_open_for_settings_nobody_signed(stack):
     with db.transaction(stack.admin) as conn:
         conn.execute("update instances set level = 2, settings_version = 'forged'")
     with stack.client() as c:
-        r = c.post("/runs", json={"instance": "assistant-finance",
-                                  "trigger": {"kind": "message", "sender": "ana"}})
+        r = c.post("/runs", json={"instance": "assistant-finance", "trigger": {
+            "kind": "message", "inbound": stack.send("Hello")}})
     assert r.status_code == 409
     assert "assistant-finance's settings aren't a signed version" in r.json()["detail"]["reasons"]

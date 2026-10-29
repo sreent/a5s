@@ -12,7 +12,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 from jwt.algorithms import RSAAlgorithm
 
-from a5s.core import teams
+from a5s.core import inbox, teams
 from a5s.core.teams import Teams, TeamsConfig
 from conftest import free_port, serve
 
@@ -79,8 +79,8 @@ def bot(stack):
                       metadata_url="https://login.botframework.test/v1/.well-known/openidconfiguration")
     stack.gateway.teams = Teams(cfg, httpx.Client(transport=httpx.MockTransport(fake.handler)))
     endpoint = replace(stack.gateway, cfg=stack.as_role("channels"))  # as deployed
-    with serve(teams.create_app(endpoint), free_port()) as url:
-        fake.url = f"{url}/api/messages"
+    with serve(inbox.create_app(endpoint), free_port()) as url:
+        fake.url = f"{url}/channels/teams/messages"
         yield fake
 
 
@@ -105,8 +105,10 @@ def test_a_teams_message_is_checked_recorded_and_answered_in_teams(stack, bot):
     assert [login["scope"] for login in bot.logins] == ["https://api.botframework.com/.default"]
 
     entries = stack.ledger()
+    received = next(e for e in entries if e["kind"] == "inbound")
     opened = next(e for e in entries if e["kind"] == "run" and e["action"] == "open")
-    assert opened["args"]["identity"] == "verified by teams"
+    assert received["args"]["identity"] == "verified by teams"
+    assert opened["acts_for"] == ["ana"] and opened["args"]["channel"] == "teams"
     assert [e["outcome"]["status"] for e in entries if e["action"] == "deliver"] == ["ok"]
     assert message["text"] not in json.dumps(entries)  # the ledger keeps a hash, not the words
     assert stack.verify().ok
@@ -165,19 +167,17 @@ def test_a_scheduler_cant_forge_or_reuse_a_teams_message(stack, bot):
     httpx.post(bot.url, json=activity(), headers=bot.auth()).raise_for_status()
     [row] = queued(stack)
 
-    def open_run(sender: str, inbound: str) -> httpx.Response:
+    def open_run(inbound: str, **trigger) -> httpx.Response:
         with stack.client() as c:
             return c.post("/runs", json={"instance": "assistant-finance", "trigger": {
-                "kind": "message", "channel": "teams", "sender": sender, "inbound": inbound}})
+                "kind": "message", "inbound": inbound, **trigger}})
 
-    for sender, inbound, reason in [
-            ("ana", str(uuid.uuid4()), "isn't one the core received"),
-            ("ben", str(row["id"]), "came from ana, not ben"),
-            ("ana", "not-an-id", "isn't one the core received")]:
-        refused = open_run(sender, inbound)
-        assert refused.status_code == 409 and reason in refused.json()["detail"]["reasons"][0]
-    assert open_run("ana", str(row["id"])).status_code == 200
-    again = open_run("ana", str(row["id"]))
+    assert open_run(str(uuid.uuid4())).status_code == 409
+    assert open_run("not-an-id").status_code == 400
+    opened = open_run(str(row["id"]), sender="ben")  # the core takes the sender from the message
+    assert opened.status_code == 200
+    assert stack.ledger(opened.json()["run"])[0]["acts_for"] == ["ana"]
+    again = open_run(str(row["id"]))
     assert again.status_code == 409 and "answered already" in again.json()["detail"]["reasons"][0]
 
 
@@ -185,13 +185,12 @@ def test_a5s_notices_reach_teams_only_in_answer_and_briefly(stack, bot):
     httpx.post(bot.url, json=activity(), headers=bot.auth()).raise_for_status()
     [row] = queued(stack)
 
-    def notice(person: str, inbound: str) -> httpx.Response:
+    def notice(inbound: str) -> httpx.Response:
         with stack.client() as c:
-            return c.post("/channels/teams/notices", json={
-                "person": person, "inbound": inbound, "text": "See https://evil.test now"})
+            return c.post("/notices", json={"inbound": inbound, "text": "See https://evil.test now"})
 
-    assert notice("ben", str(row["id"])).status_code == 403  # not in answer to ben
-    assert [notice("ana", str(row["id"])).status_code for _ in range(4)] == [200, 200, 200, 403]
+    assert notice(str(uuid.uuid4())).status_code == 403  # in answer to no one
+    assert [notice(str(row["id"])).status_code for _ in range(4)] == [200, 200, 200, 403]
     assert [m["text"] for m in bot.sent] == ["See [link removed] now"] * 3  # no links in a5s's own words
 
 
@@ -225,22 +224,33 @@ def test_a_teams_run_writes_only_to_the_person_it_answers(stack, bot):
     [row] = queued(stack)
     with stack.client() as c:
         opened = c.post("/runs", json={"instance": "assistant-finance", "trigger": {
-            "kind": "message", "channel": "teams", "sender": "ana", "inbound": str(row["id"])}})
+            "kind": "message", "inbound": str(row["id"])}})
     with stack.client(opened.json()["token"]) as c:
         denied = c.post("/run/messages", json={"to": "ben", "text": "Psst, Ben."})
     assert denied.status_code == 403
-    assert denied.json()["reasons"] == ["teams-answers-the-sender"] and not bot.sent
+    assert denied.json()["reasons"] == ["answers-the-sender"] and not bot.sent
 
 
 def test_a_busy_conversation_waits_in_the_queue_without_holding_others_up(stack, bot):
     scheduler = stack.scheduler()
-    assert scheduler._lease("ana/assistant/general", "a run for ana")
     httpx.post(bot.url, json=activity("From Ana"), headers=bot.auth()).raise_for_status()
+    httpx.post(bot.url, json=activity("Again from Ana"), headers=bot.auth()).raise_for_status()
     httpx.post(bot.url, json=activity("From Ben", sender=BEN), headers=bot.auth()).raise_for_status()
-    assert scheduler._claim()["person"] == "ben"
-    assert scheduler._claim() is None  # Ana's waits for her conversation
-    scheduler._release("ana/assistant/general", "a run for ana")
-    assert scheduler._claim()["person"] == "ana"
+    first = scheduler._claim()
+    assert first["text"] == "From Ana"
+    assert scheduler._claim()["text"] == "From Ben"  # Ana's next waits for her conversation
+    assert scheduler._claim() is None
+    scheduler._release(first)  # let go without answering, as a scheduler that stopped would
+    assert scheduler._claim()["text"] == "From Ana"  # so it's taken again, before her next
+
+
+def test_the_same_message_id_in_two_conversations_is_two_messages(stack, bot):
+    ana, ben = activity("From Ana"), activity("From Ben", sender=BEN)
+    ben["id"] = ana["id"]  # Teams' ids are unique only within a conversation
+    ben["conversation"] = {**ben["conversation"], "id": "a:1-another-chat"}
+    for message in (ana, ben):
+        httpx.post(bot.url, json=message, headers=bot.auth()).raise_for_status()
+    assert [row["text"] for row in queued(stack)] == ["From Ana", "From Ben"]
 
 
 def test_the_endpoint_takes_one_message_not_a_flood(stack, bot):

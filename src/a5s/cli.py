@@ -10,6 +10,7 @@ import secrets
 import sys
 import threading
 import time
+from dataclasses import replace
 from pathlib import Path
 
 import httpx
@@ -17,9 +18,7 @@ import yaml
 
 from a5s import build, db, definitions, devdb, worker
 from a5s.config import DEFAULT_DATABASE_URL, Config
-from a5s.core import anchor, ledger, registry, signing, teams
-from a5s.core.identity import verifier_from_env
-from a5s.services import channels
+from a5s.core import anchor, inbox, ledger, registry, signing
 from a5s.services.scheduler import Scheduler, remote_worker
 
 log = logging.getLogger("a5s")
@@ -95,24 +94,25 @@ def _pin(cfg: Config, agent: str) -> None:
     print(f"Pinned {agent}'s tools in {lock}. Run `a5s apply` to roll the new release out.")
 
 
-def _say(cfg: Config, person: str, agent: str, text: str) -> None:
+def _say(cfg: Config, person: str, agent: str, text: str, wait: float = 600) -> None:
+    """Send a message through the core's local channel, and print what a5s says back."""
     token = os.environ.get("A5S_TOKEN")  # the person's, from the identity provider, if a5s uses one
-    if cfg.scheduler_url:  # the scheduler runs as a service, so ask it through the local channel
-        headers = {"Authorization": f"Bearer {token}"} if token else {}
-        response = httpx.post(f"{cfg.scheduler_url}/channels/local/messages", headers=headers,
-                              json={"person": person, "agent": agent, "text": text}, timeout=600)
-        if response.status_code in (401, 403):
-            sys.exit(response.json()["detail"])
-        response.raise_for_status()
-        reply = response.json()["reply"]
-        httpx.get(f"{cfg.scheduler_url}/channels/local/outbox/{person}", headers=headers, timeout=30)
-    else:
-        sc = build.scenario(cfg)
-        reply = Scheduler(cfg, sc).handle_message(person=person, agent=agent, text=text,
-                                                  identity=token)
-        with db.transaction(cfg.database_url) as conn:
-            channels.undelivered(conn, person=person)  # it's printed below
-    print(reply)
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    with httpx.Client(base_url=cfg.channels_url, headers=headers, timeout=90) as channel:
+        sent = channel.post("/channels/local/messages",
+                            json={"person": person, "agent": agent, "text": text})
+        if sent.status_code >= 400:
+            sys.exit(sent.json()["detail"])
+        deadline = time.monotonic() + wait
+        while time.monotonic() < deadline:
+            answers = channel.get(f"/channels/local/messages/{sent.json()['message']}",
+                                  params={"wait": 60, "person": person})
+            if answers.status_code >= 400:
+                sys.exit(answers.json()["detail"])
+            if replies := answers.json()["replies"]:
+                print("\n\n".join(replies))
+                return
+    sys.exit("No answer yet. Is the scheduler running?")
 
 
 def _service(cfg: Config, name: str):
@@ -120,15 +120,27 @@ def _service(cfg: Config, name: str):
         return build.app(cfg)
     if name == "worker":
         return worker.create_app(cfg.gateway_url)
-    if name == "teams":
-        gw = build.gateway(cfg)
-        if gw.teams is None:
-            sys.exit("Set A5S_TEAMS_APP_ID, A5S_TEAMS_APP_SECRET and A5S_TEAMS_TENANT_ID.")
-        return teams.create_app(gw)
+    return inbox.create_app(build.gateway(cfg))  # the channels' endpoints, in the core
+
+
+def _scheduler(cfg: Config) -> None:
     hand_off = remote_worker(cfg.worker_url) if cfg.worker_url else worker.run_agent
-    scheduler = Scheduler(cfg, build.scenario(cfg), worker=hand_off)
-    threading.Thread(target=scheduler.listen, args=(threading.Event(),), daemon=True).start()
-    return channels.create_app(scheduler, cfg.database_url, verifier_from_env())
+    Scheduler(cfg, build.scenario(cfg), worker=hand_off).listen(threading.Event())
+
+
+def _dev(cfg: Config) -> None:
+    """The core, the channels and the scheduler in one process, for development."""
+    import uvicorn
+
+    cfg = replace(cfg, development=True)
+    gw = build.gateway(cfg)
+    for app, port in ((build.app(cfg), 8700), (inbox.create_app(gw), 8703)):
+        server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+        threading.Thread(target=server.run, daemon=True).start()
+    print("a5s is running for development: the gateway on port 8700, and the channels on 8703.\n"
+          "Send messages with `a5s say --as <person> <agent> <text>`. Press Ctrl-C to stop.",
+          flush=True)
+    Scheduler(cfg, gw.scenario).listen(threading.Event())
 
 
 def _anchor(cfg: Config, every: int | None) -> None:
@@ -190,12 +202,13 @@ def main(argv: list[str] | None = None) -> None:
     sign.add_argument("--key", type=Path, help="their private key (default: the sample's)")
     sub.add_parser("setup", help="migrate and apply the settings, as the administrator")
     for name, port, what in (("gateway", 8700, "the gateway, in the trusted core"),
-                             ("scheduler", 8701, "the scheduler, with the local channel"),
                              ("worker", 8702, "a worker, which holds no secrets"),
-                             ("teams", 8703, "the endpoint Teams sends messages to, in the core")):
+                             ("channels", 8703, "the core's endpoints, where messages arrive")):
         service = sub.add_parser(name, help=f"run {what}")
         service.add_argument("--host", default="127.0.0.1")
         service.add_argument("--port", type=int, default=port)
+    sub.add_parser("scheduler", help="answer the messages the core receives")
+    sub.add_parser("dev", help="run the core, the channels and the scheduler, for development")
     say = sub.add_parser("say", help="send an agent a message, as a person")
     say.add_argument("--as", dest="person", required=True)
     say.add_argument("agent")
@@ -211,6 +224,9 @@ def main(argv: list[str] | None = None) -> None:
     led.add_argument("-n", type=int, default=20)
     args = parser.parse_args(argv)
 
+    logging.basicConfig(level=logging.WARNING,
+                        format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    logging.getLogger("a5s").setLevel(logging.INFO)
     root = Path.cwd()
     if args.command == "up":
         return _dev_up(root)
@@ -230,10 +246,14 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "setup":
         _migrate(cfg)
         _apply(cfg)
-    elif args.command in ("gateway", "scheduler", "worker", "teams"):
+    elif args.command in ("gateway", "worker", "channels"):
         import uvicorn
 
         uvicorn.run(_service(cfg, args.command), host=args.host, port=args.port)
+    elif args.command == "scheduler":
+        _scheduler(cfg)
+    elif args.command == "dev":
+        _dev(cfg)
     elif args.command == "say":
         _say(cfg, args.person, args.agent, args.text)
     elif args.command in ("suspend", "resume"):

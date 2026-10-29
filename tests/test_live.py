@@ -19,9 +19,8 @@ def test_a_real_model_answers_through_the_gateway(database, tmp_path, alias, key
         pytest.skip(f"{key} isn't set")
     root = build_root(tmp_path, alias, (ROOT / "config" / "models.yaml").read_text())
     with running(database, root, httpx.Client(), FakeModel()) as stack:
-        reply = stack.scheduler().handle_message(
-            person="ana", agent="assistant",
-            text="What's the key of the customer question about an invoice? Reply with the key.")
+        reply = stack.say(
+            "What's the key of the customer question about an invoice? Reply with the key.")
         assert "Q-1001" in reply
         assert stack.verify().ok
         models = [e for e in stack.ledger() if e["kind"] == "model" and e["decision"] == "record"]

@@ -1,6 +1,6 @@
 # A stand-in identity provider, Keycloak, with the sample's people, for trying
-# sign-in without Entra ID, Google Cloud Identity or Okta. The core and the
-# channel check tokens from it the way they would check theirs:
+# sign-in without Entra ID, Google Cloud Identity or Okta. The core checks
+# tokens from it the way it would check theirs:
 #   docker compose -f deploy/compose.yaml -f deploy/compose.stub.yaml \
 #     -f deploy/compose.identity.yaml up
 # It lets people sign in with a password, A5S_IDP_PASSWORD, which a real
@@ -32,6 +32,8 @@ services:
     depends_on:
       keycloak: {condition: service_healthy}
 
-  scheduler:
+  channels:  # where people sign in
     environment:
       <<: *identity
+    depends_on:
+      keycloak: {condition: service_healthy}

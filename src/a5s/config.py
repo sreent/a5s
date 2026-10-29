@@ -10,6 +10,7 @@ import yaml
 
 DEFAULT_DATABASE_URL = "postgresql://a5s@127.0.0.1:54329/postgres"
 DEFAULT_GATEWAY_URL = "http://127.0.0.1:8700"
+DEFAULT_CHANNELS_URL = "http://127.0.0.1:8703"
 
 
 @dataclass(frozen=True)
@@ -57,8 +58,11 @@ class Config:
     gateway_url: str
     service_token: str
     root: Path
-    scheduler_url: str | None = None  # set when the scheduler runs as a service
+    channels_url: str = DEFAULT_CHANNELS_URL  # where people's messages arrive, in the core
     worker_url: str | None = None  # set when workers run as a service
+    # Without an identity provider, the local channel takes people's word for who they are.
+    # That's for development only, so it has to be asked for.
+    development: bool = False
     anchor_store: str | None = None  # where the ledger's locked copies go, such as s3://bucket/a5s
     anchor_retain_days: int = 365  # how long each copy stays locked: assurance's to set [TBC]
 
@@ -86,8 +90,9 @@ class Config:
             gateway_url=os.environ.get("A5S_GATEWAY_URL", DEFAULT_GATEWAY_URL),
             service_token=token or "",
             root=root,
-            scheduler_url=os.environ.get("A5S_SCHEDULER_URL"),
+            channels_url=os.environ.get("A5S_CHANNELS_URL", DEFAULT_CHANNELS_URL),
             worker_url=os.environ.get("A5S_WORKER_URL"),
+            development=os.environ.get("A5S_DEVELOPMENT", "").lower() in ("1", "true", "yes"),
             anchor_store=os.environ.get("A5S_ANCHOR_STORE"),
             anchor_retain_days=int(os.environ.get("A5S_ANCHOR_RETAIN_DAYS", "365")),
         )

@@ -25,11 +25,12 @@ from a5s import db
 from a5s.config import Config, ModelConfig
 from a5s.contract import Scenario, Tool, ToolCall
 from a5s.core import ledger, models, registry
-from a5s.core.identity import IdentityError, Verifier
+from a5s.core.identity import Verifier
 from a5s.core.policy import Decision, PolicyEngine
 from a5s.core.teams import Teams
 from a5s.definitions import Definition
 
+RUN_MINUTES = 60  # the longest a run may last [TBC]; its token dies with it
 _LINK = re.compile(r"https?://[^\s)>\]]+")
 _IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 
@@ -61,60 +62,35 @@ class Gateway:
     models: dict[str, ModelConfig]
     definitions: dict[str, Definition]
     http: httpx.Client
-    identity: Verifier | None = None  # without one, senders go unverified: development only
+    identity: Verifier | None = None  # for the local channel's sign-in; else development only
     teams: Teams | None = None
 
     @property
     def url(self) -> str:
         return self.cfg.database_url
 
-    def check_sender(self, conn: psycopg.Connection, trigger: dict) -> tuple[str, str | None]:
-        """Whether a message's sender is who the scheduler says, and if not, why."""
-        sender, token = trigger.get("sender"), trigger.get("identity")
-        if sender is None:
-            return "none", None
-        if trigger.get("inbound") is not None:
-            return self._check_inbound(conn, sender, trigger)
-        if self.identity is None:
-            return "unverified (development)", None
-        if not token:
-            return "missing", "the sender's identity wasn't given"
-        try:
-            person = self.identity.person(token)
-        except IdentityError as exc:
-            return "refused", f"the sender's identity doesn't check out: {exc}"
-        if person != sender:
-            return "refused", f"the identity is {person}'s, not {sender}'s"
-        return "verified", None
+    @staticmethod
+    def take_message(conn: psycopg.Connection, inbound: str) -> tuple[dict | None, str | None]:
+        """The message a run will answer, which the core received and checked, used once.
+
+        It names the sender, so no service can. The problem, if it can't be used.
+        """
+        taken = conn.execute(
+            "update inbound set answered_at = now() where id = %s and answered_at is null "
+            "returning id::text, person, channel, agent", (inbound,)).fetchone()
+        if taken:
+            return taken, None
+        if conn.execute("select 1 from inbound where id = %s", (inbound,)).fetchone():
+            return None, "the message it answers has been answered already"
+        return None, "the message it answers isn't one the core received"
 
     @staticmethod
-    def _check_inbound(conn: psycopg.Connection, sender: str, trigger: dict) -> tuple[str, str | None]:
-        """A message the core received itself, from a channel that signs them, answered once."""
-        try:
-            inbound = str(uuid.UUID(str(trigger["inbound"])))
-        except ValueError:
-            return "refused", "the message it answers isn't one the core received"
-        taken = conn.execute(
-            "update inbound set answered_at = now() where id = %s and person = %s and channel = %s "
-            "and answered_at is null returning id",
-            (inbound, sender, trigger.get("channel")),
-        ).fetchone()
-        if taken:
-            return f"verified by {trigger.get('channel')}", None
-        row = conn.execute("select person, answered_at from inbound where id = %s",
-                           (inbound,)).fetchone()
-        if row is None:
-            return "refused", "the message it answers isn't one the core received"
-        if row["person"] != sender:
-            return "refused", f"the message it answers came from {row['person']}, not {sender}"
-        return "refused", "the message it answers has been answered already"
-
-    def reply_to(self, conn: psycopg.Connection, inbound: str | None) -> tuple[str, dict] | None:
-        """Who wrote the message a run answers, and where answers to it go."""
+    def message_of(conn: psycopg.Connection, inbound: str | None) -> dict | None:
+        """Who wrote the message a run answers, on which channel, and where answers go."""
         if inbound is None:
             return None
-        row = conn.execute("select person, reply_to from inbound where id = %s", (inbound,)).fetchone()
-        return (row["person"], row["reply_to"]) if row else None
+        return conn.execute("select id::text, person, channel, reply_to from inbound where id = %s",
+                            (inbound,)).fetchone()
 
     # Cedar entities, built from the core's own records for every call.
 
@@ -174,7 +150,7 @@ def load_run(conn: psycopg.Connection, token: str) -> dict:
         """
         select r.id::text as run, r.acts_for, r.read_outside, r.trigger, i.*
         from runs r join instances i on i.id = r.instance_id
-        where r.token_hash = %s and r.closed_at is null
+        where r.token_hash = %s and r.closed_at is null and r.expires_at > now()
         """,
         (token_hash(token),),
     ).fetchone()
@@ -185,7 +161,7 @@ def load_run(conn: psycopg.Connection, token: str) -> dict:
 
 class OpenRun(BaseModel):
     instance: str
-    trigger: dict[str, Any]
+    trigger: dict[str, Any]  # phase 1's only trigger: {"kind": "message", "inbound": <id>}
 
 
 class CloseRun(BaseModel):
@@ -211,9 +187,8 @@ class Message(BaseModel):
 
 
 class Notice(BaseModel):
-    person: str
+    inbound: str  # the message it answers
     text: str
-    inbound: str
     instance: str | None = None
 
 
@@ -245,17 +220,27 @@ def create_app(gw: Gateway) -> FastAPI:
 
     @app.post("/runs", dependencies=[Depends(service)])
     def open_run(body: OpenRun) -> dict:
-        sender = body.trigger.get("sender")
-        acts_for = [sender] if sender else []
-        trigger = {k: v for k, v in body.trigger.items() if k != "identity"}  # never stored
+        if body.trigger.get("kind") != "message":
+            raise HTTPException(400, "phase 1 opens runs only to answer messages")
+        try:
+            inbound = str(uuid.UUID(str(body.trigger.get("inbound"))))
+        except ValueError:
+            raise HTTPException(400, "name the message the run answers") from None
         token = secrets.token_urlsafe(32)
         run_id = str(uuid.uuid4())
         with db.transaction(gw.url) as conn:
             inst = conn.execute("select * from instances where id = %s", (body.instance,)).fetchone()
             if inst is None:
                 raise HTTPException(404, f"no instance {body.instance}")
-            identity, problem = gw.check_sender(conn, body.trigger)
+            message, problem = gw.take_message(conn, inbound)
             reasons = [problem] if problem else []
+            sender = message["person"] if message else None
+            acts_for = [sender] if sender else []
+            trigger = {"kind": "message", "inbound": inbound,
+                       "channel": message["channel"] if message else None, "sender": sender}
+            if message and message["agent"] != inst["definition"]:
+                reasons.append(f"the message is for the {message['agent']}, "
+                               f"not the {inst['definition']}")
             if inst["status"] != "active":
                 reasons.append(f"{body.instance} is {inst['status']}")
             if any(p not in inst["serves"] for p in acts_for):
@@ -266,21 +251,37 @@ def create_app(gw: Gateway) -> FastAPI:
                 reasons.append(f"{body.instance}'s settings aren't a signed version")
             if not reasons:
                 conn.execute(
-                    "insert into runs (id, instance_id, token_hash, trigger, acts_for) "
-                    "values (%s, %s, %s, %s, %s)",
-                    (run_id, body.instance, token_hash(token), Jsonb(trigger), acts_for),
+                    "insert into runs (id, instance_id, token_hash, trigger, acts_for, expires_at) "
+                    "values (%s, %s, %s, %s, %s, now() + make_interval(mins => %s))",
+                    (run_id, body.instance, token_hash(token), Jsonb(trigger), acts_for,
+                     RUN_MINUTES),
                 )
             ledger.append(conn, {
                 "kind": "run", "action": "open", "run": None if reasons else run_id,
                 "instance": body.instance, "acts_for": acts_for,
                 "decision": "deny" if reasons else "allow", "reasons": reasons,
-                "args": {"trigger": trigger.get("kind"), "channel": trigger.get("channel"),
-                         "identity": identity},
+                "args": {"trigger": "message", "channel": trigger["channel"], "inbound": inbound},
             })
         if reasons:
             raise HTTPException(409, {"reasons": reasons, "status": inst["status"],
-                                      "owner": inst["owner"], "identity": identity})
+                                      "owner": inst["owner"], "suspended_by": inst["suspended_by"],
+                                      "answered": problem is not None and "already" in problem})
         return {"run": run_id, "token": token}
+
+    @app.post("/runs/sweep", dependencies=[Depends(service)])
+    def sweep() -> list[dict]:
+        """Close runs that outlived their time, such as ones whose scheduler stopped."""
+        with db.transaction(gw.url) as conn:
+            stale = conn.execute(
+                "update runs set closed_at = now(), outcome = 'abandoned' "
+                "where closed_at is null and expires_at < now() "
+                "returning id::text as run, instance_id, trigger").fetchall()
+            for row in stale:
+                ledger.append(conn, {"kind": "run", "action": "close", "run": row["run"],
+                                     "instance": row["instance_id"], "decision": "record",
+                                     "outcome": "abandoned"})
+        return [{"run": r["run"], "inbound": r["trigger"].get("inbound"),
+                 "instance": r["instance_id"]} for r in stale]
 
     @app.post("/runs/{run_id}/close", dependencies=[Depends(service)])
     def close_run(run_id: str, body: CloseRun) -> dict:
@@ -394,34 +395,31 @@ def create_app(gw: Gateway) -> FastAPI:
         }
         with db.transaction(gw.url) as conn:
             row = load_run(conn, token)
-            channel = row["trigger"].get("channel", "local")
-            answers = gw.reply_to(conn, row["trigger"].get("inbound"))
-            if channel == "teams" and (answers is None or answers[0] != body.to):
-                why = "in Teams, a run writes only to the person whose message it answers"
-                decision = Decision(False, ("teams-answers-the-sender",), explanations=(why,))
+            message = gw.message_of(conn, row["trigger"].get("inbound"))
+            if message is None or message["person"] != body.to:
+                why = "a run writes only to the person whose message it answers"
+                decision = Decision(False, ("answers-the-sender",), explanations=(why,))
             else:
                 decision = gw.decide(row, "send_message", recipient, [])
             ledger.append(conn, gw.entry(row, "message", "send", decision, args={
                 "to": body.to, "chars": len(text), "sha256": hashlib.sha256(text.encode()).hexdigest(),
                 "links_removed": removed,
             }))
-            if decision.allowed:
-                outbox = conn.execute(
-                    "insert into outbox (run_id, instance_id, person, channel, text) "
-                    "values (%s, %s, %s, %s, %s) returning id",
-                    (row["run"], row["id"], body.to, channel, text),
-                ).fetchone()["id"]
+            if decision.allowed and message["channel"] != "teams":  # people collect it from here
+                conn.execute(
+                    "insert into outbox (run_id, instance_id, inbound_id, person, channel, text) "
+                    "values (%s, %s, %s, %s, %s, %s)",
+                    (row["run"], row["id"], message["id"], body.to, message["channel"], text))
         if not decision.allowed:
             return JSONResponse(status_code=403,
                                 content={"denied": True, **decision.as_dict(explain=True)})
-        if channel == "teams":
-            problem = deliver(answers[1], text, outbox, row["run"], row["id"])
+        if message["channel"] == "teams":
+            problem = deliver(message["reply_to"], text, row["run"], row["id"])
             if problem:
                 return JSONResponse(status_code=502, content={"error": problem})
         return {"sent": True, "text": text, "links_removed": removed}
 
-    def deliver(reply_to: dict, text: str, outbox: int | None, run: str | None,
-                instance: str | None) -> str | None:
+    def deliver(reply_to: dict, text: str, run: str | None, instance: str | None) -> str | None:
         """Send text to Teams, and record whether it got there. The problem, if not."""
         problem = None
         if gw.teams is None:
@@ -432,37 +430,41 @@ def create_app(gw: Gateway) -> FastAPI:
             except (httpx.HTTPError, ValueError) as exc:
                 problem = f"Teams didn't take it: {type(exc).__name__}: {exc}"[:200]
         with db.transaction(gw.url) as conn:
-            if outbox is not None and problem is None:
-                conn.execute("update outbox set delivered_at = now() where id = %s", (outbox,))
             ledger.append(conn, {"kind": "message", "action": "deliver", "run": run,
                                  "instance": instance, "decision": "record",
                                  "outcome": {"status": "error", "error": problem} if problem
                                  else {"status": "ok", "channel": "teams"}})
         return problem
 
-    @app.post("/channels/teams/notices", dependencies=[Depends(service)])
+    @app.post("/notices", dependencies=[Depends(service)])
     def notice(body: Notice) -> dict:
         """a5s's own words, such as "the assistant is suspended", only ever in answer to someone."""
         text, _ = sanitize(body.text, ())
         try:
             inbound = str(uuid.UUID(body.inbound))
         except ValueError:
-            raise HTTPException(404, "no such message from Teams") from None
+            raise HTTPException(404, "no such message") from None
         with db.transaction(gw.url) as conn:
             row = conn.execute(
-                "update inbound set notices = notices + 1 where id = %s and person = %s "
-                "and notices < 3 returning reply_to", (inbound, body.person)).fetchone()
+                "update inbound set notices = notices + 1 where id = %s and notices < 3 "
+                "returning person, channel, reply_to", (inbound,)).fetchone()
             if row is not None:
                 ledger.append(conn, {"kind": "notice", "action": "send", "run": None,
-                                     "instance": body.instance, "acts_for": [body.person],
+                                     "instance": body.instance, "acts_for": [row["person"]],
                                      "decision": "allow", "args": {
                                          "inbound": inbound, "chars": len(text),
                                          "sha256": hashlib.sha256(text.encode()).hexdigest()}})
+                if row["channel"] != "teams":
+                    conn.execute(
+                        "insert into outbox (instance_id, inbound_id, person, channel, text) "
+                        "values (%s, %s, %s, %s, %s)",
+                        (body.instance, inbound, row["person"], row["channel"], text))
         if row is None:
-            raise HTTPException(403, "a5s only answers a message from that person, and briefly")
-        problem = deliver(row["reply_to"], text, None, None, body.instance)
-        if problem:
-            raise HTTPException(502, problem)
+            raise HTTPException(403, "a5s only answers a message someone sent, and briefly")
+        if row["channel"] == "teams":
+            problem = deliver(row["reply_to"], text, None, body.instance)
+            if problem:
+                raise HTTPException(502, problem)
         return {"sent": True, "text": text}
 
     # The model gateway, in both API styles.

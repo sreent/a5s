@@ -11,6 +11,7 @@ import os
 import threading
 import time
 from dataclasses import dataclass
+from typing import Any
 
 import httpx
 import jwt
@@ -24,6 +25,10 @@ class IdentityError(Exception):
     pass
 
 
+class UnknownPerson(IdentityError):
+    """The token checks out, but names nobody the directory knows."""
+
+
 @dataclass(frozen=True)
 class IdentityConfig:
     issuer: str
@@ -34,6 +39,9 @@ class IdentityConfig:
     metadata_url: str | None = None  # if it isn't at the issuer's well-known address
     required: tuple[str, ...] = ("exp", "iat", "iss", "aud")
     leeway: int = 30  # seconds of clock skew
+    # How the directory knows the claim: with "entra", an oid is found as entra:<oid>.
+    # Without one, the claim is the person's id in the directory itself.
+    directory_prefix: str | None = None
 
     @classmethod
     def from_env(cls) -> IdentityConfig | None:
@@ -44,6 +52,7 @@ class IdentityConfig:
             issuer=issuer,  # exactly as the provider writes it: Entra ID's v1 issuer ends in a slash
             audience=os.environ.get("A5S_OIDC_AUDIENCE", "a5s"),
             person_claim=os.environ.get("A5S_OIDC_PERSON_CLAIM", "preferred_username"),
+            directory_prefix=os.environ.get("A5S_OIDC_DIRECTORY_PREFIX") or None,
         )
 
 
@@ -120,6 +129,17 @@ class Verifier:
         if not isinstance(person, str) or not person:
             raise IdentityError(f"it names nobody in {self.cfg.person_claim}")
         return person
+
+
+def signed_in(verifier: Verifier, scenario: Any, token: str) -> str:
+    """Who in the directory a sign-in token is for. IdentityError if it doesn't check out,
+    and UnknownPerson if it names nobody the directory knows."""
+    claim = verifier.person(token)
+    prefix = verifier.cfg.directory_prefix
+    person = scenario.find(f"{prefix}:{claim}") if prefix else scenario.person(claim)
+    if person is None:
+        raise UnknownPerson("a5s doesn't know who you are: ask an instance approver to add you")
+    return person.id
 
 
 def verifier_from_env() -> Verifier | None:

@@ -1,43 +1,32 @@
-"""Teams, through the Bot Framework. The core receives each message itself.
+"""Teams, through the Bot Framework: checking what Teams sends, and answering in Teams.
 
 Teams vouches for a message with a token that doesn't cover the message's
 body, so anything that held the token could change who a message says it's
-from. That's why the core, not a service, receives messages from Teams. It
-checks the token, the channel and the tenant, finds the sender in the directory
-by their Entra ID, and records the message before any service sees it. Replies
-go back from the core too, which alone holds the bot's credentials.
+from. That's why the core, not a service, receives messages from Teams
+(core/inbox.py). It checks the token, the channel and the tenant, and finds the
+sender in the directory by their Entra ID. Replies go back from the core too,
+which alone holds the bot's credentials.
 """
 
 from __future__ import annotations
 
-import hashlib
-import logging
 import os
 import re
 import threading
 import time
-import uuid
 from dataclasses import dataclass, field
 from typing import Any
 from urllib.parse import quote, urlparse
 
 import httpx
-from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request, Response
-from fastapi.responses import JSONResponse
-from psycopg.types.json import Jsonb
 
-from a5s import db
 from a5s.contract import Scenario
-from a5s.core import ledger
 from a5s.core.identity import IdentityConfig, IdentityError, Verifier
-
-log = logging.getLogger(__name__)
 
 BOT_FRAMEWORK = "https://api.botframework.com"
 METADATA = "https://login.botframework.com/v1/.well-known/openidconfiguration"
 UNKNOWN = "a5s doesn't know who you are, so no agent can help. Ask whoever runs a5s to add you."
 ONE_TO_ONE = "I only talk one to one for now. Message me directly, and I'll answer there."
-MAX_BYTES = 256 * 1024  # far more than Teams sends in one message
 _MENTION = re.compile(r"<at>.*?</at>", re.DOTALL)
 
 
@@ -163,66 +152,3 @@ class Teams:
         )
         r.raise_for_status()
 
-
-def create_app(gw: Any) -> FastAPI:
-    """The endpoint Teams sends messages to. It's the only part of the core on the internet."""
-    teams: Teams = gw.teams
-    app = FastAPI(title="a5s Teams endpoint")
-
-    @app.middleware("http")
-    async def small(request: Request, call_next: Any) -> Any:
-        size = request.headers.get("content-length")
-        if size is None or not size.isdigit() or int(size) > MAX_BYTES:
-            return JSONResponse(status_code=413, content={"detail": "send one message, as Teams does"})
-        return await call_next(request)
-
-    def tell(reply_to: dict[str, str], text: str) -> None:
-        try:
-            teams.send(reply_to, text)
-        except Exception:
-            log.exception("couldn't answer in Teams")
-
-    @app.post("/api/messages")
-    def receive(activity: dict[str, Any], background: BackgroundTasks,
-                authorization: str | None = Header(default=None)) -> Response:
-        try:
-            teams.check(activity, authorization)
-        except Refused as exc:  # not recorded: anyone on the internet can send these
-            log.warning("refused a message for Teams: %s", exc.reason)
-            raise HTTPException(exc.status, exc.reason) from None
-        message = teams.message(activity, gw.scenario)
-        if message is None:
-            return Response(status_code=200)
-        if not message.personal:
-            with db.transaction(gw.url) as conn:
-                ledger.append(conn, {
-                    "kind": "inbound", "action": "teams", "run": None, "instance": None,
-                    "acts_for": [message.person] if message.person else [], "decision": "deny",
-                    "reasons": ["a5s talks one to one for now"], "args": {"chars": len(message.text)}})
-            background.add_task(tell, message.reply_to, ONE_TO_ONE)
-            return Response(status_code=200)
-        inbound = str(uuid.uuid4())
-        with db.transaction(gw.url) as conn:
-            fresh = message.person is not None and conn.execute(
-                "insert into inbound (id, channel, source_id, person, agent, text, reply_to) "
-                "values (%s, 'teams', %s, %s, %s, %s, %s) on conflict do nothing returning id",
-                (inbound, message.reply_to["activity"] or inbound, message.person,
-                 teams.cfg.agent, message.text, Jsonb(message.reply_to)),
-            ).fetchone() is not None
-            if message.person is not None and not fresh:
-                return Response(status_code=200)  # Teams sent it again; it's answered once
-            ledger.append(conn, {
-                "kind": "inbound", "action": "teams", "run": None, "instance": None,
-                "acts_for": [message.person] if message.person else [],
-                "decision": "allow" if fresh else "deny",
-                "reasons": [] if fresh else [f"the directory doesn't know entra:{message.entra_id}"],
-                "args": {"inbound": inbound if fresh else None, "chars": len(message.text),
-                         "sha256": hashlib.sha256(message.text.encode()).hexdigest()},
-            })
-            if fresh:
-                conn.execute("notify a5s_inbound")  # the scheduler takes it from here
-        if not fresh:
-            background.add_task(tell, message.reply_to, UNKNOWN)
-        return Response(status_code=200)
-
-    return app

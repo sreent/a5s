@@ -76,11 +76,13 @@ You need Python 3.12 or later, [uv](https://docs.astral.sh/uv/), Postgres 16, an
 uv sync
 uv run a5s up        # a local Postgres, the schema and a service token
 uv run a5s apply     # the assistant, from agents/ and the sample's signed settings
-uv run a5s gateway & # the gateway, on port 8700
+uv run a5s dev &     # the core, its channels and the scheduler, in one process
 uv run a5s say --as ana assistant "Which customer questions are still open?"
 uv run a5s ledger tail
 uv run a5s ledger verify
 ```
+
+`a5s dev` takes people's word for who they are, which is for development only. Everywhere else, people sign in.
 
 To run it as containers, the way each cloud would, build the image and run the [smoke test](deploy/smoke.sh). It starts the stack with stand-ins for the model, the identity provider and locked storage, and checks it end to end, from sign-in to the ledger's locked copies:
 
@@ -89,11 +91,11 @@ docker build -t a5s:dev .
 sh deploy/smoke.sh
 ```
 
-With a real model, start [`deploy/compose.yaml`](deploy/compose.yaml) with `A5S_DB_PASSWORD`, `A5S_SERVICE_TOKEN`, a provider's key, `A5S_ANCHOR_STORE`, the locked store for the ledger's copies, such as `s3://bucket/a5s`, and a password for each part's database role (`A5S_DB_GATEWAY_PASSWORD`, `A5S_DB_CHANNELS_PASSWORD`, `A5S_DB_SCHEDULER_PASSWORD` and `A5S_DB_ANCHOR_PASSWORD`) set, and send messages with `A5S_SCHEDULER_URL=http://127.0.0.1:8701 uv run a5s say ...`.
+With a real model, start [`deploy/compose.yaml`](deploy/compose.yaml) with `A5S_DB_PASSWORD`, `A5S_SERVICE_TOKEN`, a provider's key, `A5S_ANCHOR_STORE`, the locked store for the ledger's copies, such as `s3://bucket/a5s`, and a password for each part's database role (`A5S_DB_GATEWAY_PASSWORD`, `A5S_DB_CHANNELS_PASSWORD`, `A5S_DB_SCHEDULER_PASSWORD` and `A5S_DB_ANCHOR_PASSWORD`) set, and send messages to the core's channels with `A5S_TOKEN=<a sign-in token> uv run a5s say ...`.
 
 To have people sign in, point a5s at your identity provider with `A5S_OIDC_ISSUER`, `A5S_OIDC_AUDIENCE` and `A5S_OIDC_PERSON_CLAIM`, the claim that holds each person's id in the directory, such as `oid` for Entra ID. [`compose.identity.yaml`](deploy/compose.identity.yaml) does this with Keycloak in place of Entra ID, Google Cloud Identity or Okta. `a5s say` then sends the person's token from `A5S_TOKEN`.
 
-For Teams, register a bot in your Entra ID tenant, set `A5S_TEAMS_APP_ID`, `A5S_TEAMS_APP_SECRET` and `A5S_TEAMS_TENANT_ID` for the gateway and for `a5s teams`, the endpoint Teams sends messages to, and point the bot's messaging endpoint at it. With compose, `--profile teams` starts that endpoint.
+For Teams, register a bot in your Entra ID tenant, and set `A5S_TEAMS_APP_ID`, `A5S_TEAMS_APP_SECRET` and `A5S_TEAMS_TENANT_ID` for the gateway and for `a5s channels`, the core's endpoints where messages arrive. Point the bot's messaging endpoint at `/channels/teams/messages` there, through your cloud's ingress. Compose publishes the channels only on localhost, so while developing, reach them through a tunnel.
 
 To change the settings, edit [`settings.yaml`](scenarios/sample/settings.yaml), raise its serial, and sign the new version with `uv run a5s sign --as ana` before applying it. `uv run pytest` runs the tests against a scripted model, and `uv run pytest -m live` against the real providers.
 

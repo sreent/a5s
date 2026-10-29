@@ -25,7 +25,7 @@ from jwt.algorithms import RSAAlgorithm
 
 from a5s import db, definitions, devdb
 from a5s.config import Config, load_models
-from a5s.core import ledger, registry
+from a5s.core import inbox, ledger, registry
 from a5s.core.gateway import Gateway, create_app
 from a5s.core.identity import IdentityConfig, Verifier
 from a5s.core.policy import PolicyEngine
@@ -177,9 +177,33 @@ class Stack:
     gateway: Gateway
     model: FakeModel
     admin: str
+    channels_url: str  # the core's endpoints, where messages arrive
 
     def as_role(self, part: str) -> Config:
         return replace(self.cfg, database_url=db.as_role(self.admin, part))
+
+    def send(self, text: str, person: str = "ana", agent: str = "assistant") -> str:
+        """A message through the local channel, in development, recorded by the core. Its id."""
+        r = httpx.post(f"{self.channels_url}/channels/local/messages",
+                       json={"person": person, "agent": agent, "text": text}, timeout=30)
+        r.raise_for_status()
+        return r.json()["message"]
+
+    def answers(self, message: str, person: str = "ana") -> list[str]:
+        r = httpx.get(f"{self.channels_url}/channels/local/messages/{message}",
+                      params={"person": person}, timeout=30)
+        r.raise_for_status()
+        return r.json()["replies"]
+
+    def say(self, text: str, person: str = "ana", agent: str = "assistant",
+            scheduler: Scheduler | None = None) -> str:
+        """What a person is told, once the scheduler has answered their message."""
+        r = httpx.post(f"{self.channels_url}/channels/local/messages",
+                       json={"person": person, "agent": agent, "text": text}, timeout=30)
+        if r.status_code != 202:
+            return r.json()["detail"]
+        (scheduler or self.scheduler()).answer_waiting()
+        return "\n".join(self.answers(r.json()["message"], person))
 
     @property
     def url(self) -> str:
@@ -190,9 +214,10 @@ class Stack:
         return httpx.Client(base_url=self.url, headers=headers, timeout=60)
 
     def open_run(self, sender: str = "ana", instance: str = "assistant-finance") -> tuple[str, str]:
+        """A run answering a message from `sender`, opened as the scheduler would."""
         with self.client() as c:
-            r = c.post("/runs", json={"instance": instance,
-                                      "trigger": {"kind": "message", "channel": "local", "sender": sender}})
+            r = c.post("/runs", json={"instance": instance, "trigger": {
+                "kind": "message", "inbound": self.send("Hello", sender)}})
         r.raise_for_status()
         return r.json()["run"], r.json()["token"]
 
@@ -229,7 +254,8 @@ def build_root(tmp: Path, model_alias: str, models_yaml: str) -> Path:
 def running(database: str, root: Path, http: httpx.Client, model: FakeModel) -> Iterator[Stack]:
     port = free_port()
     cfg = Config(database_url=db.as_role(database, "gateway"),
-                 gateway_url=f"http://127.0.0.1:{port}", service_token=SERVICE_TOKEN, root=root)
+                 gateway_url=f"http://127.0.0.1:{port}", service_token=SERVICE_TOKEN, root=root,
+                 development=True)
     scenario = SampleScenario(cfg.scenario_dir, cfg.database_url)  # its tools run in the gateway
     definitions.pin(root / "agents" / "assistant",
                     {n: t.schema_hash for n, t in scenario.tools().items()})
@@ -239,8 +265,9 @@ def running(database: str, root: Path, http: httpx.Client, model: FakeModel) -> 
         applied = registry.apply(conn, gw.definitions, scenario.settings(), scenario.tools(),
                                  scenario.person, scenario.name)
     assert not applied.refused, applied.refused
-    with serve(create_app(gw), port):
-        yield Stack(cfg, gw, model, database)
+    channels = replace(gw, cfg=replace(cfg, database_url=db.as_role(database, "channels")))
+    with serve(create_app(gw), port), serve(inbox.create_app(channels), free_port()) as channels_url:
+        yield Stack(cfg, gw, model, database, channels_url)
 
 
 FAKE_MODELS = """

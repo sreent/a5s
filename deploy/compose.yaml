@@ -1,6 +1,6 @@
 # a5s as containers. The networks enforce the design: workers hold no secrets,
-# and reach only the gateway and the scheduler, never the database or the
-# internet. Only the gateway reaches model providers.
+# and reach only the gateway, never the database, the channels or the internet.
+# Only the gateway reaches model providers, and people reach only the channels.
 
 name: a5s
 
@@ -58,29 +58,27 @@ services:
     depends_on:
       setup: {condition: service_completed_successfully}
 
-  scheduler:  # with the local channel, for development, on localhost only
+  channels:  # the core's endpoints, where people's messages arrive: the only part people reach
     <<: *a5s
-    command: ["scheduler", "--host", "0.0.0.0"]
+    command: ["channels", "--host", "0.0.0.0"]
+    environment:
+      <<: *teams
+      A5S_DATABASE_URL: postgresql://a5s_channels:${A5S_DB_CHANNELS_PASSWORD}@postgres:5432/postgres
+    networks: [data, egress, edge]
+    ports: ["127.0.0.1:${A5S_CHANNELS_PORT:-8703}:8703"]  # for Teams, behind your ingress
+    depends_on:
+      setup: {condition: service_completed_successfully}
+
+  scheduler:  # answers the messages the core receives; it has no port of its own
+    <<: *a5s
+    command: ["scheduler"]
     environment:
       A5S_DATABASE_URL: postgresql://a5s_scheduler:${A5S_DB_SCHEDULER_PASSWORD}@postgres:5432/postgres
       A5S_SERVICE_TOKEN: ${A5S_SERVICE_TOKEN:?set A5S_SERVICE_TOKEN}
       A5S_GATEWAY_URL: http://gateway:8700
       A5S_WORKER_URL: http://worker:8702
-    networks: [data, work, edge]
-    ports: ["127.0.0.1:${A5S_CHANNEL_PORT:-8701}:8701"]
+    networks: [data, work]
     depends_on: [gateway, worker]
-
-  teams:  # the endpoint Teams sends messages to, in the core: the only part on the internet
-    <<: *a5s
-    command: ["teams", "--host", "0.0.0.0"]
-    profiles: [teams]
-    environment:
-      <<: *teams
-      A5S_DATABASE_URL: postgresql://a5s_channels:${A5S_DB_CHANNELS_PASSWORD}@postgres:5432/postgres
-    networks: [data, egress, edge]
-    ports: ["127.0.0.1:${A5S_TEAMS_PORT:-8703}:8703"]
-    depends_on:
-      setup: {condition: service_completed_successfully}
 
   anchor:  # copies the ledger to locked storage every hour, so a rewritten history shows
     <<: *a5s
