@@ -1,0 +1,30 @@
+// The facts a5s gives policy for every call. A request missing any of them is
+// denied, and a policy pack that refers to anything else fails to load.
+
+entity Instance = {
+  status: String,
+  level: Long,
+  grants: Set<String>,
+  model: String,
+  serves: Set<String>,
+};
+
+entity Tool = {
+  name: String,
+  known: Bool,
+  pinned: Bool,
+  reads: Bool,
+  writes: Bool,
+  destructive: Bool,
+  sends_outside: Bool,
+};
+
+entity Model = { name: String, approved: Bool };
+
+entity Person = { in_audience: Bool };
+
+type RunContext = { level: Long, read_outside: Bool, acts_for: Set<String> };
+
+action call_tool appliesTo { principal: Instance, resource: Tool, context: RunContext };
+action call_model appliesTo { principal: Instance, resource: Model, context: RunContext };
+action send_message appliesTo { principal: Instance, resource: Person, context: RunContext };

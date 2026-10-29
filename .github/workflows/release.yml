@@ -1,0 +1,66 @@
+name: release
+
+# A release of a5s, on a version tag such as v0.2.0: the full suite, then the image,
+# built, smoke-tested, pushed with its provenance signed, and published with the
+# manifest it was built with. Each organisation then approves the release for its
+# own deployment, by signing what `a5s release show` prints there.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  image:
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # to publish the release
+      packages: write  # to push the image
+      id-token: write  # to sign its provenance
+      attestations: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - name: The tag names the version in pyproject.toml
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' pyproject.toml)
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "The tag $GITHUB_REF_NAME doesn't name version $version."; exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
+      - name: Build the image, and run the smoke test against it
+        run: |
+          docker build -t "$IMAGE:$VERSION" .
+          A5S_IMAGE="$IMAGE:$VERSION" sh deploy/smoke.sh
+      - name: Push it
+        env:
+          TOKEN: ${{ github.token }}
+        run: |
+          echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker push "$IMAGE:$VERSION"
+          echo "DIGEST=$(docker buildx imagetools inspect "$IMAGE:$VERSION" --format '{{.Manifest.Digest}}')" >> "$GITHUB_ENV"
+      - name: Sign its provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8  # v4.2.2
+        with:
+          subject-name: ${{ env.IMAGE }}
+          subject-digest: ${{ env.DIGEST }}
+          push-to-registry: true
+      - name: Publish the release, with the manifest the image was built with
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          docker run --rm --entrypoint cat "$IMAGE@$DIGEST" /app/release.yaml > release.yaml
+          gh release create "$GITHUB_REF_NAME" release.yaml --title "a5s $VERSION" --notes "\
+          The image is $IMAGE@$DIGEST. Check where it was built from with
+          \`gh attestation verify oci://$IMAGE@$DIGEST --owner $GITHUB_REPOSITORY_OWNER\`.
+
+          release.yaml is the manifest it was built with. To approve the release for your
+          deployment, its approvers sign what \`a5s release show\` prints there, which adds
+          your own models, scenario and agents, and your administrator records their
+          signatures with \`a5s release approve\`."

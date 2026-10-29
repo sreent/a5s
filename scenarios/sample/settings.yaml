@@ -1,0 +1,19 @@
+# The sample scenario's settings: which instances exist, whom each serves,
+# and how far each may act. A version counts only when an instance approver
+# signs it (`a5s sign`), and its serial must rise with every new version.
+
+serial: 3
+
+instances:
+  assistant-finance:
+    definition: assistant
+    serves: [ana, ben]
+    level: 1
+    owner: ana       # who runs it here, and their deputy
+    deputy: ben
+  watcher-finance:
+    definition: watcher
+    serves: [ana, ben]
+    level: 0         # it observes and reports
+    owner: ana
+    deputy: ben

@@ -1,0 +1,92 @@
+{
+  "realm": "a5s",
+  "displayName": "a5s sample (stand-in identity provider)",
+  "enabled": true,
+  "accessTokenLifespan": 300,
+  "users": [
+    {
+      "username": "ana",
+      "firstName": "Ana",
+      "lastName": "Ortiz",
+      "email": "ana@sample.test",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${A5S_IDP_PASSWORD}",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "ben",
+      "firstName": "Ben",
+      "lastName": "Okafor",
+      "email": "ben@sample.test",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${A5S_IDP_PASSWORD}",
+          "temporary": false
+        }
+      ]
+    },
+    {
+      "username": "chen",
+      "firstName": "Chen",
+      "lastName": "Wei",
+      "email": "chen@sample.test",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${A5S_IDP_PASSWORD}",
+          "temporary": false
+        }
+      ]
+    }
+  ],
+  "clients": [
+    {
+      "clientId": "a5s-local",
+      "name": "a5s local channel",
+      "publicClient": true,
+      "standardFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "protocolMappers": [
+        {
+          "name": "a5s audience",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "a5s",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        }
+      ]
+    },
+    {
+      "clientId": "a5s-web",
+      "name": "a5s web chat",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": [
+        "http://127.0.0.1:8703/chat/*",
+        "http://localhost:8703/chat/*"
+      ],
+      "webOrigins": [
+        "+"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://127.0.0.1:8703/chat/*##http://localhost:8703/chat/*"
+      }
+    }
+  ]
+}

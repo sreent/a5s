@@ -1,0 +1,31 @@
+# Made-up people and records for a5s's sample scenario.
+
+# Their identities are made-up Entra ID object ids, which Teams sends with each message,
+# and their Matrix ids on the development stack's homeserver, a5s.test.
+# Everyone works 09:00 to 17:00, Monday to Friday, in their own time zone, unless
+# their entry says otherwise with hours: [start, end] and workdays: [1, ..., 5].
+people:
+  - {id: ana, name: Ana Ortiz, team: finance, roles: [instance-approver], timezone: Europe/London,
+     identities: ["entra:0a5a0000-0000-4000-8000-00000000a0a1", "matrix:@ana:a5s.test"]}
+  - {id: ben, name: Ben Okafor, team: finance, manager: ana, timezone: Europe/London,
+     identities: ["entra:0a5a0000-0000-4000-8000-00000000b0b2", "matrix:@ben:a5s.test"]}
+  - {id: chen, name: Chen Wei, team: operations, manager: omar, timezone: Asia/Singapore,
+     identities: ["entra:0a5a0000-0000-4000-8000-00000000c0c3", "matrix:@chen:a5s.test"]}
+  - {id: omar, name: Omar Haddad, team: operations, timezone: Asia/Singapore,
+     identities: ["entra:0a5a0000-0000-4000-8000-00000000d0d4", "matrix:@omar:a5s.test"]}
+
+  # The team that runs a5s, and the people from outside it who approve its releases.
+  - {id: priya, name: Priya Nair, team: platform, manager: lena, timezone: Europe/London,
+     roles: [agent-owner:assistant, agent-owner:watcher]}
+  - {id: tomas, name: Tomas Berg, team: platform, manager: lena, timezone: Europe/London}
+  - {id: lena, name: Lena Fischer, team: technology, timezone: Europe/London}
+  - {id: rosa, name: Rosa Mendes, team: risk, timezone: Europe/London, roles: [release-approver]}
+  - {id: kofi, name: Kofi Mensah, team: audit, timezone: Europe/London, roles: [assurance]}
+
+# Each open record is an obligation for its owner, from the start of their working
+# day when it opened to the end of their working day when it's due.
+records:
+  - {key: Q-1001, title: Invoice sent to the wrong address, status: open, customer: Northwind, owner: ana, opened: "2026-10-26", due: "2026-11-04"}
+  - {key: Q-1002, title: Refund for a duplicate payment, status: waiting on finance, customer: Contoso, owner: ben, opened: "2026-10-27", due: "2026-11-06"}
+  - {key: Q-1003, title: Delivery date for order 7781, status: open, customer: Fabrikam, owner: chen, opened: "2026-10-26", due: "2026-11-02"}
+  - {key: Q-1004, title: Change of billing contact, status: closed, customer: Northwind, owner: ana, opened: "2026-10-12", due: "2026-10-20"}

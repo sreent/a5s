@@ -1,0 +1,121 @@
+# a5s as containers. The networks enforce the design: workers hold no secrets,
+# and reach only the gateway, never the database, the channels or the internet.
+# Only the gateway reaches model providers, and people reach only the channels.
+
+name: a5s
+
+x-a5s: &a5s
+  image: ${A5S_IMAGE:-a5s:dev}
+  restart: unless-stopped
+
+# Each part connects as its own role, with only the rights its job needs. The
+# administrator only sets up the schema and applies the signed settings.
+x-admin: &admin
+  A5S_DATABASE_URL: postgresql://a5s:${A5S_DB_PASSWORD:?set A5S_DB_PASSWORD}@postgres:5432/postgres
+
+# How people reach a5s. Each chat is on where its settings are set, and passed on
+# from the environment: the command line always, and any of the others.
+x-people: &people
+  A5S_OIDC_ISSUER:  # the identity provider people sign in with
+  A5S_OIDC_AUDIENCE:
+  A5S_OIDC_PERSON_CLAIM:
+  A5S_OIDC_METADATA_URL:
+  A5S_WEBCHAT_CLIENT_ID:  # the web chat, signing people in through that provider
+  A5S_TEAMS_APP_ID:  # the bot's registration in Entra ID, for Teams
+  A5S_TEAMS_APP_SECRET:
+  A5S_TEAMS_TENANT_ID:
+  A5S_MATRIX_HOMESERVER:  # a5s's registration on the organisation's homeserver, for Matrix
+  A5S_MATRIX_SERVER_NAME:
+  A5S_MATRIX_AS_TOKEN:
+  A5S_MATRIX_HS_TOKEN:
+
+services:
+  postgres:
+    image: postgres:16@sha256:1beaa3084eee2676f20a9cd9928f0bf2c5bf674f8e49f81017912183d377c61c
+    environment:
+      POSTGRES_USER: a5s
+      POSTGRES_PASSWORD: ${A5S_DB_PASSWORD:?set A5S_DB_PASSWORD}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    networks: [data]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "a5s"]
+      interval: 2s
+      retries: 30
+
+  setup:  # the schema, the parts' roles, and the signed settings
+    <<: *a5s
+    restart: "no"
+    command: ["setup"]
+    environment:
+      <<: *admin
+      A5S_DB_GATEWAY_PASSWORD: ${A5S_DB_GATEWAY_PASSWORD:?set A5S_DB_GATEWAY_PASSWORD}
+      A5S_DB_CHANNELS_PASSWORD: ${A5S_DB_CHANNELS_PASSWORD:?set A5S_DB_CHANNELS_PASSWORD}
+      A5S_DB_SCHEDULER_PASSWORD: ${A5S_DB_SCHEDULER_PASSWORD:?set A5S_DB_SCHEDULER_PASSWORD}
+      A5S_DB_ANCHOR_PASSWORD: ${A5S_DB_ANCHOR_PASSWORD:?set A5S_DB_ANCHOR_PASSWORD}
+      A5S_TEAM:  # the directory's team that runs a5s, platform if not set
+    networks: [data]
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  gateway:  # the trusted core: policy, the ledger, and the providers' keys
+    <<: *a5s
+    command: ["gateway", "--host", "0.0.0.0"]
+    environment:
+      <<: *people
+      A5S_DATABASE_URL: postgresql://a5s_gateway:${A5S_DB_GATEWAY_PASSWORD}@postgres:5432/postgres
+      A5S_SERVICE_TOKEN: ${A5S_SERVICE_TOKEN:?set A5S_SERVICE_TOKEN}
+      A5S_TEAM:
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      QWEN_API_KEY: ${QWEN_API_KEY:-}
+    networks: [data, work, egress]
+    depends_on:
+      setup: {condition: service_completed_successfully}
+
+  channels:  # the core's endpoints, where people's messages arrive: the only part people reach
+    <<: *a5s
+    command: ["channels", "--host", "0.0.0.0"]
+    environment:
+      <<: *people
+      A5S_DATABASE_URL: postgresql://a5s_channels:${A5S_DB_CHANNELS_PASSWORD}@postgres:5432/postgres
+    networks: [data, egress, edge]
+    ports: ["127.0.0.1:${A5S_CHANNELS_PORT:-8703}:8703"]  # behind your ingress, for people and Teams
+    depends_on:
+      setup: {condition: service_completed_successfully}
+
+  scheduler:  # answers the messages the core receives; it has no port of its own
+    <<: *a5s
+    command: ["scheduler"]
+    environment:
+      A5S_DATABASE_URL: postgresql://a5s_scheduler:${A5S_DB_SCHEDULER_PASSWORD}@postgres:5432/postgres
+      A5S_SERVICE_TOKEN: ${A5S_SERVICE_TOKEN:?set A5S_SERVICE_TOKEN}
+      A5S_GATEWAY_URL: http://gateway:8700
+      A5S_WORKER_URL: http://worker:8702
+    networks: [data, work]
+    depends_on: [gateway, worker]
+
+  anchor:  # copies the ledger to locked storage every hour, so a rewritten history shows
+    <<: *a5s
+    command: ["anchor", "--every", "3600"]
+    environment:
+      A5S_DATABASE_URL: postgresql://a5s_anchor:${A5S_DB_ANCHOR_PASSWORD}@postgres:5432/postgres
+      A5S_ANCHOR_STORE: ${A5S_ANCHOR_STORE:?set A5S_ANCHOR_STORE, such as s3://bucket/a5s}
+      A5S_ANCHOR_RETAIN_DAYS: ${A5S_ANCHOR_RETAIN_DAYS:-365}
+    networks: [data, egress]
+    depends_on:
+      setup: {condition: service_completed_successfully}
+
+  worker:  # no secrets, no database, no internet
+    <<: *a5s
+    command: ["worker", "--host", "0.0.0.0"]
+    environment:
+      A5S_GATEWAY_URL: http://gateway:8700
+    networks: [work]
+
+networks:
+  data: {internal: true}
+  work: {internal: true}
+  egress: {}
+  edge: {}
+
+volumes:
+  pgdata: {}

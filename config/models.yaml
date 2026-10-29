@@ -1,0 +1,48 @@
+# Approved models. The model gateway refuses any model that isn't listed here.
+# These two are for development with synthetic data only: both are hosted by
+# their providers, outside the organisation.
+
+models:
+  deepseek-v4-pro:
+    provider: deepseek
+    api: openai
+    base_url: https://api.deepseek.com
+    model: deepseek-v4-pro
+    # DeepSeek offers no dated version, so a5s can only check that every response
+    # reports this name. A change behind the name can't be seen.
+    reported_model: deepseek-v4-pro
+    key_env: DEEPSEEK_API_KEY
+    region: provider-hosted
+    data_classes: [synthetic]
+
+  qwen3.7-max:
+    provider: alibaba
+    api: openai
+    base_url: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+    model: qwen3.7-max-2026-06-08
+    key_env: QWEN_API_KEY
+    region: singapore
+    data_classes: [synthetic]
+
+  # A model the organisation hosts on its own network, with vLLM, Ollama, llama.cpp
+  # or SGLang, can take real data once it's approved for it. It must support tool
+  # calling, and with no key_env, a5s sends no key:
+  #
+  # our-qwen:
+  #   provider: our-gpu-servers
+  #   api: openai
+  #   base_url: https://llm.internal:8000/v1
+  #   model: Qwen/Qwen3-32B
+  #   reported_model: Qwen/Qwen3-32B    # what the server says each time it answers
+  #   region: on-premises
+  #   data_classes: [synthetic, internal]
+
+  deepseek-v4-pro-anthropic:     # the same model, through the Anthropic-compatible API
+    provider: deepseek
+    api: anthropic
+    base_url: https://api.deepseek.com/anthropic
+    model: deepseek-v4-pro
+    reported_model: deepseek-v4-pro
+    key_env: DEEPSEEK_API_KEY
+    region: provider-hosted
+    data_classes: [synthetic]

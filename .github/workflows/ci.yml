@@ -1,0 +1,52 @@
+name: ci
+
+# The full suite, on every push: the tests against a real Postgres and storage
+# emulators, and the containers' smoke test. A release runs it too, first.
+# Every action and image is pinned by commit or digest.
+
+on:
+  push:
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16@sha256:1beaa3084eee2676f20a9cd9928f0bf2c5bf674f8e49f81017912183d377c61c
+        env:
+          POSTGRES_USER: a5s
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U a5s"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      A5S_TEST_DATABASE_URL: postgresql://a5s@127.0.0.1:5432/postgres
+      A5S_TEST_AZURITE: UseDevelopmentStorage=true
+      A5S_TEST_GCS: http://127.0.0.1:4443
+      A5S_TEST_BROWSER: required  # the web chat's tests run in a real browser here
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - name: Start emulators for Azure's and Google's storage
+        run: |
+          docker run -d -p 10000:10000 mcr.microsoft.com/azure-storage/azurite:3.37.0@sha256:830430c1da1a2d537e08f3e6764dd1f5ae00cf0346bcaf625b968ec3f0971fd5 \
+            azurite-blob --blobHost 0.0.0.0 --skipApiVersionCheck --loose
+          docker run -d -p 4443:4443 mirror.gcr.io/fsouza/fake-gcs-server:1.52@sha256:666f86b873120818b10a5e68d99401422fcf8b00c1f27fe89599c35236f48b4c \
+            -scheme http -port 4443 -external-url http://127.0.0.1:4443
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6
+      - run: uv sync --locked
+      - run: uv run playwright install --with-deps chromium
+      - run: uv run ruff check .
+      - run: uv run pytest
+
+  containers:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - run: docker build -t a5s:dev .
+      - run: sh deploy/smoke.sh
