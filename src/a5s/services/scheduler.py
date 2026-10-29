@@ -70,7 +70,9 @@ class Scheduler:
         person = self.scenario.person(owner) if owner else None
         return person.name if person else "the platform owner"
 
-    def handle_message(self, *, person: str, agent: str, text: str, channel: str = "local") -> str:
+    def handle_message(self, *, person: str, agent: str, text: str, channel: str = "local",
+                       identity: str | None = None) -> str:
+        """Handle a message from a person. `identity` is their token, which the core checks."""
         if self.scenario.person(person) is None:
             return "a5s doesn't know who you are, so no agent can help."
         with db.transaction(self.cfg.database_url) as conn:
@@ -88,17 +90,19 @@ class Scheduler:
                               "I'm still working on your last message, so I'll get to this next.",
                               inst["id"])
         try:
-            return self._run(person, agent, text, channel, inst)
+            return self._run(person, agent, text, channel, inst, identity)
         finally:
             self._release(key, holder)
 
-    def _run(self, person: str, agent: str, text: str, channel: str, inst: dict) -> str:
+    def _run(self, person: str, agent: str, text: str, channel: str, inst: dict,
+             identity: str | None) -> str:
         with db.transaction(self.cfg.database_url) as conn:
             context.add_turn(conn, person=person, agent=agent, role="person", content=text)
         try:
             opened = self.gw.post("/runs", headers=self.service, json={
                 "instance": inst["id"],
-                "trigger": {"kind": "message", "channel": channel, "sender": person},
+                "trigger": {"kind": "message", "channel": channel, "sender": person,
+                            "identity": identity},
             })
         except httpx.HTTPError:
             log.exception("the gateway can't be reached")
@@ -108,13 +112,14 @@ class Scheduler:
                               "a5s can't run agents right now. Try again in a few minutes.",
                               inst["id"])
         if opened.status_code == 409:
-            status = opened.json()["detail"].get("status", "unavailable")
-            return self._tell(
-                person, channel,
-                f"The {agent} is {status} at the moment, so it can't help. "
-                f"Ask {self._owner_name(inst['owner'])}.",
-                inst["id"],
-            )
+            detail, owner = opened.json()["detail"], self._owner_name(inst["owner"])
+            if detail.get("identity") in ("missing", "refused"):
+                text = "a5s couldn't confirm it's you, so no agent can help. Sign in again, then resend."
+            elif detail.get("status", "active") != "active":
+                text = f"The {agent} is {detail['status']} at the moment, so it can't help. Ask {owner}."
+            else:
+                text = f"The {agent} can't help you at the moment. Ask {owner}."
+            return self._tell(person, channel, text, inst["id"])
         opened.raise_for_status()
         run, token = opened.json()["run"], opened.json()["token"]
         outcome = "failed"

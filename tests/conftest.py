@@ -16,14 +16,18 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import jwt
 import psycopg
 import pytest
 import uvicorn
+from cryptography.hazmat.primitives.asymmetric import rsa
+from jwt.algorithms import RSAAlgorithm
 
 from a5s import db, definitions, devdb
 from a5s.config import Config, load_models
 from a5s.core import ledger, registry
 from a5s.core.gateway import Gateway, create_app
+from a5s.core.identity import IdentityConfig, Verifier
 from a5s.core.policy import PolicyEngine
 from a5s.sample import SampleScenario
 from a5s.services.scheduler import Scheduler
@@ -97,6 +101,48 @@ class FakeModel:
 
     def tool_names(self, request: int = 0) -> set[str]:
         return {t["function"]["name"] for t in self.requests[request]["body"].get("tools", [])}
+
+
+class FakeIssuer:
+    """An OpenID Connect provider that signs tokens, publishes its keys and can rotate them."""
+
+    url = "https://id.test/realms/a5s"
+
+    def __init__(self) -> None:
+        self.keys: dict[str, rsa.RSAPrivateKey] = {}
+        self.published: list[str] = []
+        self.fetches = 0
+        self.rotate()
+
+    def rotate(self) -> str:
+        kid = f"key-{len(self.keys) + 1}"
+        self.keys[kid] = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        self.published = [kid]
+        return kid
+
+    def handler(self, request: httpx.Request) -> httpx.Response:
+        if request.url.path.endswith("/.well-known/openid-configuration"):
+            return httpx.Response(200, json={"issuer": self.url, "jwks_uri": f"{self.url}/certs"})
+        if request.url.path.endswith("/certs"):
+            self.fetches += 1
+            keys = []
+            for kid in self.published:
+                jwk = RSAAlgorithm.to_jwk(self.keys[kid].public_key(), as_dict=True)
+                keys.append({**jwk, "kid": kid, "use": "sig", "alg": "RS256"})
+            return httpx.Response(200, json={"keys": keys})
+        return httpx.Response(404)
+
+    def token(self, person: str | None = "ana", *, kid: str | None = None, **claims: Any) -> str:
+        now = int(time.time())
+        body = {"iss": self.url, "aud": "a5s", "iat": now, "exp": now + 300,
+                "preferred_username": person, **claims}
+        kid = kid or self.published[-1]
+        return jwt.encode({k: v for k, v in body.items() if v is not None}, self.keys[kid],
+                          algorithm="RS256", headers={"kid": kid})
+
+    def verifier(self, **kwargs: Any) -> Verifier:
+        return Verifier(IdentityConfig(issuer=self.url, audience="a5s"),
+                        httpx.Client(transport=httpx.MockTransport(self.handler)), **kwargs)
 
 
 @contextmanager

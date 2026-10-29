@@ -146,7 +146,7 @@ People get one conversation with each agent, and it never runs out of room, howe
 
 Each agent talks to people under one identity, never a person's, and says it's an AI agent. Outgoing messages, and the text of drafts, go through a gateway that keeps only text and the record links the scenario's systems build. Messages go only to the audience the settings name [default: people inside the organisation].
 
-- **Who can start a run.** Only people the directory knows. Email starts one only from a sender who passes DMARC and matches the directory, and the agent never answers a Reply-To address. Any other email goes to the extractor as a document.
+- **Who can start a run.** Only people the directory knows, signed in through the organisation's identity provider. The channel checks each message's token, and the core checks it again before it opens a run, so no service can say a message came from someone else. The token names the person by a claim they can't change, such as Entra ID's object id, and the core records that it checked it but never keeps it. Email starts one only from a sender who passes DMARC and matches the directory, and the agent never answers a Reply-To address. Any other email goes to the extractor as a document.
 - **Contact.** Each person gets one digest a day from all the agents together, at a time they choose. Urgent items, and outcomes people are waiting for, go at once, within a limit per person. Escalation follows the scenario's chain, in people's working hours.
 - **When an agent can't help,** because it's suspended, out of budget, stopped by an outage or no longer approved, the channel service says so in code and names who to ask. Its obligations escalate in code along the scenario's chain as they fall due.
 

@@ -1,23 +1,49 @@
 #!/bin/sh
-# Starts a5s's containers with a stand-in model, then checks that a message
-# runs end to end, that a worker reaches only the gateway, and that the ledger
-# verifies. Needs the image first: docker build -t a5s:dev .
+# Starts a5s's containers with a stand-in model and a stand-in identity
+# provider, then checks that a person must sign in, that a message runs end to
+# end, that a worker reaches only the gateway, and that the ledger verifies.
+# Needs the image first: docker build -t a5s:dev .
 set -eu
 cd "$(dirname "$0")/.."
 
 env_file=$(mktemp)
+reply=$(mktemp)
 random() { head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9'; }
-printf 'A5S_DB_PASSWORD=%s\nA5S_SERVICE_TOKEN=%s\n' "$(random)" "$(random)" > "$env_file"
-compose() { docker compose -p a5s-smoke --env-file "$env_file" \
-              -f deploy/compose.yaml -f deploy/compose.stub.yaml "$@"; }
-trap 'compose down -v >/dev/null 2>&1; rm -f "$env_file"' EXIT
+idp_password=$(random)
+printf 'A5S_DB_PASSWORD=%s\nA5S_SERVICE_TOKEN=%s\nA5S_IDP_PASSWORD=%s\n' \
+  "$(random)" "$(random)" "$idp_password" > "$env_file"
+compose() { docker compose -p a5s-smoke --env-file "$env_file" -f deploy/compose.yaml \
+              -f deploy/compose.stub.yaml -f deploy/compose.identity.yaml "$@"; }
+trap 'compose down -v >/dev/null 2>&1; rm -f "$env_file" "$reply"' EXIT
 
 compose up -d
-reply=$(curl -sf --retry 60 --retry-all-errors --retry-delay 1 \
-  -X POST http://127.0.0.1:8701/channels/local/messages -H 'content-type: application/json' \
-  -d '{"person": "ana", "agent": "assistant", "text": "Which questions mention an invoice?"}')
-echo "Reply: $reply"
-echo "$reply" | grep -q "Q-1001"
+
+sign_in() {  # a token from the stand-in identity provider
+  curl -sf --retry 60 --retry-all-errors --retry-delay 2 \
+    http://127.0.0.1:8180/realms/a5s/protocol/openid-connect/token \
+    -d grant_type=password -d client_id=a5s-local -d scope=openid \
+    -d username="$1" --data-urlencode password="$idp_password" |
+    python3 -c 'import json, sys; print(json.load(sys.stdin)["access_token"])'
+}
+ana=$(sign_in ana)
+ben=$(sign_in ben)
+
+channel=http://127.0.0.1:8701/channels/local/messages
+send() {  # prints the status, and writes the body to $reply
+  curl -s -o "$reply" -w '%{http_code}' --retry 60 --retry-all-errors --retry-delay 1 \
+    -X POST "$channel" -H 'content-type: application/json' "$@"
+}
+
+status=$(send -d '{"agent": "assistant", "text": "Hi"}')
+[ "$status" = 401 ] || { echo "A message without a token got $status, not 401."; exit 1; }
+status=$(send -H "authorization: Bearer $ben" -d '{"person": "ana", "agent": "assistant", "text": "Hi"}')
+[ "$status" = 403 ] || { echo "Ben sending as Ana got $status, not 403."; exit 1; }
+echo "A message needs a token, and the token must be the sender's."
+
+status=$(send -H "authorization: Bearer $ana" \
+  -d '{"agent": "assistant", "text": "Which questions mention an invoice?"}')
+echo "Reply ($status): $(cat "$reply")"
+grep -q "Q-1001" "$reply"
 
 compose exec -T worker python - <<'PY'
 import os, socket
@@ -30,10 +56,12 @@ def reach(host, port):
     except OSError:
         return False
 assert reach("gateway", 8700), "the worker can't reach the gateway"
-for host, port in (("postgres", 5432), ("api.deepseek.com", 443), ("1.1.1.1", 443)):
+for host, port in (("postgres", 5432), ("keycloak", 8080), ("api.deepseek.com", 443), ("1.1.1.1", 443)):
     assert not reach(host, port), f"the worker can reach {host}:{port}"
 print("The worker holds no secrets, and reaches only the gateway.")
 PY
 
+compose exec -T gateway a5s ledger tail -n 50 | grep -q '"identity": "verified"'
+echo "The core checked Ana's identity itself, and recorded it."
 compose exec -T gateway a5s ledger verify | tee /dev/stderr | grep -q "ok=True"
 echo "Smoke test passed."

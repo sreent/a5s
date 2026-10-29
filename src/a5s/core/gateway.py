@@ -25,6 +25,7 @@ from a5s import db
 from a5s.config import Config, ModelConfig
 from a5s.contract import Scenario, Tool, ToolCall
 from a5s.core import ledger, models, registry
+from a5s.core.identity import IdentityError, Verifier
 from a5s.core.policy import Decision, PolicyEngine
 from a5s.definitions import Definition
 
@@ -59,10 +60,27 @@ class Gateway:
     models: dict[str, ModelConfig]
     definitions: dict[str, Definition]
     http: httpx.Client
+    identity: Verifier | None = None  # without one, senders go unverified: development only
 
     @property
     def url(self) -> str:
         return self.cfg.database_url
+
+    def check_sender(self, sender: str | None, token: str | None) -> tuple[str, str | None]:
+        """Whether a message's sender is who the scheduler says, and if not, why."""
+        if sender is None:
+            return "none", None
+        if self.identity is None:
+            return "unverified (development)", None
+        if not token:
+            return "missing", "the sender's identity wasn't given"
+        try:
+            person = self.identity.person(token)
+        except IdentityError as exc:
+            return "refused", f"the sender's identity doesn't check out: {exc}"
+        if person != sender:
+            return "refused", f"the identity is {person}'s, not {sender}'s"
+        return "verified", None
 
     # Cedar entities, built from the core's own records for every call.
 
@@ -188,13 +206,15 @@ def create_app(gw: Gateway) -> FastAPI:
     def open_run(body: OpenRun) -> dict:
         sender = body.trigger.get("sender")
         acts_for = [sender] if sender else []
+        identity, problem = gw.check_sender(sender, body.trigger.get("identity"))
+        trigger = {k: v for k, v in body.trigger.items() if k != "identity"}  # never stored
         token = secrets.token_urlsafe(32)
         run_id = str(uuid.uuid4())
         with db.transaction(gw.url) as conn:
             inst = conn.execute("select * from instances where id = %s", (body.instance,)).fetchone()
             if inst is None:
                 raise HTTPException(404, f"no instance {body.instance}")
-            reasons = []
+            reasons = [problem] if problem else []
             if inst["status"] != "active":
                 reasons.append(f"{body.instance} is {inst['status']}")
             if any(p not in inst["serves"] for p in acts_for):
@@ -207,16 +227,18 @@ def create_app(gw: Gateway) -> FastAPI:
                 conn.execute(
                     "insert into runs (id, instance_id, token_hash, trigger, acts_for) "
                     "values (%s, %s, %s, %s, %s)",
-                    (run_id, body.instance, token_hash(token), Jsonb(body.trigger), acts_for),
+                    (run_id, body.instance, token_hash(token), Jsonb(trigger), acts_for),
                 )
             ledger.append(conn, {
                 "kind": "run", "action": "open", "run": None if reasons else run_id,
                 "instance": body.instance, "acts_for": acts_for,
                 "decision": "deny" if reasons else "allow", "reasons": reasons,
-                "args": {"trigger": body.trigger.get("kind"), "channel": body.trigger.get("channel")},
+                "args": {"trigger": trigger.get("kind"), "channel": trigger.get("channel"),
+                         "identity": identity},
             })
         if reasons:
-            raise HTTPException(409, {"reasons": reasons, "status": inst["status"], "owner": inst["owner"]})
+            raise HTTPException(409, {"reasons": reasons, "status": inst["status"],
+                                      "owner": inst["owner"], "identity": identity})
         return {"run": run_id, "token": token}
 
     @app.post("/runs/{run_id}/close", dependencies=[Depends(service)])

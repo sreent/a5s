@@ -82,7 +82,7 @@ uv run a5s ledger tail
 uv run a5s ledger verify
 ```
 
-To run it as containers, the way each cloud would, build the image and run the [smoke test](deploy/smoke.sh). It starts the stack with a stand-in model and checks it end to end:
+To run it as containers, the way each cloud would, build the image and run the [smoke test](deploy/smoke.sh). It starts the stack with stand-ins for the model and the identity provider, and checks it end to end, sign-in included:
 
 ```sh
 docker build -t a5s:dev .
@@ -90,6 +90,8 @@ sh deploy/smoke.sh
 ```
 
 With a real model, start [`deploy/compose.yaml`](deploy/compose.yaml) with `A5S_DB_PASSWORD`, `A5S_SERVICE_TOKEN` and a provider's key set, and send messages with `A5S_SCHEDULER_URL=http://127.0.0.1:8701 uv run a5s say ...`.
+
+To have people sign in, point a5s at your identity provider with `A5S_OIDC_ISSUER`, `A5S_OIDC_AUDIENCE` and `A5S_OIDC_PERSON_CLAIM`, the claim that holds each person's id in the directory, such as `oid` for Entra ID. [`compose.identity.yaml`](deploy/compose.identity.yaml) does this with Keycloak in place of Entra ID, Google Cloud Identity or Okta. `a5s say` then sends the person's token from `A5S_TOKEN`.
 
 To change the settings, edit [`settings.yaml`](scenarios/sample/settings.yaml), raise its serial, and sign the new version with `uv run a5s sign --as ana` before applying it. `uv run pytest` runs the tests against a scripted model, and `uv run pytest -m live` against the real providers.
 

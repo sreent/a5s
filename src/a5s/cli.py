@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import secrets
 import sys
 from pathlib import Path
@@ -14,6 +15,7 @@ import yaml
 from a5s import build, db, definitions, devdb, worker
 from a5s.config import DEFAULT_DATABASE_URL, Config
 from a5s.core import ledger, registry, signing
+from a5s.core.identity import verifier_from_env
 from a5s.services import channels
 from a5s.services.scheduler import Scheduler, remote_worker
 
@@ -76,15 +78,20 @@ def _pin(cfg: Config, agent: str) -> None:
 
 
 def _say(cfg: Config, person: str, agent: str, text: str) -> None:
+    token = os.environ.get("A5S_TOKEN")  # the person's, from the identity provider, if a5s uses one
     if cfg.scheduler_url:  # the scheduler runs as a service, so ask it through the local channel
-        response = httpx.post(f"{cfg.scheduler_url}/channels/local/messages",
+        headers = {"Authorization": f"Bearer {token}"} if token else {}
+        response = httpx.post(f"{cfg.scheduler_url}/channels/local/messages", headers=headers,
                               json={"person": person, "agent": agent, "text": text}, timeout=600)
+        if response.status_code in (401, 403):
+            sys.exit(response.json()["detail"])
         response.raise_for_status()
         reply = response.json()["reply"]
-        httpx.get(f"{cfg.scheduler_url}/channels/local/outbox/{person}", timeout=30)
+        httpx.get(f"{cfg.scheduler_url}/channels/local/outbox/{person}", headers=headers, timeout=30)
     else:
         sc = build.scenario(cfg)
-        reply = Scheduler(cfg, sc).handle_message(person=person, agent=agent, text=text)
+        reply = Scheduler(cfg, sc).handle_message(person=person, agent=agent, text=text,
+                                                  identity=token)
         with db.transaction(cfg.database_url) as conn:
             channels.undelivered(conn, person=person)  # it's printed below
     print(reply)
@@ -97,7 +104,7 @@ def _service(cfg: Config, name: str):
         return worker.create_app(cfg.gateway_url)
     hand_off = remote_worker(cfg.worker_url) if cfg.worker_url else worker.run_agent
     scheduler = Scheduler(cfg, build.scenario(cfg), worker=hand_off)
-    return channels.create_app(scheduler, cfg.database_url)
+    return channels.create_app(scheduler, cfg.database_url, verifier_from_env())
 
 
 def _admin(cfg: Config, path: str, body: dict | None = None) -> dict:

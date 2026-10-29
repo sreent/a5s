@@ -1,6 +1,6 @@
 # Phase 1
 
-**Status:** Plan, nothing built · **Under:** [Architecture](architecture.md)
+**Status:** Step 1 under way ([progress](#progress)) · **Under:** [Architecture](architecture.md)
 
 Phase 1 builds the smallest a5s that's useful: the trusted core, conversations, and two reference agents of a5s's own, at levels 0 and 1. They're proven against a5s's sample scenario, and used first by the team that builds a5s. In phase 1, agents read, report, draft and remind. None of them changes data. Which real scenario comes first is a separate decision [TBC].
 
@@ -56,13 +56,14 @@ Step 1, the walking skeleton, runs locally against the sample scenario, with Dee
 | Suspension that stops the next call, even in a running run, and resuming only by whoever suspended | [`core/registry.py`](../src/a5s/core/registry.py) |
 | Signed settings: a version counts only when someone the directory names as an instance approver signs it, and its serial must rise, so an older, looser version can't be replayed. A run won't open for an instance whose settings nobody signed. | [`core/signing.py`](../src/a5s/core/signing.py), [`core/registry.py`](../src/a5s/core/registry.py) |
 | The middleware that asks the gateway to explain a tool call before making it. A call policy would deny never runs, the agent hears why in words, and the denial is recorded. It reaches subagents too. | [`worker.py`](../src/a5s/worker.py) |
+| Sign-in through the organisation's identity provider, with OpenID Connect, so Entra ID, Google Cloud Identity and Okta all work. The channel and the core each check a message's token, the core records that it did, and no run opens for a token that's another person's, expired, or signed with a key the provider doesn't list. | [`core/identity.py`](../src/a5s/core/identity.py) |
 | The sample scenario, with three people, customer questions and a store for drafts | [`scenarios/sample/`](../scenarios/sample/) |
-| One container image that runs as the gateway, the scheduler or a worker, and a compose stack whose networks enforce the design: a worker holds no secrets and reaches only the gateway, never the database or the internet. A smoke test runs the stack in CI with a stand-in model. | [`Dockerfile`](../Dockerfile), [`deploy/`](../deploy/) |
-| 49 tests against a real Postgres and a scripted model, and live tests through DeepSeek's and Qwen's OpenAI-compatible APIs and DeepSeek's Anthropic-compatible one | [`tests/`](../tests/) |
+| One container image that runs as the gateway, the scheduler or a worker, and a compose stack whose networks enforce the design: a worker holds no secrets and reaches only the gateway, never the database or the internet. A smoke test runs the stack in CI with stand-ins for the model and the identity provider: Keycloak, with the sample's people. | [`Dockerfile`](../Dockerfile), [`deploy/`](../deploy/) |
+| 65 tests against a real Postgres and a scripted model, and live tests through DeepSeek's and Qwen's OpenAI-compatible APIs and DeepSeek's Anthropic-compatible one | [`tests/`](../tests/) |
 
 Still to do in step 1:
 
-- the Teams channel, which needs a bot registered in your Entra ID tenant. With it, the core checks each message's sender against the channel's signed identity. Until then, the local channel trusts the scheduler's word for who sent a message, so it's for development only;
+- the Teams channel, which needs a bot registered in your Entra ID tenant. Until then, people send messages through the local channel, signed in through the identity provider;
 - deploying the image to Azure, Google Cloud and AWS, on each one's container service with managed Postgres, which needs your accounts there.
 
 ## Done means

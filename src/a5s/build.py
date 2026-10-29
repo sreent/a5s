@@ -7,6 +7,7 @@ import httpx
 from a5s import definitions
 from a5s.config import Config, load_models
 from a5s.core.gateway import Gateway, create_app
+from a5s.core.identity import verifier_from_env
 from a5s.core.policy import PolicyEngine
 from a5s.sample import SampleScenario
 
@@ -25,6 +26,7 @@ def gateway(cfg: Config, http: httpx.Client | None = None) -> Gateway:
         models=load_models(cfg.models_file),
         definitions=definitions.load_all(cfg.agents_dir),
         http=http or httpx.Client(),
+        identity=verifier_from_env(),
     )
 
 

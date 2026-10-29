@@ -14,9 +14,9 @@ from pydantic import BaseModel
 
 
 class Inbound(BaseModel):
-    person: str
     agent: str
     text: str
+    person: str | None = None  # without an identity provider, who the message is from
 
 
 def say(conn: psycopg.Connection, *, person: str, text: str, channel: str = "local",
@@ -37,21 +37,43 @@ def undelivered(conn: psycopg.Connection, *, person: str, channel: str = "local"
     return sorted(rows, key=lambda r: r["id"])
 
 
-def create_app(scheduler: Any, database_url: str) -> Any:
-    """The local channel, for development. Bind it to localhost: it trusts who people say they are."""
-    from fastapi import FastAPI
+def create_app(scheduler: Any, database_url: str, verifier: Any = None) -> Any:
+    """The local channel. With an identity provider, people sign in with a token.
+
+    Without one, it trusts who people say they are, so it's for development only.
+    """
+    from fastapi import FastAPI, Header, HTTPException
 
     from a5s import db
+    from a5s.core.identity import IdentityError
 
     app = FastAPI(title="a5s local channel")
 
+    def who(claimed: str | None, authorization: str | None) -> tuple[str, str | None]:
+        if verifier is None:
+            if not claimed:
+                raise HTTPException(400, "say who the message is from")
+            return claimed, None
+        token = (authorization or "").removeprefix("Bearer ").strip()
+        if not token:
+            raise HTTPException(401, "sign in first: send your token as a bearer token")
+        try:
+            person = verifier.person(token)
+        except IdentityError as exc:
+            raise HTTPException(401, f"your token doesn't check out: {exc}") from exc
+        if claimed and claimed != person:
+            raise HTTPException(403, f"you're signed in as {person}, not {claimed}")
+        return person, token
+
     @app.post("/channels/local/messages")
-    def receive(body: Inbound) -> dict[str, str]:
-        return {"reply": scheduler.handle_message(person=body.person, agent=body.agent,
-                                                  text=body.text)}
+    def receive(body: Inbound, authorization: str | None = Header(default=None)) -> dict[str, str]:
+        person, token = who(body.person, authorization)
+        return {"reply": scheduler.handle_message(person=person, agent=body.agent,
+                                                  text=body.text, identity=token)}
 
     @app.get("/channels/local/outbox/{person}")
-    def outbox(person: str) -> list[dict]:
+    def outbox(person: str, authorization: str | None = Header(default=None)) -> list[dict]:
+        who(person, authorization)  # only they may collect their messages
         with db.transaction(database_url) as conn:
             return [{"text": m["text"], "at": str(m["at"])} for m in undelivered(conn, person=person)]
 
