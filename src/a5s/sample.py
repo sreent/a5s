@@ -6,7 +6,6 @@ store for drafts. It's the test bench for building a5s, locally and in CI.
 
 from __future__ import annotations
 
-import hashlib
 from pathlib import Path
 from typing import Any
 
@@ -15,7 +14,7 @@ import yaml
 from psycopg import sql
 
 from a5s import db
-from a5s.contract import InstanceSettings, Person, Settings, Signature, Tool, ToolCall
+from a5s.contract import Person, Settings, Signature, Tool, ToolCall, parse_settings
 
 LINK = "https://sample.a5s.dev/"
 
@@ -69,25 +68,11 @@ class SampleScenario:
     # Settings
 
     def settings(self) -> Settings:
-        raw = (self.folder / "settings.yaml").read_bytes()
-        data = yaml.safe_load(raw)
         sig_file = self.folder / "settings.sig"
         signed = yaml.safe_load(sig_file.read_text()) if sig_file.exists() else None
-        return Settings(
-            version=hashlib.sha256(raw).hexdigest()[:16],
-            serial=int(data.get("serial", 0)),
-            raw=raw,
-            signatures=tuple(Signature(s["signer"], s["value"])
-                             for s in (signed or {}).get("signatures", [])),
-            instances=tuple(
-                InstanceSettings(
-                    id=iid,
-                    definition=i["definition"],
-                    serves=tuple(i["serves"]),
-                    level=i.get("level"),
-                )
-                for iid, i in data["instances"].items()
-            ),
+        return parse_settings(
+            (self.folder / "settings.yaml").read_bytes(),
+            tuple(Signature(s["signer"], s["value"]) for s in (signed or {}).get("signatures", [])),
         )
 
     def policy_pack(self) -> str | None:

@@ -124,8 +124,76 @@ def test_the_same_version_can_be_applied_again(sample):
 def test_runs_dont_open_for_settings_nobody_signed(stack):
     with db.transaction(stack.admin) as conn:
         conn.execute("update instances set level = 2, settings_version = 'forged'")
+    assert reasons(stack) == ["assistant-finance isn't in the settings in force"]
+
+
+def reasons(stack) -> list[str]:
+    """Why a run for Ana's next message doesn't open, if it doesn't."""
     with stack.client() as c:
         r = c.post("/runs", json={"instance": "assistant-finance", "trigger": {
             "kind": "message", "inbound": stack.send("Hello")}})
-    assert r.status_code == 409
-    assert "assistant-finance's settings aren't a signed version" in r.json()["detail"]["reasons"]
+    return r.json()["detail"]["reasons"] if r.status_code == 409 else []
+
+
+def test_an_instance_the_signed_settings_leave_out_is_retired_and_stops(stack):
+    original = {"assistant-finance": {"definition": "assistant", "serves": ["ana", "ben"], "level": 1}}
+    assert stack.settle(instances={}).instances == []
+    assert reasons(stack) == ["assistant-finance is retired", "assistant-finance isn't in the settings in force"]
+    assert stack.say("Hi") == "There's no assistant for you yet."
+    stack.settle(instances=original)  # brought back by a later signed version
+    stack.model.reply("I'm back.")
+    assert stack.say("Hi") == "I'm back."
+    actions = [e["action"] for e in stack.ledger() if e["kind"] == "admin" and e.get("instance")]
+    assert "retire" in actions and "restore" in actions
+
+
+@pytest.mark.parametrize("edit, reason", [
+    ("update instances set serves = serves || '{chen}'", "doesn't match its signed settings"),
+    ("update instances set level = 2", "doesn't match its signed settings"),
+    ("update instances set grants = grants || '{delete_everything}'",
+     "doesn't match its signed settings"),
+    ("update instances set owner = 'chen'", "doesn't match its signed settings"),
+], ids=["serves", "level", "grants", "owner"])
+def test_editing_an_instance_in_the_database_doesnt_change_what_it_may_do(stack, edit, reason):
+    with db.transaction(stack.admin) as conn:
+        conn.execute(edit)
+    [why] = reasons(stack)
+    assert reason in why
+
+
+def test_a_suspension_lifted_in_the_database_doesnt_count(stack):
+    stack.suspend()
+    with db.transaction(stack.admin) as conn:
+        conn.execute("update instances set status = 'active', suspended_by = null")
+    assert reasons(stack) == ["assistant-finance's status doesn't match the ledger"]
+
+
+def test_the_settings_in_force_are_checked_from_the_bytes_that_were_signed(stack):
+    with db.transaction(stack.admin) as conn:
+        conn.execute("update settings_versions set raw = "
+                     "convert_to(replace(convert_from(raw, 'UTF8'), 'ben', 'chen'), 'UTF8')")
+        conn.execute("update instances set serves = array_replace(serves, 'ben', 'chen')")
+    stack.gateway._checked.clear()  # as a gateway that starts after the edit would be
+    assert reasons(stack) == ["the settings in force aren't what was signed"]
+
+
+def test_an_older_signed_version_cant_be_put_back(stack):
+    with db.transaction(stack.admin) as conn:
+        older = conn.execute("select version from settings_versions").fetchone()["version"]
+    stack.settle(level=0)
+    with db.transaction(stack.admin) as conn:
+        conn.execute("update instances set level = 1, settings_version = %s", (older,))
+    assert reasons(stack) == ["assistant-finance isn't in the settings in force"]
+
+
+def test_a_release_that_needs_tools_the_scenario_lacks_isnt_applied(sample):
+    folder, keys, database = sample
+    write(folder, 1)
+    sign(folder, "ana", keys["ana"])
+    scenario = SampleScenario(folder, database)
+    tools = {n: t for n, t in scenario.tools().items() if n != "create_draft"}
+    with db.transaction(database) as conn:
+        result = registry.apply(conn, definitions.load_all(ROOT / "agents"), scenario.settings(),
+                                tools, scenario.person, scenario.name)
+    assert result.refused == ["assistant names tools the scenario doesn't have: create_draft"]
+    assert instances(database) == []

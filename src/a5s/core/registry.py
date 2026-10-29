@@ -49,11 +49,18 @@ def apply(
     """Bring instances in line with a signed version of the settings and the current releases.
 
     An unsigned version doesn't count, and neither does one older than the
-    version in force. An instance's status is the core's own data, so applying
-    settings never resumes a suspended instance.
+    version in force. An instance the version leaves out is retired, and one it
+    brings back is restored. Otherwise an instance's status is the core's own
+    data, so applying settings never resumes a suspended instance.
     """
     valid, problems = signers(settings, directory)
     refused = [] if valid else [f"no {INSTANCE_APPROVER} signed this version", *problems]
+    for s in settings.instances:
+        definition = definitions.get(s.definition)
+        missing = [t for t in definition.tool_names if t not in tools] if definition else []
+        if missing:
+            refused.append(f"{s.definition} names tools the scenario doesn't have: "
+                           f"{', '.join(missing)}")
     last = conn.execute(
         "select serial, version from settings_versions where scenario = %s "
         "order by serial desc limit 1",
@@ -68,12 +75,13 @@ def apply(
         ledger.append(conn, {"kind": "admin", "action": "apply", "decision": "deny",
                              "reasons": refused, "args": version})
         return Applied(signers=valid, refused=refused)
-    if not last or last["serial"] != settings.serial:
-        conn.execute(
-            "insert into settings_versions (scenario, serial, version, signers) "
-            "values (%s, %s, %s, %s)",
-            (scenario, settings.serial, settings.version, valid),
-        )
+    signatures = Jsonb([{"signer": s.signer, "value": s.value} for s in settings.signatures])
+    conn.execute(  # exactly what was signed, so the core can check it again at every run
+        "insert into settings_versions (scenario, serial, version, signers, raw, signatures) "
+        "values (%s, %s, %s, %s, %s, %s) on conflict (scenario, serial) do update "
+        "set raw = excluded.raw, signatures = excluded.signatures",
+        (scenario, settings.serial, settings.version, valid, settings.raw, signatures),
+    )
 
     applied = Applied(signers=valid)
     for s in settings.instances:
@@ -82,7 +90,11 @@ def apply(
             raise ValueError(f"instance {s.id}: no definition {s.definition}")
         wanted = definition.autonomy.start if s.level is None else s.level
         level = min(wanted, definition.autonomy.max)
-        grants = [t for t in definition.tool_names if t in tools]
+        grants = definition.tool_names
+        was = conn.execute("select status from instances where id = %s", (s.id,)).fetchone()
+        if was and was["status"] == "retired":
+            ledger.append(conn, {"kind": "admin", "action": "restore", "instance": s.id,
+                                 "decision": "record", "args": version})
         conn.execute(
             """
             insert into instances
@@ -94,6 +106,8 @@ def apply(
               level = excluded.level, grants = excluded.grants, model = excluded.model,
               serves = excluded.serves, owner = excluded.owner, deputy = excluded.deputy,
               pins = excluded.pins, settings_version = excluded.settings_version,
+              status = case when instances.status = 'retired' then 'active'
+                            else instances.status end,
               updated_at = now()
             """,
             (
@@ -121,16 +135,34 @@ def apply(
             },
         )
         applied.instances.append(s.id)
+
+    withdrawn = conn.execute(  # this scenario's instances that the version leaves out
+        """
+        update instances set status = 'retired', updated_at = now()
+        where status <> 'retired' and not (id = any(%s))
+          and settings_version in (select version from settings_versions where scenario = %s)
+        returning id
+        """,
+        ([s.id for s in settings.instances], scenario),
+    ).fetchall()
+    for row in withdrawn:
+        ledger.append(conn, {"kind": "admin", "action": "retire", "instance": row["id"],
+                             "decision": "record", "args": version})
     return applied
 
 
-def set_status(conn: psycopg.Connection, instance: str, *, by: str, suspend: bool) -> str:
+def set_status(conn: psycopg.Connection, instance: str, *, by: str, suspend: bool,
+               identity: str = "unverified (development)") -> str:
     """Suspend or resume an instance, and return the reason if it can't be done."""
     row = conn.execute("select status, suspended_by from instances where id = %s for update",
                        (instance,)).fetchone()
     if row is None:
         return f"no instance {instance}"
-    if suspend:
+    if row["status"] == "retired":
+        return f"{instance} is retired"
+    if suspend and row["status"] == "suspended":
+        pass  # it stays suspended by whoever suspended it first, who alone can resume it
+    elif suspend:
         conn.execute(
             "update instances set status = 'suspended', suspended_by = %s, updated_at = now() "
             "where id = %s",
@@ -150,6 +182,8 @@ def set_status(conn: psycopg.Connection, instance: str, *, by: str, suspend: boo
     ledger.append(
         conn,
         {"kind": "admin", "action": "suspend" if suspend else "resume", "instance": instance,
-         "decision": "record", "args": {"by": by}},
+         "decision": "record", "args": {"by": by, "identity": identity,
+                                        "suspended_by": row["suspended_by"] or by if suspend
+                                        else None}},
     )
     return ""

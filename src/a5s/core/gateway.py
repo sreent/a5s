@@ -8,10 +8,11 @@ only a run token. Provider keys and tool implementations stay on this side.
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 import secrets
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import httpx
@@ -23,14 +24,16 @@ from pydantic import BaseModel
 
 from a5s import db
 from a5s.config import Config, ModelConfig
-from a5s.contract import Scenario, Tool, ToolCall
+from a5s.contract import Scenario, Signature, Tool, ToolCall, parse_settings
 from a5s.core import ledger, models, registry
-from a5s.core.identity import Verifier
+from a5s.core.identity import IdentityError, UnknownPerson, Verifier, signed_in
 from a5s.core.policy import Decision, PolicyEngine
 from a5s.core.teams import Teams
 from a5s.definitions import Definition
 
+log = logging.getLogger(__name__)
 RUN_MINUTES = 60  # the longest a run may last [TBC]; its token dies with it
+_STATUS_AFTER = {"suspend": "suspended", "retire": "retired"}  # resume and restore: active
 _LINK = re.compile(r"https?://[^\s)>\]]+")
 _IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 
@@ -64,10 +67,59 @@ class Gateway:
     http: httpx.Client
     identity: Verifier | None = None  # for the local channel's sign-in; else development only
     teams: Teams | None = None
+    _checked: dict = field(default_factory=dict)  # settings versions whose signatures checked out
 
     @property
     def url(self) -> str:
         return self.cfg.database_url
+
+    def settings_in_force(self, conn: psycopg.Connection) -> tuple[Any, str | None]:
+        """The latest signed version of the settings, checked again from the bytes that were signed."""
+        row = conn.execute("select serial, version, raw, signatures from settings_versions "
+                           "where scenario = %s order by serial desc limit 1",
+                           (self.scenario.name,)).fetchone()
+        if row is None:
+            return None, "no settings have been applied"
+        if row["version"] in self._checked:
+            return self._checked[row["version"]], None
+        signatures = tuple(Signature(s["signer"], s["value"]) for s in row["signatures"] or [])
+        settings = parse_settings(bytes(row["raw"] or b""), signatures)
+        if (settings.version, settings.serial) != (row["version"], row["serial"]):
+            return None, "the settings in force aren't what was signed"
+        if not registry.signers(settings, self.scenario.person)[0]:
+            return None, "no instance approver signed the settings in force"
+        self._checked[row["version"]] = settings
+        return settings, None
+
+    def check_instance(self, conn: psycopg.Connection, inst: dict) -> list[str]:
+        """Whether an instance's record is exactly what its signed settings, its release and
+        the ledger say, so that nobody can widen it by editing the database."""
+        settings, problem = self.settings_in_force(conn)
+        if problem:
+            return [problem]
+        signed = next((s for s in settings.instances if s.id == inst["id"]), None)
+        if signed is None or inst["settings_version"] != settings.version:
+            return [f"{inst['id']} isn't in the settings in force"]
+        release = self.definitions.get(signed.definition)
+        if release is None or release.release_id != inst["release"]:
+            return [f"{inst['id']}'s release isn't in this gateway"]
+        level = min(release.autonomy.start if signed.level is None else signed.level,
+                    release.autonomy.max)
+        expected = (signed.definition, sorted(signed.serves), level, sorted(release.tool_names),
+                    release.model, release.pins, release.owner, release.deputy)
+        actual = (inst["definition"], sorted(inst["serves"]), inst["level"], sorted(inst["grants"]),
+                  inst["model"], inst["pins"], inst["owner"], inst["deputy"])
+        if expected != actual:
+            log.error("instance %s doesn't match its signed settings and release", inst["id"])
+            return [f"{inst['id']}'s record doesn't match its signed settings and release"]
+        last = conn.execute(
+            "select action from ledger where instance_id = %s and kind = 'admin' "
+            "and action in ('suspend', 'resume', 'retire', 'restore') order by seq desc limit 1",
+            (inst["id"],)).fetchone()
+        if inst["status"] != _STATUS_AFTER.get(last["action"] if last else "", "active"):
+            log.error("instance %s's status doesn't match the ledger", inst["id"])
+            return [f"{inst['id']}'s status doesn't match the ledger"]
+        return []
 
     @staticmethod
     def take_message(conn: psycopg.Connection, inbound: str) -> tuple[dict | None, str | None]:
@@ -138,6 +190,7 @@ class Gateway:
             "run": row["run"],
             "instance": row["id"],
             "acts_for": list(row["acts_for"]),
+            "level": row["level"],
             "policy": self.policy.version,
             "settings": row["settings_version"],
             **decision.as_dict(),
@@ -169,7 +222,8 @@ class CloseRun(BaseModel):
 
 
 class StatusChange(BaseModel):
-    by: str
+    by: str | None = None  # in development, without an identity provider, who's asking
+    identity: str | None = None  # their sign-in token: who's asking, everywhere else
 
 
 class ToolArgs(BaseModel):
@@ -245,10 +299,7 @@ def create_app(gw: Gateway) -> FastAPI:
                 reasons.append(f"{body.instance} is {inst['status']}")
             if any(p not in inst["serves"] for p in acts_for):
                 reasons.append(f"{body.instance} doesn't serve {sender}")
-            signed = conn.execute("select 1 from settings_versions where version = %s",
-                                  (inst["settings_version"],)).fetchone()
-            if signed is None:
-                reasons.append(f"{body.instance}'s settings aren't a signed version")
+            reasons += gw.check_instance(conn, inst)
             if not reasons:
                 conn.execute(
                     "insert into runs (id, instance_id, token_hash, trigger, acts_for, expires_at) "
@@ -300,21 +351,43 @@ def create_app(gw: Gateway) -> FastAPI:
 
     # Instances: anyone with the role can make a5s safer alone.
 
+    def who_asks(body: StatusChange) -> tuple[str, str]:
+        """Who's suspending or resuming, from their sign-in, and how a5s knows."""
+        if gw.identity is not None:
+            if not body.identity:
+                raise HTTPException(401, "sign in: send your token as identity")
+            try:
+                person = signed_in(gw.identity, gw.scenario, body.identity)
+            except UnknownPerson as exc:
+                raise HTTPException(403, str(exc)) from None
+            except IdentityError as exc:
+                raise HTTPException(401, f"your token doesn't check out: {exc}") from None
+            if body.by and body.by != person:
+                raise HTTPException(403, f"you're signed in as {person}, not {body.by}")
+            return person, "verified"
+        if not gw.cfg.development:
+            raise HTTPException(503, "suspending and resuming need sign-in: set A5S_OIDC_ISSUER")
+        if not body.by or gw.scenario.person(body.by) is None:
+            raise HTTPException(400, "say who you are, as someone in the directory")
+        return body.by, "unverified (development)"
+
     @app.post("/instances/{instance}/suspend", dependencies=[Depends(service)])
     def suspend(instance: str, body: StatusChange) -> dict:
+        by, identity = who_asks(body)
         with db.transaction(gw.url) as conn:
-            problem = registry.set_status(conn, instance, by=body.by, suspend=True)
+            problem = registry.set_status(conn, instance, by=by, suspend=True, identity=identity)
         if problem:
             raise HTTPException(404, problem)
-        return {"suspended": instance}
+        return {"suspended": instance, "by": by}
 
     @app.post("/instances/{instance}/resume", dependencies=[Depends(service)])
     def resume(instance: str, body: StatusChange) -> dict:
+        by, identity = who_asks(body)
         with db.transaction(gw.url) as conn:
-            problem = registry.set_status(conn, instance, by=body.by, suspend=False)
+            problem = registry.set_status(conn, instance, by=by, suspend=False, identity=identity)
         if problem:
             raise HTTPException(403, problem)
-        return {"resumed": instance}
+        return {"resumed": instance, "by": by}
 
     @app.get("/ledger", dependencies=[Depends(service)])
     def read_ledger(run: str | None = None, limit: int = 100) -> list[dict]:

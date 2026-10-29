@@ -81,17 +81,12 @@ def test_people_outside_the_directory_or_the_instance_get_no_agent(stack):
     assert not stack.model.requests
 
 
-def set_level(stack, level: int) -> None:
-    with db.transaction(stack.admin) as conn:
-        conn.execute("update instances set level = %s", (level,))
-
-
 def tool_calls(stack, name: str) -> list[dict]:
     return [e for e in stack.ledger() if e["kind"] == "tool" and e["action"] == name]
 
 
 def test_a_call_policy_would_deny_never_runs_and_the_agent_hears_why(stack):
-    set_level(stack, 0)
+    stack.settle(level=0)  # signed by Ana, an instance approver
     stack.model.reply(None, ("create_draft", {"title": "Re: Q-1001", "body": "Sorry about that."}))
     stack.model.reply("I can't save drafts at the moment.")
 
@@ -106,7 +101,7 @@ def test_a_call_policy_would_deny_never_runs_and_the_agent_hears_why(stack):
 
 
 def test_subagents_ask_first_too(stack):
-    set_level(stack, 0)
+    stack.settle(level=0)  # signed by Ana, an instance approver
     stack.model.reply(None, ("task", {"description": "Save a draft reply about Q-1001.",
                                       "subagent_type": "general-purpose"}))
     stack.model.reply(None, ("create_draft", {"title": "Re: Q-1001", "body": "Sorry."}))

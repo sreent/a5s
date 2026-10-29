@@ -16,8 +16,9 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 from a5s import db
 from a5s.core import inbox
+from a5s.core.gateway import create_app
 from a5s.core.identity import IdentityConfig, IdentityError, Verifier
-from conftest import FakeIssuer, free_port, serve
+from conftest import SERVICE_TOKEN, FakeIssuer, free_port, serve
 
 
 @pytest.fixture
@@ -196,3 +197,35 @@ def test_the_scheduler_cant_say_who_a_message_is_from(stack):
     assert unknown.json()["detail"]["reasons"] == ["the message it answers isn't one the core received"]
     assert again.json()["detail"]["reasons"] == ["the message it answers has been answered already"]
     assert bare.status_code == 400
+
+
+def test_suspending_and_resuming_go_by_sign_in_and_the_first_suspender_decides(stack, issuer):
+    signed_in = replace(stack.gateway, identity=issuer.verifier())
+    with serve(create_app(signed_in), free_port()) as url, httpx.Client(
+            base_url=url, headers={"Authorization": f"Bearer {SERVICE_TOKEN}"}) as admin:
+        def change(verb: str, person: str | None, **body) -> httpx.Response:
+            identity = issuer.token(person) if person else None
+            return admin.post(f"/instances/assistant-finance/{verb}",
+                              json={"identity": identity, **body})
+
+        assert change("suspend", None, by="ben").status_code == 401  # a typed name isn't enough
+        assert change("suspend", "ana", by="ben").status_code == 403
+        assert change("suspend", "ben").json() == {"suspended": "assistant-finance", "by": "ben"}
+        assert change("suspend", "ana").status_code == 200  # it stays Ben's suspension
+        refused = change("resume", "ana")
+        assert refused.status_code == 403 and "only ben can resume" in refused.json()["detail"]
+        assert change("resume", "ben").status_code == 200
+    changes = [(e["action"], e["args"]["by"], e["args"]["identity"])
+               for e in stack.ledger() if e["action"] in ("suspend", "resume")]
+    assert changes == [("suspend", "ben", "verified"), ("suspend", "ana", "verified"),
+                       ("resume", "ben", "verified")]
+
+
+def test_without_sign_in_only_development_takes_a_typed_name(stack):
+    production = replace(stack.gateway, cfg=replace(stack.cfg, development=False))
+    for gw, expected in ((production, 503), (stack.gateway, 200)):
+        with serve(create_app(gw), free_port()) as url:
+            r = httpx.post(f"{url}/instances/assistant-finance/suspend", json={"by": "ben"},
+                           headers={"Authorization": f"Bearer {SERVICE_TOKEN}"})
+        assert r.status_code == expected
+    assert stack.ledger()[-1]["args"]["identity"] == "unverified (development)"

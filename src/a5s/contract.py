@@ -11,6 +11,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+import yaml
+
 from a5s.core.ledger import canonical
 
 INSTANCE_APPROVER = "instance-approver"  # approves instances with no parts, and sets their level
@@ -94,6 +96,26 @@ class Settings:
     serial: int = 0  # rises with every version, so an older one can't be replayed
     raw: bytes = b""  # exactly what was signed
     signatures: tuple[Signature, ...] = ()
+
+
+def parse_settings(raw: bytes, signatures: tuple[Signature, ...] = ()) -> Settings:
+    """A version of the settings, in a5s's own format, from exactly the bytes that were signed.
+
+    The core reads the bytes it stored again at every run, so the format is a5s's,
+    whichever scenario's settings they are.
+    """
+    data = yaml.safe_load(raw) or {}
+    return Settings(
+        version=hashlib.sha256(raw).hexdigest()[:16],
+        serial=int(data.get("serial", 0)),
+        raw=raw,
+        signatures=signatures,
+        instances=tuple(
+            InstanceSettings(id=iid, definition=i["definition"], serves=tuple(i["serves"]),
+                             level=i.get("level"))
+            for iid, i in (data.get("instances") or {}).items()
+        ),
+    )
 
 
 class Scenario(Protocol):

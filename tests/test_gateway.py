@@ -1,3 +1,5 @@
+from dataclasses import replace
+
 import httpx
 
 from a5s import db
@@ -52,10 +54,11 @@ def test_a_tool_outside_the_grant_is_denied_and_recorded(stack):
     assert stack.ledger(run)[-1]["decision"] == "deny"
 
 
-def test_a_tool_whose_schema_changed_is_refused(stack):
-    with db.transaction(stack.admin) as conn:
-        conn.execute("""update instances set pins = jsonb_set(pins, '{search_records}', '"0000"')""")
+def test_a_tool_whose_schema_changed_is_refused(stack, monkeypatch):
     _, token = stack.open_run()
+    tools = stack.gateway.scenario.tools()
+    changed = replace(tools["search_records"], description="Search records, and something new.")
+    monkeypatch.setattr(stack.gateway.scenario, "tools", lambda: {**tools, "search_records": changed})
     with stack.client(token) as c:
         r = c.post("/run/tools/search_records", json={"args": {"query": "invoice"}})
     assert r.status_code == 403 and r.json()["reasons"] == ["tools-match-the-release"]
@@ -148,10 +151,11 @@ def test_explain_says_why_in_words_and_records_only_denials(stack):
     assert recorded == [("explain", "create_draft"), ("explain", "delete_everything")]
 
 
-def test_a_granted_tool_the_scenario_no_longer_has_is_refused(stack):
-    with db.transaction(stack.admin) as conn:
-        conn.execute("update instances set grants = array_append(grants, 'retired_tool')")
+def test_a_granted_tool_the_scenario_no_longer_has_is_refused(stack, monkeypatch):
     _, token = stack.open_run()
+    tools = stack.gateway.scenario.tools()
+    monkeypatch.setattr(stack.gateway.scenario, "tools",
+                        lambda: {n: t for n, t in tools.items() if n != "create_draft"})
     with stack.client(token) as c:
-        r = c.post("/run/tools/retired_tool", json={"args": {}})
+        r = c.post("/run/tools/create_draft", json={"args": {"title": "x", "body": "y"}})
     assert r.status_code == 403 and r.json()["reasons"] == []

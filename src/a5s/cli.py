@@ -216,7 +216,7 @@ def main(argv: list[str] | None = None) -> None:
     for verb in ("suspend", "resume"):
         p = sub.add_parser(verb, help=f"{verb} an instance")
         p.add_argument("instance")
-        p.add_argument("--by", required=True)
+        p.add_argument("--by", help="who you are, in development; else your sign-in in A5S_TOKEN")
     copy = sub.add_parser("anchor", help="copy the ledger to locked storage")
     copy.add_argument("--every", type=int, metavar="SECONDS", help="keep copying, this often")
     led = sub.add_parser("ledger", help="read or verify the ledger, against its copies too")
@@ -257,7 +257,8 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "say":
         _say(cfg, args.person, args.agent, args.text)
     elif args.command in ("suspend", "resume"):
-        print(_admin(cfg, f"/instances/{args.instance}/{args.command}", {"by": args.by}))
+        print(_admin(cfg, f"/instances/{args.instance}/{args.command}",
+                     {"by": args.by, "identity": os.environ.get("A5S_TOKEN")}))
     elif args.command == "anchor":
         _anchor(cfg, args.every)
     elif args.command == "ledger" and args.what == "verify":

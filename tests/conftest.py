@@ -20,12 +20,13 @@ import jwt
 import psycopg
 import pytest
 import uvicorn
+import yaml
 from cryptography.hazmat.primitives.asymmetric import rsa
 from jwt.algorithms import RSAAlgorithm
 
 from a5s import db, definitions, devdb
 from a5s.config import Config, load_models
-from a5s.core import inbox, ledger, registry
+from a5s.core import inbox, ledger, registry, signing
 from a5s.core.gateway import Gateway, create_app
 from a5s.core.identity import IdentityConfig, Verifier
 from a5s.core.policy import PolicyEngine
@@ -235,6 +236,28 @@ class Stack:
 
     def scheduler(self, **kwargs: Any) -> Scheduler:
         return Scheduler(self.as_role("scheduler"), self.gateway.scenario, **kwargs)
+
+    def settle(self, instances: dict | None = None, **changes: Any) -> registry.Applied:
+        """Sign a new version of the settings as Ana, an instance approver, and apply it.
+
+        `changes`, such as level=0, apply to assistant-finance; `instances` replaces them all.
+        """
+        folder = self.cfg.scenario_dir
+        settings = yaml.safe_load((folder / "settings.yaml").read_text())
+        settings["serial"] += 1
+        if instances is not None:
+            settings["instances"] = instances
+        else:
+            settings["instances"]["assistant-finance"].update(changes)
+        raw = yaml.safe_dump(settings).encode()
+        (folder / "settings.yaml").write_bytes(raw)
+        value = signing.sign((folder / "keys" / "ana.key").read_text().strip(), raw)
+        (folder / "settings.sig").write_text(
+            yaml.safe_dump({"signatures": [{"signer": "ana", "value": value}]}))
+        scenario = self.gateway.scenario
+        with db.transaction(self.admin) as conn:
+            return registry.apply(conn, self.gateway.definitions, scenario.settings(),
+                                  scenario.tools(), scenario.person, scenario.name)
 
 
 def build_root(tmp: Path, model_alias: str, models_yaml: str) -> Path:
