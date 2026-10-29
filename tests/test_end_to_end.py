@@ -63,7 +63,7 @@ def test_suspending_mid_run_stops_the_next_call(stack):
     assert len(stack.model.requests) == 1  # the model is never called again
     denied = [(e["kind"], e["action"], e["reasons"]) for e in stack.ledger() if e["decision"] == "deny"]
     assert denied == [
-        ("explain", "search_records", ["only-active-instances-act"]),  # so the tool never ran
+        ("tool", "search_records", ["only-active-instances-act"]),  # so the tool never ran
         ("model", "fake", ["only-active-instances-act"]),
     ]
 
@@ -95,14 +95,14 @@ def test_a_call_policy_would_deny_never_runs_and_the_agent_hears_why(stack):
     reply = stack.say("Draft a reply")
 
     assert reply == "I can't save drafts at the moment."
-    assert tool_calls(stack, "create_draft") == []  # the gateway never ran it
-    explained = [e for e in stack.ledger() if e["kind"] == "explain"]
-    assert [e["reasons"] for e in explained] == [["level-0-only-observes"]]
+    # Denied, and never run: a call that ran has a second entry, with its outcome.
+    assert [(e["decision"], e["reasons"]) for e in tool_calls(stack, "create_draft")] == [
+        ("deny", ["level-0-only-observes"])]
     told = str(stack.model.requests[1]["body"]["messages"])
     assert "at level 0 the agent only observes" in told
 
 
-def test_subagents_ask_first_too(stack):
+def test_subagents_are_held_to_the_same_policy(stack):
     stack.settle(level=0)  # signed by Ana, an instance approver
     stack.model.reply(None, ("task", {"description": "Save a draft reply about Q-1001.",
                                       "subagent_type": "general-purpose"}))
@@ -115,8 +115,7 @@ def test_subagents_ask_first_too(stack):
     assert reply == "The draft couldn't be saved."
     offered_to_subagent = stack.model.tool_names(1)
     assert "create_draft" in offered_to_subagent and "execute" not in offered_to_subagent
-    assert tool_calls(stack, "create_draft") == []
-    assert [e["action"] for e in stack.ledger() if e["kind"] == "explain"] == ["create_draft"]
+    assert [e["decision"] for e in tool_calls(stack, "create_draft")] == ["deny"]
 
 
 def test_whoever_suspended_it_is_told_so(stack):

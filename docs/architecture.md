@@ -62,11 +62,10 @@ Each scenario starts with a fake of its contract: fake systems, records and sett
 
 Every tool call, model call and outgoing message takes the same path:
 
-1. The agent's middleware asks the core to explain the call: allow, hold or deny, with the reasons, reserving nothing. The agent can change course before it commits.
-2. The middleware sends the call to a gateway with the run's id, and nothing else about the run. The core keeps each run's envelope itself: the instance and the people it acts for, taken from the trigger when the run opened, with a message's sender checked against the channel's signed identity; whether the run has read outside content, which the gateway marks when it returns some; and the handles it issued.
-3. In one Postgres transaction, the gateway reads the settings, evaluates the Cedar policies, reserves any counts, and writes the ledger entry. Settings are cached for at most [TBC: 30 seconds], and a change clears the cache. If any step fails, the call is denied.
-4. On allow, the gateway gets a short-lived credential for that one call, resolves the handles to values, and makes the call. It tokenises classified values in what comes back, tags it with its source, and records the outcome.
-5. On deny, the agent gets the reason. A hold is a Cedar annotation on a permit, used for a5s's own held proposals from phase 2.
+1. The agent sends the call to a gateway with the run's id, and nothing else about the run. The core keeps each run's envelope itself: the instance and the people it acts for, taken from the trigger when the run opened, with a message's sender checked against the channel's signed identity; whether the run has read outside content, which the gateway marks when it returns some; and the handles it issued.
+2. In one Postgres transaction, the gateway reads the settings, evaluates the Cedar policies, reserves any counts, and writes the ledger entry. Settings are cached for at most [TBC: 30 seconds], and a change clears the cache. If any step fails, the call is denied.
+3. On allow, the gateway gets a short-lived credential for that one call, resolves the handles to values, and makes the call. It tokenises classified values in what comes back, tags it with its source, and records the outcome.
+4. On deny, the call never runs, and the agent gets the reasons in words, so it can change course. A hold is a Cedar annotation on a permit, used for a5s's own held proposals from phase 2. With them comes a way for the agent to ask the core to explain a call before making it: allow, hold or deny, with the reasons, reserving nothing.
 
 The model gateway also checks each model's provider, deployment, region and dated version, and records prompts by hash, not by content.
 
@@ -219,7 +218,7 @@ a5s pins its versions, and treats each upgrade as a release. It needs deepagents
 
 | Uses | Doesn't use |
 | --- | --- |
-| The agent loop, scratch files for a run, synchronous subagents with a5s's middleware, skills loaded read-only from the release, and summarisation and offloading within a long run | The editable `AGENTS.md` memory, the long-term store, interrupts, file permissions as a boundary, and the Agent Server |
+| The agent loop, scratch files for a run, synchronous subagents held to the same gateway and with no shell, skills loaded read-only from the release, and summarisation and offloading within a long run | The editable `AGENTS.md` memory, the long-term store, interrupts, file permissions as a boundary, and the Agent Server |
 
 If the list shrinks further, LangChain's own `create_agent` could be the base instead.
 

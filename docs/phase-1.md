@@ -11,6 +11,7 @@ Decided on 28 October 2026, except where marked:
 | Decision | Decided |
 | --- | --- |
 | Clouds | Azure, Google Cloud and AWS, all three at once, each with managed Postgres. a5s's code is the same on each, and adapters cover what differs: identity, secrets, object-lock storage and model endpoints. |
+| Hosting | Each cloud's own container service, such as Azure Container Apps, Cloud Run and Amazon ECS on Fargate, not Kubernetes. Decided on 29 October 2026. |
 | Identity providers | Entra ID, Google Cloud Identity and Okta, through OpenID Connect. People who use Teams also have an Entra ID identity, which the directory maps to the person. |
 | Channel | Teams only, for now |
 | Settings | One signed settings store with three ways to change it: files in git, approval cards in Teams, and a simple web app |
@@ -26,7 +27,7 @@ Each step ends with something running and its tests passing.
    - definitions in git, and instances in Postgres;
    - a scheduler for messages, schedules and obligations, with leases and suspension;
    - `create_deep_agent` runs, each on a thread that lasts one run;
-   - every call goes from the middleware to a gateway, which checks Cedar policy, denying by default and failing closed, and writes the ledger in the same transaction ([a call, step by step](architecture.md#a-call-step-by-step));
+   - every call goes from the agent to a gateway, which checks Cedar policy, denying by default and failing closed, and writes the ledger in the same transaction ([a call, step by step](architecture.md#a-call-step-by-step));
    - a model gateway that speaks both API styles, tested with DeepSeek and Qwen;
    - settings as signed files in git;
    - replies in Teams through the channel gateway;
@@ -56,7 +57,7 @@ Step 1, the walking skeleton, runs locally against the sample scenario, with Dee
 | A Deep Agents worker with no credentials and no shell, whose thread ends with the run | [`worker.py`](../src/a5s/worker.py) |
 | Suspension that stops the next call, even in a running run. Who suspends and resumes comes from their sign-in, the first suspender's suspension stands, and only they can resume it. | [`core/registry.py`](../src/a5s/core/registry.py) |
 | Signed settings: a version counts only when someone the directory names as an instance approver signs it, and its serial must rise, so an older, looser version can't be replayed. The core checks the signed bytes again whenever a run opens, and refuses an instance whose record differs from them, from its release or from the last status change in the ledger, so editing the database widens nothing. A version that leaves an instance out retires it. | [`core/signing.py`](../src/a5s/core/signing.py), [`core/registry.py`](../src/a5s/core/registry.py) |
-| The middleware that asks the gateway to explain a tool call before making it. A call policy would deny never runs, the agent hears why in words, and the denial is recorded. It reaches subagents too. | [`worker.py`](../src/a5s/worker.py) |
+| Every tool is a call to the gateway, for subagents too. A call policy denies never runs, the agent hears why in words, and the denial is recorded. Asking the core to explain a call before making it waits for held proposals, in phase 2. | [`worker.py`](../src/a5s/worker.py) |
 | Sign-in through the organisation's identity provider, with OpenID Connect, built for Entra ID, Google Cloud Identity and Okta and tested with Keycloak and a fake provider. Every message arrives at the core, which checks the token, finds the person in the directory, and records the message. A run that answers it takes its sender from there, so the token goes no further. | [`core/identity.py`](../src/a5s/core/identity.py) |
 | The ledger's copies in locked storage, made every hour, with an adapter for each cloud's: S3 Object Lock, Azure's immutable Blob Storage and Google Cloud Storage's object retention. Verifying the ledger checks it against its copies, so a history rewritten with every hash recomputed shows, as do deleted entries, a replaced copy, a fork, a planted copy and copying that has stopped. A planted copy can't stop the copying, and a copier that finds the ledger rewritten stops with an error, so the platform notices. | [`core/anchor.py`](../src/a5s/core/anchor.py), [`core/stores.py`](../src/a5s/core/stores.py) |
 | Teams, through the Bot Framework, with each agent its own bot. The core receives each message itself, because Teams' token doesn't cover what a message says: it checks the token, its key's endorsement for Teams, the service URL and the organisation, and finds the sender by their Entra ID. The scheduler answers from the core's queue, and replies and a5s's own notices reach Teams only through the core, which alone holds the bot's credentials. | [`core/teams.py`](../src/a5s/core/teams.py) |
@@ -68,7 +69,7 @@ Still to do in step 1:
 
 - schedules and obligations: the scheduler answers messages only, so far;
 - registering a5s's bots in your Entra ID tenant and adding them to Teams, which needs your tenant. Until then, Teams is tested against a fake of the Bot Framework, and people can send messages through the local channel, signed in through the identity provider;
-- the infrastructure code that deploys the image to Azure, Google Cloud and AWS with managed Postgres, which needs your accounts there to test. The containers run locally with compose, and whether the clouds run them on Kubernetes or on each cloud's own container service is still to decide.
+- the infrastructure code that deploys the image to Azure, Google Cloud and AWS with managed Postgres, which needs your accounts there to test. The containers run locally with compose, and each cloud will run them on its own container service.
 
 ## Done means
 

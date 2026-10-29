@@ -136,22 +136,20 @@ def test_sanitize_drops_lookalike_links():
     assert removed == 1 and "evil" not in text
 
 
-def test_explain_says_why_in_words_and_records_only_denials(stack):
+def test_a_denied_call_says_why_in_words_and_never_runs(stack):
+    stack.settle(level=0)  # signed by Ana, an instance approver
     run, token = stack.open_run()
-    with db.transaction(stack.admin) as conn:
-        conn.execute("update instances set level = 0")
     with stack.client(token) as c:
-        allowed = c.post("/run/explain", json={"action": "call_tool", "name": "search_records"})
-        denied = c.post("/run/explain", json={"action": "call_tool", "name": "create_draft"})
-        unknown = c.post("/run/explain", json={"action": "call_tool", "name": "delete_everything"})
-    assert allowed.json()["decision"] == "allow"
+        denied = c.post("/run/tools/create_draft", json={"args": {"title": "t", "body": "b"}})
+        unknown = c.post("/run/tools/delete_everything", json={"args": {}})
+    assert denied.status_code == unknown.status_code == 403
     assert denied.json()["reasons"] == ["level-0-only-observes"]
     assert denied.json()["explanations"] == [
         "at level 0 the agent only observes, so it can't use a tool that writes"]
     assert unknown.json()["explanations"] == [
         "nothing permits it, such as a tool outside the instance's grant"]
-    recorded = [(e["kind"], e["action"]) for e in stack.ledger(run) if e["kind"] == "explain"]
-    assert recorded == [("explain", "create_draft"), ("explain", "delete_everything")]
+    recorded = [(e["action"], e["decision"]) for e in stack.ledger(run) if e["kind"] == "tool"]
+    assert recorded == [("create_draft", "deny"), ("delete_everything", "deny")]
 
 
 def test_a_granted_tool_the_scenario_no_longer_has_is_refused(stack, monkeypatch):

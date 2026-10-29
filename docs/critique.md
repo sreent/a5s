@@ -180,12 +180,13 @@ What round 4 changed:
 
 - **Removed:** the local channel in the scheduler, the scheduler's port, its wait for a busy conversation and the notice that went with it, sign-in tokens passing through the scheduler, the separate Teams endpoint (now the core's channels), the gateway's own ledger endpoints, outbox rows for Teams, the sample's people in the reference agent, taking people's word by default, and a schema that couldn't change.
 - **Added:** a role for each part, migrations, the core's checks on signed settings, one front door for every channel, a queue the scheduler works through, run expiry, the model gateway's allowlist, a sturdier sanitizer, a bot per agent, and the scenario loader.
-- **Proposed, for you to decide:** two reviewers proposed removing the middleware that asks the core to explain a tool call before making it, and its endpoint, until held proposals arrive in phase 2. In phase 1 a denied call already never runs and the agent hears why, so explaining adds a round trip and a policy check to every tool call. It stays until you decide, because you asked for it.
+- **Removed after the round, as two reviewers proposed:** the middleware that asked the core to explain a tool call before making it, and its endpoint, until held proposals arrive in phase 2. A denied call already never runs and the agent hears why, so explaining only added a round trip and a policy check to every tool call.
+- **Decided after the round:** the clouds run a5s on each one's own container service, not Kubernetes, and R5 and R6 are accepted by the owners below.
 - **Deferred:** a connection pool, checkpoints so the copier needn't read every head each hour, and heads signed by the copier, which would stop R5.
 
 ## Accepted risks
 
-Some risk no design removes. These remain, and each needs its owner to accept it.
+Some risk no design removes. These remain, each accepted by its owner.
 
 | # | Risk | Why it stays | Accepted by |
 | --- | --- | --- | --- |
@@ -196,4 +197,4 @@ Some risk no design removes. These remain, and each needs its owner to accept it
 
 ## Next round
 
-Round 5 starts from the accepted risks, round 4's proposals and deferrals, and the code that phase 1's next steps build. It reads from all six angles, and reports what it removes.
+Round 5 starts from the accepted risks, round 4's deferrals, and the code that phase 1's next steps build. It reads from all six angles, and reports what it removes.

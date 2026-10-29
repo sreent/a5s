@@ -8,16 +8,13 @@ run's LangGraph thread ends with the run: nothing is checkpointed.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
 import httpx
 from deepagents import HarnessProfile, create_deep_agent, register_harness_profile
-from langchain.agents.middleware import AgentMiddleware
 from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models.chat_models import BaseChatModel
-from langchain_core.messages import ToolMessage
 from langchain_core.tools import StructuredTool
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
@@ -33,40 +30,10 @@ class GatewayTool(StructuredTool):
 
     gateway: Any = None  # the run's httpx client, holding only the run token
 
-    def explain(self) -> dict[str, Any]:
-        """What policy would say about calling this tool now. If the gateway can't say, no."""
-        try:
-            response = self.gateway.post("/run/explain", json={"action": "call_tool", "name": self.name})
-        except httpx.HTTPError as exc:
-            return {"decision": "deny", "explanations": [f"the gateway couldn't be asked ({exc})"]}
-        if response.status_code != 200:
-            return {"decision": "deny",
-                    "explanations": [f"the gateway couldn't explain it ({response.status_code})"]}
-        return response.json()
 
-
-class ExplainFirst(AgentMiddleware):
-    """Asks the gateway what policy would say before a gateway tool runs.
-
-    A call policy would deny never runs, and the agent gets the reason in words,
-    so it can change course. The gateway still decides every call itself, so
-    this helps the agent and isn't the boundary.
-    """
-
-    def wrap_tool_call(self, request: Any, handler: Callable[[Any], Any]) -> Any:
-        tool = request.tool
-        if isinstance(tool, GatewayTool):
-            verdict = tool.explain()
-            if verdict.get("decision") != "allow":
-                return ToolMessage(content=denial(verdict), tool_call_id=request.tool_call["id"],
-                                   name=tool.name, status="error")
-        return handler(request)
-
-
-# The same for every agent and every subagent, because deepagents passes a
-# profile's middleware to subagents but not an agent's own.
-_PROFILE = HarnessProfile(excluded_tools=frozenset({"execute"}),  # no shell
-                          extra_middleware=(ExplainFirst(),))
+# Registered for each model a5s uses, because deepagents applies a model's
+# profile to the agent's subagents too, and an agent's own settings it doesn't.
+_PROFILE = HarnessProfile(excluded_tools=frozenset({"execute"}))  # no shell
 _profiles: set[str] = set()
 
 

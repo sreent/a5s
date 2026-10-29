@@ -250,11 +250,6 @@ class ToolArgs(BaseModel):
     args: dict[str, Any] = {}
 
 
-class Explain(BaseModel):
-    action: str
-    name: str
-
-
 class Message(BaseModel):
     to: str
     text: str
@@ -428,19 +423,6 @@ def create_app(gw: Gateway) -> FastAPI:
             "model": {"alias": model.alias, "api": model.api} if model else None,
             "tools": [tools[n].definition() for n in row["grants"] if n in tools],
         }
-
-    @app.post("/run/explain")
-    def explain(body: Explain, token: str = Depends(run_token)) -> dict:
-        """What policy would say about a call, without making it. Denials are recorded."""
-        if body.action != "call_tool":
-            raise HTTPException(400, "phase 1 explains tool calls only")
-        tool = gw.scenario.tools().get(body.name)
-        with db.transaction(gw.url) as conn:
-            row = load_run(conn, token)
-            decision = gw.decide(row, "call_tool", gw.tool_entity(body.name, tool, row["pins"]), [])
-            if not decision.allowed:
-                ledger.append(conn, gw.entry(row, "explain", body.name, decision))
-        return decision.as_dict(explain=True)
 
     def record(entry: dict) -> bool:
         """Record what happened after a call was made. If that fails, the call still happened."""
