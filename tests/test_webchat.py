@@ -3,96 +3,18 @@ provider and talk to the agents through the local channel."""
 
 import base64
 import hashlib
-import os
 import secrets
 import threading
 import time
 from dataclasses import replace
-from urllib.parse import parse_qs, urlencode
+from urllib.parse import parse_qs
 
 import httpx
-import jwt
 import pytest
-from cryptography.hazmat.primitives.asymmetric import rsa
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, RedirectResponse
-from jwt.algorithms import RSAAlgorithm
 
 from a5s.core import inbox
 from a5s.core.identity import IdentityConfig, Verifier
-from conftest import free_port, serve
-
-CLIENT = "a5s-web"
-
-
-class Provider:
-    """An OpenID Connect provider that signs Ana in at once, checking PKCE as a real one does."""
-
-    def __init__(self) -> None:
-        self.key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-        self.codes: dict[str, tuple] = {}
-        self.refreshes: dict[str, str] = {}
-        self.forms: list[dict] = []
-        self.url = ""
-
-    def id_token(self, nonce: str | None = None) -> str:
-        now = int(time.time())
-        claims = {"iss": self.url, "aud": CLIENT, "iat": now, "exp": now + 300, "sub": "u-ana",
-                  "preferred_username": "ana", "name": "Ana Ortiz", "nonce": nonce}
-        return jwt.encode({k: v for k, v in claims.items() if v is not None}, self.key,
-                          algorithm="RS256", headers={"kid": "k1"})
-
-    def app(self) -> FastAPI:
-        app = FastAPI()
-
-        @app.get("/.well-known/openid-configuration")
-        def discovery() -> dict:
-            return {"issuer": self.url, "authorization_endpoint": f"{self.url}/auth",
-                    "token_endpoint": f"{self.url}/token", "jwks_uri": f"{self.url}/certs",
-                    "end_session_endpoint": f"{self.url}/logout"}
-
-        @app.get("/certs")
-        def certs() -> dict:
-            return {"keys": [{**RSAAlgorithm.to_jwk(self.key.public_key(), as_dict=True),
-                              "kid": "k1", "use": "sig", "alg": "RS256"}]}
-
-        @app.get("/auth")
-        def auth(client_id: str, redirect_uri: str, state: str, nonce: str, code_challenge: str,
-                 code_challenge_method: str) -> RedirectResponse:
-            code = secrets.token_urlsafe(16)
-            self.codes[code] = (client_id, redirect_uri, code_challenge, code_challenge_method, nonce)
-            return RedirectResponse(f"{redirect_uri}?{urlencode({'code': code, 'state': state})}")
-
-        @app.post("/token")
-        async def token(request: Request) -> JSONResponse:
-            form = {k: v[0] for k, v in parse_qs((await request.body()).decode()).items()}
-            self.forms.append(form)
-            if form.get("grant_type") == "refresh_token":
-                if self.refreshes.pop(form.get("refresh_token", ""), None) != form.get("client_id"):
-                    return JSONResponse(status_code=400, content={"error": "invalid_grant"})
-                nonce = None
-            else:
-                client, back, challenge, method, nonce = self.codes.pop(form.get("code", ""), (None,) * 5)
-                digest = hashlib.sha256(form.get("code_verifier", "").encode()).digest()
-                proof = base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
-                if (client, back, method, challenge) != (form.get("client_id"), form.get("redirect_uri"),
-                                                         "S256", proof):
-                    return JSONResponse(status_code=400, content={"error": "invalid_grant"})
-            refresh = secrets.token_urlsafe(16)
-            self.refreshes[refresh] = form["client_id"]
-            return JSONResponse({"id_token": self.id_token(nonce), "refresh_token": refresh,
-                                 "access_token": "for-the-provider-only", "token_type": "Bearer"})
-
-        return app
-
-
-@pytest.fixture
-def provider():
-    fake = Provider()
-    port = free_port()
-    fake.url = f"http://127.0.0.1:{port}"
-    with serve(fake.app(), port):
-        yield fake
+from conftest import CLIENT, free_port, serve
 
 
 def channels(stack, **gateway) -> serve:
@@ -206,20 +128,6 @@ def test_a_wait_the_person_left_takes_nothing_they_wont_see(stack):
 
 
 # In a browser
-
-@pytest.fixture
-def browser():
-    sync_api = pytest.importorskip("playwright.sync_api")
-    with sync_api.sync_playwright() as p:
-        try:
-            chromium = p.chromium.launch()
-        except Exception as exc:  # no browser installed here: CI insists on one
-            if os.environ.get("A5S_TEST_BROWSER") == "required":
-                raise
-            pytest.skip(f"needs Chromium, from `uv run playwright install chromium`: {exc}")
-        yield chromium
-        chromium.close()
-
 
 @pytest.fixture
 def answering(stack):

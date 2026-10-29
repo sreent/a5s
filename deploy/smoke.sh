@@ -3,8 +3,9 @@
 # Matrix homeserver and locked storage, then checks that the core runs only a
 # release its people approved, that a person must sign in, that a message runs end
 # to end from the command line and from Matrix, that the core works obligations out
-# from the records, that a worker reaches only the gateway, and that the ledger is
-# copied, locked, and verifies against its copies.
+# from the records, that a worker reaches only the gateway, that an instance approver
+# approves new settings where she works, and that the ledger is copied, locked, and
+# verifies against its copies.
 # Needs the image first: docker build -t a5s:dev .
 # With --keep, it leaves the stack running afterwards, to try the web chat and Matrix.
 set -eu
@@ -23,6 +24,7 @@ for part in GATEWAY CHANNELS SCHEDULER ANCHOR; do
   echo "A5S_DB_${part}_PASSWORD=$(random)" >> "$env_file"
 done
 echo "A5S_ANCHOR_STORE=s3://a5s-ledger/sample" >> "$env_file"
+echo "A5S_SEAL_KEYS=$(random)" >> "$env_file"
 python3 deploy/matrix/configure.py "$work/matrix" >> "$env_file"
 compose() { docker compose -p a5s-smoke --env-file "$env_file" -f deploy/compose.yaml \
               -f deploy/compose.stub.yaml -f deploy/compose.identity.yaml \
@@ -183,6 +185,96 @@ with psycopg.connect(os.environ["A5S_DATABASE_URL"]) as conn:
         else:
             raise AssertionError(f"the scheduler could run: {statement}")
 print("The scheduler connects as its own role, and can't write the core's records.")
+PY
+
+# An instance approver approves a new version of the settings where she works. a5s asks her
+# in the Matrix chat she last wrote in, and she approves on the core's page, having signed in
+# afresh at Keycloak for that version alone.
+compose exec -T gateway python - <<'PY'
+import subprocess
+from pathlib import Path
+import yaml
+settings = yaml.safe_load(Path("scenarios/sample/settings.yaml").read_text())
+settings["instances"]["assistant-finance"]["serves"].append("chen")
+Path("/tmp/next.yaml").write_text(yaml.safe_dump({**settings, "serial": settings["serial"] + 1}))
+subprocess.run(["a5s", "propose", "--file", "/tmp/next.yaml"], check=True)
+PY
+A5S_PASSWORD="$idp_password" python3 - <<'PY'
+import base64, hashlib, html, json, os, re, secrets, time
+from http.cookiejar import CookieJar
+from urllib.error import HTTPError
+from urllib.parse import parse_qs, quote, urlencode, urlsplit
+from urllib.request import HTTPCookieProcessor, HTTPRedirectHandler, Request, build_opener, urlopen
+
+HOMESERVER, CORE = "http://127.0.0.1:8008/_matrix/client/v3", "http://127.0.0.1:8703"
+
+def call(url, body=None, token=None, method=None):
+    headers = {"Content-Type": "application/json"} | ({"Authorization": f"Bearer {token}"} if token else {})
+    data = None if body is None else json.dumps(body).encode()
+    with urlopen(Request(url, data, headers, method=method), timeout=30) as answer:
+        return json.load(answer)
+
+ana = call(f"{HOMESERVER}/login", {"type": "m.login.password", "password": os.environ["A5S_PASSWORD"],
+                                     "identifier": {"type": "m.id.user", "user": "ana"}})["access_token"]
+[room] = call(f"{HOMESERVER}/joined_rooms", token=ana)["joined_rooms"]
+for _ in range(60):
+    said = [e["content"]["body"] for e in call(f"{HOMESERVER}/rooms/{quote(room, safe='')}/messages"
+                                               f"?dir=b&limit=20", token=ana)["chunk"]
+            if e["type"] == "m.room.message" and "/approve/?settings=" in e["content"].get("body", "")]
+    if said:
+        break
+    time.sleep(1)
+else:
+    raise SystemExit("a5s didn't ask Ana to approve the settings in her Matrix chat.")
+link = re.search(r"http\S+/approve/\?settings=[0-9a-f]{64}", said[0]).group(0)
+version = parse_qs(urlsplit(link).query)["settings"][0]
+print(f"Asked in Matrix: {said[0].splitlines()[0]}")
+
+class Stay(HTTPRedirectHandler):  # keep Keycloak's redirect back, to read the code in it
+    def redirect_request(self, *args, **kwargs):
+        return None
+
+def b64(data):
+    return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
+
+jar = CookieJar()
+browser = build_opener(HTTPCookieProcessor(jar), Stay)
+salt, verifier, back = secrets.token_urlsafe(32), secrets.token_urlsafe(32), f"{CORE}/approve/"
+signin = call(f"{CORE}/approve/config")["signin"]
+page = browser.open(signin["authorization_endpoint"] + "?" + urlencode({
+    "response_type": "code", "client_id": signin["client_id"], "redirect_uri": back,
+    "scope": signin["scope"], "state": "s", "max_age": "0", "code_challenge_method": "S256",
+    "nonce": b64(hashlib.sha256(f"a5s approves settings {version} {salt}".encode()).digest()),
+    "code_challenge": b64(hashlib.sha256(verifier.encode()).digest())}), timeout=30).read().decode()
+for cookie in jar:  # Keycloak's are Secure, which browsers send to 127.0.0.1 all the same
+    cookie.secure = False
+form = re.search(r'<form[^>]*id="kc-form-login"[^>]*>', page).group(0)
+try:
+    browser.open(Request(html.unescape(re.search(r'action="([^"]+)"', form).group(1)), urlencode(
+        {"username": "ana", "password": os.environ["A5S_PASSWORD"], "credentialId": ""}).encode()),
+        timeout=30)
+    raise SystemExit("Keycloak didn't send Ana back to the approval page.")
+except HTTPError as went:
+    location = went.headers["Location"]
+assert location.startswith(back), location
+token = call(f"{CORE}/approve/token", {"grant_type": "authorization_code", "code_verifier": verifier,
+                                       "code": parse_qs(urlsplit(location).query)["code"][0],
+                                       "redirect_uri": back})["id_token"]
+seen = call(f"{CORE}/approve/settings/{version}/review", {"salt": salt}, token)
+assert [c["text"] for c in seen["changes"]] == ["assistant-finance serves Chen Wei as well."], seen
+print(call(f"{CORE}/approve/settings/{version}", {"salt": salt}, token))
+PY
+compose exec -T gateway python - <<'PY'
+import os, time, psycopg
+for _ in range(60):  # the scheduler asks the core to apply approved settings every minute
+    with psycopg.connect(os.environ["A5S_DATABASE_URL"]) as conn:
+        serves = conn.execute("select serves from instances where id = 'assistant-finance'").fetchone()[0]
+    if "chen" in serves:
+        break
+    time.sleep(2)
+assert "chen" in serves, serves
+print("Ana approved the new settings on the core's page, signed in afresh at Keycloak, and the core "
+      "applied them.")
 PY
 
 compose exec -T gateway a5s ledger tail -n 200 | grep -q '"identity": "verified"'

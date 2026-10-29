@@ -9,4 +9,4 @@ a5s's own stand-in for a real scenario, with made-up data: a directory of nine p
 | [settings.sig](settings.sig) | Ana's signature over the settings. She holds the instance-approver role, so her signature makes this version count. |
 | [keys/](keys/) | Made-up keys for the made-up people, so anyone can sign the sample's settings. A real scenario's private keys stay with their owners, and a5s only reads public keys. |
 
-To change the settings, edit them, raise the serial, and sign the new version: `a5s sign --as ana`, then `a5s apply`.
+To change the settings, edit them, raise the serial, and sign the new version: `a5s sign --as ana`, then `a5s apply`. Or ask Ana to approve it where she works, with `a5s propose`: she gets a card, and the core applies it once she approves.

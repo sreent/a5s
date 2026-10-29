@@ -96,7 +96,7 @@ Every round reports the rules it added and the rules it removed, and proposes cu
 
 | # | Loophole | Severity | How the design answers it | Status |
 | --- | --- | --- | --- | --- |
-| D5 | A signed sign-in doesn't sign the decision, so it can be reused for another | Critical | Each decision on a sensitive item is signed for that one decision, and a signature works once ([proposals](architecture.md#proposals-and-approvals)) | Phase 2 |
+| D5 | A signed sign-in doesn't sign the decision, so it can be reused for another | Critical | Each decision on a sensitive item is signed for that one decision, and a signature works once ([proposals](architecture.md#proposals-and-approvals)) | Built for approving settings in phase 1; proposals in phase 2 |
 | D6 | The builders build the controls and the tests that judge them | High | Assurance holds the tests for the trusted core, and changes to it need an outside approver ([independence](architecture.md#independence)) | Designed |
 | D8 | The people being watched can switch the detection off | High | Stopping or changing an agent the scenario marks as a check needs the scenario's assurance ([independence](architecture.md#independence)) | Designed |
 | O4 | A counting backstop switches busy assistants off mid-month | High | Only requests and changes count, per person acted for and type of action ([starting values](starting-values.md)) | Phase 2 |
@@ -194,6 +194,7 @@ Some risk no design removes. These remain, each accepted by its owner.
 | R4 | A person misled by an agent despite the computed facts and the source flags. It's narrowed by showing the facts apart from the agent's narrative. | People still decide | Each scenario's owners, with training on deciding from the facts |
 | R5 | Someone who can write to the ledger's store can plant a copy that continues the chain in good form, which stops the copying until assurance moves it to a new prefix. It can't hide a change, which the check reports. | Telling a5s's copies from good forgeries needs heads the copier signs, which are deferred | Assurance |
 | R6 | A provider that offers no dated version, such as DeepSeek, can change the model behind its name unseen. Each response must still report the approved name. | Only the provider can pin it | The platform owner, for development with synthetic data only |
+| R7 | Someone who holds the core's seal key and can also write to its database can make an approval of settings, as if an instance approver had approved it on a card | The core seals the approvals it checked so they outlast the identity provider's keys. Signatures made with people's own keys don't rest on the core. | The platform owner |
 
 ## Next round
 

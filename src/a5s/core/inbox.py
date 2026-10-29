@@ -8,7 +8,9 @@ else, and a person's token goes no further than this.
 
 The web chat is served from here too: a page where people sign in with their
 organisation's identity provider and talk to the agents through the local
-channel, as the command line does.
+channel, as the command line does. So is the page where instance approvers
+approve a version of the settings, which the card in their chat opens
+(core/approvals.py).
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
+import re
 import time
 import uuid
 from collections.abc import Callable
@@ -30,7 +33,8 @@ from psycopg.types.json import Jsonb
 from pydantic import BaseModel
 
 from a5s import db
-from a5s.core import chats, ledger, matrix
+from a5s.contract import parse_settings
+from a5s.core import approvals, chats, ledger, matrix
 from a5s.core.identity import IdentityError, UnknownPerson, signed_in
 from a5s.core.teams import ONE_TO_ONE, UNKNOWN, Refused
 
@@ -53,6 +57,12 @@ class LocalMessage(BaseModel):
     agent: str
     text: str
     person: str | None = None  # in development, without an identity provider, who it's from
+
+
+class Approval(BaseModel):
+    """What the approval page sends with its sign-in: the salt its nonce was made with."""
+
+    salt: str
 
 
 class TokenRequest(BaseModel):
@@ -407,21 +417,133 @@ def create_app(gw: Any) -> FastAPI:
             form |= {"refresh_token": body.refresh_token, "scope": "openid profile"}
         else:
             raise HTTPException(400, "send a code and its verifier, or a refresh token")
+        return exchange(form, ("id_token", "refresh_token", "expires_in"))
+
+    def exchange(form: dict, kept: tuple[str, ...]) -> JSONResponse:
+        """A code or refresh token, passed on to the identity provider, and what it gives back
+        that the page may keep: never the provider's access token."""
         try:
             answer = gw.identity.http.post(gw.identity.endpoints()["token_endpoint"], data=form,
                                            timeout=15)
             tokens = answer.json()
         except (httpx.HTTPError, ValueError, KeyError) as exc:
             raise HTTPException(502, "the identity provider didn't answer") from exc
-        kept = {k: tokens[k] for k in ("id_token", "refresh_token", "expires_in", "error",
-                                       "error_description") if k in tokens}  # never its access token
         return JSONResponse(status_code=answer.status_code if answer.status_code < 500 else 502,
-                            content=kept)
+                            content={k: tokens[k] for k in (*kept, "error", "error_description")
+                                     if k in tokens})
 
     @app.get("/chat/{name}", include_in_schema=False)
     def chat_file(name: str) -> Response:
         if name not in ("app.js", "app.css"):
             raise HTTPException(404, "no such file")
         return page(name)
+
+    # Approving settings: the page an approver's card opens, where they decide
+
+    def approving() -> None:
+        if problem := gw.approving():
+            raise HTTPException(404, problem)
+
+    @app.get("/approve/", include_in_schema=False)
+    def approve_page() -> Response:
+        approving()
+        return page("approve.html")
+
+    @app.get("/approve/approve.js", include_in_schema=False)
+    def approve_script() -> Response:
+        approving()
+        return page("approve.js")
+
+    @app.post("/approve/token")
+    def approve_token(body: TokenRequest) -> JSONResponse:
+        """The approval page's sign-in, passed on to the identity provider. The page gets the
+        signed sign-in alone, with no refresh token to make more like it."""
+        approving()
+        if body.grant_type != "authorization_code" or not (body.code and body.code_verifier
+                                                            and body.redirect_uri):
+            raise HTTPException(400, "send a code and its verifier")
+        return exchange({"grant_type": "authorization_code", "client_id": gw.cfg.webchat_client_id,
+                         "code": body.code, "code_verifier": body.code_verifier,
+                         "redirect_uri": body.redirect_uri}, ("id_token",))
+
+    @app.get("/approve/config")
+    def approve_config() -> dict:
+        """Where the page signs the approver in."""
+        approving()
+        try:
+            where = gw.identity.endpoints()
+        except Exception as exc:  # the provider's down: the page says so, and nothing else
+            raise HTTPException(503, "the identity provider can't be reached") from exc
+        return {"signin": {"authorization_endpoint": where["authorization_endpoint"],
+                           "client_id": gw.cfg.webchat_client_id, "scope": "openid profile"}}
+
+    def approver(version: str, body: Approval, authorization: str | None) -> tuple:
+        """Who signed in to approve this version, what the provider signed, and the token."""
+        approving()
+        if not re.fullmatch(r"[0-9a-f]{64}", version):
+            raise HTTPException(404, "a5s has no such version of the settings")
+        token = (authorization or "").removeprefix("Bearer ").strip()
+        if not token:
+            raise HTTPException(401, "sign in to approve: send your sign-in as a bearer token")
+        try:
+            person, claims = approvals.check(gw.identity, gw.scenario, gw.cfg.webchat_client_id,
+                                             token, version, body.salt, time.time())
+        except approvals.Refused as exc:
+            raise HTTPException(exc.status, exc.reason) from None
+        return person, claims, token
+
+    def proposal(conn: Any, version: str) -> tuple[dict, dict | None, str]:
+        """A version proposed for approval, the version in force, and where it stands."""
+        row = conn.execute("select * from settings_proposals where scenario = %s and digest = %s",
+                           (gw.scenario.name, version)).fetchone()
+        if row is None:
+            raise HTTPException(404, "a5s has no such version of the settings to approve")
+        last = approvals.latest(conn, gw.scenario.name)
+        if row["outcome"]:
+            status = row["outcome"]
+        elif last and row["serial"] <= last["serial"]:
+            status = "superseded"
+        else:
+            status = "waiting"
+        return row, last, status
+
+    @app.post("/approve/settings/{version}/review")
+    def review(version: str, body: Approval, authorization: str | None = Header(default=None)) -> dict:
+        """What a version changes from the one in force, as code works it out, for an instance
+        approver who signed in to approve it."""
+        person, _, _ = approver(version, body, authorization)
+        with db.transaction(gw.url) as conn:
+            row, last, status = proposal(conn, version)
+            approved, _ = approvals.approvers(conn, gw.cfg.seal_keys, gw.scenario.name, version)
+        before = parse_settings(bytes(last["raw"])) if last else None
+        found = approvals.changes(before, parse_settings(bytes(row["raw"])), gw.definitions,
+                                  gw.scenario.person)
+        return {"serial": row["serial"], "proposed_at": row["proposed_at"].isoformat(),
+                "in_force": last["serial"] if last else None, "changes": found,
+                "approved_by": [p.name if (p := gw.scenario.person(a)) else a for a in approved],
+                "you": person.name, "you_approved": person.id in approved, "status": status}
+
+    @app.post("/approve/settings/{version}")
+    def approve(version: str, body: Approval, authorization: str | None = Header(default=None)) -> dict:
+        """An instance approver's approval of a version, signed through the identity provider
+        for this version alone. It's recorded once, and sealed. The gateway applies the version."""
+        person, claims, token = approver(version, body, authorization)
+        with db.transaction(gw.url) as conn:
+            row, _, status = proposal(conn, version)
+            if status != "waiting":
+                raise HTTPException(409, f"this version isn't waiting for approval: it's {status}")
+            try:
+                approvals.record(conn, gw.cfg.seal_keys, gw.scenario.name, version, person.id, token,
+                                 body.salt, claims)
+            except approvals.Refused as exc:
+                raise HTTPException(exc.status, exc.reason) from None
+            ledger.append(conn, {
+                "kind": "admin", "action": "approve", "run": None, "instance": None, "acts_for": [],
+                "decision": "record",
+                "args": {"settings": row["version"], "serial": row["serial"], "digest": version,
+                         "by": person.id, "identity": "verified: a sign-in to approve this version alone",
+                         "issuer": claims["iss"],
+                         "token_sha256": hashlib.sha256(token.encode()).hexdigest()}})
+        return {"approved": True, "serial": row["serial"], "by": person.name}
 
     return app

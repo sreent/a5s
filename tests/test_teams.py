@@ -1,5 +1,6 @@
 """Teams: the core receives each message itself, checks it, and answers only through the core."""
 
+import base64
 import json
 import threading
 import time
@@ -9,13 +10,15 @@ from dataclasses import replace
 import httpx
 import jwt
 import pytest
+import yaml
 from cryptography.hazmat.primitives.asymmetric import rsa
 from jwt.algorithms import RSAAlgorithm
 
 from a5s import db
 from a5s.core import inbox, teams
+from a5s.core.identity import IdentityConfig, Verifier
 from a5s.core.teams import Bot, Teams, TeamsConfig
-from conftest import free_port, serve
+from conftest import CLIENT, free_port, serve
 
 APP_ID, TENANT = "a5s-bot-app", "0a5a7e17-0000-4000-8000-000000000001"
 WATCHER_APP = "a5s-watcher-app"  # a second agent's own bot
@@ -387,5 +390,31 @@ def test_an_escalation_reaches_teams_too(stack, bot):
     escalated = bot.sent[-1]
     assert escalated["text"].startswith("Q-1002, Refund for a duplicate payment, was due on Fri 6 Nov")
     assert "replyToId" not in escalated
+    [delivered] = [e for e in stack.ledger() if e["action"] == "deliver"][-1:]
+    assert delivered["outcome"] == {"status": "ok", "channel": "teams"}
+
+
+def test_an_instance_approver_gets_a_card_that_opens_the_cores_page(stack, bot, provider):
+    stack.model.reply("Hello, Ana.")
+    httpx.post(bot.url, json=activity("Hello"), headers=bot.auth()).raise_for_status()
+    stack.scheduler().answer_waiting()
+    stack.gateway.identity = Verifier(IdentityConfig(issuer=provider.url, audience=("a5s", CLIENT)))
+    stack.gateway.cfg = replace(stack.gateway.cfg, webchat_client_id=CLIENT,
+                                public_url="https://a5s.example.test")
+    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text())
+    settings["instances"]["assistant-finance"]["serves"] = ["ana", "ben", "chen"]
+    raw = yaml.safe_dump({**settings, "serial": settings["serial"] + 1}).encode()
+    with stack.client() as c:
+        asked = c.post("/settings/proposals", json={"raw": base64.b64encode(raw).decode()}).json()
+
+    card = bot.sent[-1]
+    assert card["as"] == APP_ID and "replyToId" not in card and "text" not in card
+    assert card["summary"] == "Serial 5 of a5s's settings waits for an instance approver to approve it."
+    [attachment] = card["attachments"]
+    assert attachment["contentType"] == "application/vnd.microsoft.card.adaptive"
+    content = attachment["content"]
+    assert content["actions"] == [{"type": "Action.OpenUrl", "title": "Review and approve",
+                                   "url": f"https://a5s.example.test/approve/?settings={asked['digest']}"}]
+    assert "- assistant-finance serves Chen Wei as well." in [b["text"] for b in content["body"]]
     [delivered] = [e for e in stack.ledger() if e["action"] == "deliver"][-1:]
     assert delivered["outcome"] == {"status": "ok", "channel": "teams"}

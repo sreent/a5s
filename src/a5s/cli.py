@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import logging
@@ -29,10 +30,11 @@ log = logging.getLogger("a5s")
 def _dev_up(root: Path) -> None:
     state = root / ".a5s"
     state.mkdir(exist_ok=True)
-    token_file = state / "service-token"
-    if not token_file.exists():
-        token_file.write_text(secrets.token_urlsafe(32))
-        token_file.chmod(0o600)
+    for name in ("service-token", "seal-key"):  # the core's own secrets, for development
+        secret = state / name
+        if not secret.exists():
+            secret.write_text(secrets.token_urlsafe(32))
+            secret.chmod(0o600)
     url = devdb.start(state / "pg", 54329)
     _migrate(Config.from_env(), url)
     print(f"Postgres is up at {url}, and the schema is in place.")
@@ -88,6 +90,21 @@ def _sign(cfg: Config, person: str, key: Path | None) -> None:
                          sort_keys=False)
     )
     print(f"{person} signed this version of the settings.")
+
+
+def _propose(cfg: Config, path: Path | None) -> None:
+    """Ask the instance approvers to approve the settings where they work, with a card."""
+    raw = path.read_bytes() if path else build.scenario(cfg).settings().raw
+    asked = _admin(cfg, "/settings/proposals", {"raw": base64.b64encode(raw).decode()})
+    print(f"Serial {asked['serial']} of the settings:")
+    for change in asked["changes"]:
+        print(f"- {change['text']}")
+    if asked["new"]:
+        print(f"Asked {', '.join(asked['asked']) or 'nobody: no instance approver is in the directory'}"
+              f" to approve it. a5s applies it once one has.")
+    else:
+        print("The approvers were asked about this version before.")
+    print(f"It's approved at {asked['link']}")
 
 
 def _pin(cfg: Config, agent: str) -> None:
@@ -273,6 +290,10 @@ def main(argv: list[str] | None = None) -> None:
     sign.add_argument("--as", dest="person", required=True)
     sign.add_argument("--key", type=Path, help="their private key (default: the sample's)")
     sub.add_parser("setup", help="migrate and apply the settings, as the administrator")
+    propose = sub.add_parser("propose", help="ask the instance approvers to approve the settings "
+                                             "where they work, with a card")
+    propose.add_argument("--file", type=Path, help="a version of the settings (default: the "
+                                                   "scenario's)")
     for name, port, what in (("gateway", 8700, "the gateway, in the trusted core"),
                              ("worker", 8702, "a worker, which holds no secrets"),
                              ("channels", 8703, "the core's endpoints, where messages arrive")):
@@ -341,6 +362,8 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "setup":
         _migrate(cfg)
         _apply(cfg)
+    elif args.command == "propose":
+        _propose(cfg, args.file)
     elif args.command in ("gateway", "worker", "channels"):
         import uvicorn
 

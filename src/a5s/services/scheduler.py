@@ -386,6 +386,14 @@ class Scheduler:
         except httpx.HTTPError:
             log.exception("couldn't ask the core to send the digests")
 
+    def apply_approved(self) -> None:
+        """Ask the core to apply a version of the settings its instance approvers approved
+        where they work, if one is waiting."""
+        try:
+            self.gw.post("/settings/sweep", headers=self.service).raise_for_status()
+        except httpx.HTTPError:
+            log.exception("couldn't ask the core to apply approved settings")
+
     def sweep(self) -> None:
         """Close runs that outlived their time, and tell their people."""
         try:
@@ -422,6 +430,7 @@ class Scheduler:
                         while not stop.is_set():
                             if time.monotonic() - swept > sweep_every:
                                 self.sweep()
+                                self.apply_approved()
                                 for item in self.due():
                                     if not free.acquire(blocking=False):
                                         break  # the rest is due again at the next sweep

@@ -142,22 +142,31 @@ class Verifier:
 
     def person(self, token: str) -> str:
         """Who the token is for, if it checks out. Otherwise, IdentityError."""
-        claims = self.claims(token)
+        return self.named(self.claims(token))
+
+    def named(self, claims: dict) -> str:
+        """Who a checked token's claims are for."""
         person = claims.get(self.cfg.person_claim)
         if not isinstance(person, str) or not person:
             raise IdentityError(f"it names nobody in {self.cfg.person_claim}")
         return person
 
 
-def signed_in(verifier: Verifier, scenario: Any, token: str) -> str:
-    """Who in the directory a sign-in token is for. IdentityError if it doesn't check out,
-    and UnknownPerson if it names nobody the directory knows."""
-    claim = verifier.person(token)
+def whose(verifier: Verifier, scenario: Any, claims: dict) -> Any:
+    """The person in the directory a checked token's claims are for. IdentityError if they
+    name nobody, and UnknownPerson if the directory doesn't know who they name."""
+    claim = verifier.named(claims)
     prefix = verifier.cfg.directory_prefix
     person = scenario.find(f"{prefix}:{claim}") if prefix else scenario.person(claim)
     if person is None:
         raise UnknownPerson("a5s doesn't know who you are: ask an instance approver to add you")
-    return person.id
+    return person
+
+
+def signed_in(verifier: Verifier, scenario: Any, token: str) -> str:
+    """Who in the directory a sign-in token is for. IdentityError if it doesn't check out,
+    and UnknownPerson if it names nobody the directory knows."""
+    return whose(verifier, scenario, verifier.claims(token)).id
 
 
 def verifier_from_env() -> Verifier | None:

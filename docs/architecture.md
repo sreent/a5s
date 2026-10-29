@@ -48,11 +48,11 @@ A scenario plugs into a5s by providing these, or by taking a5s's defaults:
 | Interface | Gives a5s | a5s's default |
 | --- | --- | --- |
 | Directory | People, the roles they hold, their teams, reporting lines and working hours, and what each may see, for any record | The organisation's identity provider, such as Entra ID, Google Cloud Identity, Okta or Keycloak, or its own directory, such as Active Directory, with roles assigned as groups |
-| Settings | Parts and their owners and delegates, how far each agent may act in each part and type of action, limits, sensitive fields, classes of data, the escalation chain, who agents may talk to, and the scenario's switches. Each version is signed by its owner, and an unsigned one doesn't count. Its serial only rises, so an older version can't be replayed. | a5s's settings store, with signed versions [TBC: edited through a simple app, or in git] |
+| Settings | Parts and their owners and delegates, how far each agent may act in each part and type of action, limits, sensitive fields, classes of data, the escalation chain, who agents may talk to, and the scenario's switches. Each version is signed by its owner, with their own key or through the identity provider, and an unsigned one doesn't count. Its serial only rises, so an older version can't be replayed. | a5s's settings store, with signed versions from files in git or approved on cards in the chat, and from phase 1's step 6 a simple app |
 | Tools | The systems agents use, as MCP servers, with each tool's risk attributes | None |
 | Records | Where obligations come from, such as cases past their due time, each person's records as they stand, for reports of what changed, and the events that wake agents | None |
 | Governed process | Where agents' requests to change data go, and who decides them | Held proposals in a5s itself, from phase 2 |
-| Decision surface | Where people decide | Cards in the channel, apart from the conversation and signed through the identity provider [TBC] |
+| Decision surface | Where people decide | Cards in the chat, which open the core's own page, apart from the conversation. Each decision there is signed through the identity provider for that one decision. |
 | Policy pack | The scenario's own restrictions, which can only add to a5s's base pack | None |
 | Tests | The scenario's tests, run against its systems or a fake of them | None |
 
@@ -101,7 +101,7 @@ At level 1, an agent's work reaches people in one of three ways:
 | Request | The action belongs to a governed process | Whoever the process routes it to. The process checks the agent's level with a5s before it approves anything automatically. |
 | Held proposal, from phase 2 | The action has no governed process | The owner of what it touches. a5s holds the exact call, and the agent carries on. Once it's approved, the gateway makes the call, if the records haven't changed. |
 
-Drafts and requests carry a handoff note and the agent's flags, so whoever decides sees them. From phase 2, a decision on a sensitive item is signed by its decider for that one decision, through the identity provider, and each signature works once. Decisions are taken only on the decision surface, never by telling the agent in conversation, and after a decider's authenticator is reset, their decisions wait a day before they take effect [TBC]. At level 2, actions run and are reported, and the agent owner can reverse them through the scenario's own process.
+Drafts and requests carry a handoff note and the agent's flags, so whoever decides sees them. From phase 2, a decision on a sensitive item is signed by its decider for that one decision, through the identity provider, and each signature works once. Settings are approved this way from phase 1: a card in each instance approver's chat opens the core's page, where they sign in afresh with a nonce that commits to approving that version, so the provider's signature covers the decision. The core seals each approval once it has checked it, with a key only the core holds. The approval outlasts the provider's keys, and editing the database approves nothing. Decisions are taken only on the decision surface, never by telling the agent in conversation, and after a decider's authenticator is reset, their decisions wait a day before they take effect [TBC]. At level 2, actions run and are reported, and the agent owner can reverse them through the scenario's own process.
 
 ## How an agent lives
 

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import os
+import secrets
 import shutil
 import socket
 import tempfile
@@ -15,6 +18,7 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlencode
 
 import httpx
 import jwt
@@ -23,6 +27,8 @@ import pytest
 import uvicorn
 import yaml
 from cryptography.hazmat.primitives.asymmetric import rsa
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse, RedirectResponse
 from jwt.algorithms import RSAAlgorithm
 
 from a5s import db, definitions, devdb
@@ -36,6 +42,8 @@ from a5s.services.scheduler import Scheduler
 
 ROOT = Path(__file__).resolve().parents[1]
 SERVICE_TOKEN = "test-service-token"
+SEAL_KEY = "test-seal-key"  # the core's own, which seals the approvals it checked
+CLIENT = "a5s-web"  # the web chat's client at the provider, which the approval page uses too
 PROVIDER_KEY = "provider-secret"
 # The core's clock in tests, unless a test sets it: before anything in the sample falls due,
 # so a scheduler left running never reminds anyone, whatever the date really is.
@@ -152,6 +160,108 @@ class FakeIssuer:
     def verifier(self, **kwargs: Any) -> Verifier:
         return Verifier(IdentityConfig(issuer=self.url, audience="a5s"),
                         httpx.Client(transport=httpx.MockTransport(self.handler)), **kwargs)
+
+
+class Provider:
+    """An OpenID Connect provider that signs someone in at once, Ana unless a test says, and
+    checks PKCE as a real one does. Asked for a fresh sign-in, it says when it was."""
+
+    def __init__(self) -> None:
+        self.keys = {"k1": rsa.generate_private_key(public_exponent=65537, key_size=2048)}
+        self.kid = "k1"
+        self.person = "ana"
+        self.names = {"ana": "Ana Ortiz", "ben": "Ben Okafor"}
+        self.codes: dict[str, tuple] = {}
+        self.refreshes: dict[str, str] = {}
+        self.forms: list[dict] = []
+        self.asked: list[dict] = []  # what each sign-in asked for
+        self.url = ""
+
+    def rotate(self) -> None:
+        """Sign with a new key, and withdraw the old ones, as providers do."""
+        self.kid = f"k{len(self.keys) + 1}"
+        self.keys = {self.kid: rsa.generate_private_key(public_exponent=65537, key_size=2048)}
+
+    def id_token(self, nonce: str | None = None, person: str | None = None,
+                 signed_in_at: int | None = None, **claims: Any) -> str:
+        now, who = int(time.time()), person or self.person
+        body = {"iss": self.url, "aud": CLIENT, "iat": now, "exp": now + 300, "sub": f"u-{who}",
+                "preferred_username": who, "name": self.names.get(who, who), "nonce": nonce,
+                "auth_time": signed_in_at, **claims}
+        return jwt.encode({k: v for k, v in body.items() if v is not None}, self.keys[self.kid],
+                          algorithm="RS256", headers={"kid": self.kid})
+
+    def app(self) -> FastAPI:
+        app = FastAPI()
+
+        @app.get("/.well-known/openid-configuration")
+        def discovery() -> dict:
+            return {"issuer": self.url, "authorization_endpoint": f"{self.url}/auth",
+                    "token_endpoint": f"{self.url}/token", "jwks_uri": f"{self.url}/certs",
+                    "end_session_endpoint": f"{self.url}/logout"}
+
+        @app.get("/certs")
+        def certs() -> dict:
+            return {"keys": [{**RSAAlgorithm.to_jwk(key.public_key(), as_dict=True),
+                              "kid": kid, "use": "sig", "alg": "RS256"}
+                             for kid, key in self.keys.items()]}
+
+        @app.get("/auth")
+        def auth(request: Request, client_id: str, redirect_uri: str, state: str, nonce: str,
+                 code_challenge: str, code_challenge_method: str) -> RedirectResponse:
+            self.asked.append(dict(request.query_params))
+            code = secrets.token_urlsafe(16)
+            fresh = int(time.time()) if "max_age" in request.query_params else None
+            self.codes[code] = (client_id, redirect_uri, code_challenge, code_challenge_method,
+                                nonce, self.person, fresh)
+            return RedirectResponse(f"{redirect_uri}?{urlencode({'code': code, 'state': state})}")
+
+        @app.post("/token")
+        async def token(request: Request) -> JSONResponse:
+            form = {k: v[0] for k, v in parse_qs((await request.body()).decode()).items()}
+            self.forms.append(form)
+            if form.get("grant_type") == "refresh_token":
+                if self.refreshes.pop(form.get("refresh_token", ""), None) != form.get("client_id"):
+                    return JSONResponse(status_code=400, content={"error": "invalid_grant"})
+                nonce, person, fresh = None, self.person, None
+            else:
+                client, back, challenge, method, nonce, person, fresh = self.codes.pop(
+                    form.get("code", ""), (None,) * 7)
+                digest = hashlib.sha256(form.get("code_verifier", "").encode()).digest()
+                proof = base64.urlsafe_b64encode(digest).rstrip(b"=").decode()
+                if (client, back, method, challenge) != (form.get("client_id"), form.get("redirect_uri"),
+                                                         "S256", proof):
+                    return JSONResponse(status_code=400, content={"error": "invalid_grant"})
+            refresh = secrets.token_urlsafe(16)
+            self.refreshes[refresh] = form["client_id"]
+            return JSONResponse({"id_token": self.id_token(nonce, person, fresh),
+                                 "refresh_token": refresh, "access_token": "for-the-provider-only",
+                                 "token_type": "Bearer"})
+
+        return app
+
+
+@pytest.fixture
+def provider() -> Iterator[Provider]:
+    fake = Provider()
+    port = free_port()
+    fake.url = f"http://127.0.0.1:{port}"
+    with serve(fake.app(), port):
+        yield fake
+
+
+@pytest.fixture
+def browser() -> Iterator[Any]:
+    sync_api = pytest.importorskip("playwright.sync_api")
+    with sync_api.sync_playwright() as p:
+        try:
+            chromium = p.chromium.launch()
+        except Exception as exc:  # no browser installed here: CI insists on one
+            if os.environ.get("A5S_TEST_BROWSER") == "required":
+                raise
+            pytest.skip(f"needs Chromium, from `uv run playwright install chromium`: {exc}")
+        yield chromium
+        chromium.close()
 
 
 @contextmanager
@@ -315,7 +425,7 @@ def running(database: str, root: Path, http: httpx.Client, model: FakeModel) -> 
     port = free_port()
     cfg = Config(database_url=db.as_role(database, "gateway"),
                  gateway_url=f"http://127.0.0.1:{port}", service_token=SERVICE_TOKEN, root=root,
-                 development=True)
+                 development=True, seal_keys=(SEAL_KEY,))
     scenario = SampleScenario(cfg.scenario_dir, cfg.database_url)  # its tools run in the gateway
     for agent in ("assistant", "watcher"):
         definitions.pin(root / "agents" / agent, {n: t.schema_hash for n, t in scenario.tools().items()})

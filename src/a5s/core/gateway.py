@@ -11,6 +11,8 @@ what falls due, escalating overdue obligations itself.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import logging
 import re
@@ -23,6 +25,7 @@ from typing import Any
 
 import httpx
 import psycopg
+import yaml
 from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse
 from psycopg.types.json import Jsonb
@@ -30,8 +33,18 @@ from pydantic import BaseModel
 
 from a5s import db
 from a5s.config import Config, ModelConfig
-from a5s.contract import Person, Scenario, Signature, Tool, ToolCall, parse_settings
+from a5s.contract import (
+    INSTANCE_APPROVER,
+    Person,
+    Scenario,
+    Settings,
+    Signature,
+    Tool,
+    ToolCall,
+    parse_settings,
+)
 from a5s.core import (
+    approvals,
     chats,
     coretools,
     digests,
@@ -131,7 +144,9 @@ class Gateway:
         settings = parse_settings(bytes(row["raw"] or b""), signatures)
         if (settings.version, settings.serial) != (row["version"], row["serial"]):
             return None, "the settings in force aren't what was signed"
-        if not registry.signers(settings, self.scenario.person)[0]:
+        approved, _ = approvals.approvers(conn, self.cfg.seal_keys, self.scenario.name,
+                                          approvals.digest(settings.raw))
+        if not registry.signers(settings, self.scenario.person, approved)[0]:
             return None, "no instance approver signed the settings in force"
         self._checked[row["version"]] = settings
         return settings, None
@@ -300,6 +315,38 @@ class Gateway:
     def chat(self, channel: str) -> Teams | Matrix | None:
         """A chat a5s writes to itself, if it's on here."""
         return {"teams": self.teams, "matrix": self.matrix}.get(channel)
+
+    @property
+    def public_url(self) -> str:
+        """Where people reach the core's channels, for links."""
+        return (self.cfg.public_url or self.cfg.channels_url).rstrip("/")
+
+    def approving(self) -> str | None:
+        """Why approvers can't approve settings where they work here, if they can't: it takes
+        sign-in through the organisation's identity provider, and the core's seal."""
+        if self.identity is None or not self.cfg.webchat_client_id:
+            return ("approving settings where people work needs the organisation's identity "
+                    "provider and the web chat's client: see A5S_OIDC_ISSUER and "
+                    "A5S_WEBCHAT_CLIENT_ID")
+        if not self.cfg.seal_keys:
+            return "approving settings where people work needs the core's seal key: see A5S_SEAL_KEYS"
+        return None
+
+    def unusable(self, settings: Settings, last: dict | None) -> list[str]:
+        """Why a version of the settings couldn't be applied, before anyone's asked to approve it."""
+        problems = []
+        if last and settings.serial <= last["serial"]:
+            problems.append(f"serial {settings.serial} isn't above {last['serial']}, the version "
+                            "in force's: raise it")
+        tools = self.scenario.tools()
+        for instance in settings.instances:
+            release = self.definitions.get(instance.definition)
+            if release is None:
+                problems.append(f"{instance.id} names {instance.definition}, which no release here has")
+            elif missing := [t for t in release.tool_names if t not in tools]:
+                problems.append(f"{instance.definition} names tools the scenario doesn't have: "
+                                f"{', '.join(missing)}")
+        return problems
 
     # What each kind of run brings when it opens.
 
@@ -572,6 +619,10 @@ class Notice(BaseModel):
     inbound: str  # the message it answers
     text: str
     instance: str | None = None
+
+
+class Proposal(BaseModel):
+    raw: str  # exactly the bytes of a version of the settings, in base64
 
 
 def create_app(gw: Gateway) -> FastAPI:
@@ -926,6 +977,99 @@ def create_app(gw: Gateway) -> FastAPI:
                             reports.told(conn, str(item["run_id"]))
         return sent
 
+    # Settings the instance approvers approve where they work (core/approvals.py)
+
+    @app.post("/settings/proposals", dependencies=[Depends(service)])
+    def propose(body: Proposal) -> dict:
+        """Ask the instance approvers to approve a version of the settings: each gets a card in
+        the chat they last had with a5s, or a link where there are no cards. A version asked
+        about before is asked about once."""
+        if problem := gw.approving():
+            raise HTTPException(503, problem)
+        try:
+            settings = parse_settings(base64.b64decode(body.raw, validate=True))
+        except (binascii.Error, ValueError, yaml.YAMLError, KeyError, TypeError,
+                AttributeError) as exc:
+            raise HTTPException(400, f"that isn't a version of the settings: {exc}") from None
+        sends, asked = [], []
+        with db.transaction(gw.url) as conn:
+            last = approvals.latest(conn, gw.scenario.name)
+            refused = gw.unusable(settings, last)
+            if refused:
+                ledger.append(conn, {"kind": "admin", "action": "propose", "decision": "deny",
+                                     "reasons": refused, "args": {"settings": settings.version,
+                                                                  "serial": settings.serial}})
+            else:
+                row, new = approvals.propose(conn, gw.scenario.name, settings)
+                before = parse_settings(bytes(last["raw"])) if last else None
+                found = approvals.changes(before, settings, gw.definitions, gw.scenario.person)
+                link = f"{gw.public_url}/approve/?settings={row['digest']}"
+            if not refused and new:
+                ledger.append(conn, {"kind": "admin", "action": "propose", "decision": "record",
+                                     "args": {"settings": settings.version, "serial": settings.serial,
+                                              "digest": row["digest"],
+                                              "widens": any(c["widens"] for c in found)}})
+                text = approvals.text(settings.serial, found, link)
+                for approver in gw.scenario.holders(INSTANCE_APPROVER):
+                    route = gw.reach(conn, approver.id, None)
+                    ledger.append(conn, {
+                        "kind": "notice", "action": "ask-approval", "run": None, "instance": None,
+                        "acts_for": [], "decision": "record",
+                        "args": {"settings": settings.version, "to": approver.id,
+                                 "channel": route["channel"], "chars": len(text),
+                                 "sha256": hashlib.sha256(text.encode()).hexdigest()}})
+                    if route["channel"] in PUSHED:
+                        sends.append((route, text))
+                    else:  # they collect it from the local channel's inbox
+                        conn.execute("insert into outbox (person, channel, text) "
+                                     "values (%s, 'local', %s)", (approver.id, text))
+                    asked.append(approver.id)
+        if refused:
+            raise HTTPException(409, {"reasons": refused})
+        for route, text in sends:
+            deliver(route, text, None, None, card=approvals.card(settings.serial, found, link))
+        return {"settings": settings.version, "serial": settings.serial, "digest": row["digest"],
+                "link": link, "changes": found, "asked": asked, "new": new}
+
+    @app.post("/settings/sweep", dependencies=[Depends(service)])
+    def sweep_settings() -> dict:
+        """Apply the newest version of the settings an instance approver has approved where
+        they work, and let go of the versions it leaves behind."""
+        applied = []
+        with db.transaction(gw.url) as conn:
+            if not conn.execute("select pg_try_advisory_xact_lock(hashtext('a5s settings')) as got"
+                                ).fetchone()["got"]:
+                return {"applied": []}  # another sweep is at work
+            last = approvals.latest(conn, gw.scenario.name)
+            for row in conn.execute("select * from settings_proposals where scenario = %s "
+                                    "and outcome is null order by serial desc",
+                                    (gw.scenario.name,)).fetchall():
+                if last and row["serial"] <= last["serial"]:
+                    outcome = "superseded"
+                else:
+                    approved, _ = approvals.approvers(conn, gw.cfg.seal_keys, gw.scenario.name,
+                                                      row["digest"])
+                    settings = parse_settings(bytes(row["raw"]))
+                    if not registry.signers(settings, gw.scenario.person, approved)[0]:
+                        continue  # no instance approver has approved it yet
+                    if refused := gw.unusable(settings, last):  # such as a release gone since
+                        ledger.append(conn, {"kind": "admin", "action": "apply", "decision": "deny",
+                                             "reasons": refused, "args": {
+                                                 "settings": settings.version,
+                                                 "serial": settings.serial}})
+                    else:
+                        result = registry.apply(conn, gw.definitions, settings, gw.scenario.tools(),
+                                                gw.scenario.person, gw.scenario.name, approved)
+                        refused = result.refused
+                    outcome = ("refused: " + "; ".join(refused)) if refused else "applied"
+                    if not refused:
+                        last = {"serial": row["serial"]}
+                        applied.append({"serial": row["serial"], "approved_by": approved})
+                conn.execute("update settings_proposals set outcome = %s, decided_at = now() "
+                             "where scenario = %s and digest = %s",
+                             (outcome, gw.scenario.name, row["digest"]))
+        return {"applied": applied}
+
     # Instances: anyone with the role can make a5s safer alone.
 
     def who_asks(body: StatusChange) -> tuple[str, str]:
@@ -1093,10 +1237,11 @@ def create_app(gw: Gateway) -> FastAPI:
                 return JSONResponse(status_code=502, content={"error": problem})
         return {"sent": True, "text": text, "links_removed": removed}
 
-    def deliver(route: dict, text: str, run: str | None, instance: str | None) -> str | None:
+    def deliver(route: dict, text: str, run: str | None, instance: str | None,
+                card: dict | None = None) -> str | None:
         """Send text through a chat a5s writes to itself, such as Teams or Matrix, starting the
         conversation first if the route says to, and record whether it got there. The problem,
-        if not."""
+        if not. In Teams, a card goes instead of the text, if there is one."""
         channel, problem, started = route["channel"], None, False
         chat = gw.chat(channel)
         if chat is None:
@@ -1106,7 +1251,10 @@ def create_app(gw: Gateway) -> FastAPI:
                 reply_to = route["reply_to"]
                 if "start" in route:
                     reply_to, started = start(channel, chat, **route["start"])
-                chat.send(reply_to, text)
+                if card is not None and channel == "teams":
+                    chat.send(reply_to, text, card=card)
+                else:
+                    chat.send(reply_to, text)
             except (httpx.HTTPError, ValueError) as exc:
                 problem = f"{channel} didn't take it: {type(exc).__name__}: {exc}"[:200]
         record({"kind": "message", "action": "deliver", "run": run, "instance": instance,

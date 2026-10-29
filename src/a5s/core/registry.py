@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 
 import psycopg
@@ -15,8 +15,11 @@ from a5s.definitions import Definition
 Directory = Callable[[str], Person | None]
 
 
-def signers(settings: Settings, directory: Directory) -> tuple[list[str], list[str]]:
-    """Who validly signed this version, and what's wrong with any other signature."""
+def signers(settings: Settings, directory: Directory,
+            approved: Iterable[str] = ()) -> tuple[list[str], list[str]]:
+    """Who validly signed this version, with their keys or through the identity provider,
+    and what's wrong with any other signature. `approved` are the people whose approvals
+    through the identity provider the core sealed (core/approvals.py)."""
     valid, problems = [], []
     for sig in settings.signatures:
         person = directory(sig.signer)
@@ -28,6 +31,14 @@ def signers(settings: Settings, directory: Directory) -> tuple[list[str], list[s
             problems.append(f"{sig.signer}'s signature isn't for this version")
         else:
             valid.append(sig.signer)
+    for who in approved:
+        person = directory(who)
+        if person is None:
+            problems.append(f"{who}, who approved it, isn't in the directory")
+        elif INSTANCE_APPROVER not in person.roles:
+            problems.append(f"{who}, who approved it, doesn't hold the {INSTANCE_APPROVER} role")
+        elif who not in valid:
+            valid.append(who)
     return valid, problems
 
 
@@ -45,15 +56,17 @@ def apply(
     tools: dict[str, Tool],
     directory: Directory,
     scenario: str,
+    approved: Iterable[str] = (),
 ) -> Applied:
     """Bring instances in line with a signed version of the settings and the current releases.
 
     An unsigned version doesn't count, and neither does one older than the
     version in force. An instance the version leaves out is retired, and one it
     brings back is restored. Otherwise an instance's status is the core's own
-    data, so applying settings never resumes a suspended instance.
+    data, so applying settings never resumes a suspended instance. `approved` are
+    the people whose approvals of it through the identity provider the core sealed.
     """
-    valid, problems = signers(settings, directory)
+    valid, problems = signers(settings, directory, approved)
     refused = [] if valid else [f"no {INSTANCE_APPROVER} signed this version", *problems]
     for s in settings.instances:
         definition = definitions.get(s.definition)

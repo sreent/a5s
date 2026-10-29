@@ -33,9 +33,10 @@ services:
       interval: 3s
       retries: 60
 
-  gateway:
+  gateway:  # which asks instance approvers to approve settings, signing in on the page
     environment:
       <<: *identity
+      A5S_WEBCHAT_CLIENT_ID: a5s-web
     depends_on:
       keycloak: {condition: service_healthy}
 

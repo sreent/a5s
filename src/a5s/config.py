@@ -77,6 +77,10 @@ class Config:
     # The scenario a5s serves: a class built from its folder and a5s's database URL.
     scenario: str = "a5s.sample:SampleScenario"
     scenario_folder: Path | None = None  # by default, scenarios/sample
+    # The core's own keys, which seal the approvals it has checked, such as of settings. Only
+    # the core holds them. The first seals; any others are ones it's moving away from.
+    seal_keys: tuple[str, ...] = ()
+    public_url: str | None = None  # where people reach the channels, for links: else channels_url
 
     @property
     def agents_dir(self) -> Path:
@@ -97,6 +101,10 @@ class Config:
         if not token:
             token_file = root / ".a5s" / "service-token"
             token = token_file.read_text().strip() if token_file.exists() else ""
+        seal = os.environ.get("A5S_SEAL_KEYS")
+        if not seal:
+            seal_file = root / ".a5s" / "seal-key"
+            seal = seal_file.read_text().strip() if seal_file.exists() else ""
         return cls(
             database_url=os.environ.get("A5S_DATABASE_URL", DEFAULT_DATABASE_URL),
             gateway_url=os.environ.get("A5S_GATEWAY_URL", DEFAULT_GATEWAY_URL),
@@ -112,4 +120,6 @@ class Config:
             scenario=os.environ.get("A5S_SCENARIO", "a5s.sample:SampleScenario"),
             scenario_folder=Path(os.environ["A5S_SCENARIO_DIR"]) if os.environ.get("A5S_SCENARIO_DIR")
             else None,
+            seal_keys=tuple(k.strip() for k in seal.split(",") if k.strip()),
+            public_url=os.environ.get("A5S_PUBLIC_URL", "").rstrip("/") or None,
         )

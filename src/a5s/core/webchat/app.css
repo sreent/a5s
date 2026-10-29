@@ -82,3 +82,10 @@ textarea { flex: 1; font: inherit; padding: 0.5rem; resize: vertical; }
 button, select, input { font: inherit; }
 .hidden { position: absolute; left: -10000px; }
 #name { display: flex; gap: 0.5rem; align-items: end; margin-bottom: 1rem; }
+
+/* The page where an instance approver decides on a version of the settings */
+h2 { font-size: 1.2rem; margin: 0 0 0.75rem; }
+#changes { padding-left: 1.25rem; }
+#changes li { max-width: none; padding: 0.2rem 0; border: 0; border-radius: 0; background: none; }
+#changes li.widens { font-weight: 600; }
+.note { color: var(--muted); font-size: 0.9rem; }

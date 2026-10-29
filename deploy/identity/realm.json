@@ -78,7 +78,9 @@
       "directAccessGrantsEnabled": false,
       "redirectUris": [
         "http://127.0.0.1:8703/chat/*",
-        "http://localhost:8703/chat/*"
+        "http://localhost:8703/chat/*",
+        "http://127.0.0.1:8703/approve/*",
+        "http://localhost:8703/approve/*"
       ],
       "webOrigins": [
         "+"

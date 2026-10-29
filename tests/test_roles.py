@@ -8,6 +8,8 @@ from a5s.core import ledger
 
 FORGED_INBOUND = ("insert into inbound (id, channel, source_id, person, agent, text, reply_to) "
                   "values (gen_random_uuid(), 'teams', 'x', 'ben', 'assistant', 'hi', '{}')")
+FORGED_APPROVAL = ("insert into settings_approvals (scenario, digest, person, token, nonce, salt, "
+                   "issuer, subject, seal) values ('sample', 'x', 'ana', 'x', 'x', 'x', 'x', 'x', 'x')")
 
 
 def refused(url: str, statement: str) -> bool:
@@ -39,6 +41,8 @@ def ledgered(database):
     "update obligations set chased_at = null, escalations = 0",
     "insert into schedule_fires (instance_id, schedule, due_at, outcome) values ('x', 'x', now(), 'x')",
     "insert into outbox (person, channel, text) values ('ben', 'local', 'forged')",
+    FORGED_APPROVAL,
+    "update instances set serves = '{chen}'",
 ])
 def test_the_scheduler_cant_write_the_cores_records(ledgered, statement):
     assert refused(db.as_role(ledgered, "scheduler"), statement)
@@ -61,12 +65,18 @@ def test_not_even_the_administrator_truncates_the_ledger_without_disabling_its_g
     ("anchor", "select * from turns"),
     ("channels", "update instances set status = 'active'"),
     ("channels", "select * from turns"),
-    ("gateway", "update instances set serves = '{chen}'"),
+    ("gateway", "delete from instances"),
     ("gateway", "delete from obligations"),
     ("gateway", "delete from schedule_fires"),
     ("channels", "update obligations set done_at = now()"),
-    ("gateway", ("insert into settings_versions (scenario, serial, version, signers) "
-                "values ('sample', 99, 'forged', '{}')")),
+    ("channels", ("insert into settings_versions (scenario, serial, version, signers) "
+                 "values ('sample', 99, 'forged', '{}')")),
+    ("gateway", FORGED_APPROVAL),  # only the channels, where approvers sign in, record them
+    ("gateway", "update settings_proposals set raw = 'forged'"),
+    ("channels", "update settings_approvals set seal = 'forged'"),
+    ("channels", "delete from settings_approvals"),
+    ("channels", ("insert into settings_proposals (scenario, digest, version, serial, raw) "
+                 "values ('sample', 'x', 'x', 99, 'x')")),
 ])
 def test_each_part_has_only_the_rights_its_job_needs(ledgered, part, statement):
     assert refused(db.as_role(ledgered, part), statement)

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>a5s: settings to approve</title>
+<link rel="stylesheet" href="/chat/app.css">
+<script src="/approve/approve.js" defer></script>
+</head>
+<body>
+<header>
+  <h1>a5s</h1>
+  <span id="who"></span>
+</header>
+<main>
+  <h2>Settings to approve</h2>
+  <p id="status" role="status"></p>
+  <section id="version" hidden>
+    <p id="summary"></p>
+    <ul id="changes"></ul>
+    <p id="approvals"></p>
+    <p class="note">Approve only if you mean these changes. Your sign-in approves this version
+      alone, and only once.</p>
+    <button id="approve" type="button" hidden>Approve</button>
+  </section>
+</main>
+</body>
+</html>

@@ -180,19 +180,24 @@ class Teams:
                                         time.monotonic() + int(body.get("expires_in", 3600)) - 300)
             return body["access_token"]
 
-    def send(self, reply_to: dict[str, str], text: str) -> None:
+    def send(self, reply_to: dict[str, str], text: str, card: dict | None = None) -> None:
         """Send text into the conversation a message came from, as the bot it was sent to:
-        in reply to the message, if `reply_to` names one, or else as a new message."""
+        in reply to the message, if `reply_to` names one, or else as a new message. With an
+        Adaptive Card, the card goes instead, and the text's first line sums it up in
+        notifications."""
         if not self.allowed(reply_to["service_url"]):  # the bot's token goes nowhere else
             raise ValueError("a5s sends only to the service URLs Teams uses")
         bot = self.bots.get(reply_to.get("app_id", ""))
         if bot is None:
             raise ValueError("the message came to a bot a5s no longer has")
         conversation = quote(reply_to["conversation"], safe="")
+        said = ({"text": text, "textFormat": "markdown"} if card is None else
+                {"summary": text.split("\n", 1)[0], "attachments": [
+                    {"contentType": "application/vnd.microsoft.card.adaptive", "content": card}]})
         r = self.http.post(
             f"{reply_to['service_url'].rstrip('/')}/v3/conversations/{conversation}/activities",
             headers={"Authorization": f"Bearer {self._bot_token(bot)}"},
-            json={"type": "message", "text": text, "textFormat": "markdown",
+            json={"type": "message", **said,
                   "from": {"id": reply_to["bot"]}, "conversation": {"id": reply_to["conversation"]},
                   **({"replyToId": reply_to["activity"]} if reply_to.get("activity") else {})},
         )
