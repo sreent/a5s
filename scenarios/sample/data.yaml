@@ -1,9 +1,13 @@
 # Made-up people and records for a5s's sample scenario.
 
+# Their identities are made-up Entra ID object ids, which Teams sends with each message.
 people:
-  - {id: ana, name: Ana Ortiz, team: finance, roles: [instance-approver]}
-  - {id: ben, name: Ben Okafor, team: finance}
-  - {id: chen, name: Chen Wei, team: operations}
+  - {id: ana, name: Ana Ortiz, team: finance, roles: [instance-approver],
+     identities: ["entra:0a5a0000-0000-4000-8000-00000000a0a1"]}
+  - {id: ben, name: Ben Okafor, team: finance,
+     identities: ["entra:0a5a0000-0000-4000-8000-00000000b0b2"]}
+  - {id: chen, name: Chen Wei, team: operations,
+     identities: ["entra:0a5a0000-0000-4000-8000-00000000c0c3"]}
 
 records:
   - {key: Q-1001, title: Invoice sent to the wrong address, status: open, customer: Northwind, owner: ana, due: "2026-11-04"}

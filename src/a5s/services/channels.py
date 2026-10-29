@@ -2,7 +2,8 @@
 
 Agents' messages arrive in the outbox through the gateway. When an agent can't
 help, the channel service says so itself, in code, without running a model.
-Phase 1 has the local channel. The Teams adapter delivers from the same outbox.
+This is the local channel, for development. Teams is in the core
+(core/teams.py), because a5s must check the messages Teams sends itself.
 """
 
 from __future__ import annotations

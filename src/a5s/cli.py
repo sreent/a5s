@@ -8,6 +8,7 @@ import logging
 import os
 import secrets
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -16,7 +17,7 @@ import yaml
 
 from a5s import build, db, definitions, devdb, worker
 from a5s.config import DEFAULT_DATABASE_URL, Config
-from a5s.core import anchor, ledger, registry, signing
+from a5s.core import anchor, ledger, registry, signing, teams
 from a5s.core.identity import verifier_from_env
 from a5s.services import channels
 from a5s.services.scheduler import Scheduler, remote_worker
@@ -106,8 +107,14 @@ def _service(cfg: Config, name: str):
         return build.app(cfg)
     if name == "worker":
         return worker.create_app(cfg.gateway_url)
+    if name == "teams":
+        gw = build.gateway(cfg)
+        if gw.teams is None:
+            sys.exit("Set A5S_TEAMS_APP_ID, A5S_TEAMS_APP_SECRET and A5S_TEAMS_TENANT_ID.")
+        return teams.create_app(gw)
     hand_off = remote_worker(cfg.worker_url) if cfg.worker_url else worker.run_agent
     scheduler = Scheduler(cfg, build.scenario(cfg), worker=hand_off)
+    threading.Thread(target=scheduler.listen, args=(threading.Event(),), daemon=True).start()
     return channels.create_app(scheduler, cfg.database_url, verifier_from_env())
 
 
@@ -171,7 +178,8 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("setup", help="set up the schema and apply the settings, for a deployment")
     for name, port, what in (("gateway", 8700, "the gateway, in the trusted core"),
                              ("scheduler", 8701, "the scheduler, with the local channel"),
-                             ("worker", 8702, "a worker, which holds no secrets")):
+                             ("worker", 8702, "a worker, which holds no secrets"),
+                             ("teams", 8703, "the endpoint Teams sends messages to, in the core")):
         service = sub.add_parser(name, help=f"run {what}")
         service.add_argument("--host", default="127.0.0.1")
         service.add_argument("--port", type=int, default=port)
@@ -209,7 +217,7 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "setup":
         db.migrate(cfg.database_url)
         _apply(cfg)
-    elif args.command in ("gateway", "scheduler", "worker"):
+    elif args.command in ("gateway", "scheduler", "worker", "teams"):
         import uvicorn
 
         uvicorn.run(_service(cfg, args.command), host=args.host, port=args.port)

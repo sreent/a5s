@@ -24,6 +24,7 @@ class Person:
     in_audience: bool = True  # whether agents may message them at all
     roles: tuple[str, ...] = ()
     public_key: str | None = None  # for checking what they sign
+    identities: tuple[str, ...] = ()  # their accounts elsewhere, such as entra:<object id>
 
 
 @dataclass(frozen=True)
@@ -100,6 +101,9 @@ class Scenario(Protocol):
     record_links: tuple[str, ...]  # the only link prefixes agents' messages may carry
 
     def person(self, person_id: str) -> Person | None: ...
+
+    def find(self, identity: str) -> Person | None:
+        """Whose account elsewhere this is, such as entra:<object id> for Teams."""
 
     def tools(self) -> dict[str, Tool]: ...
 

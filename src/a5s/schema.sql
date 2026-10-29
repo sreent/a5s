@@ -66,6 +66,23 @@ drop trigger if exists ledger_append_only on ledger;
 create trigger ledger_append_only before update or delete on ledger
   for each row execute function a5s_ledger_append_only();
 
+-- Messages the core received from a channel that signs them, such as Teams,
+-- with the sender it checked. A run answering one names it, and uses it once.
+create table if not exists inbound (
+  id uuid primary key,
+  channel text not null,
+  source_id text not null,  -- the channel's own id for it, so a resent message counts once
+  person text not null,
+  agent text not null,
+  text text not null,
+  reply_to jsonb not null,  -- where answers go
+  received_at timestamptz not null default now(),
+  claimed_at timestamptz,  -- by the scheduler
+  answered_at timestamptz,  -- when a run opened for it
+  notices int not null default 0,  -- a5s's own notices sent in answer to it
+  unique (channel, source_id)
+);
+
 -- Services: conversations, the outbox and leases.
 
 create table if not exists turns (

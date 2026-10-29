@@ -34,12 +34,16 @@ class SampleScenario:
     def _person(self, entry: dict) -> Person:
         key = self.folder / "keys" / f"{entry['id']}.pub"
         return Person(
-            **{**entry, "roles": tuple(entry.get("roles", ()))},
+            **{**entry, "roles": tuple(entry.get("roles", ())),
+               "identities": tuple(entry.get("identities", ()))},
             public_key=key.read_text().strip() if key.exists() else None,
         )
 
     def person(self, person_id: str) -> Person | None:
         return self._people.get(person_id)
+
+    def find(self, identity: str) -> Person | None:
+        return next((p for p in self._people.values() if identity in p.identities), None)
 
     # Settings
 

@@ -12,6 +12,7 @@ from a5s.core.gateway import Gateway, create_app
 from a5s.core.identity import verifier_from_env
 from a5s.core.policy import PolicyEngine
 from a5s.core.stores import Store, store_from_url
+from a5s.core.teams import Teams, TeamsConfig
 from a5s.sample import SampleScenario
 
 
@@ -30,6 +31,7 @@ def gateway(cfg: Config, http: httpx.Client | None = None) -> Gateway:
         definitions=definitions.load_all(cfg.agents_dir),
         http=http or httpx.Client(),
         identity=verifier_from_env(),
+        teams=Teams(teams) if (teams := TeamsConfig.from_env()) else None,
     )
 
 

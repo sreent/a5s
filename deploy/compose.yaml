@@ -11,6 +11,11 @@ x-a5s: &a5s
 x-database: &database
   A5S_DATABASE_URL: postgresql://a5s:${A5S_DB_PASSWORD:?set A5S_DB_PASSWORD}@postgres:5432/postgres
 
+x-teams: &teams  # the bot's registration in Entra ID, if a5s talks to people in Teams
+  A5S_TEAMS_APP_ID: ${A5S_TEAMS_APP_ID:-}
+  A5S_TEAMS_APP_SECRET: ${A5S_TEAMS_APP_SECRET:-}
+  A5S_TEAMS_TENANT_ID: ${A5S_TEAMS_TENANT_ID:-}
+
 services:
   postgres:
     image: postgres:16
@@ -38,7 +43,7 @@ services:
     <<: *a5s
     command: ["gateway", "--host", "0.0.0.0"]
     environment:
-      <<: *database
+      <<: [*database, *teams]
       A5S_SERVICE_TOKEN: ${A5S_SERVICE_TOKEN:?set A5S_SERVICE_TOKEN}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       QWEN_API_KEY: ${QWEN_API_KEY:-}
@@ -57,6 +62,17 @@ services:
     networks: [data, work, edge]
     ports: ["127.0.0.1:${A5S_CHANNEL_PORT:-8701}:8701"]
     depends_on: [gateway, worker]
+
+  teams:  # the endpoint Teams sends messages to, in the core: the only part on the internet
+    <<: *a5s
+    command: ["teams", "--host", "0.0.0.0"]
+    profiles: [teams]
+    environment:
+      <<: [*database, *teams]
+    networks: [data, egress, edge]
+    ports: ["127.0.0.1:${A5S_TEAMS_PORT:-8703}:8703"]
+    depends_on:
+      setup: {condition: service_completed_successfully}
 
   anchor:  # copies the ledger to locked storage every hour, so a rewritten history shows
     <<: *a5s
