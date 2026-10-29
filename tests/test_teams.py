@@ -234,7 +234,7 @@ def test_a_teams_run_writes_only_to_the_person_it_answers(stack, bot):
     with stack.client(opened.json()["token"]) as c:
         denied = c.post("/run/messages", json={"to": "ben", "text": "Psst, Ben."})
     assert denied.status_code == 403
-    assert denied.json()["reasons"] == ["answers-the-sender"] and not bot.sent
+    assert denied.json()["reasons"] == ["writes-to-whom-it-acts-for"] and not bot.sent
 
 
 def test_a_busy_conversation_waits_in_the_queue_without_holding_others_up(stack, bot):
@@ -274,3 +274,32 @@ def test_each_agent_talks_to_people_as_its_own_bot(stack, bot):
     [answer] = bot.sent
     assert answer["text"].startswith("There's no watcher for you yet.")
     assert answer["as"] == WATCHER_APP  # not the assistant's bot
+
+
+def test_a_reminder_goes_to_the_teams_chat_the_person_last_wrote_in(stack, bot):
+    stack.model.reply("Q-1001 mentions an invoice.")
+    httpx.post(bot.url, json=activity(), headers=bot.auth()).raise_for_status()
+    stack.scheduler().answer_waiting()
+
+    stack.at("2026-11-02T09:30:00+00:00")  # half the time for Ana's and Ben's questions has passed
+    stack.model.reply("Ana, Q-1001 is due on Wednesday.")
+    stack.model.reply("Ben, Q-1002 is due on Friday.")
+    assert stack.scheduler().work_due() == 2
+    reminder = bot.sent[-1]
+    assert reminder["text"] == "Ana, Q-1001 is due on Wednesday." and reminder["as"] == APP_ID
+    assert "replyToId" not in reminder and reminder["conversation"] == {"id": "a:1-chat"}
+    assert [m["text"] for m in stack.inbox("ben")] == ["Ben, Q-1002 is due on Friday."]  # no chat yet
+
+
+def test_an_escalation_reaches_teams_too(stack, bot):
+    stack.model.reply("Hello, Ana.")
+    httpx.post(bot.url, json=activity("Hello"), headers=bot.auth()).raise_for_status()
+    stack.scheduler().answer_waiting()
+    stack.suspend(by="ben")
+    stack.at("2026-11-09T09:00:00+00:00")  # Ben's Q-1002 was due on Friday, and Ana is next up
+    stack.scheduler().work_due()
+    escalated = bot.sent[-1]
+    assert escalated["text"].startswith("Q-1002, Refund for a duplicate payment, was due on Fri 6 Nov")
+    assert "replyToId" not in escalated
+    [delivered] = [e for e in stack.ledger() if e["action"] == "deliver"][-1:]
+    assert delivered["outcome"] == {"status": "ok", "channel": "teams"}

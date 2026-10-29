@@ -34,6 +34,11 @@ def ledgered(database):
     "insert into ledger (seq, entry, prev_hash, hash) values (99, '{}', 'x', 'x')",
     "update inbound set answered_at = now()",
     "truncate ledger",
+    ("insert into obligations (scenario, source, record, person, title, opened_at, due_at) "
+     "values ('sample', 'records', 'Q-9', 'ben', 'forged', now(), now())"),
+    "update obligations set chased_at = null, escalations = 0",
+    "insert into schedule_fires (instance_id, schedule, due_at, outcome) values ('x', 'x', now(), 'x')",
+    "insert into outbox (person, channel, text) values ('ben', 'local', 'forged')",
 ])
 def test_the_scheduler_cant_write_the_cores_records(ledgered, statement):
     assert refused(db.as_role(ledgered, "scheduler"), statement)
@@ -57,6 +62,9 @@ def test_not_even_the_administrator_truncates_the_ledger_without_disabling_its_g
     ("channels", "update instances set status = 'active'"),
     ("channels", "select * from turns"),
     ("gateway", "update instances set serves = '{chen}'"),
+    ("gateway", "delete from obligations"),
+    ("gateway", "delete from schedule_fires"),
+    ("channels", "update obligations set done_at = now()"),
     ("gateway", ("insert into settings_versions (scenario, serial, version, signers) "
                 "values ('sample', 99, 'forged', '{}')")),
 ])

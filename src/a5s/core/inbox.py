@@ -171,4 +171,24 @@ def create_app(gw: Any) -> FastAPI:
                 return {"replies": [r["text"] for r in sorted(said, key=lambda r: r["id"])]}
             time.sleep(0.25)
 
+    @app.get("/channels/local/inbox")
+    def inbox(wait: float = 0, person: str | None = None,
+              authorization: str | None = Header(default=None)) -> dict:
+        """What's been written to someone without answering a message of theirs, such as an
+        agent's reminder or a5s's escalation, waiting up to `wait` seconds for something."""
+        who, _ = sender(authorization, person)
+        deadline = time.monotonic() + min(max(wait, 0), 600)
+        while True:
+            with db.transaction(gw.url) as conn:
+                said = conn.execute(
+                    "update outbox set delivered_at = now() where id in ("
+                    "  select id from outbox where person = %s and channel = 'local' "
+                    "  and inbound_id is null and delivered_at is null for update skip locked) "
+                    "returning id, run_id, instance_id, text, at", (who,)).fetchall()
+            if said or time.monotonic() >= deadline:
+                return {"messages": [  # a run's message is its agent's; any other is a5s's own
+                    {"from": r["instance_id"] if r["run_id"] else "a5s", "text": r["text"],
+                     "at": r["at"].isoformat()} for r in sorted(said, key=lambda r: r["id"])]}
+            time.sleep(0.25)
+
     return app

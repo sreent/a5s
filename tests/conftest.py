@@ -12,6 +12,7 @@ import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -206,6 +207,18 @@ class Stack:
             return r.json()["detail"]
         (scheduler or self.scheduler()).answer_waiting()
         return "\n".join(self.answers(r.json()["message"], person))
+
+    def inbox(self, person: str = "ana") -> list[dict]:
+        """What's been written to someone without answering them, such as reminders."""
+        r = httpx.get(f"{self.channels_url}/channels/local/inbox", params={"person": person},
+                      timeout=30)
+        r.raise_for_status()
+        return r.json()["messages"]
+
+    def at(self, when: str) -> None:
+        """Set the core's clock, by which obligations and schedules fall due."""
+        moment = datetime.fromisoformat(when)
+        self.gateway.clock = lambda: moment
 
     @property
     def url(self) -> str:

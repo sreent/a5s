@@ -1,6 +1,6 @@
 # Sample Scenario
 
-a5s's own stand-in for a real scenario, with made-up data: a directory of three people, a records system of customer questions, and a store for drafts. Phase 1 builds and tests against it. The code is in [`src/a5s/sample.py`](../../src/a5s/sample.py).
+a5s's own stand-in for a real scenario, with made-up data: a directory of four people, in two reporting lines and two time zones, a records system of customer questions, each owed by its owner until it's closed, and a store for drafts. Phase 1 builds and tests against it. The code is in [`src/a5s/sample.py`](../../src/a5s/sample.py).
 
 | File | Holds |
 | --- | --- |

@@ -3,6 +3,10 @@
 For each call, in one Postgres transaction, it reads the run's envelope, asks
 policy, and writes the ledger. Only then does it make the call. Workers hold
 only a run token. Provider keys and tool implementations stay on this side.
+
+It also opens and closes runs, for the scheduler: to answer a message, to
+remind someone of an obligation, or to work on a schedule. And it works out
+what falls due, escalating overdue obligations itself.
 """
 
 from __future__ import annotations
@@ -12,7 +16,9 @@ import logging
 import re
 import secrets
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -25,7 +31,7 @@ from pydantic import BaseModel
 from a5s import db
 from a5s.config import Config, ModelConfig
 from a5s.contract import Scenario, Signature, Tool, ToolCall, parse_settings
-from a5s.core import ledger, models, registry
+from a5s.core import ledger, models, obligations, registry, schedules
 from a5s.core.identity import IdentityError, UnknownPerson, Verifier, signed_in
 from a5s.core.policy import Decision, PolicyEngine
 from a5s.core.teams import Teams
@@ -86,6 +92,7 @@ class Gateway:
     http: httpx.Client
     identity: Verifier | None = None  # for the local channel's sign-in; else development only
     teams: Teams | None = None
+    clock: Callable[[], datetime] = lambda: datetime.now(UTC)  # when obligations and schedules are due
     _checked: dict = field(default_factory=dict)  # settings versions whose signatures checked out
 
     @property
@@ -164,6 +171,95 @@ class Gateway:
         return conn.execute("select id::text, person, channel, reply_to from inbound where id = %s",
                             (inbound,)).fetchone()
 
+    @staticmethod
+    def reach(conn: psycopg.Connection, person: str, agent: str | None) -> dict:
+        """How to write to someone who isn't waiting for an answer: in the conversation they
+        last wrote in, to this agent if they have. Otherwise they collect it from the local
+        channel's inbox."""
+        row = conn.execute("select channel, reply_to from inbound where person = %s "
+                           "order by (agent = %s) desc nulls last, received_at desc limit 1",
+                           (person, agent)).fetchone()
+        if row is None or row["channel"] != "teams":
+            return {"channel": "local", "reply_to": {}}
+        return {"channel": "teams",  # a new message in that conversation, not a reply to one
+                "reply_to": {k: v for k, v in row["reply_to"].items() if k != "activity"}}
+
+    # What each kind of run brings when it opens.
+
+    def answering(self, conn: psycopg.Connection, inst: dict, trigger: dict,
+                  _now: datetime) -> Opening:
+        """A run that answers a message the core received, acting for its sender."""
+        try:
+            inbound = str(uuid.UUID(str(trigger.get("inbound"))))
+        except ValueError:
+            raise HTTPException(400, "name the message the run answers") from None
+        message, problem = self.take_message(conn, inbound)
+        sender = message["person"] if message else None
+        opening = Opening(
+            trigger={"kind": "message", "inbound": inbound,
+                     "channel": message["channel"] if message else None, "sender": sender},
+            acts_for=[sender] if sender else [], reasons=[problem] if problem else [],
+            args={"channel": message["channel"] if message else None, "inbound": inbound},
+            used=problem is not None and "already" in problem)
+        if message and message["agent"] != inst["definition"]:
+            opening.reasons.append(f"the message is for the {message['agent']}, "
+                                   f"not the {inst['definition']}")
+        return opening
+
+    def reminding(self, conn: psycopg.Connection, inst: dict, trigger: dict,
+                  now: datetime) -> Opening:
+        """A run that reminds someone of what they owe, acting for them."""
+        try:
+            number = int(trigger.get("obligation"))
+        except (TypeError, ValueError):
+            raise HTTPException(400, "name the obligation the run is for") from None
+        row = conn.execute("select * from obligations where id = %s and scenario = %s for update",
+                           (number, self.scenario.name)).fetchone()
+        if row is None:
+            return Opening({"kind": "obligation", "obligation": number}, [], {"obligation": number},
+                           ["there's no such obligation"])
+        person = self.scenario.person(row["person"])
+        opening = Opening(
+            trigger={"kind": "obligation", "obligation": number, "record": row["record"],
+                     "person": row["person"]},
+            acts_for=[row["person"]], args={"obligation": number, "record": row["record"]},
+            reasons=[], task=obligations.chase(row, person) if person else None,
+            used=row["chased_at"] is not None or row["escalations"] > 0)
+        if row["done_at"]:
+            opening.reasons.append("the records no longer owe it")
+        if opening.used:
+            opening.reasons.append("its person has been reminded, or it has been escalated")
+        if row["instance_id"] != inst["id"]:
+            opening.reasons.append(f"{inst['id']} doesn't act on it")
+        if now < obligations.halfway(row):
+            opening.reasons.append("half its time hasn't passed yet")
+        if person is None or not obligations.working(person, now):
+            opening.reasons.append(f"it's outside {row['person']}'s working hours")
+        return opening
+
+    def scheduled(self, conn: psycopg.Connection, inst: dict, trigger: dict,
+                  now: datetime) -> Opening:
+        """A run on one of the release's schedules, acting for nobody."""
+        name = str(trigger.get("schedule"))
+        definition = self.definitions.get(inst["definition"])
+        found = [s for s in definition.schedules if s.name == name] if (
+            definition and definition.release_id == inst["release"]) else []
+        due = schedules.due_now(found[0], schedules.zone(self.scenario, inst["owner"]),
+                                now) if found else None
+        opening = Opening(trigger={"kind": "schedule", "schedule": name,
+                                   "due": due.isoformat() if due else None},
+                          acts_for=[], args={"schedule": name, "due": due.isoformat() if due else None},
+                          reasons=[], task=found[0].task if found else None, due=due)
+        if not found:
+            opening.reasons.append(f"{inst['id']}'s release has no schedule {name}")
+        elif due is None:
+            opening.reasons.append(f"{name} isn't due")
+        elif conn.execute("select 1 from schedule_fires where instance_id = %s and schedule = %s "
+                          "and due_at = %s", (inst["id"], name, due)).fetchone():
+            opening.reasons.append(f"{name} has fired already")
+            opening.used = True
+        return opening
+
     # Cedar entities, built from the core's own records for every call.
 
     @staticmethod
@@ -218,6 +314,19 @@ class Gateway:
         }
 
 
+@dataclass
+class Opening:
+    """What a trigger brings to a run: whom it acts for, and why it can't open, if it can't."""
+
+    trigger: dict  # kept with the run
+    acts_for: list[str]
+    args: dict  # for the ledger
+    reasons: list[str]
+    task: str | None = None  # what a5s asks the agent to do, if it isn't answering a message
+    used: bool = False  # the trigger has been used already, such as a message answered before
+    due: datetime | None = None  # the time a schedule fires for
+
+
 def load_run(conn: psycopg.Connection, token: str) -> dict:
     row = conn.execute(
         """
@@ -234,7 +343,9 @@ def load_run(conn: psycopg.Connection, token: str) -> dict:
 
 class OpenRun(BaseModel):
     instance: str
-    trigger: dict[str, Any]  # phase 1's only trigger: {"kind": "message", "inbound": <id>}
+    # {"kind": "message", "inbound": <id>}, {"kind": "obligation", "obligation": <id>},
+    # or {"kind": "schedule", "schedule": <name>}
+    trigger: dict[str, Any]
 
 
 class CloseRun(BaseModel):
@@ -289,50 +400,55 @@ def create_app(gw: Gateway) -> FastAPI:
 
     @app.post("/runs", dependencies=[Depends(service)])
     def open_run(body: OpenRun) -> dict:
-        if body.trigger.get("kind") != "message":
-            raise HTTPException(400, "phase 1 opens runs only to answer messages")
-        try:
-            inbound = str(uuid.UUID(str(body.trigger.get("inbound"))))
-        except ValueError:
-            raise HTTPException(400, "name the message the run answers") from None
+        kind = body.trigger.get("kind")
+        opens = {"message": gw.answering, "obligation": gw.reminding, "schedule": gw.scheduled}
+        if kind not in opens:
+            raise HTTPException(400, "a run answers a message, reminds someone of an obligation, "
+                                     "or works on a schedule")
         token = secrets.token_urlsafe(32)
         run_id = str(uuid.uuid4())
+        now = gw.clock()
         with db.transaction(gw.url) as conn:
             inst = conn.execute("select * from instances where id = %s", (body.instance,)).fetchone()
             if inst is None:
                 raise HTTPException(404, f"no instance {body.instance}")
-            message, problem = gw.take_message(conn, inbound)
-            reasons = [problem] if problem else []
-            sender = message["person"] if message else None
-            acts_for = [sender] if sender else []
-            trigger = {"kind": "message", "inbound": inbound,
-                       "channel": message["channel"] if message else None, "sender": sender}
-            if message and message["agent"] != inst["definition"]:
-                reasons.append(f"the message is for the {message['agent']}, "
-                               f"not the {inst['definition']}")
+            opening = opens[kind](conn, inst, body.trigger, now)
+            reasons = opening.reasons
             if inst["status"] != "active":
                 reasons.append(f"{body.instance} is {inst['status']}")
-            if any(p not in inst["serves"] for p in acts_for):
-                reasons.append(f"{body.instance} doesn't serve {sender}")
+            if any(p not in inst["serves"] for p in opening.acts_for):
+                reasons.append(f"{body.instance} doesn't serve {', '.join(opening.acts_for)}")
             reasons += gw.check_instance(conn, inst)
+            if opening.due and not opening.used:  # a schedule fires once for each time, run or not
+                fired = conn.execute(
+                    "insert into schedule_fires (instance_id, schedule, due_at, fired_at, run_id, "
+                    "outcome) values (%s, %s, %s, %s, %s, %s) on conflict do nothing returning 1",
+                    (body.instance, opening.trigger["schedule"], opening.due, now,
+                     None if reasons else run_id, "; ".join(reasons) or "run")).fetchone()
+                if fired is None:
+                    reasons.append(f"{opening.trigger['schedule']} has fired already")
+                    opening.used = True
+            if kind == "obligation" and not reasons:
+                conn.execute("update obligations set chased_at = %s, updated_at = %s where id = %s",
+                             (now, now, opening.trigger["obligation"]))
             if not reasons:
                 conn.execute(
                     "insert into runs (id, instance_id, token_hash, trigger, acts_for, expires_at) "
                     "values (%s, %s, %s, %s, %s, now() + make_interval(mins => %s))",
-                    (run_id, body.instance, token_hash(token), Jsonb(trigger), acts_for,
-                     RUN_MINUTES),
+                    (run_id, body.instance, token_hash(token), Jsonb(opening.trigger),
+                     opening.acts_for, RUN_MINUTES),
                 )
             ledger.append(conn, {
                 "kind": "run", "action": "open", "run": None if reasons else run_id,
-                "instance": body.instance, "acts_for": acts_for,
+                "instance": body.instance, "acts_for": opening.acts_for,
                 "decision": "deny" if reasons else "allow", "reasons": reasons,
-                "args": {"trigger": "message", "channel": trigger["channel"], "inbound": inbound},
+                "args": {"trigger": kind, **opening.args},
             })
         if reasons:
             raise HTTPException(409, {"reasons": reasons, "status": inst["status"],
                                       "owner": inst["owner"], "suspended_by": inst["suspended_by"],
-                                      "answered": problem is not None and "already" in problem})
-        return {"run": run_id, "token": token}
+                                      "answered": opening.used})
+        return {"run": run_id, "token": token, "task": opening.task}
 
     @app.post("/runs/sweep", dependencies=[Depends(service)])
     def sweep() -> list[dict]:
@@ -363,6 +479,90 @@ def create_app(gw: Gateway) -> FastAPI:
                                  "instance": row["instance_id"], "decision": "record",
                                  "outcome": body.outcome})
         return {"closed": run_id}
+
+    # What falls due: obligations to remind people of or escalate, and schedules to fire.
+
+    @app.post("/obligations/sweep", dependencies=[Depends(service)])
+    def sweep_obligations() -> list[dict]:
+        """Bring the obligations in line with the records, and escalate those due, in code.
+
+        Returns the ones whose agents should remind their people now, for the
+        scheduler to run.
+        """
+        now, sends, escalated = gw.clock(), [], set()
+        with db.transaction(gw.url) as conn:
+            if not conn.execute("select pg_try_advisory_xact_lock(%s) as got",
+                                (obligations.LOCK,)).fetchone()["got"]:
+                return []  # another sweep is at work
+            obligations.sync(conn, gw.scenario, gw.definitions, now)
+            instances = {i["id"]: i for i in conn.execute("select * from instances")}
+            able = {iid: inst["status"] == "active" and not gw.check_instance(conn, inst)
+                    for iid, inst in instances.items()}
+            rows = conn.execute(
+                "select o.*, i.definition as agent from obligations o "
+                "left join instances i on i.id = o.instance_id "
+                "where o.scenario = %s and o.done_at is null order by o.due_at, o.id",
+                (gw.scenario.name,)).fetchall()
+            for row in rows:
+                to = obligations.to_escalate(row, gw.scenario, now, able.get(row["instance_id"], False))
+                if to is None:
+                    continue
+                text = obligations.escalation(row, gw.scenario, to, instances.get(row["instance_id"]))
+                conn.execute("update obligations set escalations = escalations + 1, "
+                             "escalated_at = %s, escalated_to = %s, updated_at = %s where id = %s",
+                             (now, to.id, now, row["id"]))
+                route = gw.reach(conn, to.id, row["agent"])
+                ledger.append(conn, {
+                    "kind": "notice", "action": "escalate", "run": None,
+                    "instance": row["instance_id"], "acts_for": [], "decision": "record",
+                    "args": {"obligation": row["id"], "record": row["record"],
+                             "person": row["person"], "to": to.id, "step": row["escalations"] + 1,
+                             "channel": route["channel"], "chars": len(text),
+                             "sha256": hashlib.sha256(text.encode()).hexdigest()}})
+                if route["channel"] == "teams":
+                    sends.append((route["reply_to"], text, row["instance_id"]))
+                else:  # people collect it from the local channel's inbox
+                    conn.execute("insert into outbox (instance_id, person, channel, text) "
+                                 "values (%s, %s, 'local', %s)", (row["instance_id"], to.id, text))
+                escalated.add(row["id"])
+            due = [d for d in obligations.to_chase(rows, gw.scenario, now, able)
+                   if d["obligation"] not in escalated]
+        for reply_to, text, instance in sends:
+            deliver(reply_to, text, None, instance)
+        return due
+
+    @app.post("/schedules/sweep", dependencies=[Depends(service)])
+    def sweep_schedules() -> list[dict]:
+        """The schedules due to fire now, for the scheduler to run. A time that falls while
+        an instance is suspended is recorded as skipped, so it isn't made up later."""
+        now, due = gw.clock(), []
+        with db.transaction(gw.url) as conn:
+            for inst in conn.execute("select * from instances where status in ('active', 'suspended') "
+                                     "order by id").fetchall():
+                definition = gw.definitions.get(inst["definition"])
+                if definition is None or definition.release_id != inst["release"]:
+                    continue
+                where = schedules.zone(gw.scenario, inst["owner"])
+                for schedule in definition.schedules:
+                    at = schedules.due_now(schedule, where, now)
+                    if at is None or conn.execute(
+                            "select 1 from schedule_fires where instance_id = %s and schedule = %s "
+                            "and due_at = %s", (inst["id"], schedule.name, at)).fetchone():
+                        continue
+                    if inst["status"] == "active":
+                        due.append({"kind": "schedule", "schedule": schedule.name,
+                                    "instance": inst["id"], "agent": inst["definition"]})
+                    elif conn.execute(
+                            "insert into schedule_fires (instance_id, schedule, due_at, fired_at, "
+                            "outcome) values (%s, %s, %s, %s, 'suspended') on conflict do nothing "
+                            "returning 1", (inst["id"], schedule.name, at, now)).fetchone():
+                        ledger.append(conn, {
+                            "kind": "run", "action": "open", "run": None, "instance": inst["id"],
+                            "acts_for": [], "decision": "deny",
+                            "reasons": [f"{inst['id']} is suspended"],
+                            "args": {"trigger": "schedule", "schedule": schedule.name,
+                                     "due": at.isoformat()}})
+        return due
 
     # Instances: anyone with the role can make a5s safer alone.
 
@@ -473,26 +673,30 @@ def create_app(gw: Gateway) -> FastAPI:
         }
         with db.transaction(gw.url) as conn:
             row = load_run(conn, token)
-            message = gw.message_of(conn, row["trigger"].get("inbound"))
-            if message is None or message["person"] != body.to:
-                why = "a run writes only to the person whose message it answers"
-                decision = Decision(False, ("answers-the-sender",), explanations=(why,))
+            inbound = row["trigger"].get("inbound")
+            route = None
+            if body.to not in row["acts_for"]:
+                why = ("a run writes only to the people it acts for, such as whoever sent the "
+                       "message it answers")
+                decision = Decision(False, ("writes-to-whom-it-acts-for",), explanations=(why,))
             else:
                 decision = gw.decide(row, "send_message", recipient, [])
+                route = (gw.message_of(conn, inbound) if inbound  # an answer, where it was asked
+                         else gw.reach(conn, body.to, row["definition"]))
             ledger.append(conn, gw.entry(row, "message", "send", decision, args={
                 "to": body.to, "chars": len(text), "sha256": hashlib.sha256(text.encode()).hexdigest(),
                 "links_removed": removed,
             }))
-            if decision.allowed and message["channel"] != "teams":  # people collect it from here
+            if decision.allowed and route["channel"] != "teams":  # people collect it from here
                 conn.execute(
                     "insert into outbox (run_id, instance_id, inbound_id, person, channel, text) "
                     "values (%s, %s, %s, %s, %s, %s)",
-                    (row["run"], row["id"], message["id"], body.to, message["channel"], text))
+                    (row["run"], row["id"], inbound, body.to, route["channel"], text))
         if not decision.allowed:
             return JSONResponse(status_code=403,
                                 content={"denied": True, **decision.as_dict(explain=True)})
-        if message["channel"] == "teams":
-            problem = deliver(message["reply_to"], text, row["run"], row["id"])
+        if route["channel"] == "teams":
+            problem = deliver(route["reply_to"], text, row["run"], row["id"])
             if problem:
                 return JSONResponse(status_code=502, content={"error": problem})
         return {"sent": True, "text": text, "links_removed": removed}

@@ -78,11 +78,12 @@ uv run a5s up        # a local Postgres, the schema and a service token
 uv run a5s apply     # the assistant, from agents/ and the sample's signed settings
 uv run a5s dev &     # the core, its channels and the scheduler, in one process
 uv run a5s say --as ana assistant "Which customer questions are still open?"
+uv run a5s inbox --as ana    # reminders, once half the time for her questions has passed
 uv run a5s ledger tail
 uv run a5s ledger verify
 ```
 
-`a5s dev` takes people's word for who they are, which is for development only. Everywhere else, people sign in.
+`a5s dev` takes people's word for who they are, which is for development only. Everywhere else, people sign in. Every minute, the scheduler also asks the core what falls due: the assistant reminds people of their open records once half the time allowed has passed, the core escalates what's overdue along each person's reporting line, and schedules in a release fire at their times.
 
 To run it as containers, the way each cloud would, build the image and run the [smoke test](deploy/smoke.sh). It starts the stack with stand-ins for the model, the identity provider and locked storage, and checks it end to end, from sign-in to the ledger's locked copies:
 

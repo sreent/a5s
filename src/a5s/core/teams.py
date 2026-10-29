@@ -155,7 +155,8 @@ class Teams:
             return body["access_token"]
 
     def send(self, reply_to: dict[str, str], text: str) -> None:
-        """Send text into the conversation a message came from, as the bot it was sent to."""
+        """Send text into the conversation a message came from, as the bot it was sent to:
+        in reply to the message, if `reply_to` names one, or else as a new message."""
         if not self.allowed(reply_to["service_url"]):  # the bot's token goes nowhere else
             raise ValueError("a5s sends only to the service URLs Teams uses")
         bot = self.bots.get(reply_to.get("app_id", ""))
@@ -166,8 +167,8 @@ class Teams:
             f"{reply_to['service_url'].rstrip('/')}/v3/conversations/{conversation}/activities",
             headers={"Authorization": f"Bearer {self._bot_token(bot)}"},
             json={"type": "message", "text": text, "textFormat": "markdown",
-                  "replyToId": reply_to["activity"], "from": {"id": reply_to["bot"]},
-                  "conversation": {"id": reply_to["conversation"]}},
+                  "from": {"id": reply_to["bot"]}, "conversation": {"id": reply_to["conversation"]},
+                  **({"replyToId": reply_to["activity"]} if reply_to.get("activity") else {})},
         )
         r.raise_for_status()
 

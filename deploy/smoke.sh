@@ -1,8 +1,9 @@
 #!/bin/sh
 # Starts a5s's containers with stand-ins for the model, the identity provider
 # and locked storage, then checks that a person must sign in, that a message
-# runs end to end, that a worker reaches only the gateway, and that the ledger
-# is copied, locked, and verifies against its copies.
+# runs end to end, that the core works obligations out from the records, that a
+# worker reaches only the gateway, and that the ledger is copied, locked, and
+# verifies against its copies.
 # Needs the image first: docker build -t a5s:dev .
 set -eu
 cd "$(dirname "$0")/.."
@@ -54,6 +55,23 @@ curl -sf -o "$reply" -H "authorization: Bearer $ana" \
   "$channel/$(field '["message"]')?wait=120"
 echo "Reply: $(field '["replies"]')"
 grep -q "Q-1001" "$reply"
+
+curl -sf -o "$reply" -H "authorization: Bearer $ana" http://127.0.0.1:8703/channels/local/inbox
+field '["messages"]' > /dev/null  # reminders and escalations, which the clock decides
+compose exec -T gateway python - <<'PY'
+import os, time, psycopg
+expected = [("Q-1001", "ana", "assistant-finance"), ("Q-1002", "ben", "assistant-finance"),
+            ("Q-1003", "chen", None)]
+for _ in range(60):  # the scheduler asks the core what's due every minute
+    with psycopg.connect(os.environ["A5S_DATABASE_URL"]) as conn:
+        owed = conn.execute("select record, person, instance_id from obligations "
+                            "where done_at is null order by record").fetchall()
+    if owed == expected:
+        break
+    time.sleep(2)
+assert owed == expected, owed
+print("The core worked the obligations out from the records, each naming who acts on it.")
+PY
 
 compose exec -T worker python - <<'PY'
 import os, socket

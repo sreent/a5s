@@ -1,20 +1,23 @@
 """a5s's sample scenario: a stand-in for a real one, with made-up data.
 
-It has a directory of people, a records system of customer questions, and a
-store for drafts. It's the test bench for building a5s, locally and in CI.
+It has a directory of people, a records system of customer questions, each
+owed by its owner until it's closed, and a store for drafts. It's the test bench
+for building a5s, locally and in CI.
 """
 
 from __future__ import annotations
 
+from datetime import date, datetime, time
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import psycopg
 import yaml
 from psycopg import sql
 
 from a5s import db
-from a5s.contract import Person, Settings, Signature, Tool, ToolCall, parse_settings
+from a5s.contract import Obligation, Person, Settings, Signature, Tool, ToolCall, parse_settings
 
 LINK = "https://sample.a5s.dev/"
 
@@ -35,8 +38,7 @@ class SampleScenario:
     def _person(self, entry: dict) -> Person:
         key = self.folder / "keys" / f"{entry['id']}.pub"
         return Person(
-            **{**entry, "roles": tuple(entry.get("roles", ())),
-               "identities": tuple(entry.get("identities", ()))},
+            **{k: tuple(v) if isinstance(v, list) else v for k, v in entry.items()},
             public_key=key.read_text().strip() if key.exists() else None,
         )
 
@@ -67,6 +69,23 @@ class SampleScenario:
 
     def holders(self, role: str) -> list[Person]:
         return [p for p in self._people.values() if role in p.roles]
+
+    # Obligations, from the records
+
+    def obligations(self) -> list[Obligation]:
+        """Each open record, owed by its owner from the start of their working day when it
+        opened to the end of their working day when it's due."""
+        found = []
+        for r in self._records.values():
+            owner = self._people.get(r["owner"])
+            if r["status"] == "closed" or owner is None:
+                continue
+            zone = ZoneInfo(owner.timezone)
+            found.append(Obligation(
+                source="records", record=r["key"], person=owner.id, title=r["title"],
+                opened=_on(r["opened"], owner.hours[0], zone), due=_on(r["due"], owner.hours[1], zone),
+                link=self._link("records", r["key"])))
+        return found
 
     # Settings
 
@@ -153,3 +172,7 @@ class SampleScenario:
                 (call.args["title"], call.args["body"], ",".join(call.acts_for) or "nobody"),
             ).fetchone()
         return {"draft": row["id"], "link": self._link("drafts", row["id"])}
+
+
+def _on(day: str | date, at: str, zone: ZoneInfo) -> datetime:
+    return datetime.combine(date.fromisoformat(str(day)), time.fromisoformat(at), tzinfo=zone)

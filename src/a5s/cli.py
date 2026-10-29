@@ -115,6 +115,20 @@ def _say(cfg: Config, person: str, agent: str, text: str, wait: float = 600) -> 
     sys.exit("No answer yet. Is the scheduler running?")
 
 
+def _inbox(cfg: Config, person: str, wait: float) -> None:
+    """Print what's been written to a person without answering them, such as reminders."""
+    token = os.environ.get("A5S_TOKEN")
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    with httpx.Client(base_url=cfg.channels_url, headers=headers, timeout=wait + 30) as channel:
+        found = channel.get("/channels/local/inbox", params={"person": person, "wait": wait})
+    if found.status_code >= 400:
+        sys.exit(found.json()["detail"])
+    for message in found.json()["messages"]:
+        print(f"[{message['at'][:16].replace('T', ' ')} UTC, {message['from']}] {message['text']}")
+    if not found.json()["messages"]:
+        print("Nothing new.")
+
+
 def _service(cfg: Config, name: str):
     if name == "gateway":
         return build.app(cfg)
@@ -216,6 +230,9 @@ def main(argv: list[str] | None = None) -> None:
     say.add_argument("--as", dest="person", required=True)
     say.add_argument("agent")
     say.add_argument("text")
+    box = sub.add_parser("inbox", help="read what's been written to a person, such as reminders")
+    box.add_argument("--as", dest="person", required=True)
+    box.add_argument("--wait", type=float, default=0, metavar="SECONDS")
     for verb in ("suspend", "resume"):
         p = sub.add_parser(verb, help=f"{verb} an instance")
         p.add_argument("instance")
@@ -259,6 +276,8 @@ def main(argv: list[str] | None = None) -> None:
         _dev(cfg)
     elif args.command == "say":
         _say(cfg, args.person, args.agent, args.text)
+    elif args.command == "inbox":
+        _inbox(cfg, args.person, args.wait)
     elif args.command in ("suspend", "resume"):
         print(_admin(cfg, f"/instances/{args.instance}/{args.command}",
                      {"by": args.by, "identity": os.environ.get("A5S_TOKEN")}))

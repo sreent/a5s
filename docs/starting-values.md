@@ -14,6 +14,8 @@ These are the numbers a5s starts from, by the phase that needs them. They're sta
 | Digest | One a day per person from all the agents together, at a time they choose, 09:00 by default | One place to look, at a time that suits them | Each person |
 | Urgent messages | Up to 5 per person per day across all agents, then batched hourly | Urgent stays urgent without becoming noise | The platform owner |
 | Chases | Routine items in the last digest before half the turnaround has passed, then escalated when due, but no sooner than a working day after the chase. Urgent items by urgent message at half the turnaround, then escalated when due. | People get a chance to act before anyone above them hears | Each part owner |
+| Working hours | From the directory, and otherwise 09:00 to 17:00, Monday to Friday, in each person's time zone. Chases and escalations wait for them. | Nobody is chased at night | Each person, through the directory |
+| Missed schedules | A time more than an hour past is let go, and one that falls while the instance is suspended isn't made up | No backlog of stale work after an outage or a suspension | The agent owner |
 | Conversations | Kept for 12 months after the last message, and archived when someone leaves | Covers a yearly cycle | The data protection officer |
 | Ledger | As long as the records it supports, which the scenario sets, with its copies locked for as long [TBC: a year until it's set] | It's evidence | Assurance |
 | Traces | 14 days | For debugging only | The agent owner |

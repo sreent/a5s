@@ -1,7 +1,8 @@
 """The scenario contract: what a scenario gives a5s.
 
-Phase 1 covers the directory, settings, tools and the policy pack. Records,
-the governed process and the decision surface follow in later steps.
+Phase 1 covers the directory, settings, tools, the obligations its records
+give rise to, and the policy pack. Events from records, the governed process
+and the decision surface follow in later steps.
 """
 
 from __future__ import annotations
@@ -9,6 +10,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Protocol
 
 import yaml
@@ -27,6 +29,23 @@ class Person:
     roles: tuple[str, ...] = ()
     public_key: str | None = None  # for checking what they sign
     identities: tuple[str, ...] = ()  # their accounts elsewhere, such as entra:<object id>
+    manager: str | None = None  # the next person up their reporting line
+    timezone: str = "UTC"  # an IANA name, such as Europe/London
+    hours: tuple[str, str] = ("09:00", "17:00")  # their working hours, in their time zone
+    workdays: tuple[int, ...] = (1, 2, 3, 4, 5)  # ISO weekdays: Monday is 1
+
+
+@dataclass(frozen=True)
+class Obligation:
+    """Something a person owes, worked out by code from the scenario's records."""
+
+    source: str  # the kind of record it comes from, such as "records"
+    record: str  # the record's key
+    person: str  # who owes it
+    title: str
+    opened: datetime  # when it started, so half the time allowed is known
+    due: datetime
+    link: str | None = None
 
 
 @dataclass(frozen=True)
@@ -140,6 +159,10 @@ class Scenario(Protocol):
         tables, for its tools, which run as `tools_role`. Most scenarios keep nothing there."""
 
     def tools(self) -> dict[str, Tool]: ...
+
+    def obligations(self) -> list[Obligation]:
+        """What people owe now, from the records: one for each record and person.
+        Something that's done, such as a closed case, owes nothing."""
 
     def settings(self) -> Settings: ...
 

@@ -21,6 +21,7 @@ dependencies = [
     "azure-storage-blob>=12.31.0",
     "azure-identity>=1.27.0",
     "google-cloud-storage>=3.17.1",
+    "tzdata>=2026.6",
 ]
 
 [project.scripts]

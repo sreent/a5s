@@ -23,7 +23,7 @@ For example, a5s's own assistant is a definition, and its release 0.3.0 a releas
 | Scope | The parts an instance may act in: one, several, or none, for an agent that acts on no part's data |
 | Grant | The tools, data and models an instance may use: what its release lists, as far as its parts' owners approve |
 | Type of action | A kind of action that a level is set for, as the scenario defines it, such as a change type or a catalogue item |
-| Acts for | Everyone whose words a run serves: whoever sent the message, set the reminder, or wrote the reply a request came from. A run started only by an event or a schedule acts for nobody. |
+| Acts for | Everyone whose words a run serves: whoever sent the message, set the reminder, or wrote the reply a request came from, and whoever a reminder of an obligation is for. A run started only by an event or a schedule acts for nobody. A run writes only to the people it acts for. |
 
 The [scenario contract](architecture.md#the-scenario-contract) says where the settings, the governed process and the decision surface come from. Each scenario's page maps these terms, as the [IT service desk](../scenarios/it-service-desk.md) does.
 
@@ -110,6 +110,8 @@ tools:
   documents: [create_draft]
 triggers:
   - message: from the people it works for
+obligations: [records]           # it reminds its people of what falls due in the records
+schedules: []                    # none: what it does, it does for someone
 reminders: false                 # phase 1, step 3
 preferences: [digest-time, channel]
 channels: [teams]
@@ -119,5 +121,7 @@ budget:
   per_run: "[TBC]"
   per_person_per_day: "[TBC]"
 ```
+
+A schedule names its times, in the time zone of the instance's owner, its days, and the task a5s gives the agent each time, such as `{name: morning, at: "09:00", days: weekdays, task: Look through the open questions.}`. Times need quotes, because YAML reads an unquoted 9:00 as a number.
 
 The register adds what changes without a release: each instance, its identity and its status. Each deployment's signed settings name who an instance serves, its level, and its owner and deputy, who are people in that deployment's directory, so the same definition serves any scenario.

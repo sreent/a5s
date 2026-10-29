@@ -91,6 +91,8 @@ def as_message(turn: dict) -> dict[str, str]:
         return {"role": "user", "content": f"[{when}] {turn['content']}"}
     if turn["role"] == "notice":  # a5s's own words, not the agent's
         return {"role": "assistant", "content": f"[{when}, a5s on my behalf] {turn['content']}"}
+    if turn["role"] == "task":  # a5s asking the agent, such as to remind someone of what's due
+        return {"role": "user", "content": f"[{when}, from a5s, not the person] {turn['content']}"}
     return {"role": "assistant", "content": turn["content"]}
 
 

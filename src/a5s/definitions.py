@@ -7,7 +7,11 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+_DAY_NAMES = {f"{d}{rest}": d for d, rest in zip(DAYS, ("day", "sday", "nesday", "rsday", "day",
+                                                       "urday", "day"), strict=True)}
 
 
 class Autonomy(BaseModel):
@@ -15,6 +19,45 @@ class Autonomy(BaseModel):
 
     start: int = Field(1, ge=0, le=1)  # level 2 only ever comes from the settings
     max: int = Field(1, ge=0, le=2)
+
+
+class Schedule(BaseModel):
+    """When the agent works on its own, and what it's asked to do each time.
+
+    Times are in the time zone of the instance's owner. A schedule run acts for
+    nobody, so it writes to nobody: what it finds reaches people through digests,
+    from step 4.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(pattern=r"^[a-z0-9-]+$")
+    at: list[str]  # such as ["09:00"]
+    days: list[str] = list(DAYS)  # or "weekdays"
+    task: str
+
+    @field_validator("at", mode="before")
+    @classmethod
+    def _times(cls, value: Any) -> list[str]:
+        times, found = value if isinstance(value, list) else [value], []
+        for t in times:  # YAML reads an unquoted 9:00 as a number, so times need quotes
+            hours, _, minutes = t.partition(":") if isinstance(t, str) else ("", "", "")
+            if not (hours.isdigit() and minutes.isdigit() and int(hours) < 24 and int(minutes) < 60
+                    and len(minutes) == 2):
+                raise ValueError(f"{t} isn't a time in quotes, such as \"09:00\"")
+            found.append(f"{int(hours):02d}:{minutes}")
+        return found
+
+    @field_validator("days", mode="before")
+    @classmethod
+    def _days(cls, value: Any) -> list[str]:
+        if value == "weekdays":
+            return list(DAYS[:5])
+        days = [_DAY_NAMES.get(d, d) for d in
+                (str(d).lower() for d in (value if isinstance(value, list) else [value]))]
+        if unknown := [d for d in days if d not in DAYS]:
+            raise ValueError(f"{', '.join(unknown)} isn't a day such as mon")
+        return days
 
 
 class Definition(BaseModel):
@@ -31,7 +74,8 @@ class Definition(BaseModel):
     autonomy: Autonomy = Autonomy()
     tools: dict[str, list[str]] = {}
     triggers: list[dict[str, Any]] = []
-    obligations: list[dict[str, Any]] = []
+    schedules: list[Schedule] = []
+    obligations: list[str] = []  # the kinds of obligation it chases, such as records
     reminders: bool = False
     preferences: list[str] = []
     channels: list[str] = ["teams"]
