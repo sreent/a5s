@@ -5,18 +5,27 @@ through the identity provider or the channel's own signed token, and records it.
 Only then does the scheduler take it, and a run that answers it acts for the
 sender the core recorded. So no service can say a message came from someone
 else, and a person's token goes no further than this.
+
+The web chat is served from here too: a page where people sign in with their
+organisation's identity provider and talk to the agents through the local
+channel, as the command line does.
 """
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import logging
 import time
 import uuid
+from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
+import httpx
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import JSONResponse, RedirectResponse
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel
 
@@ -27,12 +36,33 @@ from a5s.core.teams import ONE_TO_ONE, UNKNOWN, Refused
 
 log = logging.getLogger(__name__)
 MAX_BYTES = 256 * 1024  # far more than one message needs
+WEBCHAT = Path(__file__).parent / "webchat"
+_PAGE_HEADERS = {  # the page runs only its own script, shows only text, and goes in no frame
+    "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; "
+                               "connect-src 'self'; img-src 'self' data:; base-uri 'none'; "
+                               "form-action 'none'; frame-ancestors 'none'",
+    "Referrer-Policy": "no-referrer",
+    "X-Content-Type-Options": "nosniff",
+    "Cache-Control": "no-cache",
+}
+_TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
+          ".css": "text/css; charset=utf-8"}
 
 
 class LocalMessage(BaseModel):
     agent: str
     text: str
     person: str | None = None  # in development, without an identity provider, who it's from
+
+
+class TokenRequest(BaseModel):
+    """The web chat's sign-in, passed on to the identity provider."""
+
+    grant_type: str
+    code: str | None = None
+    code_verifier: str | None = None
+    redirect_uri: str | None = None
+    refresh_token: str | None = None
 
 
 def record(conn: Any, *, channel: str, source_id: str, person: str, agent: str, text: str,
@@ -59,6 +89,35 @@ def record(conn: Any, *, channel: str, source_id: str, person: str, agent: str, 
     return inbound
 
 
+class Small:
+    """Refuses a body bigger than one message needs, before reading any of it. It's plain
+    ASGI, so the endpoints still hear when someone has gone."""
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
+        if scope["type"] == "http" and scope["method"] in ("POST", "PUT"):
+            size = dict(scope["headers"]).get(b"content-length", b"")
+            if not size.isdigit() or int(size) > MAX_BYTES:
+                refused = JSONResponse(status_code=413, content={"detail": "send one message at a time"})
+                await refused(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
+
+
+async def waiting(request: Request, wait: float, take: Callable[[], list]) -> list:
+    """What `take` finds, waiting up to `wait` seconds for something. Once the person has
+    gone, such as by closing the page, it stops, and takes nothing they won't see."""
+    deadline = time.monotonic() + min(max(wait, 0), 600)
+    while not await request.is_disconnected():
+        found = await run_in_threadpool(take)
+        if found or time.monotonic() >= deadline:
+            return found
+        await asyncio.sleep(0.25)
+    return []
+
+
 def turned_away(conn: Any, channel: str, reason: str, people: list[str], text: str) -> None:
     ledger.append(conn, {"kind": "inbound", "action": channel, "run": None, "instance": None,
                          "acts_for": people, "decision": "deny", "reasons": [reason],
@@ -69,13 +128,7 @@ def create_app(gw: Any) -> FastAPI:
     """The core's endpoints for channels: the only part of the core people reach."""
     app = FastAPI(title="a5s channels")
 
-    @app.middleware("http")
-    async def small(request: Request, call_next: Any) -> Any:
-        if request.method == "POST":
-            size = request.headers.get("content-length")
-            if size is None or not size.isdigit() or int(size) > MAX_BYTES:
-                return JSONResponse(status_code=413, content={"detail": "send one message at a time"})
-        return await call_next(request)
+    app.add_middleware(Small)
 
     # Teams
 
@@ -149,46 +202,128 @@ def create_app(gw: Any) -> FastAPI:
         return {"message": inbound}
 
     @app.get("/channels/local/messages/{message}")
-    def answers(message: str, wait: float = 0, person: str | None = None,
-                authorization: str | None = Header(default=None)) -> dict:
+    async def answers(request: Request, message: str, wait: float = 0, person: str | None = None,
+                      authorization: str | None = Header(default=None)) -> dict:
         """What a5s has said in answer to a message, waiting up to `wait` seconds for it."""
-        who, _ = sender(authorization, person)
+        who, _ = await run_in_threadpool(sender, authorization, person)
         try:
             message = str(uuid.UUID(message))
         except ValueError:
             raise HTTPException(404, "no such message") from None
-        deadline = time.monotonic() + min(max(wait, 0), 600)
-        while True:
+
+        def take() -> list:
             with db.transaction(gw.url) as conn:
                 row = conn.execute("select person from inbound where id = %s and channel = 'local'",
                                    (message,)).fetchone()
                 if row is None or row["person"] != who:
                     raise HTTPException(404, "no such message")
-                said = conn.execute(
+                return conn.execute(
                     "update outbox set delivered_at = coalesce(delivered_at, now()) "
-                    "where inbound_id = %s returning id, text", (message,)).fetchall()
-            if said or time.monotonic() >= deadline:
-                return {"replies": [r["text"] for r in sorted(said, key=lambda r: r["id"])]}
-            time.sleep(0.25)
+                    "where inbound_id = %s returning id, run_id, agent, text, at", (message,)).fetchall()
+
+        said = sorted(await waiting(request, wait, take), key=lambda r: r["id"])
+        return {"replies": [r["text"] for r in said],
+                "messages": [{"from": r["agent"] if r["run_id"] else "a5s", "text": r["text"],
+                              "at": r["at"].isoformat()} for r in said]}
+
+    @app.get("/channels/local/conversation")
+    def conversation(agent: str, limit: int = 50, person: str | None = None,
+                     authorization: str | None = Header(default=None)) -> dict:
+        """A person's latest messages with an agent through this channel, and what came back."""
+        who, _ = sender(authorization, person)
+        with db.transaction(gw.url) as conn:
+            rows = conn.execute(
+                """
+                select * from (
+                  select 'person' as kind, text, received_at as at, null::uuid as run_id, 0 as n
+                  from inbound where person = %(who)s and agent = %(agent)s and channel = 'local'
+                  union all
+                  select 'agent', o.text, o.at, o.run_id, o.id
+                  from outbox o where o.person = %(who)s and o.channel = 'local' and o.agent = %(agent)s
+                ) said order by at desc, n desc limit %(limit)s
+                """, {"who": who, "agent": agent, "limit": min(max(limit, 1), 200)}).fetchall()
+        return {"messages": [{"from": "you" if r["kind"] == "person" else agent if r["run_id"] else "a5s",
+                              "text": r["text"], "at": r["at"].isoformat()} for r in reversed(rows)]}
 
     @app.get("/channels/local/inbox")
-    def inbox(wait: float = 0, person: str | None = None,
-              authorization: str | None = Header(default=None)) -> dict:
+    async def inbox(request: Request, wait: float = 0, person: str | None = None,
+                    authorization: str | None = Header(default=None)) -> dict:
         """What's been written to someone without answering a message of theirs, such as an
         agent's reminder or a5s's escalation, waiting up to `wait` seconds for something."""
-        who, _ = sender(authorization, person)
-        deadline = time.monotonic() + min(max(wait, 0), 600)
-        while True:
+        who, _ = await run_in_threadpool(sender, authorization, person)
+
+        def take() -> list:
             with db.transaction(gw.url) as conn:
-                said = conn.execute(
+                return conn.execute(
                     "update outbox set delivered_at = now() where id in ("
                     "  select id from outbox where person = %s and channel = 'local' "
                     "  and inbound_id is null and delivered_at is null for update skip locked) "
-                    "returning id, run_id, instance_id, text, at", (who,)).fetchall()
-            if said or time.monotonic() >= deadline:
-                return {"messages": [  # a run's message is its agent's; any other is a5s's own
-                    {"from": r["instance_id"] if r["run_id"] else "a5s", "text": r["text"],
-                     "at": r["at"].isoformat()} for r in sorted(said, key=lambda r: r["id"])]}
-            time.sleep(0.25)
+                    "returning id, run_id, instance_id, agent, text, at", (who,)).fetchall()
+
+        return {"messages": [  # a run's message is its agent's; any other is a5s's own
+            {"from": r["agent"] if r["run_id"] else "a5s", "about": r["agent"],
+             "instance": r["instance_id"], "text": r["text"], "at": r["at"].isoformat()}
+            for r in sorted(await waiting(request, wait, take), key=lambda r: r["id"])]}
+
+    # The web chat
+
+    @app.get("/", include_in_schema=False)
+    def home() -> RedirectResponse:
+        return RedirectResponse("/chat/")
+
+    def page(name: str) -> Response:
+        path = WEBCHAT / name
+        return Response(path.read_bytes(), media_type=_TYPES[path.suffix], headers=_PAGE_HEADERS)
+
+    @app.get("/chat/", include_in_schema=False)
+    def chat() -> Response:
+        return page("index.html")
+
+    @app.get("/chat/config")
+    def chat_config() -> dict:
+        """How the page signs people in, and which agents they can talk to."""
+        signin = None
+        if gw.identity is not None and gw.cfg.webchat_client_id:
+            try:
+                where = gw.identity.endpoints()
+            except Exception as exc:  # the provider's down: the page says so, and nothing else
+                raise HTTPException(503, "the identity provider can't be reached") from exc
+            signin = {"authorization_endpoint": where["authorization_endpoint"],
+                      "end_session_endpoint": where.get("end_session_endpoint"),
+                      "client_id": gw.cfg.webchat_client_id, "scope": "openid profile"}
+        return {"signin": signin, "development": gw.identity is None and gw.cfg.development,
+                "agents": sorted(gw.definitions)}
+
+    @app.post("/chat/token")
+    def chat_token(body: TokenRequest) -> JSONResponse:
+        """The web chat's sign-in, passed on to the identity provider, which checks the code
+        and its PKCE verifier. It needs no secret, and the page never calls the provider
+        itself, so the provider needn't allow it to."""
+        if gw.identity is None or not gw.cfg.webchat_client_id:
+            raise HTTPException(404, "the web chat's sign-in isn't set up")
+        form = {"grant_type": body.grant_type, "client_id": gw.cfg.webchat_client_id}
+        if body.grant_type == "authorization_code" and body.code and body.code_verifier and body.redirect_uri:
+            form |= {"code": body.code, "code_verifier": body.code_verifier,
+                     "redirect_uri": body.redirect_uri}
+        elif body.grant_type == "refresh_token" and body.refresh_token:
+            form |= {"refresh_token": body.refresh_token, "scope": "openid profile"}
+        else:
+            raise HTTPException(400, "send a code and its verifier, or a refresh token")
+        try:
+            answer = gw.identity.http.post(gw.identity.endpoints()["token_endpoint"], data=form,
+                                           timeout=15)
+            tokens = answer.json()
+        except (httpx.HTTPError, ValueError, KeyError) as exc:
+            raise HTTPException(502, "the identity provider didn't answer") from exc
+        kept = {k: tokens[k] for k in ("id_token", "refresh_token", "expires_in", "error",
+                                       "error_description") if k in tokens}  # never its access token
+        return JSONResponse(status_code=answer.status_code if answer.status_code < 500 else 502,
+                            content=kept)
+
+    @app.get("/chat/{name}", include_in_schema=False)
+    def chat_file(name: str) -> Response:
+        if name not in ("app.js", "app.css"):
+            raise HTTPException(404, "no such file")
+        return page(name)
 
     return app

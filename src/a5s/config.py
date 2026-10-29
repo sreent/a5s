@@ -68,6 +68,8 @@ class Config:
     # That's for development only, so it has to be asked for.
     development: bool = False
     anchor_store: str | None = None  # where the ledger's locked copies go, such as s3://bucket/a5s
+    # The web chat's client at the identity provider: a public client, with PKCE.
+    webchat_client_id: str | None = None
     anchor_retain_days: int = 365  # how long each copy stays locked: assurance's to set [TBC]
     # The directory's team that runs a5s. Its approvals of a release count as an engineer's,
     # and never as the release approver's.
@@ -104,6 +106,7 @@ class Config:
             worker_url=os.environ.get("A5S_WORKER_URL"),
             development=os.environ.get("A5S_DEVELOPMENT", "").lower() in ("1", "true", "yes"),
             anchor_store=os.environ.get("A5S_ANCHOR_STORE"),
+            webchat_client_id=os.environ.get("A5S_WEBCHAT_CLIENT_ID") or None,
             anchor_retain_days=int(os.environ.get("A5S_ANCHOR_RETAIN_DAYS", "365")),
             team=os.environ.get("A5S_TEAM", "platform"),
             scenario=os.environ.get("A5S_SCENARIO", "a5s.sample:SampleScenario"),

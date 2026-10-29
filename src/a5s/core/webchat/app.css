@@ -1,0 +1,84 @@
+:root {
+  --text: #1d2125;
+  --muted: #5d6670;
+  --line: #d7dce1;
+  --page: #f6f7f9;
+  --you: #e3eefc;
+  --agent: #ffffff;
+  --a5s: #fff6e0;
+  --accent: #1f5fbf;
+  color-scheme: light dark;
+  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #e6e9ec;
+    --muted: #9aa4ae;
+    --line: #333a41;
+    --page: #15181b;
+    --you: #1d3352;
+    --agent: #1f2328;
+    --a5s: #3a3220;
+    --accent: #7fb0ff;
+  }
+}
+
+* { box-sizing: border-box; }
+
+[hidden] { display: none !important; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--page);
+  color: var(--text);
+}
+
+header, footer {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background: var(--agent);
+  border-bottom: 1px solid var(--line);
+}
+
+footer { border-top: 1px solid var(--line); border-bottom: 0; position: sticky; bottom: 0; }
+
+h1 { font-size: 1.1rem; margin: 0 auto 0 0; }
+
+#who { color: var(--muted); }
+
+main { flex: 1; width: 100%; max-width: 50rem; margin: 0 auto; padding: 1rem; }
+
+#status:empty { display: none; }
+#status { color: var(--muted); }
+
+ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.75rem; }
+
+li {
+  max-width: 85%;
+  padding: 0.6rem 0.8rem;
+  border: 1px solid var(--line);
+  border-radius: 0.6rem;
+  background: var(--agent);
+}
+
+li.you { align-self: flex-end; background: var(--you); }
+li.a5s { background: var(--a5s); }
+
+li strong:first-child { font-weight: 600; }
+li time { color: var(--muted); font-size: 0.8rem; }
+li div { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 0.2rem; }
+
+a { color: var(--accent); }
+code { font-family: ui-monospace, monospace; font-size: 0.9em; }
+
+#compose { display: flex; gap: 0.5rem; width: 100%; max-width: 50rem; margin: 0 auto; }
+textarea { flex: 1; font: inherit; padding: 0.5rem; resize: vertical; }
+button, select, input { font: inherit; }
+.hidden { position: absolute; left: -10000px; }
+#name { display: flex; gap: 0.5rem; align-items: end; margin-bottom: 1rem; }

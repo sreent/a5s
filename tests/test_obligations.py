@@ -50,7 +50,7 @@ def test_its_agent_reminds_the_person_once_half_the_time_has_passed_in_their_hou
     assert "from a5s, not the person] Remind Ana Ortiz that Q-1001, Invoice sent to the wrong " \
            "address, is due by 17:00 on Wed 4 Nov and is still open." in asked
     [reminder] = stack.inbox("ana")  # Ana hasn't written to it, so she collects it here
-    assert reminder["from"] == "assistant-finance"
+    assert (reminder["from"], reminder["instance"]) == ("assistant", "assistant-finance")
     assert reminder["text"] == "Ana, Q-1001 is due on Wednesday at 17:00. Shall I draft a reply?"
     assert [m["text"] for m in stack.inbox("ben")] == [
         "Ben, the duplicate refund, Q-1002, is due on Friday."]
@@ -86,7 +86,7 @@ def test_an_overdue_obligation_escalates_in_code_in_the_recipients_hours(stack):
     stack.scheduler().work_due()
     assert escalations(stack) == [("Q-1003", "omar")]
     [told] = stack.inbox("omar")
-    assert told == {"from": "a5s", "at": told["at"], "text": (
+    assert told == {"from": "a5s", "about": None, "instance": None, "at": told["at"], "text": (
         "Q-1003, Delivery date for order 7781, was due on Mon 2 Nov and is still open. "
         "It's Chen Wei's. No agent works on it for them, so nobody reminded them first. You're "
         "next in their reporting line, so a5s is letting you know. "

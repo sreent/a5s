@@ -29,6 +29,7 @@ jobs:
       A5S_TEST_DATABASE_URL: postgresql://a5s@127.0.0.1:5432/postgres
       A5S_TEST_AZURITE: UseDevelopmentStorage=true
       A5S_TEST_GCS: http://127.0.0.1:4443
+      A5S_TEST_BROWSER: required  # the web chat's tests run in a real browser here
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
       - name: Start emulators for Azure's and Google's storage
@@ -39,6 +40,7 @@ jobs:
             -scheme http -port 4443 -external-url http://127.0.0.1:4443
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6
       - run: uv sync --locked
+      - run: uv run playwright install --with-deps chromium
       - run: uv run ruff check .
       - run: uv run pytest
 

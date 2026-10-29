@@ -53,9 +53,12 @@ class IdentityConfig:
         issuer = os.environ.get("A5S_OIDC_ISSUER")
         if not issuer:
             return None
+        audiences = [a.strip() for a in os.environ.get("A5S_OIDC_AUDIENCE", "a5s").split(",")]
+        if web := os.environ.get("A5S_WEBCHAT_CLIENT_ID"):  # its sign-ins come to the core too
+            audiences.append(web)
         return cls(
             issuer=issuer,  # exactly as the provider writes it: Entra ID's v1 issuer ends in a slash
-            audience=os.environ.get("A5S_OIDC_AUDIENCE", "a5s"),
+            audience=tuple(dict.fromkeys(a for a in audiences if a)),
             person_claim=os.environ.get("A5S_OIDC_PERSON_CLAIM", "preferred_username"),
             metadata_url=os.environ.get("A5S_OIDC_METADATA_URL") or None,
             directory_prefix=os.environ.get("A5S_OIDC_DIRECTORY_PREFIX") or None,
@@ -77,6 +80,7 @@ class Verifier:
         self.max_age, self.min_refresh = max_age, min_refresh
         self._keys: PyJWKSet | None = None
         self._published: dict[str, dict] = {}  # each key as published, with any endorsements
+        self._metadata: dict = {}  # where the provider signs people in and issues tokens
         self._fetched_at = 0.0
         self._lock = threading.Lock()
 
@@ -86,6 +90,7 @@ class Verifier:
         discovery.raise_for_status()
         if discovery.json().get("issuer") != self.cfg.issuer:
             raise IdentityError("the identity provider names a different issuer")
+        self._metadata = discovery.json()
         keys = self.http.get(discovery.json()["jwks_uri"])
         keys.raise_for_status()
         published = {k["kid"]: k for k in keys.json().get("keys", []) if isinstance(k, dict) and "kid" in k}
@@ -127,6 +132,13 @@ class Verifier:
             raise
         except (jwt.PyJWTError, httpx.HTTPError, KeyError, ValueError) as exc:
             raise IdentityError(str(exc) or type(exc).__name__) from exc
+
+    def endpoints(self) -> dict:
+        """Where people sign in, and where codes become tokens, from the provider's metadata."""
+        with self._lock:
+            self._keyset(refresh=False)
+            return {k: self._metadata[k] for k in ("authorization_endpoint", "token_endpoint",
+                                                    "end_session_endpoint") if k in self._metadata}
 
     def person(self, token: str) -> str:
         """Who the token is for, if it checks out. Otherwise, IdentityError."""

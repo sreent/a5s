@@ -535,8 +535,9 @@ def create_app(gw: Gateway) -> FastAPI:
                 if route["channel"] == "teams":
                     sends.append((route["reply_to"], text, row["instance_id"]))
                 else:  # people collect it from the local channel's inbox
-                    conn.execute("insert into outbox (instance_id, person, channel, text) "
-                                 "values (%s, %s, 'local', %s)", (row["instance_id"], to.id, text))
+                    conn.execute("insert into outbox (instance_id, agent, person, channel, text) "
+                                 "values (%s, %s, %s, 'local', %s)",
+                                 (row["instance_id"], row["agent"], to.id, text))
                 escalated.add(row["id"])
             due = [d for d in obligations.to_chase(rows, gw.scenario, now, able)
                    if d["obligation"] not in escalated]
@@ -702,9 +703,10 @@ def create_app(gw: Gateway) -> FastAPI:
             }))
             if decision.allowed and route["channel"] != "teams":  # people collect it from here
                 conn.execute(
-                    "insert into outbox (run_id, instance_id, inbound_id, person, channel, text) "
-                    "values (%s, %s, %s, %s, %s, %s)",
-                    (row["run"], row["id"], inbound, body.to, route["channel"], text))
+                    "insert into outbox (run_id, instance_id, agent, inbound_id, person, channel, "
+                    "text) values (%s, %s, %s, %s, %s, %s, %s)",
+                    (row["run"], row["id"], row["definition"], inbound, body.to, route["channel"],
+                     text))
         if not decision.allowed:
             return JSONResponse(status_code=403,
                                 content={"denied": True, **decision.as_dict(explain=True)})
@@ -740,7 +742,7 @@ def create_app(gw: Gateway) -> FastAPI:
         with db.transaction(gw.url) as conn:
             row = conn.execute(
                 "update inbound set notices = notices + 1 where id = %s and notices < 3 "
-                "returning person, channel, reply_to", (inbound,)).fetchone()
+                "returning person, agent, channel, reply_to", (inbound,)).fetchone()
             if row is not None:
                 ledger.append(conn, {"kind": "notice", "action": "send", "run": None,
                                      "instance": body.instance, "acts_for": [row["person"]],
@@ -749,9 +751,9 @@ def create_app(gw: Gateway) -> FastAPI:
                                          "sha256": hashlib.sha256(text.encode()).hexdigest()}})
                 if row["channel"] != "teams":
                     conn.execute(
-                        "insert into outbox (instance_id, inbound_id, person, channel, text) "
-                        "values (%s, %s, %s, %s, %s)",
-                        (body.instance, inbound, row["person"], row["channel"], text))
+                        "insert into outbox (instance_id, agent, inbound_id, person, channel, text) "
+                        "values (%s, %s, %s, %s, %s, %s)",
+                        (body.instance, row["agent"], inbound, row["person"], row["channel"], text))
         if row is None:
             raise HTTPException(403, "a5s only answers a message someone sent, and briefly")
         if row["channel"] == "teams":

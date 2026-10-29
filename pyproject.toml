@@ -30,6 +30,7 @@ a5s = "a5s.cli:main"
 [dependency-groups]
 dev = [
     "moto[s3]>=5.2.5",
+    "playwright==1.63.0",
     "pytest",
     "ruff",
 ]

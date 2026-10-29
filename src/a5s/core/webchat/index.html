@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>a5s</title>
+<link rel="stylesheet" href="/chat/app.css">
+<script src="/chat/app.js" defer></script>
+</head>
+<body>
+<header>
+  <h1>a5s</h1>
+  <label>Agent <select id="agent"></select></label>
+  <span id="who"></span>
+  <button id="signout" type="button" hidden>Sign out</button>
+</header>
+<main>
+  <p id="status" role="status"></p>
+  <form id="name" hidden>
+    <label>Who are you? In development, a5s takes your word for it.
+      <input id="person" autocomplete="off" required></label>
+    <button>Start</button>
+  </form>
+  <ol id="conversation" aria-live="polite"></ol>
+</main>
+<footer>
+  <form id="compose" hidden>
+    <label for="text" class="hidden">Your message</label>
+    <textarea id="text" rows="2" placeholder="Write to the agent. Enter sends, Shift+Enter starts a new line." required></textarea>
+    <button>Send</button>
+  </form>
+</footer>
+</body>
+</html>

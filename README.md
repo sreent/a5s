@@ -78,6 +78,7 @@ uv run a5s up        # a local Postgres, the schema and a service token
 uv run a5s apply     # the assistant, from agents/ and the sample's signed settings
 uv run a5s dev &     # the core, its channels and the scheduler, in one process
 uv run a5s say --as ana assistant "Which customer questions are still open?"
+# or chat in a browser at http://127.0.0.1:8703/chat/
 uv run a5s inbox --as ana    # reminders, once half the time for her questions has passed
 uv run a5s ledger tail
 uv run a5s ledger verify

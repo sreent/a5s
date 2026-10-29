@@ -66,6 +66,18 @@ status=$(send -H "authorization: Bearer $ben" -d '{"person": "ana", "agent": "as
 [ "$status" = 403 ] || { echo "Ben sending as Ana got $status, not 403."; exit 1; }
 echo "A message needs a token, and the token must be the sender's."
 
+curl -sf -o "$reply" -D "$work/headers" http://127.0.0.1:8703/chat/
+grep -qi "content-security-policy: default-src 'none'" "$work/headers"
+curl -sf -o "$reply" http://127.0.0.1:8703/chat/config
+field '["signin"]["authorization_endpoint"]' | grep -q "^http://127.0.0.1:8180/realms/a5s/"
+status=$(curl -s -o "$reply" -w '%{http_code}' -X POST http://127.0.0.1:8703/chat/token \
+  -H 'content-type: application/json' \
+  -d '{"grant_type": "authorization_code", "code": "made-up", "code_verifier": "made-up",
+       "redirect_uri": "http://127.0.0.1:8703/chat/"}')
+[ "$status" = 400 ] || { echo "Passing on a made-up sign-in code got $status, not 400."; exit 1; }
+field '["error"]' | grep -q invalid_grant
+echo "The web chat sends people to Keycloak to sign in, and the core passes their code on to it."
+
 status=$(send -H "authorization: Bearer $ana" \
   -d '{"agent": "assistant", "text": "Which questions mention an invoice?"}')
 [ "$status" = 202 ] || { echo "Ana's message got $status, not 202."; exit 1; }

@@ -5,19 +5,49 @@
   "accessTokenLifespan": 300,
   "users": [
     {
-      "username": "ana", "firstName": "Ana", "lastName": "Ortiz",
-      "email": "ana@sample.test", "emailVerified": true, "enabled": true,
-      "credentials": [{"type": "password", "value": "${A5S_IDP_PASSWORD}", "temporary": false}]
+      "username": "ana",
+      "firstName": "Ana",
+      "lastName": "Ortiz",
+      "email": "ana@sample.test",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${A5S_IDP_PASSWORD}",
+          "temporary": false
+        }
+      ]
     },
     {
-      "username": "ben", "firstName": "Ben", "lastName": "Okafor",
-      "email": "ben@sample.test", "emailVerified": true, "enabled": true,
-      "credentials": [{"type": "password", "value": "${A5S_IDP_PASSWORD}", "temporary": false}]
+      "username": "ben",
+      "firstName": "Ben",
+      "lastName": "Okafor",
+      "email": "ben@sample.test",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${A5S_IDP_PASSWORD}",
+          "temporary": false
+        }
+      ]
     },
     {
-      "username": "chen", "firstName": "Chen", "lastName": "Wei",
-      "email": "chen@sample.test", "emailVerified": true, "enabled": true,
-      "credentials": [{"type": "password", "value": "${A5S_IDP_PASSWORD}", "temporary": false}]
+      "username": "chen",
+      "firstName": "Chen",
+      "lastName": "Wei",
+      "email": "chen@sample.test",
+      "emailVerified": true,
+      "enabled": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "${A5S_IDP_PASSWORD}",
+          "temporary": false
+        }
+      ]
     }
   ],
   "clients": [
@@ -39,6 +69,24 @@
           }
         }
       ]
+    },
+    {
+      "clientId": "a5s-web",
+      "name": "a5s web chat",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": [
+        "http://127.0.0.1:8703/chat/*",
+        "http://localhost:8703/chat/*"
+      ],
+      "webOrigins": [
+        "+"
+      ],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "http://127.0.0.1:8703/chat/*##http://localhost:8703/chat/*"
+      }
     }
   ]
 }

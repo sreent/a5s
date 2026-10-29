@@ -3,11 +3,17 @@
 # tokens from it the way it would check theirs:
 #   docker compose -f deploy/compose.yaml -f deploy/compose.stub.yaml \
 #     -f deploy/compose.identity.yaml up
+# then sign in to the web chat at http://127.0.0.1:8703/chat/ as ana, ben or chen.
 # It lets people sign in with a password, A5S_IDP_PASSWORD, which a real
 # provider shouldn't allow, so it's for development and tests only.
+#
+# People's browsers reach Keycloak on this computer, and the core reaches it
+# inside the stack, so tokens name the address people use, and the core reads
+# Keycloak's metadata from inside.
 
 x-identity: &identity
-  A5S_OIDC_ISSUER: http://keycloak:8080/realms/a5s
+  A5S_OIDC_ISSUER: http://127.0.0.1:${A5S_IDP_PORT:-8180}/realms/a5s
+  A5S_OIDC_METADATA_URL: http://keycloak:8080/realms/a5s/.well-known/openid-configuration
   A5S_OIDC_AUDIENCE: a5s
 
 services:
@@ -15,7 +21,8 @@ services:
     image: quay.io/keycloak/keycloak:26.0@sha256:09a381c715ab0b111835b70f2905955274843a219c6f27efb348e4d9f4086858
     command: ["start-dev", "--import-realm"]
     environment:
-      KC_HOSTNAME: http://keycloak:8080  # the issuer in every token, however it's reached
+      KC_HOSTNAME: http://127.0.0.1:${A5S_IDP_PORT:-8180}  # the issuer in every token
+      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"  # tokens and keys at whatever address asked
       KC_HEALTH_ENABLED: "true"
       A5S_IDP_PASSWORD: ${A5S_IDP_PASSWORD:?set A5S_IDP_PASSWORD}
     volumes: ["./identity/realm.json:/opt/keycloak/data/import/a5s.json:ro"]
@@ -32,8 +39,9 @@ services:
     depends_on:
       keycloak: {condition: service_healthy}
 
-  channels:  # where people sign in
+  channels:  # where people sign in, and the web chat
     environment:
       <<: *identity
+      A5S_WEBCHAT_CLIENT_ID: a5s-web
     depends_on:
       keycloak: {condition: service_healthy}

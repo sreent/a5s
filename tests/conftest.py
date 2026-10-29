@@ -12,7 +12,7 @@ import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +37,9 @@ from a5s.services.scheduler import Scheduler
 ROOT = Path(__file__).resolve().parents[1]
 SERVICE_TOKEN = "test-service-token"
 PROVIDER_KEY = "provider-secret"
+# The core's clock in tests, unless a test sets it: before anything in the sample falls due,
+# so a scheduler left running never reminds anyone, whatever the date really is.
+QUIET = datetime(2026, 10, 28, 12, tzinfo=UTC)
 
 
 def free_port() -> int:
@@ -297,7 +300,7 @@ def running(database: str, root: Path, http: httpx.Client, model: FakeModel) -> 
     definitions.pin(root / "agents" / "assistant",
                     {n: t.schema_hash for n, t in scenario.tools().items()})
     gw = Gateway(cfg, scenario, PolicyEngine(), load_models(cfg.models_file),
-                 definitions.load_all(cfg.agents_dir), http)
+                 definitions.load_all(cfg.agents_dir), http, clock=lambda: QUIET)
     with db.transaction(database) as conn:
         applied = registry.apply(conn, gw.definitions, scenario.settings(), scenario.tools(),
                                  scenario.person, scenario.name)

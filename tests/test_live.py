@@ -36,6 +36,6 @@ def test_a_real_model_reminds_someone_of_what_falls_due(database, tmp_path):
         stack.at("2026-11-02T09:30:00+00:00")  # half the time for Ana's Q-1001 has passed
         assert stack.scheduler().work_due() == 2  # Ana's and Ben's
         [reminder] = stack.inbox("ana")
-        assert "Q-1001" in reminder["text"] and reminder["from"] == "assistant-finance"
+        assert "Q-1001" in reminder["text"] and reminder["from"] == "assistant"
         print(reminder["text"])
         assert stack.verify().ok

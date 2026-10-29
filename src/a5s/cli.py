@@ -154,8 +154,8 @@ def _dev(cfg: Config) -> None:
         server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
         threading.Thread(target=server.run, daemon=True).start()
     print("a5s is running for development: the gateway on port 8700, and the channels on 8703.\n"
-          "Send messages with `a5s say --as <person> <agent> <text>`. Press Ctrl-C to stop.",
-          flush=True)
+          "Chat in a browser at http://127.0.0.1:8703/chat/, or send messages with\n"
+          "`a5s say --as <person> <agent> <text>`. Press Ctrl-C to stop.", flush=True)
     Scheduler(cfg, gw.scenario).listen(threading.Event())
 
 
