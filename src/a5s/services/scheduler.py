@@ -369,13 +369,22 @@ class Scheduler:
         return found
 
     def work_due(self) -> int:
-        """Work, one by one, on each obligation, schedule and report that's due and free now."""
+        """Work, one by one, on each obligation, schedule, report and reminder that's due and
+        free now, and then send the digests whose work is done."""
         worked = 0
         for item in self.due():
             if (claim := self._take(item)) is not None:
                 self._answer(claim)
                 worked += 1
+        self.digest()
         return worked
+
+    def digest(self) -> None:
+        """Ask the core to send each person's digest whose time has come and whose work is done."""
+        try:
+            self.gw.post("/digests/sweep", headers=self.service).raise_for_status()
+        except httpx.HTTPError:
+            log.exception("couldn't ask the core to send the digests")
 
     def sweep(self) -> None:
         """Close runs that outlived their time, and tell their people."""
@@ -420,6 +429,7 @@ class Scheduler:
                                         free.release()
                                         continue
                                     pool.submit(answer, claim)
+                                self.digest()  # those whose work is done: the rest next time
                                 swept = time.monotonic()
                             while free.acquire(blocking=False):
                                 claim = self._claim()

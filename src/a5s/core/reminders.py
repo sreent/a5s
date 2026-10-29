@@ -5,81 +5,27 @@ An agent whose release records reminders offers one with a typed tool, and the r
 counts only once the person confirms it, in a later message of their own. It's theirs
 alone: only a run answering their own message can offer or confirm one, and never a run
 that has read content from outside. When it falls due, the agent reminds them, in a run
-that acts for them. If the agent can't act, the core reminds them itself, so suspending
-an agent never silences what someone asked for.
+that acts for them: in their digest that day, for a day, or at once, for a particular
+time. If the agent can't act, the core reminds them itself, so suspending an agent never
+silences what someone asked for.
 
 A person can also say what they're waiting on for one of their records, and until when,
 which pauses chases to them about it until then.
 
-These are a5s's own tools. They work on a5s's records, never a scenario's, so they change
-no part's data, and an agent may use them at any level.
+These are among a5s's own tools (core/coretools.py).
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
-from typing import Any
 from zoneinfo import ZoneInfo
 
-import psycopg
-
-from a5s.contract import Person, Scenario
+from a5s.contract import Person
+from a5s.core.coretools import Call, CoreTool, Refused
 from a5s.core.obligations import day, local
 
 CONFIRM_WITHIN = timedelta(days=1)  # an offer they don't confirm by then lapses [TBC]
 FURTHEST = timedelta(days=366)
-
-
-class Refused(Exception):
-    """Why a5s won't do what the agent asked, in words the agent passes on."""
-
-
-@dataclass(frozen=True)
-class Call:
-    """A call to one of a5s's own tools, with what the core knows of the run."""
-
-    conn: psycopg.Connection
-    run: dict[str, Any]  # the run, with its instance
-    args: dict[str, Any]
-    now: datetime
-    scenario: Scenario
-
-    @property
-    def asked_at(self) -> datetime:
-        """When the core received the message the run answers."""
-        return self.conn.execute("select received_at from inbound where id = %s",
-                                 (self.run["trigger"].get("inbound"),)).fetchone()["received_at"]
-
-    @property
-    def person(self) -> Person:
-        """Whose reminders these are: the person who wrote the message the run answers."""
-        if self.run["trigger"].get("kind") != "message" or len(self.run["acts_for"]) != 1:
-            raise Refused("a reminder is the person's own, so it's set only in answer to a "
-                          "message of theirs")
-        if self.run["read_outside"]:
-            raise Refused("this run has read content from outside, which can't set a reminder")
-        person = self.scenario.person(self.run["acts_for"][0])
-        if person is None:
-            raise Refused("the directory doesn't know them")
-        return person
-
-
-@dataclass(frozen=True)
-class CoreTool:
-    """One of a5s's own tools, run in the core on its own records."""
-
-    name: str
-    description: str
-    schema: dict[str, Any]
-    run: Callable[[Call], Any]
-    text_fields: tuple[str, ...] = ()
-
-    def definition(self) -> dict[str, Any]:
-        return {"name": self.name, "description": self.description, "schema": self.schema,
-                "risk": dict.fromkeys(("reads", "writes", "destructive", "sends_outside"), False),
-                "text_fields": list(self.text_fields)}
 
 
 def when(given: str, person: Person) -> datetime:
@@ -129,11 +75,13 @@ def offer(call: Call) -> dict:
         return {"reminder": f"R-{again['id']}", "when": say(person, at), "about": about,
                 "record": record, "status": "you offered this already: if they've said yes, "
                                             "confirm it with confirm_reminder"}
+    in_digest = "T" not in str(call.args["on"])  # a day, not a particular time
     number = call.conn.execute(
         "insert into reminders (person, agent, instance_id, about, record, due_at, offered_at, "
-        "offered_run, asked_at) values (%s, %s, %s, %s, %s, %s, %s, %s, %s) returning id",
+        "offered_run, asked_at, in_digest) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
+        "returning id",
         (person.id, call.run["definition"], call.run["id"], about, record, at, call.now,
-         call.run["run"], call.asked_at),
+         call.run["run"], call.asked_at, in_digest),
     ).fetchone()["id"]
     return {"reminder": f"R-{number}", "when": say(person, at), "about": about, "record": record,
             "status": "offered: it's set only once they say yes, in their next message"}

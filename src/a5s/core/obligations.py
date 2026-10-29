@@ -13,6 +13,7 @@ until a date hears no reminder about it until then, and an escalation says why.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -179,16 +180,16 @@ def chase(row: dict, person: Person) -> str:
 
 
 def to_chase(rows: list[dict[str, Any]], scenario: Scenario, now: datetime,
-             able: dict[str, bool]) -> list[dict]:
+             able: dict[str, bool], digest_open: Callable[[Person], bool]) -> list[dict]:
     """The obligations whose agents should remind their people now: half their time has
     passed, nobody has reminded them or escalated them yet, they aren't waiting on something
-    until later, and it's their working hours."""
+    until later, and their digest's time has come today, so the reminder goes in it fresh."""
     due = []
     for row in rows:
         person = scenario.person(row["person"])
         waiting = row.get("waiting_until") is not None and now < row["waiting_until"]
         if (person and able.get(row["instance_id"]) and row["chased_at"] is None and not waiting
-                and not row["escalations"] and now >= halfway(row) and working(person, now)):
+                and not row["escalations"] and now >= halfway(row) and digest_open(person)):
             due.append({"kind": "obligation", "obligation": row["id"], "instance": row["instance_id"],
                         "agent": row["agent"], "person": row["person"]})
     return due

@@ -2,9 +2,9 @@
 code.
 
 An agent whose release reports on a kind of record, such as the watcher, tells each
-person it serves, once a day, at its time in their own time zone and on their working
-days, in their working hours, what changed in their records of that kind since it last
-told them, and what fell due since. The first time, it tells them what's open. Code
+person it serves, once a day in their digest (core/digests.py), what changed in their
+records of that kind since it last told them, and what fell due since. The first time,
+it tells them what's open. Code
 compares the records with what the agent last told them, so the model only puts the
 facts into words, and a day with nothing new starts no model at all. What's open and
 what fell due come from the obligations the core keeps, so the reports sweep follows the
@@ -14,28 +14,16 @@ obligations sweep. The run acts for the person, so it writes to them and to nobo
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 import psycopg
 from psycopg.types.json import Jsonb
 
 from a5s.contract import Person, Record
-from a5s.core.obligations import day, local, working
-from a5s.definitions import Report
+from a5s.core.obligations import day, local
 
 MOST = 20  # facts in one report; the rest are counted [TBC]
-
-
-def due_now(report: Report, person: Person, now: datetime) -> datetime | None:
-    """Today's time for the person's report, once it has come, on their working days and in
-    their working hours."""
-    here = local(person, now)
-    hours, minutes = (int(part) for part in report.at.split(":"))
-    at = here.replace(hour=hours, minute=minutes, second=0, microsecond=0)
-    if here.isoweekday() not in person.workdays or here < at or not working(person, now):
-        return None
-    return at.astimezone(UTC)
 
 
 def fired(conn: psycopg.Connection, instance: str, person: str, source: str,

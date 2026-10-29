@@ -8,11 +8,9 @@ from datetime import UTC
 
 import httpx
 import pytest
-from pydantic import ValidationError
 
 from a5s import db
 from a5s.core import registry
-from a5s.definitions import Report
 
 THURSDAY = "2026-10-29T09:30:00+00:00"  # 09:30 in London, before any reminder falls due
 FRIDAY = "2026-10-30T09:30:00+00:00"
@@ -219,8 +217,3 @@ def test_while_the_records_cant_be_read_the_morning_waits(watching, monkeypatch)
     watching.model.reply("Ben, you have Q-1002 open.")
     assert watching.scheduler().work_due() == 2  # the same morning, once they can be read
 
-
-def test_a_report_names_a_time_in_quotes():
-    assert Report(source="records", at="9:30").at == "09:30"
-    with pytest.raises(ValidationError):
-        Report(source="records", at=930)

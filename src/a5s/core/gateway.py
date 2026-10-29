@@ -30,9 +30,11 @@ from pydantic import BaseModel
 
 from a5s import db
 from a5s.config import Config, ModelConfig
-from a5s.contract import Scenario, Signature, Tool, ToolCall, parse_settings
+from a5s.contract import Person, Scenario, Signature, Tool, ToolCall, parse_settings
 from a5s.core import (
     chats,
+    coretools,
+    digests,
     ledger,
     models,
     obligations,
@@ -49,6 +51,7 @@ from a5s.core.teams import Teams
 from a5s.definitions import Definition
 
 log = logging.getLogger(__name__)
+CORE_TOOLS = {**reminders.TOOLS, **digests.TOOLS}  # a5s's own, on its own records
 RUN_MINUTES = 60  # the longest a run may last [TBC]; its token dies with it
 # The chats a5s writes to itself, as each agent's bot. People collect from the local
 # channel, the command line's and the web chat's, instead.
@@ -236,6 +239,64 @@ class Gateway:
         return {"channel": channel,
                 "reply_to": {k: v for k, v in conversation["reply_to"].items() if k != "activity"}}
 
+    def able(self, conn: psycopg.Connection) -> dict[str, bool]:
+        """Which instances can act now: active, as signed and released, in a release this
+        deployment approved."""
+        runs = not self.release_problems(conn)
+        return {i["id"]: runs and i["status"] == "active" and not self.check_instance(conn, i)
+                for i in conn.execute("select * from instances").fetchall()}
+
+    def busy(self, conn: psycopg.Connection, person: Person, due: datetime, now: datetime,
+             able: dict[str, bool]) -> bool:
+        """Whether the agents' work for someone's digest is still due, or still running: a
+        chase, a report, or a reminder for the day."""
+        if conn.execute("select 1 from runs where closed_at is null and expires_at > now() "
+                        "and %s = any(acts_for) and trigger->>'kind' = any(%s)",
+                        (person.id, list(digests.KINDS))).fetchone():
+            return True
+        rows = conn.execute("select o.*, i.definition as agent from obligations o "
+                            "left join instances i on i.id = o.instance_id "
+                            "where o.scenario = %s and o.person = %s and o.done_at is null",
+                            (self.scenario.name, person.id)).fetchall()
+        if obligations.to_chase(rows, self.scenario, now, able, lambda _: True):
+            return True
+        if conn.execute("select 1 from reminders where person = %s and confirmed_at is not null "
+                        "and reminded_at is null and cancelled_at is null and in_digest "
+                        "and due_at <= %s and instance_id = any(%s)",
+                        (person.id, now, [i for i, ok in able.items() if ok])).fetchone():
+            return True
+        for inst in conn.execute("select * from instances where %s = any(serves)",
+                                 (person.id,)).fetchall():
+            definition = self.definitions.get(inst["definition"])
+            if (able.get(inst["id"]) and definition and definition.release_id == inst["release"]
+                    and any(not reports.fired(conn, inst["id"], person.id, r.source, due)
+                            for r in definition.reports)):
+                return True
+        return False
+
+    @staticmethod
+    def for_digest(conn: psycopg.Connection, run: dict) -> bool:
+        """Whether what a run writes waits for its person's digest: a chase, a report, or a
+        reminder for a day, but not a reminder for a particular time, which goes at once."""
+        kind = run["trigger"].get("kind")
+        if kind == "reminder":
+            row = conn.execute("select in_digest from reminders where id = %s",
+                               (run["trigger"].get("reminder"),)).fetchone()
+            return bool(row and row["in_digest"])
+        return kind in digests.KINDS
+
+    def digest_open(self, conn: psycopg.Connection, now: datetime) -> Callable[[Person], bool]:
+        """Whether someone's digest time has come today, and its digest hasn't gone, so their
+        agents' work for it falls due: asked once a sweep for each person."""
+        found: dict[str, bool] = {}
+
+        def is_open(person: Person) -> bool:
+            if person.id not in found:
+                found[person.id] = digests.window(conn, person, now) is not None
+            return found[person.id]
+
+        return is_open
+
     def chat(self, channel: str) -> Teams | Matrix | None:
         """A chat a5s writes to itself, if it's on here."""
         return {"teams": self.teams, "matrix": self.matrix}.get(channel)
@@ -289,8 +350,8 @@ class Gateway:
             opening.reasons.append(f"{inst['id']} doesn't act on it")
         if now < obligations.halfway(row):
             opening.reasons.append("half its time hasn't passed yet")
-        if person is None or not obligations.working(person, now):
-            opening.reasons.append(f"it's outside {row['person']}'s working hours")
+        if person is None or digests.window(conn, person, now) is None:
+            opening.reasons.append(f"it waits for {row['person']}'s digest")
         return opening
 
     def scheduled(self, conn: psycopg.Connection, inst: dict, trigger: dict,
@@ -327,7 +388,7 @@ class Gateway:
         found = [r for r in definition.reports if r.source == source] if (
             definition and definition.release_id == inst["release"]) else []
         reachable = person is not None and person.in_audience and who in inst["serves"]
-        due = reports.due_now(found[0], person, now) if found and reachable else None
+        due = digests.window(conn, person, now) if found and reachable else None
         args = {"person": who, "source": source, "due": due.isoformat() if due else None}
         opening = Opening(trigger={"kind": "report", "report": {"person": who, "source": source},
                                    "due": args["due"]},
@@ -387,6 +448,8 @@ class Gateway:
             opening.reasons.append(f"{inst['id']} didn't take it")
         if now < row["due_at"]:
             opening.reasons.append("it isn't due yet")
+        elif row["in_digest"] and person and digests.window(conn, person, now) is None:
+            opening.reasons.append(f"it waits for {row['person']}'s digest")
         return opening
 
     # Cedar entities, built from the core's own records for every call.
@@ -652,9 +715,7 @@ def create_app(gw: Gateway) -> FastAPI:
                 return []  # another sweep is at work
             obligations.sync(conn, gw.scenario.name, owed, gw.definitions, now)
             instances = {i["id"]: i for i in conn.execute("select * from instances")}
-            runs = not gw.release_problems(conn)  # else no agent can act, and code escalates
-            able = {iid: runs and inst["status"] == "active" and not gw.check_instance(conn, inst)
-                    for iid, inst in instances.items()}
+            able = gw.able(conn)  # else code escalates
             rows = conn.execute(
                 "select o.*, i.definition as agent from obligations o "
                 "left join instances i on i.id = o.instance_id "
@@ -683,7 +744,8 @@ def create_app(gw: Gateway) -> FastAPI:
                                  "values (%s, %s, %s, 'local', %s)",
                                  (row["instance_id"], row["agent"], to.id, text))
                 escalated.add(row["id"])
-            due = [d for d in obligations.to_chase(rows, gw.scenario, now, able)
+            due = [d for d in obligations.to_chase(rows, gw.scenario, now, able,
+                                                   gw.digest_open(conn, now))
                    if d["obligation"] not in escalated]
         for route, text, instance in sends:
             deliver(route, text, None, instance)
@@ -736,7 +798,7 @@ def create_app(gw: Gateway) -> FastAPI:
                     continue
                 for report, who in ((r, p) for r in definition.reports for p in inst["serves"]):
                     person = gw.scenario.person(who)  # and only people a5s may write to
-                    at = reports.due_now(report, person, now) if person and person.in_audience else None
+                    at = digests.window(conn, person, now) if person and person.in_audience else None
                     if at is None or reports.fired(conn, inst["id"], who, report.source, at):
                         continue
                     if inst["status"] != "active":
@@ -770,11 +832,14 @@ def create_app(gw: Gateway) -> FastAPI:
         lost to a suspension or a withdrawn release."""
         now, due, sends = gw.clock(), [], []
         with db.transaction(gw.url) as conn:
-            runs = not gw.release_problems(conn)
+            runs, digest_open = not gw.release_problems(conn), gw.digest_open(conn, now)
             for row in conn.execute(
                     "select * from reminders where confirmed_at is not null and reminded_at is null "
                     "and cancelled_at is null and due_at <= %s order by due_at, id for update",
                     (now,)).fetchall():
+                person = gw.scenario.person(row["person"])
+                if row["in_digest"] and person and not digest_open(person):
+                    continue  # it waits for their digest's time
                 inst = conn.execute("select * from instances where id = %s",
                                     (row["instance_id"],)).fetchone()
                 if runs and inst["status"] == "active" and not gw.check_instance(conn, inst):
@@ -782,11 +847,18 @@ def create_app(gw: Gateway) -> FastAPI:
                                 "agent": row["agent"], "person": row["person"]})
                     continue
                 conn.execute("update reminders set reminded_at = %s where id = %s", (now, row["id"]))
-                person = gw.scenario.person(row["person"])
                 if person is None or not person.in_audience:
                     continue  # a5s may not write to them now
                 status = inst["status"] if inst["status"] != "active" else "unable to act"
                 text = reminders.notice(row, person, status)
+                if row["in_digest"]:  # a5s's own item in their digest
+                    digests.keep(conn, person.id, None, inst["id"], None, text, now)
+                    ledger.append(conn, {
+                        "kind": "notice", "action": "remind", "run": None, "instance": inst["id"],
+                        "acts_for": [person.id], "decision": "record",
+                        "args": {"reminder": row["id"], "channel": "digest", "chars": len(text),
+                                 "sha256": hashlib.sha256(text.encode()).hexdigest()}})
+                    continue
                 route = gw.reach(conn, person.id, row["agent"])
                 ledger.append(conn, {
                     "kind": "notice", "action": "remind", "run": None, "instance": inst["id"],
@@ -802,6 +874,57 @@ def create_app(gw: Gateway) -> FastAPI:
         for route, text, instance in sends:
             deliver(route, text, None, instance)
         return due
+
+    @app.post("/digests/sweep", dependencies=[Depends(service)])
+    def sweep_digests() -> list[dict]:
+        """Send each person's digest, once its time has come today and their agents' work for
+        it is done. One item goes as itself, from its agent; more go as one message from a5s.
+        A day with nothing to tell sends nothing, but closes the day all the same."""
+        now, sent, sends = gw.clock(), [], []
+        with db.transaction(gw.url) as conn:
+            able = gw.able(conn)
+            people = {p for row in conn.execute("select serves from instances "
+                                                "where status <> 'retired'") for p in row["serves"]}
+            people |= {r["person"] for r in conn.execute(
+                "select distinct person from digest_items where digest_due is null")}
+            for who in sorted(people):
+                person = gw.scenario.person(who)
+                due = digests.window(conn, person, now) if person and person.in_audience else None
+                if due is None or gw.busy(conn, person, due, now, able):
+                    continue
+                items = digests.waiting(conn, who)
+                if not items:
+                    digests.close(conn, who, due, now, [], None)
+                    continue
+                one = items[0] if len(items) == 1 else None
+                text = one["text"] if one else digests.compose(person, items, due)
+                route = gw.reach(conn, who, one["agent"] if one else None)
+                ledger.append(conn, {
+                    "kind": "notice", "action": "digest", "run": None,
+                    "instance": one["instance_id"] if one else None, "acts_for": [who],
+                    "decision": "record", "args": {"items": len(items), "channel": route["channel"],
+                                                   "chars": len(text),
+                                                   "sha256": hashlib.sha256(text.encode()).hexdigest()}})
+                digests.close(conn, who, due, now, items, route["channel"])
+                if route["channel"] in PUSHED:
+                    sends.append((route, text, items))
+                else:  # they collect it from the local channel's inbox
+                    conn.execute(
+                        "insert into outbox (run_id, instance_id, agent, person, channel, text) "
+                        "values (%s, %s, %s, %s, 'local', %s)",
+                        (one["run_id"] if one else None, one["instance_id"] if one else None,
+                         one["agent"] if one else None, who, text))
+                    for item in items:  # a report counts as told once it's theirs to read
+                        if item["run_id"]:
+                            reports.told(conn, str(item["run_id"]))
+                sent.append({"person": who, "items": len(items), "channel": route["channel"]})
+        for route, text, items in sends:
+            if not deliver(route, text, None, items[0]["instance_id"] if len(items) == 1 else None):
+                with db.transaction(gw.url) as conn:
+                    for item in items:
+                        if item["run_id"]:
+                            reports.told(conn, str(item["run_id"]))
+        return sent
 
     # Instances: anyone with the role can make a5s safer alone.
 
@@ -853,7 +976,7 @@ def create_app(gw: Gateway) -> FastAPI:
         if definition is None or definition.release_id != row["release"]:
             raise HTTPException(409, f"release {row['release']} isn't loaded in this gateway")
         model = gw.models.get(row["model"])
-        tools = {**gw.scenario.tools(), **reminders.TOOLS}  # a5s's own first
+        tools = {**gw.scenario.tools(), **CORE_TOOLS}  # a5s's own first
         return {
             "run": row["run"],
             "instance": row["id"],
@@ -875,7 +998,7 @@ def create_app(gw: Gateway) -> FastAPI:
 
     @app.post("/run/tools/{name}")
     def call_tool(name: str, body: ToolArgs, token: str = Depends(run_token)) -> Any:
-        core = reminders.TOOLS.get(name)  # a5s's own, on its own records
+        core = CORE_TOOLS.get(name)
         tool = None if core else gw.scenario.tools().get(name)
         args, removed = dict(body.args), 0
         for field_name in (core or tool).text_fields if (core or tool) else ():
@@ -905,13 +1028,13 @@ def create_app(gw: Gateway) -> FastAPI:
             return JSONResponse(status_code=502, content={"error": outcome["error"]})
         return {"result": result, "recorded": recorded}
 
-    def call_core_tool(core: reminders.CoreTool, args: dict, row: dict, seq: int) -> Any:
+    def call_core_tool(core: coretools.CoreTool, args: dict, row: dict, seq: int) -> Any:
         """One of a5s's own tools, in one transaction with what it changes. A rule of a5s's
         it would break is a denial, in words the agent passes on."""
         try:
             with db.transaction(gw.url) as conn:
-                result = core.run(reminders.Call(conn, row, args, gw.clock(), gw.scenario))
-        except reminders.Refused as exc:
+                result = core.run(coretools.Call(conn, row, args, gw.clock(), gw.scenario))
+        except coretools.Refused as exc:
             record({"kind": "tool", "action": core.name, "run": row["run"], "instance": row["id"],
                     "decision": "record", "of": seq,
                     "outcome": {"status": "refused", "reason": str(exc)}})
@@ -947,19 +1070,20 @@ def create_app(gw: Gateway) -> FastAPI:
             else:
                 decision = gw.decide(row, "send_message", recipient, [])
                 route = (gw.message_of(conn, inbound) if inbound  # an answer, where it was asked
+                         else {"channel": "digest", "reply_to": {}} if gw.for_digest(conn, row)
                          else gw.reach(conn, body.to, row["definition"]))
             ledger.append(conn, gw.entry(row, "message", "send", decision, args={
                 "to": body.to, "chars": len(text), "sha256": hashlib.sha256(text.encode()).hexdigest(),
-                "links_removed": removed,
+                "links_removed": removed, **({"channel": route["channel"]} if route else {}),
             }))
-            if decision.allowed and route["channel"] not in PUSHED:  # people collect it from here
+            if decision.allowed and route["channel"] == "digest":  # it goes in their next digest
+                digests.keep(conn, body.to, row["definition"], row["id"], row["run"], text, gw.clock())
+            elif decision.allowed and route["channel"] not in PUSHED:  # people collect it from here
                 conn.execute(
                     "insert into outbox (run_id, instance_id, agent, inbound_id, person, channel, "
                     "text) values (%s, %s, %s, %s, %s, %s, %s)",
                     (row["run"], row["id"], row["definition"], inbound, body.to, route["channel"],
                      text))
-                if row["trigger"].get("kind") == "report":
-                    reports.told(conn, row["run"])
         if not decision.allowed:
             return JSONResponse(status_code=403,
                                 content={"denied": True, **decision.as_dict(explain=True)})
@@ -967,9 +1091,6 @@ def create_app(gw: Gateway) -> FastAPI:
             problem = deliver(route, text, row["run"], row["id"])
             if problem:
                 return JSONResponse(status_code=502, content={"error": problem})
-            if row["trigger"].get("kind") == "report":
-                with db.transaction(gw.url) as conn:
-                    reports.told(conn, row["run"])
         return {"sent": True, "text": text, "links_removed": removed}
 
     def deliver(route: dict, text: str, run: str | None, instance: str | None) -> str | None:

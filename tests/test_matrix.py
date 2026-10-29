@@ -220,7 +220,12 @@ def told_by_the_watcher(stack, homeserver) -> dict:
     return started
 
 
+MONDAY_DIGEST = ("Your day from a5s, Mon 2 Nov.\n\nFrom the assistant:\nAna, Q-1001 is due on "
+                 "Wednesday.\n\nFrom the watcher:\nAna, Q-1001 is waiting on the customer now.")
+
+
 def a_change_and_reminders_on_monday(stack, monkeypatch) -> None:
+    """Ana's digest on Monday has two agents' news, so it's one message from a5s."""
     records = stack.gateway.scenario._records
     monkeypatch.setitem(records, "Q-1001", {**records["Q-1001"], "status": "waiting on customer"})
     stack.at("2026-11-02T09:30:00+00:00")  # half the time for Ana's and Ben's questions has passed
@@ -228,6 +233,15 @@ def a_change_and_reminders_on_monday(stack, monkeypatch) -> None:
     stack.model.reply("Ben, Q-1002 is due on Friday.")
     stack.model.reply("Ana, Q-1001 is waiting on the customer now.")  # and the watcher's report
     assert stack.scheduler().work_due() == 3
+
+
+def only_the_watcher_on_tuesday(stack, monkeypatch) -> None:
+    """Ana's digest on Tuesday has only the watcher's news, so it's the watcher's own."""
+    records = stack.gateway.scenario._records
+    monkeypatch.setitem(records, "Q-1001", {**records["Q-1001"], "status": "open"})
+    stack.at("2026-11-03T09:30:00+00:00")
+    stack.model.reply("Ana, Q-1001 is open again.")
+    assert stack.scheduler().work_due() == 1
 
 
 def test_an_agent_writes_first_only_as_its_own_bot(stack, homeserver, monkeypatch):
@@ -244,9 +258,12 @@ def test_an_agent_writes_first_only_as_its_own_bot(stack, homeserver, monkeypatc
     a_change_and_reminders_on_monday(stack, monkeypatch)
     asked = stack.model.requests[-1]["body"]["messages"][-1]["content"]
     assert "since you last looked, on Fri 30 Oct" in asked  # Friday's report reached her
-    assert [(m["room"], m["as"], m["body"]) for m in homeserver.sent[-2:]] == [
-        (DM, BOT, "Ana, Q-1001 is due on Wednesday."),  # each in its own chat with her
-        (started["room"], WATCHER, "Ana, Q-1001 is waiting on the customer now.")]
+    assert (homeserver.sent[-1]["room"], homeserver.sent[-1]["as"]) == (DM, BOT)  # where she wrote
+    assert homeserver.sent[-1]["body"] == MONDAY_DIGEST
+
+    only_the_watcher_on_tuesday(stack, monkeypatch)
+    assert [(m["room"], m["as"], m["body"]) for m in homeserver.sent[-1:]] == [
+        (started["room"], WATCHER, "Ana, Q-1001 is open again.")]
     assert len(homeserver.started) == 1  # the same chat again, not a new one
 
     homeserver.rooms[started["room"]].add(ANA)  # she accepts, and answers it there
@@ -263,11 +280,12 @@ def test_someone_who_turns_down_an_agents_chat_hears_from_it_in_their_inbox(stac
     started = told_by_the_watcher(stack, homeserver)
     deliver(homeserver, leave(ANA, started["room"]))  # she turns the invitation down
 
-    a_change_and_reminders_on_monday(stack, monkeypatch)
+    a_change_and_reminders_on_monday(stack, monkeypatch)  # a digest from a5s, where she wrote
+    only_the_watcher_on_tuesday(stack, monkeypatch)
     assert len(homeserver.started) == 1  # a5s doesn't ask her in again
-    assert homeserver.sent[-1]["as"] == BOT  # the assistant's reminder, in her chat with it
+    assert homeserver.sent[-1]["body"] == MONDAY_DIGEST  # and nothing more in Matrix
     [told] = stack.inbox("ana")
-    assert (told["from"], told["text"]) == ("watcher", "Ana, Q-1001 is waiting on the customer now.")
+    assert (told["from"], told["text"]) == ("watcher", "Ana, Q-1001 is open again.")
 
 
 def test_matrix_is_on_where_its_settings_are_and_needs_them_all(stack, homeserver, monkeypatch):

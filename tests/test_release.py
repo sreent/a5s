@@ -119,7 +119,7 @@ CHANGES = {
     "a schedule for the assistant": (
         lambda d: agent(d)["may"]["schedules"].append({"name": "morning"}), {RELEASE_APPROVER}),
     "a report for the assistant": (
-        lambda d: agent(d)["may"]["reports"].append({"source": "records", "at": "09:00"}),
+        lambda d: agent(d)["may"]["reports"].append({"source": "records"}),
         {RELEASE_APPROVER}),
     "how far the assistant may act": (
         lambda d: agent(d)["may"]["autonomy"].update({"max": 2}), {RELEASE_APPROVER}),

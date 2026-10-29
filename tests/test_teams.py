@@ -323,9 +323,17 @@ def test_an_agent_writes_first_in_teams_only_to_people_who_added_its_app(stack, 
     stack.model.reply("Ben, Q-1002 is due on Friday.")
     stack.model.reply("Ana, Q-1001 is waiting on the customer now.")
     assert stack.scheduler().work_due() == 3
+    digest = bot.sent[-1]  # two agents' news: one message from a5s, where she last wrote
+    assert (digest["as"], digest["conversation"]) == (APP_ID, {"id": "a:1-chat"})
+    assert digest["text"].startswith("Your day from a5s, Mon 2 Nov.")
+
+    monkeypatch.setitem(records, "Q-1001", {**records["Q-1001"], "status": "open"})
+    stack.at("2026-11-03T09:30:00+00:00")  # Tuesday: only the watcher has news for her
+    stack.model.reply("Ana, Q-1001 is open again.")
+    assert stack.scheduler().work_due() == 1
     told = bot.sent[-1]
     assert (told["as"], told["conversation"]) == (WATCHER_APP, {"id": "a:1-watcher-chat"})
-    assert told["text"] == "Ana, Q-1001 is waiting on the customer now."
+    assert told["text"] == "Ana, Q-1001 is open again."
     assert told["from"] == {"id": f"28:{WATCHER_APP}"} and "replyToId" not in told
 
     removed = installation("remove")

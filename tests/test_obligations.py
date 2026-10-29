@@ -191,7 +191,10 @@ def test_the_core_decides_each_reminder(stack):
         to_ana = c.post("/run/messages", json={"to": "ana", "text": "Q-1001 is due Wednesday."})
     assert to_ben.status_code == 403
     assert to_ben.json()["reasons"] == ["writes-to-whom-it-acts-for"]
-    assert to_ana.status_code == 200
+    assert to_ana.status_code == 200 and stack.inbox("ana") == []  # it waits for her digest
+    with stack.client() as c:
+        c.post(f"/runs/{opened.json()['run']}/close", json={"outcome": "done"}).raise_for_status()
+    stack.scheduler().digest()  # which goes once the run is done
     assert [m["text"] for m in stack.inbox("ana")] == ["Q-1001 is due Wednesday."]
 
 

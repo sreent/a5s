@@ -10,9 +10,11 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
-# a5s's own tools, for an agent whose release records reminders (core/reminders.py)
+# a5s's own tools, for an agent whose release records reminders (core/reminders.py), and
+# for one that lets people set their digest's time (core/digests.py)
 REMINDER_TOOLS = ("offer_reminder", "confirm_reminder", "list_reminders", "cancel_reminder",
                   "note_waiting")
+PREFERENCE_TOOLS = {"digest-time": "set_digest_time"}
 _DAY_NAMES = {f"{d}{rest}": d for d, rest in zip(DAYS, ("day", "sday", "nesday", "rsday", "day",
                                                        "urday", "day"), strict=True)}
 
@@ -38,8 +40,7 @@ class Schedule(BaseModel):
     """When the agent works on its own, and what it's asked to do each time.
 
     Times are in the time zone of the instance's owner. A schedule run acts for
-    nobody, so it writes to nobody: what it finds reaches people through digests,
-    from step 4.
+    nobody, so it writes to nobody [TBC: whose digest a schedule's findings go in].
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -68,23 +69,16 @@ class Schedule(BaseModel):
 
 class Report(BaseModel):
     """What the agent tells each person it serves about their own records of a kind, once a
-    day: what changed since it last told them, and what fell due.
+    day, in their digest: what changed since it last told them, and what fell due.
 
-    It goes at its time in each person's own time zone, on their working days and in
-    their working hours. Code works the facts out from the records, so the run only
-    puts them into words, and a day with nothing new starts no model. The run acts for
-    the person, so it writes to them and to nobody else.
+    Code works the facts out from the records, so the run only puts them into words, and
+    a day with nothing new starts no model. The run acts for the person, so it writes to
+    them and to nobody else.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     source: str  # the kind of record, such as records
-    at: str = "09:00"
-
-    @field_validator("at", mode="before")
-    @classmethod
-    def _at(cls, value: Any) -> str:
-        return _time(value)
 
 
 class Definition(BaseModel):
@@ -122,8 +116,9 @@ class Definition(BaseModel):
     @property
     def grants(self) -> list[str]:
         """The tools its instances may use: the scenario's it names, and a5s's own for
-        reminders, if it records them."""
-        return [*self.tool_names, *(REMINDER_TOOLS if self.reminders else ())]
+        reminders, if it records them, and for the preferences people may set through it."""
+        return [*self.tool_names, *(REMINDER_TOOLS if self.reminders else ()),
+                *(PREFERENCE_TOOLS[p] for p in self.preferences if p in PREFERENCE_TOOLS)]
 
     @property
     def release_id(self) -> str:
