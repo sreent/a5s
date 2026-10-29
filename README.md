@@ -82,6 +82,15 @@ uv run a5s ledger tail
 uv run a5s ledger verify
 ```
 
+To run it as containers, the way each cloud would, build the image and run the [smoke test](deploy/smoke.sh). It starts the stack with a stand-in model and checks it end to end:
+
+```sh
+docker build -t a5s:dev .
+sh deploy/smoke.sh
+```
+
+With a real model, start [`deploy/compose.yaml`](deploy/compose.yaml) with `A5S_DB_PASSWORD`, `A5S_SERVICE_TOKEN` and a provider's key set, and send messages with `A5S_SCHEDULER_URL=http://127.0.0.1:8701 uv run a5s say ...`.
+
 To change the settings, edit [`settings.yaml`](scenarios/sample/settings.yaml), raise its serial, and sign the new version with `uv run a5s sign --as ana` before applying it. `uv run pytest` runs the tests against a scripted model, and `uv run pytest -m live` against the real providers.
 
 ## Documents

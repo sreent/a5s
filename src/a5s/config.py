@@ -57,6 +57,8 @@ class Config:
     gateway_url: str
     service_token: str
     root: Path
+    scheduler_url: str | None = None  # set when the scheduler runs as a service
+    worker_url: str | None = None  # set when workers run as a service
 
     @property
     def agents_dir(self) -> Path:
@@ -82,4 +84,6 @@ class Config:
             gateway_url=os.environ.get("A5S_GATEWAY_URL", DEFAULT_GATEWAY_URL),
             service_token=token or "",
             root=root,
+            scheduler_url=os.environ.get("A5S_SCHEDULER_URL"),
+            worker_url=os.environ.get("A5S_WORKER_URL"),
         )

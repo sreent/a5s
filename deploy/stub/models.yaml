@@ -1,0 +1,9 @@
+# The approved models, pointed at the stand-in provider inside the stack.
+models:
+  deepseek-v4-pro:
+    provider: stand-in
+    api: openai
+    base_url: http://stub-model:9000/v1
+    model: stand-in-1
+    key_env: STUB_MODEL_KEY
+    data_classes: [synthetic]

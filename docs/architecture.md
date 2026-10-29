@@ -202,7 +202,7 @@ Phase 1 sets these up [TBC]:
 
 ## Hosting
 
-Phase 1 runs a5s's own services and workers on Azure, Google Cloud and AWS at once, each with managed Postgres, so nothing ties a5s to one cloud. Nothing waits inside a host's session: conversations and held calls live in a5s's records, so a5s can move hosts or use a managed runtime later.
+Phase 1 runs a5s's own services and workers on Azure, Google Cloud and AWS at once, each with managed Postgres, so nothing ties a5s to one cloud. They run as one container image, and the networks keep workers away from everything but the gateway ([deploy](../deploy/)). Nothing waits inside a host's session: conversations and held calls live in a5s's records, so a5s can move hosts or use a managed runtime later.
 
 | Host | Runs on | Identity | Gateway |
 | --- | --- | --- | --- |

@@ -19,6 +19,7 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.messages import ToolMessage
 from langchain_core.tools import StructuredTool
 from langchain_openai import ChatOpenAI
+from pydantic import BaseModel
 
 
 def denial(verdict: dict[str, Any]) -> str:
@@ -131,3 +132,21 @@ def run_agent(gateway_url: str, token: str, history: list[dict]) -> str:
         ]
         result = agent.invoke({"messages": messages}, config={"recursion_limit": 40})
     return text_of(result["messages"][-1])
+
+
+class Work(BaseModel):
+    token: str
+    history: list[dict[str, str]]
+
+
+def create_app(gateway_url: str) -> Any:
+    """The worker as a service. It holds no secrets: each request brings one run's token."""
+    from fastapi import FastAPI
+
+    app = FastAPI(title="a5s worker")
+
+    @app.post("/work")
+    def work(body: Work) -> dict[str, str]:
+        return {"reply": run_agent(gateway_url, body.token, body.history)}
+
+    return app

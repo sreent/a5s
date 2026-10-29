@@ -1,0 +1,15 @@
+# A stand-in model provider inside the stack, for trying a5s's containers
+# without a provider's key or internet access:
+#   docker compose -f deploy/compose.yaml -f deploy/compose.stub.yaml up
+
+services:
+  stub-model:
+    image: ${A5S_IMAGE:-a5s:dev}
+    entrypoint: ["python", "/stub/model.py"]
+    volumes: ["./stub:/stub:ro"]
+    networks: [egress]
+
+  gateway:
+    environment:
+      STUB_MODEL_KEY: stand-in
+    volumes: ["./stub/models.yaml:/app/config/models.yaml:ro"]

@@ -1,0 +1,75 @@
+# a5s as containers. The networks enforce the design: workers hold no secrets,
+# and reach only the gateway and the scheduler, never the database or the
+# internet. Only the gateway reaches model providers.
+
+name: a5s
+
+x-a5s: &a5s
+  image: ${A5S_IMAGE:-a5s:dev}
+  restart: unless-stopped
+
+x-database: &database
+  A5S_DATABASE_URL: postgresql://a5s:${A5S_DB_PASSWORD:?set A5S_DB_PASSWORD}@postgres:5432/postgres
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: a5s
+      POSTGRES_PASSWORD: ${A5S_DB_PASSWORD:?set A5S_DB_PASSWORD}
+    volumes: [pgdata:/var/lib/postgresql/data]
+    networks: [data]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "a5s"]
+      interval: 2s
+      retries: 30
+
+  setup:  # the schema, and the signed settings
+    <<: *a5s
+    restart: "no"
+    command: ["setup"]
+    environment:
+      <<: *database
+    networks: [data]
+    depends_on:
+      postgres: {condition: service_healthy}
+
+  gateway:  # the trusted core: policy, the ledger, and the providers' keys
+    <<: *a5s
+    command: ["gateway", "--host", "0.0.0.0"]
+    environment:
+      <<: *database
+      A5S_SERVICE_TOKEN: ${A5S_SERVICE_TOKEN:?set A5S_SERVICE_TOKEN}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      QWEN_API_KEY: ${QWEN_API_KEY:-}
+    networks: [data, work, egress]
+    depends_on:
+      setup: {condition: service_completed_successfully}
+
+  scheduler:  # with the local channel, for development, on localhost only
+    <<: *a5s
+    command: ["scheduler", "--host", "0.0.0.0"]
+    environment:
+      <<: *database
+      A5S_SERVICE_TOKEN: ${A5S_SERVICE_TOKEN:?set A5S_SERVICE_TOKEN}
+      A5S_GATEWAY_URL: http://gateway:8700
+      A5S_WORKER_URL: http://worker:8702
+    networks: [data, work, edge]
+    ports: ["127.0.0.1:${A5S_CHANNEL_PORT:-8701}:8701"]
+    depends_on: [gateway, worker]
+
+  worker:  # no secrets, no database, no internet
+    <<: *a5s
+    command: ["worker", "--host", "0.0.0.0"]
+    environment:
+      A5S_GATEWAY_URL: http://gateway:8700
+    networks: [work]
+
+networks:
+  data: {internal: true}
+  work: {internal: true}
+  egress: {}
+  edge: {}
+
+volumes:
+  pgdata: {}

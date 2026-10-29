@@ -11,11 +11,11 @@ from pathlib import Path
 import httpx
 import yaml
 
-from a5s import build, db, definitions, devdb
+from a5s import build, db, definitions, devdb, worker
 from a5s.config import DEFAULT_DATABASE_URL, Config
 from a5s.core import ledger, registry, signing
 from a5s.services import channels
-from a5s.services.scheduler import Scheduler
+from a5s.services.scheduler import Scheduler, remote_worker
 
 
 def _dev_up(root: Path) -> None:
@@ -76,11 +76,28 @@ def _pin(cfg: Config, agent: str) -> None:
 
 
 def _say(cfg: Config, person: str, agent: str, text: str) -> None:
-    sc = build.scenario(cfg)
-    reply = Scheduler(cfg, sc).handle_message(person=person, agent=agent, text=text)
-    with db.transaction(cfg.database_url) as conn:
-        channels.undelivered(conn, person=person)  # shown below, so mark it delivered
+    if cfg.scheduler_url:  # the scheduler runs as a service, so ask it through the local channel
+        response = httpx.post(f"{cfg.scheduler_url}/channels/local/messages",
+                              json={"person": person, "agent": agent, "text": text}, timeout=600)
+        response.raise_for_status()
+        reply = response.json()["reply"]
+        httpx.get(f"{cfg.scheduler_url}/channels/local/outbox/{person}", timeout=30)
+    else:
+        sc = build.scenario(cfg)
+        reply = Scheduler(cfg, sc).handle_message(person=person, agent=agent, text=text)
+        with db.transaction(cfg.database_url) as conn:
+            channels.undelivered(conn, person=person)  # it's printed below
     print(reply)
+
+
+def _service(cfg: Config, name: str):
+    if name == "gateway":
+        return build.app(cfg)
+    if name == "worker":
+        return worker.create_app(cfg.gateway_url)
+    hand_off = remote_worker(cfg.worker_url) if cfg.worker_url else worker.run_agent
+    scheduler = Scheduler(cfg, build.scenario(cfg), worker=hand_off)
+    return channels.create_app(scheduler, cfg.database_url)
 
 
 def _admin(cfg: Config, path: str, body: dict | None = None) -> dict:
@@ -107,8 +124,13 @@ def main(argv: list[str] | None = None) -> None:
     sign = sub.add_parser("sign", help="sign the current settings, as a person")
     sign.add_argument("--as", dest="person", required=True)
     sign.add_argument("--key", type=Path, help="their private key (default: the sample's)")
-    gateway = sub.add_parser("gateway", help="run the gateway")
-    gateway.add_argument("--port", type=int, default=8700)
+    sub.add_parser("setup", help="set up the schema and apply the settings, for a deployment")
+    for name, port, what in (("gateway", 8700, "the gateway, in the trusted core"),
+                             ("scheduler", 8701, "the scheduler, with the local channel"),
+                             ("worker", 8702, "a worker, which holds no secrets")):
+        service = sub.add_parser(name, help=f"run {what}")
+        service.add_argument("--host", default="127.0.0.1")
+        service.add_argument("--port", type=int, default=port)
     say = sub.add_parser("say", help="send an agent a message, as a person")
     say.add_argument("--as", dest="person", required=True)
     say.add_argument("agent")
@@ -138,10 +160,13 @@ def main(argv: list[str] | None = None) -> None:
         _pin(cfg, args.agent)
     elif args.command == "sign":
         _sign(cfg, args.person, args.key)
-    elif args.command == "gateway":
+    elif args.command == "setup":
+        db.migrate(cfg.database_url)
+        _apply(cfg)
+    elif args.command in ("gateway", "scheduler", "worker"):
         import uvicorn
 
-        uvicorn.run(build.app(cfg), host="127.0.0.1", port=args.port)
+        uvicorn.run(_service(cfg, args.command), host=args.host, port=args.port)
     elif args.command == "say":
         _say(cfg, args.person, args.agent, args.text)
     elif args.command in ("suspend", "resume"):

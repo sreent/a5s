@@ -23,6 +23,17 @@ log = logging.getLogger(__name__)
 Worker = Callable[[str, str, list[dict]], str]
 
 
+def remote_worker(url: str) -> Worker:
+    """Hand each run to a worker service, which holds nothing but the run's token."""
+
+    def work(_gateway_url: str, token: str, history: list[dict]) -> str:
+        response = httpx.post(f"{url}/work", json={"token": token, "history": history}, timeout=600)
+        response.raise_for_status()
+        return response.json()["reply"]
+
+    return work
+
+
 class Scheduler:
     def __init__(self, cfg: Config, scenario: Scenario, worker: Worker = run_agent,
                  http: httpx.Client | None = None):
