@@ -1,4 +1,5 @@
--- a5s schema. Every statement is idempotent, so it's safe to run on every start.
+-- The core's tables, the services' tables, and the ledger's guard. Written so it
+-- also applies to a database made before migrations were numbered.
 
 -- Trusted core data: instances, runs and the ledger.
 
@@ -112,16 +113,4 @@ create table if not exists leases (
   key text primary key,
   holder text not null,
   expires_at timestamptz not null
-);
-
--- The sample scenario's own system, kept apart from a5s's tables.
-
-create schema if not exists sample;
-
-create table if not exists sample.drafts (
-  id bigserial primary key,
-  title text not null,
-  body text not null,
-  created_for text not null,
-  at timestamptz not null default now()
 );

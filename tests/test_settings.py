@@ -122,7 +122,7 @@ def test_the_same_version_can_be_applied_again(sample):
 
 
 def test_runs_dont_open_for_settings_nobody_signed(stack):
-    with db.transaction(stack.cfg.database_url) as conn:
+    with db.transaction(stack.admin) as conn:
         conn.execute("update instances set level = 2, settings_version = 'forged'")
     with stack.client() as c:
         r = c.post("/runs", json={"instance": "assistant-finance",

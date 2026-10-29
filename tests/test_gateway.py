@@ -53,7 +53,7 @@ def test_a_tool_outside_the_grant_is_denied_and_recorded(stack):
 
 
 def test_a_tool_whose_schema_changed_is_refused(stack):
-    with db.transaction(stack.cfg.database_url) as conn:
+    with db.transaction(stack.admin) as conn:
         conn.execute("""update instances set pins = jsonb_set(pins, '{search_records}', '"0000"')""")
     _, token = stack.open_run()
     with stack.client(token) as c:
@@ -132,7 +132,7 @@ def test_sanitize_drops_lookalike_links():
 
 def test_explain_says_why_in_words_and_records_only_denials(stack):
     run, token = stack.open_run()
-    with db.transaction(stack.cfg.database_url) as conn:
+    with db.transaction(stack.admin) as conn:
         conn.execute("update instances set level = 0")
     with stack.client(token) as c:
         allowed = c.post("/run/explain", json={"action": "call_tool", "name": "search_records"})
@@ -149,7 +149,7 @@ def test_explain_says_why_in_words_and_records_only_denials(stack):
 
 
 def test_a_granted_tool_the_scenario_no_longer_has_is_refused(stack):
-    with db.transaction(stack.cfg.database_url) as conn:
+    with db.transaction(stack.admin) as conn:
         conn.execute("update instances set grants = array_append(grants, 'retired_tool')")
     _, token = stack.open_run()
     with stack.client(token) as c:

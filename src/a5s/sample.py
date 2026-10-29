@@ -10,7 +10,9 @@ import hashlib
 from pathlib import Path
 from typing import Any
 
+import psycopg
 import yaml
+from psycopg import sql
 
 from a5s import db
 from a5s.contract import InstanceSettings, Person, Settings, Signature, Tool, ToolCall
@@ -41,6 +43,25 @@ class SampleScenario:
 
     def person(self, person_id: str) -> Person | None:
         return self._people.get(person_id)
+
+    # Its own system, kept apart from a5s's tables
+
+    def setup(self, conn: psycopg.Connection, tools_role: str) -> None:
+        conn.execute("""
+            create schema if not exists sample;
+            create table if not exists sample.drafts (
+              id bigserial primary key,
+              title text not null,
+              body text not null,
+              created_for text not null,
+              at timestamptz not null default now()
+            )
+        """)
+        conn.execute(sql.SQL(
+            "grant usage on schema sample to {role}; "
+            "grant select, insert on sample.drafts to {role}; "
+            "grant usage on sequence sample.drafts_id_seq to {role}").format(
+                role=sql.Identifier(tools_role)))
 
     def find(self, identity: str) -> Person | None:
         return next((p for p in self._people.values() if identity in p.identities), None)

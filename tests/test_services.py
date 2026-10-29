@@ -7,7 +7,7 @@ import httpx
 
 from a5s import db, worker
 from a5s.services import channels
-from a5s.services.scheduler import Scheduler, remote_worker
+from a5s.services.scheduler import remote_worker
 from conftest import SERVICE_TOKEN, free_port, serve
 
 
@@ -19,8 +19,8 @@ def test_a_message_through_the_channel_the_scheduler_and_a_worker_service(stack)
         seen.append(request.headers.get("authorization", ""))
 
     with serve(worker.create_app(stack.url), free_port()) as worker_url:
-        scheduler = Scheduler(stack.cfg, stack.gateway.scenario, worker=remote_worker(worker_url))
-        channel = channels.create_app(scheduler, stack.cfg.database_url)
+        scheduler = stack.scheduler(worker=remote_worker(worker_url))
+        channel = channels.create_app(scheduler, scheduler.cfg.database_url)
         with serve(channel, free_port()) as channel_url, httpx.Client(
                 event_hooks={"request": [record]}, timeout=60) as person:
             reply = person.post(f"{channel_url}/channels/local/messages",
@@ -35,7 +35,7 @@ def test_a_message_through_the_channel_the_scheduler_and_a_worker_service(stack)
 
 def test_a_message_waits_for_the_one_before_it_then_is_answered(stack):
     stack.model.reply("Here's the answer to your second message.")
-    scheduler = Scheduler(stack.cfg, stack.gateway.scenario, lease_wait=30)
+    scheduler = stack.scheduler(lease_wait=30)
     assert scheduler._lease("ana/assistant/general", "the first message")
     replies = []
     second = threading.Thread(target=lambda: replies.append(
@@ -44,7 +44,7 @@ def test_a_message_waits_for_the_one_before_it_then_is_answered(stack):
 
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
-        with db.transaction(stack.cfg.database_url) as conn:
+        with db.transaction(stack.admin) as conn:
             told = [m["text"] for m in channels.undelivered(conn, person="ana")]
         if told:
             break

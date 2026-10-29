@@ -105,6 +105,10 @@ class Scenario(Protocol):
     def find(self, identity: str) -> Person | None:
         """Whose account elsewhere this is, such as entra:<object id> for Teams."""
 
+    def setup(self, conn: Any, tools_role: str) -> None:
+        """Set up anything the scenario keeps in a5s's database, such as a fake system's
+        tables, for its tools, which run as `tools_role`. Most scenarios keep nothing there."""
+
     def tools(self) -> dict[str, Tool]: ...
 
     def settings(self) -> Settings: ...

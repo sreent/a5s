@@ -4,6 +4,7 @@ import json
 import threading
 import time
 import uuid
+from dataclasses import replace
 
 import httpx
 import jwt
@@ -77,7 +78,8 @@ def bot(stack):
                       service_hosts=("smba.test",), login_url="https://login.test",
                       metadata_url="https://login.botframework.test/v1/.well-known/openidconfiguration")
     stack.gateway.teams = Teams(cfg, httpx.Client(transport=httpx.MockTransport(fake.handler)))
-    with serve(teams.create_app(stack.gateway), free_port()) as url:
+    endpoint = replace(stack.gateway, cfg=stack.as_role("channels"))  # as deployed
+    with serve(teams.create_app(endpoint), free_port()) as url:
         fake.url = f"{url}/api/messages"
         yield fake
 
@@ -85,7 +87,7 @@ def bot(stack):
 def queued(stack) -> list[dict]:
     from a5s import db
 
-    with db.transaction(stack.cfg.database_url) as conn:
+    with db.transaction(stack.admin) as conn:
         return conn.execute("select * from inbound order by received_at").fetchall()
 
 

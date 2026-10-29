@@ -13,6 +13,9 @@ random() { head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9'; }
 idp_password=$(random)
 printf 'A5S_DB_PASSWORD=%s\nA5S_SERVICE_TOKEN=%s\nA5S_IDP_PASSWORD=%s\n' \
   "$(random)" "$(random)" "$idp_password" > "$env_file"
+for part in GATEWAY CHANNELS SCHEDULER ANCHOR; do
+  echo "A5S_DB_${part}_PASSWORD=$(random)" >> "$env_file"
+done
 echo "A5S_ANCHOR_STORE=s3://a5s-ledger/sample" >> "$env_file"
 compose() { docker compose -p a5s-smoke --env-file "$env_file" -f deploy/compose.yaml \
               -f deploy/compose.stub.yaml -f deploy/compose.identity.yaml \
@@ -63,6 +66,21 @@ for host, port in (("postgres", 5432), ("keycloak", 8080), ("localstack", 4566),
                    ("api.deepseek.com", 443), ("1.1.1.1", 443)):
     assert not reach(host, port), f"the worker can reach {host}:{port}"
 print("The worker holds no secrets, and reaches only the gateway.")
+PY
+
+compose exec -T scheduler python - <<'PY'
+import os, psycopg
+with psycopg.connect(os.environ["A5S_DATABASE_URL"]) as conn:
+    for statement in ("insert into inbound (id, channel, source_id, person, agent, text, reply_to) "
+                      "values (gen_random_uuid(), 'teams', 'x', 'ben', 'assistant', 'hi', '{}')",
+                      "update instances set level = 2", "truncate ledger"):
+        try:
+            conn.execute(statement)
+        except psycopg.errors.InsufficientPrivilege:
+            conn.rollback()
+        else:
+            raise AssertionError(f"the scheduler could run: {statement}")
+print("The scheduler connects as its own role, and can't write the core's records.")
 PY
 
 compose exec -T gateway a5s ledger tail -n 50 | grep -q '"identity": "verified"'

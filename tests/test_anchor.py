@@ -25,12 +25,12 @@ def write(url: str, n: int) -> None:
 
 
 def copy(url: str, store) -> list[anchor.Head]:
-    with db.transaction(url) as conn:
+    with db.transaction(db.as_role(url, "anchor")) as conn:  # the copier only reads the ledger
         return anchor.anchor(conn, store)
 
 
 def check(url: str, store, **kwargs) -> anchor.AnchorCheck:
-    with db.transaction(url) as conn:
+    with db.transaction(db.as_role(url, "anchor")) as conn:
         return anchor.check(conn, store, **kwargs)
 
 

@@ -128,7 +128,7 @@ def test_the_core_opens_a_run_only_for_the_person_the_token_names(stack, issuer)
     assert opened.status_code == 200
     run = opened.json()["run"]
     assert stack.ledger(run)[0]["args"]["identity"] == "verified"
-    with db.transaction(stack.cfg.database_url) as conn:
+    with db.transaction(stack.admin) as conn:
         trigger = conn.execute("select trigger from runs where id = %s", (run,)).fetchone()["trigger"]
     assert "identity" not in trigger  # the token is checked, never kept
 
@@ -153,7 +153,8 @@ def test_without_an_identity_provider_the_ledger_says_senders_went_unchecked(sta
 def test_the_channel_asks_people_to_sign_in_and_the_core_checks_them_again(stack, issuer):
     stack.model.reply("Hello, Ana.")
     stack.gateway.identity = issuer.verifier()
-    channel = channels.create_app(stack.scheduler(), stack.cfg.database_url, issuer.verifier())
+    channel = channels.create_app(stack.scheduler(), stack.as_role("scheduler").database_url,
+                                  issuer.verifier())
     as_ana = {"Authorization": f"Bearer {issuer.token('ana')}"}
     as_ben = {"Authorization": f"Bearer {issuer.token('ben')}"}
     message = {"agent": "assistant", "text": "Hi"}

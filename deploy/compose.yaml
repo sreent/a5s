@@ -8,7 +8,9 @@ x-a5s: &a5s
   image: ${A5S_IMAGE:-a5s:dev}
   restart: unless-stopped
 
-x-database: &database
+# Each part connects as its own role, with only the rights its job needs. The
+# administrator only sets up the schema and applies the signed settings.
+x-admin: &admin
   A5S_DATABASE_URL: postgresql://a5s:${A5S_DB_PASSWORD:?set A5S_DB_PASSWORD}@postgres:5432/postgres
 
 x-teams: &teams  # the bot's registration in Entra ID, if a5s talks to people in Teams
@@ -29,12 +31,16 @@ services:
       interval: 2s
       retries: 30
 
-  setup:  # the schema, and the signed settings
+  setup:  # the schema, the parts' roles, and the signed settings
     <<: *a5s
     restart: "no"
     command: ["setup"]
     environment:
-      <<: *database
+      <<: *admin
+      A5S_DB_GATEWAY_PASSWORD: ${A5S_DB_GATEWAY_PASSWORD:?set A5S_DB_GATEWAY_PASSWORD}
+      A5S_DB_CHANNELS_PASSWORD: ${A5S_DB_CHANNELS_PASSWORD:?set A5S_DB_CHANNELS_PASSWORD}
+      A5S_DB_SCHEDULER_PASSWORD: ${A5S_DB_SCHEDULER_PASSWORD:?set A5S_DB_SCHEDULER_PASSWORD}
+      A5S_DB_ANCHOR_PASSWORD: ${A5S_DB_ANCHOR_PASSWORD:?set A5S_DB_ANCHOR_PASSWORD}
     networks: [data]
     depends_on:
       postgres: {condition: service_healthy}
@@ -43,7 +49,8 @@ services:
     <<: *a5s
     command: ["gateway", "--host", "0.0.0.0"]
     environment:
-      <<: [*database, *teams]
+      <<: *teams
+      A5S_DATABASE_URL: postgresql://a5s_gateway:${A5S_DB_GATEWAY_PASSWORD}@postgres:5432/postgres
       A5S_SERVICE_TOKEN: ${A5S_SERVICE_TOKEN:?set A5S_SERVICE_TOKEN}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       QWEN_API_KEY: ${QWEN_API_KEY:-}
@@ -55,7 +62,7 @@ services:
     <<: *a5s
     command: ["scheduler", "--host", "0.0.0.0"]
     environment:
-      <<: *database
+      A5S_DATABASE_URL: postgresql://a5s_scheduler:${A5S_DB_SCHEDULER_PASSWORD}@postgres:5432/postgres
       A5S_SERVICE_TOKEN: ${A5S_SERVICE_TOKEN:?set A5S_SERVICE_TOKEN}
       A5S_GATEWAY_URL: http://gateway:8700
       A5S_WORKER_URL: http://worker:8702
@@ -68,7 +75,8 @@ services:
     command: ["teams", "--host", "0.0.0.0"]
     profiles: [teams]
     environment:
-      <<: [*database, *teams]
+      <<: *teams
+      A5S_DATABASE_URL: postgresql://a5s_channels:${A5S_DB_CHANNELS_PASSWORD}@postgres:5432/postgres
     networks: [data, egress, edge]
     ports: ["127.0.0.1:${A5S_TEAMS_PORT:-8703}:8703"]
     depends_on:
@@ -78,7 +86,7 @@ services:
     <<: *a5s
     command: ["anchor", "--every", "3600"]
     environment:
-      <<: *database
+      A5S_DATABASE_URL: postgresql://a5s_anchor:${A5S_DB_ANCHOR_PASSWORD}@postgres:5432/postgres
       A5S_ANCHOR_STORE: ${A5S_ANCHOR_STORE:?set A5S_ANCHOR_STORE, such as s3://bucket/a5s}
       A5S_ANCHOR_RETAIN_DAYS: ${A5S_ANCHOR_RETAIN_DAYS:-365}
     networks: [data, egress]

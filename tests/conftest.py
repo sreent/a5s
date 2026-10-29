@@ -11,7 +11,7 @@ import threading
 import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -59,11 +59,14 @@ def database_url() -> Iterator[str]:
 
 @pytest.fixture
 def database(database_url: str) -> str:
+    """A fresh database, migrated. The URL is its administrator's."""
     with psycopg.connect(database_url, autocommit=True) as conn:
         conn.execute("drop schema if exists public cascade")
         conn.execute("drop schema if exists sample cascade")
         conn.execute("create schema public")
     db.migrate(database_url)
+    with db.transaction(database_url) as conn:
+        SampleScenario(ROOT / "scenarios" / "sample", database_url).setup(conn, db.ROLES["gateway"])
     return database_url
 
 
@@ -164,11 +167,19 @@ def serve(app: Any, port: int) -> Iterator[str]:
 
 @dataclass
 class Stack:
-    """a5s, running: its database, gateway, sample scenario and a fake model."""
+    """a5s, running: its database, gateway, sample scenario and a fake model.
 
-    cfg: Config
+    Each part connects as its own role, as it does when deployed. `admin` is the
+    database's administrator, for setting up and for tests that tamper.
+    """
+
+    cfg: Config  # the gateway's
     gateway: Gateway
     model: FakeModel
+    admin: str
+
+    def as_role(self, part: str) -> Config:
+        return replace(self.cfg, database_url=db.as_role(self.admin, part))
 
     @property
     def url(self) -> str:
@@ -197,8 +208,8 @@ class Stack:
         with db.transaction(self.cfg.database_url) as conn:
             registry.set_status(conn, "assistant-finance", by=by, suspend=True)
 
-    def scheduler(self) -> Scheduler:
-        return Scheduler(self.cfg, self.gateway.scenario)
+    def scheduler(self, **kwargs: Any) -> Scheduler:
+        return Scheduler(self.as_role("scheduler"), self.gateway.scenario, **kwargs)
 
 
 def build_root(tmp: Path, model_alias: str, models_yaml: str) -> Path:
@@ -217,9 +228,9 @@ def build_root(tmp: Path, model_alias: str, models_yaml: str) -> Path:
 @contextmanager
 def running(database: str, root: Path, http: httpx.Client, model: FakeModel) -> Iterator[Stack]:
     port = free_port()
-    cfg = Config(database_url=database, gateway_url=f"http://127.0.0.1:{port}",
-                 service_token=SERVICE_TOKEN, root=root)
-    scenario = SampleScenario(cfg.scenario_dir, database)
+    cfg = Config(database_url=db.as_role(database, "gateway"),
+                 gateway_url=f"http://127.0.0.1:{port}", service_token=SERVICE_TOKEN, root=root)
+    scenario = SampleScenario(cfg.scenario_dir, cfg.database_url)  # its tools run in the gateway
     definitions.pin(root / "agents" / "assistant",
                     {n: t.schema_hash for n, t in scenario.tools().items()})
     gw = Gateway(cfg, scenario, PolicyEngine(), load_models(cfg.models_file),
@@ -229,7 +240,7 @@ def running(database: str, root: Path, http: httpx.Client, model: FakeModel) -> 
                                  scenario.person, scenario.name)
     assert not applied.refused, applied.refused
     with serve(create_app(gw), port):
-        yield Stack(cfg, gw, model)
+        yield Stack(cfg, gw, model, database)
 
 
 FAKE_MODELS = """

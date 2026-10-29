@@ -33,10 +33,23 @@ def _dev_up(root: Path) -> None:
         token_file.write_text(secrets.token_urlsafe(32))
         token_file.chmod(0o600)
     url = devdb.start(state / "pg", 54329)
-    db.migrate(url)
+    _migrate(Config.from_env(), url)
     print(f"Postgres is up at {url}, and the schema is in place.")
     if url != DEFAULT_DATABASE_URL:
         print(f"Set A5S_DATABASE_URL={url}")
+
+
+def _migrate(cfg: Config, url: str | None = None) -> None:
+    """Bring the schema up to date and set up the scenario's tables, as the administrator."""
+    url = url or cfg.database_url
+    ran = db.migrate(url)
+    with db.transaction(url) as conn:
+        build.scenario(cfg).setup(conn, db.ROLES["gateway"])
+    passwords = {part: os.environ[f"A5S_DB_{part.upper()}_PASSWORD"] for part in db.ROLES
+                 if os.environ.get(f"A5S_DB_{part.upper()}_PASSWORD")}
+    db.set_passwords(url, passwords)
+    print(f"Migrated: {', '.join(ran) or 'nothing new'}. "
+          f"Passwords set for {', '.join(passwords) or 'no roles'}.")
 
 
 def _apply(cfg: Config) -> None:
@@ -165,7 +178,7 @@ def main(argv: list[str] | None = None) -> None:
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("up", help="start a local Postgres and set up the schema")
     sub.add_parser("down", help="stop the local Postgres")
-    sub.add_parser("migrate", help="set up the schema")
+    sub.add_parser("migrate", help="bring the schema up to date, as the administrator")
     sub.add_parser("apply", help="bring instances in line with the settings and releases")
     pin = sub.add_parser("pin", help="pin the schemas of an agent's tools in its release")
     pin.add_argument("agent")
@@ -175,7 +188,7 @@ def main(argv: list[str] | None = None) -> None:
     sign = sub.add_parser("sign", help="sign the current settings, as a person")
     sign.add_argument("--as", dest="person", required=True)
     sign.add_argument("--key", type=Path, help="their private key (default: the sample's)")
-    sub.add_parser("setup", help="set up the schema and apply the settings, for a deployment")
+    sub.add_parser("setup", help="migrate and apply the settings, as the administrator")
     for name, port, what in (("gateway", 8700, "the gateway, in the trusted core"),
                              ("scheduler", 8701, "the scheduler, with the local channel"),
                              ("worker", 8702, "a worker, which holds no secrets"),
@@ -207,7 +220,7 @@ def main(argv: list[str] | None = None) -> None:
         return _keygen(args.person, args.out)
     cfg = Config.from_env()
     if args.command == "migrate":
-        db.migrate(cfg.database_url)
+        _migrate(cfg)
     elif args.command == "apply":
         _apply(cfg)
     elif args.command == "pin":
@@ -215,7 +228,7 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "sign":
         _sign(cfg, args.person, args.key)
     elif args.command == "setup":
-        db.migrate(cfg.database_url)
+        _migrate(cfg)
         _apply(cfg)
     elif args.command in ("gateway", "scheduler", "worker", "teams"):
         import uvicorn

@@ -39,7 +39,7 @@ def test_the_next_run_reads_the_conversation(stack):
     second = stack.model.requests[-1]["body"]["messages"]
     said = " ".join(str(m.get("content")) for m in second)
     assert "Remember Q-1001 for me." in said and "Noted: the invoice question is Q-1001." in said
-    with db.transaction(stack.cfg.database_url) as conn:
+    with db.transaction(stack.admin) as conn:
         turns = context.recent(conn, person="ana", agent="assistant")
     assert [t["role"] for t in turns] == ["person", "agent", "person", "agent"]
 
@@ -88,7 +88,7 @@ def test_people_outside_the_directory_or_the_instance_get_no_agent(stack):
 
 
 def set_level(stack, level: int) -> None:
-    with db.transaction(stack.cfg.database_url) as conn:
+    with db.transaction(stack.admin) as conn:
         conn.execute("update instances set level = %s", (level,))
 
 
