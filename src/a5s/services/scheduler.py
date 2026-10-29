@@ -10,9 +10,10 @@ the lease runs out and the message is taken again. If the core can't be reached,
 the message waits and is tried again later.
 
 Every minute, it also asks the core what falls due: obligations whose agents
-should remind their people, each taking the person's conversation in the same
-way, and schedules to fire, each taking a lease of its own. The core decides
-each run, and escalates overdue obligations itself. What can't run now is due
+should remind their people, and reports with something to tell someone, each
+taking the person's conversation in the same way, and schedules to fire, each
+taking a lease of its own. The core decides each run, and escalates overdue
+obligations itself. What can't run now is due
 again at the next sweep. The scheduler has no port of its own, so nothing can
 send it work but the core.
 """
@@ -148,9 +149,9 @@ class Scheduler:
         return {**row, "kind": "message", "holder": holder}
 
     def _take(self, item: dict) -> dict | None:
-        """What's due, with what it needs leased: the person's conversation, for a reminder,
-        or the schedule itself."""
-        if item["kind"] == "obligation":
+        """What's due, with what it needs leased: the person's conversation, for a reminder or
+        a report, or the schedule itself."""
+        if item["kind"] in ("obligation", "report"):
             key = f"{item['person']}/{item['agent']}/{context.GENERAL}"
         else:
             key = f"schedule/{item['instance']}/{item['schedule']}"
@@ -296,10 +297,11 @@ class Scheduler:
         except httpx.HTTPError:
             log.exception("couldn't close run %s; it expires on its own", run)
 
-    # Reminding people of obligations, and working on schedules
+    # Reminding people of obligations, telling them about their records, and schedules
 
     def _work(self, claim: dict) -> None:
-        """Remind someone of an obligation, or work on a schedule, if the core opens the run."""
+        """Remind someone of an obligation, tell them what changed in their records, or work on
+        a schedule, if the core opens the run."""
         kind = claim["kind"]
         try:
             opened = self.gw.post("/runs", headers=self.service, json={
@@ -354,10 +356,10 @@ class Scheduler:
 
     def due(self) -> list[dict]:
         """What the core says falls due now: obligations whose agents should remind their
-        people, and schedules to fire. The core escalates overdue obligations as it works
-        this out."""
+        people, schedules to fire, and reports with something to tell. The core escalates
+        overdue obligations as it works this out."""
         found: list[dict] = []
-        for path in ("/obligations/sweep", "/schedules/sweep"):
+        for path in ("/obligations/sweep", "/schedules/sweep", "/reports/sweep"):
             try:
                 response = self.gw.post(path, headers=self.service)
                 response.raise_for_status()
@@ -367,7 +369,7 @@ class Scheduler:
         return found
 
     def work_due(self) -> int:
-        """Work, one by one, on each obligation and schedule that's due and free now."""
+        """Work, one by one, on each obligation, schedule and report that's due and free now."""
         worked = 0
         for item in self.due():
             if (claim := self._take(item)) is not None:

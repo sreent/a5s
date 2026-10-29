@@ -31,7 +31,7 @@ from pydantic import BaseModel
 from a5s import db
 from a5s.config import Config, ModelConfig
 from a5s.contract import Scenario, Signature, Tool, ToolCall, parse_settings
-from a5s.core import chats, ledger, models, obligations, registry, releases, schedules
+from a5s.core import chats, ledger, models, obligations, registry, releases, reports, schedules
 from a5s.core.identity import IdentityError, UnknownPerson, Verifier, signed_in
 from a5s.core.matrix import Matrix
 from a5s.core.policy import Decision, PolicyEngine
@@ -306,6 +306,48 @@ class Gateway:
             opening.used = True
         return opening
 
+    def reporting(self, conn: psycopg.Connection, inst: dict, trigger: dict,
+                  now: datetime) -> Opening:
+        """A run that tells someone what changed in their records, and what fell due, acting
+        for them. The facts come from the records, worked out by code."""
+        asked = trigger.get("report") if isinstance(trigger.get("report"), dict) else {}
+        who, source = str(asked.get("person")), str(asked.get("source"))
+        person = self.scenario.person(who)
+        definition = self.definitions.get(inst["definition"])
+        found = [r for r in definition.reports if r.source == source] if (
+            definition and definition.release_id == inst["release"]) else []
+        reachable = person is not None and person.in_audience and who in inst["serves"]
+        due = reports.due_now(found[0], person, now) if found and reachable else None
+        args = {"person": who, "source": source, "due": due.isoformat() if due else None}
+        opening = Opening(trigger={"kind": "report", "report": {"person": who, "source": source},
+                                   "due": args["due"]},
+                          acts_for=[who] if reachable else [], args=args, reasons=[])
+        if not found:
+            opening.reasons.append(f"{inst['id']}'s release doesn't report on {source}")
+        elif person is None:
+            opening.reasons.append(f"the directory doesn't know {who}")
+        elif who not in inst["serves"]:
+            opening.reasons.append(f"{inst['id']} doesn't serve {who}")
+        elif not person.in_audience:
+            opening.reasons.append(f"a5s may not write to {who}")
+        elif due is None:
+            opening.reasons.append(f"{who}'s report isn't due")
+        elif reports.fired(conn, inst["id"], who, source, due):
+            opening.reasons.append(f"{who}'s report has gone already today")
+            opening.used = True
+        else:
+            try:
+                news = reports.news(conn, self.scenario.name, inst["id"], person, source,
+                                    self.scenario.watched(), now)
+            except Exception:  # the day's report waits until they can be read
+                log.exception("couldn't read the records for %s's report", who)
+                opening.reasons.append("the records can't be read")
+                return opening
+            if not news.facts:
+                opening.reasons.append("nothing is new")
+            opening.task, opening.due, opening.seen = reports.task(person, news), due, news.records
+        return opening
+
     # Cedar entities, built from the core's own records for every call.
 
     @staticmethod
@@ -370,7 +412,8 @@ class Opening:
     reasons: list[str]
     task: str | None = None  # what a5s asks the agent to do, if it isn't answering a message
     used: bool = False  # the trigger has been used already, such as a message answered before
-    due: datetime | None = None  # the time a schedule fires for
+    due: datetime | None = None  # the time a schedule or a report fires for
+    seen: dict | None = None  # a report's records as it tells them, kept once they have it
 
 
 def load_run(conn: psycopg.Connection, token: str) -> dict:
@@ -390,7 +433,8 @@ def load_run(conn: psycopg.Connection, token: str) -> dict:
 class OpenRun(BaseModel):
     instance: str
     # {"kind": "message", "inbound": <id>}, {"kind": "obligation", "obligation": <id>},
-    # or {"kind": "schedule", "schedule": <name>}
+    # {"kind": "schedule", "schedule": <name>}, or
+    # {"kind": "report", "report": {"person": <id>, "source": <kind of record>}}
     trigger: dict[str, Any]
 
 
@@ -447,10 +491,11 @@ def create_app(gw: Gateway) -> FastAPI:
     @app.post("/runs", dependencies=[Depends(service)])
     def open_run(body: OpenRun) -> dict:
         kind = body.trigger.get("kind")
-        opens = {"message": gw.answering, "obligation": gw.reminding, "schedule": gw.scheduled}
+        opens = {"message": gw.answering, "obligation": gw.reminding, "schedule": gw.scheduled,
+                 "report": gw.reporting}
         if kind not in opens:
             raise HTTPException(400, "a run answers a message, reminds someone of an obligation, "
-                                     "or works on a schedule")
+                                     "works on a schedule, or tells someone about their records")
         token = secrets.token_urlsafe(32)
         run_id = str(uuid.uuid4())
         now = gw.clock()
@@ -465,7 +510,14 @@ def create_app(gw: Gateway) -> FastAPI:
             if any(p not in inst["serves"] for p in opening.acts_for):
                 reasons.append(f"{body.instance} doesn't serve {', '.join(opening.acts_for)}")
             reasons += gw.check_instance(conn, inst) + gw.release_problems(conn)
-            if opening.due and not opening.used:  # a schedule fires once for each time, run or not
+            if kind == "report" and opening.due and not opening.used:  # once a day, run or not
+                report = opening.trigger["report"]
+                if not reports.fire(conn, body.instance, report["person"], report["source"],
+                                    opening.due, now, "; ".join(reasons) or "run",
+                                    *((None, None) if reasons else (run_id, opening.seen))):
+                    reasons.append(f"{report['person']}'s report has gone already today")
+                    opening.used = True
+            if kind == "schedule" and opening.due and not opening.used:  # once for each time
                 fired = conn.execute(
                     "insert into schedule_fires (instance_id, schedule, due_at, fired_at, run_id, "
                     "outcome) values (%s, %s, %s, %s, %s, %s) on conflict do nothing returning 1",
@@ -617,6 +669,47 @@ def create_app(gw: Gateway) -> FastAPI:
                                      "due": at.isoformat()}})
         return due
 
+    @app.post("/reports/sweep", dependencies=[Depends(service)])
+    def sweep_reports() -> list[dict]:
+        """The reports due now that have something to tell, for the scheduler to run. A day
+        with nothing new is recorded here, so no model starts, and so is one that falls while
+        the instance is suspended, which isn't made up: what changed waits for the next one."""
+        now, due, records = gw.clock(), [], None
+        with db.transaction(gw.url) as conn:
+            for inst in conn.execute("select * from instances where status in ('active', 'suspended') "
+                                     "order by id").fetchall():
+                definition = gw.definitions.get(inst["definition"])
+                if definition is None or definition.release_id != inst["release"]:
+                    continue
+                for report, who in ((r, p) for r in definition.reports for p in inst["serves"]):
+                    person = gw.scenario.person(who)  # and only people a5s may write to
+                    at = reports.due_now(report, person, now) if person and person.in_audience else None
+                    if at is None or reports.fired(conn, inst["id"], who, report.source, at):
+                        continue
+                    if inst["status"] != "active":
+                        reports.fire(conn, inst["id"], who, report.source, at, now, "suspended")
+                        ledger.append(conn, {
+                            "kind": "run", "action": "open", "run": None, "instance": inst["id"],
+                            "acts_for": [who], "decision": "deny",
+                            "reasons": [f"{inst['id']} is suspended"],
+                            "args": {"trigger": "report", "person": who, "source": report.source,
+                                     "due": at.isoformat()}})
+                        continue
+                    if records is None:
+                        try:
+                            records = gw.scenario.watched()
+                        except Exception:  # each report waits for a sweep that can read them
+                            log.exception("couldn't read the records for reports")
+                            return due
+                    news = reports.news(conn, gw.scenario.name, inst["id"], person, report.source,
+                                        records, now)
+                    if news.facts:
+                        due.append({"kind": "report", "report": {"person": who, "source": report.source},
+                                    "instance": inst["id"], "agent": inst["definition"], "person": who})
+                    else:  # nothing new, so no model starts
+                        reports.fire(conn, inst["id"], who, report.source, at, now, "nothing new")
+        return due
+
     # Instances: anyone with the role can make a5s safer alone.
 
     def who_asks(body: StatusChange) -> tuple[str, str]:
@@ -746,6 +839,8 @@ def create_app(gw: Gateway) -> FastAPI:
                     "text) values (%s, %s, %s, %s, %s, %s, %s)",
                     (row["run"], row["id"], row["definition"], inbound, body.to, route["channel"],
                      text))
+                if row["trigger"].get("kind") == "report":
+                    reports.told(conn, row["run"])
         if not decision.allowed:
             return JSONResponse(status_code=403,
                                 content={"denied": True, **decision.as_dict(explain=True)})
@@ -753,6 +848,9 @@ def create_app(gw: Gateway) -> FastAPI:
             problem = deliver(route, text, row["run"], row["id"])
             if problem:
                 return JSONResponse(status_code=502, content={"error": problem})
+            if row["trigger"].get("kind") == "report":
+                with db.transaction(gw.url) as conn:
+                    reports.told(conn, row["run"])
         return {"sent": True, "text": text, "links_removed": removed}
 
     def deliver(route: dict, text: str, run: str | None, instance: str | None) -> str | None:

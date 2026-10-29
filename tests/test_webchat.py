@@ -128,7 +128,7 @@ def test_the_page_runs_only_its_own_script_and_shows_only_text(stack):
 def test_in_development_the_page_asks_who_you_are(stack):
     with channels(stack) as url:
         config = httpx.get(f"{url}/chat/config").json()
-    assert config == {"signin": None, "development": True, "agents": ["assistant"]}
+    assert config == {"signin": None, "development": True, "agents": ["assistant", "watcher"]}
 
 
 def test_the_web_chat_is_off_where_nobody_could_sign_in_to_it(stack):

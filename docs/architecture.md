@@ -50,7 +50,7 @@ A scenario plugs into a5s by providing these, or by taking a5s's defaults:
 | Directory | People, the roles they hold, their teams, reporting lines and working hours, and what each may see, for any record | The organisation's identity provider, such as Entra ID, Google Cloud Identity, Okta or Keycloak, or its own directory, such as Active Directory, with roles assigned as groups |
 | Settings | Parts and their owners and delegates, how far each agent may act in each part and type of action, limits, sensitive fields, classes of data, the escalation chain, who agents may talk to, and the scenario's switches. Each version is signed by its owner, and an unsigned one doesn't count. Its serial only rises, so an older version can't be replayed. | a5s's settings store, with signed versions [TBC: edited through a simple app, or in git] |
 | Tools | The systems agents use, as MCP servers, with each tool's risk attributes | None |
-| Records | Where obligations come from, such as cases past their due time, and the events that wake agents | None |
+| Records | Where obligations come from, such as cases past their due time, each person's records as they stand, for reports of what changed, and the events that wake agents | None |
 | Governed process | Where agents' requests to change data go, and who decides them | Held proposals in a5s itself, from phase 2 |
 | Decision surface | Where people decide | Cards in the channel, apart from the conversation and signed through the identity provider [TBC] |
 | Policy pack | The scenario's own restrictions, which can only add to a5s's base pack | None |
@@ -119,6 +119,7 @@ An instance lives in records: its identity, register entry, triggers, obligation
 5. **Record.** The context service adds the turn to the conversation and updates the topic's summary. The scheduler updates the obligations, and the lease ends.
 
 - **Obligations** are worked out by code from the scenario's records, never inferred by the model, with one for each record and person across all agents, naming the instance that acts on it. A person can say what they're waiting on, which pauses chases to them until the date they give.
+- **Reports** are worked out by code too. An agent whose release reports on a kind of record, such as the watcher, tells each person it serves, each working morning in their own time zone, what changed in their records since it last told them, and what fell due. Code compares the records with what it last told them, so the model only words the facts, and a morning with nothing new starts no model. Each report acts for its person alone.
 - **Promises and reminders.** When an agent promises a follow-up, or a person asks for a reminder, a typed tool records it as an obligation in a5s's own records, and the person confirms it. It's theirs alone, and content from outside can't set one.
 - **Triggers and schedules** come with the release, and an agent can't create its own.
 - **Repeats are safe.** Tools are idempotent, with keys made from the piece of work, the record and the change.

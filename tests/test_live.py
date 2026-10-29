@@ -39,3 +39,25 @@ def test_a_real_model_reminds_someone_of_what_falls_due(database, tmp_path):
         assert "Q-1001" in reminder["text"] and reminder["from"] == "assistant"
         print(reminder["text"])
         assert stack.verify().ok
+
+
+@pytest.mark.live
+def test_a_real_model_tells_someone_what_changed_in_their_records(database, tmp_path, monkeypatch):
+    if not os.environ.get("DEEPSEEK_API_KEY"):
+        pytest.skip("DEEPSEEK_API_KEY isn't set")
+    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text())
+    with running(database, root, httpx.Client(), FakeModel()) as stack:
+        stack.with_watcher(serves=("ana",))
+        stack.at("2026-10-29T09:30:00+00:00")  # Thursday: the watcher's first morning
+        assert stack.scheduler().work_due() == 1
+        [first] = stack.inbox("ana")
+        assert "Q-1001" in first["text"] and first["from"] == "watcher"
+
+        records = stack.gateway.scenario._records
+        monkeypatch.setitem(records, "Q-1001", {**records["Q-1001"], "status": "waiting on customer"})
+        stack.at("2026-10-30T09:30:00+00:00")
+        assert stack.scheduler().work_due() == 1
+        [changed] = stack.inbox("ana")
+        assert "Q-1001" in changed["text"] and "waiting on" in changed["text"].lower()
+        print(first["text"], changed["text"], sep="\n---\n")
+        assert stack.verify().ok

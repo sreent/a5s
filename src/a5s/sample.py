@@ -17,7 +17,16 @@ import yaml
 from psycopg import sql
 
 from a5s import db
-from a5s.contract import Obligation, Person, Settings, Signature, Tool, ToolCall, parse_settings
+from a5s.contract import (
+    Obligation,
+    Person,
+    Record,
+    Settings,
+    Signature,
+    Tool,
+    ToolCall,
+    parse_settings,
+)
 
 LINK = "https://sample.a5s.dev/"
 
@@ -89,6 +98,13 @@ class SampleScenario:
                 opened=_on(r["opened"], owner.hours[0], zone), due=_on(r["due"], owner.hours[1], zone),
                 link=self._link("records", r["key"])))
         return found
+
+    def watched(self) -> list[Record]:
+        """Each record, as its owner stands to it."""
+        return [Record(source="records", key=r["key"], person=r["owner"], title=r["title"],
+                       fields={"status": r["status"], "due date": r["due"], "customer": r["customer"]},
+                       link=self._link("records", r["key"]))
+                for r in self._records.values() if r["owner"] in self._people]
 
     # Settings
 

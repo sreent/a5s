@@ -261,49 +261,52 @@ class Stack:
         """
         folder = self.cfg.scenario_dir
         settings = yaml.safe_load((folder / "settings.yaml").read_text())
-        settings["serial"] += 1
         if instances is not None:
             settings["instances"] = instances
         else:
             settings["instances"]["assistant-finance"].update(changes)
-        raw = yaml.safe_dump(settings).encode()
-        (folder / "settings.yaml").write_bytes(raw)
-        value = signing.sign((folder / "keys" / "ana.key").read_text().strip(), raw)
-        (folder / "settings.sig").write_text(
-            yaml.safe_dump({"signatures": [{"signer": "ana", "value": value}]}))
+        signed(folder, settings)
         scenario = self.gateway.scenario
         with db.transaction(self.admin) as conn:
             return registry.apply(conn, self.gateway.definitions, scenario.settings(),
                                   scenario.tools(), scenario.person, scenario.name)
 
-    def add_watcher(self) -> None:
-        """A second agent, the watcher, which chases what falls due for Ana and Ben in place
-        of the assistant, in a new release, signed in and applied."""
-        agents = self.cfg.agents_dir
-        shutil.copytree(agents / "assistant", agents / "watcher")
-        for agent, chases in (("assistant", []), ("watcher", ["records"])):
-            spec = agents / agent / "agent.yaml"
-            spec.write_text(yaml.safe_dump({**yaml.safe_load(spec.read_text()), "id": agent,
-                                            "obligations": chases}, sort_keys=False))
-        found = definitions.load_all(agents)
-        self.gateway.definitions.clear()  # in place, so the core's channels know it too
-        self.gateway.definitions.update(found)
+    def with_watcher(self, serves: tuple[str, ...] = ("ana", "ben")) -> None:
+        """The sample's watcher, which the tests leave out unless they ask, as its settings
+        name it: it tells its people each working morning what changed in their records."""
         settings = yaml.safe_load((self.cfg.scenario_dir / "settings.yaml").read_text())
-        finance = settings["instances"]["assistant-finance"]
-        assert not self.settle(instances={"assistant-finance": finance,
-                                          "watcher-finance": {**finance, "definition": "watcher"}}).refused
+        assert not self.settle(instances={**settings["instances"], "watcher-finance": {
+            **WATCHER, "serves": list(serves)}}).refused
+
+
+def signed(folder: Path, settings: dict) -> None:
+    """A new version of the settings, with its serial raised, signed by Ana, an instance
+    approver."""
+    raw = yaml.safe_dump({**settings, "serial": settings["serial"] + 1}).encode()
+    (folder / "settings.yaml").write_bytes(raw)
+    value = signing.sign((folder / "keys" / "ana.key").read_text().strip(), raw)
+    (folder / "settings.sig").write_text(
+        yaml.safe_dump({"signatures": [{"signer": "ana", "value": value}]}))
+
+
+SAMPLE_SETTINGS = yaml.safe_load((ROOT / "scenarios" / "sample" / "settings.yaml").read_text())
+WATCHER = SAMPLE_SETTINGS["instances"]["watcher-finance"]
 
 
 def build_root(tmp: Path, model_alias: str, models_yaml: str) -> Path:
+    """The agents and the sample, each agent on the model under test. The watcher is left
+    out of the settings, so its reports don't run in tests that aren't about it."""
     root = tmp / "root"
     shutil.copytree(ROOT / "agents", root / "agents")
     shutil.copytree(ROOT / "scenarios" / "sample", root / "scenarios" / "sample")
     (root / "config").mkdir()
     (root / "config" / "models.yaml").write_text(models_yaml)
-    spec = root / "agents" / "assistant" / "agent.yaml"
-    lines = [f"model: {model_alias}" if line.startswith("model:") else line
-             for line in spec.read_text().splitlines()]
-    spec.write_text("\n".join(lines) + "\n")
+    for spec in (root / "agents").glob("*/agent.yaml"):
+        lines = [f"model: {model_alias}" if line.startswith("model:") else line
+                 for line in spec.read_text().splitlines()]
+        spec.write_text("\n".join(lines) + "\n")
+    instances = {k: v for k, v in SAMPLE_SETTINGS["instances"].items() if k != "watcher-finance"}
+    signed(root / "scenarios" / "sample", {**SAMPLE_SETTINGS, "instances": instances})
     return root
 
 
@@ -314,8 +317,8 @@ def running(database: str, root: Path, http: httpx.Client, model: FakeModel) -> 
                  gateway_url=f"http://127.0.0.1:{port}", service_token=SERVICE_TOKEN, root=root,
                  development=True)
     scenario = SampleScenario(cfg.scenario_dir, cfg.database_url)  # its tools run in the gateway
-    definitions.pin(root / "agents" / "assistant",
-                    {n: t.schema_hash for n, t in scenario.tools().items()})
+    for agent in ("assistant", "watcher"):
+        definitions.pin(root / "agents" / agent, {n: t.schema_hash for n, t in scenario.tools().items()})
     gw = Gateway(cfg, scenario, PolicyEngine(), load_models(cfg.models_file),
                  definitions.load_all(cfg.agents_dir), http, clock=lambda: QUIET)
     with db.transaction(database) as conn:

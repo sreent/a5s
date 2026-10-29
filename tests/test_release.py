@@ -118,12 +118,15 @@ CHANGES = {
                               {RELEASE_APPROVER}),
     "a schedule for the assistant": (
         lambda d: agent(d)["may"]["schedules"].append({"name": "morning"}), {RELEASE_APPROVER}),
+    "a report for the assistant": (
+        lambda d: agent(d)["may"]["reports"].append({"source": "records", "at": "09:00"}),
+        {RELEASE_APPROVER}),
     "how far the assistant may act": (
         lambda d: agent(d)["may"]["autonomy"].update({"max": 2}), {RELEASE_APPROVER}),
     "less the assistant may do": (lambda d: agent(d)["may"]["tools"].remove("create_draft"),
                                   {OWNER, ENGINEER}),
-    "a new agent": (lambda d: d["agents"].update({"watcher": agent(BASE)}),
-                    {RELEASE_APPROVER, releases.agent_owner("watcher")}),
+    "a new agent": (lambda d: d["agents"].update({"librarian": agent(BASE)}),
+                    {RELEASE_APPROVER, releases.agent_owner("librarian")}),
     "nothing": (lambda d: None, set()),
 }
 
@@ -135,7 +138,8 @@ def test_what_a_release_needs_depends_on_what_changed(what):
 
 
 def test_the_first_release_a_deployment_approves_needs_everyone():
-    assert {n.role for n in releases.needs(BASE, None)} == {RELEASE_APPROVER, ASSURANCE, ENGINEER, OWNER}
+    assert {n.role for n in releases.needs(BASE, None)} == {
+        RELEASE_APPROVER, ASSURANCE, ENGINEER, OWNER, releases.agent_owner("watcher")}
 
 
 def test_a_security_fix_goes_in_at_once_only_if_it_changes_only_dependencies():
@@ -288,4 +292,5 @@ def test_when_an_approver_leaves_the_release_in_use_is_approved_again_as_a_basel
             Signature("ines", signing.sign(private, second, signing.RELEASE))]
         verdict = releases.record(conn, second, signatures, deployed.gateway.scenario, "platform",
                                   baseline=True)
-    assert verdict.ok and {n.role for n in verdict.needs} == {RELEASE_APPROVER, ASSURANCE, ENGINEER, OWNER}
+    assert verdict.ok and {n.role for n in verdict.needs} == {
+        RELEASE_APPROVER, ASSURANCE, ENGINEER, OWNER, releases.agent_owner("watcher")}

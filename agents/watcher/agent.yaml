@@ -1,0 +1,29 @@
+id: watcher
+release: 0.1.0
+works_for: The people its instance is assigned to
+does: >-
+  Tells each of its people, each working morning, what changed in the records
+  they own since it last told them, and what fell due, and answers their
+  questions about their records. It reads, and changes nothing.
+scope: none                      # it changes no part's data
+model: deepseek-v4-pro           # from config/models.yaml, the approved list
+autonomy:
+  start: 0
+  max: 0                         # it observes and reports
+tools:
+  records: [search_records, get_record]    # the scenario's records, read only
+triggers:
+  - message: from the people it works for
+obligations: []                  # the assistant chases what falls due
+schedules: []                    # none: it reports to each person, in their own time
+reports:
+  - source: records              # what changed in each person's records, and what fell due
+    at: "09:00"                  # in each person's own time zone, on their working days
+reminders: false
+preferences: [channel]
+channels: [teams]
+context:
+  budget_tokens: 30000
+budget:
+  per_run: "[TBC]"
+  per_person_per_day: "[TBC]"

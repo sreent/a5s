@@ -16,7 +16,7 @@ people:
 
   # The team that runs a5s, and the people from outside it who approve its releases.
   - {id: priya, name: Priya Nair, team: platform, manager: lena, timezone: Europe/London,
-     roles: [agent-owner:assistant]}
+     roles: [agent-owner:assistant, agent-owner:watcher]}
   - {id: tomas, name: Tomas Berg, team: platform, manager: lena, timezone: Europe/London}
   - {id: lena, name: Lena Fischer, team: technology, timezone: Europe/London}
   - {id: rosa, name: Rosa Mendes, team: risk, timezone: Europe/London, roles: [release-approver]}

@@ -14,6 +14,16 @@ _DAY_NAMES = {f"{d}{rest}": d for d, rest in zip(DAYS, ("day", "sday", "nesday",
                                                        "urday", "day"), strict=True)}
 
 
+def _time(value: Any) -> str:
+    """A time of day, such as "09:00". YAML reads an unquoted 9:00 as a number, so times
+    need quotes."""
+    hours, _, minutes = value.partition(":") if isinstance(value, str) else ("", "", "")
+    if not (hours.isdigit() and minutes.isdigit() and int(hours) < 24 and int(minutes) < 60
+            and len(minutes) == 2):
+        raise ValueError(f"{value} isn't a time in quotes, such as \"09:00\"")
+    return f"{int(hours):02d}:{minutes}"
+
+
 class Autonomy(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -39,14 +49,7 @@ class Schedule(BaseModel):
     @field_validator("at", mode="before")
     @classmethod
     def _times(cls, value: Any) -> list[str]:
-        times, found = value if isinstance(value, list) else [value], []
-        for t in times:  # YAML reads an unquoted 9:00 as a number, so times need quotes
-            hours, _, minutes = t.partition(":") if isinstance(t, str) else ("", "", "")
-            if not (hours.isdigit() and minutes.isdigit() and int(hours) < 24 and int(minutes) < 60
-                    and len(minutes) == 2):
-                raise ValueError(f"{t} isn't a time in quotes, such as \"09:00\"")
-            found.append(f"{int(hours):02d}:{minutes}")
-        return found
+        return [_time(t) for t in (value if isinstance(value, list) else [value])]
 
     @field_validator("days", mode="before")
     @classmethod
@@ -58,6 +61,27 @@ class Schedule(BaseModel):
         if unknown := [d for d in days if d not in DAYS]:
             raise ValueError(f"{', '.join(unknown)} isn't a day such as mon")
         return days
+
+
+class Report(BaseModel):
+    """What the agent tells each person it serves about their own records of a kind, once a
+    day: what changed since it last told them, and what fell due.
+
+    It goes at its time in each person's own time zone, on their working days and in
+    their working hours. Code works the facts out from the records, so the run only
+    puts them into words, and a day with nothing new starts no model. The run acts for
+    the person, so it writes to them and to nobody else.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    source: str  # the kind of record, such as records
+    at: str = "09:00"
+
+    @field_validator("at", mode="before")
+    @classmethod
+    def _at(cls, value: Any) -> str:
+        return _time(value)
 
 
 class Definition(BaseModel):
@@ -76,6 +100,7 @@ class Definition(BaseModel):
     triggers: list[dict[str, Any]] = []
     schedules: list[Schedule] = []
     obligations: list[str] = []  # the kinds of obligation it chases, such as records
+    reports: list[Report] = []  # what it tells each person about their own records, daily
     reminders: bool = False
     preferences: list[str] = []
     channels: list[str] = ["teams"]

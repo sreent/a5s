@@ -1,8 +1,8 @@
 """The scenario contract: what a scenario gives a5s.
 
 Phase 1 covers the directory, settings, tools, the obligations its records
-give rise to, and the policy pack. Events from records, the governed process
-and the decision surface follow in later steps.
+give rise to, each person's records as they stand, and the policy pack. Events
+from records, the governed process and the decision surface follow in later steps.
 """
 
 from __future__ import annotations
@@ -48,6 +48,18 @@ class Obligation:
     title: str
     opened: datetime  # when it started, so half the time allowed is known
     due: datetime
+    link: str | None = None
+
+
+@dataclass(frozen=True)
+class Record:
+    """A record as its person stands to it now, for the core to tell them what changed."""
+
+    source: str  # the kind of record it is, such as "records"
+    key: str
+    person: str  # whose it is, such as its owner
+    title: str
+    fields: dict[str, str]  # what a change in matters, named in words, such as {"status": "open"}
     link: str | None = None
 
 
@@ -170,6 +182,11 @@ class Scenario(Protocol):
         """What people owe now, from the records: one for each record and person.
         Something that's done, such as a closed case, owes nothing. If the records
         can't be read, raise: an empty list means nothing is owed."""
+
+    def watched(self) -> list[Record]:
+        """Each person's records as they stand now, closed ones included, so an agent that
+        reports on them can say what changed. If the records can't be read, raise: an
+        empty list means nobody has any."""
 
     def settings(self) -> Settings: ...
 

@@ -129,7 +129,7 @@ said = until("the assistant answering", lambda: [
 print(f"Reply in Matrix: {said[0]}")
 assert "Q-1001" in said[0], said
 PY
-compose exec -T gateway a5s ledger tail -n 50 | grep -q '"identity": "verified by matrix"'
+compose exec -T gateway a5s ledger tail -n 200 | grep -q '"identity": "verified by matrix"'
 echo "The homeserver vouched for Ana in Matrix, and the core recorded it."
 
 curl -sf -o "$reply" -H "authorization: Bearer $ana" http://127.0.0.1:8703/channels/local/inbox
@@ -147,6 +147,10 @@ for _ in range(60):  # the scheduler asks the core what's due every minute
     time.sleep(2)
 assert owed == expected, owed
 print("The core worked the obligations out from the records, each naming who acts on it.")
+with psycopg.connect(os.environ["A5S_DATABASE_URL"]) as conn:
+    running = conn.execute("select id, status from instances order by id").fetchall()
+assert running == [("assistant-finance", "active"), ("watcher-finance", "active")], running
+print("The assistant and the watcher are both at work, in the release their people approved.")
 PY
 
 compose exec -T worker python - <<'PY'
@@ -181,7 +185,7 @@ with psycopg.connect(os.environ["A5S_DATABASE_URL"]) as conn:
 print("The scheduler connects as its own role, and can't write the core's records.")
 PY
 
-compose exec -T gateway a5s ledger tail -n 50 | grep -q '"identity": "verified"'
+compose exec -T gateway a5s ledger tail -n 200 | grep -q '"identity": "verified"'
 echo "The core checked Ana's identity itself, and recorded it."
 compose exec -T anchor a5s anchor
 compose exec -T anchor python - <<'PY'

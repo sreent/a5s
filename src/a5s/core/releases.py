@@ -92,6 +92,7 @@ def _agent(folder: Path) -> dict:
         "may": {  # what widening it would change
             "tools": sorted(d.tool_names), "pins": dict(sorted(d.pins.items())), "model": d.model,
             "triggers": d.triggers, "schedules": [s.model_dump() for s in d.schedules],
+            "reports": [r.model_dump() for r in d.reports],
             "obligations": sorted(d.obligations), "autonomy": d.autonomy.model_dump(),
             "channels": sorted(d.channels), "budget": d.budget, "context": d.context,
             "scope": d.scope, "reminders": d.reminders,
@@ -178,8 +179,8 @@ def _widens_agent(old: dict, new: dict) -> list[str]:
         found.append("uses a tool that changed")
     if new["model"] != old["model"]:
         found.append("uses another model")
-    found += [f"has new {key}" for key in ("triggers", "schedules")
-              if any(item not in old[key] for item in new[key])]
+    found += [f"has new {key}" for key in ("triggers", "schedules", "reports")
+              if any(item not in old.get(key, []) for item in new.get(key, []))]
     if set(new["obligations"]) - set(old["obligations"]):
         found.append("chases more")
     if any(new["autonomy"][k] > old["autonomy"][k] for k in ("start", "max")):

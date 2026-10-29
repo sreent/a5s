@@ -23,7 +23,7 @@ For example, a5s's own assistant is a definition, and its release 0.3.0 a releas
 | Scope | The parts an instance may act in: one, several, or none, for an agent that acts on no part's data |
 | Grant | The tools, data and models an instance may use: what its release lists, as far as its parts' owners approve |
 | Type of action | A kind of action that a level is set for, as the scenario defines it, such as a change type or a catalogue item |
-| Acts for | Everyone whose words a run serves: whoever sent the message, set the reminder, or wrote the reply a request came from, and whoever a reminder of an obligation is for. A run started only by an event or a schedule acts for nobody. A run writes only to the people it acts for. |
+| Acts for | Everyone whose words a run serves: whoever sent the message, set the reminder, or wrote the reply a request came from, whoever a reminder of an obligation is for, and whoever a report on their own records is for. A run started only by an event or a schedule acts for nobody. A run writes only to the people it acts for. |
 
 The [scenario contract](architecture.md#the-scenario-contract) says where the settings, the governed process and the decision surface come from. Each scenario's page maps these terms, as the [IT service desk](../scenarios/it-service-desk.md) does.
 
@@ -125,5 +125,7 @@ budget:
 ```
 
 A schedule names its times, in the time zone of the instance's owner, its days, and the task a5s gives the agent each time, such as `{name: morning, at: "09:00", days: weekdays, task: Look through the open questions.}`. Times need quotes, because YAML reads an unquoted 9:00 as a number.
+
+A report names a kind of record and a time, such as `{source: records, at: "09:00"}`, as the [watcher's](../agents/watcher/agent.yaml) does. Each working morning, at that time in each person's own time zone and within their working hours, the agent tells each person it serves what changed in their records of that kind since it last told them, and what fell due. The first time, it tells them what's open. Code works the facts out from the records, and the agent only puts them into words, so a morning with nothing new starts no model. The run acts for that person alone.
 
 The register adds what changes without a release: each instance, its identity and its status. Each deployment's signed settings name who an instance serves, its level, and its owner and deputy, who are people in that deployment's directory, so the same definition serves any scenario.

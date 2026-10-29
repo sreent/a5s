@@ -301,27 +301,32 @@ def installation(action: str) -> dict:
             "channelData": {"tenant": {"id": TENANT}}}
 
 
-def test_an_agent_writes_first_in_teams_only_to_people_who_added_its_app(stack, bot):
-    stack.add_watcher()  # it chases what falls due for Ana and Ben now, not the assistant
+def test_an_agent_writes_first_in_teams_only_to_people_who_added_its_app(stack, bot, monkeypatch):
+    stack.with_watcher()
     stack.model.reply("Hello, Ana.")
     httpx.post(bot.url, json=activity("Hello"), headers=bot.auth()).raise_for_status()
     stack.scheduler().answer_waiting()
 
-    stack.at("2026-11-02T09:30:00+00:00")  # half the time for Ana's and Ben's questions has passed
-    stack.model.reply("Ana, Q-1001 is due on Wednesday.")
-    stack.model.reply("Ben, Q-1002 is due on Friday.")
+    stack.at("2026-10-30T09:30:00+00:00")  # Friday morning: the watcher's first report to each
+    stack.model.reply("Ana, Q-1001 is open, and due on Wednesday.")
+    stack.model.reply("Ben, Q-1002 is waiting on finance.")
     assert stack.scheduler().work_due() == 2
     assert [m["as"] for m in bot.sent] == [APP_ID]  # the assistant's answer, and nothing as it since
-    assert [m["text"] for m in stack.inbox("ana")] == ["Ana, Q-1001 is due on Wednesday."]
+    assert [m["text"] for m in stack.inbox("ana")] == ["Ana, Q-1001 is open, and due on Wednesday."]
 
     added = installation("add")
     assert httpx.post(bot.url, json=added, headers=bot.auth(aud=WATCHER_APP)).status_code == 200
-    stack.at("2026-11-09T09:00:00+00:00")  # Ben's was due on Friday, so Ana, his manager, hears
-    stack.scheduler().work_due()
-    escalated = bot.sent[-1]
-    assert (escalated["as"], escalated["conversation"]) == (WATCHER_APP, {"id": "a:1-watcher-chat"})
-    assert escalated["text"].startswith("Q-1002, Refund for a duplicate payment, was due")
-    assert escalated["from"] == {"id": f"28:{WATCHER_APP}"} and "replyToId" not in escalated
+    records = stack.gateway.scenario._records
+    monkeypatch.setitem(records, "Q-1001", {**records["Q-1001"], "status": "waiting on customer"})
+    stack.at("2026-11-02T09:30:00+00:00")  # Monday: her record changed, and reminders are due
+    stack.model.reply("Ana, Q-1001 is due on Wednesday.")
+    stack.model.reply("Ben, Q-1002 is due on Friday.")
+    stack.model.reply("Ana, Q-1001 is waiting on the customer now.")
+    assert stack.scheduler().work_due() == 3
+    told = bot.sent[-1]
+    assert (told["as"], told["conversation"]) == (WATCHER_APP, {"id": "a:1-watcher-chat"})
+    assert told["text"] == "Ana, Q-1001 is waiting on the customer now."
+    assert told["from"] == {"id": f"28:{WATCHER_APP}"} and "replyToId" not in told
 
     removed = installation("remove")
     assert httpx.post(bot.url, json=removed, headers=bot.auth(aud=WATCHER_APP)).status_code == 200

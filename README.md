@@ -2,7 +2,7 @@
 
 **An agent OS on LangChain Deep Agents, for agents that live and work alongside people, under the rules people set.**
 
-**Status:** Phase 1 has started. Its first step, a walking skeleton, runs locally against a sample scenario with real models, and the second, the release pipeline, is under way ([progress](docs/phase-1.md#progress)).
+**Status:** Phase 1 has started. Its first step, a walking skeleton, runs locally against a sample scenario with real models, the second, the release pipeline, is under way, and the second of its two reference agents, the watcher, is built ([progress](docs/phase-1.md#progress)).
 
 a5s runs agents the way an operating system runs programs. It installs them, gives each one an identity and only the rights it needs, wakes it when there's work, checks every call it makes, and records what happened. Unlike a task runner, it keeps agents alive between tasks: each one remembers its conversations with people, keeps track of what it owes them, and picks up where it left off, for months.
 
@@ -79,12 +79,12 @@ uv run a5s apply     # the assistant, from agents/ and the sample's signed setti
 uv run a5s dev &     # the core, its channels and the scheduler, in one process
 uv run a5s say --as ana assistant "Which customer questions are still open?"
 # or chat in a browser at http://127.0.0.1:8703/chat/
-uv run a5s inbox --as ana    # reminders, once half the time for her questions has passed
+uv run a5s inbox --as ana    # the watcher's morning report, and reminders when they fall due
 uv run a5s ledger tail
 uv run a5s ledger verify
 ```
 
-`a5s dev` takes people's word for who they are, and runs whatever release it is, which is for development only. Everywhere else, people sign in, and the core runs only a release its deployment's people have approved. Every minute, the scheduler also asks the core what falls due: the assistant reminds people of their open records once half the time allowed has passed, the core escalates what's overdue along each person's reporting line, and schedules in a release fire at their times.
+`a5s dev` takes people's word for who they are, and runs whatever release it is, which is for development only. Everywhere else, people sign in, and the core runs only a release its deployment's people have approved. Every minute, the scheduler also asks the core what falls due: the assistant reminds people of their open records once half the time allowed has passed, the core escalates what's overdue along each person's reporting line, the watcher tells each person, each working morning in their own time zone, what changed in their records and what fell due, and schedules in a release fire at their times.
 
 To run it as containers, the way each cloud would, build the image and run the [smoke test](deploy/smoke.sh). It starts the stack with stand-ins for the model, the identity provider, a Matrix homeserver and locked storage, and checks it end to end, from sign-in and a chat in Matrix to the ledger's locked copies. With `--keep`, it leaves the stack running, to try the web chat and Matrix as the sample's people:
 

@@ -203,59 +203,71 @@ def test_a_reminder_reaches_the_matrix_room_the_person_last_wrote_in(stack, home
     assert [m["text"] for m in stack.inbox("ben")] == ["Ben, Q-1002 is due on Friday."]  # no room yet
 
 
-def reminded_by_the_watcher(stack, homeserver) -> dict:
-    """Ana talks to the assistant in Matrix, and then the watcher reminds her. The room it
-    started for her."""
-    stack.add_watcher()  # it chases what falls due for Ana and Ben now, not the assistant
+def told_by_the_watcher(stack, homeserver) -> dict:
+    """Ana talks to the assistant in Matrix, and then the watcher writes to her first, with
+    its first morning report. The room the watcher's bot started for her."""
+    stack.with_watcher()
     deliver(homeserver, invite())
     stack.model.reply("Hello, Ana.")
     deliver(homeserver, said("Hello"))
     stack.scheduler().answer_waiting()
 
-    stack.at("2026-11-02T09:30:00+00:00")  # half the time for Ana's and Ben's questions has passed
-    stack.model.reply("Ana, Q-1001 is due on Wednesday.")
-    stack.model.reply("Ben, Q-1002 is due on Friday.")
+    stack.at("2026-10-30T09:30:00+00:00")  # Friday morning, before any reminder falls due
+    stack.model.reply("Ana, Q-1001 is open, and due on Wednesday.")
+    stack.model.reply("Ben, Q-1002 is waiting on finance, and due next Friday.")
     assert stack.scheduler().work_due() == 2
     [started] = homeserver.started
     return started
 
 
-def test_an_agent_writes_first_only_as_its_own_bot(stack, homeserver):
-    started = reminded_by_the_watcher(stack, homeserver)
+def a_change_and_reminders_on_monday(stack, monkeypatch) -> None:
+    records = stack.gateway.scenario._records
+    monkeypatch.setitem(records, "Q-1001", {**records["Q-1001"], "status": "waiting on customer"})
+    stack.at("2026-11-02T09:30:00+00:00")  # half the time for Ana's and Ben's questions has passed
+    stack.model.reply("Ana, Q-1001 is due on Wednesday.")  # the assistant's reminders
+    stack.model.reply("Ben, Q-1002 is due on Friday.")
+    stack.model.reply("Ana, Q-1001 is waiting on the customer now.")  # and the watcher's report
+    assert stack.scheduler().work_due() == 3
+
+
+def test_an_agent_writes_first_only_as_its_own_bot(stack, homeserver, monkeypatch):
+    started = told_by_the_watcher(stack, homeserver)
     assert (started["by"], started["invite"], started["direct"]) == (WATCHER, [ANA], True)
     assert [(m["as"], m["body"]) for m in homeserver.sent] == [
-        (BOT, "Hello, Ana."), (WATCHER, "Ana, Q-1001 is due on Wednesday.")]  # never as the assistant
-    assert homeserver.sent[-1]["room"] == started["room"]
-    assert [m["text"] for m in stack.inbox("ben")] == ["Ben, Q-1002 is due on Friday."]  # no Matrix yet
+        (BOT, "Hello, Ana."), (WATCHER, "Ana, Q-1001 is open, and due on Wednesday.")]
+    assert homeserver.sent[-1]["room"] == started["room"]  # never as the assistant
+    assert [m["text"] for m in stack.inbox("ben")] == [
+        "Ben, Q-1002 is waiting on finance, and due next Friday."]  # no Matrix of his yet
     [delivered] = [e for e in stack.ledger() if e["action"] == "deliver"][-1:]
     assert delivered["outcome"] == {"status": "ok", "channel": "matrix", "started": True}
 
-    stack.at("2026-11-09T09:00:00+00:00")  # Ben's was due on Friday, so Ana, his manager, hears
-    stack.scheduler().work_due()
-    assert homeserver.sent[-1]["body"].startswith("Q-1002, Refund for a duplicate payment, was due")
-    assert (homeserver.sent[-1]["room"], homeserver.sent[-1]["as"]) == (started["room"], WATCHER)
+    a_change_and_reminders_on_monday(stack, monkeypatch)
+    asked = stack.model.requests[-1]["body"]["messages"][-1]["content"]
+    assert "since you last looked, on Fri 30 Oct" in asked  # Friday's report reached her
+    assert [(m["room"], m["as"], m["body"]) for m in homeserver.sent[-2:]] == [
+        (DM, BOT, "Ana, Q-1001 is due on Wednesday."),  # each in its own chat with her
+        (started["room"], WATCHER, "Ana, Q-1001 is waiting on the customer now.")]
     assert len(homeserver.started) == 1  # the same chat again, not a new one
 
     homeserver.rooms[started["room"]].add(ANA)  # she accepts, and answers it there
     stack.model.reply("Thanks, Ana.")
-    deliver(homeserver, said("I'll look at it today", room=started["room"]))
-    [answered] = [r for r in queued(stack) if r["text"] == "I'll look at it today"]
+    deliver(homeserver, said("Thanks, I'm on it", room=started["room"]))
+    [answered] = [r for r in queued(stack) if r["text"] == "Thanks, I'm on it"]
     assert (answered["agent"], answered["reply_to"]["bot"]) == ("watcher", WATCHER)
     stack.scheduler().answer_waiting()
     assert (homeserver.sent[-1]["as"], homeserver.sent[-1]["body"]) == (WATCHER, "Thanks, Ana.")
 
 
-def test_someone_who_turns_down_an_agents_chat_hears_from_it_in_their_inbox(stack, homeserver):
-    started = reminded_by_the_watcher(stack, homeserver)
+def test_someone_who_turns_down_an_agents_chat_hears_from_it_in_their_inbox(stack, homeserver,
+                                                                            monkeypatch):
+    started = told_by_the_watcher(stack, homeserver)
     deliver(homeserver, leave(ANA, started["room"]))  # she turns the invitation down
 
-    stack.at("2026-11-09T09:00:00+00:00")  # Ben's was due on Friday, so Ana, his manager, hears
-    stack.scheduler().work_due()
+    a_change_and_reminders_on_monday(stack, monkeypatch)
     assert len(homeserver.started) == 1  # a5s doesn't ask her in again
-    assert homeserver.sent[-1]["body"] == "Ana, Q-1001 is due on Wednesday."  # nothing more there
-    [escalated] = stack.inbox("ana")
-    assert (escalated["from"], escalated["about"]) == ("a5s", "watcher")
-    assert escalated["text"].startswith("Q-1002, Refund for a duplicate payment, was due")
+    assert homeserver.sent[-1]["as"] == BOT  # the assistant's reminder, in her chat with it
+    [told] = stack.inbox("ana")
+    assert (told["from"], told["text"]) == ("watcher", "Ana, Q-1001 is waiting on the customer now.")
 
 
 def test_matrix_is_on_where_its_settings_are_and_needs_them_all(stack, homeserver, monkeypatch):
