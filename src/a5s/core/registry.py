@@ -112,7 +112,8 @@ def apply(
             """,
             (
                 s.id, definition.id, definition.release_id, level, grants, definition.model,
-                list(s.serves), definition.owner, definition.deputy, Jsonb(definition.pins),
+                list(s.serves), s.owner or definition.owner, s.deputy or definition.deputy,
+                Jsonb(definition.pins),
                 settings.version,
             ),
         )

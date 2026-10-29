@@ -65,6 +65,9 @@ class SampleScenario:
     def find(self, identity: str) -> Person | None:
         return next((p for p in self._people.values() if identity in p.identities), None)
 
+    def holders(self, role: str) -> list[Person]:
+        return [p for p in self._people.values() if role in p.roles]
+
     # Settings
 
     def settings(self) -> Settings:

@@ -100,8 +100,6 @@ does: >-
   Keeps one conversation with each person, drafts on request, records the
   follow-ups it offers and the reminders people ask for, and chases what
   falls due.
-owner: ana
-deputy: ben
 scope: none                      # it changes no part's data
 model: deepseek-v4-pro           # from config/models.yaml, the approved list
 autonomy:
@@ -122,4 +120,4 @@ budget:
   per_person_per_day: "[TBC]"
 ```
 
-The register adds what changes without a release: each instance, its identity and its status.
+The register adds what changes without a release: each instance, its identity and its status. Each deployment's signed settings name who an instance serves, its level, and its owner and deputy, who are people in that deployment's directory, so the same definition serves any scenario.

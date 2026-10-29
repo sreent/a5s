@@ -84,6 +84,8 @@ class InstanceSettings:
     definition: str
     serves: tuple[str, ...]
     level: int | None = None  # the release's starting level, if the settings set none
+    owner: str | None = None  # who runs it here, and their deputy: people in this directory
+    deputy: str | None = None
 
 
 @dataclass(frozen=True)
@@ -115,7 +117,7 @@ def parse_settings(raw: bytes, signatures: tuple[Signature, ...] = ()) -> Settin
         signatures=signatures,
         instances=tuple(
             InstanceSettings(id=iid, definition=i["definition"], serves=tuple(i["serves"]),
-                             level=i.get("level"))
+                             level=i.get("level"), owner=i.get("owner"), deputy=i.get("deputy"))
             for iid, i in (data.get("instances") or {}).items()
         ),
     )
@@ -129,6 +131,9 @@ class Scenario(Protocol):
 
     def find(self, identity: str) -> Person | None:
         """Whose account elsewhere this is, such as entra:<object id> for Teams."""
+
+    def holders(self, role: str) -> list[Person]:
+        """The people the directory assigns a role to."""
 
     def setup(self, conn: Any, tools_role: str) -> None:
         """Set up anything the scenario keeps in a5s's database, such as a fake system's

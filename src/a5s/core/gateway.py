@@ -125,7 +125,8 @@ class Gateway:
         level = min(release.autonomy.start if signed.level is None else signed.level,
                     release.autonomy.max)
         expected = (signed.definition, sorted(signed.serves), level, sorted(release.tool_names),
-                    release.model, release.pins, release.owner, release.deputy)
+                    release.model, release.pins, signed.owner or release.owner,
+                    signed.deputy or release.deputy)
         actual = (inst["definition"], sorted(inst["serves"]), inst["level"], sorted(inst["grants"]),
                   inst["model"], inst["pins"], inst["owner"], inst["deputy"])
         if expected != actual:

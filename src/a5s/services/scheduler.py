@@ -24,9 +24,9 @@ import psycopg
 
 from a5s import db
 from a5s.config import Config
-from a5s.contract import Scenario
+from a5s.contract import INSTANCE_APPROVER, Scenario
 from a5s.services import context
-from a5s.worker import run_agent
+from a5s.worker import ModelDown, run_agent
 
 log = logging.getLogger(__name__)
 Worker = Callable[[str, str, list[dict]], str]
@@ -42,6 +42,8 @@ def remote_worker(url: str) -> Worker:
 
     def work(_gateway_url: str, token: str, history: list[dict]) -> str:
         response = httpx.post(f"{url}/work", json={"token": token, "history": history}, timeout=600)
+        if response.status_code == 503 and response.json().get("error") == "model_unavailable":
+            raise ModelDown(response.json().get("detail", ""))
         response.raise_for_status()
         return response.json()["reply"]
 
@@ -67,9 +69,27 @@ class Scheduler:
         except httpx.HTTPError:
             log.exception("the gateway can't be reached, so message %s goes unanswered", inbound)
 
-    def _owner_name(self, owner: str | None) -> str:
-        person = self.scenario.person(owner) if owner else None
-        return person.name if person else "the platform owner"
+    def _ask(self, inst: dict, asker: str) -> str:
+        """Who to ask about an instance: its owner, or its deputy when the owner is asking."""
+        for candidate in (inst["owner"], inst["deputy"]):
+            person = self.scenario.person(candidate) if candidate and candidate != asker else None
+            if person:
+                return person.name
+        return "whoever runs a5s"
+
+    def _nobody_serves(self, agent: str, asker: str) -> str:
+        approvers = [p.name for p in self.scenario.holders(INSTANCE_APPROVER) if p.id != asker]
+        if approvers:
+            return f"There's no {agent} for you yet. Ask {' or '.join(approvers)} to add you."
+        if self.scenario.holders(INSTANCE_APPROVER):  # only the person asking approves instances
+            return f"There's no {agent} for you yet. As an instance approver, you can add one."
+        return f"There's no {agent} for you yet. Ask whoever runs a5s to add you."
+
+    def _turn(self, claim: dict, text: str, run: str) -> None:
+        """Note in the conversation what a5s told someone, so a later run knows."""
+        with db.transaction(self.cfg.database_url) as conn:
+            context.add_turn(conn, person=claim["person"], agent=claim["agent"], role="notice",
+                             content=text, run=run)
 
     # Taking messages, and holding their conversation while answering
 
@@ -165,7 +185,7 @@ class Scheduler:
                 (agent, person),
             ).fetchone()
         if inst is None:
-            self._tell(inbound, f"There's no {agent} for you yet.")
+            self._tell(inbound, self._nobody_serves(agent, person))
             self._later(claim, never=True)
             return
         try:
@@ -178,21 +198,26 @@ class Scheduler:
         if opened.status_code == 409:
             detail = opened.json()["detail"]
             if not detail.get("answered"):  # answered already, by someone else: nothing to do
-                self._tell(inbound, self._why_not(agent, inst, detail), inst["id"])
+                self._tell(inbound, self._why_not(agent, inst, detail, person), inst["id"])
             return
         if opened.status_code >= 400:
             log.error("the gateway refused to open a run: %s", opened.text[:200])
             self._tell(inbound, "a5s couldn't start on that. Try again, or ask "
-                                f"{self._owner_name(inst['owner'])}.", inst["id"])
+                                f"{self._ask(inst, person)}.", inst["id"])
             self._later(claim, never=True)
             return
         self._run(claim, inst, opened.json()["run"], opened.json()["token"])
 
-    def _why_not(self, agent: str, inst: dict, detail: dict) -> str:
-        owner = self._owner_name(inst["owner"])
-        if detail.get("status", "active") != "active":
-            return f"The {agent} is {detail['status']} at the moment, so it can't help. Ask {owner}."
-        return f"The {agent} can't help you at the moment. Ask {owner}."
+    def _why_not(self, agent: str, inst: dict, detail: dict, asker: str) -> str:
+        status, by = detail.get("status", "active"), detail.get("suspended_by")
+        if status == "suspended" and by == asker:
+            return f"The {agent} is suspended, because you suspended it. Resume it to carry on."
+        if status == "suspended" and (suspender := self.scenario.person(by) if by else None):
+            return (f"The {agent} is suspended at the moment, so it can't help. "
+                    f"{suspender.name} suspended it and can resume it.")
+        if status != "active":
+            return f"The {agent} is {status}, so it can't help. Ask {self._ask(inst, asker)}."
+        return f"The {agent} can't help you at the moment. Ask {self._ask(inst, asker)}."
 
     def _run(self, claim: dict, inst: dict, run: str, token: str) -> None:
         person, agent, inbound = claim["person"], claim["agent"], claim["id"]
@@ -207,17 +232,25 @@ class Scheduler:
                                 json={"to": person, "text": reply})
             if sent.status_code == 403:
                 outcome = "reply denied"
-                self._tell(inbound, "I couldn't send you my reply, sorry.", inst["id"])
+                self._tell(inbound, told := "I couldn't send you my reply, sorry.", inst["id"])
+                self._turn(claim, told, run)
                 return
             sent.raise_for_status()
             with db.transaction(self.cfg.database_url) as conn:
                 context.add_turn(conn, person=person, agent=agent, role="agent",
                                  content=sent.json()["text"], run=run)
             outcome = "done"
+        except ModelDown:
+            log.warning("the model for run %s isn't answering", run)
+            outcome = "model unavailable"
+            self._tell(inbound, told := "The model I use isn't answering right now, so I couldn't "
+                                        "finish that. Try again in a few minutes.", inst["id"])
+            self._turn(claim, told, run)
         except Exception:
             log.exception("run %s failed", run)
-            self._tell(inbound, "I couldn't finish that. Try again, or ask "
-                                f"{self._owner_name(inst['owner'])}.", inst["id"])
+            self._tell(inbound, told := "I couldn't finish that. Try again, or ask "
+                                        f"{self._ask(inst, person)}.", inst["id"])
+            self._turn(claim, told, run)
         finally:
             try:
                 self.gw.post(f"/runs/{run}/close", headers=self.service, json={"outcome": outcome})

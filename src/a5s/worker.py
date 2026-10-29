@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -112,6 +113,20 @@ def text_of(message: Any) -> str:
     )
 
 
+class ModelDown(Exception):
+    """The model didn't answer, because its provider was down or failed."""
+
+
+def as_message(turn: dict) -> dict[str, str]:
+    """A turn as the model sees it, with when it happened, so it can tell old from new."""
+    when = datetime.fromisoformat(turn["at"]).strftime("%a %d %b %Y, %H:%M UTC") if turn.get("at") else ""
+    if turn["role"] == "person":
+        return {"role": "user", "content": f"[{when}] {turn['content']}"}
+    if turn["role"] == "notice":  # a5s's own words, not the agent's
+        return {"role": "assistant", "content": f"[{when}, a5s on my behalf] {turn['content']}"}
+    return {"role": "assistant", "content": turn["content"]}
+
+
 def run_agent(gateway_url: str, token: str, history: list[dict]) -> str:
     """Run the agent on the conversation so far, and return its reply."""
     headers = {"Authorization": f"Bearer {token}"}
@@ -126,11 +141,13 @@ def run_agent(gateway_url: str, token: str, history: list[dict]) -> str:
             tools=[gateway_tool(gw, d) for d in info["tools"]],
             system_prompt=info["instructions"],
         )
-        messages = [
-            {"role": "user" if t["role"] == "person" else "assistant", "content": t["content"]}
-            for t in history
-        ]
-        result = agent.invoke({"messages": messages}, config={"recursion_limit": 40})
+        try:
+            result = agent.invoke({"messages": [as_message(t) for t in history]},
+                                  config={"recursion_limit": 40})
+        except Exception as exc:
+            if getattr(exc, "status_code", None) in (502, 503):  # from the model gateway
+                raise ModelDown(str(exc)) from exc
+            raise
     return text_of(result["messages"][-1])
 
 
@@ -142,11 +159,16 @@ class Work(BaseModel):
 def create_app(gateway_url: str) -> Any:
     """The worker as a service. It holds no secrets: each request brings one run's token."""
     from fastapi import FastAPI
+    from fastapi.responses import JSONResponse
 
     app = FastAPI(title="a5s worker")
 
     @app.post("/work")
-    def work(body: Work) -> dict[str, str]:
-        return {"reply": run_agent(gateway_url, body.token, body.history)}
+    def work(body: Work) -> Any:
+        try:
+            return {"reply": run_agent(gateway_url, body.token, body.history)}
+        except ModelDown as exc:
+            return JSONResponse(status_code=503, content={"error": "model_unavailable",
+                                                          "detail": str(exc)[:200]})
 
     return app

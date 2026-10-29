@@ -39,3 +39,14 @@ def test_level_2_never_comes_from_the_release(tmp_path):
     (folder / "agent.yaml").write_text(spec)
     with pytest.raises(ValidationError):
         definitions.load(folder)
+
+
+def test_a5s_serves_whichever_scenario_its_configuration_names(tmp_path):
+    from a5s import build
+    from a5s.config import Config
+
+    cfg = Config(database_url="postgresql://unused", gateway_url="http://unused", service_token="",
+                 root=tmp_path, scenario="other_scenario:ServiceDesk",
+                 scenario_folder=ROOT / "scenarios" / "sample")
+    scenario = build.scenario(cfg)
+    assert scenario.name == "service-desk" and scenario.person("ana").name == "Ana Ortiz"

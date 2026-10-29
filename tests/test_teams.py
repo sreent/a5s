@@ -13,10 +13,11 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from jwt.algorithms import RSAAlgorithm
 
 from a5s.core import inbox, teams
-from a5s.core.teams import Teams, TeamsConfig
+from a5s.core.teams import Bot, Teams, TeamsConfig
 from conftest import free_port, serve
 
 APP_ID, TENANT = "a5s-bot-app", "0a5a7e17-0000-4000-8000-000000000001"
+WATCHER_APP = "a5s-watcher-app"  # a second agent's own bot
 ANA, BEN = "0a5a0000-0000-4000-8000-00000000a0a1", "0a5a0000-0000-4000-8000-00000000b0b2"
 SERVICE_URL = "https://smba.test/amer/"
 
@@ -41,11 +42,13 @@ class FakeBotFramework:
                 {**RSAAlgorithm.to_jwk(key.public_key(), as_dict=True), "kid": kid, "use": "sig",
                  "endorsements": self.endorsements[kid]} for kid, key in self.keys.items()]})
         if url == f"https://login.test/{TENANT}/oauth2/v2.0/token":
-            self.logins.append(dict(httpx.QueryParams(request.content.decode())))
-            return httpx.Response(200, json={"access_token": "bot-token", "expires_in": 3600})
+            login = dict(httpx.QueryParams(request.content.decode()))
+            self.logins.append(login)
+            return httpx.Response(200, json={"access_token": f"token-for-{login['client_id']}",
+                                             "expires_in": 3600})
         if request.url.host == "smba.test" and request.url.path.endswith("/activities"):
-            assert request.headers["authorization"] == "Bearer bot-token"
-            self.sent.append(json.loads(request.content))
+            self.sent.append({**json.loads(request.content),
+                              "as": request.headers["authorization"].removeprefix("Bearer token-for-")})
             return httpx.Response(201, json={"id": f"reply-{len(self.sent)}"})
         return httpx.Response(404)
 
@@ -74,8 +77,9 @@ def activity(text: str = "Which questions mention an invoice?", *, sender: str =
 @pytest.fixture
 def bot(stack):
     fake = FakeBotFramework()
-    cfg = TeamsConfig(app_id=APP_ID, app_secret="bot-secret", tenant_id=TENANT,
-                      service_hosts=("smba.test",), login_url="https://login.test",
+    cfg = TeamsConfig(bots=(Bot("assistant", APP_ID, "bot-secret"),
+                            Bot("watcher", WATCHER_APP, "watcher-secret")),
+                      tenant_id=TENANT, service_hosts=("smba.test",), login_url="https://login.test",
                       metadata_url="https://login.botframework.test/v1/.well-known/openidconfiguration")
     stack.gateway.teams = Teams(cfg, httpx.Client(transport=httpx.MockTransport(fake.handler)))
     endpoint = replace(stack.gateway, cfg=stack.as_role("channels"))  # as deployed
@@ -102,6 +106,7 @@ def test_a_teams_message_is_checked_recorded_and_answered_in_teams(stack, bot):
     [sent] = bot.sent
     assert sent["text"] == "Q-1001 mentions an invoice."
     assert sent["replyToId"] == message["id"] and sent["conversation"] == {"id": "a:1-chat"}
+    assert sent["as"] == APP_ID  # the assistant answers as itself
     assert [login["scope"] for login in bot.logins] == ["https://api.botframework.com/.default"]
 
     entries = stack.ledger()
@@ -199,7 +204,8 @@ def test_a_suspended_agent_says_so_in_teams(stack, bot):
     httpx.post(bot.url, json=activity(), headers=bot.auth()).raise_for_status()
     stack.scheduler().answer_waiting()
     assert [m["text"] for m in bot.sent] == [
-        "The assistant is suspended at the moment, so it can't help. Ask Ana Ortiz."]
+        ("The assistant is suspended at the moment, so it can't help. "
+        "Ben Okafor suspended it and can resume it.")]
     assert not stack.model.requests
 
 
@@ -257,3 +263,14 @@ def test_the_endpoint_takes_one_message_not_a_flood(stack, bot):
     big = activity("x" * (300 * 1024))
     assert httpx.post(bot.url, json=big, headers=bot.auth()).status_code == 413
     assert not queued(stack)
+
+
+def test_each_agent_talks_to_people_as_its_own_bot(stack, bot):
+    to_watcher = activity("What's due this week?")
+    to_watcher["recipient"] = {"id": f"28:{WATCHER_APP}"}
+    httpx.post(bot.url, json=to_watcher, headers=bot.auth(aud=WATCHER_APP)).raise_for_status()
+    assert [row["agent"] for row in queued(stack)] == ["watcher"]
+    stack.scheduler().answer_waiting()
+    [answer] = bot.sent
+    assert answer["text"].startswith("There's no watcher for you yet.")
+    assert answer["as"] == WATCHER_APP  # not the assistant's bot

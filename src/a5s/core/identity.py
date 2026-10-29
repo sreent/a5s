@@ -32,7 +32,7 @@ class UnknownPerson(IdentityError):
 @dataclass(frozen=True)
 class IdentityConfig:
     issuer: str
-    audience: str
+    audience: str | tuple[str, ...]  # a token for any of them is accepted
     # Which claim holds the person's id in the directory. Pick one people can't change:
     # Entra ID's oid, Google's or Okta's sub, or Keycloak's preferred_username.
     person_claim: str = "preferred_username"

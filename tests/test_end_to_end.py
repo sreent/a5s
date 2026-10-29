@@ -71,13 +71,15 @@ def test_suspending_mid_run_stops_the_next_call(stack):
 def test_a_suspended_agent_answers_from_code_not_the_model(stack):
     stack.suspend()
     reply = stack.say("Hello?")
-    assert reply == "The assistant is suspended at the moment, so it can't help. Ask Ana Ortiz."
+    assert reply == ("The assistant is suspended at the moment, so it can't help. "
+                     "Ben Okafor suspended it and can resume it.")
     assert not stack.model.requests
 
 
 def test_people_outside_the_directory_or_the_instance_get_no_agent(stack):
     assert "doesn't know who you are" in stack.say("hi", person="mallory")
-    assert stack.say("hi", person="chen") == "There's no assistant for you yet."
+    assert stack.say("hi", person="chen") == (
+        "There's no assistant for you yet. Ask Ana Ortiz to add you.")
     assert not stack.model.requests
 
 
@@ -115,3 +117,32 @@ def test_subagents_ask_first_too(stack):
     assert "create_draft" in offered_to_subagent and "execute" not in offered_to_subagent
     assert tool_calls(stack, "create_draft") == []
     assert [e["action"] for e in stack.ledger() if e["kind"] == "explain"] == ["create_draft"]
+
+
+def test_whoever_suspended_it_is_told_so(stack):
+    stack.suspend(by="ben")
+    assert stack.say("Hello?", person="ben") == (
+        "The assistant is suspended, because you suspended it. Resume it to carry on.")
+
+
+def test_the_agent_sees_when_things_were_said_and_what_a5s_couldnt_finish(stack, monkeypatch):
+    monkeypatch.delenv("A5S_TEST_PROVIDER_KEY")  # the provider can't be used
+    assert stack.say("Draft a reply to Northwind") == (
+        "The model I use isn't answering right now, so I couldn't finish that. "
+        "Try again in a few minutes.")
+    monkeypatch.setenv("A5S_TEST_PROVIDER_KEY", "provider-secret")
+    stack.model.reply("Here's the draft you asked for earlier.")
+    stack.say("Are you back?")
+    told = [m["content"] for m in stack.model.requests[-1]["body"]["messages"] if m["role"] != "system"]
+    assert told[0].startswith("[") and told[0].endswith("] Draft a reply to Northwind")
+    assert "a5s on my behalf] The model I use isn't answering right now" in told[1]
+    assert told[2].endswith("] Are you back?")
+
+
+def test_a_long_conversation_keeps_the_latest_turns_that_fit(stack):
+    with db.transaction(stack.admin) as conn:
+        for n in range(10):
+            context.add_turn(conn, person="ana", agent="assistant", role="person",
+                             content=f"{n} " + "x" * 1000)
+        turns = context.recent(conn, person="ana", agent="assistant", max_chars=3500)
+    assert [t["content"].split()[0] for t in turns] == ["7", "8", "9"]

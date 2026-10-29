@@ -91,11 +91,11 @@ def create_app(gw: Any) -> FastAPI:
         if gw.teams is None:
             raise HTTPException(404, "Teams isn't set up")
         try:
-            gw.teams.check(activity, authorization)
+            bot = gw.teams.check(activity, authorization)
         except Refused as exc:  # not recorded: anyone on the internet can send these
             log.warning("refused a message for Teams: %s", exc.reason)
             raise HTTPException(exc.status, exc.reason) from None
-        message = gw.teams.message(activity, gw.scenario)
+        message = gw.teams.message(activity, gw.scenario, bot)
         if message is None:
             return Response(status_code=200)
         people = [message.person] if message.person else []
@@ -110,7 +110,7 @@ def create_app(gw: Any) -> FastAPI:
             else:  # Teams' message ids are unique only within a conversation
                 source = f"{message.reply_to['conversation']}/{message.reply_to['activity']}"
                 record(conn, channel="teams", source_id=source, person=message.person,
-                       agent=gw.teams.cfg.agent, text=message.text, reply_to=message.reply_to,
+                       agent=message.agent, text=message.text, reply_to=message.reply_to,
                        identity="verified by teams")
         return Response(status_code=200)
 

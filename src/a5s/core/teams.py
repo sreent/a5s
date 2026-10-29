@@ -10,6 +10,7 @@ which alone holds the bot's credentials.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import threading
@@ -37,35 +38,45 @@ class Refused(Exception):
 
 
 @dataclass(frozen=True)
-class TeamsConfig:
-    app_id: str  # the bot's, from its Entra ID app registration
+class Bot:
+    """An agent's own identity in Teams: each agent talks to people as itself."""
+
+    agent: str
+    app_id: str  # from its Entra ID app registration
     app_secret: str = field(repr=False)
+
+
+@dataclass(frozen=True)
+class TeamsConfig:
+    bots: tuple[Bot, ...]
     tenant_id: str  # the organisation's: messages from any other are refused
-    agent: str = "assistant"  # the agent people talk to through this bot
     service_hosts: tuple[str, ...] = ("smba.trafficmanager.net",)  # where Teams takes replies
     metadata_url: str = METADATA
     login_url: str = "https://login.microsoftonline.com"
 
     @classmethod
     def from_env(cls) -> TeamsConfig | None:
-        app_id = os.environ.get("A5S_TEAMS_APP_ID")
-        if not app_id:
+        """One bot from A5S_TEAMS_APP_ID, or several from A5S_TEAMS_BOTS, a JSON list of
+        {"agent", "app_id", "secret_env"}, each secret in the variable it names."""
+        if listed := os.environ.get("A5S_TEAMS_BOTS"):
+            bots = tuple(Bot(b["agent"], b["app_id"], os.environ[b["secret_env"]])
+                         for b in json.loads(listed))
+        elif app_id := os.environ.get("A5S_TEAMS_APP_ID"):
+            bots = (Bot(os.environ.get("A5S_TEAMS_AGENT", "assistant"), app_id,
+                        os.environ["A5S_TEAMS_APP_SECRET"]),)
+        else:
             return None
         hosts = os.environ.get("A5S_TEAMS_SERVICE_HOSTS", "smba.trafficmanager.net")
-        return cls(
-            app_id=app_id,
-            app_secret=os.environ["A5S_TEAMS_APP_SECRET"],
-            tenant_id=os.environ["A5S_TEAMS_TENANT_ID"],
-            agent=os.environ.get("A5S_TEAMS_AGENT", "assistant"),
-            service_hosts=tuple(h.strip() for h in hosts.split(",") if h.strip()),
-        )
+        return cls(bots=bots, tenant_id=os.environ["A5S_TEAMS_TENANT_ID"],
+                   service_hosts=tuple(h.strip() for h in hosts.split(",") if h.strip()))
 
 
 @dataclass(frozen=True)
 class Message:
-    """A message from Teams that checked out, and who sent it."""
+    """A message from Teams that checked out, who sent it, and to which agent."""
 
     person: str | None  # None when the directory doesn't know them
+    agent: str
     entra_id: str
     text: str
     reply_to: dict[str, str]
@@ -75,20 +86,22 @@ class Message:
 class Teams:
     def __init__(self, cfg: TeamsConfig, http: httpx.Client | None = None):
         self.cfg = cfg
+        self.bots = {bot.app_id: bot for bot in cfg.bots}
         self.http = http or httpx.Client(timeout=30)
-        self.verifier = Verifier(
-            IdentityConfig(issuer=BOT_FRAMEWORK, audience=cfg.app_id, metadata_url=cfg.metadata_url,
-                           required=("exp", "iss", "aud"), leeway=300),  # as the Bot Framework asks
+        self.verifier = Verifier(  # a token for any of a5s's bots, as the Bot Framework asks
+            IdentityConfig(issuer=BOT_FRAMEWORK, audience=tuple(self.bots),
+                           metadata_url=cfg.metadata_url, required=("exp", "iss", "aud"),
+                           leeway=300),
             self.http)
-        self._token: tuple[str, float] | None = None
+        self._tokens: dict[str, tuple[str, float]] = {}
         self._lock = threading.Lock()
 
     def allowed(self, service_url: str) -> bool:
         url = urlparse(service_url)
         return url.scheme == "https" and url.hostname in self.cfg.service_hosts
 
-    def check(self, activity: dict[str, Any], authorization: str | None) -> None:
-        """Refuse anything Teams didn't send to this bot, for this organisation."""
+    def check(self, activity: dict[str, Any], authorization: str | None) -> Bot:
+        """The bot Teams sent this to, or Refused if Teams didn't send it, for this organisation."""
         if not (authorization or "").startswith("Bearer "):
             raise Refused(401, "Teams sends a bearer token")
         channel = activity.get("channelId") or ""
@@ -108,8 +121,9 @@ class Teams:
             raise Refused(403, "the message is from another organisation")
         if not self.allowed(service_url):
             raise Refused(403, "the service URL isn't one Teams uses")
+        return self.bots[claims["aud"]]
 
-    def message(self, activity: dict[str, Any], scenario: Scenario) -> Message | None:
+    def message(self, activity: dict[str, Any], scenario: Scenario, bot: Bot) -> Message | None:
         """The message in an activity that checked out, if it's one a person typed."""
         text = _MENTION.sub("", activity.get("text") or "").strip()
         conversation = activity.get("conversation") or {}
@@ -118,34 +132,39 @@ class Teams:
         entra_id = (activity.get("from") or {}).get("aadObjectId") or ""
         person = scenario.find(f"entra:{entra_id}") if entra_id else None
         return Message(
-            person=person.id if person else None, entra_id=entra_id, text=text,
+            person=person.id if person else None, agent=bot.agent, entra_id=entra_id, text=text,
             reply_to={"service_url": activity["serviceUrl"], "conversation": conversation["id"],
                       "activity": activity.get("id") or "",
-                      "bot": (activity.get("recipient") or {}).get("id") or ""},
+                      "bot": (activity.get("recipient") or {}).get("id") or "",
+                      "app_id": bot.app_id},
             personal=conversation.get("conversationType", "personal") == "personal",
         )
 
-    def _bot_token(self) -> str:
+    def _bot_token(self, bot: Bot) -> str:
         with self._lock:
-            if self._token and time.monotonic() < self._token[1]:
-                return self._token[0]
+            cached = self._tokens.get(bot.app_id)
+            if cached and time.monotonic() < cached[1]:
+                return cached[0]
             r = self.http.post(f"{self.cfg.login_url}/{self.cfg.tenant_id}/oauth2/v2.0/token", data={
-                "grant_type": "client_credentials", "client_id": self.cfg.app_id,
-                "client_secret": self.cfg.app_secret, "scope": f"{BOT_FRAMEWORK}/.default"})
+                "grant_type": "client_credentials", "client_id": bot.app_id,
+                "client_secret": bot.app_secret, "scope": f"{BOT_FRAMEWORK}/.default"})
             r.raise_for_status()
             body = r.json()
-            self._token = (body["access_token"],
-                           time.monotonic() + int(body.get("expires_in", 3600)) - 300)
-            return self._token[0]
+            self._tokens[bot.app_id] = (body["access_token"],
+                                        time.monotonic() + int(body.get("expires_in", 3600)) - 300)
+            return body["access_token"]
 
     def send(self, reply_to: dict[str, str], text: str) -> None:
-        """Send text into the conversation a message came from, as the bot."""
+        """Send text into the conversation a message came from, as the bot it was sent to."""
         if not self.allowed(reply_to["service_url"]):  # the bot's token goes nowhere else
             raise ValueError("a5s sends only to the service URLs Teams uses")
+        bot = self.bots.get(reply_to.get("app_id", ""))
+        if bot is None:
+            raise ValueError("the message came to a bot a5s no longer has")
         conversation = quote(reply_to["conversation"], safe="")
         r = self.http.post(
             f"{reply_to['service_url'].rstrip('/')}/v3/conversations/{conversation}/activities",
-            headers={"Authorization": f"Bearer {self._bot_token()}"},
+            headers={"Authorization": f"Bearer {self._bot_token(bot)}"},
             json={"type": "message", "text": text, "textFormat": "markdown",
                   "replyToId": reply_to["activity"], "from": {"id": reply_to["bot"]},
                   "conversation": {"id": reply_to["conversation"]}},

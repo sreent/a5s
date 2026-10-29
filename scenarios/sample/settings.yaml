@@ -2,10 +2,12 @@
 # and how far each may act. A version counts only when an instance approver
 # signs it (`a5s sign`), and its serial must rise with every new version.
 
-serial: 1
+serial: 2
 
 instances:
   assistant-finance:
     definition: assistant
     serves: [ana, ben]
     level: 1
+    owner: ana       # who runs it here, and their deputy
+    deputy: ben

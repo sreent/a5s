@@ -5,8 +5,6 @@ does: >-
   Keeps one conversation with each person, drafts on request, records the
   follow-ups it offers and the reminders people ask for, and chases what
   falls due.
-owner: ana
-deputy: ben
 scope: none                      # it changes no part's data
 model: deepseek-v4-pro           # from config/models.yaml, the approved list
 autonomy:
