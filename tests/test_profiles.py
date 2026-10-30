@@ -167,3 +167,21 @@ def test_only_a_run_for_one_person_searches_and_only_theirs(stack):
     with stack.client(opened.json()["token"]) as c:  # a run for nobody reads nobody's
         found = c.post("/run/tools/search_conversation", json={"args": {"query": "Contoso"}})
     assert found.status_code == 403 and "acts for them alone" in found.json()["explanations"][0]
+
+
+def test_a_run_knows_what_its_agent_offered_that_waits_for_their_yes(stack):
+    stack.model.reply(None, ("offer_note", {"note": NOTE}),
+                      ("offer_reminder", {"about": "call Northwind", "on": "2026-11-02"}))
+    stack.model.reply("Shall I keep both?")
+    stack.say("I like short answers. And remind me to call Northwind on Monday.")
+    stack.model.reply("Yes to which?")
+    stack.say("Yes")
+    told = system_prompt(stack)
+    assert "## What you offered them, waiting for their yes\n\nYou offered these in an earlier message." in told
+    assert f'- A note on how they like to work: "{NOTE}". If they say yes to it, keep it with ' \
+           "confirm_note." in told
+    assert "- A reminder on Mon 2 Nov at 09:00: call Northwind. If they say yes to it, set it " \
+           "with confirm_reminder." in told
+    stack.model.reply("Hello, Ben.")
+    stack.say("Hello", person="ben")
+    assert "waiting for their yes" not in system_prompt(stack)  # hers, not his

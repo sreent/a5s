@@ -84,6 +84,11 @@ class ModelDown(Exception):
     """The model didn't answer, because its provider was down or failed."""
 
 
+# Some models end a run on a tool's result with nothing to say. They're asked once more.
+EMPTY = {"role": "user", "content": "[from a5s, not the person] Your last message was empty, and "
+                                    "the person sees only your last message. Write it now."}
+
+
 def as_message(turn: dict) -> dict[str, str]:
     """A turn as the model sees it, with when it happened, so it can tell old from new."""
     when = datetime.fromisoformat(turn["at"]).strftime("%a %d %b %Y, %H:%M UTC") if turn.get("at") else ""
@@ -122,6 +127,9 @@ def run_agent(gateway_url: str, token: str, history: list[dict]) -> str:
         try:
             result = agent.invoke({"messages": [as_message(t) for t in history]},
                                   config={"recursion_limit": 40})
+            if not text_of(result["messages"][-1]).strip():  # it ended with nothing to say
+                result = agent.invoke({"messages": [*result["messages"], EMPTY]},
+                                      config={"recursion_limit": 40})
         except Exception as exc:
             if getattr(exc, "status_code", None) in (502, 503):  # from the model gateway
                 raise ModelDown(str(exc)) from exc

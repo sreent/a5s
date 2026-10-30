@@ -71,3 +71,19 @@ def test_a_run_that_outlives_its_time_is_closed_its_token_dies_and_its_person_is
     assert [e["outcome"] for e in stack.ledger(run) if e["action"] == "close"] == ["abandoned"]
     assert stack.answers(message) == [
         "I couldn't finish your last message, so I stopped. Send it again if you still need it."]
+
+
+def test_a_model_that_ends_with_nothing_to_say_is_asked_once_more(stack):
+    stack.model.reply(None, ("get_record", {"key": "Q-1001"}))
+    stack.model.reply("")  # it read the record, and said nothing
+    stack.model.reply("Q-1001 is open, and due on Wednesday.")
+    assert stack.say("What's Q-1001?") == "Q-1001 is open, and due on Wednesday."
+    asked = stack.model.requests[-1]["body"]["messages"][-1]["content"]
+    assert asked.startswith("[from a5s, not the person] Your last message was empty")
+
+
+def test_a_reply_that_stays_empty_isnt_sent(stack):
+    stack.model.reply("")
+    stack.model.reply("")
+    told = stack.say("Hello")
+    assert told.startswith("I couldn't finish that.") and len(stack.model.requests) == 2

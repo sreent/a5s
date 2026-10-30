@@ -53,6 +53,17 @@ def section(conn: psycopg.Connection, person: Person) -> dict:
     return {"title": f"Who you're working for: {person.name}", "text": "\n".join(told)}
 
 
+def waiting(conn: psycopg.Connection, person: Person, agent: str) -> list[str]:
+    """The note this agent offered the person, if it waits for their yes, for its context.
+    Offers count from when the core received the message, by the database's clock."""
+    row = conn.execute("select text from profile_notes where person = %s and agent = %s "
+                       "and confirmed_at is null and ended_at is null and asked_at > now() - %s "
+                       "order by asked_at desc, id desc limit 1",
+                       (person.id, agent, CONFIRM_WITHIN)).fetchone()
+    return [(f"A note on how they like to work: \"{row['text']}\". If they say yes to it, "
+             "keep it with confirm_note.")] if row else []
+
+
 def offer(call: Call) -> dict:
     person, text = call.person, " ".join(str(call.args["note"]).split())
     if not text:
@@ -72,7 +83,7 @@ def offer(call: Call) -> dict:
         "values (%s, %s, %s, %s, %s, %s)",
         (person.id, call.run["definition"], text, call.now, call.run["run"], call.asked_at))
     return {"note": text, "status": "offered: it's kept only once they say yes, in their next "
-                                    "message. Quote the note in your reply, and ask them."}
+                                    "message"}
 
 
 def confirm(call: Call) -> dict:
@@ -105,8 +116,8 @@ TOOLS = {t.name: t for t in (
     CoreTool("offer_note",
              "Offer to note how the person you're answering likes to work, such as how long or "
              "how formal your answers should be, in a sentence or two. Every agent that works "
-             "for them will see it. It's kept only once they say yes in their next message: quote "
-             "the note in your reply, and ask them.",
+             "for them will see it. It's kept only once they say yes in their next message: tell "
+             "them what you'll note, and ask them.",
              {"type": "object", "required": ["note"], "properties": {
                  "note": {"type": "string", "description": "The note, as it will be kept"}}},
              offer, text_fields=("note",)),

@@ -20,6 +20,8 @@ from __future__ import annotations
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
+import psycopg
+
 from a5s.contract import Person
 from a5s.core.coretools import Call, CoreTool, Refused
 from a5s.core.obligations import day, local
@@ -87,6 +89,17 @@ def offer(call: Call) -> dict:
     ).fetchone()["id"]
     return {"reminder": f"R-{number}", "when": say(person, at), "about": about, "record": record,
             "status": "offered: it's set only once they say yes, in their next message"}
+
+
+def waiting_for_yes(conn: psycopg.Connection, person: Person, agent: str) -> list[str]:
+    """The reminders this agent offered the person that wait for their yes, for its context.
+    Offers count from when the core received the message, by the database's clock."""
+    rows = conn.execute("select * from reminders where person = %s and agent = %s "
+                        "and confirmed_at is null and cancelled_at is null "
+                        "and asked_at > now() - %s order by asked_at, id",
+                        (person.id, agent, CONFIRM_WITHIN)).fetchall()
+    return [f"A reminder on {say(person, r['due_at'])}: {r['about']}. If they say yes to it, set "
+            "it with confirm_reminder." for r in rows]
 
 
 def confirm(call: Call) -> dict:

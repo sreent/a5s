@@ -96,6 +96,8 @@ def test_a_real_model_notes_how_someone_works_and_goes_by_what_they_said(databas
     with running(database, root, httpx.Client(), FakeModel()) as stack:
         offered = stack.say("Please note that I like answers in one sentence, no lists.")
         confirmed = stack.say("Yes, keep that note.")
+        print(offered, confirmed, *[f"{e['run'][:8]} {e['action']} {e['outcome']}" for e in stack.ledger()
+                                    if e["kind"] == "tool" and e["decision"] == "record"], sep="\n")
         with db.transaction(stack.admin) as conn:
             [note] = conn.execute("select * from profile_notes").fetchall()
         assert note["confirmed_at"] is not None and "sentence" in note["text"]

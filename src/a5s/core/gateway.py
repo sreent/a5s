@@ -1124,6 +1124,14 @@ def create_app(gw: Gateway) -> FastAPI:
             row = load_run(conn, token)
             person = gw.scenario.person(row["acts_for"][0]) if len(row["acts_for"]) == 1 else None
             context = [profiles.section(conn, person)] if person else []
+            if person and (offered := [  # so a yes in their next message finds what it's to
+                    *profiles.waiting(conn, person, row["definition"]),
+                    *reminders.waiting_for_yes(conn, person, row["definition"])]):
+                context.append({"title": "What you offered them, waiting for their yes",
+                                "text": "You offered these in an earlier message. If they say yes "
+                                        "to one now, keep it with the tool named, at once, "
+                                        "without asking again.\n"
+                                        + "\n".join(f"- {o}" for o in offered)})
         definition = gw.definitions.get(row["definition"])
         if definition is None or definition.release_id != row["release"]:
             raise HTTPException(409, f"release {row['release']} isn't loaded in this gateway")

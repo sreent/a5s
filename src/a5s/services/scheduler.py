@@ -265,6 +265,8 @@ class Scheduler:
                                  content=claim["text"], run=run)
                 history = context.recent(conn, person=person, agent=agent)
             reply = self.worker(self.cfg.gateway_url, token, history)
+            if not reply.strip():
+                raise RuntimeError("the agent's reply was empty")
             sent = self.gw.post("/run/messages", headers={"Authorization": f"Bearer {token}"},
                                 json={"to": person, "text": reply})
             if sent.status_code == 403:
@@ -323,6 +325,8 @@ class Scheduler:
                     history = context.recent(conn, person=person, agent=agent)
             asked = {"role": "task", "content": task, "at": datetime.now(UTC).isoformat()}
             reply = self.worker(self.cfg.gateway_url, token, [*history, asked])
+            if person and not reply.strip():
+                raise RuntimeError("the agent's reply was empty")
             if person:  # the agent writes to the person it reminds, and to nobody else
                 sent = self.gw.post("/run/messages", headers={"Authorization": f"Bearer {token}"},
                                     json={"to": person, "text": reply})
