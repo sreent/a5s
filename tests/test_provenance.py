@@ -120,3 +120,18 @@ def test_a_system_gets_the_value_and_a_handle_works_only_in_its_run(stack):
     with db.transaction(stack.admin) as conn:
         bodies = [r["body"] for r in conn.execute("select body from sample.drafts order by id")]
     assert bodies[-1] == f"Send it to {CONTACT}."  # the draft is for people: the value
+
+
+def test_what_a_search_found_is_read_but_the_agents_own_words_are_not(stack):
+    stack.model.reply("Noted: it's £50.")  # the agent made the amount up
+    stack.say("Northwind wants a credit for Q-1001.")
+    stack.model.reply(None, ("search_conversation", {"query": "Northwind"}))
+    stack.model.reply("You said Northwind wants a credit for Q-1001, and the credit is £50.")
+    told = stack.say("What did I say about Northwind, and when?")
+    assert told.endswith("(a5s: £50 came from the assistant itself, not from the records or from "
+                         "you, so check it before you rely on it.)")  # a search doesn't launder it
+    with db.transaction(stack.admin) as conn:
+        read = {(r["kind"], r["text"]) for r in conn.execute(
+            "select kind, text from run_reads where source = 'search_conversation'")}
+    assert ("amount", "£50") not in read and ("key", "Q-1001") in read
+    assert any(kind == "date" for kind, _ in read)  # when each was said, which a5s knows

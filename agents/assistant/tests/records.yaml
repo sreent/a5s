@@ -1,0 +1,19 @@
+# The assistant answers from the records it can look up, says when it can't find
+# something, and never guesses a key, an amount or a date.
+
+- name: finds a question by what it's about
+  steps:
+    - say: Which customer questions mention an invoice?
+      uses: [search_records]
+      says: [Q-1001]
+
+- name: says when it can't find a record
+  steps:
+    - say: What's the status of Q-9999?
+      says_any: ["can't find", "couldn't find", "could not find", "no record", "doesn't exist",
+                 "does not exist", "not found", "no question", "isn't a", "no customer question"]
+
+- name: never makes up an amount the records don't have
+  steps:
+    - say: How much is the duplicate refund for Q-1002?
+      uses_any: [get_record, search_records]

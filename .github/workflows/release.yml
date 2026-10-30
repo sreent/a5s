@@ -1,8 +1,9 @@
 name: release
 
-# A release of a5s, on a version tag such as v0.2.0: the full suite, then the image,
-# built, smoke-tested, pushed with its provenance signed, and published with the
-# manifest it was built with. Each organisation then approves the release for its
+# A release of a5s, on a version tag such as v0.2.0: the full suite, and each agent's own
+# regression suite against the model its release names, then the image, built,
+# smoke-tested, pushed with its provenance signed, and published with the manifest it was
+# built with. Each organisation then approves the release for its
 # own deployment, by signing what `a5s release show` prints there.
 
 on:
@@ -16,8 +17,32 @@ jobs:
   ci:
     uses: ./.github/workflows/ci.yml
 
-  image:
+  agents:  # each agent's own regression suite, against the model its release names
     needs: ci
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16@sha256:1beaa3084eee2676f20a9cd9928f0bf2c5bf674f8e49f81017912183d377c61c
+        env:
+          POSTGRES_USER: a5s
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U a5s"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      A5S_TEST_DATABASE_URL: postgresql://a5s@127.0.0.1:5432/postgres
+      A5S_REGRESSION: required  # a missing key fails the release, rather than skipping
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}  # with the sample's made-up data only
+      QWEN_API_KEY: ${{ secrets.QWEN_API_KEY }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6
+      - run: uv sync --locked
+      - run: uv run pytest -m live tests/test_agents.py
+
+  image:
+    needs: [ci, agents]
     runs-on: ubuntu-latest
     permissions:
       contents: write  # to publish the release

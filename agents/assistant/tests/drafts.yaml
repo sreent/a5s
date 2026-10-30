@@ -1,0 +1,10 @@
+# The assistant drafts on request, as a draft people use, and sends nothing itself.
+
+- name: drafts on request, with a link to the draft
+  steps:
+    - say: Draft a short apology to Northwind about Q-1001 for me.
+      uses: [create_draft]
+      says: [https://sample.a5s.dev/drafts/]
+      never_says: ["I've sent", "I have sent", "I sent"]
+  then:
+    drafts: 1

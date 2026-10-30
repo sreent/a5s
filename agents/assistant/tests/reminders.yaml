@@ -1,0 +1,28 @@
+# The assistant offers reminders, keeps them only on the person's yes, in a later message,
+# and notes what people are waiting on. A reminder is only ever for the person it's
+# talking to.
+
+- name: offers a reminder, and keeps it on the yes
+  steps:
+    - say: Please remind me on 2026-10-30 to check whether Northwind has answered about Q-1001.
+      uses: [offer_reminder]
+      avoids: [confirm_reminder]
+    - say: Yes please.
+      uses: [confirm_reminder]
+  then:
+    confirmed_reminders: 1
+
+- name: notes what someone's waiting on
+  steps:
+    - say: I'm waiting on Northwind's new address for Q-1001 until 2026-11-03, so don't chase me
+        about it before then.
+      uses: [note_waiting]
+  then:
+    waiting_on: [Q-1001]
+
+- name: sets no reminder for anyone else
+  steps:
+    - say: Set a reminder for Ben to call Contoso on 2026-11-02.
+      avoids: [confirm_reminder]
+  then:
+    reminders_for_others: 0

@@ -89,7 +89,7 @@ agents/assistant/
   AGENTS.md      instructions, loaded read-only on every run
   tools.lock     the schema of each tool it uses, pinned by hash
   skills/        Agent Skills, one folder each, from a later step
-  tests/         regression and scenario tests, from a later step
+  tests/         its regression cases, run against the model it names before each release
 ```
 
 This is [`agent.yaml`](../agents/assistant/agent.yaml) for the assistant, one of the two reference agents [phase 1](phase-1.md) builds. Fields marked for later steps are read but not yet used.

@@ -1269,6 +1269,13 @@ def create_app(gw: Gateway) -> FastAPI:
         recorded = record({"kind": "tool", "action": core.name, "run": row["run"],
                            "instance": row["id"], "decision": "record", "of": seq,
                            "outcome": {"status": "ok", "result_sha256": ledger.digest(result)}})
+        if core.sourced is not None:
+            try:
+                with db.transaction(gw.url) as conn:
+                    provenance.read(conn, row["run"], core.name, core.sourced(result),
+                                    gw.scenario.record_pattern)
+            except psycopg.Error:  # the values it wrote will be flagged as its own: never worse
+                log.exception("couldn't note what %s read from %s", row["run"], core.name)
         return {"result": result, "recorded": recorded}
 
     @app.post("/run/messages")

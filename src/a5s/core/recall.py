@@ -64,7 +64,9 @@ TOOLS = {t.name: t for t in (
              "newest first, with when each was said.",
              {"type": "object", "required": ["query"], "properties": {
                  "query": {"type": "string", "description": "A record's key, or a few words"}}},
-             search),
+             search, sourced=lambda found: [  # when each was said, and what the agent didn't say
+                 *(f["when"] for f in found["found"]),
+                 *(f["said"] for f in found["found"] if f["who"] != _WHO["agent"])]),
     CoreTool("correct_summary",
              "When the person says the summary of this topic you were given is wrong, add their "
              "correction to it, in their words.",

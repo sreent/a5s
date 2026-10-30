@@ -1,0 +1,11 @@
+# The assistant notes how someone likes to work, only on their yes, in a later message.
+
+- name: notes how someone likes to work, on their yes
+  steps:
+    - say: Please note that I like answers in one sentence, no lists.
+      uses: [offer_note]
+      avoids: [confirm_note]
+    - say: Yes, keep that note.
+      uses: [confirm_note]
+  then:
+    kept_notes: 1

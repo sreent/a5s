@@ -1,0 +1,8 @@
+# The watcher answers people's questions about their records, and changes nothing.
+
+- name: answers about someone's records
+  steps:
+    - say: What's the status of my customer questions?
+      uses_any: [search_records, get_record]
+      says: [Q-1001]
+      never_says: ["I've changed", "I have changed", "I've updated", "I have updated"]

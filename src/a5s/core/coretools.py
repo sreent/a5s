@@ -74,6 +74,9 @@ class CoreTool:
     schema: dict[str, Any]
     run: Callable[[Call], Any]
     text_fields: tuple[str, ...] = ()
+    # What of its result the run has read, as provenance counts it (core/provenance.py): such
+    # as when things were said, and what the person said, but never the agent's own words
+    sourced: Callable[[Any], Any] | None = None
 
     def definition(self) -> dict[str, Any]:
         return {"name": self.name, "description": self.description, "schema": self.schema,
