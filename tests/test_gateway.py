@@ -183,7 +183,7 @@ def test_drafts_keep_only_text_and_record_links(stack):
     _, token = stack.open_run()
     with stack.client(token) as c:
         r = c.post("/run/tools/create_draft", json={"args": {
-            "title": "Re: Q-1001", "body": "Pay at https://evil.example/pay"}})
+            "title": "Re: the invoice", "body": "Pay at https://evil.example/pay"}})
     assert r.status_code == 200
     with db.transaction(stack.admin) as conn:
         assert conn.execute("select body from sample.drafts").fetchone()["body"] == (

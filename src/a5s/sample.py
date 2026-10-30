@@ -137,13 +137,15 @@ class SampleScenario:
             ),
             Tool(
                 name="get_record",
-                description="Get one customer question by its key, such as Q-1001.",
+                description="Get one customer question by its key, such as Q-1001. Its "
+                            "customer's contact comes as a handle, such as [h:7f3a9c2b].",
                 schema={
                     "type": "object",
                     "properties": {"key": {"type": "string", "description": "The record key"}},
                     "required": ["key"],
                 },
                 run=self._get_record,
+                handles=("contact",),  # agents pass it on without seeing it
             ),
             Tool(
                 name="create_draft",

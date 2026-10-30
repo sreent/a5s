@@ -48,10 +48,12 @@ from a5s.core import (
     chats,
     coretools,
     digests,
+    handles,
     ledger,
     models,
     obligations,
     profiles,
+    provenance,
     recall,
     registry,
     releases,
@@ -597,6 +599,13 @@ class Opening:
     seen: dict | None = None  # a report's records as it tells them, kept once they have it
 
 
+def values_of(traced: list[dict]) -> dict:
+    """For the ledger: how many of the values an agent wrote came from what it read, and
+    which it wrote itself."""
+    return {"sourced": sum(1 for t in traced if t["from"]),
+            "own": [t["value"] for t in traced if not t["from"]]}
+
+
 def load_run(conn: psycopg.Connection, token: str) -> dict:
     row = conn.execute(
         """
@@ -725,6 +734,9 @@ def create_app(gw: Gateway) -> FastAPI:
                     (run_id, body.instance, token_hash(token), Jsonb(opening.trigger),
                      opening.acts_for, RUN_MINUTES),
                 )
+                if opening.task:  # what a5s asks it, from the records: something it has read
+                    provenance.read(conn, run_id, provenance.A5S, opening.task,
+                                    gw.scenario.record_pattern)
             ledger.append(conn, {
                 "kind": "run", "action": "open", "run": None if reasons else run_id,
                 "instance": body.instance, "acts_for": opening.acts_for,
@@ -1149,6 +1161,8 @@ def create_app(gw: Gateway) -> FastAPI:
             context = [profiles.section(conn, person)] if person else []
             if (topic := row["trigger"].get("topic", topics.GENERAL)) != topics.GENERAL:
                 context.append(topics.brief(conn, gw.scenario, topic, person, gw.clock()))
+                provenance.read(conn, row["run"], f"the records, on {topic}", context[-1]["text"],
+                                gw.scenario.record_pattern)
             if person and (offered := [  # so a yes in their next message finds what it's to
                     *profiles.waiting(conn, person, row["definition"]),
                     *reminders.waiting_for_yes(conn, person, row["definition"])]):
@@ -1200,19 +1214,35 @@ def create_app(gw: Gateway) -> FastAPI:
             if row["trigger"].get("kind") in OWN_RUNS:
                 decision = Decision(False, ("a5s-runs-call-no-tools",), explanations=(
                     "a5s's own runs, such as keeping a summary, call no tools",))
+            texts = [f for f in tool.text_fields if isinstance(args.get(f), str)] if tool else []
+            traced = provenance.traced(conn, gw.scenario, row, "\n".join(args[f] for f in texts))
+            if own := [t["value"] for t in traced if t["from"] is None]:  # people see it apart
+                args[texts[-1]] += "\n\n" + provenance.note(row["definition"], own)
             seq = ledger.append(conn, gw.entry(row, "tool", name, decision, args=ledger.mask(args),
-                                               links_removed=removed))
+                                               links_removed=removed,
+                                               **({"values": values_of(traced)} if traced else {})))
         if not decision.allowed:
             return JSONResponse(status_code=403,
                                 content={"denied": True, **decision.as_dict(explain=True)})
         if core is not None:
             return call_core_tool(core, args, row, seq)
         try:
-            result = tool.run(ToolCall(args=args, instance=row["id"], run=row["run"],
+            with db.transaction(gw.url) as conn:  # a system gets the values handles stand for
+                given = handles.resolved_args(conn, row["run"], args)
+            result = tool.run(ToolCall(args=given, instance=row["id"], run=row["run"],
                                        acts_for=tuple(row["acts_for"])))
             outcome = {"status": "ok", "result_sha256": ledger.digest(result)}
+            if tool.handles:  # and the agent gets handles for its sensitive values, never them
+                with db.transaction(gw.url) as conn:
+                    result = handles.issue(conn, row["run"], name, result, tool.handles)
         except Exception as exc:  # noqa: BLE001 - the tool's own failure, recorded and reported
             result, outcome = None, {"status": "error", "error": f"{type(exc).__name__}: {exc}"[:200]}
+        if outcome["status"] == "ok":
+            try:
+                with db.transaction(gw.url) as conn:
+                    provenance.read(conn, row["run"], name, result, gw.scenario.record_pattern)
+            except psycopg.Error:  # the values it wrote will be flagged as its own: never worse
+                log.exception("couldn't note what %s read from %s", row["run"], name)
         recorded = record({"kind": "tool", "action": name, "run": row["run"], "instance": row["id"],
                            "decision": "record", "of": seq, "outcome": outcome})
         if outcome["status"] != "ok":
@@ -1266,25 +1296,31 @@ def create_app(gw: Gateway) -> FastAPI:
                 route = (gw.message_of(conn, inbound) if inbound  # an answer, where it was asked
                          else {"channel": "digest", "reply_to": {}} if gw.for_digest(conn, row)
                          else gw.reach(conn, body.to, row["definition"]))
+            traced = provenance.traced(conn, gw.scenario, row, text) if decision.allowed else []
+            if own := [t["value"] for t in traced if t["from"] is None]:  # people see it apart
+                text += "\n\n" + provenance.note(row["definition"], own)
             ledger.append(conn, gw.entry(row, "message", "send", decision, args={
                 "to": body.to, "chars": len(text), "sha256": hashlib.sha256(text.encode()).hexdigest(),
                 "links_removed": removed, **({"channel": route["channel"]} if route else {}),
+                **({"values": values_of(traced)} if traced else {}),
             }))
+            shown = handles.resolved(conn, row["run"], text)  # what people read: the values
             if decision.allowed and route["channel"] == "digest":  # it goes in their next digest
-                digests.keep(conn, body.to, row["definition"], row["id"], row["run"], text, gw.clock())
+                digests.keep(conn, body.to, row["definition"], row["id"], row["run"], shown, gw.clock())
             elif decision.allowed and route["channel"] not in PUSHED:  # people collect it from here
                 conn.execute(
                     "insert into outbox (run_id, instance_id, agent, inbound_id, person, channel, "
                     "text) values (%s, %s, %s, %s, %s, %s, %s)",
                     (row["run"], row["id"], row["definition"], inbound, body.to, route["channel"],
-                     text))
+                     shown))
         if not decision.allowed:
             return JSONResponse(status_code=403,
                                 content={"denied": True, **decision.as_dict(explain=True)})
         if route["channel"] in PUSHED:
-            problem = deliver(route, text, row["run"], row["id"])
+            problem = deliver(route, shown, row["run"], row["id"])
             if problem:
                 return JSONResponse(status_code=502, content={"error": problem})
+        # As the agent wrote it, with its handles, for the conversation a later run reads
         return {"sent": True, "text": text, "links_removed": removed}
 
     def deliver(route: dict, text: str, run: str | None, instance: str | None,

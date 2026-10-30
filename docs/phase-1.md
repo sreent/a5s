@@ -1,6 +1,6 @@
 # Phase 1
 
-**Status:** Steps 1, 2 and 3 under way, step 4 built ([progress](#progress)) · **Under:** [Architecture](architecture.md)
+**Status:** Steps 1 and 2 under way, steps 3 and 4 built ([progress](#progress)) · **Under:** [Architecture](architecture.md)
 
 Phase 1 builds the smallest a5s that's useful: the trusted core, conversations, and two reference agents of a5s's own, at levels 0 and 1. They're proven against a5s's sample scenario, and used first by the team that builds a5s. In phase 1, agents read, report, draft and remind. None of them changes data. Which real scenario comes first is a separate decision [TBC].
 
@@ -84,7 +84,7 @@ Still to do in step 2:
 - applying the rules to the repository, which needs a second maintainer to review changes: `gh api --method POST repos/<owner>/a5s/rulesets --input .github/rulesets/main.json`, and the same for `releases.json`;
 - each agent's own regression suite, run against real models, which grows with the reference agents in step 4.
 
-Step 3, context, has started:
+Step 3, context, is built:
 
 | Built | Where |
 | --- | --- |
@@ -93,6 +93,8 @@ Step 3, context, has started:
 | The release manifest lists the preferences people may set through each agent, so a new one widens it | [`core/releases.py`](../src/a5s/core/releases.py) |
 | Topics and case briefs. A message that names one of the scenario's records goes in that record's case, and one that names none stays in the conversation's current topic, until it's been quiet for a few hours. A chase or a reminder about a record goes in its case. A run in a case is given a brief of it, built by code from the records: the record as it stands, and, for the person the run acts for alone, when they owe it by, when they were reminded, what they're waiting on, and their reminders about it. It gets the conversation's latest turns, and the case's older ones within the rest of the budget its release gives it, so a long conversation keeps each case in view. | [`core/topics.py`](../src/a5s/core/topics.py), [`services/context.py`](../src/a5s/services/context.py) |
 | Summaries that code checks. Once a topic's turns no longer fit in its runs, a run of a5s's own, with a5s's instructions and no tools, writing to nobody, folds them into the topic's summary: what was decided and promised, and what's still open. Code keeps every key, amount and date the turns had, with who said it and when, and keeps no summary that has one nobody said. Later runs in the topic are given the summary before the turns that still fit. People see their summaries with `a5s summaries`, and have an agent add their corrections, in their words. | [`services/summaries.py`](../src/a5s/services/summaries.py), [`core/values.py`](../src/a5s/core/values.py) |
+| Provenance of typed values. The keys, amounts and dates an agent writes, to people and in drafts, are matched exactly, in code, against what its run read: the records, through its tools and the brief a5s gave it, a5s's own tasks, and what the person said, in their messages and in their summaries' facts. A match carries its source, in the ledger. Anything else is the agent's own, and a5s says so in a note of its own, apart from the agent's words, so people check it before they rely on it. | [`core/provenance.py`](../src/a5s/core/provenance.py), [`core/values.py`](../src/a5s/core/values.py) |
+| Handles. A scenario's tool names the fields of what it returns that hold sensitive values, such as the sample's customer contacts, and the agent gets each as a handle for its run. It writes the handle wherever the value should go: a system gets the value, people read it, and the model, the ledger and the conversation keep only the handle. A handle works only in the run that was given it. | [`core/handles.py`](../src/a5s/core/handles.py) |
 | Each run is told which of its agent's offers wait for the person's yes, since it sees the conversation's words but not the tool calls behind them, and a model that ends with nothing to say is asked once more, so nobody gets an empty message | [`core/gateway.py`](../src/a5s/core/gateway.py), [`worker.py`](../src/a5s/worker.py) |
 
 Step 4, the reference agents, is built:

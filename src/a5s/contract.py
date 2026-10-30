@@ -85,6 +85,9 @@ class Tool:
     destructive: bool = False
     sends_outside: bool = False
     text_fields: tuple[str, ...] = ()  # arguments that are outgoing text, such as a draft's body
+    # Fields of what it returns that hold sensitive values, such as a contact, which the agent
+    # gets as handles: it passes them on, and a5s puts the values in (core/handles.py)
+    handles: tuple[str, ...] = ()
 
     @property
     def risk(self) -> dict[str, bool]:
@@ -100,6 +103,8 @@ class Tool:
         """Pinned in releases, so a changed tool, its risk flags included, needs a new release."""
         payload = {"name": self.name, "description": self.description, "schema": self.schema,
                    "risk": self.risk, "text_fields": list(self.text_fields)}
+        if self.handles:  # so a tool that stops handing a value over needs a new release
+            payload["handles"] = list(self.handles)
         return hashlib.sha256(canonical(payload).encode()).hexdigest()
 
     def definition(self) -> dict[str, Any]:

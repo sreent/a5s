@@ -98,6 +98,7 @@ def queued(stack) -> list[dict]:
 
 
 def test_a_teams_message_is_checked_recorded_and_answered_in_teams(stack, bot):
+    stack.model.reply(None, ("search_records", {"query": "invoice"}))  # it looks first
     stack.model.reply("Q-1001 mentions an invoice.")
     message = activity()
     assert httpx.post(bot.url, json=message, headers=bot.auth()).status_code == 200
@@ -279,6 +280,7 @@ def test_each_agent_talks_to_people_as_its_own_bot(stack, bot):
 
 
 def test_a_reminder_goes_to_the_teams_chat_the_person_last_wrote_in(stack, bot):
+    stack.model.reply(None, ("search_records", {"query": "invoice"}))  # it looks first
     stack.model.reply("Q-1001 mentions an invoice.")
     httpx.post(bot.url, json=activity(), headers=bot.auth()).raise_for_status()
     stack.scheduler().answer_waiting()

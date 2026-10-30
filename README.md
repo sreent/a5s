@@ -80,6 +80,7 @@ uv run a5s dev &     # the core, its channels and the scheduler, in one process
 uv run a5s say --as ana assistant "Which customer questions are still open?"
 # or chat in a browser at http://127.0.0.1:8703/chat/
 uv run a5s inbox --as ana    # her daily digest, from all her agents, once there's news
+uv run a5s summaries --as ana   # what a5s keeps of her conversation, once it outgrows a run
 uv run a5s ledger tail
 uv run a5s ledger verify
 ```

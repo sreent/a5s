@@ -101,6 +101,7 @@ def test_the_core_passes_on_the_sign_in_and_keeps_the_providers_access_token(sig
 
 
 def test_a_person_sees_only_their_own_conversation(stack):
+    stack.model.reply(None, ("search_records", {"query": "invoice"}))  # it looks first
     stack.model.reply("Q-1001 mentions an invoice.")
     assert stack.say("Which questions mention an invoice?") == "Q-1001 mentions an invoice."
     stack.model.reply("Hello, Ben.")
@@ -142,6 +143,7 @@ def answering(stack):
 
 
 def test_a_person_chats_in_the_browser_in_development(stack, browser, answering):
+    stack.model.reply(None, ("search_records", {"query": "invoice"}))  # it looks first
     stack.model.reply("Q-1001 is about an invoice sent to the wrong address.")
     with channels(stack) as url:
         page = browser.new_page()

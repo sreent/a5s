@@ -161,3 +161,18 @@ def test_a_real_model_folds_what_no_longer_fits_into_a_checked_summary(database,
         found = stack.say("How much is Contoso's refund, and when does it go out?")
         assert "1,240.50" in found
         assert stack.verify().ok
+
+
+@pytest.mark.live
+def test_a_real_model_passes_on_a_contact_it_never_sees(database, tmp_path):
+    if not os.environ.get("DEEPSEEK_API_KEY"):
+        pytest.skip("DEEPSEEK_API_KEY isn't set")
+    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text())
+    model_calls = []
+    with running(database, root, httpx.Client(event_hooks={"request": [model_calls.append]}),
+                 FakeModel()) as stack:
+        told = stack.say("Who should I email about Q-1001? Give me the address.")
+        print(told)
+        assert "accounts@northwind.test" in told
+        assert not any(b"accounts@northwind.test" in (r.content or b"") for r in model_calls)
+        assert stack.verify().ok

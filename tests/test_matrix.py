@@ -108,6 +108,7 @@ def test_a_matrix_message_is_checked_recorded_and_answered_in_the_room(stack, ho
     assert deliver(homeserver, invite()).status_code == 200
     assert BOT in homeserver.rooms[DM] and homeserver.registered == ["a5s-assistant"]
 
+    stack.model.reply(None, ("search_records", {"query": "invoice"}))  # it looks first
     stack.model.reply("Q-1001 mentions an invoice.")
     assert deliver(homeserver, said("Which questions mention an invoice?")).status_code == 200
     [row] = queued(stack)
