@@ -96,6 +96,15 @@ def as_message(turn: dict) -> dict[str, str]:
     return {"role": "assistant", "content": turn["content"]}
 
 
+def instructed(instructions: str, context: list[dict]) -> str:
+    """The release's instructions, then what a5s knows from its own records for this run,
+    apart from them and from the conversation."""
+    if not context:
+        return instructions
+    told = "\n\n".join(f"## {part['title']}\n\n{part['text']}" for part in context)
+    return f"{instructions}\n\n# From a5s's records, for this run\n\n{told}"
+
+
 def run_agent(gateway_url: str, token: str, history: list[dict]) -> str:
     """Run the agent on the conversation so far, and return its reply."""
     headers = {"Authorization": f"Bearer {token}"}
@@ -108,7 +117,7 @@ def run_agent(gateway_url: str, token: str, history: list[dict]) -> str:
         agent = create_deep_agent(
             model=chat_model(gateway_url, token, info["model"]),
             tools=[gateway_tool(gw, d) for d in info["tools"]],
-            system_prompt=info["instructions"],
+            system_prompt=instructed(info["instructions"], info.get("context") or []),
         )
         try:
             result = agent.invoke({"messages": [as_message(t) for t in history]},

@@ -10,11 +10,15 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
-# a5s's own tools, for an agent whose release records reminders (core/reminders.py), and
-# for one that lets people set their digest's time (core/digests.py)
+# a5s's own tools: for an agent whose release records reminders (core/reminders.py), for the
+# preferences people may set through it, such as their digest's time (core/digests.py) and
+# how they like to work (core/profiles.py), and for searching its conversation with the person
+# it acts for (core/recall.py)
 REMINDER_TOOLS = ("offer_reminder", "confirm_reminder", "list_reminders", "cancel_reminder",
                   "note_waiting")
-PREFERENCE_TOOLS = {"digest-time": "set_digest_time"}
+PREFERENCE_TOOLS = {"digest-time": ("set_digest_time",),
+                    "how-i-work": ("offer_note", "confirm_note", "forget_note")}
+SEARCH_TOOLS = ("search_conversation",)
 _DAY_NAMES = {f"{d}{rest}": d for d, rest in zip(DAYS, ("day", "sday", "nesday", "rsday", "day",
                                                        "urday", "day"), strict=True)}
 
@@ -81,6 +85,15 @@ class Report(BaseModel):
     source: str  # the kind of record, such as records
 
 
+class Context(BaseModel):
+    """What each run of the agent is given beside its instructions."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    budget_tokens: int = Field(30000, ge=1000)  # for the conversation, split by part
+    search: bool = False  # whether it may search its conversation with the person it acts for
+
+
 class Definition(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -101,7 +114,7 @@ class Definition(BaseModel):
     reminders: bool = False
     preferences: list[str] = []
     channels: list[str] = ["teams"]
-    context: dict[str, Any] = {}
+    context: Context = Context()
     budget: dict[str, Any] = {}
 
     # Filled in from the folder, not from agent.yaml.
@@ -116,9 +129,11 @@ class Definition(BaseModel):
     @property
     def grants(self) -> list[str]:
         """The tools its instances may use: the scenario's it names, and a5s's own for
-        reminders, if it records them, and for the preferences people may set through it."""
+        reminders, if it records them, for the preferences people may set through it, and for
+        searching its conversation with the person it acts for, if it may."""
         return [*self.tool_names, *(REMINDER_TOOLS if self.reminders else ()),
-                *(PREFERENCE_TOOLS[p] for p in self.preferences if p in PREFERENCE_TOOLS)]
+                *(tool for p in self.preferences for tool in PREFERENCE_TOOLS.get(p, ())),
+                *(SEARCH_TOOLS if self.context.search else ())]
 
     @property
     def release_id(self) -> str:

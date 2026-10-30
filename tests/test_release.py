@@ -123,6 +123,11 @@ CHANGES = {
         {RELEASE_APPROVER}),
     "how far the assistant may act": (
         lambda d: agent(d)["may"]["autonomy"].update({"max": 2}), {RELEASE_APPROVER}),
+    "a preference people set through the assistant": (
+        lambda d: agent(d)["may"]["preferences"].append("working-hours"), {RELEASE_APPROVER}),
+    "searching its conversations": (
+        lambda d: agent(d)["may"]["context"].update({"search": not agent(d)["may"]["context"]["search"]}),
+        {RELEASE_APPROVER}),
     "less the assistant may do": (lambda d: agent(d)["may"]["tools"].remove("create_draft"),
                                   {OWNER, ENGINEER}),
     "a new agent": (lambda d: d["agents"].update({"librarian": agent(BASE)}),

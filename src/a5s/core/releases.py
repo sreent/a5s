@@ -94,8 +94,8 @@ def _agent(folder: Path) -> dict:
             "triggers": d.triggers, "schedules": [s.model_dump() for s in d.schedules],
             "reports": [r.model_dump() for r in d.reports],
             "obligations": sorted(d.obligations), "autonomy": d.autonomy.model_dump(),
-            "channels": sorted(d.channels), "budget": d.budget, "context": d.context,
-            "scope": d.scope, "reminders": d.reminders,
+            "channels": sorted(d.channels), "budget": d.budget, "context": d.context.model_dump(),
+            "scope": d.scope, "reminders": d.reminders, "preferences": sorted(d.preferences),
         },
     }
 
@@ -189,6 +189,8 @@ def _widens_agent(old: dict, new: dict) -> list[str]:
         found.append("reaches more channels")
     if new["reminders"] and not old["reminders"]:
         found.append("records reminders")
+    if set(new.get("preferences", [])) - set(old.get("preferences", [])):
+        found.append("lets people set more preferences")
     found += [f"has a new {key}" for key in ("budget", "context", "scope") if new[key] != old[key]]
     return found
 

@@ -1,6 +1,6 @@
 # Phase 1
 
-**Status:** Steps 1 and 2 under way, step 4 built ([progress](#progress)) · **Under:** [Architecture](architecture.md)
+**Status:** Steps 1, 2 and 3 under way, step 4 built ([progress](#progress)) · **Under:** [Architecture](architecture.md)
 
 Phase 1 builds the smallest a5s that's useful: the trusted core, conversations, and two reference agents of a5s's own, at levels 0 and 1. They're proven against a5s's sample scenario, and used first by the team that builds a5s. In phase 1, agents read, report, draft and remind. None of them changes data. Which real scenario comes first is a separate decision [TBC].
 
@@ -83,6 +83,14 @@ Still to do in step 2:
 - deploying each release to the three clouds, which waits for step 1's infrastructure code;
 - applying the rules to the repository, which needs a second maintainer to review changes: `gh api --method POST repos/<owner>/a5s/rulesets --input .github/rulesets/main.json`, and the same for `releases.json`;
 - each agent's own regression suite, run against real models, which grows with the reference agents in step 4.
+
+Step 3, context, has started:
+
+| Built | Where |
+| --- | --- |
+| Profiles. Each run that acts for one person is given their profile, built by code: their working hours, working days and time zone from the directory, their digest's time, and a short note, in their own words, on how they like to work. An agent offers the note, showing it word for word, and a5s keeps it only once they say yes in a later message of their own, never from a run that has read content from outside. A new note replaces the last, people can have it forgotten, and every agent that works for them follows it. | [`core/profiles.py`](../src/a5s/core/profiles.py) |
+| Recall. Records beat recollection: an agent searches its conversation with the person it acts for, and gets the original messages, newest first, with when each was said. It reads that person's conversation alone, so only a run that acts for them alone can search. | [`core/recall.py`](../src/a5s/core/recall.py) |
+| The release manifest lists the preferences people may set through each agent, so a new one widens it | [`core/releases.py`](../src/a5s/core/releases.py) |
 
 Step 4, the reference agents, is built:
 

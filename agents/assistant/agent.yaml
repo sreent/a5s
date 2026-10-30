@@ -18,10 +18,11 @@ triggers:
 obligations: [records]           # it reminds its people of what falls due in the records
 schedules: []                    # none: what it does, it does for someone
 reminders: true                  # it offers reminders, and keeps those people confirm
-preferences: [digest-time, channel]
+preferences: [digest-time, channel, how-i-work]
 channels: [teams]
 context:
   budget_tokens: 50000           # split by part, tested at release
+  search: true                   # it searches its conversation with the person it acts for
 budget:
   per_run: "[TBC]"
   per_person_per_day: "[TBC]"

@@ -2,7 +2,9 @@
 
 They change no part's data, so an agent may use them at any level. Each is about the
 person the run is answering, and theirs alone: only a run answering a message of
-theirs can use one, and never a run that has read content from outside.
+theirs can use one that sets something, and never a run that has read content from
+outside. One that only reads the person's own records, such as a search of their
+conversation, serves any run that acts for them alone.
 """
 
 from __future__ import annotations
@@ -46,6 +48,17 @@ class Call:
         if self.run["read_outside"]:
             raise Refused("this run has read content from outside, which can't set what's "
                           "theirs")
+        person = self.scenario.person(self.run["acts_for"][0])
+        if person is None:
+            raise Refused("the directory doesn't know them")
+        return person
+
+    @property
+    def reader(self) -> Person:
+        """Whose own records the run may read: the one person it acts for, whatever started it."""
+        if len(self.run["acts_for"]) != 1:
+            raise Refused("it reads one person's own records, so only a run that acts for them "
+                          "alone can")
         person = self.scenario.person(self.run["acts_for"][0])
         if person is None:
             raise Refused("the directory doesn't know them")

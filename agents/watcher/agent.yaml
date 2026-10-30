@@ -23,6 +23,7 @@ preferences: [digest-time, channel]
 channels: [teams]
 context:
   budget_tokens: 30000
+  search: true                   # it searches its conversation with the person it acts for
 budget:
   per_run: "[TBC]"
   per_person_per_day: "[TBC]"

@@ -86,3 +86,22 @@ def test_a_real_model_offers_a_reminder_and_keeps_it_once_its_person_says_yes(da
         assert "Northwind" in reminder["text"] or "Q-1001" in reminder["text"]
         print(offered, confirmed, reminder["text"], sep="\n---\n")
         assert stack.verify().ok
+
+
+@pytest.mark.live
+def test_a_real_model_notes_how_someone_works_and_goes_by_what_they_said(database, tmp_path):
+    if not os.environ.get("DEEPSEEK_API_KEY"):
+        pytest.skip("DEEPSEEK_API_KEY isn't set")
+    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text())
+    with running(database, root, httpx.Client(), FakeModel()) as stack:
+        offered = stack.say("Please note that I like answers in one sentence, no lists.")
+        confirmed = stack.say("Yes, keep that note.")
+        with db.transaction(stack.admin) as conn:
+            [note] = conn.execute("select * from profile_notes").fetchall()
+        assert note["confirmed_at"] is not None and "sentence" in note["text"]
+
+        stack.say("For Q-1001, Northwind wants the corrected invoice sent to their Leeds office.")
+        found = stack.say("Remind me: which office did I say Northwind wants the invoice sent to?")
+        assert "Leeds" in found
+        print(offered, confirmed, found, sep="\n---\n")
+        assert stack.verify().ok

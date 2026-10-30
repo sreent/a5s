@@ -51,6 +51,8 @@ from a5s.core import (
     ledger,
     models,
     obligations,
+    profiles,
+    recall,
     registry,
     releases,
     reminders,
@@ -64,7 +66,8 @@ from a5s.core.teams import Teams
 from a5s.definitions import Definition
 
 log = logging.getLogger(__name__)
-CORE_TOOLS = {**reminders.TOOLS, **digests.TOOLS}  # a5s's own, on its own records
+CORE_TOOLS = {**reminders.TOOLS, **digests.TOOLS, **profiles.TOOLS,  # a5s's own, on its
+              **recall.TOOLS}  # own records
 RUN_MINUTES = 60  # the longest a run may last [TBC]; its token dies with it
 # The chats a5s writes to itself, as each agent's bot. People collect from the local
 # channel, the command line's and the web chat's, instead.
@@ -1114,8 +1117,13 @@ def create_app(gw: Gateway) -> FastAPI:
 
     @app.get("/run")
     def run_info(token: str = Depends(run_token)) -> dict:
+        """What a worker needs for its run: the release's instructions, the model, the tools,
+        and what a5s knows from its own records for the run, built by code, such as the
+        profile of the one person it acts for."""
         with db.transaction(gw.url) as conn:
             row = load_run(conn, token)
+            person = gw.scenario.person(row["acts_for"][0]) if len(row["acts_for"]) == 1 else None
+            context = [profiles.section(conn, person)] if person else []
         definition = gw.definitions.get(row["definition"])
         if definition is None or definition.release_id != row["release"]:
             raise HTTPException(409, f"release {row['release']} isn't loaded in this gateway")
@@ -1126,6 +1134,7 @@ def create_app(gw: Gateway) -> FastAPI:
             "instance": row["id"],
             "acts_for": list(row["acts_for"]),
             "instructions": definition.instructions,
+            "context": context,
             "model": {"alias": model.alias, "api": model.api} if model else None,
             "tools": [tools[n].definition() for n in row["grants"] if n in tools],
         }
