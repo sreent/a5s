@@ -12,13 +12,13 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 # a5s's own tools: for an agent whose release records reminders (core/reminders.py), for the
 # preferences people may set through it, such as their digest's time (core/digests.py) and
-# how they like to work (core/profiles.py), and for searching its conversation with the person
-# it acts for (core/recall.py)
+# how they like to work (core/profiles.py), and for recalling its conversation with the person
+# it acts for: searching it, and correcting its summaries at their word (core/recall.py)
 REMINDER_TOOLS = ("offer_reminder", "confirm_reminder", "list_reminders", "cancel_reminder",
                   "note_waiting")
 PREFERENCE_TOOLS = {"digest-time": ("set_digest_time",),
                     "how-i-work": ("offer_note", "confirm_note", "forget_note")}
-SEARCH_TOOLS = ("search_conversation",)
+RECALL_TOOLS = ("search_conversation", "correct_summary")
 _DAY_NAMES = {f"{d}{rest}": d for d, rest in zip(DAYS, ("day", "sday", "nesday", "rsday", "day",
                                                        "urday", "day"), strict=True)}
 
@@ -91,7 +91,9 @@ class Context(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     budget_tokens: int = Field(30000, ge=1000)  # for the conversation, split by part
-    search: bool = False  # whether it may search its conversation with the person it acts for
+    # whether it may search its conversation with the person it acts for, and correct its
+    # summaries at their word
+    recall: bool = False
 
 
 class Definition(BaseModel):
@@ -130,10 +132,10 @@ class Definition(BaseModel):
     def grants(self) -> list[str]:
         """The tools its instances may use: the scenario's it names, and a5s's own for
         reminders, if it records them, for the preferences people may set through it, and for
-        searching its conversation with the person it acts for, if it may."""
+        recalling its conversation with the person it acts for, if it may."""
         return [*self.tool_names, *(REMINDER_TOOLS if self.reminders else ()),
                 *(tool for p in self.preferences for tool in PREFERENCE_TOOLS.get(p, ())),
-                *(SEARCH_TOOLS if self.context.search else ())]
+                *(RECALL_TOOLS if self.context.recall else ())]
 
     @property
     def release_id(self) -> str:

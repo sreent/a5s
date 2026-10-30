@@ -6,7 +6,7 @@ import json
 
 from a5s import db
 from a5s.core import profiles, recall
-from a5s.definitions import PREFERENCE_TOOLS, SEARCH_TOOLS
+from a5s.definitions import PREFERENCE_TOOLS, RECALL_TOOLS
 
 NOTE = "Keep answers to two sentences, with the record's link."
 
@@ -120,18 +120,18 @@ def test_a5s_offers_its_note_tools_only_where_a_release_lets_people_set_one(stac
     assert set(profiles.TOOLS) == set(PREFERENCE_TOOLS["how-i-work"])
     stack.model.reply("Hello.")
     stack.say("Hello")
-    assert set(PREFERENCE_TOOLS["how-i-work"]) | set(SEARCH_TOOLS) <= stack.model.tool_names(-1)
+    assert set(PREFERENCE_TOOLS["how-i-work"]) | set(RECALL_TOOLS) <= stack.model.tool_names(-1)
     stack.with_watcher()
     with db.transaction(stack.admin) as conn:
         grants = conn.execute("select grants from instances where id = 'watcher-finance'").fetchone()
-    assert set(SEARCH_TOOLS) <= set(grants["grants"])
+    assert set(RECALL_TOOLS) <= set(grants["grants"])
     assert not set(PREFERENCE_TOOLS["how-i-work"]) & set(grants["grants"])
 
 
 # Recall: the original turns, from the person's own conversation
 
 def test_an_agent_finds_what_was_said_before_in_the_original_words(stack):
-    assert set(recall.TOOLS) == set(SEARCH_TOOLS)
+    assert set(recall.TOOLS) == set(RECALL_TOOLS)
     stack.model.reply("Noted: Northwind wants the invoice sent to their Leeds office.")
     stack.say("For Q-1001, Northwind wants the invoice sent to their Leeds office.")
     stack.model.reply("Hello, Ben.")

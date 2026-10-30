@@ -28,6 +28,32 @@ from a5s.core.reminders import say
 log = logging.getLogger(__name__)
 GENERAL = "general"
 CURRENT = timedelta(hours=4)  # how long a conversation stays on its topic without a word [TBC]
+# What a summary run is told: a5s's own words, not a release's. It has no tools, writes to
+# nobody, and what it says is checked by code before it's kept (services/summaries.py).
+SUMMARY = (
+    "You keep a short summary of one topic of a conversation between a person and an agent, "
+    "for the agent to read later, when the turns themselves no longer fit. You're given the "
+    "summary so far and the turns to fold into it. Reply with JSON alone, in this form: "
+    '{"decisions": [...], "commitments": [...], "open_questions": [...]}. Each is a list of '
+    "short sentences: what was decided, what the person or the agent promised to do, and what's "
+    "still open. Fold in the summary so far, keeping what still holds. Write keys, amounts and "
+    "dates exactly as they were written, and never one that wasn't. Don't guess."
+)
+
+
+PARTS = {"decisions": "Decided", "commitments": "Promised", "open_questions": "Still open"}
+
+
+def render(body: dict) -> str:
+    """A topic's summary as a run, or its person, reads it (services/summaries.py)."""
+    told = [f"{label}: " + " ".join(body[part]) for part, label in PARTS.items() if body.get(part)]
+    if body.get("facts"):
+        told.append("Keys, amounts and dates, exactly as said: " + "; ".join(
+            f"{f['value']} ({f['who']}, {f['when']})" for f in body["facts"]))
+    if body.get("corrections"):
+        told.append("Corrections, in their words: " + " ".join(
+            f"{c['said']} ({c['when']})" for c in body["corrections"]))
+    return "\n".join(told)
 
 
 def named(scenario: Scenario, text: str) -> list[str]:

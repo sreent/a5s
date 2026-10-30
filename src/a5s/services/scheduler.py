@@ -34,7 +34,7 @@ import psycopg
 from a5s import db
 from a5s.config import Config
 from a5s.contract import INSTANCE_APPROVER, Scenario
-from a5s.services import context
+from a5s.services import context, summaries
 from a5s.worker import ModelDown, run_agent
 
 log = logging.getLogger(__name__)
@@ -295,6 +295,50 @@ class Scheduler:
             self._turn(claim, told, run, topic)
         finally:
             self._close(run, outcome)
+        if outcome == "done":  # once the person has their answer
+            self._fold(inst["id"], person, agent, topic, opened.get("history_chars"))
+
+    def _fold(self, instance: str, person: str, agent: str, topic: str,
+              chars: int | None) -> None:
+        """Fold the topic's turns that no run is given any more into its summary, with a run
+        of a5s's own, once there are any. Code checks the summary before it's kept."""
+        chars = chars or context.CHARS
+        with db.transaction(self.cfg.database_url) as conn:
+            previous, turns = context.dropped(conn, person=person, agent=agent, topic=topic,
+                                              chars=chars)
+        if sum(len(t["content"]) for t in turns) < chars * context.FOLD:
+            return  # not yet: they're folded in a batch, not one model call a run
+        try:
+            opened = self.gw.post("/runs", headers=self.service, json={
+                "instance": instance, "trigger": {"kind": "summary", "person": person,
+                                                  "topic": topic}})
+        except httpx.HTTPError:
+            log.warning("the core can't be reached, so %s's summary waits", topic)
+            return
+        if opened.status_code >= 400:
+            log.info("the core didn't open a summary run: %s", opened.text[:200])
+            return
+        run, token = opened.json()["run"], opened.json()["token"]
+        name = who.name if (who := self.scenario.person(person)) else person
+        asked = {"role": "task", "content": summaries.task(name, topic, previous, turns),
+                 "at": datetime.now(UTC).isoformat()}
+        outcome = "failed"
+        try:
+            reply = self.worker(self.cfg.gateway_url, token, [asked])
+            body, problems = summaries.checked(reply, previous, turns, name, self.scenario)
+            if problems:
+                log.warning("kept no summary of %s for %s: %s", topic, person, "; ".join(problems))
+                outcome = "summary refused: " + "; ".join(problems)
+            else:
+                with db.transaction(self.cfg.database_url) as conn:
+                    summaries.keep(conn, person, agent, topic, body, turns[-1]["id"], run)
+                outcome = "done"
+        except ModelDown:
+            outcome = "model unavailable"
+        except Exception:
+            log.exception("summary run %s failed", run)
+        finally:
+            self._close(run, outcome[:200])
 
     def _close(self, run: str, outcome: str) -> None:
         try:
@@ -353,6 +397,8 @@ class Scheduler:
             log.exception("run %s failed", run)
         finally:
             self._close(run, outcome)
+        if person and outcome == "done":  # once the person has been told
+            self._fold(claim["instance"], person, agent, topic, opened.json().get("history_chars"))
 
     # Working through the queue, and what falls due
 

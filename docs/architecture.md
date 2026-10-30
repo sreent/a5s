@@ -116,7 +116,7 @@ An instance lives in records: its identity, register entry, triggers, obligation
    - a brief of the case, built from records;
    - what a search of the history finds.
 4. **Run.** A fresh Deep Agents run, on a LangGraph thread that lasts only as long as the run. Every call goes through the gateways.
-5. **Record.** The context service adds the turn to the conversation and updates the topic's summary. The scheduler updates the obligations, and the lease ends.
+5. **Record.** The context service adds the turn to the conversation, and folds the topic's turns that no longer fit into its summary. The scheduler updates the obligations, and the lease ends.
 
 - **Obligations** are worked out by code from the scenario's records, never inferred by the model, with one for each record and person across all agents, naming the instance that acts on it. A person can say what they're waiting on, which pauses chases to them until the date they give.
 - **Reports** are worked out by code too. An agent whose release reports on a kind of record, such as the watcher, tells each person it serves, in their daily digest, what changed in their records since it last told them, and what fell due. Code compares the records with what it last told them, so the model only words the facts, and a day with nothing new starts no model. Each report acts for its person alone.
@@ -131,7 +131,7 @@ People get one conversation with each agent, and it never runs out of room, howe
 | Context | What it is | Written by | Checked by |
 | --- | --- | --- | --- |
 | Conversation | Every turn with a person, across channels, organised in topics such as one per request | a5s, as turns happen | The person, who can see all of it |
-| Summaries | A structured summary of each topic: decisions, commitments, open questions, and facts by handle | a5s after each run. Code checks that every key, amount and date survives. | The person, who can correct it |
+| Summaries | A structured summary of each topic: decisions, commitments, open questions, and facts by handle | a5s, once a topic's turns no longer fit in its runs. Code keeps every key, amount and date they had, and keeps no summary that has one nobody said. | The person, who can correct it |
 | Profile | Typed preferences, such as digest time and channel, and a short "how I like to work" note | The person, or the agent with their confirmation | The person |
 | Case briefs | The state and history of a case, built for each run | Code, from records | Nobody needs to: the records are the source |
 | Instructions and skills | How the agent works | Only a release | The release approver |

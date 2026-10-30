@@ -22,7 +22,7 @@ preferences: [digest-time, channel, how-i-work]
 channels: [teams]
 context:
   budget_tokens: 50000           # split by part, tested at release
-  search: true                   # it searches its conversation with the person it acts for
+  recall: true                   # it searches its conversation with the person it acts for
 budget:
   per_run: "[TBC]"
   per_person_per_day: "[TBC]"

@@ -98,6 +98,10 @@ def as_message(turn: dict) -> dict[str, str]:
         return {"role": "assistant", "content": f"[{when}, a5s on my behalf] {turn['content']}"}
     if turn["role"] == "task":  # a5s asking the agent, such as to remind someone of what's due
         return {"role": "user", "content": f"[{when}, from a5s, not the person] {turn['content']}"}
+    if turn["role"] == "summary":  # what a5s keeps of the turns that no longer fit
+        return {"role": "user", "content": "[from a5s, not the person] A summary of this topic "
+                                           "before the messages that follow, which they can see "
+                                           f"and correct:\n{turn['content']}"}
     return {"role": "assistant", "content": turn["content"]}
 
 
@@ -119,6 +123,16 @@ def run_agent(gateway_url: str, token: str, history: list[dict]) -> str:
         info = info.json()
         if info["model"] is None:
             raise RuntimeError("the instance's model isn't on the approved list")
+        if info.get("plain"):  # a5s's own work, such as a summary: one call, with no tools
+            try:
+                answer = chat_model(gateway_url, token, info["model"]).invoke(
+                    [{"role": "system", "content": info["instructions"]},
+                     *(as_message(t) for t in history)])
+            except Exception as exc:
+                if getattr(exc, "status_code", None) in (502, 503):  # from the model gateway
+                    raise ModelDown(str(exc)) from exc
+                raise
+            return text_of(answer)
         agent = create_deep_agent(
             model=chat_model(gateway_url, token, info["model"]),
             tools=[gateway_tool(gw, d) for d in info["tools"]],

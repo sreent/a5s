@@ -148,6 +148,22 @@ def _inbox(cfg: Config, person: str, wait: float) -> None:
         print("Nothing new.")
 
 
+def _summaries(cfg: Config, person: str, agent: str) -> None:
+    """Print what a5s keeps of a person's conversation with an agent beyond what each run is
+    given: a summary of each topic, which they can have the agent correct."""
+    token = os.environ.get("A5S_TOKEN")
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    with httpx.Client(base_url=cfg.channels_url, headers=headers, timeout=30) as channel:
+        found = channel.get("/channels/local/summaries", params={"person": person, "agent": agent})
+    if found.status_code >= 400:
+        sys.exit(found.json()["detail"])
+    for summary in found.json()["summaries"]:
+        print(f"[{summary['topic']}, as of {summary['at'][:16].replace('T', ' ')} UTC]\n"
+              f"{summary['text']}\n")
+    if not found.json()["summaries"]:
+        print("Nothing yet: the whole conversation still fits in each run.")
+
+
 def _service(cfg: Config, name: str):
     if name == "gateway":
         return build.app(cfg)
@@ -306,6 +322,10 @@ def main(argv: list[str] | None = None) -> None:
     say.add_argument("--as", dest="person", required=True)
     say.add_argument("agent")
     say.add_argument("text")
+    kept = sub.add_parser("summaries", help="read the summaries a5s keeps of a person's "
+                                            "conversation with an agent")
+    kept.add_argument("--as", dest="person", required=True)
+    kept.add_argument("agent", nargs="?", default="assistant")
     box = sub.add_parser("inbox", help="read what's been written to a person, such as reminders")
     box.add_argument("--as", dest="person", required=True)
     box.add_argument("--wait", type=float, default=0, metavar="SECONDS")
@@ -376,6 +396,8 @@ def main(argv: list[str] | None = None) -> None:
         _say(cfg, args.person, args.agent, args.text)
     elif args.command == "inbox":
         _inbox(cfg, args.person, args.wait)
+    elif args.command == "summaries":
+        _summaries(cfg, args.person, args.agent)
     elif args.command in ("suspend", "resume"):
         print(_admin(cfg, f"/instances/{args.instance}/{args.command}",
                      {"by": args.by, "identity": os.environ.get("A5S_TOKEN")}))

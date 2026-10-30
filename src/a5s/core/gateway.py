@@ -71,6 +71,7 @@ CORE_TOOLS = {**reminders.TOOLS, **digests.TOOLS, **profiles.TOOLS,  # a5s's own
               **recall.TOOLS}  # own records
 RUN_MINUTES = 60  # the longest a run may last [TBC]; its token dies with it
 CHARS_PER_TOKEN = 4  # roughly, for a run's budget for its conversation
+OWN_RUNS = ("summary",)  # a5s's own work on a conversation: no tools, and it writes to nobody
 # The chats a5s writes to itself, as each agent's bot. People collect from the local
 # channel, the command line's and the web chat's, instead.
 PUSHED = ("teams", "matrix")
@@ -508,6 +509,18 @@ class Gateway:
             opening.reasons.append(f"it waits for {row['person']}'s digest")
         return opening
 
+    def summarising(self, conn: psycopg.Connection, inst: dict, trigger: dict,
+                    now: datetime) -> Opening:
+        """A run of a5s's own that folds the turns of a topic that no longer fit in its runs
+        into the topic's summary, acting for the person whose conversation it is. It has no
+        tools, and writes to nobody."""
+        who, topic = str(trigger.get("person")), str(trigger.get("topic") or topics.GENERAL)
+        opening = Opening(trigger={"kind": "summary", "person": who, "topic": topic},
+                          acts_for=[who], args={"person": who, "topic": topic}, reasons=[])
+        if self.scenario.person(who) is None:
+            opening.reasons.append(f"the directory doesn't know {who}")
+        return opening
+
     # Cedar entities, built from the core's own records for every call.
 
     @staticmethod
@@ -664,11 +677,11 @@ def create_app(gw: Gateway) -> FastAPI:
     def open_run(body: OpenRun) -> dict:
         kind = body.trigger.get("kind")
         opens = {"message": gw.answering, "obligation": gw.reminding, "schedule": gw.scheduled,
-                 "report": gw.reporting, "reminder": gw.following_up}
+                 "report": gw.reporting, "reminder": gw.following_up, "summary": gw.summarising}
         if kind not in opens:
             raise HTTPException(400, "a run answers a message, reminds someone of an obligation "
-                                     "or of what they asked, works on a schedule, or tells "
-                                     "someone about their records")
+                                     "or of what they asked, works on a schedule, tells someone "
+                                     "about their records, or keeps a topic's summary")
         token = secrets.token_urlsafe(32)
         run_id = str(uuid.uuid4())
         now = gw.clock()
@@ -1149,14 +1162,16 @@ def create_app(gw: Gateway) -> FastAPI:
             raise HTTPException(409, f"release {row['release']} isn't loaded in this gateway")
         model = gw.models.get(row["model"])
         tools = {**gw.scenario.tools(), **CORE_TOOLS}  # a5s's own first
+        own = row["trigger"].get("kind") in OWN_RUNS  # a5s's own work, with one model call
         return {
             "run": row["run"],
             "instance": row["id"],
             "acts_for": list(row["acts_for"]),
-            "instructions": definition.instructions,
-            "context": context,
+            "instructions": topics.SUMMARY if own else definition.instructions,
+            "context": [] if own else context,
             "model": {"alias": model.alias, "api": model.api} if model else None,
-            "tools": [tools[n].definition() for n in row["grants"] if n in tools],
+            "tools": [] if own else [tools[n].definition() for n in row["grants"] if n in tools],
+            "plain": own,
         }
 
     def record(entry: dict) -> bool:
@@ -1182,6 +1197,9 @@ def create_app(gw: Gateway) -> FastAPI:
             row = load_run(conn, token)
             entity = gw.core_tool_entity(name) if core else gw.tool_entity(name, tool, row["pins"])
             decision = gw.decide(row, "call_tool", entity, [])
+            if row["trigger"].get("kind") in OWN_RUNS:
+                decision = Decision(False, ("a5s-runs-call-no-tools",), explanations=(
+                    "a5s's own runs, such as keeping a summary, call no tools",))
             seq = ledger.append(conn, gw.entry(row, "tool", name, decision, args=ledger.mask(args),
                                                links_removed=removed))
         if not decision.allowed:
@@ -1236,7 +1254,10 @@ def create_app(gw: Gateway) -> FastAPI:
             row = load_run(conn, token)
             inbound = row["trigger"].get("inbound")
             route = None
-            if body.to not in row["acts_for"]:
+            if row["trigger"].get("kind") in OWN_RUNS:
+                decision = Decision(False, ("a5s-runs-write-to-nobody",), explanations=(
+                    "a5s's own runs, such as keeping a summary, write to nobody",))
+            elif body.to not in row["acts_for"]:
                 why = ("a run writes only to the people it acts for, such as whoever sent the "
                        "message it answers")
                 decision = Decision(False, ("writes-to-whom-it-acts-for",), explanations=(why,))

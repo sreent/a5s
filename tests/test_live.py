@@ -1,5 +1,6 @@
 """Calls a real provider. Run with `pytest -m live`, with the provider's key set."""
 
+import json
 import os
 
 import httpx
@@ -131,4 +132,32 @@ def test_a_real_model_searches_for_what_its_context_no_longer_holds(database, tm
                     if e["action"] == "search_conversation" and e["decision"] == "allow"]
         print(found, [e["args"] for e in searched], sep="\n---\n")
         assert searched and "Leeds" in found
+        assert stack.verify().ok
+
+
+@pytest.mark.live
+def test_a_real_model_folds_what_no_longer_fits_into_a_checked_summary(database, tmp_path):
+    if not os.environ.get("DEEPSEEK_API_KEY"):
+        pytest.skip("DEEPSEEK_API_KEY isn't set")
+    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text())
+    with running(database, root, httpx.Client(), FakeModel()) as stack:
+        with db.transaction(stack.admin) as conn:  # what Ana agreed a while ago, and much since
+            context.add_turn(conn, person="ana", agent="assistant", role="person",
+                             content="We agreed: Contoso's refund for Q-1002 is £1,240.50, and it "
+                                     "goes out by 2026-11-06. Can you chase finance on Monday?")
+            context.add_turn(conn, person="ana", agent="assistant", role="agent",
+                             content="Yes, I'll chase finance about the refund on Monday.")
+            for n in range(6):
+                context.add_turn(conn, person="ana", agent="assistant", role="person",
+                                 content=f"Note {n} from the weekly sync: " + "We went through the "
+                                 "open invoices and the next payment run. " * 12)
+        stack.gateway.definitions["assistant"].context.budget_tokens = 1000  # 4,000 characters
+        stack.say("Thanks for all that.")
+        with db.transaction(stack.admin) as conn:
+            [summary] = conn.execute("select * from summaries").fetchall()
+        print(json.dumps(summary["body"], indent=1, ensure_ascii=False))
+        assert {"GBP 1240.50", "2026-11-06", "Q-1002"} <= {f["norm"] for f in summary["body"]["facts"]}
+        assert summary["body"]["decisions"] or summary["body"]["commitments"]
+        found = stack.say("How much is Contoso's refund, and when does it go out?")
+        assert "1,240.50" in found
         assert stack.verify().ok

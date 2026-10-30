@@ -34,7 +34,7 @@ from pydantic import BaseModel
 
 from a5s import db
 from a5s.contract import parse_settings
-from a5s.core import approvals, chats, ledger, matrix
+from a5s.core import approvals, chats, ledger, matrix, topics
 from a5s.core.identity import IdentityError, UnknownPerson, signed_in
 from a5s.core.teams import ONE_TO_ONE, UNKNOWN, Refused
 
@@ -346,6 +346,18 @@ def create_app(gw: Any) -> FastAPI:
                 """, {"who": who, "agent": agent, "limit": min(max(limit, 1), 200)}).fetchall()
         return {"messages": [{"from": "you" if r["kind"] == "person" else agent if r["run_id"] else "a5s",
                               "text": r["text"], "at": r["at"].isoformat()} for r in reversed(rows)]}
+
+    @app.get("/channels/local/summaries")
+    def summaries_kept(agent: str, person: str | None = None,
+                       authorization: str | None = Header(default=None)) -> dict:
+        """What a5s keeps of someone's conversation with an agent beyond what each run is given:
+        a summary of each topic, for them to see, and to have an agent correct."""
+        who, _ = sender(authorization, person)
+        with db.transaction(gw.url) as conn:
+            rows = conn.execute("select topic, body, updated_at from summaries where person = %s "
+                                "and agent = %s order by updated_at desc", (who, agent)).fetchall()
+        return {"summaries": [{"topic": r["topic"], "text": topics.render(r["body"]),
+                               "at": r["updated_at"].isoformat()} for r in rows]}
 
     @app.get("/channels/local/inbox")
     async def inbox(request: Request, wait: float = 0, person: str | None = None,
