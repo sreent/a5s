@@ -38,7 +38,7 @@ def test_the_next_run_reads_the_conversation(stack):
     said = " ".join(str(m.get("content")) for m in second)
     assert "Remember Q-1001 for me." in said and "Noted: the invoice question is Q-1001." in said
     with db.transaction(stack.admin) as conn:
-        turns = context.recent(conn, person="ana", agent="assistant")
+        turns = context.history(conn, person="ana", agent="assistant")
     assert [t["role"] for t in turns] == ["person", "agent", "person", "agent"]
 
 
@@ -143,5 +143,5 @@ def test_a_long_conversation_keeps_the_latest_turns_that_fit(stack):
         for n in range(10):
             context.add_turn(conn, person="ana", agent="assistant", role="person",
                              content=f"{n} " + "x" * 1000)
-        turns = context.recent(conn, person="ana", agent="assistant", max_chars=3500)
+        turns = context.history(conn, person="ana", agent="assistant", chars=3500)
     assert [t["content"].split()[0] for t in turns] == ["7", "8", "9"]

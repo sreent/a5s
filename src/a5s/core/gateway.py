@@ -58,17 +58,19 @@ from a5s.core import (
     reminders,
     reports,
     schedules,
+    topics,
 )
 from a5s.core.identity import IdentityError, UnknownPerson, Verifier, signed_in
 from a5s.core.matrix import Matrix
 from a5s.core.policy import Decision, PolicyEngine
 from a5s.core.teams import Teams
-from a5s.definitions import Definition
+from a5s.definitions import Context, Definition
 
 log = logging.getLogger(__name__)
 CORE_TOOLS = {**reminders.TOOLS, **digests.TOOLS, **profiles.TOOLS,  # a5s's own, on its
               **recall.TOOLS}  # own records
 RUN_MINUTES = 60  # the longest a run may last [TBC]; its token dies with it
+CHARS_PER_TOKEN = 4  # roughly, for a run's budget for its conversation
 # The chats a5s writes to itself, as each agent's bot. People collect from the local
 # channel, the command line's and the web chat's, instead.
 PUSHED = ("teams", "matrix")
@@ -199,7 +201,7 @@ class Gateway:
         """
         taken = conn.execute(
             "update inbound set answered_at = now() where id = %s and answered_at is null "
-            "returning id::text, person, channel, agent", (inbound,)).fetchone()
+            "returning id::text, person, channel, agent, text", (inbound,)).fetchone()
         if taken:
             return taken, None
         if conn.execute("select 1 from inbound where id = %s", (inbound,)).fetchone():
@@ -362,9 +364,12 @@ class Gateway:
             raise HTTPException(400, "name the message the run answers") from None
         message, problem = self.take_message(conn, inbound)
         sender = message["person"] if message else None
+        topic = topics.of_message(conn, self.scenario, sender, inst["definition"],
+                                  message["text"]) if message else topics.GENERAL
         opening = Opening(
             trigger={"kind": "message", "inbound": inbound,
-                     "channel": message["channel"] if message else None, "sender": sender},
+                     "channel": message["channel"] if message else None, "sender": sender,
+                     "topic": topic},
             acts_for=[sender] if sender else [], reasons=[problem] if problem else [],
             args={"channel": message["channel"] if message else None, "inbound": inbound},
             used=problem is not None and "already" in problem)
@@ -388,7 +393,7 @@ class Gateway:
         person = self.scenario.person(row["person"])
         opening = Opening(
             trigger={"kind": "obligation", "obligation": number, "record": row["record"],
-                     "person": row["person"]},
+                     "person": row["person"], "topic": row["record"]},
             acts_for=[row["person"]], args={"obligation": number, "record": row["record"]},
             reasons=[], task=obligations.chase(row, person) if person else None,
             used=row["chased_at"] is not None or row["escalations"] > 0)
@@ -441,7 +446,7 @@ class Gateway:
         due = digests.window(conn, person, now) if found and reachable else None
         args = {"person": who, "source": source, "due": due.isoformat() if due else None}
         opening = Opening(trigger={"kind": "report", "report": {"person": who, "source": source},
-                                   "due": args["due"]},
+                                   "due": args["due"], "topic": topics.GENERAL},
                           acts_for=[who] if reachable else [], args=args, reasons=[])
         if not found:
             opening.reasons.append(f"{inst['id']}'s release doesn't report on {source}")
@@ -482,7 +487,8 @@ class Gateway:
                            ["there's no such reminder"])
         person = self.scenario.person(row["person"])
         opening = Opening(
-            trigger={"kind": "reminder", "reminder": number, "person": row["person"]},
+            trigger={"kind": "reminder", "reminder": number, "person": row["person"],
+                     "topic": row["record"] or topics.GENERAL},
             acts_for=[row["person"]], args={"reminder": number}, reasons=[],
             task=reminders.task(row, person) if person and row["confirmed_at"] else None,
             used=row["reminded_at"] is not None)
@@ -716,7 +722,11 @@ def create_app(gw: Gateway) -> FastAPI:
             raise HTTPException(409, {"reasons": reasons, "status": inst["status"],
                                       "owner": inst["owner"], "suspended_by": inst["suspended_by"],
                                       "answered": opening.used})
-        return {"run": run_id, "token": token, "task": opening.task}
+        definition = gw.definitions.get(inst["definition"])
+        return {"run": run_id, "token": token, "task": opening.task,
+                "topic": opening.trigger.get("topic", topics.GENERAL),
+                "history_chars": CHARS_PER_TOKEN * (definition.context.budget_tokens if definition
+                                                    else Context().budget_tokens)}
 
     @app.post("/runs/sweep", dependencies=[Depends(service)])
     def sweep() -> list[dict]:
@@ -1124,6 +1134,8 @@ def create_app(gw: Gateway) -> FastAPI:
             row = load_run(conn, token)
             person = gw.scenario.person(row["acts_for"][0]) if len(row["acts_for"]) == 1 else None
             context = [profiles.section(conn, person)] if person else []
+            if (topic := row["trigger"].get("topic", topics.GENERAL)) != topics.GENERAL:
+                context.append(topics.brief(conn, gw.scenario, topic, person, gw.clock()))
             if person and (offered := [  # so a yes in their next message finds what it's to
                     *profiles.waiting(conn, person, row["definition"]),
                     *reminders.waiting_for_yes(conn, person, row["definition"])]):

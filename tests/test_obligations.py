@@ -59,7 +59,7 @@ def test_its_agent_reminds_the_person_once_half_the_time_has_passed_in_their_hou
     assert [(e["args"]["record"], e["acts_for"], e["decision"]) for e in opened] == [
         ("Q-1001", ["ana"], "allow"), ("Q-1002", ["ben"], "allow")]
     with db.transaction(stack.admin) as conn:  # the next run with Ana knows what it said
-        turns = context.recent(conn, person="ana", agent="assistant")
+        turns = context.history(conn, person="ana", agent="assistant", topic="Q-1001")
     assert [t["role"] for t in turns] == ["task", "agent"]
     assert stack.verify().ok
 

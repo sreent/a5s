@@ -6,6 +6,7 @@ import httpx
 import pytest
 
 from a5s import db
+from a5s.services import context
 from conftest import ROOT, FakeModel, build_root, running
 
 
@@ -106,4 +107,28 @@ def test_a_real_model_notes_how_someone_works_and_goes_by_what_they_said(databas
         found = stack.say("Remind me: which office did I say Northwind wants the invoice sent to?")
         assert "Leeds" in found
         print(offered, confirmed, found, sep="\n---\n")
+        assert stack.verify().ok
+
+
+@pytest.mark.live
+def test_a_real_model_searches_for_what_its_context_no_longer_holds(database, tmp_path):
+    if not os.environ.get("DEEPSEEK_API_KEY"):
+        pytest.skip("DEEPSEEK_API_KEY isn't set")
+    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text())
+    with running(database, root, httpx.Client(), FakeModel()) as stack:
+        with db.transaction(stack.admin) as conn:  # what Ana said a while ago, and much since
+            context.add_turn(conn, person="ana", agent="assistant", role="person",
+                             content="Northwind wants the corrected invoice sent to their Leeds office.")
+            context.add_turn(conn, person="ana", agent="assistant", role="agent", content="Noted.")
+            for n in range(6):
+                context.add_turn(conn, person="ana", agent="assistant", role="person",
+                                 content=f"Note {n} from the weekly sync: " + "We went through the "
+                                 "open invoices, the refunds and the next payment run. " * 12)
+                context.add_turn(conn, person="ana", agent="assistant", role="agent", content="Noted.")
+        stack.gateway.definitions["assistant"].context.budget_tokens = 1000  # 4,000 characters
+        found = stack.say("Which office did I say Northwind wants the invoice sent to?")
+        searched = [e for e in stack.ledger()
+                    if e["action"] == "search_conversation" and e["decision"] == "allow"]
+        print(found, [e["args"] for e in searched], sep="\n---\n")
+        assert searched and "Leeds" in found
         assert stack.verify().ok

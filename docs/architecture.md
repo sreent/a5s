@@ -108,11 +108,11 @@ Drafts and requests carry a handoff note and the agent's flags, so whoever decid
 An instance lives in records: its identity, register entry, triggers, obligations and context. Compute is temporary.
 
 1. **Wake.** A message, an event, a schedule or an obligation falling due wakes it. So does a sweep, which runs only while the instance is idle and starts no model when nothing has changed. Every agent can be talked to.
-2. **Lease.** The context service puts the work in a topic or case: an event or obligation by its record, and a message in the person's current topic, unless it names another record or they start a new one. The scheduler takes a lease on that topic or case, so each runs one thing at a time, and asks the core to open the run, which checks that the instance is active and has budget left.
+2. **Lease.** The scheduler takes a lease on the person's conversation with the agent, so it runs one thing at a time [TBC: a lease for each topic], and asks the core to open the run, which checks that the instance is active and has budget left. The core puts the work in a topic or case: an event or obligation by its record, and a message in the conversation's current topic, unless it names another record or the conversation has been quiet for a few hours.
 3. **Assemble.** The context service builds the run's context, within a budget for each part:
    - the release's instructions, and the skills for the parts in play;
    - the person's profile;
-   - the topic's summary and recent turns;
+   - the conversation's latest turns, and in a case, the case's summary and older turns;
    - a brief of the case, built from records;
    - what a search of the history finds.
 4. **Run.** A fresh Deep Agents run, on a LangGraph thread that lasts only as long as the run. Every call goes through the gateways.

@@ -34,6 +34,7 @@ LINK = "https://sample.a5s.dev/"
 class SampleScenario:
     name = "sample"
     record_links = (LINK,)
+    record_pattern = r"\bQ-\d{4}\b"  # customer questions' keys, such as Q-1001
 
     def __init__(self, folder: Path, database_url: str):
         self.folder = folder

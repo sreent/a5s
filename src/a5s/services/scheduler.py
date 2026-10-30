@@ -100,11 +100,11 @@ class Scheduler:
             return f"There's no {agent} for you yet. As an instance approver, you can add one."
         return f"There's no {agent} for you yet. Ask whoever runs a5s to add you."
 
-    def _turn(self, claim: dict, text: str, run: str) -> None:
+    def _turn(self, claim: dict, text: str, run: str, topic: str) -> None:
         """Note in the conversation what a5s told someone, so a later run knows."""
         with db.transaction(self.cfg.database_url) as conn:
             context.add_turn(conn, person=claim["person"], agent=claim["agent"], role="notice",
-                             content=text, run=run)
+                             content=text, run=run, topic=topic)
 
     # Taking work, and holding its conversation, or its schedule, while working on it
 
@@ -243,7 +243,7 @@ class Scheduler:
                                 f"{self._ask(inst, person)}.", inst["id"])
             self._later(claim, never=True)
             return
-        self._run(claim, inst, opened.json()["run"], opened.json()["token"])
+        self._run(claim, inst, opened.json())
 
     def _why_not(self, agent: str, inst: dict, detail: dict, asker: str) -> str:
         status, by = detail.get("status", "active"), detail.get("suspended_by")
@@ -256,14 +256,17 @@ class Scheduler:
             return f"The {agent} is {status}, so it can't help. Ask {self._ask(inst, asker)}."
         return f"The {agent} can't help you at the moment. Ask {self._ask(inst, asker)}."
 
-    def _run(self, claim: dict, inst: dict, run: str, token: str) -> None:
+    def _run(self, claim: dict, inst: dict, opened: dict) -> None:
         person, agent, inbound = claim["person"], claim["agent"], claim["id"]
+        run, token = opened["run"], opened["token"]
+        topic = opened.get("topic") or context.GENERAL  # the core decides it
         outcome = "failed"
         try:
             with db.transaction(self.cfg.database_url) as conn:
                 context.add_turn(conn, person=person, agent=agent, role="person",
-                                 content=claim["text"], run=run)
-                history = context.recent(conn, person=person, agent=agent)
+                                 content=claim["text"], run=run, topic=topic)
+                history = context.history(conn, person=person, agent=agent, topic=topic,
+                                          chars=opened.get("history_chars") or context.CHARS)
             reply = self.worker(self.cfg.gateway_url, token, history)
             if not reply.strip():
                 raise RuntimeError("the agent's reply was empty")
@@ -272,24 +275,24 @@ class Scheduler:
             if sent.status_code == 403:
                 outcome = "reply denied"
                 self._tell(inbound, told := "I couldn't send you my reply, sorry.", inst["id"])
-                self._turn(claim, told, run)
+                self._turn(claim, told, run, topic)
                 return
             sent.raise_for_status()
             with db.transaction(self.cfg.database_url) as conn:
                 context.add_turn(conn, person=person, agent=agent, role="agent",
-                                 content=sent.json()["text"], run=run)
+                                 content=sent.json()["text"], run=run, topic=topic)
             outcome = "done"
         except ModelDown:
             log.warning("the model for run %s isn't answering", run)
             outcome = "model unavailable"
             self._tell(inbound, told := "The model I use isn't answering right now, so I couldn't "
                                         "finish that. Try again in a few minutes.", inst["id"])
-            self._turn(claim, told, run)
+            self._turn(claim, told, run, topic)
         except Exception:
             log.exception("run %s failed", run)
             self._tell(inbound, told := "I couldn't finish that. Try again, or ask "
                                         f"{self._ask(inst, person)}.", inst["id"])
-            self._turn(claim, told, run)
+            self._turn(claim, told, run, topic)
         finally:
             self._close(run, outcome)
 
@@ -316,13 +319,16 @@ class Scheduler:
             log.info("the core didn't open a run for %s: %s", what(claim), opened.text[:200])
             return
         run, token, task = (opened.json()[k] for k in ("run", "token", "task"))
+        topic = opened.json().get("topic") or context.GENERAL  # the core decides it
         person, agent = claim.get("person"), claim["agent"]  # a schedule acts for nobody
         outcome = "failed"
         try:
             history = []
             if person:
                 with db.transaction(self.cfg.database_url) as conn:
-                    history = context.recent(conn, person=person, agent=agent)
+                    history = context.history(
+                        conn, person=person, agent=agent, topic=topic,
+                        chars=opened.json().get("history_chars") or context.CHARS)
             asked = {"role": "task", "content": task, "at": datetime.now(UTC).isoformat()}
             reply = self.worker(self.cfg.gateway_url, token, [*history, asked])
             if person and not reply.strip():
@@ -336,9 +342,9 @@ class Scheduler:
                 sent.raise_for_status()
                 with db.transaction(self.cfg.database_url) as conn:
                     context.add_turn(conn, person=person, agent=agent, role="task", content=task,
-                                     run=run)
+                                     run=run, topic=topic)
                     context.add_turn(conn, person=person, agent=agent, role="agent",
-                                     content=sent.json()["text"], run=run)
+                                     content=sent.json()["text"], run=run, topic=topic)
             outcome = "done"
         except ModelDown:
             log.warning("the model for run %s isn't answering", run)

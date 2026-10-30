@@ -1,8 +1,9 @@
 """The scenario contract: what a scenario gives a5s.
 
 Phase 1 covers the directory, settings, tools, the obligations its records
-give rise to, each person's records as they stand, and the policy pack. Events
-from records, the governed process and the decision surface follow in later steps.
+give rise to, each person's records as they stand, how its records' keys look,
+and the policy pack. Events from records, the governed process and the decision
+surface follow in later steps.
 """
 
 from __future__ import annotations
@@ -160,6 +161,9 @@ def parse_settings(raw: bytes, signatures: tuple[Signature, ...] = ()) -> Settin
 class Scenario(Protocol):
     name: str
     record_links: tuple[str, ...]  # the only link prefixes agents' messages may carry
+    # A regular expression for its records' keys, such as Q-\d{4}, so a message that names
+    # one goes in that record's case. None if its messages never name records.
+    record_pattern: str | None
 
     def person(self, person_id: str) -> Person | None: ...
 
