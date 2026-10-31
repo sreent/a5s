@@ -264,8 +264,8 @@ def test_an_approver_reviews_and_approves_in_the_browser(stack, approving, provi
         "assistant-finance's level in billing goes from 1 to 0."]
     assert page.locator("#whole li").all_inner_texts() == [  # and all of it, before deciding
         "The scenario's data is synthetic.",
-        "assistant-finance: the assistant, working in billing at level 0, serving Ana Ortiz, "
-        "Ben Okafor and Chen Wei, run by Ana Ortiz with Ben Okafor as deputy."]
+        ("assistant-finance: the assistant, working in billing at level 0, serving Ana Ortiz, "
+         "Ben Okafor and Chen Wei, run by Ana Ortiz with Ben Okafor as deputy.")]
     assert page.evaluate("window.location.search") == ""  # the code doesn't linger
     page.click("#approve")
     page.wait_for_selector(f"#status >> text=You approved serial {asked['serial']}", timeout=30000)
