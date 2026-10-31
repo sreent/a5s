@@ -93,6 +93,15 @@ function show(version, signed) {
   }
   $("approvals").textContent = version.approved_by.length
     ? `Approved so far by ${version.approved_by.join(", ")}.` : "Nobody has approved it yet.";
+  if (version.needs.length) {
+    $("needs").textContent = `It goes in force once nothing more is missing: ${version.needs.join("; ")}.`;
+    $("needs").hidden = false;
+  }
+  for (const line of version.whole) {
+    const item = document.createElement("li");
+    item.textContent = line;
+    $("whole").append(item);
+  }
   $("version").hidden = false;
   if (version.status !== "waiting") {
     status(STANDING[version.status] || `a5s couldn't apply it: ${version.status.replace(/^refused: /, "")}`);

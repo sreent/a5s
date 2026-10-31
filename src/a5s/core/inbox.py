@@ -10,7 +10,8 @@ The web chat is served from here too: a page where people sign in with their
 organisation's identity provider and talk to the agents through the local
 channel, as the command line does. So is the page where instance approvers
 approve a version of the settings, which the card in their chat opens
-(core/approvals.py).
+(core/approvals.py), and the settings app, where they review the whole version in
+force and ask for a new one, which the gateway then proposes to everyone it needs.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import yaml
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -33,8 +35,8 @@ from psycopg.types.json import Jsonb
 from pydantic import BaseModel
 
 from a5s import db
-from a5s.contract import parse_settings
-from a5s.core import approvals, chats, ledger, matrix, topics
+from a5s.contract import Person, Settings, parse_settings
+from a5s.core import approvals, chats, ledger, matrix, registry, topics
 from a5s.core.identity import IdentityError, UnknownPerson, signed_in
 from a5s.core.teams import ONE_TO_ONE, UNKNOWN, Refused
 
@@ -63,6 +65,12 @@ class Approval(BaseModel):
     """What the approval page sends with its sign-in: the salt its nonce was made with."""
 
     salt: str
+
+
+class Draft(BaseModel):
+    """A version of the settings as someone wrote it in the settings app."""
+
+    text: str
 
 
 class TokenRequest(BaseModel):
@@ -528,10 +536,14 @@ def create_app(gw: Any) -> FastAPI:
             row, last, status = proposal(conn, version)
             approved, _ = approvals.approvers(conn, gw.cfg.seal_keys, gw.scenario.name, version)
         before = parse_settings(bytes(last["raw"])) if last else None
-        found = approvals.changes(before, parse_settings(bytes(row["raw"])), gw.definitions,
-                                  gw.scenario.person)
+        settings = parse_settings(bytes(row["raw"]))
+        found = approvals.changes(before, settings, gw.definitions, gw.scenario.person)
+        valid, _ = registry.signers(settings, gw.scenario.person, approved)
         return {"serial": row["serial"], "proposed_at": row["proposed_at"].isoformat(),
                 "in_force": last["serial"] if last else None, "changes": found,
+                "whole": approvals.described(settings, gw.definitions, gw.scenario.person),
+                "needs": registry.missing(settings, gw.scenario.person, valid, before)
+                if status == "waiting" else [],
                 "approved_by": [p.name if (p := gw.scenario.person(a)) else a for a in approved],
                 "you": person.name, "you_approved": person.id in approved, "status": status}
 
@@ -557,5 +569,115 @@ def create_app(gw: Any) -> FastAPI:
                          "issuer": claims["iss"],
                          "token_sha256": hashlib.sha256(token.encode()).hexdigest()}})
         return {"approved": True, "serial": row["serial"], "by": person.name}
+
+    # The settings app: where the people who approve instances review the whole version in
+    # force, and ask for a new one. The gateway proposes it to everyone it needs, who approve
+    # it on the page above, so asking for a version changes nothing by itself.
+
+    def settling(authorization: str | None) -> Person:
+        """Who signed in to the settings app: someone who approves instances."""
+        approving()
+        who, _ = sender(authorization, None)
+        person = gw.scenario.person(who)
+        if person is None or not registry.approves(person):
+            raise HTTPException(403, "the settings app is for the people who approve instances: "
+                                     "each part's owner, and the instance approvers")
+        return person
+
+    def drafted(text: str, last: dict | None) -> tuple[Settings | None, bytes, list[str]]:
+        """The version someone wrote, with the next serial, and why it can't be proposed."""
+        try:
+            data = yaml.safe_load(text)
+            if not isinstance(data, dict):
+                raise TypeError("it isn't a set of settings")
+            data["serial"] = (last["serial"] if last else 0) + 1
+            raw = yaml.safe_dump(data, sort_keys=False, allow_unicode=True).encode()
+            settings = parse_settings(raw)
+        except (yaml.YAMLError, ValueError, KeyError, TypeError, AttributeError) as exc:
+            return None, b"", [f"a5s can't read it as settings: {exc}"]
+        return settings, raw, gw.unusable(settings, last)
+
+    @app.get("/settings/", include_in_schema=False)
+    def settings_page() -> Response:
+        approving()
+        return page("settings.html")
+
+    @app.get("/settings/settings.js", include_in_schema=False)
+    def settings_script() -> Response:
+        approving()
+        return page("settings.js")
+
+    @app.get("/settings/api")
+    def settings_now(authorization: str | None = Header(default=None)) -> dict:
+        """The whole version in force, in words and as written, the versions waiting for
+        approval, and what the person asked for lately."""
+        person = settling(authorization)
+        words = (gw.definitions, gw.scenario.person)
+        with db.transaction(gw.url) as conn:
+            last = approvals.latest(conn, gw.scenario.name)
+            in_force = parse_settings(bytes(last["raw"])) if last else None
+            waiting = []
+            for row in conn.execute("select * from settings_proposals where scenario = %s and "
+                                    "outcome is null and serial > %s order by serial desc",
+                                    (gw.scenario.name, last["serial"] if last else -1)):
+                settings = parse_settings(bytes(row["raw"]))
+                approved, _ = approvals.approvers(conn, gw.cfg.seal_keys, gw.scenario.name,
+                                                  row["digest"])
+                valid, _ = registry.signers(settings, gw.scenario.person, approved)
+                waiting.append({
+                    "serial": row["serial"], "link": f"/approve/?settings={row['digest']}",
+                    "changes": approvals.changes(in_force, settings, *words),
+                    "approved_by": [p.name if (p := gw.scenario.person(a)) else a for a in valid],
+                    "needs": registry.missing(settings, gw.scenario.person, valid, in_force)})
+            asked = conn.execute("select * from settings_requests where scenario = %s and "
+                                 "person = %s order by id desc limit 5",
+                                 (gw.scenario.name, person.id)).fetchall()
+        return {
+            "you": person.name,
+            "in_force": {"serial": last["serial"], "text": bytes(last["raw"]).decode(),
+                         "whole": approvals.described(in_force, *words)} if last else None,
+            "waiting": waiting,
+            "requests": [{"asked_at": r["asked_at"].isoformat(),
+                          "serial": parse_settings(bytes(r["raw"])).serial,
+                          "outcome": r["outcome"] or "waiting for a5s to ask its approvers",
+                          "link": f"/approve/?settings={r['digest']}" if r["digest"] else None}
+                         for r in asked],
+        }
+
+    @app.post("/settings/api/review")
+    def settings_review(body: Draft, authorization: str | None = Header(default=None)) -> dict:
+        """What a version someone wrote would change, the whole of it in words, and who'd
+        have to approve it, before they ask for it."""
+        settling(authorization)
+        with db.transaction(gw.url) as conn:
+            last = approvals.latest(conn, gw.scenario.name)
+        settings, _, problems = drafted(body.text, last)
+        if settings is None:
+            return {"problems": problems}
+        before = parse_settings(bytes(last["raw"])) if last else None
+        words = (gw.definitions, gw.scenario.person)
+        return {"serial": settings.serial, "problems": problems,
+                "changes": approvals.changes(before, settings, *words),
+                "whole": approvals.described(settings, *words),
+                "approvers": [p.name for p in registry.approvers(settings, gw.scenario.holders,
+                                                                 before)]}
+
+    @app.post("/settings/api/requests", status_code=202)
+    def settings_request(body: Draft, authorization: str | None = Header(default=None)) -> dict:
+        """Ask for a version: the gateway proposes it to everyone it needs within a minute."""
+        person = settling(authorization)
+        with db.transaction(gw.url) as conn:
+            last = approvals.latest(conn, gw.scenario.name)
+            settings, raw, problems = drafted(body.text, last)
+            if settings is None or problems:
+                raise HTTPException(409, {"problems": problems})
+            row = conn.execute("insert into settings_requests (scenario, person, raw) "
+                               "values (%s, %s, %s) returning id",
+                               (gw.scenario.name, person.id, raw)).fetchone()
+            ledger.append(conn, {"kind": "admin", "action": "request", "run": None,
+                                 "instance": None, "acts_for": [], "decision": "record",
+                                 "args": {"settings": settings.version, "serial": settings.serial,
+                                          "by": person.id, "identity": "verified"}})
+        return {"request": row["id"], "serial": settings.serial}
 
     return app

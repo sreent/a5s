@@ -195,6 +195,12 @@ assert swept.status_code == 200, swept.text
 print("The core deletes what's past its time to keep, as its own role.")
 PY
 
+status=$(curl -s -o "$reply" -w '%{http_code}' http://127.0.0.1:8703/settings/api)
+[ "$status" = 401 ] || { echo "The settings app without a sign-in got $status, not 401."; exit 1; }
+curl -sf -o "$reply" http://127.0.0.1:8703/settings/
+grep -q "a5s: settings" "$reply" || { echo "The settings app's page isn't served."; exit 1; }
+echo "The settings app is served, and asks people to sign in."
+
 # An instance approver approves a new version of the settings where she works. a5s asks her
 # in the Matrix chat she last wrote in, and she approves on the core's page, having signed in
 # afresh at Keycloak for that version alone.

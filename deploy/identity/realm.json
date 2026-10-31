@@ -80,7 +80,9 @@
         "http://127.0.0.1:8703/chat/*",
         "http://localhost:8703/chat/*",
         "http://127.0.0.1:8703/approve/*",
-        "http://localhost:8703/approve/*"
+        "http://localhost:8703/approve/*",
+        "http://127.0.0.1:8703/settings/*",
+        "http://localhost:8703/settings/*"
       ],
       "webOrigins": [
         "+"

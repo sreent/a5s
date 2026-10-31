@@ -100,48 +100,65 @@ def latest(conn: psycopg.Connection, scenario: str) -> dict | None:
                         "order by serial desc limit 1", (scenario,)).fetchone()
 
 
-def changes(before: Settings | None, after: Settings, definitions: dict[str, Definition],
-            directory: Directory) -> list[dict]:
-    """What a version changes from the one in force, in words code works out, each with
-    whether it widens what agents do."""
+class Words:
+    """How code puts a version of the settings in words, from the releases and the directory."""
 
-    def names(people: Any) -> str:
-        return names_of([p.name if (p := directory(pid)) else pid for pid in sorted(people)])
+    def __init__(self, definitions: dict[str, Definition], directory: Directory):
+        self.definitions, self.directory = definitions, directory
 
-    def levels(instance: InstanceSettings) -> tuple[int | None, dict[str, int | None]]:
-        release = definitions.get(instance.definition)
+    def names(self, people: Any) -> str:
+        return names_of([p.name if (p := self.directory(pid)) else pid for pid in sorted(people)])
+
+    def levels(self, instance: InstanceSettings) -> tuple[int | None, dict[str, int | None]]:
+        release = self.definitions.get(instance.definition)
         if release is None:
             return instance.level, {p: lv if lv is not None else instance.level
                                     for p, lv in instance.parts.items()}
         return registry.levels(instance, release)
 
-    def where(instance: InstanceSettings) -> str:
-        level, parts = levels(instance)
+    def where(self, instance: InstanceSettings) -> str:
+        level, parts = self.levels(instance)
         if not parts:
-            return f"at level {level}"
+            return f"in no part, at level {level}"
         return "working in " + names_of([f"{p} at level {lv}" for p, lv in parts.items()])
 
-    def owner(instance: InstanceSettings, who: str) -> str | None:
-        release = definitions.get(instance.definition)
+    def owner(self, instance: InstanceSettings, who: str) -> str | None:
+        release = self.definitions.get(instance.definition)
         return getattr(instance, who) or (getattr(release, who) if release else None)
 
+    @staticmethod
+    def classes(settings: Settings) -> str:
+        own = [f"{field} is {cls}" for field, cls in sorted(settings.classified.items())]
+        return f"{settings.data_class}" + (f", except that {names_of(own)}" if own else "")
+
+
+def changes(before: Settings | None, after: Settings, definitions: dict[str, Definition],
+            directory: Directory) -> list[dict]:
+    """What a version changes from the one in force, in words code works out, each with
+    whether it widens what agents do. A change to the classes of data counts as widening,
+    since a5s can't tell which classes are wider."""
+    words = Words(definitions, directory)
     was = {i.id: i for i in before.instances} if before else {}
     found: list[dict] = []
+    if before is not None and words.classes(before) != words.classes(after):
+        found.append({"text": f"The scenario's data becomes {words.classes(after)}, instead of "
+                              f"{words.classes(before)}.", "widens": True})
     for new in after.instances:
         old = was.pop(new.id, None)
         if old is None:
-            run_by = f", run by {names([o])}" if (o := owner(new, "owner")) else ""
-            found.append({"text": f"Adds {new.id}: the {new.definition}, {where(new)}, "
-                                  f"serving {names(new.serves)}{run_by}.", "widens": True})
+            run_by = f", run by {words.names([o])}" if (o := words.owner(new, "owner")) else ""
+            found.append({"text": f"Adds {new.id}: the {new.definition}, {words.where(new)}, "
+                                  f"serving {words.names(new.serves)}{run_by}.", "widens": True})
             continue
         if new.definition != old.definition:
             found.append({"text": f"{new.id} becomes the {new.definition}, instead of the "
                                   f"{old.definition}.", "widens": True})
         if more := set(new.serves) - set(old.serves):
-            found.append({"text": f"{new.id} serves {names(more)} as well.", "widens": True})
+            found.append({"text": f"{new.id} serves {words.names(more)} as well.", "widens": True})
         if fewer := set(old.serves) - set(new.serves):
-            found.append({"text": f"{new.id} no longer serves {names(fewer)}.", "widens": False})
-        (a, was_in), (b, now_in) = levels(old), levels(new)
+            found.append({"text": f"{new.id} no longer serves {words.names(fewer)}.",
+                          "widens": False})
+        (a, was_in), (b, now_in) = words.levels(old), words.levels(new)
         if not was_in and not now_in and a != b:
             found.append({"text": f"{new.id}'s level goes from {a} to {b}.",
                           "widens": (b or 0) > (a or 0)})
@@ -155,19 +172,37 @@ def changes(before: Settings | None, after: Settings, definitions: dict[str, Def
                 found.append({"text": f"{new.id}'s level in {part} goes from {a} to {b}.",
                               "widens": (b or 0) > (a or 0)})
         for who in ("owner", "deputy"):
-            if (a := owner(old, who)) != (b := owner(new, who)):
+            if (a := words.owner(old, who)) != (b := words.owner(new, who)):
                 found.append({"text": f"{new.id}'s {who} changes from "
-                                      f"{names([a]) if a else 'nobody'} to "
-                                      f"{names([b]) if b else 'nobody'}.", "widens": False})
+                                      f"{words.names([a]) if a else 'nobody'} to "
+                                      f"{words.names([b]) if b else 'nobody'}.", "widens": False})
     for gone in was.values():
-        found.append({"text": f"Retires {gone.id}, which served {names(gone.serves)}.",
+        found.append({"text": f"Retires {gone.id}, which served {words.names(gone.serves)}.",
                       "widens": False})
     return found or [{"text": "It changes nothing the agents do: only its serial or notes.",
                       "widens": False}]
 
 
+def described(settings: Settings, definitions: dict[str, Definition],
+              directory: Directory) -> list[str]:
+    """A whole version of the settings in words, for reviewing all of it before approving it."""
+    words = Words(definitions, directory)
+    told = [f"The scenario's data is {words.classes(settings)}."]
+    for i in settings.instances:
+        run_by = [f"run by {words.names([o])}"] if (o := words.owner(i, "owner")) else []
+        if deputy := words.owner(i, "deputy"):
+            run_by.append(f"with {words.names([deputy])} as deputy")
+        told.append(f"{i.id}: the {i.definition}, {words.where(i)}, serving "
+                    f"{words.names(i.serves)}" + (f", {' '.join(run_by)}" if run_by else "") + ".")
+    if not settings.instances:
+        told.append("No instances: every agent here is retired.")
+    return told
+
+
 def names_of(found: list[str]) -> str:
-    """Things in a list, in words: a, b and c."""
+    """Things in a list, in words: a, b and c, or nobody."""
+    if not found:
+        return "nobody"
     return found[0] if len(found) == 1 else f"{', '.join(found[:-1])} and {found[-1]}"
 
 

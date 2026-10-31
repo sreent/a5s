@@ -77,6 +77,9 @@ def test_not_even_the_administrator_truncates_the_ledger_without_disabling_its_g
     ("channels", "delete from settings_approvals"),
     ("channels", ("insert into settings_proposals (scenario, digest, version, serial, raw) "
                  "values ('sample', 'x', 'x', 99, 'x')")),
+    ("scheduler", ("insert into settings_requests (scenario, person, raw) "
+                   "values ('sample', 'ana', 'x')")),  # people ask for settings at the channels
+    ("channels", "update settings_requests set outcome = 'proposed'"),  # and the gateway decides
     ("scheduler", "delete from turns"),  # only the core deletes conversations, when it's time
     ("scheduler", "delete from summaries"),
     ("channels", "delete from inbound"),

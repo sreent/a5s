@@ -1,6 +1,6 @@
 # Phase 1
 
-**Status:** Steps 1, 2, 5 and 6 under way, steps 3 and 4 built ([progress](#progress)) · **Under:** [Architecture](architecture.md)
+**Status:** Steps 1, 2 and 5 under way, steps 3, 4 and 6 built ([progress](#progress)) · **Under:** [Architecture](architecture.md)
 
 Phase 1 builds the smallest a5s that's useful: the trusted core, conversations, and two reference agents of a5s's own, at levels 0 and 1. They're proven against a5s's sample scenario, and used first by the team that builds a5s. In phase 1, agents read, report, draft and remind. None of them changes data. Which real scenario comes first is a separate decision [TBC].
 
@@ -68,7 +68,7 @@ Step 1, the walking skeleton, runs locally against the sample scenario, with Dee
 | Each deployment turns on the chats its people use by setting each one's settings, any number at once, and compose passes them on from its environment | [`deploy/compose.yaml`](../deploy/compose.yaml) |
 | The sample scenario, with nine people in two time zones, including the team that runs a5s and the people outside it who approve its releases, customer questions with owners and due dates, and a store for drafts. a5s serves whichever scenario its configuration names, and keeps none of a scenario's people in its own definitions. | [`scenarios/sample/`](../scenarios/sample/) |
 | One container image that runs as the gateway, the scheduler or a worker, and a compose stack whose networks enforce the design: a worker holds no secrets and reaches only the gateway, never the database or the internet. A smoke test runs the stack in CI with stand-ins for the model, the identity provider, a Matrix homeserver and locked storage: Keycloak and Synapse, with the sample's people, and LocalStack, whose S3 enforces object lock as Amazon's does. | [`Dockerfile`](../Dockerfile), [`deploy/`](../deploy/) |
-| 366 tests against a real Postgres and a scripted model, fakes of the Bot Framework, a Matrix homeserver and an identity provider, and the web chat and the approval page in Chromium, with a clock the tests set, with emulators for Azure's and Google's storage, and live tests through DeepSeek's and Qwen's OpenAI-compatible APIs and DeepSeek's Anthropic-compatible one, including a reminder, the watcher's reports, and a reminder offered and confirmed | [`tests/`](../tests/) |
+| 390 tests against a real Postgres and a scripted model, fakes of the Bot Framework, a Matrix homeserver and an identity provider, and the web chat, the approval page and the settings app in Chromium, with a clock the tests set, with emulators for Azure's and Google's storage, and live tests through DeepSeek's and Qwen's OpenAI-compatible APIs and DeepSeek's Anthropic-compatible one, including a reminder, the watcher's reports, and a reminder offered and confirmed | [`tests/`](../tests/) |
 
 Step 2, the release pipeline, has started:
 
@@ -123,14 +123,13 @@ Step 5, running it properly, has started:
 
 Still to do in step 5: deploying to the three clouds, which needs your accounts there, and then production; who's on call; and archiving the conversations of someone who leaves, once it's decided where archives go.
 
-Step 6, parts and levels, has started:
+Step 6, parts and levels, is built:
 
 | Built | Where |
 | --- | --- |
 | Parts with owners. The sample has two parts, billing and orders, each owned by whoever holds `part-owner:<part>` in the directory. Each instance's settings name the parts it works in and its level in each, within its release's maximum. A version of the settings counts only once the owner of each part its instances work in, or that it takes an instance out of, has signed or approved it, and an instance approver for any instance in no part. The core checks this again at every run, so if a part's owner leaves, no run opens until whoever owns it now approves the version in force. Approval cards go to everyone a version needs, and say what it changes in each part. | [`core/registry.py`](../src/a5s/core/registry.py), [`core/approvals.py`](../src/a5s/core/approvals.py) |
 | What agents work on. The scenario says which part each record is in, and the directory who may see it. An instance works only on records in its parts, at its level there, and only on those everyone its run acts for may see. Policy denies a call about any other, what tools return leaves them out, and so do case briefs, reports, reminders and the choice of which instance chases what. A draft about no record in particular works at the instance's lowest level. | [`core/parts.py`](../src/a5s/core/parts.py), [`core/policies/base.cedar`](../src/a5s/core/policies/base.cedar) |
-
-Still to do in step 6: the settings web app, where owners review a whole version before they sign it.
+| The settings app, for the people who approve instances. Signed in, they see the whole version in force in words, the versions waiting for approval with whose approval each still needs, and the version as written, which they can change. Before they ask for a change, a5s says in words what it would do, what the whole new version is, and whose approval it needs. Asking changes nothing by itself: the gateway proposes the version to everyone it needs, who approve it on its own page, which shows the whole version too, not only what it changes. | [`core/webchat/settings.js`](../src/a5s/core/webchat/settings.js), [`core/inbox.py`](../src/a5s/core/inbox.py) |
 
 Still to do in step 1:
 

@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>a5s: settings</title>
+<link rel="stylesheet" href="/chat/app.css">
+<script src="/settings/settings.js" defer></script>
+</head>
+<body>
+<header>
+  <h1>a5s</h1>
+  <span id="who"></span>
+</header>
+<main>
+  <h2>Settings</h2>
+  <p id="status" role="status"></p>
+  <section id="in-force" hidden>
+    <h3 id="in-force-title"></h3>
+    <ul id="whole" class="plain"></ul>
+  </section>
+  <section id="waiting-section" hidden>
+    <h3>Waiting for approval</h3>
+    <div id="waiting"></div>
+  </section>
+  <section id="edit" hidden>
+    <h3>Ask for a change</h3>
+    <p class="note">Change the settings below, then review them. a5s gives the new version the
+      next serial, and once you ask for it, asks everyone who must approve it. Nothing changes
+      until they do.</p>
+    <textarea id="text" spellcheck="false" aria-label="The settings, as written"></textarea>
+    <p><button id="review" type="button">Review</button></p>
+    <div id="reviewed" hidden>
+      <p id="reviewed-summary"></p>
+      <ul id="problems" class="plain"></ul>
+      <ul id="reviewed-changes" class="plain"></ul>
+      <p id="reviewed-approvers"></p>
+      <h4>The whole version</h4>
+      <ul id="reviewed-whole" class="plain"></ul>
+      <button id="send" type="button">Ask its approvers</button>
+    </div>
+  </section>
+  <section id="requests-section" hidden>
+    <h3>What you asked for</h3>
+    <ul id="requests" class="plain"></ul>
+  </section>
+</main>
+</body>
+</html>

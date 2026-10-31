@@ -11,33 +11,18 @@ from dataclasses import replace
 from urllib.parse import parse_qs
 
 import httpx
-import pytest
 import yaml
 
 from a5s import db
-from a5s.core import approvals, inbox
+from a5s.core import approvals
 from a5s.core.identity import IdentityConfig, Verifier
-from conftest import CLIENT, SEAL_KEY, free_port, serve
+from conftest import CLIENT, SEAL_KEY
 
 CHEN_TOO = ["ana", "ben", "chen"]
 
 
 def in_force_serial(stack) -> int:
     return yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text())["serial"]
-
-
-@pytest.fixture
-def approving(stack, provider):
-    """The core, signing people in through the provider: the channels, where approvers
-    decide, and the gateway, which asks them and applies what they approve."""
-    verifier = Verifier(IdentityConfig(issuer=provider.url, audience=("a5s", CLIENT)))
-    port = free_port()
-    stack.gateway.identity = verifier
-    stack.gateway.cfg = replace(stack.gateway.cfg, webchat_client_id=CLIENT,
-                                public_url=f"http://127.0.0.1:{port}")
-    cfg = replace(stack.as_role("channels"), webchat_client_id=CLIENT, development=False)
-    with serve(inbox.create_app(replace(stack.gateway, cfg=cfg, identity=verifier)), port) as url:
-        yield url
 
 
 def proposed(stack, **changes) -> dict:
@@ -277,6 +262,10 @@ def test_an_approver_reviews_and_approves_in_the_browser(stack, approving, provi
     assert page.locator("#changes li").all_inner_texts() == [
         "assistant-finance serves Chen Wei as well. This widens what agents do.",
         "assistant-finance's level in billing goes from 1 to 0."]
+    assert page.locator("#whole li").all_inner_texts() == [  # and all of it, before deciding
+        "The scenario's data is synthetic.",
+        "assistant-finance: the assistant, working in billing at level 0, serving Ana Ortiz, "
+        "Ben Okafor and Chen Wei, run by Ana Ortiz with Ben Okafor as deputy."]
     assert page.evaluate("window.location.search") == ""  # the code doesn't linger
     page.click("#approve")
     page.wait_for_selector(f"#status >> text=You approved serial {asked['serial']}", timeout=30000)

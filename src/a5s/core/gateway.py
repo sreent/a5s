@@ -1090,11 +1090,50 @@ def create_app(gw: Gateway) -> FastAPI:
 
     # Settings the instance approvers approve where they work (core/approvals.py)
 
+    def proposing(conn: psycopg.Connection, settings: Settings, by: str | None = None) -> dict:
+        """Record a version for its approvers, and ask each of them where they work, once. What
+        to send them once the transaction is done, and what the version changes; or why it
+        can't be proposed. `by` is who asked for it in the settings app, if anyone did."""
+        last = approvals.latest(conn, gw.scenario.name)
+        asker = {"by": by} if by else {}
+        if refused := gw.unusable(settings, last):
+            ledger.append(conn, {"kind": "admin", "action": "propose", "decision": "deny",
+                                 "reasons": refused, "args": {"settings": settings.version,
+                                                              "serial": settings.serial, **asker}})
+            return {"refused": refused}
+        row, new = approvals.propose(conn, gw.scenario.name, settings)
+        before = parse_settings(bytes(last["raw"])) if last else None
+        found = approvals.changes(before, settings, gw.definitions, gw.scenario.person)
+        link = f"{gw.public_url}/approve/?settings={row['digest']}"
+        sends, asked = [], []
+        if new:
+            ledger.append(conn, {"kind": "admin", "action": "propose", "decision": "record",
+                                 "args": {"settings": settings.version, "serial": settings.serial,
+                                          "digest": row["digest"], **asker,
+                                          "widens": any(c["widens"] for c in found)}})
+            text = approvals.text(settings.serial, found, link)
+            for approver in registry.approvers(settings, gw.scenario.holders, before):
+                route = gw.reach(conn, approver.id, None)
+                ledger.append(conn, {
+                    "kind": "notice", "action": "ask-approval", "run": None, "instance": None,
+                    "acts_for": [], "decision": "record",
+                    "args": {"settings": settings.version, "to": approver.id,
+                             "channel": route["channel"], "chars": len(text),
+                             "sha256": hashlib.sha256(text.encode()).hexdigest()}})
+                if route["channel"] in PUSHED:
+                    sends.append((route, text))
+                else:  # they collect it from the local channel's inbox
+                    conn.execute("insert into outbox (person, channel, text) "
+                                 "values (%s, 'local', %s)", (approver.id, text))
+                asked.append(approver.id)
+        return {"refused": [], "row": row, "new": new, "changes": found, "link": link,
+                "asked": asked, "sends": sends, "card": approvals.card(settings.serial, found, link)}
+
     @app.post("/settings/proposals", dependencies=[Depends(service)])
     def propose(body: Proposal) -> dict:
-        """Ask the instance approvers to approve a version of the settings: each gets a card in
-        the chat they last had with a5s, or a link where there are no cards. A version asked
-        about before is asked about once."""
+        """Ask a version's approvers to approve it: each gets a card in the chat they last had
+        with a5s, or a link where there are no cards. A version asked about before is asked
+        about once."""
         if problem := gw.approving():
             raise HTTPException(503, problem)
         try:
@@ -1102,55 +1141,54 @@ def create_app(gw: Gateway) -> FastAPI:
         except (binascii.Error, ValueError, yaml.YAMLError, KeyError, TypeError,
                 AttributeError) as exc:
             raise HTTPException(400, f"that isn't a version of the settings: {exc}") from None
-        sends, asked = [], []
         with db.transaction(gw.url) as conn:
-            last = approvals.latest(conn, gw.scenario.name)
-            refused = gw.unusable(settings, last)
-            if refused:
-                ledger.append(conn, {"kind": "admin", "action": "propose", "decision": "deny",
-                                     "reasons": refused, "args": {"settings": settings.version,
-                                                                  "serial": settings.serial}})
+            done = proposing(conn, settings)
+        if done["refused"]:
+            raise HTTPException(409, {"reasons": done["refused"]})
+        for route, text in done["sends"]:
+            deliver(route, text, None, None, card=done["card"])
+        return {"settings": settings.version, "serial": settings.serial,
+                "digest": done["row"]["digest"], "link": done["link"], "changes": done["changes"],
+                "asked": done["asked"], "new": done["new"]}
+
+    def requested(conn: psycopg.Connection) -> list[tuple[dict, str, dict]]:
+        """Propose the versions people asked for in the settings app, once each, if they still
+        approve instances. What to send their approvers once the transaction is done."""
+        sends = []
+        for req in conn.execute("select * from settings_requests where scenario = %s "
+                                "and outcome is null order by id for update",
+                                (gw.scenario.name,)).fetchall():
+            person, digest = gw.scenario.person(req["person"]), None
+            if person is None or not registry.approves(person):
+                outcome = "refused: they don't approve instances"
             else:
-                row, new = approvals.propose(conn, gw.scenario.name, settings)
-                before = parse_settings(bytes(last["raw"])) if last else None
-                found = approvals.changes(before, settings, gw.definitions, gw.scenario.person)
-                link = f"{gw.public_url}/approve/?settings={row['digest']}"
-            if not refused and new:
-                ledger.append(conn, {"kind": "admin", "action": "propose", "decision": "record",
-                                     "args": {"settings": settings.version, "serial": settings.serial,
-                                              "digest": row["digest"],
-                                              "widens": any(c["widens"] for c in found)}})
-                text = approvals.text(settings.serial, found, link)
-                for approver in registry.approvers(settings, gw.scenario.holders, before):
-                    route = gw.reach(conn, approver.id, None)
-                    ledger.append(conn, {
-                        "kind": "notice", "action": "ask-approval", "run": None, "instance": None,
-                        "acts_for": [], "decision": "record",
-                        "args": {"settings": settings.version, "to": approver.id,
-                                 "channel": route["channel"], "chars": len(text),
-                                 "sha256": hashlib.sha256(text.encode()).hexdigest()}})
-                    if route["channel"] in PUSHED:
-                        sends.append((route, text))
-                    else:  # they collect it from the local channel's inbox
-                        conn.execute("insert into outbox (person, channel, text) "
-                                     "values (%s, 'local', %s)", (approver.id, text))
-                    asked.append(approver.id)
-        if refused:
-            raise HTTPException(409, {"reasons": refused})
-        for route, text in sends:
-            deliver(route, text, None, None, card=approvals.card(settings.serial, found, link))
-        return {"settings": settings.version, "serial": settings.serial, "digest": row["digest"],
-                "link": link, "changes": found, "asked": asked, "new": new}
+                try:
+                    settings = parse_settings(bytes(req["raw"]))
+                except (ValueError, yaml.YAMLError, KeyError, TypeError, AttributeError):
+                    outcome = "refused: it isn't a version of the settings"
+                else:
+                    done = proposing(conn, settings, by=person.id)
+                    outcome = ("refused: " + "; ".join(done["refused"])) if done["refused"] \
+                        else "proposed"
+                    if not done["refused"]:
+                        digest = done["row"]["digest"]
+                        sends += [(route, text, done["card"]) for route, text in done["sends"]]
+            conn.execute("update settings_requests set outcome = %s, digest = %s, decided_at = now() "
+                         "where id = %s", (outcome, digest, req["id"]))
+        return sends
 
     @app.post("/settings/sweep", dependencies=[Depends(service)])
     def sweep_settings() -> dict:
-        """Apply the newest version of the settings that everyone it needs has approved where
-        they work, and let go of the versions it leaves behind."""
-        applied = []
+        """Propose the versions people asked for in the settings app. Apply the newest version
+        that everyone it needs has approved where they work, and let go of the versions it
+        leaves behind."""
+        applied, sends = [], []
         with db.transaction(gw.url) as conn:
             if not conn.execute("select pg_try_advisory_xact_lock(hashtext('a5s settings')) as got"
                                 ).fetchone()["got"]:
                 return {"applied": []}  # another sweep is at work
+            if not gw.approving():  # approving where people work is set up here
+                sends = requested(conn)
             last = approvals.latest(conn, gw.scenario.name)
             for row in conn.execute("select * from settings_proposals where scenario = %s "
                                     "and outcome is null order by serial desc",
@@ -1181,6 +1219,8 @@ def create_app(gw: Gateway) -> FastAPI:
                 conn.execute("update settings_proposals set outcome = %s, decided_at = now() "
                              "where scenario = %s and digest = %s",
                              (outcome, gw.scenario.name, row["digest"]))
+        for route, text, card in sends:  # what the settings app's requests ask their approvers
+            deliver(route, text, None, None, card=card)
         return {"applied": applied}
 
     @app.get("/status", dependencies=[Depends(service)])

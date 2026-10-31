@@ -257,6 +257,21 @@ def provider() -> Iterator[Provider]:
 
 
 @pytest.fixture
+def approving(stack: Stack, provider: Provider) -> Iterator[str]:
+    """The core, signing people in through the provider: the channels, where approvers
+    decide and the settings app is, and the gateway, which asks them and applies what they
+    approve."""
+    verifier = Verifier(IdentityConfig(issuer=provider.url, audience=("a5s", CLIENT)))
+    port = free_port()
+    stack.gateway.identity = verifier
+    stack.gateway.cfg = replace(stack.gateway.cfg, webchat_client_id=CLIENT,
+                                public_url=f"http://127.0.0.1:{port}")
+    cfg = replace(stack.as_role("channels"), webchat_client_id=CLIENT, development=False)
+    with serve(inbox.create_app(replace(stack.gateway, cfg=cfg, identity=verifier)), port) as url:
+        yield url
+
+
+@pytest.fixture
 def browser() -> Iterator[Any]:
     sync_api = pytest.importorskip("playwright.sync_api")
     with sync_api.sync_playwright() as p:
