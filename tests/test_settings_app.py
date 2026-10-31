@@ -33,7 +33,9 @@ def test_an_approver_sees_the_whole_version_in_force(stack, approving, provider)
     assert body["in_force"]["whole"] == [
         "The scenario's data is synthetic.", ASSISTANT,
         "Limit for change-due-date: 5 in one run and 20 for one person in 30 days.",
-        "Limit for close-question: 5 in one run and 20 for one person in 30 days."]
+        "Limit for close-question: 5 in one run and 20 for one person in 30 days.",
+        "An agent earns level 2 in billing once graded samples show it's 98% accurate.",
+        "An agent earns level 2 in orders once graded samples show it's 95% accurate."]
     written = yaml.safe_load(body["in_force"]["text"])
     assert written["instances"]["assistant-finance"]["parts"] == ["billing"]
     assert body["waiting"] == [] and body["requests"] == []

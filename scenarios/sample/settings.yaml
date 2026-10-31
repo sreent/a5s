@@ -3,7 +3,7 @@
 # owner of each part its instances work in signs it (`a5s sign`), and an instance approver
 # for any instance in no part. Its serial must rise with every new version.
 
-serial: 6
+serial: 7
 
 # Every record here is made up, so models approved only for made-up data may see it.
 # A real scenario names its own class, such as internal, and any fields of a class of
@@ -19,6 +19,12 @@ classified: {}
 limits:
   change-due-date: {per_run: 5, per_person_30_days: 20}
   close-question: {per_run: 5, per_person_30_days: 20}
+
+# How accurate an agent's changes in each part must be, as graded samples show, before a5s
+# raises its cap there to level 2. A part with none never earns it.
+thresholds:
+  billing: 0.98
+  orders: 0.95
 
 instances:
   assistant-finance:

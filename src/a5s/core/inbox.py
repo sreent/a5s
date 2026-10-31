@@ -36,7 +36,7 @@ from pydantic import BaseModel
 
 from a5s import db
 from a5s.contract import Person, Settings, parse_settings
-from a5s.core import approvals, chats, ledger, matrix, proposals, registry, topics
+from a5s.core import approvals, chats, ledger, matrix, proposals, registry, samples, topics
 from a5s.core.identity import IdentityError, UnknownPerson, signed_in
 from a5s.core.teams import ONE_TO_ONE, UNKNOWN, Refused
 
@@ -76,6 +76,12 @@ class Deciding(BaseModel):
     proposals: list[str]
     decision: str
     salt: str
+
+
+class Grade(BaseModel):
+    """A grader's grade of a sample of an agent's work."""
+
+    grade: str
 
 
 class Draft(BaseModel):
@@ -680,6 +686,73 @@ def create_app(gw: Any) -> FastAPI:
                          "token_sha256": hashlib.sha256(token.encode()).hexdigest()}})
         return {"decided": [proposals.key(r) for r in rows], "decision": body.decision,
                 "by": person.name}
+
+    # Grading: where people outside the team that built an agent grade samples of its changes,
+    # whose grades raise or lower a5s's cap on its level (core/samples.py).
+
+    @app.get("/grade/", include_in_schema=False)
+    def grade_page() -> Response:
+        approving()
+        return page("grade.html")
+
+    @app.get("/grade/grade.js", include_in_schema=False)
+    def grade_script() -> Response:
+        approving()
+        return page("grade.js")
+
+    @app.post("/grade/token")
+    def grade_token(body: TokenRequest) -> JSONResponse:
+        return approve_token(body)
+
+    @app.get("/grade/config")
+    def grade_config() -> dict:
+        return approve_config()
+
+    def grader(authorization: str | None) -> Person:
+        approving()
+        who, _ = sender(authorization, None)
+        person = gw.scenario.person(who)
+        if person is None or samples.GRADER not in person.roles:
+            raise HTTPException(403, "grading is for the people who grade agents' work")
+        return person
+
+    @app.post("/grade/review")
+    def review_samples(authorization: str | None = Header(default=None)) -> dict:
+        """The samples waiting for a grade that whoever signed in may grade, oldest first."""
+        person = grader(authorization)
+        with db.transaction(gw.url) as conn:
+            rows = conn.execute("select * from samples where scenario = %s and grade is null "
+                                "order by id limit 200", (gw.scenario.name,)).fetchall()
+        shown = [{"id": r["id"], "kind": r["kind"], "agent": r["definition"], "part": r["part"],
+                  "action": r["action"], "said": r["said"], "records": r["records"],
+                  "decided": r["decided"], "drawn_at": r["drawn_at"].isoformat()}
+                 for r in rows if samples.may_grade(gw.scenario, r, person) is None][:20]
+        return {"you": person.name, "samples": shown}
+
+    @app.post("/grade/samples/{sample}")
+    def grade_sample(sample: int, body: Grade, authorization: str | None = Header(default=None)
+                     ) -> dict:
+        """A grade of one sample, once, by someone who may grade it."""
+        person = grader(authorization)
+        if body.grade not in samples.GRADES:
+            raise HTTPException(400, "a sample is graded right, wrong or critical")
+        with db.transaction(gw.url) as conn:
+            row = conn.execute("select * from samples where scenario = %s and id = %s for update",
+                               (gw.scenario.name, sample)).fetchone()
+            if row is None:
+                raise HTTPException(404, "a5s has no such sample")
+            if (why := samples.may_grade(gw.scenario, row, person)) is not None:
+                raise HTTPException(403, why)
+            if row["grade"] is not None:
+                raise HTTPException(409, "it's been graded already")
+            conn.execute("update samples set grade = %s, graded_by = %s, graded_at = %s "
+                         "where id = %s", (body.grade, person.id, gw.clock(), sample))
+            ledger.append(conn, {
+                "kind": "admin", "action": "grade", "run": str(row["run_id"]),
+                "instance": row["instance_id"], "acts_for": [], "decision": "record",
+                "args": {"sample": sample, "grade": body.grade, "by": person.id,
+                         "release": row["release"], "part": row["part"], "action": row["action"]}})
+        return {"graded": sample, "grade": body.grade, "by": person.name}
 
     # The settings app: where the people who approve instances review the whole version in
     # force, and ask for a new one. The gateway proposes it to everyone it needs, who approve

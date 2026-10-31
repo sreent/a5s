@@ -38,7 +38,7 @@ Roles are held by people, never by job titles. An organisation assigns people to
 | Part owner, and delegates | The part owner, who holds `part-owner:<part>` in the directory, approves an instance for the part, sets how far it may act there, and moves it up or down. They or their delegates decide its proposals, as the scenario allows. Decisions about the agent itself are never a delegate's. |
 | Instance approver | For each part in an instance's scope, its owner. For an instance with no parts, whoever the scenario names, who also sets its level. |
 | Release approver | Approves what loosens a5s: releases that change a tool or widen what an agent may do, changes to the trusted core, and anything else the scenario names nobody else for. Never from the team that runs a5s, or its manager's reporting line. |
-| Graders, from phase 2 | Grade samples of an agent's work. Never from the team that built it. |
+| Graders | Grade samples of an agent's work. Never from the team that built it, nor anyone a change was for or who decided it. |
 | Assurance | Holds the ledger's anchor, reads the ledger, and is told of everything that loosens a5s |
 
 ## Lifecycle
@@ -61,7 +61,7 @@ Each organisation approves a release for its own deployment, with its own people
 - A part owner can stop an instance acting in their part at any time, by withdrawing its approval in the settings.
 - If the agent owner and the deputy both leave, the instances are suspended until the platform owner names a new owner.
 - An instance moves to another approved release when its agent owner moves it. Runs start fresh, so nothing needs migrating, and it can always go straight back to the release it ran before.
-- From phase 2, a release that widens what an agent does starts at level 1 for what it widens, and earns level 2 on samples. One that changes only instructions or skills keeps its cap if the last graded samples still pass when re-run.
+- A release earns level 2 on its own samples, since a5s's caps are each release's own: a new release starts at level 1 for every type of action. [TBC] Re-running the last graded samples, so a release that changes only instructions or skills keeps its cap if they still pass.
 
 ## Autonomy
 

@@ -16,6 +16,8 @@ from typing import Any
 
 import psycopg
 
+from a5s.core import samples
+
 # a5s's starting objectives [TBC]: set from the first users' baseline
 OBJECTIVES = {"reply_seconds_p90": 120, "chased_on_time": 0.95}
 
@@ -53,6 +55,10 @@ def report(conn: psycopg.Connection, breakers: list[str]) -> dict[str, Any]:
         "select count(*) filter (where status = 'waiting') as waiting, "
         "extract(epoch from now() - min(proposed_at) filter (where status = 'waiting')) as oldest, "
         "count(*) filter (where status = 'making') as stuck from proposals").fetchone()
+    graded = conn.execute("select count(*) filter (where grade is null) as waiting from samples"
+                          ).fetchone()
+    raised = conn.execute("select release, part, action, since from caps where cap >= 2 "
+                          "order by release, part, action").fetchall()
     stopped = conn.execute(
         "select id, status, suspended_by from instances where status <> 'active' order by id"
     ).fetchall()
@@ -79,6 +85,10 @@ def report(conn: psycopg.Connection, breakers: list[str]) -> dict[str, Any]:
         "urgent_held": {"messages": held["n"], "people": held["people"]},
         "changes": {"waiting": changes["waiting"], "oldest_seconds": _number(changes["oldest"]),
                     "stuck": changes["stuck"]},
+        "samples": {"to_grade": graded["waiting"],
+                    "level_2": [{"release": r["release"], "part": r["part"], "action": r["action"],
+                                 "since": r["since"].isoformat()} for r in raised],
+                    "rubber_stamps": samples.rubber_stamps(conn)},
         "not_active": [dict(r) for r in stopped],
         "breakers_open": breakers,
         "objectives": {
@@ -134,6 +144,14 @@ def told(status: dict[str, Any]) -> str:
             if status["changes"]["waiting"] else "none")
         + (f"; {status['changes']['stuck']} stopped part way through being made"
            if status["changes"]["stuck"] else "") + ".",
+        "  Samples waiting to be graded: " + (str(status["samples"]["to_grade"])
+                                              if status["samples"]["to_grade"] else "none") + ".",
+        "  Earned level 2: " + ("; ".join(f"{r['action']} in {r['part']}, by {r['release']}"
+                                          for r in status["samples"]["level_2"]) or "nothing")
+        + ".",
+        "  Approvals graded wrong far more than others': " + (
+            ", ".join(f"{r['person']}, {r['graded_wrong']} of {r['approved']}"
+                      for r in status["samples"]["rubber_stamps"]) or "nobody") + ".",
         "  Urgent messages held for a batch: " + (
             f"{status['urgent_held']['messages']} for {status['urgent_held']['people']} "
             + ("person" if status["urgent_held"]["people"] == 1 else "people")

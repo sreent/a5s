@@ -182,6 +182,14 @@ def changes(before: Settings | None, after: Settings, definitions: dict[str, Def
     for action in sorted(set(limits_was) - set(Words.limits(after))):
         found.append({"text": f"{action} has no limit any more, instead of {limits_was[action]}.",
                       "widens": True})
+    thresholds_was = before.thresholds if before else {}
+    for part in sorted(set(thresholds_was) | set(after.thresholds)):
+        a, b = thresholds_was.get(part), after.thresholds.get(part)
+        if a != b:
+            found.append({"text": f"The accuracy {part} needs before an agent earns level 2 there "
+                                  f"becomes {_percent(b) if b else 'none, so none earns it'}"
+                                  + (f", instead of {_percent(a)}" if a else "") + ".",
+                          "widens": b is not None and (a is None or b < a)})
     for new in after.instances:
         old = was.pop(new.id, None)
         if old is None:
@@ -232,6 +240,10 @@ def changes(before: Settings | None, after: Settings, definitions: dict[str, Def
                       "widens": False}]
 
 
+def _percent(share: float) -> str:
+    return f"{share * 100:g}%"
+
+
 def _looser(was: dict[str, int] | None, now: dict[str, int]) -> bool:
     """Whether a type of action's new limit lets more through than its old one: a limit that's
     new only narrows, and one that rises or goes widens."""
@@ -254,6 +266,8 @@ def described(settings: Settings, definitions: dict[str, Definition],
     if not settings.instances:
         told.append("No instances: every agent here is retired.")
     told += [f"Limit for {action}: {said}." for action, said in Words.limits(settings).items()]
+    told += [f"An agent earns level 2 in {part} once graded samples show it's {_percent(share)} "
+             "accurate." for part, share in sorted(settings.thresholds.items())]
     return told
 
 

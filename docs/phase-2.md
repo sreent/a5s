@@ -1,6 +1,6 @@
 # Phase 2
 
-**Status:** Steps 1 to 3 built, 31 October 2026 ([progress](#progress)) · **Under:** [Architecture](architecture.md)
+**Status:** Steps 1 to 4 built, 31 October 2026 ([progress](#progress)) · **Under:** [Architecture](architecture.md)
 
 Phase 2 lets agents act. In [phase 1](phase-1.md) they read, report, draft and remind, and change no data. In phase 2 an agent can propose a change, which the owner of what it touches decides on the core's own page. Once samples, graded by people outside the team that built it, show it's accurate enough, it can make changes of a type the part owner approves, within the scenario's limits, telling someone each time. Content from outside, such as a customer's email, reaches agents only through the extractor, and a run that has read some never acts on its own.
 
@@ -71,5 +71,13 @@ Steps 2 and 3, counts and level 2, are built:
 | --- | --- |
 | Counts. The settings give each type of action the scenario's limits: how many one run may take, and how many for each person acted for in 30 days, across every agent. The gateway counts each change made or held in the transaction that decides it, under a lock for its type, so calls made at once can't each squeeze under a limit. Past a limit, a change waits for its decider, whatever the level. The same change made again in a run counts once, keeps its verdict, and answers with the same proposal. The sample limits each of its two types to 5 a run and 20 a person. | [`core/counts.py`](../src/a5s/core/counts.py), [`core/policies/base.cedar`](../src/a5s/core/policies/base.cedar) |
 | Level 2. The settings set an instance's level for each type of action in each part, the only way to level 2, and approvers read it in words. A change works at level 2 only while someone who approved the settings in force owns the part, and only up to a5s's cap for the release, part and type, which is 1 until graded samples raise it in step 4. A change about no record, or from a run that read outside content, works at level 1 at most. At level 2 a change is made, and reported in the digest of the instance's owner with a link to the record. The assistant's release may now reach level 2. | [`core/parts.py`](../src/a5s/core/parts.py), [`contract.py`](../src/a5s/contract.py), [`core/gateway.py`](../src/a5s/core/gateway.py) |
+
+Step 4, samples, grades and the cap, is built:
+
+| Built | Where |
+| --- | --- |
+| Samples. Code draws samples of each release's changes, for each part and type of action: every held change someone decided, while the cap is 1, and at level 2 every change made until there are 100 in the quarter, each with what the agent asked for or did, in words code worked out, and its records as they stood. | [`core/samples.py`](../src/a5s/core/samples.py), [`core/gateway.py`](../src/a5s/core/gateway.py) |
+| Grades, on the core's own page. People who hold the grader role grade samples right, wrong or critical, once each: never anyone from the team of the agent's owner, nor anyone a change was for or who decided it, and only for records they may see. The sample has a grader, Dana Price, in finance. | [`core/webchat/grade.js`](../src/a5s/core/webchat/grade.js), [`core/inbox.py`](../src/a5s/core/inbox.py) |
+| The cap. Each minute an anytime-valid sequential test, pooled across the release's instances, weighs the grades for each release, part and type: it raises the cap to 2 once they show, with 95% confidence, that accuracy meets the part's threshold in the settings, and lowers it once they show it falls short, or at once on a critical error. A part with no threshold never earns level 2; the sample's are 98% for billing and 95% for orders. The ledger records each change of cap with its evidence, and the status shows what's earned level 2, what waits to be graded, and deciders whose approvals are graded wrong far more often than everyone else's. Graded samples go a year after they're graded. | [`core/samples.py`](../src/a5s/core/samples.py), [`core/status.py`](../src/a5s/core/status.py) |
 
 Held proposals didn't bring back the round-4 middleware that asked the core to explain a call before making it: a held call answers at once, with who decides, so the agent carries on.

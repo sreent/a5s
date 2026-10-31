@@ -507,11 +507,13 @@ class Scheduler:
 
     def decided(self) -> None:
         """Ask the core to make the held changes their deciders approved, and to remind,
-        escalate or let go of those still waiting."""
-        try:
-            self.gw.post("/proposals/sweep", headers=self.service).raise_for_status()
-        except httpx.HTTPError:
-            log.exception("couldn't ask the core about the held changes")
+        escalate or let go of those still waiting; and to weigh the grades of agents' work."""
+        for path, what in (("/proposals/sweep", "the held changes"),
+                           ("/samples/sweep", "the graded samples")):
+            try:
+                self.gw.post(path, headers=self.service).raise_for_status()
+            except httpx.HTTPError:
+                log.exception("couldn't ask the core about %s", what)
 
     def deliveries(self) -> None:
         """Ask the core to deliver again what a chat it writes to didn't take before."""

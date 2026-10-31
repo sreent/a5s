@@ -266,7 +266,9 @@ def test_an_approver_reviews_and_approves_in_the_browser(stack, approving, provi
         ("assistant-finance: the assistant, working in billing at level 0, serving Ana Ortiz, "
          "Ben Okafor and Chen Wei, run by Ana Ortiz with Ben Okafor as deputy."),
         "Limit for change-due-date: 5 in one run and 20 for one person in 30 days.",
-        "Limit for close-question: 5 in one run and 20 for one person in 30 days."]
+        "Limit for close-question: 5 in one run and 20 for one person in 30 days.",
+        "An agent earns level 2 in billing once graded samples show it's 98% accurate.",
+        "An agent earns level 2 in orders once graded samples show it's 95% accurate."]
     assert page.evaluate("window.location.search") == ""  # the code doesn't linger
     page.click("#approve")
     page.wait_for_selector(f"#status >> text=You approved serial {asked['serial']}", timeout=30000)

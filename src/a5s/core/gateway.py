@@ -65,6 +65,7 @@ from a5s.core import (
     reminders,
     reports,
     retention,
+    samples,
     schedules,
     status,
     topics,
@@ -1615,6 +1616,7 @@ def create_app(gw: Gateway) -> FastAPI:
                                 content={"denied": True, **decision.as_dict(explain=True)})
         if core is not None:
             return call_core_tool(core, args, row, seq)
+        before = {k: record_of(gw.scenario, k) for k in keys} if action else {}  # for graders
         try:
             with db.transaction(gw.url) as conn:  # a system gets the values handles stand for
                 given = handles.resolved_args(conn, row["run"], args)
@@ -1642,7 +1644,7 @@ def create_app(gw: Gateway) -> FastAPI:
                            **({"level": about["level"]} if action else {})})
         if action and outcome["status"] == "ok":  # a change made at level 2: someone's told
             try:
-                acted(row, tool, args, keys)
+                acted(row, tool, args, keys, before)
             except psycopg.Error:
                 log.exception("couldn't report the change %s made", row["run"])
         traces.note(current, **{"error.type": "tool_error" if outcome["status"] != "ok" else None})
@@ -1650,10 +1652,10 @@ def create_app(gw: Gateway) -> FastAPI:
             return JSONResponse(status_code=502, content={"error": outcome["error"]})
         return {"result": result, "recorded": recorded}
 
-    def acted(row: dict, tool: Tool, args: dict, keys: list[str]) -> None:
+    def acted(row: dict, tool: Tool, args: dict, keys: list[str], before: dict) -> None:
         """Report a change an agent made at level 2: in the digest of its instance's owner, with
         a link to each record, in words code works out, so they can reverse it through the
-        scenario's own process if they need to."""
+        scenario's own process if they need to. And draw it as a sample, for grading."""
         standing = {k: record_of(gw.scenario, k) for k in keys}
         whom = approvals.names_of([p.name if (p := gw.scenario.person(w)) else w
                                    for w in row["acts_for"]]) if row["acts_for"] else "nobody"
@@ -1668,6 +1670,12 @@ def create_app(gw: Gateway) -> FastAPI:
             if owner:
                 digests.keep(conn, owner, row["definition"], row["id"], row["run"], text,
                              gw.clock())
+            said = proposals.said(gw.scenario, tool, args, before, list(row["acts_for"]),
+                                  row["definition"])
+            for part in sorted({p for k in keys if (p := gw.scenario.part_of(k))}):
+                samples.draw(conn, gw.scenario.name, "action", row["release"], row["definition"],
+                             row["id"], row["run"], part, tool.action, said, before,
+                             list(row["acts_for"]), gw.clock())
             ledger.append(conn, {"kind": "tool", "action": "report", "run": row["run"],
                                  "instance": row["id"], "acts_for": list(row["acts_for"]),
                                  "decision": "record", "args": {"to": owner, "tool": tool.name,
@@ -2010,6 +2018,14 @@ def create_app(gw: Gateway) -> FastAPI:
                          "changed", "refused", "failed") else became,
                       decider, now, text, p["id"]))
         conn.execute("delete from proposal_values where proposal_id = %s", (p["id"],))
+        if became != "lapsed":  # someone decided it: a sample of the agent's work, for grading
+            for part in p["parts"]:
+                samples.draw(conn, gw.scenario.name, "proposal", p["release"], p["definition"],
+                             p["instance_id"], str(p["run_id"]), part, p["action"], p["said"],
+                             {r: record_of(gw.scenario, r) for r in p["records"]},
+                             list(p["acts_for"]), now, proposal=p["id"],
+                             decided="reject" if became == "rejected" else "approve",
+                             decided_by=decider)
         ledger.append(conn, {"kind": "proposal", "action": became, "run": str(p["run_id"]),
                              "instance": p["instance_id"], "acts_for": list(p["acts_for"]),
                              "decision": "record", "of": p["seq"],
@@ -2075,6 +2091,28 @@ def create_app(gw: Gateway) -> FastAPI:
                                  "args": {"proposal": proposals.key(p), "to": due}})
             return {"sends": sends}
         return None
+
+    @app.post("/samples/sweep", dependencies=[Depends(service)])
+    def sweep_samples() -> dict:
+        """Weigh the grades of each release's samples, for each part and type of action, and
+        raise or lower a5s's cap where they now show it should (core/samples.py)."""
+        changed = []
+        with db.transaction(gw.url) as conn:
+            if not conn.execute("select pg_try_advisory_xact_lock(hashtext('a5s samples')) as got"
+                                ).fetchone()["got"]:
+                return {"changed": []}  # another sweep is at work
+            settings, _ = gw.settings_in_force(conn)
+            thresholds = settings.thresholds if settings else {}
+            for row in conn.execute("select distinct release, part, action from samples "
+                                    "where grade is not null").fetchall():
+                found = samples.assess(conn, row["release"], row["part"], row["action"],
+                                       thresholds.get(row["part"]), gw.clock())
+                if found:
+                    ledger.append(conn, {"kind": "cap", "action": "raise" if found["cap"] >= 2
+                                         else "lower", "run": None, "instance": None,
+                                         "acts_for": [], "decision": "record", "args": found})
+                    changed.append(found)
+        return {"changed": changed}
 
     @app.post("/deliveries/sweep", dependencies=[Depends(service)])
     def sweep_deliveries() -> dict:

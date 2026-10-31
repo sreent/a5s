@@ -15,6 +15,10 @@ people:
   - {id: omar, name: Omar Haddad, team: operations, roles: [part-owner:orders],
      timezone: Asia/Singapore,
      identities: ["entra:0a5a0000-0000-4000-8000-00000000d0d4", "matrix:@omar:a5s.test"]}
+  # Grades samples of agents' changes in billing, from outside the team that builds them
+  - {id: dana, name: Dana Price, team: finance, manager: ana, roles: [grader],
+     timezone: Europe/London,
+     identities: ["entra:0a5a0000-0000-4000-8000-00000000e0e5", "matrix:@dana:a5s.test"]}
 
   # The team that runs a5s, and the people from outside it who approve its releases.
   - {id: priya, name: Priya Nair, team: platform, manager: lena, timezone: Europe/London,

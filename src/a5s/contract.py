@@ -186,6 +186,9 @@ class Settings:
     # for each person acted for in 30 days, such as {"change-due-date": {"per_run": 5,
     # "per_person_30_days": 20}}. Past one, a change waits for a person, whatever the level.
     limits: dict[str, dict[str, int]] = field(default_factory=dict)
+    # How accurate an agent's work in a part must be, as graded samples show, before a5s raises
+    # its cap to level 2 there, such as {"billing": 0.98}. A part with none never earns it.
+    thresholds: dict[str, float] = field(default_factory=dict)
 
 
 class SettingsError(ValueError):
@@ -202,6 +205,7 @@ _WHO = Annotated[str, StringConstraints(strict=True, pattern=(
 _FIELD = Annotated[str, StringConstraints(strict=True, pattern=r"^[A-Za-z][A-Za-z0-9 _-]{0,62}$")]
 _LEVEL = Annotated[StrictInt, Field(ge=0, le=2)]
 _COUNT = Annotated[StrictInt, Field(ge=1, le=100_000)]
+_THRESHOLD = Annotated[float, Field(strict=True, ge=0.5, le=0.999)]
 
 
 class _Part(BaseModel):
@@ -241,6 +245,7 @@ class _Version(BaseModel):
     data_class: _ID = "internal"
     classified: dict[_FIELD, _ID] = Field(default_factory=dict)
     limits: dict[_ID, _Limit] = Field(default_factory=dict)
+    thresholds: dict[_ID, _THRESHOLD] = Field(default_factory=dict)
     instances: dict[_ID, _Instance] = Field(default_factory=dict)
 
 
@@ -281,6 +286,7 @@ def parse_settings(raw: bytes, signatures: tuple[Signature, ...] = ()) -> Settin
         classified=dict(version.classified),
         limits={a: {k: v for k, v in limit.model_dump().items() if v is not None}
                 for a, limit in version.limits.items()},
+        thresholds=dict(version.thresholds),
         instances=tuple(
             InstanceSettings(id=iid, definition=i.definition, serves=tuple(i.serves),
                              level=i.level, owner=i.owner, deputy=i.deputy,

@@ -172,7 +172,7 @@ The same events go out as OpenTelemetry spans, using the GenAI conventions at a 
 
 - **Tests.** Each release passes its regression suite and the scenario's tests, attempted injections included.
 - **Measures.** Work handled, acceptance and edit rates, time to decision, chases, cost, and how many people use the agents. Measures of individual people judge outcomes, not speed. They're agreed with the data protection officer, and with works councils where there are any, before they start.
-- **Samples and level-ups, from phase 2.** Code draws samples of an agent's work, and people outside the team that built it grade them. A sequential test decides when the evidence supports level 2 ([starting values](starting-values.md)).
+- **Samples and level-ups.** Code draws samples of an agent's changes: every held change someone decided, while its cap is 1, and at level 2 every change made until there are 100 in the quarter. People who hold the grader role grade them on the core's page, never from the team that built the agent, nor anyone a change was for or who decided it, and only for records they may see. An anytime-valid sequential test raises the cap when the evidence shows accuracy meets the part's threshold, and lowers it when it shows it doesn't, or at once on a critical error ([starting values](starting-values.md)).
 
 ## Independence
 
