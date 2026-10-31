@@ -151,6 +151,9 @@ class InstanceSettings:
     # owners approve it. With none, it works on no part's records, and an instance approver
     # approves it.
     parts: dict[str, int | None] = field(default_factory=dict)
+    # Its level for a type of action in a part, such as {"billing": {"change-due-date": 2}}: the
+    # only way to level 2, which a5s's cap for the release can still hold at 1
+    actions: dict[str, dict[str, int]] = field(default_factory=dict)
 
     def level_in(self, part: str, start: int, most: int) -> int:
         """How far it may act in a part, between a release's starting level and its maximum."""
@@ -179,6 +182,10 @@ class Settings:
     # Fields of a class of their own, such as {"contact": "personal"}: a model not approved
     # for it gets each as a handle instead (core/handles.py)
     classified: dict[str, str] = field(default_factory=dict)
+    # The scenario's limits for each type of action: how many one run may take, and how many
+    # for each person acted for in 30 days, such as {"change-due-date": {"per_run": 5,
+    # "per_person_30_days": 20}}. Past one, a change waits for a person, whatever the level.
+    limits: dict[str, dict[str, int]] = field(default_factory=dict)
 
 
 class SettingsError(ValueError):
@@ -194,6 +201,16 @@ _WHO = Annotated[str, StringConstraints(strict=True, pattern=(
     r"^(?:(?:team|role):[A-Za-z0-9][A-Za-z0-9._@:-]{0,127}|[A-Za-z0-9][A-Za-z0-9._@-]{0,127})$"))]
 _FIELD = Annotated[str, StringConstraints(strict=True, pattern=r"^[A-Za-z][A-Za-z0-9 _-]{0,62}$")]
 _LEVEL = Annotated[StrictInt, Field(ge=0, le=2)]
+_COUNT = Annotated[StrictInt, Field(ge=1, le=100_000)]
+
+
+class _Part(BaseModel):
+    """An instance's level in a part, and for each type of action there."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    level: _LEVEL | None = None
+    actions: dict[_ID, _LEVEL] = Field(default_factory=dict)
 
 
 class _Instance(BaseModel):
@@ -204,7 +221,14 @@ class _Instance(BaseModel):
     level: _LEVEL | None = None
     owner: _PERSON | None = None
     deputy: _PERSON | None = None
-    parts: list[_ID] | dict[_ID, _LEVEL | None] = Field(default_factory=list)
+    parts: list[_ID] | dict[_ID, _LEVEL | _Part | None] = Field(default_factory=list)
+
+
+class _Limit(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    per_run: _COUNT | None = None
+    per_person_30_days: _COUNT | None = None
 
 
 class _Version(BaseModel):
@@ -216,6 +240,7 @@ class _Version(BaseModel):
     serial: Annotated[StrictInt, Field(ge=0)] = 0
     data_class: _ID = "internal"
     classified: dict[_FIELD, _ID] = Field(default_factory=dict)
+    limits: dict[_ID, _Limit] = Field(default_factory=dict)
     instances: dict[_ID, _Instance] = Field(default_factory=dict)
 
 
@@ -254,14 +279,27 @@ def parse_settings(raw: bytes, signatures: tuple[Signature, ...] = ()) -> Settin
         signatures=signatures,
         data_class=version.data_class,
         classified=dict(version.classified),
+        limits={a: {k: v for k, v in limit.model_dump().items() if v is not None}
+                for a, limit in version.limits.items()},
         instances=tuple(
             InstanceSettings(id=iid, definition=i.definition, serves=tuple(i.serves),
                              level=i.level, owner=i.owner, deputy=i.deputy,
-                             parts=(dict(i.parts) if isinstance(i.parts, dict)
-                                    else dict.fromkeys(i.parts)))
+                             parts=_part_levels(i.parts), actions=_action_levels(i.parts))
             for iid, i in version.instances.items()
         ),
     )
+
+
+def _part_levels(parts: list[str] | dict[str, Any]) -> dict[str, int | None]:
+    if not isinstance(parts, dict):
+        return dict.fromkeys(parts)
+    return {p: v.level if isinstance(v, _Part) else v for p, v in parts.items()}
+
+
+def _action_levels(parts: list[str] | dict[str, Any]) -> dict[str, dict[str, int]]:
+    if not isinstance(parts, dict):
+        return {}
+    return {p: dict(v.actions) for p, v in parts.items() if isinstance(v, _Part) and v.actions}
 
 
 class Scenario(Protocol):

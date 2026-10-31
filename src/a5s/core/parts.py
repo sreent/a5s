@@ -10,22 +10,50 @@ parts'. Each part's owner approves the instances that work in it, and how far
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any
 
-from a5s.contract import Scenario
+from a5s.contract import PART_OWNER, Scenario
 
 UNSEEN = "there's no such record, or the people this run is for may not see it"
 
 
-def about(scenario: Scenario, run: dict, records: list[str]) -> dict[str, Any]:
+def about(scenario: Scenario, run: dict, records: list[str], action: str | None = None,
+          approved: Iterable[str] = (), caps: dict[tuple[str, str], int] | None = None
+          ) -> dict[str, Any]:
     """What policy weighs of the records a call is about: the level it works at, whether
-    they're all in the instance's parts, and whether everyone the run acts for may see them."""
+    they're all in the instance's parts, and whether everyone the run acts for may see them.
+
+    A change, a call with a type of action, works at the level the settings set for that type
+    in each record's part, or else at most at level 1. Level 2 counts only while someone who
+    approved the settings in force still owns the part, and only up to a5s's cap for the
+    release, part and type, which is 1 until graded samples raise it. A change about no record,
+    or in a run that has read content from outside, works at level 1 at most."""
     parts = run.get("parts") or {}
     touched = {scenario.part_of(r) for r in records}
-    levels = [parts[p] for p in touched if p in parts]
-    return {"level": min(levels) if levels else run["level"],
+    levels = [_level(scenario, run, p, action, set(approved), caps or {})
+              for p in touched if p in parts]
+    level = min(levels) if levels else run["level"]
+    if action and (not records or run.get("read_outside")):
+        level = min(level, 1)
+    return {"level": level,
             "in_scope": all(p is None or p in parts for p in touched),
             "visible": all(scenario.sees(who, r) for r in records for who in run["acts_for"])}
+
+
+def _level(scenario: Scenario, run: dict, part: str, action: str | None, approved: set[str],
+           caps: dict[tuple[str, str], int]) -> int:
+    level = (run.get("parts") or {})[part]
+    if not action:
+        return level
+    chosen = ((run.get("actions") or {}).get(part) or {}).get(action)
+    level = min(level, 1) if chosen is None else chosen
+    if level >= 2:
+        role = f"{PART_OWNER}:{part}"
+        if not any(role in who.roles for a in approved if (who := scenario.person(a))):
+            return 1  # nobody who approved it owns the part now: until the new owner does
+        level = min(level, caps.get((part, action), 1))
+    return level
 
 
 def workable(scenario: Scenario, run: dict, record: str) -> bool:

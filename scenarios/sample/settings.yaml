@@ -3,13 +3,22 @@
 # owner of each part its instances work in signs it (`a5s sign`), and an instance approver
 # for any instance in no part. Its serial must rise with every new version.
 
-serial: 5
+serial: 6
 
 # Every record here is made up, so models approved only for made-up data may see it.
 # A real scenario names its own class, such as internal, and any fields of a class of
 # their own, such as contact: personal, which only models approved for it see.
 data_class: synthetic
 classified: {}
+
+# The scenario's limits for each type of change: how many one run may ask for, and how many
+# for each person in 30 days. Past one, a change waits for the owner of its part to decide
+# it, whatever the level. Each instance's level for a type of change in a part, such as
+# parts: {billing: {level: 1, actions: {change-due-date: 2}}}, is the only way to level 2,
+# and a5s holds it at level 1 until graded samples of the release's work raise its cap.
+limits:
+  change-due-date: {per_run: 5, per_person_30_days: 20}
+  close-question: {per_run: 5, per_person_30_days: 20}
 
 instances:
   assistant-finance:

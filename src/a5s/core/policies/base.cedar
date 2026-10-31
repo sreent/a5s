@@ -7,18 +7,28 @@
 permit (principal is Instance, action == Action::"call_tool", resource is Tool)
 when {
   principal.status == "active" && resource.known && principal.grants.contains(resource.name)
-  && (resource.action == "" || context.level >= 2)
+  && (resource.action == "" || (context.level >= 2 && !context.over_limit))
 };
 
-// A change to a part's data, below level 2, waits for a person: the owner of the part its
-// record is in decides it, on the core's own page, and the gateway makes it once approved.
+// A change to a part's data, below level 2 or past the scenario's limits, waits for a person:
+// the owner of the part its record is in decides it, on the core's own page, and the gateway
+// makes it once approved.
 @id("level-1-changes-wait-for-their-decider")
 @reason("below level 2, a change waits for the owner of the record's part to decide it")
 @hold("true")
 permit (principal is Instance, action == Action::"call_tool", resource is Tool)
 when {
   principal.status == "active" && resource.known && principal.grants.contains(resource.name)
-  && resource.action != "" && context.level == 1
+  && resource.action != "" && context.level == 1 && !context.over_limit
+};
+
+@id("changes-past-a-limit-wait-for-their-decider")
+@reason("past the scenario's limit for its type of action, a change waits for the owner of the record's part to decide it, whatever the level")
+@hold("true")
+permit (principal is Instance, action == Action::"call_tool", resource is Tool)
+when {
+  principal.status == "active" && resource.known && principal.grants.contains(resource.name)
+  && resource.action != "" && context.level >= 1 && context.over_limit
 };
 
 @id("tools-match-the-release")

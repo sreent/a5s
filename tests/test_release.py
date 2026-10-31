@@ -87,8 +87,8 @@ def changed(base: dict, edit) -> dict:
     return new
 
 
-def agent(data: dict) -> dict:
-    return data["agents"]["assistant"]
+def agent(data: dict, name: str = "assistant") -> dict:
+    return data["agents"][name]
 
 
 BASE = yaml.safe_load(releases.manifest(ROOT, ROOT / "scenarios" / "sample"))
@@ -122,8 +122,8 @@ CHANGES = {
     "a report for the assistant": (
         lambda d: agent(d)["may"]["reports"].append({"source": "records"}),
         {RELEASE_APPROVER}),
-    "how far the assistant may act": (
-        lambda d: agent(d)["may"]["autonomy"].update({"max": 2}), {RELEASE_APPROVER}),
+    "how far the watcher may act": (
+        lambda d: agent(d, "watcher")["may"]["autonomy"].update({"max": 1}), {RELEASE_APPROVER}),
     "a preference people set through the assistant": (
         lambda d: agent(d)["may"]["preferences"].append("working-hours"), {RELEASE_APPROVER}),
     "recalling its conversations": (
@@ -225,13 +225,13 @@ def test_a_release_is_weighed_against_the_one_approved_before_it(deployed):
     verdict = record(deployed, second, "priya", "tomas")
     assert verdict.ok and {n.role for n in verdict.needs} == {OWNER, ENGINEER}
 
-    spec = deployed.cfg.agents_dir / "assistant" / "agent.yaml"
-    spec.write_text(spec.read_text().replace("  max: 1", "  max: 2"))
+    spec = deployed.cfg.agents_dir / "watcher" / "agent.yaml"
+    spec.write_text(spec.read_text().replace("  max: 0", "  max: 1"))
     third = this(deployed).raw
     widened = record(deployed, third, "priya", "tomas")
     assert not widened.ok and widened.missing[0].startswith(
         "it needs the release approver, from outside the team that runs a5s, because the "
-        "assistant may act more")
+        "watcher may act more")
     assert record(deployed, third, "rosa").ok
 
 

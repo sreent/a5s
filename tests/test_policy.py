@@ -27,7 +27,7 @@ def call(engine, inst, resource, context=None, **about):
     return engine.decide(
         principal=inst["uid"], action="call_tool", resource=resource["uid"],
         context={"level": inst["attrs"]["level"], "read_outside": False, "acts_for": ["ana"],
-                 "in_scope": True, "visible": True, **about}
+                 "in_scope": True, "visible": True, "over_limit": False, **about}
         if context is None else context,
         entities=[inst, resource],
     )
@@ -141,3 +141,15 @@ def test_a_scenario_pack_cant_add_a_hold():
     """A pack may only forbid, so it can't let a call wait where a5s's base pack denies it."""
     with pytest.raises(ValueError, match="only add restrictions"):
         PolicyEngine(packs=('@hold("true") permit (principal, action, resource);',))
+
+
+def test_a_change_past_a_limit_waits_even_at_level_2(engine):
+    grants = ("search_records", "change_due_date")
+    over = call(engine, instance(level=2, grants=grants),
+                tool("change_due_date", action="change-due-date"), over_limit=True)
+    assert over.held and over.reasons == ("changes-past-a-limit-wait-for-their-decider",)
+    at_one = call(engine, instance(grants=grants), tool("change_due_date", action="change-due-date"),
+                  over_limit=True)
+    assert at_one.held and not at_one.allowed
+    reading = call(engine, instance(level=2, grants=grants), tool(), over_limit=True)
+    assert reading.allowed  # a limit counts changes, never reads

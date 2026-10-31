@@ -142,6 +142,14 @@ def levels(instance: InstanceSettings, release: Definition) -> tuple[int, dict[s
     return (min(parts.values()) if parts else level), parts
 
 
+def action_levels(instance: InstanceSettings, release: Definition) -> dict[str, dict[str, int]]:
+    """An instance's level for each type of action the settings set, in each of its parts,
+    within its release's maximum."""
+    most = release.autonomy.max
+    return {p: {a: min(lv, most) for a, lv in sorted(acts.items())}
+            for p, acts in sorted(instance.actions.items()) if p in instance.parts and acts}
+
+
 @dataclass
 class Applied:
     instances: list[str] = field(default_factory=list)
@@ -204,6 +212,7 @@ def apply(
         if definition is None:
             raise ValueError(f"instance {s.id}: no definition {s.definition}")
         level, parts = levels(s, definition)
+        actions = action_levels(s, definition)
         grants = definition.grants
         was = conn.execute("select status, suspended_by from instances where id = %s",
                            (s.id,)).fetchone()
@@ -214,12 +223,13 @@ def apply(
         conn.execute(
             """
             insert into instances
-              (id, definition, release, level, parts, grants, model, serves, owner, deputy,
-               pins, settings_version)
-            values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+              (id, definition, release, level, parts, actions, grants, model, serves, owner,
+               deputy, pins, settings_version)
+            values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             on conflict (id) do update set
               definition = excluded.definition, release = excluded.release,
-              level = excluded.level, parts = excluded.parts, grants = excluded.grants,
+              level = excluded.level, parts = excluded.parts, actions = excluded.actions,
+              grants = excluded.grants,
               model = excluded.model,
               serves = excluded.serves, owner = excluded.owner, deputy = excluded.deputy,
               pins = excluded.pins, settings_version = excluded.settings_version,
@@ -229,8 +239,8 @@ def apply(
               updated_at = now()
             """,
             (
-                s.id, definition.id, definition.release_id, level, Jsonb(parts), grants,
-                definition.model,
+                s.id, definition.id, definition.release_id, level, Jsonb(parts), Jsonb(actions),
+                grants, definition.model,
                 list(s.serves), s.owner or definition.owner, s.deputy or definition.deputy,
                 Jsonb(definition.pins),
                 settings.version,
@@ -250,6 +260,7 @@ def apply(
                     "release": definition.release_id,
                     "level": level,
                     **({"parts": parts} if parts else {}),
+                    **({"actions": actions} if actions else {}),
                     "grants": grants,
                     "model": definition.model,
                 },

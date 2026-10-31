@@ -30,7 +30,10 @@ def test_an_approver_sees_the_whole_version_in_force(stack, approving, provider)
     assert now.status_code == 200
     body = now.json()
     assert body["you"] == "Ana Ortiz" and body["in_force"]["serial"] == in_force_serial(stack)
-    assert body["in_force"]["whole"] == ["The scenario's data is synthetic.", ASSISTANT]
+    assert body["in_force"]["whole"] == [
+        "The scenario's data is synthetic.", ASSISTANT,
+        "Limit for change-due-date: 5 in one run and 20 for one person in 30 days.",
+        "Limit for close-question: 5 in one run and 20 for one person in 30 days."]
     written = yaml.safe_load(body["in_force"]["text"])
     assert written["instances"]["assistant-finance"]["parts"] == ["billing"]
     assert body["waiting"] == [] and body["requests"] == []

@@ -9,7 +9,9 @@ scope: none                      # it changes no part's data
 model: deepseek-v4-pro           # from config/models.yaml, the approved list
 autonomy:
   start: 1
-  max: 1                         # it drafts, and people decide
+  max: 2                         # it drafts, and people decide its changes, unless the
+                                 # settings set level 2 for a type of change, and samples
+                                 # have raised a5s's cap to 2
 tools:
   records: [search_records, get_record]    # the scenario's records, read only
   documents: [create_draft]

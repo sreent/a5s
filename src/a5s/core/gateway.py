@@ -42,12 +42,14 @@ from a5s.contract import (
     Tool,
     ToolCall,
     parse_settings,
+    record_of,
 )
 from a5s.core import (
     approvals,
     budgets,
     chats,
     coretools,
+    counts,
     digests,
     handles,
     ledger,
@@ -247,12 +249,13 @@ class Gateway:
         if release is None or release.release_id != inst["release"]:
             return [f"{inst['id']}'s release isn't in this gateway"]
         level, scope = registry.levels(signed, release)
-        expected = (signed.definition, sorted(signed.serves), level, scope, sorted(release.grants),
+        expected = (signed.definition, sorted(signed.serves), level, scope,
+                    registry.action_levels(signed, release), sorted(release.grants),
                     release.model, release.pins, signed.owner or release.owner,
                     signed.deputy or release.deputy)
         actual = (inst["definition"], sorted(inst["serves"]), inst["level"], inst["parts"] or {},
-                  sorted(inst["grants"]), inst["model"], inst["pins"], inst["owner"],
-                  inst["deputy"])
+                  inst["actions"] or {}, sorted(inst["grants"]), inst["model"], inst["pins"],
+                  inst["owner"], inst["deputy"])
         if expected != actual:
             log.error("instance %s doesn't match its signed settings and release", inst["id"])
             return [f"{inst['id']}'s record doesn't match its signed settings and release"]
@@ -416,6 +419,18 @@ class Gateway:
     def public_url(self) -> str:
         """Where people reach the core's channels, for links."""
         return (self.cfg.public_url or self.cfg.channels_url).rstrip("/")
+
+    def approvers_in_force(self, conn: psycopg.Connection) -> list[str]:
+        """Who approved the settings in force, by key or on a card the core sealed."""
+        row = conn.execute("select signers from settings_versions where scenario = %s "
+                           "order by serial desc limit 1", (self.scenario.name,)).fetchone()
+        return list(row["signers"]) if row else []
+
+    @staticmethod
+    def caps(conn: psycopg.Connection, release: str) -> dict[tuple[str, str], int]:
+        """a5s's caps for a release's types of action in each part: 1 where there's none."""
+        return {(r["part"], r["action"]): r["cap"] for r in conn.execute(
+            "select part, action, cap from caps where release = %s", (release,))}
 
     def approving(self) -> str | None:
         """Why approvers can't approve settings where they work here, if they can't: it takes
@@ -669,8 +684,8 @@ class Gateway:
                **context: Any) -> Decision:
         given = {"level": row["level"], "read_outside": row["read_outside"],
                  "acts_for": list(row["acts_for"])}
-        if action != "call_model":  # about no record, unless the call says otherwise
-            given |= {"in_scope": True, "visible": True}
+        if action != "call_model":  # about no record, and no change, unless the call says so
+            given |= {"in_scope": True, "visible": True, "over_limit": False}
         return self.policy.decide(
             principal={"type": "Instance", "id": row["id"]},
             action=action,
@@ -1538,10 +1553,18 @@ def create_app(gw: Gateway) -> FastAPI:
             arg = tool.record_arg if tool else None  # the record it's about, if it names one
             named = args.get(arg) if arg else None
             records = [] if named in (None, "") else named if isinstance(named, list) else [named]
-            decision = gw.decide(row, "call_tool", entity, [],
-                                 **parts.about(gw.scenario, row, [r for r in records
-                                                                  if isinstance(r, str) and r]))
-            if (found := gw.settings_in_force(conn))[0] is None:  # fail closed
+            keys = [r for r in records if isinstance(r, str) and r]
+            found = gw.settings_in_force(conn)
+            action = tool.action if tool else None  # a change, which levels and limits govern
+            change, over = None, False
+            if action and found[0] is not None:
+                change = counts.change(action, keys, args)
+                over = counts.over(conn, row, action, change, found[0].limits, gw.clock())
+            about = parts.about(gw.scenario, row, keys, action, gw.approvers_in_force(conn),
+                                gw.caps(conn, row["release"])) if action else parts.about(
+                gw.scenario, row, keys)
+            decision = gw.decide(row, "call_tool", entity, [], **about, over_limit=over)
+            if found[0] is None:  # fail closed
                 decision = Decision(False, ("settings-must-check-out",), explanations=(
                     f"a5s can't use the settings in force: {found[1]}",))
             elif problem := misfit((core or tool).schema if (core or tool) else {}, args):
@@ -1570,8 +1593,11 @@ def create_app(gw: Gateway) -> FastAPI:
                                                args=ledger.mask(args, plain),
                                                links_removed=removed,
                                                **({"values": values_of(traced)} if traced else {})))
+            if change and (decision.allowed or decision.held):  # made or held: it counts
+                counts.count(conn, row, action, change, over, gw.clock())
             if decision.held:  # it waits for a person: the exact call, kept for its deciders
-                proposal, sends = held(conn, row, tool, args, records, deciding or [], seq, traced)
+                proposal, sends = held(conn, row, tool, args, records, deciding or [], seq, traced,
+                                       change)
         traces.note(current, **{"a5s.run.id": row["run"], "a5s.instance": row["id"],
                                 "a5s.decision": decision.label})
         if decision.held:
@@ -1612,11 +1638,40 @@ def create_app(gw: Gateway) -> FastAPI:
             except psycopg.Error:  # the values it wrote will be flagged as its own: never worse
                 log.exception("couldn't note what %s read from %s", row["run"], name)
         recorded = record({"kind": "tool", "action": name, "run": row["run"], "instance": row["id"],
-                           "decision": "record", "of": seq, "outcome": outcome})
+                           "decision": "record", "of": seq, "outcome": outcome,
+                           **({"level": about["level"]} if action else {})})
+        if action and outcome["status"] == "ok":  # a change made at level 2: someone's told
+            try:
+                acted(row, tool, args, keys)
+            except psycopg.Error:
+                log.exception("couldn't report the change %s made", row["run"])
         traces.note(current, **{"error.type": "tool_error" if outcome["status"] != "ok" else None})
         if outcome["status"] != "ok":
             return JSONResponse(status_code=502, content={"error": outcome["error"]})
         return {"result": result, "recorded": recorded}
+
+    def acted(row: dict, tool: Tool, args: dict, keys: list[str]) -> None:
+        """Report a change an agent made at level 2: in the digest of its instance's owner, with
+        a link to each record, in words code works out, so they can reverse it through the
+        scenario's own process if they need to."""
+        standing = {k: record_of(gw.scenario, k) for k in keys}
+        whom = approvals.names_of([p.name if (p := gw.scenario.person(w)) else w
+                                   for w in row["acts_for"]]) if row["acts_for"] else "nobody"
+        shown = ", ".join(f"{k} {v}" for k, v in args.items() if k != tool.record_arg)
+        links = " ".join(r.link for r in standing.values() if r and r.link)
+        text = (f"The {row['definition']} made a change itself, at level 2, for {whom}: "
+                f"{tool.description.rstrip('.')}: {', '.join(keys) or 'no record'}"
+                + (f", with {shown}" if shown else "") + "." + (f" {links}" if links else ""))
+        with db.transaction(gw.url) as conn:
+            owner = conn.execute("select owner from instances where id = %s",
+                                 (row["id"],)).fetchone()["owner"]
+            if owner:
+                digests.keep(conn, owner, row["definition"], row["id"], row["run"], text,
+                             gw.clock())
+            ledger.append(conn, {"kind": "tool", "action": "report", "run": row["run"],
+                                 "instance": row["id"], "acts_for": list(row["acts_for"]),
+                                 "decision": "record", "args": {"to": owner, "tool": tool.name,
+                                                                "records": keys}})
 
     def holding(decision: Decision, records: list[str], row: dict) -> list[Person] | None:
         """Who may decide a call policy holds, if it holds it and someone may: None if nobody
@@ -1634,9 +1689,13 @@ def create_app(gw: Gateway) -> FastAPI:
                 "what they asked for themselves: they can make it themselves, in the records system")
 
     def held(conn: psycopg.Connection, row: dict, tool: Tool, args: dict, records: list[str],
-             deciding: list[Person], seq: int, traced: list[dict]) -> tuple[dict, list]:
+             deciding: list[Person], seq: int, traced: list[dict],
+             change: str | None) -> tuple[dict, list]:
         """Keep a held call for its deciders, and ask each of them, where they work, to decide
-        it on the core's page. The proposal, and what to send them once the transaction is done."""
+        it on the core's page. The proposal, and what to send them once the transaction is done.
+        The same change made again in the run answers with the proposal it made before."""
+        if change and (before := proposals.waiting(conn, row["run"], change)) is not None:
+            return before, []
         whom = approvals.names_of([p.name if (p := gw.scenario.person(w)) else w
                                    for w in row["acts_for"]])
         flags = [f"{t['value']} came from the {row['definition']} itself, not from the records "
@@ -1645,7 +1704,7 @@ def create_app(gw: Gateway) -> FastAPI:
             flags.append(f"the {row['definition']} read content from outside the organisation "
                          "before it asked for this")
         proposal = proposals.hold(conn, gw.scenario, row, tool, args, records, deciding, seq,
-                                  flags, gw.clock())
+                                  flags, gw.clock(), change)
         link = f"{gw.public_url}/decide/?proposal={proposal['digest']}"
         text = proposals.asking(proposal, link)
         sends = []
@@ -1909,7 +1968,8 @@ def create_app(gw: Gateway) -> FastAPI:
         if problems := gw.check_instance(conn, row) + gw.release_problems(conn):
             return "; ".join(problems)
         decision = gw.decide(row, "call_tool", gw.tool_entity(p["tool"], tool, row["pins"]), [],
-                             **parts.about(gw.scenario, row, list(p["records"])))
+                             **parts.about(gw.scenario, row, list(p["records"]), tool.action,
+                                           gw.approvers_in_force(conn), gw.caps(conn, row["release"])))
         if not (decision.allowed or decision.held):
             return "; ".join(decision.explanations) or "policy denies it now"
         return None

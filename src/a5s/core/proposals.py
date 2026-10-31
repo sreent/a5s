@@ -129,8 +129,15 @@ def resolved(args: Any, values: dict[str, str]) -> Any:
     return args
 
 
+def waiting(conn: psycopg.Connection, run: str, change: str) -> dict | None:
+    """The same change, held already in the same run and still waiting: the call made again."""
+    return conn.execute("select * from proposals where run_id = %s and change = %s "
+                        "and status = 'waiting'", (run, change)).fetchone()
+
+
 def hold(conn: psycopg.Connection, scenario: Scenario, run: dict, tool: Tool, args: dict,
-         records: list[str], who: list[Person], seq: int, flags: list[str], now: datetime) -> dict:
+         records: list[str], who: list[Person], seq: int, flags: list[str], now: datetime,
+         change: str | None = None) -> dict:
     """Keep a held call for its deciders, in the transaction that decided it."""
     standing = {r: record_of(scenario, r) for r in records}
     first = who[0]
@@ -141,15 +148,15 @@ def hold(conn: psycopg.Connection, scenario: Scenario, run: dict, tool: Tool, ar
     row = conn.execute(
         "insert into proposals (scenario, digest, run_id, instance_id, definition, release, tool, "
         "schema_hash, action, args, records, parts, acts_for, deciders, said, flags, sensitive, "
-        "read_outside, seq, proposed_at, lapses_at) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, "
-        "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) returning *",
+        "read_outside, seq, proposed_at, lapses_at, change) values (%s, %s, %s, %s, %s, %s, %s, "
+        "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) returning *",
         (scenario.name, hashlib.sha256(canonical(body).encode()).hexdigest(), run["run"], run["id"],
          run["definition"], run["release"], tool.name, tool.schema_hash, tool.action, Jsonb(args),
          Jsonb(body["records"]), sorted({p for r in records if (p := scenario.part_of(r))}),
          list(run["acts_for"]), [p.id for p in who],
          said(scenario, tool, args, standing, list(run["acts_for"]), run["definition"]),
          Jsonb(flags), sensitive, bool(run["read_outside"]), seq, now,
-         working_days_after(first, now, LAPSE))).fetchone()
+         working_days_after(first, now, LAPSE), change)).fetchone()
     for handle in sorted(handles_in(args)):  # the values it stands for, kept until it's decided
         conn.execute("insert into proposal_values (proposal_id, handle, value) "
                      "select %s, handle, value from run_handles where run_id = %s and handle = %s",

@@ -120,6 +120,23 @@ class Words:
             return f"everyone who holds the {entry[5:]} role"
         return p.name if (p := self.directory(entry)) else entry
 
+    def actions(self, instance: InstanceSettings) -> dict[tuple[str, str], int]:
+        """Its level for each type of action in each part, within its release's maximum."""
+        release = self.definitions.get(instance.definition)
+        found = registry.action_levels(instance, release) if release else instance.actions
+        return {(p, a): lv for p, acts in found.items() for a, lv in acts.items()}
+
+    @staticmethod
+    def limits(settings: Settings) -> dict[str, str]:
+        """The scenario's limit for each type of action, in words."""
+        said = {}
+        for action, limit in sorted(settings.limits.items()):
+            parts = ([f"{limit['per_run']} in one run"] if "per_run" in limit else []) + (
+                [f"{limit['per_person_30_days']} for one person in 30 days"]
+                if "per_person_30_days" in limit else [])
+            said[action] = names_of(parts) if parts else "no limit"
+        return said
+
     def levels(self, instance: InstanceSettings) -> tuple[int | None, dict[str, int | None]]:
         release = self.definitions.get(instance.definition)
         if release is None:
@@ -154,6 +171,17 @@ def changes(before: Settings | None, after: Settings, definitions: dict[str, Def
     if before is not None and words.classes(before) != words.classes(after):
         found.append({"text": f"The scenario's data becomes {words.classes(after)}, instead of "
                               f"{words.classes(before)}.", "widens": True})
+    limits_was = Words.limits(before) if before else {}
+    for action, now in Words.limits(after).items():
+        if limits_was.get(action) != now:
+            earlier = before.limits.get(action) if before else None
+            found.append({"text": f"The limit for {action} becomes {now}"
+                                  + (f", instead of {limits_was[action]}" if action in limits_was
+                                     else "") + ".",
+                          "widens": _looser(earlier, after.limits[action])})
+    for action in sorted(set(limits_was) - set(Words.limits(after))):
+        found.append({"text": f"{action} has no limit any more, instead of {limits_was[action]}.",
+                      "widens": True})
     for new in after.instances:
         old = was.pop(new.id, None)
         if old is None:
@@ -182,6 +210,16 @@ def changes(before: Settings | None, after: Settings, definitions: dict[str, Def
             if (a := was_in[part]) != (b := now_in[part]):
                 found.append({"text": f"{new.id}'s level in {part} goes from {a} to {b}.",
                               "widens": (b or 0) > (a or 0)})
+        acts_was, acts_now = words.actions(old), words.actions(new)
+        for part, action in sorted(set(acts_was) | set(acts_now)):
+            a = acts_was.get((part, action), min(was_in.get(part) or 0, 1) if part in was_in else None)
+            b = acts_now.get((part, action), min(now_in.get(part) or 0, 1) if part in now_in else None)
+            if a != b and b is not None:
+                found.append({"text": f"{new.id}'s level for {action} in {part} goes from "
+                                      f"{a if a is not None else 'none'} to {b}"
+                                      + (", where it acts and reports, once samples show it's "
+                                         "accurate enough" if b >= 2 else "") + ".",
+                              "widens": b > (a or 0)})
         for who in ("owner", "deputy"):
             if (a := words.owner(old, who)) != (b := words.owner(new, who)):
                 found.append({"text": f"{new.id}'s {who} changes from "
@@ -192,6 +230,12 @@ def changes(before: Settings | None, after: Settings, definitions: dict[str, Def
                       "widens": False})
     return found or [{"text": "It changes nothing the agents do: only its serial or notes.",
                       "widens": False}]
+
+
+def _looser(was: dict[str, int] | None, now: dict[str, int]) -> bool:
+    """Whether a type of action's new limit lets more through than its old one: a limit that's
+    new only narrows, and one that rises or goes widens."""
+    return was is not None and any(k not in now or now[k] > v for k, v in was.items())
 
 
 def described(settings: Settings, definitions: dict[str, Definition],
@@ -205,8 +249,11 @@ def described(settings: Settings, definitions: dict[str, Definition],
             run_by.append(f"with {words.names([deputy])} as deputy")
         told.append(f"{i.id}: the {i.definition}, {words.where(i)}, serving "
                     f"{words.names(i.serves)}" + (f", {' '.join(run_by)}" if run_by else "") + ".")
+        told += [f"{i.id} works at level {lv} for {action} in {part}."
+                 for (part, action), lv in sorted(words.actions(i).items())]
     if not settings.instances:
         told.append("No instances: every agent here is retired.")
+    told += [f"Limit for {action}: {said}." for action, said in Words.limits(settings).items()]
     return told
 
 
