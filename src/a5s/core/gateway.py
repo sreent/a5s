@@ -358,11 +358,9 @@ class Gateway:
     def busy(self, conn: psycopg.Connection, person: Person, due: datetime, now: datetime,
              able: dict[str, bool]) -> bool:
         """Whether the agents' work for someone's digest is still due, or still running: a
-        chase, a report, or a reminder for the day."""
-        if conn.execute("select 1 from runs where closed_at is null and expires_at > now() "
-                        "and %s = any(acts_for) and trigger->>'kind' = any(%s)",
-                        (person.id, list(digests.KINDS))).fetchone():
-            return True
+        chase, a report, or a reminder for the day. What's due is checked before what's
+        running: a run that opens between the two checks has marked its work as begun before
+        the second, so it's seen running, never missed; and one that ends has left its item."""
         rows = conn.execute("select o.*, i.definition as agent from obligations o "
                             "left join instances i on i.id = o.instance_id "
                             "where o.scenario = %s and o.person = %s and o.done_at is null",
@@ -382,7 +380,9 @@ class Gateway:
                     and any(not reports.fired(conn, inst["id"], person.id, r.source, due)
                             for r in definition.reports)):
                 return True
-        return False
+        return bool(conn.execute("select 1 from runs where closed_at is null and expires_at > now() "
+                                 "and %s = any(acts_for) and trigger->>'kind' = any(%s)",
+                                 (person.id, list(digests.KINDS))).fetchone())
 
     @staticmethod
     def for_digest(conn: psycopg.Connection, run: dict) -> bool:
