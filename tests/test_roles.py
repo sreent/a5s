@@ -77,6 +77,11 @@ def test_not_even_the_administrator_truncates_the_ledger_without_disabling_its_g
     ("channels", "delete from settings_approvals"),
     ("channels", ("insert into settings_proposals (scenario, digest, version, serial, raw) "
                  "values ('sample', 'x', 'x', 99, 'x')")),
+    ("scheduler", "delete from turns"),  # only the core deletes conversations, when it's time
+    ("scheduler", "delete from summaries"),
+    ("channels", "delete from inbound"),
+    ("scheduler", "delete from urgent_held"),
+    ("channels", "update urgent_sent set sent = 0"),
 ])
 def test_each_part_has_only_the_rights_its_job_needs(ledgered, part, statement):
     assert refused(db.as_role(ledgered, part), statement)

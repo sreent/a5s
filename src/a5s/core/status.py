@@ -1,8 +1,9 @@
 """Status: how a5s is doing, for the team that runs it, from the core's own records.
 
 Over the last day: what waits in the queue, the runs and how they ended, what was denied,
-the tokens each instance used and any budget warnings, the instances that aren't active,
-and the models whose breakers are open. And a5s's objectives, with whether it meets them:
+the tokens each instance used and any budget warnings, the urgent messages held for a batch
+because people had had their day's five, the instances that aren't active, and the models
+whose breakers are open. And a5s's objectives, with whether it meets them:
 how quickly people get answers, and how many chases go out before what's owed falls due.
 `a5s status` prints it, and the gateway's /status gives it to a dashboard. What to do about
 each is in docs/runbooks.md.
@@ -41,6 +42,8 @@ def report(conn: psycopg.Connection, breakers: list[str]) -> dict[str, Any]:
         "  and w.at::timestamptz > now() - interval '1 day') as warnings "
         "from runs r where r.opened_at > now() - interval '1 day' and r.tokens > 0 "
         "group by 1 order by 1").fetchall()
+    held = conn.execute("select count(*) as n, count(distinct person) as people "
+                        "from urgent_held where sent_at is null").fetchone()
     stopped = conn.execute(
         "select id, status, suspended_by from instances where status <> 'active' order by id"
     ).fetchall()
@@ -62,6 +65,7 @@ def report(conn: psycopg.Connection, breakers: list[str]) -> dict[str, Any]:
         "denied": [dict(r) for r in denied],
         "tokens": [{"instance": r["instance_id"], "tokens": int(r["tokens"]),
                     "budget_warnings": r["warnings"]} for r in tokens],
+        "urgent_held": {"messages": held["n"], "people": held["people"]},
         "not_active": [dict(r) for r in stopped],
         "breakers_open": breakers,
         "objectives": {
@@ -107,6 +111,10 @@ def told(status: dict[str, Any]) -> str:
                                   + (f", {t['budget_warnings']} past four fifths"
                                      if t["budget_warnings"] else "")
                                   for t in status["tokens"]) or "none") + ".",
+        "  Urgent messages held for a batch: " + (
+            f"{status['urgent_held']['messages']} for {status['urgent_held']['people']} "
+            + ("person" if status["urgent_held"]["people"] == 1 else "people")
+            if status["urgent_held"]["messages"] else "none") + ".",
         "  Not active: " + (", ".join(f"{i['id']}, {i['status']}"
                                       + (f" by {i['suspended_by']}" if i["suspended_by"] else "")
                                       for i in status["not_active"]) or "none") + ".",

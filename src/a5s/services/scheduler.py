@@ -469,6 +469,13 @@ class Scheduler:
         except httpx.HTTPError:
             log.exception("couldn't ask the core to apply approved settings")
 
+    def retain(self) -> None:
+        """Ask the core to delete what's past its time to keep."""
+        try:
+            self.gw.post("/retention/sweep", headers=self.service).raise_for_status()
+        except httpx.HTTPError:
+            log.exception("couldn't ask the core to delete what's past its time")
+
     def sweep(self) -> None:
         """Close runs that outlived their time, and tell their people."""
         try:
@@ -482,9 +489,10 @@ class Scheduler:
                 self._tell(run["inbound"], "I couldn't finish your last message, so I stopped. "
                                            "Send it again if you still need it.", run["instance"])
 
-    def listen(self, stop: threading.Event, workers: int = 8, sweep_every: float = 60) -> None:
+    def listen(self, stop: threading.Event, workers: int = 8, sweep_every: float = 60,
+               retain_every: float = 3600) -> None:
         """Answer messages as the core receives them, and work on what falls due, several at
-        once, until stopped.
+        once, until stopped. Every hour, ask the core to delete what's past its time to keep.
 
         Work is taken only when a worker is free for it.
         """
@@ -496,7 +504,7 @@ class Scheduler:
             finally:
                 free.release()
 
-        swept = float("-inf")  # so the first sweep is straight away
+        swept = kept = float("-inf")  # so the first sweeps are straight away
         with ThreadPoolExecutor(workers) as pool:
             while not stop.is_set():
                 try:
@@ -515,6 +523,9 @@ class Scheduler:
                                     pool.submit(answer, claim)
                                 self.digest()  # those whose work is done: the rest next time
                                 swept = time.monotonic()
+                            if time.monotonic() - kept > retain_every:
+                                self.retain()
+                                kept = time.monotonic()
                             while free.acquire(blocking=False):
                                 claim = self._claim()
                                 if claim is None:

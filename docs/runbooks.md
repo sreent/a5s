@@ -31,6 +31,14 @@ To follow one run, find its spans by `a5s.run.id`, where the deployment sends tr
 2. Chases and reminders go on, on the fifth of each day kept for them. Reports wait for the next day.
 3. Budgets come with the release, so raising one is a new release that widens the agent, which the release approver signs. Don't raise one to get through a bad day.
 
+## People get urgent messages in batches
+
+**Shows as:** urgent messages held for a batch.
+
+1. Someone has had five urgent messages today, across all the agents, so the rest wait and go together once an hour. That's a5s working as it should, and a sign an agent writes too much.
+2. Find which agent wrote them with `a5s ledger tail`: each one held shows as a message sent to `batch`.
+3. Tell the agent owner. What isn't urgent belongs in the digest.
+
 ## Calls are denied
 
 **Shows as:** many denials of one kind.
@@ -61,6 +69,14 @@ To follow one run, find its spans by `a5s.run.id`, where the deployment sends tr
 
 1. Don't restart the copier to make the error go away. It stops when the ledger no longer matches its copies, which means the history changed.
 2. Run `a5s ledger verify`, and tell assurance what it says.
+
+## Old conversations aren't deleted
+
+**Shows as:** the scheduler's log saying it couldn't ask the core to delete what's past its time.
+
+1. The scheduler asks the core every hour, and the ledger records what each sweep deleted. A sweep that finds nothing to delete records nothing.
+2. Check that the scheduler is running and can reach the gateway. Nothing is lost while it's stopped, but a5s keeps what it said it would delete.
+3. If it stopped for more than a few days, tell the data protection officer.
 
 ## An objective is missed
 

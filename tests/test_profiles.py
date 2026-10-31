@@ -89,6 +89,8 @@ def test_a_new_note_replaces_the_last_and_people_can_have_it_forgotten(stack):
     stack.say("Forget how I said I like to work")
     with db.transaction(stack.admin) as conn:
         assert profiles.note(conn, "ana") is None
+        kept = [r["text"] for r in conn.execute("select text from profile_notes order by id")]
+    assert kept == [NOTE, ""]  # the one she asked to forget goes at once
 
 
 def test_someones_note_never_reaches_a_run_for_anyone_else(stack):

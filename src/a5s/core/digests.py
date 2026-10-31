@@ -7,7 +7,7 @@ working days and in their working hours. The work for it is done just before it 
 once a person's digest time comes, the agents' runs for them fall due, and the digest
 goes once they're done, so nothing in it is stale. What comes up after that waits for
 the next one. Answers to people's messages, escalations, and reminders for a particular
-time go at once.
+time go at once, the last two up to five a day (core/urgent.py).
 
 A digest with one item is that item, from its agent. One with more is a5s's own message,
 with each item under the agent that wrote it. People set their digest's time by asking an

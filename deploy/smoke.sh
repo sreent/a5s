@@ -3,9 +3,9 @@
 # Matrix homeserver and locked storage, then checks that the core runs only a
 # release its people approved, that a person must sign in, that a message runs end
 # to end from the command line and from Matrix, that the core works obligations out
-# from the records, that a worker reaches only the gateway, that an instance approver
-# approves new settings where she works, and that the ledger is copied, locked, and
-# verifies against its copies.
+# from the records, that a worker reaches only the gateway, that the core can delete what's
+# past its time to keep, that an instance approver approves new settings where she works,
+# and that the ledger is copied, locked, and verifies against its copies.
 # Needs the image first: docker build -t a5s:dev .
 # With --keep, it leaves the stack running afterwards, to try the web chat and Matrix.
 set -eu
@@ -177,7 +177,7 @@ import os, psycopg
 with psycopg.connect(os.environ["A5S_DATABASE_URL"]) as conn:
     for statement in ("insert into inbound (id, channel, source_id, person, agent, text, reply_to) "
                       "values (gen_random_uuid(), 'teams', 'x', 'ben', 'assistant', 'hi', '{}')",
-                      "update instances set level = 2", "truncate ledger"):
+                      "update instances set level = 2", "truncate ledger", "delete from turns"):
         try:
             conn.execute(statement)
         except psycopg.errors.InsufficientPrivilege:
@@ -185,6 +185,14 @@ with psycopg.connect(os.environ["A5S_DATABASE_URL"]) as conn:
         else:
             raise AssertionError(f"the scheduler could run: {statement}")
 print("The scheduler connects as its own role, and can't write the core's records.")
+PY
+
+compose exec -T gateway python - <<'PY'
+import os, httpx
+swept = httpx.post("http://127.0.0.1:8700/retention/sweep", timeout=30,
+                   headers={"Authorization": f"Bearer {os.environ['A5S_SERVICE_TOKEN']}"})
+assert swept.status_code == 200, swept.text
+print("The core deletes what's past its time to keep, as its own role.")
 PY
 
 # An instance approver approves a new version of the settings where she works. a5s asks her

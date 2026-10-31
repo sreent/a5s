@@ -106,7 +106,7 @@ def confirm(call: Call) -> dict:
 
 def forget(call: Call) -> dict:
     person = call.person
-    if not call.conn.execute("update profile_notes set ended_at = %s where person = %s "
+    if not call.conn.execute("update profile_notes set ended_at = %s, text = '' where person = %s "
                              "and ended_at is null returning id", (call.now, person.id)).fetchall():
         raise Refused("they have no note to forget")
     return {"forgotten": True}
