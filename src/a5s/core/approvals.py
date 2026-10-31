@@ -110,7 +110,15 @@ class Words:
         self.definitions, self.directory = definitions, directory
 
     def names(self, people: Any) -> str:
-        return names_of([p.name if (p := self.directory(pid)) else pid for pid in sorted(people)])
+        return names_of([self.name(pid) for pid in sorted(people)])
+
+    def name(self, entry: str) -> str:
+        """Someone, by name, or a group, as the directory decides who is in it at the time."""
+        if entry.startswith("team:"):
+            return f"everyone in the {entry[5:]} team"
+        if entry.startswith("role:"):
+            return f"everyone who holds the {entry[5:]} role"
+        return p.name if (p := self.directory(entry)) else entry
 
     def levels(self, instance: InstanceSettings) -> tuple[int | None, dict[str, int | None]]:
         release = self.definitions.get(instance.definition)

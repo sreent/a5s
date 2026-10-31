@@ -108,10 +108,11 @@ def test_a_run_in_a_case_gets_its_older_turns_beside_the_latest(stack):
 
 
 def test_a_run_goes_on_when_the_records_cant_be_read(stack, monkeypatch):
-    def down():
+    def down(*_):
         raise ConnectionError("the records system is down")
 
     monkeypatch.setattr(stack.gateway.scenario, "watched", down)
+    monkeypatch.setattr(stack.gateway.scenario, "record", down)  # one record, or all of them
     stack.model.reply("I can't see the records right now.")
     assert stack.say("What about Q-1001?") == "I can't see the records right now."
     assert "The records can't be read right now, so a5s has nothing on Q-1001." in system_prompt(stack)

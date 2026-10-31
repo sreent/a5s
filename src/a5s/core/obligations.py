@@ -36,10 +36,17 @@ def _minutes(hhmm: str) -> int:
 
 
 def working(person: Person, at: datetime) -> bool:
-    """Whether it's within the person's working hours."""
+    """Whether it's within the person's working hours. Hours that end at or before they
+    start cross midnight, such as a night shift from 22:00 to 06:00: its morning belongs to the
+    working day it started on."""
     here = local(person, at)
     start, end = (_minutes(t) for t in person.hours)
-    return here.isoweekday() in person.workdays and start <= here.hour * 60 + here.minute < end
+    now = here.hour * 60 + here.minute
+    if start < end:
+        return here.isoweekday() in person.workdays and start <= now < end
+    if now >= start:
+        return here.isoweekday() in person.workdays
+    return now < end and (here - timedelta(days=1)).isoweekday() in person.workdays
 
 
 def a_working_day_after(person: Person, at: datetime) -> datetime:
@@ -81,7 +88,8 @@ def chain(scenario: Scenario, person: str, record: str | None = None) -> list[Pe
 
 def sync(conn: psycopg.Connection, scenario: str, owed: list[Obligation],
          definitions: dict[str, Definition], now: datetime,
-         part_of: Callable[[str], str | None] = lambda _: None) -> None:
+         part_of: Callable[[str], str | None] = lambda _: None,
+         serving: Callable[[list[str], str], bool] = lambda serves, who: who in serves) -> None:
     """Bring the obligations in line with what the records owe now, each naming the
     instance that acts on it: one that serves its person, chases its kind of record, and
     works in the record's part, if it's in one.
@@ -96,7 +104,7 @@ def sync(conn: psycopg.Connection, scenario: str, owed: list[Obligation],
         part = part_of(record)
         for inst in instances:
             definition = definitions.get(inst["definition"])
-            if (definition and source in definition.obligations and person in inst["serves"]
+            if (definition and source in definition.obligations and serving(inst["serves"], person)
                     and (part is None or part in (inst["parts"] or {}))):
                 return inst["id"]
         return None
@@ -116,6 +124,10 @@ def sync(conn: psycopg.Connection, scenario: str, owed: list[Obligation],
               escalated_at = case when {afresh} then null else obligations.escalated_at end,
               escalated_to = case when {afresh} then null else obligations.escalated_to end,
               due_at = excluded.due_at, done_at = null
+            where (obligations.title, obligations.link, obligations.opened_at, obligations.due_at,
+                   obligations.instance_id, obligations.done_at)
+              is distinct from (excluded.title, excluded.link, excluded.opened_at,
+                                excluded.due_at, excluded.instance_id, null)
             """,
             (scenario, o.source, o.record, o.person, o.title, o.link, o.opened, o.due,
              acting(o.source, o.person, o.record), now),

@@ -21,6 +21,7 @@ send it work but the core.
 from __future__ import annotations
 
 import logging
+import re
 import threading
 import time
 import uuid
@@ -33,7 +34,8 @@ import psycopg
 
 from a5s import db
 from a5s.config import Config
-from a5s.contract import INSTANCE_APPROVER, Scenario
+from a5s.contract import INSTANCE_APPROVER, PART_OWNER, Scenario
+from a5s.core import registry
 from a5s.services import context, summaries
 from a5s.worker import BudgetSpent, ModelDown, run_agent
 
@@ -94,12 +96,33 @@ class Scheduler:
                 return person.name
         return "whoever runs a5s"
 
+    def _serving(self, instances: list[dict], person: str, text: str) -> dict | None:
+        """The instance of an agent that answers someone: one that serves them, and, if their
+        message names a record, one that works in the record's part."""
+        theirs = [i for i in instances if registry.serving(self.scenario, i["serves"], person)]
+        pattern = getattr(self.scenario, "record_pattern", None)
+        for found in (re.finditer(pattern, text) if pattern else ()):
+            part = self.scenario.part_of(found.group(0))
+            if part and (fit := [i for i in theirs if part in (i["parts"] or {})]):
+                return fit[0]
+        return theirs[0] if theirs else None
+
     def _nobody_serves(self, agent: str, asker: str) -> str:
-        approvers = [p.name for p in self.scenario.holders(INSTANCE_APPROVER) if p.id != asker]
+        """Who can add someone to an agent: the owners of the parts its instances work in, or
+        the instance approvers, for one in no part."""
+        with db.transaction(self.cfg.database_url) as conn:
+            scopes = [i["parts"] or {} for i in conn.execute(
+                "select parts from instances where definition = %s and status <> 'retired'",
+                (agent,))]
+        roles = [f"{PART_OWNER}:{p}" for scope in scopes for p in scope] or [INSTANCE_APPROVER]
+        holders = {p.id: p for role in dict.fromkeys(roles) for p in self.scenario.holders(role)}
+        approvers = [p.name for p in holders.values() if p.id != asker]
         if approvers:
             return f"There's no {agent} for you yet. Ask {' or '.join(approvers)} to add you."
-        if self.scenario.holders(INSTANCE_APPROVER):  # only the person asking approves instances
-            return f"There's no {agent} for you yet. As an instance approver, you can add one."
+        if holders:  # only the person asking approves it
+            return (f"There's no {agent} for you yet. " + (
+                "As an instance approver, you can add one." if roles == [INSTANCE_APPROVER]
+                else "As the owner of the parts it works in, you can add one."))
         return f"There's no {agent} for you yet. Ask whoever runs a5s to add you."
 
     def _turn(self, claim: dict, text: str, run: str, topic: str) -> None:
@@ -218,11 +241,10 @@ class Scheduler:
     def handle(self, claim: dict) -> None:
         person, agent, inbound = claim["person"], claim["agent"], claim["id"]
         with db.transaction(self.cfg.database_url) as conn:
-            inst = conn.execute(
-                "select * from instances where definition = %s and %s = any(serves) "
-                "and status <> 'retired' order by (status = 'active') desc, id limit 1",
-                (agent, person),
-            ).fetchone()
+            instances = conn.execute(
+                "select * from instances where definition = %s and status <> 'retired' "
+                "order by (status = 'active') desc, id", (agent,)).fetchall()
+        inst = self._serving(instances, person, claim["text"])
         if inst is None:
             self._tell(inbound, self._nobody_serves(agent, person))
             self._later(claim, never=True)

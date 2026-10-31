@@ -124,10 +124,17 @@ class SampleScenario:
 
     def watched(self) -> list[Record]:
         """Each record, as its owner stands to it."""
-        return [Record(source="records", key=r["key"], person=r["owner"], title=r["title"],
-                       fields={"status": r["status"], "due date": r["due"], "customer": r["customer"]},
-                       link=self._link("records", r["key"]))
-                for r in self._records.values() if r["owner"] in self._people]
+        return [self._record(r) for r in self._records.values() if r["owner"] in self._people]
+
+    def record(self, key: str) -> Record | None:
+        """One record, as watched() stands to it, read on its own."""
+        found = self._records.get(key)
+        return self._record(found) if found and found["owner"] in self._people else None
+
+    def _record(self, r: dict) -> Record:
+        return Record(source="records", key=r["key"], person=r["owner"], title=r["title"],
+                      fields={"status": r["status"], "due date": r["due"], "customer": r["customer"]},
+                      link=self._link("records", r["key"]))
 
     # Settings
 

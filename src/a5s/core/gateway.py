@@ -374,8 +374,9 @@ class Gateway:
                         "and due_at <= %s and instance_id = any(%s)",
                         (person.id, now, [i for i, ok in able.items() if ok])).fetchone():
             return True
-        for inst in conn.execute("select * from instances where %s = any(serves)",
-                                 (person.id,)).fetchall():
+        for inst in conn.execute("select * from instances where status <> 'retired'").fetchall():
+            if not registry.serving(self.scenario, inst["serves"], person.id):
+                continue
             definition = self.definitions.get(inst["definition"])
             if (able.get(inst["id"]) and definition and definition.release_id == inst["release"]
                     and any(not reports.fired(conn, inst["id"], person.id, r.source, due)
@@ -442,7 +443,7 @@ class Gateway:
             elif missing := [t for t in release.tool_names if t not in tools]:
                 problems.append(f"{instance.definition} names tools the scenario doesn't have: "
                                 f"{', '.join(missing)}")
-            people = [p for p in instance.serves if ":" not in p]  # teams and roles aside
+            people = [p for p in instance.serves if not p.startswith(("team:", "role:"))]
             people += [p for p in (instance.owner, instance.deputy) if p]
             if unknown := sorted({p for p in people if self.scenario.person(p) is None}):
                 problems.append(f"{instance.id} names people the directory doesn't know: "
@@ -539,7 +540,8 @@ class Gateway:
         definition = self.definitions.get(inst["definition"])
         found = [r for r in definition.reports if r.source == source] if (
             definition and definition.release_id == inst["release"]) else []
-        reachable = person is not None and person.in_audience and who in inst["serves"]
+        reachable = (person is not None and person.in_audience
+                     and registry.serving(self.scenario, inst["serves"], who))
         due = digests.window(conn, person, now) if found and reachable else None
         args = {"person": who, "source": source, "due": due.isoformat() if due else None}
         opening = Opening(trigger={"kind": "report", "report": {"person": who, "source": source},
@@ -549,7 +551,7 @@ class Gateway:
             opening.reasons.append(f"{inst['id']}'s release doesn't report on {source}")
         elif person is None:
             opening.reasons.append(f"the directory doesn't know {who}")
-        elif who not in inst["serves"]:
+        elif not registry.serving(self.scenario, inst["serves"], who):
             opening.reasons.append(f"{inst['id']} doesn't serve {who}")
         elif not person.in_audience:
             opening.reasons.append(f"a5s may not write to {who}")
@@ -821,7 +823,7 @@ def create_app(gw: Gateway) -> FastAPI:
             reasons = opening.reasons
             if inst["status"] != "active":
                 reasons.append(f"{body.instance} is {inst['status']}")
-            if any(p not in inst["serves"] for p in opening.acts_for):
+            if any(not registry.serving(gw.scenario, inst["serves"], p) for p in opening.acts_for):
                 reasons.append(f"{body.instance} doesn't serve {', '.join(opening.acts_for)}")
             reasons += gw.check_instance(conn, inst) + gw.release_problems(conn)
             release = gw.definitions.get(inst["definition"])
@@ -986,7 +988,8 @@ def create_app(gw: Gateway) -> FastAPI:
                                 (obligations.LOCK,)).fetchone()["got"]:
                 return []  # another sweep is at work
             obligations.sync(conn, gw.scenario.name, owed, gw.definitions, now,
-                             gw.scenario.part_of)
+                             gw.scenario.part_of,
+                             lambda serves, who: registry.serving(gw.scenario, serves, who))
             instances = {i["id"]: i for i in conn.execute("select * from instances")}
             able = gw.able(conn)  # else code escalates
             rows = conn.execute(
@@ -1068,7 +1071,8 @@ def create_app(gw: Gateway) -> FastAPI:
                 definition = gw.definitions.get(inst["definition"])
                 if definition is None or definition.release_id != inst["release"]:
                     continue
-                for report, who in ((r, p) for r in definition.reports for p in inst["serves"]):
+                for report, who in ((r, p) for r in definition.reports
+                                    for p in registry.served(gw.scenario, inst["serves"])):
                     person = gw.scenario.person(who)  # and only people a5s may write to
                     at = digests.window(conn, person, now) if person and person.in_audience else None
                     if at is None or reports.fired(conn, inst["id"], who, report.source, at):
@@ -1171,7 +1175,8 @@ def create_app(gw: Gateway) -> FastAPI:
             agents = {i["id"]: i["definition"]
                       for i in conn.execute("select id, definition from instances")}
             people = {p for row in conn.execute("select serves from instances "
-                                                "where status <> 'retired'") for p in row["serves"]}
+                                                "where status <> 'retired'")
+                      for p in registry.served(gw.scenario, row["serves"])}
             people |= {r["person"] for r in conn.execute(
                 "select distinct person from digest_items where digest_due is null")}
             for who in sorted(people):

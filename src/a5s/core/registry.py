@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
+from typing import Any
 
 import psycopg
 from psycopg.types.json import Jsonb
@@ -22,6 +23,31 @@ from a5s.definitions import Definition
 
 Directory = Callable[[str], Person | None]
 Holders = Callable[[str], list[Person]]
+
+
+def serving(scenario: Any, serves: Iterable[str], person: str) -> bool:
+    """Whether an instance's `serves` takes someone in: by name, or as one of a team or of a
+    role's holders, as the directory says now, so a joiner is served without new settings."""
+    serves = list(serves)
+    if person in serves:
+        return True
+    who = scenario.person(person)
+    return who is not None and any(
+        (entry.startswith("team:") and who.team == entry[5:])
+        or (entry.startswith("role:") and entry[5:] in who.roles) for entry in serves)
+
+
+def served(scenario: Any, serves: Iterable[str]) -> list[str]:
+    """Everyone an instance serves, by name, as the directory says now."""
+    found: set[str] = set()
+    for entry in serves:
+        if entry.startswith("team:"):
+            found |= {p.id for p in scenario.team(entry[5:])}
+        elif entry.startswith("role:"):
+            found |= {p.id for p in scenario.holders(entry[5:])}
+        else:
+            found.add(entry)
+    return sorted(found)
 
 
 def approves(person: Person) -> bool:

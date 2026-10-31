@@ -21,7 +21,7 @@ from datetime import datetime, timedelta
 
 import psycopg
 
-from a5s.contract import Person, Scenario
+from a5s.contract import Person, Scenario, record_of
 from a5s.core.obligations import WITHHELD, day
 from a5s.core.reminders import say
 
@@ -59,7 +59,7 @@ def render(body: dict) -> str:
 def named(scenario: Scenario, text: str) -> list[str]:
     """The records a message names, by their keys, in the order it names them."""
     pattern = getattr(scenario, "record_pattern", None)
-    return list(dict.fromkeys(re.findall(pattern, text))) if pattern else []
+    return list(dict.fromkeys(m.group(0) for m in re.finditer(pattern, text))) if pattern else []
 
 
 def of_message(conn: psycopg.Connection, scenario: Scenario, person: str, agent: str,
@@ -81,7 +81,7 @@ def brief(conn: psycopg.Connection, scenario: Scenario, key: str, person: Person
     fields of a class its model isn't approved for."""
     title = f"The case: {key}, from the records"
     try:
-        record = next((r for r in scenario.watched() if r.key == key), None)
+        record = record_of(scenario, key)
     except Exception:  # the scenario's own systems: the run goes on without the brief
         log.exception("couldn't read the records for %s's brief", key)
         return {"title": title, "text": f"The records can't be read right now, so a5s has "

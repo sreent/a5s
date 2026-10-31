@@ -180,8 +180,8 @@ _PERSON = Annotated[str, StringConstraints(strict=True,
                                            pattern=r"^[A-Za-z0-9][A-Za-z0-9._@-]{0,127}$")]
 # Whom an instance serves: a person, or everyone in a team or holding a role, as the directory
 # says when each run opens, such as team:sales or role:part-owner:billing
-_WHO = Annotated[str, StringConstraints(
-    strict=True, pattern=r"^(?:(?:team|role):)?[A-Za-z0-9][A-Za-z0-9._@:-]{0,127}$")]
+_WHO = Annotated[str, StringConstraints(strict=True, pattern=(
+    r"^(?:(?:team|role):[A-Za-z0-9][A-Za-z0-9._@:-]{0,127}|[A-Za-z0-9][A-Za-z0-9._@-]{0,127})$"))]
 _FIELD = Annotated[str, StringConstraints(strict=True, pattern=r"^[A-Za-z][A-Za-z0-9 _-]{0,62}$")]
 _LEVEL = Annotated[StrictInt, Field(ge=0, le=2)]
 
@@ -255,6 +255,11 @@ def parse_settings(raw: bytes, signatures: tuple[Signature, ...] = ()) -> Settin
 
 
 class Scenario(Protocol):
+    """What a scenario gives a5s. One may also have record(key) -> Record | None, which reads
+    one record, as watched() stands to it, or None if there's no such record; a5s reads that
+    one record with it, such as for a case's brief, and without it reads every record with
+    watched() to find the one."""
+
     name: str
     record_links: tuple[str, ...]  # the only link prefixes agents' messages may carry
     # A regular expression for its records' keys, such as Q-\d{4}, so a message that names
@@ -298,3 +303,12 @@ class Scenario(Protocol):
     def settings(self) -> Settings: ...
 
     def policy_pack(self) -> str | None: ...
+
+
+def record_of(scenario: Scenario, key: str) -> Record | None:
+    """One record, by its key, as it stands now: from the scenario's record(key) if it has
+    one, else from every record it watches. None if there's no such record."""
+    one = getattr(scenario, "record", None)
+    if callable(one):
+        return one(key)
+    return next((r for r in scenario.watched() if r.key == key), None)
