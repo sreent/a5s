@@ -84,6 +84,20 @@ class ModelDown(Exception):
     """The model didn't answer, because its provider was down or failed."""
 
 
+class BudgetSpent(Exception):
+    """The core stopped the run's model calls, because a budget is spent (core/budgets.py)."""
+
+
+def stopped(exc: Exception) -> Exception | None:
+    """What the model gateway's refusal means for the run, if it's one a5s says in its words."""
+    status = getattr(exc, "status_code", None)
+    if status in (502, 503):
+        return ModelDown(str(exc))
+    if status == 429 and "budget" in str(exc):
+        return BudgetSpent(str(exc))
+    return None
+
+
 # Some models end a run on a tool's result with nothing to say. They're asked once more.
 EMPTY = {"role": "user", "content": "[from a5s, not the person] Your last message was empty, and "
                                     "the person sees only your last message. Write it now."}
@@ -129,8 +143,8 @@ def run_agent(gateway_url: str, token: str, history: list[dict]) -> str:
                     [{"role": "system", "content": info["instructions"]},
                      *(as_message(t) for t in history)])
             except Exception as exc:
-                if getattr(exc, "status_code", None) in (502, 503):  # from the model gateway
-                    raise ModelDown(str(exc)) from exc
+                if why := stopped(exc):  # from the model gateway
+                    raise why from exc
                 raise
             return text_of(answer)
         agent = create_deep_agent(
@@ -145,8 +159,8 @@ def run_agent(gateway_url: str, token: str, history: list[dict]) -> str:
                 result = agent.invoke({"messages": [*result["messages"], EMPTY]},
                                       config={"recursion_limit": 40})
         except Exception as exc:
-            if getattr(exc, "status_code", None) in (502, 503):  # from the model gateway
-                raise ModelDown(str(exc)) from exc
+            if why := stopped(exc):  # from the model gateway
+                raise why from exc
             raise
     return text_of(result["messages"][-1])
 
@@ -169,6 +183,9 @@ def create_app(gateway_url: str) -> Any:
             return {"reply": run_agent(gateway_url, body.token, body.history)}
         except ModelDown as exc:
             return JSONResponse(status_code=503, content={"error": "model_unavailable",
+                                                          "detail": str(exc)[:200]})
+        except BudgetSpent as exc:
+            return JSONResponse(status_code=429, content={"error": "budget_spent",
                                                           "detail": str(exc)[:200]})
 
     return app

@@ -1,6 +1,6 @@
 # Phase 1
 
-**Status:** Steps 1 and 2 under way, steps 3 and 4 built ([progress](#progress)) · **Under:** [Architecture](architecture.md)
+**Status:** Steps 1, 2 and 5 under way, steps 3 and 4 built ([progress](#progress)) · **Under:** [Architecture](architecture.md)
 
 Phase 1 builds the smallest a5s that's useful: the trusted core, conversations, and two reference agents of a5s's own, at levels 0 and 1. They're proven against a5s's sample scenario, and used first by the team that builds a5s. In phase 1, agents read, report, draft and remind. None of them changes data. Which real scenario comes first is a separate decision [TBC].
 
@@ -108,6 +108,12 @@ Step 4, the reference agents, is built:
 | Approval cards, for the people who approve these agents. A version of the settings can be proposed to the instance approvers, rather than signed with their keys. Each gets a card in Teams, or a link in Matrix, the web chat or on the command line, saying what the version changes in words code works out, and which changes widen what agents do. The card only opens the core's own page, where they decide, apart from the conversation. There they sign in afresh at the identity provider, with a nonce that commits to approving that version, so the provider's signature covers the decision, and each sign-in approves once. The core seals each approval it has checked with a key only it holds, so the approval outlasts the provider's keys and editing the database approves nothing. It checks the seal again at every run, as it checks signatures made with keys, and applies the version once an instance approver has approved it. Releases are still signed with keys, offline. | [`core/approvals.py`](../src/a5s/core/approvals.py), [`core/webchat/approve.js`](../src/a5s/core/webchat/approve.js) |
 
 Approval cards reach Teams through the fake Bot Framework until a5s's bots are registered in your tenant, as the rest of Teams does (step 1). The smoke test approves new settings with a real sign-in at Keycloak, from a request in a Matrix chat.
+
+Step 5, running it properly, has started:
+
+| Built | Where |
+| --- | --- |
+| Budgets at the model gateway. Each release sets how many tokens, as the providers count them, one run may use, and how many an instance may use for each person each day, in their own time zone. A fifth of each person's day is kept for chases and reminders: other work, such as answers and reports, stops short of it. Crossing four fifths is recorded as a warning. The core checks before it opens a run and before each model call. Once a budget is spent, the work waits, a report for the next day, and someone asking is told so in a5s's own words, with who to ask. | [`core/budgets.py`](../src/a5s/core/budgets.py) |
 
 Still to do in step 1:
 

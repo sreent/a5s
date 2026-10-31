@@ -91,6 +91,7 @@ class FakeModel:
     requests: list[dict] = field(default_factory=list)
     on_request: Callable[[int], None] | None = None
     reports: str | None = None  # the model it says answered, if not the one asked for; "" for none
+    tokens: int = 15  # what it says each call took
 
     def reply(self, content: str | None = None, *tools: tuple[str, dict]) -> None:
         self.script.append((content, list(tools)))
@@ -113,7 +114,8 @@ class FakeModel:
             "id": "chatcmpl-test", "object": "chat.completion", "created": 0, **reported,
             "choices": [{"index": 0, "message": message,
                          "finish_reason": "tool_calls" if tools else "stop"}],
-            "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+            "usage": {"prompt_tokens": self.tokens - 5, "completion_tokens": 5,
+                      "total_tokens": self.tokens},
         })
 
     def tool_names(self, request: int = 0) -> set[str]:

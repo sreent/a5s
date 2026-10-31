@@ -96,6 +96,16 @@ class Context(BaseModel):
     recall: bool = False
 
 
+class Budget(BaseModel):
+    """How much model work an instance may do, in tokens as the providers count them: in one
+    run, and for each person it acts for, each day (core/budgets.py)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    per_run: int = Field(200_000, ge=1000)
+    per_person_per_day: int = Field(1_000_000, ge=1000)
+
+
 class Definition(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -117,7 +127,7 @@ class Definition(BaseModel):
     preferences: list[str] = []
     channels: list[str] = ["teams"]
     context: Context = Context()
-    budget: dict[str, Any] = {}
+    budget: Budget = Budget()
 
     # Filled in from the folder, not from agent.yaml.
     instructions: str = ""

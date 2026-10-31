@@ -24,6 +24,6 @@ channels: [teams]
 context:
   budget_tokens: 30000
   recall: true                   # it searches its conversation with the person it acts for
-budget:
-  per_run: "[TBC]"
-  per_person_per_day: "[TBC]"
+budget:                          # in tokens, as the providers count them [TBC: from current volumes]
+  per_run: 100000
+  per_person_per_day: 300000       # a fifth of it kept for chases and reminders

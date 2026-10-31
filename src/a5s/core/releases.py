@@ -94,7 +94,7 @@ def _agent(folder: Path) -> dict:
             "triggers": d.triggers, "schedules": [s.model_dump() for s in d.schedules],
             "reports": [r.model_dump() for r in d.reports],
             "obligations": sorted(d.obligations), "autonomy": d.autonomy.model_dump(),
-            "channels": sorted(d.channels), "budget": d.budget, "context": d.context.model_dump(),
+            "channels": sorted(d.channels), "budget": d.budget.model_dump(), "context": d.context.model_dump(),
             "scope": d.scope, "reminders": d.reminders, "preferences": sorted(d.preferences),
         },
     }

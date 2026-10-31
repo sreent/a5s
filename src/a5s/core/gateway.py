@@ -45,6 +45,7 @@ from a5s.contract import (
 )
 from a5s.core import (
     approvals,
+    budgets,
     chats,
     coretools,
     digests,
@@ -609,7 +610,7 @@ def values_of(traced: list[dict]) -> dict:
 def load_run(conn: psycopg.Connection, token: str) -> dict:
     row = conn.execute(
         """
-        select r.id::text as run, r.acts_for, r.read_outside, r.trigger, i.*
+        select r.id::text as run, r.acts_for, r.read_outside, r.trigger, r.tokens, i.*
         from runs r join instances i on i.id = r.instance_id
         where r.token_hash = %s and r.closed_at is null and r.expires_at > now()
         """,
@@ -705,6 +706,11 @@ def create_app(gw: Gateway) -> FastAPI:
             if any(p not in inst["serves"] for p in opening.acts_for):
                 reasons.append(f"{body.instance} doesn't serve {', '.join(opening.acts_for)}")
             reasons += gw.check_instance(conn, inst) + gw.release_problems(conn)
+            release = gw.definitions.get(inst["definition"])
+            spent = None if reasons or release is None else budgets.refused(
+                conn, gw.scenario, release.budget, body.instance, opening.acts_for, kind, 0, now)
+            if spent:  # the work waits: a report for the next day, a chase for the next sweep
+                reasons.append(spent)
             if kind == "report" and opening.due and not opening.used:  # once a day, run or not
                 report = opening.trigger["report"]
                 if not reports.fire(conn, body.instance, report["person"], report["source"],
@@ -746,11 +752,10 @@ def create_app(gw: Gateway) -> FastAPI:
         if reasons:
             raise HTTPException(409, {"reasons": reasons, "status": inst["status"],
                                       "owner": inst["owner"], "suspended_by": inst["suspended_by"],
-                                      "answered": opening.used})
-        definition = gw.definitions.get(inst["definition"])
+                                      "answered": opening.used, "out_of_budget": bool(spent)})
         return {"run": run_id, "token": token, "task": opening.task,
                 "topic": opening.trigger.get("topic", topics.GENERAL),
-                "history_chars": CHARS_PER_TOKEN * (definition.context.budget_tokens if definition
+                "history_chars": CHARS_PER_TOKEN * (release.context.budget_tokens if release
                                                     else Context().budget_tokens)}
 
     @app.post("/runs/sweep", dependencies=[Depends(service)])
@@ -1419,8 +1424,14 @@ def create_app(gw: Gateway) -> FastAPI:
         forwarded, dropped, refusal = models.screen(api, body)
         with db.transaction(gw.url) as conn:
             row = load_run(conn, token)
+            release = gw.definitions.get(row["definition"])
+            spent = None if release is None else budgets.refused(
+                conn, gw.scenario, release.budget, row["id"], list(row["acts_for"]),
+                row["trigger"].get("kind"), row["tokens"], gw.clock())
             if refusal:
                 decision = Decision(False, ("agents-use-their-own-tools",), explanations=(refusal,))
+            elif spent:
+                decision = Decision(False, ("budgets",), explanations=(spent,))
             else:
                 decision = gw.decide(row, "call_model", approved, [])
             seq = ledger.append(conn, gw.entry(row, "model", alias, decision, args={
@@ -1432,6 +1443,9 @@ def create_app(gw: Gateway) -> FastAPI:
                            if k not in ("model", "messages", "system", "tools")},
                 "left_out": dropped,
             }, provider=model.provider if model else None))
+        if spent:
+            return JSONResponse(status_code=429, content=models.error_body(
+                api, f"out of budget: {spent}", "budget_spent"))
         if not decision.allowed:
             return JSONResponse(status_code=403, content=models.error_body(
                 api, "denied by policy: " + "; ".join(decision.explanations)))
@@ -1449,6 +1463,21 @@ def create_app(gw: Gateway) -> FastAPI:
                            "decision": "record", "of": seq,
                            "outcome": {"status": status, "reported_model": reported,
                                        "usage": data.get("usage") if isinstance(data, dict) else None}})
+        tokens = budgets.tokens_of(data.get("usage")) if isinstance(data, dict) else 0
+        if tokens and release is not None:
+            try:
+                with db.transaction(gw.url) as conn:
+                    if warning := budgets.spent(conn, gw.scenario, release.budget, row, tokens,
+                                                gw.clock()):
+                        log.warning("%s has used %s of its %s tokens for %s today", row["id"],
+                                    warning["used"], warning["budget"], warning["person"])
+                        ledger.append(conn, {
+                            "kind": "budget", "action": "warn", "run": row["run"],
+                            "instance": row["id"], "acts_for": [warning["person"]],
+                            "decision": "record", "args": {"used": warning["used"],
+                                                           "budget": warning["budget"]}})
+            except psycopg.Error:
+                log.exception("couldn't count %s tokens for run %s", tokens, row["run"])
         return JSONResponse(status_code=status, content=data,
                             headers=None if recorded else {"x-a5s-recorded": "false"})
 

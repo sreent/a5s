@@ -35,7 +35,7 @@ from a5s import db
 from a5s.config import Config
 from a5s.contract import INSTANCE_APPROVER, Scenario
 from a5s.services import context, summaries
-from a5s.worker import ModelDown, run_agent
+from a5s.worker import BudgetSpent, ModelDown, run_agent
 
 log = logging.getLogger(__name__)
 Worker = Callable[[str, str, list[dict]], str]
@@ -59,6 +59,8 @@ def remote_worker(url: str) -> Worker:
         response = httpx.post(f"{url}/work", json={"token": token, "history": history}, timeout=600)
         if response.status_code == 503 and response.json().get("error") == "model_unavailable":
             raise ModelDown(response.json().get("detail", ""))
+        if response.status_code == 429 and response.json().get("error") == "budget_spent":
+            raise BudgetSpent(response.json().get("detail", ""))
         response.raise_for_status()
         return response.json()["reply"]
 
@@ -247,6 +249,8 @@ class Scheduler:
 
     def _why_not(self, agent: str, inst: dict, detail: dict, asker: str) -> str:
         status, by = detail.get("status", "active"), detail.get("suspended_by")
+        if detail.get("out_of_budget"):
+            return self._spent(agent, inst, asker)
         if status == "suspended" and by == asker:
             return f"The {agent} is suspended, because you suspended it. Resume it to carry on."
         if status == "suspended" and (suspender := self.scenario.person(by) if by else None):
@@ -255,6 +259,10 @@ class Scheduler:
         if status != "active":
             return f"The {agent} is {status}, so it can't help. Ask {self._ask(inst, asker)}."
         return f"The {agent} can't help you at the moment. Ask {self._ask(inst, asker)}."
+
+    def _spent(self, agent: str, inst: dict, asker: str) -> str:
+        return (f"The {agent} has used its budget for you today, so it can't help with that until "
+                f"tomorrow. Ask {self._ask(inst, asker)} if it can't wait.")
 
     def _run(self, claim: dict, inst: dict, opened: dict) -> None:
         person, agent, inbound = claim["person"], claim["agent"], claim["id"]
@@ -287,6 +295,13 @@ class Scheduler:
             outcome = "model unavailable"
             self._tell(inbound, told := "The model I use isn't answering right now, so I couldn't "
                                         "finish that. Try again in a few minutes.", inst["id"])
+            self._turn(claim, told, run, topic)
+        except BudgetSpent as exc:
+            outcome = "budget spent"
+            told = self._spent(agent, inst, person) if "today" in str(exc) else (
+                "That took more work than one run may do, so I stopped. Try asking for less at "
+                f"once, or ask {self._ask(inst, person)}.")
+            self._tell(inbound, told, inst["id"])
             self._turn(claim, told, run, topic)
         except Exception:
             log.exception("run %s failed", run)
@@ -335,6 +350,8 @@ class Scheduler:
                 outcome = "done"
         except ModelDown:
             outcome = "model unavailable"
+        except BudgetSpent:  # the turns wait to be folded in, with the next day's budget
+            outcome = "budget spent"
         except Exception:
             log.exception("summary run %s failed", run)
         finally:
@@ -393,6 +410,8 @@ class Scheduler:
         except ModelDown:
             log.warning("the model for run %s isn't answering", run)
             outcome = "model unavailable"
+        except BudgetSpent:  # it waits, for the next day's budget
+            outcome = "budget spent"
         except Exception:
             log.exception("run %s failed", run)
         finally:

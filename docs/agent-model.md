@@ -115,13 +115,14 @@ triggers:
 obligations: [records]           # it reminds its people of what falls due in the records
 schedules: []                    # none: what it does, it does for someone
 reminders: true                  # it offers reminders, and keeps those people confirm
-preferences: [digest-time, channel]
+preferences: [digest-time, channel, how-i-work]
 channels: [teams]
 context:
   budget_tokens: 50000           # split by part, tested at release
-budget:
-  per_run: "[TBC]"
-  per_person_per_day: "[TBC]"
+  recall: true                   # it searches its conversation with the person it acts for
+budget:                          # in tokens, as the providers count them [TBC: from current volumes]
+  per_run: 200000
+  per_person_per_day: 1000000    # a fifth of it kept for chases and reminders
 ```
 
 A schedule names its times, in the time zone of the instance's owner, its days, and the task a5s gives the agent each time, such as `{name: morning, at: "09:00", days: weekdays, task: Look through the open questions.}`. Times need quotes, because YAML reads an unquoted 9:00 as a number.
