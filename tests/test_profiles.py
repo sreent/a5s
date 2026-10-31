@@ -182,8 +182,8 @@ def test_a_run_knows_what_its_agent_offered_that_waits_for_their_yes(stack):
     assert "## What you offered them, waiting for their yes\n\nYou offered these in an earlier message." in told
     assert f'- A note on how they like to work: "{NOTE}". If they say yes to it, keep it with ' \
            "confirm_note." in told
-    assert "- A reminder on Mon 2 Nov at 09:00: call Northwind. If they say yes to it, set it " \
-           "with confirm_reminder." in told
+    assert "a reminder on Mon 2 Nov at 09:00: call Northwind. If they say yes to it, set it " \
+           "with confirm_reminder, naming R-" in told
     stack.model.reply("Hello, Ben.")
     stack.say("Hello", person="ben")
     assert "waiting for their yes" not in system_prompt(stack)  # hers, not his

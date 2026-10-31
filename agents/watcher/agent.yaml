@@ -19,7 +19,7 @@ schedules: []                    # none: it reports to each person, in their own
 reports:
   - source: records              # each person's records: what changed, and what fell due
 reminders: false
-preferences: [digest-time, channel]
+preferences: [digest-time]
 channels: [teams]
 context:
   budget_tokens: 30000

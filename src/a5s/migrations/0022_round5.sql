@@ -36,3 +36,8 @@ create table if not exists digest_waits (
 );
 alter table digest_waits owner to a5s_owner;
 grant select, insert, delete on digest_waits to a5s_gateway;
+
+-- What a5s writes in its own words in an agent's chat, such as an escalation, goes in the
+-- conversation too, so the agent's next run knows what the person is answering.
+grant insert on turns to a5s_gateway;
+grant usage on sequence turns_id_seq to a5s_gateway;

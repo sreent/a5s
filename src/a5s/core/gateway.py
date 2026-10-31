@@ -940,6 +940,7 @@ def create_app(gw: Gateway) -> FastAPI:
                                  "decision": "record", "args": {
                                      "reminder": row["id"], "instead": why, "chars": len(text),
                                      "sha256": hashlib.sha256(text.encode()).hexdigest()}})
+            noted(conn, person.id, row["agent"], text, row["record"])
             if row["in_digest"]:  # a reminder for a day goes in their digest
                 digests.keep(conn, person.id, None, row["instance_id"], None, text, now)
                 return []
@@ -961,6 +962,7 @@ def create_app(gw: Gateway) -> FastAPI:
                                      "obligation": row["id"], "record": row["record"],
                                      "instead": why, "chars": len(text),
                                      "sha256": hashlib.sha256(text.encode()).hexdigest()}})
+            noted(conn, person.id, row["agent"], text, row["record"])
             digests.keep(conn, person.id, None, row["instance_id"], None, text, now)  # as chases go
         return []
 
@@ -1013,6 +1015,7 @@ def create_app(gw: Gateway) -> FastAPI:
                 else:  # in the chat, after this transaction, or in the local channel's inbox
                     sends.append(outbound(conn, route, to.id, text, instance=row["instance_id"],
                                           agent=row["agent"]))
+                noted(conn, to.id, row["agent"], text, row["record"])
                 escalated.add(row["id"])
             due = [d for d in obligations.to_chase(rows, gw.scenario, now, able,
                                                    gw.digest_open(conn, now))
@@ -1130,6 +1133,7 @@ def create_app(gw: Gateway) -> FastAPI:
                 text = reminders.notice(row, person, status)
                 if row["in_digest"]:  # a5s's own item in their digest
                     digests.keep(conn, person.id, None, inst["id"], None, text, now)
+                    noted(conn, person.id, row["agent"], text, row["record"])
                     ledger.append(conn, {
                         "kind": "notice", "action": "remind", "run": None, "instance": inst["id"],
                         "acts_for": [person.id], "decision": "record",
@@ -1147,6 +1151,7 @@ def create_app(gw: Gateway) -> FastAPI:
                 else:  # in the chat, after this transaction, or in the local channel's inbox
                     sends.append(outbound(conn, route, person.id, text, instance=inst["id"],
                                           agent=row["agent"]))
+                noted(conn, person.id, row["agent"], text, row["record"])
         push(sends)
         return due
 
@@ -1462,6 +1467,14 @@ def create_app(gw: Gateway) -> FastAPI:
                                         "to one now, keep it with the tool named, at once, "
                                         "without asking again.\n"
                                         + "\n".join(f"- {o}" for o in offered)})
+                provenance.read(conn, row["run"], provenance.A5S, context[-1]["text"],
+                                gw.scenario.record_pattern)  # a5s told it these dates
+            if person:  # and the day each turn of the conversation was said, which it's shown
+                said = conn.execute("select distinct to_char(at at time zone 'UTC', 'YYYY-MM-DD') "
+                                    "as day from turns where person = %s and agent = %s",
+                                    (person.id, row["definition"])).fetchall()
+                provenance.read(conn, row["run"], "when things were said",
+                                " ".join(d["day"] for d in said), gw.scenario.record_pattern)
         definition = gw.definitions.get(row["definition"])
         if definition is None or definition.release_id != row["release"]:
             raise HTTPException(409, f"release {row['release']} isn't loaded in this gateway")
@@ -1696,6 +1709,15 @@ def create_app(gw: Gateway) -> FastAPI:
             (run, instance, agent, inbound, person, route["channel"], text,
              Jsonb(route) if pushed else None, Jsonb(card) if card else None)).fetchone()
         return row["id"] if pushed else None
+
+    def noted(conn: psycopg.Connection, person: str, agent: str | None, text: str,
+              topic: str | None) -> None:
+        """a5s's own words to someone, in their conversation with the agent whose chat they
+        go in, so the agent's next run knows what the person is answering."""
+        if agent:
+            conn.execute("insert into turns (person, agent, topic, role, content) "
+                         "values (%s, %s, %s, 'notice', %s)",
+                         (person, agent, topic or topics.GENERAL, text))
 
     def push(ids: list[int | None] | None = None) -> None:
         """Deliver what waits for a chat a5s writes to itself: the rows given, or every one

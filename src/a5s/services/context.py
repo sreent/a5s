@@ -48,7 +48,7 @@ def history(
     the rest of the budget, or in a case, their share of it, and the case's older turns that
     fit what's left."""
     summary = summaries.load(conn, person, agent, topic)
-    told = render(summary["body"]) if summary else ""
+    told = _told(summary, chars)
     turns = [{"role": t["role"], "content": t["content"], "at": t["at"].isoformat(),
               "topic": t["topic"]} for _, t in sorted(_kept(conn, person, agent, topic,
                                                              chars - len(told)).items())]
@@ -61,7 +61,7 @@ def dropped(conn: psycopg.Connection, *, person: str, agent: str, topic: str,
     """The topic's summary, and its turns that no run is given any more and the summary
     doesn't hold yet, oldest first: what to fold into it."""
     summary = summaries.load(conn, person, agent, topic)
-    told = render(summary["body"]) if summary else ""
+    told = _told(summary, chars)
     shown = [i for i, t in _kept(conn, person, agent, topic, chars - len(told)).items()
              if t["topic"] == topic]
     first = min(shown) if shown else None
@@ -69,6 +69,19 @@ def dropped(conn: psycopg.Connection, *, person: str, agent: str, topic: str,
         "select id, role, content, at, topic from turns where person = %s and agent = %s "
         "and topic = %s and id > %s and (%s::bigint is null or id < %s) order by id",
         (person, agent, topic, summary["through"] if summary else 0, first, first)).fetchall()
+
+
+def _told(summary: dict | None, chars: int) -> str:
+    """A topic's summary as a run is given it: a third of the run's budget at most, keeping
+    its newest facts, so it never crowds out the conversation's latest turns."""
+    if summary is None:
+        return ""
+    body = summary["body"]
+    told, facts = render(body), list(body.get("facts") or [])
+    while facts and len(told) > chars // 3:
+        facts = facts[max(1, len(facts) // 4):]  # the oldest quarter goes
+        told = render({**body, "facts": facts})
+    return told
 
 
 def _kept(conn: psycopg.Connection, person: str, agent: str, topic: str, chars: int) -> dict:

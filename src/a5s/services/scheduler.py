@@ -326,6 +326,13 @@ class Scheduler:
                                               chars=chars)
         if sum(len(t["content"]) for t in turns) < chars * context.FOLD:
             return  # not yet: they're folded in a batch, not one model call a run
+        taken, size = [], 0  # at most a run's worth at once: the rest, next time
+        for turn in turns:
+            if taken and size + len(turn["content"]) > chars:
+                break
+            taken.append(turn)
+            size += len(turn["content"])
+        turns = taken
         try:
             opened = self.gw.post("/runs", headers=self.service, json={
                 "instance": instance, "trigger": {"kind": "summary", "person": person,
@@ -344,13 +351,12 @@ class Scheduler:
         try:
             reply = self.worker(self.cfg.gateway_url, token, [asked])
             body, problems = summaries.checked(reply, previous, turns, name, self.scenario)
+            with db.transaction(self.cfg.database_url) as conn:  # folded, either way, once
+                summaries.keep(conn, person, agent, topic, body, turns[-1]["id"], run)
             if problems:
-                log.warning("kept no summary of %s for %s: %s", topic, person, "; ".join(problems))
-                outcome = "summary refused: " + "; ".join(problems)
-            else:
-                with db.transaction(self.cfg.database_url) as conn:
-                    summaries.keep(conn, person, agent, topic, body, turns[-1]["id"], run)
-                outcome = "done"
+                log.warning("kept %s's summary for %s without what code couldn't trace: %s",
+                            topic, person, "; ".join(problems))
+            outcome = "done" if not problems else "done, leaving out: " + "; ".join(problems)
         except ModelDown:
             outcome = "model unavailable"
         except BudgetSpent:  # the turns wait to be folded in, with the next day's budget

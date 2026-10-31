@@ -73,9 +73,10 @@ def offer(call: Call) -> dict:
     again = call.conn.execute(  # the same reminder, offered before: it waits for their yes,
         # or has it, such as when a model confirms it in the same breath, in parallel
         "select id, confirmed_at from reminders where person = %s and agent = %s and due_at = %s "
-        "and record is not distinct from %s and cancelled_at is null and reminded_at is null "
-        "and (confirmed_at is not null or asked_at > %s)",
-        (person.id, call.run["definition"], at, record, call.asked_at - CONFIRM_WITHIN)).fetchone()
+        "and record is not distinct from %s and about = %s and cancelled_at is null "
+        "and reminded_at is null and (confirmed_at is not null or asked_at > %s)",
+        (person.id, call.run["definition"], at, record, about,
+         call.asked_at - CONFIRM_WITHIN)).fetchone()
     if again is not None:
         return {"reminder": f"R-{again['id']}", "when": say(person, at), "about": about,
                 "record": record,
@@ -100,17 +101,20 @@ def waiting_for_yes(conn: psycopg.Connection, person: Person, agent: str) -> lis
                         "and confirmed_at is null and cancelled_at is null "
                         "and asked_at > now() - %s order by asked_at, id",
                         (person.id, agent, CONFIRM_WITHIN)).fetchall()
-    return [f"A reminder on {say(person, r['due_at'])}: {r['about']}. If they say yes to it, set "
-            "it with confirm_reminder." for r in rows]
+    return [f"R-{r['id']}, a reminder on {say(person, r['due_at'])}: {r['about']}. If they say "
+            f"yes to it, set it with confirm_reminder, naming R-{r['id']}." for r in rows]
 
 
 def confirm(call: Call) -> dict:
+    """Keep a reminder the person said yes to: the one named, or the one offered last."""
     person, asked = call.person, call.asked_at
+    named = _number(call.args["reminder"]) if call.args.get("reminder") else None
     row = call.conn.execute(  # offered in answer to an earlier message of theirs, not this one
         "select * from reminders where person = %s and agent = %s and confirmed_at is null "
         "and cancelled_at is null and offered_run <> %s and asked_at < %s and asked_at > %s "
-        "order by asked_at desc limit 1 for update",
-        (person.id, call.run["definition"], call.run["run"], asked, asked - CONFIRM_WITHIN),
+        "and (%s::bigint is null or id = %s) order by asked_at desc, id desc limit 1 for update",
+        (person.id, call.run["definition"], call.run["run"], asked, asked - CONFIRM_WITHIN,
+         named, named),
     ).fetchone()
     if row is None:
         raise Refused("no reminder is waiting for them to confirm. Offer it first, and confirm "
@@ -155,7 +159,15 @@ def waiting(call: Call) -> dict:
         (what, until, call.now, call.now, call.scenario.name, person.id, record)).fetchone()
     if row is None:
         raise Refused(f"{record} isn't one of their open records")
-    return {"record": record, "waiting on": what, "no reminders about it until": say(person, until)}
+    theirs = call.conn.execute(  # their own reminders about it still come, unless they cancel
+        "select id, due_at from reminders where person = %s and record = %s and due_at < %s "
+        "and reminded_at is null and cancelled_at is null and confirmed_at is not null "
+        "order by due_at", (person.id, record, until)).fetchall()
+    return {"record": record, "waiting on": what,
+            "a5s won't chase them about it until": say(person, until),
+            **({"their own reminders about it before then, which still come unless they ask you "
+                "to cancel them": [f"R-{r['id']} on {say(person, r['due_at'])}" for r in theirs]}
+               if theirs else {})}
 
 
 _WHEN = {"type": "string", "description": "A date, such as 2026-11-06, for the start of their "
@@ -170,23 +182,29 @@ TOOLS = {t.name: t for t in (
                  "about": {"type": "string", "description": "What to remind them of, in a sentence"},
                  "on": _WHEN,
                  "record": {"type": "string", "description": "The record it's about, if any"}}},
-             offer, text_fields=("about",)),
+             offer, text_fields=("about",), sourced=lambda result: result),
     CoreTool("confirm_reminder",
-             "Set the reminder you last offered the person, once they've said yes to it.",
-             {"type": "object", "properties": {}}, confirm),
+             "Set a reminder you offered the person, once they've said yes to it: the one they "
+             "said yes to, or, if you offered only one, that one.",
+             {"type": "object", "properties": {
+                 "reminder": {"type": "string",
+                              "description": "Such as R-12, if you offered more than one"}}},
+             confirm, sourced=lambda result: result),
     CoreTool("list_reminders", "The reminders the person has with you that haven't come yet.",
-             {"type": "object", "properties": {}}, upcoming),
+             {"type": "object", "properties": {}}, upcoming, sourced=lambda result: result),
     CoreTool("cancel_reminder", "Cancel one of the person's reminders, when they ask you to.",
              {"type": "object", "required": ["reminder"], "properties": {
-                 "reminder": {"type": "string", "description": "Such as R-12"}}}, cancel),
+                 "reminder": {"type": "string", "description": "Such as R-12"}}}, cancel,
+             sourced=lambda result: result),
     CoreTool("note_waiting",
              "Note that the person is waiting on something for one of their records, until a "
-             "date. Reminders to them about it pause until then.",
+             "date. a5s won't chase them about it until then. Reminders they asked for still "
+             "come, unless they ask you to cancel them.",
              {"type": "object", "required": ["record", "waiting_on", "until"], "properties": {
-                 "record": {"type": "string", "description": "The record's key, such as Q-1002"},
+                 "record": {"type": "string", "description": "The record's key"},
                  "waiting_on": {"type": "string", "description": "What they're waiting on"},
                  "until": _WHEN}},
-             waiting, text_fields=("waiting_on",)),
+             waiting, text_fields=("waiting_on",), sourced=lambda result: result),
 )}
 
 

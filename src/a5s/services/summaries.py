@@ -3,8 +3,8 @@
 Once a topic's turns fall out of what its runs are given (services/context.py), a5s folds
 them into the topic's summary, with a run of its own: the model says what was decided and
 promised, and what's still open, and code keeps every key, amount and date the turns had,
-with who said it and when, so none is lost. Code checks the model's part too, and keeps no
-summary that has a key, an amount or a date nobody said (core/values.py). Each later run in
+with who said it and when, so none is lost. Code checks the model's part too, and leaves out
+any sentence with a key, an amount or a date nobody said (core/values.py). Each later run in
 the topic is given the summary before the turns that still fit. The person can see it, and
 have an agent correct it in their words (core/recall.py).
 """
@@ -23,6 +23,7 @@ from a5s.core import values
 from a5s.core.topics import PARTS, render
 
 MOST = 12  # sentences in each part
+FACTS = 500  # the newest keys, amounts and dates a summary keeps
 _JSON = re.compile(r"\{.*\}", re.DOTALL)
 
 
@@ -41,31 +42,45 @@ def task(person: str, topic: str, previous: dict | None, turns: list[dict]) -> s
 
 
 def checked(reply: str, previous: dict | None, turns: list[dict], person: str,
-            scenario: Scenario) -> tuple[dict | None, list[str]]:
-    """The new summary, if the model's reply holds up, and what's wrong with it if it doesn't.
-    Code adds every key, amount and date the turns had to its facts."""
+            scenario: Scenario) -> tuple[dict, list[str]]:
+    """The new summary, and what code left out of the model's part. A sentence with a key, an
+    amount or a date nobody said, nor a5s showed as when something was said, is left out, and
+    a reply that isn't a summary leaves the summary so far as it was. Either way, code adds
+    every key, amount and date the turns had to its facts, the newest few hundred, so nothing
+    the turns held is lost, and the turns are folded once, not asked about again."""
     pattern = getattr(scenario, "record_pattern", None)
+    before = previous["body"] if previous else {}
     match = _JSON.search(reply or "")
     try:
         data = json.loads(match.group(0)) if match else None
     except json.JSONDecodeError:
         data = None
-    if not isinstance(data, dict):
-        return None, ["the model's reply isn't a summary in the form asked for"]
-    parts = {part: [" ".join(str(s).split()) for s in data.get(part) or [] if str(s).strip()][:MOST]
-             for part in PARTS if isinstance(data.get(part) or [], list)}
-    before = previous["body"] if previous else {}
-    sources = values.found("\n".join([render(before), *(t["content"] for t in turns)]), pattern)
-    said = [v for part in parts.values() for line in part for v in values.found(line, pattern)]
-    if invented := values.unmatched(said, sources):
-        return None, [f"it says {v.text}, which nobody said" for v in invented]
+    problems: list[str] = []
+    if isinstance(data, dict):
+        parts = {part: [" ".join(str(s).split()) for s in data.get(part) or []
+                        if str(s).strip()][:MOST]
+                 for part in PARTS if isinstance(data.get(part) or [], list)}
+        sources = values.found("\n".join([render(before), *(t["content"] for t in turns),
+                                          *(_when(t["at"]) for t in turns)]), pattern)
+        for part, lines in parts.items():
+            kept = []
+            for line in lines:
+                if invented := values.unmatched(values.found(line, pattern), sources):
+                    problems += [f"it says {v.text}, which nobody said" for v in invented]
+                else:
+                    kept.append(line)
+            parts[part] = kept
+    else:
+        problems.append("the model's reply isn't a summary in the form asked for")
+        parts = {part: list(before.get(part) or []) for part in PARTS}
     facts = list(before.get("facts") or [])
     for turn in turns:
         for v in values.found(turn["content"], pattern):
             if not any(f["kind"] == v.kind and f["norm"] == v.norm for f in facts):
                 facts.append({"kind": v.kind, "value": v.text, "norm": v.norm,
                               "who": _who(turn["role"], person), "when": _when(turn["at"])})
-    return {**parts, "facts": facts, "corrections": list(before.get("corrections") or [])}, []
+    return {**parts, "facts": facts[-FACTS:],
+            "corrections": list(before.get("corrections") or [])}, problems
 
 
 def keep(conn: psycopg.Connection, person: str, agent: str, topic: str, body: dict,

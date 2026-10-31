@@ -18,7 +18,7 @@ triggers:
 obligations: [records]           # it reminds its people of what falls due in the records
 schedules: []                    # none: what it does, it does for someone
 reminders: true                  # it offers reminders, and keeps those people confirm
-preferences: [digest-time, channel, how-i-work]
+preferences: [digest-time, how-i-work]
 channels: [teams]
 context:
   budget_tokens: 50000           # split by part, tested at release

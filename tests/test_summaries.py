@@ -77,22 +77,33 @@ def test_code_keeps_every_key_amount_and_date_the_model_leaves_out(stack):
     assert [f["norm"] for f in summary["body"]["facts"]] == ["Q-1002", "GBP 1240.50", "2026-11-06"]
 
 
-def test_a_summary_that_says_a_value_nobody_said_isnt_kept(stack):
+def test_a_sentence_that_says_a_value_nobody_said_is_left_out(stack):
     a_long_conversation(stack)
     stack.model.reply("Hello, Ana.")
-    stack.model.reply(folded(["Contoso's refund for Q-1002 is £1,999.00."]))
+    stack.model.reply(folded(["Contoso's refund for Q-1002 is £1,999.00.",
+                              "Ana will check Contoso's refund."]))
     stack.say("Hello")
-    assert summaries(stack) == []
+    [kept] = summaries(stack)
+    assert kept["body"]["decisions"] == ["Ana will check Contoso's refund."]  # the rest goes
+    assert {f["norm"] for f in kept["body"]["facts"]} >= {"Q-1002", "GBP 1240.50"}  # code's
     closed = [e for e in stack.ledger() if e["action"] == "close"]
-    assert closed[-1]["outcome"] == "summary refused: it says £1,999.00, which nobody said"
+    assert closed[-1]["outcome"] == "done, leaving out: it says £1,999.00, which nobody said"
 
 
-def test_a_reply_that_isnt_a_summary_isnt_kept(stack):
+def test_a_reply_that_isnt_a_summary_still_folds_codes_facts_once(stack):
     a_long_conversation(stack)
     stack.model.reply("Hello, Ana.")
     stack.model.reply("Here's a summary: they talked about refunds.")
     stack.say("Hello")
-    assert summaries(stack) == []
+    [kept] = summaries(stack)
+    assert kept["body"]["decisions"] == [] and kept["body"]["facts"]  # nothing lost or made up
+    asked = len(stack.model.requests)
+    stack.model.reply("Hello again, Ana.")
+    stack.model.reply(folded([]))  # what the first fold didn't take, if anything
+    stack.say("Hello again")
+    later = [r for r in stack.model.requests[asked:]
+             if r["body"]["messages"][0]["content"] == topics.SUMMARY]
+    assert all(OLD not in str(r["body"]["messages"]) for r in later)  # folded once, not again
 
 
 def test_nothing_is_folded_while_the_conversation_fits(stack):
