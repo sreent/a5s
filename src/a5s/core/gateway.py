@@ -443,11 +443,15 @@ class Gateway:
             elif missing := [t for t in release.tool_names if t not in tools]:
                 problems.append(f"{instance.definition} names tools the scenario doesn't have: "
                                 f"{', '.join(missing)}")
-            people = [p for p in instance.serves if not p.startswith(("team:", "role:"))]
+            groups = [p for p in instance.serves if p.startswith(("team:", "role:"))]
+            people = [p for p in instance.serves if p not in groups]
             people += [p for p in (instance.owner, instance.deputy) if p]
             if unknown := sorted({p for p in people if self.scenario.person(p) is None}):
                 problems.append(f"{instance.id} names people the directory doesn't know: "
                                 f"{', '.join(unknown)}")
+            if empty := sorted(g for g in groups if not registry.served(self.scenario, [g])):
+                problems.append(f"{instance.id} serves groups nobody in the directory is in: "
+                                f"{', '.join(empty)}")
         return problems
 
     # What each kind of run brings when it opens.
@@ -805,6 +809,11 @@ def create_app(gw: Gateway) -> FastAPI:
 
     @app.post("/runs", dependencies=[Depends(service)])
     def open_run(body: OpenRun) -> dict:
+        with traces.span("open_run", **{"a5s.instance": body.instance,
+                                        "a5s.trigger": str(body.trigger.get("kind"))}) as current:
+            return opening_run(body, current)
+
+    def opening_run(body: OpenRun, current: Any) -> dict:
         kind = body.trigger.get("kind")
         opens = {"message": gw.answering, "obligation": gw.reminding, "schedule": gw.scheduled,
                  "report": gw.reporting, "reminder": gw.following_up, "summary": gw.summarising}
@@ -872,10 +881,8 @@ def create_app(gw: Gateway) -> FastAPI:
                 "decision": "deny" if reasons else "allow", "reasons": reasons,
                 "args": {"trigger": kind, **opening.args},
             })
-        with traces.span("open_run", **{"a5s.run.id": None if reasons else run_id,
-                                        "a5s.instance": body.instance, "a5s.trigger": kind,
-                                        "a5s.decision": "deny" if reasons else "allow"}):
-            pass
+        traces.note(current, **{"a5s.run.id": None if reasons else run_id,
+                                "a5s.decision": "deny" if reasons else "allow"})
         push(pushing)
         if reasons:
             raise HTTPException(409, {"reasons": reasons, "status": inst["status"],
@@ -1509,6 +1516,12 @@ def create_app(gw: Gateway) -> FastAPI:
 
     @app.post("/run/tools/{name}")
     def call_tool(name: str, body: ToolArgs, token: str = Depends(run_token)) -> Any:
+        with traces.span(f"execute_tool {name}", **{
+                "gen_ai.operation.name": "execute_tool", "gen_ai.tool.name": name,
+                "a5s.tool.own": name in CORE_TOOLS or None}) as current:
+            return calling_tool(name, body, token, current)
+
+    def calling_tool(name: str, body: ToolArgs, token: str, current: Any) -> Any:
         core = CORE_TOOLS.get(name)
         tool = None if core else gw.scenario.tools().get(name)
         args, removed = dict(body.args), 0
@@ -1548,14 +1561,13 @@ def create_app(gw: Gateway) -> FastAPI:
                                                args=ledger.mask(args, plain),
                                                links_removed=removed,
                                                **({"values": values_of(traced)} if traced else {})))
+        traces.note(current, **{"a5s.run.id": row["run"], "a5s.instance": row["id"],
+                                "a5s.decision": decision.label})
         if not decision.allowed:
             return JSONResponse(status_code=403,
                                 content={"denied": True, **decision.as_dict(explain=True)})
         if core is not None:
-            with traces.span(f"execute_tool {name}", **{
-                    "gen_ai.operation.name": "execute_tool", "gen_ai.tool.name": name,
-                    "a5s.run.id": row["run"], "a5s.instance": row["id"], "a5s.tool.own": True}):
-                return call_core_tool(core, args, row, seq)
+            return call_core_tool(core, args, row, seq)
         try:
             with db.transaction(gw.url) as conn:  # a system gets the values handles stand for
                 given = handles.resolved_args(conn, row["run"], args)
@@ -1580,11 +1592,7 @@ def create_app(gw: Gateway) -> FastAPI:
                 log.exception("couldn't note what %s read from %s", row["run"], name)
         recorded = record({"kind": "tool", "action": name, "run": row["run"], "instance": row["id"],
                            "decision": "record", "of": seq, "outcome": outcome})
-        with traces.span(f"execute_tool {name}", **{
-                "gen_ai.operation.name": "execute_tool", "gen_ai.tool.name": name,
-                "a5s.run.id": row["run"], "a5s.instance": row["id"],
-                "error.type": "tool_error" if outcome["status"] != "ok" else None}):
-            pass
+        traces.note(current, **{"error.type": "tool_error" if outcome["status"] != "ok" else None})
         if outcome["status"] != "ok":
             return JSONResponse(status_code=502, content={"error": outcome["error"]})
         return {"result": result, "recorded": recorded}
@@ -1620,6 +1628,10 @@ def create_app(gw: Gateway) -> FastAPI:
 
     @app.post("/run/messages")
     def send_message(body: Message, token: str = Depends(run_token)) -> Any:
+        with traces.span("send_message") as current:
+            return sending_message(body, token, current)
+
+    def sending_message(body: Message, token: str, current: Any) -> Any:
         person = gw.scenario.person(body.to)
         text, removed = sanitize(body.text, gw.scenario.record_links)
         recipient = {
@@ -1663,10 +1675,9 @@ def create_app(gw: Gateway) -> FastAPI:
             elif decision.allowed:  # in the chat, after this transaction, or in the inbox
                 sending = outbound(conn, route, body.to, shown, run=row["run"], instance=row["id"],
                                    agent=row["definition"], inbound=inbound)
-        with traces.span("send_message", **{"a5s.run.id": row["run"], "a5s.instance": row["id"],
-                                            "a5s.channel": route["channel"] if route else None,
-                                            "a5s.decision": decision.label}):
-            pass
+        traces.note(current, **{"a5s.run.id": row["run"], "a5s.instance": row["id"],
+                                "a5s.channel": route["channel"] if route else None,
+                                "a5s.decision": decision.label})
         if not decision.allowed:
             return JSONResponse(status_code=403,
                                 content={"denied": True, **decision.as_dict(explain=True)})

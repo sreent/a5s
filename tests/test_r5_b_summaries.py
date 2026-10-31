@@ -47,4 +47,9 @@ def test_a_refused_summary_keeps_codes_facts_and_isnt_asked_again_on_every_run(s
         f"no summary was kept ({len(kept)}), and the turn with £1,240.50 is out of every run's "
         f"context, so the agent can't see it; a5s asked for a summary {len(asks)} times, "
         f"{asks} characters each")
-    assert len(asks) <= 1, f"a5s asked again on every run: {asks} characters each"
+    # A backlog folds a run's worth of turns at a time, so this one takes two asks; once it's
+    # folded, later runs ask nothing more
+    assert len(asks) <= 2 and max(asks) < 110_000, f"a5s asked again on every run: {asks}"
+    stack.model.reply("Yes, still here.")
+    stack.say("One more thing")
+    assert summary_asks(stack) == asks, "a5s asked again with nothing new to fold"

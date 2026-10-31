@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 # a5s's own tools: for an agent whose release records reminders (core/reminders.py), for the
@@ -90,10 +90,20 @@ class Context(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    budget_tokens: int = Field(30000, ge=1000)  # for the conversation, split by part
+    budget_tokens: int = Field(24000, ge=1000)  # for the conversation, split by part
     # whether it may search its conversation with the person it acts for, and correct its
     # summaries at their word
     recall: bool = False
+
+
+# Each model call in a run carries the whole context and, beside it, the instructions, the
+# tools, the run's records and its tool results, about BESIDE tokens. A release's budgets must
+# fit CALLS_A_RUN such calls in a run, and ANSWERS_A_DAY answers of two calls each in the part
+# of a person's day that isn't KEPT for chases and reminders, or the release is refused.
+BESIDE = 6000
+CALLS_A_RUN = 6
+ANSWERS_A_DAY = 12
+KEPT = 0.2  # of each person's day, for chases and reminders
 
 
 class Budget(BaseModel):
@@ -137,6 +147,20 @@ class Definition(BaseModel):
     @property
     def tool_names(self) -> list[str]:
         return [name for names in self.tools.values() for name in names]
+
+    @model_validator(mode="after")
+    def _budgets_fit_the_context(self) -> Definition:
+        call = self.context.budget_tokens + BESIDE
+        if self.budget.per_run < CALLS_A_RUN * call:
+            raise ValueError(f"budget.per_run must fit {CALLS_A_RUN} model calls of about "
+                             f"{call:,} tokens each, with a context of "
+                             f"{self.context.budget_tokens:,}: at least {CALLS_A_RUN * call:,}")
+        if self.budget.per_person_per_day * (1 - KEPT) < ANSWERS_A_DAY * 2 * call:
+            least = round(ANSWERS_A_DAY * 2 * call / (1 - KEPT))
+            raise ValueError(f"budget.per_person_per_day must fit {ANSWERS_A_DAY} answers of two "
+                             f"model calls, beside what's kept for chases and reminders: at "
+                             f"least {least:,}")
+        return self
 
     @property
     def grants(self) -> list[str]:

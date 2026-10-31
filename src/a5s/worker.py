@@ -32,8 +32,12 @@ class GatewayTool(StructuredTool):
 
 
 # Registered for each model a5s uses, because deepagents applies a model's
-# profile to the agent's subagents too, and an agent's own settings it doesn't.
-_PROFILE = HarnessProfile(excluded_tools=frozenset({"execute"}))  # no shell
+# profile to the agent's subagents too, and an agent's own settings it doesn't. No shell, and
+# none of the tools for files or subagents a5s's agents don't use: each model call carries
+# every tool's description, about 2,500 tokens of them. read_file stays, since Deep Agents
+# puts a tool result too large for one message in a file for the agent to read in parts.
+_PROFILE = HarnessProfile(excluded_tools=frozenset({
+    "execute", "ls", "write_file", "edit_file", "delete", "glob", "grep", "task", "write_todos"}))
 _profiles: set[str] = set()
 
 

@@ -41,3 +41,6 @@ grant select, insert, delete on digest_waits to a5s_gateway;
 -- conversation too, so the agent's next run knows what the person is answering.
 grant insert on turns to a5s_gateway;
 grant usage on sequence turns_id_seq to a5s_gateway;
+
+-- The status reads the last day's denials newest first: by this index, not the whole ledger.
+create index if not exists ledger_denied on ledger (seq) where decision = 'deny';

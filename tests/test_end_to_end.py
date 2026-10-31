@@ -102,20 +102,16 @@ def test_a_call_policy_would_deny_never_runs_and_the_agent_hears_why(stack):
     assert "at level 0 the agent only observes" in told
 
 
-def test_subagents_are_held_to_the_same_policy(stack):
-    stack.settle(level=0)  # signed by Ana, an instance approver
-    stack.model.reply(None, ("task", {"description": "Save a draft reply about Q-1001.",
-                                      "subagent_type": "general-purpose"}))
-    stack.model.reply(None, ("create_draft", {"title": "Re: Q-1001", "body": "Sorry."}))
-    stack.model.reply("I wasn't allowed to save the draft.")
-    stack.model.reply("The draft couldn't be saved.")
-
-    reply = stack.say("Draft it")
-
-    assert reply == "The draft couldn't be saved."
-    offered_to_subagent = stack.model.tool_names(1)
-    assert "create_draft" in offered_to_subagent and "execute" not in offered_to_subagent
-    assert [e["decision"] for e in tool_calls(stack, "create_draft")] == ["deny"]
+def test_agents_get_no_shell_files_or_subagents(stack):
+    """Deep Agents offers a shell, files and subagents a5s's agents don't use. Each model call
+    carries every tool's description, so they aren't offered: only read_file stays, for a tool
+    result too large for one message, which Deep Agents puts in a file."""
+    stack.model.reply("Hello.")
+    stack.say("Hello")
+    offered = stack.model.tool_names(-1)
+    assert "create_draft" in offered and "read_file" in offered
+    assert not offered & {"execute", "task", "ls", "write_file", "edit_file", "delete", "glob",
+                          "grep", "write_todos"}
 
 
 def test_whoever_suspended_it_is_told_so(stack):

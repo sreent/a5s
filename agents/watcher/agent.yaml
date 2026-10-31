@@ -22,8 +22,8 @@ reminders: false
 preferences: [digest-time]
 channels: [teams]
 context:
-  budget_tokens: 30000
+  budget_tokens: 16000           # split by part, tested at release
   recall: true                   # it searches its conversation with the person it acts for
 budget:                          # in tokens, as the providers count them [TBC: from current volumes]
-  per_run: 100000
-  per_person_per_day: 300000       # a fifth of it kept for chases and reminders
+  per_run: 150000
+  per_person_per_day: 700000       # a fifth of it kept for chases and reminders

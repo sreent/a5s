@@ -18,9 +18,8 @@ import psycopg
 
 from a5s.contract import Scenario
 from a5s.core.obligations import local
-from a5s.definitions import Budget
+from a5s.definitions import KEPT, Budget
 
-KEPT = 0.2  # of each person's day, for chases and reminders
 WARN = 0.8  # of each person's day, when a warning is recorded
 OWED = ("obligation", "reminder")  # the work that may use the share kept for it
 

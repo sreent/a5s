@@ -1,10 +1,11 @@
 """Status: how a5s is doing, for the team that runs it, from the core's own records.
 
 Over the last day: what waits in the queue, the runs and how they ended, what was denied,
-the tokens each instance used and any budget warnings, the urgent messages held for a batch
-because people had had their day's five, the instances that aren't active, and the models
-whose breakers are open. And a5s's objectives, with whether it meets them:
-how quickly people get answers, and how many chases go out before what's owed falls due.
+the tokens each instance used and any budget warnings, what a chat didn't take, the urgent
+messages held for a batch because people had had their day's five, the instances that aren't
+active, and the models whose breakers are open. And a5s's objectives, with whether it meets
+them, or None while there's nothing to measure: how quickly people get answers, and how many
+chases go out before what's owed falls due.
 `a5s status` prints it, and the gateway's /status gives it to a dashboard. What to do about
 each is in docs/runbooks.md.
 """
@@ -29,19 +30,23 @@ def report(conn: psycopg.Connection, breakers: list[str]) -> dict[str, Any]:
         "select trigger->>'kind' as kind, coalesce(outcome, 'open') as outcome, count(*) as n "
         "from runs where opened_at > now() - interval '1 day' group by 1, 2 order by 1, 2"
     ).fetchall()
-    denied = conn.execute(
+    denied = conn.execute(  # the newest denials, by the ledger's index of them
         "select kind, action, count(*) as n from ("
         "  select kind, action, entry::jsonb->>'at' as at from ledger "
         "  where decision = 'deny' order by seq desc limit 10000) recent "
         "where at::timestamptz > now() - interval '1 day' group by 1, 2 order by 3 desc, 1, 2"
     ).fetchall()
     tokens = conn.execute(
-        "select r.instance_id, sum(r.tokens) as tokens, (select count(*) from ("
-        "  select instance_id, entry::jsonb->>'at' as at from ledger where kind = 'budget' "
-        "  order by seq desc limit 1000) w where w.instance_id = r.instance_id "
-        "  and w.at::timestamptz > now() - interval '1 day') as warnings "
+        "select r.instance_id, sum(r.tokens) as tokens, (select count(*) from spend s "
+        "  where s.instance_id = r.instance_id and s.warned_at > now() - interval '1 day') "
+        "  as warnings "
         "from runs r where r.opened_at > now() - interval '1 day' and r.tokens > 0 "
         "group by 1 order by 1").fetchall()
+    deliveries = conn.execute(
+        "select count(*) filter (where delivered_at is null and channel <> 'local' "
+        "  and attempts > 0) as retrying, "
+        "count(*) filter (where channel = 'local' and problem is not null) as left_in_inbox "
+        "from outbox where at > now() - interval '1 day'").fetchone()
     held = conn.execute("select count(*) as n, count(distinct person) as people "
                         "from urgent_held where sent_at is null").fetchone()
     stopped = conn.execute(
@@ -65,6 +70,8 @@ def report(conn: psycopg.Connection, breakers: list[str]) -> dict[str, Any]:
         "denied": [dict(r) for r in denied],
         "tokens": [{"instance": r["instance_id"], "tokens": int(r["tokens"]),
                     "budget_warnings": r["warnings"]} for r in tokens],
+        "deliveries": {"retrying": deliveries["retrying"],
+                       "left_in_inbox": deliveries["left_in_inbox"]},
         "urgent_held": {"messages": held["n"], "people": held["people"]},
         "not_active": [dict(r) for r in stopped],
         "breakers_open": breakers,
@@ -72,11 +79,11 @@ def report(conn: psycopg.Connection, breakers: list[str]) -> dict[str, Any]:
             "replies": {"answered": replies["n"], "p50_seconds": _number(replies["p50"]),
                         "p90_seconds": _number(replies["p90"]),
                         "objective_seconds": OBJECTIVES["reply_seconds_p90"],
-                        "met": replies["p90"] is None
-                        or replies["p90"] <= OBJECTIVES["reply_seconds_p90"]},
+                        "met": None if replies["p90"] is None
+                        else replies["p90"] <= OBJECTIVES["reply_seconds_p90"]},
             "chases": {"due": chased["due"], "on_time": on_time,
                        "objective": OBJECTIVES["chased_on_time"],
-                       "met": on_time is None or on_time >= OBJECTIVES["chased_on_time"]},
+                       "met": None if on_time is None else on_time >= OBJECTIVES["chased_on_time"]},
         },
     }
 
@@ -99,18 +106,22 @@ def told(status: dict[str, Any]) -> str:
                          f"{o['replies']['p90_seconds']:.0f}s" if o["replies"]["answered"]
                          else "none yet")
         + f" (objective: nine in ten within {o['replies']['objective_seconds']}s"
-        + ("" if o["replies"]["met"] else ", missed") + ").",
+        + _verdict(o["replies"]["met"]) + ").",
         "  Chases before they fell due, over a week: "
         + (f"{o['chases']['on_time']:.0%} of {o['chases']['due']}" if o["chases"]["due"]
            else "nothing fell due")
-        + f" (objective: {o['chases']['objective']:.0%}" + ("" if o["chases"]["met"]
-                                                              else ", missed") + ").",
+        + f" (objective: {o['chases']['objective']:.0%}" + _verdict(o["chases"]["met"]) + ").",
         "  Denied: " + (_listed({f"{d['kind']} {d['action']}": d["n"] for d in status["denied"]})
                         or "nothing") + ".",
         "  Tokens: " + ("; ".join(f"{t['instance']} {t['tokens']:,}"
                                   + (f", {t['budget_warnings']} past four fifths"
                                      if t["budget_warnings"] else "")
                                   for t in status["tokens"]) or "none") + ".",
+        "  Deliveries a chat didn't take: " + (
+            f"{status['deliveries']['retrying']} being tried again, "
+            f"{status['deliveries']['left_in_inbox']} left in people's local inbox"
+            if status["deliveries"]["retrying"] or status["deliveries"]["left_in_inbox"]
+            else "none") + ".",
         "  Urgent messages held for a batch: " + (
             f"{status['urgent_held']['messages']} for {status['urgent_held']['people']} "
             + ("person" if status["urgent_held"]["people"] == 1 else "people")
@@ -121,6 +132,10 @@ def told(status: dict[str, Any]) -> str:
         "  Breakers open: " + (", ".join(status["breakers_open"]) or "none") + ".",
     ]
     return "\n".join(lines)
+
+
+def _verdict(met: bool | None) -> str:
+    return "" if met else ", not known yet" if met is None else ", missed"
 
 
 def _number(value: Any) -> float | None:

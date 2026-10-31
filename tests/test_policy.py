@@ -12,11 +12,12 @@ def instance(status="active", level=1, grants=("search_records", "create_draft")
     }
 
 
-def tool(name="search_records", writes=False, pinned=True):
+def tool(name="search_records", writes=False, pinned=True, destructive=False,
+         sends_outside=False):
     return {
         "uid": {"type": "Tool", "id": name},
         "attrs": {"name": name, "known": True, "pinned": pinned, "reads": True, "writes": writes,
-                  "destructive": False, "sends_outside": False},
+                  "destructive": destructive, "sends_outside": sends_outside},
         "parents": [],
     }
 
@@ -54,6 +55,16 @@ def test_a_suspended_instance_is_denied(engine):
 def test_level_0_only_observes(engine):
     d = call(engine, instance(level=0), tool("create_draft", writes=True))
     assert not d.allowed and "level-0-only-observes" in d.reasons
+
+
+@pytest.mark.parametrize("risk", [{"destructive": True}, {"sends_outside": True}])
+def test_what_cant_be_undone_or_goes_outside_needs_level_2(engine, risk):
+    """At level 1 an agent drafts and people decide: a tool that deletes, or that sends to
+    someone outside, isn't a draft, whatever the grant says."""
+    grants = ("search_records", "create_draft", "send_email")
+    d = call(engine, instance(grants=grants), tool("send_email", writes=True, **risk))
+    assert not d.allowed and "lasting-or-outside-effects-need-level-2" in d.reasons
+    assert call(engine, instance(level=2, grants=grants), tool("send_email", writes=True, **risk)).allowed
 
 
 def test_a_call_works_at_the_level_of_the_part_its_record_is_in(engine):

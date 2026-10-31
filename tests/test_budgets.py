@@ -87,3 +87,18 @@ def test_a_report_waits_for_the_next_day_when_its_budget_is_spent(stack):
     stack.model.reply("Ana, you have Q-1001, open, due 2026-11-04.")
     stack.scheduler().work_due()
     assert "Q-1001" in stack.inbox("ana")[0]["text"]
+
+
+def test_a_release_whose_budgets_dont_fit_its_context_is_refused():
+    """Each call carries the whole context, so the budgets are checked against it at release."""
+    import pytest
+    from pydantic import ValidationError
+
+    from a5s.definitions import Definition
+
+    base = {"id": "a", "release": "1", "works_for": "x", "does": "y", "model": "m"}
+    assert Definition(**base)  # the defaults fit
+    with pytest.raises(ValidationError, match="must fit 6 model calls"):
+        Definition(**base, context={"budget_tokens": 50000})
+    with pytest.raises(ValidationError, match="must fit 12 answers"):
+        Definition(**base, budget={"per_run": 400000, "per_person_per_day": 500000})

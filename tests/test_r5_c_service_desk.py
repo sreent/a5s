@@ -334,6 +334,18 @@ def test_serving_a_team_is_put_in_words_and_needs_its_approvals(desk):
     assert [p.name for p in needs] == ["Ola Nowak"]  # access's owner: the classes are the same
 
 
+def test_a_group_nobody_is_in_is_refused_before_anyone_is_asked(desk):
+    """A group's name goes into approvers' cards, so it must be one the directory has, not
+    text such as a link."""
+    wider = parse_settings(yaml.safe_dump({**SETTINGS, "serial": 2, "instances": {"desk-access": {
+        **SETTINGS["instances"]["desk-access"], "serves": ["team:evil.example", "pat"]}}}).encode())
+    with db.transaction(desk.admin) as conn:
+        last = conn.execute("select serial from settings_versions order by serial desc "
+                            "limit 1").fetchone()
+    assert desk.gateway.unusable(wider, last) == [
+        "desk-access serves groups nobody in the directory is in: team:evil.example"]
+
+
 def test_briefing_one_ticket_doesnt_read_every_ticket(desk):
     desk.model.reply(None, ("offer_reminder", {"about": "chase Rae", "on": "2026-11-02",
                                                "record": "INC0000001"}))
