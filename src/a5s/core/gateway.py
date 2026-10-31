@@ -14,6 +14,7 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+import json
 import logging
 import re
 import secrets
@@ -140,35 +141,34 @@ class Gateway:
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)  # when obligations and schedules are due
     releases: releases.Releases | None = None  # the release a5s is, which must be approved here
     breakers: Breakers = field(default_factory=Breakers)  # models not called for now (core/breakers.py)
-    _checked: dict = field(default_factory=dict)  # settings versions whose signatures checked out
 
     @property
     def url(self) -> str:
         return self.cfg.database_url
 
     def settings_in_force(self, conn: psycopg.Connection) -> tuple[Any, str | None]:
-        """The latest signed version of the settings, checked again from the bytes that were signed."""
-        row = conn.execute("select serial, version, raw, signatures from settings_versions "
-                           "where scenario = %s order by serial desc limit 1",
-                           (self.scenario.name,)).fetchone()
-        if row is None:
+        """The latest signed version of the settings, checked again from the bytes that were
+        signed, against the directory as it is now: every time, with nothing cached, so an
+        approver who loses their role, or a seal key withdrawn, counts at once."""
+        rows = conn.execute("select serial, version, raw, signatures from settings_versions "
+                            "where scenario = %s order by serial desc limit 2",
+                            (self.scenario.name,)).fetchall()
+        if not rows:
             return None, "no settings have been applied"
-        if row["version"] in self._checked:
-            return self._checked[row["version"]], None
-        signatures = tuple(Signature(s["signer"], s["value"]) for s in row["signatures"] or [])
-        settings = parse_settings(bytes(row["raw"] or b""), signatures)
-        if (settings.version, settings.serial) != (row["version"], row["serial"]):
+        try:
+            found = [(row, parse_settings(bytes(row["raw"] or b""), tuple(
+                Signature(s["signer"], s["value"]) for s in row["signatures"] or [])))
+                for row in rows]
+        except ValueError as exc:
+            return None, f"the settings in force can't be read: {exc}"
+        if any((s.version, s.serial) != (row["version"], row["serial"]) for row, s in found):
             return None, "the settings in force aren't what was signed"
+        settings, before = found[0][1], found[1][1] if len(found) > 1 else None
         approved, _ = approvals.approvers(conn, self.cfg.seal_keys, self.scenario.name,
                                           approvals.digest(settings.raw))
         valid, _ = registry.signers(settings, self.scenario.person, approved)
-        earlier = conn.execute("select raw from settings_versions where scenario = %s "
-                               "and serial < %s order by serial desc limit 1",
-                               (self.scenario.name, row["serial"])).fetchone()
-        before = parse_settings(bytes(earlier["raw"])) if earlier and earlier["raw"] else None
         if needs := registry.missing(settings, self.scenario.person, valid, before):
             return None, f"the settings in force aren't approved: {needs[0]}"
-        self._checked[row["version"]] = settings
         return settings, None
 
     def check_instance(self, conn: psycopg.Connection, inst: dict) -> list[str]:
@@ -194,10 +194,13 @@ class Gateway:
             log.error("instance %s doesn't match its signed settings and release", inst["id"])
             return [f"{inst['id']}'s record doesn't match its signed settings and release"]
         last = conn.execute(
-            "select action from ledger where instance_id = %s and kind = 'admin' "
+            "select action, entry from ledger where instance_id = %s and kind = 'admin' "
             "and action in ('suspend', 'resume', 'retire', 'restore') order by seq desc limit 1",
             (inst["id"],)).fetchone()
-        if inst["status"] != _STATUS_AFTER.get(last["action"] if last else "", "active"):
+        expected = _STATUS_AFTER.get(last["action"] if last else "", "active")
+        if last and last["action"] == "restore":  # as it was before it was retired
+            expected = (json.loads(last["entry"]).get("args") or {}).get("status", "active")
+        if inst["status"] != expected:
             log.error("instance %s's status doesn't match the ledger", inst["id"])
             return [f"{inst['id']}'s status doesn't match the ledger"]
         return []
@@ -362,7 +365,9 @@ class Gateway:
         return None
 
     def unusable(self, settings: Settings, last: dict | None) -> list[str]:
-        """Why a version of the settings couldn't be applied, before anyone's asked to approve it."""
+        """Why a version of the settings couldn't be applied, before anyone's asked to approve
+        it: an old serial, a release or tools this deployment doesn't have, or people the
+        directory doesn't know."""
         problems = []
         if last and settings.serial <= last["serial"]:
             problems.append(f"serial {settings.serial} isn't above {last['serial']}, the version "
@@ -375,6 +380,11 @@ class Gateway:
             elif missing := [t for t in release.tool_names if t not in tools]:
                 problems.append(f"{instance.definition} names tools the scenario doesn't have: "
                                 f"{', '.join(missing)}")
+            people = [p for p in instance.serves if ":" not in p]  # teams and roles aside
+            people += [p for p in (instance.owner, instance.deputy) if p]
+            if unknown := sorted({p for p in people if self.scenario.person(p) is None}):
+                problems.append(f"{instance.id} names people the directory doesn't know: "
+                                f"{', '.join(unknown)}")
         return problems
 
     # What each kind of run brings when it opens.
@@ -596,12 +606,15 @@ class Gateway:
         )
 
     def unseen(self, conn: psycopg.Connection, alias: str) -> set[str]:
-        """The fields of a class the instance's model isn't approved for, which it never sees."""
-        settings, _ = self.settings_in_force(conn)
+        """The fields of a class the instance's model isn't approved for, which it never sees.
+        If the settings in force don't check out, nothing a5s could hand over is safe: it
+        raises, and the call fails closed."""
+        settings, problem = self.settings_in_force(conn)
+        if settings is None:
+            raise RuntimeError(f"the settings in force don't check out: {problem}")
         model = self.models.get(alias)
-        if settings is None or model is None:
-            return set()
-        return {f for f, cls in settings.classified.items() if cls not in model.data_classes}
+        classes = model.data_classes if model else ()
+        return {f for f, cls in settings.classified.items() if cls not in classes}
 
     def entry(self, row: dict, kind: str, action: str, decision: Decision, **fields: Any) -> dict:
         return {
@@ -1153,42 +1166,65 @@ def create_app(gw: Gateway) -> FastAPI:
 
     def requested(conn: psycopg.Connection) -> list[tuple[dict, str, dict]]:
         """Propose the versions people asked for in the settings app, once each, if they still
-        approve instances. What to send their approvers once the transaction is done."""
-        sends = []
+        approve instances. What to send their approvers once the transaction is done. Each
+        request is worked on alone, so one a5s can't use is refused, and holds up nothing."""
+        sends, problem = [], gw.approving()
         for req in conn.execute("select * from settings_requests where scenario = %s "
                                 "and outcome is null order by id for update",
                                 (gw.scenario.name,)).fetchall():
-            person, digest = gw.scenario.person(req["person"]), None
-            if person is None or not registry.approves(person):
-                outcome = "refused: they don't approve instances"
-            else:
-                try:
-                    settings = parse_settings(bytes(req["raw"]))
-                except (ValueError, yaml.YAMLError, KeyError, TypeError, AttributeError):
-                    outcome = "refused: it isn't a version of the settings"
-                else:
-                    done = proposing(conn, settings, by=person.id)
-                    outcome = ("refused: " + "; ".join(done["refused"])) if done["refused"] \
-                        else "proposed"
-                    if not done["refused"]:
-                        digest = done["row"]["digest"]
-                        sends += [(route, text, done["card"]) for route, text in done["sends"]]
+            digest = None
+            try:
+                with conn.transaction():  # a savepoint
+                    person = gw.scenario.person(req["person"])
+                    if problem:  # such as no seal key here, though the channels have one
+                        outcome = f"refused: {problem}"
+                    elif person is None or not registry.approves(person):
+                        outcome = "refused: they don't approve instances"
+                    else:
+                        done = proposing(conn, parse_settings(bytes(req["raw"])), by=person.id)
+                        outcome = ("refused: " + "; ".join(done["refused"])) if done["refused"] \
+                            else "proposed"
+                        if not done["refused"]:
+                            digest = done["row"]["digest"]
+                            sends += [(route, text, done["card"]) for route, text in done["sends"]]
+            except ValueError as exc:
+                outcome = f"refused: {exc}"[:500]
+            except Exception as exc:  # recorded on the request, and logged
+                log.exception("couldn't work on settings request %s", req["id"])
+                outcome = f"refused: a5s couldn't work on it ({type(exc).__name__})"
             conn.execute("update settings_requests set outcome = %s, digest = %s, decided_at = now() "
                          "where id = %s", (outcome, digest, req["id"]))
         return sends
+
+    def applying(conn: psycopg.Connection, row: dict, last: dict | None) -> tuple[str | None, list]:
+        """Apply a proposed version once everyone it needs has approved it: what became of it,
+        or None while it waits, and who approved it."""
+        approved, _ = approvals.approvers(conn, gw.cfg.seal_keys, gw.scenario.name, row["digest"])
+        settings = parse_settings(bytes(row["raw"]))
+        valid, _ = registry.signers(settings, gw.scenario.person, approved)
+        before = parse_settings(bytes(last["raw"])) if last and last.get("raw") else None
+        if registry.missing(settings, gw.scenario.person, valid, before):
+            return None, approved  # it waits for the rest of the approvers it needs
+        if refused := gw.unusable(settings, last):  # such as a release gone since
+            ledger.append(conn, {"kind": "admin", "action": "apply", "decision": "deny",
+                                 "reasons": refused, "args": {"settings": settings.version,
+                                                              "serial": settings.serial}})
+        else:
+            refused = registry.apply(conn, gw.definitions, settings, gw.scenario.tools(),
+                                     gw.scenario.person, gw.scenario.name, approved).refused
+        return ("refused: " + "; ".join(refused)) if refused else "applied", approved
 
     @app.post("/settings/sweep", dependencies=[Depends(service)])
     def sweep_settings() -> dict:
         """Propose the versions people asked for in the settings app. Apply the newest version
         that everyone it needs has approved where they work, and let go of the versions it
-        leaves behind."""
-        applied, sends = [], []
+        leaves behind. Each version is worked on alone: one a5s can't use holds up no other."""
+        applied = []
         with db.transaction(gw.url) as conn:
             if not conn.execute("select pg_try_advisory_xact_lock(hashtext('a5s settings')) as got"
                                 ).fetchone()["got"]:
                 return {"applied": []}  # another sweep is at work
-            if not gw.approving():  # approving where people work is set up here
-                sends = requested(conn)
+            sends = requested(conn)
             last = approvals.latest(conn, gw.scenario.name)
             for row in conn.execute("select * from settings_proposals where scenario = %s "
                                     "and outcome is null order by serial desc",
@@ -1196,25 +1232,18 @@ def create_app(gw: Gateway) -> FastAPI:
                 if last and row["serial"] <= last["serial"]:
                     outcome = "superseded"
                 else:
-                    approved, _ = approvals.approvers(conn, gw.cfg.seal_keys, gw.scenario.name,
-                                                      row["digest"])
-                    settings = parse_settings(bytes(row["raw"]))
-                    valid, _ = registry.signers(settings, gw.scenario.person, approved)
-                    before = parse_settings(bytes(last["raw"])) if last and last.get("raw") else None
-                    if registry.missing(settings, gw.scenario.person, valid, before):
-                        continue  # it waits for the rest of the approvers it needs
-                    if refused := gw.unusable(settings, last):  # such as a release gone since
-                        ledger.append(conn, {"kind": "admin", "action": "apply", "decision": "deny",
-                                             "reasons": refused, "args": {
-                                                 "settings": settings.version,
-                                                 "serial": settings.serial}})
-                    else:
-                        result = registry.apply(conn, gw.definitions, settings, gw.scenario.tools(),
-                                                gw.scenario.person, gw.scenario.name, approved)
-                        refused = result.refused
-                    outcome = ("refused: " + "; ".join(refused)) if refused else "applied"
-                    if not refused:
-                        last = {"serial": row["serial"]}
+                    try:
+                        with conn.transaction():  # a savepoint
+                            outcome, approved = applying(conn, row, last)
+                    except ValueError as exc:
+                        outcome = f"refused: {exc}"[:500]
+                    except Exception as exc:  # recorded on the proposal, and logged
+                        log.exception("couldn't apply settings %s", row["digest"])
+                        outcome = f"refused: a5s couldn't apply it ({type(exc).__name__})"
+                    if outcome is None:
+                        continue
+                    if outcome == "applied":
+                        last = approvals.latest(conn, gw.scenario.name)
                         applied.append({"serial": row["serial"], "approved_by": approved})
                 conn.execute("update settings_proposals set outcome = %s, decided_at = now() "
                              "where scenario = %s and digest = %s",
@@ -1351,6 +1380,9 @@ def create_app(gw: Gateway) -> FastAPI:
             records = [args[arg]] if arg and isinstance(args.get(arg), str) and args[arg] else []
             decision = gw.decide(row, "call_tool", entity, [],
                                  **parts.about(gw.scenario, row, records))
+            if (found := gw.settings_in_force(conn))[0] is None:  # fail closed
+                decision = Decision(False, ("settings-must-check-out",), explanations=(
+                    f"a5s can't use the settings in force: {found[1]}",))
             if row["trigger"].get("kind") in OWN_RUNS:
                 decision = Decision(False, ("a5s-runs-call-no-tools",), explanations=(
                     "a5s's own runs, such as keeping a summary, call no tools",))
@@ -1585,10 +1617,12 @@ def create_app(gw: Gateway) -> FastAPI:
                 decision = Decision(False, ("agents-use-their-own-tools",), explanations=(refusal,))
             elif spent:
                 decision = Decision(False, ("budgets",), explanations=(spent,))
+            elif (found := gw.settings_in_force(conn))[0] is None:
+                decision = Decision(False, ("settings-must-check-out",), explanations=(
+                    f"a5s can't use the settings in force: {found[1]}",))
             else:
-                settings, _ = gw.settings_in_force(conn)
                 decision = gw.decide(row, "call_model", approved, [],
-                                     data_class=settings.data_class if settings else "internal")
+                                     data_class=found[0].data_class)
             seq = ledger.append(conn, gw.entry(row, "model", alias, decision, args={
                 "prompt_sha256": ledger.digest(prompt),
                 "messages": len(body.get("messages") or []),

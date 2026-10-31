@@ -85,7 +85,8 @@ def test_an_approver_is_asked_where_they_work_and_what_they_approve_is_applied(s
         "waiting", "Ana Ortiz", False, now)
     assert seen["changes"] == asked["changes"] and seen["approved_by"] == []
     approved = decide(approving, asked["digest"], token, salt)
-    assert approved.json() == {"approved": True, "serial": now + 1, "by": "Ana Ortiz"}
+    assert approved.json() == {"approved": True, "serial": now + 1, "by": "Ana Ortiz",
+                               "needs": []}
     assert provider.asked[-1]["max_age"] == "0"  # she signed in afresh for it
 
     assert "chen" not in serves(stack)  # not until the gateway applies it
@@ -169,7 +170,6 @@ def test_editing_the_database_approves_nothing(stack, approving, provider):
     assert serves(stack) == CHEN_TOO
     with db.transaction(stack.admin) as conn:  # her approval, moved to someone else
         conn.execute("update settings_approvals set subject = 'u-someone-else'")
-    stack.gateway._checked.clear()  # as a gateway that has just started
     with stack.client() as c:
         refused = c.post("/runs", json={"instance": "assistant-finance", "trigger": {
             "kind": "message", "inbound": stack.send("Hello", "chen")}})
@@ -185,7 +185,6 @@ def test_an_approval_outlasts_the_providers_keys_but_not_the_cores(stack, approv
 
     def in_force(*keys: str) -> tuple:
         stack.gateway.cfg = replace(stack.gateway.cfg, seal_keys=keys)
-        stack.gateway._checked.clear()  # as a gateway that has just started
         with db.transaction(stack.cfg.database_url) as conn:
             settings, problem = stack.gateway.settings_in_force(conn)
         return settings and settings.serial, problem

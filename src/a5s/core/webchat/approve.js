@@ -106,7 +106,7 @@ function show(version, signed) {
   if (version.status !== "waiting") {
     status(STANDING[version.status] || `a5s couldn't apply it: ${version.status.replace(/^refused: /, "")}`);
   } else if (version.you_approved) {
-    status("You've approved it. a5s puts it in force within a minute.");
+    status(version.needs.length ? `You've approved it. It goes in force once nothing more is missing: ${version.needs.join("; ")}.` : "You've approved it. a5s puts it in force within a minute, as it needs nothing more.");
   } else {
     $("approve").hidden = false;
     $("approve").addEventListener("click", async () => {
@@ -116,7 +116,7 @@ function show(version, signed) {
         const done = await ask(`/approve/settings/${signed.version}`, signed);
         signed.token = null;  // it's done its one job
         $("approve").hidden = true;
-        status(`You approved serial ${done.serial}. a5s puts it in force within a minute.`);
+        status(done.needs.length ? `You approved serial ${done.serial}. It goes in force once nothing more is missing: ${done.needs.join("; ")}.` : `You approved serial ${done.serial}. a5s puts it in force within a minute, as it needs nothing more.`);
       } catch (error) {
         status(error.message);
         $("approve").disabled = false;

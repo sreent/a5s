@@ -12,9 +12,10 @@ import hashlib
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Protocol
+from typing import Annotated, Any, Protocol
 
 import yaml
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, StringConstraints, ValidationError
 
 from a5s.core.ledger import canonical
 
@@ -170,34 +171,87 @@ class Settings:
     classified: dict[str, str] = field(default_factory=dict)
 
 
+class SettingsError(ValueError):
+    """Why bytes aren't a version of the settings a5s can use."""
+
+
+_ID = Annotated[str, StringConstraints(strict=True, pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")]
+_PERSON = Annotated[str, StringConstraints(strict=True,
+                                           pattern=r"^[A-Za-z0-9][A-Za-z0-9._@-]{0,127}$")]
+# Whom an instance serves: a person, or everyone in a team or holding a role, as the directory
+# says when each run opens, such as team:sales or role:part-owner:billing
+_WHO = Annotated[str, StringConstraints(
+    strict=True, pattern=r"^(?:(?:team|role):)?[A-Za-z0-9][A-Za-z0-9._@:-]{0,127}$")]
+_FIELD = Annotated[str, StringConstraints(strict=True, pattern=r"^[A-Za-z][A-Za-z0-9 _-]{0,62}$")]
+_LEVEL = Annotated[StrictInt, Field(ge=0, le=2)]
+
+
+class _Instance(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    definition: _ID
+    serves: list[_WHO]
+    level: _LEVEL | None = None
+    owner: _PERSON | None = None
+    deputy: _PERSON | None = None
+    parts: list[_ID] | dict[_ID, _LEVEL | None] = Field(default_factory=list)
+
+
+class _Version(BaseModel):
+    """a5s's own settings format, checked strictly: names are plain words, levels are whole
+    numbers from 0 to 2, and nothing else may be there."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    serial: Annotated[StrictInt, Field(ge=0)] = 0
+    data_class: _ID = "internal"
+    classified: dict[_FIELD, _ID] = Field(default_factory=dict)
+    instances: dict[_ID, _Instance] = Field(default_factory=dict)
+
+
+def _plain_yaml(raw: bytes) -> Any:
+    """YAML without anchors or aliases, which can make a few bytes into gigabytes."""
+    try:
+        for event in yaml.parse(raw, Loader=yaml.SafeLoader):
+            if isinstance(event, yaml.AliasEvent) or getattr(event, "anchor", None):
+                raise SettingsError("settings may not use YAML anchors or aliases")
+        return yaml.safe_load(raw)
+    except yaml.YAMLError as exc:
+        raise SettingsError(f"it isn't YAML a5s can read: {exc}") from None
+
+
 def parse_settings(raw: bytes, signatures: tuple[Signature, ...] = ()) -> Settings:
     """A version of the settings, in a5s's own format, from exactly the bytes that were signed.
+    SettingsError, which is a ValueError, if they aren't one.
 
     The core reads the bytes it stored again at every run, so the format is a5s's,
     whichever scenario's settings they are.
     """
-    data = yaml.safe_load(raw) or {}
+    data = _plain_yaml(raw)
+    if data is None:
+        data = {}
+    if not isinstance(data, dict):
+        raise SettingsError("settings are a mapping, such as serial: and instances:")
+    try:
+        version = _Version.model_validate(data)
+    except ValidationError as exc:
+        raise SettingsError("; ".join(f"{'.'.join(str(p) for p in e['loc']) or 'settings'}: "
+                                      f"{e['msg']}" for e in exc.errors())) from None
     return Settings(
         version=hashlib.sha256(raw).hexdigest()[:16],
-        serial=int(data.get("serial", 0)),
+        serial=version.serial,
         raw=raw,
         signatures=signatures,
-        data_class=str(data.get("data_class") or "internal"),
-        classified={str(k): str(v) for k, v in (data.get("classified") or {}).items()},
+        data_class=version.data_class,
+        classified=dict(version.classified),
         instances=tuple(
-            InstanceSettings(id=iid, definition=i["definition"], serves=tuple(i["serves"]),
-                             level=i.get("level"), owner=i.get("owner"), deputy=i.get("deputy"),
-                             parts=_parts(i.get("parts")))
-            for iid, i in (data.get("instances") or {}).items()
+            InstanceSettings(id=iid, definition=i.definition, serves=tuple(i.serves),
+                             level=i.level, owner=i.owner, deputy=i.deputy,
+                             parts=(dict(i.parts) if isinstance(i.parts, dict)
+                                    else dict.fromkeys(i.parts)))
+            for iid, i in version.instances.items()
         ),
     )
-
-
-def _parts(given: Any) -> dict[str, int | None]:
-    """An instance's parts, as a list of names or with a level for each."""
-    if isinstance(given, dict):
-        return {str(p): None if v is None else int(v) for p, v in given.items()}
-    return {str(p): None for p in given or ()}
 
 
 class Scenario(Protocol):

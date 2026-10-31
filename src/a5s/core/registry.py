@@ -179,10 +179,12 @@ def apply(
             raise ValueError(f"instance {s.id}: no definition {s.definition}")
         level, parts = levels(s, definition)
         grants = definition.grants
-        was = conn.execute("select status from instances where id = %s", (s.id,)).fetchone()
-        if was and was["status"] == "retired":
+        was = conn.execute("select status, suspended_by from instances where id = %s",
+                           (s.id,)).fetchone()
+        if was and was["status"] == "retired":  # a suspension outlasts retiring, and restoring
+            back = "suspended" if was["suspended_by"] else "active"
             ledger.append(conn, {"kind": "admin", "action": "restore", "instance": s.id,
-                                 "decision": "record", "args": version})
+                                 "decision": "record", "args": {**version, "status": back}})
         conn.execute(
             """
             insert into instances
@@ -195,8 +197,9 @@ def apply(
               model = excluded.model,
               serves = excluded.serves, owner = excluded.owner, deputy = excluded.deputy,
               pins = excluded.pins, settings_version = excluded.settings_version,
-              status = case when instances.status = 'retired' then 'active'
-                            else instances.status end,
+              status = case when instances.status <> 'retired' then instances.status
+                            when instances.suspended_by is not null then 'suspended'
+                            else 'active' end,
               updated_at = now()
             """,
             (

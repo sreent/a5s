@@ -252,9 +252,11 @@ def check(verifier: Verifier, scenario: Any, client_id: str, token: str, version
         raise Refused(401, "that sign-in is for something else")
     if not 16 <= len(salt) <= 128 or claims.get("nonce") != nonce(version, salt):
         raise Refused(403, "your sign-in wasn't to approve this version")
-    if any(isinstance(claims.get(c), int | float) and now - claims[c] > FRESH
-           for c in ("iat", "auth_time")):
-        raise Refused(401, "approving needs a sign-in from the last ten minutes: sign in again")
+    if not isinstance(claims.get("auth_time"), int | float) or any(
+            not isinstance(claims.get(c), int | float) or now - claims[c] > FRESH
+            for c in ("iat", "auth_time")):  # a session's silent sign-in doesn't approve
+        raise Refused(401, "approving needs you to sign in again, from the last ten minutes, "
+                           "not a sign-in your browser kept")
     try:
         person = whose(verifier, scenario, claims)
     except UnknownPerson as exc:

@@ -174,7 +174,6 @@ def test_the_settings_in_force_are_checked_from_the_bytes_that_were_signed(stack
         conn.execute("update settings_versions set raw = "
                      "convert_to(replace(convert_from(raw, 'UTF8'), 'ben', 'chen'), 'UTF8')")
         conn.execute("update instances set serves = array_replace(serves, 'ben', 'chen')")
-    stack.gateway._checked.clear()  # as a gateway that starts after the edit would be
     assert reasons(stack) == ["the settings in force aren't what was signed"]
 
 
