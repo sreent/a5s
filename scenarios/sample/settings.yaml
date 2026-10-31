@@ -2,7 +2,13 @@
 # and how far each may act. A version counts only when an instance approver
 # signs it (`a5s sign`), and its serial must rise with every new version.
 
-serial: 3
+serial: 4
+
+# Every record here is made up, so models approved only for made-up data may see it.
+# A real scenario names its own class, such as internal, and any fields of a class of
+# their own, such as contact: personal, which only models approved for it see.
+data_class: synthetic
+classified: {}
 
 instances:
   assistant-finance:

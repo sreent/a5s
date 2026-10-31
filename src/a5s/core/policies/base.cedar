@@ -29,6 +29,11 @@ when { resource.writes && context.read_outside && principal.level >= 2 };
 permit (principal is Instance, action == Action::"call_model", resource is Model)
 when { principal.status == "active" && resource.approved && principal.model == resource.name };
 
+@id("models-see-only-data-they-are-approved-for")
+@reason("the model isn't approved for the class of data the scenario holds")
+forbid (principal is Instance, action == Action::"call_model", resource is Model)
+unless { resource.classes.contains(context.data_class) };
+
 @id("messages-go-only-to-the-audience")
 @reason("the person is in the scenario's audience")
 permit (principal is Instance, action == Action::"send_message", resource is Person)

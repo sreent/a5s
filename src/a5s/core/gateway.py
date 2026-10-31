@@ -19,7 +19,7 @@ import re
 import secrets
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -63,6 +63,7 @@ from a5s.core import (
     schedules,
     topics,
 )
+from a5s.core.breakers import FAILURES, Breakers
 from a5s.core.identity import IdentityError, UnknownPerson, Verifier, signed_in
 from a5s.core.matrix import Matrix
 from a5s.core.policy import Decision, PolicyEngine
@@ -134,6 +135,7 @@ class Gateway:
     matrix: Matrix | None = None
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)  # when obligations and schedules are due
     releases: releases.Releases | None = None  # the release a5s is, which must be approved here
+    breakers: Breakers = field(default_factory=Breakers)  # models not called for now (core/breakers.py)
     _checked: dict = field(default_factory=dict)  # settings versions whose signatures checked out
 
     @property
@@ -467,8 +469,10 @@ class Gateway:
             opening.used = True
         else:
             try:
-                news = reports.news(conn, self.scenario.name, inst["id"], person, source,
-                                    self.scenario.watched(), now)
+                unseen = self.unseen(conn, inst["model"])  # what its model never sees
+                news = reports.news(conn, self.scenario.name, inst["id"], person, source, [
+                    replace(r, fields={k: v for k, v in r.fields.items() if k not in unseen})
+                    for r in self.scenario.watched()], now)
             except Exception:  # the day's report waits until they can be read
                 log.exception("couldn't read the records for %s's report", who)
                 opening.reasons.append("the records can't be read")
@@ -558,7 +562,8 @@ class Gateway:
             "parents": [],
         }
 
-    def decide(self, row: dict, action: str, resource: dict, extra: list[dict]) -> Decision:
+    def decide(self, row: dict, action: str, resource: dict, extra: list[dict],
+               **context: Any) -> Decision:
         return self.policy.decide(
             principal={"type": "Instance", "id": row["id"]},
             action=action,
@@ -567,9 +572,18 @@ class Gateway:
                 "level": row["level"],
                 "read_outside": row["read_outside"],
                 "acts_for": list(row["acts_for"]),
+                **context,
             },
             entities=[self.instance_entity(row), resource, *extra],
         )
+
+    def unseen(self, conn: psycopg.Connection, alias: str) -> set[str]:
+        """The fields of a class the instance's model isn't approved for, which it never sees."""
+        settings, _ = self.settings_in_force(conn)
+        model = self.models.get(alias)
+        if settings is None or model is None:
+            return set()
+        return {f for f, cls in settings.classified.items() if cls not in model.data_classes}
 
     def entry(self, row: dict, kind: str, action: str, decision: Decision, **fields: Any) -> dict:
         return {
@@ -1165,7 +1179,8 @@ def create_app(gw: Gateway) -> FastAPI:
             person = gw.scenario.person(row["acts_for"][0]) if len(row["acts_for"]) == 1 else None
             context = [profiles.section(conn, person)] if person else []
             if (topic := row["trigger"].get("topic", topics.GENERAL)) != topics.GENERAL:
-                context.append(topics.brief(conn, gw.scenario, topic, person, gw.clock()))
+                context.append(topics.brief(conn, gw.scenario, topic, person, gw.clock(),
+                                            gw.unseen(conn, row["model"])))
                 provenance.read(conn, row["run"], f"the records, on {topic}", context[-1]["text"],
                                 gw.scenario.record_pattern)
             if person and (offered := [  # so a yes in their next message finds what it's to
@@ -1237,9 +1252,9 @@ def create_app(gw: Gateway) -> FastAPI:
             result = tool.run(ToolCall(args=given, instance=row["id"], run=row["run"],
                                        acts_for=tuple(row["acts_for"])))
             outcome = {"status": "ok", "result_sha256": ledger.digest(result)}
-            if tool.handles:  # and the agent gets handles for its sensitive values, never them
-                with db.transaction(gw.url) as conn:
-                    result = handles.issue(conn, row["run"], name, result, tool.handles)
+            with db.transaction(gw.url) as conn:  # the agent gets handles for sensitive values,
+                hidden = (*tool.handles, *sorted(gw.unseen(conn, row["model"])))  # and classified
+                result = handles.issue(conn, row["run"], name, result, hidden)  # ones it can't see
         except Exception as exc:  # noqa: BLE001 - the tool's own failure, recorded and reported
             result, outcome = None, {"status": "error", "error": f"{type(exc).__name__}: {exc}"[:200]}
         if outcome["status"] == "ok":
@@ -1417,7 +1432,8 @@ def create_app(gw: Gateway) -> FastAPI:
                 api, "streaming isn't supported yet", "invalid_request_error"))
         approved = {
             "uid": {"type": "Model", "id": alias},
-            "attrs": {"name": alias, "approved": bool(model and model.api == api)},
+            "attrs": {"name": alias, "approved": bool(model and model.api == api),
+                      "classes": list(model.data_classes) if model else []},
             "parents": [],
         }
         prompt = {"system": body.get("system"), "messages": body.get("messages")}
@@ -1433,7 +1449,9 @@ def create_app(gw: Gateway) -> FastAPI:
             elif spent:
                 decision = Decision(False, ("budgets",), explanations=(spent,))
             else:
-                decision = gw.decide(row, "call_model", approved, [])
+                settings, _ = gw.settings_in_force(conn)
+                decision = gw.decide(row, "call_model", approved, [],
+                                     data_class=settings.data_class if settings else "internal")
             seq = ledger.append(conn, gw.entry(row, "model", alias, decision, args={
                 "prompt_sha256": ledger.digest(prompt),
                 "messages": len(body.get("messages") or []),
@@ -1449,16 +1467,28 @@ def create_app(gw: Gateway) -> FastAPI:
         if not decision.allowed:
             return JSONResponse(status_code=403, content=models.error_body(
                 api, "denied by policy: " + "; ".join(decision.explanations)))
-        try:
-            status, data = models.forward(model, forwarded, gw.http)
-        except models.ModelUnavailable as exc:
-            status, data = 503, models.error_body(api, str(exc), "model_unavailable")
+        called = gw.breakers.allow(alias)
+        if not called:  # it failed in a row lately: it isn't called for a few minutes
+            status, data = 503, models.error_body(
+                api, f"{alias} failed {FAILURES} times in a row, so a5s isn't calling it for a few "
+                     "minutes", "model_unavailable")
+        else:
+            try:
+                status, data = models.forward(model, forwarded, gw.http)
+            except models.ModelUnavailable as exc:
+                status, data = 503, models.error_body(api, str(exc), "model_unavailable")
         reported = data.get("model") if isinstance(data, dict) else None
         expected = model.reported_model or model.model
-        if status < 400 and reported != expected:
+        if called and status < 400 and reported != expected:
             status, data = 502, models.error_body(
                 api, f"the provider reported {reported}, not the approved {expected}",
                 "model_mismatch")
+        if called and (change := "open" if (status >= 500 or status == 429)
+                       and gw.breakers.failed(alias) else "close" if status < 400
+                       and gw.breakers.worked(alias) else None):
+            log.warning("the breaker for %s is %s", alias, "open" if change == "open" else "closed again")
+            record({"kind": "breaker", "action": change, "run": row["run"], "instance": row["id"],
+                    "decision": "record", "args": {"model": alias, "status": status}})
         recorded = record({"kind": "model", "action": alias, "run": row["run"], "instance": row["id"],
                            "decision": "record", "of": seq,
                            "outcome": {"status": status, "reported_model": reported,

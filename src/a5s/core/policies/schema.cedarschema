@@ -19,12 +19,20 @@ entity Tool = {
   sends_outside: Bool,
 };
 
-entity Model = { name: String, approved: Bool };
+entity Model = { name: String, approved: Bool, classes: Set<String> };
 
 entity Person = { in_audience: Bool };
 
 type RunContext = { level: Long, read_outside: Bool, acts_for: Set<String> };
 
+// A model call also says the class of the scenario's data, from the settings in force.
+type ModelContext = {
+  level: Long,
+  read_outside: Bool,
+  acts_for: Set<String>,
+  data_class: String,
+};
+
 action call_tool appliesTo { principal: Instance, resource: Tool, context: RunContext };
-action call_model appliesTo { principal: Instance, resource: Model, context: RunContext };
+action call_model appliesTo { principal: Instance, resource: Model, context: ModelContext };
 action send_message appliesTo { principal: Instance, resource: Person, context: RunContext };

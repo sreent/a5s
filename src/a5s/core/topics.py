@@ -76,8 +76,9 @@ def of_message(conn: psycopg.Connection, scenario: Scenario, person: str, agent:
 
 
 def brief(conn: psycopg.Connection, scenario: Scenario, key: str, person: Person | None,
-          now: datetime) -> dict:
-    """What the records say about a case, for a run in it, built by code."""
+          now: datetime, unseen: set[str] = frozenset()) -> dict:
+    """What the records say about a case, for a run in it, built by code, leaving out the
+    fields of a class its model isn't approved for."""
     title = f"The case: {key}, from the records"
     try:
         record = next((r for r in scenario.watched() if r.key == key), None)
@@ -88,7 +89,8 @@ def brief(conn: psycopg.Connection, scenario: Scenario, key: str, person: Person
     if record is None:
         return {"title": title, "text": f"The records have no {key}."}
     owner = scenario.person(record.person)
-    facts = ", ".join(f"{name} {value}" for name, value in record.fields.items())
+    facts = ", ".join(f"{name} {value}" for name, value in record.fields.items()
+                      if name not in unseen)
     told = [f"{key}, {record.title}: {facts}. {owner.name if owner else record.person} owns it."
             + (f" {record.link}" if record.link else "")]
     if person is not None:

@@ -22,6 +22,10 @@ from conftest import CLIENT, SEAL_KEY, free_port, serve
 CHEN_TOO = ["ana", "ben", "chen"]
 
 
+def in_force_serial(stack) -> int:
+    return yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text())["serial"]
+
+
 @pytest.fixture
 def approving(stack, provider):
     """The core, signing people in through the provider: the channels, where approvers
@@ -79,23 +83,24 @@ def serves(stack) -> list[str]:
 
 def test_an_approver_is_asked_where_they_work_and_what_they_approve_is_applied(stack, approving,
                                                                                provider):
+    now = in_force_serial(stack)
     asked = proposed(stack, serves=CHEN_TOO)
-    assert (asked["serial"], asked["asked"], asked["new"]) == (5, ["ana"], True)
+    assert (asked["serial"], asked["asked"], asked["new"]) == (now + 1, ["ana"], True)
     assert asked["changes"] == [{"text": "assistant-finance serves Chen Wei as well.", "widens": True}]
     assert asked["link"] == f"{approving}/approve/?settings={asked['digest']}"
     [told] = stack.inbox("ana")  # she's not written to a5s anywhere, so it waits in her inbox
     assert told["from"] == "a5s" and told["text"] == (
-        "Serial 5 of a5s's settings waits for an instance approver to approve it.\n"
+        f"Serial {now + 1} of a5s's settings waits for an instance approver to approve it.\n"
         "What it changes:\n- assistant-finance serves Chen Wei as well.\n"
         f"Review it, and approve it only if you mean it, at {asked['link']}")
 
     token, salt = sign_in(approving, provider, asked["digest"])
     seen = decide(approving, asked["digest"], token, salt, review=True).json()
     assert (seen["status"], seen["you"], seen["you_approved"], seen["in_force"]) == (
-        "waiting", "Ana Ortiz", False, 4)
+        "waiting", "Ana Ortiz", False, now)
     assert seen["changes"] == asked["changes"] and seen["approved_by"] == []
     approved = decide(approving, asked["digest"], token, salt)
-    assert approved.json() == {"approved": True, "serial": 5, "by": "Ana Ortiz"}
+    assert approved.json() == {"approved": True, "serial": now + 1, "by": "Ana Ortiz"}
     assert provider.asked[-1]["max_age"] == "0"  # she signed in afresh for it
 
     assert "chen" not in serves(stack)  # not until the gateway applies it
@@ -107,10 +112,10 @@ def test_an_approver_is_asked_where_they_work_and_what_they_approve_is_applied(s
 
     entries = stack.ledger()
     [approval] = [e for e in entries if e["action"] == "approve"]
-    assert approval["args"]["by"] == "ana" and approval["args"]["serial"] == 5
+    assert approval["args"]["by"] == "ana" and approval["args"]["serial"] == now + 1
     assert token not in str(entries)  # the ledger keeps a hash of the sign-in, not the sign-in
     applied = [e for e in entries if e["action"] == "apply" and e.get("instance") == "assistant-finance"]
-    assert (applied[-1]["args"]["serial"], applied[-1]["args"]["signed_by"]) == (5, ["ana"])
+    assert (applied[-1]["args"]["serial"], applied[-1]["args"]["signed_by"]) == (now + 1, ["ana"])
     assert [e["args"]["to"] for e in entries if e["action"] == "ask-approval"] == ["ana"]
     assert stack.verify().ok
 
@@ -201,15 +206,16 @@ def test_an_approval_outlasts_the_providers_keys_but_not_the_cores(stack, approv
         return settings and settings.serial, problem
 
     provider.rotate()  # the key that signed her sign-in is withdrawn
-    assert in_force(SEAL_KEY) == (5, None)
-    assert in_force("a new seal key", SEAL_KEY) == (5, None)  # the core moving to a new key
+    approved = asked["serial"]
+    assert in_force(SEAL_KEY) == (approved, None)
+    assert in_force("a new seal key", SEAL_KEY) == (approved, None)  # the core moving to a new key
     assert in_force("a new seal key") == (None, "no instance approver signed the settings in force")
 
 
 def test_a_version_waiting_for_approval_is_let_go_once_a_newer_one_is_in_force(stack, approving,
                                                                                provider):
     asked = proposed(stack, level=0)
-    stack.settle(serves=["ana"])  # serial 5, signed with Ana's key, applied first
+    stack.settle(serves=["ana"])  # the same serial, signed with Ana's key, applied first
     token, salt = sign_in(approving, provider, asked["digest"])
     assert decide(approving, asked["digest"], token, salt, review=True).json()["status"] == "superseded"
     late = decide(approving, asked["digest"], token, salt)
@@ -231,7 +237,8 @@ def test_the_core_asks_nobody_about_a_version_it_couldnt_apply(stack, approving)
         nobody = c.post("/settings/proposals", json={
             "raw": base64.b64encode(yaml.safe_dump(unknown).encode()).decode()})
     assert garbled.status_code == 400
-    assert older.status_code == 409 and "isn't above 4" in older.json()["detail"]["reasons"][0]
+    assert older.status_code == 409
+    assert f"isn't above {settings['serial']}" in older.json()["detail"]["reasons"][0]
     assert nobody.status_code == 409
     assert "helper names helper, which no release here has" in nobody.json()["detail"]["reasons"]
     assert stack.inbox("ana") == []
@@ -272,7 +279,7 @@ def test_an_approver_reviews_and_approves_in_the_browser(stack, approving, provi
         "assistant-finance's level goes from 1 to 0."]
     assert page.evaluate("window.location.search") == ""  # the code doesn't linger
     page.click("#approve")
-    page.wait_for_selector("#status >> text=You approved serial 5", timeout=30000)
+    page.wait_for_selector(f"#status >> text=You approved serial {asked['serial']}", timeout=30000)
     assert not page.is_visible("#approve")
     stack.scheduler().apply_approved()
     assert serves(stack) == CHEN_TOO

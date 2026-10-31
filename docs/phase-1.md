@@ -113,6 +113,8 @@ Step 5, running it properly, has started:
 
 | Built | Where |
 | --- | --- |
+| Classes of data. The scenario's signed settings say what class its data is, and which fields are of a class of their own, such as a personal contact. A model sees no data of a class it isn't approved for: policy refuses to call it at all, or the core hands it those fields as handles, and leaves them out of what it tells it from the records, in briefs and reports. Settings that don't name a class are internal, so no model approved only for made-up data sees real data. | [`core/policies/base.cedar`](../src/a5s/core/policies/base.cedar), [`contract.py`](../src/a5s/contract.py) |
+| A circuit breaker for each model: after three failures in a row, a5s doesn't call it for five minutes, so people hear at once, and then one call tries it again. The ledger records each breaker opening and closing. | [`core/breakers.py`](../src/a5s/core/breakers.py) |
 | Budgets at the model gateway. Each release sets how many tokens, as the providers count them, one run may use, and how many an instance may use for each person each day, in their own time zone. A fifth of each person's day is kept for chases and reminders: other work, such as answers and reports, stops short of it. Crossing four fifths is recorded as a warning. The core checks before it opens a run and before each model call. Once a budget is spent, the work waits, a report for the next day, and someone asking is told so in a5s's own words, with who to ask. | [`core/budgets.py`](../src/a5s/core/budgets.py) |
 
 Still to do in step 1:

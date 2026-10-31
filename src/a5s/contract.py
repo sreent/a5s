@@ -141,6 +141,12 @@ class Settings:
     serial: int = 0  # rises with every version, so an older one can't be replayed
     raw: bytes = b""  # exactly what was signed
     signatures: tuple[Signature, ...] = ()
+    # The class of the scenario's data: a model must be approved for it to see any. Without
+    # one, it's internal, so no model approved only for made-up data sees real data.
+    data_class: str = "internal"
+    # Fields of a class of their own, such as {"contact": "personal"}: a model not approved
+    # for it gets each as a handle instead (core/handles.py)
+    classified: dict[str, str] = field(default_factory=dict)
 
 
 def parse_settings(raw: bytes, signatures: tuple[Signature, ...] = ()) -> Settings:
@@ -155,6 +161,8 @@ def parse_settings(raw: bytes, signatures: tuple[Signature, ...] = ()) -> Settin
         serial=int(data.get("serial", 0)),
         raw=raw,
         signatures=signatures,
+        data_class=str(data.get("data_class") or "internal"),
+        classified={str(k): str(v) for k, v in (data.get("classified") or {}).items()},
         instances=tuple(
             InstanceSettings(id=iid, definition=i["definition"], serves=tuple(i["serves"]),
                              level=i.get("level"), owner=i.get("owner"), deputy=i.get("deputy"))
