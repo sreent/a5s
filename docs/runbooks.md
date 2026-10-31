@@ -39,6 +39,14 @@ To follow one run, find its spans by `a5s.run.id`, where the deployment sends tr
 2. Read why with `a5s ledger tail`: a chat that's down, a bot's credentials that expired, or a person who left the conversation.
 3. Mend the chat. What's already in someone's inbox stays there, so tell them where to find it if they don't use the web chat.
 
+## Changes wait, or stop part way
+
+**Shows as:** changes waiting for a decision for days, or one stopped part way through being made.
+
+1. A waiting change reminds its deciders after two working days, tells their managers after five, and lapses after ten, telling whoever asked for it. Nothing needs doing unless a part has nobody who may decide: then the change isn't held at all, and the agent tells the person to make it themselves.
+2. A change stopped part way means a5s marked it as being made, and then stopped before it could record what happened. a5s never makes it again by itself. Check the record in the scenario's own system: if the change is there, tell whoever asked; if not, they can ask again.
+3. A decision that doesn't count shows in the gateway's log: a decision the core didn't seal, or by someone who no longer owns the part. Tell assurance about the first.
+
 ## People get urgent messages in batches
 
 **Shows as:** urgent messages held for a batch.

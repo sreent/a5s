@@ -41,6 +41,9 @@ class Person:
     timezone: str = "UTC"  # an IANA name, such as Europe/London
     hours: tuple[str, str] = ("09:00", "17:00")  # their working hours, in their time zone
     workdays: tuple[int, ...] = (1, 2, 3, 4, 5)  # ISO weekdays: Monday is 1
+    # When their authenticator was last reset, if the directory says: how a stolen identity
+    # usually starts, so their decisions wait a day after it
+    reset_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -97,12 +100,16 @@ class Tool:
     # its parts, and only on those everyone the run acts for may see.
     record_arg: str | None = None
     record_field: str | None = None
+    # The type of action it takes, if it changes a part's data, such as change-due-date. It
+    # names the record it changes, by record_arg. At level 1, a5s holds such a call for the
+    # owner of the record's part to decide, and makes it once they approve it.
+    action: str | None = None
 
     @property
     def risk(self) -> dict[str, bool]:
         return {
             "reads": self.reads,
-            "writes": self.writes,
+            "writes": self.writes or bool(self.action),  # a change always writes
             "destructive": self.destructive,
             "sends_outside": self.sends_outside,
         }
@@ -116,6 +123,8 @@ class Tool:
             payload["handles"] = list(self.handles)
         if self.record_arg or self.record_field:  # and one that stops naming its records
             payload["records"] = [self.record_arg, self.record_field]
+        if self.action:  # or that changes another type of thing
+            payload["action"] = self.action
         return hashlib.sha256(canonical(payload).encode()).hexdigest()
 
     def definition(self) -> dict[str, Any]:
@@ -125,6 +134,7 @@ class Tool:
             "schema": self.schema,
             "risk": self.risk,
             "text_fields": list(self.text_fields),
+            "action": self.action,
             "schema_hash": self.schema_hash,
         }
 

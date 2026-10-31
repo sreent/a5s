@@ -5,7 +5,8 @@ months after the last thing either said, and then deleted: its turns and summari
 messages the core received and sent for it, and what waited for a digest or a batch. a5s's
 own notices go 12 months after they were written, and so do the notes on how someone likes to
 work, and the reminders, 12 months after they ended, as do what someone said they were
-waiting on, offers nobody said yes to, and the record of each day's report. A note people ask
+waiting on, offers nobody said yes to, the record of each day's report, and the changes agents
+asked for, with their decisions, 12 months after they ended. A note people ask
 to forget goes at once (core/profiles.py). The ledger keeps what people and agents wrote only
 by hash and length (core/ledger.py), so retention needn't touch it. The values a run was handed as handles, and what it read, go once the run
 has been over for an hour: a handle works only in its run, and nothing reads them after.
@@ -70,4 +71,7 @@ def sweep(conn: psycopg.Connection) -> dict[str, int]:
                         "case when confirmed_at is null then offered_at end) "
                         f"< now() - interval '{KEPT}'")
     delete("counts", "delete from urgent_sent where day < (now() - interval '2 days')::date")
+    ended_changes = f"select digest from proposals where ended_at < now() - interval '{KEPT}'"
+    delete("decisions", f"delete from proposal_decisions where digest in ({ended_changes})")
+    delete("changes", f"delete from proposals where ended_at < now() - interval '{KEPT}'")
     return gone

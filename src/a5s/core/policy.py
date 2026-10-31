@@ -1,6 +1,7 @@
-"""Policy: Cedar decides allow or deny, outside the agent, and denies by default.
+"""Policy: Cedar decides allow, hold or deny, outside the agent, and denies by default.
 
-If the policy can't be evaluated for any reason, the answer is deny.
+A hold is a permit annotated @hold: the call doesn't run, and waits for a person to decide it
+(core/proposals.py). If the policy can't be evaluated for any reason, the answer is deny.
 """
 
 from __future__ import annotations
@@ -22,10 +23,11 @@ class Decision:
     reasons: tuple[str, ...]  # the names of the policies that decided
     errors: tuple[str, ...] = ()
     explanations: tuple[str, ...] = ()  # the same, in words, for the agent and for people
+    held: bool = False  # it doesn't run, and waits for a person to decide it: never allowed too
 
     @property
     def label(self) -> str:
-        return "allow" if self.allowed else "deny"
+        return "hold" if self.held else "allow" if self.allowed else "deny"
 
     def as_dict(self, explain: bool = False) -> dict[str, Any]:
         out = {"decision": self.label, "reasons": list(self.reasons), "errors": list(self.errors)}
@@ -62,6 +64,8 @@ class PolicyEngine:
         statements = _statements(self.text)
         self._names = {pid: p.get("annotations", {}).get("id", pid) for pid, p in statements.items()}
         self._words = {pid: p.get("annotations", {}).get("reason") for pid, p in statements.items()}
+        self._holds = {pid for pid, p in statements.items()
+                       if p["effect"] == "permit" and p.get("annotations", {}).get("hold") == "true"}
         self._policies = cedarpy.PolicySet.from_str(self.text)
 
     def decide(
@@ -91,4 +95,6 @@ class PolicyEngine:
         if errors:
             return Decision(False, reasons, errors, ("a5s couldn't check the call, so it's denied",))
         allowed = bool(result.allowed)
+        if allowed and any(pid in self._holds for pid in pids):  # it waits for a person
+            return Decision(False, reasons, (), words, held=True)
         return Decision(allowed, reasons, (), words or (() if allowed else (_DEFAULT_DENY,)))

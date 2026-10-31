@@ -65,7 +65,8 @@ def test_a_release_lists_every_file_it_runs_and_what_its_agents_may_do():
     assert "scenario/data.yaml" in parts["scenario"] and "scenario/keys/rosa.pub" in parts["scenario"]
     assert not [p for p in parts["scenario"] if p.endswith((".key", "settings.yaml", "settings.sig"))]
     assert not [p for part in parts.values() for p in part if "__pycache__" in p]
-    assert data["agents"]["assistant"]["may"]["tools"] == ["create_draft", "get_record", "search_records"]
+    assert data["agents"]["assistant"]["may"]["tools"] == [
+        "change_due_date", "close_question", "create_draft", "get_record", "search_records"]
     assert "deepseek-v4-pro" in data["models"]
 
 

@@ -55,6 +55,7 @@ from a5s.core import (
     obligations,
     parts,
     profiles,
+    proposals,
     provenance,
     recall,
     registry,
@@ -649,7 +650,8 @@ class Gateway:
         """One of a5s's own tools: part of the trusted core's release, and changing no part's data."""
         return {"uid": {"type": "Tool", "id": name},
                 "attrs": {"name": name, "known": True, "pinned": True, "reads": False,
-                          "writes": False, "destructive": False, "sends_outside": False},
+                          "writes": False, "destructive": False, "sends_outside": False,
+                          "action": ""},
                 "parents": []}
 
     @staticmethod
@@ -658,7 +660,8 @@ class Gateway:
         pinned = tool is not None and pins.get(name) == tool.schema_hash
         return {
             "uid": {"type": "Tool", "id": name},
-            "attrs": {"name": name, "known": tool is not None, "pinned": pinned, **risk},
+            "attrs": {"name": name, "known": tool is not None, "pinned": pinned, **risk,
+                      "action": (tool.action or "") if tool else ""},
             "parents": [],
         }
 
@@ -1550,7 +1553,13 @@ def create_app(gw: Gateway) -> FastAPI:
             if row["trigger"].get("kind") in OWN_RUNS:
                 decision = Decision(False, ("a5s-runs-call-no-tools",), explanations=(
                     "a5s's own runs, such as keeping a summary, call no tools",))
+            deciding = holding(decision, records, row)
+            if deciding is None:  # nobody else may decide it, or nobody can decide it here
+                decision = Decision(False, ("someone-else-decides",), explanations=(
+                    unheld(records, row),))
             texts = [s for f in tool.text_fields for s in strings(args.get(f))] if tool else []
+            if decision.held:  # what deciders should know: every value the agent wrote itself
+                texts = strings(args)
             traced = provenance.traced(conn, gw.scenario, row, "\n".join(texts))
             last = next((f for f in reversed(tool.text_fields) if isinstance(args.get(f), str)),
                         None) if tool else None
@@ -1561,8 +1570,20 @@ def create_app(gw: Gateway) -> FastAPI:
                                                args=ledger.mask(args, plain),
                                                links_removed=removed,
                                                **({"values": values_of(traced)} if traced else {})))
+            if decision.held:  # it waits for a person: the exact call, kept for its deciders
+                proposal, sends = held(conn, row, tool, args, records, deciding or [], seq, traced)
         traces.note(current, **{"a5s.run.id": row["run"], "a5s.instance": row["id"],
                                 "a5s.decision": decision.label})
+        if decision.held:
+            push(sends)
+            names = approvals.names_of([p.name for p in deciding or []])
+            whom = approvals.names_of([p.name if (p := gw.scenario.person(w)) else w
+                                       for w in row["acts_for"]])
+            return {"result": {
+                "held": proposals.key(proposal), "decides": names,
+                "status": f"Not made yet: it waits for {names} to decide it, on a5s's own page. "
+                          f"a5s will tell {whom if row['acts_for'] else 'its owner'} what they "
+                          "decide, and makes the change if they approve it."}, "recorded": True}
         if not decision.allowed:
             return JSONResponse(status_code=403,
                                 content={"denied": True, **decision.as_dict(explain=True)})
@@ -1596,6 +1617,48 @@ def create_app(gw: Gateway) -> FastAPI:
         if outcome["status"] != "ok":
             return JSONResponse(status_code=502, content={"error": outcome["error"]})
         return {"result": result, "recorded": recorded}
+
+    def holding(decision: Decision, records: list[str], row: dict) -> list[Person] | None:
+        """Who may decide a call policy holds, if it holds it and someone may: None if nobody
+        but the people the run acts for may, or nobody can decide anything here."""
+        if not decision.held:
+            return []
+        if gw.approving() is not None:
+            return None
+        return proposals.deciders(gw.scenario, records, list(row["acts_for"])) or None
+
+    def unheld(records: list[str], row: dict) -> str:
+        if (problem := gw.approving()) is not None:
+            return f"a change can't wait for a decision here, since {problem}"
+        return ("nobody but the people this run is for may decide this change, and nobody decides "
+                "what they asked for themselves: they can make it themselves, in the records system")
+
+    def held(conn: psycopg.Connection, row: dict, tool: Tool, args: dict, records: list[str],
+             deciding: list[Person], seq: int, traced: list[dict]) -> tuple[dict, list]:
+        """Keep a held call for its deciders, and ask each of them, where they work, to decide
+        it on the core's page. The proposal, and what to send them once the transaction is done."""
+        whom = approvals.names_of([p.name if (p := gw.scenario.person(w)) else w
+                                   for w in row["acts_for"]])
+        flags = [f"{t['value']} came from the {row['definition']} itself, not from the records "
+                 f"or from {whom}" for t in traced if t["from"] is None]
+        if row["read_outside"]:
+            flags.append(f"the {row['definition']} read content from outside the organisation "
+                         "before it asked for this")
+        proposal = proposals.hold(conn, gw.scenario, row, tool, args, records, deciding, seq,
+                                  flags, gw.clock())
+        link = f"{gw.public_url}/decide/?proposal={proposal['digest']}"
+        text = proposals.asking(proposal, link)
+        sends = []
+        for person in deciding:
+            route = gw.reach(conn, person.id, None)
+            ledger.append(conn, {
+                "kind": "notice", "action": "ask-decision", "run": row["run"],
+                "instance": row["id"], "acts_for": list(row["acts_for"]), "decision": "record",
+                "args": {"proposal": proposals.key(proposal), "to": person.id,
+                         "channel": route["channel"], "chars": len(text),
+                         "sha256": hashlib.sha256(text.encode()).hexdigest()}})
+            sends.append(outbound(conn, route, person.id, text, card=proposals.card(proposal, link)))
+        return proposal, sends
 
     def call_core_tool(core: coretools.CoreTool, args: dict, row: dict, seq: int) -> Any:
         """One of a5s's own tools, in one transaction with what it changes. A rule of a5s's
@@ -1773,6 +1836,185 @@ def create_app(gw: Gateway) -> FastAPI:
                     conn.execute("update outbox set retry_at = %s, problem = %s where id = %s",
                                  (now + timedelta(minutes=2 ** (row["attempts"] - 1)), problem,
                                   row["id"]))
+
+    @app.post("/proposals/sweep", dependencies=[Depends(service)])
+    def sweep_proposals() -> dict:
+        """Make the held changes their deciders approved, and tell whoever each was for what
+        became of it: made, rejected, lapsed, or not made since its records changed or the
+        instance may no longer act. Remind deciders once after two working days, and tell
+        their managers after five."""
+        now, sends, made = gw.clock(), [], []
+        with db.transaction(gw.url) as conn:
+            waiting = [r["id"] for r in conn.execute(
+                "select id from proposals where scenario = %s and status = 'waiting' order by id",
+                (gw.scenario.name,))]
+        for pid in waiting:
+            with db.transaction(gw.url) as conn:  # each alone, so one can't hold up another
+                p = conn.execute("select * from proposals where id = %s and status = 'waiting' "
+                                 "for update skip locked", (pid,)).fetchone()
+                if p is None:
+                    continue
+                found, problems = proposals.decision(conn, gw.cfg.seal_keys, gw.scenario, p)
+                for problem in problems:  # a decision that doesn't count, such as an unsealed one
+                    log.warning("%s: %s", proposals.key(p), problem)
+                if found is not None:
+                    decider = gw.scenario.person(found["person"])
+                    if now < proposals.effective(decider, found["decided_at"]):
+                        continue  # their authenticator was reset lately: it waits a day
+                    going = deciding(conn, p, found, decider, now)
+                elif now >= p["lapses_at"]:
+                    going = ended(conn, p, "lapsed", None, now)
+                else:
+                    going = chasing(conn, p, now)
+                if going is None:
+                    continue
+                sends += going.get("sends", [])
+                if going.get("make"):
+                    made.append(going["make"])
+        push(sends)
+        for p, values, decider in made:  # outside any transaction, once it's marked as making
+            push(making(p, values, decider))
+        return {"swept": True, "made": len(made)}
+
+    def deciding(conn: psycopg.Connection, p: dict, found: dict, decider: Person | None,
+                 now: datetime) -> dict:
+        """What becomes of a held change once someone who may decide it has: whether it's made."""
+        if found["decision"] == "reject":
+            return ended(conn, p, "rejected", found["person"], now)
+        if changed := proposals.unchanged(gw.scenario, p):
+            return ended(conn, p, "changed", found["person"], now, ", ".join(changed))
+        if (why := allowed_now(conn, p)) is not None:
+            return ended(conn, p, "refused", found["person"], now, why)
+        conn.execute("update proposals set status = 'making', decided_by = %s, decided_at = %s "
+                     "where id = %s", (found["person"], found["decided_at"], p["id"]))
+        ledger.append(conn, {"kind": "proposal", "action": "decide", "run": str(p["run_id"]),
+                             "instance": p["instance_id"], "acts_for": list(p["acts_for"]),
+                             "decision": "allow", "of": p["seq"],
+                             "args": {"proposal": proposals.key(p), "by": found["person"],
+                                      "decided": "approve", "decision": found["id"]}})
+        return {"make": (p, proposals.values(conn, p), found["person"])}
+
+    def allowed_now(conn: psycopg.Connection, p: dict) -> str | None:
+        """Why an approved change can't be made now, if it can't: the instance may no longer
+        act, the tool has changed since, or policy would deny the call."""
+        if (found := gw.settings_in_force(conn))[0] is None:
+            return f"the settings in force don't check out: {found[1]}"
+        row = conn.execute(
+            "select r.id::text as run, r.acts_for, r.read_outside, r.trigger, r.tokens, i.* "
+            "from runs r join instances i on i.id = r.instance_id where r.id = %s",
+            (p["run_id"],)).fetchone()
+        tool = gw.scenario.tools().get(p["tool"])
+        if row is None or tool is None or tool.schema_hash != p["schema_hash"]:
+            return "the tool has changed since it was asked for"
+        if problems := gw.check_instance(conn, row) + gw.release_problems(conn):
+            return "; ".join(problems)
+        decision = gw.decide(row, "call_tool", gw.tool_entity(p["tool"], tool, row["pins"]), [],
+                             **parts.about(gw.scenario, row, list(p["records"])))
+        if not (decision.allowed or decision.held):
+            return "; ".join(decision.explanations) or "policy denies it now"
+        return None
+
+    def making(p: dict, values: dict, decider: str) -> list:
+        """Make an approved change, and tell whoever it was for. It's marked as making first,
+        so it's never made twice: if a5s stops part way, it stays marked, for someone to see."""
+        tool = gw.scenario.tools()[p["tool"]]
+        try:
+            result = tool.run(ToolCall(args=proposals.resolved(p["args"], values),
+                                       instance=p["instance_id"], run=str(p["run_id"]),
+                                       acts_for=tuple(p["acts_for"])))
+            failed = result.get("error") if isinstance(result, dict) else None
+            outcome = ({"status": "error", "error": str(failed)[:200]} if failed
+                       else {"status": "ok", "result_sha256": ledger.digest(result)})
+        except Exception as exc:  # noqa: BLE001 - the system's own failure, recorded and told
+            outcome = {"status": "error", "error": f"{type(exc).__name__}"}
+        with db.transaction(gw.url) as conn:
+            ledger.append(conn, {"kind": "tool", "action": p["tool"], "run": str(p["run_id"]),
+                                 "instance": p["instance_id"], "acts_for": list(p["acts_for"]),
+                                 "decision": "record", "of": p["seq"], "outcome": outcome,
+                                 "args": {"proposal": proposals.key(p)}})
+            if outcome["status"] == "ok":
+                going = ended(conn, p, "made", decider, gw.clock())
+            else:
+                going = ended(conn, p, "failed", decider, gw.clock(), outcome["error"])
+        return going["sends"]
+
+    def ended(conn: psycopg.Connection, p: dict, became: str, decider: str | None,
+              now: datetime, extra: str = "") -> dict:
+        """End a held change, let go of the values it kept, and tell whoever it was for, in the
+        conversation with its agent, so its next run knows too."""
+        name = who.name if decider and (who := gw.scenario.person(decider)) else decider
+        text = proposals.told(p, became, name, extra)
+        conn.execute("update proposals set status = %s, decided_by = coalesce(decided_by, %s), "
+                     "ended_at = %s, outcome = %s where id = %s",
+                     ("made" if became == "made" else "not made" if became in (
+                         "changed", "refused", "failed") else became,
+                      decider, now, text, p["id"]))
+        conn.execute("delete from proposal_values where proposal_id = %s", (p["id"],))
+        ledger.append(conn, {"kind": "proposal", "action": became, "run": str(p["run_id"]),
+                             "instance": p["instance_id"], "acts_for": list(p["acts_for"]),
+                             "decision": "record", "of": p["seq"],
+                             "args": {"proposal": proposals.key(p), "by": decider}})
+        told_to = list(p["acts_for"])
+        if not told_to:  # a run for nobody: its instance's owner hears instead
+            owner = conn.execute("select owner from instances where id = %s",
+                                 (p["instance_id"],)).fetchone()
+            told_to = [owner["owner"]] if owner and owner["owner"] else []
+        sends = []
+        for person in told_to:
+            route = gw.reach(conn, person, p["definition"])  # what they're waiting for: at once
+            sends.append(outbound(conn, route, person, text, instance=p["instance_id"],
+                                  agent=p["definition"]))
+            noted(conn, person, p["definition"], text, next(iter(p["records"]), None))
+        return {"sends": sends}
+
+    def chasing(conn: psycopg.Connection, p: dict, now: datetime) -> dict | None:
+        """Remind a held change's deciders once, after two working days, and tell their
+        managers once, after five, each in their working hours."""
+        first = gw.scenario.person(p["deciders"][0]) if p["deciders"] else None
+        if first is None:
+            return None
+        link = f"{gw.public_url}/decide/?proposal={p['digest']}"
+        if p["escalated_at"] is None and now >= proposals.working_days_after(
+                first, p["proposed_at"], proposals.ESCALATE):
+            above: dict[str, Person] = {}  # each decider's manager, who may hear of the record
+            for decider in p["deciders"]:
+                who = gw.scenario.person(decider)
+                boss = gw.scenario.person(who.manager) if who and who.manager else None
+                if (boss is not None and boss.in_audience and boss.id not in p["acts_for"]
+                        and all(gw.scenario.sees(boss.id, r) for r in p["records"])):
+                    above.setdefault(boss.id, boss)
+            if above and not any(obligations.working(b, now) for b in above.values()):
+                return None  # it waits for their working hours
+            sends = []
+            for boss in above.values():
+                names = approvals.names_of([w.name for d in p["deciders"]
+                                            if (w := gw.scenario.person(d)) and w.manager == boss.id])
+                text = (f"{proposals.key(p)} has waited {proposals.ESCALATE} working days for "
+                        f"{names} to decide it.\n{p['said']}\nIt lapses on "
+                        f"{obligations.day(boss, p['lapses_at'])} unless someone decides it: {link}")
+                sends.append(outbound(conn, gw.reach(conn, boss.id, None), boss.id, text))
+            conn.execute("update proposals set escalated_at = %s where id = %s", (now, p["id"]))
+            ledger.append(conn, {"kind": "proposal", "action": "escalate", "run": str(p["run_id"]),
+                                 "instance": p["instance_id"], "acts_for": list(p["acts_for"]),
+                                 "decision": "record", "of": p["seq"],
+                                 "args": {"proposal": proposals.key(p), "to": sorted(above)}})
+            return {"sends": sends}
+        if p["reminded_at"] is None and now >= proposals.working_days_after(
+                first, p["proposed_at"], proposals.REMIND):
+            due = [d for d in p["deciders"]
+                   if (who := gw.scenario.person(d)) and obligations.working(who, now)]
+            if not due:
+                return None
+            text = "Still waiting for your decision. " + proposals.asking(p, link)
+            sends = [outbound(conn, gw.reach(conn, d, None), d, text,
+                              card=proposals.card(p, link)) for d in due]
+            conn.execute("update proposals set reminded_at = %s where id = %s", (now, p["id"]))
+            ledger.append(conn, {"kind": "proposal", "action": "remind", "run": str(p["run_id"]),
+                                 "instance": p["instance_id"], "acts_for": list(p["acts_for"]),
+                                 "decision": "record", "of": p["seq"],
+                                 "args": {"proposal": proposals.key(p), "to": due}})
+            return {"sends": sends}
+        return None
 
     @app.post("/deliveries/sweep", dependencies=[Depends(service)])
     def sweep_deliveries() -> dict:

@@ -166,6 +166,14 @@ class Desk:
         def draft(call: ToolCall) -> dict:
             return {"draft": 1, "link": LINK + "drafts/1"}
 
+        def due(call: ToolCall) -> dict:
+            self._tickets[call.args["key"]]["due"] = call.args["due"]
+            return {"key": call.args["key"], "due": call.args["due"]}
+
+        def close(call: ToolCall) -> dict:
+            self._tickets[call.args["key"]]["status"] = "closed"
+            return {"key": call.args["key"], "status": "closed"}
+
         query = {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}
         key = {"type": "object", "properties": {"key": {"type": "string"}}, "required": ["key"]}
         body = {"type": "object", "required": ["title", "body"], "properties": {
@@ -177,6 +185,12 @@ class Desk:
                  handles=("contact",), record_arg="key", record_field="key"),
             Tool("create_draft", "Save a draft ticket for the person to submit.", body, draft,
                  writes=True, text_fields=("title", "body"), record_arg="record"),
+            Tool("change_due_date", "Change a ticket's due date.",
+                 {"type": "object", "required": ["key", "due"], "properties": {
+                     "key": {"type": "string"}, "due": {"type": "string"}}},
+                 due, record_arg="key", action="change-due-date"),
+            Tool("close_question", "Close a ticket that's resolved.", key, close,
+                 record_arg="key", action="close-ticket"),
         )}
 
 

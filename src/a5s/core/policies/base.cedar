@@ -7,6 +7,18 @@
 permit (principal is Instance, action == Action::"call_tool", resource is Tool)
 when {
   principal.status == "active" && resource.known && principal.grants.contains(resource.name)
+  && (resource.action == "" || context.level >= 2)
+};
+
+// A change to a part's data, below level 2, waits for a person: the owner of the part its
+// record is in decides it, on the core's own page, and the gateway makes it once approved.
+@id("level-1-changes-wait-for-their-decider")
+@reason("below level 2, a change waits for the owner of the record's part to decide it")
+@hold("true")
+permit (principal is Instance, action == Action::"call_tool", resource is Tool)
+when {
+  principal.status == "active" && resource.known && principal.grants.contains(resource.name)
+  && resource.action != "" && context.level == 1
 };
 
 @id("tools-match-the-release")

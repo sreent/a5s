@@ -11,6 +11,7 @@ than skips.
 
 import os
 import re
+from dataclasses import replace
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -20,8 +21,9 @@ import yaml
 
 from a5s import db, definitions
 from a5s.config import load_models
+from a5s.core.identity import IdentityConfig, Verifier
 from a5s.services import context
-from conftest import ROOT, FakeModel, build_root, running
+from conftest import ROOT, SEAL_KEY, FakeModel, build_root, running
 
 NOTE = "(a5s: "  # how a5s starts its note on values the agent wrote itself
 FILLER = "We went through the open invoices, the refunds and the next payment run. " * 12
@@ -50,10 +52,11 @@ def dated(text: str) -> str:
 
 
 def turns_called(stack, after: int) -> list[str]:
-    """The tools the agent's runs called, and a5s let them, since the ledger's entry `after`."""
+    """The tools the agent's runs called, and a5s let them, or held them for a person to
+    decide, since the ledger's entry `after`."""
     return [e["action"] for e in stack.ledger()[after:]
-            if e["kind"] == "tool" and e["decision"] == "record"
-            and (e.get("outcome") or {}).get("status") == "ok"]
+            if e["kind"] == "tool" and (e["decision"] == "hold" or (
+                e["decision"] == "record" and (e.get("outcome") or {}).get("status") == "ok"))]
 
 
 def kept(stack, what: str):
@@ -71,6 +74,9 @@ def kept(stack, what: str):
                 "select record from obligations where waiting_on is not null order by record")]
         if what == "reminders_for_others":
             return conn.execute("select count(*) from reminders where person <> 'ana'"
+                                ).fetchone()["count"]
+        if what == "held":
+            return conn.execute("select count(*) from proposals where status = 'waiting'"
                                 ).fetchone()["count"]
     raise ValueError(f"a case can't check {what}")
 
@@ -105,6 +111,11 @@ def test_each_agents_regression_suite(database: str, tmp_path: Path, monkeypatch
     with running(database, root, httpx.Client(), FakeModel()) as stack:
         if agent == "watcher" or case.get("with_watcher"):
             stack.with_watcher()
+        if case.get("deciding"):  # a held change needs the page where its deciders decide
+            stack.gateway.identity = Verifier(IdentityConfig(issuer="https://id.a5s.test",
+                                                             audience="a5s-web"))
+            stack.gateway.cfg = replace(stack.gateway.cfg, webchat_client_id="a5s-web",
+                                        seal_keys=(SEAL_KEY,), public_url="https://a5s.test")
         person, records = case.get("as", "ana"), stack.gateway.scenario._records
         stack.scheduler().due()  # the core works out what the records owe
         if budget := case.get("budget_tokens"):

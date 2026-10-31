@@ -1,8 +1,10 @@
 """a5s's sample scenario: a stand-in for a real one, with made-up data.
 
 It has a directory of people, a records system of customer questions, each in a part of
-the business and owed by its owner until it's closed, and a store for drafts. It's the
-test bench for building a5s, locally and in CI.
+the business and owed by its owner until it's closed, and a store for drafts. A question's
+due date can be changed, and a question closed: the records system keeps each change apart
+from the questions as data.yaml has them. It's the test bench for building a5s, locally and
+in CI.
 """
 
 from __future__ import annotations
@@ -68,12 +70,20 @@ class SampleScenario:
               created_for text not null,
               at timestamptz not null default now()
             );
-            alter table sample.drafts add column if not exists record text
+            alter table sample.drafts add column if not exists record text;
+            create table if not exists sample.changes (
+              id bigserial primary key,
+              key text not null,
+              field text not null,
+              value text not null,
+              made_for text not null,
+              at timestamptz not null default now()
+            )
         """)
         conn.execute(sql.SQL(
             "grant usage on schema sample to {role}; "
-            "grant select, insert on sample.drafts to {role}; "
-            "grant usage on sequence sample.drafts_id_seq to {role}").format(
+            "grant select, insert on sample.drafts, sample.changes to {role}; "
+            "grant usage on sequence sample.drafts_id_seq, sample.changes_id_seq to {role}").format(
                 role=sql.Identifier(tools_role)))
 
     def find(self, identity: str) -> Person | None:
@@ -111,7 +121,7 @@ class SampleScenario:
         """Each open record, owed by its owner from the start of their working day when it
         opened to the end of their working day when it's due."""
         found = []
-        for r in self._records.values():
+        for r in self._standing().values():
             owner = self._people.get(r["owner"])
             if r["status"] == "closed" or owner is None:
                 continue
@@ -124,12 +134,22 @@ class SampleScenario:
 
     def watched(self) -> list[Record]:
         """Each record, as its owner stands to it."""
-        return [self._record(r) for r in self._records.values() if r["owner"] in self._people]
+        return [self._record(r) for r in self._standing().values() if r["owner"] in self._people]
 
     def record(self, key: str) -> Record | None:
         """One record, as watched() stands to it, read on its own."""
-        found = self._records.get(key)
+        found = self._standing(key).get(key)
         return self._record(found) if found and found["owner"] in self._people else None
+
+    def _standing(self, key: str | None = None) -> dict[str, dict]:
+        """The records as they stand: as data.yaml has them, with the changes made since."""
+        found = {k: dict(v) for k, v in self._records.items() if key is None or k == key}
+        with db.transaction(self.database_url) as conn:
+            for row in conn.execute("select key, field, value from sample.changes "
+                                    "where %s::text is null or key = %s order by id", (key, key)):
+                if row["key"] in found:
+                    found[row["key"]][row["field"]] = row["value"]
+        return found
 
     def _record(self, r: dict) -> Record:
         return Record(source="records", key=r["key"], person=r["owner"], title=r["title"],
@@ -197,6 +217,35 @@ class SampleScenario:
                 text_fields=("title", "body"),  # drafts keep only text and record links
                 record_arg="record",  # in that record's part
             ),
+            Tool(
+                name="change_due_date",
+                description="Change a customer question's due date.",
+                schema={
+                    "type": "object",
+                    "properties": {
+                        "key": {"type": "string", "description": "The question, such as Q-1001"},
+                        "due": {"type": "string", "description": "The new due date, as YYYY-MM-DD"},
+                    },
+                    "required": ["key", "due"],
+                },
+                run=self._change_due_date,
+                record_arg="key",
+                action="change-due-date",  # it changes the records: below level 2, a person decides
+            ),
+            Tool(
+                name="close_question",
+                description="Close a customer question that's been answered.",
+                schema={
+                    "type": "object",
+                    "properties": {
+                        "key": {"type": "string", "description": "The question, such as Q-1001"},
+                    },
+                    "required": ["key"],
+                },
+                run=self._close_question,
+                record_arg="key",
+                action="close-question",
+            ),
         ]
         return {t.name: t for t in tools}
 
@@ -207,7 +256,7 @@ class SampleScenario:
         words = call.args["query"].lower().split()
         hits = [
             r
-            for r in self._records.values()
+            for r in self._standing().values()
             if any(w in f"{r['title']} {r['status']}".lower() for w in words)
         ]
         return [
@@ -216,10 +265,30 @@ class SampleScenario:
         ]
 
     def _get_record(self, call: ToolCall) -> dict:
-        record = self._records.get(call.args["key"])
+        record = self._standing(call.args["key"]).get(call.args["key"])
         if record is None:
             return {"error": f"no record {call.args['key']}"}
         return {**record, "link": self._link("records", record["key"])}
+
+    def _change(self, call: ToolCall, field: str, value: str) -> dict:
+        key = call.args["key"]
+        if key not in self._records:
+            return {"error": f"no record {key}"}
+        with db.transaction(self.database_url) as conn:
+            conn.execute("insert into sample.changes (key, field, value, made_for) "
+                         "values (%s, %s, %s, %s)",
+                         (key, field, value, ",".join(call.acts_for) or "nobody"))
+        return {"key": key, field: value, "link": self._link("records", key)}
+
+    def _change_due_date(self, call: ToolCall) -> dict:
+        try:
+            due = date.fromisoformat(str(call.args["due"]))
+        except ValueError:
+            return {"error": "a due date is written as YYYY-MM-DD"}
+        return self._change(call, "due", due.isoformat())
+
+    def _close_question(self, call: ToolCall) -> dict:
+        return self._change(call, "status", "closed")
 
     def _create_draft(self, call: ToolCall) -> dict:
         with db.transaction(self.database_url) as conn:

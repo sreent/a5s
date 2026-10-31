@@ -36,7 +36,7 @@ from pydantic import BaseModel
 
 from a5s import db
 from a5s.contract import Person, Settings, parse_settings
-from a5s.core import approvals, chats, ledger, matrix, registry, topics
+from a5s.core import approvals, chats, ledger, matrix, proposals, registry, topics
 from a5s.core.identity import IdentityError, UnknownPerson, signed_in
 from a5s.core.teams import ONE_TO_ONE, UNKNOWN, Refused
 
@@ -66,6 +66,15 @@ class LocalMessage(BaseModel):
 class Approval(BaseModel):
     """What the approval page sends with its sign-in: the salt its nonce was made with."""
 
+    salt: str
+
+
+class Deciding(BaseModel):
+    """What the decision page sends with a sign-in made to decide: the changes it decides, by
+    their digests, the decision, and the salt its nonce was made with."""
+
+    proposals: list[str]
+    decision: str
     salt: str
 
 
@@ -577,6 +586,100 @@ def create_app(gw: Any) -> FastAPI:
         before = parse_settings(bytes(last["raw"])) if last else None
         return {"approved": True, "serial": row["serial"], "by": person.name,
                 "needs": registry.missing(settings, gw.scenario.person, valid, before)}
+
+    # Deciding held changes: the page a decider's card opens. They sign in to see what waits
+    # for them, and again, afresh, to decide: that sign-in's nonce commits to their decision on
+    # exactly the changes they chose, so the provider signs the decision. The gateway makes
+    # what's approved.
+
+    @app.get("/decide/", include_in_schema=False)
+    def decide_page() -> Response:
+        approving()
+        return page("decide.html")
+
+    @app.get("/decide/decide.js", include_in_schema=False)
+    def decide_script() -> Response:
+        approving()
+        return page("decide.js")
+
+    @app.post("/decide/token")
+    def decide_token(body: TokenRequest) -> JSONResponse:
+        """The decision page's sign-ins, passed on to the identity provider, as for approving."""
+        return approve_token(body)
+
+    @app.get("/decide/config")
+    def decide_config() -> dict:
+        return approve_config()
+
+    @app.post("/decide/review")
+    def review_proposals(authorization: str | None = Header(default=None)) -> dict:
+        """The held changes waiting for the decision of whoever signed in, and those they
+        decided lately, in the words code worked out when each was held."""
+        approving()
+        who, _ = sender(authorization, None)
+        person = gw.scenario.person(who)
+        with db.transaction(gw.url) as conn:
+            rows = conn.execute(
+                "select p.*, d.decision as yours from proposals p left join proposal_decisions d "
+                "on d.digest = p.digest and d.person = %s where p.scenario = %s and %s = any(p.deciders) "
+                "and (p.status = 'waiting' or p.ended_at > now() - interval '7 days') "
+                "order by p.id desc limit 50", (who, gw.scenario.name, who)).fetchall()
+        shown = []
+        for row in rows:
+            if row["status"] == "waiting" and not proposals.may_decide(gw.scenario, row, who):
+                continue  # they no longer own what it touches, or may no longer see it
+            shown.append({"key": proposals.key(row), "digest": row["digest"], "said": row["said"],
+                          "flags": row["flags"], "sensitive": row["sensitive"],
+                          "status": row["status"], "yours": row["yours"],
+                          "outcome": row["outcome"], "proposed_at": row["proposed_at"].isoformat(),
+                          "lapses_at": row["lapses_at"].isoformat()})
+        return {"you": person.name if person else who, "proposals": shown}
+
+    @app.post("/decide/proposals")
+    def decide_proposals(body: Deciding, authorization: str | None = Header(default=None)) -> dict:
+        """A decision on held changes, signed through the identity provider for that decision on
+        exactly those changes. It's recorded once, and sealed. The gateway makes what's approved."""
+        approving()
+        digests = sorted(set(body.proposals))
+        if not 1 <= len(digests) <= 20 or not all(re.fullmatch(r"[0-9a-f]{64}", d) for d in digests):
+            raise HTTPException(400, "name from one to 20 changes to decide, by their digests")
+        token = (authorization or "").removeprefix("Bearer ").strip()
+        if not token:
+            raise HTTPException(401, "sign in to decide: send your sign-in as a bearer token")
+        try:
+            person, claims = proposals.check(gw.identity, gw.scenario, gw.cfg.webchat_client_id,
+                                             token, digests, body.decision, body.salt, time.time())
+        except proposals.Refused as exc:
+            raise HTTPException(exc.status, exc.reason) from None
+        with db.transaction(gw.url) as conn:
+            rows = conn.execute("select * from proposals where scenario = %s and digest = any(%s) "
+                                "order by id", (gw.scenario.name, digests)).fetchall()
+            if len(rows) != len(digests):
+                raise HTTPException(404, "a5s has no such change to decide")
+            for row in rows:
+                if row["status"] != "waiting":
+                    raise HTTPException(409, f"{proposals.key(row)} isn't waiting for a decision: "
+                                             f"it's {row['status']}")
+                if not proposals.may_decide(gw.scenario, row, person.id):
+                    raise HTTPException(403, f"{person.name} may not decide {proposals.key(row)}")
+            if len(rows) > 1 and any(r["sensitive"] for r in rows):
+                raise HTTPException(409, "a sensitive change is decided on its own, with a sign-in "
+                                         "of its own")
+            try:
+                proposals.record(conn, gw.cfg.seal_keys, gw.scenario.name, rows, body.decision,
+                                 person.id, token, body.salt, claims, gw.clock())
+            except proposals.Refused as exc:
+                raise HTTPException(exc.status, exc.reason) from None
+            ledger.append(conn, {
+                "kind": "admin", "action": "decide", "run": None, "instance": None, "acts_for": [],
+                "decision": "record",
+                "args": {"proposals": [proposals.key(r) for r in rows], "decided": body.decision,
+                         "by": person.id,
+                         "identity": "verified: a sign-in to make this decision on these alone",
+                         "issuer": claims["iss"],
+                         "token_sha256": hashlib.sha256(token.encode()).hexdigest()}})
+        return {"decided": [proposals.key(r) for r in rows], "decision": body.decision,
+                "by": person.name}
 
     # The settings app: where the people who approve instances review the whole version in
     # force, and ask for a new one. The gateway proposes it to everyone it needs, who approve

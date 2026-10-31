@@ -143,7 +143,8 @@ The smoke test runs this way: Keycloak for sign-in, Synapse for Matrix, a model 
 | [Architecture](docs/architecture.md) | The trusted core, the scenario contract, a call step by step, policy, provenance, how an agent lives, context, evidence, independence, failure, operations and hosting |
 | [Agent model](docs/agent-model.md) | Definitions, releases, instances, conversations and runs, roles, lifecycle, autonomy, and the definition format |
 | [Phase 1](docs/phase-1.md) | What to decide, what to build in what order, what done means, and costs |
-| [IT service desk](scenarios/it-service-desk.md) | A scenario on paper, to check the contract is general |
+| [Phase 2](docs/phase-2.md) | Agents that act: held proposals, signed decisions, counts, level 2 earned on graded samples, and the extractor |
+| [IT service desk](scenarios/it-service-desk.md) | A second scenario, to check the contract is general, which round 5's tests build against the contract alone |
 | [Critique](docs/critique.md) | What each adversarial review found, how the design answers it, and what each round removed |
 | [Starting values](docs/starting-values.md) | The numbers a5s starts from, by phase |
 | [Runbooks](docs/runbooks.md) | For the team that runs a5s: what to do when each part of `a5s status` goes wrong |

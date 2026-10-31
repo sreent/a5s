@@ -17,6 +17,7 @@ entity Tool = {
   writes: Bool,
   destructive: Bool,
   sends_outside: Bool,
+  action: String,  // the type of action it takes, if it changes a part's data; else ""
 };
 
 entity Model = { name: String, approved: Bool, classes: Set<String> };

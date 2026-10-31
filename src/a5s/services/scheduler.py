@@ -486,6 +486,7 @@ class Scheduler:
                 self._answer(claim)
                 worked += 1
         self.digest()
+        self.decided()
         self.deliveries()
         return worked
 
@@ -503,6 +504,14 @@ class Scheduler:
             self.gw.post("/settings/sweep", headers=self.service).raise_for_status()
         except httpx.HTTPError:
             log.exception("couldn't ask the core to apply approved settings")
+
+    def decided(self) -> None:
+        """Ask the core to make the held changes their deciders approved, and to remind,
+        escalate or let go of those still waiting."""
+        try:
+            self.gw.post("/proposals/sweep", headers=self.service).raise_for_status()
+        except httpx.HTTPError:
+            log.exception("couldn't ask the core about the held changes")
 
     def deliveries(self) -> None:
         """Ask the core to deliver again what a chat it writes to didn't take before."""
@@ -562,6 +571,7 @@ class Scheduler:
                             continue
                         pool.submit(answer, claim)
                     self.digest()  # those whose work is done: the rest next time
+                    self.decided()
                     self.deliveries()
                     if time.monotonic() - kept > retain_every:
                         self.retain()

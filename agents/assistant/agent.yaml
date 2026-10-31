@@ -13,6 +13,7 @@ autonomy:
 tools:
   records: [search_records, get_record]    # the scenario's records, read only
   documents: [create_draft]
+  changes: [change_due_date, close_question]  # each waits for its decider, below level 2
 triggers:
   - message: from the people it works for
 obligations: [records]           # it reminds its people of what falls due in the records

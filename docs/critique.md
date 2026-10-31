@@ -98,7 +98,7 @@ Every round reports the rules it added and the rules it removed, and proposes cu
 
 | # | Loophole | Severity | How the design answers it | Status |
 | --- | --- | --- | --- | --- |
-| D5 | A signed sign-in doesn't sign the decision, so it can be reused for another | Critical | Each decision on a sensitive item is signed for that one decision, and a signature works once ([proposals](architecture.md#proposals-and-approvals)) | Built for approving settings in phase 1; proposals in phase 2 |
+| D5 | A signed sign-in doesn't sign the decision, so it can be reused for another | Critical | Each decision is signed for that decision on exactly the changes it names, and a signature works once ([proposals](architecture.md#proposals-and-approvals)) | Fixed: for settings in phase 1, and for held changes in phase 2 |
 | D6 | The builders build the controls and the tests that judge them | High | Assurance holds the tests for the trusted core, and changes to it need an outside approver ([independence](architecture.md#independence)) | Designed |
 | D8 | The people being watched can switch the detection off | High | Stopping or changing an agent the scenario marks as a check needs the scenario's assurance ([independence](architecture.md#independence)) | Designed |
 | O4 | A counting backstop switches busy assistants off mid-month | High | Only requests and changes count, per person acted for and type of action ([starting values](starting-values.md)) | Phase 2 |
@@ -107,7 +107,7 @@ Every round reports the rules it added and the rules it removed, and proposes cu
 | O7 | The context cap has no rule for what happens when it's reached | High | A budget for each part of the context, tested at release ([how an agent lives](architecture.md#how-an-agent-lives)) | Designed |
 | O8 | Samples prove little and cost a lot | High | A sequential test at 95% confidence, pooled across a release's instances ([starting values](starting-values.md)) | Phase 2 |
 | O9 | Chases arrive with the escalation | Medium | A chase comes well before the escalation, which waits at least a working day after it ([starting values](starting-values.md)) | Designed |
-| O10 | A sign-in for every decision breeds approval fatigue | Medium | Only decisions on sensitive items are signed one by one ([proposals](architecture.md#proposals-and-approvals)) | Phase 2 |
+| O10 | A sign-in for every decision breeds approval fatigue | Medium | Changes that aren't sensitive can be decided together, with one sign-in that names each; sensitive ones are decided one by one ([proposals](architecture.md#proposals-and-approvals)) | Fixed |
 | O11 | A second model checking narratives has no rule for outages or disagreement | Medium | Round 3 removed the second model | Removed |
 | O12 | A quiet month sets the budgets | Medium | Budgets come from current volumes, with obligations protected ([starting values](starting-values.md)) | Designed |
 

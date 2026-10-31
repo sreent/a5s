@@ -1,4 +1,6 @@
 # Written by `a5s pin`. A tool whose schema no longer matches is refused.
+change_due_date: 827269bb1b237c88c8c42010430db0f5b8474c9359e9432eb49c851ccafe5cf2
+close_question: 265549b1f1c5c88d51d10d339532221b0b30f9345fe92fbc4592cf75acebc21c
 create_draft: 7c14e797214c01ad53009ae6be84f3fbb2b1ae7e3f1741b3f8f7ad0b066ec073
 get_record: 79d42f69481edcd2b6cc38646698c0e560544fd1d673c937c87952ff9f081494
 search_records: e45b429b1556f01088bbf05dd4124a84c6985ca0209b62fce7f3a8ea4bb92a49

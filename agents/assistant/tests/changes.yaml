@@ -1,0 +1,23 @@
+# The assistant asks for the changes people ask for, which wait for the owner of the part
+# the record is in: it never says a change is made until a5s says so.
+
+- name: asks for a change of due date, which waits for the part's owner
+  as: ben
+  deciding: true
+  steps:
+    - say: Please move the due date of Q-1002 to {in 9 days}.
+      uses: [change_due_date]
+      says: [Ana]
+      never_says: ["I've changed", "I have changed", "I've updated", "I have updated",
+                   "has been changed", "has been updated", "I've moved", "has been moved"]
+  then:
+    held: 1
+
+- name: tells someone they can make a change no one else may decide
+  as: ana
+  deciding: true
+  steps:
+    - say: Close Q-1001 please, it's been answered.
+      never_says: ["I've closed", "I have closed", "has been closed", "is now closed"]
+  then:
+    held: 0

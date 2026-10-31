@@ -13,11 +13,12 @@ def instance(status="active", level=1, grants=("search_records", "create_draft")
 
 
 def tool(name="search_records", writes=False, pinned=True, destructive=False,
-         sends_outside=False):
+         sends_outside=False, action=""):
     return {
         "uid": {"type": "Tool", "id": name},
-        "attrs": {"name": name, "known": True, "pinned": pinned, "reads": True, "writes": writes,
-                  "destructive": destructive, "sends_outside": sends_outside},
+        "attrs": {"name": name, "known": True, "pinned": pinned, "reads": True,
+                  "writes": writes or bool(action), "destructive": destructive,
+                  "sends_outside": sends_outside, "action": action},
         "parents": [],
     }
 
@@ -109,3 +110,34 @@ def test_a_scenario_pack_adds_a_restriction():
     pack = '@id("no-drafts-here")\nforbid (principal, action, resource is Tool) when { resource.name == "create_draft" };'
     d = call(PolicyEngine(packs=(pack,)), instance(), tool("create_draft", writes=True))
     assert not d.allowed and d.reasons == ("no-drafts-here",)
+
+
+def test_a_change_below_level_2_is_held_for_a_person(engine):
+    """A tool that changes a part's data doesn't run at level 1: it waits for its decider."""
+    grants = ("search_records", "change_due_date")
+    held = call(engine, instance(grants=grants), tool("change_due_date", action="change-due-date"))
+    assert held.held and not held.allowed and held.label == "hold"
+    assert held.reasons == ("level-1-changes-wait-for-their-decider",)
+    assert "waits for the owner of the record's part" in held.explanations[0]
+    at_two = call(engine, instance(level=2, grants=grants),
+                  tool("change_due_date", action="change-due-date"))
+    assert at_two.allowed and not at_two.held
+    at_zero = call(engine, instance(level=0, grants=grants),
+                   tool("change_due_date", action="change-due-date"))
+    assert not at_zero.allowed and not at_zero.held and "level-0-only-observes" in at_zero.reasons
+
+
+def test_a_hold_never_outweighs_a_forbid(engine):
+    grants = ("search_records", "change_due_date")
+    d = call(engine, instance(grants=grants), tool("change_due_date", action="change-due-date"),
+             in_scope=False)
+    assert not d.allowed and not d.held and "instances-work-only-in-their-parts" in d.reasons
+    d = call(engine, instance(grants=grants, status="suspended"),
+             tool("change_due_date", action="change-due-date"))
+    assert not d.held and not d.allowed
+
+
+def test_a_scenario_pack_cant_add_a_hold():
+    """A pack may only forbid, so it can't let a call wait where a5s's base pack denies it."""
+    with pytest.raises(ValueError, match="only add restrictions"):
+        PolicyEngine(packs=('@hold("true") permit (principal, action, resource);',))

@@ -28,14 +28,14 @@ These are the numbers a5s starts from, by the phase that needs them. They're sta
 
 | Setting | Starting value | Why | Owned by |
 | --- | --- | --- | --- |
-| Moving up a level | A sequential test showing, with 95% confidence, that accuracy meets the part's threshold, pooled across the release's instances. With no errors, a 98% threshold needs about 150 graded items, and a 95% one about 60. | 50 items can't tell a 98% agent from a 95% one | Each part owner, through the threshold |
+| Moving up a level | An anytime-valid sequential test showing, with 95% confidence, that accuracy meets the part's threshold, pooled across the release's instances. With no errors, a 98% threshold needs 224 graded items, and a 95% one 88; with one error, 340 and 134. | 50 items can't tell a 98% agent from a 95% one, and a test checked after every grade must stay valid however often it's checked | Each part owner, through the threshold |
 | Moving down a level | When the evidence shows accuracy below the threshold, or at once on a critical error | One bad month of a small sample is often chance | Each part owner |
 | Ongoing samples | About 100 items a quarter per type of action at level 2, or all of them if there are fewer | Notices a fall from 98% to 93% about four times in five, with few false alarms | Each part owner |
 | Counting backstop | 30 days, up to the scenario's limit, per person acted for and type of action, or per check | Catches a change spread over weeks without stopping a busy assistant | Each part owner |
-| Held proposals | Chased and escalated as above, and expired after 10 business days | Nothing waits forever | Each part owner |
+| Held proposals | Their deciders reminded once after 2 working days, their managers told after 5, and lapsed after 10. A decision by someone whose authenticator was reset in the last day waits until a day has passed. Kept a year after they end. | Nothing waits forever, and a reset, how a stolen identity usually starts, can't approve a change at once | Each part owner |
 | Rubber-stamping flag | A reviewer whose accepted items fail later samples more often than their peers' accepted items do | Quick reviews of good work aren't a problem | Assurance |
 | Outside senders | 20 requests a day per outside sender, then the rest wait for review | Stops a flood without blocking a busy supplier | Each part owner |
-| After an authenticator reset | The person's decisions wait 24 hours before they take effect | A reset is how a stolen identity usually starts | The release approver |
+| After an authenticator reset | The person's decisions wait 24 hours before they take effect, by the time the directory says it was reset | A reset is how a stolen identity usually starts | The release approver |
 
 ## Phase 3
 

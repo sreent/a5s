@@ -49,6 +49,10 @@ def report(conn: psycopg.Connection, breakers: list[str]) -> dict[str, Any]:
         "from outbox where at > now() - interval '1 day'").fetchone()
     held = conn.execute("select count(*) as n, count(distinct person) as people "
                         "from urgent_held where sent_at is null").fetchone()
+    changes = conn.execute(
+        "select count(*) filter (where status = 'waiting') as waiting, "
+        "extract(epoch from now() - min(proposed_at) filter (where status = 'waiting')) as oldest, "
+        "count(*) filter (where status = 'making') as stuck from proposals").fetchone()
     stopped = conn.execute(
         "select id, status, suspended_by from instances where status <> 'active' order by id"
     ).fetchall()
@@ -73,6 +77,8 @@ def report(conn: psycopg.Connection, breakers: list[str]) -> dict[str, Any]:
         "deliveries": {"retrying": deliveries["retrying"],
                        "left_in_inbox": deliveries["left_in_inbox"]},
         "urgent_held": {"messages": held["n"], "people": held["people"]},
+        "changes": {"waiting": changes["waiting"], "oldest_seconds": _number(changes["oldest"]),
+                    "stuck": changes["stuck"]},
         "not_active": [dict(r) for r in stopped],
         "breakers_open": breakers,
         "objectives": {
@@ -122,6 +128,12 @@ def told(status: dict[str, Any]) -> str:
             f"{status['deliveries']['left_in_inbox']} left in people's local inbox"
             if status["deliveries"]["retrying"] or status["deliveries"]["left_in_inbox"]
             else "none") + ".",
+        "  Changes waiting for a decision: " + (
+            f"{status['changes']['waiting']}, the oldest for "
+            f"{status['changes']['oldest_seconds'] / 86400:.0f} days"
+            if status["changes"]["waiting"] else "none")
+        + (f"; {status['changes']['stuck']} stopped part way through being made"
+           if status["changes"]["stuck"] else "") + ".",
         "  Urgent messages held for a batch: " + (
             f"{status['urgent_held']['messages']} for {status['urgent_held']['people']} "
             + ("person" if status["urgent_held"]["people"] == 1 else "people")

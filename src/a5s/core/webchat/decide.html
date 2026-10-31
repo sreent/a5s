@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>a5s: changes to decide</title>
+<link rel="stylesheet" href="/chat/app.css">
+<script src="/decide/decide.js" defer></script>
+</head>
+<body>
+<header>
+  <h1>a5s</h1>
+  <span id="who"></span>
+</header>
+<main>
+  <h2>Changes to decide</h2>
+  <p id="status" role="status"></p>
+  <section id="waiting" hidden>
+    <p class="note">An agent asked for each of these, and it waits for you. Decide only what
+      you mean: deciding signs you in again, and your sign-in decides once.</p>
+    <div id="list"></div>
+    <p id="together" hidden>
+      <button id="approve-ticked" type="button">Approve the ticked ones</button>
+      <button id="reject-ticked" type="button">Reject the ticked ones</button>
+    </p>
+  </section>
+  <section id="earlier" hidden>
+    <h3>Decided lately</h3>
+    <ul id="decided" class="plain"></ul>
+  </section>
+</main>
+</body>
+</html>
