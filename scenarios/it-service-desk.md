@@ -48,6 +48,7 @@ The service desk adds these to a5s's base pack:
 - **The audience is a setting.** Most scenarios talk only to people inside the organisation, while the joiner coordinator must reach people who haven't started.
 - **The default settings store matters.** The service desk keeps no settings of its own for agents, so it uses a5s's.
 - **Each scenario answers who may see a record.** a5s asks the directory interface, and here the ITSM answers for its tickets.
+- **Written against the contract, it runs.** Round 5's tests build the desk against the contract alone ([`tests/test_r5_c_service_desk.py`](../tests/test_r5_c_service_desk.py)). They found what a5s had to change, now changed: the desk assistant serves the sales team as a team, so joiners need no new settings; its tools answer with objects, as MCP tools do, and a5s filters them at any depth; its ticket keys have a pattern of their own; it reads one ticket for a brief, not every ticket; and its night shift's hours cross midnight.
 - **Where it strains:** a major incident brings thousands of people to the desk assistant at once, and per-person budgets don't help. The channel service would need a known-incident answer it can give without a run [TBC: phase 2].
 
 ## Tests, on paper

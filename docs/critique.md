@@ -1,14 +1,15 @@
 # Design Critique
 
-**Status:** Rounds 1 to 4, 29 October 2026 · **Design:** [a5s](../README.md)
+**Status:** Rounds 1 to 5, 31 October 2026 · **Design:** [a5s](../README.md)
 
 Every change to the design gets an adversarial review before it settles. Reviewers who didn't write the design read it cold, each from one angle, and each finding is checked against the documents before it's accepted. This page records the findings about a5s, how the design answers them now, and what each round removed.
 
 - **Designed** means the design stops it, and a test in a5s's own suite will show it once it's built.
-- **Fixed** means the code stops it, and a test in a5s's own suite shows it. Round 4 is the first round of findings about code.
+- **Fixed** means the code stops it, and a test in a5s's own suite shows it. Rounds 4 and 5 found problems in code.
 - **Phase 2** and **Phase 3** mean it's designed for a feature that comes in that phase. Until then, neither the feature nor the loophole exists.
 - **Accepted** marks what's left once the design has done what it can: a risk its owner accepts under [accepted risks](#accepted-risks).
 - **Removed** means a later round removed the control the finding was about.
+- **Kept by design** means the round's reviewers proposed a change, and it isn't worth what it costs.
 
 ## How we critique
 
@@ -29,6 +30,7 @@ Every round reports the rules it added and the rules it removed, and proposes cu
 - **Round 3** read the design with fresh eyes and found it had drifted into that scenario. It cut a5s back to a small trusted core, a scenario contract and a phase-1 plan ([below](#round-3-fresh-eyes)). A consistency read then fixed the gaps between the documents.
 - **Then the scenario was removed** from a5s, with the findings that were only about its controls, so that a5s's design depends on no one scenario. The findings below are those about a5s itself, in general terms.
 - **Round 4** read the code phase 1's first step built, with three reviewers who hadn't written it, from all six angles. It found 22 problems, two of them critical, and removed the parts that let services stand between people and the core ([below](#round-4-the-code)).
+- **Round 5** read the code of phase 1's steps 3 to 6, with three new reviewers, and wrote a second scenario, an IT service desk, against the contract alone. It found 45 problems, six of them high, mostly work lost when something failed and data protection that stopped at the top level of a tool's answer, and removed Deep Agents' unused tools, the gateway's cache of settings and the ledger's short-text rule ([below](#round-5-steps-3-to-6)).
 
 ## Findings about a5s
 
@@ -184,6 +186,50 @@ What round 4 changed:
 - **Decided after the round:** the clouds run a5s on each one's own container service, not Kubernetes, and R5 and R6 are accepted by the owners below.
 - **Deferred:** a connection pool, checkpoints so the copier needn't read every head each hour, and heads signed by the copier, which would stop R5.
 
+## Round 5: steps 3 to 6
+
+Three reviewers who hadn't written it read the code of phase 1's steps 3 to 6 cold: conversations, summaries, provenance and handles, budgets, breakers, classes of data, traces, status, retention, the urgent cap, parts and need-to-know, and the settings app. One read it as an outside attacker and an insider, one for failure and for the team that runs it, and one as a colleague and as the author of a second scenario, an IT service desk written against the contract alone. They found 45 problems and reproduced most of them in 66 tests. Where two or three reviewers found the same thing, it's one finding here, and each test now passes as the fix's regression test.
+
+| # | Finding | Severity | How the code answers it | Status |
+| --- | --- | --- | --- | --- |
+| E1 | A reminder or chase whose run failed was never given, because it was marked given when the run opened, and a5s then told the person's manager it had been (found by two) | High | When such a run doesn't finish, the core gives the reminder or chase itself, in its own words, in the person's digest or chat | Fixed |
+| E2 | Teams and Matrix got one try, after the commit, so a digest, escalation, reminder or approval card was lost when the chat failed | High | What a5s sends to a chat goes in the outbox in the transaction that decides it, is tried five times with longer waits, and is then left in the person's local inbox, which the ledger and the status record | Fixed |
+| E3 | Any part owner could stop every approved version being applied, with a level written as a quoted number, or make the core build about 100 GB from a 2 KB request, with YAML aliases | High | Settings are read by a strict model: no anchors or aliases, whole-number levels, ids and classes as plain words, and nothing else. The sweep works on each request and each version alone | Fixed |
+| E4 | A tool that answered with an object, as MCP tools do, skipped parts, visibility, handles and classes; a record key that wasn't a string skipped the part check; and text inside an object argument wasn't cleaned (round 4's B12 again) (found by two) | High | Results and arguments are filtered, cleaned and resolved at any depth. A call that names a record other than by its key is denied, and a result that holds records without their keys is withheld | Fixed |
+| E5 | A second reminder for the same day was dropped while the agent was told it was set, and saying yes kept the last offer, whatever the person said yes to | High | An offer matches another only if it's about the same thing, and confirming names the offer | Fixed |
+| E6 | An instance's `serves` listed people one by one, so every joiner was a new signed version that widened what agents do | High | `serves` may name a team or a role's holders, which the directory resolves when each run opens. A group nobody is in is refused before anyone is asked | Fixed |
+| E7 | Retiring an instance and bringing it back lifted someone else's suspension (round 4's B4 by a new path) | Medium | Bringing an instance back keeps its suspension, and the ledger's entry says so | Fixed |
+| E8 | The gateway cached a checked version for its whole life, and once the settings in force stopped checking out, classified fields came back in clear and model calls went ahead | Medium | Nothing is cached. While the settings don't check out, model and tool calls are denied | Fixed |
+| E9 | The gateway's own database role could put back an older, wider version (round 4's B2, reopened by a later migration) | Medium | It may change only a version's text and signatures, and the core checks the two latest versions against their rows | Fixed |
+| E10 | A part owner's request could put a link in every approver's card, as often as they liked | Medium | Ids, parts and classes are plain words, people and groups must be in the directory, a person may make five requests a day with one waiting at a time, and nobody is asked about a version that changes nothing | Fixed |
+| E11 | A classified title reached models not approved for it, and an escalation named a record to people who may not see it | Medium | The title is withheld where the model isn't approved for it, and escalations go only to people who may see the record | Fixed |
+| E12 | People's words went into the append-only ledger as they were, past a note they'd asked a5s to forget and past retention, and approvals kept sign-ins that still worked (found by two) | Medium | The ledger keeps every text by its hash, and approvals keep sign-ins by their hash. Retention clears what people wait on, unconfirmed notes and old report snapshots | Fixed |
+| E13 | Model calls made at the same time overran run and day budgets: eight calls used 7,200 tokens of a budget of 1,000 | Medium | A run's model calls go one at a time | Fixed |
+| E14 | A handle's value came back to the model in a tool's result or error | Medium | Any handle's value in a result or an error goes back to the agent as its handle | Fixed |
+| E15 | One slow chat stopped a5s answering anyone, in any chat | Medium | Sweeps run on their own thread, and chats are written from the outbox | Fixed |
+| E16 | A chase refused for budget held the person's whole digest all day, changing the digest time sent a second digest, and held escalations went out after hours | Medium | A digest waits half an hour at most for its work, goes once a local day, and batches wait for working hours | Fixed |
+| E17 | A summary refused for one invented value lost code's facts and was asked for again on every run; it could be refused for citing the date a5s showed; and its facts grew until they crowded the conversation out (found by two) | Medium | A summary keeps what checks out, counts the turns' dates as said, keeps the newest 500 facts, takes a third of a run's budget at most, and folds a backlog a run's worth at a time | Fixed |
+| E18 | Budgets didn't fit the context each call carries: a long conversation left a run four calls, and a person seven answers a day | Medium | Deep Agents' tools for files, subagents and a shell aren't offered, which saves about 2,500 tokens a call, the contexts are smaller, and a release whose budgets don't fit six calls a run and twelve answers a day is refused | Fixed |
+| E19 | What a5s wrote in an agent's chat, such as an escalation, never reached the agent, and a digest from several agents arrived as one of their bots | Medium | What a5s writes in an agent's chat goes in that conversation as a5s's notice, and in Teams and Matrix each agent's digest goes in its own chat | Fixed |
+| E20 | The provenance note flagged dates a5s itself had given the agent, an agent could write a5s's note itself, a correction kept the agent's words as the person's, and common forms of amounts and dates went unchecked (found by two) | Medium | What a5s's tools return and its own context count as sources, a forged note is removed, a5s's note is kept apart from the agent's words, a correction must match what the person said, and more forms are recognised | Fixed |
+| E21 | The approval page told the first of two approvers the version would be in force within a minute | Medium | It says whose approval it still needs | Fixed |
+| E22 | The watcher said records were gone when only its parts had changed | Medium | A record that's still theirs, in a part it no longer works in, is left out of what it says, not said to be gone | Fixed |
+| E23 | The service desk couldn't run without changing a5s: a key pattern with a group broke cases, one ticket's brief read every ticket, a night shift was never working hours, the wrong person was named to someone nobody serves, a5s's tools named the sample's keys, and a message never reached a second instance of an agent (found by all three) | Medium | Keys are matched whole, a scenario may read one record with `record(key)`, hours may cross midnight, the owners of the instances' parts are named, a5s's own tools name no scenario's keys, and a message goes to the instance that works in its record's part | Fixed |
+| E24 | Approving accepted a sign-in that had no time of sign-in, so a silent sign-in at an unlocked browser could approve | Low | A sign-in must say it's fresh | Fixed |
+| E25 | A reminder for someone who'd left was refused every minute, forever, and a reminder at a set time counted toward the urgent cap | Low | Such a reminder is ended once, in the ledger, and reminders people asked for at a time don't count toward the cap | Fixed |
+| E26 | The status said replies met their objective when nothing had been answered, read warnings from the whole ledger and said nothing about failed deliveries; and traces said tools, messages and run openings took no time | Low | The status says "not known yet" with nothing to measure, reads warnings from the budgets, counts deliveries a chat didn't take, and reads denials by an index. Spans now enclose the work | Fixed |
+| E27 | No policy used a tool's `destructive` or `sends_outside` flags, so only the grant stopped a level-1 agent from using one | Low | Such tools need level 2, which comes in phase 2 | Fixed |
+| E28 | `note_waiting` promised to pause the person's own reminders, and the assistant offered a channel preference nothing implemented | Low | Its words say what it does, and the preference is gone | Fixed |
+| E29 | A run that provokes three provider failures stops that model for everyone for five minutes | Low | Only a provider's own failures count, not a refused request, and a provider that fails for one run is likely failing for all | Kept by design |
+| E30 | Obligations are one per source, record and person, so a ticket's response and resolution targets need separate sources, and a queue can't owe anything | Low | A scenario names a source for each target, and the system that assigns a queue's work says who owes it | Kept by design |
+
+What round 5 changed:
+
+- **Removed:** the gateway's cache of checked settings, YAML's anchors and aliases in settings, Deep Agents' file, subagent and shell tools, the assistant's channel preference, the ledger's rule that kept short text as it was, sign-ins kept as tokens, report snapshots kept after they're told, the rewrite of every open obligation every minute, a5s's own words in place of the agent's, the three empty spans, and the status's scans of the whole ledger.
+- **Added:** the outbox for every chat, the core giving reminders and chases itself, a half-hour bound on a digest's wait, one model call at a time for each run, strict settings, groups in `serves`, `record(key)` in the contract, hours across midnight, notice turns, budgets checked against the context at release, a policy for destructive and outside tools, and the status's lines for deliveries.
+- **Proposed and kept:** approval cards still say what a version changes, since every word in them now comes from the directory or a plain id; the urgent cap stays, since status shows when it holds anything back; and digests in the local inbox still combine all of a person's agents.
+- **Deferred:** sealing approvals in the gateway's sweep rather than the channels app, which would take the seal key off the internet-facing service and narrow R7; one check for parts and visibility in place of four; and a record shape the contract defines, in place of a tool's `record_field`, `record_arg`, `handles` and `text_fields`.
+
 ## Accepted risks
 
 Some risk no design removes. These remain, each accepted by its owner.
@@ -198,4 +244,4 @@ Some risk no design removes. These remain, each accepted by its owner.
 
 ## Next round
 
-Round 5 starts from the accepted risks, round 4's deferrals, and the code that phase 1's next steps build. It reads from all six angles, and reports what it removes.
+Round 6 starts from the accepted risks, round 5's deferrals, and the code phase 2 builds: the extractor, held proposals, counts, signed decisions and level 2. It reads from all six angles, and reports what it removes.

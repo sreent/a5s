@@ -31,11 +31,19 @@ To follow one run, find its spans by `a5s.run.id`, where the deployment sends tr
 2. Chases and reminders go on, on the fifth of each day kept for them. Reports wait for the next day.
 3. Budgets come with the release, so raising one is a new release that widens the agent, which the release approver signs. Don't raise one to get through a bad day.
 
+## Deliveries a chat didn't take
+
+**Shows as:** deliveries being tried again, or left in people's local inbox.
+
+1. a5s tries a message a chat didn't take after a minute, then two, four and eight. After five tries it leaves it in the person's inbox in the web chat and on the command line, and the ledger records a `message fallback` with the chat's answer.
+2. Read why with `a5s ledger tail`: a chat that's down, a bot's credentials that expired, or a person who left the conversation.
+3. Mend the chat. What's already in someone's inbox stays there, so tell them where to find it if they don't use the web chat.
+
 ## People get urgent messages in batches
 
 **Shows as:** urgent messages held for a batch.
 
-1. Someone has had five urgent messages today, across all the agents, so the rest wait and go together once an hour. That's a5s working as it should, and a sign an agent writes too much.
+1. Someone has had five urgent messages today, such as escalations, across all the agents, so the rest wait and go together once an hour, in their working hours. That's a5s working as it should, and a sign an agent writes too much or that much is falling due.
 2. Find which agent wrote them with `a5s ledger tail`: each one held shows as a message sent to `batch`.
 3. Tell the agent owner. What isn't urgent belongs in the digest.
 
@@ -47,6 +55,9 @@ To follow one run, find its spans by `a5s.run.id`, where the deployment sends tr
 2. `tools-match-the-release`: a scenario's tool changed since the release pinned it. Pin the tools again with `a5s pin`, test, and release.
 3. `models-see-only-data-they-are-approved-for`: the instance's model isn't approved for the class of data the settings name. Approve a model for it, or use one that is.
 4. `messages-go-only-to-the-audience`: an agent tried to write to someone a5s may not write to. That's usually right: check what it was asked.
+5. `settings-must-check-out`: the settings in force don't match their signatures or their rows, so every call is denied until they do. See [settings or the release don't check out](#settings-or-the-release-dont-check-out).
+6. `lasting-or-outside-effects-need-level-2`: a tool the scenario marks as destructive, or as sending outside the organisation, was called below level 2. Tell the agent owner: below level 2, agents draft and people act.
+7. `arguments-fit-the-schema` or `records-are-named-by-key`: the agent called a tool with arguments it doesn't take. Once in a while is the model's mistake. Many in a row may mean the tool's description misleads it: tell the agent owner.
 
 ## An instance isn't active
 
@@ -80,7 +91,7 @@ To follow one run, find its spans by `a5s.run.id`, where the deployment sends tr
 
 ## An objective is missed
 
-**Shows as:** `missed` beside replies or chases.
+**Shows as:** `missed` beside replies or chases. `Not known yet` means nothing was answered or fell due: check the runs line, since a day of failed runs answers nothing.
 
 1. Slow replies: look at the queue and at model latency in the traces, then at the sections above.
 2. Late chases: check that the scheduler sweeps every minute, and that the records can be read. While they can't, nothing owed changes.

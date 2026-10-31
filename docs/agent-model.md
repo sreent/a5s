@@ -116,22 +116,24 @@ triggers:
 obligations: [records]           # it reminds its people of what falls due in the records
 schedules: []                    # none: what it does, it does for someone
 reminders: true                  # it offers reminders, and keeps those people confirm
-preferences: [digest-time, channel, how-i-work]
+preferences: [digest-time, how-i-work]
 channels: [teams]
 context:
-  budget_tokens: 50000           # split by part, tested at release
+  budget_tokens: 24000           # split by part, tested at release
   recall: true                   # it searches its conversation with the person it acts for
 budget:                          # in tokens, as the providers count them [TBC: from current volumes]
   per_run: 200000
   per_person_per_day: 1000000    # a fifth of it kept for chases and reminders
 ```
 
+Each model call carries the whole context and, beside it, the instructions, the tools and what the run has read so far, so the budgets are checked against the context when a release is loaded: a run's budget must fit six calls of the context and about 6,000 tokens beside it, and a person's day, beside the fifth kept for chases and reminders, twelve answers of two calls each. A release that doesn't fit is refused.
+
 A schedule names its times, in the time zone of the instance's owner, its days, and the task a5s gives the agent each time, such as `{name: morning, at: "09:00", days: weekdays, task: Look through the open questions.}`. Times need quotes, because YAML reads an unquoted 9:00 as a number.
 
-An agent whose release keeps reminders gets a5s's own tools for them: it offers a reminder, or to follow something up, and a5s keeps it only once the person says yes in a later message of their own. Its people can list and cancel theirs, and say what they're waiting on for one of their records, which pauses reminders about it until the date they give.
+An agent whose release keeps reminders gets a5s's own tools for them: it offers a reminder, or to follow something up, and a5s keeps it only once the person says yes in a later message of their own. Its people can list and cancel theirs, and say what they're waiting on for one of their records, which pauses a5s's chases about it until the date they give. Confirming names the offer the person said yes to, so two offers waiting are never confused.
 
 A report names a kind of record, such as `{source: records}`, as the [watcher's](../agents/watcher/agent.yaml) does. Each working day, in each person's digest, the agent tells each person it serves what changed in their records of that kind since it last told them, and what fell due. The first time, it tells them what's open. Code works the facts out from the records, and the agent only puts them into words, so a day with nothing new starts no model. The run acts for that person alone.
 
 The preferences a release lists are those people may set through the agent, such as `digest-time`, the time their daily digest comes, which a5s's own tool sets when they ask.
 
-The register adds what changes without a release: each instance, its identity and its status. Each deployment's signed settings name who an instance serves, its level, and its owner and deputy, who are people in that deployment's directory, so the same definition serves any scenario.
+The register adds what changes without a release: each instance, its identity and its status. Each deployment's signed settings name who an instance serves, by name or as a team or a role's holders, such as `team:sales`, which the directory resolves when each run opens, its level, and its owner and deputy, who are people in that deployment's directory, so the same definition serves any scenario.
