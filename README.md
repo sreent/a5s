@@ -82,6 +82,7 @@ uv run a5s say --as ana assistant "Which customer questions are still open?"
 uv run a5s inbox --as ana    # her daily digest, from all her agents, once there's news
 uv run a5s summaries --as ana   # what a5s keeps of her conversation, once it outgrows a run
 uv run a5s ledger tail
+uv run a5s status           # how a5s is doing: its queue, runs, denials, budgets and objectives
 uv run a5s ledger verify
 ```
 
@@ -145,6 +146,7 @@ The smoke test runs this way: Keycloak for sign-in, Synapse for Matrix, a model 
 | [IT service desk](scenarios/it-service-desk.md) | A scenario on paper, to check the contract is general |
 | [Critique](docs/critique.md) | What each adversarial review found, how the design answers it, and what each round removed |
 | [Starting values](docs/starting-values.md) | The numbers a5s starts from, by phase |
+| [Runbooks](docs/runbooks.md) | For the team that runs a5s: what to do when each part of `a5s status` goes wrong |
 | [Research](docs/research/platform-lessons.md) | What Deep Agents, Microsoft, AWS, Google and Hermes Agent offer, with the [notes](docs/research/notes/) behind it |
 
 Every change to the design gets an adversarial review before it settles, from six angles: an outside attacker, insiders, failure, colleagues, the builder and funder, and a second scenario. Each round reports what it removed as well as what it added.

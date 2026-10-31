@@ -197,11 +197,12 @@ The scenario's own processes work without agents. So when a5s can't run safely, 
 
 ## Operations
 
-Phase 1 sets these up [TBC]:
+Phase 1 sets these up:
 
-- **Environments:** local, against the scenario's fake; test; and production. Each scenario's data and agents are kept apart.
-- **Objectives:** for example, how quickly an agent replies, and the share of obligations chased on time.
-- **Dashboards and runbooks** for the team that runs a5s: runs, denials, queues, costs and suspensions, and what to do when each goes wrong. Who's on call.
+- **Environments:** local, against the scenario's fake; test; and production. Each scenario's data and agents are kept apart [TBC].
+- **Objectives:** how quickly people get answers, nine in ten within two minutes, and the share of what's owed that's chased before it falls due, 95% [TBC: from the first users' baseline].
+- **Status and runbooks** for the team that runs a5s: the queue, runs, denials, budgets, suspensions and breakers, and the objectives, from `a5s status` or a dashboard, and what to do when each goes wrong ([runbooks](runbooks.md)). Who's on call [TBC].
+- **Traces** as masked OpenTelemetry spans, which carry no prompt, reply, message, tool argument or person, kept for 14 days.
 
 ## Hosting
 

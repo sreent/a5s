@@ -61,7 +61,9 @@ from a5s.core import (
     reminders,
     reports,
     schedules,
+    status,
     topics,
+    traces,
 )
 from a5s.core.breakers import FAILURES, Breakers
 from a5s.core.identity import IdentityError, UnknownPerson, Verifier, signed_in
@@ -763,6 +765,10 @@ def create_app(gw: Gateway) -> FastAPI:
                 "decision": "deny" if reasons else "allow", "reasons": reasons,
                 "args": {"trigger": kind, **opening.args},
             })
+        with traces.span("open_run", **{"a5s.run.id": None if reasons else run_id,
+                                        "a5s.instance": body.instance, "a5s.trigger": kind,
+                                        "a5s.decision": "deny" if reasons else "allow"}):
+            pass
         if reasons:
             raise HTTPException(409, {"reasons": reasons, "status": inst["status"],
                                       "owner": inst["owner"], "suspended_by": inst["suspended_by"],
@@ -1127,6 +1133,12 @@ def create_app(gw: Gateway) -> FastAPI:
                              (outcome, gw.scenario.name, row["digest"]))
         return {"applied": applied}
 
+    @app.get("/status", dependencies=[Depends(service)])
+    def status_now() -> dict:
+        """How a5s is doing, for the team that runs it and its dashboards (core/status.py)."""
+        with db.transaction(gw.url) as conn:
+            return status.report(conn, gw.breakers.open())
+
     # Instances: anyone with the role can make a5s safer alone.
 
     def who_asks(body: StatusChange) -> tuple[str, str]:
@@ -1245,7 +1257,10 @@ def create_app(gw: Gateway) -> FastAPI:
             return JSONResponse(status_code=403,
                                 content={"denied": True, **decision.as_dict(explain=True)})
         if core is not None:
-            return call_core_tool(core, args, row, seq)
+            with traces.span(f"execute_tool {name}", **{
+                    "gen_ai.operation.name": "execute_tool", "gen_ai.tool.name": name,
+                    "a5s.run.id": row["run"], "a5s.instance": row["id"], "a5s.tool.own": True}):
+                return call_core_tool(core, args, row, seq)
         try:
             with db.transaction(gw.url) as conn:  # a system gets the values handles stand for
                 given = handles.resolved_args(conn, row["run"], args)
@@ -1265,6 +1280,11 @@ def create_app(gw: Gateway) -> FastAPI:
                 log.exception("couldn't note what %s read from %s", row["run"], name)
         recorded = record({"kind": "tool", "action": name, "run": row["run"], "instance": row["id"],
                            "decision": "record", "of": seq, "outcome": outcome})
+        with traces.span(f"execute_tool {name}", **{
+                "gen_ai.operation.name": "execute_tool", "gen_ai.tool.name": name,
+                "a5s.run.id": row["run"], "a5s.instance": row["id"],
+                "error.type": "tool_error" if outcome["status"] != "ok" else None}):
+            pass
         if outcome["status"] != "ok":
             return JSONResponse(status_code=502, content={"error": outcome["error"]})
         return {"result": result, "recorded": recorded}
@@ -1340,6 +1360,10 @@ def create_app(gw: Gateway) -> FastAPI:
                     "text) values (%s, %s, %s, %s, %s, %s, %s)",
                     (row["run"], row["id"], row["definition"], inbound, body.to, route["channel"],
                      shown))
+        with traces.span("send_message", **{"a5s.run.id": row["run"], "a5s.instance": row["id"],
+                                            "a5s.channel": route["channel"] if route else None,
+                                            "a5s.decision": decision.label}):
+            pass
         if not decision.allowed:
             return JSONResponse(status_code=403,
                                 content={"denied": True, **decision.as_dict(explain=True)})
@@ -1468,15 +1492,27 @@ def create_app(gw: Gateway) -> FastAPI:
             return JSONResponse(status_code=403, content=models.error_body(
                 api, "denied by policy: " + "; ".join(decision.explanations)))
         called = gw.breakers.allow(alias)
-        if not called:  # it failed in a row lately: it isn't called for a few minutes
-            status, data = 503, models.error_body(
-                api, f"{alias} failed {FAILURES} times in a row, so a5s isn't calling it for a few "
-                     "minutes", "model_unavailable")
-        else:
-            try:
-                status, data = models.forward(model, forwarded, gw.http)
-            except models.ModelUnavailable as exc:
-                status, data = 503, models.error_body(api, str(exc), "model_unavailable")
+        with traces.span(f"chat {alias}", **{
+                "gen_ai.operation.name": "chat", "gen_ai.provider.name": model.provider,
+                "gen_ai.request.model": alias, "a5s.run.id": row["run"],
+                "a5s.instance": row["id"]}) as current:
+            if not called:  # it failed in a row lately: it isn't called for a few minutes
+                status, data = 503, models.error_body(
+                    api, f"{alias} failed {FAILURES} times in a row, so a5s isn't calling it for "
+                         "a few minutes", "model_unavailable")
+            else:
+                try:
+                    status, data = models.forward(model, forwarded, gw.http)
+                except models.ModelUnavailable as exc:
+                    status, data = 503, models.error_body(api, str(exc), "model_unavailable")
+            usage = data.get("usage") if isinstance(data, dict) else None
+            current.set_attributes({k: v for k, v in {
+                "gen_ai.response.model": data.get("model") if isinstance(data, dict) else None,
+                "gen_ai.usage.input_tokens": (usage or {}).get("prompt_tokens",
+                                                               (usage or {}).get("input_tokens")),
+                "gen_ai.usage.output_tokens": (usage or {}).get("completion_tokens",
+                                                                (usage or {}).get("output_tokens")),
+                "error.type": str(status) if status >= 400 else None}.items() if v is not None})
         reported = data.get("model") if isinstance(data, dict) else None
         expected = model.reported_model or model.model
         if called and status < 400 and reported != expected:

@@ -10,6 +10,7 @@ import httpx
 from a5s import definitions
 from a5s.config import Config, load_models
 from a5s.contract import Scenario
+from a5s.core import traces
 from a5s.core.gateway import Gateway, create_app
 from a5s.core.identity import verifier_from_env
 from a5s.core.matrix import Matrix, MatrixConfig
@@ -52,4 +53,5 @@ def app(cfg: Config | None = None):
     cfg = cfg or Config.from_env()
     if not cfg.service_token:
         raise RuntimeError("Set A5S_SERVICE_TOKEN, or run `a5s up` to create one.")
+    traces.setup("a5s-gateway")  # if the deployment names an OpenTelemetry endpoint
     return create_app(gateway(cfg))

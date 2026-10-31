@@ -21,7 +21,7 @@ import yaml
 from a5s import build, db, definitions, devdb, worker
 from a5s.config import DEFAULT_DATABASE_URL, Config
 from a5s.contract import Signature
-from a5s.core import anchor, inbox, ledger, registry, releases, signing
+from a5s.core import anchor, inbox, ledger, registry, releases, signing, status
 from a5s.services.scheduler import Scheduler, remote_worker
 
 log = logging.getLogger("a5s")
@@ -333,6 +333,8 @@ def main(argv: list[str] | None = None) -> None:
         p = sub.add_parser(verb, help=f"{verb} an instance")
         p.add_argument("instance")
         p.add_argument("--by", help="who you are, in development; else your sign-in in A5S_TOKEN")
+    sub.add_parser("status", help="how a5s is doing: its queue, runs, denials, budgets and "
+                                  "objectives")
     copy = sub.add_parser("anchor", help="copy the ledger to locked storage")
     copy.add_argument("--every", type=int, metavar="SECONDS", help="keep copying, this often")
     rel = sub.add_parser("release", help="approve a release of a5s for this deployment")
@@ -403,6 +405,8 @@ def main(argv: list[str] | None = None) -> None:
                      {"by": args.by, "identity": os.environ.get("A5S_TOKEN")}))
     elif args.command == "anchor":
         _anchor(cfg, args.every)
+    elif args.command == "status":
+        print(status.told(_admin(cfg, "/status")))
     elif args.command == "release":
         _release(cfg, args)
     elif args.command == "ledger" and args.what == "verify":
