@@ -2,7 +2,7 @@
 
 **An agent OS on LangChain Deep Agents, for agents that live and work alongside people, under the rules people set.**
 
-**Status:** Phase 1 has started. Its first step, a walking skeleton, runs locally against a sample scenario with real models, the second, the release pipeline, is under way, and the second of its two reference agents, the watcher, is built ([progress](docs/phase-1.md#progress)).
+**Status:** Phase 1 runs locally against a sample scenario with real models, its release pipeline is under way, and deploying to the clouds and connecting Teams wait for accounts and a tenant ([progress](docs/phase-1.md#progress)). Phase 2, agents that act, is built: held changes that people decide on the core's page, counts, level 2 earned on graded samples, and the extractor for content from outside ([progress](docs/phase-2.md#progress)). Round 6 of the critique is reading it.
 
 a5s runs agents the way an operating system runs programs. It installs them, gives each one an identity and only the rights it needs, wakes it when there's work, checks every call it makes, and records what happened. Unlike a task runner, it keeps agents alive between tasks: each one remembers its conversations with people, keeps track of what it owes them, and picks up where it left off, for months.
 
@@ -42,7 +42,8 @@ The assistant, one of the two reference agents phase 1 builds, keeps track of wh
 - **Friday, 09:00.** Their digest arrives at the time they chose: one message from all their agents together. It includes the reminder, with a link back to the conversation.
 - **09:20.** They reply that they're waiting on finance until the 14th. The assistant notes it and stops reminding them until then.
 - **Two weeks later,** they ask where the customer's question landed. A fresh run reads the topic's summary and the original turns, and answers with links. Nothing was lost between runs.
-- **All along,** every call went through a gateway, was checked by policy and was recorded in the ledger. The assistant could draft the reply, but not send it outside the organisation: it holds no right to.
+- **Wednesday.** They ask it to move the question's due date to next week. The change waits for the owner of the question's part, who gets a card, reads what it changes in words code works out, and approves it on the core's page. a5s makes the change, if the question hasn't changed meanwhile, and tells them.
+- **All along,** every call went through a gateway, was checked by policy and was recorded in the ledger. The assistant could draft the reply, but not send it outside the organisation: it holds no right to. It read the customer's email only through a5s's extractor, as a form of the values it named, so nothing the customer wrote could tell it what to do.
 
 Each scenario decides what its agents may do beyond that. On an IT service desk, for example, a person could ask to reset their own password and have it done at once, because that [scenario](scenarios/it-service-desk.md) allows self-service the identity provider verifies. Another scenario could rule out anything like it.
 
