@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from psycopg.types.json import Jsonb
 
+from a5s.core import values
 from a5s.core.coretools import Call, CoreTool, Refused
 from a5s.core.obligations import day
 from a5s.core.reminders import say
@@ -43,6 +44,13 @@ def correct(call: Call) -> dict:
         raise Refused("say what's wrong with the summary, and what's right, in a sentence")
     if len(text) > 500:
         raise Refused("keep the correction to a sentence or two")
+    said = call.conn.execute("select text from inbound where id = %s",
+                             (call.run["trigger"].get("inbound"),)).fetchone()
+    pattern = call.scenario.record_pattern
+    if wrong := values.unmatched(values.found(text, pattern),
+                                 values.found(said["text"] if said else "", pattern)):
+        raise Refused(f"a correction keeps only what they said, and they didn't say "
+                      f"{', '.join(v.text for v in wrong)}: put it in their words")
     topic = call.run["trigger"].get("topic") or "general"
     row = call.conn.execute("select body from summaries where person = %s and agent = %s "
                             "and topic = %s for update", (person.id, call.run["definition"], topic)

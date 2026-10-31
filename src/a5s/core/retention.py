@@ -4,8 +4,10 @@ A conversation, everything one person and one agent have said to each other, is 
 months after the last thing either said, and then deleted: its turns and summaries, the
 messages the core received and sent for it, and what waited for a digest or a batch. a5s's
 own notices go 12 months after they were written, and so do the notes on how someone likes to
-work, and the reminders, 12 months after they ended. A note people ask to forget goes at once
-(core/profiles.py). The values a run was handed as handles, and what it read, go once the run
+work, and the reminders, 12 months after they ended, as do what someone said they were
+waiting on, offers nobody said yes to, and the record of each day's report. A note people ask
+to forget goes at once (core/profiles.py). The ledger keeps what people and agents wrote only
+by hash and length (core/ledger.py), so retention needn't touch it. The values a run was handed as handles, and what it read, go once the run
 has been over for an hour: a handle works only in its run, and nothing reads them after.
 
 The core sweeps every hour, by the database's clock, and the ledger records what each sweep
@@ -59,6 +61,11 @@ def sweep(conn: psycopg.Connection) -> dict[str, int]:
         delete("messages", f"delete from {table} where agent is null "
                            f"and {at} < now() - interval '{KEPT}'")
     delete("notes", f"delete from profile_notes where ended_at < now() - interval '{KEPT}'")
+    delete("notes", "delete from profile_notes where confirmed_at is null and ended_at is null "
+                    f"and offered_at < now() - interval '{KEPT}'")  # offers nobody said yes to
+    delete("waiting", "update obligations set waiting_on = null where waiting_on is not null "
+                      f"and waiting_noted_at < now() - interval '{KEPT}'")  # in their words
+    delete("reports", f"delete from report_fires where fired_at < now() - interval '{KEPT}'")
     delete("reminders", "delete from reminders where greatest(reminded_at, cancelled_at, "
                         "case when confirmed_at is null then offered_at end) "
                         f"< now() - interval '{KEPT}'")

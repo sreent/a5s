@@ -52,6 +52,9 @@ def a_working_day_after(person: Person, at: datetime) -> datetime:
     return here
 
 
+WITHHELD = "[title withheld]"  # a title of a class the model isn't approved for
+
+
 def day(person: Person, at: datetime) -> str:
     """Such as Mon 2 Nov, in the person's time zone."""
     here = local(person, at)
@@ -62,15 +65,16 @@ def halfway(row: dict) -> datetime:
     return row["opened_at"] + (row["due_at"] - row["opened_at"]) / 2
 
 
-def chain(scenario: Scenario, person: str) -> list[Person]:
-    """The person's reporting line, nearest first, leaving out anyone a5s may not write to."""
+def chain(scenario: Scenario, person: str, record: str | None = None) -> list[Person]:
+    """The person's reporting line, nearest first, leaving out anyone a5s may not write to,
+    and anyone the directory says may not see the record it's about."""
     line: list[Person] = []
     seen = {person}
     current = scenario.person(person)
     while current and current.manager and current.manager not in seen:
         seen.add(current.manager)
         current = scenario.person(current.manager)
-        if current and current.in_audience:
+        if current and current.in_audience and (record is None or scenario.sees(current.id, record)):
             line.append(current)
     return line
 
@@ -134,7 +138,7 @@ def to_escalate(row: dict, scenario: Scenario, now: datetime, can_act: bool) -> 
     person = scenario.person(row["person"])
     if row["done_at"] or now < row["due_at"] or person is None:
         return None
-    line = chain(scenario, row["person"])
+    line = chain(scenario, row["person"], row["record"])
     if row["escalations"] >= len(line):
         return None  # the top of the line has heard
     if row["escalations"]:
@@ -174,11 +178,13 @@ def escalation(row: dict, scenario: Scenario, recipient: Person, inst: dict | No
     return " ".join(said)
 
 
-def chase(row: dict, person: Person) -> str:
-    """The task a5s gives the agent that reminds someone: worked out from the records."""
+def chase(row: dict, person: Person, *, withheld: bool = False) -> str:
+    """The task a5s gives the agent that reminds someone: worked out from the records. With
+    `withheld`, the record's title is of a class the agent's model isn't approved for."""
     due = local(person, row["due_at"])
     link = f" The record is at {row['link']}." if row["link"] else ""
-    return (f"Remind {person.name} that {row['record']}, {row['title']}, is due by "
+    title = WITHHELD if withheld else row["title"]
+    return (f"Remind {person.name} that {row['record']}, {title}, is due by "
             f"{due:%H:%M} on {day(person, row['due_at'])} and is still open. Check the record "
             f"first, and offer to help with it. Write to them briefly, in one message.{link}")
 

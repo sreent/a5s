@@ -22,18 +22,42 @@ TOKEN = re.compile(r"\[h:([0-9a-f]{8})\]")
 
 def issue(conn: psycopg.Connection, run: str, source: str, result: Any,
           fields: tuple[str, ...]) -> Any:
-    """What a tool returned, with the values in the named fields handed over as handles."""
-    if not fields:
-        return result
-    if isinstance(result, list):
-        return [issue(conn, run, source, item, fields) for item in result]
-    if not isinstance(result, dict):
-        return result
-    given = dict(result)
-    for field in fields:
-        if isinstance(given.get(field), str) and given[field]:
-            given[field] = f"[h:{_handle(conn, run, source, field, given[field])}]"
-    return given
+    """What a tool returned, with the values in the named fields handed over as handles, at
+    any depth, and any value the run already holds a handle for hidden behind it wherever
+    else it appears, such as in an error that repeats an argument."""
+
+    def given(value: Any) -> Any:
+        if isinstance(value, list):
+            return [given(item) for item in value]
+        if not isinstance(value, dict):
+            return value
+        return {key: f"[h:{_handle(conn, run, source, key, found)}]"
+                if key in fields and isinstance(found, str) and found else given(found)
+                for key, found in value.items()}
+
+    return masked(conn, run, given(result) if fields else result)
+
+
+def masked(conn: psycopg.Connection, run: str, value: Any) -> Any:
+    """A value with every value the run holds a handle for replaced by its handle, at any
+    depth, so a handle's value never comes back to the model."""
+    held = {r["value"]: r["handle"] for r in conn.execute(
+        "select handle, value from run_handles where run_id = %s", (run,))}
+    if not held:
+        return value
+
+    def hide(found: Any) -> Any:
+        if isinstance(found, str):
+            for secret in sorted(held, key=len, reverse=True):
+                found = found.replace(secret, f"[h:{held[secret]}]")
+            return found
+        if isinstance(found, list):
+            return [hide(item) for item in found]
+        if isinstance(found, dict):
+            return {k: hide(v) for k, v in found.items()}
+        return found
+
+    return hide(value)
 
 
 def _handle(conn: psycopg.Connection, run: str, source: str, field: str, value: str) -> str:
@@ -56,6 +80,13 @@ def resolved(conn: psycopg.Connection, run: str, text: str) -> str:
     return TOKEN.sub(lambda m: held.get(m.group(1), m.group(0)), text)
 
 
-def resolved_args(conn: psycopg.Connection, run: str, args: dict[str, Any]) -> dict[str, Any]:
-    """A tool's arguments, with the run's handles replaced by their values, as a system gets them."""
-    return {k: resolved(conn, run, v) if isinstance(v, str) else v for k, v in args.items()}
+def resolved_args(conn: psycopg.Connection, run: str, args: Any) -> Any:
+    """A tool's arguments, with the run's handles replaced by their values at any depth, as a
+    system gets them."""
+    if isinstance(args, str):
+        return resolved(conn, run, args)
+    if isinstance(args, list):
+        return [resolved_args(conn, run, item) for item in args]
+    if isinstance(args, dict):
+        return {k: resolved_args(conn, run, v) for k, v in args.items()}
+    return args

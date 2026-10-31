@@ -92,6 +92,8 @@ _IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 _TAG = re.compile(r"</?[A-Za-z][^>]*>")  # HTML, and autolinks such as <https://...>
 _MARKDOWN_LINK = re.compile(r"\[([^\]]*)\]\(\s*([^)\s]*)[^)]*\)")
 _URL = re.compile(r"(?i)(?:\b[a-z][a-z0-9+.-]*:[/\\]+|(?<![\w:/\\])//|\bwww\.)[^\s)>\]]*")
+# a5s's own note on values, which only a5s writes: an agent's copy of one is dropped
+_FORGED_NOTE = re.compile(r"(?is)\(\s*a5s\s*:.*?\)")
 
 
 def token_hash(token: str) -> bytes:
@@ -119,12 +121,67 @@ def sanitize(text: str, allowed: tuple[str, ...]) -> tuple[str, int]:
         removed += 1
         return "[link removed]"
 
+    text, forged = _FORGED_NOTE.subn("", text)
     text, images = _IMAGE.subn("[image removed]", text)
     text, tags = _TAG.subn("[removed]", text)
     text = _MARKDOWN_LINK.sub(link, text)
     parts = re.split(r"(\[[^\]]*\]\([^)]*\))", text)  # record links already kept stay whole
     text = "".join(p if _MARKDOWN_LINK.fullmatch(p) else _URL.sub(url, p) for p in parts)
-    return text, removed + images + tags
+    return text.strip() if forged else text, removed + images + tags + forged
+
+
+def cleaned(value: Any, allowed: tuple[str, ...]) -> tuple[Any, int]:
+    """Text at any depth of a value, sanitized, and how many things were removed."""
+    if isinstance(value, str):
+        return sanitize(value, allowed)
+    if isinstance(value, list):
+        found = [cleaned(item, allowed) for item in value]
+        return [v for v, _ in found], sum(n for _, n in found)
+    if isinstance(value, dict):
+        found = {k: cleaned(v, allowed) for k, v in value.items()}
+        return {k: v for k, (v, _) in found.items()}, sum(n for _, n in found.values())
+    return value, 0
+
+
+def strings(value: Any) -> list[str]:
+    """Every string at any depth of a value, in order."""
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, list):
+        return [s for item in value for s in strings(item)]
+    if isinstance(value, dict):
+        return [s for v in value.values() for s in strings(v)]
+    return []
+
+
+_TYPES = {"string": str, "integer": int, "number": int | float, "boolean": bool, "object": dict,
+          "array": list, "null": type(None)}
+
+
+def misfit(schema: dict[str, Any], value: Any, where: str = "") -> str | None:
+    """Why a tool's arguments don't fit its pinned schema, if they don't: the types, required
+    properties and items it names. A model can send anything, so a call must fit its schema
+    before policy looks at it."""
+    kind = schema.get("type")
+    kinds = kind if isinstance(kind, list) else [kind] if kind else []
+    if kinds and not any(isinstance(value, _TYPES.get(k, object)) and not (
+            k in ("integer", "number") and isinstance(value, bool)) for k in kinds):
+        return f"{where or 'the arguments'} should be {' or '.join(kinds)}"
+    if isinstance(value, dict):
+        for name in schema.get("required") or []:
+            if name not in value:
+                return f"{where}{'.' if where else ''}{name} is missing"
+        for name, found in value.items():
+            sub = (schema.get("properties") or {}).get(name)
+            if sub is None and schema.get("additionalProperties") is False:
+                return f"{where}{'.' if where else ''}{name} isn't one of its arguments"
+            if sub and (problem := misfit(sub, found, f"{where}{'.' if where else ''}{name}")):
+                return problem
+    if isinstance(value, list) and isinstance(schema.get("items"), dict):
+        for n, item in enumerate(value):
+            if problem := misfit(schema["items"], item, f"{where}[{n}]"):
+                return problem
+    return None
 
 
 @dataclass
@@ -429,7 +486,8 @@ class Gateway:
             trigger={"kind": "obligation", "obligation": number, "record": row["record"],
                      "person": row["person"], "topic": row["record"]},
             acts_for=[row["person"]], args={"obligation": number, "record": row["record"]},
-            reasons=[], task=obligations.chase(row, person) if person else None,
+            reasons=[], task=obligations.chase(row, person, withheld=self.title_hidden(
+                conn, inst["model"])) if person else None,
             used=row["chased_at"] is not None or row["escalations"] > 0)
         if row["done_at"]:
             opening.reasons.append("the records no longer owe it")
@@ -498,10 +556,12 @@ class Gateway:
         else:
             try:
                 unseen = self.unseen(conn, inst["model"])  # what its model never sees
+                watched = self.scenario.watched()
+                reach = parts.within(self.scenario, inst, [who], watched)
                 news = reports.news(conn, self.scenario.name, inst["id"], person, source, [
                     replace(r, fields={k: v for k, v in r.fields.items() if k not in unseen})
-                    for r in parts.within(self.scenario, inst, [who], self.scenario.watched())],
-                    now)
+                    for r in reach], now, withheld="title" in unseen,
+                    beyond=reports.beyond(watched, reach, who))
             except Exception:  # the day's report waits until they can be read
                 log.exception("couldn't read the records for %s's report", who)
                 opening.reasons.append("the records can't be read")
@@ -615,6 +675,14 @@ class Gateway:
         model = self.models.get(alias)
         classes = model.data_classes if model else ()
         return {f for f, cls in settings.classified.items() if cls not in classes}
+
+    def title_hidden(self, conn: psycopg.Connection, alias: str) -> bool:
+        """Whether records' titles are of a class the model isn't approved for, or the settings
+        in force can't say, so a5s writes no title into what it tells the model."""
+        try:
+            return "title" in self.unseen(conn, alias)
+        except RuntimeError:
+            return True
 
     def entry(self, row: dict, kind: str, action: str, decision: Decision, **fields: Any) -> dict:
         return {
@@ -962,8 +1030,9 @@ def create_app(gw: Gateway) -> FastAPI:
                         except Exception:  # each report waits for a sweep that can read them
                             log.exception("couldn't read the records for reports")
                             return due
+                    reach = parts.within(gw.scenario, inst, [who], records)
                     news = reports.news(conn, gw.scenario.name, inst["id"], person, report.source,
-                                        parts.within(gw.scenario, inst, [who], records), now)
+                                        reach, now, beyond=reports.beyond(records, reach, who))
                     if news.facts:
                         due.append({"kind": "report", "report": {"person": who, "source": report.source},
                                     "instance": inst["id"], "agent": inst["definition"], "person": who})
@@ -1370,27 +1439,39 @@ def create_app(gw: Gateway) -> FastAPI:
         tool = None if core else gw.scenario.tools().get(name)
         args, removed = dict(body.args), 0
         for field_name in (core or tool).text_fields if (core or tool) else ():
-            if isinstance(args.get(field_name), str):
-                args[field_name], dropped = sanitize(args[field_name], gw.scenario.record_links)
+            if field_name in args:  # outgoing text, at any depth
+                args[field_name], dropped = cleaned(args[field_name], gw.scenario.record_links)
                 removed += dropped
         with db.transaction(gw.url) as conn:
             row = load_run(conn, token)
             entity = gw.core_tool_entity(name) if core else gw.tool_entity(name, tool, row["pins"])
             arg = tool.record_arg if tool else None  # the record it's about, if it names one
-            records = [args[arg]] if arg and isinstance(args.get(arg), str) and args[arg] else []
+            named = args.get(arg) if arg else None
+            records = [] if named in (None, "") else named if isinstance(named, list) else [named]
             decision = gw.decide(row, "call_tool", entity, [],
-                                 **parts.about(gw.scenario, row, records))
+                                 **parts.about(gw.scenario, row, [r for r in records
+                                                                  if isinstance(r, str) and r]))
             if (found := gw.settings_in_force(conn))[0] is None:  # fail closed
                 decision = Decision(False, ("settings-must-check-out",), explanations=(
                     f"a5s can't use the settings in force: {found[1]}",))
+            elif problem := misfit((core or tool).schema if (core or tool) else {}, args):
+                decision = Decision(False, ("arguments-fit-the-schema",), explanations=(
+                    f"the arguments don't fit the tool: {problem}",))
+            elif any(not isinstance(r, str) or not r for r in records):
+                decision = Decision(False, ("records-are-named-by-key",), explanations=(
+                    "a record is named by its key, in words",))
             if row["trigger"].get("kind") in OWN_RUNS:
                 decision = Decision(False, ("a5s-runs-call-no-tools",), explanations=(
                     "a5s's own runs, such as keeping a summary, call no tools",))
-            texts = [f for f in tool.text_fields if isinstance(args.get(f), str)] if tool else []
-            traced = provenance.traced(conn, gw.scenario, row, "\n".join(args[f] for f in texts))
-            if own := [t["value"] for t in traced if t["from"] is None]:  # people see it apart
-                args[texts[-1]] += "\n\n" + provenance.note(row["definition"], own)
-            seq = ledger.append(conn, gw.entry(row, "tool", name, decision, args=ledger.mask(args),
+            texts = [s for f in tool.text_fields for s in strings(args.get(f))] if tool else []
+            traced = provenance.traced(conn, gw.scenario, row, "\n".join(texts))
+            last = next((f for f in reversed(tool.text_fields) if isinstance(args.get(f), str)),
+                        None) if tool else None
+            if (own := [t["value"] for t in traced if t["from"] is None]) and last:
+                args[last] += "\n\n" + provenance.note(row["definition"], own)  # apart
+            plain = (*((arg,) if arg else ()), *(core.plain if core else ()))
+            seq = ledger.append(conn, gw.entry(row, "tool", name, decision,
+                                               args=ledger.mask(args, plain),
                                                links_removed=removed,
                                                **({"values": values_of(traced)} if traced else {})))
         if not decision.allowed:
@@ -1414,7 +1495,9 @@ def create_app(gw: Gateway) -> FastAPI:
                 hidden = (*tool.handles, *sorted(gw.unseen(conn, row["model"])))  # and classified
                 result = handles.issue(conn, row["run"], name, result, hidden)  # ones it can't see
         except Exception as exc:  # noqa: BLE001 - the tool's own failure, recorded and reported
-            result, outcome = None, {"status": "error", "error": f"{type(exc).__name__}: {exc}"[:200]}
+            with db.transaction(gw.url) as conn:  # it may repeat an argument: no handle's value
+                said = handles.masked(conn, row["run"], f"{type(exc).__name__}: {exc}")
+            result, outcome = None, {"status": "error", "error": said[:200]}
         if outcome["status"] == "ok":
             try:
                 with db.transaction(gw.url) as conn:
@@ -1487,8 +1570,10 @@ def create_app(gw: Gateway) -> FastAPI:
                          else {"channel": "digest", "reply_to": {}} if gw.for_digest(conn, row)
                          else gw.at_once(conn, body.to, row["definition"], count=decision.allowed))
             traced = provenance.traced(conn, gw.scenario, row, text) if decision.allowed else []
+            said, note = text, None  # the agent's words, apart from a5s's own note on them
             if own := [t["value"] for t in traced if t["from"] is None]:  # people see it apart
-                text += "\n\n" + provenance.note(row["definition"], own)
+                note = provenance.note(row["definition"], own)
+                text += "\n\n" + note
             ledger.append(conn, gw.entry(row, "message", "send", decision, args={
                 "to": body.to, "chars": len(text), "sha256": hashlib.sha256(text.encode()).hexdigest(),
                 "links_removed": removed, **({"channel": route["channel"]} if route else {}),
@@ -1516,8 +1601,9 @@ def create_app(gw: Gateway) -> FastAPI:
             problem = deliver(route, shown, row["run"], row["id"])
             if problem:
                 return JSONResponse(status_code=502, content={"error": problem})
-        # As the agent wrote it, with its handles, for the conversation a later run reads
-        return {"sent": True, "text": text, "links_removed": removed}
+        # As the agent wrote it, with its handles, for the conversation a later run reads, and
+        # a5s's note apart, so no run takes a5s's words for the agent's, or learns to imitate them
+        return {"sent": True, "text": said, "note": note, "links_removed": removed}
 
     def deliver(route: dict, text: str, run: str | None, instance: str | None,
                 card: dict | None = None) -> str | None:

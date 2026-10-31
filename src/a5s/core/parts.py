@@ -35,18 +35,37 @@ def workable(scenario: Scenario, run: dict, record: str) -> bool:
 
 
 def kept(scenario: Scenario, run: dict, field: str | None, result: Any) -> tuple[Any, int]:
-    """What a tool returned, less the records in it the run may not work on, by the field
-    that names each, and how many it left out."""
-    def fits(item: Any) -> bool:
-        key = item.get(field) if isinstance(item, dict) else None
-        return not isinstance(key, str) or workable(scenario, run, key)
+    """What a tool returned, less the records in it the run may not work on, at any depth, by
+    the field that names each, and how many it left out. A record whose key isn't a string
+    is left out too, since nothing can say whose it is."""
+    withheld = 0
+
+    def fits(item: dict) -> bool:
+        key = item.get(field)
+        return isinstance(key, str) and bool(key) and workable(scenario, run, key)
+
+    def walk(value: Any) -> Any:
+        nonlocal withheld
+        if isinstance(value, list):
+            found = []
+            for item in value:
+                if isinstance(item, dict) and field in item and not fits(item):
+                    withheld += 1
+                else:
+                    found.append(walk(item))
+            return found
+        if isinstance(value, dict):
+            return {k: walk(v) for k, v in value.items()}
+        return value
 
     if not field:
         return result, 0
-    if isinstance(result, list):
-        found = [item for item in result if fits(item)]
-        return found, len(result) - len(found)
-    return (result, 0) if fits(result) else ({"error": UNSEEN}, 1)
+    if isinstance(result, dict) and field in result and not fits(result):
+        return {"error": UNSEEN}, 1
+    found = walk(result)
+    if isinstance(result, dict) and field in result and withheld:  # a record holding records
+        return {"error": UNSEEN}, withheld + 1
+    return found, withheld
 
 
 def within(scenario: Scenario, instance: dict, people: list[str], records: list[Any]) -> list[Any]:

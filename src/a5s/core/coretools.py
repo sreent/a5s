@@ -77,6 +77,9 @@ class CoreTool:
     # What of its result the run has read, as provenance counts it (core/provenance.py): such
     # as when things were said, and what the person said, but never the agent's own words
     sourced: Callable[[Any], Any] | None = None
+    # Arguments the ledger keeps as they are, such as a record's key or a reminder's number:
+    # everything else in the arguments it keeps by hash and length only
+    plain: tuple[str, ...] = ("record", "reminder")
 
     def definition(self) -> dict[str, Any]:
         return {"name": self.name, "description": self.description, "schema": self.schema,

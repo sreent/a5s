@@ -289,6 +289,9 @@ class Scheduler:
             with db.transaction(self.cfg.database_url) as conn:
                 context.add_turn(conn, person=person, agent=agent, role="agent",
                                  content=sent.json()["text"], run=run, topic=topic)
+                if note := sent.json().get("note"):  # a5s's own words on the agent's values
+                    context.add_turn(conn, person=person, agent=agent, role="notice",
+                                     content=note, run=run, topic=topic)
             outcome = "done"
         except ModelDown:
             log.warning("the model for run %s isn't answering", run)
@@ -406,6 +409,9 @@ class Scheduler:
                                      run=run, topic=topic)
                     context.add_turn(conn, person=person, agent=agent, role="agent",
                                      content=sent.json()["text"], run=run, topic=topic)
+                    if note := sent.json().get("note"):
+                        context.add_turn(conn, person=person, agent=agent, role="notice",
+                                         content=note, run=run, topic=topic)
             outcome = "done"
         except ModelDown:
             log.warning("the model for run %s isn't answering", run)

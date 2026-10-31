@@ -39,6 +39,7 @@ from a5s.definitions import Definition
 log = logging.getLogger(__name__)
 FRESH = 600  # seconds: how recent the sign-in that approves a version must be
 _SEALED = ("scenario", "digest", "person", "nonce", "salt", "issuer", "subject")
+HASHED = "sha256:"  # how a sign-in is kept: by its hash, never as a token that still works
 
 Directory = Callable[[str], Person | None]
 
@@ -75,7 +76,9 @@ def sealed(keys: tuple[str, ...], approval: dict) -> bool:
 
 def _mac(key: str, approval: dict) -> str:
     fields = {k: approval[k] for k in _SEALED}
-    fields["token"] = hashlib.sha256(approval["token"].encode()).hexdigest()
+    token = approval["token"]  # the sign-in, kept by its hash only once it's recorded
+    fields["token"] = (token.removeprefix(HASHED) if token.startswith(HASHED)
+                       else hashlib.sha256(token.encode()).hexdigest())
     return hmac.new(key.encode(), canonical(fields).encode(), hashlib.sha256).hexdigest()
 
 
@@ -277,6 +280,7 @@ def record(conn: psycopg.Connection, keys: tuple[str, ...], scenario: str, versi
                 "nonce": claims["nonce"], "salt": salt, "issuer": claims["iss"],
                 "subject": str(claims.get("sub") or "")}
     approval["seal"] = seal(keys, approval)
+    approval["token"] = HASHED + hashlib.sha256(token.encode()).hexdigest()  # kept, not usable
     if conn.execute("select 1 from settings_approvals where scenario = %s and digest = %s "
                     "and person = %s", (scenario, version, person)).fetchone():
         raise Refused(409, "you've approved this version already")
