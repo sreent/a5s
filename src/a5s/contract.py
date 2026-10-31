@@ -104,6 +104,12 @@ class Tool:
     # names the record it changes, by record_arg. At level 1, a5s holds such a call for the
     # owner of the record's part to decide, and makes it once they approve it.
     action: str | None = None
+    # Fields of what it returns that hold content from outside the organisation, such as an
+    # email's body, and the fixed form a5s's extractor fills from them instead, each field
+    # typed: key, amount, date, flag, handle, or choice:<one>|<another>. The agent gets the
+    # form, never the content, and its run is marked as having read outside content.
+    outside: tuple[str, ...] = ()
+    extract: dict[str, str] = field(default_factory=dict)
 
     @property
     def risk(self) -> dict[str, bool]:
@@ -125,6 +131,8 @@ class Tool:
             payload["records"] = [self.record_arg, self.record_field]
         if self.action:  # or that changes another type of thing
             payload["action"] = self.action
+        if self.outside:  # or reads outside content another way
+            payload["outside"] = [list(self.outside), self.extract]
         return hashlib.sha256(canonical(payload).encode()).hexdigest()
 
     def definition(self) -> dict[str, Any]:

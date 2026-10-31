@@ -13,7 +13,7 @@ autonomy:
                                  # settings set level 2 for a type of change, and samples
                                  # have raised a5s's cap to 2
 tools:
-  records: [search_records, get_record]    # the scenario's records, read only
+  records: [search_records, get_record, get_messages]  # the scenario's records, read only
   documents: [create_draft]
   changes: [change_due_date, close_question]  # each waits for its decider, below level 2
 triggers:
@@ -26,6 +26,7 @@ channels: [teams]
 context:
   budget_tokens: 24000           # split by part, tested at release
   recall: true                   # it searches its conversation with the person it acts for
+  documents: true                # it asks a5s's reader about customers' emails it has read
 budget:                          # in tokens, as the providers count them [TBC: from current volumes]
   per_run: 200000
   per_person_per_day: 1000000       # a fifth of it kept for chases and reminders

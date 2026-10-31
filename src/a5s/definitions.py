@@ -19,6 +19,8 @@ REMINDER_TOOLS = ("offer_reminder", "confirm_reminder", "list_reminders", "cance
 PREFERENCE_TOOLS = {"digest-time": ("set_digest_time",),
                     "how-i-work": ("offer_note", "confirm_note", "forget_note")}
 RECALL_TOOLS = ("search_conversation", "correct_summary")
+# and for asking a5s's reader about a document from outside that a run has read (core/extractor.py)
+DOCUMENT_TOOLS = ("ask_about",)
 _DAY_NAMES = {f"{d}{rest}": d for d, rest in zip(DAYS, ("day", "sday", "nesday", "rsday", "day",
                                                        "urday", "day"), strict=True)}
 
@@ -94,6 +96,8 @@ class Context(BaseModel):
     # whether it may search its conversation with the person it acts for, and correct its
     # summaries at their word
     recall: bool = False
+    # whether it may ask a5s's reader questions about documents from outside its run has read
+    documents: bool = False
 
 
 # Each model call in a run carries the whole context and, beside it, the instructions, the
@@ -169,7 +173,8 @@ class Definition(BaseModel):
         recalling its conversation with the person it acts for, if it may."""
         return [*self.tool_names, *(REMINDER_TOOLS if self.reminders else ()),
                 *(tool for p in self.preferences for tool in PREFERENCE_TOOLS.get(p, ())),
-                *(RECALL_TOOLS if self.context.recall else ())]
+                *(RECALL_TOOLS if self.context.recall else ()),
+                *(DOCUMENT_TOOLS if self.context.documents else ())]
 
     @property
     def release_id(self) -> str:

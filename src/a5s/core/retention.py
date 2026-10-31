@@ -9,8 +9,8 @@ waiting on, offers nobody said yes to, the record of each day's report, and the 
 asked for, with their decisions, 12 months after they ended, and graded samples of agents'
 work 12 months after they were graded. A note people ask
 to forget goes at once (core/profiles.py). The ledger keeps what people and agents wrote only
-by hash and length (core/ledger.py), so retention needn't touch it. The values a run was handed as handles, and what it read, go once the run
-has been over for an hour: a handle works only in its run, and nothing reads them after.
+by hash and length (core/ledger.py), so retention needn't touch it. The values a run was handed as handles, what it read, and the documents from
+outside it read, go once the run has been over for an hour: a handle works only in its run, and nothing reads them after.
 
 The core sweeps every hour, by the database's clock, and the ledger records what each sweep
 deleted, in counts, never what was said. The ledger itself is evidence, kept as long as the
@@ -44,6 +44,7 @@ def sweep(conn: psycopg.Connection) -> dict[str, int]:
     over = f"(select id from runs where closed_at < now() - interval '{OVER}')"
     delete("handles", f"delete from run_handles where run_id in {over}")
     delete("reads", f"delete from run_reads where run_id in {over}")
+    delete("documents", f"delete from run_documents where run_id in {over}")
 
     said = " union all ".join(f"select person, agent, {at} as at from {table}"
                               for table, at in SAID)

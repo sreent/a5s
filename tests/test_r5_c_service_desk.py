@@ -174,6 +174,9 @@ class Desk:
             self._tickets[call.args["key"]]["status"] = "closed"
             return {"key": call.args["key"], "status": "closed"}
 
+        def comments(call: ToolCall) -> dict:  # what requesters wrote on a ticket: outside text
+            return {"key": call.args["key"], "messages": []}
+
         query = {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}
         key = {"type": "object", "properties": {"key": {"type": "string"}}, "required": ["key"]}
         body = {"type": "object", "required": ["title", "body"], "properties": {
@@ -191,6 +194,9 @@ class Desk:
                  due, record_arg="key", action="change-due-date"),
             Tool("close_question", "Close a ticket that's resolved.", key, close,
                  record_arg="key", action="close-ticket"),
+            Tool("get_messages", "Get what the requester wrote on a ticket.", key, comments,
+                 record_arg="key", record_field="key", outside=("body",),
+                 extract={"asks_for": "choice:a reset|access|equipment|something else"}),
         )}
 
 

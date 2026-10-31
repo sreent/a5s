@@ -10,8 +10,8 @@ from conftest import ROOT
 def test_the_assistant_loads_with_its_instructions_and_pins():
     d = definitions.load(ROOT / "agents" / "assistant")
     assert d.id == "assistant" and d.autonomy.max == 2
-    assert d.tool_names == ["search_records", "get_record", "create_draft", "change_due_date",
-                            "close_question"]
+    assert d.tool_names == ["search_records", "get_record", "get_messages", "create_draft",
+                            "change_due_date", "close_question"]
     assert set(d.pins) == set(d.tool_names)
     assert "only your last message" in d.instructions
     assert d.release_id.startswith("0.1.0+")

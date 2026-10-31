@@ -51,6 +51,7 @@ from a5s.core import (
     coretools,
     counts,
     digests,
+    extractor,
     handles,
     ledger,
     models,
@@ -81,7 +82,7 @@ from a5s.definitions import Context, Definition
 
 log = logging.getLogger(__name__)
 CORE_TOOLS = {**reminders.TOOLS, **digests.TOOLS, **profiles.TOOLS,  # a5s's own, on its
-              **recall.TOOLS}  # own records
+              **recall.TOOLS, extractor.ASK: extractor.TOOL}  # own records
 RUN_MINUTES = 60  # the longest a run may last [TBC]; its token dies with it
 CHARS_PER_TOKEN = 4  # roughly, for a run's budget for its conversation
 OWN_RUNS = ("summary",)  # a5s's own work on a conversation: no tools, and it writes to nobody
@@ -1589,6 +1590,8 @@ def create_app(gw: Gateway) -> FastAPI:
                         None) if tool else None
             if (own := [t["value"] for t in traced if t["from"] is None]) and last:
                 args[last] += "\n\n" + provenance.note(row["definition"], own)  # apart
+            if row["read_outside"] and last and decision.allowed:  # and what it drew on
+                args[last] += "\n\n" + extractor.DREW
             plain = (*((arg,) if arg else ()), *(core.plain if core else ()))
             seq = ledger.append(conn, gw.entry(row, "tool", name, decision,
                                                args=ledger.mask(args, plain),
@@ -1614,6 +1617,8 @@ def create_app(gw: Gateway) -> FastAPI:
         if not decision.allowed:
             return JSONResponse(status_code=403,
                                 content={"denied": True, **decision.as_dict(explain=True)})
+        if core is not None and core.name == extractor.ASK:  # it needs the run's own model
+            return asking_about(args, row, seq, token)
         if core is not None:
             return call_core_tool(core, args, row, seq)
         before = {k: record_of(gw.scenario, k) for k in keys} if action else {}  # for graders
@@ -1623,11 +1628,14 @@ def create_app(gw: Gateway) -> FastAPI:
             result = tool.run(ToolCall(args=given, instance=row["id"], run=row["run"],
                                        acts_for=tuple(row["acts_for"])))
             outcome = {"status": "ok", "result_sha256": ledger.digest(result)}
+            if tool.outside:  # never the content itself: the extractor's form, checked by code
+                result, outcome["documents"] = read_outside(row, token, tool, result)
             result, withheld = parts.kept(gw.scenario, row, tool.record_field, result)
             if withheld:
                 outcome["withheld"] = withheld
             with db.transaction(gw.url) as conn:  # the agent gets handles for sensitive values,
-                hidden = (*tool.handles, *sorted(gw.unseen(conn, row["model"])))  # and classified
+                hidden = (*tool.handles, *(f for f, k in tool.extract.items() if k == "handle"),
+                          *sorted(gw.unseen(conn, row["model"])))  # and classified
                 result = handles.issue(conn, row["run"], name, result, hidden)  # ones it can't see
         except Exception as exc:  # noqa: BLE001 - the tool's own failure, recorded and reported
             with db.transaction(gw.url) as conn:  # it may repeat an argument: no handle's value
@@ -1726,6 +1734,79 @@ def create_app(gw: Gateway) -> FastAPI:
                          "sha256": hashlib.sha256(text.encode()).hexdigest()}})
             sends.append(outbound(conn, route, person.id, text, card=proposals.card(proposal, link)))
         return proposal, sends
+
+    def read_outside(row: dict, token: str, tool: Tool, result: Any) -> tuple[Any, int]:
+        """What a tool returned, with each item's outside content replaced by the extractor's
+        form of it, which code checked, and the document's number. The run is marked first:
+        once it's read outside content, it stays marked. How many documents it read."""
+        with db.transaction(gw.url) as conn:
+            conn.execute("update runs set read_outside = true where id = %s", (row["run"],))
+        model = gw.models.get(row["model"])
+        read = 0
+
+        def form(item: dict) -> dict:
+            nonlocal read
+            text = "\n\n".join(str(item[f]) for f in tool.outside if isinstance(item.get(f), str))
+            if not text:
+                return item
+            filled, dropped = None, []
+            if model is not None:
+                answer = model_call(model.api, extractor.form_request(
+                    model.api, row["model"], tool.extract, text), token)
+                reply = extractor.reply_text(model.api, json.loads(answer.body))
+                if answer.status_code < 400:
+                    filled, dropped = extractor.checked(reply, text, tool.extract,
+                                                        gw.scenario.record_pattern)
+            with db.transaction(gw.url) as conn:
+                number = conn.execute(
+                    "insert into run_documents (run_id, number, text) values (%s, "
+                    "(select coalesce(max(number), 0) + 1 from run_documents where run_id = %s), "
+                    "%s) returning number", (row["run"], row["run"], text)).fetchone()["number"]
+            read += 1
+            kept = {k: v for k, v in item.items() if k not in tool.outside}
+            return {**kept, "document": f"D-{number}", extractor.OUTSIDE: {
+                **(filled if filled is not None else dict.fromkeys(tool.extract)),
+                **({"unread": "a5s couldn't read it now"} if filled is None else {}),
+                **({"left_out": dropped} if dropped else {})}}
+
+        def walk(value: Any) -> Any:
+            if isinstance(value, list):
+                return [walk(v) for v in value]
+            if isinstance(value, dict):
+                if any(f in value for f in tool.outside):
+                    return form(value)
+                return {k: walk(v) for k, v in value.items()}
+            return value
+
+        return walk(result), read
+
+    def asking_about(args: dict, row: dict, seq: int, token: str) -> Any:
+        """a5s's reader's answer to a question about a document the run has read: in free
+        text, marked as outside content, never as an instruction."""
+        number = str(args.get("document", "")).removeprefix("D-")
+        with db.transaction(gw.url) as conn:
+            found = conn.execute("select text from run_documents where run_id = %s and number = %s",
+                                 (row["run"], int(number) if number.isdigit() else -1)).fetchone()
+        model = gw.models.get(row["model"])
+        if found is None or model is None:
+            record({"kind": "tool", "action": extractor.ASK, "run": row["run"],
+                    "instance": row["id"], "decision": "record", "of": seq,
+                    "outcome": {"status": "refused"}})
+            return JSONResponse(status_code=403, content={
+                "denied": True, "explanations": ["this run has read no such document"]})
+        answer = model_call(model.api, extractor.answer_request(
+            model.api, row["model"], found["text"], str(args.get("question", ""))[:500]), token)
+        said = extractor.reply_text(model.api, json.loads(answer.body))
+        status_now = "ok" if answer.status_code < 400 and said else "error"
+        recorded = record({"kind": "tool", "action": extractor.ASK, "run": row["run"],
+                           "instance": row["id"], "decision": "record", "of": seq,
+                           "outcome": {"status": status_now}})
+        if status_now != "ok":
+            return JSONResponse(status_code=502, content={"error": "a5s's reader couldn't answer now"})
+        with db.transaction(gw.url) as conn:  # its values count as outside, never as read
+            said = handles.masked(conn, row["run"], said)
+        return {"result": {extractor.OUTSIDE: True, "document": f"D-{number}", "says": said,
+                           "note": extractor.NOTE}, "recorded": recorded}
 
     def call_core_tool(core: coretools.CoreTool, args: dict, row: dict, seq: int) -> Any:
         """One of a5s's own tools, in one transaction with what it changes. A rule of a5s's

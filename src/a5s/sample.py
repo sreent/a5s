@@ -45,6 +45,7 @@ class SampleScenario:
         self._people = {p["id"]: self._person(p) for p in data["people"]}
         self._parts = data.get("parts") or {}
         self._records = {r["key"]: r for r in data["records"]}
+        self._messages = data.get("messages") or []
 
     # Directory
 
@@ -218,6 +219,28 @@ class SampleScenario:
                 record_arg="record",  # in that record's part
             ),
             Tool(
+                name="get_messages",
+                description="Get the emails a customer sent about one of their questions, by "
+                            "its key, such as Q-1001. a5s's reader reads each for you: you get "
+                            "what it asks for, and the amounts, dates and keys it names, never "
+                            "its words. Ask a5s's reader about an email with ask_about, by its "
+                            "number, such as D-1.",
+                schema={
+                    "type": "object",
+                    "properties": {"key": {"type": "string", "description": "The question's key"}},
+                    "required": ["key"],
+                },
+                run=self._get_messages,
+                handles=("from",),
+                record_arg="key",
+                record_field="key",
+                outside=("body",),  # the customer's own words, which no agent sees
+                extract={"asks_for": "choice:a refund|a copy of an invoice|a new due date|"
+                                     "a change of address|something else",
+                         "amount": "amount", "date": "date", "question": "key",
+                         "reply_to": "handle"},
+            ),
+            Tool(
                 name="change_due_date",
                 description="Change a customer question's due date.",
                 schema={
@@ -269,6 +292,14 @@ class SampleScenario:
         if record is None:
             return {"error": f"no record {call.args['key']}"}
         return {**record, "link": self._link("records", record["key"])}
+
+    def _get_messages(self, call: ToolCall) -> dict:
+        key = call.args["key"]
+        if key not in self._records:
+            return {"error": f"no record {key}"}
+        return {"key": key, "link": self._link("records", key),
+                "messages": [{"from": m["from"], "at": str(m["at"]), "body": m["body"]}
+                             for m in self._messages if m["record"] == key]}
 
     def _change(self, call: ToolCall, field: str, value: str) -> dict:
         key = call.args["key"]
