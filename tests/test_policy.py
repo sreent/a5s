@@ -21,10 +21,11 @@ def tool(name="search_records", writes=False, pinned=True):
     }
 
 
-def call(engine, inst, resource, context=None):
+def call(engine, inst, resource, context=None, **about):
     return engine.decide(
         principal=inst["uid"], action="call_tool", resource=resource["uid"],
-        context={"level": inst["attrs"]["level"], "read_outside": False, "acts_for": ["ana"]}
+        context={"level": inst["attrs"]["level"], "read_outside": False, "acts_for": ["ana"],
+                 "in_scope": True, "visible": True, **about}
         if context is None else context,
         entities=[inst, resource],
     )
@@ -53,6 +54,24 @@ def test_a_suspended_instance_is_denied(engine):
 def test_level_0_only_observes(engine):
     d = call(engine, instance(level=0), tool("create_draft", writes=True))
     assert not d.allowed and "level-0-only-observes" in d.reasons
+
+
+def test_a_call_works_at_the_level_of_the_part_its_record_is_in(engine):
+    d = call(engine, instance(level=1), tool("create_draft", writes=True), level=0)
+    assert not d.allowed and "level-0-only-observes" in d.reasons
+    assert call(engine, instance(level=0), tool("create_draft", writes=True), level=1).allowed
+
+
+def test_an_instance_works_only_on_records_in_its_parts(engine):
+    d = call(engine, instance(), tool("get_record"), in_scope=False)
+    assert not d.allowed and "instances-work-only-in-their-parts" in d.reasons
+
+
+def test_a_run_works_only_on_records_its_people_may_see(engine):
+    d = call(engine, instance(), tool("get_record"), visible=False)
+    assert not d.allowed and "people-see-only-what-they-may" in d.reasons
+    assert d.explanations == (
+        "someone the run acts for may not see that record, or there's no such record",)
 
 
 def test_a_tool_whose_schema_changed_is_refused(engine):

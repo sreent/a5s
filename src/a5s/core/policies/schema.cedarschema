@@ -23,7 +23,16 @@ entity Model = { name: String, approved: Bool, classes: Set<String> };
 
 entity Person = { in_audience: Bool };
 
-type RunContext = { level: Long, read_outside: Bool, acts_for: Set<String> };
+// A call's level is the lowest level the instance has in the parts of the records it's about.
+// It's in scope if they're all in the instance's parts, and visible if everyone the run acts
+// for may see them all.
+type RunContext = {
+  level: Long,
+  read_outside: Bool,
+  acts_for: Set<String>,
+  in_scope: Bool,
+  visible: Bool,
+};
 
 // A model call also says the class of the scenario's data, from the settings in force.
 type ModelContext = {

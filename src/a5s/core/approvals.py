@@ -1,21 +1,22 @@
 """Approving settings where people work: a card in their chat, and the decision on the
 core's own page.
 
-A version of the settings can be proposed to the instance approvers rather than signed
-with their keys. Each approver gets a card in the chat they last had with a5s, such as
+A version of the settings can be proposed to its instance approvers rather than signed
+with their keys: the owner of each part its instances work in, and an instance approver for
+any instance in no part. Each gets a card in the chat they last had with a5s, such as
 Teams, or a message with a link elsewhere, saying what the version changes in words code
 works out. The card only opens the core's page. Decisions are taken there, apart from the
 conversation, and never by telling an agent.
 
 On the page, the approver signs in afresh at the organisation's identity provider, with a
 nonce that commits to approving exactly this version, so the provider's signature covers
-the decision. The core checks the sign-in: that it's recent, for this version, and from an
-instance approver. It records it once, since a signature works for one decision. Then it
-seals the approval with a key only the core holds. The approval keeps counting after the
-provider rotates its keys, and nobody who can only edit the database can make one. The core
-checks the seal again at every run, as it checks signatures made with keys, and the
-approver must still hold the role. Once a version has an instance approver's approval,
-the gateway applies it.
+the decision. The core checks the sign-in: that it's recent, for this version, and from
+someone who approves instances. It records it once, since a signature works for one
+decision. Then it seals the approval with a key only the core holds. The approval keeps
+counting after the provider rotates its keys, and nobody who can only edit the database can
+make one. The core checks the seal again at every run, as it checks signatures made with
+keys, and the approver must still hold their role. Once everyone a version needs has
+approved it, the gateway applies it.
 """
 
 from __future__ import annotations
@@ -29,7 +30,8 @@ from typing import Any
 
 import psycopg
 
-from a5s.contract import INSTANCE_APPROVER, InstanceSettings, Person, Settings
+from a5s.contract import InstanceSettings, Person, Settings
+from a5s.core import registry
 from a5s.core.identity import IdentityError, UnknownPerson, Verifier, whose
 from a5s.core.ledger import canonical
 from a5s.definitions import Definition
@@ -104,15 +106,20 @@ def changes(before: Settings | None, after: Settings, definitions: dict[str, Def
     whether it widens what agents do."""
 
     def names(people: Any) -> str:
-        found = [p.name if (p := directory(pid)) else pid for pid in sorted(people)]
-        return found[0] if len(found) == 1 else f"{', '.join(found[:-1])} and {found[-1]}"
+        return names_of([p.name if (p := directory(pid)) else pid for pid in sorted(people)])
 
-    def level(instance: InstanceSettings) -> int | None:
+    def levels(instance: InstanceSettings) -> tuple[int | None, dict[str, int | None]]:
         release = definitions.get(instance.definition)
         if release is None:
-            return instance.level
-        return min(release.autonomy.start if instance.level is None else instance.level,
-                   release.autonomy.max)
+            return instance.level, {p: lv if lv is not None else instance.level
+                                    for p, lv in instance.parts.items()}
+        return registry.levels(instance, release)
+
+    def where(instance: InstanceSettings) -> str:
+        level, parts = levels(instance)
+        if not parts:
+            return f"at level {level}"
+        return "working in " + names_of([f"{p} at level {lv}" for p, lv in parts.items()])
 
     def owner(instance: InstanceSettings, who: str) -> str | None:
         release = definitions.get(instance.definition)
@@ -124,7 +131,7 @@ def changes(before: Settings | None, after: Settings, definitions: dict[str, Def
         old = was.pop(new.id, None)
         if old is None:
             run_by = f", run by {names([o])}" if (o := owner(new, "owner")) else ""
-            found.append({"text": f"Adds {new.id}: the {new.definition}, at level {level(new)}, "
+            found.append({"text": f"Adds {new.id}: the {new.definition}, {where(new)}, "
                                   f"serving {names(new.serves)}{run_by}.", "widens": True})
             continue
         if new.definition != old.definition:
@@ -134,9 +141,19 @@ def changes(before: Settings | None, after: Settings, definitions: dict[str, Def
             found.append({"text": f"{new.id} serves {names(more)} as well.", "widens": True})
         if fewer := set(old.serves) - set(new.serves):
             found.append({"text": f"{new.id} no longer serves {names(fewer)}.", "widens": False})
-        if (a := level(old)) != (b := level(new)):
+        (a, was_in), (b, now_in) = levels(old), levels(new)
+        if not was_in and not now_in and a != b:
             found.append({"text": f"{new.id}'s level goes from {a} to {b}.",
                           "widens": (b or 0) > (a or 0)})
+        for part in sorted(set(now_in) - set(was_in)):
+            found.append({"text": f"{new.id} works in {part} as well, at level {now_in[part]}.",
+                          "widens": True})
+        for part in sorted(set(was_in) - set(now_in)):
+            found.append({"text": f"{new.id} no longer works in {part}.", "widens": False})
+        for part in sorted(set(was_in) & set(now_in)):
+            if (a := was_in[part]) != (b := now_in[part]):
+                found.append({"text": f"{new.id}'s level in {part} goes from {a} to {b}.",
+                              "widens": (b or 0) > (a or 0)})
         for who in ("owner", "deputy"):
             if (a := owner(old, who)) != (b := owner(new, who)):
                 found.append({"text": f"{new.id}'s {who} changes from "
@@ -147,6 +164,11 @@ def changes(before: Settings | None, after: Settings, definitions: dict[str, Def
                       "widens": False})
     return found or [{"text": "It changes nothing the agents do: only its serial or notes.",
                       "widens": False}]
+
+
+def names_of(found: list[str]) -> str:
+    """Things in a list, in words: a, b and c."""
+    return found[0] if len(found) == 1 else f"{', '.join(found[:-1])} and {found[-1]}"
 
 
 def card(serial: int, found: list[dict], link: str) -> dict:
@@ -177,7 +199,7 @@ def text(serial: int, found: list[dict], link: str) -> str:
 
 
 def _waits(serial: int) -> str:
-    return f"Serial {serial} of a5s's settings waits for an instance approver to approve it."
+    return f"Serial {serial} of a5s's settings waits for its instance approvers to approve it."
 
 
 # Approving
@@ -204,9 +226,9 @@ def check(verifier: Verifier, scenario: Any, client_id: str, token: str, version
         raise Refused(403, str(exc)) from None
     except IdentityError as exc:
         raise Refused(401, f"your sign-in doesn't check out: {exc}") from None
-    if INSTANCE_APPROVER not in person.roles:
-        raise Refused(403, f"only an {INSTANCE_APPROVER} can approve settings, and "
-                           f"{person.name} isn't one")
+    if not registry.approves(person):
+        raise Refused(403, f"only a part's owner or an instance approver can approve settings, "
+                           f"and {person.name} is neither")
     return person, claims
 
 

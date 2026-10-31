@@ -1,8 +1,8 @@
 """a5s's sample scenario: a stand-in for a real one, with made-up data.
 
-It has a directory of people, a records system of customer questions, each
-owed by its owner until it's closed, and a store for drafts. It's the test bench
-for building a5s, locally and in CI.
+It has a directory of people, a records system of customer questions, each in a part of
+the business and owed by its owner until it's closed, and a store for drafts. It's the
+test bench for building a5s, locally and in CI.
 """
 
 from __future__ import annotations
@@ -41,6 +41,7 @@ class SampleScenario:
         self.database_url = database_url
         data = yaml.safe_load((folder / "data.yaml").read_text())
         self._people = {p["id"]: self._person(p) for p in data["people"]}
+        self._parts = data.get("parts") or {}
         self._records = {r["key"]: r for r in data["records"]}
 
     # Directory
@@ -66,7 +67,8 @@ class SampleScenario:
               body text not null,
               created_for text not null,
               at timestamptz not null default now()
-            )
+            );
+            alter table sample.drafts add column if not exists record text
         """)
         conn.execute(sql.SQL(
             "grant usage on schema sample to {role}; "
@@ -82,6 +84,26 @@ class SampleScenario:
 
     def team(self, name: str) -> list[Person]:
         return [p for p in self._people.values() if p.team == name]
+
+    def part_of(self, record: str) -> str | None:
+        found = self._records.get(record)
+        return found.get("part") if found else None
+
+    def sees(self, person: str, record: str) -> bool:
+        """The team whose part it's in may see a record, and so may its owner and whoever is
+        above them."""
+        found, who = self._records.get(record), self._people.get(person)
+        if found is None or who is None:
+            return False
+        if (self._parts.get(found.get("part")) or {}).get("team") == who.team:
+            return True
+        above, seen = self._people.get(found["owner"]), set()
+        while above is not None and above.id not in seen:
+            if above.id == person:
+                return True
+            seen.add(above.id)
+            above = self._people.get(above.manager) if above.manager else None
+        return False
 
     # Obligations, from the records
 
@@ -134,6 +156,7 @@ class SampleScenario:
                     "required": ["query"],
                 },
                 run=self._search_records,
+                record_field="key",
             ),
             Tool(
                 name="get_record",
@@ -146,6 +169,8 @@ class SampleScenario:
                 },
                 run=self._get_record,
                 handles=("contact",),  # agents pass it on without seeing it
+                record_arg="key",
+                record_field="key",
             ),
             Tool(
                 name="create_draft",
@@ -155,12 +180,15 @@ class SampleScenario:
                     "properties": {
                         "title": {"type": "string"},
                         "body": {"type": "string"},
+                        "record": {"type": "string",
+                                   "description": "The record it's about, such as Q-1001, if any"},
                     },
                     "required": ["title", "body"],
                 },
                 run=self._create_draft,
                 writes=True,
                 text_fields=("title", "body"),  # drafts keep only text and record links
+                record_arg="record",  # in that record's part
             ),
         ]
         return {t.name: t for t in tools}
@@ -189,9 +217,10 @@ class SampleScenario:
     def _create_draft(self, call: ToolCall) -> dict:
         with db.transaction(self.database_url) as conn:
             row = conn.execute(
-                "insert into sample.drafts (title, body, created_for) values (%s, %s, %s) "
-                "returning id",
-                (call.args["title"], call.args["body"], ",".join(call.acts_for) or "nobody"),
+                "insert into sample.drafts (title, body, created_for, record) "
+                "values (%s, %s, %s, %s) returning id",
+                (call.args["title"], call.args["body"], ",".join(call.acts_for) or "nobody",
+                 call.args.get("record")),
             ).fetchone()
         return {"draft": row["id"], "link": self._link("drafts", row["id"])}
 

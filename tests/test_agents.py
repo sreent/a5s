@@ -10,6 +10,8 @@ than skips.
 """
 
 import os
+import re
+from datetime import date, timedelta
 from pathlib import Path
 
 import httpx
@@ -33,6 +35,18 @@ def cases() -> list:
                 found.append(pytest.param(folder.name, case,
                                           id=f"{folder.name}/{path.stem}/{case['name']}"))
     return found
+
+
+def dated(text: str) -> str:
+    """A case's words, with each {in N days} the working day that many days from today, so a
+    case about a date ahead stays ahead."""
+    def day(found: re.Match) -> str:
+        when = date.today() + timedelta(days=int(found.group(1)))
+        while when.isoweekday() > 5:
+            when += timedelta(days=1)
+        return when.isoformat()
+
+    return re.sub(r"\{in (\d+) days\}", day, text)
 
 
 def turns_called(stack, after: int) -> list[str]:
@@ -109,7 +123,7 @@ def test_each_agents_regression_suite(database: str, tmp_path: Path, monkeypatch
                 monkeypatch.setitem(records, key, {**records[key], **fields})
             after = len(stack.ledger())
             if "say" in step:
-                reply = stack.say(step["say"], person=person, agent=agent)
+                reply = stack.say(dated(step["say"]), person=person, agent=agent)
             else:  # what's due runs, and what people are told waits in their inbox
                 stack.scheduler().work_due()
                 reply = "\n\n".join(m["text"] for m in stack.inbox(person))

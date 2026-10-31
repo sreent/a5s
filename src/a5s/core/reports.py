@@ -58,14 +58,16 @@ class News:
 def news(conn: psycopg.Connection, scenario: str, instance: str, person: Person, source: str,
          records: list[Record], now: datetime) -> News:
     """What changed in someone's records of a kind since the agent last told them, and what
-    fell due since it last looked: or, the first time, what's open."""
+    fell due since it last looked: or, the first time, what's open. `records` are those the
+    agent may tell them of, so what they owe is told only of those too."""
     mine = {r.key: {"title": r.title, "fields": r.fields, "link": r.link}
             for r in records if r.person == person.id and r.source == source}
     seen = conn.execute("select records, looked_at from report_seen where instance_id = %s "
                         "and person = %s and source = %s", (instance, person.id, source)).fetchone()
     owed = conn.execute("select record, title, link, due_at from obligations where scenario = %s "
-                        "and person = %s and source = %s and done_at is null order by due_at, record",
-                        (scenario, person.id, source)).fetchall()
+                        "and person = %s and source = %s and done_at is null "
+                        "and record = any(%s) order by due_at, record",
+                        (scenario, person.id, source, [r.key for r in records])).fetchall()
     facts: list[str] = []
     if seen is None:
         facts = [_open(o, person, now) for o in owed]

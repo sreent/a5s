@@ -76,20 +76,24 @@ def chain(scenario: Scenario, person: str) -> list[Person]:
 
 
 def sync(conn: psycopg.Connection, scenario: str, owed: list[Obligation],
-         definitions: dict[str, Definition], now: datetime) -> None:
+         definitions: dict[str, Definition], now: datetime,
+         part_of: Callable[[str], str | None] = lambda _: None) -> None:
     """Bring the obligations in line with what the records owe now, each naming the
-    instance that acts on it.
+    instance that acts on it: one that serves its person, chases its kind of record, and
+    works in the record's part, if it's in one.
 
     A new due date, or a record that's open again, is owed afresh. One the
     records no longer give is done.
     """
-    instances = conn.execute("select id, definition, serves from instances "
+    instances = conn.execute("select id, definition, serves, parts from instances "
                              "where status <> 'retired' order by (status = 'active') desc, id").fetchall()
 
-    def acting(source: str, person: str) -> str | None:
+    def acting(source: str, person: str, record: str) -> str | None:
+        part = part_of(record)
         for inst in instances:
             definition = definitions.get(inst["definition"])
-            if definition and source in definition.obligations and person in inst["serves"]:
+            if (definition and source in definition.obligations and person in inst["serves"]
+                    and (part is None or part in (inst["parts"] or {}))):
                 return inst["id"]
         return None
 
@@ -110,7 +114,7 @@ def sync(conn: psycopg.Connection, scenario: str, owed: list[Obligation],
               due_at = excluded.due_at, done_at = null
             """,
             (scenario, o.source, o.record, o.person, o.title, o.link, o.opened, o.due,
-             acting(o.source, o.person), now),
+             acting(o.source, o.person, o.record), now),
         )
     conn.execute(
         "update obligations set done_at = %s, updated_at = %s "

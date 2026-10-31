@@ -25,10 +25,10 @@ def test_values_are_found_and_matched_however_they_are_written():
 
 
 def test_what_the_agent_read_from_the_records_carries_its_source(stack):
-    stack.model.reply(None, ("get_record", {"key": "Q-1003"}))
-    stack.model.reply("Q-1003 is open, and due on 2026-11-02.")
-    told = stack.say("What's the delivery question about?")
-    assert told == "Q-1003 is open, and due on 2026-11-02."  # nothing to flag
+    stack.model.reply(None, ("get_record", {"key": "Q-1001"}))
+    stack.model.reply("Q-1001 is open, and due on 2026-11-04.")
+    told = stack.say("What's the invoice question about?")
+    assert told == "Q-1001 is open, and due on 2026-11-04."  # nothing to flag
     assert sent(stack)["args"]["values"] == {"sourced": 2, "own": []}
 
 

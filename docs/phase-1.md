@@ -1,6 +1,6 @@
 # Phase 1
 
-**Status:** Steps 1, 2 and 5 under way, steps 3 and 4 built ([progress](#progress)) · **Under:** [Architecture](architecture.md)
+**Status:** Steps 1, 2, 5 and 6 under way, steps 3 and 4 built ([progress](#progress)) · **Under:** [Architecture](architecture.md)
 
 Phase 1 builds the smallest a5s that's useful: the trusted core, conversations, and two reference agents of a5s's own, at levels 0 and 1. They're proven against a5s's sample scenario, and used first by the team that builds a5s. In phase 1, agents read, report, draft and remind. None of them changes data. Which real scenario comes first is a separate decision [TBC].
 
@@ -122,6 +122,15 @@ Step 5, running it properly, has started:
 | Budgets at the model gateway. Each release sets how many tokens, as the providers count them, one run may use, and how many an instance may use for each person each day, in their own time zone. A fifth of each person's day is kept for chases and reminders: other work, such as answers and reports, stops short of it. Crossing four fifths is recorded as a warning. The core checks before it opens a run and before each model call. Once a budget is spent, the work waits, a report for the next day, and someone asking is told so in a5s's own words, with who to ask. | [`core/budgets.py`](../src/a5s/core/budgets.py) |
 
 Still to do in step 5: deploying to the three clouds, which needs your accounts there, and then production; who's on call; and archiving the conversations of someone who leaves, once it's decided where archives go.
+
+Step 6, parts and levels, has started:
+
+| Built | Where |
+| --- | --- |
+| Parts with owners. The sample has two parts, billing and orders, each owned by whoever holds `part-owner:<part>` in the directory. Each instance's settings name the parts it works in and its level in each, within its release's maximum. A version of the settings counts only once the owner of each part its instances work in, or that it takes an instance out of, has signed or approved it, and an instance approver for any instance in no part. The core checks this again at every run, so if a part's owner leaves, no run opens until whoever owns it now approves the version in force. Approval cards go to everyone a version needs, and say what it changes in each part. | [`core/registry.py`](../src/a5s/core/registry.py), [`core/approvals.py`](../src/a5s/core/approvals.py) |
+| What agents work on. The scenario says which part each record is in, and the directory who may see it. An instance works only on records in its parts, at its level there, and only on those everyone its run acts for may see. Policy denies a call about any other, what tools return leaves them out, and so do case briefs, reports, reminders and the choice of which instance chases what. A draft about no record in particular works at the instance's lowest level. | [`core/parts.py`](../src/a5s/core/parts.py), [`core/policies/base.cedar`](../src/a5s/core/policies/base.cedar) |
+
+Still to do in step 6: the settings web app, where owners review a whole version before they sign it.
 
 Still to do in step 1:
 

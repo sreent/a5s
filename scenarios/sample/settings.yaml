@@ -1,8 +1,9 @@
-# The sample scenario's settings: which instances exist, whom each serves,
-# and how far each may act. A version counts only when an instance approver
-# signs it (`a5s sign`), and its serial must rise with every new version.
+# The sample scenario's settings: which instances exist, whom each serves, the parts of the
+# business each works in, and how far each may act there. A version counts only when the
+# owner of each part its instances work in signs it (`a5s sign`), and an instance approver
+# for any instance in no part. Its serial must rise with every new version.
 
-serial: 4
+serial: 5
 
 # Every record here is made up, so models approved only for made-up data may see it.
 # A real scenario names its own class, such as internal, and any fields of a class of
@@ -14,12 +15,14 @@ instances:
   assistant-finance:
     definition: assistant
     serves: [ana, ben]
-    level: 1
+    parts: [billing]  # the parts it works in, whose owners approve it: Ana owns billing
+    level: 1         # in each of them, unless a part says otherwise: it drafts, people decide
     owner: ana       # who runs it here, and their deputy
     deputy: ben
   watcher-finance:
     definition: watcher
     serves: [ana, ben]
+    parts: [billing]
     level: 0         # it observes and reports
     owner: ana
     deputy: ben

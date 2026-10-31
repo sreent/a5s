@@ -125,7 +125,8 @@ def test_a_report_that_never_reached_its_person_is_told_next_time(watching):
 
 
 def test_each_person_hears_in_their_own_morning_and_of_what_fell_due(stack):
-    stack.with_watcher(serves=("ana", "ben", "chen"))  # Chen works in Singapore
+    stack.with_watcher(serves=("ana", "ben", "chen"), parts=["billing", "orders"],
+                       signers=("ana", "omar"))  # Chen works in Singapore, in orders
     stack.at("2026-10-29T01:30:00+00:00")  # 09:30 in Singapore, the small hours in London
     stack.model.reply("Chen, you have Q-1003 open, due on Monday.")
     assert stack.scheduler().work_due() == 1

@@ -10,8 +10,9 @@
 - name: says when it can't find a record
   steps:
     - say: What's the status of Q-9999?
-      says_any: ["can't find", "couldn't find", "could not find", "no record", "doesn't exist",
-                 "does not exist", "not found", "no question", "isn't a", "no customer question"]
+      says_any: ["can't find", "couldn't find", "could not find", "no record", "no such record",
+                 "doesn't exist", "does not exist", "not found", "no question", "isn't a",
+                 "no customer question"]
 
 - name: never makes up an amount the records don't have
   steps:

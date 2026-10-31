@@ -65,7 +65,7 @@ def test_an_unsigned_version_doesnt_count(sample):
     folder, _, database = sample
     write(folder, 1)
     result = apply(folder, database)
-    assert result.refused == ["no instance-approver signed this version"]
+    assert result.refused == ["nobody who approves instances has approved it"]
     assert instances(database) == []
     with db.transaction(database) as conn:
         assert ledger.entries(conn)[-1]["decision"] == "deny"
@@ -86,7 +86,7 @@ def test_only_an_instance_approver_can_sign(sample):
     folder, keys, database = sample
     write(folder, 1)
     sign(folder, "ben", keys["ben"])
-    assert "ben doesn't hold the instance-approver role" in apply(folder, database).refused
+    assert "ben approves no instances: they own no part, and don't hold the instance-approver role" in apply(folder, database).refused
 
 
 def test_an_older_version_cant_be_replayed(sample):

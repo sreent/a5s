@@ -90,7 +90,7 @@ def test_an_approver_is_asked_where_they_work_and_what_they_approve_is_applied(s
     assert asked["link"] == f"{approving}/approve/?settings={asked['digest']}"
     [told] = stack.inbox("ana")  # she's not written to a5s anywhere, so it waits in her inbox
     assert told["from"] == "a5s" and told["text"] == (
-        f"Serial {now + 1} of a5s's settings waits for an instance approver to approve it.\n"
+        f"Serial {now + 1} of a5s's settings waits for its instance approvers to approve it.\n"
         "What it changes:\n- assistant-finance serves Chen Wei as well.\n"
         f"Review it, and approve it only if you mean it, at {asked['link']}")
 
@@ -146,7 +146,7 @@ def test_only_an_instance_approvers_fresh_sign_in_for_this_approves(stack, appro
     version = asked["digest"]
     token, salt = sign_in(approving, provider, version, person="ben")
     ben = decide(approving, version, token, salt)
-    assert ben.status_code == 403 and "Ben Okafor isn't one" in ben.json()["detail"]
+    assert ben.status_code == 403 and "Ben Okafor is neither" in ben.json()["detail"]
 
     salt = secrets.token_urlsafe(32)
     bound = approvals.nonce(version, salt)
@@ -189,7 +189,7 @@ def test_editing_the_database_approves_nothing(stack, approving, provider):
         refused = c.post("/runs", json={"instance": "assistant-finance", "trigger": {
             "kind": "message", "inbound": stack.send("Hello", "chen")}})
     assert refused.status_code == 409
-    assert "no instance approver signed the settings in force" in refused.json()["detail"]["reasons"]
+    assert "the settings in force aren't approved: nobody who approves instances has approved it" in refused.json()["detail"]["reasons"]
 
 
 def test_an_approval_outlasts_the_providers_keys_but_not_the_cores(stack, approving, provider):
@@ -209,7 +209,7 @@ def test_an_approval_outlasts_the_providers_keys_but_not_the_cores(stack, approv
     approved = asked["serial"]
     assert in_force(SEAL_KEY) == (approved, None)
     assert in_force("a new seal key", SEAL_KEY) == (approved, None)  # the core moving to a new key
-    assert in_force("a new seal key") == (None, "no instance approver signed the settings in force")
+    assert in_force("a new seal key") == (None, "the settings in force aren't approved: nobody who approves instances has approved it")
 
 
 def test_a_version_waiting_for_approval_is_let_go_once_a_newer_one_is_in_force(stack, approving,
@@ -276,7 +276,7 @@ def test_an_approver_reviews_and_approves_in_the_browser(stack, approving, provi
     assert page.inner_text("#who") == "Ana Ortiz"
     assert page.locator("#changes li").all_inner_texts() == [
         "assistant-finance serves Chen Wei as well. This widens what agents do.",
-        "assistant-finance's level goes from 1 to 0."]
+        "assistant-finance's level in billing goes from 1 to 0."]
     assert page.evaluate("window.location.search") == ""  # the code doesn't linger
     page.click("#approve")
     page.wait_for_selector(f"#status >> text=You approved serial {asked['serial']}", timeout=30000)

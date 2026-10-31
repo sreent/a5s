@@ -57,9 +57,9 @@ To follow one run, find its spans by `a5s.run.id`, where the deployment sends tr
 
 ## Settings or the release don't check out
 
-**Shows as:** runs refused because no instance approver signed the settings in force, or because the release isn't approved here.
+**Shows as:** runs refused because the settings in force aren't approved, or because the release isn't approved here.
 
-1. Settings: an instance approver signs the version again, with their key, or approves it on a card. If an approver left, someone who holds the role now does.
+1. Settings: the reason names whose approval is missing, such as the owner of a part. They sign the version again, with their key, or approve it on a card. If an approver left, whoever holds the role now does.
 2. If the core's seal key changed, approvals made on cards need making again.
 3. The release: `a5s release status` says what it still needs, and who must sign.
 

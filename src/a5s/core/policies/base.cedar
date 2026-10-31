@@ -17,12 +17,22 @@ when { resource.known && !resource.pinned };
 @id("level-0-only-observes")
 @reason("at level 0 the agent only observes, so it can't use a tool that writes")
 forbid (principal is Instance, action == Action::"call_tool", resource is Tool)
-when { resource.writes && principal.level < 1 };
+when { resource.writes && context.level < 1 };
 
 @id("marked-runs-never-act-at-level-2")
 @reason("a run that has read outside content can't act at level 2")
 forbid (principal is Instance, action == Action::"call_tool", resource is Tool)
-when { resource.writes && context.read_outside && principal.level >= 2 };
+when { resource.writes && context.read_outside && context.level >= 2 };
+
+@id("instances-work-only-in-their-parts")
+@reason("the record is in a part the instance doesn't work in")
+forbid (principal is Instance, action == Action::"call_tool", resource is Tool)
+unless { context.in_scope };
+
+@id("people-see-only-what-they-may")
+@reason("someone the run acts for may not see that record, or there's no such record")
+forbid (principal is Instance, action == Action::"call_tool", resource is Tool)
+unless { context.visible };
 
 @id("active-instances-use-their-model")
 @reason("the model is approved, and is the instance's own")

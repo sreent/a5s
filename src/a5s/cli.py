@@ -100,8 +100,8 @@ def _propose(cfg: Config, path: Path | None) -> None:
     for change in asked["changes"]:
         print(f"- {change['text']}")
     if asked["new"]:
-        print(f"Asked {', '.join(asked['asked']) or 'nobody: no instance approver is in the directory'}"
-              f" to approve it. a5s applies it once one has.")
+        print(f"Asked {', '.join(asked['asked']) or 'nobody: none of its approvers is in the directory'}"
+              f" to approve it. a5s applies it once everyone it needs has.")
     else:
         print("The approvers were asked about this version before.")
     print(f"It's approved at {asked['link']}")

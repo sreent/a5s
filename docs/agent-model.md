@@ -35,7 +35,7 @@ Roles are held by people, never by job titles. An organisation assigns people to
 | --- | --- |
 | Platform owner | Accountable for a5s and the agents it runs. Names each agent owner and deputy, and can suspend any instance or withdraw any release. |
 | Agent owner, with a deputy | Builds and runs a definition and its instances. Reviews level-2 actions and can reverse them. Can suspend the agent's instances, lower their cap and withdraw its releases. |
-| Part owner, and delegates | The part owner approves an instance for the part, sets how far it may act there, and moves it up or down. They or their delegates decide its proposals, as the scenario allows. Decisions about the agent itself are never a delegate's. |
+| Part owner, and delegates | The part owner, who holds `part-owner:<part>` in the directory, approves an instance for the part, sets how far it may act there, and moves it up or down. They or their delegates decide its proposals, as the scenario allows. Decisions about the agent itself are never a delegate's. |
 | Instance approver | For each part in an instance's scope, its owner. For an instance with no parts, whoever the scenario names, who also sets its level. |
 | Release approver | Approves what loosens a5s: releases that change a tool or widen what an agent may do, changes to the trusted core, and anything else the scenario names nobody else for. Never from the team that runs a5s, or its manager's reporting line. |
 | Graders, from phase 2 | Grade samples of an agent's work. Never from the team that built it. |
@@ -71,7 +71,8 @@ Each organisation approves a release for its own deployment, with its own people
 | 1. Propose | Prepare drafts, raise requests in a governed process, and, from phase 2, hold proposals ([how](architecture.md#proposals-and-approvals)) | A person decides each one |
 | 2. Act and notify, from phase 2 | Take actions of a type the part owner has approved, within the scenario's limits, through the governed process where there is one | The agent owner reviews them and can reverse any |
 
-- The level is set for each instance, part and type of action, in the settings. Where none is set, the release's starting level applies, which can only be 0 or 1, so level 2 always comes from the settings, never from the release. The release's maximum caps whatever the settings say.
+- The level is set for each instance, part and type of action, in the settings. Where none is set, the release's starting level applies, which can only be 0 or 1, so level 2 always comes from the settings, never from the release. The release's maximum caps whatever the settings say. In phase 1 a level is set for each instance and part; types of action come with level 2.
+- An instance works only on records in its parts, and only on those everyone it acts for may see. A call about records works at the lowest level it has in their parts, and one about no record in particular at the lowest of all its parts.
 - A level-2 setting records who approved it and the version of the part. If either changes, it drops to level 1 until the new owner sets it.
 - From phase 2, a5s also keeps a cap for each instance and type of action, and the instance works at the lower of the cap and the setting. The cap rises only when samples pass ([starting values](starting-values.md)), and falls when they fail or the agent owner lowers it. Raising it by hand loosens, so it needs someone outside the team.
 - An action that touches several parts works at the lowest of their levels.

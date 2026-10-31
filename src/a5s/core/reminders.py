@@ -23,6 +23,7 @@ from zoneinfo import ZoneInfo
 import psycopg
 
 from a5s.contract import Person
+from a5s.core import parts
 from a5s.core.coretools import Call, CoreTool, Refused
 from a5s.core.obligations import day, local
 
@@ -66,8 +67,9 @@ def offer(call: Call) -> dict:
         raise Refused(f"{say(person, at)} has passed")
     if at > call.now + FURTHEST:
         raise Refused("a reminder can be a year ahead at most")
-    if record and record not in {r.key for r in call.scenario.watched()}:
-        raise Refused(f"there's no record {record}")
+    if record and (record not in {r.key for r in call.scenario.watched()}
+                   or not parts.workable(call.scenario, call.run, record)):
+        raise Refused(f"there's no record {record} that they may see")
     again = call.conn.execute(  # the same reminder, offered before: it waits for their yes,
         # or has it, such as when a model confirms it in the same breath, in parallel
         "select id, confirmed_at from reminders where person = %s and agent = %s and due_at = %s "

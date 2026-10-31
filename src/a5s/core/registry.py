@@ -8,11 +8,26 @@ from dataclasses import dataclass, field
 import psycopg
 from psycopg.types.json import Jsonb
 
-from a5s.contract import INSTANCE_APPROVER, Person, Settings, Tool
+from a5s.contract import (
+    INSTANCE_APPROVER,
+    PART_OWNER,
+    InstanceSettings,
+    Person,
+    Settings,
+    Tool,
+    parse_settings,
+)
 from a5s.core import ledger, signing
 from a5s.definitions import Definition
 
 Directory = Callable[[str], Person | None]
+Holders = Callable[[str], list[Person]]
+
+
+def approves(person: Person) -> bool:
+    """Whether someone approves instances: the owner of a part, or an instance approver."""
+    return INSTANCE_APPROVER in person.roles or any(r.startswith(f"{PART_OWNER}:")
+                                                    for r in person.roles)
 
 
 def signers(settings: Settings, directory: Directory,
@@ -25,8 +40,9 @@ def signers(settings: Settings, directory: Directory,
         person = directory(sig.signer)
         if person is None:
             problems.append(f"{sig.signer} isn't in the directory")
-        elif INSTANCE_APPROVER not in person.roles:
-            problems.append(f"{sig.signer} doesn't hold the {INSTANCE_APPROVER} role")
+        elif not approves(person):
+            problems.append(f"{sig.signer} approves no instances: they own no part, and don't "
+                            f"hold the {INSTANCE_APPROVER} role")
         elif not person.public_key or not signing.verify(person.public_key, settings.raw, sig.value):
             problems.append(f"{sig.signer}'s signature isn't for this version")
         else:
@@ -35,11 +51,69 @@ def signers(settings: Settings, directory: Directory,
         person = directory(who)
         if person is None:
             problems.append(f"{who}, who approved it, isn't in the directory")
-        elif INSTANCE_APPROVER not in person.roles:
-            problems.append(f"{who}, who approved it, doesn't hold the {INSTANCE_APPROVER} role")
+        elif not approves(person):
+            problems.append(f"{who}, who approved it, approves no instances")
         elif who not in valid:
             valid.append(who)
     return valid, problems
+
+
+def _covered(settings: Settings, before: Settings | None) -> list[InstanceSettings]:
+    """The instances a version decides on: those it names, and those in force it retires."""
+    named = {i.id for i in settings.instances}
+    return [*settings.instances, *(i for i in (before.instances if before else ()) if i.id not in named)]
+
+
+def _classes_change(settings: Settings, before: Settings | None) -> bool:
+    """Whether a version sets the scenario's classes of data afresh, which decide which models
+    may see what: the first version does, and so does one that changes them."""
+    return before is None or ((settings.data_class, settings.classified)
+                              != (before.data_class, before.classified))
+
+
+def missing(settings: Settings, directory: Directory, valid: Iterable[str],
+            before: Settings | None = None) -> list[str]:
+    """Whose approval a version still needs, given who validly approved it: for each part an
+    instance works in, its owner's, and an instance approver's for any instance in no part,
+    and for the scenario's classes of data, if it sets them afresh. `before` is the version
+    before it, whose instances a version that leaves them out retires, so their approvers
+    decide that too."""
+    held = {role for who in valid if (p := directory(who)) for role in p.roles}
+    if not held:
+        return ["nobody who approves instances has approved it"]
+    covered = _covered(settings, before)
+    needs = [f"the owner of {part} hasn't approved it"
+             for part in sorted({p for i in covered for p in i.parts})
+             if f"{PART_OWNER}:{part}" not in held]
+    if INSTANCE_APPROVER not in held:
+        if any(not i.parts for i in covered):
+            needs.append(f"no {INSTANCE_APPROVER} has approved it, for the instances in no part")
+        if _classes_change(settings, before):
+            needs.append(f"no {INSTANCE_APPROVER} has approved its classes of data")
+    return needs
+
+
+def approvers(settings: Settings, holders: Holders, before: Settings | None = None) -> list[Person]:
+    """The people whose approval a version needs: each part's owners, and the instance
+    approvers, if any instance it decides on is in no part, or it sets the classes of data
+    afresh."""
+    covered = _covered(settings, before)
+    roles = [f"{PART_OWNER}:{p}" for p in sorted({p for i in covered for p in i.parts})]
+    if any(not i.parts for i in covered) or _classes_change(settings, before):
+        roles.append(INSTANCE_APPROVER)
+    found: dict[str, Person] = {}
+    for role in roles:
+        found.update({p.id: p for p in holders(role) if p.id not in found})
+    return list(found.values())
+
+
+def levels(instance: InstanceSettings, release: Definition) -> tuple[int, dict[str, int]]:
+    """How far an instance may act: its level, and its level in each of its parts, each
+    within its release's maximum. With parts, its level is the lowest of theirs."""
+    start, most = release.autonomy.start, release.autonomy.max
+    parts = {p: instance.level_in(p, start, most) for p in sorted(instance.parts)}
+    level = min(start if instance.level is None else instance.level, most)
+    return (min(parts.values()) if parts else level), parts
 
 
 @dataclass
@@ -66,19 +140,21 @@ def apply(
     data, so applying settings never resumes a suspended instance. `approved` are
     the people whose approvals of it through the identity provider the core sealed.
     """
-    valid, problems = signers(settings, directory, approved)
-    refused = [] if valid else [f"no {INSTANCE_APPROVER} signed this version", *problems]
-    for s in settings.instances:
-        definition = definitions.get(s.definition)
-        missing = [t for t in definition.tool_names if t not in tools] if definition else []
-        if missing:
-            refused.append(f"{s.definition} names tools the scenario doesn't have: "
-                           f"{', '.join(missing)}")
     last = conn.execute(
-        "select serial, version from settings_versions where scenario = %s "
+        "select serial, version, raw from settings_versions where scenario = %s "
         "order by serial desc limit 1",
         (scenario,),
     ).fetchone()
+    before = parse_settings(bytes(last["raw"])) if last and last["raw"] else None
+    valid, problems = signers(settings, directory, approved)
+    needs = missing(settings, directory, valid, before)
+    refused = [*needs, *problems] if needs else []
+    for s in settings.instances:
+        definition = definitions.get(s.definition)
+        absent = [t for t in definition.tool_names if t not in tools] if definition else []
+        if absent:
+            refused.append(f"{s.definition} names tools the scenario doesn't have: "
+                           f"{', '.join(absent)}")
     if last and settings.serial < last["serial"]:
         refused.append(f"serial {settings.serial} is older than {last['serial']}, the version in force")
     if last and settings.serial == last["serial"] and settings.version != last["version"]:
@@ -101,8 +177,7 @@ def apply(
         definition = definitions.get(s.definition)
         if definition is None:
             raise ValueError(f"instance {s.id}: no definition {s.definition}")
-        wanted = definition.autonomy.start if s.level is None else s.level
-        level = min(wanted, definition.autonomy.max)
+        level, parts = levels(s, definition)
         grants = definition.grants
         was = conn.execute("select status from instances where id = %s", (s.id,)).fetchone()
         if was and was["status"] == "retired":
@@ -111,12 +186,13 @@ def apply(
         conn.execute(
             """
             insert into instances
-              (id, definition, release, level, grants, model, serves, owner, deputy,
+              (id, definition, release, level, parts, grants, model, serves, owner, deputy,
                pins, settings_version)
-            values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             on conflict (id) do update set
               definition = excluded.definition, release = excluded.release,
-              level = excluded.level, grants = excluded.grants, model = excluded.model,
+              level = excluded.level, parts = excluded.parts, grants = excluded.grants,
+              model = excluded.model,
               serves = excluded.serves, owner = excluded.owner, deputy = excluded.deputy,
               pins = excluded.pins, settings_version = excluded.settings_version,
               status = case when instances.status = 'retired' then 'active'
@@ -124,7 +200,8 @@ def apply(
               updated_at = now()
             """,
             (
-                s.id, definition.id, definition.release_id, level, grants, definition.model,
+                s.id, definition.id, definition.release_id, level, Jsonb(parts), grants,
+                definition.model,
                 list(s.serves), s.owner or definition.owner, s.deputy or definition.deputy,
                 Jsonb(definition.pins),
                 settings.version,
@@ -143,6 +220,7 @@ def apply(
                     "ignored_signatures": problems,
                     "release": definition.release_id,
                     "level": level,
+                    **({"parts": parts} if parts else {}),
                     "grants": grants,
                     "model": definition.model,
                 },

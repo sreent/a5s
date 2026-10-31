@@ -1,9 +1,9 @@
 """The scenario contract: what a scenario gives a5s.
 
-Phase 1 covers the directory, settings, tools, the obligations its records
-give rise to, each person's records as they stand, how its records' keys look,
-and the policy pack. Events from records, the governed process and the decision
-surface follow in later steps.
+Phase 1 covers the directory, with what each person may see, settings, tools, the
+obligations its records give rise to, each person's records as they stand, the part each
+record is in, how its records' keys look, and the policy pack. Events from records, the
+governed process and the decision surface follow in later steps.
 """
 
 from __future__ import annotations
@@ -19,6 +19,9 @@ import yaml
 from a5s.core.ledger import canonical
 
 INSTANCE_APPROVER = "instance-approver"  # approves instances with no parts, and sets their level
+# A part's owner holds part-owner:<part>, such as part-owner:billing: they approve the instances
+# that work in their part, and how far each may act there.
+PART_OWNER = "part-owner"
 # a5s's own roles, for approving its releases. An agent's owner holds agent-owner:<agent>.
 RELEASE_APPROVER = "release-approver"  # never from the team that runs a5s, nor above it
 ASSURANCE = "assurance"
@@ -88,6 +91,11 @@ class Tool:
     # Fields of what it returns that hold sensitive values, such as a contact, which the agent
     # gets as handles: it passes them on, and a5s puts the values in (core/handles.py)
     handles: tuple[str, ...] = ()
+    # The argument that names the record a call is about, such as key, and the field of what it
+    # returns that names each record in it. The core lets an instance work only on records in
+    # its parts, and only on those everyone the run acts for may see.
+    record_arg: str | None = None
+    record_field: str | None = None
 
     @property
     def risk(self) -> dict[str, bool]:
@@ -105,6 +113,8 @@ class Tool:
                    "risk": self.risk, "text_fields": list(self.text_fields)}
         if self.handles:  # so a tool that stops handing a value over needs a new release
             payload["handles"] = list(self.handles)
+        if self.record_arg or self.record_field:  # and one that stops naming its records
+            payload["records"] = [self.record_arg, self.record_field]
         return hashlib.sha256(canonical(payload).encode()).hexdigest()
 
     def definition(self) -> dict[str, Any]:
@@ -126,6 +136,17 @@ class InstanceSettings:
     level: int | None = None  # the release's starting level, if the settings set none
     owner: str | None = None  # who runs it here, and their deputy: people in this directory
     deputy: str | None = None
+    # The parts it works in, its scope, each with its level there, or None for `level`. Their
+    # owners approve it. With none, it works on no part's records, and an instance approver
+    # approves it.
+    parts: dict[str, int | None] = field(default_factory=dict)
+
+    def level_in(self, part: str, start: int, most: int) -> int:
+        """How far it may act in a part, between a release's starting level and its maximum."""
+        wanted = self.parts.get(part)
+        if wanted is None:
+            wanted = start if self.level is None else self.level
+        return min(wanted, most)
 
 
 @dataclass(frozen=True)
@@ -165,10 +186,18 @@ def parse_settings(raw: bytes, signatures: tuple[Signature, ...] = ()) -> Settin
         classified={str(k): str(v) for k, v in (data.get("classified") or {}).items()},
         instances=tuple(
             InstanceSettings(id=iid, definition=i["definition"], serves=tuple(i["serves"]),
-                             level=i.get("level"), owner=i.get("owner"), deputy=i.get("deputy"))
+                             level=i.get("level"), owner=i.get("owner"), deputy=i.get("deputy"),
+                             parts=_parts(i.get("parts")))
             for iid, i in (data.get("instances") or {}).items()
         ),
     )
+
+
+def _parts(given: Any) -> dict[str, int | None]:
+    """An instance's parts, as a list of names or with a level for each."""
+    if isinstance(given, dict):
+        return {str(p): None if v is None else int(v) for p, v in given.items()}
+    return {str(p): None for p in given or ()}
 
 
 class Scenario(Protocol):
@@ -185,6 +214,13 @@ class Scenario(Protocol):
 
     def holders(self, role: str) -> list[Person]:
         """The people the directory assigns a role to."""
+
+    def part_of(self, record: str) -> str | None:
+        """The part a record is in, by its key, or None if it's in none."""
+
+    def sees(self, person: str, record: str) -> bool:
+        """Whether the directory lets someone see a record, by its key. False for a record
+        that doesn't exist."""
 
     def team(self, name: str) -> list[Person]:
         """The people in a team, such as the one that runs a5s."""

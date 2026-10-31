@@ -34,7 +34,6 @@ from pydantic import BaseModel
 from a5s import db
 from a5s.config import Config, ModelConfig
 from a5s.contract import (
-    INSTANCE_APPROVER,
     Person,
     Scenario,
     Settings,
@@ -53,6 +52,7 @@ from a5s.core import (
     ledger,
     models,
     obligations,
+    parts,
     profiles,
     provenance,
     recall,
@@ -161,8 +161,13 @@ class Gateway:
             return None, "the settings in force aren't what was signed"
         approved, _ = approvals.approvers(conn, self.cfg.seal_keys, self.scenario.name,
                                           approvals.digest(settings.raw))
-        if not registry.signers(settings, self.scenario.person, approved)[0]:
-            return None, "no instance approver signed the settings in force"
+        valid, _ = registry.signers(settings, self.scenario.person, approved)
+        earlier = conn.execute("select raw from settings_versions where scenario = %s "
+                               "and serial < %s order by serial desc limit 1",
+                               (self.scenario.name, row["serial"])).fetchone()
+        before = parse_settings(bytes(earlier["raw"])) if earlier and earlier["raw"] else None
+        if needs := registry.missing(settings, self.scenario.person, valid, before):
+            return None, f"the settings in force aren't approved: {needs[0]}"
         self._checked[row["version"]] = settings
         return settings, None
 
@@ -178,13 +183,13 @@ class Gateway:
         release = self.definitions.get(signed.definition)
         if release is None or release.release_id != inst["release"]:
             return [f"{inst['id']}'s release isn't in this gateway"]
-        level = min(release.autonomy.start if signed.level is None else signed.level,
-                    release.autonomy.max)
-        expected = (signed.definition, sorted(signed.serves), level, sorted(release.grants),
+        level, scope = registry.levels(signed, release)
+        expected = (signed.definition, sorted(signed.serves), level, scope, sorted(release.grants),
                     release.model, release.pins, signed.owner or release.owner,
                     signed.deputy or release.deputy)
-        actual = (inst["definition"], sorted(inst["serves"]), inst["level"], sorted(inst["grants"]),
-                  inst["model"], inst["pins"], inst["owner"], inst["deputy"])
+        actual = (inst["definition"], sorted(inst["serves"]), inst["level"], inst["parts"] or {},
+                  sorted(inst["grants"]), inst["model"], inst["pins"], inst["owner"],
+                  inst["deputy"])
         if expected != actual:
             log.error("instance %s doesn't match its signed settings and release", inst["id"])
             return [f"{inst['id']}'s record doesn't match its signed settings and release"]
@@ -485,7 +490,8 @@ class Gateway:
                 unseen = self.unseen(conn, inst["model"])  # what its model never sees
                 news = reports.news(conn, self.scenario.name, inst["id"], person, source, [
                     replace(r, fields={k: v for k, v in r.fields.items() if k not in unseen})
-                    for r in self.scenario.watched()], now)
+                    for r in parts.within(self.scenario, inst, [who], self.scenario.watched())],
+                    now)
             except Exception:  # the day's report waits until they can be read
                 log.exception("couldn't read the records for %s's report", who)
                 opening.reasons.append("the records can't be read")
@@ -577,16 +583,15 @@ class Gateway:
 
     def decide(self, row: dict, action: str, resource: dict, extra: list[dict],
                **context: Any) -> Decision:
+        given = {"level": row["level"], "read_outside": row["read_outside"],
+                 "acts_for": list(row["acts_for"])}
+        if action != "call_model":  # about no record, unless the call says otherwise
+            given |= {"in_scope": True, "visible": True}
         return self.policy.decide(
             principal={"type": "Instance", "id": row["id"]},
             action=action,
             resource=resource["uid"],
-            context={
-                "level": row["level"],
-                "read_outside": row["read_outside"],
-                "acts_for": list(row["acts_for"]),
-                **context,
-            },
+            context={**given, **context},
             entities=[self.instance_entity(row), resource, *extra],
         )
 
@@ -838,7 +843,8 @@ def create_app(gw: Gateway) -> FastAPI:
             if not conn.execute("select pg_try_advisory_xact_lock(%s) as got",
                                 (obligations.LOCK,)).fetchone()["got"]:
                 return []  # another sweep is at work
-            obligations.sync(conn, gw.scenario.name, owed, gw.definitions, now)
+            obligations.sync(conn, gw.scenario.name, owed, gw.definitions, now,
+                             gw.scenario.part_of)
             instances = {i["id"]: i for i in conn.execute("select * from instances")}
             able = gw.able(conn)  # else code escalates
             rows = conn.execute(
@@ -944,7 +950,7 @@ def create_app(gw: Gateway) -> FastAPI:
                             log.exception("couldn't read the records for reports")
                             return due
                     news = reports.news(conn, gw.scenario.name, inst["id"], person, report.source,
-                                        records, now)
+                                        parts.within(gw.scenario, inst, [who], records), now)
                     if news.facts:
                         due.append({"kind": "report", "report": {"person": who, "source": report.source},
                                     "instance": inst["id"], "agent": inst["definition"], "person": who})
@@ -1115,7 +1121,7 @@ def create_app(gw: Gateway) -> FastAPI:
                                               "digest": row["digest"],
                                               "widens": any(c["widens"] for c in found)}})
                 text = approvals.text(settings.serial, found, link)
-                for approver in gw.scenario.holders(INSTANCE_APPROVER):
+                for approver in registry.approvers(settings, gw.scenario.holders, before):
                     route = gw.reach(conn, approver.id, None)
                     ledger.append(conn, {
                         "kind": "notice", "action": "ask-approval", "run": None, "instance": None,
@@ -1138,7 +1144,7 @@ def create_app(gw: Gateway) -> FastAPI:
 
     @app.post("/settings/sweep", dependencies=[Depends(service)])
     def sweep_settings() -> dict:
-        """Apply the newest version of the settings an instance approver has approved where
+        """Apply the newest version of the settings that everyone it needs has approved where
         they work, and let go of the versions it leaves behind."""
         applied = []
         with db.transaction(gw.url) as conn:
@@ -1155,8 +1161,10 @@ def create_app(gw: Gateway) -> FastAPI:
                     approved, _ = approvals.approvers(conn, gw.cfg.seal_keys, gw.scenario.name,
                                                       row["digest"])
                     settings = parse_settings(bytes(row["raw"]))
-                    if not registry.signers(settings, gw.scenario.person, approved)[0]:
-                        continue  # no instance approver has approved it yet
+                    valid, _ = registry.signers(settings, gw.scenario.person, approved)
+                    before = parse_settings(bytes(last["raw"])) if last and last.get("raw") else None
+                    if registry.missing(settings, gw.scenario.person, valid, before):
+                        continue  # it waits for the rest of the approvers it needs
                     if refused := gw.unusable(settings, last):  # such as a release gone since
                         ledger.append(conn, {"kind": "admin", "action": "apply", "decision": "deny",
                                              "reasons": refused, "args": {
@@ -1243,7 +1251,11 @@ def create_app(gw: Gateway) -> FastAPI:
             row = load_run(conn, token)
             person = gw.scenario.person(row["acts_for"][0]) if len(row["acts_for"]) == 1 else None
             context = [profiles.section(conn, person)] if person else []
-            if (topic := row["trigger"].get("topic", topics.GENERAL)) != topics.GENERAL:
+            topic = row["trigger"].get("topic", topics.GENERAL)
+            if topic != topics.GENERAL and not parts.workable(gw.scenario, row, topic):
+                context.append({"title": f"The case: {topic}, from the records",
+                                "text": f"a5s has nothing on {topic} for this run: {parts.UNSEEN}."})
+            elif topic != topics.GENERAL:
                 context.append(topics.brief(conn, gw.scenario, topic, person, gw.clock(),
                                             gw.unseen(conn, row["model"])))
                 provenance.read(conn, row["run"], f"the records, on {topic}", context[-1]["text"],
@@ -1295,7 +1307,10 @@ def create_app(gw: Gateway) -> FastAPI:
         with db.transaction(gw.url) as conn:
             row = load_run(conn, token)
             entity = gw.core_tool_entity(name) if core else gw.tool_entity(name, tool, row["pins"])
-            decision = gw.decide(row, "call_tool", entity, [])
+            arg = tool.record_arg if tool else None  # the record it's about, if it names one
+            records = [args[arg]] if arg and isinstance(args.get(arg), str) and args[arg] else []
+            decision = gw.decide(row, "call_tool", entity, [],
+                                 **parts.about(gw.scenario, row, records))
             if row["trigger"].get("kind") in OWN_RUNS:
                 decision = Decision(False, ("a5s-runs-call-no-tools",), explanations=(
                     "a5s's own runs, such as keeping a summary, call no tools",))
@@ -1320,6 +1335,9 @@ def create_app(gw: Gateway) -> FastAPI:
             result = tool.run(ToolCall(args=given, instance=row["id"], run=row["run"],
                                        acts_for=tuple(row["acts_for"])))
             outcome = {"status": "ok", "result_sha256": ledger.digest(result)}
+            result, withheld = parts.kept(gw.scenario, row, tool.record_field, result)
+            if withheld:
+                outcome["withheld"] = withheld
             with db.transaction(gw.url) as conn:  # the agent gets handles for sensitive values,
                 hidden = (*tool.handles, *sorted(gw.unseen(conn, row["model"])))  # and classified
                 result = handles.issue(conn, row["run"], name, result, hidden)  # ones it can't see

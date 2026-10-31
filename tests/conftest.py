@@ -370,8 +370,10 @@ class Stack:
     def scheduler(self, **kwargs: Any) -> Scheduler:
         return Scheduler(self.as_role("scheduler"), self.gateway.scenario, **kwargs)
 
-    def settle(self, instances: dict | None = None, **changes: Any) -> registry.Applied:
-        """Sign a new version of the settings as Ana, an instance approver, and apply it.
+    def settle(self, instances: dict | None = None, signers: tuple[str, ...] = ("ana",),
+               **changes: Any) -> registry.Applied:
+        """Sign a new version of the settings as Ana, an instance approver who owns billing,
+        or as `signers`, and apply it.
 
         `changes`, such as level=0, apply to assistant-finance; `instances` replaces them all.
         """
@@ -381,28 +383,31 @@ class Stack:
             settings["instances"] = instances
         else:
             settings["instances"]["assistant-finance"].update(changes)
-        signed(folder, settings)
+        signed(folder, settings, signers)
         scenario = self.gateway.scenario
         with db.transaction(self.admin) as conn:
             return registry.apply(conn, self.gateway.definitions, scenario.settings(),
                                   scenario.tools(), scenario.person, scenario.name)
 
-    def with_watcher(self, serves: tuple[str, ...] = ("ana", "ben")) -> None:
+    def with_watcher(self, serves: tuple[str, ...] = ("ana", "ben"),
+                     signers: tuple[str, ...] = ("ana",), **changes: Any) -> None:
         """The sample's watcher, which the tests leave out unless they ask, as its settings
-        name it: it tells its people each working morning what changed in their records."""
+        name it, with `changes`: it tells its people each working morning what changed in
+        their records."""
         settings = yaml.safe_load((self.cfg.scenario_dir / "settings.yaml").read_text())
         assert not self.settle(instances={**settings["instances"], "watcher-finance": {
-            **WATCHER, "serves": list(serves)}}).refused
+            **WATCHER, "serves": list(serves), **changes}}, signers=signers).refused
 
 
-def signed(folder: Path, settings: dict) -> None:
+def signed(folder: Path, settings: dict, signers: tuple[str, ...] = ("ana",)) -> None:
     """A new version of the settings, with its serial raised, signed by Ana, an instance
-    approver."""
+    approver who owns billing, or by `signers`."""
     raw = yaml.safe_dump({**settings, "serial": settings["serial"] + 1}).encode()
     (folder / "settings.yaml").write_bytes(raw)
-    value = signing.sign((folder / "keys" / "ana.key").read_text().strip(), raw)
-    (folder / "settings.sig").write_text(
-        yaml.safe_dump({"signatures": [{"signer": "ana", "value": value}]}))
+    (folder / "settings.sig").write_text(yaml.safe_dump({"signatures": [
+        {"signer": who, "value": signing.sign((folder / "keys" / f"{who}.key").read_text().strip(),
+                                               raw)}
+        for who in signers]}))
 
 
 SAMPLE_SETTINGS = yaml.safe_load((ROOT / "scenarios" / "sample" / "settings.yaml").read_text())

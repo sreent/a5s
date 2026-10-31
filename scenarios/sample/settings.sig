@@ -2,4 +2,4 @@
 # and these no longer match: the new version needs signing again.
 signatures:
 - signer: ana
-  value: lxf1kbyN255c9/1QfttwhbfgeLpyvbZ19XmTj3fQR6CJZ+xb8sCkfX5iHjiRxf1InDJfGDPKym16Hk2BG41OCQ==
+  value: lRvTPUdZrd7prgFRU5kTBoQCHj5tZRsX1BGp9htfy6+/ZMzqvAf2xTrwC0Np7QzWUQb2uvaCl9olzV6e0Y4rAg==
