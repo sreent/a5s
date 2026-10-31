@@ -162,9 +162,8 @@ def escalation(row: dict, scenario: Scenario, recipient: Person, inst: dict | No
     if row.get("waiting_on") and row.get("waiting_noted_at"):
         said.append(f"On {day(recipient, row['waiting_noted_at'])}, they said they were waiting on "
                     f"{row['waiting_on']} until {day(recipient, row['waiting_until'])}.")
-    if row["chased_at"]:
-        said.append(f"The {inst['definition'] if inst else 'agent'} reminded them on "
-                    f"{day(recipient, row['chased_at'])}.")
+    if row["chased_at"]:  # by its agent, or by a5s when the agent couldn't
+        said.append(f"They were reminded on {day(recipient, row['chased_at'])}.")
     elif inst is None:
         said.append("No agent works on it for them, so nobody reminded them first.")
     else:
@@ -176,6 +175,15 @@ def escalation(row: dict, scenario: Scenario, recipient: Person, inst: dict | No
     if row["link"]:
         said.append(row["link"])
     return " ".join(said)
+
+
+def instead(row: dict, person: Person, why: str) -> str:
+    """a5s's own reminder of what someone owes, when their agent couldn't write it."""
+    due = local(person, row["due_at"])
+    link = f" {row['link']}" if row["link"] else ""
+    return (f"{row['record']}, {row['title']}, is due by {due:%H:%M} on "
+            f"{day(person, row['due_at'])} and is still open. The {row.get('agent') or 'agent'} "
+            f"couldn't write to you about it, as {why}, so a5s is telling you itself.{link}")
 
 
 def chase(row: dict, person: Person, *, withheld: bool = False) -> str:

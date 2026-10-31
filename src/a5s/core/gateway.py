@@ -21,7 +21,7 @@ import secrets
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
@@ -81,6 +81,11 @@ CORE_TOOLS = {**reminders.TOOLS, **digests.TOOLS, **profiles.TOOLS,  # a5s's own
 RUN_MINUTES = 60  # the longest a run may last [TBC]; its token dies with it
 CHARS_PER_TOKEN = 4  # roughly, for a run's budget for its conversation
 OWN_RUNS = ("summary",)  # a5s's own work on a conversation: no tools, and it writes to nobody
+TRIES = 5  # deliveries to a chat before what it didn't take is left in the person's inbox
+WHY = {  # why an agent's run didn't get its message through, in words people read
+    "model unavailable": "its model isn't answering", "budget spent": "it has used its budget "
+    "for today", "reply denied": "a5s didn't let its message through", "abandoned": "it stopped "
+    "before it finished"}
 # The chats a5s writes to itself, as each agent's bot. People collect from the local
 # channel, the command line's and the web chat's, instead.
 PUSHED = ("teams", "matrix")
@@ -822,8 +827,11 @@ def create_app(gw: Gateway) -> FastAPI:
             release = gw.definitions.get(inst["definition"])
             spent = None if reasons or release is None else budgets.refused(
                 conn, gw.scenario, release.budget, body.instance, opening.acts_for, kind, 0, now)
-            if spent:  # the work waits: a report for the next day, a chase for the next sweep
+            pushing = []
+            if spent:  # the work waits, a report for the next day; a5s gives what's owed itself
                 reasons.append(spent)
+                if kind in ("reminder", "obligation") and not opening.used:
+                    pushing = give_instead(conn, opening.trigger, WHY["budget spent"])
             if kind == "report" and opening.due and not opening.used:  # once a day, run or not
                 report = opening.trigger["report"]
                 if not reports.fire(conn, body.instance, report["person"], report["source"],
@@ -866,6 +874,7 @@ def create_app(gw: Gateway) -> FastAPI:
                                         "a5s.instance": body.instance, "a5s.trigger": kind,
                                         "a5s.decision": "deny" if reasons else "allow"}):
             pass
+        push(pushing)
         if reasons:
             raise HTTPException(409, {"reasons": reasons, "status": inst["status"],
                                       "owner": inst["owner"], "suspended_by": inst["suspended_by"],
@@ -883,19 +892,24 @@ def create_app(gw: Gateway) -> FastAPI:
                 "update runs set closed_at = now(), outcome = 'abandoned' "
                 "where closed_at is null and expires_at < now() "
                 "returning id::text as run, instance_id, trigger").fetchall()
+            sends = []
             for row in stale:
                 ledger.append(conn, {"kind": "run", "action": "close", "run": row["run"],
                                      "instance": row["instance_id"], "decision": "record",
                                      "outcome": "abandoned"})
+                sends += give_instead(conn, row["trigger"], WHY["abandoned"])
+        push(sends)
         return [{"run": r["run"], "inbound": r["trigger"].get("inbound"),
                  "instance": r["instance_id"]} for r in stale]
 
     @app.post("/runs/{run_id}/close", dependencies=[Depends(service)])
     def close_run(run_id: str, body: CloseRun) -> dict:
+        """Close a run, with how it ended. A reminder or chase whose run didn't get its message
+        through, a5s gives itself, in its own words."""
         with db.transaction(gw.url) as conn:
             row = conn.execute(
                 "update runs set closed_at = now(), outcome = %s where id = %s and closed_at is null "
-                "returning instance_id",
+                "returning instance_id, trigger",
                 (body.outcome, run_id),
             ).fetchone()
             if row is None:
@@ -903,7 +917,52 @@ def create_app(gw: Gateway) -> FastAPI:
             ledger.append(conn, {"kind": "run", "action": "close", "run": run_id,
                                  "instance": row["instance_id"], "decision": "record",
                                  "outcome": body.outcome})
+            sends = [] if body.outcome == "done" else give_instead(conn, row["trigger"],
+                                                                     WHY.get(body.outcome))
+        push(sends)
         return {"closed": run_id}
+
+    def give_instead(conn: psycopg.Connection, trigger: dict, why: str | None) -> list[int | None]:
+        """Give a reminder or a chase that its agent's run couldn't, in a5s's own words, so
+        nothing someone agreed to or owes lapses because a model, a budget or a run failed.
+        What to push once the transaction is done."""
+        why, now = why or "it couldn't finish", gw.clock()
+        if trigger.get("kind") == "reminder":
+            row = conn.execute("select * from reminders where id = %s for update",
+                               (trigger.get("reminder"),)).fetchone()
+            person = gw.scenario.person(row["person"]) if row else None
+            if row is None or row["cancelled_at"] or person is None or not person.in_audience:
+                return []
+            conn.execute("update reminders set reminded_at = %s where id = %s", (now, row["id"]))
+            text = reminders.notice(row, person, f"unable to write to you just now, as {why}")
+            ledger.append(conn, {"kind": "notice", "action": "remind", "run": None,
+                                 "instance": row["instance_id"], "acts_for": [person.id],
+                                 "decision": "record", "args": {
+                                     "reminder": row["id"], "instead": why, "chars": len(text),
+                                     "sha256": hashlib.sha256(text.encode()).hexdigest()}})
+            if row["in_digest"]:  # a reminder for a day goes in their digest
+                digests.keep(conn, person.id, None, row["instance_id"], None, text, now)
+                return []
+            return [outbound(conn, gw.reach(conn, person.id, row["agent"]), person.id, text,
+                             instance=row["instance_id"], agent=row["agent"])]
+        if trigger.get("kind") == "obligation":
+            row = conn.execute("select o.*, i.definition as agent from obligations o left join "
+                               "instances i on i.id = o.instance_id where o.id = %s for update of o",
+                               (trigger.get("obligation"),)).fetchone()
+            person = gw.scenario.person(row["person"]) if row else None
+            if row is None or row["done_at"] or person is None or not person.in_audience:
+                return []
+            conn.execute("update obligations set chased_at = %s, updated_at = %s where id = %s",
+                         (now, now, row["id"]))
+            text = obligations.instead(row, person, why)
+            ledger.append(conn, {"kind": "notice", "action": "chase", "run": None,
+                                 "instance": row["instance_id"], "acts_for": [person.id],
+                                 "decision": "record", "args": {
+                                     "obligation": row["id"], "record": row["record"],
+                                     "instead": why, "chars": len(text),
+                                     "sha256": hashlib.sha256(text.encode()).hexdigest()}})
+            digests.keep(conn, person.id, None, row["instance_id"], None, text, now)  # as chases go
+        return []
 
     # What falls due: obligations to remind people of or escalate, and schedules to fire.
 
@@ -949,20 +1008,16 @@ def create_app(gw: Gateway) -> FastAPI:
                              "person": row["person"], "to": to.id, "step": row["escalations"] + 1,
                              "channel": route["channel"], "chars": len(text),
                              "sha256": hashlib.sha256(text.encode()).hexdigest()}})
-                if route["channel"] in PUSHED:
-                    sends.append((route, text, row["instance_id"]))
-                elif route["channel"] == "batch":  # they've had today's urgent messages
+                if route["channel"] == "batch":  # they've had today's urgent messages
                     urgent.hold(conn, to.id, None, row["instance_id"], None, text, now)  # a5s's
-                else:  # people collect it from the local channel's inbox
-                    conn.execute("insert into outbox (instance_id, agent, person, channel, text) "
-                                 "values (%s, %s, %s, 'local', %s)",
-                                 (row["instance_id"], row["agent"], to.id, text))
+                else:  # in the chat, after this transaction, or in the local channel's inbox
+                    sends.append(outbound(conn, route, to.id, text, instance=row["instance_id"],
+                                          agent=row["agent"]))
                 escalated.add(row["id"])
             due = [d for d in obligations.to_chase(rows, gw.scenario, now, able,
                                                    gw.digest_open(conn, now))
                    if d["obligation"] not in escalated]
-        for route, text, instance in sends:
-            deliver(route, text, None, instance)
+        push(sends)
         return due
 
     @app.post("/schedules/sweep", dependencies=[Depends(service)])
@@ -1053,7 +1108,16 @@ def create_app(gw: Gateway) -> FastAPI:
                     "and cancelled_at is null and due_at <= %s order by due_at, id for update",
                     (now,)).fetchall():
                 person = gw.scenario.person(row["person"])
-                if row["in_digest"] and person and not digest_open(person):
+                if person is None or not person.in_audience:  # they've left, or a5s may not
+                    conn.execute("update reminders set cancelled_at = %s where id = %s",  # write
+                                 (now, row["id"]))  # to them: it ends, once, not every minute
+                    ledger.append(conn, {"kind": "notice", "action": "remind", "run": None,
+                                         "instance": row["instance_id"], "acts_for": [],
+                                         "decision": "record", "args": {"reminder": row["id"]},
+                                         "outcome": {"status": "ended", "why": "a5s may not "
+                                                     "write to them now"}})
+                    continue
+                if row["in_digest"] and not digest_open(person):
                     continue  # it waits for their digest's time
                 inst = conn.execute("select * from instances where id = %s",
                                     (row["instance_id"],)).fetchone()
@@ -1062,8 +1126,6 @@ def create_app(gw: Gateway) -> FastAPI:
                                 "agent": row["agent"], "person": row["person"]})
                     continue
                 conn.execute("update reminders set reminded_at = %s where id = %s", (now, row["id"]))
-                if person is None or not person.in_audience:
-                    continue  # a5s may not write to them now
                 status = inst["status"] if inst["status"] != "active" else "unable to act"
                 text = reminders.notice(row, person, status)
                 if row["in_digest"]:  # a5s's own item in their digest
@@ -1074,33 +1136,35 @@ def create_app(gw: Gateway) -> FastAPI:
                         "args": {"reminder": row["id"], "channel": "digest", "chars": len(text),
                                  "sha256": hashlib.sha256(text.encode()).hexdigest()}})
                     continue
-                route = gw.at_once(conn, person.id, row["agent"])
+                route = gw.reach(conn, person.id, row["agent"])  # they asked for it then
                 ledger.append(conn, {
                     "kind": "notice", "action": "remind", "run": None, "instance": inst["id"],
                     "acts_for": [person.id], "decision": "record",
                     "args": {"reminder": row["id"], "channel": route["channel"], "chars": len(text),
                              "sha256": hashlib.sha256(text.encode()).hexdigest()}})
-                if route["channel"] in PUSHED:
-                    sends.append((route, text, inst["id"]))
-                elif route["channel"] == "batch":  # they've had today's urgent messages
+                if route["channel"] == "batch":  # they've had today's urgent messages
                     urgent.hold(conn, person.id, None, inst["id"], None, text, now)  # a5s's
-                else:  # they collect it from the local channel's inbox
-                    conn.execute("insert into outbox (instance_id, agent, person, channel, text) "
-                                 "values (%s, %s, %s, 'local', %s)",
-                                 (inst["id"], row["agent"], person.id, text))
-        for route, text, instance in sends:
-            deliver(route, text, None, instance)
+                else:  # in the chat, after this transaction, or in the local channel's inbox
+                    sends.append(outbound(conn, route, person.id, text, instance=inst["id"],
+                                          agent=row["agent"]))
+        push(sends)
         return due
 
     @app.post("/digests/sweep", dependencies=[Depends(service)])
     def sweep_digests() -> list[dict]:
         """Send each person's digest, once its time has come today and their agents' work for
-        it is done. One item goes as itself, from its agent; more go as one message from a5s.
-        A day with nothing to tell sends nothing, but closes the day all the same. And send
-        the urgent messages held for someone, together, once the oldest has waited an hour."""
-        now, sent, sends, batches = gw.clock(), [], [], []
+        it is done, or has had half an hour: what's ready goes then, and the rest waits for the
+        next. In a chat, where each agent writes as its own bot, each agent's items go as its
+        own message, in its own chat, so an answer to one reaches the agent that wrote it. In
+        the local inbox, one item goes as itself, from its agent, and more go as one message
+        from a5s, each under its agent. A day with nothing to tell sends nothing, but closes
+        the day all the same. And send the urgent messages held for someone, together, once
+        the oldest has waited an hour, in their working hours."""
+        now, sent, sends = gw.clock(), [], []
         with db.transaction(gw.url) as conn:
             able = gw.able(conn)
+            agents = {i["id"]: i["definition"]
+                      for i in conn.execute("select id, definition from instances")}
             people = {p for row in conn.execute("select serves from instances "
                                                 "where status <> 'retired'") for p in row["serves"]}
             people |= {r["person"] for r in conn.execute(
@@ -1108,38 +1172,47 @@ def create_app(gw: Gateway) -> FastAPI:
             for who in sorted(people):
                 person = gw.scenario.person(who)
                 due = digests.window(conn, person, now) if person and person.in_audience else None
-                if due is None or gw.busy(conn, person, due, now, able):
-                    continue
+                if due is None or (gw.busy(conn, person, due, now, able)
+                                   and digests.waiting_since(conn, who, due, now) + digests.WAIT
+                                   > now):
+                    continue  # its work isn't done, and hasn't had half an hour since a5s looked
                 items = digests.waiting(conn, who)
                 if not items:
                     digests.close(conn, who, due, now, [], None)
                     continue
-                one = items[0] if len(items) == 1 else None
-                text = one["text"] if one else digests.compose(person, items, due)
-                route = gw.reach(conn, who, one["agent"] if one else None)
-                ledger.append(conn, {
-                    "kind": "notice", "action": "digest", "run": None,
-                    "instance": one["instance_id"] if one else None, "acts_for": [who],
-                    "decision": "record", "args": {"items": len(items), "channel": route["channel"],
-                                                   "chars": len(text),
-                                                   "sha256": hashlib.sha256(text.encode()).hexdigest()}})
-                digests.close(conn, who, due, now, items, route["channel"])
-                if route["channel"] in PUSHED:
-                    sends.append((route, text, items))
-                else:  # they collect it from the local channel's inbox
-                    conn.execute(
-                        "insert into outbox (run_id, instance_id, agent, person, channel, text) "
-                        "values (%s, %s, %s, %s, 'local', %s)",
-                        (one["run_id"] if one else None, one["instance_id"] if one else None,
-                         one["agent"] if one else None, who, text))
-                    for item in items:  # a report counts as told once it's theirs to read
-                        if item["run_id"]:
-                            reports.told(conn, str(item["run_id"]))
-                sent.append({"person": who, "items": len(items), "channel": route["channel"]})
+                for item in items:  # a report counts as told once a5s has it to deliver
+                    if item["run_id"]:
+                        reports.told(conn, str(item["run_id"]))
+                groups: dict[str | None, list[dict]] = {}
+                if gw.reach(conn, who, None)["channel"] in PUSHED:  # each agent in its own chat
+                    for item in items:
+                        groups.setdefault(item["agent"] or agents.get(item["instance_id"]),
+                                          []).append(item)
+                else:
+                    groups[None] = items
+                channels = []
+                for agent, group in groups.items():
+                    one = group[0] if len(group) == 1 else None
+                    writer = agent or (one["agent"] if one else None)
+                    text = one["text"] if one else digests.compose(person, group, due, agent)
+                    route = gw.reach(conn, who, writer)
+                    ledger.append(conn, {
+                        "kind": "notice", "action": "digest", "run": None,
+                        "instance": one["instance_id"] if one else None, "acts_for": [who],
+                        "decision": "record", "args": {
+                            "items": len(group), "channel": route["channel"], "chars": len(text),
+                            "sha256": hashlib.sha256(text.encode()).hexdigest()}})
+                    sends.append(outbound(conn, route, who, text,
+                                          run=one["run_id"] if one else None,
+                                          instance=one["instance_id"] if one else None,
+                                          agent=writer))
+                    channels.append(route["channel"])
+                digests.close(conn, who, due, now, items, channels[0])
+                sent.append({"person": who, "items": len(items), "channel": channels[0]})
             for who, items in urgent.due(conn, now).items():
                 person = gw.scenario.person(who)
-                if person is None or not person.in_audience:
-                    continue  # a5s may not write to them now
+                if person is None or not person.in_audience or not obligations.working(person, now):
+                    continue  # a5s may not write to them now, or it's outside their hours
                 one = items[0] if len(items) == 1 else None
                 text = one["text"] if one else urgent.compose(items)
                 route = gw.reach(conn, who, one["agent"] if one else None)
@@ -1150,24 +1223,12 @@ def create_app(gw: Gateway) -> FastAPI:
                                                    "chars": len(text),
                                                    "sha256": hashlib.sha256(text.encode()).hexdigest()}})
                 urgent.sent(conn, items, now)
-                if route["channel"] in PUSHED:
-                    batches.append((route, text, one["instance_id"] if one else None))
-                else:  # they collect it from the local channel's inbox
-                    conn.execute(
-                        "insert into outbox (run_id, instance_id, agent, person, channel, text) "
-                        "values (%s, %s, %s, %s, 'local', %s)",
-                        (one["run_id"] if one else None, one["instance_id"] if one else None,
-                         one["agent"] if one else None, who, text))
+                sends.append(outbound(conn, route, who, text, run=one["run_id"] if one else None,
+                                      instance=one["instance_id"] if one else None,
+                                      agent=one["agent"] if one else None))
                 sent.append({"person": who, "items": len(items), "channel": route["channel"],
                              "batch": True})
-        for route, text, items in sends:
-            if not deliver(route, text, None, items[0]["instance_id"] if len(items) == 1 else None):
-                with db.transaction(gw.url) as conn:
-                    for item in items:
-                        if item["run_id"]:
-                            reports.told(conn, str(item["run_id"]))
-        for route, text, instance in batches:
-            deliver(route, text, None, instance)
+        push(sends)
         return sent
 
     # Settings the instance approvers approve where they work (core/approvals.py)
@@ -1202,14 +1263,11 @@ def create_app(gw: Gateway) -> FastAPI:
                     "args": {"settings": settings.version, "to": approver.id,
                              "channel": route["channel"], "chars": len(text),
                              "sha256": hashlib.sha256(text.encode()).hexdigest()}})
-                if route["channel"] in PUSHED:
-                    sends.append((route, text))
-                else:  # they collect it from the local channel's inbox
-                    conn.execute("insert into outbox (person, channel, text) "
-                                 "values (%s, 'local', %s)", (approver.id, text))
+                sends.append(outbound(conn, route, approver.id, text,
+                                      card=approvals.card(settings.serial, found, link)))
                 asked.append(approver.id)
         return {"refused": [], "row": row, "new": new, "changes": found, "link": link,
-                "asked": asked, "sends": sends, "card": approvals.card(settings.serial, found, link)}
+                "asked": asked, "sends": sends}
 
     @app.post("/settings/proposals", dependencies=[Depends(service)])
     def propose(body: Proposal) -> dict:
@@ -1227,13 +1285,12 @@ def create_app(gw: Gateway) -> FastAPI:
             done = proposing(conn, settings)
         if done["refused"]:
             raise HTTPException(409, {"reasons": done["refused"]})
-        for route, text in done["sends"]:
-            deliver(route, text, None, None, card=done["card"])
+        push(done["sends"])
         return {"settings": settings.version, "serial": settings.serial,
                 "digest": done["row"]["digest"], "link": done["link"], "changes": done["changes"],
                 "asked": done["asked"], "new": done["new"]}
 
-    def requested(conn: psycopg.Connection) -> list[tuple[dict, str, dict]]:
+    def requested(conn: psycopg.Connection) -> list[int | None]:
         """Propose the versions people asked for in the settings app, once each, if they still
         approve instances. What to send their approvers once the transaction is done. Each
         request is worked on alone, so one a5s can't use is refused, and holds up nothing."""
@@ -1255,7 +1312,7 @@ def create_app(gw: Gateway) -> FastAPI:
                             else "proposed"
                         if not done["refused"]:
                             digest = done["row"]["digest"]
-                            sends += [(route, text, done["card"]) for route, text in done["sends"]]
+                            sends += done["sends"]
             except ValueError as exc:
                 outcome = f"refused: {exc}"[:500]
             except Exception as exc:  # recorded on the request, and logged
@@ -1317,8 +1374,7 @@ def create_app(gw: Gateway) -> FastAPI:
                 conn.execute("update settings_proposals set outcome = %s, decided_at = now() "
                              "where scenario = %s and digest = %s",
                              (outcome, gw.scenario.name, row["digest"]))
-        for route, text, card in sends:  # what the settings app's requests ask their approvers
-            deliver(route, text, None, None, card=card)
+        push(sends)  # what the settings app's requests ask their approvers
         return {"applied": applied}
 
     @app.get("/status", dependencies=[Depends(service)])
@@ -1568,7 +1624,9 @@ def create_app(gw: Gateway) -> FastAPI:
                 decision = gw.decide(row, "send_message", recipient, [])
                 route = (gw.message_of(conn, inbound) if inbound  # an answer, where it was asked
                          else {"channel": "digest", "reply_to": {}} if gw.for_digest(conn, row)
-                         else gw.at_once(conn, body.to, row["definition"], count=decision.allowed))
+                         else gw.at_once(conn, body.to, row["definition"],  # not what they
+                                         count=decision.allowed  # asked to be reminded of then
+                                         and row["trigger"].get("kind") != "reminder"))
             traced = provenance.traced(conn, gw.scenario, row, text) if decision.allowed else []
             said, note = text, None  # the agent's words, apart from a5s's own note on them
             if own := [t["value"] for t in traced if t["from"] is None]:  # people see it apart
@@ -1584,12 +1642,9 @@ def create_app(gw: Gateway) -> FastAPI:
                 digests.keep(conn, body.to, row["definition"], row["id"], row["run"], shown, gw.clock())
             elif decision.allowed and route["channel"] == "batch":  # it waits for their next batch
                 urgent.hold(conn, body.to, row["definition"], row["id"], row["run"], shown, gw.clock())
-            elif decision.allowed and route["channel"] not in PUSHED:  # people collect it from here
-                conn.execute(
-                    "insert into outbox (run_id, instance_id, agent, inbound_id, person, channel, "
-                    "text) values (%s, %s, %s, %s, %s, %s, %s)",
-                    (row["run"], row["id"], row["definition"], inbound, body.to, route["channel"],
-                     shown))
+            elif decision.allowed:  # in the chat, after this transaction, or in the inbox
+                sending = outbound(conn, route, body.to, shown, run=row["run"], instance=row["id"],
+                                   agent=row["definition"], inbound=inbound)
         with traces.span("send_message", **{"a5s.run.id": row["run"], "a5s.instance": row["id"],
                                             "a5s.channel": route["channel"] if route else None,
                                             "a5s.decision": decision.label}):
@@ -1597,10 +1652,8 @@ def create_app(gw: Gateway) -> FastAPI:
         if not decision.allowed:
             return JSONResponse(status_code=403,
                                 content={"denied": True, **decision.as_dict(explain=True)})
-        if route["channel"] in PUSHED:
-            problem = deliver(route, shown, row["run"], row["id"])
-            if problem:
-                return JSONResponse(status_code=502, content={"error": problem})
+        if route["channel"] not in ("digest", "batch"):
+            push([sending])  # a chat that doesn't take it now gets it again, later
         # As the agent wrote it, with its handles, for the conversation a later run reads, and
         # a5s's note apart, so no run takes a5s's words for the agent's, or learns to imitate them
         return {"sent": True, "text": said, "note": note, "links_removed": removed}
@@ -1629,6 +1682,65 @@ def create_app(gw: Gateway) -> FastAPI:
                 "decision": "record", "outcome": {"status": "error", "error": problem} if problem
                 else {"status": "ok", "channel": channel, **({"started": True} if started else {})}})
         return problem
+
+    def outbound(conn: psycopg.Connection, route: dict, person: str, text: str, *,
+                 run: str | None = None, instance: str | None = None, agent: str | None = None,
+                 inbound: str | None = None, card: dict | None = None) -> int | None:
+        """Keep what a5s will write to someone, in the transaction that decides it: in the
+        local channel's inbox, or, for a chat a5s writes to itself, to deliver once the
+        transaction is done. The row's id, to push, for a chat."""
+        pushed = route["channel"] in PUSHED
+        row = conn.execute(
+            "insert into outbox (run_id, instance_id, agent, inbound_id, person, channel, text, "
+            "route, card) values (%s, %s, %s, %s, %s, %s, %s, %s, %s) returning id",
+            (run, instance, agent, inbound, person, route["channel"], text,
+             Jsonb(route) if pushed else None, Jsonb(card) if card else None)).fetchone()
+        return row["id"] if pushed else None
+
+    def push(ids: list[int | None] | None = None) -> None:
+        """Deliver what waits for a chat a5s writes to itself: the rows given, or every one
+        that's due again. Each is taken for five minutes while it's tried, so two gateways
+        don't send it twice. One the chat doesn't take is tried again, after a minute, then
+        two, four and eight, and after five tries it's left in the person's local inbox."""
+        wanted = None if ids is None else [i for i in ids if i is not None]
+        if wanted == []:
+            return
+        now = gw.clock()  # by the core's clock, as everything that falls due is
+        with db.transaction(gw.url) as conn:
+            rows = conn.execute(
+                "update outbox set attempts = attempts + 1, retry_at = %s where id in ("
+                "  select id from outbox where delivered_at is null and channel = any(%s) "
+                "  and (retry_at is null or retry_at <= %s) "
+                "  and (%s::bigint[] is null or id = any(%s)) "
+                "  order by id limit 100 for update skip locked) returning *",
+                (now + timedelta(minutes=5), list(PUSHED), now, wanted, wanted)).fetchall()
+        for row in sorted(rows, key=lambda r: r["id"]):  # in the order a5s wrote them
+            run = str(row["run_id"]) if row["run_id"] else None
+            problem = deliver(row["route"], row["text"], run, row["instance_id"], card=row["card"])
+            with db.transaction(gw.url) as conn:
+                if problem is None:
+                    conn.execute("update outbox set delivered_at = now(), retry_at = null, "
+                                 "problem = null where id = %s", (row["id"],))
+                elif row["attempts"] >= TRIES:  # the chat won't take it: the inbox will
+                    conn.execute("update outbox set channel = 'local', inbound_id = null, "
+                                 "retry_at = null, problem = %s where id = %s",
+                                 (problem, row["id"]))
+                    ledger.append(conn, {
+                        "kind": "message", "action": "fallback", "run": run,
+                        "instance": row["instance_id"], "acts_for": [row["person"]],
+                        "decision": "record", "args": {"outbox": row["id"], "tries": row["attempts"],
+                                                       "channel": row["route"]["channel"]},
+                        "outcome": {"status": "error", "error": problem}})
+                else:
+                    conn.execute("update outbox set retry_at = %s, problem = %s where id = %s",
+                                 (now + timedelta(minutes=2 ** (row["attempts"] - 1)), problem,
+                                  row["id"]))
+
+    @app.post("/deliveries/sweep", dependencies=[Depends(service)])
+    def sweep_deliveries() -> dict:
+        """Try again what a chat a5s writes to itself didn't take, once it's due."""
+        push()
+        return {"swept": True}
 
     def start(channel: str, chat: Any, person: str, agent: str, user: str) -> tuple[dict, bool]:
         """The conversation an agent's bot starts with someone, unless another delivery started
@@ -1664,22 +1776,29 @@ def create_app(gw: Gateway) -> FastAPI:
                                      "decision": "allow", "args": {
                                          "inbound": inbound, "chars": len(text),
                                          "sha256": hashlib.sha256(text.encode()).hexdigest()}})
-                if row["channel"] not in PUSHED:
-                    conn.execute(
-                        "insert into outbox (instance_id, agent, inbound_id, person, channel, text) "
-                        "values (%s, %s, %s, %s, %s, %s)",
-                        (body.instance, row["agent"], inbound, row["person"], row["channel"], text))
+                sending = outbound(conn, {"channel": row["channel"], "reply_to": row["reply_to"]},
+                                   row["person"], text, instance=body.instance, agent=row["agent"],
+                                   inbound=inbound)
         if row is None:
             raise HTTPException(403, "a5s only answers a message someone sent, and briefly")
-        if row["channel"] in PUSHED:
-            problem = deliver(row, text, None, body.instance)
-            if problem:
-                raise HTTPException(502, problem)
+        push([sending])
         return {"sent": True, "text": text}
 
     # The model gateway, in both API styles.
 
     def model_call(api: str, body: dict[str, Any], token: str) -> JSONResponse:
+        """A model call, one at a time for each run: the run's budget is checked before it and
+        counted after it, so calls a run makes at once wait their turn rather than each pass
+        the same check, across every gateway, by a lock the database holds."""
+        with psycopg.connect(gw.url, autocommit=True) as held:
+            held.execute("select pg_advisory_lock(hashtext(%s))", (f"model {token_hash(token)}",))
+            try:
+                return calling(api, body, token)
+            finally:
+                held.execute("select pg_advisory_unlock(hashtext(%s))",
+                             (f"model {token_hash(token)}",))
+
+    def calling(api: str, body: dict[str, Any], token: str) -> JSONResponse:
         alias = body.get("model", "")
         model = gw.models.get(alias)
         if body.get("stream"):

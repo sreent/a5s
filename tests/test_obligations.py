@@ -134,7 +134,7 @@ def test_escalation_waits_a_working_day_after_the_reminder(stack):
     assert escalations(stack) == [("Q-1002", "ana")]
     [told] = [m["text"] for m in stack.inbox("ana") if m["from"] == "a5s"]
     assert told.startswith("Q-1002, Refund for a duplicate payment, was due on Fri 6 Nov and is "
-                           "still open. It's Ben Okafor's. The assistant reminded them on Fri 6 Nov.")
+                           "still open. It's Ben Okafor's. They were reminded on Fri 6 Nov.")
     assert "Q-1001" not in str(escalations(stack))  # Ana is the top of her own line
 
 

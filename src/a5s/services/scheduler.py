@@ -458,6 +458,7 @@ class Scheduler:
                 self._answer(claim)
                 worked += 1
         self.digest()
+        self.deliveries()
         return worked
 
     def digest(self) -> None:
@@ -474,6 +475,13 @@ class Scheduler:
             self.gw.post("/settings/sweep", headers=self.service).raise_for_status()
         except httpx.HTTPError:
             log.exception("couldn't ask the core to apply approved settings")
+
+    def deliveries(self) -> None:
+        """Ask the core to deliver again what a chat it writes to didn't take before."""
+        try:
+            self.gw.post("/deliveries/sweep", headers=self.service).raise_for_status()
+        except httpx.HTTPError:
+            log.exception("couldn't ask the core to deliver again")
 
     def retain(self) -> None:
         """Ask the core to delete what's past its time to keep."""
@@ -500,7 +508,8 @@ class Scheduler:
         """Answer messages as the core receives them, and work on what falls due, several at
         once, until stopped. Every hour, ask the core to delete what's past its time to keep.
 
-        Work is taken only when a worker is free for it.
+        Work is taken only when a worker is free for it. The sweeps run on their own thread,
+        so a chat that's slow to take what the core delivers in them never holds up answers.
         """
         free = threading.Semaphore(workers)
 
@@ -510,28 +519,37 @@ class Scheduler:
             finally:
                 free.release()
 
-        swept = kept = float("-inf")  # so the first sweeps are straight away
+        def sweeping() -> None:
+            kept = float("-inf")  # so the first sweeps are straight away
+            while not stop.is_set():
+                started = time.monotonic()
+                try:
+                    self.sweep()
+                    self.apply_approved()
+                    for item in self.due():
+                        if not free.acquire(blocking=False):
+                            break  # the rest is due again at the next sweep
+                        if (claim := self._take(item)) is None:
+                            free.release()
+                            continue
+                        pool.submit(answer, claim)
+                    self.digest()  # those whose work is done: the rest next time
+                    self.deliveries()
+                    if time.monotonic() - kept > retain_every:
+                        self.retain()
+                        kept = time.monotonic()
+                except Exception:  # each sweep logs its own; this keeps the thread going
+                    log.exception("a sweep failed")
+                stop.wait(max(0.0, sweep_every - (time.monotonic() - started)))
+
         with ThreadPoolExecutor(workers) as pool:
+            sweeper = threading.Thread(target=sweeping, name="a5s-sweeps", daemon=True)
+            sweeper.start()
             while not stop.is_set():
                 try:
                     with psycopg.connect(self.cfg.database_url, autocommit=True) as conn:
                         conn.execute("listen a5s_inbound")
                         while not stop.is_set():
-                            if time.monotonic() - swept > sweep_every:
-                                self.sweep()
-                                self.apply_approved()
-                                for item in self.due():
-                                    if not free.acquire(blocking=False):
-                                        break  # the rest is due again at the next sweep
-                                    if (claim := self._take(item)) is None:
-                                        free.release()
-                                        continue
-                                    pool.submit(answer, claim)
-                                self.digest()  # those whose work is done: the rest next time
-                                swept = time.monotonic()
-                            if time.monotonic() - kept > retain_every:
-                                self.retain()
-                                kept = time.monotonic()
                             while free.acquire(blocking=False):
                                 claim = self._claim()
                                 if claim is None:
@@ -543,3 +561,4 @@ class Scheduler:
                 except psycopg.OperationalError:
                     log.exception("lost the database, so listening again shortly")
                     stop.wait(5)
+            sweeper.join()

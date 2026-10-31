@@ -1,3 +1,4 @@
+import hashlib
 from dataclasses import replace
 
 import httpx
@@ -45,7 +46,8 @@ def test_a_tool_call_is_decided_and_recorded(stack):
     decided, done = stack.ledger(run)[-2:]
     assert decided["decision"] == "allow"
     assert decided["reasons"] == ["active-instances-use-their-grant"]
-    assert decided["acts_for"] == ["ana"] and decided["args"] == {"query": "invoice"}
+    assert decided["acts_for"] == ["ana"] and decided["args"] == {  # words, by hash alone
+        "query": {"sha256": hashlib.sha256(b"invoice").hexdigest(), "chars": 7}}
     assert done["of"] == decided["seq"] and done["outcome"]["status"] == "ok"
 
 

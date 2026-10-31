@@ -1,13 +1,13 @@
 """Urgent messages: what a5s and its agents write to someone at once, when they aren't
-waiting for it, such as an escalation or a reminder for a particular time.
+waiting for it, such as an escalation.
 
 Up to five a day go at once, in the person's own day, across all the agents. After that, they
-wait, and go together once the oldest has waited an hour, so urgent stays urgent without
-becoming noise. A batch of one goes as itself, from its agent; more go as one message from
-a5s, each under its agent. Answers to people's own messages aren't urgent messages, since
-they're waiting for them, and neither is what waits for their digest, nor a request to an
-approver to approve settings, which comes from a5s, not an agent, and only when someone
-proposes new settings.
+wait, and go together once the oldest has waited an hour, in their working hours, so urgent
+stays urgent without becoming noise. A batch of one goes as itself, from its agent; more go as
+one message from a5s, each under its agent. Answers to people's own messages aren't urgent
+messages, since they're waiting for them, and neither are reminders they asked for at a
+particular time, nor what waits for their digest, nor a request to an approver to approve
+settings, which comes from a5s, not an agent, and only when someone proposes new settings.
 """
 
 from __future__ import annotations

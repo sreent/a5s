@@ -43,8 +43,10 @@ def sources(conn: psycopg.Connection, scenario: Scenario, run: dict) -> list[tup
     if inbound := run["trigger"].get("inbound"):
         row = conn.execute("select text from inbound where id = %s", (inbound,)).fetchone()
         found += [(v, THEY) for v in values.found(row["text"] if row else "", pattern)]
-    for row in conn.execute("select role, content from turns where person = %s and agent = %s "
-                            "and role <> 'agent' order by id desc limit 500", (who, run["definition"])):
+    for row in conn.execute(  # not the agent's words, nor a5s's notes on them, which name
+            "select role, content from turns where person = %s and agent = %s "  # its own values
+            "and role <> 'agent' and not (role = 'notice' and content like '(a5s:%%') "
+            "order by id desc limit 500", (who, run["definition"])):
         found += [(v, THEY if row["role"] == "person" else A5S)
                   for v in values.found(row["content"], pattern)]
     for row in conn.execute("select body from summaries where person = %s and agent = %s",

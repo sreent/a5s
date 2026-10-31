@@ -16,7 +16,7 @@ agent whose release lets them, with one of a5s's own tools (core/coretools.py).
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, time
+from datetime import UTC, datetime, time, timedelta
 
 import psycopg
 
@@ -26,6 +26,7 @@ from a5s.core.obligations import day, local, working
 
 KINDS = ("obligation", "report", "reminder")  # the runs whose messages wait for a digest
 TIME = "digest-time"
+WAIT = timedelta(minutes=30)  # the longest a digest waits for its agents' work
 
 
 def chosen(conn: psycopg.Connection, person: Person) -> str:
@@ -42,11 +43,13 @@ def window(conn: psycopg.Connection, person: Person, now: datetime) -> datetime 
     at = datetime.combine(here.date(), time.fromisoformat(chosen(conn, person)), tzinfo=here.tzinfo)
     if here.isoweekday() not in person.workdays or here < at or not working(person, now):
         return None
-    due = at.astimezone(UTC)
-    if conn.execute("select 1 from digests where person = %s and due_at = %s",
-                    (person.id, due)).fetchone():
-        return None
-    return due
+    starts = datetime.combine(here.date(), time(), tzinfo=here.tzinfo).astimezone(UTC)
+    ends = datetime.combine(here.date() + timedelta(days=1), time(),
+                            tzinfo=here.tzinfo).astimezone(UTC)
+    if conn.execute("select 1 from digests where person = %s and due_at >= %s and due_at < %s",
+                    (person.id, starts, ends)).fetchone():
+        return None  # today's has gone, whatever time it went at
+    return at.astimezone(UTC)
 
 
 def keep(conn: psycopg.Connection, person: str, agent: str | None, instance: str | None,
@@ -56,13 +59,27 @@ def keep(conn: psycopg.Connection, person: str, agent: str | None, instance: str
                  "values (%s, %s, %s, %s, %s, %s)", (person, agent, instance, run, text, now))
 
 
+def waiting_since(conn: psycopg.Connection, person: str, due: datetime, now: datetime) -> datetime:
+    """When a5s first found someone's digest waiting for its agents' work."""
+    conn.execute("insert into digest_waits (person, due_at, since) values (%s, %s, %s) "
+                 "on conflict do nothing", (person, due, now))
+    return conn.execute("select since from digest_waits where person = %s and due_at = %s",
+                        (person, due)).fetchone()["since"]
+
+
 def waiting(conn: psycopg.Connection, person: str) -> list[dict]:
     return conn.execute("select * from digest_items where person = %s and digest_due is null "
                         "order by id for update", (person,)).fetchall()
 
 
-def compose(person: Person, items: list[dict], due: datetime) -> str:
-    """One message from several agents' items, each under the agent that wrote it."""
+def compose(person: Person, items: list[dict], due: datetime, agent: str | None = None) -> str:
+    """One message from several items, each under the agent that wrote it, or, as `agent`'s
+    own message in its own chat, its items, with a5s's own about it marked as a5s's."""
+    if agent is not None:
+        parts = [f"Your day from the {agent}, {day(person, due)}."]
+        parts += [item["text"] if item["agent"] else f"From a5s:\n{item['text']}"
+                  for item in items]
+        return "\n\n".join(parts)
     parts = [f"Your day from a5s, {day(person, due)}."]
     for item in items:
         parts.append(f"From the {item['agent']}:\n{item['text']}" if item["agent"]
@@ -73,6 +90,7 @@ def compose(person: Person, items: list[dict], due: datetime) -> str:
 def close(conn: psycopg.Connection, person: str, due: datetime, now: datetime, items: list[dict],
           channel: str | None) -> None:
     """The day's digest went, with these items, or with none, which closes the day all the same."""
+    conn.execute("delete from digest_waits where person = %s and due_at <= %s", (person, due))
     conn.execute("insert into digests (person, due_at, sent_at, items, channel) "
                  "values (%s, %s, %s, %s, %s) on conflict do nothing",
                  (person, due, now, len(items), channel))
