@@ -204,7 +204,7 @@ Phase 1 sets these up:
 
 - **Environments:** local, against the scenario's fake; test; and production. Each scenario's data and agents are kept apart [TBC].
 - **Objectives:** how quickly people get answers, nine in ten within two minutes, and the share of what's owed that's chased before it falls due, 95% [TBC: from the first users' baseline].
-- **Status and runbooks** for the team that runs a5s: the queue, runs, denials, budgets, suspensions and breakers, and the objectives, from `a5s status` or a dashboard, and what to do when each goes wrong ([runbooks](runbooks.md)). Who's on call [TBC].
+- **Status and runbooks** for the team that runs a5s: the queue, runs, denials, budgets, suspensions and breakers, and the objectives, from `a5s status` or a dashboard, and what to do when each goes wrong ([runbooks](runbooks.md)). On call: once people depend on a5s, a weekly working-hours rota of the team that runs it, paged out of hours only for the ledger's copies, a change stopped part way, and a sudden rise in denials, since a5s stops safely and people carry on without it ([on call](runbooks.md#on-call)).
 - **Traces** as masked OpenTelemetry spans, which carry no prompt, reply, message, tool argument or person, kept for 14 days.
 
 ## Hosting

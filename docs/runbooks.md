@@ -2,9 +2,21 @@
 
 **Status:** Draft v0.1 · **Under:** [Architecture](architecture.md#operations)
 
-For the team that runs a5s. `a5s status` shows how a5s did over the last day, and the gateway's `/status` gives the same to a dashboard. Each section below says what to do when one of its lines goes wrong. Who's on call, and when, is [TBC].
+For the team that runs a5s. `a5s status` shows how a5s did over the last day, and the gateway's `/status` gives the same to a dashboard. Each section below says what to do when one of its lines goes wrong. Who's on call, and for what, is [below](#on-call).
 
 To follow one run, find its spans by `a5s.run.id`, where the deployment sends traces (`OTEL_EXPORTER_OTLP_ENDPOINT`), and its entries with `a5s ledger tail`. Traces are for debugging. The ledger is the evidence.
+
+## On call
+
+a5s is built to stop safely: when it can't run as it should, it stops and says so, and people carry on in the scenario's own processes. So almost nothing it does needs anyone out of hours.
+
+- **Until people depend on a5s in production,** nobody is on call. The team that runs a5s reads `a5s status` each working day.
+- **Once they do,** the team that runs a5s keeps a weekly rota, a primary and a secondary, in working hours, and the status's lines go to a working-hours queue.
+- **Out of hours, three things page the primary,** since each can't safely wait:
+  - the ledger's copies failing to copy, lock or verify ([below](#the-ledgers-copies-stop)), since that's the evidence: tell assurance too;
+  - a change stopped part way through being made ([below](#changes-wait-or-stop-part-way)), since a record may be half-changed;
+  - denials in an hour more than five times their usual rate for that hour ([below](#calls-are-denied)), which is what an attack looks like.
+- Everything else, such as a model that's down, a budget spent or a chat that didn't take a message, waits for working hours: people carry on without a5s, and it catches up.
 
 ## Messages are waiting
 

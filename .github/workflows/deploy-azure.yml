@@ -1,0 +1,62 @@
+name: deploy-azure
+
+# Deploys a released image to a5s's test environment on Azure (deploy/azure): runs the setup
+# job with it, the schema and the signed settings, and only once that succeeds moves each
+# app to it. It signs in to Azure with GitHub's own OpenID Connect token, as the identity
+# Terraform made for this repository's azure-test environment, which may change the apps and
+# the job and nothing else, so no cloud key is stored anywhere. Run it by hand, with the
+# image's digest from the release.
+
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: The released image, by its digest, such as ghcr.io/<owner>/a5s@sha256:...
+        required: true
+
+permissions:
+  contents: read
+  id-token: write  # GitHub's token, which Azure trusts for this environment alone
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: azure-test
+    env:
+      IMAGE: ${{ inputs.image }}
+      GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      NAME: ${{ vars.A5S_NAME }}
+      CLIENT: ${{ vars.AZURE_CLIENT_ID }}
+      TENANT: ${{ vars.AZURE_TENANT_ID }}
+      SUBSCRIPTION: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+    steps:
+      - name: Check the image is named by its digest
+        run: echo "$IMAGE" | grep -Eq '^[a-z0-9./-]+@sha256:[0-9a-f]{64}$'
+      - name: Sign in to Azure with GitHub's token
+        run: |
+          token=$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=api://AzureADTokenExchange" | jq -r .value)
+          az login --service-principal --username "$CLIENT" --tenant "$TENANT" \
+            --federated-token "$token" --output none
+          az account set --subscription "$SUBSCRIPTION"
+          az extension add --name containerapp --upgrade --only-show-errors
+      - name: Set up the schema and apply the signed settings, with the new image
+        run: |
+          az containerapp job update -g "$GROUP" -n "caj-$NAME-setup" --image "$IMAGE" --output none
+          run=$(az containerapp job start -g "$GROUP" -n "caj-$NAME-setup" --query name -o tsv)
+          for _ in $(seq 1 90); do
+            status=$(az containerapp job execution show -g "$GROUP" -n "caj-$NAME-setup" \
+              --job-execution-name "$run" --query properties.status -o tsv)
+            case "$status" in
+              Succeeded) exit 0 ;;
+              Failed|Stopped|Degraded) echo "the setup job ended $status" >&2; exit 1 ;;
+            esac
+            sleep 10
+          done
+          echo "the setup job didn't finish in 15 minutes" >&2
+          exit 1
+      - name: Move each app to the new image
+        run: |
+          for part in gateway channels scheduler anchor worker; do
+            az containerapp update -g "$GROUP" -n "ca-$NAME-$part" --image "$IMAGE" --output none
+          done

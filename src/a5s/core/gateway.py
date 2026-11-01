@@ -53,6 +53,7 @@ from a5s.core import (
     chats,
     coretools,
     counts,
+    departures,
     digests,
     extractor,
     handles,
@@ -1464,14 +1465,16 @@ def create_app(gw: Gateway) -> FastAPI:
 
     @app.post("/retention/sweep", dependencies=[Depends(service)])
     def sweep_retention() -> dict:
-        """Delete what's past its time to keep (core/retention.py), and record how much went."""
+        """Delete what's past its time to keep (core/retention.py), and record how much went.
+        Archive what a5s keeps for anyone who has left (core/departures.py)."""
         with db.transaction(gw.url) as conn:
             gone = retention.sweep(conn)
             if gone:
                 ledger.append(conn, {"kind": "retention", "action": "delete", "run": None,
                                      "instance": None, "acts_for": [], "decision": "record",
                                      "args": gone})
-        return {"deleted": gone}
+            archived = departures.sweep(conn, gw.scenario, gw.clock())
+        return {"deleted": gone, "archived": len(archived)}
 
     # Instances: anyone with the role can make a5s safer alone.
 

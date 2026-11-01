@@ -2,7 +2,7 @@
 
 **An agent OS on LangChain Deep Agents, for agents that live and work alongside people, under the rules people set.**
 
-**Status:** Phase 1 runs locally against a sample scenario with real models, its release pipeline is under way, and deploying to the clouds and connecting Teams wait for accounts and a tenant ([progress](docs/phase-1.md#progress)). Phase 2, agents that act, is built: held changes that people decide on the core's page, counts, level 2 earned on graded samples, and the extractor for content from outside ([progress](docs/phase-2.md#progress)). Round 6 of the critique has read it, and what it found is fixed.
+**Status:** Phase 1 runs locally against a sample scenario with real models, and its release pipeline is under way. Deploying to the clouds starts with Azure, whose infrastructure code is written for review and waits for a subscription ([deploy/azure](deploy/azure/README.md)), and connecting Teams waits for a test tenant ([progress](docs/phase-1.md#progress)). Phase 2, agents that act, is built: held changes that people decide on the core's page, counts, level 2 earned on graded samples, and the extractor for content from outside ([progress](docs/phase-2.md#progress)). Round 6 of the critique has read it, and what it found is fixed.
 
 a5s runs agents the way an operating system runs programs. It installs them, gives each one an identity and only the rights it needs, wakes it when there's work, checks every call it makes, and records what happened. Unlike a task runner, it keeps agents alive between tasks: each one remembers its conversations with people, keeps track of what it owes them, and picks up where it left off, for months.
 

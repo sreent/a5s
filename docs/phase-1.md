@@ -68,7 +68,7 @@ Step 1, the walking skeleton, runs locally against the sample scenario, with Dee
 | Each deployment turns on the chats its people use by setting each one's settings, any number at once, and compose passes them on from its environment | [`deploy/compose.yaml`](../deploy/compose.yaml) |
 | The sample scenario, with nine people in two time zones, including the team that runs a5s and the people outside it who approve its releases, customer questions with owners and due dates, and a store for drafts. a5s serves whichever scenario its configuration names, and keeps none of a scenario's people in its own definitions. | [`scenarios/sample/`](../scenarios/sample/) |
 | One container image that runs as the gateway, the scheduler or a worker, and a compose stack whose networks enforce the design: a worker holds no secrets and reaches only the gateway, never the database or the internet. A smoke test runs the stack in CI with stand-ins for the model, the identity provider, a Matrix homeserver and locked storage: Keycloak and Synapse, with the sample's people, and LocalStack, whose S3 enforces object lock as Amazon's does. | [`Dockerfile`](../Dockerfile), [`deploy/`](../deploy/) |
-| 612 tests against a real Postgres and a scripted model, a second scenario, an IT service desk, written against the contract alone, fakes of the Bot Framework, a Matrix homeserver and an identity provider, and the web chat, the approval page and the settings app in Chromium, with a clock the tests set, with emulators for Azure's and Google's storage, and live tests through DeepSeek's and Qwen's OpenAI-compatible APIs and DeepSeek's Anthropic-compatible one, including a reminder, the watcher's reports, and a reminder offered and confirmed | [`tests/`](../tests/) |
+| 616 tests against a real Postgres and a scripted model, a second scenario, an IT service desk, written against the contract alone, fakes of the Bot Framework, a Matrix homeserver and an identity provider, and the web chat, the approval page and the settings app in Chromium, with a clock the tests set, with emulators for Azure's and Google's storage, and live tests through DeepSeek's and Qwen's OpenAI-compatible APIs and DeepSeek's Anthropic-compatible one, including a reminder, the watcher's reports, and a reminder offered and confirmed | [`tests/`](../tests/) |
 
 Step 2, the release pipeline, has started:
 
@@ -82,7 +82,7 @@ Step 2, the release pipeline, has started:
 Still to do in step 2:
 
 - deploying each release to the three clouds, which waits for step 1's infrastructure code;
-- applying the rules to the repository, which needs a second maintainer to review changes: `gh api --method POST repos/<owner>/a5s/rulesets --input .github/rulesets/main.json`, and the same for `releases.json`.
+- applying the rules to the repository, which needs the repository's administrator: `gh api --method POST repos/<owner>/a5s/rulesets --input .github/rulesets/main.json`, and the same for `releases.json`, or each file's JSON imported under the repository's settings, Rules, Rulesets. With one maintainer they ask for no review, since nobody can approve their own pull request, and keep the rest: the suite and the containers' smoke test must pass, `main` can't be force-pushed or deleted, and release tags can't be moved or deleted. Once a second maintainer joins, `required_approving_review_count` goes to 1, with `require_last_push_approval`. On a private repository, rulesets need GitHub Pro or Team.
 
 Step 3, context, is built:
 
@@ -121,7 +121,10 @@ Step 5, running it properly, has started:
 | A cap on urgent messages. Up to five a day go to each person at once, in their own day, across all the agents, such as escalations and chases that can't wait for the digest. The rest wait, and go together once the oldest has waited an hour, in their working hours, as one message from a5s. Answers to people's own messages, reminders they asked for at a particular time, and what waits for their digest, aren't counted. | [`core/urgent.py`](../src/a5s/core/urgent.py) |
 | Budgets at the model gateway. Each release sets how many tokens, as the providers count them, one run may use, and how many an instance may use for each person each day, in their own time zone. A fifth of each person's day is kept for chases and reminders: other work, such as answers and reports, stops short of it. Crossing four fifths is recorded as a warning. The core checks before it opens a run and before each model call. Once a budget is spent, the work waits, a report for the next day, and someone asking is told so in a5s's own words, with who to ask. A run's model calls go one at a time, and a release whose budgets can't fit six calls a run and twelve answers a day of its context is refused. | [`core/budgets.py`](../src/a5s/core/budgets.py) |
 
-Still to do in step 5: deploying to the three clouds, which needs your accounts there, and then production; who's on call; and archiving the conversations of someone who leaves, once it's decided where archives go.
+| On call, in working hours, from a weekly rota of the team that runs a5s once people depend on it, and out of hours only for the ledger's copies, a change stopped part way, and a sudden rise in denials, since a5s stops safely and people carry on without it | [`docs/runbooks.md`](runbooks.md#on-call) |
+| Archiving what a5s keeps for someone who leaves, where it is. A day after the directory stops naming them, their conversations, summaries, messages, chats, notes and reminders go under a name of a5s's own that no person has, so no run loads them again, nothing more goes to them, and someone given the same id later starts afresh. Their reminders are cancelled and their notes ended; what they owed follows the records. Nothing is copied anywhere else: it all goes on retention's usual clock, with the record of whose it was | [`core/departures.py`](../src/a5s/core/departures.py) |
+
+Still to do in step 5: deploying to the clouds, which needs your accounts there, and then production.
 
 Step 6, parts and levels, is built:
 
@@ -134,9 +137,9 @@ Step 6, parts and levels, is built:
 
 Still to do in step 1:
 
-- registering a5s's bots in your Entra ID tenant and adding them to Teams, which needs your tenant. Until then, Teams is tested against a fake of the Bot Framework, and people use the web chat, Matrix or the command line;
-- reading encrypted rooms in Matrix. Until then, people turn encryption off in their chats with a5s;
-- the infrastructure code that deploys the image to Azure, Google Cloud and AWS with managed Postgres, which needs your accounts there to test. The containers run locally with compose, and each cloud will run them on its own container service.
+- registering a5s's bots in a Microsoft 365 tenant and adding them to Teams. Decided: a test tenant of its own, not the production one, with a single-tenant bot registration for each agent, Teams turned on, and leave to upload a custom app. Until then, Teams is tested against a fake of the Bot Framework, and people use the web chat, Matrix or the command line;
+- reading encrypted rooms in Matrix. Decided: not built. a5s's chats in Matrix are one-to-one, with an agent, on the organisation's own homeserver, and a5s must read every message to answer it, so end-to-end encryption would only hide them from the organisation's own homeserver, at the cost of a5s holding every bot's keys. The homeserver turns encryption off for a5s's rooms, and a5s turns an encrypted message away, asking for a chat without it. To revisit only if the organisation's policy requires encryption in every room;
+- the infrastructure code that deploys the image to Azure, Google Cloud and AWS with managed Postgres, which needs your accounts there to test. Decided: one cloud at a time, starting with Azure, where Teams' bots live too, each with an account for each environment, a spending cap, and deploys that sign in to it from GitHub Actions without keys. Azure's is written, for review, and waits for a subscription ([`deploy/azure/`](../deploy/azure/)). The containers run locally with compose, and each cloud runs them on its own container service.
 
 ## Done means
 

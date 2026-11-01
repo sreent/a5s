@@ -41,6 +41,10 @@ def migrate(url: str) -> list[str]:
     """Apply each migration the database hasn't had, in one transaction, and say which ran."""
     with connect(url) as conn:
         conn.execute("select pg_advisory_xact_lock(%s)", (_LOCK,))
+        if conn.info.server_version >= 160000:  # a managed Postgres's administrator, such as
+            # Azure's, isn't a superuser: it takes the parts' roles as it makes them, so it may
+            # give their tables to the owner role
+            conn.execute("set local createrole_self_grant = 'set, inherit'")
         conn.execute("create table if not exists schema_migrations (version int primary key, "
                      "name text not null, applied_at timestamptz not null default now())")
         done = {r["version"] for r in conn.execute("select version from schema_migrations")}

@@ -6,16 +6,16 @@ Phase 2 lets agents act. In [phase 1](phase-1.md) they read, report, draft and r
 
 ## Decide first
 
-Proposed here, for whoever runs a5s to confirm:
+Confirmed on 1 November 2026:
 
 | Decision | Proposed |
 | --- | --- |
-| What agents can change in the sample | The assistant can change a customer question's due date, and close one, in the sample's records system. Each is a type of action: `change-due-date` and `close-question`. |
+| What agents can change in the sample | The assistant can change a customer question's due date, and close one, in the sample's records system. Each is a type of action: `change-due-date` and `close-question`. Both are frequent enough to earn level 2, can be undone, and move no money. What sends outside or can't be undone stays with a person, decided one at a time. A deployment's first types of action are the same kind: frequent, undoable changes inside the organisation, such as a date, a status or who a case is assigned to. |
 | Who decides a held change | The owners of each part its records are in, and anyone they name to decide beside them (`part-delegate:<part>`), with an approval for each part, never anyone the run acts for. Where nobody else may decide, a5s doesn't hold the change: the agent drafts it for the person to make themselves. |
 | Which decisions take a sign-in each | Decisions on sensitive changes: a tool that can't be undone or sends outside the organisation, or a value of a class of its own. Others can be decided together, with one sign-in that names each of them. |
 | How long a held change waits | Each decider is reminded once after 2 working days, in their own hours; once reminded, their managers, or the instance's owner, are told after 5, and it lapses after 10 ([starting values](starting-values.md#phase-2)) |
-| Who grades | People who hold the `grader` role, never from the team of the agent's owner or of the instance's owner or deputy, nor reporting to whoever decided the change, and only for records they may see [TBC: who, in each deployment] |
-| Thresholds | Each part's, in its settings. The sample: billing 98%, orders 95%. |
+| Who grades | People who hold the `grader` role, never from the team of the agent's owner or of the instance's owner or deputy, nor reporting to whoever decided the change, and only for records they may see. In each deployment, two or three for each part, from a quality or controls team close to the work, such as finance controls for billing, with a one-page guide to right, wrong and critical, and at least two for each part, so nobody's leave stops the grading. Earning level 2 at 98% takes about 224 grades, some 11 hours; after that, 100 to 200 a quarter. |
+| Thresholds | Each part's, in its settings. The sample: billing 98%, orders 95%. In a deployment: 98% for anything that touches money or what customers are told, 95% for the organisation's own housekeeping, and never lower. |
 | The sequential test | Anytime-valid, at 95% confidence, so checking after every grade doesn't make a level-up likelier by chance. With no errors, a 98% threshold needs 224 graded items and a 95% one 88, more than the 149 and 59 a test of fixed size needs, which the starting values quoted until now. |
 | Outside content in the sample | Made-up emails from each record's customer |
 
