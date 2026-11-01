@@ -75,16 +75,30 @@ async function ask(path, token, body) {
 
 let signinConfig = null;
 
-async function decide(digests, decision) {
+async function decide(digests, decision, reason) {
   // Sign in afresh, with a nonce that commits to this decision on exactly these changes.
-  const pending = { kind: "decide", proposals: [...digests].sort(), decision, salt: random() };
+  const pending = { kind: "decide", proposals: [...digests].sort(), decision, salt: random(),
+                    reason: decision === "reject" && reason ? reason : null };
   pending.nonce = await sha256(`a5s ${decision}s proposals ${pending.proposals.join(",")} ${pending.salt}`);
   status(`Signing you in again, to ${decision} ${digests.length === 1 ? "this change" : "these changes"} alone…`);
   await signIn(signinConfig, pending, true);
 }
 
+function list(items, className) {
+  const shown = document.createElement("ul");
+  shown.className = className;
+  for (const text of items) {
+    const item = document.createElement("li");
+    item.textContent = text;
+    shown.append(item);
+  }
+  return shown;
+}
+
 function show(found, named) {
   $("who").textContent = found.you;
+  $("list").replaceChildren();
+  $("decided").replaceChildren();
   const waiting = found.proposals.filter((p) => p.status === "waiting" && !p.yours);
   const decided = found.proposals.filter((p) => p.status !== "waiting" || p.yours);
   waiting.sort((a, b) => (b.digest === named) - (a.digest === named));
@@ -96,25 +110,42 @@ function show(found, named) {
     said.className = "said";
     said.textContent = proposal.said;
     block.append(title, said);
-    if (proposal.flags.length) {
-      const flags = document.createElement("ul");
-      flags.className = "flags";
-      for (const flag of proposal.flags) {
-        const item = document.createElement("li");
-        item.textContent = flag;
-        flags.append(item);
-      }
-      block.append(flags);
+    if (proposal.changed.length) block.append(list(proposal.changed, "flags changed"));
+    if (proposal.flags.length) block.append(list(proposal.flags, "flags"));
+    for (const link of proposal.links) {
+      const open = document.createElement("a");
+      open.href = link;  // a record's link, which the core kept from the scenario
+      open.rel = "noopener noreferrer";
+      open.target = "_blank";
+      open.textContent = `Open ${link}`;
+      const line = document.createElement("p");
+      line.append(open);
+      block.append(line);
     }
     const when = document.createElement("p");
     when.className = "note";
     when.textContent = `It lapses on ${new Date(proposal.lapses_at).toLocaleDateString([], { dateStyle: "medium" })} unless someone decides it.`;
+    block.append(when);
+    if (!proposal.may_decide) {
+      const only = document.createElement("p");
+      only.className = "note";
+      only.textContent = "You can see it, as you were told it waits, but only its deciders decide it.";
+      block.append(only);
+      $("list").append(block);
+      continue;
+    }
+    const why = document.createElement("input");
+    why.type = "text";
+    why.maxLength = 300;
+    why.placeholder = "Why, if you reject it (optional)";
+    why.setAttribute("aria-label", `Why you reject ${proposal.key}, if you do`);
     const buttons = document.createElement("p");
     for (const decision of ["approve", "reject"]) {
       const button = document.createElement("button");
       button.type = "button";
       button.textContent = decision === "approve" ? "Approve" : "Reject";
-      button.addEventListener("click", () => decide([proposal.digest], decision).catch((e) => status(e.message)));
+      button.addEventListener("click", () => decide([proposal.digest], decision, why.value.trim())
+        .catch((e) => status(e.message)));
       buttons.append(button);
     }
     if (!proposal.sensitive) {
@@ -125,17 +156,11 @@ function show(found, named) {
       tick.setAttribute("aria-label", `Decide ${proposal.key} with the others ticked`);
       buttons.append(tick);
     }
-    block.append(when, buttons);
+    block.append(why, buttons);
     $("list").append(block);
   }
   $("waiting").hidden = waiting.length === 0;
-  $("together").hidden = waiting.filter((p) => !p.sensitive).length < 2;
-  for (const decision of ["approve", "reject"]) {
-    $(`${decision}-ticked`).addEventListener("click", () => {
-      const ticked = [...document.querySelectorAll(".tick:checked")].map((t) => t.value);
-      if (ticked.length) decide(ticked, decision).catch((e) => status(e.message));
-    });
-  }
+  $("together").hidden = waiting.filter((p) => p.may_decide && !p.sensitive).length < 2;
   for (const proposal of decided) {
     const item = document.createElement("li");
     item.textContent = proposal.outcome || `${proposal.key}: you've decided it, and a5s acts on it within a minute.`;
@@ -159,19 +184,27 @@ async function main() {
       return;
     }
     signinConfig = body.signin;
+    for (const decision of ["approve", "reject"]) {
+      $(`${decision}-ticked`).addEventListener("click", () => {
+        const ticked = [...document.querySelectorAll(".tick:checked")].map((t) => t.value);
+        if (ticked.length) decide(ticked, decision).catch((e) => status(e.message));
+      });
+    }
     if (params.has("code") || params.has("error")) {
       const { pending, token } = await signedIn(params);
+      let done = "";
       if (pending.kind === "decide") {
-        const done = await ask("/decide/proposals", token,
-                               { proposals: pending.proposals, decision: pending.decision, salt: pending.salt });
-        const what = done.decided.join(", ");
-        status(done.decision === "approve"
-          ? `You approved ${what}. a5s makes each change within a minute, if its records haven't changed.`
-          : `You rejected ${what}. a5s tells whoever asked for it.`);
-        return;
+        const made = await ask("/decide/proposals", token, {
+          proposals: pending.proposals, decision: pending.decision, salt: pending.salt,
+          ...(pending.reason ? { reason: pending.reason } : {}) });
+        const what = made.decided.join(", ");
+        done = made.decision === "approve"
+          ? `You approved ${what}. a5s makes each change within a minute, once every part it touches has approved it, if its records haven't changed.`
+          : `You rejected ${what}. a5s tells whoever asked for it.`;
       }
       status("");
       show(await ask("/decide/review", token), pending.named);
+      if (done) status(done);
       return;
     }
     const named = params.get("proposal") || "";

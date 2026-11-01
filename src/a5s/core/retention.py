@@ -6,8 +6,10 @@ messages the core received and sent for it, and what waited for a digest or a ba
 own notices go 12 months after they were written, and so do the notes on how someone likes to
 work, and the reminders, 12 months after they ended, as do what someone said they were
 waiting on, offers nobody said yes to, the record of each day's report, and the changes agents
-asked for, with their decisions, 12 months after they ended, and graded samples of agents'
-work 12 months after they were graded. A note people ask
+asked for, with their decisions, 12 months after they ended, and samples of agents' work 12
+months after they were graded, or, if nobody graded them, drawn. The counts of changes go once
+their 30 days are past. A change a5s left marked as being made, which someone ends by hand
+(`a5s proposals`), goes 12 months after that. A note people ask
 to forget goes at once (core/profiles.py). The ledger keeps what people and agents wrote only
 by hash and length (core/ledger.py), so retention needn't touch it. The values a run was handed as handles, what it read, and the documents from
 outside it read, go once the run has been over for an hour: a handle works only in its run, and nothing reads them after.
@@ -77,4 +79,7 @@ def sweep(conn: psycopg.Connection) -> dict[str, int]:
     delete("decisions", f"delete from proposal_decisions where digest in ({ended_changes})")
     delete("changes", f"delete from proposals where ended_at < now() - interval '{KEPT}'")
     delete("samples", f"delete from samples where graded_at < now() - interval '{KEPT}'")
+    delete("samples", "delete from samples where grade is null "
+                      f"and drawn_at < now() - interval '{KEPT}'")  # nobody graded them
+    delete("counts", "delete from action_counts where at < now() - interval '31 days'")
     return gone

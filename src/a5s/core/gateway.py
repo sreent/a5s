@@ -35,6 +35,9 @@ from pydantic import BaseModel
 from a5s import db
 from a5s.config import Config, ModelConfig
 from a5s.contract import (
+    ASSURANCE,
+    INSTANCE_APPROVER,
+    PART_OWNER,
     Person,
     Scenario,
     Settings,
@@ -110,8 +113,9 @@ def token_hash(token: str) -> bytes:
     return hashlib.sha256(token.encode()).digest()
 
 
-def sanitize(text: str, allowed: tuple[str, ...]) -> tuple[str, int]:
-    """Keep text and the scenario's own record links. Drop images, HTML and other links."""
+def sanitize(text: str, allowed: tuple[str, ...], notes: bool = True) -> tuple[str, int]:
+    """Keep text and the scenario's own record links. Drop images, HTML and other links, and,
+    unless `notes` is False, copies of a5s's own notes, which only a5s writes."""
     removed = 0
 
     def kept(url: str) -> bool:
@@ -131,7 +135,7 @@ def sanitize(text: str, allowed: tuple[str, ...]) -> tuple[str, int]:
         removed += 1
         return "[link removed]"
 
-    text, forged = _FORGED_NOTE.subn("", text)
+    text, forged = _FORGED_NOTE.subn("", text) if notes else (text, 0)
     text, images = _IMAGE.subn("[image removed]", text)
     text, tags = _TAG.subn("[removed]", text)
     text = _MARKDOWN_LINK.sub(link, text)
@@ -140,15 +144,15 @@ def sanitize(text: str, allowed: tuple[str, ...]) -> tuple[str, int]:
     return text.strip() if forged else text, removed + images + tags + forged
 
 
-def cleaned(value: Any, allowed: tuple[str, ...]) -> tuple[Any, int]:
+def cleaned(value: Any, allowed: tuple[str, ...], notes: bool = True) -> tuple[Any, int]:
     """Text at any depth of a value, sanitized, and how many things were removed."""
     if isinstance(value, str):
-        return sanitize(value, allowed)
+        return sanitize(value, allowed, notes)
     if isinstance(value, list):
-        found = [cleaned(item, allowed) for item in value]
+        found = [cleaned(item, allowed, notes) for item in value]
         return [v for v, _ in found], sum(n for _, n in found)
     if isinstance(value, dict):
-        found = {k: cleaned(v, allowed) for k, v in value.items()}
+        found = {k: cleaned(v, allowed, notes) for k, v in value.items()}
         return {k: v for k, (v, _) in found.items()}, sum(n for _, n in found.values())
     return value, 0
 
@@ -422,17 +426,31 @@ class Gateway:
         """Where people reach the core's channels, for links."""
         return (self.cfg.public_url or self.cfg.channels_url).rstrip("/")
 
+    @staticmethod
+    def reads_outside(conn: psycopg.Connection, agent: str, acts_for: list[str],
+                      topic: str) -> bool:
+        """Whether a run opens marked: whether the conversation it reads holds a turn from a
+        run that read outside content, in its topic, which its summary may have folded, or
+        among the conversation's latest turns. What a marked run passed on stays marked."""
+        if len(acts_for) != 1:
+            return False
+        return bool(conn.execute(
+            "select 1 from turns t join runs r on r.id = t.run_id where r.read_outside "
+            "and t.person = %(person)s and t.agent = %(agent)s and (t.topic = %(topic)s or t.id in "
+            "(select id from turns where person = %(person)s and agent = %(agent)s "
+            "order by id desc limit 200)) limit 1",
+            {"person": acts_for[0], "agent": agent, "topic": topic}).fetchone())
+
     def approvers_in_force(self, conn: psycopg.Connection) -> list[str]:
         """Who approved the settings in force, by key or on a card the core sealed."""
         row = conn.execute("select signers from settings_versions where scenario = %s "
                            "order by serial desc limit 1", (self.scenario.name,)).fetchone()
         return list(row["signers"]) if row else []
 
-    @staticmethod
-    def caps(conn: psycopg.Connection, release: str) -> dict[tuple[str, str], int]:
-        """a5s's caps for a release's types of action in each part: 1 where there's none."""
-        return {(r["part"], r["action"]): r["cap"] for r in conn.execute(
-            "select part, action, cap from caps where release = %s", (release,))}
+    def caps(self, conn: psycopg.Connection, release: str) -> dict[tuple[str, str], int]:
+        """a5s's caps for a release's types of action in each part, as the core sealed them
+        with the ledger's last word on each: 1 where there's none."""
+        return samples.caps(conn, self.cfg.seal_keys, release)
 
     def approving(self) -> str | None:
         """Why approvers can't approve settings where they work here, if they can't: it takes
@@ -454,7 +472,21 @@ class Gateway:
             problems.append(f"serial {settings.serial} isn't above {last['serial']}, the version "
                             "in force's: raise it")
         tools = self.scenario.tools()
+        taken = sorted({t.action for t in tools.values() if t.action})  # the types of action
+        if unknown := sorted(set(settings.limits) - set(taken)):
+            problems.append(f"the limits name {', '.join(unknown)}, which no tool here takes: the "
+                            f"types of action are {', '.join(taken) or 'none'}")
         for instance in settings.instances:
+            for part, levels in sorted(instance.actions.items()):
+                if unknown := sorted(set(levels) - set(taken)):
+                    problems.append(f"{instance.id} sets a level in {part} for "
+                                    f"{', '.join(unknown)}, which no tool here takes: the types "
+                                    f"of action are {', '.join(taken) or 'none'}")
+                if unlimited := sorted(a for a, lv in levels.items()
+                                       if lv >= 2 and a in taken and a not in settings.limits):
+                    problems.append(f"{instance.id} works at level 2 in {part} for "
+                                    f"{', '.join(unlimited)}, which has no limit: give it one, "
+                                    "under limits, so a run can't make any number of them")
             release = self.definitions.get(instance.definition)
             if release is None:
                 problems.append(f"{instance.id} names {instance.definition}, which no release here has")
@@ -782,6 +814,12 @@ class StatusChange(BaseModel):
     identity: str | None = None  # their sign-in token: who's asking, everywhere else
 
 
+class CapChange(StatusChange):
+    agent: str
+    part: str
+    action: str
+
+
 class ToolArgs(BaseModel):
     args: dict[str, Any] = {}
 
@@ -887,10 +925,13 @@ def create_app(gw: Gateway) -> FastAPI:
                              (now, now, opening.trigger["obligation"]))
             if not reasons:
                 conn.execute(
-                    "insert into runs (id, instance_id, token_hash, trigger, acts_for, expires_at) "
-                    "values (%s, %s, %s, %s, %s, now() + make_interval(mins => %s))",
+                    "insert into runs (id, instance_id, token_hash, trigger, acts_for, expires_at, "
+                    "read_outside) values (%s, %s, %s, %s, %s, now() + make_interval(mins => %s), "
+                    "%s)",
                     (run_id, body.instance, token_hash(token), Jsonb(opening.trigger),
-                     opening.acts_for, RUN_MINUTES),
+                     opening.acts_for, RUN_MINUTES,
+                     gw.reads_outside(conn, inst["definition"], opening.acts_for,
+                                      opening.trigger.get("topic", topics.GENERAL))),
                 )
                 if opening.task:  # what a5s asks it, from the records: something it has read
                     provenance.read(conn, run_id, provenance.A5S, opening.task,
@@ -1418,7 +1459,8 @@ def create_app(gw: Gateway) -> FastAPI:
     def status_now() -> dict:
         """How a5s is doing, for the team that runs it and its dashboards (core/status.py)."""
         with db.transaction(gw.url) as conn:
-            return status.report(conn, gw.breakers.open())
+            return status.report(conn, gw.breakers.open(), gw.cfg.seal_keys,
+                                 gw.cfg.flag_rubber_stamps)
 
     @app.post("/retention/sweep", dependencies=[Depends(service)])
     def sweep_retention() -> dict:
@@ -1491,6 +1533,12 @@ def create_app(gw: Gateway) -> FastAPI:
                                             gw.unseen(conn, row["model"])))
                 provenance.read(conn, row["run"], f"the records, on {topic}", context[-1]["text"],
                                 gw.scenario.record_pattern)
+                if waiting := proposals.brief(conn, row["id"], list(row["acts_for"]), [topic]):
+                    context.append({  # a5s's own, not the records': so it says it waits
+                        "title": f"Changes to {topic} waiting for a decision",
+                        "text": "a5s holds these, as they were asked for, until their deciders "
+                                "decide them. Asking for one again only points at it.\n"
+                                + "\n".join(waiting)})
             if person and (offered := [  # so a yes in their next message finds what it's to
                     *profiles.waiting(conn, person, row["definition"]),
                     *reminders.waiting_for_yes(conn, person, row["definition"])]):
@@ -1549,59 +1597,86 @@ def create_app(gw: Gateway) -> FastAPI:
             if field_name in args:  # outgoing text, at any depth
                 args[field_name], dropped = cleaned(args[field_name], gw.scenario.record_links)
                 removed += dropped
+        arg = tool.record_arg if tool else None  # the record it's about, if it names one
+        named = args.get(arg) if arg else None
+        records = [] if named in (None, "") else named if isinstance(named, list) else [named]
+        keys = [r for r in records if isinstance(r, str) and r]
+        action = tool.action if tool else None  # a change, which levels and limits govern
+        # the records as they stand, read before any lock is taken, so a slow system holds
+        # up nobody else: for its deciders, the owner's report and graders
+        standing = proposals.snapshot({k: record_of(gw.scenario, k) for k in keys}) if action else {}
         with db.transaction(gw.url) as conn:
             row = load_run(conn, token)
             entity = gw.core_tool_entity(name) if core else gw.tool_entity(name, tool, row["pins"])
-            arg = tool.record_arg if tool else None  # the record it's about, if it names one
-            named = args.get(arg) if arg else None
-            records = [] if named in (None, "") else named if isinstance(named, list) else [named]
-            keys = [r for r in records if isinstance(r, str) and r]
             found = gw.settings_in_force(conn)
-            action = tool.action if tool else None  # a change, which levels and limits govern
-            change, over = None, False
-            if action and found[0] is not None:
+            change, over, again = None, None, None
+            if action and found[0] is not None and all(isinstance(r, str) and r for r in records):
                 change = counts.change(action, keys, args)
-                over = counts.over(conn, row, action, change, found[0].limits, gw.clock())
-            about = parts.about(gw.scenario, row, keys, action, gw.approvers_in_force(conn),
-                                gw.caps(conn, row["release"])) if action else parts.about(
-                gw.scenario, row, keys)
-            decision = gw.decide(row, "call_tool", entity, [], **about, over_limit=over)
-            if found[0] is None:  # fail closed
-                decision = Decision(False, ("settings-must-check-out",), explanations=(
-                    f"a5s can't use the settings in force: {found[1]}",))
-            elif problem := misfit((core or tool).schema if (core or tool) else {}, args):
-                decision = Decision(False, ("arguments-fit-the-schema",), explanations=(
-                    f"the arguments don't fit the tool: {problem}",))
-            elif any(not isinstance(r, str) or not r for r in records):
-                decision = Decision(False, ("records-are-named-by-key",), explanations=(
-                    "a record is named by its key, in words",))
-            if row["trigger"].get("kind") in OWN_RUNS:
-                decision = Decision(False, ("a5s-runs-call-no-tools",), explanations=(
-                    "a5s's own runs, such as keeping a summary, call no tools",))
-            deciding = holding(decision, records, row)
-            if deciding is None:  # nobody else may decide it, or nobody can decide it here
-                decision = Decision(False, ("someone-else-decides",), explanations=(
-                    unheld(records, row),))
-            texts = [s for f in tool.text_fields for s in strings(args.get(f))] if tool else []
-            if decision.held:  # what deciders should know: every value the agent wrote itself
-                texts = strings(args)
-            traced = provenance.traced(conn, gw.scenario, row, "\n".join(texts))
-            last = next((f for f in reversed(tool.text_fields) if isinstance(args.get(f), str)),
-                        None) if tool else None
-            if (own := [t["value"] for t in traced if t["from"] is None]) and last:
-                args[last] += "\n\n" + provenance.note(row["definition"], own)  # apart
-            if row["read_outside"] and last and decision.allowed:  # and what it drew on
-                args[last] += "\n\n" + extractor.DREW
-            plain = (*((arg,) if arg else ()), *(core.plain if core else ()))
-            seq = ledger.append(conn, gw.entry(row, "tool", name, decision,
-                                               args=ledger.mask(args, plain),
-                                               links_removed=removed,
-                                               **({"values": values_of(traced)} if traced else {})))
-            if change and (decision.allowed or decision.held):  # made or held: it counts
-                counts.count(conn, row, action, change, over, gw.clock())
-            if decision.held:  # it waits for a person: the exact call, kept for its deciders
-                proposal, sends = held(conn, row, tool, args, records, deciding or [], seq, traced,
-                                       change)
+                again = counts.before(conn, row, action, change)
+                waits = proposals.waiting(conn, row, change)
+                if waits is not None or (again and again["state"] != "held"):
+                    # asked for already: answered with what became of it, never made twice
+                    ledger.append(conn, {"kind": "tool", "action": name, "run": row["run"],
+                                         "instance": row["id"], "acts_for": list(row["acts_for"]),
+                                         "decision": "record", "args": ledger.mask(args, (arg,)),
+                                         "outcome": {"status": "asked already", **(
+                                             {"proposal": proposals.key(waits)} if waits else
+                                             {"state": again["state"]})}})
+            else:
+                waits = None
+            if waits is None and not (again and again["state"] != "held"):
+                if change:
+                    over = counts.over(conn, row, action, max(len(keys), 1), found[0].limits,
+                                       gw.clock())
+                about = parts.about(gw.scenario, row, keys, action, gw.approvers_in_force(conn),
+                                    gw.caps(conn, row["release"])) if action else parts.about(
+                    gw.scenario, row, keys)
+                decision = gw.decide(row, "call_tool", entity, [], **about,
+                                     over_limit=over is not None)
+                if found[0] is None:  # fail closed
+                    decision = Decision(False, ("settings-must-check-out",), explanations=(
+                        f"a5s can't use the settings in force: {found[1]}",))
+                elif problem := misfit((core or tool).schema if (core or tool) else {}, args):
+                    decision = Decision(False, ("arguments-fit-the-schema",), explanations=(
+                        f"the arguments don't fit the tool: {problem}",))
+                elif any(not isinstance(r, str) or not r for r in records):
+                    decision = Decision(False, ("records-are-named-by-key",), explanations=(
+                        "a record is named by its key, in words",))
+                if row["trigger"].get("kind") in OWN_RUNS:
+                    decision = Decision(False, ("a5s-runs-call-no-tools",), explanations=(
+                        "a5s's own runs, such as keeping a summary, call no tools",))
+                deciding = holding(decision, records, row)
+                if isinstance(deciding, str):  # nobody may decide it, or nothing can here
+                    decision = Decision(False, ("someone-else-decides",), explanations=(deciding,))
+                texts = [s for f in tool.text_fields for s in strings(args.get(f))] if tool else []
+                if decision.held:  # what deciders should know: every value the agent wrote itself
+                    texts = strings(args)
+                traced = provenance.traced(conn, gw.scenario, row, "\n".join(texts))
+                last = next((f for f in reversed(tool.text_fields)
+                             if isinstance(args.get(f), str)), None) if tool else None
+                if (own := [t["value"] for t in traced if t["from"] is None]) and last:
+                    args[last] += "\n\n" + provenance.note(row["definition"], own)  # apart
+                if row["read_outside"] and last and decision.allowed:  # and what it drew on
+                    args[last] += "\n\n" + extractor.DREW
+                plain = (*((arg,) if arg else ()), *(core.plain if core else ()))
+                seq = ledger.append(conn, gw.entry(row, "tool", name, decision,
+                                                   args=ledger.mask(args, plain),
+                                                   links_removed=removed,
+                                                   **({"values": values_of(traced)} if traced else {})))
+                if change and (decision.allowed or decision.held):  # made or held: it counts
+                    counts.count(conn, row, action, change, max(len(keys), 1), over is not None,
+                                 "making" if decision.allowed else "held", gw.clock())
+                if decision.held:  # it waits for a person: the exact call, kept for its deciders
+                    proposal, sends = held(conn, row, tool, args, standing, deciding or [], seq,
+                                           traced, change, over, found[0])
+        if waits is not None or (again and again["state"] != "held"):
+            return {"result": {"held": proposals.key(waits), "status": (
+                f"Asked for already, on {waits['proposed_at']:%d %b}: it still waits for a "
+                "decision, on a5s's own page, and a5s makes it once it's approved.")}
+                if waits is not None else {"made": (
+                    "a5s made this same change already, in this run, and doesn't make it twice"
+                    if again["state"] == "made" else "a5s is making this same change now, in "
+                    "this run, and doesn't make it twice")}, "recorded": True}
         traces.note(current, **{"a5s.run.id": row["run"], "a5s.instance": row["id"],
                                 "a5s.decision": decision.label})
         if decision.held:
@@ -1621,21 +1696,26 @@ def create_app(gw: Gateway) -> FastAPI:
             return asking_about(args, row, seq, token)
         if core is not None:
             return call_core_tool(core, args, row, seq)
-        before = {k: record_of(gw.scenario, k) for k in keys} if action else {}  # for graders
         try:
             with db.transaction(gw.url) as conn:  # a system gets the values handles stand for
                 given = handles.resolved_args(conn, row["run"], args)
+            for field_name in tool.text_fields:  # cleaned again: a value may hold a link,
+                if field_name in given:  # though a5s's own notes stay
+                    given[field_name], _ = cleaned(given[field_name], gw.scenario.record_links,
+                                                   notes=False)
             result = tool.run(ToolCall(args=given, instance=row["id"], run=row["run"],
-                                       acts_for=tuple(row["acts_for"])))
-            outcome = {"status": "ok", "result_sha256": ledger.digest(result)}
+                                       acts_for=tuple(row["acts_for"]),
+                                       key=counts.key(row["run"], change) if change else None))
+            refused = result.get("error") if action and isinstance(result, dict) else None
+            outcome = ({"status": "error", "error": str(refused)[:200], "answered": True}
+                       if refused else {"status": "ok", "result_sha256": ledger.digest(result)})
+            result, withheld = parts.kept(gw.scenario, row, tool.record_field, result)
+            if withheld:  # first, so a5s reads nothing the run may not see
+                outcome["withheld"] = withheld
             if tool.outside:  # never the content itself: the extractor's form, checked by code
                 result, outcome["documents"] = read_outside(row, token, tool, result)
-            result, withheld = parts.kept(gw.scenario, row, tool.record_field, result)
-            if withheld:
-                outcome["withheld"] = withheld
             with db.transaction(gw.url) as conn:  # the agent gets handles for sensitive values,
-                hidden = (*tool.handles, *(f for f, k in tool.extract.items() if k == "handle"),
-                          *sorted(gw.unseen(conn, row["model"])))  # and classified
+                hidden = (*tool.handles, *sorted(gw.unseen(conn, row["model"])))  # and classified
                 result = handles.issue(conn, row["run"], name, result, hidden)  # ones it can't see
         except Exception as exc:  # noqa: BLE001 - the tool's own failure, recorded and reported
             with db.transaction(gw.url) as conn:  # it may repeat an argument: no handle's value
@@ -1643,131 +1723,207 @@ def create_app(gw: Gateway) -> FastAPI:
             result, outcome = None, {"status": "error", "error": said[:200]}
         if outcome["status"] == "ok":
             try:
-                with db.transaction(gw.url) as conn:
-                    provenance.read(conn, row["run"], name, result, gw.scenario.record_pattern)
+                with db.transaction(gw.url) as conn:  # the forms' values are their documents'
+                    provenance.read(conn, row["run"], name, extractor.without_forms(result),
+                                    gw.scenario.record_pattern)
             except psycopg.Error:  # the values it wrote will be flagged as its own: never worse
                 log.exception("couldn't note what %s read from %s", row["run"], name)
         recorded = record({"kind": "tool", "action": name, "run": row["run"], "instance": row["id"],
                            "decision": "record", "of": seq, "outcome": outcome,
                            **({"level": about["level"]} if action else {})})
+        if change:
+            try:
+                with db.transaction(gw.url) as conn:  # made, or not taken, so not counted
+                    (counts.made if outcome["status"] == "ok" else counts.failed)(
+                        conn, row["run"], change)
+            except psycopg.Error:
+                log.exception("couldn't settle the count of %s's change", row["run"])
         if action and outcome["status"] == "ok":  # a change made at level 2: someone's told
             try:
-                acted(row, tool, args, keys, before)
-            except psycopg.Error:
+                acted(row, tool, args, keys, standing)
+            except Exception:  # it's made: the agent hears so, whatever else fails
                 log.exception("couldn't report the change %s made", row["run"])
         traces.note(current, **{"error.type": "tool_error" if outcome["status"] != "ok" else None})
-        if outcome["status"] != "ok":
+        if outcome["status"] != "ok" and not outcome.get("answered"):
             return JSONResponse(status_code=502, content={"error": outcome["error"]})
         return {"result": result, "recorded": recorded}
 
-    def acted(row: dict, tool: Tool, args: dict, keys: list[str], before: dict) -> None:
-        """Report a change an agent made at level 2: in the digest of its instance's owner, with
-        a link to each record, in words code works out, so they can reverse it through the
-        scenario's own process if they need to. And draw it as a sample, for grading."""
-        standing = {k: record_of(gw.scenario, k) for k in keys}
+    def acted(row: dict, tool: Tool, args: dict, keys: list[str], standing: dict) -> None:
+        """Report a change an agent made at level 2, in words code works out, with each record
+        as it stood before, and a link to it, so it can be reversed through the scenario's own
+        process if it needs to be: in the digest of the instance's owner and deputy who may see
+        its records, or, with neither, of the owners of its parts. Tell whoever it was for, in
+        their conversation with the agent. And draw it as a sample, for grading."""
         whom = approvals.names_of([p.name if (p := gw.scenario.person(w)) else w
                                    for w in row["acts_for"]]) if row["acts_for"] else "nobody"
-        shown = ", ".join(f"{k} {v}" for k, v in args.items() if k != tool.record_arg)
-        links = " ".join(r.link for r in standing.values() if r and r.link)
-        text = (f"The {row['definition']} made a change itself, at level 2, for {whom}: "
-                f"{tool.description.rstrip('.')}: {', '.join(keys) or 'no record'}"
-                + (f", with {shown}" if shown else "") + "." + (f" {links}" if links else ""))
         with db.transaction(gw.url) as conn:
-            owner = conn.execute("select owner from instances where id = %s",
-                                 (row["id"],)).fetchone()["owner"]
-            if owner:
-                digests.keep(conn, owner, row["definition"], row["id"], row["run"], text,
+            values = {r["handle"]: r["value"] for r in conn.execute(
+                "select handle, value from run_handles where run_id = %s", (row["run"],))}
+            said = proposals.said(gw.scenario, tool, args, standing, list(row["acts_for"]),
+                                  row["definition"], values)
+            change = said.split("\n", 1)[0]
+            before = " ".join(proposals.stood(standing)).replace(
+                "as it stood when it was asked for", "as it stood before")
+            text = (f"The {row['definition']} made a change itself, at level 2, for {whom}: "
+                    f"{change}" + (f" {before}" if before else ""))
+            inst = conn.execute("select owner, deputy from instances where id = %s",
+                                (row["id"],)).fetchone()
+            told = [p for p in (inst["owner"], inst["deputy"])
+                    if p and all(gw.scenario.sees(p, k) for k in keys)]
+            if not told:  # nobody runs it here: the owners of its parts hear instead
+                told = [p.id for p in proposals.everyone(proposals.deciders(
+                    gw.scenario, keys, []))]
+            for person in dict.fromkeys(told):
+                digests.keep(conn, person, row["definition"], row["id"], row["run"], text,
                              gw.clock())
-            said = proposals.said(gw.scenario, tool, args, before, list(row["acts_for"]),
-                                  row["definition"])
+            for person in row["acts_for"]:  # and its next run knows a5s made it
+                noted(conn, person, row["definition"],
+                      f"a5s made the change the {row['definition']} asked for, at level 2: "
+                      f"{change}", keys[0] if keys else None)
             for part in sorted({p for k in keys if (p := gw.scenario.part_of(k))}):
-                samples.draw(conn, gw.scenario.name, "action", row["release"], row["definition"],
-                             row["id"], row["run"], part, tool.action, said, before,
+                samples.draw(conn, gw.cfg.seal_keys, gw.scenario.name, "action", row["release"],
+                             row["definition"],
+                             row["id"], row["run"], part, tool.action, said, standing,
                              list(row["acts_for"]), gw.clock())
             ledger.append(conn, {"kind": "tool", "action": "report", "run": row["run"],
                                  "instance": row["id"], "acts_for": list(row["acts_for"]),
-                                 "decision": "record", "args": {"to": owner, "tool": tool.name,
+                                 "decision": "record", "args": {"to": sorted(set(told)),
+                                                                "tool": tool.name,
                                                                 "records": keys}})
 
-    def holding(decision: Decision, records: list[str], row: dict) -> list[Person] | None:
-        """Who may decide a call policy holds, if it holds it and someone may: None if nobody
-        but the people the run acts for may, or nobody can decide anything here."""
+    def holding(decision: Decision, records: list[str], row: dict) -> list[Person] | str:
+        """Who may decide a call policy holds, if it holds it: or why nobody may, in words."""
         if not decision.held:
             return []
-        if gw.approving() is not None:
-            return None
-        return proposals.deciders(gw.scenario, records, list(row["acts_for"])) or None
-
-    def unheld(records: list[str], row: dict) -> str:
         if (problem := gw.approving()) is not None:
             return f"a change can't wait for a decision here, since {problem}"
-        return ("nobody but the people this run is for may decide this change, and nobody decides "
-                "what they asked for themselves: they can make it themselves, in the records system")
+        by_part = proposals.deciders(gw.scenario, records, list(row["acts_for"]))
+        if not (nobody := proposals.undecidable(by_part)):
+            return proposals.everyone(by_part)
+        anyone = proposals.deciders(gw.scenario, records, [])
+        if all(anyone[part] for part in by_part if not by_part[part]):
+            return ("nobody but the people this run is for may decide this change, and nobody "
+                    "decides what they asked for themselves: they can make it themselves, in "
+                    "the records system")
+        return (f"nobody may decide this change for {approvals.names_of(nobody)}: of the people "
+                "who decide changes there, none may see every record it names. Ask for a change "
+                "to the records of one part at a time, or ask someone who may see them all to "
+                "make it")
 
-    def held(conn: psycopg.Connection, row: dict, tool: Tool, args: dict, records: list[str],
-             deciding: list[Person], seq: int, traced: list[dict],
-             change: str | None) -> tuple[dict, list]:
-        """Keep a held call for its deciders, and ask each of them, where they work, to decide
-        it on the core's page. The proposal, and what to send them once the transaction is done.
-        The same change made again in the run answers with the proposal it made before."""
-        if change and (before := proposals.waiting(conn, row["run"], change)) is not None:
-            return before, []
+    def held(conn: psycopg.Connection, row: dict, tool: Tool, args: dict, standing: dict,
+             deciding: list[Person], seq: int, traced: list[dict], change: str | None,
+             over: str | None, settings: Settings) -> tuple[dict, list]:
+        """Keep a held call for its deciders, and ask each of them, where they work with the
+        agent, to decide it on the core's page, as an urgent message: past their five a day,
+        it waits for their next batch. The proposal, and what to send once the transaction is
+        done."""
         whom = approvals.names_of([p.name if (p := gw.scenario.person(w)) else w
                                    for w in row["acts_for"]])
-        flags = [f"{t['value']} came from the {row['definition']} itself, not from the records "
-                 f"or from {whom}" for t in traced if t["from"] is None]
+        flags = []
+        for t in traced:
+            if t["from"] is None:
+                flags.append(f"{t['value']} came from the {row['definition']} itself, not from "
+                             f"the records or from {whom}")
+            elif t["from"].startswith(provenance.OUTSIDE):
+                flags.append(f"{t['value']} came from a document from outside the organisation "
+                             f"({t['from'].removeprefix(provenance.OUTSIDE).strip()}), such as a "
+                             "customer's email, not from the records")
         if row["read_outside"]:
             flags.append(f"the {row['definition']} read content from outside the organisation "
                          "before it asked for this")
-        proposal = proposals.hold(conn, gw.scenario, row, tool, args, records, deciding, seq,
-                                  flags, gw.clock(), change)
-        link = f"{gw.public_url}/decide/?proposal={proposal['digest']}"
-        text = proposals.asking(proposal, link)
-        sends = []
-        for person in deciding:
-            route = gw.reach(conn, person.id, None)
-            ledger.append(conn, {
-                "kind": "notice", "action": "ask-decision", "run": row["run"],
-                "instance": row["id"], "acts_for": list(row["acts_for"]), "decision": "record",
-                "args": {"proposal": proposals.key(proposal), "to": person.id,
-                         "channel": route["channel"], "chars": len(text),
-                         "sha256": hashlib.sha256(text.encode()).hexdigest()}})
-            sends.append(outbound(conn, route, person.id, text, card=proposals.card(proposal, link)))
+        if over is not None:
+            flags.append(f"it waits because {over}")
+        proposal = proposals.hold(conn, gw.scenario, row, tool, args, standing, deciding, seq,
+                                  flags, gw.clock(), change, proposals.sensitive(
+                                      conn, row["run"], tool, args, settings.classified))
+        sends = [ask(conn, proposal, person.id) for person in deciding]
+        conn.execute("update proposals set asked = %s where id = %s",
+                     ([p.id for p in deciding], proposal["id"]))
         return proposal, sends
 
+    def ask(conn: psycopg.Connection, p: dict, person: str, again: bool = False) -> int | None:
+        """Ask, or remind, a decider to decide a held change, where they work with its agent,
+        as an urgent message. What to push once the transaction is done."""
+        link = f"{gw.public_url}/decide/?proposal={p['digest']}"
+        text = proposals.asking(p, link, again)
+        route = gw.at_once(conn, person, p["definition"])
+        ledger.append(conn, {
+            "kind": "notice", "action": "remind-decision" if again else "ask-decision",
+            "run": str(p["run_id"]), "instance": p["instance_id"], "acts_for": list(p["acts_for"]),
+            "decision": "record", "args": {"proposal": proposals.key(p), "to": person,
+                                           "channel": route["channel"], "chars": len(text),
+                                           "sha256": hashlib.sha256(text.encode()).hexdigest()}})
+        if route["channel"] == "batch":  # they've had today's urgent messages
+            urgent.hold(conn, person, None, p["instance_id"], None, text, gw.clock())
+            return None
+        return outbound(conn, route, person, text, instance=p["instance_id"],
+                        agent=p["definition"], card=proposals.card(p, link, again))
+
+
     def read_outside(row: dict, token: str, tool: Tool, result: Any) -> tuple[Any, int]:
-        """What a tool returned, with each item's outside content replaced by the extractor's
-        form of it, which code checked, and the document's number. The run is marked first:
-        once it's read outside content, it stays marked. How many documents it read."""
+        """What a tool returned, with each item's outside content, whatever its type and at any
+        depth, replaced by the extractor's form of it, which code checked, and the document's
+        number. The run is marked first: once it's read outside content, it stays marked. The
+        same document read again in the run keeps its number and form. The reader reads at
+        most the first few thousand words of each, and a few documents a call, within what's
+        left of the run's budget. How many it read."""
         with db.transaction(gw.url) as conn:
             conn.execute("update runs set read_outside = true where id = %s", (row["run"],))
+            unseen = gw.unseen(conn, row["model"])
+            spent = conn.execute("select tokens from runs where id = %s",
+                                 (row["run"],)).fetchone()["tokens"]
         model = gw.models.get(row["model"])
+        release = gw.definitions.get(row["definition"])
+        room = (release.budget.per_run - spent) * CHARS_PER_TOKEN if release else 0
         read = 0
 
         def form(item: dict) -> dict:
-            nonlocal read
-            text = "\n\n".join(str(item[f]) for f in tool.outside if isinstance(item.get(f), str))
-            if not text:
-                return item
-            filled, dropped = None, []
-            if model is not None:
+            nonlocal read, room
+            found = [item[f] for f in tool.outside if f in item and item[f] not in (None, "")]
+            whole = "\n\n".join(v if isinstance(v, str) else json.dumps(v, ensure_ascii=False)
+                                  for v in found)
+            kept = {k: walk(v) for k, v in item.items() if k not in tool.outside}
+            if not whole:
+                return kept
+            text = whole[:extractor.MOST]  # what a5s's reader reads of it, and says so
+            digest = hashlib.sha256(whole.encode()).hexdigest()
+            with db.transaction(gw.url) as conn:
+                again = conn.execute("select number, form from run_documents where run_id = %s "
+                                     "and digest = %s", (row["run"], digest)).fetchone()
+            if again is not None:  # read already in this run: no second call to the model
+                return {**kept, "document": f"D-{again['number']}", extractor.OUTSIDE: again["form"]}
+            filled, dropped, why = None, [], "a5s couldn't read it now"
+            if any(f in unseen for f in tool.outside if f in item):
+                why = "it's of a class the model here isn't approved for, so a5s didn't read it"
+            elif read >= extractor.DOCUMENTS:
+                why = (f"a5s reads at most {extractor.DOCUMENTS} documents a call: ask for fewer "
+                       "at once")
+            elif len(text) + 2_000 > room:
+                why = "what's left of the run's budget hasn't room to read it"
+            elif model is not None:
+                room -= len(text) + 2_000
                 answer = model_call(model.api, extractor.form_request(
                     model.api, row["model"], tool.extract, text), token)
                 reply = extractor.reply_text(model.api, json.loads(answer.body))
                 if answer.status_code < 400:
                     filled, dropped = extractor.checked(reply, text, tool.extract,
                                                         gw.scenario.record_pattern)
+            shown = {**(filled if filled is not None else dict.fromkeys(tool.extract)),
+                     **({"unread": why} if filled is None else {}),
+                     **({"left_out": dropped} if dropped else {}),
+                     **({"cut": f"a5s read the first {len(text):,} characters of {len(whole):,}"}
+                        if len(whole) > len(text) else {})}
             with db.transaction(gw.url) as conn:
                 number = conn.execute(
-                    "insert into run_documents (run_id, number, text) values (%s, "
+                    "insert into run_documents (run_id, number, text, digest, form) values (%s, "
                     "(select coalesce(max(number), 0) + 1 from run_documents where run_id = %s), "
-                    "%s) returning number", (row["run"], row["run"], text)).fetchone()["number"]
+                    "%s, %s, %s) returning number",
+                    (row["run"], row["run"], text, digest, Jsonb(shown))).fetchone()["number"]
+                if filled:  # its values are the document's, not the records'
+                    provenance.read(conn, row["run"], f"{provenance.OUTSIDE} D-{number}", filled,
+                                    gw.scenario.record_pattern)
             read += 1
-            kept = {k: v for k, v in item.items() if k not in tool.outside}
-            return {**kept, "document": f"D-{number}", extractor.OUTSIDE: {
-                **(filled if filled is not None else dict.fromkeys(tool.extract)),
-                **({"unread": "a5s couldn't read it now"} if filled is None else {}),
-                **({"left_out": dropped} if dropped else {})}}
+            return {**kept, "document": f"D-{number}", extractor.OUTSIDE: shown}
 
         def walk(value: Any) -> Any:
             if isinstance(value, list):
@@ -1878,7 +2034,9 @@ def create_app(gw: Gateway) -> FastAPI:
                 "links_removed": removed, **({"channel": route["channel"]} if route else {}),
                 **({"values": values_of(traced)} if traced else {}),
             }))
-            shown = handles.resolved(conn, row["run"], text)  # what people read: the values
+            shown, _ = sanitize(handles.resolved(conn, row["run"], said),  # what people read:
+                                gw.scenario.record_links)  # the values, cleaned again, and
+            shown += f"\n\n{note}" if note else ""  # a5s's own note, apart
             if decision.allowed and route["channel"] == "digest":  # it goes in their next digest
                 digests.keep(conn, body.to, row["definition"], row["id"], row["run"], shown, gw.clock())
             elif decision.allowed and route["channel"] == "batch":  # it waits for their next batch
@@ -1989,64 +2147,81 @@ def create_app(gw: Gateway) -> FastAPI:
     def sweep_proposals() -> dict:
         """Make the held changes their deciders approved, and tell whoever each was for what
         became of it: made, rejected, lapsed, or not made since its records changed or the
-        instance may no longer act. Remind deciders once after two working days, and tell
-        their managers after five."""
-        now, sends, made = gw.clock(), [], []
+        instance may no longer act. Remind each decider once, in their own hours, after two
+        working days, and tell their managers, or the instance's owner, after five. Only the
+        changes with something due are read, each on its own, so one that fails holds up
+        none of the others, and each approved change is made as soon as it's marked."""
+        now, made, failed = gw.clock(), 0, 0
         with db.transaction(gw.url) as conn:
-            waiting = [r["id"] for r in conn.execute(
-                "select id from proposals where scenario = %s and status = 'waiting' order by id",
-                (gw.scenario.name,))]
-        for pid in waiting:
-            with db.transaction(gw.url) as conn:  # each alone, so one can't hold up another
-                p = conn.execute("select * from proposals where id = %s and status = 'waiting' "
-                                 "for update skip locked", (pid,)).fetchone()
-                if p is None:
-                    continue
-                found, problems = proposals.decision(conn, gw.cfg.seal_keys, gw.scenario, p)
+            due = [r["id"] for r in conn.execute(
+                "select id from proposals p where scenario = %s and status = 'waiting' and ("
+                "least(remind_at, escalate_at, lapses_at) <= %s or exists (select 1 from "
+                "proposal_decisions d where d.digest = p.digest and d.id > p.weighed)) order by id",
+                (gw.scenario.name, now))]
+        for pid in due:
+            try:
+                going = sweeping(pid, now)
+                push(going.get("sends", []))
+                if going.get("make"):
+                    push(making(*going["make"]))
+                    made += 1
+            except Exception:  # one change's failure holds up no other
+                log.exception("couldn't sweep P-%s", pid)
+                failed += 1
+        return {"swept": True, "made": made, "failed": failed}
+
+    def sweeping(pid: int, now: datetime) -> dict:
+        """What's due for one held change, in a transaction of its own."""
+        with db.transaction(gw.url) as conn:
+            p = conn.execute("select * from proposals where id = %s and status = 'waiting' "
+                             "for update skip locked", (pid,)).fetchone()
+            if p is None:
+                return {}
+            found, problems = proposals.decision(conn, gw.cfg.seal_keys, gw.scenario, p)
+            last = conn.execute("select coalesce(max(id), 0) as id from proposal_decisions "
+                                "where digest = %s", (p["digest"],)).fetchone()["id"]
+            if last > p["weighed"]:
                 for problem in problems:  # a decision that doesn't count, such as an unsealed one
                     log.warning("%s: %s", proposals.key(p), problem)
-                if found is not None:
-                    decider = gw.scenario.person(found["person"])
-                    if now < proposals.effective(decider, found["decided_at"]):
-                        continue  # their authenticator was reset lately: it waits a day
-                    going = deciding(conn, p, found, decider, now)
-                elif now >= p["lapses_at"]:
-                    going = ended(conn, p, "lapsed", None, now)
-                else:
-                    going = chasing(conn, p, now)
-                if going is None:
-                    continue
-                sends += going.get("sends", [])
-                if going.get("make"):
-                    made.append(going["make"])
-        push(sends)
-        for p, values, decider in made:  # outside any transaction, once it's marked as making
-            push(making(p, values, decider))
-        return {"swept": True, "made": len(made)}
+            if found is not None and found["decision"] == "approve":
+                if (settled := gw.settings_in_force(conn))[0] is None:
+                    log.warning("%s waits, since the settings in force don't check out: %s",
+                                proposals.key(p), settled[1])
+                    return {}  # it's made once they do: nothing's weighed yet
+                ready = max(proposals.effective(gw.scenario.person(r["person"]), r["decided_at"])
+                            for r in found["rows"])
+                if now < ready:
+                    return {}  # an authenticator was reset lately: the approval waits a day
+            conn.execute("update proposals set weighed = %s where id = %s", (last, p["id"]))
+            if found is not None:
+                return deciding(conn, p, found, now)
+            if now >= p["lapses_at"]:
+                return ended(conn, p, "lapsed", [], now)
+            return chasing(conn, p, now)
 
-    def deciding(conn: psycopg.Connection, p: dict, found: dict, decider: Person | None,
-                 now: datetime) -> dict:
-        """What becomes of a held change once someone who may decide it has: whether it's made."""
+    def deciding(conn: psycopg.Connection, p: dict, found: dict, now: datetime) -> dict:
+        """What becomes of a held change once the people who may decide it have: whether it's
+        made. An approved one is marked as making, so it's never made twice."""
+        rows = found["rows"]
         if found["decision"] == "reject":
-            return ended(conn, p, "rejected", found["person"], now)
-        if changed := proposals.unchanged(gw.scenario, p):
-            return ended(conn, p, "changed", found["person"], now, ", ".join(changed))
+            return ended(conn, p, "rejected", rows, now, reason=rows[0].get("reason"))
+        if changed := proposals.changed(gw.scenario, p):
+            return ended(conn, p, "changed", rows, now, ", ".join(changed))
         if (why := allowed_now(conn, p)) is not None:
-            return ended(conn, p, "refused", found["person"], now, why)
+            return ended(conn, p, "refused", rows, now, why)
+        by = [r["person"] for r in rows]
         conn.execute("update proposals set status = 'making', decided_by = %s, decided_at = %s "
-                     "where id = %s", (found["person"], found["decided_at"], p["id"]))
+                     "where id = %s", (", ".join(by), max(r["decided_at"] for r in rows), p["id"]))
         ledger.append(conn, {"kind": "proposal", "action": "decide", "run": str(p["run_id"]),
                              "instance": p["instance_id"], "acts_for": list(p["acts_for"]),
                              "decision": "allow", "of": p["seq"],
-                             "args": {"proposal": proposals.key(p), "by": found["person"],
-                                      "decided": "approve", "decision": found["id"]}})
-        return {"make": (p, proposals.values(conn, p), found["person"])}
+                             "args": {"proposal": proposals.key(p), "by": by,
+                                      "decided": "approve", "decisions": [r["id"] for r in rows]}})
+        return {"make": (p, proposals.values(conn, p), rows)}
 
     def allowed_now(conn: psycopg.Connection, p: dict) -> str | None:
         """Why an approved change can't be made now, if it can't: the instance may no longer
         act, the tool has changed since, or policy would deny the call."""
-        if (found := gw.settings_in_force(conn))[0] is None:
-            return f"the settings in force don't check out: {found[1]}"
         row = conn.execute(
             "select r.id::text as run, r.acts_for, r.read_outside, r.trigger, r.tokens, i.* "
             "from runs r join instances i on i.id = r.instance_id where r.id = %s",
@@ -2063,54 +2238,63 @@ def create_app(gw: Gateway) -> FastAPI:
             return "; ".join(decision.explanations) or "policy denies it now"
         return None
 
-    def making(p: dict, values: dict, decider: str) -> list:
-        """Make an approved change, and tell whoever it was for. It's marked as making first,
-        so it's never made twice: if a5s stops part way, it stays marked, for someone to see."""
+    def making(p: dict, values: dict, rows: list[dict]) -> list:
+        """Make an approved change, record what happened in a transaction of its own, then
+        tell people. It's marked as making first, so it's never made twice: if a5s stops part
+        way, it stays marked, for someone to see (`a5s proposals`)."""
         tool = gw.scenario.tools()[p["tool"]]
         try:
             result = tool.run(ToolCall(args=proposals.resolved(p["args"], values),
                                        instance=p["instance_id"], run=str(p["run_id"]),
-                                       acts_for=tuple(p["acts_for"])))
+                                       acts_for=tuple(p["acts_for"]),
+                                       key=counts.key(str(p["run_id"]), p["change"] or p["digest"])))
             failed = result.get("error") if isinstance(result, dict) else None
             outcome = ({"status": "error", "error": str(failed)[:200]} if failed
                        else {"status": "ok", "result_sha256": ledger.digest(result)})
         except Exception as exc:  # noqa: BLE001 - the system's own failure, recorded and told
             outcome = {"status": "error", "error": f"{type(exc).__name__}"}
-        with db.transaction(gw.url) as conn:
+        with db.transaction(gw.url) as conn:  # what happened, first, whatever comes after
             ledger.append(conn, {"kind": "tool", "action": p["tool"], "run": str(p["run_id"]),
                                  "instance": p["instance_id"], "acts_for": list(p["acts_for"]),
                                  "decision": "record", "of": p["seq"], "outcome": outcome,
                                  "args": {"proposal": proposals.key(p)}})
+            conn.execute("update proposals set status = %s, ended_at = %s where id = %s",
+                         ("made" if outcome["status"] == "ok" else "not made", gw.clock(), p["id"]))
+        with db.transaction(gw.url) as conn:
             if outcome["status"] == "ok":
-                going = ended(conn, p, "made", decider, gw.clock())
+                going = ended(conn, p, "made", rows, gw.clock())
             else:
-                going = ended(conn, p, "failed", decider, gw.clock(), outcome["error"])
+                going = ended(conn, p, "failed", rows, gw.clock(), outcome["error"])
         return going["sends"]
 
-    def ended(conn: psycopg.Connection, p: dict, became: str, decider: str | None,
-              now: datetime, extra: str = "") -> dict:
+    def ended(conn: psycopg.Connection, p: dict, became: str, rows: list[dict],
+              now: datetime, extra: str = "", reason: str | None = None) -> dict:
         """End a held change, let go of the values it kept, and tell whoever it was for, in the
-        conversation with its agent, so its next run knows too."""
-        name = who.name if decider and (who := gw.scenario.person(decider)) else decider
-        text = proposals.told(p, became, name, extra)
+        conversation with its agent, so its next run knows too, and, in their digest, everyone
+        who decided it. Its records as they stood when it was asked for go to graders."""
+        deciders_ = [r["person"] for r in rows]
+        names = approvals.names_of([who.name if (who := gw.scenario.person(d)) else d
+                                    for d in deciders_]) if deciders_ else None
+        text = proposals.told(p, became, names, extra, reason)
         conn.execute("update proposals set status = %s, decided_by = coalesce(decided_by, %s), "
                      "ended_at = %s, outcome = %s where id = %s",
                      ("made" if became == "made" else "not made" if became in (
                          "changed", "refused", "failed") else became,
-                      decider, now, text, p["id"]))
+                      ", ".join(deciders_) or None, now, text, p["id"]))
         conn.execute("delete from proposal_values where proposal_id = %s", (p["id"],))
         if became != "lapsed":  # someone decided it: a sample of the agent's work, for grading
             for part in p["parts"]:
-                samples.draw(conn, gw.scenario.name, "proposal", p["release"], p["definition"],
+                samples.draw(conn, gw.cfg.seal_keys, gw.scenario.name, "proposal", p["release"],
+                             p["definition"],
                              p["instance_id"], str(p["run_id"]), part, p["action"], p["said"],
-                             {r: record_of(gw.scenario, r) for r in p["records"]},
+                             p["standing"] or {r: None for r in p["records"]},
                              list(p["acts_for"]), now, proposal=p["id"],
                              decided="reject" if became == "rejected" else "approve",
-                             decided_by=decider)
+                             decided_by=deciders_[0] if deciders_ else None, flags=p["flags"])
         ledger.append(conn, {"kind": "proposal", "action": became, "run": str(p["run_id"]),
                              "instance": p["instance_id"], "acts_for": list(p["acts_for"]),
                              "decision": "record", "of": p["seq"],
-                             "args": {"proposal": proposals.key(p), "by": decider}})
+                             "args": {"proposal": proposals.key(p), "by": deciders_}})
         told_to = list(p["acts_for"])
         if not told_to:  # a run for nobody: its instance's owner hears instead
             owner = conn.execute("select owner from instances where id = %s",
@@ -2122,78 +2306,188 @@ def create_app(gw: Gateway) -> FastAPI:
             sends.append(outbound(conn, route, person, text, instance=p["instance_id"],
                                   agent=p["definition"]))
             noted(conn, person, p["definition"], text, next(iter(p["records"]), None))
+        for person in dict.fromkeys(deciders_):  # and those who decided it, in their digest
+            if person not in told_to:
+                digests.keep(conn, person, p["definition"], p["instance_id"], str(p["run_id"]),
+                             f"What became of {proposals.key(p)}, which you decided: {text}",
+                             now)
         return {"sends": sends}
 
-    def chasing(conn: psycopg.Connection, p: dict, now: datetime) -> dict | None:
-        """Remind a held change's deciders once, after two working days, and tell their
-        managers once, after five, each in their working hours."""
-        first = gw.scenario.person(p["deciders"][0]) if p["deciders"] else None
-        if first is None:
-            return None
-        link = f"{gw.public_url}/decide/?proposal={p['digest']}"
-        if p["escalated_at"] is None and now >= proposals.working_days_after(
-                first, p["proposed_at"], proposals.ESCALATE):
+    def chasing(conn: psycopg.Connection, p: dict, now: datetime) -> dict:
+        """Remind each of a held change's deciders once, in their own working hours, after
+        two working days. After five, and only once they've been reminded, tell their
+        managers, each in their own hours, or the instance's owner if nobody is above them:
+        they can see what waits, and nudge, but only its deciders decide it."""
+        later = now + timedelta(hours=1)  # when to look again for someone off shift
+        by_part = proposals.deciders(gw.scenario, list(p["records"]), list(p["acts_for"]))
+        current = proposals.everyone(by_part)
+        sends: list = []
+        if p["remind_at"] is not None and now >= p["remind_at"]:
+            due = [d for d in current if d.id not in p["reminded"]]
+            working = [d for d in due if obligations.working(d, now)]
+            for d in working:
+                sends.append(ask(conn, p, d.id, again=True))
+            reminded = [*p["reminded"], *(d.id for d in working)]
+            conn.execute("update proposals set reminded = %s, remind_at = %s where id = %s",
+                         (reminded, later if len(working) < len(due) else None, p["id"]))
+            if working:
+                ledger.append(conn, {"kind": "proposal", "action": "remind",
+                                     "run": str(p["run_id"]), "instance": p["instance_id"],
+                                     "acts_for": list(p["acts_for"]), "decision": "record",
+                                     "of": p["seq"], "args": {"proposal": proposals.key(p),
+                                                              "to": [d.id for d in working]}})
+            p = {**p, "reminded": reminded}
+        if p["escalate_at"] is not None and now >= p["escalate_at"] and (p["reminded"] or not current):
             above: dict[str, Person] = {}  # each decider's manager, who may hear of the record
-            for decider in p["deciders"]:
-                who = gw.scenario.person(decider)
-                boss = gw.scenario.person(who.manager) if who and who.manager else None
+            for decider in current:
+                boss = gw.scenario.person(decider.manager) if decider.manager else None
                 if (boss is not None and boss.in_audience and boss.id not in p["acts_for"]
                         and all(gw.scenario.sees(boss.id, r) for r in p["records"])):
                     above.setdefault(boss.id, boss)
-            if above and not any(obligations.working(b, now) for b in above.values()):
-                return None  # it waits for their working hours
-            sends = []
-            for boss in above.values():
-                names = approvals.names_of([w.name for d in p["deciders"]
-                                            if (w := gw.scenario.person(d)) and w.manager == boss.id])
+            if not above:  # nobody above them: the instance's owner hears instead
+                inst = conn.execute("select owner from instances where id = %s",
+                                    (p["instance_id"],)).fetchone()
+                owner = gw.scenario.person(inst["owner"]) if inst and inst["owner"] else None
+                if owner is not None and all(gw.scenario.sees(owner.id, r) for r in p["records"]):
+                    above[owner.id] = owner
+            due = [b for b in above.values() if b.id not in (p["escalated"] or [])]
+            working = [b for b in due if obligations.working(b, now)]
+            names = approvals.names_of([d.name for d in current]) or "its deciders"
+            for boss in working:
                 text = (f"{proposals.key(p)} has waited {proposals.ESCALATE} working days for "
                         f"{names} to decide it.\n{p['said']}\nIt lapses on "
-                        f"{obligations.day(boss, p['lapses_at'])} unless someone decides it: {link}")
-                sends.append(outbound(conn, gw.reach(conn, boss.id, None), boss.id, text))
-            conn.execute("update proposals set escalated_at = %s where id = %s", (now, p["id"]))
-            ledger.append(conn, {"kind": "proposal", "action": "escalate", "run": str(p["run_id"]),
-                                 "instance": p["instance_id"], "acts_for": list(p["acts_for"]),
-                                 "decision": "record", "of": p["seq"],
-                                 "args": {"proposal": proposals.key(p), "to": sorted(above)}})
-            return {"sends": sends}
-        if p["reminded_at"] is None and now >= proposals.working_days_after(
-                first, p["proposed_at"], proposals.REMIND):
-            due = [d for d in p["deciders"]
-                   if (who := gw.scenario.person(d)) and obligations.working(who, now)]
-            if not due:
-                return None
-            text = "Still waiting for your decision. " + proposals.asking(p, link)
-            sends = [outbound(conn, gw.reach(conn, d, None), d, text,
-                              card=proposals.card(p, link)) for d in due]
-            conn.execute("update proposals set reminded_at = %s where id = %s", (now, p["id"]))
-            ledger.append(conn, {"kind": "proposal", "action": "remind", "run": str(p["run_id"]),
-                                 "instance": p["instance_id"], "acts_for": list(p["acts_for"]),
-                                 "decision": "record", "of": p["seq"],
-                                 "args": {"proposal": proposals.key(p), "to": due}})
-            return {"sends": sends}
-        return None
+                        f"{obligations.day(boss, p['lapses_at'])} unless one of them decides it, "
+                        f"on a5s's page. You can see it there, though only they decide it: "
+                        f"{gw.public_url}/decide/?proposal={p['digest']}")
+                route = gw.at_once(conn, boss.id, p["definition"])
+                if route["channel"] == "batch":
+                    urgent.hold(conn, boss.id, None, p["instance_id"], None, text, now)
+                else:
+                    sends.append(outbound(conn, route, boss.id, text, instance=p["instance_id"],
+                                          agent=p["definition"]))
+            escalated = [*(p["escalated"] or []), *(b.id for b in working)]
+            conn.execute("update proposals set escalated = %s, escalated_at = coalesce("
+                         "escalated_at, %s), escalate_at = %s where id = %s",
+                         (escalated, now if working else None,
+                          later if len(working) < len(due) else None, p["id"]))
+            if working:
+                ledger.append(conn, {"kind": "proposal", "action": "escalate",
+                                     "run": str(p["run_id"]), "instance": p["instance_id"],
+                                     "acts_for": list(p["acts_for"]), "decision": "record",
+                                     "of": p["seq"], "args": {"proposal": proposals.key(p),
+                                                              "to": [b.id for b in working]}})
+        elif p["escalate_at"] is not None and now >= p["escalate_at"]:
+            conn.execute("update proposals set escalate_at = %s where id = %s", (later, p["id"]))
+        return {"sends": sends}
+
 
     @app.post("/samples/sweep", dependencies=[Depends(service)])
     def sweep_samples() -> dict:
-        """Weigh the grades of each release's samples, for each part and type of action, and
-        raise or lower a5s's cap where they now show it should (core/samples.py)."""
-        changed = []
+        """Weigh the sealed grades of each behaviour's samples, for each part and type of
+        action, and raise or lower a5s's cap where they now show it should (core/samples.py),
+        telling the owners of the instances it governs. Samples nobody graded in a quarter
+        lapse. While the settings in force don't check out, nothing is weighed."""
+        changed, now = [], gw.clock()
+        if not gw.cfg.seal_keys:  # a cap counts only as the core sealed it
+            return {"changed": [], "weighed": "nothing, since the core has no key to seal caps"}
         with db.transaction(gw.url) as conn:
             if not conn.execute("select pg_try_advisory_xact_lock(hashtext('a5s samples')) as got"
                                 ).fetchone()["got"]:
                 return {"changed": []}  # another sweep is at work
-            settings, _ = gw.settings_in_force(conn)
-            thresholds = settings.thresholds if settings else {}
-            for row in conn.execute("select distinct release, part, action from samples "
-                                    "where grade is not null").fetchall():
-                found = samples.assess(conn, row["release"], row["part"], row["action"],
-                                       thresholds.get(row["part"]), gw.clock())
+            lapsed = samples.lapse(conn, now)
+            settings, problem = gw.settings_in_force(conn)
+            if settings is None:
+                return {"changed": [], "lapsed": lapsed, "weighed": f"nothing, since {problem}"}
+            for row in conn.execute(
+                    "select distinct b.behaviour, s.part, s.action from samples s join behaviours b "
+                    "on b.release = s.release and b.action = s.action where s.grade is not null"
+                    ).fetchall():
+                found = samples.assess(conn, gw.cfg.seal_keys, row["behaviour"], row["part"],
+                                       row["action"], settings.thresholds.get(row["part"]), now)
                 if found:
-                    ledger.append(conn, {"kind": "cap", "action": "raise" if found["cap"] >= 2
-                                         else "lower", "run": None, "instance": None,
-                                         "acts_for": [], "decision": "record", "args": found})
                     changed.append(found)
-        return {"changed": changed}
+                    capped(conn, found, now)
+        return {"changed": changed, "lapsed": lapsed}
+
+    def capped(conn: psycopg.Connection, found: dict, now: datetime) -> None:
+        """Tell the owners and deputies of the instances a cap governs that it changed, in
+        their digest."""
+        rows = conn.execute(
+            "select i.id, i.definition, i.owner, i.deputy from instances i join behaviours b on "
+            "b.release = i.release where b.behaviour = %s and b.action = %s and i.status = 'active'",
+            (found["behaviour"], found["action"])).fetchall()
+        for inst in rows:
+            text = (f"a5s's cap on {inst['id']} for {found['action']} in {found['part']} is now "
+                    f"{found['cap']}: {found['why']}" + (
+                        f", on {found['graded']} grades, {found['errors']} of them wrong."
+                        if "graded" in found else "."))
+            for person in dict.fromkeys(p for p in (inst["owner"], inst["deputy"]) if p):
+                digests.keep(conn, person, inst["definition"], inst["id"], None, text, now)
+
+    @app.get("/proposals", dependencies=[Depends(service)])
+    def list_proposals() -> dict:
+        """The held changes that wait, or that a5s stopped part way through making, for the
+        team that runs it: what each does, whom it's for, and since when."""
+        with db.transaction(gw.url) as conn:
+            rows = conn.execute("select * from proposals where scenario = %s and status in "
+                                "('waiting', 'making') order by id", (gw.scenario.name,)).fetchall()
+        return {"proposals": [{"key": proposals.key(r), "status": r["status"],
+                               "proposed_at": r["proposed_at"].isoformat(),
+                               "decided_at": r["decided_at"].isoformat() if r["decided_at"] else None,
+                               "for": list(r["acts_for"]), "change": proposals.first(r)}
+                              for r in rows]}
+
+    @app.post("/proposals/{key}/end", dependencies=[Depends(service)])
+    def end_proposal(key: str, body: StatusChange) -> dict:
+        """End a held change a5s stopped part way through making, at the word of someone who
+        may, once they've checked the records system for it: the instance's owner or deputy,
+        an owner of a part it touches, an instance approver, or assurance. Whoever it was for
+        is told."""
+        by, identity = who_asks(body)
+        number = key.removeprefix("P-")
+        with db.transaction(gw.url) as conn:
+            p = conn.execute("select * from proposals where id = %s and scenario = %s for update",
+                             (int(number) if number.isdigit() else -1, gw.scenario.name)).fetchone()
+            if p is None or p["status"] != "making":
+                raise HTTPException(409, f"{key} isn't a change a5s stopped part way through making")
+            inst = conn.execute("select owner, deputy from instances where id = %s",
+                                (p["instance_id"],)).fetchone()
+            person = gw.scenario.person(by)
+            may = {*(f"{PART_OWNER}:{part}" for part in p["parts"]), INSTANCE_APPROVER, ASSURANCE}
+            minders = (inst["owner"], inst["deputy"]) if inst else ()
+            if person is None or not (may & set(person.roles) or by in minders):
+                raise HTTPException(403, f"{by} may not end {key}")
+            going = ended(conn, p, "stopped", [{"person": by}], gw.clock())
+            ledger.append(conn, {"kind": "admin", "action": "end-change", "run": str(p["run_id"]),
+                                 "instance": p["instance_id"], "acts_for": list(p["acts_for"]),
+                                 "decision": "record", "args": {"proposal": key, "by": by,
+                                                                "identity": identity}})
+        push(going["sends"])
+        return {"ended": key, "by": by}
+
+    @app.post("/caps/lower", dependencies=[Depends(service)])
+    def lower_cap(body: CapChange) -> dict:
+        """Lower an agent's cap for a type of action in a part to 1, at the word of someone who
+        may: the part's owners, the instance approvers, the agent's owners, or assurance.
+        Anyone with the role makes a5s safer alone; only graded samples raise a cap."""
+        by, identity = who_asks(body)
+        person = gw.scenario.person(by)
+        may = {f"{PART_OWNER}:{body.part}", INSTANCE_APPROVER, f"agent-owner:{body.agent}",
+               ASSURANCE}
+        if person is None or not may & set(person.roles):
+            raise HTTPException(403, f"{by} may not lower the {body.agent}'s cap in {body.part}")
+        definition = gw.definitions.get(body.agent)
+        if definition is None:
+            raise HTTPException(404, f"no release here has an agent called {body.agent}")
+        if not gw.cfg.seal_keys:
+            raise HTTPException(503, "the core has no key to seal caps with: see A5S_SEAL_KEYS")
+        with db.transaction(gw.url) as conn:
+            found = samples.lower(conn, gw.cfg.seal_keys, definition.release_id, body.part,
+                                  body.action, by, gw.clock())
+            if found:
+                found["identity"] = identity
+                capped(conn, found, gw.clock())
+        return {"lowered": bool(found), "cap": 1}
 
     @app.post("/deliveries/sweep", dependencies=[Depends(service)])
     def sweep_deliveries() -> dict:

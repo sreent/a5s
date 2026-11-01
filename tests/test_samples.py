@@ -3,12 +3,19 @@ the team that built the agent grade them; and an anytime-valid sequential test r
 cap on its level to 2 once the grades show it meets the part's threshold, and lowers it when
 they show it falls short, or at once on a critical error."""
 
+import base64
+import hashlib
+import secrets
+from dataclasses import replace
+from urllib.parse import parse_qs
+
 import httpx
 import pytest
 
 from a5s import db
 from a5s.contract import record_of
 from a5s.core import samples
+from conftest import CLIENT, seal_grades
 from test_levels import asked, levelled
 from test_proposals import decide, held, sweep
 
@@ -34,7 +41,8 @@ def graded(stack, n: int, wrong: int = 0, critical: int = 0, part: str = "billin
                 "part, action, said, records, acts_for, drawn_at, grade, graded_by, graded_at) "
                 "values ('sample', 'proposal', gen_random_uuid(), 'assistant-finance', %s, "
                 "'assistant', %s, 'change-due-date', 'a change', '{}', '{ben}', now(), %s, "
-                "'dana', now())", (release(stack), part, grade))
+                "'dana', %s)", (release(stack), part, grade, stack.gateway.clock()))
+    seal_grades(stack)
 
 
 def weigh(stack) -> list[dict]:
@@ -46,12 +54,25 @@ def weigh(stack) -> list[dict]:
 
 def cap(stack, part: str = "billing") -> int:
     with db.transaction(stack.admin) as conn:
-        return samples.cap(conn, release(stack), part, "change-due-date")
+        return samples.caps(conn, stack.gateway.cfg.seal_keys, release(stack)).get(
+            (part, "change-due-date"), 1)
 
 
 def grade(url: str, provider, sample: int, how: str, person: str = "dana") -> httpx.Response:
-    return httpx.post(f"{url}/grade/samples/{sample}", json={"grade": how},
-                      headers={"Authorization": f"Bearer {provider.id_token(person=person)}"})
+    """A grade, given as the page gives it, with a sign-in made afresh to give it."""
+    salt, verifier = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
+    challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=")
+    provider.person = person
+    query = {"client_id": CLIENT, "redirect_uri": f"{url}/grade/", "state": "s",
+             "nonce": samples.nonce({sample: how}, salt), "code_challenge": challenge.decode(),
+             "code_challenge_method": "S256", "max_age": "0"}
+    went = httpx.get(f"{provider.url}/auth", params=query)
+    code = parse_qs(went.headers["location"].split("?", 1)[1])["code"][0]
+    token = httpx.post(f"{url}/grade/token", json={
+        "grant_type": "authorization_code", "code": code, "code_verifier": verifier,
+        "redirect_uri": f"{url}/grade/"}).json()["id_token"]
+    return httpx.post(f"{url}/grade/samples", json={"grades": {str(sample): how}, "salt": salt},
+                      headers={"Authorization": f"Bearer {token}"})
 
 
 @pytest.mark.parametrize("threshold, errors, items", [(0.98, 0, 224), (0.95, 0, 88),
@@ -151,6 +172,7 @@ def test_a_critical_error_lowers_the_cap_at_once(stack):
     graded(stack, 224)
     weigh(stack)
     assert cap(stack) == 2
+    stack.at("2026-10-28T12:05:00+00:00")  # graded after the cap rose
     graded(stack, 1, critical=1)
     [lowered] = weigh(stack)
     assert (lowered["cap"], lowered["why"]) == (1, "a critical error")
@@ -160,6 +182,7 @@ def test_a_critical_error_lowers_the_cap_at_once(stack):
 def test_grades_that_fall_short_lower_the_cap(stack):
     graded(stack, 224)
     weigh(stack)
+    stack.at("2026-10-28T12:05:00+00:00")  # graded after the cap rose: a fresh test
     graded(stack, 60, wrong=30)
     [lowered] = weigh(stack)
     assert lowered["cap"] == 1 and lowered["why"] == "graded samples show it falls short"
@@ -175,6 +198,10 @@ def test_a_part_with_no_threshold_never_earns_level_2(stack):
 
 
 def test_a_decider_whose_approvals_are_graded_wrong_far_more_is_flagged(stack):
+    """Only once the data protection officer agrees, which the deployment says (O6)."""
+    with stack.client() as c:
+        assert c.get("/status").json()["samples"]["rubber_stamps"] is None  # off, by default
+    stack.gateway.cfg = replace(stack.gateway.cfg, flag_rubber_stamps=True)
     with db.transaction(stack.admin) as conn:
         for who, wrong, right in (("ana", 4, 2), ("omar", 1, 30)):
             for i in range(wrong + right):
@@ -211,5 +238,6 @@ def test_a_grader_grades_in_the_browser(stack, approving, provider, browser):
     assert page.inner_text("#who") == "Dana Price"
     assert page.inner_text("article h3") == "assistant, change-due-date in billing: asked for, and approved"
     page.click("article button >> text=Right")
+    page.click("#send")
     page.wait_for_selector("#status >> text=Graded right", timeout=30000)
     assert drawn(stack)[0]["grade"] == "right"

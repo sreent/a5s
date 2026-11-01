@@ -15,8 +15,9 @@ people:
   - {id: omar, name: Omar Haddad, team: operations, roles: [part-owner:orders],
      timezone: Asia/Singapore,
      identities: ["entra:0a5a0000-0000-4000-8000-00000000d0d4", "matrix:@omar:a5s.test"]}
-  # Grades samples of agents' changes in billing, from outside the team that builds them
-  - {id: dana, name: Dana Price, team: finance, manager: ana, roles: [grader],
+  # Grades samples of agents' changes in billing: from outside the team that builds them,
+  # and the teams that run them and decide their changes, and reporting to none of them
+  - {id: dana, name: Dana Price, team: quality, manager: kofi, roles: [grader],
      timezone: Europe/London,
      identities: ["entra:0a5a0000-0000-4000-8000-00000000e0e5", "matrix:@dana:a5s.test"]}
 
@@ -29,10 +30,10 @@ people:
   - {id: kofi, name: Kofi Mensah, team: audit, timezone: Europe/London, roles: [assurance]}
 
 # The parts of the business, each owned by whoever holds part-owner:<part> above. Each
-# record is in one. Its team may see its records, and so may each record's owner and
-# whoever is above them.
+# record is in one. Its team may see its records, and so may any team it names as seeing
+# them, each record's owner, and whoever is above them.
 parts:
-  billing: {team: finance}  # invoices, refunds and billing contacts
+  billing: {team: finance, seen_by: [quality]}  # invoices, refunds and billing contacts
   orders: {team: operations}  # deliveries
 
 # Each open record is an obligation for its owner, from the start of their working

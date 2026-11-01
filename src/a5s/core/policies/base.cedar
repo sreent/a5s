@@ -44,12 +44,15 @@ when { resource.writes && context.level < 1 };
 @id("lasting-or-outside-effects-need-level-2")
 @reason("a tool that can't be undone, or that sends outside the organisation, needs level 2")
 forbid (principal is Instance, action == Action::"call_tool", resource is Tool)
-when { (resource.destructive || resource.sends_outside) && context.level < 2 };
+when { (resource.destructive || resource.sends_outside) && context.level < 2 && resource.action == "" };
 
 @id("marked-runs-never-act-at-level-2")
 @reason("a run that has read outside content can't act at level 2")
 forbid (principal is Instance, action == Action::"call_tool", resource is Tool)
-when { resource.writes && context.read_outside && context.level >= 2 };
+when {
+  (resource.writes || resource.destructive || resource.sends_outside)
+  && context.read_outside && context.level >= 2
+};
 
 @id("instances-work-only-in-their-parts")
 @reason("the record is in a part the instance doesn't work in")

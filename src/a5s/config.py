@@ -81,6 +81,9 @@ class Config:
     # the core holds them. The first seals; any others are ones it's moving away from.
     seal_keys: tuple[str, ...] = ()
     public_url: str | None = None  # where people reach the channels, for links: else channels_url
+    # Whether the status names deciders whose approvals are graded wrong far more often than
+    # others': profiling people, so only once the data protection officer agrees [TBC: O6].
+    flag_rubber_stamps: bool = False
 
     @property
     def agents_dir(self) -> Path:
@@ -122,4 +125,6 @@ class Config:
             else None,
             seal_keys=tuple(k.strip() for k in seal.split(",") if k.strip()),
             public_url=os.environ.get("A5S_PUBLIC_URL", "").rstrip("/") or None,
+            flag_rubber_stamps=os.environ.get("A5S_FLAG_RUBBER_STAMPS", "").lower()
+            in ("1", "true", "yes"),
         )

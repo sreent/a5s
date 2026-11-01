@@ -79,7 +79,8 @@ class SampleScenario:
               value text not null,
               made_for text not null,
               at timestamptz not null default now()
-            )
+            );
+            create index if not exists sample_changes_by_key on sample.changes (key, id)
         """)
         conn.execute(sql.SQL(
             "grant usage on schema sample to {role}; "
@@ -101,12 +102,13 @@ class SampleScenario:
         return found.get("part") if found else None
 
     def sees(self, person: str, record: str) -> bool:
-        """The team whose part it's in may see a record, and so may its owner and whoever is
-        above them."""
+        """The team whose part it's in may see a record, and so may any team the part names as
+        seeing its records, its owner and whoever is above them."""
         found, who = self._records.get(record), self._people.get(person)
         if found is None or who is None:
             return False
-        if (self._parts.get(found.get("part")) or {}).get("team") == who.team:
+        part = self._parts.get(found.get("part")) or {}
+        if who.team == part.get("team") or who.team in (part.get("seen_by") or ()):
             return True
         above, seen = self._people.get(found["owner"]), set()
         while above is not None and above.id not in seen:
@@ -237,8 +239,7 @@ class SampleScenario:
                 outside=("body",),  # the customer's own words, which no agent sees
                 extract={"asks_for": "choice:a refund|a copy of an invoice|a new due date|"
                                      "a change of address|something else",
-                         "amount": "amount", "date": "date", "question": "key",
-                         "reply_to": "handle"},
+                         "amount": "amount", "date": "date", "question": "key"},
             ),
             Tool(
                 name="change_due_date",

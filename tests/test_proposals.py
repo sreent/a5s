@@ -81,7 +81,8 @@ def test_a_change_below_level_2_waits_for_the_owner_of_its_part(stack, approving
     assert (p["deciders"], p["acts_for"], p["action"], p["status"]) == (
         ["ana"], ["ben"], "change-due-date", "waiting")
     assert p["said"].startswith("Change a customer question's due date: Q-1002, with due 2026-11-13.")
-    assert "as it stands: status waiting on finance, due date 2026-11-06" in p["said"]
+    assert ("as it stood when it was asked for: status waiting on finance, due date 2026-11-06"
+            in p["said"])
     holds = [e for e in stack.ledger() if e["kind"] == "tool" and e["action"] == "change_due_date"]
     assert [e["decision"] for e in holds] == ["hold"]
     [card] = [m for m in stack.inbox("ana") if m["text"].startswith("P-1 waits")]
@@ -177,13 +178,25 @@ def test_a_decision_is_signed_for_that_decision_on_that_change_alone(stack, appr
 
 def test_changes_that_arent_sensitive_can_be_decided_together(stack, approving, provider):
     asked(stack)
-    asked(stack, ("close_question", {"key": "Q-1002"}), said="And close Q-1002.")
+    asked(stack, ("close_question", {"key": "Q-1001"}), said="And close Q-1001.")
     digests = [p["digest"] for p in held(stack)]
     together = decide(approving, provider, digests)
     assert together.status_code == 200 and together.json()["decided"] == ["P-1", "P-2"]
     sweep(stack)
     assert [p["status"] for p in held(stack)] == ["made", "made"]
-    assert record_of(stack.gateway.scenario, "Q-1002").fields["status"] == "closed"
+    assert record_of(stack.gateway.scenario, "Q-1001").fields["status"] == "closed"
+
+
+def test_of_two_changes_to_one_record_approved_together_the_second_waits_its_turn(
+        stack, approving, provider):
+    """Each is made only if its record is as it stood when it was asked for: once the first
+    is made, the second's record has changed, so it isn't made, and Ben is told why."""
+    asked(stack)
+    asked(stack, ("close_question", {"key": "Q-1002"}), said="And close Q-1002.")
+    decide(approving, provider, [p["digest"] for p in held(stack)])
+    sweep(stack)
+    assert [p["status"] for p in held(stack)] == ["made", "not made"]
+    assert any("Q-1002 changed after it was asked for" in m["text"] for m in stack.inbox("ben"))
 
 
 def test_a_sensitive_change_is_decided_on_its_own(stack, approving, provider):
@@ -301,7 +314,8 @@ def test_a_decider_reviews_and_approves_in_the_browser(stack, approving, provide
     assert page.inner_text("#who") == "Ana Ortiz"
     assert "max_age" not in provider.asked[-1]  # seeing what waits needs no fresh sign-in
     assert page.inner_text("article h3") == "P-1"
-    assert "as it stands: status waiting on finance" in page.inner_text("article .said")
+    assert "as it stood when it was asked for: status waiting on finance" in page.inner_text(
+        "article .said")
     assert page.locator("article .flags li").all_inner_texts() == [
         "2026-11-13 came from the assistant itself, not from the records or from Ben Okafor"]
     page.click("article button >> text=Approve")  # afresh, for this decision alone

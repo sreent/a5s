@@ -34,8 +34,8 @@ def about(scenario: Scenario, run: dict, records: list[str], action: str | None 
     levels = [_level(scenario, run, p, action, set(approved), caps or {})
               for p in touched if p in parts]
     level = min(levels) if levels else run["level"]
-    if action and (not records or run.get("read_outside")):
-        level = min(level, 1)
+    if action and (not levels or None in touched or run.get("read_outside")):
+        level = min(level, 1)  # level 2 is for a type set in a record's part, and nothing else
     return {"level": level,
             "in_scope": all(p is None or p in parts for p in touched),
             "visible": all(scenario.sees(who, r) for r in records for who in run["acts_for"])}

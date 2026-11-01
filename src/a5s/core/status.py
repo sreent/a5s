@@ -22,8 +22,10 @@ from a5s.core import samples
 OBJECTIVES = {"reply_seconds_p90": 120, "chased_on_time": 0.95}
 
 
-def report(conn: psycopg.Connection, breakers: list[str]) -> dict[str, Any]:
-    """The last day's status, by the database's clock."""
+def report(conn: psycopg.Connection, breakers: list[str], keys: tuple[str, ...] = (),
+           rubber_stamps: bool = False) -> dict[str, Any]:
+    """The last day's status, by the database's clock. `keys` are the core's seal keys, for
+    the caps that count; deciders are named for rubber stamps only if `rubber_stamps`."""
     queue = conn.execute(
         "select count(*) as waiting, extract(epoch from now() - min(received_at)) as oldest "
         "from inbound where answered_at is null and (retry_at is null or retry_at <= now())"
@@ -54,11 +56,19 @@ def report(conn: psycopg.Connection, breakers: list[str]) -> dict[str, Any]:
     changes = conn.execute(
         "select count(*) filter (where status = 'waiting') as waiting, "
         "extract(epoch from now() - min(proposed_at) filter (where status = 'waiting')) as oldest, "
-        "count(*) filter (where status = 'making') as stuck from proposals").fetchone()
-    graded = conn.execute("select count(*) filter (where grade is null) as waiting from samples"
-                          ).fetchone()
-    raised = conn.execute("select release, part, action, since from caps where cap >= 2 "
-                          "order by release, part, action").fetchall()
+        "count(*) filter (where status = 'making' and decided_at < now() - interval '10 minutes') "
+        "as stuck, count(*) filter (where status = 'not made' and ended_at > now() - interval "
+        "'1 day') as not_made, count(*) filter (where status = 'lapsed' and ended_at > now() - "
+        "interval '1 day') as lapsed from proposals").fetchone()
+    graded = conn.execute(
+        "select count(*) filter (where grade is null and lapsed_at is null) as waiting, "
+        "count(*) filter (where lapsed_at > now() - interval '91 days') as lapsed from samples"
+    ).fetchone()
+    raised = sorted(samples.standing_caps(conn, keys, "cap >= 2"),
+                    key=lambda r: (r["part"], r["action"]))
+    lowered = conn.execute("select count(*) as n from ledger where kind = 'cap' and action = "
+                           "'lower' and (entry::jsonb ->> 'at')::timestamptz > now() - "
+                           "interval '1 day'").fetchone()
     stopped = conn.execute(
         "select id, status, suspended_by from instances where status <> 'active' order by id"
     ).fetchall()
@@ -84,11 +94,13 @@ def report(conn: psycopg.Connection, breakers: list[str]) -> dict[str, Any]:
                        "left_in_inbox": deliveries["left_in_inbox"]},
         "urgent_held": {"messages": held["n"], "people": held["people"]},
         "changes": {"waiting": changes["waiting"], "oldest_seconds": _number(changes["oldest"]),
-                    "stuck": changes["stuck"]},
-        "samples": {"to_grade": graded["waiting"],
-                    "level_2": [{"release": r["release"], "part": r["part"], "action": r["action"],
+                    "stuck": changes["stuck"], "not_made": changes["not_made"],
+                    "lapsed": changes["lapsed"]},
+        "samples": {"to_grade": graded["waiting"], "lapsed": graded["lapsed"],
+                    "level_2": [{"part": r["part"], "action": r["action"],
                                  "since": r["since"].isoformat()} for r in raised],
-                    "rubber_stamps": samples.rubber_stamps(conn)},
+                    "caps_lowered": lowered["n"],
+                    "rubber_stamps": samples.rubber_stamps(conn) if rubber_stamps else None},
         "not_active": [dict(r) for r in stopped],
         "breakers_open": breakers,
         "objectives": {
@@ -142,16 +154,23 @@ def told(status: dict[str, Any]) -> str:
             f"{status['changes']['waiting']}, the oldest for "
             f"{status['changes']['oldest_seconds'] / 86400:.0f} days"
             if status["changes"]["waiting"] else "none")
-        + (f"; {status['changes']['stuck']} stopped part way through being made"
-           if status["changes"]["stuck"] else "") + ".",
+        + (f"; {status['changes']['stuck']} stopped part way through being made "
+           "(a5s proposals)" if status["changes"]["stuck"] else "")
+        + (f"; {status['changes']['not_made']} approved but not made, and "
+           f"{status['changes']['lapsed']} lapsed, in the last day"
+           if status["changes"]["not_made"] or status["changes"]["lapsed"] else "") + ".",
         "  Samples waiting to be graded: " + (str(status["samples"]["to_grade"])
-                                              if status["samples"]["to_grade"] else "none") + ".",
-        "  Earned level 2: " + ("; ".join(f"{r['action']} in {r['part']}, by {r['release']}"
+                                              if status["samples"]["to_grade"] else "none")
+        + (f"; {status['samples']['lapsed']} lapsed ungraded this quarter"
+           if status["samples"]["lapsed"] else "") + ".",
+        "  Earned level 2: " + ("; ".join(f"{r['action']} in {r['part']}"
                                           for r in status["samples"]["level_2"]) or "nothing")
-        + ".",
-        "  Approvals graded wrong far more than others': " + (
+        + (f"; {status['samples']['caps_lowered']} caps lowered in the last day"
+           if status["samples"]["caps_lowered"] else "") + ".",
+        *(["  Approvals graded wrong far more than others': " + (
             ", ".join(f"{r['person']}, {r['graded_wrong']} of {r['approved']}"
-                      for r in status["samples"]["rubber_stamps"]) or "nobody") + ".",
+                      for r in status["samples"]["rubber_stamps"]) or "nobody") + "."]
+          if status["samples"]["rubber_stamps"] is not None else []),
         "  Urgent messages held for a batch: " + (
             f"{status['urgent_held']['messages']} for {status['urgent_held']['people']} "
             + ("person" if status["urgent_held"]["people"] == 1 else "people")

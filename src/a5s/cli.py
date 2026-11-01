@@ -335,6 +335,17 @@ def main(argv: list[str] | None = None) -> None:
         p.add_argument("--by", help="who you are, in development; else your sign-in in A5S_TOKEN")
     sub.add_parser("status", help="how a5s is doing: its queue, runs, denials, budgets and "
                                   "objectives")
+    held = sub.add_parser("proposals", help="the held changes that wait, or that a5s stopped "
+                                            "part way through making; or end one of those")
+    held.add_argument("end", nargs="?", choices=["end"], help="end a change a5s stopped making")
+    held.add_argument("key", nargs="?", help="the change, such as P-12")
+    held.add_argument("--by", help="who you are, in development; else your sign-in in A5S_TOKEN")
+    caps = sub.add_parser("caps", help="lower an agent's cap for a type of action in a part")
+    caps.add_argument("what", choices=["lower"])
+    caps.add_argument("agent")
+    caps.add_argument("part")
+    caps.add_argument("action")
+    caps.add_argument("--by", help="who you are, in development; else your sign-in in A5S_TOKEN")
     copy = sub.add_parser("anchor", help="copy the ledger to locked storage")
     copy.add_argument("--every", type=int, metavar="SECONDS", help="keep copying, this often")
     rel = sub.add_parser("release", help="approve a release of a5s for this deployment")
@@ -407,6 +418,19 @@ def main(argv: list[str] | None = None) -> None:
         _anchor(cfg, args.every)
     elif args.command == "status":
         print(status.told(_admin(cfg, "/status")))
+    elif args.command == "proposals" and args.end:
+        if not args.key:
+            sys.exit("name the change to end, such as P-12")
+        print(_admin(cfg, f"/proposals/{args.key}/end",
+                     {"by": args.by, "identity": os.environ.get("A5S_TOKEN")}))
+    elif args.command == "proposals":
+        for p in _admin(cfg, "/proposals")["proposals"]:
+            print(f"{p['key']} {p['status']} since {p['decided_at'] or p['proposed_at']}, "
+                  f"for {', '.join(p['for']) or 'nobody'}: {p['change']}")
+    elif args.command == "caps":
+        print(_admin(cfg, "/caps/lower", {"agent": args.agent, "part": args.part,
+                                          "action": args.action, "by": args.by,
+                                          "identity": os.environ.get("A5S_TOKEN")}))
     elif args.command == "release":
         _release(cfg, args)
     elif args.command == "ledger" and args.what == "verify":

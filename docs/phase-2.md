@@ -1,6 +1,6 @@
 # Phase 2
 
-**Status:** Built, 31 October 2026, apart from outside senders ([progress](#progress)) · Round 6 of the critique comes next · **Under:** [Architecture](architecture.md)
+**Status:** Built, 31 October 2026, apart from outside senders ([progress](#progress)) · Round 6 of the critique has read it, and what it found is fixed · **Under:** [Architecture](architecture.md)
 
 Phase 2 lets agents act. In [phase 1](phase-1.md) they read, report, draft and remind, and change no data. In phase 2 an agent can propose a change, which the owner of what it touches decides on the core's own page. Once samples, graded by people outside the team that built it, show it's accurate enough, it can make changes of a type the part owner approves, within the scenario's limits, telling someone each time. Content from outside, such as a customer's email, reaches agents only through the extractor, and a run that has read some never acts on its own.
 
@@ -11,10 +11,10 @@ Proposed here, for whoever runs a5s to confirm:
 | Decision | Proposed |
 | --- | --- |
 | What agents can change in the sample | The assistant can change a customer question's due date, and close one, in the sample's records system. Each is a type of action: `change-due-date` and `close-question`. |
-| Who decides a held change | The owners of the part its record is in, never anyone the run acts for. Where nobody else may decide, a5s doesn't hold the change: the agent drafts it for the person to make themselves. |
+| Who decides a held change | The owners of each part its records are in, and anyone they name to decide beside them (`part-delegate:<part>`), with an approval for each part, never anyone the run acts for. Where nobody else may decide, a5s doesn't hold the change: the agent drafts it for the person to make themselves. |
 | Which decisions take a sign-in each | Decisions on sensitive changes: a tool that can't be undone or sends outside the organisation, or a value of a class of its own. Others can be decided together, with one sign-in that names each of them. |
-| How long a held change waits | Its deciders are reminded once after 2 working days, their managers are told after 5, and it lapses after 10 ([starting values](starting-values.md#phase-2)) |
-| Who grades | People who hold the `grader` role, never from the team of the agent's owner, and only for records they may see [TBC: who, in each deployment] |
+| How long a held change waits | Each decider is reminded once after 2 working days, in their own hours; once reminded, their managers, or the instance's owner, are told after 5, and it lapses after 10 ([starting values](starting-values.md#phase-2)) |
+| Who grades | People who hold the `grader` role, never from the team of the agent's owner or of the instance's owner or deputy, nor reporting to whoever decided the change, and only for records they may see [TBC: who, in each deployment] |
 | Thresholds | Each part's, in its settings. The sample: billing 98%, orders 95%. |
 | The sequential test | Anytime-valid, at 95% confidence, so checking after every grade doesn't make a level-up likelier by chance. With no errors, a 98% threshold needs 224 graded items and a 95% one 88, more than the 149 and 59 a test of fixed size needs, which the starting values quoted until now. |
 | Outside content in the sample | Made-up emails from each record's customer |
@@ -35,9 +35,9 @@ Each step ends with something running and its tests passing.
    - At level 2, a call runs, and is reported: in the digest of the instance's owner, with a link to the record, and to whoever the run acted for. The owner reverses one through the scenario's own process.
    - A run that has read outside content works at level 1 at most, so what it would change is held.
 4. **Samples, grades and the cap.**
-   - a5s keeps a cap for each release, part and type of action, and an instance works at the lower of its setting and the cap. The cap starts at 1.
+   - a5s keeps a cap for each behaviour, part and type of action, and an instance works at the lower of its setting and the cap. A behaviour is the agent, its model and the tools of that type it may use, as pinned. The cap starts at 1.
    - Code draws samples: every held change once it's decided, while the cap is 1, and at level 2 enough actions for about 100 a quarter. Graders grade them on the core's page as right, wrong or critical, seeing what the agent proposed or did and the record as it stood.
-   - A sequential test, pooled across the release's instances, raises the cap when the evidence shows accuracy meets the part's threshold, and lowers it when the evidence shows it doesn't, or at once on a critical error. The ledger records each change of cap.
+   - A sequential test, pooled across the behaviour's instances, on the grades given since the cap last changed, raises the cap when the evidence shows accuracy meets the part's threshold, and lowers it when the evidence shows it doesn't, or at once on a critical error. The ledger records each change of cap.
    - The status flags a decider whose approvals are graded wrong more often than their peers'. A release that widens what an agent does starts at 1 for what it widens.
 5. **The extractor and marked runs.**
    - A scenario's tool says which fields of what it returns are outside content, and the fixed schema the extractor fills from them: keys, amounts, dates, choices from a list, and sensitive values, never free text.
@@ -51,7 +51,7 @@ Outside senders who can start work, with a limit of 20 requests a day each, wait
 
 - Each finding the [critique](critique.md) marks for phase 2 has a test in a5s's own suite that shows the code stops it: A2, A8, I1, I6, I7, I11, F5, C10, D5, O4, O8 and O10.
 - In the sample, the assistant holds a change of due date, its decider approves it on the core's page, and the change is made only if the record hasn't changed. Once graded samples raise its cap and the part's owner sets level 2, it makes such changes and reports them. A run that has read a customer's email can't make one.
-- Round 6 of the critique has read the code, and what it found is fixed.
+- Round 6 of the critique has read the code, and what it found is fixed ([round 6](critique.md#round-6-phase-2)).
 
 ## Progress
 
@@ -76,8 +76,8 @@ Step 4, samples, grades and the cap, is built:
 
 | Built | Where |
 | --- | --- |
-| Samples. Code draws samples of each release's changes, for each part and type of action: every held change someone decided, while the cap is 1, and at level 2 every change made until there are 100 in the quarter, each with what the agent asked for or did, in words code worked out, and its records as they stood. | [`core/samples.py`](../src/a5s/core/samples.py), [`core/gateway.py`](../src/a5s/core/gateway.py) |
-| Grades, on the core's own page. People who hold the grader role grade samples right, wrong or critical, once each: never anyone from the team of the agent's owner, nor anyone a change was for or who decided it, and only for records they may see. The sample has a grader, Dana Price, in finance. | [`core/webchat/grade.js`](../src/a5s/core/webchat/grade.js), [`core/inbox.py`](../src/a5s/core/inbox.py) |
+| Samples. Code draws samples of each release's changes, for each part and type of action: every held change someone decided, while the cap is 1, and at level 2 changes made, at random, about 100 a quarter, each with what the agent asked for or did, in words code worked out, what code flagged to its decider, and its records as they stood when it was asked for. | [`core/samples.py`](../src/a5s/core/samples.py), [`core/gateway.py`](../src/a5s/core/gateway.py) |
+| Grades, on the core's own page. People who hold the grader role grade samples right, wrong or critical, once each: never anyone from the team of the agent's owner, nor anyone a change was for or who decided it, and only for records they may see. The sample has a grader, Dana Price, in a quality team that may see billing's records. | [`core/webchat/grade.js`](../src/a5s/core/webchat/grade.js), [`core/inbox.py`](../src/a5s/core/inbox.py) |
 | The cap. Each minute an anytime-valid sequential test, pooled across the release's instances, weighs the grades for each release, part and type: it raises the cap to 2 once they show, with 95% confidence, that accuracy meets the part's threshold in the settings, and lowers it once they show it falls short, or at once on a critical error. A part with no threshold never earns level 2; the sample's are 98% for billing and 95% for orders. The ledger records each change of cap with its evidence, and the status shows what's earned level 2, what waits to be graded, and deciders whose approvals are graded wrong far more often than everyone else's. Graded samples go a year after they're graded. | [`core/samples.py`](../src/a5s/core/samples.py), [`core/status.py`](../src/a5s/core/status.py) |
 
 Step 5, the extractor and marked runs, is built:
@@ -90,5 +90,14 @@ Step 5, the extractor and marked runs, is built:
 | The sample's customers write: their emails are on each question, and one tells the agent that finance approved its refund and to move every due date. The assistant reads them with `get_messages`, its regression suite checks it does nothing an email says, and the tests show the email can't make a change at level 2. | [`scenarios/sample/data.yaml`](../scenarios/sample/data.yaml), [`agents/assistant/tests/outside.yaml`](../agents/assistant/tests/outside.yaml) |
 
 Still to do: a limit of 20 requests a day for each outside sender, once a scenario lets outside senders start work at all.
+
+Round 6's fixes, in brief ([round 6](critique.md#round-6-phase-2)):
+
+| Built | Where |
+| --- | --- |
+| Outside content, whatever its type and at any depth, goes only to the extractor, after need-to-know, with at most its first 24,000 characters, ten documents a call, within the run's budget. A run opens marked when its conversation holds a marked run's turn. | [`core/gateway.py`](../src/a5s/core/gateway.py), [`core/extractor.py`](../src/a5s/core/extractor.py) |
+| Level 2 only for a type of action set in a record's part. Each record a change names counts; a run for nobody counts against its instance; the same change is made once, and a tool gets a key for it. A level-2 change the system refuses isn't counted or reported; one made is reported, with what it replaced, to the owner and deputy, or the part's owners, and the person hears from a5s. | [`core/parts.py`](../src/a5s/core/parts.py), [`core/counts.py`](../src/a5s/core/counts.py), [`core/gateway.py`](../src/a5s/core/gateway.py) |
+| Each part approves a change in it, deciders are worked out afresh, the same change is matched across runs and listed in a run's context, reminders and escalations go in each person's hours, a rejection may say why, the page shows values, links and what changed since, and one failing change holds up no other in the sweep. | [`core/proposals.py`](../src/a5s/core/proposals.py), [`core/inbox.py`](../src/a5s/core/inbox.py), [`core/webchat/decide.js`](../src/a5s/core/webchat/decide.js) |
+| Caps kept for a behaviour, sealed with the ledger's entry; grades signed for afresh and sealed; a fresh test after each change of cap; thresholds kept with the cap; the evidence computed exactly. `a5s proposals` and `a5s caps lower` for the team that runs a5s. | [`core/samples.py`](../src/a5s/core/samples.py), [`core/webchat/grade.js`](../src/a5s/core/webchat/grade.js), [`cli.py`](../src/a5s/cli.py) |
 
 Held proposals didn't bring back the round-4 middleware that asked the core to explain a call before making it: a held call answers at once, with who decides, so the agent carries on.

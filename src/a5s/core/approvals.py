@@ -261,7 +261,9 @@ def described(settings: Settings, definitions: dict[str, Definition],
             run_by.append(f"with {words.names([deputy])} as deputy")
         told.append(f"{i.id}: the {i.definition}, {words.where(i)}, serving "
                     f"{words.names(i.serves)}" + (f", {' '.join(run_by)}" if run_by else "") + ".")
-        told += [f"{i.id} works at level {lv} for {action} in {part}."
+        told += [f"{i.id} works at level {lv} for {action} in {part}"
+                 + (", where it acts and reports, once graded samples show it's accurate "
+                    "enough: until then a5s holds it at level 1" if lv >= 2 else "") + "."
                  for (part, action), lv in sorted(words.actions(i).items())]
     if not settings.instances:
         told.append("No instances: every agent here is retired.")

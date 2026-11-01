@@ -486,3 +486,28 @@ def stack(database: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Ite
     with running(database, root, httpx.Client(transport=httpx.MockTransport(model.handler)),
                  model) as s:
         yield s
+
+
+def raise_cap(stack: Stack, part: str = "billing", action: str = "change-due-date",
+              cap: int = 2, instance: str = "assistant-finance") -> None:
+    """a5s's cap for an instance's release, as graded samples raise it: sealed by the core,
+    with the ledger entry that set it."""
+    from a5s.core import samples
+    with db.transaction(stack.admin) as conn:
+        release = conn.execute("select release from instances where id = %s",
+                               (instance,)).fetchone()["release"]
+        kind = samples.behaviour_of(conn, release, action)
+        assert kind, f"no behaviour for {release} and {action}"
+        samples.set_cap(conn, (SEAL_KEY,), kind, part, action, cap, "samples passed",
+                        stack.gateway.clock(), threshold=0.98)
+
+
+def seal_grades(stack: Stack) -> None:
+    """Seal the grades written straight into the database, as the grading page has the core
+    seal each grade it checked."""
+    from a5s.core import samples
+    with db.transaction(stack.admin) as conn:
+        for row in conn.execute("select * from samples where grade is not null "
+                                "and grade_seal is null").fetchall():
+            conn.execute("update samples set grade_seal = %s where id = %s",
+                         (samples.seal((SEAL_KEY,), row), row["id"]))

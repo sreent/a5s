@@ -12,7 +12,7 @@ import yaml
 from a5s import db
 from a5s.contract import parse_settings, record_of
 from a5s.core import approvals, registry
-from conftest import signed
+from conftest import raise_cap, signed
 
 MOVE = ("change_due_date", {"key": "Q-1002", "due": "2026-11-13"})
 
@@ -32,10 +32,8 @@ def levelled(stack, actions: dict | None = None, limits: dict | None = None, cap
         applied = registry.apply(conn, stack.gateway.definitions, scenario.settings(),
                                  scenario.tools(), scenario.person, scenario.name)
         assert not applied.refused, applied.refused
-        if cap:
-            conn.execute("insert into caps (release, part, action, cap, since, why) select "
-                         "release, 'billing', 'change-due-date', %s, now(), 'samples passed' "
-                         "from instances where id = 'assistant-finance'", (cap,))
+    if cap:
+        raise_cap(stack, cap=cap)
 
 
 def asked(stack, *calls, person: str = "ben", said: str = "Please move Q-1002 to 2026-11-13."):
@@ -66,7 +64,9 @@ def test_at_level_2_a_change_is_made_and_reported_to_the_instances_owner(stack, 
         assert conn.execute("select count(*) from proposals").fetchone()["count"] == 0
     assert item["text"] == (
         "The assistant made a change itself, at level 2, for Ben Okafor: Change a customer "
-        "question's due date: Q-1002, with due 2026-11-13. https://sample.a5s.dev/records/Q-1002")
+        "question's due date: Q-1002, with due 2026-11-13. Q-1002, Refund for a duplicate "
+        "payment, as it stood before: status waiting on finance, due date 2026-11-06, customer "
+        "Contoso. https://sample.a5s.dev/records/Q-1002")
 
 
 def test_level_2_waits_for_samples_to_raise_a5s_cap(stack, approving):
@@ -174,7 +174,9 @@ def test_approvers_read_level_2_and_limits_in_words(stack):
                     "where it acts and reports, once samples show it's accurate enough.",
             "widens": True} in found
     whole = approvals.described(after, stack.gateway.definitions, stack.gateway.scenario.person)
-    assert "assistant-finance works at level 2 for change-due-date in billing." in whole
+    assert ("assistant-finance works at level 2 for change-due-date in billing, where it acts "
+            "and reports, once graded samples show it's accurate enough: until then a5s holds "
+            "it at level 1.") in whole
 
 
 def test_the_core_refuses_an_instance_whose_action_levels_were_edited(stack):

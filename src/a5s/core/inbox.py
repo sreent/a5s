@@ -23,6 +23,7 @@ import re
 import time
 import uuid
 from collections.abc import Callable
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -35,8 +36,16 @@ from psycopg.types.json import Jsonb
 from pydantic import BaseModel
 
 from a5s import db
-from a5s.contract import Person, Settings, parse_settings
+from a5s.contract import (
+    INSTANCE_APPROVER,
+    PART_DELEGATE,
+    PART_OWNER,
+    Person,
+    Settings,
+    parse_settings,
+)
 from a5s.core import approvals, chats, ledger, matrix, proposals, registry, samples, topics
+from a5s.core.gateway import sanitize
 from a5s.core.identity import IdentityError, UnknownPerson, signed_in
 from a5s.core.teams import ONE_TO_ONE, UNKNOWN, Refused
 
@@ -71,17 +80,29 @@ class Approval(BaseModel):
 
 class Deciding(BaseModel):
     """What the decision page sends with a sign-in made to decide: the changes it decides, by
-    their digests, the decision, and the salt its nonce was made with."""
+    their digests, the decision, the salt its nonce was made with, and, for a rejection, why,
+    if the decider says."""
 
     proposals: list[str]
     decision: str
     salt: str
+    reason: str | None = None
 
 
 class Grade(BaseModel):
-    """A grader's grade of a sample of an agent's work."""
+    """A grader's grade of one sample of an agent's work, with the salt of the sign-in made
+    to give it."""
 
     grade: str
+    salt: str = ""
+
+
+class Grading(BaseModel):
+    """What the grading page sends with a sign-in made to grade: the grades, by sample, and the
+    salt its nonce was made with."""
+
+    grades: dict[int, str]
+    salt: str
 
 
 class Draft(BaseModel):
@@ -619,26 +640,49 @@ def create_app(gw: Any) -> FastAPI:
 
     @app.post("/decide/review")
     def review_proposals(authorization: str | None = Header(default=None)) -> dict:
-        """The held changes waiting for the decision of whoever signed in, and those they
-        decided lately, in the words code worked out when each was held."""
+        """The held changes whoever signed in may decide now, oldest first, since those lapse
+        first, as the directory stands now; those they were told of as a decider's manager,
+        which they may see but not decide; and those they decided lately. Each in the words
+        code worked out when it was asked for, with a link to each record, and whether it has
+        changed since."""
         approving()
         who, _ = sender(authorization, None)
         person = gw.scenario.person(who)
+        roles = person.roles if person else ()
+        mine = sorted({r.split(":", 1)[1] for r in roles
+                       if r.startswith((f"{PART_OWNER}:", f"{PART_DELEGATE}:"))})
         with db.transaction(gw.url) as conn:
             rows = conn.execute(
                 "select p.*, d.decision as yours from proposals p left join proposal_decisions d "
-                "on d.digest = p.digest and d.person = %s where p.scenario = %s and %s = any(p.deciders) "
-                "and (p.status = 'waiting' or p.ended_at > now() - interval '7 days') "
-                "order by p.id desc limit 50", (who, gw.scenario.name, who)).fetchall()
+                "on d.digest = p.digest and d.person = %(who)s where p.scenario = %(scenario)s "
+                "and ((p.status = 'waiting' and (p.parts && %(parts)s or %(who)s = any(p.escalated) "
+                "or (%(approver)s and cardinality(p.parts) = 0))) or (d.id is not null and "
+                "(p.ended_at is null or p.ended_at > %(week)s))) "
+                "order by (p.status = 'waiting') desc, p.id limit 500",
+                {"who": who, "scenario": gw.scenario.name, "parts": mine,
+                 "approver": INSTANCE_APPROVER in roles,
+                 "week": gw.clock() - timedelta(days=7)}).fetchall()
         shown = []
         for row in rows:
-            if row["status"] == "waiting" and not proposals.may_decide(gw.scenario, row, who):
+            waits = row["status"] == "waiting"
+            decides = waits and proposals.may_decide(gw.scenario, row, who)
+            if waits and not decides and who not in (row["escalated"] or []):
                 continue  # they no longer own what it touches, or may no longer see it
+            if len(shown) >= 50:
+                break
+            try:
+                changed = proposals.changed(gw.scenario, row) if waits else []
+            except Exception:  # the records system didn't answer: say so, rather than nothing
+                log.exception("couldn't read the records of %s", proposals.key(row))
+                changed = list(row["records"])
+            standing = row["standing"] or {}
             shown.append({"key": proposals.key(row), "digest": row["digest"], "said": row["said"],
                           "flags": row["flags"], "sensitive": row["sensitive"],
-                          "status": row["status"], "yours": row["yours"],
+                          "status": row["status"], "yours": row["yours"], "may_decide": decides,
                           "outcome": row["outcome"], "proposed_at": row["proposed_at"].isoformat(),
-                          "lapses_at": row["lapses_at"].isoformat()})
+                          "lapses_at": row["lapses_at"].isoformat(),
+                          "links": [r["link"] for r in standing.values() if r and r.get("link")],
+                          "changed": [f"{k} has changed since it was asked for" for k in changed]})
         return {"you": person.name if person else who, "proposals": shown}
 
     @app.post("/decide/proposals")
@@ -649,6 +693,11 @@ def create_app(gw: Any) -> FastAPI:
         digests = sorted(set(body.proposals))
         if not 1 <= len(digests) <= 20 or not all(re.fullmatch(r"[0-9a-f]{64}", d) for d in digests):
             raise HTTPException(400, "name from one to 20 changes to decide, by their digests")
+        reason = None
+        if body.reason and body.reason.strip() and body.decision == "reject":
+            if len(body.reason) > proposals.REASON:
+                raise HTTPException(400, f"say why in at most {proposals.REASON} characters")
+            reason, _ = sanitize(" ".join(body.reason.split()), gw.scenario.record_links)
         token = (authorization or "").removeprefix("Bearer ").strip()
         if not token:
             raise HTTPException(401, "sign in to decide: send your sign-in as a bearer token")
@@ -673,7 +722,7 @@ def create_app(gw: Any) -> FastAPI:
                                          "of its own")
             try:
                 proposals.record(conn, gw.cfg.seal_keys, gw.scenario.name, rows, body.decision,
-                                 person.id, token, body.salt, claims, gw.clock())
+                                 person.id, token, body.salt, claims, gw.clock(), reason)
             except proposals.Refused as exc:
                 raise HTTPException(exc.status, exc.reason) from None
             ledger.append(conn, {
@@ -718,41 +767,100 @@ def create_app(gw: Any) -> FastAPI:
 
     @app.post("/grade/review")
     def review_samples(authorization: str | None = Header(default=None)) -> dict:
-        """The samples waiting for a grade that whoever signed in may grade, oldest first."""
+        """The samples waiting for a grade that whoever signed in may grade, oldest first: read
+        in pages, leaving out in the query what it can, until 20 are found."""
         person = grader(authorization)
+        shown: list[dict] = []
+        after = 0
         with db.transaction(gw.url) as conn:
-            rows = conn.execute("select * from samples where scenario = %s and grade is null "
-                                "order by id limit 200", (gw.scenario.name,)).fetchall()
-        shown = [{"id": r["id"], "kind": r["kind"], "agent": r["definition"], "part": r["part"],
-                  "action": r["action"], "said": r["said"], "records": r["records"],
-                  "decided": r["decided"], "drawn_at": r["drawn_at"].isoformat()}
-                 for r in rows if samples.may_grade(gw.scenario, r, person) is None][:20]
-        return {"you": person.name, "samples": shown}
+            minders = {r["id"]: (r["owner"], r["deputy"]) for r in conn.execute(
+                "select id, owner, deputy from instances")}
+            while len(shown) < 20:
+                rows = conn.execute(
+                    "select * from samples where scenario = %s and grade is null and lapsed_at "
+                    "is null and id > %s and not (%s = any(acts_for)) and decided_by is distinct "
+                    "from %s order by id limit 200",
+                    (gw.scenario.name, after, person.id, person.id)).fetchall()
+                if not rows:
+                    break
+                after = rows[-1]["id"]
+                shown += [{"id": r["id"], "kind": r["kind"], "agent": r["definition"],
+                           "part": r["part"], "action": r["action"], "said": r["said"],
+                           "records": r["records"], "flags": r["flags"],
+                           "decided": r["decided"], "drawn_at": r["drawn_at"].isoformat()}
+                          for r in rows if samples.may_grade(
+                              gw.scenario, r, person, minders.get(r["instance_id"], ())) is None]
+        return {"you": person.name, "samples": shown[:20]}
+
+    @app.post("/grade/samples")
+    def grade_samples(body: Grading, authorization: str | None = Header(default=None)) -> dict:
+        """Grades of samples, signed through the identity provider for exactly those grades of
+        exactly those samples, by someone who may grade each, once. The core seals each."""
+        return grading(body.grades, body.salt, authorization)
 
     @app.post("/grade/samples/{sample}")
     def grade_sample(sample: int, body: Grade, authorization: str | None = Header(default=None)
                      ) -> dict:
-        """A grade of one sample, once, by someone who may grade it."""
-        person = grader(authorization)
-        if body.grade not in samples.GRADES:
-            raise HTTPException(400, "a sample is graded right, wrong or critical")
+        """One sample's grade, as above."""
+        return grading({sample: body.grade}, body.salt, authorization)
+
+    def grading(grades: dict[int, str], salt: str, authorization: str | None) -> dict:
+        approving()
+        if not 1 <= len(grades) <= 20 or any(g not in samples.GRADES for g in grades.values()):
+            raise HTTPException(400, "grade from one to 20 samples, each right, wrong or critical")
+        token = (authorization or "").removeprefix("Bearer ").strip()
+        if not token:
+            raise HTTPException(401, "sign in to grade: send your sign-in as a bearer token")
+        try:
+            person, claims = proposals.fresh(gw.identity, gw.scenario, gw.cfg.webchat_client_id,
+                                             token, samples.nonce(grades, salt), salt, time.time(),
+                                             "grade these samples")
+        except proposals.Refused as exc:
+            raise HTTPException(exc.status, exc.reason) from None
+        if samples.GRADER not in person.roles:
+            raise HTTPException(403, "grading is for the people who grade agents' work")
+        hashed = approvals.HASHED + hashlib.sha256(token.encode()).hexdigest()
         with db.transaction(gw.url) as conn:
-            row = conn.execute("select * from samples where scenario = %s and id = %s for update",
-                               (gw.scenario.name, sample)).fetchone()
-            if row is None:
-                raise HTTPException(404, "a5s has no such sample")
-            if (why := samples.may_grade(gw.scenario, row, person)) is not None:
-                raise HTTPException(403, why)
-            if row["grade"] is not None:
-                raise HTTPException(409, "it's been graded already")
-            conn.execute("update samples set grade = %s, graded_by = %s, graded_at = %s "
-                         "where id = %s", (body.grade, person.id, gw.clock(), sample))
-            ledger.append(conn, {
-                "kind": "admin", "action": "grade", "run": str(row["run_id"]),
-                "instance": row["instance_id"], "acts_for": [], "decision": "record",
-                "args": {"sample": sample, "grade": body.grade, "by": person.id,
-                         "release": row["release"], "part": row["part"], "action": row["action"]}})
-        return {"graded": sample, "grade": body.grade, "by": person.name}
+            if conn.execute("select 1 from samples where grade_token = %s limit 1",
+                            (hashed,)).fetchone():
+                raise HTTPException(409, "that sign-in has graded already: sign in again")
+            rows = {r["id"]: r for r in conn.execute(
+                "select * from samples where scenario = %s and id = any(%s) order by id for update",
+                (gw.scenario.name, sorted(grades)))}
+            minders = {r["id"]: (r["owner"], r["deputy"]) for r in conn.execute(
+                "select id, owner, deputy from instances")}
+            for sample in sorted(grades):
+                row = rows.get(sample)
+                if row is None:
+                    raise HTTPException(404, f"a5s has no sample {sample}")
+                if (why := samples.may_grade(gw.scenario, row, person,
+                                             minders.get(row["instance_id"], ()))) is not None:
+                    raise HTTPException(403, why)
+                if row["grade"] is not None or row["lapsed_at"] is not None:
+                    raise HTTPException(409, f"sample {sample} has been graded already, or lapsed")
+            now = gw.clock()
+            for sample, grade in sorted(grades.items()):
+                entry = {**rows[sample], "grade": grade, "graded_by": person.id, "graded_at": now,
+                         "grade_token": hashed, "grade_nonce": claims["nonce"], "grade_salt": salt,
+                         "grade_issuer": claims["iss"],
+                         "grade_subject": str(claims.get("sub") or "")}
+                entry["grade_seal"] = samples.seal(gw.cfg.seal_keys, entry)
+                conn.execute(
+                    "update samples set grade = %(grade)s, graded_by = %(graded_by)s, "
+                    "graded_at = %(graded_at)s, grade_token = %(grade_token)s, grade_nonce = "
+                    "%(grade_nonce)s, grade_salt = %(grade_salt)s, grade_issuer = %(grade_issuer)s, "
+                    "grade_subject = %(grade_subject)s, grade_seal = %(grade_seal)s "
+                    "where id = %(id)s", entry)
+                ledger.append(conn, {
+                    "kind": "admin", "action": "grade", "run": str(rows[sample]["run_id"]),
+                    "instance": rows[sample]["instance_id"], "acts_for": [], "decision": "record",
+                    "args": {"sample": sample, "grade": grade, "by": person.id,
+                             "release": rows[sample]["release"], "part": rows[sample]["part"],
+                             "action": rows[sample]["action"],
+                             "identity": "verified: a sign-in to give these grades alone",
+                             "token_sha256": hashed.removeprefix(approvals.HASHED)}})
+        return {"graded": sorted(grades), "grades": {str(k): v for k, v in grades.items()},
+                "by": person.name}
 
     # The settings app: where the people who approve instances review the whole version in
     # force, and ask for a new one. The gateway proposes it to everyone it needs, who approve

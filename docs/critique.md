@@ -1,11 +1,11 @@
 # Design Critique
 
-**Status:** Rounds 1 to 5, 31 October 2026 · **Design:** [a5s](../README.md)
+**Status:** Rounds 1 to 6, 31 October 2026 · **Design:** [a5s](../README.md)
 
 Every change to the design gets an adversarial review before it settles. Reviewers who didn't write the design read it cold, each from one angle, and each finding is checked against the documents before it's accepted. This page records the findings about a5s, how the design answers them now, and what each round removed.
 
 - **Designed** means the design stops it, and a test in a5s's own suite will show it once it's built.
-- **Fixed** means the code stops it, and a test in a5s's own suite shows it. Rounds 4 and 5 found problems in code.
+- **Fixed** means the code stops it, and a test in a5s's own suite shows it. Rounds 4 to 6 found problems in code.
 - **Phase 2** and **Phase 3** mean it's designed for a feature that comes in that phase. Until then, neither the feature nor the loophole exists.
 - **Accepted** marks what's left once the design has done what it can: a risk its owner accepts under [accepted risks](#accepted-risks).
 - **Removed** means a later round removed the control the finding was about.
@@ -31,6 +31,7 @@ Every round reports the rules it added and the rules it removed, and proposes cu
 - **Then the scenario was removed** from a5s, with the findings that were only about its controls, so that a5s's design depends on no one scenario. The findings below are those about a5s itself, in general terms.
 - **Round 4** read the code phase 1's first step built, with three reviewers who hadn't written it, from all six angles. It found 22 problems, two of them critical, and removed the parts that let services stand between people and the core ([below](#round-4-the-code)).
 - **Round 5** read the code of phase 1's steps 3 to 6, with three new reviewers, and wrote a second scenario, an IT service desk, against the contract alone. It found 45 problems, six of them high, mostly work lost when something failed and data protection that stopped at the top level of a tool's answer, and removed Deep Agents' unused tools, the gateway's cache of settings and the ledger's short-text rule ([below](#round-5-steps-3-to-6)).
+- **Round 6** read phase 2's code, with three new reviewers, and plugged the service desk into it through the contract alone. It found 60 problems, 40 once merged, ten of them high: outside content that got past the extractor or past the mark, level 2 without its evidence, approved changes lost when one failed, and caps that fell with every release. It removed caps kept for each release and deciders fixed when a change is held ([below](#round-6-phase-2)).
 
 ## Findings about a5s
 
@@ -230,6 +231,60 @@ What round 5 changed:
 - **Proposed and kept:** approval cards still say what a version changes, since every word in them now comes from the directory or a plain id; the urgent cap stays, since status shows when it holds anything back; and digests in the local inbox still combine all of a person's agents.
 - **Deferred:** sealing approvals in the gateway's sweep rather than the channels app, which would take the seal key off the internet-facing service and narrow R7; one check for parts and visibility in place of four; and a record shape the contract defines, in place of a tool's `record_field`, `record_arg`, `handles` and `text_fields`.
 
+## Round 6: phase 2
+
+Three reviewers who hadn't written it read phase 2's code cold: the extractor and marked runs, held proposals and signed decisions, counts, types of action and level 2, and samples, grades and the cap. One read it as an outside attacker and an insider, one for failure and for the team that runs a5s, and one as a colleague and as the author of the IT service desk of round 5, plugged into phase 2 through the contract alone. They found 60 problems, which come to the 40 below, and reproduced most of them in 71 tests. Each test now passes as its fix's regression test.
+
+| # | Finding | Severity | How the code answers it | Status |
+| --- | --- | --- | --- | --- |
+| G1 | Outside content reached the agent when its field wasn't a plain string, such as an email's body as Microsoft Graph gives it, or sat inside an item, such as an attachment (found by two) | High | Every outside field, whatever its type, goes to the extractor as text, at any depth, and the agent gets only the form | Fixed |
+| G2 | The extractor's handle kind took any text an email held, so a link of the sender's choosing reached messages and drafts, since text was cleaned before handles were resolved | High | The handle kind is gone, and text is cleaned again once handles are resolved, keeping a5s's own notes | Fixed |
+| G3 | The mark stayed with the run: what a marked run passed on, the person's next run read unmarked, and acted on at level 2 | High | A run opens marked when its conversation, in its topic or its latest turns, holds a turn from a marked run | Fixed |
+| G4 | A change to a record in no part, or with a tool that can't be undone or sends outside, worked at the instance's own level: level 2 with no level for its type of action, no cap earned on samples, and no sample drawn (found by two) | High | Level 2 is only for a type of action the settings set in a record's part, up to the cap. Anything else, and any change in a marked run, works at level 1 at most, and a part's own level never goes above 1 | Fixed |
+| G5 | A critical error lowered the cap for a minute, since the next sweep weighed the same grades and raised it again, and once level 2 was earned, the grades that earned it hid a fall: 88% over a quarter against 98% went unnoticed (found by all three) | High | Each test weighs only the grades given since the cap last changed, so each change starts a fresh test, and level 2 is earned again on new grades | Fixed |
+| G6 | One failure in the proposals sweep lost approved changes: they were made only after its loop, one record that couldn't be read stopped every sweep, and a change made just before its record couldn't be read was never recorded | High | Each change is swept on its own, made as soon as it's marked, and its outcome recorded first, in a transaction of its own. Its records are read once, when it's held | Fixed |
+| G7 | Every release threw away level 2, since caps were kept for a release, whose id covers every file: one sentence of instructions dropped every cap to 1 (found by two) | High | Caps are kept for a behaviour: the agent, its model, and the tools of that type it may use, as pinned. A release that changes only instructions keeps them, after its regression suite and a re-run of the last graded samples; one that changes a tool or the model starts again for what it widens | Fixed |
+| G8 | The extractor read, and `ask_about` answered about, documents on records the run may not see (found by two) | High | Need-to-know comes first, then the extractor | Fixed |
+| G9 | A call that changed many records counted as one, so one call closed any number of tickets at level 2, past a limit of two a run | High | Each record a change names counts | Fixed |
+| G10 | A change in two parts was decided by one part's owner, and when nobody could decide, a5s told a requester to make it themselves when they couldn't | High | Each part's deciders approve for their part, and a rejection by any ends it. a5s says which case it is when nobody may decide | Fixed |
+| G11 | A run that read outside content could send outside or destroy at level 2: policy forbade it only tools that write | Medium | It may use none of the three at level 2 | Fixed |
+| G12 | Grades and caps counted as stored: the channels' role could write grades, and the gateway's caps; and a sign-in the browser kept could grade | Medium | A grade needs a fresh sign-in whose nonce commits to exactly those grades, and the core seals it. A cap counts only as the core sealed it, with the ledger entry that set it, while that's the ledger's last word on it | Fixed |
+| G13 | A decider approved a handle, not the value the change writes; nothing said which values came from a customer's email; there was no link to the record, and no word it had changed since (found by two) | Medium | The page and the card give the values, a link to each record, a flag for each value from a document from outside, and which records have changed since | Fixed |
+| G14 | The extractor sent an outside field to a model not approved for its class | Medium | It isn't read, and the form says why | Fixed |
+| G15 | One message could send a decider any number of requests | Medium | Requests are urgent messages: past a person's five a day, they wait for a batch | Fixed |
+| G16 | The same change made again in a run was made again at level 2 though counted once; runs for nobody escaped the per-person limits; and no key let a tool make a change once (found by two) | Medium | a5s answers the same change with what became of it, and doesn't make it twice. A tool gets a key for each change, and a run for nobody counts against its instance | Fixed |
+| G17 | The same change asked for again in a later run was held again, asked again, and could be approved twice, and nothing told a later run it waited (found by two) | Medium | A waiting change is matched across runs, by instance, people and change, and a run's context lists what waits on its record | Fixed |
+| G18 | Held changes were stranded when deciders changed: deciders were fixed when held, a part's new owner couldn't decide, chasing followed the first decider alone, a reminder went only to those at work that minute, a manager was sent a link to a page that showed them nothing, and a card went to a chat its decider doesn't use (found by all three) | Medium | Deciders are worked out afresh at review, decision and chase. Each is reminded in their own hours, and only then are their managers told, each in their own hours, or the instance's owner; they can see what waits, but only its deciders decide it. A request goes where the decider works with the agent | Fixed |
+| G19 | At level 2, a change the records system refused was reported as made, counted and sampled, and one whose report failed answered the agent with an error, so it asked again. The report didn't say what the change replaced, the person it was for heard nothing from a5s, and with no owner nobody did (found by all three) | Medium | An error the system answers with is a failure, and isn't counted. The report comes from what a5s read before the change, to the owner and deputy, or else the part's owners, and the person gets a5s's notice in their conversation | Fixed |
+| G20 | A slow records system stalled every agent while a change was held, since records were read inside the ledger's lock | Medium | They're read before the lock is taken | Fixed |
+| G21 | The extractor's cost had no limit: it sent each document whole, again for each question, and read the same email again | Medium | It reads the first 24,000 characters of each, ten documents a call, within what's left of the run's budget, once a run | Fixed |
+| G22 | The decision and grading pages cut their lists before filtering, so what a person could decide or grade could hide behind what they couldn't (found by all three) | Medium | Waiting changes come oldest first, and samples are read in pages until 20 are found, with what a query can leave out left out | Fixed |
+| G23 | The proposals sweep read every waiting change every minute | Medium | When each step falls due is kept with the change, and the sweep reads only what's due | Fixed |
+| G24 | A cap ignored the threshold it was earned under, and while the settings didn't check out the sweep lowered every cap | Medium | A cap keeps its threshold, and is tested again when it rises. Nothing is weighed while the settings don't check out | Fixed |
+| G25 | Below level 2, a change that can't be undone or sends outside was denied, never held, so it could never earn level 2; and a classified value didn't make a change sensitive | Medium | Such a change waits for its decider, alone, and so does one that writes a classified value | Fixed |
+| G26 | A decider couldn't say why they rejected a change | Medium | They may, briefly. It's sealed with their decision, and told to whoever asked | Fixed |
+| G27 | Graders saw neither what code flagged to the decider nor the record as it stood, but as it was after the change (found by two) | Medium | A sample keeps the flags, and the records as they stood when the change was asked for | Fixed |
+| G28 | A grader could grade the approvals of the manager they report to, and graders could come from the team that runs the instance | Medium | Neither may grade. The sample's grader is in a quality team, which may see billing's records | Fixed |
+| G29 | The settings accepted a limit or a level for a type of action no tool takes, and level 2 for a type with no limit | Medium | Both are refused before anyone is asked | Fixed |
+| G30 | The team that runs a5s couldn't list or end a change stopped part way through making, nor lower a cap, and the status and runbooks said nothing of phase 2's failures | Medium | `a5s proposals` lists and ends them, `a5s caps lower` lowers a cap, each in the ledger, and the status and runbooks cover each | Fixed |
+| G31 | Only a part's owners could decide its changes | Medium | Its owner may name delegates, `part-delegate:<part>`, who decide beside them | Fixed |
+| G32 | The form kept a year the email never gave | Low | A date is kept only as fully as the document gives it | Fixed |
+| G33 | A change held for being past a limit didn't tell its decider why | Low | Its flags say so | Fixed |
+| G34 | The whole settings said an instance works at level 2 where the cap held it at 1 | Low | They say level 2 waits for graded samples | Fixed |
+| G35 | Ungraded samples, counts of changes and changes stopped part way were kept forever | Low | Ungraded samples lapse after a quarter and go after a year, counts after their 30 days, and a stopped change once it's ended | Fixed |
+| G36 | A part's owner could change another part's threshold alone | Low | A changed threshold needs its part's owner. Limits already need the owner of every part an instance works in | Fixed |
+| G37 | The sample scenario read all its changes on every read | Low | They're indexed by key | Fixed |
+| G38 | A decision that didn't count went unsaid, deciders weren't told what became of a change, nobody was told when a cap changed, and the page stopped after a decision | Low | Everyone who decided a change hears what became of it, owners hear when a cap changes, and the page lists what waits again | Fixed |
+| G39 | Two approved changes to one record were both made, each checked against the record before either was made | Low | Each is checked just before it's made, so the second waits for a new request | Fixed |
+| G40 | A record field that changes all the time, such as a last-updated time, stops every held change on it | Low | The contract says a record's fields are what deciders weigh, not values that change by themselves | Kept by design |
+
+What round 6 changed:
+
+- **Removed:** the extractor's handle kind, Simpson's rule (the evidence is now exact), caps kept for each release, a part's own level as a way to level 2 for changes, records read again after a change, deciders fixed when a change is held, reading every waiting change every minute, and the rubber-stamping flag by default, until the data protection officer agrees (O6).
+- **Added:** decisions for each part, part delegates, caps kept for a behaviour and sealed with the ledger's entry, grades signed for and sealed, a fresh test after each change of cap, counts for each record, changes made once with keys for tools, waiting changes matched across runs and listed in a run's context, a level-2 report to someone always, `a5s proposals` and `a5s caps lower`, and limits on what a5s's reader reads.
+- **Proposed and kept:** caps don't count instructions, since the release table already asks for a re-run of the last graded samples; rejected changes are still sampled, since a grade of what the agent asked for is evidence about it whatever the decider did; held changes stay apart from obligations, which are one person's; and sensitive changes are held, not denied, so they can be decided and earn level 2.
+- **Deferred:** a hook for a scenario to route a decision to its own approval process, beside part delegates; and making a change exactly once in a system that knows no keys, where a5s marks it as being made, and someone ends it by hand.
+
 ## Accepted risks
 
 Some risk no design removes. These remain, each accepted by its owner.
@@ -240,8 +295,8 @@ Some risk no design removes. These remain, each accepted by its owner.
 | R4 | A person misled by an agent despite the computed facts and the source flags. It's narrowed by showing the facts apart from the agent's narrative. | People still decide | Each scenario's owners, with training on deciding from the facts |
 | R5 | Someone who can write to the ledger's store can plant a copy that continues the chain in good form, which stops the copying until assurance moves it to a new prefix. It can't hide a change, which the check reports. | Telling a5s's copies from good forgeries needs heads the copier signs, which are deferred | Assurance |
 | R6 | A provider that offers no dated version, such as DeepSeek, can change the model behind its name unseen. Each response must still report the approved name. | Only the provider can pin it | The platform owner, for development with synthetic data only |
-| R7 | Someone who holds the core's seal key and can also write to its database can make an approval of settings, as if an instance approver had approved it on a card | The core seals the approvals it checked so they outlast the identity provider's keys. Signatures made with people's own keys don't rest on the core. | The platform owner |
+| R7 | Someone who holds the core's seal key and can also write to its database can make an approval of settings, a decision on a held change, a grade or a cap, as if its person had made it on the core's page, or samples had earned it | The core seals the approvals it checked so they outlast the identity provider's keys. Signatures made with people's own keys don't rest on the core. | The platform owner |
 
 ## Next round
 
-Round 6 starts from the accepted risks, round 5's deferrals, and the code phase 2 builds: the extractor, held proposals, counts, signed decisions and level 2. It reads from all six angles, and reports what it removes.
+Round 7 starts from the accepted risks, round 6's deferrals, and the code phase 3 builds. It reads from all six angles, and reports what it removes.

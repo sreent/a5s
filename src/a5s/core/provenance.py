@@ -20,6 +20,7 @@ from a5s.core.values import Value
 
 THEY = "they said it"
 A5S = "a5s"
+OUTSIDE = "outside"  # a document from outside the organisation, as a5s's reader read it
 
 
 def read(conn: psycopg.Connection, run: str, source: str, said: Any, pattern: str | None) -> None:
@@ -59,9 +60,13 @@ def sources(conn: psycopg.Connection, scenario: Scenario, run: dict) -> list[tup
 def traced(conn: psycopg.Connection, scenario: Scenario, run: dict, text: str) -> list[dict]:
     """Each key, amount and date in what an agent wrote, with where it came from, or None
     where it's the agent's own."""
-    known = sources(conn, scenario, run)
-    return [{"value": v.text, "kind": v.kind,
-             "from": next((source for s, source in known if v.matches(s)), None)}
+    known = sources(conn, scenario, run)  # where else a value came from, before outside
+
+    def source(v: Value) -> str | None:
+        return next((s for k, s in known if v.matches(k) and not s.startswith(OUTSIDE)),
+                    next((s for k, s in known if v.matches(k)), None))
+
+    return [{"value": v.text, "kind": v.kind, "from": source(v)}
             for v in values.found(text, getattr(scenario, "record_pattern", None))]
 
 

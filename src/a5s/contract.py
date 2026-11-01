@@ -23,6 +23,9 @@ INSTANCE_APPROVER = "instance-approver"  # approves instances with no parts, and
 # A part's owner holds part-owner:<part>, such as part-owner:billing: they approve the instances
 # that work in their part, and how far each may act there.
 PART_OWNER = "part-owner"
+# Someone a part's owner names to decide the changes agents ask for there, beside them, such
+# as while they're away: part-delegate:<part>. They approve no settings.
+PART_DELEGATE = "part-delegate"
 # a5s's own roles, for approving its releases. An agent's owner holds agent-owner:<agent>.
 RELEASE_APPROVER = "release-approver"  # never from the team that runs a5s, nor above it
 ASSURANCE = "assurance"
@@ -67,8 +70,15 @@ class Record:
     key: str
     person: str  # whose it is, such as its owner
     title: str
-    fields: dict[str, str]  # what a change in matters, named in words, such as {"status": "open"}
+    # What a change in matters, named in words, such as {"status": "open"}: what a person
+    # deciding a change to it weighs, never values that change by themselves, such as a time
+    # it was last read, since a held change is made only if its fields are as they stood.
+    fields: dict[str, str]
     link: str | None = None
+
+
+# What a field of the extractor's form may be, besides a choice from a list: never free text
+EXTRACT_KINDS = ("key", "amount", "date", "flag")
 
 
 @dataclass(frozen=True)
@@ -79,6 +89,9 @@ class ToolCall:
     instance: str
     run: str
     acts_for: tuple[str, ...]
+    # For a change, the same each time the same change is asked for in a run, or made once
+    # approved: a system that adds something, such as a credit, makes it once for each key
+    key: str | None = None
 
 
 @dataclass(frozen=True)
@@ -105,11 +118,22 @@ class Tool:
     # owner of the record's part to decide, and makes it once they approve it.
     action: str | None = None
     # Fields of what it returns that hold content from outside the organisation, such as an
-    # email's body, and the fixed form a5s's extractor fills from them instead, each field
-    # typed: key, amount, date, flag, handle, or choice:<one>|<another>. The agent gets the
-    # form, never the content, and its run is marked as having read outside content.
+    # email's body, whatever their type, and the fixed form a5s's extractor fills from them
+    # instead, each field typed: key, amount, date, flag, or choice:<one>|<another>. The agent
+    # gets the form, never the content, and its run is marked as having read outside content.
     outside: tuple[str, ...] = ()
     extract: dict[str, str] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if bool(self.outside) != bool(self.extract):
+            raise ValueError(f"{self.name}: a tool that returns outside content names the form "
+                             "a5s's extractor fills from it, and only such a tool names one")
+        for name, kind in self.extract.items():
+            choices = kind.removeprefix("choice:").split("|") if kind.startswith("choice:") else []
+            if kind not in EXTRACT_KINDS and not (choices and all(choices)):
+                raise ValueError(f"{self.name}: the form's field {name} is a {kind}, which a5s's "
+                                 f"extractor doesn't fill: use {', '.join(EXTRACT_KINDS)} or "
+                                 "choice:<one>|<another>")
 
     @property
     def risk(self) -> dict[str, bool]:

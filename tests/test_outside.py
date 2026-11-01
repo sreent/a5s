@@ -14,8 +14,7 @@ from a5s.contract import record_of
 from a5s.core import extractor
 from test_levels import levelled
 
-FORM = {"asks_for": "a refund", "amount": "£860.00", "date": "2026-11-06", "question": "Q-1002",
-        "reply_to": "billing@contoso.test"}
+FORM = {"asks_for": "a refund", "amount": "£860.00", "date": "2026-11-06", "question": "Q-1002"}
 
 
 def tool_results(stack, request: int = -1) -> list[dict]:
@@ -52,16 +51,15 @@ def test_an_agent_gets_the_extractors_form_never_the_emails_words(stack):
     form = email[extractor.OUTSIDE]
     assert {k: form[k] for k in ("asks_for", "amount", "date", "question")} == {
         "asks_for": "a refund", "amount": "£860.00", "date": "2026-11-06", "question": "Q-1002"}
-    assert form["reply_to"].startswith("[h:")  # a sensitive value, as a handle
     assert marked(stack) == [True]
 
 
 def test_what_the_email_doesnt_say_is_left_out(stack):
     read(stack, {**FORM, "amount": "£9,999.00", "asks_for": "a pony", "question": "Q-1003",
-                 "reply_to": "attacker@evil.test"})
+                 "reply_to": "attacker@evil.test"})  # and a field the form hasn't got
     form = tool_results(stack, 2)[0]["messages"][0][extractor.OUTSIDE]
-    assert (form["amount"], form["asks_for"], form["question"], form["reply_to"]) == (None,) * 4
-    assert sorted(form["left_out"]) == ["amount", "asks_for", "question", "reply_to"]
+    assert (form["amount"], form["asks_for"], form["question"]) == (None,) * 3
+    assert "reply_to" not in form and sorted(form["left_out"]) == ["amount", "asks_for", "question"]
 
 
 def test_when_the_reader_cant_read_it_the_agent_hears_so(stack):
@@ -137,7 +135,6 @@ def test_a_marked_run_stays_marked(stack):
     ("amount", "£860.00", True), ("amount", "£860", True), ("amount", "£86", False),
     ("date", "20 Oct", True), ("date", "2026-10-21", False), ("key", "Q-1002", True),
     ("key", "Q-1003", False), ("flag", True, True), ("flag", "yes", False),
-    ("handle", "billing@contoso.test", True), ("handle", "x@y.test", False),
     ("choice:a|b", "a", True), ("choice:a|b", "c", False)])
 def test_the_form_keeps_only_what_the_text_holds(kind, value, ok):
     text = "We paid £860.00 twice on 2026-10-20 for Q-1002. Reply to billing@contoso.test."

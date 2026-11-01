@@ -41,11 +41,28 @@ To follow one run, find its spans by `a5s.run.id`, where the deployment sends tr
 
 ## Changes wait, or stop part way
 
-**Shows as:** changes waiting for a decision for days, or one stopped part way through being made.
+**Shows as:** changes waiting for a decision for days, changes approved but not made, or one stopped part way through being made.
 
-1. A waiting change reminds its deciders after two working days, tells their managers after five, and lapses after ten, telling whoever asked for it. Nothing needs doing unless a part has nobody who may decide: then the change isn't held at all, and the agent tells the person to make it themselves.
-2. A change stopped part way means a5s marked it as being made, and then stopped before it could record what happened. a5s never makes it again by itself. Check the record in the scenario's own system: if the change is there, tell whoever asked; if not, they can ask again.
-3. A decision that doesn't count shows in the gateway's log: a decision the core didn't seal, or by someone who no longer owns the part. Tell assurance about the first.
+1. A waiting change reminds each of its deciders, in their own hours, after two working days, then tells their managers, or the instance's owner, after five, and lapses after ten, telling whoever asked for it. Its deciders are worked out afresh each time, so a part's new owner, or a delegate its owner names with `part-delegate:<part>`, decides what waits there. Nothing needs doing unless a part has nobody who may decide: then the change isn't held at all, and the agent says why.
+2. A change approved but not made says why in the outcome its asker was told: its record changed after it was asked for, the instance may no longer act, or the records system didn't take it. They can ask again.
+3. A change stopped part way means a5s marked it as being made, and stopped, or the sweep failed for it, before it could record what happened: the gateway's log says `couldn't sweep P-n`. a5s never makes it again by itself. `a5s proposals` lists such changes. Check the record in the scenario's own system, then end it with `a5s proposals end P-n`, as its instance's owner or deputy, an owner of a part it touches, an instance approver or assurance: whoever asked is told it may or may not have been made, and can ask again.
+4. A decision that doesn't count shows once in the gateway's log: a decision the core didn't seal, or by someone who may no longer decide it. Tell assurance about the first.
+
+## Samples wait to be graded, or a cap falls
+
+**Shows as:** samples waiting to be graded, samples that lapsed ungraded, or caps lowered in the last day.
+
+1. Samples are graded on the core's page, `/grade/`, by people who hold the grader role, from outside the teams that build and run the agent. A backlog only slows level 2: ask the scenario's owners for graders. A sample nobody grades in a quarter lapses, and goes after a year.
+2. A cap falls on a critical error, on grades that show accuracy below the part's threshold, when the threshold rises past what the grades show, or when someone lowers it. The ledger's `cap` entries give the evidence, and the instance's owner and deputy hear in their digest. It rises again only on new grades.
+3. To lower a cap at once, such as while a fault is looked into: `a5s caps lower <agent> <part> <type of action>`, as one of the part's owners, an instance approver, the agent's owner or assurance. Nobody raises a cap by hand.
+4. While the settings in force don't check out, nothing is weighed, and caps stand.
+
+## a5s's reader reads less than a document
+
+**Shows as:** forms an agent got that say `unread` or `cut`.
+
+1. `cut` means the document was longer than a5s's reader reads, and the form holds what its first part says. The agent can ask about it, which reads the same part.
+2. `unread` says why: the model didn't answer, the field is of a class the model isn't approved for, the call named more documents than a5s reads at once, or what's left of the run's budget hasn't room. Each is a reason to look at the model, the classes in the settings, or the budget, not at the document.
 
 ## People get urgent messages in batches
 

@@ -18,7 +18,7 @@ from a5s.contract import (
     Tool,
     parse_settings,
 )
-from a5s.core import ledger, signing
+from a5s.core import ledger, samples, signing
 from a5s.definitions import Definition
 
 Directory = Callable[[str], Person | None]
@@ -90,6 +90,16 @@ def _covered(settings: Settings, before: Settings | None) -> list[InstanceSettin
     return [*settings.instances, *(i for i in (before.instances if before else ()) if i.id not in named)]
 
 
+def _thresholds_change(settings: Settings, before: Settings | None) -> set[str]:
+    """The parts whose threshold a version changes from the one in force: each needs its
+    owner, though no instance works there yet, since it decides when agents earn level 2
+    there. (A part's owner approves the first version an instance works there in, whole.)"""
+    if before is None:
+        return set()
+    return {p for p in set(settings.thresholds) | set(before.thresholds)
+            if settings.thresholds.get(p) != before.thresholds.get(p)}
+
+
 def _classes_change(settings: Settings, before: Settings | None) -> bool:
     """Whether a version sets the scenario's classes of data afresh, which decide which models
     may see what: the first version does, and so does one that changes them."""
@@ -100,16 +110,17 @@ def _classes_change(settings: Settings, before: Settings | None) -> bool:
 def missing(settings: Settings, directory: Directory, valid: Iterable[str],
             before: Settings | None = None) -> list[str]:
     """Whose approval a version still needs, given who validly approved it: for each part an
-    instance works in, its owner's, and an instance approver's for any instance in no part,
-    and for the scenario's classes of data, if it sets them afresh. `before` is the version
-    before it, whose instances a version that leaves them out retires, so their approvers
-    decide that too."""
+    instance works in, or whose threshold it changes, its owner's, and an instance approver's
+    for any instance in no part, and for the scenario's classes of data, if it sets them
+    afresh. `before` is the version before it, whose instances a version that leaves them out
+    retires, so their approvers decide that too."""
     held = {role for who in valid if (p := directory(who)) for role in p.roles}
     if not held:
         return ["nobody who approves instances has approved it"]
     covered = _covered(settings, before)
     needs = [f"the owner of {part} hasn't approved it"
-             for part in sorted({p for i in covered for p in i.parts})
+             for part in sorted({p for i in covered for p in i.parts}
+                                | _thresholds_change(settings, before))
              if f"{PART_OWNER}:{part}" not in held]
     if INSTANCE_APPROVER not in held:
         if any(not i.parts for i in covered):
@@ -124,7 +135,8 @@ def approvers(settings: Settings, holders: Holders, before: Settings | None = No
     approvers, if any instance it decides on is in no part, or it sets the classes of data
     afresh."""
     covered = _covered(settings, before)
-    roles = [f"{PART_OWNER}:{p}" for p in sorted({p for i in covered for p in i.parts})]
+    roles = [f"{PART_OWNER}:{p}" for p in sorted({p for i in covered for p in i.parts}
+                                                 | _thresholds_change(settings, before))]
     if any(not i.parts for i in covered) or _classes_change(settings, before):
         roles.append(INSTANCE_APPROVER)
     found: dict[str, Person] = {}
@@ -135,8 +147,9 @@ def approvers(settings: Settings, holders: Holders, before: Settings | None = No
 
 def levels(instance: InstanceSettings, release: Definition) -> tuple[int, dict[str, int]]:
     """How far an instance may act: its level, and its level in each of its parts, each
-    within its release's maximum. With parts, its level is the lowest of theirs."""
-    start, most = release.autonomy.start, release.autonomy.max
+    within its release's maximum, and never above 1: level 2 is only ever for a type of action
+    (action_levels). With parts, its level is the lowest of theirs."""
+    start, most = release.autonomy.start, min(release.autonomy.max, 1)
     parts = {p: instance.level_in(p, start, most) for p in sorted(instance.parts)}
     level = min(start if instance.level is None else instance.level, most)
     return (min(parts.values()) if parts else level), parts
@@ -207,6 +220,7 @@ def apply(
     )
 
     applied = Applied(signers=valid)
+    samples.note_behaviours(conn, definitions.values(), tools)  # what caps are kept for
     for s in settings.instances:
         definition = definitions.get(s.definition)
         if definition is None:
