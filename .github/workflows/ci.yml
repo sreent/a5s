@@ -1,9 +1,9 @@
 name: ci
 
 # The full suite, on every push: the tests against a real Postgres and storage
-# emulators, the containers' smoke test, and the infrastructure code's checks. A release
-# runs it too, first. Every action and image is pinned by commit or digest, and Terraform
-# by its version and checksum.
+# emulators, the containers' smoke test, and the Helm chart, installed on a Kubernetes
+# cluster of its own. A release runs it too, first. Every action and image is pinned by
+# commit or digest.
 
 on:
   push:
@@ -52,20 +52,14 @@ jobs:
       - run: docker build -t a5s:dev .
       - run: sh deploy/smoke.sh
 
-  infrastructure:
+  kubernetes:
     runs-on: ubuntu-latest
-    env:
-      TERRAFORM: "1.9.8"
-      TERRAFORM_SHA256: 186e0145f5e5f2eb97cbd785bc78f21bae4ef15119349f6ad4fa535b83b10df8
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
-      - name: Install Terraform, checked against its checksum
-        run: |
-          curl -fsSLo /tmp/terraform.zip \
-            "https://releases.hashicorp.com/terraform/${TERRAFORM}/terraform_${TERRAFORM}_linux_amd64.zip"
-          echo "${TERRAFORM_SHA256}  /tmp/terraform.zip" | sha256sum -c -
-          mkdir -p "$HOME/bin" && unzip -q /tmp/terraform.zip -d "$HOME/bin"
-          echo "$HOME/bin" >> "$GITHUB_PATH"
-      - run: terraform -chdir=deploy/azure fmt -check -diff -recursive
-      - run: terraform -chdir=deploy/azure init -backend=false -input=false
-      - run: terraform -chdir=deploy/azure validate
+      - name: Lint the chart
+        run: >-
+          docker run --rm -v "$PWD/deploy/helm:/charts:ro"
+          alpine/helm:3.16.3@sha256:ed9dfc49d43d034df3f9880eb777caf0183e5156508672478b80412c63f3db4f
+          lint /charts/a5s --strict -f /charts/ci-values.yaml
+      - run: docker build -t a5s:dev .
+      - run: sh deploy/helm/test.sh

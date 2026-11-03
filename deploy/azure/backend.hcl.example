@@ -1,7 +1,0 @@
-# Copy to backend.hcl, which git ignores: the storage account that keeps Terraform's state,
-# made by hand first, which only the people who apply this may read.
-resource_group_name  = "rg-a5s-state"
-storage_account_name = "<a name of your own>"
-container_name       = "tfstate"
-key                  = "a5s-test.tfstate"
-use_azuread_auth     = true

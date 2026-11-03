@@ -184,7 +184,7 @@ What round 4 changed:
 - **Removed:** the local channel in the scheduler, the scheduler's port, its wait for a busy conversation and the notice that went with it, sign-in tokens passing through the scheduler, the separate Teams endpoint (now the core's channels), the gateway's own ledger endpoints, outbox rows for Teams, the sample's people in the reference agent, taking people's word by default, and a schema that couldn't change.
 - **Added:** a role for each part, migrations, the core's checks on signed settings, one front door for every channel, a queue the scheduler works through, run expiry, the model gateway's allowlist, a sturdier sanitizer, a bot per agent, and the scenario loader.
 - **Removed after the round, as two reviewers proposed:** the middleware that asked the core to explain a tool call before making it, and its endpoint, until held proposals arrive in phase 2. A denied call already never runs and the agent hears why, so explaining only added a round trip and a policy check to every tool call.
-- **Decided after the round:** the clouds run a5s on each one's own container service, not Kubernetes, and R5 and R6 are accepted by the owners below.
+- **Decided after the round:** the clouds run a5s on each one's own container service, not Kubernetes, and R5 and R6 are accepted by the owners below. (On 3 November 2026 hosting changed to Kubernetes everywhere, from one Helm chart, so a5s runs the same way in every cloud and network policies isolate the worker in each.)
 - **Deferred:** a connection pool, checkpoints so the copier needn't read every head each hour, and heads signed by the copier, which would stop R5.
 
 ## Round 5: steps 3 to 6

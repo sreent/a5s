@@ -1,8 +1,0 @@
-# What a person's own apply makes, which never goes in the repository
-.terraform/
-*.tfstate
-*.tfstate.*
-*.tfvars
-backend.hcl
-crash.log
-plan

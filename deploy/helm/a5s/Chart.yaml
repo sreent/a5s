@@ -1,0 +1,6 @@
+apiVersion: v2
+name: a5s
+description: a5s, an agent OS, on any Kubernetes cluster, in a cloud or on premises
+type: application
+version: 0.1.0
+appVersion: "0.1.0"

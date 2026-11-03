@@ -1,0 +1,126 @@
+{{- if .Values.networkPolicies.enabled }}
+{{/* Each part reaches only what its job needs, as compose's networks keep them: the worker
+reaches the gateway alone, and only the worker and the scheduler reach the gateway. */}}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ printf "%s-gateway" .Release.Name }}
+  labels:
+    {{- include "a5s.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "a5s.selector" (dict "root" . "part" "gateway") | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "a5s.selector" (dict "root" . "part" "worker") | nindent 14 }}
+        - podSelector:
+            matchLabels:
+              {{- include "a5s.selector" (dict "root" . "part" "scheduler") | nindent 14 }}
+      ports:
+        - {protocol: TCP, port: 8700}
+  egress:
+    {{- include "a5s.policy.dns" . | nindent 4 }}
+    {{- include "a5s.policy.database" . | nindent 4 }}
+    {{- include "a5s.policy.outside" . | nindent 4 }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ printf "%s-channels" .Release.Name }}
+  labels:
+    {{- include "a5s.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "a5s.selector" (dict "root" . "part" "channels") | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - ports:
+        - {protocol: TCP, port: 8703}
+      {{- with .Values.networkPolicies.ingressNamespace }}
+      from:
+        - namespaceSelector:
+            {{- toYaml . | nindent 12 }}
+      {{- end }}
+  egress:
+    {{- include "a5s.policy.dns" . | nindent 4 }}
+    {{- include "a5s.policy.database" . | nindent 4 }}
+    {{- include "a5s.policy.outside" . | nindent 4 }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ printf "%s-scheduler" .Release.Name }}
+  labels:
+    {{- include "a5s.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "a5s.selector" (dict "root" . "part" "scheduler") | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  egress:
+    {{- include "a5s.policy.dns" . | nindent 4 }}
+    {{- include "a5s.policy.database" . | nindent 4 }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "a5s.selector" (dict "root" . "part" "gateway") | nindent 14 }}
+      ports:
+        - {protocol: TCP, port: 8700}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "a5s.selector" (dict "root" . "part" "worker") | nindent 14 }}
+      ports:
+        - {protocol: TCP, port: 8702}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ printf "%s-anchor" .Release.Name }}
+  labels:
+    {{- include "a5s.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "a5s.selector" (dict "root" . "part" "anchor") | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  egress:
+    {{- include "a5s.policy.dns" . | nindent 4 }}
+    {{- include "a5s.policy.database" . | nindent 4 }}
+    {{- include "a5s.policy.outside" . | nindent 4 }}
+---
+# The worker holds no secrets, and reaches the gateway alone: not the database, the channels,
+# the internet, or Kubernetes' own API.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ printf "%s-worker" .Release.Name }}
+  labels:
+    {{- include "a5s.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "a5s.selector" (dict "root" . "part" "worker") | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "a5s.selector" (dict "root" . "part" "scheduler") | nindent 14 }}
+      ports:
+        - {protocol: TCP, port: 8702}
+  egress:
+    {{- include "a5s.policy.dns" . | nindent 4 }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "a5s.selector" (dict "root" . "part" "gateway") | nindent 14 }}
+      ports:
+        - {protocol: TCP, port: 8700}
+{{- end }}

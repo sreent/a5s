@@ -1,0 +1,15 @@
+a5s is installed as {{ .Release.Name }}, in {{ .Release.Namespace }}.
+
+The core opens no run until this deployment's people approve the release it runs:
+  kubectl -n {{ .Release.Namespace }} exec deploy/{{ .Release.Name }}-gateway -- a5s release show > release.yaml
+Each person its changes need signs it with their own key (a5s release sign --as <them>), and
+a ConfigMap with release.yaml and release.sig, named in release.approval, records it at the
+next upgrade. `a5s release status` in the gateway says what's still needed.
+{{- if .Values.ingress.enabled }}
+
+People reach a5s at https://{{ .Values.ingress.host }}.
+{{- else }}
+
+Nothing outside the cluster reaches a5s yet: set ingress.enabled, with a host, for people and
+their chats to reach the channels.
+{{- end }}

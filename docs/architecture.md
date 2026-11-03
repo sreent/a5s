@@ -209,7 +209,7 @@ Phase 1 sets these up:
 
 ## Hosting
 
-Phase 1 runs a5s's own services and workers on Azure, Google Cloud and AWS at once, each with managed Postgres, so nothing ties a5s to one cloud. The same image runs on the organisation's own premises, even on a network with no way out, with its own Postgres, identity provider, models and locked storage. They run as one container image, and the networks keep workers away from everything but the gateway ([deploy](../deploy/)). Nothing waits inside a host's session: conversations and held calls live in a5s's records, so a5s can move hosts or use a managed runtime later.
+Phase 1 runs a5s's own services and workers on Kubernetes, in each cloud's managed Kubernetes, AKS, GKE and EKS, each with managed Postgres, so nothing ties a5s to one cloud. The same chart runs on the organisation's own clusters on premises, even on a network with no way out, with its own Postgres, identity provider, models and locked storage. They run as one container image, and network policies keep workers away from everything but the gateway ([deploy](../deploy/)). Nothing waits inside a host's session: conversations and held calls live in a5s's records, so a5s can move hosts or use a managed runtime later.
 
 | Host | Runs on | Identity | Gateway |
 | --- | --- | --- | --- |

@@ -268,6 +268,11 @@ def test_everything_a5s_is_built_and_tested_with_is_pinned():
         images = re.findall(r"(?m)^\s*image:[ \t]+(\S+)", text) + re.findall(  # services, and docker run
             r"docker run[^\n]*?\s((?:[\w.-]+/)+[\w.-]+:[\w.-]+(?:@sha256:[0-9a-f]{64})?)", text)
         unpinned += [f"{workflow.name}: {image}" for image in images if "@sha256:" not in image]
+    for script in (ROOT / "deploy").rglob("*.sh"):  # the images the tests' scripts start
+        for image in re.findall(r"(?m)^[A-Z0-9_]+=([a-z0-9.-]+(?:/[a-z0-9._-]+)*:[\w.-]+\S*)$",
+                                script.read_text()):
+            if "@sha256:" not in image:
+                unpinned.append(f"{script.name}: {image}")
     for compose in (ROOT / "deploy").glob("compose*.yaml"):
         for image in re.findall(r"(?m)^\s*image:[ \t]+(\S+)", compose.read_text()):
             if "@sha256:" not in image and not image.startswith("${A5S_IMAGE"):
