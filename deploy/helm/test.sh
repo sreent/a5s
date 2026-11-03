@@ -43,6 +43,7 @@ for _ in $(seq 1 90); do
 done
 k wait --for=condition=Ready node --all --timeout=120s > /dev/null
 docker exec "$CLUSTER" cat /etc/rancher/k3s/k3s.yaml > "$work/kubeconfig"
+chmod 600 "$work/kubeconfig"  # the cluster's own credentials, for its helm alone
 docker save "$IMAGE" | docker exec -i "$CLUSTER" ctr -n k8s.io images import - > /dev/null
 echo "A cluster of its own is up, with the image in it."
 
