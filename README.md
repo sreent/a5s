@@ -96,6 +96,12 @@ docker build -t a5s:dev .
 sh deploy/smoke.sh          # or: sh deploy/smoke.sh --keep
 ```
 
+The [soak test](deploy/soak.sh) starts the same stack, then has the sample's people talk to its agents for half an hour, or as many minutes as you give it. It checks that every message had one answer, in time, that no part's memory or Postgres's connections kept growing, and that no part logged an error. CI runs it weekly, and when asked:
+
+```sh
+sh deploy/soak.sh 30
+```
+
 With a real model, start [`deploy/compose.yaml`](deploy/compose.yaml) with `A5S_DB_PASSWORD`, `A5S_SERVICE_TOKEN`, a provider's key, `A5S_ANCHOR_STORE`, the locked store for the ledger's copies, such as `s3://bucket/a5s`, and a password for each part's database role (`A5S_DB_GATEWAY_PASSWORD`, `A5S_DB_CHANNELS_PASSWORD`, `A5S_DB_SCHEDULER_PASSWORD` and `A5S_DB_ANCHOR_PASSWORD`) set, and send messages to the core's channels with `A5S_TOKEN=<a sign-in token> uv run a5s say ...`.
 
 Before the core runs a release, the people its changes need approve it. In the stack, `a5s release show` prints the release, each approver signs it with `a5s release sign --as <their id> --key <their private key>`, wherever they are, and the administrator records the signatures with `a5s release approve`. `a5s release status` says what it still needs, and why. Set `A5S_TEAM` to the directory's team that runs a5s, `platform` by default: nobody in it, or above it in its reporting line, can approve as the release approver. The smoke test does this with the sample's made-up people.

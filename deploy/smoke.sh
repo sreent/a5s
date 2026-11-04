@@ -8,13 +8,15 @@
 # and that the ledger is copied, locked, and verifies against its copies.
 # Needs the image first: docker build -t a5s:dev .
 # With --keep, it leaves the stack running afterwards, to try the web chat and Matrix.
+# A5S_SMOKE_ENV and A5S_SMOKE_WORK, if set, name the stack's environment file and working
+# folder, for a script that goes on with the stack it leaves, such as deploy/soak.sh.
 set -eu
 cd "$(dirname "$0")/.."
 keep=$([ "${1:-}" = --keep ] && echo 1 || echo 0)
 
-env_file=$(mktemp)
+env_file=${A5S_SMOKE_ENV:-$(mktemp)}
 reply=$(mktemp)
-work=$(mktemp -d)
+work=${A5S_SMOKE_WORK:-$(mktemp -d)}
 chmod a+rx "$work"  # for the containers that sign and record the release
 random() { head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9'; }
 idp_password=$(random)
