@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import secrets
+import time
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -25,6 +26,7 @@ import httpx
 from a5s.contract import Person, Scenario
 from a5s.core import groups
 
+MEMBERS_KEPT = 60.0  # seconds a room's members, as last read, stand for who's in it [TBC]
 UNKNOWN = "a5s doesn't know who you are. Ask an instance approver to add your Matrix id to the directory."
 ENCRYPTED = ("I can't read encrypted messages yet. Start a direct chat with me with encryption "
              "turned off.")
@@ -69,7 +71,12 @@ class Matrix:
         self.cfg = cfg
         self.http = http or httpx.Client(timeout=15)
         self._registered: set[str] = set()
-        self._rooms: dict[str, str] = {}  # each room a bot has joined, and that bot
+        self._rooms: dict[str, set[str]] = {}  # each room a5s's bots have joined, and those bots
+        self._told_encrypted: set[str] = set()  # group rooms told why a5s can't read them
+        # Who's in each room, and whether it's private, as last read, until its state changes,
+        # for the events the homeserver sends: never for what a5s checks before it writes
+        self._joined: dict[str, tuple[float, list[str]]] = {}
+        self._private: dict[str, tuple[float, bool]] = {}
 
     def check(self, authorization: str | None, access_token: str | None = None) -> None:
         """That the homeserver itself sent this. Refused if not."""
@@ -104,9 +111,10 @@ class Matrix:
 
     # Speaking as a bot, with a5s's token
 
-    def _call(self, method: str, path: str, bot: str, json: dict | None = None) -> httpx.Response:
+    def _call(self, method: str, path: str, bot: str, json: dict | None = None,
+              params: dict[str, str] | None = None) -> httpx.Response:
         return self.http.request(method, f"{self.cfg.homeserver}/_matrix/client/v3{path}",
-                                 params={"user_id": bot}, json=json,
+                                 params={"user_id": bot, **(params or {})}, json=json,
                                  headers={"Authorization": f"Bearer {self.cfg.as_token}"})
 
     def register(self, bot: str) -> None:
@@ -124,15 +132,45 @@ class Matrix:
     def join(self, room: str, bot: str) -> None:
         self.register(bot)
         self._call("POST", f"/join/{quote(room, safe='')}", bot).raise_for_status()
-        self._rooms[room] = bot
+        self._rooms.setdefault(room, set()).add(bot)
 
-    def members(self, room: str, bot: str) -> list[str] | None:
-        """Who's in a room, as the bot sees it, or None if the bot isn't in it."""
+    def members(self, room: str, bot: str, cached: bool = False) -> list[str] | None:
+        """Who's in a room, as the bot sees it, or None if the bot isn't in it: with `cached`,
+        as last read, if nobody has joined or left it since, within a minute."""
+        if cached and (seen := self._joined.get(room)) and time.monotonic() - seen[0] < MEMBERS_KEPT:
+            return seen[1]
         found = self._call("GET", f"/rooms/{quote(room, safe='')}/joined_members", bot)
         if found.status_code in (403, 404):
             return None
         found.raise_for_status()
-        return sorted(found.json().get("joined", {}))
+        joined = sorted(found.json().get("joined", {}))
+        self._joined[room] = (time.monotonic(), joined)
+        return joined
+
+    def private(self, room: str, bot: str) -> bool:
+        """Whether a room with nobody but one person and a5s's bots in it is theirs alone: only
+        those invited may join it, nobody else is invited, and nobody may read it unjoined. A
+        room that isn't is a group's room, however few are in it now."""
+        if (seen := self._private.get(room)) and time.monotonic() - seen[0] < MEMBERS_KEPT:
+            return seen[1]
+        rules = self._call("GET", f"/rooms/{quote(room, safe='')}/state/m.room.join_rules", bot)
+        rule = "invite" if rules.status_code == 404 else (
+            rules.raise_for_status() and "" or str(rules.json().get("join_rule") or "invite"))
+        invited = self._call("GET", f"/rooms/{quote(room, safe='')}/members", bot,
+                             params={"membership": "invite"})
+        invited.raise_for_status()
+        others = [e.get("state_key") for e in invited.json().get("chunk") or []
+                  if not self.agent_of(str(e.get("state_key") or ""))]
+        found = (rule in ("invite", "knock") and not others
+                 and self.history(room, bot) != "world_readable")
+        self._private[room] = (time.monotonic(), found)
+        return found
+
+    def leave(self, room: str, bot: str) -> None:
+        """Leave a room a5s won't work in, such as one with too many people."""
+        self._call("POST", f"/rooms/{quote(room, safe='')}/leave", bot).raise_for_status()
+        self._rooms.pop(room, None)
+        self._joined.pop(room, None)
 
     def history(self, room: str, bot: str) -> str:
         """Who may read what was said in a room before they joined it: "shared" unless the
@@ -163,15 +201,18 @@ class Matrix:
                 return text[len(name):].lstrip(" :,").strip()
         return text.strip()
 
+    def bots_in(self, room: str, agents: list[str]) -> list[str]:
+        """Which of a5s's bots are in a room, such as the assistant and the watcher both."""
+        if not self._rooms.get(room):
+            found = {self.bot(a) for a in agents if self.members(room, self.bot(a)) is not None}
+            if not found:
+                return []
+            self._rooms[room] = found
+        return sorted(self._rooms[room])
+
     def bot_in(self, room: str, agents: list[str]) -> str | None:
-        """Which of a5s's bots is in a room, if one is."""
-        if room in self._rooms:
-            return self._rooms[room]
-        for agent in agents:
-            if self.members(room, self.bot(agent)) is not None:
-                self._rooms[room] = self.bot(agent)
-                return self._rooms[room]
-        return None
+        """One of a5s's bots in a room, if any is."""
+        return next(iter(self.bots_in(room, agents)), None)
 
     def start(self, user: str, agent: str) -> dict[str, str]:
         """A direct chat an agent's bot starts with someone, inviting them to it. Where to
@@ -180,10 +221,12 @@ class Matrix:
             raise ValueError("a5s starts chats only with people on the organisation's own server")
         bot = self.bot(agent)
         self.register(bot)
-        made = self._call("POST", "/createRoom", bot, json={
-            "is_direct": True, "invite": [user], "preset": "trusted_private_chat"})
+        made = self._call("POST", "/createRoom", bot, json={  # anyone they add later reads
+            "is_direct": True, "invite": [user], "preset": "trusted_private_chat",  # only what's
+            "initial_state": [{"type": "m.room.history_visibility", "state_key": "",  # said
+                               "content": {"history_visibility": "joined"}}]})  # once they're in
         made.raise_for_status()
-        self._rooms[made.json()["room_id"]] = bot
+        self._rooms.setdefault(made.json()["room_id"], set()).add(bot)
         return {"room": made.json()["room_id"], "bot": bot}
 
     def send(self, reply_to: dict[str, str], text: str) -> None:
@@ -199,9 +242,12 @@ class Matrix:
     def event(self, event: dict[str, Any], scenario: Scenario, agents: list[str]) -> tuple[str, Any]:
         """What to do about one event: ("join", (room, bot)), ("message", Message),
         ("turn away", (reason, people, reply, reply_to)), ("left", (person, agent, reply_to)),
-        or ("ignore", None)."""
+        ("shared", (person, agent, reply_to)), or ("ignore", None)."""
         sender, room, kind = event.get("sender", ""), event.get("room_id", ""), event.get("type")
         content = event.get("content") or {}
+        if event.get("state_key") is not None:  # who's in it, or its rules, changed: read
+            self._joined.pop(room, None)  # them afresh next time
+            self._private.pop(room, None)
         if (kind == "m.room.member" and self.agent_of(event.get("state_key", ""))
                 and content.get("membership") in ("leave", "ban")):
             self._rooms.pop(room, None)  # a bot left, or was removed: ask again next time
@@ -212,43 +258,66 @@ class Matrix:
             known = self.person_of(sender, scenario) is not None
             if membership == "invite" and self.agent_of(target) in agents and known:
                 return "join", (room, target)
-            if membership in ("leave", "ban") and (person := self.person_of(target, scenario)):
-                bot = self.bot_in(room, agents)  # still there: they left it, or turned it down
-                if bot is not None and not [  # their own chat, not a group's room
-                        u for u in self.members(room, bot) or [] if u != target
-                        and not self.agent_of(u)]:
-                    return "left", (person.id, self.agent_of(bot), {"room": room, "bot": bot})
+            bot = self.bot_in(room, agents) if not self.agent_of(target) else None
+            people = [u for u in self.members(room, bot) or [] if not self.agent_of(u)] \
+                if bot else []
+            if (membership in ("leave", "ban") and bot is not None  # their own chat, not a
+                    and (person := self.person_of(target, scenario))  # group's room
+                    and not [u for u in people if u != target]):
+                return "left", (person.id, self.agent_of(bot), {"room": room, "bot": bot})
+            if membership == "join" and len(people) > 1:  # someone joined a person's own chat:
+                owner = next((p for u in people if u != target  # it's theirs alone no more, so
+                              and (p := self.person_of(u, scenario))), None)  # a5s writes to
+                if owner is not None:  # them first in a new one
+                    return "shared", (owner.id, self.agent_of(bot), {"room": room, "bot": bot})
             return "ignore", None
         if kind not in ("m.room.message", "m.room.encrypted"):
             return "ignore", None
         if kind == "m.room.message" and (content.get("msgtype") != "m.text"
                                           or (content.get("m.relates_to") or {}).get("rel_type") == "m.replace"):
             return "ignore", None  # notices, files and edits
-        bot = self.bot_in(room, agents)
+        bots = self.bots_in(room, agents)
+        if not bots:
+            return "ignore", None
+        joined = self.members(room, bots[0], cached=True)
+        if joined is None:  # it can't tell who's there, so it can't tell whose this is
+            self._rooms.pop(room, None)
+            return "ignore", None
+        people = [u for u in joined if u != sender and not self.agent_of(u)]  # a5s's bots
+        group = bool(people) or not self.private(room, bots[0])  # aren't people
+        if group and kind == "m.room.encrypted":  # nobody can tell whom it mentions: say why,
+            if room in self._told_encrypted:  # once
+                return "ignore", None
+            self._told_encrypted.add(room)
+            return "turn away", ("the room is encrypted, which a5s can't read yet", [],
+                                 groups.ENCRYPTED, {"room": room, "bot": bots[0]})
+        # A group's room: it answers only when someone mentions one of its bots, as that bot
+        bot = next((b for b in bots if self.mentioned(content, b)), None) if group else bots[0]
         if bot is None:
             return "ignore", None
         reply_to = {"room": room, "bot": bot}
-        others = [u for u in self.members(room, bot) or [] if u not in (sender, bot)]
-        people = [u for u in others if not self.agent_of(u)]  # a5s's other bots aren't people
-        if people and (kind == "m.room.encrypted" or not self.mentioned(content, bot)):
-            return "ignore", None  # a group's room: it answers only when someone mentions its bot
         person = self.person_of(sender, scenario)
         if person is None:
             return "turn away", (f"the directory doesn't know matrix:{sender}", [], UNKNOWN, reply_to)
         if kind == "m.room.encrypted":
             return "turn away", ("a5s can't read encrypted messages yet", [person.id], ENCRYPTED,
                                  reply_to)
-        if not people:
+        if not group:
             return "message", Message(person.id, self.agent_of(bot), content.get("body", ""),
                                       reply_to)
+        joined = self.members(room, bot)  # a mention in a group's room: who's in it now,
+        if joined is None:  # afresh, since a run there acts for them all
+            return "ignore", None
+        people = [u for u in joined if u != sender and not self.agent_of(u)]
+        if len(people) + 1 > groups.LIMIT:  # and it leaves, so each message there costs nothing
+            return "turn away", (f"the group has more than {groups.LIMIT} people", [person.id],
+                                 groups.TOO_MANY, {**reply_to, "leave": "yes"})
         known = [self.person_of(u, scenario) for u in people]
         if None in known:
+            strangers = [u for u, p in zip(people, known, strict=True) if p is None]
             return "turn away", ("someone in the group isn't in the directory", [person.id],
-                                 groups.STRANGERS, reply_to)
+                                 groups.STRANGERS.format(who=groups.listed(strangers)), reply_to)
         members = tuple(sorted({person.id, *(p.id for p in known if p)}))
-        if len(members) > groups.LIMIT:
-            return "turn away", (f"the group has more than {groups.LIMIT} people", [person.id],
-                                 groups.TOO_MANY, reply_to)
         if self.history(room, bot) != "joined":  # "invited" shows people, once they've joined,
             # what was said while they were only invited, which the run wasn't for
             return "turn away", ("the room shows people what was said before they joined",

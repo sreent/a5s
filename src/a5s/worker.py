@@ -8,7 +8,7 @@ run's LangGraph thread ends with the run: nothing is checkpointed.
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 import httpx
@@ -69,10 +69,38 @@ def gateway_tool(gw: httpx.Client, definition: dict[str, Any]) -> GatewayTool:
             return denial(response.json())
         if response.status_code >= 400:
             return f"The tool failed: {response.text[:300]}"
-        return json.dumps(response.json()["result"], ensure_ascii=False)
+        found = response.json()
+        if "answer_with" in found:  # another agent's run, which the core opened for this
+            found = answered(str(gw.base_url), found["answer_with"])  # worker to run, as its own
+            if "error" in found:
+                return f"The tool failed: {found['error']}"
+        return json.dumps(found["result"], ensure_ascii=False)
 
     return GatewayTool(name=name, description=definition["description"],
                        args_schema=definition["schema"], func=call, gateway=gw)
+
+
+def answered(gateway_url: str, asked: dict[str, str]) -> dict[str, Any]:
+    """Run the agent asked a question, on the run the core opened for it, and give the core
+    its answer, or why there's none: what the run that asked gets back. The token is the
+    other run's own, so nothing of this run's reaches it but the question."""
+    problem, reply = None, ""
+    try:
+        reply = run_agent(gateway_url.rstrip("/"), asked["token"], [{
+            "role": "task", "content": asked["task"], "at": datetime.now(UTC).isoformat()}])
+    except ModelDown:
+        problem = "its model isn't answering"
+    except BudgetSpent as exc:
+        problem = "its budget is spent" + (" for today" if "today" in str(exc) else "")
+    except Exception as exc:  # noqa: BLE001 - its own failure, which the asker hears of
+        problem = f"its run failed: {type(exc).__name__}"
+    with httpx.Client(base_url=gateway_url, timeout=60,
+                      headers={"Authorization": f"Bearer {asked['token']}"}) as gw:
+        given = gw.post("/run/answer", json={"text": reply, "problem": problem})
+    if given.status_code >= 400:
+        return {"error": f"the {asked.get('agent', 'agent')}'s answer didn't reach a5s: "
+                         f"{given.text[:200]}"}
+    return given.json()
 
 
 def text_of(message: Any) -> str:

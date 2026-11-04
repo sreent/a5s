@@ -1,6 +1,6 @@
 # Phase 3
 
-**Status:** Confirmed on 4 November 2026. Steps 1 to 3, group conversations, agent to agent and the notebook, are built ([progress](#progress)) · **Under:** [Architecture](architecture.md)
+**Status:** Confirmed on 4 November 2026. Steps 1 to 3, group conversations, agent to agent and the notebook, are built, and round 7 of the critique has read them and what it found is fixed ([progress](#progress)). Step 4 waits for a deployment that needs it · **Under:** [Architecture](architecture.md)
 
 Phase 3 lets agents work with more than one person at a time, and with each other. In [phase 1](phase-1.md) and [phase 2](phase-2.md), each person has a conversation of their own with each agent, and a5s turns away a chat with anyone else in it. In phase 3, people can bring an agent into a group chat, an agent can ask another what it knows, and an agent can keep a notebook of what it learns from records. Each keeps the rules phase 2 ends with: a run sees only what everyone it acts for may see, authority never passes from one person or agent to another, and what's said to an agent reaches only runs for people who heard it.
 
@@ -36,15 +36,15 @@ Each step ends with something running and its tests passing.
    - The question and the answer take A2A's shapes for a message and a task, so agents outside a5s can come later without a second way of asking.
 3. **The notebook.**
    - A typed tool notes something learned, naming the records and tool results it comes from. Code keeps the entry only if every key, amount and date in it is in those sources, and a marked run can't use the tool.
-   - A run is given the entries whose every source its people may see, within a budget.
-   - A sweep renews each entry whose sources still hold at 90 days, and lets the rest go. The agent's owner reads and removes entries on the core's page.
+   - A run is given the entries whose every source its people may see, within a budget. Round 7 narrowed this: whose every record its run read they may see, and only on a case a note names.
+   - A sweep renews each entry whose sources still hold at 90 days, and lets the rest go. Round 7 made it each day, by its records' fingerprints. The agent's owner reads and removes entries on the core's page.
 4. **Adapters for managed runtimes,** only once a deployment needs one.
 
 ## Done means
 
 - Each finding the [critique](critique.md) marks for phase 3 has a test in a5s's own suite that shows the code stops it: A9, C1 and C9, and F6 for group chats.
 - In the sample, two people in a Matrix room ask the assistant about a record only one of them may see, and it answers only from what both may see. Someone added to the room later gets nothing said before they joined. The same holds in a Teams group chat, against the fake of the Bot Framework. The assistant asks the watcher what changed on a record, for the person it's answering, and hears only what that person may see. A notebook entry holds only what its records show, and goes once they stop showing it.
-- Round 7 of the critique has read the code, and what it found is fixed.
+- Round 7 of the critique has read the code, and what it found is fixed. It found 41 problems once merged, and fixed 39; two are kept by design ([critique](critique.md#round-7-phase-3)).
 
 ## Progress
 
@@ -77,7 +77,18 @@ Step 3, the notebook, is built:
 | Built | Where |
 | --- | --- |
 | `note_learned`, which a release grants with `context: notebook`, for a run that acts for nobody, such as one on its schedule, so a note comes from records alone, never from anyone's words. A run that has read content from outside notes nothing. Code keeps a note only if every record it names was read by the run with its tools, in its instance's parts, and holds every key, amount and date it says, up to 50 notes for each instance. | [`core/notebook.py`](../src/a5s/core/notebook.py) |
-| Each run of the instance is given the notes whose every record all its people may see, newest first, within a budget, and told to check a record before relying on a note about it. At 90 days a note whose records still hold it is renewed, in the hourly retention sweep, and any other goes. | [`core/notebook.py`](../src/a5s/core/notebook.py), [`core/gateway.py`](../src/a5s/core/gateway.py) |
+| Each run of the instance is given the notes whose every record all its people may see, newest first, within a budget, and told to check a record before relying on a note about it. At 90 days a note whose records still hold it is renewed, in the hourly retention sweep, and any other goes. Round 7 changed both: see below. | [`core/notebook.py`](../src/a5s/core/notebook.py), [`core/gateway.py`](../src/a5s/core/gateway.py) |
 | The core's page for the notebook, where the agent's owner, or whoever runs its instance, signs in and reads the notes whose records they may see, and removes any. The ledger records each note kept, lapsed or removed, by its hash. | [`core/webchat/notebook.js`](../src/a5s/core/webchat/notebook.js), [`core/inbox.py`](../src/a5s/core/inbox.py) |
 
 Its tests are in [`tests/test_notebook.py`](../tests/test_notebook.py), with a live case where the assistant, on a real model, notes what it learned from the records on its schedule. On that case's first try, the model read customers' emails along the way, and its note was refused, as it should be: a release's schedule should say to work from the records alone.
+
+Round 7 of the critique read the three steps, and changed them ([critique](critique.md#round-7-phase-3)):
+
+| Changed | Where |
+| --- | --- |
+| A run in a group sees only what everyone in it may see, but its changes are for whoever asked and whoever spoke in what it was given: only they don't decide them, and only theirs they count against. It's told it hears only mentions, and asks for answers that mention it. It writes only to the group. An offer made there keeps who heard it. Someone's own Matrix chat that another person joins is theirs alone no more, so a5s writes to them first in a new one, and a5s starts direct chats with someone it knows only from groups. A Matrix room is someone's own only if nobody else can join or read it; an encrypted room hears why a5s can't read it; and each of a5s's bots in a room hears its own mentions. In Teams, other people's mentions keep their names, and another organisation's app makes a chat one a5s won't work in. | [`core/groups.py`](../src/a5s/core/groups.py), [`core/matrix.py`](../src/a5s/core/matrix.py), [`core/teams.py`](../src/a5s/core/teams.py), [`core/gateway.py`](../src/a5s/core/gateway.py), [`core/reminders.py`](../src/a5s/core/reminders.py) |
+| The worker that asks another agent runs the run asked, which the core opens at once: so a question never waits for a worker another run holds, and no thread of the core's waits on it. The run asked sees nothing of a class the asking model may not see, is paid for by the asker's day, and, for an agent that reports on records, is given what changed. Only what it read comes back as found, never what it was asked. A run asks three questions at most, and knows what each agent it may ask does. | [`core/asking.py`](../src/a5s/core/asking.py), [`core/gateway.py`](../src/a5s/core/gateway.py), [`worker.py`](../src/a5s/worker.py) |
+| A note reaches only people who may see every record its run read, and only runs on a case it names, where it isn't taken as found. It says only what the run read of the records it names. It goes once its records change, checked each day apart from the retention sweep, and the notebook keeps its newest 50. A run is offered only the tools that can work for it. | [`core/notebook.py`](../src/a5s/core/notebook.py), [`core/provenance.py`](../src/a5s/core/provenance.py), [`core/coretools.py`](../src/a5s/core/coretools.py) |
+| The status counts questions, the notebook, answers kept back from a group chat, and chats turned away apart from denials. A release won't serve a database a later one migrated, migrations and the ledger's lock wait a while at most, and a busy pool connects afresh only as many as it holds. | [`core/status.py`](../src/a5s/core/status.py), [`db.py`](../src/a5s/db.py), [`core/ledger.py`](../src/a5s/core/ledger.py) |
+
+Its tests are in `tests/test_r7_channels.py`, `tests/test_r7_groups.py`, `tests/test_r7_asking.py`, `tests/test_r7_notebook.py` and `tests/test_r7_operations.py`.

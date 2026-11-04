@@ -29,6 +29,8 @@ class Homeserver:
         self.sent: list[dict] = []
         self.started: list[dict] = []  # rooms a bot made, and whom it invited
         self.closed: set[str] = set()  # rooms nobody may join, such as an invitation withdrawn
+        self.invited: dict[str, set[str]] = {}  # people invited to each room, not yet in it
+        self.rules: dict[str, str] = {}  # each room's join rule, if not invite only
         self.url = ""
 
     def handler(self, request: httpx.Request) -> httpx.Response:
@@ -57,6 +59,15 @@ class Homeserver:
             return httpx.Response(403, json={"errcode": "M_FORBIDDEN"})
         if path.endswith("/joined_members"):
             return httpx.Response(200, json={"joined": {m: {} for m in self.rooms[room]}})
+        if path.endswith("/members"):  # those invited, who haven't joined yet
+            return httpx.Response(200, json={"chunk": [
+                {"type": "m.room.member", "state_key": u, "content": {"membership": "invite"}}
+                for u in sorted(self.invited.get(room, set()))]})
+        if path.endswith("/state/m.room.join_rules"):
+            return httpx.Response(200, json={"join_rule": self.rules.get(room, "invite")})
+        if path.endswith("/leave"):
+            self.rooms[room].discard(user)
+            return httpx.Response(200, json={})
         if "/send/m.room.message/" in path:
             self.sent.append({"room": room, "as": user, "body": json.loads(request.content)["body"]})
             return httpx.Response(200, json={"event_id": f"${uuid.uuid4().hex}"})

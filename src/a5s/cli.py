@@ -165,6 +165,8 @@ def _summaries(cfg: Config, person: str, agent: str) -> None:
 
 
 def _service(cfg: Config, name: str):
+    if name != "worker":  # never against a schema a later release made
+        db.known(cfg.database_url)
     if name == "gateway":
         return build.app(cfg)
     if name == "worker":
@@ -173,6 +175,7 @@ def _service(cfg: Config, name: str):
 
 
 def _scheduler(cfg: Config) -> None:
+    db.known(cfg.database_url)  # never against a schema a later release made
     hand_off = remote_worker(cfg.worker_url) if cfg.worker_url else worker.run_agent
     Scheduler(cfg, build.scenario(cfg), worker=hand_off).listen(threading.Event())
 

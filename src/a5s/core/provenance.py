@@ -32,6 +32,48 @@ def read(conn: psycopg.Connection, run: str, source: str, said: Any, pattern: st
                      (run, source, v.kind, v.norm, v.text))
 
 
+ABOUT = " about "  # in what a run read of each record a tool's result held: "<tool> about <key>"
+
+
+def read_records(conn: psycopg.Connection, run: str, tool: str, field: str | None, result: Any,
+                 pattern: str | None) -> None:
+    """Note what a tool's result said of each record in it, by its key, apart: each item that
+    names a record by `field`, without the records within it, which are items of their own. So
+    a note can be checked against what the run read of the records it names (core/notebook.py)."""
+    if not field:
+        return
+
+    def named(value: Any) -> str | None:
+        key = value.get(field) if isinstance(value, dict) else None
+        return key if isinstance(key, str) and key else None
+
+    def alone(value: Any) -> Any:  # the item, with the records in it as their keys
+        if isinstance(value, dict):
+            return {k: named(v) or alone(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [named(v) or alone(v) for v in value]
+        return value
+
+    def walk(value: Any) -> None:
+        if (key := named(value)) is not None:
+            read(conn, run, f"{tool}{ABOUT}{key}", alone(value), pattern)
+        for v in value.values() if isinstance(value, dict) else value if isinstance(
+                value, list) else ():
+            walk(v)
+
+    walk(result)
+
+
+def records_read(conn: psycopg.Connection, run: str) -> dict[str, list[Value]]:
+    """The records a run read with its tools, by key, each with what it read of it."""
+    found: dict[str, list[Value]] = {}
+    for r in conn.execute("select source, kind, norm, text from run_reads where run_id = %s "
+                          "and source like %s", (run, f"%{ABOUT}%")):
+        key = r["source"].rsplit(ABOUT, 1)[1]
+        found.setdefault(key, []).append(Value(r["kind"], r["text"], r["norm"]))
+    return found
+
+
 def sources(conn: psycopg.Connection, scenario: Scenario, run: dict) -> list[tuple[Value, str]]:
     """What the run has read, and from where: its tools, a5s's briefs and tasks, and, when it
     acts for one person, what they said."""

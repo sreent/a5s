@@ -62,6 +62,7 @@ from a5s.core.teams import UNKNOWN, Refused
 
 log = logging.getLogger(__name__)
 MAX_BYTES = 256 * 1024  # far more than one message needs
+TRIES = 3  # deliveries of a Matrix event a5s can't act on before it's skipped, and recorded
 REQUESTS_A_DAY = 5  # versions one person may ask for in the settings app [TBC]
 MAX_SETTINGS = 64 * 1024  # characters of settings, as written
 WEBCHAT = Path(__file__).parent / "webchat"
@@ -248,12 +249,17 @@ def create_app(gw: Any) -> FastAPI:
         people = [message.person] if message.person else []
         group = message.kind == "groupChat"
         members: list[str | None] = []
+        strangers: list[str] = []
         if group and message.person:  # who's in it, from Teams itself, at each message
             try:
-                members = gw.teams.members(message.reply_to, gw.scenario)
-            except (httpx.HTTPError, ValueError) as exc:
+                members = gw.teams.members(message.reply_to, gw.scenario, strangers)
+            except (httpx.HTTPError, ValueError) as exc:  # recorded, and said, not dropped
                 log.warning("couldn't read who's in a Teams group chat: %s", exc)
-                raise HTTPException(503, "a5s couldn't read who's in the chat") from None
+                with db.transaction(gw.url) as conn:
+                    turned_away(conn, "teams", "a5s couldn't read who's in the chat",
+                                people, message.text)
+                background.add_task(tell_in_teams, message.reply_to, groups.UNREAD)
+                return Response(status_code=200)
         everyone = sorted({message.person, *members}) if group and None not in members else []
         with db.transaction(gw.url) as conn:
             if message.person is None:
@@ -264,14 +270,15 @@ def create_app(gw: Any) -> FastAPI:
                 turned_away(conn, "teams", "a5s works in group chats, not a team's channels",
                             people, message.text)
                 background.add_task(tell_in_teams, message.reply_to, groups.CHANNELS)
-            elif group and not everyone:
-                turned_away(conn, "teams", "someone in the group isn't in the directory", people,
-                            message.text)
-                background.add_task(tell_in_teams, message.reply_to, groups.STRANGERS)
-            elif len(everyone) > groups.LIMIT:
+            elif group and len({message.person, *members}) > groups.LIMIT:  # before naming
                 turned_away(conn, "teams", f"the group has more than {groups.LIMIT} people", people,
                             message.text)
                 background.add_task(tell_in_teams, message.reply_to, groups.TOO_MANY)
+            elif group and not everyone:
+                turned_away(conn, "teams", "someone in the group isn't in the directory", people,
+                            message.text)
+                background.add_task(tell_in_teams, message.reply_to, groups.STRANGERS.format(
+                    who=groups.listed(strangers) if strangers else "someone here"))
             else:  # Teams' message ids are unique only within a conversation
                 source = f"{message.reply_to['conversation']}/{message.reply_to['activity']}"
                 record(conn, channel="teams", source_id=source, person=message.person,
@@ -298,6 +305,14 @@ def create_app(gw: Any) -> FastAPI:
         except Exception:
             log.exception("couldn't answer in Matrix")
 
+    def leave_in_matrix(reply_to: dict[str, str]) -> None:
+        try:
+            gw.matrix.leave(reply_to["room"], reply_to["bot"])
+        except Exception:
+            log.exception("couldn't leave a Matrix room")
+
+    failures: dict[str, int] = {}  # Matrix events a5s couldn't act on, by id, and how often
+
     @app.put("/channels/matrix/_matrix/app/v1/transactions/{txn}")
     def matrix_transaction(txn: str, body: dict[str, Any], background: BackgroundTasks,
                            authorization: str | None = Header(default=None),
@@ -309,18 +324,29 @@ def create_app(gw: Any) -> FastAPI:
                 what, detail = gw.matrix.event(event, gw.scenario, agents)
                 if what == "join":
                     gw.matrix.join(*detail)
-            except httpx.HTTPStatusError as exc:
-                if exc.response.status_code >= 500:  # the homeserver sends it all again later
+            except httpx.HTTPError as exc:
+                failed = failures[event.get("event_id", "")] = failures.get(
+                    event.get("event_id", ""), 0) + 1
+                server = isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code < 500
+                if not server and failed < TRIES:  # the homeserver sends it all again later
                     raise
-                # It sends nothing more until this delivery is taken, so one event it won't
-                # let a5s act on, such as an invitation withdrawn before a5s joined, is skipped
-                log.warning("skipped a Matrix event the homeserver refused: %s", exc)
+                # It sends nothing more until this delivery is taken, so one event it won't let
+                # a5s act on, such as an invitation withdrawn before a5s joined, or one room it
+                # can't read three times running, is skipped, and recorded
+                log.warning("skipped a Matrix event: %s", exc)
+                failures.pop(event.get("event_id", ""), None)
+                with db.transaction(gw.url) as conn:
+                    turned_away(conn, "matrix", f"a5s couldn't act on it: {type(exc).__name__}",
+                                [], "")
                 continue
             if what == "turn away":
                 reason, people, reply, reply_to = detail
                 with db.transaction(gw.url) as conn:
                     turned_away(conn, "matrix", reason, people, "")
-                background.add_task(tell_in_matrix, reply_to, reply)
+                background.add_task(tell_in_matrix, {k: v for k, v in reply_to.items()
+                                                     if k != "leave"}, reply)
+                if reply_to.get("leave"):  # a room it won't ever work in: it goes
+                    background.add_task(leave_in_matrix, reply_to)
             elif what == "message":
                 with db.transaction(gw.url) as conn:  # a resent delivery counts once
                     record(conn, channel="matrix", source_id=event["event_id"], person=detail.person,
@@ -330,6 +356,9 @@ def create_app(gw: Any) -> FastAPI:
             elif what == "left":  # so a5s writes to them elsewhere, and doesn't ask them back
                 with db.transaction(gw.url) as conn:
                     chats.left(conn, "matrix", *detail)
+            elif what == "shared":  # someone joined their own chat: a5s writes first elsewhere
+                with db.transaction(gw.url) as conn:
+                    chats.shared(conn, "matrix", *detail)
         return {}
 
     @app.get("/channels/matrix/_matrix/app/v1/users/{user}")
@@ -960,20 +989,32 @@ def create_app(gw: Any) -> FastAPI:
         approving()
         return page("notebook.js")
 
+    def may_see(person: Person, row: dict) -> bool:
+        """Whether someone may see a note: every record its run read, as it reached runs."""
+        return all(gw.scenario.sees(person.id, k) for k in row["read_records"] or row["sources"])
+
     @app.get("/notebook/api")
     def notebook_now(authorization: str | None = Header(default=None)) -> dict:
-        """The entries of the instances someone keeps, those whose every record they may see."""
+        """The entries of the instances someone keeps, those whose every record they may see,
+        each with links to its records, and who else keeps the ones they may not see."""
         person, kept = keeping(authorization)
         with db.transaction(gw.url) as conn:
             rows = conn.execute("select * from notebook where instance_id = any(%s) "
-                                "order by instance_id, renewed_at desc, id desc",
+                                "order by instance_id, written_at desc, id desc",
                                 ([i["id"] for i in kept],)).fetchall()
-        shown = [r for r in rows if all(gw.scenario.sees(person.id, k) for k in r["sources"])]
+        shown = [r for r in rows if may_see(person, r)]
+        hidden = {r["instance_id"] for r in rows if not may_see(person, r)}
+        others = sorted({p.name for i in kept if i["id"] in hidden
+                         for k in (i["owner"], i["deputy"])
+                         if k and k != person.id and (p := gw.scenario.person(k))})
         return {"you": person.name, "instances": [i["id"] for i in kept],
                 "entries": [{"entry": f"N-{r['id']}", "instance": r["instance_id"],
-                             "text": r["text"], "sources": list(r["sources"]),
-                             "renewed": r["renewed_at"].date().isoformat()} for r in shown],
-                "hidden": len(rows) - len(shown)}
+                             "text": r["text"],
+                             "sources": [{"key": k, "link": (r["links"] or {}).get(k)}
+                                         for k in r["sources"]],
+                             "noted": r["written_at"].date().isoformat(),
+                             "checked": r["checked_at"].date().isoformat()} for r in shown],
+                "hidden": len(rows) - len(shown), "others": others}
 
     @app.post("/notebook/api/{entry}/remove")
     def notebook_remove(entry: str, authorization: str | None = Header(default=None)) -> dict:
@@ -985,7 +1026,7 @@ def create_app(gw: Any) -> FastAPI:
         with db.transaction(gw.url) as conn:
             row = conn.execute("delete from notebook where id = %s and instance_id = any(%s) "
                                "returning *", (int(number), [i["id"] for i in kept])).fetchone()
-            if row is None or not all(gw.scenario.sees(person.id, k) for k in row["sources"]):
+            if row is None or not may_see(person, row):
                 raise HTTPException(404, "no such entry in a notebook you keep")
             ledger.append(conn, notebook.entry(row, "remove", "its keeper removed it", person.id))
         return {"removed": f"N-{row['id']}"}

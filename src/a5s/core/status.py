@@ -34,23 +34,37 @@ def report(conn: psycopg.Connection, breakers: list[str], keys: tuple[str, ...] 
         "select trigger->>'kind' as kind, coalesce(outcome, 'open') as outcome, count(*) as n "
         "from runs where opened_at > now() - interval '1 day' group by 1, 2 order by 1, 2"
     ).fetchall()
-    denied = conn.execute(  # the newest denials, by the ledger's index of them
-        "select kind, action, count(*) as n from ("
-        "  select kind, action, entry::jsonb->>'at' as at from ledger "
+    denied = conn.execute(  # the newest denials, by the ledger's index of them: a chat a5s
+        "select kind, action, count(*) as n from ("  # turned away, such as a group too big,
+        "  select kind, action, entry::jsonb->>'at' as at from ledger "  # counted apart
         "  where decision = 'deny' order by seq desc limit 10000) recent "
         "where at::timestamptz > now() - interval '1 day' group by 1, 2 order by 3 desc, 1, 2"
     ).fetchall()
+    turned = [d for d in denied if d["kind"] == "inbound"]
+    denied = [d for d in denied if d["kind"] != "inbound"]
+    asked = conn.execute(  # questions agents asked each other (core/asking.py)
+        "select count(*) filter (where answered_at is not null) as answered, "
+        "count(*) filter (where problem is not null) as unanswered, "
+        "percentile_cont(0.9) within group (order by extract(epoch from answered_at - asked_at)) "
+        "filter (where answered_at is not null) as p90 "
+        "from questions where asked_at > now() - interval '1 day'").fetchone()
+    noted = conn.execute(  # the notebook (core/notebook.py): its notes, and those let go
+        "select (select count(*) from notebook) as kept, (select count(*) from ledger "
+        "where kind = 'notebook' and action = 'lapse' and (entry::jsonb ->> 'at')::timestamptz "
+        "> now() - interval '1 day') as lapsed").fetchone()
     tokens = conn.execute(
         "select r.instance_id, sum(r.tokens) as tokens, (select count(*) from spend s "
         "  where s.instance_id = r.instance_id and s.warned_at > now() - interval '1 day') "
         "  as warnings "
         "from runs r where r.opened_at > now() - interval '1 day' and r.tokens > 0 "
         "group by 1 order by 1").fetchall()
-    deliveries = conn.execute(
+    deliveries = conn.execute(  # an answer kept back from a group chat isn't a chat that's down
         "select count(*) filter (where delivered_at is null and channel <> 'local' "
         "  and attempts > 0) as retrying, "
-        "count(*) filter (where channel = 'local' and problem is not null) as left_in_inbox "
-        "from outbox where at > now() - interval '1 day'").fetchone()
+        "count(*) filter (where channel = 'local' and problem is not null "
+        "  and problem <> 'someone joined the chat while it was answering') as left_in_inbox, "
+        "count(*) filter (where problem = 'someone joined the chat while it was answering') "
+        "  as kept_back from outbox where at > now() - interval '1 day'").fetchone()
     held = conn.execute("select count(*) as n, count(distinct person) as people "
                         "from urgent_held where sent_at is null").fetchone()
     changes = conn.execute(
@@ -89,10 +103,15 @@ def report(conn: psycopg.Connection, breakers: list[str], keys: tuple[str, ...] 
         "queue": {"waiting": queue["waiting"], "oldest_seconds": _number(queue["oldest"])},
         "runs": [dict(r) for r in runs],
         "denied": [dict(r) for r in denied],
+        "turned_away": sum(d["n"] for d in turned),
+        "questions": {"answered": asked["answered"], "unanswered": asked["unanswered"],
+                      "p90_seconds": _number(asked["p90"])},
+        "notebook": {"kept": noted["kept"], "lapsed": noted["lapsed"]},
         "tokens": [{"instance": r["instance_id"], "tokens": int(r["tokens"]),
                     "budget_warnings": r["warnings"]} for r in tokens],
         "deliveries": {"retrying": deliveries["retrying"],
-                       "left_in_inbox": deliveries["left_in_inbox"]},
+                       "left_in_inbox": deliveries["left_in_inbox"],
+                       "kept_back": deliveries["kept_back"]},
         "urgent_held": {"messages": held["n"], "people": held["people"]},
         "changes": {"waiting": changes["waiting"], "oldest_seconds": _number(changes["oldest"]),
                     "stuck": changes["stuck"], "not_made": changes["not_made"],
@@ -143,6 +162,18 @@ def told(status: dict[str, Any]) -> str:
         + f" (objective: {o['chases']['objective']:.0%}" + _verdict(o["chases"]["met"]) + ").",
         "  Denied: " + (_listed({f"{d['kind']} {d['action']}": d["n"] for d in status["denied"]})
                         or "nothing") + ".",
+        "  Chats turned away, such as a group too big or with strangers: "
+        + str(status.get("turned_away") or "none") + ".",
+        "  Questions agents asked each other: " + (
+            f"{status['questions']['answered']} answered"
+            + (f", nine in ten within {status['questions']['p90_seconds']:.0f}s"
+               if status["questions"]["p90_seconds"] is not None else "")
+            + f", {status['questions']['unanswered']} not"
+            if status["questions"]["answered"] or status["questions"]["unanswered"]
+            else "none") + ".",
+        "  Notebook: " + f"{status['notebook']['kept']} notes"
+        + (f", {status['notebook']['lapsed']} let go in the last day as their records changed"
+           if status["notebook"]["lapsed"] else "") + ".",
         "  Tokens: " + ("; ".join(f"{t['instance']} {t['tokens']:,}"
                                   + (f", {t['budget_warnings']} past four fifths"
                                      if t["budget_warnings"] else "")
@@ -151,7 +182,10 @@ def told(status: dict[str, Any]) -> str:
             f"{status['deliveries']['retrying']} being tried again, "
             f"{status['deliveries']['left_in_inbox']} left in people's local inbox"
             if status["deliveries"]["retrying"] or status["deliveries"]["left_in_inbox"]
-            else "none") + ".",
+            else "none") + "."
+        + (f" Answers kept back from a group chat someone joined: "
+           f"{status['deliveries']['kept_back']}." if status["deliveries"].get("kept_back")
+           else ""),
         "  Changes waiting for a decision: " + (
             f"{status['changes']['waiting']}, the oldest for "
             f"{status['changes']['oldest_seconds'] / 86400:.0f} days"

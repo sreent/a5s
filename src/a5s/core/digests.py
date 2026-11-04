@@ -16,12 +16,13 @@ agent whose release lets them, with one of a5s's own tools (core/coretools.py).
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, time, timedelta
 
 import psycopg
 
 from a5s.contract import Person
-from a5s.core.coretools import Call, CoreTool, Refused
+from a5s.core.coretools import Call, CoreTool, Refused, one_to_one
 from a5s.core.obligations import day, local, working
 
 KINDS = ("obligation", "report", "reminder")  # the runs whose messages wait for a digest
@@ -124,3 +125,5 @@ TOOLS = {t.name: t for t in (
              {"type": "object", "required": ["time"], "properties": {
                  "time": {"type": "string", "description": "Such as 08:30"}}}, set_time),
 )}
+# One person's own: offered only in their own chat, never a group chat
+TOOLS = {n: replace(t, offered=one_to_one) for n, t in TOOLS.items()}

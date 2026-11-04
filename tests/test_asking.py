@@ -6,7 +6,6 @@ agent that's asked can't ask another (critique A9)."""
 
 import json
 import os
-import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 
@@ -37,27 +36,13 @@ def may_ask(stack, serves: tuple[str, ...] = ("ana", "ben"), asks: bool = True,
 
 @contextmanager
 def questions_answered(stack) -> Iterator[None]:
-    """The scheduler's workers, answering questions as they come, as they do deployed."""
-    stop, scheduler = threading.Event(), stack.scheduler()
-
-    def loop() -> None:
-        while not stop.is_set():
-            scheduler.answer_questions()
-            stop.wait(0.05)
-
-    thread = threading.Thread(target=loop, daemon=True)
-    thread.start()
-    try:
-        yield
-    finally:
-        stop.set()
-        thread.join(10)
+    """Questions are answered by the worker that asks them, at once: nothing else runs."""
+    yield
 
 
 @pytest.fixture
 def answering(stack):
-    with questions_answered(stack):
-        yield
+    yield
 
 
 def questions(stack) -> list[dict]:
@@ -94,12 +79,13 @@ def test_an_agent_asks_another_for_the_person_it_acts_for(stack, answering):
     assert (q["asker"], q["asked"], q["acts_for"], q["text"]) == (
         "assistant-finance", "watcher-finance", ["ana"], ASKED)
     assert q["answer"] == "Q-1001 hasn't changed since you were last told."
-    assert q["task"]["status"]["state"] == "TASK_STATE_COMPLETED"  # an A2A task
-    assert q["task"]["history"][0]["parts"] == [{"text": ASKED}]
-    assert q["task"]["artifacts"][0]["parts"] == [{"text": q["answer"]}]
+    task = asking.task(q)  # as an A2A task
+    assert task["status"]["state"] == "TASK_STATE_COMPLETED"
+    assert task["history"][0]["parts"] == [{"text": ASKED}]
+    assert task["artifacts"][0]["parts"] == [{"text": q["answer"]}]
     asker, asked = runs(stack)
     assert (asked["instance_id"], asked["acts_for"]) == ("watcher-finance", ["ana"])
-    assert asked["trigger"]["by_run"] == asker["id"] == q["task"]["contextId"]
+    assert asked["trigger"]["by_run"] == asker["id"] == task["contextId"]
     assert tool_result(stack, 2) == {"agent": "watcher", "answer": q["answer"]}
     told = stack.model.requests[1]["body"]["messages"]  # what the watcher was asked
     assert "The assistant asks you this, for Ana Ortiz: " + ASKED in told[-1]["content"]
@@ -178,16 +164,21 @@ def test_values_the_agent_asked_made_up_dont_count_as_found(stack, answering):
     assert "(a5s: " in reply and "2026-12-24" in reply.split("(a5s: ")[1]
 
 
-def test_a_question_nobody_answers_in_time_is_given_up(stack, monkeypatch):
+def test_a_question_whose_run_fails_says_why_and_its_run_is_over(stack):
     may_ask(stack)
-    monkeypatch.setattr(asking, "WAIT", 0.5)  # and no scheduler to answer it
     stack.model.reply(None, ("ask_agent", {"agent": "watcher", "question": ASKED}))
+    stack.model.on_request = lambda n: setattr(stack.model, "failing", 1) if n == 2 else None
     stack.model.reply("The watcher didn't answer.")
     stack.say(ASKED)
-    assert "the watcher didn't answer" in said(stack, 1)
+    assert "the watcher didn't answer: its model isn't answering" in said(stack, -1)
     [q] = questions(stack)
-    assert q["problem"] and q["task"]["status"]["state"] == "TASK_STATE_FAILED"
-    assert stack.scheduler().answer_questions() == 0  # nobody runs for it now
+    assert q["problem"] == "its model isn't answering"
+    assert asking.task(q)["status"]["state"] == "TASK_STATE_FAILED"
+    _, asked = runs(stack)
+    with db.transaction(stack.admin) as conn:
+        [closed] = conn.execute("select closed_at, outcome from runs where id = %s",
+                                (asked["id"],)).fetchall()
+    assert closed["closed_at"] is not None and closed["outcome"] == "its model isn't answering"
 
 
 def test_settings_name_only_other_instances_to_ask_and_say_so_in_words(stack):
@@ -201,8 +192,9 @@ def test_settings_name_only_other_instances_to_ask_and_say_so_in_words(stack):
     settings["instances"]["watcher-finance"] = WATCHER
     after = parse_settings(yaml.safe_dump(settings).encode())
     said = approvals.changes(before, after, stack.gateway.definitions, stack.gateway.scenario.person)
-    assert {"text": "assistant-finance may ask the watcher (watcher-finance) what they know, "
-                    "for the people it acts for.", "widens": True} in said
+    assert {"text": "assistant-finance may ask the watcher (watcher-finance) questions, for the "
+                    "people it acts for, which each answers from the records in its own parts "
+                    "that those people may see.", "widens": True} in said
 
 
 @pytest.mark.live

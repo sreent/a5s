@@ -35,7 +35,7 @@ import psycopg
 from a5s import db
 from a5s.config import Config
 from a5s.contract import INSTANCE_APPROVER, PART_OWNER, Scenario
-from a5s.core import asking, groups, registry
+from a5s.core import groups, registry
 from a5s.services import context, summaries
 from a5s.worker import BudgetSpent, ModelDown, run_agent
 
@@ -109,9 +109,10 @@ class Scheduler:
                 return fit[0]
         return theirs[0] if theirs else None
 
-    def _nobody_serves(self, agent: str, asker: str) -> str:
+    def _nobody_serves(self, agent: str, asker: str, others: list[str] | None = None) -> str:
         """Who can add someone to an agent: the owners of the parts its instances work in, or
-        the instance approvers, for one in no part."""
+        the instance approvers, for one in no part. With `others`, the people in a group chat
+        with the asker whom it doesn't serve."""
         with db.transaction(self.cfg.database_url) as conn:
             scopes = [i["parts"] or {} for i in conn.execute(
                 "select parts from instances where definition = %s and status <> 'retired'",
@@ -119,13 +120,18 @@ class Scheduler:
         roles = [f"{PART_OWNER}:{p}" for scope in scopes for p in scope] or [INSTANCE_APPROVER]
         holders = {p.id: p for role in dict.fromkeys(roles) for p in self.scenario.holders(role)}
         approvers = [p.name for p in holders.values() if p.id != asker]
+        them = "them" if others else "you"
         if approvers:
-            return f"There's no {agent} for you yet. Ask {' or '.join(approvers)} to add you."
-        if holders:  # only the person asking approves it
-            return (f"There's no {agent} for you yet. " + (
-                "As an instance approver, you can add one." if roles == [INSTANCE_APPROVER]
-                else "As the owner of the parts it works in, you can add one."))
-        return f"There's no {agent} for you yet. Ask whoever runs a5s to add you."
+            add = f"Ask {' or '.join(approvers)} to add {them}."
+        elif holders:  # only the person asking approves it
+            add = ("As an instance approver, you can add " if roles == [INSTANCE_APPROVER]
+                   else "As the owner of the parts it works in, you can add ") + (
+                "them." if others else "one.")
+        else:
+            add = f"Ask whoever runs a5s to add {them}."
+        if others:
+            return groups.UNSERVED.format(who=groups.names(self.scenario, others), add=add)
+        return f"There's no {agent} for you yet. {add}"
 
     def _turn(self, claim: dict, text: str, run: str, topic: str) -> None:
         """Note in the conversation what a5s told someone, so a later run knows."""
@@ -150,31 +156,9 @@ class Scheduler:
             (key, holder, LEASE),
         ).fetchone() is not None
 
-    def _question(self) -> dict | None:
-        """The oldest question another agent's run waits on an answer to, taken."""
-        with db.transaction(self.cfg.database_url) as conn:
-            row = conn.execute(
-                "update questions set claimed_at = now() where id = ("
-                "  select id from questions where claimed_at is null and answered_at is null "
-                "  and problem is null order by asked_at limit 1 for update skip locked) "
-                "returning id::text, asked").fetchone()
-        return None if row is None else {"kind": asking.KIND, "id": row["id"],
-                                         "instance": row["asked"], "lease": f"question/{row['id']}",
-                                         "holder": str(uuid.uuid4())}
-
-    def answer_questions(self) -> int:
-        """Have each question that waits answered: how many."""
-        n = 0
-        while (claim := self._question()) is not None:
-            self._answer(claim)
-            n += 1
-        return n
-
     def _claim(self) -> dict | None:
-        """A question another agent's run waits on, first, or else the oldest waiting message
-        whose conversation is free, with that conversation leased."""
-        if (question := self._question()) is not None:
-            return question
+        """The oldest waiting message whose conversation is free, with that conversation
+        leased."""
         holder = str(uuid.uuid4())
         with db.transaction(self.cfg.database_url) as conn:
             row = conn.execute(
@@ -248,8 +232,6 @@ class Scheduler:
         try:
             if message:
                 self.handle(claim)
-            elif claim["kind"] == asking.KIND:
-                self._answering(claim)
             else:
                 self._work(claim)
         except Retry:
@@ -276,11 +258,18 @@ class Scheduler:
             instances = conn.execute(
                 "select * from instances where definition = %s and status <> 'retired' "
                 "order by (status = 'active') desc, id", (agent,)).fetchall()
-        inst = self._serving(instances, list(claim["members"]) if group else [person],
-                             claim["text"])
+        members = list(claim["members"]) if group else [person]
+        if group and (unwritten := [m for m in members if (p := self.scenario.person(m))
+                                    and not p.in_audience]):  # before a run, not after it
+            self._tell(inbound, groups.UNWRITTEN.format(who=groups.names(self.scenario, unwritten)))
+            self._later(claim, never=True)
+            return
+        inst = self._serving(instances, members, claim["text"])
         if inst is None:
-            self._tell(inbound, groups.NOBODY_SERVES.format(agent=agent) if group
-                       else self._nobody_serves(agent, person))
+            unserved = [m for m in members if not any(
+                registry.serving(self.scenario, i["serves"], m) for i in instances)]
+            self._tell(inbound, self._nobody_serves(agent, person) if not group else
+                       self._nobody_serves(agent, person, unserved) if unserved else groups.APART)
             self._later(claim, never=True)
             return
         try:
@@ -348,13 +337,14 @@ class Scheduler:
                 self._turn(claim, told, run, topic)
                 return
             sent.raise_for_status()
-            with db.transaction(self.cfg.database_url) as conn:
+            heard = [person] if sent.json().get("kept_back") else members  # whoever asked
+            with db.transaction(self.cfg.database_url) as conn:  # alone, if someone joined
                 context.add_turn(conn, person=conversation, agent=agent, role="agent",
                                  content=sent.json()["text"], run=run, topic=topic,
-                                 heard_by=members)
+                                 heard_by=heard)
                 if note := sent.json().get("note"):  # a5s's own words on the agent's values
                     context.add_turn(conn, person=conversation, agent=agent, role="notice",
-                                     content=note, run=run, topic=topic, heard_by=members)
+                                     content=note, run=run, topic=topic, heard_by=heard)
             outcome = "done"
         except ModelDown:
             log.warning("the model for run %s isn't answering", run)
@@ -447,49 +437,6 @@ class Scheduler:
             self.gw.post(f"/runs/{run}/close", headers=self.service, json={"outcome": outcome})
         except httpx.HTTPError:
             log.exception("couldn't close run %s; it expires on its own", run)
-
-    # Answering another agent's question (core/asking.py)
-
-    def _unanswered(self, question: str, why: str) -> None:
-        with db.transaction(self.cfg.database_url) as conn:
-            conn.execute("update questions set problem = %s where id = %s and answered_at is null "
-                         "and problem is null", (why[:200], question))
-
-    def _answering(self, claim: dict) -> None:
-        """Run the instance a question is for, if the core opens the run, and give its answer
-        back to the run that asked, through the core. It writes to nobody else."""
-        question = claim["id"]
-        try:
-            opened = self.gw.post("/runs", headers=self.service, json={
-                "instance": claim["instance"], "trigger": {"kind": asking.KIND,
-                                                           "question": question}})
-        except httpx.HTTPError:
-            self._unanswered(question, "a5s couldn't reach the core")
-            return
-        if opened.status_code >= 400:  # the core says why, for the run that asked
-            self._unanswered(question, f"the core didn't open a run to answer it: "
-                                       f"{opened.text[:150]}")
-            return
-        run, token, task = (opened.json()[k] for k in ("run", "token", "task"))
-        outcome = "failed"
-        try:
-            reply = self.worker(self.cfg.gateway_url, token, [
-                {"role": "task", "content": task, "at": datetime.now(UTC).isoformat()}])
-            if not reply.strip():
-                raise RuntimeError("the agent's answer was empty")
-            self.gw.post("/run/answer", headers={"Authorization": f"Bearer {token}"},
-                         json={"text": reply}).raise_for_status()
-            outcome = "done"
-        except ModelDown:
-            outcome = "model unavailable"
-        except BudgetSpent:
-            outcome = "budget spent"
-        except Exception:
-            log.exception("run %s, answering a question, failed", run)
-        finally:
-            if outcome != "done":
-                self._unanswered(question, f"its run ended: {outcome}")
-            self._close(run, outcome)
 
     # Reminding people of obligations, telling them about their records, and schedules
 

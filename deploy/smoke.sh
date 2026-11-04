@@ -342,8 +342,9 @@ token = call(f"{CORE}/approve/token", {"grant_type": "authorization_code", "code
                                        "redirect_uri": back})["id_token"]
 seen = call(f"{CORE}/approve/settings/{version}/review", {"salt": salt}, token)
 assert [c["text"] for c in seen["changes"]] == [
-    "assistant-finance may ask the watcher (watcher-finance) what they know, for the people it "
-    "acts for.", "assistant-finance serves Chen Wei as well."], seen
+    "assistant-finance may ask the watcher (watcher-finance) questions, for the people it acts "
+    "for, which each answers from the records in its own parts that those people may see.",
+    "assistant-finance serves Chen Wei as well."], seen
 print(call(f"{CORE}/approve/settings/{version}", {"salt": salt}, token))
 PY
 compose exec -T gateway python - <<'PY'

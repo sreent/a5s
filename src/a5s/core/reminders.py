@@ -17,6 +17,7 @@ These are among a5s's own tools (core/coretools.py).
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
@@ -24,7 +25,7 @@ import psycopg
 
 from a5s.contract import Person, record_of
 from a5s.core import parts
-from a5s.core.coretools import Call, CoreTool, Refused
+from a5s.core.coretools import Call, CoreTool, Refused, one_to_one
 from a5s.core.obligations import day, local
 
 CONFIRM_WITHIN = timedelta(days=1)  # an offer they don't confirm by then lapses [TBC]
@@ -86,25 +87,33 @@ def offer(call: Call) -> dict:
     in_digest = "T" not in str(call.args["on"])  # a day, not a particular time
     number = call.conn.execute(
         "insert into reminders (person, agent, instance_id, about, record, due_at, offered_at, "
-        "offered_run, asked_at, in_digest, conversation) values (%s, %s, %s, %s, %s, %s, %s, "
-        "%s, %s, %s, %s) returning id",
+        "offered_run, asked_at, in_digest, conversation, heard_by) values (%s, %s, %s, %s, %s, "
+        "%s, %s, %s, %s, %s, %s, %s) returning id",
         (person.id, call.run["definition"], call.run["id"], about, record, at, call.now,
-         call.run["run"], call.asked_at, in_digest, call.conversation),
+         call.run["run"], call.asked_at, in_digest, call.conversation,
+         list(call.run["acts_for"]) if call.conversation else None),
     ).fetchone()["id"]
     return {"reminder": f"R-{number}", "when": say(person, at), "about": about, "record": record,
-            "status": "offered: it's set only once they say yes, in their next message"}
+            "status": (f"offered: it's set only once {person.name} says yes, in a later message "
+                       "that mentions you, as you hear only those here: ask them to answer so")
+            if call.conversation else
+            "offered: it's set only once they say yes, in their next message"}
 
 
 def waiting_for_yes(conn: psycopg.Connection, person: Person, agent: str,
-                    conversation: str | None = None) -> list[str]:
+                    conversation: str | None = None,
+                    members: list[str] | None = None) -> list[str]:
     """The reminders this agent offered the person that wait for their yes, for its context:
-    in their own chat with it, or those offered in the group chat named. Offers count from
-    when the core received the message, by the database's clock."""
+    in their own chat with it, or those offered in the group chat named, while everyone now in
+    it, `members`, heard the offer. Offers count from when the core received the message, by
+    the database's clock."""
     rows = conn.execute("select * from reminders where person = %s and agent = %s "
                         "and confirmed_at is null and cancelled_at is null "
                         "and asked_at > now() - %s and conversation is not distinct from %s "
+                        "and (%s::text[] is null or heard_by @> %s::text[]) "
                         "order by asked_at, id",
-                        (person.id, agent, CONFIRM_WITHIN, conversation)).fetchall()
+                        (person.id, agent, CONFIRM_WITHIN, conversation, members,
+                         members)).fetchall()
     return [f"R-{r['id']}, a reminder on {say(person, r['due_at'])}: {r['about']}. If they say "
             f"yes to it, set it with confirm_reminder, naming R-{r['id']}." for r in rows]
 
@@ -114,17 +123,22 @@ def confirm(call: Call) -> dict:
     the chat it was offered in: their own, or the group chat where they asked for it."""
     person, asked = call.asker, call.asked_at
     named = _number(call.args["reminder"]) if call.args.get("reminder") else None
-    row = call.conn.execute(  # offered in answer to an earlier message of theirs, not this one
+    members = list(call.run["acts_for"]) if call.conversation else None  # in a group, one
+    row = call.conn.execute(  # everyone now in it heard offered, in answer to an earlier
         "select * from reminders where person = %s and agent = %s and confirmed_at is null "
         "and cancelled_at is null and offered_run <> %s and asked_at < %s and asked_at > %s "
         "and (%s::bigint is null or id = %s) and conversation is not distinct from %s "
-        "order by asked_at desc, id desc limit 1 for update",
+        "and (%s::text[] is null or heard_by @> %s::text[]) "
+        "order by asked_at desc, id desc limit 1 for update",  # message of theirs, not this one
         (person.id, call.run["definition"], call.run["run"], asked, asked - CONFIRM_WITHIN,
-         named, named, call.conversation),
+         named, named, call.conversation, members, members),
     ).fetchone()
     if row is None:
-        raise Refused("no reminder is waiting for them to confirm. Offer it first, and confirm "
-                      "it once they say yes in a later message")
+        raise Refused("no reminder is waiting for them to confirm here. Offer it first, and "
+                      "confirm it once they say yes in a later message")
+    if row["record"] and not parts.workable(call.scenario, call.run, row["record"]):
+        raise Refused(f"{row['record']} isn't a record everyone here may see now: confirm it one "
+                      "to one")
     call.conn.execute("update reminders set confirmed_at = %s, confirmed_run = %s where id = %s",
                       (call.now, call.run["run"], row["id"]))
     return {"reminder": f"R-{row['id']}", "set for": say(person, row["due_at"]),
@@ -212,6 +226,11 @@ TOOLS = {t.name: t for t in (
                  "until": _WHEN}},
              waiting, text_fields=("waiting_on",), sourced=lambda result: result),
 )}
+# One person's own, offered only in their own chat: a reminder offered in a group
+# chat is the asker's alone, there
+TOOLS = {n: replace(t, offered=one_to_one) if n in ("list_reminders", "cancel_reminder",
+                                                    "note_waiting") else t
+         for n, t in TOOLS.items()}
 
 
 def task(row: dict, person: Person) -> str:

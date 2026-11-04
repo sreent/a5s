@@ -51,6 +51,10 @@ class Refused(Exception):
         self.status, self.reason = status, reason
 
 
+# What approving an instance's `asks` lets through, in words (core/asking.py)
+ASKS_ABOUT = ("questions, for the people it acts for, which each answers from the records in "
+              "its own parts that those people may see")
+
 def digest(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
 
@@ -198,13 +202,13 @@ def changes(before: Settings | None, after: Settings, definitions: dict[str, Def
             run_by = f", run by {words.names([o])}" if (o := words.owner(new, "owner")) else ""
             found.append({"text": f"Adds {new.id}: the {new.definition}, {words.where(new)}, "
                                   f"serving {words.names(new.serves)}{run_by}."
-                                  + (f" It may ask {_asked(new.asks, asked)} what they know, "
-                                     "for the people it acts for." if new.asks else ""),
+                                  + (f" It may ask {_asked(new.asks, asked)} {ASKS_ABOUT}."
+                                     if new.asks else ""),
                           "widens": True})
             continue
         if more := [a for a in new.asks if a not in old.asks]:
-            found.append({"text": f"{new.id} may ask {_asked(more, asked)} what they know, "
-                                  "for the people it acts for.", "widens": True})
+            found.append({"text": f"{new.id} may ask {_asked(more, asked)} {ASKS_ABOUT}.",
+                          "widens": True})
         if fewer := [a for a in old.asks if a not in new.asks]:
             found.append({"text": f"{new.id} no longer asks {_asked(fewer, asked)}.",
                           "widens": False})
@@ -278,7 +282,7 @@ def described(settings: Settings, definitions: dict[str, Definition],
         told.append(f"{i.id}: the {i.definition}, {words.where(i)}, serving "
                     f"{words.names(i.serves)}" + (f", {' '.join(run_by)}" if run_by else "") + "."
                     + (f" It may ask {_asked(i.asks, {j.id: j.definition for j in settings.instances})}"
-                       " what they know, for the people it acts for." if i.asks else ""))
+                       f" {ASKS_ABOUT}." if i.asks else ""))
         told += [f"{i.id} works at level {lv} for {action} in {part}"
                  + (", where it acts and reports, once graded samples show it's accurate "
                     "enough: until then a5s holds it at level 1" if lv >= 2 else "") + "."

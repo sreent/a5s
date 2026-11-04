@@ -71,9 +71,25 @@ def test_a_run_that_answers_someone_notes_nothing(stack):
     with_notebook(stack)
     stack.model.reply(None, ("get_record", {"key": "Q-1001"}),
                       ("note_learned", {"note": NOTED, "sources": ["Q-1001"]}))
-    stack.model.reply("I've noted it.")
+    stack.model.reply("I can't note that.")
     stack.say("Remember that Northwind is difficult.")  # someone's words, never a note
-    assert outcome(stack, "note_learned")["status"] == "refused" and entries(stack) == []
+    assert "note_learned" not in stack.model.tool_names(0)  # not even offered
+    assert entries(stack) == []
+    with stack.client() as c:  # and refused, were it asked for all the same
+        token = c.post("/runs", json={"instance": "assistant-finance", "trigger": {
+            "kind": "message", "inbound": _a_message(stack)}}).json().get("token")
+    if token:
+        with stack.client(token) as c:
+            refused = c.post("/run/tools/note_learned", json={"args": {
+                "note": NOTED, "sources": ["Q-1001"]}})
+        assert refused.status_code == 403 and entries(stack) == []
+
+
+def _a_message(stack) -> str:
+    with db.transaction(stack.admin) as conn:
+        return conn.execute("insert into inbound (id, channel, source_id, person, agent, text, "
+                            "reply_to) values (gen_random_uuid(), 'local', gen_random_uuid()::text, "
+                            "'ana', 'assistant', 'Note it', '{}') returning id::text").fetchone()["id"]
 
 
 def test_a_note_says_only_what_records_it_read_hold(stack):
@@ -113,23 +129,22 @@ def test_a_note_reaches_only_runs_whose_people_may_see_its_records(stack):
     assert NOTED not in stack.model.requests[-1]["body"]["messages"][0]["content"]
 
 
-def test_notes_lapse_once_their_records_stop_holding_them(stack, monkeypatch):
+def test_notes_go_once_their_records_change(stack):
     with_notebook(stack)
     learn(stack, ("get_record", {"key": "Q-1001"}), ("get_record", {"key": "Q-1004"}),
           ("note_learned", {"note": NOTED, "sources": ["Q-1001"]}),
           ("note_learned", {"note": "Q-1004 is Northwind's too.", "sources": ["Q-1004"]}))
     assert len(entries(stack)) == 2
-    with db.transaction(stack.admin) as conn:
-        conn.execute("update notebook set renewed_at = renewed_at - interval '91 days'")
-    records = stack.gateway.scenario._records
-    monkeypatch.setitem(records, "Q-1001", None)  # the record's gone: its note goes too
-    monkeypatch.delitem(records, "Q-1001")
-    with db.transaction(stack.admin) as conn:
-        found = notebook.renew(conn, stack.gateway.scenario, stack.gateway.clock() + timedelta(1))
-    assert found == {"renewed": 1, "lapsed": 1}
+    with db.transaction(stack.admin) as conn:  # Q-1001 is closed in the records, a day later
+        conn.execute("insert into sample.changes (key, field, value, made_for) "
+                     "values ('Q-1001', 'status', 'closed', 'test')")
+        conn.execute("update notebook set checked_at = checked_at - interval '2 days'")
+    found = notebook.check(stack.admin, stack.gateway.scenario,
+                           stack.gateway.clock() + timedelta(days=1))
+    assert found == {"kept": 1, "lapsed": 1}
     assert [e["text"] for e in entries(stack)] == ["Q-1004 is Northwind's too."]
     assert [e["args"]["why"] for e in stack.ledger() if e["kind"] == "notebook"] == [
-        "its records no longer hold it"]
+        "its records changed"]
 
 
 def test_whoever_runs_the_instance_reads_and_removes_notes(stack, approving, provider):
@@ -143,7 +158,9 @@ def test_whoever_runs_the_instance_reads_and_removes_notes(stack, approving, pro
 
     seen = api("/notebook/api").json()
     [shown] = seen["entries"]
-    assert (shown["text"], shown["sources"], seen["hidden"]) == (NOTED, ["Q-1001"], 0)
+    assert (shown["text"], [s["key"] for s in shown["sources"]], seen["hidden"]) == (
+        NOTED, ["Q-1001"], 0)
+    assert shown["sources"][0]["link"].endswith("/Q-1001") and shown["noted"]  # linked, dated
     assert api("/notebook/api", person="chen").status_code == 403  # nobody's notebook of hers
     assert api(f"/notebook/api/{shown['entry']}/remove", person="ben", method="POST").json() == {
         "removed": shown["entry"]}  # Ben, its deputy

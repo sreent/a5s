@@ -10,6 +10,7 @@ structured content is a JSON object.
 
 from __future__ import annotations
 
+import json
 import re
 import shutil
 from collections.abc import Iterator
@@ -405,3 +406,13 @@ def test_a5s_own_tools_dont_name_the_samples_keys(desk):
     offered = desk.model.requests[-1]["body"]["tools"]
     sample = [t["function"]["name"] for t in offered if re.search(r"Q-\d{4}", str(t))]
     assert sample == [], f"a5s's own tools tell the desk's agent its keys look like Q-1002: {sample}"
+
+
+def test_none_of_a5s_own_tools_names_the_samples_keys_or_agents():
+    """Every tool a5s offers, granted or not, in any run: never the sample's keys or its
+    agents (round 7, C12)."""
+    from a5s.core.gateway import CORE_TOOLS
+    for tool in CORE_TOOLS.values():
+        said = json.dumps(tool.definition())
+        assert not re.search(r"Q-\d{4}|watcher|assistant", said, re.IGNORECASE), (
+            tool.name, said)

@@ -44,7 +44,10 @@ def day_of(scenario: Scenario, person: str, now: datetime) -> date:
 
 def payer(acts_for: list[str], trigger: dict | None) -> str | None:
     """Whose day's budget a run uses: the one person it acts for, or in a group chat,
-    whoever asked (core/groups.py). None for a run for several people that nobody asked for."""
+    whoever asked (core/groups.py), or for a run that answers another agent's question, whoever
+    the run that asked was paid for by. None for a run for several people nobody asked for."""
+    if (trigger or {}).get("payer"):
+        return str(trigger["payer"])
     return groups.asker({"acts_for": acts_for, "trigger": trigger or {}})
 
 

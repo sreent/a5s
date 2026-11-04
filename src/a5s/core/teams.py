@@ -27,7 +27,7 @@ from a5s.core.identity import IdentityConfig, IdentityError, Verifier
 BOT_FRAMEWORK = "https://api.botframework.com"
 METADATA = "https://login.botframework.com/v1/.well-known/openidconfiguration"
 UNKNOWN = "a5s doesn't know who you are, so no agent can help. Ask whoever runs a5s to add you."
-_MENTION = re.compile(r"<at>.*?</at>", re.DOTALL)
+_MENTION = re.compile(r"<at>(.*?)</at>", re.DOTALL)
 
 
 class Refused(Exception):
@@ -124,9 +124,24 @@ class Teams:
             raise Refused(403, "the service URL isn't one Teams uses")
         return self.bots[claims["aud"]]
 
+    @staticmethod
+    def said(activity: dict[str, Any]) -> str:
+        """What someone typed, without their mention of the bot it was sent to, and with each
+        other mention, such as of someone in the chat, as the name it shows."""
+        text = activity.get("text") or ""
+        recipient = (activity.get("recipient") or {}).get("id") or ""
+        mine = [e for e in activity.get("entities") or [] if e.get("type") == "mention"
+                and (e.get("mentioned") or {}).get("id") == recipient]
+        for entity in mine:  # as Teams spells it, such as <at>Assistant</at>
+            name = (entity.get("mentioned") or {}).get("name")
+            spelt = entity.get("text") or (f"<at>{name}</at>" if name else None)
+            text = text.replace(spelt, "", 1) if spelt and spelt in text else _MENTION.sub(
+                "", text, count=1)  # one Teams didn't spell out: it opens the message
+        return _MENTION.sub(lambda m: m.group(1), text).strip()
+
     def message(self, activity: dict[str, Any], scenario: Scenario, bot: Bot) -> Message | None:
         """The message in an activity that checked out, if it's one a person typed."""
-        text = _MENTION.sub("", activity.get("text") or "").strip()
+        text = self.said(activity)
         conversation = activity.get("conversation") or {}
         if activity.get("type") != "message" or not text or not conversation.get("id"):
             return None  # such as a typing indicator, or the bot being added
@@ -145,9 +160,12 @@ class Teams:
                 for e in activity.get("entities") or []),
         )
 
-    def members(self, reply_to: dict[str, str], scenario: Scenario) -> list[str | None]:
+    def members(self, reply_to: dict[str, str], scenario: Scenario,
+                strangers: list[str] | None = None) -> list[str | None]:
         """Who's in a group chat, as Teams says, as the bot it was sent to: each person by
-        their id in the directory, or None for someone it doesn't know. Bots aren't people."""
+        their id in the directory, or None for someone it doesn't know, whose name, as Teams
+        shows it, goes in `strangers`. a5s's own bots aren't people, and any other app in the
+        chat, which may read what's said there, is someone the directory doesn't know."""
         if not self.allowed(reply_to["service_url"]):  # the bot's token goes nowhere else
             raise ValueError("a5s asks only the service URLs Teams uses")
         bot = self.bots.get(reply_to.get("app_id", ""))
@@ -160,11 +178,13 @@ class Teams:
         r.raise_for_status()
         found = []
         for member in r.json():
-            if str(member.get("id", "")).startswith("28:"):  # a bot, such as this one
-                continue
+            if str(member.get("id", "")).removeprefix("28:") in self.bots:  # a5s's own bots
+                continue  # aren't people: any other app that reads the chat is a stranger
             entra = member.get("aadObjectId") or ""
             person = scenario.find(f"entra:{entra}") if entra else None
             found.append(person.id if person else None)
+            if person is None and strangers is not None:
+                strangers.append(str(member.get("name") or "someone"))
         return found
 
     def installed(self, activity: dict[str, Any], scenario: Scenario,

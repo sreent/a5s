@@ -80,7 +80,16 @@ async function load() {
     words.textContent = entry.text;
     const about = document.createElement("p");
     about.className = "note";
-    about.textContent = `${entry.entry}, ${entry.instance}, from ${entry.sources.join(", ")}, kept since ${entry.renewed}.`;
+    about.append(`${entry.entry}, ${entry.instance}, from `);
+    entry.sources.forEach((source, n) => {  // each record it comes from, linked where it has one
+      if (n) about.append(", ");
+      const safe = source.link && /^https:\/\//.test(source.link);
+      const named = document.createElement(safe ? "a" : "span");
+      named.textContent = source.key;
+      if (safe) { named.href = source.link; named.rel = "noopener noreferrer"; }
+      about.append(named);
+    });
+    about.append(`. Noted on ${entry.noted}; its records last checked on ${entry.checked}.`);
     const remove = document.createElement("button");
     remove.type = "button";
     remove.textContent = "Remove";
@@ -97,8 +106,9 @@ async function load() {
     into.append(line);
   }
   status(now.entries.length ? "" : `Nothing noted yet for ${now.instances.join(", ")}.`);
+  const who = now.others.length ? `: ${now.others.join(" or ")}, who run its instances, may be able to` : "";
   $("hidden").textContent = now.hidden
-    ? `And ${now.hidden} more from records you may not see, which someone who may see them can remove.` : "";
+    ? `And ${now.hidden} more from records you may not see, which someone who may see them can remove${who}.` : "";
 }
 
 async function main() {

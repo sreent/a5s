@@ -24,18 +24,28 @@ import psycopg
 LIMIT = 20  # people in a group chat an agent works in [TBC]
 PREFIX = "group:"  # what a group's name starts with: never a person in the directory
 
-# What a5s says in a group chat it won't work in, and why
+# What a5s says in a group chat it won't work in, and why: who or what's in the way, and what
+# to do now
 TOO_MANY = (f"I work in group chats of up to {LIMIT} people, so I can't help here. Ask me in a "
             "smaller chat, or one to one.")
-STRANGERS = ("I work only where everyone in the chat is someone a5s knows, so I can't help here. "
-             "Ask me one to one.")
+STRANGERS = ("I can help in a chat only if everyone in it is in the organisation's directory, and "
+             "{who} isn't, so I can't help here. Ask me one to one.")
 HISTORY = ("I work only in rooms where people added later can't read what was said before they "
-           "joined. Set the room's history to members only, since they joined, and ask me again.")
+           "joined. Ask whoever administers this room to set who can read its history to members "
+           "only, since they joined, then ask me again.")
+ENCRYPTED = ("I can't read encrypted rooms yet, so I can't help in this one. Ask me in a room "
+             "made with encryption off, or one to one.")
 CHANNELS = "I work in group chats, not in a team's channels. Ask me in a group chat, or one to one."
-NOBODY_SERVES = ("There's no {agent} for everyone here, so I can't help in this chat. Ask me one "
-                 "to one, or in a chat with only the people I work for.")
-JOINED = ("Someone joined the chat while I was answering, so I've kept that answer back: whoever "
-          "asked has it in their inbox. Ask me again here, and I'll answer for everyone here now.")
+UNREAD = ("I couldn't tell who's in this chat just now, so I can't answer here. Ask me again in a "
+          "minute.")
+UNSERVED = ("I don't work for {who} yet, so I can't help in this chat. {add} Or ask me in a chat "
+            "without them, or one to one.")
+APART = ("I can't work for everyone here at once, so I can't help in this chat. Ask me in a "
+         "smaller chat, or one to one.")
+UNWRITTEN = ("I may not write to {who}, so I can't help in this chat. Ask me in a chat without "
+             "them, or one to one.")
+JOINED = ("Someone joined the chat while I was answering, so I've kept that answer back for whoever "
+          "asked: {where}. Ask me again here, and I'll answer for everyone here now.")
 
 
 def key(channel: str, place: str) -> str:
@@ -65,6 +75,13 @@ def asker(run: dict[str, Any]) -> str | None:
     return acts_for[0] if len(acts_for) == 1 else None
 
 
+def listed(names: list[str], most: int = 3) -> str:
+    """Names in words, the first few of them: A, B and C, or A, B, C and 4 others."""
+    if len(names) > most:
+        return f"{', '.join(names[:most])} and {len(names) - most} others"
+    return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
+
+
 def names(scenario: Any, people: list[str]) -> str:
     """People by their names, in words: Ana Ortiz and Ben Okafor."""
     named = [p.name if (p := scenario.person(who)) else who for who in people]
@@ -80,6 +97,20 @@ def section(scenario: Any, members: list[str], sender: str | None) -> dict:
     return {"title": "Who you're working for: everyone in this group chat",
             "text": "You're answering in a group chat, and everyone in it reads your answer: "
                     + ", ".join(named) + ". Say only what all of them may see. Each message in "
-                    "the conversation says who wrote it. Anything that's one person's own, such "
-                    "as their notes, their digest or their list of reminders, they ask for one to "
+                    "the conversation says who wrote it. You hear only messages that mention "
+                    "you: if someone refers to something said without a mention, ask them to "
+                    "say it again with one, and when you ask someone something, ask them to "
+                    "answer with a mention of you. Anything that's one person's own, such as "
+                    "their notes, their digest or their list of reminders, they ask for one to "
                     "one, and a reminder you offer here is for the person who asked, alone."}
+
+
+def requesters(run: dict[str, Any]) -> list[str]:
+    """Whom a run's changes are asked for: the one person it acts for, or in a group chat,
+    whoever asked there and whoever spoke in what the run was given, whose words may have asked
+    for them. They're who decides nothing of it, and whose limits it counts against. A run in a
+    group sees only what everyone in it may see, whoever asked."""
+    trigger = run.get("trigger") or {}
+    if of(trigger.get("conversation")) and trigger.get("asked_by"):
+        return sorted(trigger["asked_by"])
+    return list(run.get("acts_for") or [])

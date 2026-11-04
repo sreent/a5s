@@ -32,6 +32,11 @@ LOCK = 7_310_018  # so two sweeps don't work at once
 # Where conversations' words are, and when each was said
 SAID = (("turns", "at"), ("inbound", "received_at"), ("outbox", "at"), ("digest_items", "at"),
         ("urgent_held", "at"))
+# Whose conversation each is: a person's own, or a group chat's (core/groups.py), whose
+# messages are kept under whoever sent them, and its answers under whoever asked
+WHOSE = {"inbound": "coalesce(conversation, person)",
+         "outbox": "coalesce((select conversation from inbound i where i.id = outbox.inbound_id), "
+                   "person)"}
 
 
 def sweep(conn: psycopg.Connection) -> dict[str, int]:
@@ -50,18 +55,20 @@ def sweep(conn: psycopg.Connection) -> dict[str, int]:
     delete("reads", f"delete from run_reads where run_id in {over}")
     delete("documents", f"delete from run_documents where run_id in {over}")
 
-    said = " union all ".join(f"select person, agent, {at} as at from {table}"
-                              for table, at in SAID)
+    said = " union all ".join(f"select {WHOSE.get(table, 'person')} as person, agent, {at} as at "
+                              f"from {table}" for table, at in SAID)
     idle = conn.execute(
         f"select person, agent from ({said}) said where agent is not null "
         f"group by person, agent having max(at) < now() - interval '{KEPT}'").fetchall()
     if idle:  # and only what's old, should someone write again as the sweep works
         people, agents = [r["person"] for r in idle], [r["agent"] for r in idle]
-        ended = "(person, agent) in (select * from unnest(%s::text[], %s::text[]))"
-        for table, at in SAID:
+        for table, at in sorted(SAID, key=lambda t: t[0] != "outbox"):  # answers before the
+            ended = (f"({WHOSE.get(table, 'person')}, agent) in "  # messages they answer
+                     "(select * from unnest(%s::text[], %s::text[]))")
             delete("messages" if table != "turns" else "turns",
                    f"delete from {table} where {ended} and {at} < now() - interval '{KEPT}'",
                    (people, agents))
+        ended = "(person, agent) in (select * from unnest(%s::text[], %s::text[]))"
         delete("summaries", f"delete from summaries where {ended} "
                             f"and updated_at < now() - interval '{KEPT}'", (people, agents))
     for table, at in SAID[2:]:  # a5s's own notices, about no agent
