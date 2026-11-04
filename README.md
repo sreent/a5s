@@ -2,7 +2,7 @@
 
 **An agent OS on LangChain Deep Agents, for agents that live and work alongside people, under the rules people set.**
 
-**Status:** Phase 1 runs locally against a sample scenario with real models, and its release pipeline is under way. It runs on any Kubernetes cluster from one Helm chart, tested on a cluster of its own in CI ([deploy/helm](deploy/helm/README.md)); running it in a cloud waits for an account, and connecting Teams for a test tenant ([progress](docs/phase-1.md#progress)). Phase 2, agents that act, is built: held changes that people decide on the core's page, counts, level 2 earned on graded samples, and the extractor for content from outside ([progress](docs/phase-2.md#progress)). Round 6 of the critique has read it, and what it found is fixed. Phase 3 has begun: agents work in group chats, in Teams and Matrix, for everyone in them, and ask each other what they know, for the people they act for ([progress](docs/phase-3.md#progress)).
+**Status:** Phase 1 runs locally against a sample scenario with real models, and its release pipeline is under way. It runs on any Kubernetes cluster from one Helm chart, tested on a cluster of its own in CI ([deploy/helm](deploy/helm/README.md)); running it in a cloud waits for an account, and connecting Teams for a test tenant ([progress](docs/phase-1.md#progress)). Phase 2, agents that act, is built: held changes that people decide on the core's page, counts, level 2 earned on graded samples, and the extractor for content from outside ([progress](docs/phase-2.md#progress)). Round 6 of the critique has read it, and what it found is fixed. Phase 3 has begun: agents work in group chats, in Teams and Matrix, for everyone in them, ask each other what they know, for the people they act for, and keep a notebook of what they learn from records ([progress](docs/phase-3.md#progress)).
 
 a5s runs agents the way an operating system runs programs. It installs them, gives each one an identity and only the rights it needs, wakes it when there's work, checks every call it makes, and records what happened. Unlike a task runner, it keeps agents alive between tasks: each one remembers its conversations with people, keeps track of what it owes them, and picks up where it left off, for months.
 
@@ -115,7 +115,7 @@ Each deployment turns on the chats its people use, by setting each one's setting
 | Chat | On where these are set | What it needs |
 | --- | --- | --- |
 | The command line | Always on | `a5s say` and `a5s inbox`, with the person's sign-in token in `A5S_TOKEN` |
-| The web chat | `A5S_WEBCHAT_CLIENT_ID`, or in development | A public client at your identity provider, using PKCE, that may return to the page at `/chat/` on the channels' address, to `/approve/` for approving settings, and to `/settings/` for the settings app, over HTTPS or on localhost |
+| The web chat | `A5S_WEBCHAT_CLIENT_ID`, or in development | A public client at your identity provider, using PKCE, that may return to the page at `/chat/` on the channels' address, to `/approve/` for approving settings, to `/settings/` for the settings app, and to `/notebook/` for the agents' notebook, over HTTPS or on localhost |
 | Matrix | `A5S_MATRIX_HOMESERVER`, `A5S_MATRIX_SERVER_NAME`, `A5S_MATRIX_AS_TOKEN` and `A5S_MATRIX_HS_TOKEN` | A homeserver of your own, such as Synapse, with a5s registered on it as an application service |
 | Teams | `A5S_TEAMS_APP_ID`, `A5S_TEAMS_APP_SECRET` and `A5S_TEAMS_TENANT_ID`, or `A5S_TEAMS_BOTS` | Microsoft 365, a bot registered in your Entra ID tenant, and the internet |
 

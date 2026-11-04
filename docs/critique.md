@@ -84,7 +84,7 @@ Every round reports the rules it added and the rules it removed, and proposes cu
 
 | # | Loophole | Severity | How the design answers it | Status |
 | --- | --- | --- | --- | --- |
-| C1 | A notebook carries one person's words to everyone | High | No notebook until phase 3. When it comes, notes come only from records and tool results ([context](architecture.md#context-and-memory)) | Phase 3 |
+| C1 | A notebook carries one person's words to everyone | High | Only a run that acts for nobody, and so hears nobody's words, notes anything, never once it has read content from outside; code checks each note against the records it names; and a run is given only the notes whose records all its people may see ([context](architecture.md#context-and-memory)) | Fixed |
 | C2 | Only some people get a conversation, so someone who replies to a chase gets no answer | High | Every agent can be talked to, and a reply starts a run that acts for the sender ([how an agent lives](architecture.md#how-an-agent-lives)) | Designed |
 | C3 | What people tell an agent never reaches the work, so the chases keep coming | High | A person can say what they're waiting on, which pauses chases until the date they give ([how an agent lives](architecture.md#how-an-agent-lives)) | Designed |
 | C4 | When an agent can't run, it goes silent | High | The channel service says so in code and names who to ask ([channels](architecture.md#channels)) | Designed |

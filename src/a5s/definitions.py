@@ -23,6 +23,8 @@ RECALL_TOOLS = ("search_conversation", "correct_summary")
 DOCUMENT_TOOLS = ("ask_about",)
 # and for asking another agent, whom the settings name (core/asking.py)
 ASKING_TOOLS = ("ask_agent",)
+# and for noting what it learns from records, in a run that acts for nobody (core/notebook.py)
+NOTEBOOK_TOOLS = ("note_learned",)
 _DAY_NAMES = {f"{d}{rest}": d for d, rest in zip(DAYS, ("day", "sday", "nesday", "rsday", "day",
                                                        "urday", "day"), strict=True)}
 
@@ -102,6 +104,8 @@ class Context(BaseModel):
     documents: bool = False
     # whether it may ask other agents, whom the settings name, for what they know
     agents: bool = False
+    # whether it notes what it learns from records, on its schedules, for its later runs
+    notebook: bool = False
 
 
 # Each model call in a run carries the whole context and, beside it, the instructions, the
@@ -179,7 +183,8 @@ class Definition(BaseModel):
                 *(tool for p in self.preferences for tool in PREFERENCE_TOOLS.get(p, ())),
                 *(RECALL_TOOLS if self.context.recall else ()),
                 *(DOCUMENT_TOOLS if self.context.documents else ()),
-                *(ASKING_TOOLS if self.context.agents else ())]
+                *(ASKING_TOOLS if self.context.agents else ()),
+                *(NOTEBOOK_TOOLS if self.context.notebook else ())]
 
     @property
     def release_id(self) -> str:

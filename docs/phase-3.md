@@ -1,6 +1,6 @@
 # Phase 3
 
-**Status:** Confirmed on 4 November 2026. Steps 1 and 2, group conversations and agent to agent, are built ([progress](#progress)) · **Under:** [Architecture](architecture.md)
+**Status:** Confirmed on 4 November 2026. Steps 1 to 3, group conversations, agent to agent and the notebook, are built ([progress](#progress)) · **Under:** [Architecture](architecture.md)
 
 Phase 3 lets agents work with more than one person at a time, and with each other. In [phase 1](phase-1.md) and [phase 2](phase-2.md), each person has a conversation of their own with each agent, and a5s turns away a chat with anyone else in it. In phase 3, people can bring an agent into a group chat, an agent can ask another what it knows, and an agent can keep a notebook of what it learns from records. Each keeps the rules phase 2 ends with: a run sees only what everyone it acts for may see, authority never passes from one person or agent to another, and what's said to an agent reaches only runs for people who heard it.
 
@@ -70,3 +70,13 @@ Step 2, agent to agent, is built:
 | The run that answers: of the instance asked, for the same people as the run that asked, from an instance that serves them all, with the question as a5s's task and the asker's mark. It writes to nobody, and isn't offered `ask_agent`. Its answer goes back without its handles, which no other run can use; its mark marks the run that asked; and only the values it had read count as found there. The ledger links the two runs, and the question and its answer are kept as an A2A 1.0 task. | [`core/gateway.py`](../src/a5s/core/gateway.py) |
 
 Its tests are in [`tests/test_asking.py`](../tests/test_asking.py), with a live case where the assistant, on a real model, asks the watcher for the person it's answering.
+
+Step 3, the notebook, is built:
+
+| Built | Where |
+| --- | --- |
+| `note_learned`, which a release grants with `context: notebook`, for a run that acts for nobody, such as one on its schedule, so a note comes from records alone, never from anyone's words. A run that has read content from outside notes nothing. Code keeps a note only if every record it names was read by the run with its tools, in its instance's parts, and holds every key, amount and date it says, up to 50 notes for each instance. | [`core/notebook.py`](../src/a5s/core/notebook.py) |
+| Each run of the instance is given the notes whose every record all its people may see, newest first, within a budget, and told to check a record before relying on a note about it. At 90 days a note whose records still hold it is renewed, in the hourly retention sweep, and any other goes. | [`core/notebook.py`](../src/a5s/core/notebook.py), [`core/gateway.py`](../src/a5s/core/gateway.py) |
+| The core's page for the notebook, where the agent's owner, or whoever runs its instance, signs in and reads the notes whose records they may see, and removes any. The ledger records each note kept, lapsed or removed, by its hash. | [`core/webchat/notebook.js`](../src/a5s/core/webchat/notebook.js), [`core/inbox.py`](../src/a5s/core/inbox.py) |
+
+Its tests are in [`tests/test_notebook.py`](../tests/test_notebook.py), with a live case where the assistant, on a real model, notes what it learned from the records on its schedule. On that case's first try, the model read customers' emails along the way, and its note was refused, as it should be: a release's schedule should say to work from the records alone.

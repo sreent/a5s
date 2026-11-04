@@ -50,6 +50,7 @@ from a5s.core import (
     groups,
     ledger,
     matrix,
+    notebook,
     proposals,
     registry,
     samples,
@@ -928,6 +929,66 @@ def create_app(gw: Any) -> FastAPI:
         except (yaml.YAMLError, ValueError, KeyError, TypeError, AttributeError) as exc:
             return None, b"", [f"a5s can't read it as settings: {exc}"]
         return settings, raw, gw.unusable(settings, last)
+
+    # The notebook: what agents learned from records, for their owners to read and remove
+
+    def keeping(authorization: str | None) -> tuple[Person, list[dict]]:
+        """Who signed in to the notebook, and the instances whose entries they keep: those of an
+        agent they own, or that they run, as its owner or deputy."""
+        approving()
+        who, _ = sender(authorization, None)
+        person = gw.scenario.person(who)
+        if person is None:
+            raise HTTPException(403, "a5s doesn't know who you are")
+        owns = {r.removeprefix("agent-owner:") for r in person.roles if r.startswith("agent-owner:")}
+        with db.transaction(gw.url) as conn:
+            kept = [i for i in conn.execute("select id, definition, owner, deputy from instances "
+                                            "where status <> 'retired' order by id")
+                    if i["definition"] in owns or person.id in (i["owner"], i["deputy"])]
+        if not kept:
+            raise HTTPException(403, "the notebook is for the people who own an agent, or run one "
+                                     "of its instances")
+        return person, kept
+
+    @app.get("/notebook/", include_in_schema=False)
+    def notebook_page() -> Response:
+        approving()
+        return page("notebook.html")
+
+    @app.get("/notebook/notebook.js", include_in_schema=False)
+    def notebook_script() -> Response:
+        approving()
+        return page("notebook.js")
+
+    @app.get("/notebook/api")
+    def notebook_now(authorization: str | None = Header(default=None)) -> dict:
+        """The entries of the instances someone keeps, those whose every record they may see."""
+        person, kept = keeping(authorization)
+        with db.transaction(gw.url) as conn:
+            rows = conn.execute("select * from notebook where instance_id = any(%s) "
+                                "order by instance_id, renewed_at desc, id desc",
+                                ([i["id"] for i in kept],)).fetchall()
+        shown = [r for r in rows if all(gw.scenario.sees(person.id, k) for k in r["sources"])]
+        return {"you": person.name, "instances": [i["id"] for i in kept],
+                "entries": [{"entry": f"N-{r['id']}", "instance": r["instance_id"],
+                             "text": r["text"], "sources": list(r["sources"]),
+                             "renewed": r["renewed_at"].date().isoformat()} for r in shown],
+                "hidden": len(rows) - len(shown)}
+
+    @app.post("/notebook/api/{entry}/remove")
+    def notebook_remove(entry: str, authorization: str | None = Header(default=None)) -> dict:
+        """Remove an entry, as someone who keeps its instance's notebook and may see its records."""
+        person, kept = keeping(authorization)
+        number = entry.removeprefix("N-")
+        if not number.isdigit():
+            raise HTTPException(404, "no such entry")
+        with db.transaction(gw.url) as conn:
+            row = conn.execute("delete from notebook where id = %s and instance_id = any(%s) "
+                               "returning *", (int(number), [i["id"] for i in kept])).fetchone()
+            if row is None or not all(gw.scenario.sees(person.id, k) for k in row["sources"]):
+                raise HTTPException(404, "no such entry in a notebook you keep")
+            ledger.append(conn, notebook.entry(row, "remove", "its keeper removed it", person.id))
+        return {"removed": f"N-{row['id']}"}
 
     @app.get("/settings/", include_in_schema=False)
     def settings_page() -> Response:

@@ -101,6 +101,13 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 2. The ledger links the two runs: the asked run's `open` names the run that asked, and its `answer` names it too.
 3. Nothing is left waiting: a question given up stays given up, and the agent tells the person it couldn't get an answer.
 
+## A note in the notebook is wrong, or the notebook is full
+
+**Shows as:** an agent relying on a note its owner thinks wrong, or `note_learned` refused because the notebook holds 50 notes.
+
+1. The agent's owner, or whoever runs the instance, removes the note on the core's page, `/notebook/`. The ledger records who removed it.
+2. A note can't carry anyone's words, nor anything from outside: only a run on a schedule writes one, from records it read. If one seems to, tell assurance, with the note's number.
+
 ## Calls are denied
 
 **Shows as:** many denials of one kind.

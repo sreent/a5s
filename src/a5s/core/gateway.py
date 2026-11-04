@@ -62,6 +62,7 @@ from a5s.core import (
     handles,
     ledger,
     models,
+    notebook,
     obligations,
     parts,
     profiles,
@@ -91,7 +92,8 @@ from a5s.definitions import Context, Definition
 log = logging.getLogger(__name__)
 CORE_TOOLS = {**reminders.TOOLS, **digests.TOOLS, **profiles.TOOLS,  # a5s's own, on its
               **recall.TOOLS, extractor.ASK: extractor.TOOL,  # own records, and asking
-              asking.ASK: asking.TOOL}  # another agent (core/asking.py)
+              asking.ASK: asking.TOOL,  # another agent (core/asking.py), and the notebook
+              notebook.NOTE: notebook.TOOL}  # of what it learns from records
 RUN_MINUTES = 60  # the longest a run may last [TBC]; its token dies with it
 CHARS_PER_TOKEN = 4  # roughly, for a run's budget for its conversation
 OWN_RUNS = ("summary",)  # a5s's own work on a conversation: no tools, and it writes to nobody
@@ -1545,7 +1547,8 @@ def create_app(gw: Gateway) -> FastAPI:
     @app.post("/retention/sweep", dependencies=[Depends(service)])
     def sweep_retention() -> dict:
         """Delete what's past its time to keep (core/retention.py), and record how much went.
-        Archive what a5s keeps for anyone who has left (core/departures.py)."""
+        Archive what a5s keeps for anyone who has left (core/departures.py). Renew each note
+        in the notebook 90 days old that its records still hold, and let the rest go."""
         with db.transaction(gw.url) as conn:
             gone = retention.sweep(conn)
             if gone:
@@ -1553,7 +1556,8 @@ def create_app(gw: Gateway) -> FastAPI:
                                      "instance": None, "acts_for": [], "decision": "record",
                                      "args": gone})
             archived = departures.sweep(conn, gw.scenario, gw.clock())
-        return {"deleted": gone, "archived": len(archived)}
+            learned = notebook.renew(conn, gw.scenario, gw.clock())  # notes 90 days old
+        return {"deleted": gone, "archived": len(archived), "notebook": learned}
 
     # Instances: anyone with the role can make a5s safer alone.
 
@@ -1647,6 +1651,10 @@ def create_app(gw: Gateway) -> FastAPI:
                                         "tool named, at once, without asking again. Only they "
                                         "can.\n" + "\n".join(f"- {o}" for o in offered)})
                 provenance.read(conn, row["run"], provenance.A5S, context[-1]["text"],
+                                gw.scenario.record_pattern)
+            if learned := notebook.given(conn, gw.scenario, row):  # from records alone
+                context.append(learned)
+                provenance.read(conn, row["run"], provenance.A5S, learned["text"],
                                 gw.scenario.record_pattern)
             questioned = row["trigger"].get("kind") == asking.KIND
             if asking.ASK in (row["grants"] or []) and row["asks"] and not questioned and (
