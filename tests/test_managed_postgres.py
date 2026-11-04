@@ -43,5 +43,6 @@ def test_the_migrations_run_as_an_administrator_who_isnt_a_superuser(database_ur
                                      ).fetchone()[0]
         assert owner == "a5s_owner" and not superuser
     finally:
+        db.close_pools()  # pooled connections to it, which would hold the database open
         with psycopg.connect(database_url, autocommit=True) as conn:
             conn.execute("drop database if exists a5s_managed")

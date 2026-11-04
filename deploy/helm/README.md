@@ -20,7 +20,7 @@ Each part runs as its own service account, which can't reach Kubernetes' own API
 
 ## Before installing
 
-- **Postgres 16 or later**, such as the cloud's managed one, which the parts reach. Its administrator needn't be a superuser.
+- **Postgres 16 or later**, such as the cloud's managed one, which the parts reach. Its administrator needn't be a superuser. Each pod that reaches it keeps up to 10 connections open (`A5S_DB_POOL_SIZE`), and the gateway one more for each model call in flight, so it must allow that many for every replica, which a small managed tier may not.
 - **A Secret** in the release's namespace, named as `secret` says (`a5s` unless you change it), made by hand, with External Secrets, or with the cloud's secrets store driver. Each part reads only its own keys:
   - `database-admin-url`, for the jobs;
   - `database-<part>-url` and `database-<part>-password`, for `gateway`, `channels`, `scheduler` and `anchor`;

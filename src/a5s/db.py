@@ -1,7 +1,21 @@
-"""Postgres access: connections, transactions, migrations and the roles each part uses."""
+"""Postgres access: connections, transactions, migrations and the roles each part uses.
+
+Each transaction takes a connection from its part's pool and gives it back, rather than
+connecting afresh: a soak test counted some 28 connections for each message, and against a
+managed Postgres each is a TLS handshake, a password exchange and a new server process. A
+pooled connection is checked before it's used, so one a database's failover broke is replaced
+rather than failing the work, and carries nothing from one transaction to the next: no
+prepared statements, which a migration could leave stale, and only `set local`. A
+transaction that can't have a pooled connection at once, because every one is in use or none
+can connect, connects afresh, as before: so it never waits on the pool for long, and while
+the database is down it fails at once.
+"""
 
 from __future__ import annotations
 
+import atexit
+import os
+import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
 from importlib.resources import files
@@ -10,6 +24,7 @@ from urllib.parse import urlsplit, urlunsplit
 import psycopg
 from psycopg import sql
 from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool, PoolTimeout
 
 # The role each part of a5s connects as. Setup runs as the database's administrator.
 ROLES = {"gateway": "a5s_gateway", "channels": "a5s_channels", "scheduler": "a5s_scheduler",
@@ -17,15 +32,64 @@ ROLES = {"gateway": "a5s_gateway", "channels": "a5s_channels", "scheduler": "a5s
 _LOCK = 0x0A5_5C4E  # one migrator at a time
 
 
+POOL_SIZE = int(os.environ.get("A5S_DB_POOL_SIZE", "10"))  # connections each part keeps [TBC]
+WAIT = 0.5  # seconds a transaction waits for a pooled connection before connecting afresh
+_pools: dict[str, ConnectionPool] = {}
+_pooling = threading.Lock()
+
+
 def connect(url: str) -> psycopg.Connection:
+    """A connection of its own, for what outlives a transaction, such as listening, or a
+    session's lock, and for migrations."""
     return psycopg.connect(url, row_factory=dict_row)
+
+
+def _pool(url: str) -> ConnectionPool:
+    with _pooling:
+        if (pool := _pools.get(url)) is None:
+            pool = _pools[url] = ConnectionPool(
+                url, open=True, min_size=1, max_size=max(1, POOL_SIZE), max_idle=300,
+                max_lifetime=3600, check=ConnectionPool.check_connection,
+                kwargs={"row_factory": dict_row, "prepare_threshold": None},
+                name=f"a5s-{urlsplit(url).username or 'pool'}")
+        return pool
+
+
+def close_pools() -> None:
+    """Close every pooled connection, such as before the database is dropped."""
+    with _pooling:
+        pools = list(_pools.values())
+        _pools.clear()
+    for pool in pools:
+        pool.close()
+
+
+atexit.register(close_pools)
 
 
 @contextmanager
 def transaction(url: str) -> Iterator[psycopg.Connection]:
-    """One transaction: committed if the block succeeds, rolled back if it raises."""
-    with connect(url) as conn:
+    """One transaction: committed if the block succeeds, rolled back if it raises. On a
+    pooled connection, or on one of its own if none is free at once."""
+    pool = _pool(url)
+    try:
+        conn = pool.getconn(timeout=WAIT)
+    except PoolTimeout:  # all in use, or the database is down: which, connecting says at once
+        with connect(url) as own:
+            yield own
+        return
+    try:
         yield conn
+    except BaseException:
+        try:
+            conn.rollback()
+        except psycopg.Error:  # a broken connection, which the pool replaces
+            pass
+        raise
+    else:
+        conn.commit()
+    finally:
+        pool.putconn(conn)
 
 
 def migrations() -> list[tuple[int, str, str]]:

@@ -24,6 +24,7 @@ dependencies = [
     "tzdata>=2026.6",
     "opentelemetry-sdk>=1.45.2",
     "opentelemetry-exporter-otlp-proto-http>=1.45.2",
+    "psycopg-pool>=3.2.6",
 ]
 
 [project.scripts]

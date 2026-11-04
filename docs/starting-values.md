@@ -9,6 +9,7 @@ These are the numbers a5s starts from, by the phase that needs them. They're sta
 | Setting | Starting value | Why | Owned by |
 | --- | --- | --- | --- |
 | Context per run | 24,000 tokens for the assistant and 16,000 for the watcher, with a budget for each part of the context, tested at release. A topic's summary takes a third of it at most, and keeps its newest 500 facts. | Each model call carries the whole context, so it sets what every call costs | The agent owner |
+| Database connections | Each part keeps up to 10 (`A5S_DB_POOL_SIZE`), and a transaction that can't have one within half a second connects afresh | Connecting for each transaction took some 28 connections for each message in the soak test, and against a managed Postgres each is a TLS handshake and a new server process | The platform owner |
 | Settings cache | None: the settings in force are checked at every call | A withdrawn approval takes effect at the next call, and settings that stop checking out stop every call | The platform owner |
 | Settings requests | 5 a day per person in the settings app, with one waiting at a time, and 64 KB at most | Approvers aren't asked again and again | The platform owner |
 | Ledger anchor | Every hour, with assurance | A rewritten history shows within the hour | Assurance |
