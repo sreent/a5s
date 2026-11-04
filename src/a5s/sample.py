@@ -179,11 +179,12 @@ class SampleScenario:
         tools = [
             Tool(
                 name="search_records",
-                description="Search customer questions by words in their title or status.",
+                description="Search customer questions by words in their title or status, "
+                            "such as \"invoice\" or \"open\". With no words, it lists them all.",
                 schema={
                     "type": "object",
-                    "properties": {"query": {"type": "string", "description": "Words to look for"}},
-                    "required": ["query"],
+                    "properties": {"query": {"type": "string",
+                                             "description": "Words to look for, or none for all"}},
                 },
                 run=self._search_records,
                 record_field="key",
@@ -277,12 +278,12 @@ class SampleScenario:
         return f"{LINK}{kind}/{key}"
 
     def _search_records(self, call: ToolCall) -> list[dict]:
-        words = call.args["query"].lower().split()
+        words = str(call.args.get("query") or "").lower().split()
         hits = [
             r
             for r in self._standing().values()
-            if any(w in f"{r['title']} {r['status']}".lower() for w in words)
-        ]
+            if not words or any(w in f"{r['title']} {r['status']}".lower() for w in words)
+        ]  # the gateway keeps only those the people the run acts for may see
         return [
             {"key": r["key"], "title": r["title"], "status": r["status"], "link": self._link("records", r["key"])}
             for r in hits
