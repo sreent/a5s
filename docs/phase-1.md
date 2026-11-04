@@ -154,6 +154,8 @@ The first day in the test tenant and the first cloud checks what only the real s
 - a5s's own suite passes on all three clouds, against the sample scenario in CI and in test. Among its tests: every call is in the ledger; calls are denied when policy, the settings or the ledger is down; a suspended instance's next call is denied; a change to the trusted core can't deploy without the outside approval; and a person who comes back a week later picks up where they left off.
 - The measures have a baseline from the first users: promises and reminders met on time, time from something falling due to it being done, people who come back to an agent, and cost per run.
 
+Both come from real use, which the [pilot](pilot.md) plans.
+
 ## Later
 
 | Phase | Adds | Because |

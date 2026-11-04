@@ -152,6 +152,7 @@ The smoke test runs this way: Keycloak for sign-in, Synapse for Matrix, a model 
 | [Phase 1](docs/phase-1.md) | What to decide, what to build in what order, what done means, and costs |
 | [Phase 2](docs/phase-2.md) | Agents that act: held proposals, signed decisions, counts, level 2 earned on graded samples, and the extractor |
 | [Phase 3](docs/phase-3.md) | Group conversations, agent to agent, and a notebook of what agents learn from records |
+| [Pilot](docs/pilot.md) | One team, on Azure and Teams, in stages: what it shows, what stops it, and how it chooses what comes after phase 3 |
 | [IT service desk](scenarios/it-service-desk.md) | A second scenario, to check the contract is general, which round 5's tests build against the contract alone |
 | [Critique](docs/critique.md) | What each adversarial review found, how the design answers it, and what each round removed |
 | [Starting values](docs/starting-values.md) | The numbers a5s starts from, by phase |
