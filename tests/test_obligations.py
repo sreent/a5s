@@ -59,7 +59,7 @@ def test_its_agent_reminds_the_person_once_half_the_time_has_passed_in_their_hou
     assert [(e["args"]["record"], e["acts_for"], e["decision"]) for e in opened] == [
         ("Q-1001", ["ana"], "allow"), ("Q-1002", ["ben"], "allow")]
     with db.transaction(stack.admin) as conn:  # the next run with Ana knows what it said
-        turns = context.recent(conn, person="ana", agent="assistant")
+        turns = context.history(conn, person="ana", agent="assistant", topic="Q-1001")
     assert [t["role"] for t in turns] == ["task", "agent"]
     assert stack.verify().ok
 
@@ -134,7 +134,7 @@ def test_escalation_waits_a_working_day_after_the_reminder(stack):
     assert escalations(stack) == [("Q-1002", "ana")]
     [told] = [m["text"] for m in stack.inbox("ana") if m["from"] == "a5s"]
     assert told.startswith("Q-1002, Refund for a duplicate payment, was due on Fri 6 Nov and is "
-                           "still open. It's Ben Okafor's. The assistant reminded them on Fri 6 Nov.")
+                           "still open. It's Ben Okafor's. They were reminded on Fri 6 Nov.")
     assert "Q-1001" not in str(escalations(stack))  # Ana is the top of her own line
 
 
@@ -191,7 +191,10 @@ def test_the_core_decides_each_reminder(stack):
         to_ana = c.post("/run/messages", json={"to": "ana", "text": "Q-1001 is due Wednesday."})
     assert to_ben.status_code == 403
     assert to_ben.json()["reasons"] == ["writes-to-whom-it-acts-for"]
-    assert to_ana.status_code == 200
+    assert to_ana.status_code == 200 and stack.inbox("ana") == []  # it waits for her digest
+    with stack.client() as c:
+        c.post(f"/runs/{opened.json()['run']}/close", json={"outcome": "done"}).raise_for_status()
+    stack.scheduler().digest()  # which goes once the run is done
     assert [m["text"] for m in stack.inbox("ana")] == ["Q-1001 is due Wednesday."]
 
 

@@ -1,3 +1,5 @@
+import hashlib
+
 import psycopg
 import pytest
 
@@ -39,7 +41,9 @@ def test_a_rewritten_entry_shows_where_the_chain_breaks(database):
     assert not result.ok and result.broken_at == 2 and result.entries == 1
 
 
-def test_long_text_is_kept_by_hash_and_length_only():
-    masked = ledger.mask({"title": "Short", "body": "x" * 500})
-    assert masked["title"] == "Short"
+def test_text_is_kept_by_hash_and_length_only_however_short():
+    masked = ledger.mask({"title": "Short", "body": "x" * 500, "key": "Q-1001", "count": 3},
+                         plain=("key",))
+    assert masked["title"] == {"sha256": hashlib.sha256(b"Short").hexdigest(), "chars": 5}
     assert masked["body"]["chars"] == 500 and "x" * 50 not in str(masked)
+    assert (masked["key"], masked["count"]) == ("Q-1001", 3)  # a record's key, and numbers

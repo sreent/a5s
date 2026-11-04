@@ -65,7 +65,7 @@ def test_an_unsigned_version_doesnt_count(sample):
     folder, _, database = sample
     write(folder, 1)
     result = apply(folder, database)
-    assert result.refused == ["no instance-approver signed this version"]
+    assert result.refused == ["nobody who approves instances has approved it"]
     assert instances(database) == []
     with db.transaction(database) as conn:
         assert ledger.entries(conn)[-1]["decision"] == "deny"
@@ -86,7 +86,7 @@ def test_only_an_instance_approver_can_sign(sample):
     folder, keys, database = sample
     write(folder, 1)
     sign(folder, "ben", keys["ben"])
-    assert "ben doesn't hold the instance-approver role" in apply(folder, database).refused
+    assert "ben approves no instances: they own no part, and don't hold the instance-approver role" in apply(folder, database).refused
 
 
 def test_an_older_version_cant_be_replayed(sample):
@@ -174,7 +174,6 @@ def test_the_settings_in_force_are_checked_from_the_bytes_that_were_signed(stack
         conn.execute("update settings_versions set raw = "
                      "convert_to(replace(convert_from(raw, 'UTF8'), 'ben', 'chen'), 'UTF8')")
         conn.execute("update instances set serves = array_replace(serves, 'ben', 'chen')")
-    stack.gateway._checked.clear()  # as a gateway that starts after the edit would be
     assert reasons(stack) == ["the settings in force aren't what was signed"]
 
 

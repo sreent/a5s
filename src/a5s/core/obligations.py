@@ -7,11 +7,13 @@ run that acts for them. If it's still open when due, the core escalates it
 itself, along the person's reporting line, in each recipient's working hours,
 and no sooner than a working day after the reminder or the last escalation. It
 escalates whether or not an agent can act, so suspending or withdrawing an
-agent never silences what's owed.
+agent never silences what's owed. A person who says they're waiting on something
+until a date hears no reminder about it until then, and an escalation says why.
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -34,10 +36,17 @@ def _minutes(hhmm: str) -> int:
 
 
 def working(person: Person, at: datetime) -> bool:
-    """Whether it's within the person's working hours."""
+    """Whether it's within the person's working hours. Hours that end at or before they
+    start cross midnight, such as a night shift from 22:00 to 06:00: its morning belongs to the
+    working day it started on."""
     here = local(person, at)
     start, end = (_minutes(t) for t in person.hours)
-    return here.isoweekday() in person.workdays and start <= here.hour * 60 + here.minute < end
+    now = here.hour * 60 + here.minute
+    if start < end:
+        return here.isoweekday() in person.workdays and start <= now < end
+    if now >= start:
+        return here.isoweekday() in person.workdays
+    return now < end and (here - timedelta(days=1)).isoweekday() in person.workdays
 
 
 def a_working_day_after(person: Person, at: datetime) -> datetime:
@@ -50,6 +59,9 @@ def a_working_day_after(person: Person, at: datetime) -> datetime:
     return here
 
 
+WITHHELD = "[title withheld]"  # a title of a class the model isn't approved for
+
+
 def day(person: Person, at: datetime) -> str:
     """Such as Mon 2 Nov, in the person's time zone."""
     here = local(person, at)
@@ -60,34 +72,40 @@ def halfway(row: dict) -> datetime:
     return row["opened_at"] + (row["due_at"] - row["opened_at"]) / 2
 
 
-def chain(scenario: Scenario, person: str) -> list[Person]:
-    """The person's reporting line, nearest first, leaving out anyone a5s may not write to."""
+def chain(scenario: Scenario, person: str, record: str | None = None) -> list[Person]:
+    """The person's reporting line, nearest first, leaving out anyone a5s may not write to,
+    and anyone the directory says may not see the record it's about."""
     line: list[Person] = []
     seen = {person}
     current = scenario.person(person)
     while current and current.manager and current.manager not in seen:
         seen.add(current.manager)
         current = scenario.person(current.manager)
-        if current and current.in_audience:
+        if current and current.in_audience and (record is None or scenario.sees(current.id, record)):
             line.append(current)
     return line
 
 
 def sync(conn: psycopg.Connection, scenario: str, owed: list[Obligation],
-         definitions: dict[str, Definition], now: datetime) -> None:
+         definitions: dict[str, Definition], now: datetime,
+         part_of: Callable[[str], str | None] = lambda _: None,
+         serving: Callable[[list[str], str], bool] = lambda serves, who: who in serves) -> None:
     """Bring the obligations in line with what the records owe now, each naming the
-    instance that acts on it.
+    instance that acts on it: one that serves its person, chases its kind of record, and
+    works in the record's part, if it's in one.
 
     A new due date, or a record that's open again, is owed afresh. One the
     records no longer give is done.
     """
-    instances = conn.execute("select id, definition, serves from instances "
+    instances = conn.execute("select id, definition, serves, parts from instances "
                              "where status <> 'retired' order by (status = 'active') desc, id").fetchall()
 
-    def acting(source: str, person: str) -> str | None:
+    def acting(source: str, person: str, record: str) -> str | None:
+        part = part_of(record)
         for inst in instances:
             definition = definitions.get(inst["definition"])
-            if definition and source in definition.obligations and person in inst["serves"]:
+            if (definition and source in definition.obligations and serving(inst["serves"], person)
+                    and (part is None or part in (inst["parts"] or {}))):
                 return inst["id"]
         return None
 
@@ -106,9 +124,13 @@ def sync(conn: psycopg.Connection, scenario: str, owed: list[Obligation],
               escalated_at = case when {afresh} then null else obligations.escalated_at end,
               escalated_to = case when {afresh} then null else obligations.escalated_to end,
               due_at = excluded.due_at, done_at = null
+            where (obligations.title, obligations.link, obligations.opened_at, obligations.due_at,
+                   obligations.instance_id, obligations.done_at)
+              is distinct from (excluded.title, excluded.link, excluded.opened_at,
+                                excluded.due_at, excluded.instance_id, null)
             """,
             (scenario, o.source, o.record, o.person, o.title, o.link, o.opened, o.due,
-             acting(o.source, o.person), now),
+             acting(o.source, o.person, o.record), now),
         )
     conn.execute(
         "update obligations set done_at = %s, updated_at = %s "
@@ -128,7 +150,7 @@ def to_escalate(row: dict, scenario: Scenario, now: datetime, can_act: bool) -> 
     person = scenario.person(row["person"])
     if row["done_at"] or now < row["due_at"] or person is None:
         return None
-    line = chain(scenario, row["person"])
+    line = chain(scenario, row["person"], row["record"])
     if row["escalations"] >= len(line):
         return None  # the top of the line has heard
     if row["escalations"]:
@@ -149,9 +171,11 @@ def escalation(row: dict, scenario: Scenario, recipient: Person, inst: dict | No
     person = scenario.person(row["person"])
     said = [(f"{row['record']}, {row['title']}, was due on {day(recipient, row['due_at'])} "
              "and is still open."), f"It's {person.name if person else row['person']}'s."]
-    if row["chased_at"]:
-        said.append(f"The {inst['definition'] if inst else 'agent'} reminded them on "
-                    f"{day(recipient, row['chased_at'])}.")
+    if row.get("waiting_on") and row.get("waiting_noted_at"):
+        said.append(f"On {day(recipient, row['waiting_noted_at'])}, they said they were waiting on "
+                    f"{row['waiting_on']} until {day(recipient, row['waiting_until'])}.")
+    if row["chased_at"]:  # by its agent, or by a5s when the agent couldn't
+        said.append(f"They were reminded on {day(recipient, row['chased_at'])}.")
     elif inst is None:
         said.append("No agent works on it for them, so nobody reminded them first.")
     else:
@@ -165,24 +189,37 @@ def escalation(row: dict, scenario: Scenario, recipient: Person, inst: dict | No
     return " ".join(said)
 
 
-def chase(row: dict, person: Person) -> str:
-    """The task a5s gives the agent that reminds someone: worked out from the records."""
+def instead(row: dict, person: Person, why: str) -> str:
+    """a5s's own reminder of what someone owes, when their agent couldn't write it."""
+    due = local(person, row["due_at"])
+    link = f" {row['link']}" if row["link"] else ""
+    return (f"{row['record']}, {row['title']}, is due by {due:%H:%M} on "
+            f"{day(person, row['due_at'])} and is still open. The {row.get('agent') or 'agent'} "
+            f"couldn't write to you about it, as {why}, so a5s is telling you itself.{link}")
+
+
+def chase(row: dict, person: Person, *, withheld: bool = False) -> str:
+    """The task a5s gives the agent that reminds someone: worked out from the records. With
+    `withheld`, the record's title is of a class the agent's model isn't approved for."""
     due = local(person, row["due_at"])
     link = f" The record is at {row['link']}." if row["link"] else ""
-    return (f"Remind {person.name} that {row['record']}, {row['title']}, is due by "
+    title = WITHHELD if withheld else row["title"]
+    return (f"Remind {person.name} that {row['record']}, {title}, is due by "
             f"{due:%H:%M} on {day(person, row['due_at'])} and is still open. Check the record "
             f"first, and offer to help with it. Write to them briefly, in one message.{link}")
 
 
 def to_chase(rows: list[dict[str, Any]], scenario: Scenario, now: datetime,
-             able: dict[str, bool]) -> list[dict]:
+             able: dict[str, bool], digest_open: Callable[[Person], bool]) -> list[dict]:
     """The obligations whose agents should remind their people now: half their time has
-    passed, nobody has reminded them or escalated them yet, and it's their working hours."""
+    passed, nobody has reminded them or escalated them yet, they aren't waiting on something
+    until later, and their digest's time has come today, so the reminder goes in it fresh."""
     due = []
     for row in rows:
         person = scenario.person(row["person"])
-        if (person and able.get(row["instance_id"]) and row["chased_at"] is None
-                and not row["escalations"] and now >= halfway(row) and working(person, now)):
+        waiting = row.get("waiting_until") is not None and now < row["waiting_until"]
+        if (person and able.get(row["instance_id"]) and row["chased_at"] is None and not waiting
+                and not row["escalations"] and now >= halfway(row) and digest_open(person)):
             due.append({"kind": "obligation", "obligation": row["id"], "instance": row["instance_id"],
                         "agent": row["agent"], "person": row["person"]})
     return due

@@ -18,6 +18,9 @@ begin
   end loop;
 end $$;
 
+-- A new owner must be able to create in the schema, which a superuser alone needn't grant.
+grant usage, create on schema public to a5s_owner;
+
 alter table instances owner to a5s_owner;
 alter table runs owner to a5s_owner;
 alter table settings_versions owner to a5s_owner;

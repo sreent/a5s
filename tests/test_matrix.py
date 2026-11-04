@@ -11,7 +11,7 @@ import pytest
 
 from a5s import db
 from a5s.core import inbox
-from a5s.core.matrix import ENCRYPTED, ONE_TO_ONE, UNKNOWN, Matrix, MatrixConfig
+from a5s.core.matrix import ENCRYPTED, UNKNOWN, Matrix, MatrixConfig
 from conftest import free_port, serve
 
 AS_TOKEN, HS_TOKEN = "a5s-speaks-as-its-bots", "the-homeserver-proves-itself"
@@ -108,6 +108,7 @@ def test_a_matrix_message_is_checked_recorded_and_answered_in_the_room(stack, ho
     assert deliver(homeserver, invite()).status_code == 200
     assert BOT in homeserver.rooms[DM] and homeserver.registered == ["a5s-assistant"]
 
+    stack.model.reply(None, ("search_records", {"query": "invoice"}))  # it looks first
     stack.model.reply("Q-1001 mentions an invoice.")
     assert deliver(homeserver, said("Which questions mention an invoice?")).status_code == 200
     [row] = queued(stack)
@@ -143,11 +144,11 @@ def test_people_the_directory_doesnt_know_hear_so_and_nothing_runs(stack, homese
     assert homeserver.sent == [{"room": "!x:a5s.test", "as": BOT, "body": UNKNOWN}]
 
 
-def test_a5s_talks_one_to_one_in_matrix_too(stack, homeserver):
+def test_once_someone_else_joins_a_room_it_hears_only_what_mentions_it(stack, homeserver):
     deliver(homeserver, invite())
-    homeserver.rooms[DM].add(BEN)
+    homeserver.rooms[DM].add(BEN)  # a group's room now: see test_groups.py
     deliver(homeserver, said("Hello, both of you"))
-    assert queued(stack) == [] and homeserver.sent[-1]["body"] == ONE_TO_ONE
+    assert queued(stack) == [] and homeserver.sent == []
 
 
 def test_an_encrypted_message_is_turned_away_with_how_to_carry_on(stack, homeserver):
@@ -221,6 +222,7 @@ def told_by_the_watcher(stack, homeserver) -> dict:
 
 
 def a_change_and_reminders_on_monday(stack, monkeypatch) -> None:
+    """Ana's digest on Monday has two agents' news, each as its own agent's message."""
     records = stack.gateway.scenario._records
     monkeypatch.setitem(records, "Q-1001", {**records["Q-1001"], "status": "waiting on customer"})
     stack.at("2026-11-02T09:30:00+00:00")  # half the time for Ana's and Ben's questions has passed
@@ -228,6 +230,15 @@ def a_change_and_reminders_on_monday(stack, monkeypatch) -> None:
     stack.model.reply("Ben, Q-1002 is due on Friday.")
     stack.model.reply("Ana, Q-1001 is waiting on the customer now.")  # and the watcher's report
     assert stack.scheduler().work_due() == 3
+
+
+def only_the_watcher_on_tuesday(stack, monkeypatch) -> None:
+    """Ana's digest on Tuesday has only the watcher's news, so it's the watcher's own."""
+    records = stack.gateway.scenario._records
+    monkeypatch.setitem(records, "Q-1001", {**records["Q-1001"], "status": "open"})
+    stack.at("2026-11-03T09:30:00+00:00")
+    stack.model.reply("Ana, Q-1001 is open again.")
+    assert stack.scheduler().work_due() == 1
 
 
 def test_an_agent_writes_first_only_as_its_own_bot(stack, homeserver, monkeypatch):
@@ -244,9 +255,13 @@ def test_an_agent_writes_first_only_as_its_own_bot(stack, homeserver, monkeypatc
     a_change_and_reminders_on_monday(stack, monkeypatch)
     asked = stack.model.requests[-1]["body"]["messages"][-1]["content"]
     assert "since you last looked, on Fri 30 Oct" in asked  # Friday's report reached her
-    assert [(m["room"], m["as"], m["body"]) for m in homeserver.sent[-2:]] == [
-        (DM, BOT, "Ana, Q-1001 is due on Wednesday."),  # each in its own chat with her
+    assert [(m["room"], m["as"], m["body"]) for m in homeserver.sent[-2:]] == [  # each in its
+        (DM, BOT, "Ana, Q-1001 is due on Wednesday."),  # own chat, where answers reach it
         (started["room"], WATCHER, "Ana, Q-1001 is waiting on the customer now.")]
+
+    only_the_watcher_on_tuesday(stack, monkeypatch)
+    assert [(m["room"], m["as"], m["body"]) for m in homeserver.sent[-1:]] == [
+        (started["room"], WATCHER, "Ana, Q-1001 is open again.")]
     assert len(homeserver.started) == 1  # the same chat again, not a new one
 
     homeserver.rooms[started["room"]].add(ANA)  # she accepts, and answers it there
@@ -264,10 +279,12 @@ def test_someone_who_turns_down_an_agents_chat_hears_from_it_in_their_inbox(stac
     deliver(homeserver, leave(ANA, started["room"]))  # she turns the invitation down
 
     a_change_and_reminders_on_monday(stack, monkeypatch)
+    only_the_watcher_on_tuesday(stack, monkeypatch)
     assert len(homeserver.started) == 1  # a5s doesn't ask her in again
-    assert homeserver.sent[-1]["as"] == BOT  # the assistant's reminder, in her chat with it
-    [told] = stack.inbox("ana")
-    assert (told["from"], told["text"]) == ("watcher", "Ana, Q-1001 is waiting on the customer now.")
+    assert homeserver.sent[-1]["body"] == "Ana, Q-1001 is due on Wednesday."  # the assistant's
+    assert [(m["from"], m["text"]) for m in stack.inbox("ana")] == [  # and the watcher's, here
+        ("watcher", "Ana, Q-1001 is waiting on the customer now."),
+        ("watcher", "Ana, Q-1001 is open again.")]
 
 
 def test_matrix_is_on_where_its_settings_are_and_needs_them_all(stack, homeserver, monkeypatch):

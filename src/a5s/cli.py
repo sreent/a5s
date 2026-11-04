@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import logging
@@ -20,7 +21,7 @@ import yaml
 from a5s import build, db, definitions, devdb, worker
 from a5s.config import DEFAULT_DATABASE_URL, Config
 from a5s.contract import Signature
-from a5s.core import anchor, inbox, ledger, registry, releases, signing
+from a5s.core import anchor, inbox, ledger, registry, releases, signing, status
 from a5s.services.scheduler import Scheduler, remote_worker
 
 log = logging.getLogger("a5s")
@@ -29,10 +30,11 @@ log = logging.getLogger("a5s")
 def _dev_up(root: Path) -> None:
     state = root / ".a5s"
     state.mkdir(exist_ok=True)
-    token_file = state / "service-token"
-    if not token_file.exists():
-        token_file.write_text(secrets.token_urlsafe(32))
-        token_file.chmod(0o600)
+    for name in ("service-token", "seal-key"):  # the core's own secrets, for development
+        secret = state / name
+        if not secret.exists():
+            secret.write_text(secrets.token_urlsafe(32))
+            secret.chmod(0o600)
     url = devdb.start(state / "pg", 54329)
     _migrate(Config.from_env(), url)
     print(f"Postgres is up at {url}, and the schema is in place.")
@@ -90,6 +92,21 @@ def _sign(cfg: Config, person: str, key: Path | None) -> None:
     print(f"{person} signed this version of the settings.")
 
 
+def _propose(cfg: Config, path: Path | None) -> None:
+    """Ask the instance approvers to approve the settings where they work, with a card."""
+    raw = path.read_bytes() if path else build.scenario(cfg).settings().raw
+    asked = _admin(cfg, "/settings/proposals", {"raw": base64.b64encode(raw).decode()})
+    print(f"Serial {asked['serial']} of the settings:")
+    for change in asked["changes"]:
+        print(f"- {change['text']}")
+    if asked["new"]:
+        print(f"Asked {', '.join(asked['asked']) or 'nobody: none of its approvers is in the directory'}"
+              f" to approve it. a5s applies it once everyone it needs has.")
+    else:
+        print("The approvers were asked about this version before.")
+    print(f"It's approved at {asked['link']}")
+
+
 def _pin(cfg: Config, agent: str) -> None:
     tools = build.scenario(cfg).tools()
     lock = definitions.pin(cfg.agents_dir / agent, {n: t.schema_hash for n, t in tools.items()})
@@ -129,6 +146,22 @@ def _inbox(cfg: Config, person: str, wait: float) -> None:
         print(f"[{message['at'][:16].replace('T', ' ')} UTC, {message['from']}] {message['text']}")
     if not found.json()["messages"]:
         print("Nothing new.")
+
+
+def _summaries(cfg: Config, person: str, agent: str) -> None:
+    """Print what a5s keeps of a person's conversation with an agent beyond what each run is
+    given: a summary of each topic, which they can have the agent correct."""
+    token = os.environ.get("A5S_TOKEN")
+    headers = {"Authorization": f"Bearer {token}"} if token else {}
+    with httpx.Client(base_url=cfg.channels_url, headers=headers, timeout=30) as channel:
+        found = channel.get("/channels/local/summaries", params={"person": person, "agent": agent})
+    if found.status_code >= 400:
+        sys.exit(found.json()["detail"])
+    for summary in found.json()["summaries"]:
+        print(f"[{summary['topic']}, as of {summary['at'][:16].replace('T', ' ')} UTC]\n"
+              f"{summary['text']}\n")
+    if not found.json()["summaries"]:
+        print("Nothing yet: the whole conversation still fits in each run.")
 
 
 def _service(cfg: Config, name: str):
@@ -273,6 +306,10 @@ def main(argv: list[str] | None = None) -> None:
     sign.add_argument("--as", dest="person", required=True)
     sign.add_argument("--key", type=Path, help="their private key (default: the sample's)")
     sub.add_parser("setup", help="migrate and apply the settings, as the administrator")
+    propose = sub.add_parser("propose", help="ask the instance approvers to approve the settings "
+                                             "where they work, with a card")
+    propose.add_argument("--file", type=Path, help="a version of the settings (default: the "
+                                                   "scenario's)")
     for name, port, what in (("gateway", 8700, "the gateway, in the trusted core"),
                              ("worker", 8702, "a worker, which holds no secrets"),
                              ("channels", 8703, "the core's endpoints, where messages arrive")):
@@ -285,6 +322,10 @@ def main(argv: list[str] | None = None) -> None:
     say.add_argument("--as", dest="person", required=True)
     say.add_argument("agent")
     say.add_argument("text")
+    kept = sub.add_parser("summaries", help="read the summaries a5s keeps of a person's "
+                                            "conversation with an agent")
+    kept.add_argument("--as", dest="person", required=True)
+    kept.add_argument("agent", nargs="?", default="assistant")
     box = sub.add_parser("inbox", help="read what's been written to a person, such as reminders")
     box.add_argument("--as", dest="person", required=True)
     box.add_argument("--wait", type=float, default=0, metavar="SECONDS")
@@ -292,6 +333,19 @@ def main(argv: list[str] | None = None) -> None:
         p = sub.add_parser(verb, help=f"{verb} an instance")
         p.add_argument("instance")
         p.add_argument("--by", help="who you are, in development; else your sign-in in A5S_TOKEN")
+    sub.add_parser("status", help="how a5s is doing: its queue, runs, denials, budgets and "
+                                  "objectives")
+    held = sub.add_parser("proposals", help="the held changes that wait, or that a5s stopped "
+                                            "part way through making; or end one of those")
+    held.add_argument("end", nargs="?", choices=["end"], help="end a change a5s stopped making")
+    held.add_argument("key", nargs="?", help="the change, such as P-12")
+    held.add_argument("--by", help="who you are, in development; else your sign-in in A5S_TOKEN")
+    caps = sub.add_parser("caps", help="lower an agent's cap for a type of action in a part")
+    caps.add_argument("what", choices=["lower"])
+    caps.add_argument("agent")
+    caps.add_argument("part")
+    caps.add_argument("action")
+    caps.add_argument("--by", help="who you are, in development; else your sign-in in A5S_TOKEN")
     copy = sub.add_parser("anchor", help="copy the ledger to locked storage")
     copy.add_argument("--every", type=int, metavar="SECONDS", help="keep copying, this often")
     rel = sub.add_parser("release", help="approve a release of a5s for this deployment")
@@ -341,6 +395,8 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "setup":
         _migrate(cfg)
         _apply(cfg)
+    elif args.command == "propose":
+        _propose(cfg, args.file)
     elif args.command in ("gateway", "worker", "channels"):
         import uvicorn
 
@@ -353,11 +409,28 @@ def main(argv: list[str] | None = None) -> None:
         _say(cfg, args.person, args.agent, args.text)
     elif args.command == "inbox":
         _inbox(cfg, args.person, args.wait)
+    elif args.command == "summaries":
+        _summaries(cfg, args.person, args.agent)
     elif args.command in ("suspend", "resume"):
         print(_admin(cfg, f"/instances/{args.instance}/{args.command}",
                      {"by": args.by, "identity": os.environ.get("A5S_TOKEN")}))
     elif args.command == "anchor":
         _anchor(cfg, args.every)
+    elif args.command == "status":
+        print(status.told(_admin(cfg, "/status")))
+    elif args.command == "proposals" and args.end:
+        if not args.key:
+            sys.exit("name the change to end, such as P-12")
+        print(_admin(cfg, f"/proposals/{args.key}/end",
+                     {"by": args.by, "identity": os.environ.get("A5S_TOKEN")}))
+    elif args.command == "proposals":
+        for p in _admin(cfg, "/proposals")["proposals"]:
+            print(f"{p['key']} {p['status']} since {p['decided_at'] or p['proposed_at']}, "
+                  f"for {', '.join(p['for']) or 'nobody'}: {p['change']}")
+    elif args.command == "caps":
+        print(_admin(cfg, "/caps/lower", {"agent": args.agent, "part": args.part,
+                                          "action": args.action, "by": args.by,
+                                          "identity": os.environ.get("A5S_TOKEN")}))
     elif args.command == "release":
         _release(cfg, args)
     elif args.command == "ledger" and args.what == "verify":

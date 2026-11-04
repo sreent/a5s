@@ -1,0 +1,28 @@
+name: soak
+
+# The soak test: the containers' stack, as the smoke test starts it, with the sample's people
+# talking to its agents for half an hour, or as long as asked. It finds what a test of
+# seconds can't: leaks, locks that pile up, and work done twice. Weekly, and when asked.
+
+on:
+  schedule:
+    - cron: "17 3 * * 0"  # Sundays, 03:17 UTC
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: How long the people talk, in minutes
+        default: "30"
+
+permissions:
+  contents: read
+
+jobs:
+  soak:
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - run: docker build -t a5s:dev .
+      - run: sh deploy/soak.sh "${MINUTES:-30}"
+        env:
+          MINUTES: ${{ inputs.minutes }}

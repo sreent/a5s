@@ -28,14 +28,18 @@ def digest(value: Any) -> str:
     return hashlib.sha256(canonical(value).encode()).hexdigest()
 
 
-def mask(args: dict[str, Any]) -> dict[str, Any]:
-    """Keep short values, and record long text by hash and length only."""
-    masked = {}
+def mask(args: dict[str, Any], plain: tuple[str, ...] = ()) -> dict[str, Any]:
+    """Arguments as the ledger keeps them: numbers, yes or no, and the `plain` ones, such as
+    the key of the record a call is about, as they are, and anything people or agents wrote
+    by hash and length only, however short, so the ledger keeps nothing anyone said."""
+    masked: dict[str, Any] = {}
     for key, value in args.items():
-        if isinstance(value, str) and len(value) > _LONG_TEXT:
-            masked[key] = {"sha256": hashlib.sha256(value.encode()).hexdigest(), "chars": len(value)}
-        else:
+        if value is None or isinstance(value, bool | int | float) or (
+                key in plain and isinstance(value, str) and len(value) <= _LONG_TEXT):
             masked[key] = value
+        else:
+            text = value if isinstance(value, str) else canonical(value)
+            masked[key] = {"sha256": hashlib.sha256(text.encode()).hexdigest(), "chars": len(text)}
     return masked
 
 

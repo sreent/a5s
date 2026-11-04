@@ -1,8 +1,9 @@
 name: ci
 
 # The full suite, on every push: the tests against a real Postgres and storage
-# emulators, and the containers' smoke test. A release runs it too, first.
-# Every action and image is pinned by commit or digest.
+# emulators, the containers' smoke test, and the Helm chart, installed on a Kubernetes
+# cluster of its own. A release runs it too, first. Every action and image is pinned by
+# commit or digest.
 
 on:
   push:
@@ -50,3 +51,15 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
       - run: docker build -t a5s:dev .
       - run: sh deploy/smoke.sh
+
+  kubernetes:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - name: Lint the chart
+        run: >-
+          docker run --rm -v "$PWD/deploy/helm:/charts:ro"
+          alpine/helm:3.16.3@sha256:ed9dfc49d43d034df3f9880eb777caf0183e5156508672478b80412c63f3db4f
+          lint /charts/a5s --strict -f /charts/ci-values.yaml
+      - run: docker build -t a5s:dev .
+      - run: sh deploy/helm/test.sh

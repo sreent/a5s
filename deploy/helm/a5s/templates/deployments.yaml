@@ -1,0 +1,82 @@
+{{- $parts := list
+  (dict "part" "gateway" "args" (list "gateway" "--host" "0.0.0.0") "port" 8700)
+  (dict "part" "channels" "args" (list "channels" "--host" "0.0.0.0") "port" 8703)
+  (dict "part" "scheduler" "args" (list "scheduler") "port" 0)
+  (dict "part" "anchor" "args" (list "anchor" "--every" "3600") "port" 0)
+  (dict "part" "worker" "args" (list "worker" "--host" "0.0.0.0") "port" 8702) }}
+{{- range $parts }}
+{{- $part := .part }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ printf "%s-%s" $.Release.Name $part }}
+  labels:
+    {{- include "a5s.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: {{ $part }}
+spec:
+  replicas: 1
+  # One at a time, so two schedulers or copiers never overlap
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "a5s.selector" (dict "root" $ "part" $part) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "a5s.podLabels" (dict "root" $ "part" $part) | nindent 8 }}
+    spec:
+      serviceAccountName: {{ printf "%s-%s" $.Release.Name $part }}
+      automountServiceAccountToken: false
+      {{- with $.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 10001
+      containers:
+        - name: {{ $part }}
+          image: {{ include "a5s.image" $ }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          args: {{ toJson .args }}
+          securityContext:
+            {{- include "a5s.securityContext" $ | nindent 12 }}
+          env:
+            {{- include "a5s.scratch" $ | nindent 12 }}
+            {{- include (printf "a5s.env.%s" $part) $ | nindent 12 }}
+          {{- if .port }}
+          ports:
+            - name: http
+              containerPort: {{ .port }}
+          readinessProbe:
+            tcpSocket:
+              port: http
+            periodSeconds: 5
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 20
+          {{- end }}
+          resources:
+            {{- toYaml (get $.Values.resources $part) | nindent 12 }}
+          volumeMounts:
+            - name: scratch
+              mountPath: /tmp
+            {{- if and (eq $part "gateway") $.Values.models.configMap }}
+            - name: models
+              mountPath: /app/config/models.yaml
+              subPath: models.yaml
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: scratch
+          emptyDir: {}
+        {{- if and (eq $part "gateway") $.Values.models.configMap }}
+        - name: models
+          configMap:
+            name: {{ $.Values.models.configMap }}
+        {{- end }}
+{{- end }}

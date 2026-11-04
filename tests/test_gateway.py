@@ -1,3 +1,4 @@
+import hashlib
 from dataclasses import replace
 
 import httpx
@@ -45,7 +46,8 @@ def test_a_tool_call_is_decided_and_recorded(stack):
     decided, done = stack.ledger(run)[-2:]
     assert decided["decision"] == "allow"
     assert decided["reasons"] == ["active-instances-use-their-grant"]
-    assert decided["acts_for"] == ["ana"] and decided["args"] == {"query": "invoice"}
+    assert decided["acts_for"] == ["ana"] and decided["args"] == {  # words, by hash alone
+        "query": {"sha256": hashlib.sha256(b"invoice").hexdigest(), "chars": 7}}
     assert done["of"] == decided["seq"] and done["outcome"]["status"] == "ok"
 
 
@@ -183,7 +185,7 @@ def test_drafts_keep_only_text_and_record_links(stack):
     _, token = stack.open_run()
     with stack.client(token) as c:
         r = c.post("/run/tools/create_draft", json={"args": {
-            "title": "Re: Q-1001", "body": "Pay at https://evil.example/pay"}})
+            "title": "Re: the invoice", "body": "Pay at https://evil.example/pay"}})
     assert r.status_code == 200
     with db.transaction(stack.admin) as conn:
         assert conn.execute("select body from sample.drafts").fetchone()["body"] == (

@@ -1,0 +1,118 @@
+# a5s on Kubernetes: the same parts as deploy/compose.yaml, on any cluster, in any cloud or
+# on the organisation's own premises. Each part runs from the same image, as its own
+# service account, reads only its own keys of the Secret, and reaches only what its network
+# policy lets it: the worker reaches the gateway alone.
+
+image:
+  repository: ghcr.io/sreent/a5s
+  # A release's image, by its digest, such as sha256:..., so what runs is what was approved.
+  digest: ""
+  # Only to try it on a cluster of your own with an image you built: a tag, in place of a digest.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+# The Secret the deployment makes, by hand, with External Secrets, or with its cloud's secrets
+# store driver, in the release's namespace. Each part reads only its own keys:
+#   database-admin-url, the database's administrator, for the jobs that set up the schema,
+#     apply the signed settings and record a release's approval;
+#   database-<part>-url and database-<part>-password, for gateway, channels, scheduler and anchor;
+#   service-token and seal-keys;
+#   and as the deployment needs them: deepseek-api-key, qwen-api-key, teams-secret-<agent>,
+#   matrix-as-token and matrix-hs-token.
+secret: a5s
+
+# The directory's team that runs a5s.
+team: platform
+
+# How people sign in, through the organisation's identity provider, and where they reach a5s.
+people:
+  oidcIssuer: ""
+  oidcAudience: a5s
+  oidcPersonClaim: preferred_username
+  oidcDirectoryPrefix: ""
+  oidcMetadataUrl: ""
+  webchatClientId: ""
+  publicUrl: ""
+
+models:
+  # The environment variables the gateway passes on to model providers, each from a key of the
+  # Secret, which may be left out.
+  keys:
+    DEEPSEEK_API_KEY: deepseek-api-key
+    QWEN_API_KEY: qwen-api-key
+  # A ConfigMap with a models.yaml to use in place of the image's. It's part of the release,
+  # so its people sign it with the rest.
+  configMap: ""
+
+# Teams: the Microsoft 365 tenant the agents' bots are registered in, and each bot, such as
+# {agent: assistant, appId: <its app id>}, with its secret in the Secret as teams-secret-<agent>.
+teams:
+  tenantId: ""
+  bots: []
+
+# Matrix: a5s's registration on the organisation's homeserver, with its tokens in the Secret.
+matrix:
+  homeserver: ""
+  serverName: ""
+
+anchor:
+  # Where the ledger's locked copies go: s3://bucket/prefix, azure://account/container/prefix
+  # or gs://bucket/prefix. The copier's service account needs the right to write there.
+  store: ""
+  retainDays: 365
+
+release:
+  # A ConfigMap with release.yaml and release.sig, the release's manifest and the signatures of
+  # the people its changes need. A job records them once the chart is installed or upgraded:
+  # until then, the core opens no run.
+  approval: ""
+
+ingress:
+  enabled: false
+  className: ""
+  host: ""
+  tlsSecret: ""
+  annotations: {}
+
+# Annotations on each part's service account, for its cloud's workload identity, such as the
+# copier's right to write the ledger's copies.
+serviceAccounts:
+  annotations: {}
+
+networkPolicies:
+  enabled: true
+  # Where Postgres is: pods in the cluster, by their labels, or addresses outside it.
+  database:
+    podSelector: {}
+    namespaceSelector: {}
+    cidrs: []
+    port: 5432
+  # What the gateway, the channels and the copier may reach outside the cluster: the models,
+  # the identity provider, the chats and the locked storage.
+  outside:
+    - 0.0.0.0/0
+  # The namespace of the ingress controller, by its labels, which alone reaches the channels.
+  # Empty lets anything reach them, as a cluster with no ingress controller needs.
+  ingressNamespace: {}
+
+resources:
+  gateway:
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {memory: 1Gi}
+  channels:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 512Mi}
+  scheduler:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 512Mi}
+  anchor:
+    requests: {cpu: 50m, memory: 128Mi}
+    limits: {memory: 256Mi}
+  worker:
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {memory: 1Gi}
+  jobs:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 512Mi}

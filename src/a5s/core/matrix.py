@@ -23,9 +23,9 @@ from urllib.parse import quote
 import httpx
 
 from a5s.contract import Person, Scenario
+from a5s.core import groups
 
 UNKNOWN = "a5s doesn't know who you are. Ask an instance approver to add your Matrix id to the directory."
-ONE_TO_ONE = "a5s talks one to one for now. Start a direct chat with me instead."
 ENCRYPTED = ("I can't read encrypted messages yet. Start a direct chat with me with encryption "
              "turned off.")
 
@@ -60,6 +60,8 @@ class Message:
     agent: str
     text: str
     reply_to: dict[str, str]
+    members: tuple[str, ...] = ()  # in a group's room, everyone in it, by their ids
+    place: str | None = None  # in a group's room, the room
 
 
 class Matrix:
@@ -132,6 +134,35 @@ class Matrix:
         found.raise_for_status()
         return sorted(found.json().get("joined", {}))
 
+    def history(self, room: str, bot: str) -> str:
+        """Who may read what was said in a room before they joined it: "shared" unless the
+        room says otherwise, as the spec has it."""
+        found = self._call("GET", f"/rooms/{quote(room, safe='')}/state/m.room.history_visibility",
+                           bot)
+        if found.status_code == 404:
+            return "shared"
+        found.raise_for_status()
+        return str(found.json().get("history_visibility") or "shared")
+
+    @staticmethod
+    def mentioned(content: dict[str, Any], bot: str) -> bool:
+        """Whether a message mentions the bot: as the spec has apps say so now, or by its id
+        or its name in the text, as older apps do."""
+        if bot in ((content.get("m.mentions") or {}).get("user_ids") or []):
+            return True
+        local = bot.removeprefix("@").partition(":")[0]
+        said = f"{content.get('body', '')} {content.get('formatted_body', '')}"
+        return bot in said or local in said
+
+    @staticmethod
+    def unmentioned(text: str, bot: str) -> str:
+        """A message's text without the mention of the bot it opens with."""
+        local = bot.removeprefix("@").partition(":")[0]
+        for name in (bot, local):
+            if text.startswith(name):
+                return text[len(name):].lstrip(" :,").strip()
+        return text.strip()
+
     def bot_in(self, room: str, agents: list[str]) -> str | None:
         """Which of a5s's bots is in a room, if one is."""
         if room in self._rooms:
@@ -183,7 +214,9 @@ class Matrix:
                 return "join", (room, target)
             if membership in ("leave", "ban") and (person := self.person_of(target, scenario)):
                 bot = self.bot_in(room, agents)  # still there: they left it, or turned it down
-                if bot is not None:
+                if bot is not None and not [  # their own chat, not a group's room
+                        u for u in self.members(room, bot) or [] if u != target
+                        and not self.agent_of(u)]:
                     return "left", (person.id, self.agent_of(bot), {"room": room, "bot": bot})
             return "ignore", None
         if kind not in ("m.room.message", "m.room.encrypted"):
@@ -195,12 +228,31 @@ class Matrix:
         if bot is None:
             return "ignore", None
         reply_to = {"room": room, "bot": bot}
+        others = [u for u in self.members(room, bot) or [] if u not in (sender, bot)]
+        people = [u for u in others if not self.agent_of(u)]  # a5s's other bots aren't people
+        if people and (kind == "m.room.encrypted" or not self.mentioned(content, bot)):
+            return "ignore", None  # a group's room: it answers only when someone mentions its bot
         person = self.person_of(sender, scenario)
         if person is None:
             return "turn away", (f"the directory doesn't know matrix:{sender}", [], UNKNOWN, reply_to)
-        if self.members(room, bot) != sorted({sender, bot}):
-            return "turn away", ("a5s talks one to one for now", [person.id], ONE_TO_ONE, reply_to)
         if kind == "m.room.encrypted":
             return "turn away", ("a5s can't read encrypted messages yet", [person.id], ENCRYPTED,
                                  reply_to)
-        return "message", Message(person.id, self.agent_of(bot), content.get("body", ""), reply_to)
+        if not people:
+            return "message", Message(person.id, self.agent_of(bot), content.get("body", ""),
+                                      reply_to)
+        known = [self.person_of(u, scenario) for u in people]
+        if None in known:
+            return "turn away", ("someone in the group isn't in the directory", [person.id],
+                                 groups.STRANGERS, reply_to)
+        members = tuple(sorted({person.id, *(p.id for p in known if p)}))
+        if len(members) > groups.LIMIT:
+            return "turn away", (f"the group has more than {groups.LIMIT} people", [person.id],
+                                 groups.TOO_MANY, reply_to)
+        if self.history(room, bot) != "joined":  # "invited" shows people, once they've joined,
+            # what was said while they were only invited, which the run wasn't for
+            return "turn away", ("the room shows people what was said before they joined",
+                                 [person.id], groups.HISTORY, reply_to)
+        return "message", Message(person.id, self.agent_of(bot),
+                                  self.unmentioned(content.get("body", ""), bot), reply_to,
+                                  members=members, place=room)

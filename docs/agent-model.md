@@ -35,10 +35,10 @@ Roles are held by people, never by job titles. An organisation assigns people to
 | --- | --- |
 | Platform owner | Accountable for a5s and the agents it runs. Names each agent owner and deputy, and can suspend any instance or withdraw any release. |
 | Agent owner, with a deputy | Builds and runs a definition and its instances. Reviews level-2 actions and can reverse them. Can suspend the agent's instances, lower their cap and withdraw its releases. |
-| Part owner, and delegates | The part owner approves an instance for the part, sets how far it may act there, and moves it up or down. They or their delegates decide its proposals, as the scenario allows. Decisions about the agent itself are never a delegate's. |
+| Part owner, and delegates | The part owner, who holds `part-owner:<part>` in the directory, approves an instance for the part, sets how far it may act there, and moves it up or down. They or their delegates decide its proposals, as the scenario allows. Decisions about the agent itself are never a delegate's. |
 | Instance approver | For each part in an instance's scope, its owner. For an instance with no parts, whoever the scenario names, who also sets its level. |
 | Release approver | Approves what loosens a5s: releases that change a tool or widen what an agent may do, changes to the trusted core, and anything else the scenario names nobody else for. Never from the team that runs a5s, or its manager's reporting line. |
-| Graders, from phase 2 | Grade samples of an agent's work. Never from the team that built it. |
+| Graders | Grade samples of an agent's work. Never from the team that built it, nor anyone a change was for or who decided it. |
 | Assurance | Holds the ledger's anchor, reads the ledger, and is told of everything that loosens a5s |
 
 ## Lifecycle
@@ -61,7 +61,7 @@ Each organisation approves a release for its own deployment, with its own people
 - A part owner can stop an instance acting in their part at any time, by withdrawing its approval in the settings.
 - If the agent owner and the deputy both leave, the instances are suspended until the platform owner names a new owner.
 - An instance moves to another approved release when its agent owner moves it. Runs start fresh, so nothing needs migrating, and it can always go straight back to the release it ran before.
-- From phase 2, a release that widens what an agent does starts at level 1 for what it widens, and earns level 2 on samples. One that changes only instructions or skills keeps its cap if the last graded samples still pass when re-run.
+- a5s keeps its caps for a behaviour, not a release: the agent, its model, and the tools of a type of action it may use, as pinned. A release that changes only instructions or skills keeps its caps, after its regression suite and a re-run of the last graded samples; one that changes a tool of that type, or the model, starts again at level 1 for what it widens.
 
 ## Autonomy
 
@@ -71,9 +71,11 @@ Each organisation approves a release for its own deployment, with its own people
 | 1. Propose | Prepare drafts, raise requests in a governed process, and, from phase 2, hold proposals ([how](architecture.md#proposals-and-approvals)) | A person decides each one |
 | 2. Act and notify, from phase 2 | Take actions of a type the part owner has approved, within the scenario's limits, through the governed process where there is one | The agent owner reviews them and can reverse any |
 
-- The level is set for each instance, part and type of action, in the settings. Where none is set, the release's starting level applies, which can only be 0 or 1, so level 2 always comes from the settings, never from the release. The release's maximum caps whatever the settings say.
-- A level-2 setting records who approved it and the version of the part. If either changes, it drops to level 1 until the new owner sets it.
-- From phase 2, a5s also keeps a cap for each instance and type of action, and the instance works at the lower of the cap and the setting. The cap rises only when samples pass ([starting values](starting-values.md)), and falls when they fail or the agent owner lowers it. Raising it by hand loosens, so it needs someone outside the team.
+- The level is set for each instance, part and type of action, in the settings. Where none is set, the release's starting level applies, which can only be 0 or 1, so level 2 always comes from the settings, never from the release. The release's maximum caps whatever the settings say. A part's own level applies to drafts and requests, and is never above 1; a change of a type the settings don't set for the part works at level 1 at most, so level 2 is always for a type of action, such as `parts: {billing: {level: 1, actions: {change-due-date: 2}}}`, and the settings must give that type a limit.
+- An instance works only on records in its parts, and only on those everyone it acts for may see. A call about records works at the lowest level it has in their parts, and one about no record in particular at the lowest of all its parts.
+- A level-2 setting counts only while someone who approved the settings in force still owns the part. If the part's owner changes, no run opens until the new owner approves the version in force, and level 2 counts again only once they have.
+- a5s also keeps a cap for each behaviour, part and type of action, which starts at 1, and the instance works at the lower of the cap and the setting. The cap rises only when samples pass ([starting values](starting-values.md)), and falls when they fail or someone who may lowers it, such as the agent owner or the part's owner (`a5s caps lower`). Nobody raises it by hand.
+- A change about no record, about a record in no part, or from a run that has read content from outside, or whose conversation holds what such a run passed on, works at level 1 at most, and so does any change past the scenario's limits for its type.
 - An action that touches several parts works at the lowest of their levels.
 - Reminding, chasing and routing are allowed at every level, within the contact rules, because they change no data.
 - A scenario's policy pack can rule out level 2 for some actions, such as anything a person asked for in their own words, or narrow it, such as to self-service that the identity provider verifies.
@@ -89,7 +91,7 @@ agents/assistant/
   AGENTS.md      instructions, loaded read-only on every run
   tools.lock     the schema of each tool it uses, pinned by hash
   skills/        Agent Skills, one folder each, from a later step
-  tests/         regression and scenario tests, from a later step
+  tests/         its regression cases, run against the model it names before each release
 ```
 
 This is [`agent.yaml`](../agents/assistant/agent.yaml) for the assistant, one of the two reference agents [phase 1](phase-1.md) builds. Fields marked for later steps are read but not yet used.
@@ -114,18 +116,25 @@ triggers:
   - message: from the people it works for
 obligations: [records]           # it reminds its people of what falls due in the records
 schedules: []                    # none: what it does, it does for someone
-reminders: false                 # phase 1, step 3
-preferences: [digest-time, channel]
+reminders: true                  # it offers reminders, and keeps those people confirm
+preferences: [digest-time, how-i-work]
 channels: [teams]
 context:
-  budget_tokens: 50000           # split by part, tested at release
-budget:
-  per_run: "[TBC]"
-  per_person_per_day: "[TBC]"
+  budget_tokens: 24000           # split by part, tested at release
+  recall: true                   # it searches its conversation with the person it acts for
+budget:                          # in tokens, as the providers count them [TBC: from current volumes]
+  per_run: 200000
+  per_person_per_day: 1000000    # a fifth of it kept for chases and reminders
 ```
+
+Each model call carries the whole context and, beside it, the instructions, the tools and what the run has read so far, so the budgets are checked against the context when a release is loaded: a run's budget must fit six calls of the context and about 6,000 tokens beside it, and a person's day, beside the fifth kept for chases and reminders, twelve answers of two calls each. A release that doesn't fit is refused.
 
 A schedule names its times, in the time zone of the instance's owner, its days, and the task a5s gives the agent each time, such as `{name: morning, at: "09:00", days: weekdays, task: Look through the open questions.}`. Times need quotes, because YAML reads an unquoted 9:00 as a number.
 
-A report names a kind of record and a time, such as `{source: records, at: "09:00"}`, as the [watcher's](../agents/watcher/agent.yaml) does. Each working morning, at that time in each person's own time zone and within their working hours, the agent tells each person it serves what changed in their records of that kind since it last told them, and what fell due. The first time, it tells them what's open. Code works the facts out from the records, and the agent only puts them into words, so a morning with nothing new starts no model. The run acts for that person alone.
+An agent whose release keeps reminders gets a5s's own tools for them: it offers a reminder, or to follow something up, and a5s keeps it only once the person says yes in a later message of their own. Its people can list and cancel theirs, and say what they're waiting on for one of their records, which pauses a5s's chases about it until the date they give. Confirming names the offer the person said yes to, so two offers waiting are never confused.
 
-The register adds what changes without a release: each instance, its identity and its status. Each deployment's signed settings name who an instance serves, its level, and its owner and deputy, who are people in that deployment's directory, so the same definition serves any scenario.
+A report names a kind of record, such as `{source: records}`, as the [watcher's](../agents/watcher/agent.yaml) does. Each working day, in each person's digest, the agent tells each person it serves what changed in their records of that kind since it last told them, and what fell due. The first time, it tells them what's open. Code works the facts out from the records, and the agent only puts them into words, so a day with nothing new starts no model. The run acts for that person alone.
+
+The preferences a release lists are those people may set through the agent, such as `digest-time`, the time their daily digest comes, which a5s's own tool sets when they ask.
+
+The register adds what changes without a release: each instance, its identity and its status. Each deployment's signed settings name who an instance serves, by name or as a team or a role's holders, such as `team:sales`, which the directory resolves when each run opens, its level, and its owner and deputy, who are people in that deployment's directory, so the same definition serves any scenario.

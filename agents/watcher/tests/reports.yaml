@@ -1,0 +1,16 @@
+# The watcher tells each of its people, in their digest, what's open the first time, and
+# what changed since, from the facts a5s works out, and only those.
+
+- name: tells someone what's open, the first time
+  steps:
+    - at: "2026-10-29T09:30:00+00:00"
+      says: [Q-1001]
+
+- name: tells someone what changed since
+  steps:
+    - at: "2026-10-29T09:30:00+00:00"
+    - at: "2026-10-30T09:30:00+00:00"
+      records:
+        Q-1001: {status: waiting on customer}
+      says: [Q-1001]
+      says_any: [waiting on customer, waiting on the customer]

@@ -65,7 +65,9 @@ def test_a_release_lists_every_file_it_runs_and_what_its_agents_may_do():
     assert "scenario/data.yaml" in parts["scenario"] and "scenario/keys/rosa.pub" in parts["scenario"]
     assert not [p for p in parts["scenario"] if p.endswith((".key", "settings.yaml", "settings.sig"))]
     assert not [p for part in parts.values() for p in part if "__pycache__" in p]
-    assert data["agents"]["assistant"]["may"]["tools"] == ["create_draft", "get_record", "search_records"]
+    assert data["agents"]["assistant"]["may"]["tools"] == [
+        "change_due_date", "close_question", "create_draft", "get_messages", "get_record",
+        "search_records"]
     assert "deepseek-v4-pro" in data["models"]
 
 
@@ -86,8 +88,8 @@ def changed(base: dict, edit) -> dict:
     return new
 
 
-def agent(data: dict) -> dict:
-    return data["agents"]["assistant"]
+def agent(data: dict, name: str = "assistant") -> dict:
+    return data["agents"][name]
 
 
 BASE = yaml.safe_load(releases.manifest(ROOT, ROOT / "scenarios" / "sample"))
@@ -119,10 +121,15 @@ CHANGES = {
     "a schedule for the assistant": (
         lambda d: agent(d)["may"]["schedules"].append({"name": "morning"}), {RELEASE_APPROVER}),
     "a report for the assistant": (
-        lambda d: agent(d)["may"]["reports"].append({"source": "records", "at": "09:00"}),
+        lambda d: agent(d)["may"]["reports"].append({"source": "records"}),
         {RELEASE_APPROVER}),
-    "how far the assistant may act": (
-        lambda d: agent(d)["may"]["autonomy"].update({"max": 2}), {RELEASE_APPROVER}),
+    "how far the watcher may act": (
+        lambda d: agent(d, "watcher")["may"]["autonomy"].update({"max": 1}), {RELEASE_APPROVER}),
+    "a preference people set through the assistant": (
+        lambda d: agent(d)["may"]["preferences"].append("working-hours"), {RELEASE_APPROVER}),
+    "recalling its conversations": (
+        lambda d: agent(d)["may"]["context"].update({"recall": not agent(d)["may"]["context"]["recall"]}),
+        {RELEASE_APPROVER}),
     "less the assistant may do": (lambda d: agent(d)["may"]["tools"].remove("create_draft"),
                                   {OWNER, ENGINEER}),
     "a new agent": (lambda d: d["agents"].update({"librarian": agent(BASE)}),
@@ -219,13 +226,13 @@ def test_a_release_is_weighed_against_the_one_approved_before_it(deployed):
     verdict = record(deployed, second, "priya", "tomas")
     assert verdict.ok and {n.role for n in verdict.needs} == {OWNER, ENGINEER}
 
-    spec = deployed.cfg.agents_dir / "assistant" / "agent.yaml"
-    spec.write_text(spec.read_text().replace("  max: 1", "  max: 2"))
+    spec = deployed.cfg.agents_dir / "watcher" / "agent.yaml"
+    spec.write_text(spec.read_text().replace("  max: 0", "  max: 1"))
     third = this(deployed).raw
     widened = record(deployed, third, "priya", "tomas")
     assert not widened.ok and widened.missing[0].startswith(
         "it needs the release approver, from outside the team that runs a5s, because the "
-        "assistant may act more")
+        "watcher may act more")
     assert record(deployed, third, "rosa").ok
 
 
@@ -261,6 +268,11 @@ def test_everything_a5s_is_built_and_tested_with_is_pinned():
         images = re.findall(r"(?m)^\s*image:[ \t]+(\S+)", text) + re.findall(  # services, and docker run
             r"docker run[^\n]*?\s((?:[\w.-]+/)+[\w.-]+:[\w.-]+(?:@sha256:[0-9a-f]{64})?)", text)
         unpinned += [f"{workflow.name}: {image}" for image in images if "@sha256:" not in image]
+    for script in (ROOT / "deploy").rglob("*.sh"):  # the images the tests' scripts start
+        for image in re.findall(r"(?m)^[A-Z0-9_]+=([a-z0-9.-]+(?:/[a-z0-9._-]+)*:[\w.-]+\S*)$",
+                                script.read_text()):
+            if "@sha256:" not in image:
+                unpinned.append(f"{script.name}: {image}")
     for compose in (ROOT / "deploy").glob("compose*.yaml"):
         for image in re.findall(r"(?m)^\s*image:[ \t]+(\S+)", compose.read_text()):
             if "@sha256:" not in image and not image.startswith("${A5S_IMAGE"):

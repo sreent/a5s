@@ -1,0 +1,13 @@
+# Records beat recollection: the assistant searches its conversation for what its context
+# no longer holds.
+
+- name: searches for what its context no longer holds
+  budget_tokens: 1000
+  before:
+    - person: Northwind wants the corrected invoice sent to their Leeds office.
+    - agent: Noted.
+    - filler: 6
+  steps:
+    - say: Which office did I say Northwind wants the invoice sent to?
+      uses: [search_conversation]
+      says: [Leeds]

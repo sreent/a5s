@@ -27,7 +27,6 @@ from a5s.core.identity import IdentityConfig, IdentityError, Verifier
 BOT_FRAMEWORK = "https://api.botframework.com"
 METADATA = "https://login.botframework.com/v1/.well-known/openidconfiguration"
 UNKNOWN = "a5s doesn't know who you are, so no agent can help. Ask whoever runs a5s to add you."
-ONE_TO_ONE = "I only talk one to one for now. Message me directly, and I'll answer there."
 _MENTION = re.compile(r"<at>.*?</at>", re.DOTALL)
 
 
@@ -81,6 +80,8 @@ class Message:
     text: str
     reply_to: dict[str, str]
     personal: bool  # a one-to-one chat with the bot
+    kind: str = "personal"  # Teams' conversation type: personal, groupChat or channel
+    mentioned: bool = True  # whether it mentions the bot, as a message in a group chat must
 
 
 class Teams:
@@ -131,14 +132,40 @@ class Teams:
             return None  # such as a typing indicator, or the bot being added
         entra_id = (activity.get("from") or {}).get("aadObjectId") or ""
         person = scenario.find(f"entra:{entra_id}") if entra_id else None
+        recipient = (activity.get("recipient") or {}).get("id") or ""
+        kind = conversation.get("conversationType", "personal")
         return Message(
             person=person.id if person else None, agent=bot.agent, entra_id=entra_id, text=text,
             reply_to={"service_url": activity["serviceUrl"], "conversation": conversation["id"],
-                      "activity": activity.get("id") or "",
-                      "bot": (activity.get("recipient") or {}).get("id") or "",
+                      "activity": activity.get("id") or "", "bot": recipient,
                       "app_id": bot.app_id},
-            personal=conversation.get("conversationType", "personal") == "personal",
+            personal=kind == "personal", kind=kind,
+            mentioned=kind == "personal" or any(  # Teams marks each mention of the bot
+                e.get("type") == "mention" and (e.get("mentioned") or {}).get("id") == recipient
+                for e in activity.get("entities") or []),
         )
+
+    def members(self, reply_to: dict[str, str], scenario: Scenario) -> list[str | None]:
+        """Who's in a group chat, as Teams says, as the bot it was sent to: each person by
+        their id in the directory, or None for someone it doesn't know. Bots aren't people."""
+        if not self.allowed(reply_to["service_url"]):  # the bot's token goes nowhere else
+            raise ValueError("a5s asks only the service URLs Teams uses")
+        bot = self.bots.get(reply_to.get("app_id", ""))
+        if bot is None:
+            raise ValueError("the message came to a bot a5s no longer has")
+        conversation = quote(reply_to["conversation"], safe="")
+        r = self.http.get(
+            f"{reply_to['service_url'].rstrip('/')}/v3/conversations/{conversation}/members",
+            headers={"Authorization": f"Bearer {self._bot_token(bot)}"})
+        r.raise_for_status()
+        found = []
+        for member in r.json():
+            if str(member.get("id", "")).startswith("28:"):  # a bot, such as this one
+                continue
+            entra = member.get("aadObjectId") or ""
+            person = scenario.find(f"entra:{entra}") if entra else None
+            found.append(person.id if person else None)
+        return found
 
     def installed(self, activity: dict[str, Any], scenario: Scenario,
                   bot: Bot) -> tuple[str, dict[str, str], bool] | None:
@@ -180,19 +207,24 @@ class Teams:
                                         time.monotonic() + int(body.get("expires_in", 3600)) - 300)
             return body["access_token"]
 
-    def send(self, reply_to: dict[str, str], text: str) -> None:
+    def send(self, reply_to: dict[str, str], text: str, card: dict | None = None) -> None:
         """Send text into the conversation a message came from, as the bot it was sent to:
-        in reply to the message, if `reply_to` names one, or else as a new message."""
+        in reply to the message, if `reply_to` names one, or else as a new message. With an
+        Adaptive Card, the card goes instead, and the text's first line sums it up in
+        notifications."""
         if not self.allowed(reply_to["service_url"]):  # the bot's token goes nowhere else
             raise ValueError("a5s sends only to the service URLs Teams uses")
         bot = self.bots.get(reply_to.get("app_id", ""))
         if bot is None:
             raise ValueError("the message came to a bot a5s no longer has")
         conversation = quote(reply_to["conversation"], safe="")
+        said = ({"text": text, "textFormat": "markdown"} if card is None else
+                {"summary": text.split("\n", 1)[0], "attachments": [
+                    {"contentType": "application/vnd.microsoft.card.adaptive", "content": card}]})
         r = self.http.post(
             f"{reply_to['service_url'].rstrip('/')}/v3/conversations/{conversation}/activities",
             headers={"Authorization": f"Bearer {self._bot_token(bot)}"},
-            json={"type": "message", "text": text, "textFormat": "markdown",
+            json={"type": "message", **said,
                   "from": {"id": reply_to["bot"]}, "conversation": {"id": reply_to["conversation"]},
                   **({"replyToId": reply_to["activity"]} if reply_to.get("activity") else {})},
         )

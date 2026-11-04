@@ -2,7 +2,7 @@
 
 **An agent OS on LangChain Deep Agents, for agents that live and work alongside people, under the rules people set.**
 
-**Status:** Phase 1 has started. Its first step, a walking skeleton, runs locally against a sample scenario with real models, the second, the release pipeline, is under way, and the second of its two reference agents, the watcher, is built ([progress](docs/phase-1.md#progress)).
+**Status:** Phase 1 runs locally against a sample scenario with real models, and its release pipeline is under way. It runs on any Kubernetes cluster from one Helm chart, tested on a cluster of its own in CI ([deploy/helm](deploy/helm/README.md)); running it in a cloud waits for an account, and connecting Teams for a test tenant ([progress](docs/phase-1.md#progress)). Phase 2, agents that act, is built: held changes that people decide on the core's page, counts, level 2 earned on graded samples, and the extractor for content from outside ([progress](docs/phase-2.md#progress)). Round 6 of the critique has read it, and what it found is fixed. Phase 3 has begun: agents work in group chats, in Teams and Matrix, for everyone in them, ask each other what they know, for the people they act for, and keep a notebook of what they learn from records ([progress](docs/phase-3.md#progress)).
 
 a5s runs agents the way an operating system runs programs. It installs them, gives each one an identity and only the rights it needs, wakes it when there's work, checks every call it makes, and records what happened. Unlike a task runner, it keeps agents alive between tasks: each one remembers its conversations with people, keeps track of what it owes them, and picks up where it left off, for months.
 
@@ -42,7 +42,8 @@ The assistant, one of the two reference agents phase 1 builds, keeps track of wh
 - **Friday, 09:00.** Their digest arrives at the time they chose: one message from all their agents together. It includes the reminder, with a link back to the conversation.
 - **09:20.** They reply that they're waiting on finance until the 14th. The assistant notes it and stops reminding them until then.
 - **Two weeks later,** they ask where the customer's question landed. A fresh run reads the topic's summary and the original turns, and answers with links. Nothing was lost between runs.
-- **All along,** every call went through a gateway, was checked by policy and was recorded in the ledger. The assistant could draft the reply, but not send it outside the organisation: it holds no right to.
+- **Wednesday.** They ask it to move the question's due date to next week. The change waits for the owner of the question's part, who gets a card, reads what it changes in words code works out, and approves it on the core's page. a5s makes the change, if the question hasn't changed meanwhile, and tells them.
+- **All along,** every call went through a gateway, was checked by policy and was recorded in the ledger. The assistant could draft the reply, but not send it outside the organisation: it holds no right to. It read the customer's email only through a5s's extractor, as a form of the values it named, so nothing the customer wrote could tell it what to do.
 
 Each scenario decides what its agents may do beyond that. On an IT service desk, for example, a person could ask to reset their own password and have it done at once, because that [scenario](scenarios/it-service-desk.md) allows self-service the identity provider verifies. Another scenario could rule out anything like it.
 
@@ -74,17 +75,19 @@ You need Python 3.12 or later, [uv](https://docs.astral.sh/uv/), Postgres 16, an
 
 ```sh
 uv sync
-uv run a5s up        # a local Postgres, the schema and a service token
+uv run a5s up        # a local Postgres, the schema, and the core's own token and seal key
 uv run a5s apply     # the assistant, from agents/ and the sample's signed settings
 uv run a5s dev &     # the core, its channels and the scheduler, in one process
 uv run a5s say --as ana assistant "Which customer questions are still open?"
 # or chat in a browser at http://127.0.0.1:8703/chat/
-uv run a5s inbox --as ana    # the watcher's morning report, and reminders when they fall due
+uv run a5s inbox --as ana    # her daily digest, from all her agents, once there's news
+uv run a5s summaries --as ana   # what a5s keeps of her conversation, once it outgrows a run
 uv run a5s ledger tail
+uv run a5s status           # how a5s is doing: its queue, runs, denials, budgets and objectives
 uv run a5s ledger verify
 ```
 
-`a5s dev` takes people's word for who they are, and runs whatever release it is, which is for development only. Everywhere else, people sign in, and the core runs only a release its deployment's people have approved. Every minute, the scheduler also asks the core what falls due: the assistant reminds people of their open records once half the time allowed has passed, the core escalates what's overdue along each person's reporting line, the watcher tells each person, each working morning in their own time zone, what changed in their records and what fell due, and schedules in a release fire at their times.
+`a5s dev` takes people's word for who they are, and runs whatever release it is, which is for development only. Everywhere else, people sign in, and the core runs only a release its deployment's people have approved. Every minute, the scheduler also asks the core what falls due: the assistant reminds people of their open records once half the time allowed has passed, the core escalates what's overdue along each person's reporting line, the watcher tells each person what changed in their records and what fell due, and schedules in a release fire at their times. What agents write to someone on their own goes in one digest a day, from all their agents together, at a time they choose: the start of their working day unless they ask an agent for another.
 
 To run it as containers, the way each cloud would, build the image and run the [smoke test](deploy/smoke.sh). It starts the stack with stand-ins for the model, the identity provider, a Matrix homeserver and locked storage, and checks it end to end, from sign-in and a chat in Matrix to the ledger's locked copies. With `--keep`, it leaves the stack running, to try the web chat and Matrix as the sample's people:
 
@@ -93,11 +96,17 @@ docker build -t a5s:dev .
 sh deploy/smoke.sh          # or: sh deploy/smoke.sh --keep
 ```
 
+The [soak test](deploy/soak.sh) starts the same stack, then has the sample's people talk to its agents for half an hour, or as many minutes as you give it. It checks that every message had one answer, in time, that no part's memory or Postgres's connections kept growing, and that no part logged an error. CI runs it weekly, and when asked:
+
+```sh
+sh deploy/soak.sh 30
+```
+
 With a real model, start [`deploy/compose.yaml`](deploy/compose.yaml) with `A5S_DB_PASSWORD`, `A5S_SERVICE_TOKEN`, a provider's key, `A5S_ANCHOR_STORE`, the locked store for the ledger's copies, such as `s3://bucket/a5s`, and a password for each part's database role (`A5S_DB_GATEWAY_PASSWORD`, `A5S_DB_CHANNELS_PASSWORD`, `A5S_DB_SCHEDULER_PASSWORD` and `A5S_DB_ANCHOR_PASSWORD`) set, and send messages to the core's channels with `A5S_TOKEN=<a sign-in token> uv run a5s say ...`.
 
 Before the core runs a release, the people its changes need approve it. In the stack, `a5s release show` prints the release, each approver signs it with `a5s release sign --as <their id> --key <their private key>`, wherever they are, and the administrator records the signatures with `a5s release approve`. `a5s release status` says what it still needs, and why. Set `A5S_TEAM` to the directory's team that runs a5s, `platform` by default: nobody in it, or above it in its reporting line, can approve as the release approver. The smoke test does this with the sample's made-up people.
 
-To change the settings, edit [`settings.yaml`](scenarios/sample/settings.yaml), raise its serial, and sign the new version with `uv run a5s sign --as ana` before applying it. `uv run pytest` runs the tests against a scripted model, and `uv run pytest -m live` against the real providers. To serve another scenario, set `A5S_SCENARIO` to its class, such as `a5s.sample:SampleScenario`, and `A5S_SCENARIO_DIR` to its folder.
+To change the settings, edit [`settings.yaml`](scenarios/sample/settings.yaml), raise its serial, and sign the new version with `uv run a5s sign --as ana` before applying it. Or, where people sign in, have the instance approvers approve it where they work: `a5s propose` sends each a card in Teams, or a link in their other chats, and the core applies the version once one of them approves it on the page the card opens, signed in afresh. That needs `A5S_SEAL_KEYS`, the core's own key for sealing the approvals it checked, for the gateway and the channels, and `A5S_PUBLIC_URL`, where people reach the channels, for the gateway. `uv run pytest` runs the tests against a scripted model, and `uv run pytest -m live` against the real providers, including each agent's own regression suite, from its folder's `tests/`. To serve another scenario, set `A5S_SCENARIO` to its class, such as `a5s.sample:SampleScenario`, and `A5S_SCENARIO_DIR` to its folder.
 
 ### Chats
 
@@ -106,7 +115,7 @@ Each deployment turns on the chats its people use, by setting each one's setting
 | Chat | On where these are set | What it needs |
 | --- | --- | --- |
 | The command line | Always on | `a5s say` and `a5s inbox`, with the person's sign-in token in `A5S_TOKEN` |
-| The web chat | `A5S_WEBCHAT_CLIENT_ID`, or in development | A public client at your identity provider, using PKCE, that may return to the page at `/chat/` on the channels' address, over HTTPS or on localhost |
+| The web chat | `A5S_WEBCHAT_CLIENT_ID`, or in development | A public client at your identity provider, using PKCE, that may return to the page at `/chat/` on the channels' address, to `/approve/` for approving settings, to `/settings/` for the settings app, and to `/notebook/` for the agents' notebook, over HTTPS or on localhost |
 | Matrix | `A5S_MATRIX_HOMESERVER`, `A5S_MATRIX_SERVER_NAME`, `A5S_MATRIX_AS_TOKEN` and `A5S_MATRIX_HS_TOKEN` | A homeserver of your own, such as Synapse, with a5s registered on it as an application service |
 | Teams | `A5S_TEAMS_APP_ID`, `A5S_TEAMS_APP_SECRET` and `A5S_TEAMS_TENANT_ID`, or `A5S_TEAMS_BOTS` | Microsoft 365, a bot registered in your Entra ID tenant, and the internet |
 
@@ -124,7 +133,7 @@ a5s ties itself to no cloud and no identity provider. It runs on your own premis
 
 | Part | On your own premises |
 | --- | --- |
-| Hosts | The one image, on any container host, with your own Postgres 16 or later. [`compose.yaml`](deploy/compose.yaml) is the reference. |
+| Hosts | The one image, on any Kubernetes cluster with [the Helm chart](deploy/helm/README.md), or on any container host, with your own Postgres 16 or later. [`compose.yaml`](deploy/compose.yaml) is the reference. |
 | Sign-in | Any provider that speaks OpenID Connect, such as Keycloak, Authentik, Zitadel or Active Directory Federation Services. Active Directory or another LDAP directory on its own connects through Keycloak or Dex. Set `A5S_OIDC_METADATA_URL` if the provider's metadata isn't at the issuer's well-known address. |
 | Models | Any server that speaks the OpenAI- or Anthropic-compatible API, such as vLLM, Ollama, llama.cpp or SGLang, with a model that supports tool calling. Leave out `key_env` if it needs no key. [`models.yaml`](config/models.yaml) has an example. |
 | The ledger's copies | Any S3-compatible store with object lock in compliance mode, run by assurance, such as Ceph or NetApp StorageGRID. Point the copier at it with `AWS_ENDPOINT_URL_S3`. |
@@ -141,13 +150,16 @@ The smoke test runs this way: Keycloak for sign-in, Synapse for Matrix, a model 
 | [Architecture](docs/architecture.md) | The trusted core, the scenario contract, a call step by step, policy, provenance, how an agent lives, context, evidence, independence, failure, operations and hosting |
 | [Agent model](docs/agent-model.md) | Definitions, releases, instances, conversations and runs, roles, lifecycle, autonomy, and the definition format |
 | [Phase 1](docs/phase-1.md) | What to decide, what to build in what order, what done means, and costs |
-| [IT service desk](scenarios/it-service-desk.md) | A scenario on paper, to check the contract is general |
+| [Phase 2](docs/phase-2.md) | Agents that act: held proposals, signed decisions, counts, level 2 earned on graded samples, and the extractor |
+| [Phase 3](docs/phase-3.md) | Group conversations, agent to agent, and a notebook of what agents learn from records |
+| [IT service desk](scenarios/it-service-desk.md) | A second scenario, to check the contract is general, which round 5's tests build against the contract alone |
 | [Critique](docs/critique.md) | What each adversarial review found, how the design answers it, and what each round removed |
 | [Starting values](docs/starting-values.md) | The numbers a5s starts from, by phase |
+| [Runbooks](docs/runbooks.md) | For the team that runs a5s: what to do when each part of `a5s status` goes wrong |
 | [Research](docs/research/platform-lessons.md) | What Deep Agents, Microsoft, AWS, Google and Hermes Agent offer, with the [notes](docs/research/notes/) behind it |
 
 Every change to the design gets an adversarial review before it settles, from six angles: an outside attacker, insiders, failure, colleagues, the builder and funder, and a second scenario. Each round reports what it removed as well as what it added.
 
 ## Open decisions
 
-Phase 1's [first decisions](docs/phase-1.md#decide-first) are made: all three clouds and identity providers at once, Teams, three ways to change settings, roles held by people rather than job titles, and models through OpenAI- or Anthropic-compatible APIs. `[TBC]` marks what's still to confirm, such as who holds each role in a deployment. Since then, the clouds run a5s on each one's own container service rather than Kubernetes, it runs on premises too, with any identity provider that speaks OpenID Connect and models the organisation hosts itself, and the middleware that asked the core to explain a tool call first is gone until phase 2, as [round 4](docs/critique.md#round-4-the-code) proposed. People reach a5s through a web chat of its own and Matrix as well as Teams, each deployment turning on the chats it uses, and test and development use the web chat and Matrix.
+Phase 1's [first decisions](docs/phase-1.md#decide-first) are made: all three clouds and identity providers at once, Teams, three ways to change settings, roles held by people rather than job titles, and models through OpenAI- or Anthropic-compatible APIs. `[TBC]` marks what's still to confirm, such as who holds each role in a deployment. Since then, a5s runs on Kubernetes everywhere, from one Helm chart for every cloud and the organisation's own clusters, it runs on premises too, with any identity provider that speaks OpenID Connect and models the organisation hosts itself, and the middleware that asked the core to explain a tool call first is gone until phase 2, as [round 4](docs/critique.md#round-4-the-code) proposed. [Round 5](docs/critique.md#round-5-steps-3-to-6) made sure nothing a person asked for is lost when a model, a budget or a chat fails, carried need-to-know to any depth of what tools return, and let an instance serve a team or a role. [Round 6](docs/critique.md#round-6-phase-2) kept outside content and its mark from leaking into what agents read later, made level 2 something only graded samples of a type of action earn, and kept it across releases that change only instructions, and made each part's owners decide the changes in their part. People reach a5s through a web chat of its own and Matrix as well as Teams, each deployment turning on the chats it uses, and test and development use the web chat and Matrix.

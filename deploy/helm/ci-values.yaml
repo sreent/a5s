@@ -1,0 +1,15 @@
+# The chart as its test installs it (test.sh): the image built here, Postgres beside it in the
+# cluster, and the ledger's copies in a folder, since this cluster has no locked storage.
+image:
+  repository: a5s
+  tag: dev
+  pullPolicy: Never
+
+anchor:
+  store: file:///tmp/ledger
+
+networkPolicies:
+  database:
+    podSelector:
+      matchLabels:
+        app: postgres

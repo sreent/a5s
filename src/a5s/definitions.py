@@ -7,9 +7,24 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
+# a5s's own tools: for an agent whose release records reminders (core/reminders.py), for the
+# preferences people may set through it, such as their digest's time (core/digests.py) and
+# how they like to work (core/profiles.py), and for recalling its conversation with the person
+# it acts for: searching it, and correcting its summaries at their word (core/recall.py)
+REMINDER_TOOLS = ("offer_reminder", "confirm_reminder", "list_reminders", "cancel_reminder",
+                  "note_waiting")
+PREFERENCE_TOOLS = {"digest-time": ("set_digest_time",),
+                    "how-i-work": ("offer_note", "confirm_note", "forget_note")}
+RECALL_TOOLS = ("search_conversation", "correct_summary")
+# and for asking a5s's reader about a document from outside that a run has read (core/extractor.py)
+DOCUMENT_TOOLS = ("ask_about",)
+# and for asking another agent, whom the settings name (core/asking.py)
+ASKING_TOOLS = ("ask_agent",)
+# and for noting what it learns from records, in a run that acts for nobody (core/notebook.py)
+NOTEBOOK_TOOLS = ("note_learned",)
 _DAY_NAMES = {f"{d}{rest}": d for d, rest in zip(DAYS, ("day", "sday", "nesday", "rsday", "day",
                                                        "urday", "day"), strict=True)}
 
@@ -35,8 +50,7 @@ class Schedule(BaseModel):
     """When the agent works on its own, and what it's asked to do each time.
 
     Times are in the time zone of the instance's owner. A schedule run acts for
-    nobody, so it writes to nobody: what it finds reaches people through digests,
-    from step 4.
+    nobody, so it writes to nobody [TBC: whose digest a schedule's findings go in].
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -65,23 +79,53 @@ class Schedule(BaseModel):
 
 class Report(BaseModel):
     """What the agent tells each person it serves about their own records of a kind, once a
-    day: what changed since it last told them, and what fell due.
+    day, in their digest: what changed since it last told them, and what fell due.
 
-    It goes at its time in each person's own time zone, on their working days and in
-    their working hours. Code works the facts out from the records, so the run only
-    puts them into words, and a day with nothing new starts no model. The run acts for
-    the person, so it writes to them and to nobody else.
+    Code works the facts out from the records, so the run only puts them into words, and
+    a day with nothing new starts no model. The run acts for the person, so it writes to
+    them and to nobody else.
     """
 
     model_config = ConfigDict(extra="forbid")
 
     source: str  # the kind of record, such as records
-    at: str = "09:00"
 
-    @field_validator("at", mode="before")
-    @classmethod
-    def _at(cls, value: Any) -> str:
-        return _time(value)
+
+class Context(BaseModel):
+    """What each run of the agent is given beside its instructions."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    budget_tokens: int = Field(24000, ge=1000)  # for the conversation, split by part
+    # whether it may search its conversation with the person it acts for, and correct its
+    # summaries at their word
+    recall: bool = False
+    # whether it may ask a5s's reader questions about documents from outside its run has read
+    documents: bool = False
+    # whether it may ask other agents, whom the settings name, for what they know
+    agents: bool = False
+    # whether it notes what it learns from records, on its schedules, for its later runs
+    notebook: bool = False
+
+
+# Each model call in a run carries the whole context and, beside it, the instructions, the
+# tools, the run's records and its tool results, about BESIDE tokens. A release's budgets must
+# fit CALLS_A_RUN such calls in a run, and ANSWERS_A_DAY answers of two calls each in the part
+# of a person's day that isn't KEPT for chases and reminders, or the release is refused.
+BESIDE = 6000
+CALLS_A_RUN = 6
+ANSWERS_A_DAY = 12
+KEPT = 0.2  # of each person's day, for chases and reminders
+
+
+class Budget(BaseModel):
+    """How much model work an instance may do, in tokens as the providers count them: in one
+    run, and for each person it acts for, each day (core/budgets.py)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    per_run: int = Field(200_000, ge=1000)
+    per_person_per_day: int = Field(1_000_000, ge=1000)
 
 
 class Definition(BaseModel):
@@ -104,8 +148,8 @@ class Definition(BaseModel):
     reminders: bool = False
     preferences: list[str] = []
     channels: list[str] = ["teams"]
-    context: dict[str, Any] = {}
-    budget: dict[str, Any] = {}
+    context: Context = Context()
+    budget: Budget = Budget()
 
     # Filled in from the folder, not from agent.yaml.
     instructions: str = ""
@@ -115,6 +159,32 @@ class Definition(BaseModel):
     @property
     def tool_names(self) -> list[str]:
         return [name for names in self.tools.values() for name in names]
+
+    @model_validator(mode="after")
+    def _budgets_fit_the_context(self) -> Definition:
+        call = self.context.budget_tokens + BESIDE
+        if self.budget.per_run < CALLS_A_RUN * call:
+            raise ValueError(f"budget.per_run must fit {CALLS_A_RUN} model calls of about "
+                             f"{call:,} tokens each, with a context of "
+                             f"{self.context.budget_tokens:,}: at least {CALLS_A_RUN * call:,}")
+        if self.budget.per_person_per_day * (1 - KEPT) < ANSWERS_A_DAY * 2 * call:
+            least = round(ANSWERS_A_DAY * 2 * call / (1 - KEPT))
+            raise ValueError(f"budget.per_person_per_day must fit {ANSWERS_A_DAY} answers of two "
+                             f"model calls, beside what's kept for chases and reminders: at "
+                             f"least {least:,}")
+        return self
+
+    @property
+    def grants(self) -> list[str]:
+        """The tools its instances may use: the scenario's it names, and a5s's own for
+        reminders, if it records them, for the preferences people may set through it, and for
+        recalling its conversation with the person it acts for, if it may."""
+        return [*self.tool_names, *(REMINDER_TOOLS if self.reminders else ()),
+                *(tool for p in self.preferences for tool in PREFERENCE_TOOLS.get(p, ())),
+                *(RECALL_TOOLS if self.context.recall else ()),
+                *(DOCUMENT_TOOLS if self.context.documents else ()),
+                *(ASKING_TOOLS if self.context.agents else ()),
+                *(NOTEBOOK_TOOLS if self.context.notebook else ())]
 
     @property
     def release_id(self) -> str:

@@ -2,9 +2,9 @@
 code.
 
 An agent whose release reports on a kind of record, such as the watcher, tells each
-person it serves, once a day, at its time in their own time zone and on their working
-days, in their working hours, what changed in their records of that kind since it last
-told them, and what fell due since. The first time, it tells them what's open. Code
+person it serves, once a day in their digest (core/digests.py), what changed in their
+records of that kind since it last told them, and what fell due since. The first time,
+it tells them what's open. Code
 compares the records with what the agent last told them, so the model only puts the
 facts into words, and a day with nothing new starts no model at all. What's open and
 what fell due come from the obligations the core keeps, so the reports sweep follows the
@@ -14,28 +14,16 @@ obligations sweep. The run acts for the person, so it writes to them and to nobo
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import datetime
 from typing import Any
 
 import psycopg
 from psycopg.types.json import Jsonb
 
 from a5s.contract import Person, Record
-from a5s.core.obligations import day, local, working
-from a5s.definitions import Report
+from a5s.core.obligations import WITHHELD, day, local
 
 MOST = 20  # facts in one report; the rest are counted [TBC]
-
-
-def due_now(report: Report, person: Person, now: datetime) -> datetime | None:
-    """Today's time for the person's report, once it has come, on their working days and in
-    their working hours."""
-    here = local(person, now)
-    hours, minutes = (int(part) for part in report.at.split(":"))
-    at = here.replace(hour=hours, minute=minutes, second=0, microsecond=0)
-    if here.isoweekday() not in person.workdays or here < at or not working(person, now):
-        return None
-    return at.astimezone(UTC)
 
 
 def fired(conn: psycopg.Connection, instance: str, person: str, source: str,
@@ -68,21 +56,30 @@ class News:
 
 
 def news(conn: psycopg.Connection, scenario: str, instance: str, person: Person, source: str,
-         records: list[Record], now: datetime) -> News:
+         records: list[Record], now: datetime, *, withheld: bool = False,
+         beyond: frozenset[str] = frozenset()) -> News:
     """What changed in someone's records of a kind since the agent last told them, and what
-    fell due since it last looked: or, the first time, what's open."""
-    mine = {r.key: {"title": r.title, "fields": r.fields, "link": r.link}
+    fell due since it last looked: or, the first time, what's open. `records` are those the
+    agent may tell them of, so what they owe is told only of those too. `beyond` are records
+    still theirs that the agent may no longer tell them of, such as ones in a part it no
+    longer works in, which aren't gone. With `withheld`, titles are of a class the agent's
+    model isn't approved for."""
+    mine = {r.key: {"title": WITHHELD if withheld else r.title, "fields": r.fields, "link": r.link}
             for r in records if r.person == person.id and r.source == source}
     seen = conn.execute("select records, looked_at from report_seen where instance_id = %s "
                         "and person = %s and source = %s", (instance, person.id, source)).fetchone()
     owed = conn.execute("select record, title, link, due_at from obligations where scenario = %s "
-                        "and person = %s and source = %s and done_at is null order by due_at, record",
-                        (scenario, person.id, source)).fetchall()
+                        "and person = %s and source = %s and done_at is null "
+                        "and record = any(%s) order by due_at, record",
+                        (scenario, person.id, source, [r.key for r in records])).fetchall()
+    if withheld:
+        owed = [{**o, "title": WITHHELD} for o in owed]
     facts: list[str] = []
     if seen is None:
         facts = [_open(o, person, now) for o in owed]
     else:
-        before = seen["records"]
+        before = {key: {**was, "title": WITHHELD} if withheld else was
+                  for key, was in seen["records"].items() if key not in beyond}
         facts += [_new(key, mine[key]) for key in sorted(mine.keys() - before.keys())]
         for key in sorted(mine.keys() & before.keys()):
             facts += _changed(key, before[key], mine[key])
@@ -93,6 +90,11 @@ def news(conn: psycopg.Connection, scenario: str, instance: str, person: Person,
         more = len(facts) - MOST
         facts = [*facts[:MOST], f"There are {more} more, so suggest they look through their records."]
     return News(facts, first=seen is None, since=seen["looked_at"] if seen else None, records=mine)
+
+
+def beyond(records: list[Record], reach: list[Record], person: str) -> frozenset[str]:
+    """The person's records an agent may not tell them of, though they're still theirs."""
+    return frozenset(r.key for r in records if r.person == person) - {r.key for r in reach}
 
 
 def _link(link: str | None) -> str:
@@ -156,3 +158,4 @@ def told(conn: psycopg.Connection, run: str) -> None:
             "records = excluded.records, looked_at = excluded.looked_at",
             (row["instance_id"], row["person"], row["source"], Jsonb(row["records"]),
              row["fired_at"]))
+        conn.execute("update report_fires set records = null where run_id = %s", (run,))

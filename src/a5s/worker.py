@@ -32,8 +32,12 @@ class GatewayTool(StructuredTool):
 
 
 # Registered for each model a5s uses, because deepagents applies a model's
-# profile to the agent's subagents too, and an agent's own settings it doesn't.
-_PROFILE = HarnessProfile(excluded_tools=frozenset({"execute"}))  # no shell
+# profile to the agent's subagents too, and an agent's own settings it doesn't. No shell, and
+# none of the tools for files or subagents a5s's agents don't use: each model call carries
+# every tool's description, about 2,500 tokens of them. read_file stays, since Deep Agents
+# puts a tool result too large for one message in a file for the agent to read in parts.
+_PROFILE = HarnessProfile(excluded_tools=frozenset({
+    "execute", "ls", "write_file", "edit_file", "delete", "glob", "grep", "task", "write_todos"}))
 _profiles: set[str] = set()
 
 
@@ -84,6 +88,25 @@ class ModelDown(Exception):
     """The model didn't answer, because its provider was down or failed."""
 
 
+class BudgetSpent(Exception):
+    """The core stopped the run's model calls, because a budget is spent (core/budgets.py)."""
+
+
+def stopped(exc: Exception) -> Exception | None:
+    """What the model gateway's refusal means for the run, if it's one a5s says in its words."""
+    status = getattr(exc, "status_code", None)
+    if status in (502, 503):
+        return ModelDown(str(exc))
+    if status == 429 and "budget" in str(exc):
+        return BudgetSpent(str(exc))
+    return None
+
+
+# Some models end a run on a tool's result with nothing to say. They're asked once more.
+EMPTY = {"role": "user", "content": "[from a5s, not the person] Your last message was empty, and "
+                                    "the person sees only your last message. Write it now."}
+
+
 def as_message(turn: dict) -> dict[str, str]:
     """A turn as the model sees it, with when it happened, so it can tell old from new."""
     when = datetime.fromisoformat(turn["at"]).strftime("%a %d %b %Y, %H:%M UTC") if turn.get("at") else ""
@@ -93,7 +116,24 @@ def as_message(turn: dict) -> dict[str, str]:
         return {"role": "assistant", "content": f"[{when}, a5s on my behalf] {turn['content']}"}
     if turn["role"] == "task":  # a5s asking the agent, such as to remind someone of what's due
         return {"role": "user", "content": f"[{when}, from a5s, not the person] {turn['content']}"}
+    if turn["role"] == "summary" and turn.get("group"):  # a group chat's: what all heard
+        return {"role": "user", "content": "[from a5s, not anyone in the chat] A summary of this "
+                                           "topic before the messages that follow, of what "
+                                           f"everyone now in the chat heard:\n{turn['content']}"}
+    if turn["role"] == "summary":  # what a5s keeps of the turns that no longer fit
+        return {"role": "user", "content": "[from a5s, not the person] A summary of this topic "
+                                           "before the messages that follow, which they can see "
+                                           f"and correct:\n{turn['content']}"}
     return {"role": "assistant", "content": turn["content"]}
+
+
+def instructed(instructions: str, context: list[dict]) -> str:
+    """The release's instructions, then what a5s knows from its own records for this run,
+    apart from them and from the conversation."""
+    if not context:
+        return instructions
+    told = "\n\n".join(f"## {part['title']}\n\n{part['text']}" for part in context)
+    return f"{instructions}\n\n# From a5s's records, for this run\n\n{told}"
 
 
 def run_agent(gateway_url: str, token: str, history: list[dict]) -> str:
@@ -105,17 +145,30 @@ def run_agent(gateway_url: str, token: str, history: list[dict]) -> str:
         info = info.json()
         if info["model"] is None:
             raise RuntimeError("the instance's model isn't on the approved list")
+        if info.get("plain"):  # a5s's own work, such as a summary: one call, with no tools
+            try:
+                answer = chat_model(gateway_url, token, info["model"]).invoke(
+                    [{"role": "system", "content": info["instructions"]},
+                     *(as_message(t) for t in history)])
+            except Exception as exc:
+                if why := stopped(exc):  # from the model gateway
+                    raise why from exc
+                raise
+            return text_of(answer)
         agent = create_deep_agent(
             model=chat_model(gateway_url, token, info["model"]),
             tools=[gateway_tool(gw, d) for d in info["tools"]],
-            system_prompt=info["instructions"],
+            system_prompt=instructed(info["instructions"], info.get("context") or []),
         )
         try:
             result = agent.invoke({"messages": [as_message(t) for t in history]},
                                   config={"recursion_limit": 40})
+            if not text_of(result["messages"][-1]).strip():  # it ended with nothing to say
+                result = agent.invoke({"messages": [*result["messages"], EMPTY]},
+                                      config={"recursion_limit": 40})
         except Exception as exc:
-            if getattr(exc, "status_code", None) in (502, 503):  # from the model gateway
-                raise ModelDown(str(exc)) from exc
+            if why := stopped(exc):  # from the model gateway
+                raise why from exc
             raise
     return text_of(result["messages"][-1])
 
@@ -138,6 +191,9 @@ def create_app(gateway_url: str) -> Any:
             return {"reply": run_agent(gateway_url, body.token, body.history)}
         except ModelDown as exc:
             return JSONResponse(status_code=503, content={"error": "model_unavailable",
+                                                          "detail": str(exc)[:200]})
+        except BudgetSpent as exc:
+            return JSONResponse(status_code=429, content={"error": "budget_spent",
                                                           "detail": str(exc)[:200]})
 
     return app

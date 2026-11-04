@@ -1,5 +1,6 @@
 """Teams: the core receives each message itself, checks it, and answers only through the core."""
 
+import base64
 import json
 import threading
 import time
@@ -9,13 +10,15 @@ from dataclasses import replace
 import httpx
 import jwt
 import pytest
+import yaml
 from cryptography.hazmat.primitives.asymmetric import rsa
 from jwt.algorithms import RSAAlgorithm
 
 from a5s import db
-from a5s.core import inbox, teams
+from a5s.core import groups, inbox, teams
+from a5s.core.identity import IdentityConfig, Verifier
 from a5s.core.teams import Bot, Teams, TeamsConfig
-from conftest import free_port, serve
+from conftest import CLIENT, free_port, serve
 
 APP_ID, TENANT = "a5s-bot-app", "0a5a7e17-0000-4000-8000-000000000001"
 WATCHER_APP = "a5s-watcher-app"  # a second agent's own bot
@@ -95,6 +98,7 @@ def queued(stack) -> list[dict]:
 
 
 def test_a_teams_message_is_checked_recorded_and_answered_in_teams(stack, bot):
+    stack.model.reply(None, ("search_records", {"query": "invoice"}))  # it looks first
     stack.model.reply("Q-1001 mentions an invoice.")
     message = activity()
     assert httpx.post(bot.url, json=message, headers=bot.auth()).status_code == 200
@@ -161,10 +165,12 @@ def test_someone_the_directory_doesnt_know_is_told_so_and_nothing_runs(stack, bo
     assert stack.ledger()[-1]["decision"] == "deny"
 
 
-def test_group_chats_get_a_pointer_to_a_one_to_one_chat(stack, bot):
-    assert httpx.post(bot.url, json=activity(kind="groupChat"), headers=bot.auth()).status_code == 200
+def test_a_teams_channel_gets_a_pointer_to_a_group_chat(stack, bot):
+    said = {**activity(kind="channel"),  # Teams sends a bot only what mentions it, in a channel
+            "entities": [{"type": "mention", "mentioned": {"id": "28:a5s-bot"}}]}
+    assert httpx.post(bot.url, json=said, headers=bot.auth()).status_code == 200
     assert not queued(stack)
-    assert [m["text"] for m in bot.sent] == [teams.ONE_TO_ONE]
+    assert [m["text"] for m in bot.sent] == [groups.CHANNELS]  # group chats: see test_groups.py
 
 
 def test_a_scheduler_cant_forge_or_reuse_a_teams_message(stack, bot):
@@ -276,6 +282,7 @@ def test_each_agent_talks_to_people_as_its_own_bot(stack, bot):
 
 
 def test_a_reminder_goes_to_the_teams_chat_the_person_last_wrote_in(stack, bot):
+    stack.model.reply(None, ("search_records", {"query": "invoice"}))  # it looks first
     stack.model.reply("Q-1001 mentions an invoice.")
     httpx.post(bot.url, json=activity(), headers=bot.auth()).raise_for_status()
     stack.scheduler().answer_waiting()
@@ -323,9 +330,18 @@ def test_an_agent_writes_first_in_teams_only_to_people_who_added_its_app(stack, 
     stack.model.reply("Ben, Q-1002 is due on Friday.")
     stack.model.reply("Ana, Q-1001 is waiting on the customer now.")
     assert stack.scheduler().work_due() == 3
+    # two agents' news: each agent's as its own message, in its own chat, where answers reach it
+    assert [(m["as"], m["conversation"], m["text"]) for m in bot.sent[-2:]] == [
+        (APP_ID, {"id": "a:1-chat"}, "Ana, Q-1001 is due on Wednesday."),
+        (WATCHER_APP, {"id": "a:1-watcher-chat"}, "Ana, Q-1001 is waiting on the customer now.")]
+
+    monkeypatch.setitem(records, "Q-1001", {**records["Q-1001"], "status": "open"})
+    stack.at("2026-11-03T09:30:00+00:00")  # Tuesday: only the watcher has news for her
+    stack.model.reply("Ana, Q-1001 is open again.")
+    assert stack.scheduler().work_due() == 1
     told = bot.sent[-1]
     assert (told["as"], told["conversation"]) == (WATCHER_APP, {"id": "a:1-watcher-chat"})
-    assert told["text"] == "Ana, Q-1001 is waiting on the customer now."
+    assert told["text"] == "Ana, Q-1001 is open again."
     assert told["from"] == {"id": f"28:{WATCHER_APP}"} and "replyToId" not in told
 
     removed = installation("remove")
@@ -379,5 +395,32 @@ def test_an_escalation_reaches_teams_too(stack, bot):
     escalated = bot.sent[-1]
     assert escalated["text"].startswith("Q-1002, Refund for a duplicate payment, was due on Fri 6 Nov")
     assert "replyToId" not in escalated
+    [delivered] = [e for e in stack.ledger() if e["action"] == "deliver"][-1:]
+    assert delivered["outcome"] == {"status": "ok", "channel": "teams"}
+
+
+def test_an_instance_approver_gets_a_card_that_opens_the_cores_page(stack, bot, provider):
+    stack.model.reply("Hello, Ana.")
+    httpx.post(bot.url, json=activity("Hello"), headers=bot.auth()).raise_for_status()
+    stack.scheduler().answer_waiting()
+    stack.gateway.identity = Verifier(IdentityConfig(issuer=provider.url, audience=("a5s", CLIENT)))
+    stack.gateway.cfg = replace(stack.gateway.cfg, webchat_client_id=CLIENT,
+                                public_url="https://a5s.example.test")
+    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text())
+    settings["instances"]["assistant-finance"]["serves"] = ["ana", "ben", "chen"]
+    raw = yaml.safe_dump({**settings, "serial": settings["serial"] + 1}).encode()
+    with stack.client() as c:
+        asked = c.post("/settings/proposals", json={"raw": base64.b64encode(raw).decode()}).json()
+
+    card = bot.sent[-1]
+    assert card["as"] == APP_ID and "replyToId" not in card and "text" not in card
+    assert card["summary"] == (f"Serial {asked['serial']} of a5s's settings waits for its "
+                               "instance approvers to approve it.")
+    [attachment] = card["attachments"]
+    assert attachment["contentType"] == "application/vnd.microsoft.card.adaptive"
+    content = attachment["content"]
+    assert content["actions"] == [{"type": "Action.OpenUrl", "title": "Review and approve",
+                                   "url": f"https://a5s.example.test/approve/?settings={asked['digest']}"}]
+    assert "- assistant-finance serves Chen Wei as well." in [b["text"] for b in content["body"]]
     [delivered] = [e for e in stack.ledger() if e["action"] == "deliver"][-1:]
     assert delivered["outcome"] == {"status": "ok", "channel": "teams"}
