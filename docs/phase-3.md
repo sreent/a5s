@@ -1,12 +1,12 @@
 # Phase 3
 
-**Status:** Proposed on 4 November 2026, for you to confirm ([decide first](#decide-first)) · **Under:** [Architecture](architecture.md)
+**Status:** Confirmed on 4 November 2026, and step 1, group conversations, under way ([progress](#progress)) · **Under:** [Architecture](architecture.md)
 
 Phase 3 lets agents work with more than one person at a time, and with each other. In [phase 1](phase-1.md) and [phase 2](phase-2.md), each person has a conversation of their own with each agent, and a5s turns away a chat with anyone else in it. In phase 3, people can bring an agent into a group chat, an agent can ask another what it knows, and an agent can keep a notebook of what it learns from records. Each keeps the rules phase 2 ends with: a run sees only what everyone it acts for may see, authority never passes from one person or agent to another, and what's said to an agent reaches only runs for people who heard it.
 
 ## Decide first
 
-Proposed, for you to confirm:
+Confirmed on 4 November 2026:
 
 | Decision | Proposed |
 | --- | --- |
@@ -45,3 +45,7 @@ Each step ends with something running and its tests passing.
 - Each finding the [critique](critique.md) marks for phase 3 has a test in a5s's own suite that shows the code stops it: A9, C1 and C9, and F6 for group chats.
 - In the sample, two people in a Matrix room ask the assistant about a record only one of them may see, and it answers only from what both may see. Someone added to the room later gets nothing said before they joined. The same holds in a Teams group chat, against the fake of the Bot Framework. The assistant asks the watcher what changed on a record, for the person it's answering, and hears only what that person may see. A notebook entry holds only what its records show, and goes once they stop showing it.
 - Round 7 of the critique has read the code, and what it found is fixed.
+
+## Progress
+
+Step 1, group conversations, is under way.

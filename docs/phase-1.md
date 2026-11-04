@@ -159,7 +159,7 @@ The first day in the test tenant and the first cloud checks what only the real s
 | Phase | Adds | Because |
 | --- | --- | --- |
 | 2 | The extractor, with handles for the values it reads. Held proposals, counts, signed decisions, and level 2 with samples and sequential tests ([plan](phase-2.md)). | They're needed only once agents read outside content or act |
-| 3 | Group conversations, agent to agent, a notebook of what agents learn from records, and adapters for managed runtimes ([plan](phase-3.md), proposed) | Each builds on phase 2's evidence |
+| 3 | Group conversations, agent to agent, a notebook of what agents learn from records, and adapters for managed runtimes ([plan](phase-3.md)) | Each builds on phase 2's evidence |
 
 ## Costs
 
