@@ -438,18 +438,24 @@ class Gateway:
 
     @staticmethod
     def reads_outside(conn: psycopg.Connection, agent: str, acts_for: list[str],
-                      topic: str) -> bool:
+                      topic: str, conversation: str | None = None) -> bool:
         """Whether a run opens marked: whether the conversation it reads holds a turn from a
         run that read outside content, in its topic, which its summary may have folded, or
-        among the conversation's latest turns. What a marked run passed on stays marked."""
-        if len(acts_for) != 1:
+        among the conversation's latest turns. In a group chat's conversation, among the
+        turns everyone it acts for heard, which are all it's given. What a marked run passed
+        on stays marked."""
+        group = conversation if groups.of(conversation) else None
+        if group is None and len(acts_for) != 1:
             return False
+        heard = " and heard_by @> %(members)s::text[]" if group else ""  # the latest turns'
+        it_heard = " and t.heard_by @> %(members)s::text[]" if group else ""  # and the turn's
         return bool(conn.execute(
             "select 1 from turns t join runs r on r.id = t.run_id where r.read_outside "
             "and t.person = %(person)s and t.agent = %(agent)s and (t.topic = %(topic)s or t.id in "
-            "(select id from turns where person = %(person)s and agent = %(agent)s "
-            "order by id desc limit 200)) limit 1",
-            {"person": acts_for[0], "agent": agent, "topic": topic}).fetchone())
+            f"(select id from turns where person = %(person)s and agent = %(agent)s{heard} "
+            f"order by id desc limit 200)){it_heard} limit 1",
+            {"person": group or acts_for[0], "agent": agent, "topic": topic,
+             "members": list(acts_for)}).fetchone())
 
     def approvers_in_force(self, conn: psycopg.Connection) -> list[str]:
         """Who approved the settings in force, by key or on a card the core sealed."""
@@ -733,13 +739,35 @@ class Gateway:
     def summarising(self, conn: psycopg.Connection, inst: dict, trigger: dict,
                     now: datetime) -> Opening:
         """A run of a5s's own that folds the turns of a topic that no longer fit in its runs
-        into the topic's summary, acting for the person whose conversation it is. It has no
-        tools, and writes to nobody."""
+        into the topic's summary, acting for the person whose conversation it is: in a group
+        chat's, for everyone in it when the message whose run gave way was sent, as that run
+        did, with its sender's budget. It has no tools, and writes to nobody."""
         who, topic = str(trigger.get("person")), str(trigger.get("topic") or topics.GENERAL)
-        opening = Opening(trigger={"kind": "summary", "person": who, "topic": topic},
-                          acts_for=[who], args={"person": who, "topic": topic}, reasons=[])
-        if self.scenario.person(who) is None:
-            opening.reasons.append(f"the directory doesn't know {who}")
+        if not groups.of(who):
+            opening = Opening(trigger={"kind": "summary", "person": who, "topic": topic},
+                              acts_for=[who], args={"person": who, "topic": topic}, reasons=[])
+            if self.scenario.person(who) is None:
+                opening.reasons.append(f"the directory doesn't know {who}")
+            return opening
+        try:
+            message = conn.execute(
+                "select person, conversation, members, agent from inbound where id = %s",
+                (str(uuid.UUID(str(trigger.get("message")))),)).fetchone()
+        except ValueError:
+            message = None
+        if message is None or message["conversation"] != who:
+            return Opening({"kind": "summary", "person": who, "topic": topic}, [],
+                           {"person": who, "topic": topic},
+                           ["name the group's message whose run its turns gave way to"])
+        members = sorted(message["members"])
+        opening = Opening(trigger={"kind": "summary", "person": who, "topic": topic,
+                                   "conversation": who, "sender": message["person"]},
+                          acts_for=members, args={"person": who, "topic": topic}, reasons=[])
+        if message["agent"] != inst["definition"]:
+            opening.reasons.append(f"it's the {message['agent']}'s conversation, "
+                                   f"not the {inst['definition']}'s")
+        if unknown := [m for m in members if self.scenario.person(m) is None]:
+            opening.reasons.append(f"the directory doesn't know {', '.join(unknown)}")
         return opening
 
     # Cedar entities, built from the core's own records for every call.
@@ -1004,7 +1032,8 @@ def create_app(gw: Gateway) -> FastAPI:
                      opening.acts_for, RUN_MINUTES,
                      opening.marked or gw.reads_outside(
                          conn, inst["definition"], opening.acts_for,
-                         opening.trigger.get("topic", topics.GENERAL))),
+                         opening.trigger.get("topic", topics.GENERAL),
+                         opening.trigger.get("conversation"))),
                 )
                 if kind == asking.KIND:  # whose run answers it, at work on it now
                     conn.execute("update questions set run_id = %s, task = jsonb_set(task, "

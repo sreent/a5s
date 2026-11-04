@@ -22,6 +22,7 @@ import secrets
 from datetime import datetime, timedelta
 
 import psycopg
+from psycopg.types.json import Jsonb
 
 from a5s.contract import Scenario
 from a5s.core import groups, ledger
@@ -77,6 +78,16 @@ def archive(conn: psycopg.Connection, person: str, now: datetime) -> str:
                  "where %s = any(heard_by)", (person, name, person))
     conn.execute("update inbound set members = array_replace(members, %s, %s) "
                  "where %s = any(members)", (person, name, person))
+    conn.execute("update summaries set heard_by = array_replace(heard_by, %s, %s) "
+                 "where %s = any(heard_by)", (person, name, person))
+    for row in conn.execute(  # and what they said, in the facts a group's summary keeps
+            "select person, agent, topic, body from summaries where body->'facts' @> %s",
+            (Jsonb([{"speaker": person}]),)).fetchall():
+        facts = [{**f, "who": name, "speaker": name} if f.get("speaker") == person else f
+                 for f in row["body"]["facts"]]
+        conn.execute("update summaries set body = %s where person = %s and agent = %s "
+                     "and topic = %s", (Jsonb({**row["body"], "facts": facts}), row["person"],
+                                        row["agent"], row["topic"]))
     conn.execute("update departures set archived_at = %s, archived_as = %s where person = %s "
                  "and archived_at is null", (now, name, person))
     ledger.append(conn, {"kind": "admin", "action": "archive", "run": None, "instance": None,

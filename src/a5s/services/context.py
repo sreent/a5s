@@ -10,7 +10,8 @@ longer fit are folded into the summary (services/summaries.py).
 
 A group chat's conversation is kept the same way, under the group's name (core/groups.py),
 with who said each turn and who was there to hear it. A run in the group is given only the
-turns everyone now in it heard, each with the name of whoever said it.
+turns everyone now in it heard, each with the name of whoever said it, and the topic's summary
+only if everyone now in it heard all it holds.
 """
 
 from __future__ import annotations
@@ -55,28 +56,33 @@ def history(
     the rest of the budget, or in a case, their share of it, and the case's older turns that
     fit what's left. In a group, only what all of `members` heard, each turn people said with
     the name of whoever said it, from `names`."""
-    summary = None if members is not None else summaries.load(conn, person, agent, topic)
+    summary = summaries.load(conn, person, agent, topic, members)
     told = _told(summary, chars)
     turns = [{"role": t["role"], "content": _said(t, names), "at": t["at"].isoformat(),
               "topic": t["topic"]} for _, t in sorted(_kept(conn, person, agent, topic,
                                                              chars - len(told), members).items())]
     return ([{"role": "summary", "content": told, "at": summary["updated_at"].isoformat(),
-              "topic": topic}] if told else []) + turns
+              "topic": topic, **({"group": True} if members is not None else {})}]
+            if told else []) + turns
 
 
 def dropped(conn: psycopg.Connection, *, person: str, agent: str, topic: str,
-            chars: int) -> tuple[dict | None, list[dict]]:
+            chars: int, members: list[str] | None = None) -> tuple[dict | None, list[dict]]:
     """The topic's summary, and its turns that no run is given any more and the summary
-    doesn't hold yet, oldest first: what to fold into it."""
-    summary = summaries.load(conn, person, agent, topic)
+    doesn't hold yet, oldest first: what to fold into it. In a group, of what all of
+    `members` heard: a summary someone in it didn't hear all of is started afresh."""
+    summary = summaries.load(conn, person, agent, topic, members)
     told = _told(summary, chars)
-    shown = [i for i, t in _kept(conn, person, agent, topic, chars - len(told)).items()
+    shown = [i for i, t in _kept(conn, person, agent, topic, chars - len(told), members).items()
              if t["topic"] == topic]
     first = min(shown) if shown else None
+    heard = "" if members is None else " and heard_by @> %(members)s::text[]"
     return summary, conn.execute(
-        "select id, role, content, at, topic from turns where person = %s and agent = %s "
-        "and topic = %s and id > %s and (%s::bigint is null or id < %s) order by id",
-        (person, agent, topic, summary["through"] if summary else 0, first, first)).fetchall()
+        "select id, role, content, at, topic, speaker, heard_by from turns where person = "
+        f"%(person)s and agent = %(agent)s and topic = %(topic)s{heard} and id > %(through)s "
+        "and (%(first)s::bigint is null or id < %(first)s) order by id",
+        {"person": person, "agent": agent, "topic": topic, "members": members,
+         "through": summary["through"] if summary else 0, "first": first}).fetchall()
 
 
 def _told(summary: dict | None, chars: int) -> str:
@@ -90,6 +96,13 @@ def _told(summary: dict | None, chars: int) -> str:
         facts = facts[max(1, len(facts) // 4):]  # the oldest quarter goes
         told = render({**body, "facts": facts})
     return told
+
+
+def speakers(conn: psycopg.Connection, group: str, agent: str) -> list[str]:
+    """Whoever has said anything in a group chat's conversation with the agent."""
+    return [r["speaker"] for r in conn.execute(
+        "select distinct speaker from turns where person = %s and agent = %s "
+        "and speaker is not null", (group, agent))]
 
 
 def _said(turn: dict, names: dict[str, str] | None) -> str:

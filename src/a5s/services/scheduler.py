@@ -335,7 +335,8 @@ class Scheduler:
                 history = context.history(
                     conn, person=conversation, agent=agent, topic=topic,
                     chars=opened.get("history_chars") or context.CHARS, members=members,
-                    names={m: p.name for m in members or () if (p := self.scenario.person(m))})
+                    names=self._names([*members, *context.speakers(conn, conversation, agent)])
+                    if members else None)
             reply = self.worker(self.cfg.gateway_url, token, history)
             if not reply.strip():
                 raise RuntimeError("the agent's reply was empty")
@@ -375,18 +376,22 @@ class Scheduler:
             self._turn(claim, told, run, topic)
         finally:
             self._close(run, outcome)
-        if outcome == "done" and not members:  # once the person has their answer: a
-            # group's conversation keeps no summary, as nobody may join it who heard all of it
-            self._fold(inst["id"], person, agent, topic, opened.get("history_chars"))
+        if outcome == "done":  # once they have their answer
+            self._fold(inst["id"], conversation, agent, topic, opened.get("history_chars"),
+                       members, inbound)
 
     def _fold(self, instance: str, person: str, agent: str, topic: str,
-              chars: int | None) -> None:
+              chars: int | None, members: list[str] | None = None,
+              inbound: str | None = None) -> None:
         """Fold the topic's turns that no run is given any more into its summary, with a run
-        of a5s's own, once there are any. Code checks the summary before it's kept."""
+        of a5s's own, once there are any. Code checks the summary before it's kept. In a group
+        chat, the turns everyone in it heard, for them, as the message's run was."""
         chars = chars or context.CHARS
         with db.transaction(self.cfg.database_url) as conn:
             previous, turns = context.dropped(conn, person=person, agent=agent, topic=topic,
-                                              chars=chars)
+                                              chars=chars, members=members)
+        names = None if members is None else self._names(
+            [*members, *(t["speaker"] for t in turns if t["speaker"])])
         if sum(len(t["content"]) for t in turns) < chars * context.FOLD:
             return  # not yet: they're folded in a batch, not one model call a run
         taken, size = [], 0  # at most a run's worth at once: the rest, next time
@@ -396,10 +401,11 @@ class Scheduler:
             taken.append(turn)
             size += len(turn["content"])
         turns = taken
+        trigger = {"kind": "summary", "person": person, "topic": topic,
+                   **({"message": inbound} if members is not None else {})}
         try:
-            opened = self.gw.post("/runs", headers=self.service, json={
-                "instance": instance, "trigger": {"kind": "summary", "person": person,
-                                                  "topic": topic}})
+            opened = self.gw.post("/runs", headers=self.service,
+                                  json={"instance": instance, "trigger": trigger})
         except httpx.HTTPError:
             log.warning("the core can't be reached, so %s's summary waits", topic)
             return
@@ -408,14 +414,16 @@ class Scheduler:
             return
         run, token = opened.json()["run"], opened.json()["token"]
         name = who.name if (who := self.scenario.person(person)) else person
-        asked = {"role": "task", "content": summaries.task(name, topic, previous, turns),
+        asked = {"role": "task", "content": summaries.task(name, topic, previous, turns, names),
                  "at": datetime.now(UTC).isoformat()}
         outcome = "failed"
         try:
             reply = self.worker(self.cfg.gateway_url, token, [asked])
-            body, problems = summaries.checked(reply, previous, turns, name, self.scenario)
+            body, problems = summaries.checked(reply, previous, turns, name, self.scenario,
+                                               names)
             with db.transaction(self.cfg.database_url) as conn:  # folded, either way, once
-                summaries.keep(conn, person, agent, topic, body, turns[-1]["id"], run)
+                summaries.keep(conn, person, agent, topic, body, turns[-1]["id"], run,
+                               summaries.heard_by(previous, turns))
             if problems:
                 log.warning("kept %s's summary for %s without what code couldn't trace: %s",
                             topic, person, "; ".join(problems))
@@ -428,6 +436,11 @@ class Scheduler:
             log.exception("summary run %s failed", run)
         finally:
             self._close(run, outcome[:200])
+
+    def _names(self, people: list[str]) -> dict[str, str]:
+        """What the directory calls each of them, in a group chat's conversation: whoever's in
+        it, and whoever said what its runs are given, even if they've left it since."""
+        return {p: who.name for p in dict.fromkeys(people) if (who := self.scenario.person(p))}
 
     def _close(self, run: str, outcome: str) -> None:
         try:

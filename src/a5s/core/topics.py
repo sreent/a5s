@@ -31,11 +31,11 @@ CURRENT = timedelta(hours=4)  # how long a conversation stays on its topic witho
 # What a summary run is told: a5s's own words, not a release's. It has no tools, writes to
 # nobody, and what it says is checked by code before it's kept (services/summaries.py).
 SUMMARY = (
-    "You keep a short summary of one topic of a conversation between a person and an agent, "
-    "for the agent to read later, when the turns themselves no longer fit. You're given the "
-    "summary so far and the turns to fold into it. Reply with JSON alone, in this form: "
+    "You keep a short summary of one topic of a conversation with an agent, one person's or a "
+    "group chat's, for the agent to read later, when the turns themselves no longer fit. You're "
+    "given the summary so far and the turns to fold into it. Reply with JSON alone, in this form: "
     '{"decisions": [...], "commitments": [...], "open_questions": [...]}. Each is a list of '
-    "short sentences: what was decided, what the person or the agent promised to do, and what's "
+    "short sentences: what was decided, what anyone in it or the agent promised to do, and what's "
     "still open. Fold in the summary so far, keeping what still holds. Write keys, amounts and "
     "dates exactly as they were written, and never one that wasn't. Don't guess."
 )

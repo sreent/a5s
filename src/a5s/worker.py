@@ -116,6 +116,10 @@ def as_message(turn: dict) -> dict[str, str]:
         return {"role": "assistant", "content": f"[{when}, a5s on my behalf] {turn['content']}"}
     if turn["role"] == "task":  # a5s asking the agent, such as to remind someone of what's due
         return {"role": "user", "content": f"[{when}, from a5s, not the person] {turn['content']}"}
+    if turn["role"] == "summary" and turn.get("group"):  # a group chat's: what all heard
+        return {"role": "user", "content": "[from a5s, not anyone in the chat] A summary of this "
+                                           "topic before the messages that follow, of what "
+                                           f"everyone now in the chat heard:\n{turn['content']}"}
     if turn["role"] == "summary":  # what a5s keeps of the turns that no longer fit
         return {"role": "user", "content": "[from a5s, not the person] A summary of this topic "
                                            "before the messages that follow, which they can see "

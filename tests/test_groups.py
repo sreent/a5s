@@ -17,9 +17,10 @@ import pytest
 
 from a5s import db, definitions
 from a5s.config import load_models
-from a5s.core import departures, groups, inbox
+from a5s.core import departures, groups, inbox, topics
 from a5s.core.matrix import Matrix, MatrixConfig
 from a5s.core.teams import Bot, Teams, TeamsConfig
+from a5s.services import context
 from conftest import ROOT, FakeModel, build_root, free_port, running, serve
 from test_matrix import AS_TOKEN, BOT, HS_TOKEN, Homeserver, deliver, invite, said
 from test_teams import ANA as ANA_ENTRA
@@ -230,6 +231,156 @@ def test_someone_who_leaves_keeps_their_words_in_the_group_under_the_archives_na
     assert [(t["person"], t["speaker"], t["heard_by"]) for t in turns] == [
         (GROUP, name, ["ana", name]), (GROUP, None, ["ana", name])]
     assert (row["person"], row["members"]) == (name, ["ana", name])
+
+
+def test_whoever_said_a_turn_is_named_even_once_theyve_left_the_room(stack, homeserver):
+    assert not stack.settle(serves=["ana", "ben", "chen"]).refused
+    homeserver.rooms[ROOM].add(CHEN)
+    stack.model.reply("Hello, Chen.")
+    deliver(homeserver, mention("Hello from operations", by=CHEN))
+    stack.scheduler().answer_waiting()
+    homeserver.rooms[ROOM].discard(CHEN)  # Chen leaves the room, not the organisation
+    stack.model.reply("Chen did.")
+    deliver(homeserver, mention("Who said hello?"))
+    stack.scheduler().answer_waiting()
+    assert "Chen Wei: Hello from operations" in json.dumps(messages(stack))
+
+
+def test_a_run_after_one_that_read_outside_content_in_the_group_is_marked_too(
+        stack, homeserver):
+    assert not stack.settle(serves=["ana", "ben", "chen"]).refused
+
+    def marked(n: int) -> None:  # as if the run had read a customer's email
+        if n == 1:
+            with db.transaction(stack.admin) as conn:
+                conn.execute("update runs set read_outside = true")
+
+    stack.model.on_request = marked
+    stack.model.reply("Q-1001 is about an invoice.")
+    deliver(homeserver, mention("What's Q-1001 about?"))
+    stack.scheduler().answer_waiting()
+    stack.model.on_request = None
+    stack.model.reply("You're welcome.")
+    deliver(homeserver, mention("Thanks", by=BEN))  # it's given what the marked run said
+    stack.scheduler().answer_waiting()
+    homeserver.rooms[ROOM].add(CHEN)  # who didn't hear it, so a run for all three isn't given it
+    stack.model.reply("Hello, Chen.")
+    deliver(homeserver, mention("Say hello to Chen", by=BEN))
+    stack.scheduler().answer_waiting()
+    with db.transaction(stack.admin) as conn:
+        runs = conn.execute("select acts_for, read_outside from runs order by opened_at").fetchall()
+    assert [(r["acts_for"], r["read_outside"]) for r in runs] == [
+        (["ana", "ben"], True), (["ana", "ben"], True), (["ana", "ben", "chen"], False)]
+
+
+# A group's summary: of what everyone in it heard
+
+OLD = "Contoso's refund for Q-1002 is £1,240.50, due by 2026-11-06."
+
+
+def a_long_group_conversation(stack) -> None:
+    """Ana and Ben's earlier turns in the room, more than a run with a small budget is given."""
+    with db.transaction(stack.admin) as conn:
+        context.add_turn(conn, person=GROUP, agent="assistant", role="person", content=OLD,
+                         speaker="ben", heard_by=["ana", "ben"])
+        context.add_turn(conn, person=GROUP, agent="assistant", role="agent", content="Noted.",
+                         heard_by=["ana", "ben"])
+        for n in range(5):
+            context.add_turn(conn, person=GROUP, agent="assistant", role="person",
+                             content=f"Note {n}: " + "the weekly sync went through invoices. " * 25,
+                             speaker="ana", heard_by=["ana", "ben"])
+    stack.gateway.definitions["assistant"].context.budget_tokens = 1000  # 4,000 characters
+
+
+def folded(decisions: list[str]) -> str:
+    return json.dumps({"decisions": decisions, "commitments": [], "open_questions": []})
+
+
+def group_summaries(stack) -> list[dict]:
+    with db.transaction(stack.admin) as conn:
+        return conn.execute("select * from summaries where person = %s", (GROUP,)).fetchall()
+
+
+def answering(stack) -> list[list[dict]]:
+    """What the agent's own runs were sent, not a5s's summary runs."""
+    return [r["body"]["messages"] for r in stack.model.requests
+            if r["body"]["messages"][0]["content"] != topics.SUMMARY]
+
+
+def test_a_long_group_conversation_is_summarised_for_everyone_who_heard_it(stack, homeserver):
+    a_long_group_conversation(stack)
+    stack.model.reply("Hello, both.")
+    stack.model.reply(folded(["Contoso's refund for Q-1002 is £1,240.50."]))
+    deliver(homeserver, mention("Hello"))
+    stack.scheduler().answer_waiting()
+    asked = messages(stack)
+    assert asked[0]["content"] == topics.SUMMARY
+    assert "in a group chat's conversation with you" in asked[1]["content"]
+    assert f"Ben Okafor: {OLD}" in asked[1]["content"]
+    [summary] = group_summaries(stack)
+    assert summary["heard_by"] == ["ana", "ben"]
+    assert [(f["value"], f["who"], f["speaker"]) for f in summary["body"]["facts"]] == [
+        ("Q-1002", "Ben Okafor", "ben"), ("£1,240.50", "Ben Okafor", "ben"),
+        ("2026-11-06", "Ben Okafor", "ben")]
+    with db.transaction(stack.admin) as conn:
+        [opened] = [r for r in conn.execute("select acts_for, trigger from runs")
+                    if r["trigger"]["kind"] == "summary"]
+    assert (opened["acts_for"], opened["trigger"]["sender"]) == (["ana", "ben"], "ana")
+
+    stack.model.reply("It's due on 2026-11-06.")
+    stack.model.reply(folded(["Contoso's refund for Q-1002 is £1,240.50."]))
+    deliver(homeserver, mention("When is the refund due?", by=BEN))
+    stack.scheduler().answer_waiting()
+    given = answering(stack)[-1][1]["content"]
+    assert given.startswith("[from a5s, not anyone in the chat] A summary of this topic")
+    assert "Decided: Contoso's refund for Q-1002 is £1,240.50." in given
+    assert "Q-1002 (Ben Okafor, " in given
+
+
+def test_nobody_added_later_is_given_a_summary_of_what_was_said_before(stack, homeserver):
+    assert not stack.settle(serves=["ana", "ben", "chen"]).refused
+    a_long_group_conversation(stack)
+    stack.model.reply("Hello, both.")
+    stack.model.reply(folded(["Contoso's refund for Q-1002 is £1,240.50."]))
+    deliver(homeserver, mention("Hello"))
+    stack.scheduler().answer_waiting()
+    homeserver.rooms[ROOM].add(CHEN)  # Chen joins
+    stack.model.reply("Hello, Chen.")
+    deliver(homeserver, mention("Say hello to Chen", by=BEN))
+    stack.scheduler().answer_waiting()
+    given = json.dumps(answering(stack)[-1])
+    assert "Q-1002" not in given and "A summary of this topic" not in given
+    with db.transaction(stack.admin) as conn:  # what all three heard, more than fits
+        for n in range(5):
+            context.add_turn(conn, person=GROUP, agent="assistant", role="person",
+                             content=f"Plan {n}: " + "the rota for next week is settled. " * 28,
+                             speaker="chen", heard_by=["ana", "ben", "chen"])
+    stack.model.reply("Noted.")
+    stack.model.reply(folded(["The rota for next week is settled."]))
+    deliver(homeserver, mention("Thanks", by=CHEN))
+    stack.scheduler().answer_waiting()
+    asked = messages(stack)[1]["content"]
+    assert ("The summary so far of the general topic, in a group chat's conversation with "
+            "you:\nNone yet.") in asked  # afresh, from what Chen heard
+    assert "Q-1002" not in asked and "Chen" in asked
+    [summary] = group_summaries(stack)
+    assert summary["heard_by"] == ["ana", "ben", "chen"]
+    assert "Q-1002" not in json.dumps(summary["body"])
+
+
+def test_someone_who_leaves_is_under_the_archives_name_in_the_groups_summary_too(
+        stack, homeserver):
+    a_long_group_conversation(stack)
+    stack.model.reply("Hello, both.")
+    stack.model.reply(folded([]))
+    deliver(homeserver, mention("Hello"))
+    stack.scheduler().answer_waiting()
+    with db.transaction(stack.admin) as conn:
+        name = departures.archive(conn, "ben", datetime.now(UTC))
+    [summary] = group_summaries(stack)
+    assert summary["heard_by"] == ["ana", name]
+    assert {(f["who"], f["speaker"]) for f in summary["body"]["facts"]} == {(name, name)}
+    assert "Ben" not in json.dumps(summary["body"])
 
 
 # Teams: group chats, as the Bot Framework sends them

@@ -55,11 +55,13 @@ def sources(conn: psycopg.Connection, scenario: Scenario, run: dict) -> list[tup
             {"who": who, "agent": run["definition"], "members": list(run["acts_for"])}):
         found += [(v, THEY if row["role"] == "person" else A5S)
                   for v in values.found(row["content"], pattern)]
-    for row in () if group else conn.execute(
-            "select body from summaries where person = %s and agent = %s",
+    for row in conn.execute(  # in a group, the summaries everyone it acts for heard all of
+            "select body, heard_by from summaries where person = %s and agent = %s",
             (who, run["definition"])):
+        if group and not set(run["acts_for"]) <= set(row["heard_by"] or ()):
+            continue
         found += [(Value(f["kind"], f["value"], f["norm"]), THEY) for f in row["body"].get("facts", [])
-                  if person is not None and f["who"] == person.name]
+                  if (f.get("speaker") if group else person is not None and f["who"] == person.name)]
     return found
 
 
