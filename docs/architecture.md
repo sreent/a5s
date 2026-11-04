@@ -141,7 +141,7 @@ People get one conversation with each agent, and it never runs out of room, howe
 - **Records beat recollection.** Commitments and decisions live in records, never only in a conversation, and answers about the past retrieve the original turns, not just the summary.
 - **People stay separate.** Nothing from one person's conversation enters a run for someone else. An agent acting for people sees only what the directory says all of them may see.
 - **Classified values** are tokenised in conversations, and shown back only to people who may see them.
-- **Later:** group conversations, and a notebook of what an agent learns from records, from phase 3.
+- **Later:** group conversations, and a notebook of what an agent learns from records, from phase 3 ([plan](phase-3.md)).
 
 ## Channels
 
@@ -157,7 +157,7 @@ Each agent talks to people under one identity, never a person's, and says it's a
 
 - **Classes** of data come from the scenario's settings, and decide what's masked and which models may see it.
 - **Tokens.** The ledger, conversations, traces and test data hold tokens with record keys, not classified values.
-- **Retention.** A conversation is kept for 12 months after the last thing a person and an agent said to each other, and then deleted, with its summaries and the messages that carried it. Notes on how people like to work, and reminders, go 12 months after they ended or, if never confirmed, were offered, and a note someone asks to forget goes at once. What someone waits on goes with the date they named, and what a report told a person goes once it's told. The values a run is handed as handles go once it's over. The ledger records what each deletion removed, in counts, and keeps nothing that was said. Archiving the conversations of someone who leaves [TBC: where archives go].
+- **Retention.** A conversation is kept for 12 months after the last thing a person and an agent said to each other, and then deleted, with its summaries and the messages that carried it. Notes on how people like to work, and reminders, go 12 months after they ended or, if never confirmed, were offered, and a note someone asks to forget goes at once. What someone waits on goes with the date they named, and what a report told a person goes once it's told. The values a run is handed as handles go once it's over. The ledger records what each deletion removed, in counts, and keeps nothing that was said. What a5s keeps for someone who leaves is archived where it is, a day after the directory stops naming them, under a name no person has, and goes on the same clock ([`core/departures.py`](../src/a5s/core/departures.py)).
 - **Models.** Each approved model names its provider, deployment, region and version: a dated version where the provider offers one, and otherwise the version each response reports, checked every time. The model gateway refuses anything else, including a failover to an unapproved model. It speaks both OpenAI-compatible and Anthropic-compatible APIs, so a model from any provider that offers either can be approved, including open-weight models an organisation hosts in its own cloud or on its own premises. A server on the organisation's own network may need no key.
 - **Outside content.** A scenario's tool says which fields of what it returns are content from outside the organisation, such as an email's body, and the fixed form a5s's extractor fills from them: keys, amounts, dates, yes or no, choices from a list, and sensitive values, never free text. The agent never gets those fields: the extractor, a call to the instance's own approved model with no tools, fills the form, and code keeps only values the document itself contains, sensitive ones as handles. An agent can also ask the extractor a question about a document its run has read, and the answer comes back in free text, marked as outside content and never used as an instruction. The run is marked from its first outside content. Classifiers such as Prompt Shields, Model Armor or Bedrock Guardrails add signals. They're never the boundary.
 - **Supply chain.** Skills are copied into the release and pinned by hash, and so are the schemas of the tools it uses, so the gateway refuses a tool whose schema has changed. a5s's image pins its base images by digest and its packages by hash, its build's provenance is signed, and the actions that build it are pinned by commit. It also refuses tool servers' requests to ask people for input or to run the agent's model.
@@ -232,7 +232,7 @@ If the list shrinks further, LangChain's own `create_agent` could be the base in
 
 ## Agent to agent
 
-From phase 3. Agents will call each other over A2A, only between registered instances. The people the caller acts for travel with the call, and authority never passes from one agent to the other.
+From phase 3 ([plan](phase-3.md)). Agents will call each other over A2A, only between registered instances. The people the caller acts for travel with the call, and authority never passes from one agent to the other.
 
 ## Standards
 
