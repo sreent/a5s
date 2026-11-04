@@ -72,6 +72,7 @@ from a5s.core import (
     retention,
     samples,
     schedules,
+    sealing,
     status,
     topics,
     traces,
@@ -453,16 +454,34 @@ class Gateway:
         with the ledger's last word on each: 1 where there's none."""
         return samples.caps(conn, self.cfg.seal_keys, release)
 
-    def approving(self) -> str | None:
+    def approving(self, sealing: bool = True) -> str | None:
         """Why approvers can't approve settings where they work here, if they can't: it takes
-        sign-in through the organisation's identity provider, and the core's seal."""
+        sign-in through the organisation's identity provider, and, in the gateway, which seals
+        what they do, the core's seal key. The channels app, which people reach, has none."""
         if self.identity is None or not self.cfg.webchat_client_id:
             return ("approving settings where people work needs the organisation's identity "
                     "provider and the web chat's client: see A5S_OIDC_ISSUER and "
                     "A5S_WEBCHAT_CLIENT_ID")
-        if not self.cfg.seal_keys:
+        if sealing and not self.cfg.seal_keys:
             return "approving settings where people work needs the core's seal key: see A5S_SEAL_KEYS"
         return None
+
+    def seal_pending(self, conn: psycopg.Connection) -> None:
+        """Check again, and seal, what the channels app recorded people approving, deciding and
+        grading, in the gateway alone (core/sealing.py): what doesn't check out is refused.
+        Without its seal key or the identity provider, it leaves them waiting, and says so."""
+        if problem := self.approving():
+            if waiting := sealing.waiting(conn):
+                log.error("%d approvals, decisions and grades wait to be sealed, but %s",
+                          waiting, problem.replace("approving settings where people work needs",
+                                                   "sealing them needs"))
+            return
+        args = (self.cfg.seal_keys, self.identity, self.scenario, self.cfg.webchat_client_id)
+        for refused in (*approvals.seal_pending(conn, *args), *proposals.seal_pending(conn, *args),
+                        *samples.seal_pending(conn, *args)):
+            ledger.append(conn, {"kind": "admin", "action": "refuse-sign-in", "run": None,
+                                 "instance": None, "acts_for": [], "decision": "record",
+                                 "args": {"what": refused}})
 
     def unusable(self, settings: Settings, last: dict | None) -> list[str]:
         """Why a version of the settings couldn't be applied, before anyone's asked to approve
@@ -1429,6 +1448,7 @@ def create_app(gw: Gateway) -> FastAPI:
             if not conn.execute("select pg_try_advisory_xact_lock(hashtext('a5s settings')) as got"
                                 ).fetchone()["got"]:
                 return {"applied": []}  # another sweep is at work
+            gw.seal_pending(conn)  # what the channels app recorded counts once it's sealed
             sends = requested(conn)
             last = approvals.latest(conn, gw.scenario.name)
             for row in conn.execute("select * from settings_proposals where scenario = %s "
@@ -2155,6 +2175,8 @@ def create_app(gw: Gateway) -> FastAPI:
         changes with something due are read, each on its own, so one that fails holds up
         none of the others, and each approved change is made as soon as it's marked."""
         now, made, failed = gw.clock(), 0, 0
+        with db.transaction(gw.url) as conn:  # what the channels app recorded, sealed first
+            gw.seal_pending(conn)
         with db.transaction(gw.url) as conn:
             due = [r["id"] for r in conn.execute(
                 "select id from proposals p where scenario = %s and status = 'waiting' and ("
@@ -2181,8 +2203,11 @@ def create_app(gw: Gateway) -> FastAPI:
             if p is None:
                 return {}
             found, problems = proposals.decision(conn, gw.cfg.seal_keys, gw.scenario, p)
-            last = conn.execute("select coalesce(max(id), 0) as id from proposal_decisions "
-                                "where digest = %s", (p["digest"],)).fetchone()["id"]
+            last = conn.execute(  # up to the first decision still to be sealed, which, once it
+                # is, makes the change due again
+                "select coalesce(min(id) filter (where seal is null and refused is null and proof "
+                "is not null) - 1, max(id), 0) as id from proposal_decisions where digest = %s",
+                (p["digest"],)).fetchone()["id"]
             if last > p["weighed"]:
                 for problem in problems:  # a decision that doesn't count, such as an unsealed one
                     log.warning("%s: %s", proposals.key(p), problem)
@@ -2397,6 +2422,7 @@ def create_app(gw: Gateway) -> FastAPI:
             if not conn.execute("select pg_try_advisory_xact_lock(hashtext('a5s samples')) as got"
                                 ).fetchone()["got"]:
                 return {"changed": []}  # another sweep is at work
+            gw.seal_pending(conn)  # the grades the channels app recorded, sealed first
             lapsed = samples.lapse(conn, now)
             settings, problem = gw.settings_in_force(conn)
             if settings is None:

@@ -51,7 +51,7 @@ from a5s.contract import (
     Tool,
     record_of,
 )
-from a5s.core import approvals
+from a5s.core import approvals, sealing
 from a5s.core.handles import TOKEN
 from a5s.core.identity import IdentityError, UnknownPerson, Verifier, whose
 from a5s.core.ledger import canonical
@@ -302,11 +302,12 @@ def may_decide(scenario: Scenario, proposal: dict, person: str) -> bool:
     return person in {p.id for p in everyone(by_part)}
 
 
-def record(conn: psycopg.Connection, keys: tuple[str, ...], scenario: str, found: list[dict],
-           decision: str, person: str, token: str, salt: str, claims: dict,
-           now: datetime, reason: str | None = None) -> list[dict]:
-    """Record a decision on each of these changes, sealed, with why, for a rejection that
-    says. Refused if the sign-in was used, or the person has decided one of them already."""
+def record(conn: psycopg.Connection, scenario: str, found: list[dict], decision: str,
+           person: str, token: str, salt: str, claims: dict, now: datetime,
+           reason: str | None = None) -> list[dict]:
+    """Record a decision on each of these changes, with the sign-in that made it, and why, for
+    a rejection that says, for the gateway to seal (seal_pending). Refused if the sign-in was
+    used, or the person has decided one of them already."""
     made = []
     for proposal in found:
         entry = {"scenario": scenario, "digest": proposal["digest"], "decision": decision,
@@ -314,19 +315,49 @@ def record(conn: psycopg.Connection, keys: tuple[str, ...], scenario: str, found
                  "issuer": claims["iss"], "subject": str(claims.get("sub") or ""),
                  "token": approvals.HASHED + hashlib.sha256(token.encode()).hexdigest(),
                  "decided_at": now,  # by the core's clock, as everything that falls due is
-                 "reason": reason if decision == "reject" and reason else None}
-        entry["seal"] = _mac(keys[0], entry)
+                 "reason": reason if decision == "reject" and reason else None, "proof": token}
         row = conn.execute(
             "insert into proposal_decisions (scenario, digest, decision, person, token, nonce, salt, "
-            "issuer, subject, seal, decided_at, reason) values (%(scenario)s, %(digest)s, "
+            "issuer, subject, decided_at, reason, proof) values (%(scenario)s, %(digest)s, "
             "%(decision)s, %(person)s, %(token)s, %(nonce)s, %(salt)s, %(issuer)s, %(subject)s, "
-            "%(seal)s, %(decided_at)s, %(reason)s) on conflict do nothing returning id",
+            "%(decided_at)s, %(reason)s, %(proof)s) on conflict do nothing returning id",
             entry).fetchone()
         if row is None:
             raise Refused(409, f"{key(proposal)} has been decided with that sign-in, or by you, "
                                "already")
         made.append({**entry, **row})
     return made
+
+
+def seal_pending(conn: psycopg.Connection, keys: tuple[str, ...], verifier: Verifier | None,
+                 scenario: Scenario, client_id: str | None) -> list[str]:
+    """Check again each decision the channels app recorded, by its sign-in, which covers every
+    change decided with it, seal each, and let the sign-in go, in the gateway: or refuse them.
+    Why each refused one was."""
+    if not keys:
+        return []  # they wait for a gateway that can seal them
+    rows = conn.execute("select * from proposal_decisions where scenario = %s and seal is null "
+                        "and refused is null order by id for update skip locked",
+                        (scenario.name,)).fetchall()
+    signed: dict[str, list[dict]] = {}
+    for row in rows:
+        signed.setdefault(row["token"], []).append(row)
+    refused = []
+    for together in signed.values():
+        first = together[0]
+        decided = sorted(r["digest"] for r in conn.execute(
+            "select digest from proposal_decisions where token = %s", (first["token"],)))
+        why = sealing.check(verifier, scenario, client_id, first["proof"],
+                            nonce(decided, first["decision"], first["salt"]), first["person"])
+        for row in together:
+            if why is not None:
+                conn.execute("update proposal_decisions set refused = %s, proof = null "
+                             "where id = %s", (why, row["id"]))
+                refused.append(f"{row['person']}'s decision: {why}")
+            else:
+                conn.execute("update proposal_decisions set seal = %s, proof = null "
+                             "where id = %s", (_mac(keys[0], row), row["id"]))
+    return refused
 
 
 def sealed(keys: tuple[str, ...], entry: dict) -> bool:
@@ -348,9 +379,10 @@ def decision(conn: psycopg.Connection, keys: tuple[str, ...], scenario: Scenario
     by_part = deciders(scenario, list(proposal["records"]), list(proposal["acts_for"]))
     problems: list[str] = []
     approved: dict[str | None, dict] = {}
-    for row in conn.execute("select * from proposal_decisions where digest = %s order by id",
+    for row in conn.execute("select * from proposal_decisions where digest = %s and refused is "
+                            "null and (seal is not null or proof is null) order by id",
                             (proposal["digest"],)):
-        if not sealed(keys, row):
+        if not row["seal"] or not sealed(keys, row):
             problems.append(f"{row['person']}'s decision isn't one the core sealed")
             continue
         parts = [part for part, people in by_part.items() if row["person"] in {p.id for p in people}]

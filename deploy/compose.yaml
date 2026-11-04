@@ -65,7 +65,7 @@ services:
       <<: *people
       A5S_DATABASE_URL: postgresql://a5s_gateway:${A5S_DB_GATEWAY_PASSWORD}@postgres:5432/postgres
       A5S_SERVICE_TOKEN: ${A5S_SERVICE_TOKEN:?set A5S_SERVICE_TOKEN}
-      A5S_SEAL_KEYS:  # the core's own, sealing the approvals it checked: for approving by card
+      A5S_SEAL_KEYS:  # the core's own, sealing what people approve, decide and grade: the gateway alone holds it
       A5S_TEAM:
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       QWEN_API_KEY: ${QWEN_API_KEY:-}
@@ -79,7 +79,6 @@ services:
     environment:
       <<: *people
       A5S_DATABASE_URL: postgresql://a5s_channels:${A5S_DB_CHANNELS_PASSWORD}@postgres:5432/postgres
-      A5S_SEAL_KEYS:
     networks: [data, egress, edge]
     ports: ["127.0.0.1:${A5S_CHANNELS_PORT:-8703}:8703"]  # behind your ingress, for people and Teams
     depends_on:

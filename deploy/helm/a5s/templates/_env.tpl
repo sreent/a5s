@@ -14,7 +14,6 @@
 
 {{- define "a5s.env.channels" -}}
 {{ include "a5s.secretEnv" (dict "root" . "name" "A5S_DATABASE_URL" "key" "database-channels-url") }}
-{{ include "a5s.secretEnv" (dict "root" . "name" "A5S_SEAL_KEYS" "key" "seal-keys") }}
 {{ include "a5s.peopleEnv" . }}
 {{- end }}
 

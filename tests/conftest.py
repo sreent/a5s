@@ -266,7 +266,8 @@ def approving(stack: Stack, provider: Provider) -> Iterator[str]:
     stack.gateway.identity = verifier
     stack.gateway.cfg = replace(stack.gateway.cfg, webchat_client_id=CLIENT,
                                 public_url=f"http://127.0.0.1:{port}")
-    cfg = replace(stack.as_role("channels"), webchat_client_id=CLIENT, development=False)
+    cfg = replace(stack.as_role("channels"), webchat_client_id=CLIENT, development=False,
+                  seal_keys=())  # the channels app never holds the core's seal key
     with serve(inbox.create_app(replace(stack.gateway, cfg=cfg, identity=verifier)), port) as url:
         yield url
 

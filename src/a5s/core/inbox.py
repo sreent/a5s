@@ -499,7 +499,7 @@ def create_app(gw: Any) -> FastAPI:
     # Approving settings: the page an approver's card opens, where they decide
 
     def approving() -> None:
-        if problem := gw.approving():
+        if problem := gw.approving(sealing=False):  # the gateway seals, never the channels app
             raise HTTPException(404, problem)
 
     @app.get("/approve/", include_in_schema=False)
@@ -572,7 +572,7 @@ def create_app(gw: Any) -> FastAPI:
         person, _, _ = approver(version, body, authorization)
         with db.transaction(gw.url) as conn:
             row, last, status = proposal(conn, version)
-            approved, _ = approvals.approvers(conn, gw.cfg.seal_keys, gw.scenario.name, version)
+            approved = approvals.recorded(conn, gw.scenario.name, version)
         before = parse_settings(bytes(last["raw"])) if last else None
         settings = parse_settings(bytes(row["raw"]))
         found = approvals.changes(before, settings, gw.definitions, gw.scenario.person)
@@ -595,8 +595,8 @@ def create_app(gw: Any) -> FastAPI:
             if status != "waiting":
                 raise HTTPException(409, f"this version isn't waiting for approval: it's {status}")
             try:
-                approvals.record(conn, gw.cfg.seal_keys, gw.scenario.name, version, person.id, token,
-                                 body.salt, claims)
+                approvals.record(conn, gw.scenario.name, version, person.id, token, body.salt,
+                                 claims)
             except approvals.Refused as exc:
                 raise HTTPException(exc.status, exc.reason) from None
             ledger.append(conn, {
@@ -606,7 +606,7 @@ def create_app(gw: Any) -> FastAPI:
                          "by": person.id, "identity": "verified: a sign-in to approve this version alone",
                          "issuer": claims["iss"],
                          "token_sha256": hashlib.sha256(token.encode()).hexdigest()}})
-            approved, _ = approvals.approvers(conn, gw.cfg.seal_keys, gw.scenario.name, version)
+            approved = approvals.recorded(conn, gw.scenario.name, version)
             last = approvals.latest(conn, gw.scenario.name)
         settings = parse_settings(bytes(row["raw"]))
         valid, _ = registry.signers(settings, gw.scenario.person, approved)
@@ -721,8 +721,8 @@ def create_app(gw: Any) -> FastAPI:
                 raise HTTPException(409, "a sensitive change is decided on its own, with a sign-in "
                                          "of its own")
             try:
-                proposals.record(conn, gw.cfg.seal_keys, gw.scenario.name, rows, body.decision,
-                                 person.id, token, body.salt, claims, gw.clock(), reason)
+                proposals.record(conn, gw.scenario.name, rows, body.decision, person.id, token,
+                                 body.salt, claims, gw.clock(), reason)
             except proposals.Refused as exc:
                 raise HTTPException(exc.status, exc.reason) from None
             ledger.append(conn, {
@@ -843,13 +843,12 @@ def create_app(gw: Any) -> FastAPI:
                 entry = {**rows[sample], "grade": grade, "graded_by": person.id, "graded_at": now,
                          "grade_token": hashed, "grade_nonce": claims["nonce"], "grade_salt": salt,
                          "grade_issuer": claims["iss"],
-                         "grade_subject": str(claims.get("sub") or "")}
-                entry["grade_seal"] = samples.seal(gw.cfg.seal_keys, entry)
-                conn.execute(
+                         "grade_subject": str(claims.get("sub") or ""), "grade_proof": token}
+                conn.execute(  # with the sign-in, which the gateway checks again and seals
                     "update samples set grade = %(grade)s, graded_by = %(graded_by)s, "
                     "graded_at = %(graded_at)s, grade_token = %(grade_token)s, grade_nonce = "
                     "%(grade_nonce)s, grade_salt = %(grade_salt)s, grade_issuer = %(grade_issuer)s, "
-                    "grade_subject = %(grade_subject)s, grade_seal = %(grade_seal)s "
+                    "grade_subject = %(grade_subject)s, grade_proof = %(grade_proof)s "
                     "where id = %(id)s", entry)
                 ledger.append(conn, {
                     "kind": "admin", "action": "grade", "run": str(rows[sample]["run_id"]),
@@ -916,8 +915,7 @@ def create_app(gw: Any) -> FastAPI:
                                     "outcome is null and serial > %s order by serial desc",
                                     (gw.scenario.name, last["serial"] if last else -1)):
                 settings = parse_settings(bytes(row["raw"]))
-                approved, _ = approvals.approvers(conn, gw.cfg.seal_keys, gw.scenario.name,
-                                                  row["digest"])
+                approved = approvals.recorded(conn, gw.scenario.name, row["digest"])
                 valid, _ = registry.signers(settings, gw.scenario.person, approved)
                 waiting.append({
                     "serial": row["serial"], "link": f"/approve/?settings={row['digest']}",

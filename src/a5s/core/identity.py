@@ -111,11 +111,13 @@ class Verifier:
                     continue
         raise IdentityError("it's signed with a key the identity provider doesn't list")
 
-    def claims(self, token: str, *, endorsed_for: str | None = None) -> dict:
+    def claims(self, token: str, *, endorsed_for: str | None = None,
+               expired: bool = False) -> dict:
         """The token's claims, if it checks out. Otherwise, IdentityError.
 
         With `endorsed_for`, the key that signed it must also be endorsed for that
-        channel, as the Bot Framework's keys are.
+        channel, as the Bot Framework's keys are. With `expired`, a token past its expiry
+        still checks out, for checking again a sign-in the core recorded when it was fresh.
         """
         try:
             key, published = self._key(jwt.get_unverified_header(token).get("kid"))
@@ -126,7 +128,7 @@ class Verifier:
             return jwt.decode(
                 token, key.key, algorithms=[key.algorithm_name], audience=self.cfg.audience,
                 issuer=self.cfg.issuer, leeway=self.cfg.leeway,
-                options={"require": list(self.cfg.required)},
+                options={"require": list(self.cfg.required), "verify_exp": not expired},
             )
         except IdentityError:
             raise

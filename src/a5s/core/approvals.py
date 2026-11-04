@@ -10,13 +10,14 @@ conversation, and never by telling an agent.
 
 On the page, the approver signs in afresh at the organisation's identity provider, with a
 nonce that commits to approving exactly this version, so the provider's signature covers
-the decision. The core checks the sign-in: that it's recent, for this version, and from
-someone who approves instances. It records it once, since a signature works for one
-decision. Then it seals the approval with a key only the core holds. The approval keeps
-counting after the provider rotates its keys, and nobody who can only edit the database can
-make one. The core checks the seal again at every run, as it checks signatures made with
-keys, and the approver must still hold their role. Once everyone a version needs has
-approved it, the gateway applies it.
+the decision. The channels app checks the sign-in: that it's recent, for this version, and
+from someone who approves instances. It records it once, with the sign-in itself, since a
+signature works for one decision. The gateway checks the sign-in again, and seals the
+approval with a key only the core holds, which the channels app never has (core/sealing.py).
+The approval keeps counting after the provider rotates its keys, and nobody who can only edit
+the database can make one. The core checks the seal again at every run, as it checks
+signatures made with keys, and the approver must still hold their role. Once everyone a
+version needs has approved it, the gateway applies it.
 """
 
 from __future__ import annotations
@@ -31,7 +32,7 @@ from typing import Any
 import psycopg
 
 from a5s.contract import InstanceSettings, Person, Settings
-from a5s.core import registry
+from a5s.core import registry, sealing
 from a5s.core.identity import IdentityError, UnknownPerson, Verifier, whose
 from a5s.core.ledger import canonical
 from a5s.definitions import Definition
@@ -343,26 +344,57 @@ def check(verifier: Verifier, scenario: Any, client_id: str, token: str, version
     return person, claims
 
 
-def record(conn: psycopg.Connection, keys: tuple[str, ...], scenario: str, version: str,
-           person: str, token: str, salt: str, claims: dict) -> dict:
-    """Record an approval, sealed. Refused if the person has approved this version already,
-    or the sign-in was used before."""
-    approval = {"scenario": scenario, "digest": version, "person": person, "token": token,
+def record(conn: psycopg.Connection, scenario: str, version: str, person: str, token: str,
+           salt: str, claims: dict) -> dict:
+    """Record an approval, with the sign-in that made it, for the gateway to seal. Refused if
+    the person has approved this version already, or the sign-in was used before."""
+    approval = {"scenario": scenario, "digest": version, "person": person,
+                "token": HASHED + hashlib.sha256(token.encode()).hexdigest(),  # kept, not usable
                 "nonce": claims["nonce"], "salt": salt, "issuer": claims["iss"],
-                "subject": str(claims.get("sub") or "")}
-    approval["seal"] = seal(keys, approval)
-    approval["token"] = HASHED + hashlib.sha256(token.encode()).hexdigest()  # kept, not usable
+                "subject": str(claims.get("sub") or ""), "proof": token}
     if conn.execute("select 1 from settings_approvals where scenario = %s and digest = %s "
                     "and person = %s", (scenario, version, person)).fetchone():
         raise Refused(409, "you've approved this version already")
     row = conn.execute(
         "insert into settings_approvals (scenario, digest, person, token, nonce, salt, issuer, "
-        "subject, seal) values (%(scenario)s, %(digest)s, %(person)s, %(token)s, %(nonce)s, "
-        "%(salt)s, %(issuer)s, %(subject)s, %(seal)s) on conflict do nothing "
+        "subject, proof) values (%(scenario)s, %(digest)s, %(person)s, %(token)s, %(nonce)s, "
+        "%(salt)s, %(issuer)s, %(subject)s, %(proof)s) on conflict do nothing "
         "returning id, approved_at", approval).fetchone()
     if row is None:
         raise Refused(409, "that sign-in has been used: sign in again")
     return {**approval, **row}
+
+
+def recorded(conn: psycopg.Connection, scenario: str, version: str) -> list[str]:
+    """Who has approved a version, as the channels app recorded it, sealed yet or not: for
+    saying who's still needed. Only what the gateway sealed counts (approvers)."""
+    return [r["person"] for r in conn.execute(
+        "select person from settings_approvals where scenario = %s and digest = %s "
+        "and refused is null order by id", (scenario, version))]
+
+
+def seal_pending(conn: psycopg.Connection, keys: tuple[str, ...], verifier: Verifier | None,
+                 scenario: Any, client_id: str | None) -> list[str]:
+    """Check again each approval the channels app recorded, seal it, and let its sign-in go,
+    in the gateway: or refuse it. Why each refused one was."""
+    if not keys:
+        return []  # it waits for a gateway that can seal it
+    refused = []
+    for row in conn.execute("select * from settings_approvals where scenario = %s and seal is "
+                            "null and refused is null order by id for update skip locked",
+                            (scenario.name,)).fetchall():
+        why = sealing.check(verifier, scenario, client_id, row["proof"],
+                            nonce(row["digest"], row["salt"]), row["person"])
+        if why is not None:
+            log.error("an approval of settings %s by %s is refused: %s", row["digest"],
+                      row["person"], why)
+            conn.execute("update settings_approvals set refused = %s, proof = null where id = %s",
+                         (why, row["id"]))
+            refused.append(f"{row['person']}'s approval: {why}")
+            continue
+        conn.execute("update settings_approvals set seal = %s, proof = null where id = %s",
+                     (seal(keys, row), row["id"]))
+    return refused
 
 
 def approvers(conn: psycopg.Connection, keys: tuple[str, ...], scenario: str,
@@ -370,8 +402,9 @@ def approvers(conn: psycopg.Connection, keys: tuple[str, ...], scenario: str,
     """Who approved a version, by approvals the core sealed, and what's wrong with any other."""
     valid, problems = [], []
     for row in conn.execute("select * from settings_approvals where scenario = %s and digest = %s "
+                            "and refused is null and (seal is not null or proof is null) "
                             "order by id", (scenario, version)):
-        if keys and sealed(keys, row):
+        if keys and row["seal"] and sealed(keys, row):
             valid.append(row["person"])
         else:
             log.error("an approval of settings %s by %s isn't one the core sealed", version,

@@ -16,7 +16,7 @@ from typing import Any
 
 import psycopg
 
-from a5s.core import samples
+from a5s.core import samples, sealing
 
 # a5s's starting objectives [TBC]: set from the first users' baseline
 OBJECTIVES = {"reply_seconds_p90": 120, "chased_on_time": 0.95}
@@ -64,6 +64,7 @@ def report(conn: psycopg.Connection, breakers: list[str], keys: tuple[str, ...] 
         "select count(*) filter (where grade is null and lapsed_at is null) as waiting, "
         "count(*) filter (where lapsed_at > now() - interval '91 days') as lapsed from samples"
     ).fetchone()
+    unsealed = sealing.waiting(conn, "5 minutes")  # the gateway seals each minute
     raised = sorted(samples.standing_caps(conn, keys, "cap >= 2"),
                     key=lambda r: (r["part"], r["action"]))
     lowered = conn.execute("select count(*) as n from ledger where kind = 'cap' and action = "
@@ -101,6 +102,7 @@ def report(conn: psycopg.Connection, breakers: list[str], keys: tuple[str, ...] 
                                  "since": r["since"].isoformat()} for r in raised],
                     "caps_lowered": lowered["n"],
                     "rubber_stamps": samples.rubber_stamps(conn) if rubber_stamps else None},
+        "unsealed": unsealed,
         "not_active": [dict(r) for r in stopped],
         "breakers_open": breakers,
         "objectives": {
@@ -171,6 +173,9 @@ def told(status: dict[str, Any]) -> str:
             ", ".join(f"{r['person']}, {r['graded_wrong']} of {r['approved']}"
                       for r in status["samples"]["rubber_stamps"]) or "nobody") + "."]
           if status["samples"]["rubber_stamps"] is not None else []),
+        *([f"  Approvals, decisions and grades the gateway hasn't sealed in 5 minutes: "
+           f"{status['unsealed']}, which don't count until it does (see A5S_SEAL_KEYS)."]
+          if status.get("unsealed") else []),
         "  Urgent messages held for a batch: " + (
             f"{status['urgent_held']['messages']} for {status['urgent_held']['people']} "
             + ("person" if status["urgent_held"]["people"] == 1 else "people")

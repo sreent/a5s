@@ -299,6 +299,41 @@ def seal(keys: tuple[str, ...], row: dict) -> str:
     return _mac(keys[0], row, _SEALED_GRADE)
 
 
+def seal_pending(conn: psycopg.Connection, keys: tuple[str, ...], verifier: Any,
+                 scenario: Scenario, client_id: str | None) -> list[str]:
+    """Check again each grade the channels app recorded, by its sign-in, which covers every
+    grade given with it, seal each, and let the sign-in go, in the gateway: or refuse them, so
+    the samples wait to be graded again. Why each refused one was."""
+    from a5s.core import sealing  # the check people's sign-ins share
+
+    if not keys:
+        return []  # they wait for a gateway that can seal them
+    rows = conn.execute("select * from samples where scenario = %s and grade_proof is not null "
+                        "and grade_seal is null order by id for update skip locked",
+                        (scenario.name,)).fetchall()
+    signed: dict[str, list[dict]] = {}
+    for row in rows:
+        signed.setdefault(row["grade_token"], []).append(row)
+    refused = []
+    for together in signed.values():
+        first = together[0]
+        given = {r["id"]: r["grade"] for r in conn.execute(
+            "select id, grade from samples where grade_token = %s", (first["grade_token"],))}
+        why = sealing.check(verifier, scenario, client_id, first["grade_proof"],
+                            nonce(given, first["grade_salt"]), first["graded_by"])
+        for row in together:
+            if why is not None:
+                conn.execute(
+                    "update samples set grade = null, graded_by = null, graded_at = null, "
+                    "grade_token = null, grade_nonce = null, grade_salt = null, grade_issuer = "
+                    "null, grade_subject = null, grade_proof = null where id = %s", (row["id"],))
+                refused.append(f"{row['graded_by']}'s grade of sample {row['id']}: {why}")
+            else:
+                conn.execute("update samples set grade_seal = %s, grade_proof = null where id = %s",
+                             (seal(keys, row), row["id"]))
+    return refused
+
+
 def counted(keys: tuple[str, ...], row: dict) -> bool:
     """Whether a grade counts: one the core sealed."""
     return _sealed(keys, row, _SEALED_GRADE, row.get("grade_seal"))
