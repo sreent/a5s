@@ -173,8 +173,8 @@ def told(status: dict[str, Any]) -> str:
             ", ".join(f"{r['person']}, {r['graded_wrong']} of {r['approved']}"
                       for r in status["samples"]["rubber_stamps"]) or "nobody") + "."]
           if status["samples"]["rubber_stamps"] is not None else []),
-        *([f"  Approvals, decisions and grades the gateway hasn't sealed in 5 minutes: "
-           f"{status['unsealed']}, which don't count until it does (see A5S_SEAL_KEYS)."]
+        *([(f"  Approvals, decisions and grades the gateway hasn't sealed in 5 minutes: "
+            f"{status['unsealed']}, which don't count until it does (see A5S_SEAL_KEYS).")]
           if status.get("unsealed") else []),
         "  Urgent messages held for a batch: " + (
             f"{status['urgent_held']['messages']} for {status['urgent_held']['people']} "
