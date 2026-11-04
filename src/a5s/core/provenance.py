@@ -15,7 +15,7 @@ from typing import Any
 import psycopg
 
 from a5s.contract import Scenario
-from a5s.core import values
+from a5s.core import groups, values
 from a5s.core.values import Value
 
 THEY = "they said it"
@@ -38,20 +38,26 @@ def sources(conn: psycopg.Connection, scenario: Scenario, run: dict) -> list[tup
     pattern = getattr(scenario, "record_pattern", None)
     found = [(Value(r["kind"], r["text"], r["norm"]), r["source"]) for r in conn.execute(
         "select * from run_reads where run_id = %s", (run["run"],))]
-    if len(run["acts_for"]) != 1:
+    group = run["trigger"].get("conversation")  # in a group chat, what anyone in it said that
+    group = group if groups.of(group) else None  # everyone now in it heard
+    if len(run["acts_for"]) != 1 and not group:
         return found
-    who, person = run["acts_for"][0], scenario.person(run["acts_for"][0])
+    who = group or run["acts_for"][0]
+    person = None if group else scenario.person(who)
     if inbound := run["trigger"].get("inbound"):
         row = conn.execute("select text from inbound where id = %s", (inbound,)).fetchone()
         found += [(v, THEY) for v in values.found(row["text"] if row else "", pattern)]
+    heard = " and heard_by @> %(members)s::text[]" if group else ""
     for row in conn.execute(  # not the agent's words, nor a5s's notes on them, which name
-            "select role, content from turns where person = %s and agent = %s "  # its own values
-            "and role <> 'agent' and not (role = 'notice' and content like '(a5s:%%') "
-            "order by id desc limit 500", (who, run["definition"])):
+            "select role, content from turns where person = %(who)s and agent = %(agent)s "
+            "and role <> 'agent' and not (role = 'notice' and content like '(a5s:%%')"
+            f"{heard} order by id desc limit 500",  # its own values
+            {"who": who, "agent": run["definition"], "members": list(run["acts_for"])}):
         found += [(v, THEY if row["role"] == "person" else A5S)
                   for v in values.found(row["content"], pattern)]
-    for row in conn.execute("select body from summaries where person = %s and agent = %s",
-                            (who, run["definition"])):
+    for row in () if group else conn.execute(
+            "select body from summaries where person = %s and agent = %s",
+            (who, run["definition"])):
         found += [(Value(f["kind"], f["value"], f["norm"]), THEY) for f in row["body"].get("facts", [])
                   if person is not None and f["who"] == person.name]
     return found

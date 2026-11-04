@@ -7,6 +7,10 @@ topics, such as one for each case, and the core decides each run's topic
 turns, whatever their topic, and in a case, the case's older turns too, each
 within its share of the budget the agent's release gives it. Turns that no
 longer fit are folded into the summary (services/summaries.py).
+
+A group chat's conversation is kept the same way, under the group's name (core/groups.py),
+with who said each turn and who was there to hear it. A run in the group is given only the
+turns everyone now in it heard, each with the name of whoever said it.
 """
 
 from __future__ import annotations
@@ -31,27 +35,31 @@ def add_turn(
     content: str,
     run: str | None = None,
     topic: str = GENERAL,
+    speaker: str | None = None,
+    heard_by: list[str] | None = None,
 ) -> None:
+    """A turn of the conversation: in a group's, with who said it and who heard it."""
     conn.execute(
-        "insert into turns (person, agent, topic, role, content, run_id) "
-        "values (%s, %s, %s, %s, %s, %s)",
-        (person, agent, topic, role, content, run),
+        "insert into turns (person, agent, topic, role, content, run_id, speaker, heard_by) "
+        "values (%s, %s, %s, %s, %s, %s, %s, %s)",
+        (person, agent, topic, role, content, run, speaker, heard_by),
     )
 
 
 def history(
     conn: psycopg.Connection, *, person: str, agent: str, topic: str = GENERAL,
-    chars: int = CHARS,
+    chars: int = CHARS, members: list[str] | None = None, names: dict[str, str] | None = None,
 ) -> list[dict]:
     """What a run is given of the conversation, oldest first, with when each was and its
     topic: the topic's summary, if it has one, then the conversation's latest turns that fit
     the rest of the budget, or in a case, their share of it, and the case's older turns that
-    fit what's left."""
-    summary = summaries.load(conn, person, agent, topic)
+    fit what's left. In a group, only what all of `members` heard, each turn people said with
+    the name of whoever said it, from `names`."""
+    summary = None if members is not None else summaries.load(conn, person, agent, topic)
     told = _told(summary, chars)
-    turns = [{"role": t["role"], "content": t["content"], "at": t["at"].isoformat(),
+    turns = [{"role": t["role"], "content": _said(t, names), "at": t["at"].isoformat(),
               "topic": t["topic"]} for _, t in sorted(_kept(conn, person, agent, topic,
-                                                             chars - len(told)).items())]
+                                                             chars - len(told), members).items())]
     return ([{"role": "summary", "content": told, "at": summary["updated_at"].isoformat(),
               "topic": topic}] if told else []) + turns
 
@@ -84,18 +92,30 @@ def _told(summary: dict | None, chars: int) -> str:
     return told
 
 
-def _kept(conn: psycopg.Connection, person: str, agent: str, topic: str, chars: int) -> dict:
-    """The turns that fit, by id: the conversation's latest, and in a case, its older ones."""
+def _said(turn: dict, names: dict[str, str] | None) -> str:
+    """A turn's words, and in a group, who said them."""
+    if turn.get("speaker") and turn["role"] == "person":
+        return f"{(names or {}).get(turn['speaker'], turn['speaker'])}: {turn['content']}"
+    return turn["content"]
+
+
+def _kept(conn: psycopg.Connection, person: str, agent: str, topic: str, chars: int,
+          members: list[str] | None = None) -> dict:
+    """The turns that fit, by id: the conversation's latest, and in a case, its older ones.
+    In a group, only the turns all of `members` heard."""
+    heard = "" if members is None else " and heard_by @> %(members)s::text[]"
+    given = {"person": person, "agent": agent, "members": members, "topic": topic}
     kept, used = _fit(conn.execute(
-        "select id, role, content, at, topic from turns where person = %s and agent = %s "
-        "order by id desc limit 500", (person, agent)),
+        "select id, role, content, at, topic, speaker from turns where person = %(person)s "
+        f"and agent = %(agent)s{heard} order by id desc limit 500", given),
         chars if topic == GENERAL else int(chars * LATEST))
     if topic != GENERAL:
         before = min(kept) if kept else None
         older, _ = _fit(conn.execute(
-            "select id, role, content, at, topic from turns where person = %s and agent = %s "
-            "and topic = %s and (%s::bigint is null or id < %s) order by id desc limit 500",
-            (person, agent, topic, before, before)), chars - used, keep_one=False)
+            "select id, role, content, at, topic, speaker from turns where person = %(person)s "
+            f"and agent = %(agent)s and topic = %(topic)s{heard} and (%(before)s::bigint is null "
+            "or id < %(before)s) order by id desc limit 500", {**given, "before": before}),
+            chars - used, keep_one=False)
         kept |= older
     return kept
 

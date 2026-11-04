@@ -85,6 +85,14 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 2. Find which agent wrote them with `a5s ledger tail`: each one held shows as a message sent to `batch`.
 3. Tell the agent owner. What isn't urgent belongs in the digest.
 
+## An agent doesn't answer in a group chat
+
+**Shows as:** someone saying it ignores them in a group chat, or an inbound message denied with why.
+
+1. It answers only a message that mentions it, as people do. Anything else in the chat it never hears, and nothing is recorded.
+2. A mention it won't work on gets one message saying why, and the ledger records the reason: someone in the chat the directory doesn't know, more than 20 people, a Matrix room that shows people what was said before they joined, which its settings change, or a team's channel in Teams, where it doesn't work. Nothing else runs.
+3. If no instance of the agent serves everyone in the chat, it says so. A version of the settings that serves them all, which the part owners approve, lets it work there, or people ask one to one.
+
 ## Calls are denied
 
 **Shows as:** many denials of one kind.

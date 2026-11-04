@@ -48,4 +48,15 @@ Each step ends with something running and its tests passing.
 
 ## Progress
 
-Step 1, group conversations, is under way.
+Step 1, group conversations, is built:
+
+| Built | Where |
+| --- | --- |
+| Group chats in Matrix and Teams. In a room with more people than the sender, an agent hears only what mentions it. At each mention, the core reads who's in the room from the organisation's homeserver, and turns the room away, with one message saying why, if anyone in it isn't in the directory, if it has more than 20 people, or if it shows people what was said before they joined. In Teams, a mention in a group chat arrives marked, and the core reads who's in the chat from the Bot Framework. A team's channel is turned away. | [`core/matrix.py`](../src/a5s/core/matrix.py), [`core/teams.py`](../src/a5s/core/teams.py), [`core/inbox.py`](../src/a5s/core/inbox.py) |
+| A conversation for each group chat, apart from each person's, under the group's own name, with who said each turn and who heard it. A run there acts for everyone in the chat, from an instance that serves them all, and is given only what all of them heard, each turn with who said it. Its topic comes only from what they all heard, too, so a case nobody new heard of isn't named to them. Just before an answer goes, the core reads who's in the chat again: if someone has joined, the answer, worked out for the people there before, goes to whoever asked, in their inbox, and the chat hears why. Its day's budget is the asker's. | [`core/groups.py`](../src/a5s/core/groups.py), [`services/context.py`](../src/a5s/services/context.py), [`services/scheduler.py`](../src/a5s/services/scheduler.py), [`core/gateway.py`](../src/a5s/core/gateway.py) |
+| What's one person's own stays one to one. Notes, digest times, what someone waits on and their list of reminders are refused in a group, and an agent never writes first into one. A reminder asked for in a group is the asker's alone: only they can say yes to it, there, and it reaches them alone. A search of past turns in a group searches what everyone in it heard. What becomes of a held change reaches whoever asked, and the group's next run knows. | [`core/coretools.py`](../src/a5s/core/coretools.py), [`core/reminders.py`](../src/a5s/core/reminders.py), [`core/recall.py`](../src/a5s/core/recall.py) |
+| Someone who leaves keeps their words in the group, under their archive's name, and a group's conversation goes on retention's usual clock. | [`core/departures.py`](../src/a5s/core/departures.py) |
+
+Its tests are in [`tests/test_groups.py`](../tests/test_groups.py), and the smoke test brings the assistant into a room with two people on a real Synapse homeserver, where it answers only the mention, for both of them.
+
+Not yet: a summary of a group's conversation, so a run in a long one is given only its latest turns, and searches the rest; and Teams group chats against a real tenant, which the first day there checks ([phase 1](phase-1.md#progress)).

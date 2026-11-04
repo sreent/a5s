@@ -59,7 +59,7 @@ def _number(reminder: str) -> int:
 
 
 def offer(call: Call) -> dict:
-    person, about, record = call.person, call.args["about"].strip(), call.args.get("record")
+    person, about, record = call.asker, call.args["about"].strip(), call.args.get("record")
     at = when(str(call.args["on"]), person)
     if not about:
         raise Refused("say what to remind them of")
@@ -74,9 +74,10 @@ def offer(call: Call) -> dict:
         # or has it, such as when a model confirms it in the same breath, in parallel
         "select id, confirmed_at from reminders where person = %s and agent = %s and due_at = %s "
         "and record is not distinct from %s and about = %s and cancelled_at is null "
-        "and reminded_at is null and (confirmed_at is not null or asked_at > %s)",
+        "and reminded_at is null and (confirmed_at is not null or asked_at > %s) "
+        "and conversation is not distinct from %s",
         (person.id, call.run["definition"], at, record, about,
-         call.asked_at - CONFIRM_WITHIN)).fetchone()
+         call.asked_at - CONFIRM_WITHIN, call.conversation)).fetchone()
     if again is not None:
         return {"reminder": f"R-{again['id']}", "when": say(person, at), "about": about,
                 "record": record,
@@ -85,36 +86,41 @@ def offer(call: Call) -> dict:
     in_digest = "T" not in str(call.args["on"])  # a day, not a particular time
     number = call.conn.execute(
         "insert into reminders (person, agent, instance_id, about, record, due_at, offered_at, "
-        "offered_run, asked_at, in_digest) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
-        "returning id",
+        "offered_run, asked_at, in_digest, conversation) values (%s, %s, %s, %s, %s, %s, %s, "
+        "%s, %s, %s, %s) returning id",
         (person.id, call.run["definition"], call.run["id"], about, record, at, call.now,
-         call.run["run"], call.asked_at, in_digest),
+         call.run["run"], call.asked_at, in_digest, call.conversation),
     ).fetchone()["id"]
     return {"reminder": f"R-{number}", "when": say(person, at), "about": about, "record": record,
             "status": "offered: it's set only once they say yes, in their next message"}
 
 
-def waiting_for_yes(conn: psycopg.Connection, person: Person, agent: str) -> list[str]:
-    """The reminders this agent offered the person that wait for their yes, for its context.
-    Offers count from when the core received the message, by the database's clock."""
+def waiting_for_yes(conn: psycopg.Connection, person: Person, agent: str,
+                    conversation: str | None = None) -> list[str]:
+    """The reminders this agent offered the person that wait for their yes, for its context:
+    in their own chat with it, or those offered in the group chat named. Offers count from
+    when the core received the message, by the database's clock."""
     rows = conn.execute("select * from reminders where person = %s and agent = %s "
                         "and confirmed_at is null and cancelled_at is null "
-                        "and asked_at > now() - %s order by asked_at, id",
-                        (person.id, agent, CONFIRM_WITHIN)).fetchall()
+                        "and asked_at > now() - %s and conversation is not distinct from %s "
+                        "order by asked_at, id",
+                        (person.id, agent, CONFIRM_WITHIN, conversation)).fetchall()
     return [f"R-{r['id']}, a reminder on {say(person, r['due_at'])}: {r['about']}. If they say "
             f"yes to it, set it with confirm_reminder, naming R-{r['id']}." for r in rows]
 
 
 def confirm(call: Call) -> dict:
-    """Keep a reminder the person said yes to: the one named, or the one offered last."""
-    person, asked = call.person, call.asked_at
+    """Keep a reminder the person said yes to: the one named, or the one offered last, in
+    the chat it was offered in: their own, or the group chat where they asked for it."""
+    person, asked = call.asker, call.asked_at
     named = _number(call.args["reminder"]) if call.args.get("reminder") else None
     row = call.conn.execute(  # offered in answer to an earlier message of theirs, not this one
         "select * from reminders where person = %s and agent = %s and confirmed_at is null "
         "and cancelled_at is null and offered_run <> %s and asked_at < %s and asked_at > %s "
-        "and (%s::bigint is null or id = %s) order by asked_at desc, id desc limit 1 for update",
+        "and (%s::bigint is null or id = %s) and conversation is not distinct from %s "
+        "order by asked_at desc, id desc limit 1 for update",
         (person.id, call.run["definition"], call.run["run"], asked, asked - CONFIRM_WITHIN,
-         named, named),
+         named, named, call.conversation),
     ).fetchone()
     if row is None:
         raise Refused("no reminder is waiting for them to confirm. Offer it first, and confirm "

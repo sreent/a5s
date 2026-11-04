@@ -11,7 +11,7 @@ import pytest
 
 from a5s import db
 from a5s.core import inbox
-from a5s.core.matrix import ENCRYPTED, ONE_TO_ONE, UNKNOWN, Matrix, MatrixConfig
+from a5s.core.matrix import ENCRYPTED, UNKNOWN, Matrix, MatrixConfig
 from conftest import free_port, serve
 
 AS_TOKEN, HS_TOKEN = "a5s-speaks-as-its-bots", "the-homeserver-proves-itself"
@@ -144,11 +144,11 @@ def test_people_the_directory_doesnt_know_hear_so_and_nothing_runs(stack, homese
     assert homeserver.sent == [{"room": "!x:a5s.test", "as": BOT, "body": UNKNOWN}]
 
 
-def test_a5s_talks_one_to_one_in_matrix_too(stack, homeserver):
+def test_once_someone_else_joins_a_room_it_hears_only_what_mentions_it(stack, homeserver):
     deliver(homeserver, invite())
-    homeserver.rooms[DM].add(BEN)
+    homeserver.rooms[DM].add(BEN)  # a group's room now: see test_groups.py
     deliver(homeserver, said("Hello, both of you"))
-    assert queued(stack) == [] and homeserver.sent[-1]["body"] == ONE_TO_ONE
+    assert queued(stack) == [] and homeserver.sent == []
 
 
 def test_an_encrypted_message_is_turned_away_with_how_to_carry_on(stack, homeserver):

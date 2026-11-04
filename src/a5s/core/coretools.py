@@ -4,7 +4,8 @@ They change no part's data, so an agent may use them at any level. Each is about
 person the run is answering, and theirs alone: only a run answering a message of
 theirs can use one that sets something, and never a run that has read content from
 outside. One that only reads the person's own records, such as a search of their
-conversation, serves any run that acts for them alone.
+conversation, serves any run that acts for them alone. In a group chat (core/groups.py), what's
+one person's own is asked for one to one, apart from a reminder, which is the asker's alone.
 """
 
 from __future__ import annotations
@@ -17,6 +18,7 @@ from typing import Any
 import psycopg
 
 from a5s.contract import Person, Scenario
+from a5s.core import groups
 
 
 class Refused(Exception):
@@ -40,8 +42,31 @@ class Call:
                                  (self.run["trigger"].get("inbound"),)).fetchone()["received_at"]
 
     @property
+    def conversation(self) -> str | None:
+        """The group chat the run answers in, if it's in one."""
+        found = self.run["trigger"].get("conversation")
+        return found if groups.of(found) else None
+
+    @property
+    def asker(self) -> Person:
+        """Who asked: the person who wrote the message the run answers, in their own chat or in
+        a group chat, for what's theirs alone even there, such as a reminder."""
+        if self.conversation is None:
+            return self.person
+        if self.run["read_outside"]:
+            raise Refused("this run has read content from outside, which can't set what's "
+                          "theirs")
+        person = self.scenario.person(groups.asker(self.run) or "")
+        if person is None:
+            raise Refused("the directory doesn't know them")
+        return person
+
+    @property
     def person(self) -> Person:
         """Whose these are: the person who wrote the message the run answers."""
+        if self.conversation is not None:
+            raise Refused("that's one person's own, so they ask for it one to one, not in a "
+                          "group chat")
         if self.run["trigger"].get("kind") != "message" or len(self.run["acts_for"]) != 1:
             raise Refused("it's the person's own, so it's set only in answer to a message of "
                           "theirs")
@@ -56,6 +81,9 @@ class Call:
     @property
     def reader(self) -> Person:
         """Whose own records the run may read: the one person it acts for, whatever started it."""
+        if self.conversation is not None:
+            raise Refused("that's one person's own, so they ask for it one to one, not in a "
+                          "group chat")
         if len(self.run["acts_for"]) != 1:
             raise Refused("it reads one person's own records, so only a run that acts for them "
                           "alone can")

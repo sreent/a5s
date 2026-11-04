@@ -15,7 +15,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from jwt.algorithms import RSAAlgorithm
 
 from a5s import db
-from a5s.core import inbox, teams
+from a5s.core import groups, inbox, teams
 from a5s.core.identity import IdentityConfig, Verifier
 from a5s.core.teams import Bot, Teams, TeamsConfig
 from conftest import CLIENT, free_port, serve
@@ -165,10 +165,12 @@ def test_someone_the_directory_doesnt_know_is_told_so_and_nothing_runs(stack, bo
     assert stack.ledger()[-1]["decision"] == "deny"
 
 
-def test_group_chats_get_a_pointer_to_a_one_to_one_chat(stack, bot):
-    assert httpx.post(bot.url, json=activity(kind="groupChat"), headers=bot.auth()).status_code == 200
+def test_a_teams_channel_gets_a_pointer_to_a_group_chat(stack, bot):
+    said = {**activity(kind="channel"),  # Teams sends a bot only what mentions it, in a channel
+            "entities": [{"type": "mention", "mentioned": {"id": "28:a5s-bot"}}]}
+    assert httpx.post(bot.url, json=said, headers=bot.auth()).status_code == 200
     assert not queued(stack)
-    assert [m["text"] for m in bot.sent] == [teams.ONE_TO_ONE]
+    assert [m["text"] for m in bot.sent] == [groups.CHANNELS]  # group chats: see test_groups.py
 
 
 def test_a_scheduler_cant_forge_or_reuse_a_teams_message(stack, bot):

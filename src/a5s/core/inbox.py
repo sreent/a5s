@@ -44,10 +44,20 @@ from a5s.contract import (
     Settings,
     parse_settings,
 )
-from a5s.core import approvals, chats, ledger, matrix, proposals, registry, samples, topics
+from a5s.core import (
+    approvals,
+    chats,
+    groups,
+    ledger,
+    matrix,
+    proposals,
+    registry,
+    samples,
+    topics,
+)
 from a5s.core.gateway import sanitize
 from a5s.core.identity import IdentityError, UnknownPerson, signed_in
-from a5s.core.teams import ONE_TO_ONE, UNKNOWN, Refused
+from a5s.core.teams import UNKNOWN, Refused
 
 log = logging.getLogger(__name__)
 MAX_BYTES = 256 * 1024  # far more than one message needs
@@ -122,24 +132,31 @@ class TokenRequest(BaseModel):
 
 
 def record(conn: Any, *, channel: str, source_id: str, person: str, agent: str, text: str,
-           reply_to: dict, identity: str) -> str | None:
-    """Record a message whose sender the core checked, and wake the scheduler.
+           reply_to: dict, identity: str, place: str | None = None,
+           members: list[str] | None = None) -> str | None:
+    """Record a message whose sender the core checked, and wake the scheduler: in a group chat,
+    the chat it was said in, `place`, and everyone in it then, `members` (core/groups.py).
 
     None if the channel sent it before, so it's answered once.
     """
     inbound = str(uuid.uuid4())
+    conversation = groups.record(conn, channel, place) if place else None
     fresh = conn.execute(
-        "insert into inbound (id, channel, source_id, person, agent, text, reply_to) "
-        "values (%s, %s, %s, %s, %s, %s, %s) on conflict do nothing returning id",
-        (inbound, channel, source_id, person, agent, text, Jsonb(reply_to)),
+        "insert into inbound (id, channel, source_id, person, agent, text, reply_to, "
+        "conversation, members) values (%s, %s, %s, %s, %s, %s, %s, %s, %s) "
+        "on conflict do nothing returning id",
+        (inbound, channel, source_id, person, agent, text, Jsonb(reply_to), conversation,
+         sorted(members) if place and members else None),
     ).fetchone()
     if fresh is None:
         return None
     ledger.append(conn, {
-        "kind": "inbound", "action": channel, "run": None, "instance": None, "acts_for": [person],
+        "kind": "inbound", "action": channel, "run": None, "instance": None,
+        "acts_for": sorted(members) if place and members else [person],
         "decision": "allow", "reasons": [],
         "args": {"inbound": inbound, "agent": agent, "identity": identity, "chars": len(text),
-                 "sha256": hashlib.sha256(text.encode()).hexdigest()},
+                 "sha256": hashlib.sha256(text.encode()).hexdigest(),
+                 **({"sender": person, "group": conversation} if conversation else {})},
     })
     conn.execute("notify a5s_inbound")
     return inbound
@@ -225,22 +242,42 @@ def create_app(gw: Any) -> FastAPI:
                 (chats.started if added else chats.left)(conn, "teams", person, bot.agent, reply_to)
             return Response(status_code=200)
         message = gw.teams.message(activity, gw.scenario, bot)
-        if message is None:
+        if message is None or not message.mentioned:  # in a group chat, only what mentions it
             return Response(status_code=200)
         people = [message.person] if message.person else []
+        group = message.kind == "groupChat"
+        members: list[str | None] = []
+        if group and message.person:  # who's in it, from Teams itself, at each message
+            try:
+                members = gw.teams.members(message.reply_to, gw.scenario)
+            except (httpx.HTTPError, ValueError) as exc:
+                log.warning("couldn't read who's in a Teams group chat: %s", exc)
+                raise HTTPException(503, "a5s couldn't read who's in the chat") from None
+        everyone = sorted({message.person, *members}) if group and None not in members else []
         with db.transaction(gw.url) as conn:
             if message.person is None:
                 turned_away(conn, "teams", f"the directory doesn't know entra:{message.entra_id}",
                             people, message.text)
                 background.add_task(tell_in_teams, message.reply_to, UNKNOWN)
-            elif not message.personal:
-                turned_away(conn, "teams", "a5s talks one to one for now", people, message.text)
-                background.add_task(tell_in_teams, message.reply_to, ONE_TO_ONE)
+            elif not message.personal and not group:  # such as a team's channel
+                turned_away(conn, "teams", "a5s works in group chats, not a team's channels",
+                            people, message.text)
+                background.add_task(tell_in_teams, message.reply_to, groups.CHANNELS)
+            elif group and not everyone:
+                turned_away(conn, "teams", "someone in the group isn't in the directory", people,
+                            message.text)
+                background.add_task(tell_in_teams, message.reply_to, groups.STRANGERS)
+            elif len(everyone) > groups.LIMIT:
+                turned_away(conn, "teams", f"the group has more than {groups.LIMIT} people", people,
+                            message.text)
+                background.add_task(tell_in_teams, message.reply_to, groups.TOO_MANY)
             else:  # Teams' message ids are unique only within a conversation
                 source = f"{message.reply_to['conversation']}/{message.reply_to['activity']}"
                 record(conn, channel="teams", source_id=source, person=message.person,
                        agent=message.agent, text=message.text, reply_to=message.reply_to,
-                       identity="verified by teams")
+                       identity="verified by teams",
+                       place=message.reply_to["conversation"] if group else None,
+                       members=everyone or None)
         return Response(status_code=200)
 
     # Matrix: the homeserver sends what happens in the rooms the agents' bots are in
@@ -287,7 +324,8 @@ def create_app(gw: Any) -> FastAPI:
                 with db.transaction(gw.url) as conn:  # a resent delivery counts once
                     record(conn, channel="matrix", source_id=event["event_id"], person=detail.person,
                            agent=detail.agent, text=detail.text, reply_to=detail.reply_to,
-                           identity="verified by matrix")
+                           identity="verified by matrix", place=detail.place,
+                           members=list(detail.members))
             elif what == "left":  # so a5s writes to them elsewhere, and doesn't ask them back
                 with db.transaction(gw.url) as conn:
                     chats.left(conn, "matrix", *detail)

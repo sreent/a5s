@@ -63,15 +63,18 @@ def named(scenario: Scenario, text: str) -> list[str]:
 
 
 def of_message(conn: psycopg.Connection, scenario: Scenario, person: str, agent: str,
-               text: str) -> str:
+               text: str, members: list[str] | None = None) -> str:
     """The topic a message goes in: the one record it names, or else the conversation's
-    current topic. Turns are timed by the database's clock."""
+    current topic, which in a group chat is from what all of `members` heard, so nobody added
+    later learns what it was about. Turns are timed by the database's clock."""
     keys = named(scenario, text)
     if len(keys) == 1:
         return keys[0]
-    row = conn.execute("select topic from turns where person = %s and agent = %s "
-                       "and at > now() - %s order by id desc limit 1",
-                       (person, agent, CURRENT)).fetchone()
+    heard = "" if members is None else " and heard_by @> %(members)s::text[]"
+    row = conn.execute("select topic from turns where person = %(person)s and agent = %(agent)s "
+                       f"and at > now() - %(current)s{heard} order by id desc limit 1",
+                       {"person": person, "agent": agent, "current": CURRENT,
+                        "members": members}).fetchone()
     return row["topic"] if row else GENERAL
 
 

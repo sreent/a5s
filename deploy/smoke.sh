@@ -136,6 +136,65 @@ PY
 compose exec -T gateway a5s ledger tail -n 200 | grep -q '"identity": "verified by matrix"'
 echo "The homeserver vouched for Ana in Matrix, and the core recorded it."
 
+# A group's room: Ana and Ben, with the assistant, which answers only when someone mentions it,
+# for everyone in the room, in a room that shows nobody what was said before they joined
+A5S_PASSWORD="$idp_password" python3 - <<'PY'
+import json, os, time, uuid
+from urllib.parse import quote
+from urllib.request import Request, urlopen
+
+HOMESERVER, BOT = "http://127.0.0.1:8008/_matrix/client/v3", "@a5s-assistant:a5s.test"
+
+def call(method, path, body=None, token=None):
+    headers = {"Content-Type": "application/json"} | ({"Authorization": f"Bearer {token}"} if token else {})
+    data = None if body is None else json.dumps(body).encode()
+    with urlopen(Request(HOMESERVER + path, data, headers, method=method), timeout=30) as answer:
+        return json.load(answer)
+
+def until(what, found, seconds=120):
+    for _ in range(seconds):
+        if result := found():
+            return result
+        time.sleep(1)
+    raise SystemExit(f"In Matrix, {what} didn't happen within {seconds} seconds.")
+
+def login(user):
+    return call("POST", "/login", {"type": "m.login.password", "password": os.environ["A5S_PASSWORD"],
+                                   "identifier": {"type": "m.id.user", "user": user}})["access_token"]
+
+ana, ben = login("ana"), login("ben")
+room = call("POST", "/createRoom", {"preset": "private_chat", "invite": [BOT, "@ben:a5s.test"],
+            "initial_state": [{"type": "m.room.history_visibility", "state_key": "",
+                               "content": {"history_visibility": "joined"}}]}, ana)["room_id"]
+at = f"/rooms/{quote(room, safe='')}"
+call("POST", f"/join/{quote(room, safe='')}", {}, ben)
+until("the assistant joining the group's room",
+      lambda: BOT in call("GET", f"{at}/joined_members", token=ana)["joined"])
+call("PUT", f"{at}/send/m.room.message/{uuid.uuid4().hex}",
+     {"msgtype": "m.text", "body": "Lunch at one?"}, ben)  # not for the assistant
+call("PUT", f"{at}/send/m.room.message/{uuid.uuid4().hex}",
+     {"msgtype": "m.text", "body": "a5s-assistant: Which questions mention an invoice?",
+      "m.mentions": {"user_ids": [BOT]}}, ana)
+
+def answers():
+    return [e["content"]["body"] for e in call("GET", f"{at}/messages?dir=b&limit=50", token=ana)["chunk"]
+            if e["sender"] == BOT and e["type"] == "m.room.message"]
+
+said = until("the assistant answering in the group's room", answers)
+time.sleep(5)  # and nothing more: Ben's message wasn't for it
+assert answers() == said and len(said) == 1 and "Q-1001" in said[0], answers()
+print(f"Reply in the group's room: {said[0]}")
+PY
+compose exec -T gateway python - <<'PY'
+import os, psycopg
+with psycopg.connect(os.environ["A5S_DATABASE_URL"]) as conn:
+    rows = conn.execute("select person, members, conversation from inbound "
+                        "where conversation is not null").fetchall()
+assert [(r[0], r[1]) for r in rows] == [("ana", ["ana", "ben"])], rows
+assert rows[0][2].startswith("group:"), rows
+print("In the group's room, the assistant answered only the mention, for Ana and Ben both.")
+PY
+
 curl -sf -o "$reply" -H "authorization: Bearer $ana" http://127.0.0.1:8703/channels/local/inbox
 field '["messages"]' > /dev/null  # reminders and escalations, which the clock decides
 compose exec -T gateway python - <<'PY'
@@ -232,16 +291,20 @@ def call(url, body=None, token=None, method=None):
 
 ana = call(f"{HOMESERVER}/login", {"type": "m.login.password", "password": os.environ["A5S_PASSWORD"],
                                      "identifier": {"type": "m.id.user", "user": "ana"}})["access_token"]
-[room] = call(f"{HOMESERVER}/joined_rooms", token=ana)["joined_rooms"]
+rooms = call(f"{HOMESERVER}/joined_rooms", token=ana)["joined_rooms"]  # her own, and a group's
 for _ in range(60):
-    said = [e["content"]["body"] for e in call(f"{HOMESERVER}/rooms/{quote(room, safe='')}/messages"
-                                               f"?dir=b&limit=20", token=ana)["chunk"]
-            if e["type"] == "m.room.message" and "/approve/?settings=" in e["content"].get("body", "")]
-    if said:
+    asked = {room: said for room in rooms if (said := [
+        e["content"]["body"] for e in call(f"{HOMESERVER}/rooms/{quote(room, safe='')}/messages"
+                                           f"?dir=b&limit=20", token=ana)["chunk"]
+        if e["type"] == "m.room.message" and "/approve/?settings=" in e["content"].get("body", "")])}
+    if asked:
         break
     time.sleep(1)
 else:
     raise SystemExit("a5s didn't ask Ana to approve the settings in her Matrix chat.")
+[(room, said)] = asked.items()  # in one room only, and her own: never a group's
+there = call(f"{HOMESERVER}/rooms/{quote(room, safe='')}/joined_members", token=ana)["joined"]
+assert all(m == "@ana:a5s.test" or m.startswith("@a5s-") for m in there), there
 link = re.search(r"http\S+/approve/\?settings=[0-9a-f]{64}", said[0]).group(0)
 version = parse_qs(urlsplit(link).query)["settings"][0]
 print(f"Asked in Matrix: {said[0].splitlines()[0]}")

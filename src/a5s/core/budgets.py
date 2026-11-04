@@ -17,6 +17,7 @@ from datetime import date, datetime
 import psycopg
 
 from a5s.contract import Scenario
+from a5s.core import groups
 from a5s.core.obligations import local
 from a5s.definitions import KEPT, Budget
 
@@ -41,18 +42,25 @@ def day_of(scenario: Scenario, person: str, now: datetime) -> date:
     return local(who, now).date() if who else now.date()
 
 
+def payer(acts_for: list[str], trigger: dict | None) -> str | None:
+    """Whose day's budget a run uses: the one person it acts for, or in a group chat,
+    whoever asked (core/groups.py). None for a run for several people that nobody asked for."""
+    return groups.asker({"acts_for": acts_for, "trigger": trigger or {}})
+
+
 def refused(conn: psycopg.Connection, scenario: Scenario, budget: Budget, instance: str,
-            acts_for: list[str], kind: str, tokens: int, now: datetime) -> str | None:
+            acts_for: list[str], kind: str, tokens: int, now: datetime,
+            trigger: dict | None = None) -> str | None:
     """Why a run, or its next model call, would go past its budgets, if it would."""
     if tokens >= budget.per_run:
         return f"this run has used its budget of {budget.per_run:,} tokens"
-    if len(acts_for) != 1:
+    if (person := payer(acts_for, trigger)) is None:
         return None
     row = conn.execute("select tokens from spend where instance_id = %s and person = %s and day = %s",
-                       (instance, acts_for[0], day_of(scenario, acts_for[0], now))).fetchone()
+                       (instance, person, day_of(scenario, person, now))).fetchone()
     may = budget.per_person_per_day if kind in OWED else int(budget.per_person_per_day * (1 - KEPT))
     if row and row["tokens"] >= may:
-        return f"{instance} has used its budget for {acts_for[0]} today"
+        return f"{instance} has used its budget for {person} today"
     return None
 
 
@@ -61,7 +69,7 @@ def spent(conn: psycopg.Connection, scenario: Scenario, budget: Budget, run: dic
     """Count a model call's tokens against its run and its person's day. The day's use, if this
     call took it past four fifths of the budget, for a warning."""
     conn.execute("update runs set tokens = tokens + %s where id = %s", (tokens, run["run"]))
-    person = run["acts_for"][0] if len(run["acts_for"]) == 1 else ""
+    person = payer(list(run["acts_for"]), run.get("trigger")) or ""
     row = conn.execute(
         "insert into spend (instance_id, person, day, tokens) values (%s, %s, %s, %s) "
         "on conflict (instance_id, person, day) do update set tokens = spend.tokens + excluded.tokens "

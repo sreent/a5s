@@ -56,6 +56,7 @@ from a5s.core import (
     departures,
     digests,
     extractor,
+    groups,
     handles,
     ledger,
     models,
@@ -293,7 +294,8 @@ class Gateway:
         """
         taken = conn.execute(
             "update inbound set answered_at = now() where id = %s and answered_at is null "
-            "returning id::text, person, channel, agent, text", (inbound,)).fetchone()
+            "returning id::text, person, channel, agent, text, conversation, members",
+            (inbound,)).fetchone()
         if taken:
             return taken, None
         if conn.execute("select 1 from inbound where id = %s", (inbound,)).fetchone():
@@ -314,14 +316,15 @@ class Gateway:
         it, or else in the chat they last wrote in, where the agent's bot starts one if the
         chat lets it. a5s's own notices, about no agent, go in the conversation they last had.
         Otherwise, and where they've left the conversation, they collect it from the local
-        channel's inbox."""
+        channel's inbox. Never in a group chat (core/groups.py): what's written to someone
+        first is theirs alone."""
         local = {"channel": "local", "reply_to": {}}
         if agent is not None:
             had = conn.execute(
                 """
                 select channel, reply_to, at from (
                   select channel, reply_to, received_at as at from inbound
-                  where person = %(person)s and agent = %(agent)s
+                  where person = %(person)s and agent = %(agent)s and conversation is null
                   union all
                   select channel, reply_to, started_at from chats
                   where person = %(person)s and agent = %(agent)s and started_at is not null
@@ -330,8 +333,8 @@ class Gateway:
             if had is not None:
                 return self._in(conn, had) or local
         last = conn.execute("select channel, reply_to, received_at as at from inbound "
-                            "where person = %s order by received_at desc limit 1",
-                            (person,)).fetchone()
+                            "where person = %s and conversation is null "
+                            "order by received_at desc limit 1", (person,)).fetchone()
         if last is None or agent is None:
             return (last and self._in(conn, last)) or local
         who = self.scenario.person(person)
@@ -528,20 +531,24 @@ class Gateway:
 
     def answering(self, conn: psycopg.Connection, inst: dict, trigger: dict,
                   _now: datetime) -> Opening:
-        """A run that answers a message the core received, acting for its sender."""
+        """A run that answers a message the core received, acting for its sender, or in a
+        group chat, for everyone in it when it was sent (core/groups.py)."""
         try:
             inbound = str(uuid.UUID(str(trigger.get("inbound"))))
         except ValueError:
             raise HTTPException(400, "name the message the run answers") from None
         message, problem = self.take_message(conn, inbound)
         sender = message["person"] if message else None
-        topic = topics.of_message(conn, self.scenario, sender, inst["definition"],
-                                  message["text"]) if message else topics.GENERAL
+        group = message["conversation"] if message and groups.of(message["conversation"]) else None
+        topic = topics.of_message(conn, self.scenario, group or sender, inst["definition"],
+                                  message["text"], sorted(message["members"]) if group else None
+                                  ) if message else topics.GENERAL
+        acts_for = sorted(message["members"]) if group else [sender] if sender else []
         opening = Opening(
             trigger={"kind": "message", "inbound": inbound,
                      "channel": message["channel"] if message else None, "sender": sender,
-                     "topic": topic},
-            acts_for=[sender] if sender else [], reasons=[problem] if problem else [],
+                     "topic": topic, **({"conversation": group} if group else {})},
+            acts_for=acts_for, reasons=[problem] if problem else [],
             args={"channel": message["channel"] if message else None, "inbound": inbound},
             used=problem is not None and "already" in problem)
         if message and message["agent"] != inst["definition"]:
@@ -915,7 +922,8 @@ def create_app(gw: Gateway) -> FastAPI:
             reasons += gw.check_instance(conn, inst) + gw.release_problems(conn)
             release = gw.definitions.get(inst["definition"])
             spent = None if reasons or release is None else budgets.refused(
-                conn, gw.scenario, release.budget, body.instance, opening.acts_for, kind, 0, now)
+                conn, gw.scenario, release.budget, body.instance, opening.acts_for, kind, 0, now,
+                opening.trigger)
             pushing = []
             if spent:  # the work waits, a report for the next day; a5s gives what's owed itself
                 reasons.append(spent)
@@ -1545,8 +1553,14 @@ def create_app(gw: Gateway) -> FastAPI:
         profile of the one person it acts for."""
         with db.transaction(gw.url) as conn:
             row = load_run(conn, token)
-            person = gw.scenario.person(row["acts_for"][0]) if len(row["acts_for"]) == 1 else None
+            group = row["trigger"].get("conversation") if groups.of(
+                row["trigger"].get("conversation")) else None
+            person = gw.scenario.person(row["acts_for"][0]) if len(row["acts_for"]) == 1 \
+                and not group else None
             context = [profiles.section(conn, person)] if person else []
+            if group:
+                context.append(groups.section(gw.scenario, list(row["acts_for"]),
+                                              row["trigger"].get("sender")))
             topic = row["trigger"].get("topic", topics.GENERAL)
             if topic != topics.GENERAL and not parts.workable(gw.scenario, row, topic):
                 context.append({"title": f"The case: {topic}, from the records",
@@ -1562,6 +1576,7 @@ def create_app(gw: Gateway) -> FastAPI:
                         "text": "a5s holds these, as they were asked for, until their deciders "
                                 "decide them. Asking for one again only points at it.\n"
                                 + "\n".join(waiting)})
+            asker = gw.scenario.person(row["trigger"].get("sender") or "") if group else None
             if person and (offered := [  # so a yes in their next message finds what it's to
                     *profiles.waiting(conn, person, row["definition"]),
                     *reminders.waiting_for_yes(conn, person, row["definition"])]):
@@ -1572,10 +1587,20 @@ def create_app(gw: Gateway) -> FastAPI:
                                         + "\n".join(f"- {o}" for o in offered)})
                 provenance.read(conn, row["run"], provenance.A5S, context[-1]["text"],
                                 gw.scenario.record_pattern)  # a5s told it these dates
-            if person:  # and the day each turn of the conversation was said, which it's shown
+            elif asker and (offered := reminders.waiting_for_yes(conn, asker, row["definition"],
+                                                                 group)):
+                context.append({"title": f"What you offered {asker.name} here, waiting for "
+                                         "their yes",
+                                "text": f"You offered these in an earlier message in this chat. "
+                                        f"If {asker.name} says yes to one now, keep it with the "
+                                        "tool named, at once, without asking again. Only they "
+                                        "can.\n" + "\n".join(f"- {o}" for o in offered)})
+                provenance.read(conn, row["run"], provenance.A5S, context[-1]["text"],
+                                gw.scenario.record_pattern)
+            if person or group:  # and the day each turn of the conversation was said
                 said = conn.execute("select distinct to_char(at at time zone 'UTC', 'YYYY-MM-DD') "
                                     "as day from turns where person = %s and agent = %s",
-                                    (person.id, row["definition"])).fetchall()
+                                    (group or person.id, row["definition"])).fetchall()
                 provenance.read(conn, row["run"], "when things were said",
                                 " ".join(d["day"] for d in said), gw.scenario.record_pattern)
         definition = gw.definitions.get(row["definition"])
@@ -1799,10 +1824,12 @@ def create_app(gw: Gateway) -> FastAPI:
             for person in dict.fromkeys(told):
                 digests.keep(conn, person, row["definition"], row["id"], row["run"], text,
                              gw.clock())
-            for person in row["acts_for"]:  # and its next run knows a5s made it
+            group = row["trigger"].get("conversation")  # and its next run knows a5s made it:
+            for person in ([group] if groups.of(group) else row["acts_for"]):  # the group's, in one
                 noted(conn, person, row["definition"],
                       f"a5s made the change the {row['definition']} asked for, at level 2: "
-                      f"{change}", keys[0] if keys else None)
+                      f"{change}", keys[0] if keys else None,
+                      heard_by=list(row["acts_for"]) if groups.of(group) else None)
             for part in sorted({p for k in keys if (p := gw.scenario.part_of(k))}):
                 samples.draw(conn, gw.cfg.seal_keys, gw.scenario.name, "action", row["release"],
                              row["definition"],
@@ -2022,31 +2049,39 @@ def create_app(gw: Gateway) -> FastAPI:
             return sending_message(body, token, current)
 
     def sending_message(body: Message, token: str, current: Any) -> Any:
-        person = gw.scenario.person(body.to)
         text, removed = sanitize(body.text, gw.scenario.record_links)
-        recipient = {
-            "uid": {"type": "Person", "id": body.to},
-            "attrs": {"in_audience": bool(person and person.in_audience)},
-            "parents": [],
-        }
+
+        def recipient(who: str) -> dict:
+            person = gw.scenario.person(who)
+            return {"uid": {"type": "Person", "id": who},
+                    "attrs": {"in_audience": bool(person and person.in_audience)}, "parents": []}
+
         with db.transaction(gw.url) as conn:
             row = load_run(conn, token)
             inbound = row["trigger"].get("inbound")
+            # In a group chat, an answer goes to the chat, so to everyone in it, and it's kept
+            # as the asker's, such as for their inbox, if the chat won't take it
+            group = groups.of(body.to) and body.to == row["trigger"].get("conversation")
+            owner = row["trigger"].get("sender") if group else body.to
             route = None
             if row["trigger"].get("kind") in OWN_RUNS:
                 decision = Decision(False, ("a5s-runs-write-to-nobody",), explanations=(
                     "a5s's own runs, such as keeping a summary, write to nobody",))
-            elif body.to not in row["acts_for"]:
+            elif not group and body.to not in row["acts_for"]:
                 why = ("a run writes only to the people it acts for, such as whoever sent the "
                        "message it answers")
                 decision = Decision(False, ("writes-to-whom-it-acts-for",), explanations=(why,))
             else:
-                decision = gw.decide(row, "send_message", recipient, [])
-                route = (gw.message_of(conn, inbound) if inbound  # an answer, where it was asked
+                decisions = [gw.decide(row, "send_message", recipient(who), [])
+                             for who in (row["acts_for"] if group else [body.to])]
+                decision = next((d for d in decisions if not d.allowed), decisions[0])
+                route = (dict(gw.message_of(conn, inbound)) if inbound  # an answer, where asked
                          else {"channel": "digest", "reply_to": {}} if gw.for_digest(conn, row)
                          else gw.at_once(conn, body.to, row["definition"],  # not what they
                                          count=decision.allowed  # asked to be reminded of then
                                          and row["trigger"].get("kind") != "reminder"))
+            if group and route:  # so it goes only if nobody has joined since the run began
+                route["members"] = list(row["acts_for"])
             traced = provenance.traced(conn, gw.scenario, row, text) if decision.allowed else []
             said, note = text, None  # the agent's words, apart from a5s's own note on them
             if own := [t["value"] for t in traced if t["from"] is None]:  # people see it apart
@@ -2065,7 +2100,7 @@ def create_app(gw: Gateway) -> FastAPI:
             elif decision.allowed and route["channel"] == "batch":  # it waits for their next batch
                 urgent.hold(conn, body.to, row["definition"], row["id"], row["run"], shown, gw.clock())
             elif decision.allowed:  # in the chat, after this transaction, or in the inbox
-                sending = outbound(conn, route, body.to, shown, run=row["run"], instance=row["id"],
+                sending = outbound(conn, route, owner, shown, run=row["run"], instance=row["id"],
                                    agent=row["definition"], inbound=inbound)
         traces.note(current, **{"a5s.run.id": row["run"], "a5s.instance": row["id"],
                                 "a5s.channel": route["channel"] if route else None,
@@ -2119,13 +2154,14 @@ def create_app(gw: Gateway) -> FastAPI:
         return row["id"] if pushed else None
 
     def noted(conn: psycopg.Connection, person: str, agent: str | None, text: str,
-              topic: str | None) -> None:
+              topic: str | None, heard_by: list[str] | None = None) -> None:
         """a5s's own words to someone, in their conversation with the agent whose chat they
-        go in, so the agent's next run knows what the person is answering."""
+        go in, so the agent's next run knows what the person is answering: or in a group
+        chat's conversation, as heard by everyone in it then, though not sent there."""
         if agent:
-            conn.execute("insert into turns (person, agent, topic, role, content) "
-                         "values (%s, %s, %s, 'notice', %s)",
-                         (person, agent, topic or topics.GENERAL, text))
+            conn.execute("insert into turns (person, agent, topic, role, content, heard_by) "
+                         "values (%s, %s, %s, 'notice', %s, %s)",
+                         (person, agent, topic or topics.GENERAL, text, heard_by))
 
     def push(ids: list[int | None] | None = None) -> None:
         """Deliver what waits for a chat a5s writes to itself: the rows given, or every one
@@ -2146,7 +2182,14 @@ def create_app(gw: Gateway) -> FastAPI:
                 (now + timedelta(minutes=5), list(PUSHED), now, wanted, wanted)).fetchall()
         for row in sorted(rows, key=lambda r: r["id"]):  # in the order a5s wrote them
             run = str(row["run_id"]) if row["run_id"] else None
-            problem = deliver(row["route"], row["text"], run, row["instance_id"], card=row["card"])
+            expected = (row["route"] or {}).get("members")  # a group's answer: for whom it was
+            now_in = present(row["route"]) if expected is not None else None  # worked out
+            if now_in is not None and not set(now_in) <= set(expected):
+                kept_back(row, run)
+                continue
+            problem = ("a5s couldn't read who's in the chat" if expected is not None
+                       and now_in is None else deliver(row["route"], row["text"], run,
+                                                       row["instance_id"], card=row["card"]))
             with db.transaction(gw.url) as conn:
                 if problem is None:
                     conn.execute("update outbox set delivered_at = now(), retry_at = null, "
@@ -2165,6 +2208,38 @@ def create_app(gw: Gateway) -> FastAPI:
                     conn.execute("update outbox set retry_at = %s, problem = %s where id = %s",
                                  (now + timedelta(minutes=2 ** (row["attempts"] - 1)), problem,
                                   row["id"]))
+
+    def present(route: dict) -> list[str | None] | None:
+        """Who's in a group chat now, by their ids in the directory, None for anyone it doesn't
+        know: or None if the chat can't say."""
+        chat, reply_to = gw.chat(route["channel"]), route.get("reply_to") or {}
+        try:
+            if route["channel"] == "matrix" and chat is not None:
+                joined = chat.members(reply_to["room"], reply_to["bot"])
+                return None if joined is None else [
+                    p.id if (p := chat.person_of(u, gw.scenario)) else None
+                    for u in joined if not chat.agent_of(u)]
+            if route["channel"] == "teams" and chat is not None:
+                return chat.members(reply_to, gw.scenario)
+        except (httpx.HTTPError, ValueError, KeyError):
+            log.warning("couldn't read who's in a %s chat", route["channel"])
+        return None
+
+    def kept_back(row: dict, run: str | None) -> None:
+        """An answer for a group chat someone joined while its run was answering: it was worked
+        out for the people there then, so it goes to whoever asked, in their inbox, and the chat
+        hears why, in answer to them."""
+        with db.transaction(gw.url) as conn:
+            conn.execute("update outbox set channel = 'local', inbound_id = null, retry_at = null, "
+                         "problem = 'someone joined the chat while it was answering' where id = %s",
+                         (row["id"],))
+            ledger.append(conn, {"kind": "message", "action": "kept back", "run": run,
+                                 "instance": row["instance_id"], "acts_for": [row["person"]],
+                                 "decision": "record", "args": {"outbox": row["id"]},
+                                 "outcome": {"status": "error",
+                                             "error": "someone joined the chat while it was answering"}})
+        route = {k: v for k, v in row["route"].items() if k != "members"}
+        deliver(route, groups.JOINED, run, row["instance_id"])
 
     @app.post("/proposals/sweep", dependencies=[Depends(service)])
     def sweep_proposals() -> dict:
@@ -2323,7 +2398,11 @@ def create_app(gw: Gateway) -> FastAPI:
                              "instance": p["instance_id"], "acts_for": list(p["acts_for"]),
                              "decision": "record", "of": p["seq"],
                              "args": {"proposal": proposals.key(p), "by": deciders_}})
-        told_to = list(p["acts_for"])
+        asked = conn.execute("select trigger from runs where id = %s", (p["run_id"],)).fetchone()
+        group = asked["trigger"].get("conversation") if asked and groups.of(
+            asked["trigger"].get("conversation")) else None
+        told_to = [asked["trigger"]["sender"]] if group and asked["trigger"].get("sender") \
+            else list(p["acts_for"])  # in a group chat, whoever asked: a5s never writes there first
         if not told_to:  # a run for nobody: its instance's owner hears instead
             owner = conn.execute("select owner from instances where id = %s",
                                  (p["instance_id"],)).fetchone()
@@ -2334,6 +2413,9 @@ def create_app(gw: Gateway) -> FastAPI:
             sends.append(outbound(conn, route, person, text, instance=p["instance_id"],
                                   agent=p["definition"]))
             noted(conn, person, p["definition"], text, next(iter(p["records"]), None))
+        if group:  # and the group's next run knows, as everyone there then heard it asked
+            noted(conn, group, p["definition"], text, next(iter(p["records"]), None),
+                  heard_by=list(p["acts_for"]))
         for person in dict.fromkeys(deciders_):  # and those who decided it, in their digest
             if person not in told_to:
                 digests.keep(conn, person, p["definition"], p["instance_id"], str(p["run_id"]),
@@ -2551,10 +2633,11 @@ def create_app(gw: Gateway) -> FastAPI:
         with db.transaction(gw.url) as conn:
             row = conn.execute(
                 "update inbound set notices = notices + 1 where id = %s and notices < 3 "
-                "returning person, agent, channel, reply_to", (inbound,)).fetchone()
+                "returning person, agent, channel, reply_to, members", (inbound,)).fetchone()
             if row is not None:
                 ledger.append(conn, {"kind": "notice", "action": "send", "run": None,
-                                     "instance": body.instance, "acts_for": [row["person"]],
+                                     "instance": body.instance,
+                                     "acts_for": list(row["members"] or [row["person"]]),
                                      "decision": "allow", "args": {
                                          "inbound": inbound, "chars": len(text),
                                          "sha256": hashlib.sha256(text.encode()).hexdigest()}})
@@ -2599,7 +2682,7 @@ def create_app(gw: Gateway) -> FastAPI:
             release = gw.definitions.get(row["definition"])
             spent = None if release is None else budgets.refused(
                 conn, gw.scenario, release.budget, row["id"], list(row["acts_for"]),
-                row["trigger"].get("kind"), row["tokens"], gw.clock())
+                row["trigger"].get("kind"), row["tokens"], gw.clock(), row["trigger"])
             if refusal:
                 decision = Decision(False, ("agents-use-their-own-tools",), explanations=(refusal,))
             elif spent:

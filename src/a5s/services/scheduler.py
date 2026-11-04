@@ -35,7 +35,7 @@ import psycopg
 from a5s import db
 from a5s.config import Config
 from a5s.contract import INSTANCE_APPROVER, PART_OWNER, Scenario
-from a5s.core import registry
+from a5s.core import groups, registry
 from a5s.services import context, summaries
 from a5s.worker import BudgetSpent, ModelDown, run_agent
 
@@ -96,10 +96,12 @@ class Scheduler:
                 return person.name
         return "whoever runs a5s"
 
-    def _serving(self, instances: list[dict], person: str, text: str) -> dict | None:
-        """The instance of an agent that answers someone: one that serves them, and, if their
-        message names a record, one that works in the record's part."""
-        theirs = [i for i in instances if registry.serving(self.scenario, i["serves"], person)]
+    def _serving(self, instances: list[dict], people: list[str], text: str) -> dict | None:
+        """The instance of an agent that answers someone: one that serves them, and everyone
+        else in their group chat, and, if their message names a record, one that works in the
+        record's part."""
+        theirs = [i for i in instances
+                  if all(registry.serving(self.scenario, i["serves"], p) for p in people)]
         pattern = getattr(self.scenario, "record_pattern", None)
         for found in (re.finditer(pattern, text) if pattern else ()):
             part = self.scenario.part_of(found.group(0))
@@ -128,8 +130,9 @@ class Scheduler:
     def _turn(self, claim: dict, text: str, run: str, topic: str) -> None:
         """Note in the conversation what a5s told someone, so a later run knows."""
         with db.transaction(self.cfg.database_url) as conn:
-            context.add_turn(conn, person=claim["person"], agent=claim["agent"], role="notice",
-                             content=text, run=run, topic=topic)
+            context.add_turn(conn, person=claim.get("conversation") or claim["person"],
+                             agent=claim["agent"], role="notice", content=text, run=run,
+                             topic=topic, heard_by=claim.get("members"))
 
     # Taking work, and holding its conversation, or its schedule, while working on it
 
@@ -154,12 +157,15 @@ class Scheduler:
             row = conn.execute(
                 """
                 select i.id::text as id, i.channel, i.person, i.agent, i.text, i.attempts,
-                       i.person || '/' || i.agent || '/' || %(topic)s as lease
+                       coalesce(i.conversation, i.person) as conversation, i.members,
+                       coalesce(i.conversation, i.person) || '/' || i.agent || '/' || %(topic)s
+                         as lease
                 from inbound i
                 where i.answered_at is null and (i.retry_at is null or i.retry_at <= now())
                   and not exists (
                     select 1 from leases l
-                    where l.key = i.person || '/' || i.agent || '/' || %(topic)s
+                    where l.key = coalesce(i.conversation, i.person) || '/' || i.agent || '/'
+                                  || %(topic)s
                       and l.expires_at > now())
                 order by i.received_at limit 1
                 for update of i skip locked
@@ -240,13 +246,16 @@ class Scheduler:
 
     def handle(self, claim: dict) -> None:
         person, agent, inbound = claim["person"], claim["agent"], claim["id"]
+        group = groups.of(claim.get("conversation"))
         with db.transaction(self.cfg.database_url) as conn:
             instances = conn.execute(
                 "select * from instances where definition = %s and status <> 'retired' "
                 "order by (status = 'active') desc, id", (agent,)).fetchall()
-        inst = self._serving(instances, person, claim["text"])
+        inst = self._serving(instances, list(claim["members"]) if group else [person],
+                             claim["text"])
         if inst is None:
-            self._tell(inbound, self._nobody_serves(agent, person))
+            self._tell(inbound, groups.NOBODY_SERVES.format(agent=agent) if group
+                       else self._nobody_serves(agent, person))
             self._later(claim, never=True)
             return
         try:
@@ -290,18 +299,23 @@ class Scheduler:
         person, agent, inbound = claim["person"], claim["agent"], claim["id"]
         run, token = opened["run"], opened["token"]
         topic = opened.get("topic") or context.GENERAL  # the core decides it
+        conversation = claim.get("conversation") or person  # theirs, or their group chat's
+        members = list(claim["members"]) if groups.of(conversation) else None
+        heard = {"speaker": person, "heard_by": members} if members else {}
         outcome = "failed"
         try:
             with db.transaction(self.cfg.database_url) as conn:
-                context.add_turn(conn, person=person, agent=agent, role="person",
-                                 content=claim["text"], run=run, topic=topic)
-                history = context.history(conn, person=person, agent=agent, topic=topic,
-                                          chars=opened.get("history_chars") or context.CHARS)
+                context.add_turn(conn, person=conversation, agent=agent, role="person",
+                                 content=claim["text"], run=run, topic=topic, **heard)
+                history = context.history(
+                    conn, person=conversation, agent=agent, topic=topic,
+                    chars=opened.get("history_chars") or context.CHARS, members=members,
+                    names={m: p.name for m in members or () if (p := self.scenario.person(m))})
             reply = self.worker(self.cfg.gateway_url, token, history)
             if not reply.strip():
                 raise RuntimeError("the agent's reply was empty")
             sent = self.gw.post("/run/messages", headers={"Authorization": f"Bearer {token}"},
-                                json={"to": person, "text": reply})
+                                json={"to": conversation, "text": reply})
             if sent.status_code == 403:
                 outcome = "reply denied"
                 self._tell(inbound, told := "I couldn't send you my reply, sorry.", inst["id"])
@@ -309,11 +323,12 @@ class Scheduler:
                 return
             sent.raise_for_status()
             with db.transaction(self.cfg.database_url) as conn:
-                context.add_turn(conn, person=person, agent=agent, role="agent",
-                                 content=sent.json()["text"], run=run, topic=topic)
+                context.add_turn(conn, person=conversation, agent=agent, role="agent",
+                                 content=sent.json()["text"], run=run, topic=topic,
+                                 heard_by=members)
                 if note := sent.json().get("note"):  # a5s's own words on the agent's values
-                    context.add_turn(conn, person=person, agent=agent, role="notice",
-                                     content=note, run=run, topic=topic)
+                    context.add_turn(conn, person=conversation, agent=agent, role="notice",
+                                     content=note, run=run, topic=topic, heard_by=members)
             outcome = "done"
         except ModelDown:
             log.warning("the model for run %s isn't answering", run)
@@ -335,7 +350,8 @@ class Scheduler:
             self._turn(claim, told, run, topic)
         finally:
             self._close(run, outcome)
-        if outcome == "done":  # once the person has their answer
+        if outcome == "done" and not members:  # once the person has their answer: a
+            # group's conversation keeps no summary, as nobody may join it who heard all of it
             self._fold(inst["id"], person, agent, topic, opened.get("history_chars"))
 
     def _fold(self, instance: str, person: str, agent: str, topic: str,
