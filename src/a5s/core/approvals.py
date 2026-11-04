@@ -191,13 +191,23 @@ def changes(before: Settings | None, after: Settings, definitions: dict[str, Def
                                   f"becomes {_percent(b) if b else 'none, so none earns it'}"
                                   + (f", instead of {_percent(a)}" if a else "") + ".",
                           "widens": b is not None and (a is None or b < a)})
+    asked = {i.id: i.definition for i in after.instances}
     for new in after.instances:
         old = was.pop(new.id, None)
         if old is None:
             run_by = f", run by {words.names([o])}" if (o := words.owner(new, "owner")) else ""
             found.append({"text": f"Adds {new.id}: the {new.definition}, {words.where(new)}, "
-                                  f"serving {words.names(new.serves)}{run_by}.", "widens": True})
+                                  f"serving {words.names(new.serves)}{run_by}."
+                                  + (f" It may ask {_asked(new.asks, asked)} what they know, "
+                                     "for the people it acts for." if new.asks else ""),
+                          "widens": True})
             continue
+        if more := [a for a in new.asks if a not in old.asks]:
+            found.append({"text": f"{new.id} may ask {_asked(more, asked)} what they know, "
+                                  "for the people it acts for.", "widens": True})
+        if fewer := [a for a in old.asks if a not in new.asks]:
+            found.append({"text": f"{new.id} no longer asks {_asked(fewer, asked)}.",
+                          "widens": False})
         if new.definition != old.definition:
             found.append({"text": f"{new.id} becomes the {new.definition}, instead of the "
                                   f"{old.definition}.", "widens": True})
@@ -241,6 +251,11 @@ def changes(before: Settings | None, after: Settings, definitions: dict[str, Def
                       "widens": False}]
 
 
+def _asked(ids: list[str] | tuple[str, ...], definitions: dict[str, str]) -> str:
+    """The instances an instance may ask, in words: the watcher (watcher-finance)."""
+    return names_of([f"the {definitions[a]} ({a})" if a in definitions else a for a in ids])
+
+
 def _percent(share: float) -> str:
     return f"{share * 100:g}%"
 
@@ -261,7 +276,9 @@ def described(settings: Settings, definitions: dict[str, Definition],
         if deputy := words.owner(i, "deputy"):
             run_by.append(f"with {words.names([deputy])} as deputy")
         told.append(f"{i.id}: the {i.definition}, {words.where(i)}, serving "
-                    f"{words.names(i.serves)}" + (f", {' '.join(run_by)}" if run_by else "") + ".")
+                    f"{words.names(i.serves)}" + (f", {' '.join(run_by)}" if run_by else "") + "."
+                    + (f" It may ask {_asked(i.asks, {j.id: j.definition for j in settings.instances})}"
+                       " what they know, for the people it acts for." if i.asks else ""))
         told += [f"{i.id} works at level {lv} for {action} in {part}"
                  + (", where it acts and reports, once graded samples show it's accurate "
                     "enough: until then a5s holds it at level 1" if lv >= 2 else "") + "."

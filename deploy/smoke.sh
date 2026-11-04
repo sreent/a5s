@@ -271,6 +271,7 @@ from pathlib import Path
 import yaml
 settings = yaml.safe_load(Path("scenarios/sample/settings.yaml").read_text())
 settings["instances"]["assistant-finance"]["serves"].append("chen")
+settings["instances"]["assistant-finance"]["asks"] = ["watcher-finance"]
 Path("/tmp/next.yaml").write_text(yaml.safe_dump({**settings, "serial": settings["serial"] + 1}))
 subprocess.run(["a5s", "propose", "--file", "/tmp/next.yaml"], check=True)
 PY
@@ -340,7 +341,9 @@ token = call(f"{CORE}/approve/token", {"grant_type": "authorization_code", "code
                                        "code": parse_qs(urlsplit(location).query)["code"][0],
                                        "redirect_uri": back})["id_token"]
 seen = call(f"{CORE}/approve/settings/{version}/review", {"salt": salt}, token)
-assert [c["text"] for c in seen["changes"]] == ["assistant-finance serves Chen Wei as well."], seen
+assert [c["text"] for c in seen["changes"]] == [
+    "assistant-finance may ask the watcher (watcher-finance) what they know, for the people it "
+    "acts for.", "assistant-finance serves Chen Wei as well."], seen
 print(call(f"{CORE}/approve/settings/{version}", {"salt": salt}, token))
 PY
 compose exec -T gateway python - <<'PY'
@@ -358,6 +361,24 @@ PY
 
 compose exec -T gateway a5s ledger tail -n 200 | grep -q '"identity": "verified"'
 echo "The core checked Ana's identity itself, and recorded it."
+
+# The assistant asks the watcher, which the new settings let it, for Ana: a run of the
+# watcher answers, for her alone, and the assistant tells her what it said
+ana=$(sign_in ana)
+status=$(send -H "authorization: Bearer $ana" \
+  -d '{"agent": "assistant", "text": "Ask the watcher which questions mention an invoice"}')
+[ "$status" = 202 ] || { echo "Ana's message got $status, not 202."; exit 1; }
+curl -sf -o "$reply" -H "authorization: Bearer $ana" "$channel/$(field '["message"]')?wait=120"
+echo "Reply: $(field '["replies"]')"
+field '["replies"][0]' | grep -q "^The watcher says: I looked it up and found Q-1001" ||
+  { echo "The assistant didn't pass on the watcher's answer."; exit 1; }
+compose exec -T gateway python - <<'PY'
+import os, psycopg
+with psycopg.connect(os.environ["A5S_DATABASE_URL"]) as conn:
+    rows = conn.execute("select asker, asked, acts_for, answer is not null from questions").fetchall()
+assert rows == [("assistant-finance", "watcher-finance", ["ana"], True)], rows
+print("The assistant asked the watcher for Ana, and a run of the watcher answered, for her alone.")
+PY
 compose exec -T anchor a5s anchor
 compose exec -T anchor python - <<'PY'
 import boto3

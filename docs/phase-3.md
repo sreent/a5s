@@ -1,6 +1,6 @@
 # Phase 3
 
-**Status:** Confirmed on 4 November 2026, and step 1, group conversations, under way ([progress](#progress)) · **Under:** [Architecture](architecture.md)
+**Status:** Confirmed on 4 November 2026. Steps 1 and 2, group conversations and agent to agent, are built ([progress](#progress)) · **Under:** [Architecture](architecture.md)
 
 Phase 3 lets agents work with more than one person at a time, and with each other. In [phase 1](phase-1.md) and [phase 2](phase-2.md), each person has a conversation of their own with each agent, and a5s turns away a chat with anyone else in it. In phase 3, people can bring an agent into a group chat, an agent can ask another what it knows, and an agent can keep a notebook of what it learns from records. Each keeps the rules phase 2 ends with: a run sees only what everyone it acts for may see, authority never passes from one person or agent to another, and what's said to an agent reaches only runs for people who heard it.
 
@@ -60,3 +60,13 @@ Step 1, group conversations, is built:
 Its tests are in [`tests/test_groups.py`](../tests/test_groups.py), and the smoke test brings the assistant into a room with two people on a real Synapse homeserver, where it answers only the mention, for both of them.
 
 Not yet: a summary of a group's conversation, so a run in a long one is given only its latest turns, and searches the rest; and Teams group chats against a real tenant, which the first day there checks ([phase 1](phase-1.md#progress)).
+
+Step 2, agent to agent, is built:
+
+| Built | Where |
+| --- | --- |
+| Whom an instance may ask: its settings name the instances, which the owners of the parts both work in approve, worded for them as widening, and a release says whether its agent asks at all. Settings that name anything but another instance don't check out, and each run checks its instance's record against them. | [`contract.py`](../src/a5s/contract.py), [`core/approvals.py`](../src/a5s/core/approvals.py), [`core/registry.py`](../src/a5s/core/registry.py) |
+| `ask_agent`, a typed tool, offered only to a run whose instance may ask someone, which says whom. The question is kept first, outside any transaction, so the scheduler takes it ahead of messages, and the run that asked waits two minutes at most for its answer. | [`core/asking.py`](../src/a5s/core/asking.py), [`core/gateway.py`](../src/a5s/core/gateway.py), [`services/scheduler.py`](../src/a5s/services/scheduler.py) |
+| The run that answers: of the instance asked, for the same people as the run that asked, from an instance that serves them all, with the question as a5s's task and the asker's mark. It writes to nobody, and isn't offered `ask_agent`. Its answer goes back without its handles, which no other run can use; its mark marks the run that asked; and only the values it had read count as found there. The ledger links the two runs, and the question and its answer are kept as an A2A 1.0 task. | [`core/gateway.py`](../src/a5s/core/gateway.py) |
+
+Its tests are in [`tests/test_asking.py`](../tests/test_asking.py), with a live case where the assistant, on a real model, asks the watcher for the person it's answering.

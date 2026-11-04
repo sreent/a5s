@@ -2,6 +2,8 @@
 
 It looks up what the person asked about, then says what it found, so a run
 makes a model call, a tool call through the gateway, and another model call.
+Asked to ask the watcher, and offered the tool to, it asks it, and says what
+it answered.
 """
 
 import json
@@ -27,10 +29,23 @@ def complete(body: dict) -> dict:
     messages = body["messages"]
     last = messages[-1]
     if last["role"] == "tool":
+        if last["content"].startswith("{") and '"answer"' in last["content"]:  # another agent's
+            told = json.loads(last["content"])
+            return reply(body, {"role": "assistant",
+                                "content": f"The {told['agent']} says: {told['answer']}"})
         found = json.loads(last["content"]) if last["content"].startswith("[") else []
         keys = ", ".join(r["key"] for r in found) or "nothing"
         return reply(body, {"role": "assistant", "content": f"I looked it up and found {keys}."})
-    words = re.findall(r"[a-z0-9-]+", str(last.get("content", "")).lower())
+    said = str(last.get("content", "")).split("] ", 1)[-1]  # after when it was said
+    offered = {t["function"]["name"] for t in body.get("tools") or []}
+    if "ask the watcher" in said.lower() and "ask_agent" in offered:
+        return reply(body, {"role": "assistant", "content": None, "tool_calls": [{
+            "id": f"call-{time.time_ns()}", "type": "function", "function": {
+                "name": "ask_agent", "arguments": json.dumps({"agent": "watcher",
+                                                              "question": said})}}]})
+    if "asks you this" in said:  # another agent's question, apart from a5s's words around it
+        said = said.split(": ", 1)[-1].split("\n\n")[0]
+    words = re.findall(r"[a-z0-9-]+", said.lower())
     query = words[-1] if words else ""  # the last word, such as "invoice"
     return reply(body, {"role": "assistant", "content": None, "tool_calls": [{
         "id": f"call-{time.time_ns()}", "type": "function",

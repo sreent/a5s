@@ -238,8 +238,8 @@ def apply(
             """
             insert into instances
               (id, definition, release, level, parts, actions, grants, model, serves, owner,
-               deputy, pins, settings_version)
-            values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+               deputy, pins, settings_version, asks)
+            values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             on conflict (id) do update set
               definition = excluded.definition, release = excluded.release,
               level = excluded.level, parts = excluded.parts, actions = excluded.actions,
@@ -247,6 +247,7 @@ def apply(
               model = excluded.model,
               serves = excluded.serves, owner = excluded.owner, deputy = excluded.deputy,
               pins = excluded.pins, settings_version = excluded.settings_version,
+              asks = excluded.asks,
               status = case when instances.status <> 'retired' then instances.status
                             when instances.suspended_by is not null then 'suspended'
                             else 'active' end,
@@ -257,7 +258,7 @@ def apply(
                 grants, definition.model,
                 list(s.serves), s.owner or definition.owner, s.deputy or definition.deputy,
                 Jsonb(definition.pins),
-                settings.version,
+                settings.version, list(s.asks),
             ),
         )
         ledger.append(

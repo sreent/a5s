@@ -85,4 +85,5 @@ def sweep(conn: psycopg.Connection) -> dict[str, int]:
                       f"and drawn_at < now() - interval '{KEPT}'")  # nobody graded them
     delete("counts", "delete from action_counts where at < now() - interval '31 days'")
     delete("departures", f"delete from departures where archived_at < now() - interval '{KEPT}'")
+    delete("questions", f"delete from questions where asked_at < now() - interval '{KEPT}'")
     return gone

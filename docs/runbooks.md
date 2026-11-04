@@ -93,6 +93,14 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 2. A mention it won't work on gets one message saying why, and the ledger records the reason: someone in the chat the directory doesn't know, more than 20 people, a Matrix room that shows people what was said before they joined, which its settings change, or a team's channel in Teams, where it doesn't work. Nothing else runs.
 3. If no instance of the agent serves everyone in the chat, it says so. A version of the settings that serves them all, which the part owners approve, lets it work there, or people ask one to one.
 
+## An agent's question to another goes unanswered
+
+**Shows as:** an `ask_agent` call that failed because the other agent didn't answer.
+
+1. The question's row in `questions` says why: the instance asked was suspended, out of budget, or not one the settings let it ask, the run that asked had ended, or no answer came within two minutes, such as when every worker was busy.
+2. The ledger links the two runs: the asked run's `open` names the run that asked, and its `answer` names it too.
+3. Nothing is left waiting: a question given up stays given up, and the agent tells the person it couldn't get an answer.
+
 ## Calls are denied
 
 **Shows as:** many denials of one kind.

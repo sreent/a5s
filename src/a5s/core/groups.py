@@ -65,6 +65,14 @@ def asker(run: dict[str, Any]) -> str | None:
     return acts_for[0] if len(acts_for) == 1 else None
 
 
+def names(scenario: Any, people: list[str]) -> str:
+    """People by their names, in words: Ana Ortiz and Ben Okafor."""
+    named = [p.name if (p := scenario.person(who)) else who for who in people]
+    if not named:
+        return "nobody"
+    return named[0] if len(named) == 1 else f"{', '.join(named[:-1])} and {named[-1]}"
+
+
 def section(scenario: Any, members: list[str], sender: str | None) -> dict:
     """Who a run in a group works for, as it's given it."""
     named = [(p.name if (p := scenario.person(m)) else m) + (" (who asked)" if m == sender else "")

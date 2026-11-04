@@ -35,7 +35,7 @@ import psycopg
 from a5s import db
 from a5s.config import Config
 from a5s.contract import INSTANCE_APPROVER, PART_OWNER, Scenario
-from a5s.core import groups, registry
+from a5s.core import asking, groups, registry
 from a5s.services import context, summaries
 from a5s.worker import BudgetSpent, ModelDown, run_agent
 
@@ -150,8 +150,31 @@ class Scheduler:
             (key, holder, LEASE),
         ).fetchone() is not None
 
+    def _question(self) -> dict | None:
+        """The oldest question another agent's run waits on an answer to, taken."""
+        with db.transaction(self.cfg.database_url) as conn:
+            row = conn.execute(
+                "update questions set claimed_at = now() where id = ("
+                "  select id from questions where claimed_at is null and answered_at is null "
+                "  and problem is null order by asked_at limit 1 for update skip locked) "
+                "returning id::text, asked").fetchone()
+        return None if row is None else {"kind": asking.KIND, "id": row["id"],
+                                         "instance": row["asked"], "lease": f"question/{row['id']}",
+                                         "holder": str(uuid.uuid4())}
+
+    def answer_questions(self) -> int:
+        """Have each question that waits answered: how many."""
+        n = 0
+        while (claim := self._question()) is not None:
+            self._answer(claim)
+            n += 1
+        return n
+
     def _claim(self) -> dict | None:
-        """The oldest waiting message whose conversation is free, with that conversation leased."""
+        """A question another agent's run waits on, first, or else the oldest waiting message
+        whose conversation is free, with that conversation leased."""
+        if (question := self._question()) is not None:
+            return question
         holder = str(uuid.uuid4())
         with db.transaction(self.cfg.database_url) as conn:
             row = conn.execute(
@@ -225,6 +248,8 @@ class Scheduler:
         try:
             if message:
                 self.handle(claim)
+            elif claim["kind"] == asking.KIND:
+                self._answering(claim)
             else:
                 self._work(claim)
         except Retry:
@@ -409,6 +434,49 @@ class Scheduler:
             self.gw.post(f"/runs/{run}/close", headers=self.service, json={"outcome": outcome})
         except httpx.HTTPError:
             log.exception("couldn't close run %s; it expires on its own", run)
+
+    # Answering another agent's question (core/asking.py)
+
+    def _unanswered(self, question: str, why: str) -> None:
+        with db.transaction(self.cfg.database_url) as conn:
+            conn.execute("update questions set problem = %s where id = %s and answered_at is null "
+                         "and problem is null", (why[:200], question))
+
+    def _answering(self, claim: dict) -> None:
+        """Run the instance a question is for, if the core opens the run, and give its answer
+        back to the run that asked, through the core. It writes to nobody else."""
+        question = claim["id"]
+        try:
+            opened = self.gw.post("/runs", headers=self.service, json={
+                "instance": claim["instance"], "trigger": {"kind": asking.KIND,
+                                                           "question": question}})
+        except httpx.HTTPError:
+            self._unanswered(question, "a5s couldn't reach the core")
+            return
+        if opened.status_code >= 400:  # the core says why, for the run that asked
+            self._unanswered(question, f"the core didn't open a run to answer it: "
+                                       f"{opened.text[:150]}")
+            return
+        run, token, task = (opened.json()[k] for k in ("run", "token", "task"))
+        outcome = "failed"
+        try:
+            reply = self.worker(self.cfg.gateway_url, token, [
+                {"role": "task", "content": task, "at": datetime.now(UTC).isoformat()}])
+            if not reply.strip():
+                raise RuntimeError("the agent's answer was empty")
+            self.gw.post("/run/answer", headers={"Authorization": f"Bearer {token}"},
+                         json={"text": reply}).raise_for_status()
+            outcome = "done"
+        except ModelDown:
+            outcome = "model unavailable"
+        except BudgetSpent:
+            outcome = "budget spent"
+        except Exception:
+            log.exception("run %s, answering a question, failed", run)
+        finally:
+            if outcome != "done":
+                self._unanswered(question, f"its run ended: {outcome}")
+            self._close(run, outcome)
 
     # Reminding people of obligations, telling them about their records, and schedules
 

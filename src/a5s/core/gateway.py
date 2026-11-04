@@ -18,6 +18,7 @@ import json
 import logging
 import re
 import secrets
+import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
@@ -49,6 +50,7 @@ from a5s.contract import (
 )
 from a5s.core import (
     approvals,
+    asking,
     budgets,
     chats,
     coretools,
@@ -88,7 +90,8 @@ from a5s.definitions import Context, Definition
 
 log = logging.getLogger(__name__)
 CORE_TOOLS = {**reminders.TOOLS, **digests.TOOLS, **profiles.TOOLS,  # a5s's own, on its
-              **recall.TOOLS, extractor.ASK: extractor.TOOL}  # own records
+              **recall.TOOLS, extractor.ASK: extractor.TOOL,  # own records, and asking
+              asking.ASK: asking.TOOL}  # another agent (core/asking.py)
 RUN_MINUTES = 60  # the longest a run may last [TBC]; its token dies with it
 CHARS_PER_TOKEN = 4  # roughly, for a run's budget for its conversation
 OWN_RUNS = ("summary",)  # a5s's own work on a conversation: no tools, and it writes to nobody
@@ -261,10 +264,10 @@ class Gateway:
         expected = (signed.definition, sorted(signed.serves), level, scope,
                     registry.action_levels(signed, release), sorted(release.grants),
                     release.model, release.pins, signed.owner or release.owner,
-                    signed.deputy or release.deputy)
+                    signed.deputy or release.deputy, sorted(signed.asks))
         actual = (inst["definition"], sorted(inst["serves"]), inst["level"], inst["parts"] or {},
                   inst["actions"] or {}, sorted(inst["grants"]), inst["model"], inst["pins"],
-                  inst["owner"], inst["deputy"])
+                  inst["owner"], inst["deputy"], sorted(inst["asks"] or []))
         if expected != actual:
             log.error("instance %s doesn't match its signed settings and release", inst["id"])
             return [f"{inst['id']}'s record doesn't match its signed settings and release"]
@@ -611,6 +614,38 @@ class Gateway:
             opening.used = True
         return opening
 
+    def questioned(self, conn: psycopg.Connection, inst: dict, trigger: dict,
+                   _now: datetime) -> Opening:
+        """A run that answers another agent's question, acting for the same people as the run
+        that asked, with the question as a5s's task, and its mark (core/asking.py)."""
+        try:
+            question = str(uuid.UUID(str(trigger.get("question"))))
+        except ValueError:
+            raise HTTPException(400, "name the question the run answers") from None
+        row = conn.execute("select * from questions where id = %s for update",
+                           (question,)).fetchone()
+        if row is None:
+            return Opening({"kind": asking.KIND, "question": question}, [],
+                           {"question": question}, ["there's no such question"])
+        by = {"question": question, "asked_by": row["asker"], "by_run": str(row["asked_by_run"])}
+        opening = Opening(trigger={"kind": asking.KIND, **by}, acts_for=list(row["acts_for"]),
+                          args=by, reasons=[], marked=bool(row["read_outside"]),
+                          used=bool(row["run_id"] or row["answered_at"] or row["problem"]))
+        if opening.used:
+            opening.reasons.append("the question has been taken already")
+        if row["asked"] != inst["id"]:
+            opening.reasons.append(f"the question is for {row['asked']}, not {inst['id']}")
+        asker = conn.execute("select * from instances where id = %s", (row["asker"],)).fetchone()
+        if asker is None or inst["id"] not in (asker["asks"] or []) or self.check_instance(
+                conn, asker):
+            opening.reasons.append(f"{row['asker']} may not ask {inst['id']}, by the settings "
+                                   "in force")
+        if not conn.execute("select 1 from runs where id = %s and closed_at is null and "
+                            "expires_at > now()", (row["asked_by_run"],)).fetchone():
+            opening.reasons.append("the run that asked has ended")
+        opening.task = asking.brief(self.scenario, row, asker["definition"] if asker else "agent")
+        return opening
+
     def reporting(self, conn: psycopg.Connection, inst: dict, trigger: dict,
                   now: datetime) -> Opening:
         """A run that tells someone what changed in their records, and what fell due, acting
@@ -801,6 +836,7 @@ class Opening:
     used: bool = False  # the trigger has been used already, such as a message answered before
     due: datetime | None = None  # the time a schedule or a report fires for
     seen: dict | None = None  # a report's records as it tells them, kept once they have it
+    marked: bool = False  # it starts as a run that has read content from outside
 
 
 def values_of(traced: list[dict]) -> dict:
@@ -856,6 +892,10 @@ class Message(BaseModel):
     text: str
 
 
+class Answer(BaseModel):
+    text: str
+
+
 class Notice(BaseModel):
     inbound: str  # the message it answers
     text: str
@@ -901,11 +941,13 @@ def create_app(gw: Gateway) -> FastAPI:
     def opening_run(body: OpenRun, current: Any) -> dict:
         kind = body.trigger.get("kind")
         opens = {"message": gw.answering, "obligation": gw.reminding, "schedule": gw.scheduled,
-                 "report": gw.reporting, "reminder": gw.following_up, "summary": gw.summarising}
+                 "report": gw.reporting, "reminder": gw.following_up, "summary": gw.summarising,
+                 asking.KIND: gw.questioned}
         if kind not in opens:
             raise HTTPException(400, "a run answers a message, reminds someone of an obligation "
                                      "or of what they asked, works on a schedule, tells someone "
-                                     "about their records, or keeps a topic's summary")
+                                     "about their records, keeps a topic's summary, or answers "
+                                     "another agent's question")
         token = secrets.token_urlsafe(32)
         run_id = str(uuid.uuid4())
         now = gw.clock()
@@ -958,12 +1000,21 @@ def create_app(gw: Gateway) -> FastAPI:
                     "%s)",
                     (run_id, body.instance, token_hash(token), Jsonb(opening.trigger),
                      opening.acts_for, RUN_MINUTES,
-                     gw.reads_outside(conn, inst["definition"], opening.acts_for,
-                                      opening.trigger.get("topic", topics.GENERAL))),
+                     opening.marked or gw.reads_outside(
+                         conn, inst["definition"], opening.acts_for,
+                         opening.trigger.get("topic", topics.GENERAL))),
                 )
+                if kind == asking.KIND:  # whose run answers it, at work on it now
+                    conn.execute("update questions set run_id = %s, task = jsonb_set(task, "
+                                 "'{status,state}', '\"TASK_STATE_WORKING\"') where id = %s",
+                                 (run_id, opening.trigger["question"]))
                 if opening.task:  # what a5s asks it, from the records: something it has read
                     provenance.read(conn, run_id, provenance.A5S, opening.task,
                                     gw.scenario.record_pattern)
+            if reasons and kind == asking.KIND and not opening.used:  # so the asker hears why
+                conn.execute("update questions set problem = %s, task = jsonb_set(task, "
+                             "'{status,state}', '\"TASK_STATE_REJECTED\"') where id = %s",
+                             ("; ".join(reasons)[:200], opening.trigger["question"]))
             ledger.append(conn, {
                 "kind": "run", "action": "open", "run": None if reasons else run_id,
                 "instance": body.instance, "acts_for": opening.acts_for,
@@ -1597,6 +1648,15 @@ def create_app(gw: Gateway) -> FastAPI:
                                         "can.\n" + "\n".join(f"- {o}" for o in offered)})
                 provenance.read(conn, row["run"], provenance.A5S, context[-1]["text"],
                                 gw.scenario.record_pattern)
+            questioned = row["trigger"].get("kind") == asking.KIND
+            if asking.ASK in (row["grants"] or []) and row["asks"] and not questioned and (
+                    asked := conn.execute("select distinct definition from instances where id = "
+                                          "any(%s) and status = 'active' order by definition",
+                                          (list(row["asks"]),)).fetchall()):
+                context.append({"title": "Agents you may ask",
+                                "text": "With ask_agent, for the people you're working for: "
+                                        + ", ".join(f"the {a['definition']}" for a in asked)
+                                        + ". Each answers within what those people may see."})
             if person or group:  # and the day each turn of the conversation was said
                 said = conn.execute("select distinct to_char(at at time zone 'UTC', 'YYYY-MM-DD') "
                                     "as day from turns where person = %s and agent = %s",
@@ -1616,7 +1676,10 @@ def create_app(gw: Gateway) -> FastAPI:
             "instructions": topics.SUMMARY if own else definition.instructions,
             "context": [] if own else context,
             "model": {"alias": model.alias, "api": model.api} if model else None,
-            "tools": [] if own else [tools[n].definition() for n in row["grants"] if n in tools],
+            "tools": [] if own else [tools[n].definition() for n in row["grants"] if n in tools
+                                     and not (n == asking.ASK and (  # nobody asked asks again,
+                                         row["trigger"].get("kind") == asking.KIND  # and only
+                                         or not row["asks"]))],  # whom its settings name
             "plain": own,
         }
 
@@ -1742,6 +1805,8 @@ def create_app(gw: Gateway) -> FastAPI:
                                 content={"denied": True, **decision.as_dict(explain=True)})
         if core is not None and core.name == extractor.ASK:  # it needs the run's own model
             return asking_about(args, row, seq, token)
+        if core is not None and core.name == asking.ASK:  # it waits, outside any transaction
+            return asking_agent(args, row, seq)
         if core is not None:
             return call_core_tool(core, args, row, seq)
         try:
@@ -2014,6 +2079,89 @@ def create_app(gw: Gateway) -> FastAPI:
         return {"result": {extractor.OUTSIDE: True, "document": f"D-{number}", "says": said,
                            "note": extractor.NOTE}, "recorded": recorded}
 
+    def asking_agent(args: dict, row: dict, seq: int) -> Any:
+        """Ask another agent, for the people the run acts for, and wait for its answer
+        (core/asking.py). The question is kept first, so the scheduler can have it answered,
+        and the answer brings its run's mark, and only the values that run had read."""
+        agent = str(args.get("agent", "")).strip()
+        text = " ".join(str(args.get("question", "")).split())
+
+        def told(status: str, **more: Any) -> bool:
+            return record({"kind": "tool", "action": asking.ASK, "run": row["run"],
+                           "instance": row["id"], "decision": "record", "of": seq,
+                           "outcome": {"status": status, **more}})
+
+        try:
+            if not text:
+                raise coretools.Refused("say what to ask, in a sentence or two")
+            if len(text) > asking.LONGEST:
+                raise coretools.Refused(f"keep the question to {asking.LONGEST} characters")
+            with db.transaction(gw.url) as conn:
+                question = asking.ask(conn, row, asking.whom(conn, gw.scenario, row, agent), text,
+                                      gw.clock())
+        except coretools.Refused as exc:
+            told("refused", reason=str(exc))
+            return JSONResponse(status_code=403, content={"denied": True, "reasons": [str(exc)],
+                                                          "explanations": [str(exc)]})
+        deadline, found = time.monotonic() + asking.WAIT, None
+        while time.monotonic() < deadline:
+            with db.transaction(gw.url) as conn:
+                found = conn.execute("select * from questions where id = %s", (question,)).fetchone()
+            if found["answered_at"] or found["problem"]:
+                break
+            time.sleep(0.2)
+        if not found or not found["answered_at"]:
+            why = (found and found["problem"]) or f"no answer within {asking.WAIT:g} seconds"
+            with db.transaction(gw.url) as conn:  # an answer that comes later is for nobody
+                conn.execute("update questions set problem = coalesce(problem, %s), task = "
+                             "jsonb_set(task, '{status,state}', '\"TASK_STATE_FAILED\"') "
+                             "where id = %s and answered_at is null", (why[:200], question))
+            told("error", error=f"the {agent} didn't answer: {why}"[:200], question=question)
+            return JSONResponse(status_code=504, content={"error": f"the {agent} didn't answer: "
+                                                                   f"{why}"[:300]})
+        with db.transaction(gw.url) as conn:
+            if found["answer_read_outside"]:  # the mark follows the answer
+                conn.execute("update runs set read_outside = true where id = %s", (row["run"],))
+            provenance.read(conn, row["run"], f"the {agent}'s answer",
+                            found["answer_sourced"] or "", gw.scenario.record_pattern)
+        recorded = told("ok", question=question, marked=bool(found["answer_read_outside"]),
+                        result_sha256=hashlib.sha256(found["answer"].encode()).hexdigest())
+        result = {"agent": agent, "answer": found["answer"]}
+        if found["answer_read_outside"]:
+            result["note"] = (f"The {agent} drew on content from outside, so this run has read "
+                              "outside content now too, and works as one that has.")
+        return {"result": result, "recorded": recorded}
+
+    @app.post("/run/answer")
+    def answer_question(body: Answer, token: str = Depends(run_token)) -> dict:
+        """A run's answer to the question it was opened for, back to the run that asked: with
+        its mark, and the values in it the run had read, and without its handles."""
+        with db.transaction(gw.url) as conn:
+            row = load_run(conn, token)
+            if row["trigger"].get("kind") != asking.KIND:
+                raise HTTPException(403, "only a run that answers a question gives an answer")
+            text, _ = sanitize(body.text, gw.scenario.record_links)
+            text = asking.kept_back(text, row["definition"])
+            traced = provenance.traced(conn, gw.scenario, row, text)
+            question = row["trigger"]["question"]
+            done = conn.execute(
+                "update questions set answer = %s, answered_at = %s, answer_read_outside = "
+                "(select read_outside from runs where id = %s), answer_sourced = %s, task = %s "
+                "where id = %s and run_id = %s and answered_at is null and problem is null "
+                "returning asked_by_run::text",
+                (text, gw.clock(), row["run"], " ".join(t["value"] for t in traced if t["from"]),
+                 Jsonb(asking.task(question, row["trigger"]["by_run"], conn.execute(
+                     "select text from questions where id = %s", (question,)).fetchone()["text"],
+                     "TASK_STATE_COMPLETED", gw.clock(), text)),
+                 question, row["run"])).fetchone()
+            if done is None:
+                raise HTTPException(409, "the question has been answered, or given up on")
+            ledger.append(conn, gw.entry(row, "message", "answer", Decision(True, ()), args={
+                "question": question, "to_run": done["asked_by_run"], "chars": len(text),
+                "sha256": hashlib.sha256(text.encode()).hexdigest(),
+                **({"values": values_of(traced)} if traced else {})}))
+        return {"answered": question}
+
     def call_core_tool(core: coretools.CoreTool, args: dict, row: dict, seq: int) -> Any:
         """One of a5s's own tools, in one transaction with what it changes. A rule of a5s's
         it would break is a denial, in words the agent passes on."""
@@ -2067,6 +2215,10 @@ def create_app(gw: Gateway) -> FastAPI:
             if row["trigger"].get("kind") in OWN_RUNS:
                 decision = Decision(False, ("a5s-runs-write-to-nobody",), explanations=(
                     "a5s's own runs, such as keeping a summary, write to nobody",))
+            elif row["trigger"].get("kind") == asking.KIND:
+                decision = Decision(False, ("answers-go-to-the-asker",), explanations=(
+                    ("a run that answers another agent's question writes to nobody: its answer "
+                     "goes back to that agent"),))
             elif not group and body.to not in row["acts_for"]:
                 why = ("a run writes only to the people it acts for, such as whoever sent the "
                        "message it answers")

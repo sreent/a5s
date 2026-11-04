@@ -186,6 +186,8 @@ class InstanceSettings:
     # Its level for a type of action in a part, such as {"billing": {"change-due-date": 2}}: the
     # only way to level 2, which a5s's cap for the release can still hold at 1
     actions: dict[str, dict[str, int]] = field(default_factory=dict)
+    # The instances it may ask a question, for the people it acts for (core/asking.py)
+    asks: tuple[str, ...] = ()
 
     def level_in(self, part: str, start: int, most: int) -> int:
         """How far it may act in a part, between a release's starting level and its maximum."""
@@ -258,6 +260,7 @@ class _Instance(BaseModel):
     owner: _PERSON | None = None
     deputy: _PERSON | None = None
     parts: list[_ID] | dict[_ID, _LEVEL | _Part | None] = Field(default_factory=list)
+    asks: list[_ID] = Field(default_factory=list)
 
 
 class _Limit(BaseModel):
@@ -309,6 +312,10 @@ def parse_settings(raw: bytes, signatures: tuple[Signature, ...] = ()) -> Settin
     except ValidationError as exc:
         raise SettingsError("; ".join(f"{'.'.join(str(p) for p in e['loc']) or 'settings'}: "
                                       f"{e['msg']}" for e in exc.errors())) from None
+    for iid, i in version.instances.items():  # whom it asks: another instance in this version
+        if wrong := [a for a in i.asks if a == iid or a not in version.instances]:
+            raise SettingsError(f"instances.{iid}.asks: {', '.join(wrong)} isn't another instance "
+                                "in these settings")
     return Settings(
         version=hashlib.sha256(raw).hexdigest()[:16],
         serial=version.serial,
@@ -322,7 +329,8 @@ def parse_settings(raw: bytes, signatures: tuple[Signature, ...] = ()) -> Settin
         instances=tuple(
             InstanceSettings(id=iid, definition=i.definition, serves=tuple(i.serves),
                              level=i.level, owner=i.owner, deputy=i.deputy,
-                             parts=_part_levels(i.parts), actions=_action_levels(i.parts))
+                             parts=_part_levels(i.parts), actions=_action_levels(i.parts),
+                             asks=tuple(i.asks))
             for iid, i in version.instances.items()
         ),
     )

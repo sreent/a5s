@@ -233,7 +233,7 @@ If the list shrinks further, LangChain's own `create_agent` could be the base in
 
 ## Agent to agent
 
-From phase 3 ([plan](phase-3.md)). Agents will call each other over A2A, only between registered instances. The people the caller acts for travel with the call, and authority never passes from one agent to the other.
+An agent asks another what it knows, such as the assistant asking the watcher what changed on someone's records, with the typed tool `ask_agent`. Only instances of one deployment ask each other, and only those an instance's settings name, which the owners of the parts both work in approve, and a release says whether its agent asks at all. The core opens a run of the instance asked, acting for the same people as the run that asks, so the people travel with the question and authority never passes from one agent to the other: it works within its own grant and level, and what those people may see, and nobody it acts for decides what it holds. It writes to nobody: its answer goes back to the run that asked, as the tool's result. The question carries the asker's mark to it, and its answer carries its own mark back, so a run that hears from one that read content from outside works as one that has. Only the values it had read count as found for the run that asked, so a value it wrote itself is noted as such when it's passed on. An agent that's asked can't ask another, so questions never chain, and the ledger links the two runs. The question and its answer are kept as an A2A task, in A2A 1.0's shapes for a message and a task, so agents outside a5s can come later without a second way of asking ([`core/asking.py`](../src/a5s/core/asking.py)).
 
 ## Standards
 
