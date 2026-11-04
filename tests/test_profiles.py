@@ -73,6 +73,65 @@ def test_it_takes_a_later_message_of_theirs_to_keep_one(stack):
     assert refused[0]["outcome"]["status"] == "refused"
 
 
+def tool_result(stack, request: int) -> dict:
+    return json.loads(stack.model.requests[request]["body"]["messages"][-1]["content"])
+
+
+def offers(stack) -> list[tuple[str, bool, bool]]:
+    return [(r["text"], r["confirmed_at"] is not None, r["ended_at"] is not None)
+            for r in kept_notes(stack)]
+
+
+def offered(stack) -> None:
+    stack.model.reply(None, ("offer_note", {"note": NOTE}))
+    stack.model.reply(f"Shall I note this? \"{NOTE}\"")
+    stack.say("I like short answers: two sentences, with the record's link.")
+
+
+def test_a_note_offered_again_on_their_yes_points_to_keeping_the_one_they_said_yes_to(stack):
+    offered(stack)
+    reworded = "Two sentences at most, with the record's link."
+    stack.model.reply(None, ("offer_note", {"note": reworded}))  # as a model may, on her yes
+    stack.model.reply(None, ("confirm_note", {}))
+    stack.model.reply("Noted.")
+    assert stack.say("Yes, keep that note.") == "Noted."
+    status = tool_result(stack, -2)["status"]
+    assert f'you offered "{NOTE}" in answer to their last message' in status
+    assert "If this message says yes to it, keep it now with confirm_note" in status
+    assert tool_result(stack, -1)["note"] == NOTE
+    assert offers(stack) == [(NOTE, True, False), (reworded, False, True)]  # the new one lapses
+    with db.transaction(stack.admin) as conn:
+        assert profiles.note(conn, "ana") == NOTE
+
+
+def test_the_same_note_offered_again_on_their_yes_isnt_offered_twice(stack):
+    offered(stack)
+    stack.model.reply(None, ("offer_note", {"note": NOTE}))
+    stack.model.reply(None, ("confirm_note", {}))
+    stack.model.reply("Noted.")
+    stack.say("Yes")
+    assert tool_result(stack, -2)["status"].startswith(
+        "you offered this in answer to their last message, and it waits for their yes: if this "
+        "message says yes to it, keep it now with confirm_note")
+    assert offers(stack) == [(NOTE, True, False)]
+
+
+def test_a_note_reworded_as_they_ask_is_kept_only_on_their_yes_to_it(stack):
+    offered(stack)
+    shorter = "One sentence is enough."
+    stack.model.reply(None, ("offer_note", {"note": shorter}))
+    stack.model.reply("Shall I note that instead?")
+    stack.say("Make it one sentence.")
+    assert offers(stack) == [(NOTE, False, False), (shorter, False, False)]
+    stack.model.reply(None, ("confirm_note", {}))
+    stack.model.reply("Noted.")
+    stack.say("Yes")
+    assert f'"{shorter}". If they say yes to it' in system_prompt(stack, -2)  # the latest offer
+    assert offers(stack) == [(NOTE, False, True), (shorter, True, False)]
+    with db.transaction(stack.admin) as conn:
+        assert profiles.note(conn, "ana") == shorter
+
+
 def test_a_new_note_replaces_the_last_and_people_can_have_it_forgotten(stack):
     offered_and_confirmed(stack)
     shorter = "One sentence is enough."
@@ -181,7 +240,7 @@ def test_a_run_knows_what_its_agent_offered_that_waits_for_their_yes(stack):
     told = system_prompt(stack)
     assert "## What you offered them, waiting for their yes\n\nYou offered these in an earlier message." in told
     assert f'- A note on how they like to work: "{NOTE}". If they say yes to it, keep it with ' \
-           "confirm_note." in told
+           "confirm_note, and don't offer it again." in told
     assert "a reminder on Mon 2 Nov at 09:00: call Northwind. If they say yes to it, set it " \
            "with confirm_reminder, naming R-" in told
     stack.model.reply("Hello, Ben.")

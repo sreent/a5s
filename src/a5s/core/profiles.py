@@ -61,10 +61,23 @@ def waiting(conn: psycopg.Connection, person: Person, agent: str) -> list[str]:
                        "order by asked_at desc, id desc limit 1",
                        (person.id, agent, CONFIRM_WITHIN)).fetchone()
     return [(f"A note on how they like to work: \"{row['text']}\". If they say yes to it, "
-             "keep it with confirm_note.")] if row else []
+             "keep it with confirm_note, and don't offer it again.")] if row else []
+
+
+def _offered_before(call: Call, lock: bool = False) -> dict | None:
+    """The note this agent last offered the person in answer to an earlier message of theirs,
+    not this one, if it waits for their yes: the one a yes in this message keeps."""
+    return call.conn.execute(
+        "select * from profile_notes where person = %s and agent = %s and confirmed_at is null "
+        "and ended_at is null and offered_run <> %s and asked_at < %s and asked_at > %s "
+        f"order by asked_at desc, id desc limit 1{' for update' if lock else ''}",
+        (call.person.id, call.run["definition"], call.run["run"], call.asked_at,
+         call.asked_at - CONFIRM_WITHIN)).fetchone()
 
 
 def offer(call: Call) -> dict:
+    """Offer a note, to keep once they say yes. Offered again in answer to their yes, as a
+    model may do, it points to confirm_note, which keeps what they said yes to."""
     person, text = call.person, " ".join(str(call.args["note"]).split())
     if not text:
         raise Refused("say how they like to work, in a sentence or two")
@@ -72,33 +85,45 @@ def offer(call: Call) -> dict:
         raise Refused(f"keep it to {LONGEST} characters: it's a short note")
     if note(call.conn, person.id) == text:  # such as when a model keeps it in the same breath
         return {"note": text, "status": "it's their note already"}
-    if call.conn.execute(  # the same offer, made before: it waits for their yes
+    before = _offered_before(call)
+    if before is not None and before["text"] == text:
+        return {"note": text, "status": "you offered this in answer to their last message, and "
+                                        "it waits for their yes: if this message says yes to it, "
+                                        "keep it now with confirm_note, and don't offer it again"}
+    if call.conn.execute(  # the same offer, made in this answer already
             "select 1 from profile_notes where person = %s and agent = %s and text = %s "
-            "and confirmed_at is null and ended_at is null and asked_at > %s",
-            (person.id, call.run["definition"], text, call.asked_at - CONFIRM_WITHIN)).fetchone():
-        return {"note": text, "status": "you offered this already: if they've said yes, keep it "
-                                        "with confirm_note"}
+            "and confirmed_at is null and ended_at is null and offered_run = %s",
+            (person.id, call.run["definition"], text, call.run["run"])).fetchone():
+        return {"note": text, "status": "you've offered this already: it's kept only once they "
+                                        "say yes, in their next message"}
     call.conn.execute(
         "insert into profile_notes (person, agent, text, offered_at, offered_run, asked_at) "
         "values (%s, %s, %s, %s, %s, %s)",
         (person.id, call.run["definition"], text, call.now, call.run["run"], call.asked_at))
+    if before is not None:
+        return {"note": text, "status": (
+            f"offered. But you offered \"{before['text']}\" in answer to their last message, and "
+            "it waits for their yes. If this message says yes to it, keep it now with "
+            "confirm_note, which keeps the one they said yes to, and this offer lapses. If they "
+            "asked for a different note, this one is kept only once they say yes to it, in their "
+            "next message")}
     return {"note": text, "status": "offered: it's kept only once they say yes, in their next "
                                     "message"}
 
 
 def confirm(call: Call) -> dict:
-    person, asked = call.person, call.asked_at
-    row = call.conn.execute(  # offered in answer to an earlier message of theirs, not this one
-        "select * from profile_notes where person = %s and agent = %s and confirmed_at is null "
-        "and ended_at is null and offered_run <> %s and asked_at < %s and asked_at > %s "
-        "order by asked_at desc, id desc limit 1 for update",
-        (person.id, call.run["definition"], call.run["run"], asked, asked - CONFIRM_WITHIN),
-    ).fetchone()
+    """Keep the note they said yes to, in place of any they had. Any other offer this agent
+    made them lapses."""
+    person = call.person
+    row = _offered_before(call, lock=True)  # offered in answer to an earlier message of theirs
     if row is None:
         raise Refused("no note is waiting for them to confirm. Offer it first, and keep it once "
                       "they say yes in a later message")
     call.conn.execute("update profile_notes set ended_at = %s where person = %s "
                       "and confirmed_at is not null and ended_at is null", (call.now, person.id))
+    call.conn.execute("update profile_notes set ended_at = %s where person = %s and agent = %s "
+                      "and confirmed_at is null and ended_at is null and id <> %s",
+                      (call.now, person.id, call.run["definition"], row["id"]))
     call.conn.execute("update profile_notes set confirmed_at = %s, confirmed_run = %s where id = %s",
                       (call.now, call.run["run"], row["id"]))
     return {"note": row["text"], "status": "kept: every agent that works for them sees it"}
@@ -117,13 +142,14 @@ TOOLS = {t.name: t for t in (
              "Offer to note how the person you're answering likes to work, such as how long or "
              "how formal your answers should be, in a sentence or two. Every agent that works "
              "for them will see it. It's kept only once they say yes in their next message: tell "
-             "them what you'll note, and ask them.",
+             "them what you'll note, and ask them. When they say yes to a note you offered, keep "
+             "it with confirm_note instead.",
              {"type": "object", "required": ["note"], "properties": {
                  "note": {"type": "string", "description": "The note, as it will be kept"}}},
              offer, text_fields=("note",)),
     CoreTool("confirm_note",
-             "Keep the note you last offered the person, once they've said yes to it. It "
-             "replaces any note they had.",
+             "Keep the note you offered the person in an earlier message, once they've said yes "
+             "to it: at once, without offering it again. It replaces any note they had.",
              {"type": "object", "properties": {}}, confirm),
     CoreTool("forget_note", "Forget the person's note on how they like to work, when they ask "
                             "you to.", {"type": "object", "properties": {}}, forget),
