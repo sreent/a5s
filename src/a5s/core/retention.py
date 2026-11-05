@@ -9,11 +9,13 @@ waiting on, offers nobody said yes to, the record of each day's report, and the 
 asked for, with their decisions, 12 months after they ended, and samples of agents' work 12
 months after they were graded, or, if nobody graded them, drawn. The counts of changes go once
 their 30 days are past, and what someone owed goes 12 months after the records stopped
-owing it. A change a5s left marked as being made, which someone ends by hand
+owing it, or, in a scenario the deployment no longer runs, after it last changed. Each
+person's use of a day's budget, and the log of their digests, go once the day's past, by the
+core's clock, which stamps them. A change a5s left marked as being made, which someone ends by hand
 (`a5s proposals`), goes 12 months after that. What a5s keeps for someone who left is archived
 where it is, a day after the directory stops naming them (core/departures.py), and goes on
-the same clocks, as does the record of whose archive it was, and with it the chats a5s wrote
-to them in. A note people ask
+the same clocks. The chats a5s wrote to them in go 12 months after, and the record of whose
+archive it was once nothing is left under its name. A note people ask
 to forget goes at once (core/profiles.py). The ledger keeps what people and agents wrote only
 by hash and length (core/ledger.py), so retention needn't touch it. The values a run was handed as handles, what it read, and the documents from
 outside it read, go once the run has been over for an hour: a handle works only in its run, and nothing reads them after.
@@ -25,7 +27,11 @@ records it supports, and so are runs, which it names.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 import psycopg
+
+from a5s.core import departures
 
 KEPT = "12 months"  # after a conversation's last message [TBC: the data protection officer]
 OVER = "1 hour"  # after a run closes, before its handles and what it read go
@@ -41,9 +47,11 @@ WHOSE = {"inbound": "coalesce(conversation, person)",
                    "person)"}
 
 
-def sweep(conn: psycopg.Connection) -> dict[str, int]:
-    """Delete what's past its time, in the caller's transaction. How many of each kind went,
-    leaving out the kinds where none did."""
+def sweep(conn: psycopg.Connection, now: datetime | None = None,
+          scenario: str | None = None) -> dict[str, int]:
+    """Delete what's past its time, in the caller's transaction, with `now` the core's clock,
+    which stamps a day's use and the digest log, and `scenario` the scenario it runs. How many
+    of each kind went, leaving out the kinds where none did."""
     if not conn.execute("select pg_try_advisory_xact_lock(%s) as got", (LOCK,)).fetchone()["got"]:
         return {}  # another sweep is at work
     gone: dict[str, int] = {}
@@ -95,8 +103,19 @@ def sweep(conn: psycopg.Connection) -> dict[str, int]:
     delete("counts", "delete from action_counts where at < now() - interval '31 days'")
     delete("chats", "delete from chats where person in (select archived_as from departures "
                     f"where archived_at < now() - interval '{KEPT}')")  # an archive's, with it
-    delete("departures", f"delete from departures where archived_at < now() - interval '{KEPT}'")
+    held = " or ".join([f"exists (select 1 from {table} x where x.person = d.archived_as)"
+                        for table in departures.KEPT]
+                       + ["exists (select 1 from turns x where x.speaker = d.archived_as)"])
+    delete("departures", "delete from departures d where archived_at < now() - interval "  # once
+           f"'{KEPT}' and not ({held})")  # nothing's left under the archive's name, such as in a
+    # group chat, whose conversation goes by its own last message
     delete("questions", f"delete from questions where asked_at < now() - interval '{KEPT}'")
     delete("obligations", "delete from obligations where done_at < now() - interval "
                           f"'{KEPT}'")  # with what the records called it, and whose it was
+    if scenario:  # a scenario the deployment no longer runs: nothing syncs what it owed
+        delete("obligations", "delete from obligations where scenario <> %s and updated_at < "
+                              f"now() - interval '{KEPT}'", (scenario,))
+    if now is not None:  # each person's day: only today's is asked after, in any time zone
+        delete("days", "delete from spend where day < %s", ((now - timedelta(days=2)).date(),))
+        delete("days", "delete from digests where due_at < %s", (now - timedelta(days=3),))
     return gone

@@ -139,4 +139,12 @@ def test_the_chats_of_someone_who_left_go_with_the_record_of_their_archive(stack
     with db.transaction(stack.admin) as conn:
         left = conn.execute("select (select count(*) from chats) as chats, "
                             "(select count(*) from departures) as departures").fetchone()
-    assert (left["chats"], left["departures"]) == (0, 0)
+    assert (left["chats"], left["departures"]) == (0, 1)  # while his conversation's kept, so
+    with db.transaction(stack.admin) as conn:  # is the record of whose archive it is
+        for table, at in (("turns", "at"), ("inbound", "received_at"), ("outbox", "at")):
+            conn.execute(f"update {table} set {at} = {at} - interval '13 months' "
+                         "where person like 'former:%%'")
+    sweep(stack)
+    with db.transaction(stack.admin) as conn:
+        left = conn.execute("select count(*) as n from departures").fetchone()["n"]
+    assert left == 0

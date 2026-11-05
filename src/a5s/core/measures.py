@@ -190,8 +190,8 @@ def told(m: dict[str, Any]) -> str:
             "; ".join(f"the {x['agent']}, {x['came_back']} of {x['wrote_before']}"
                       for x in m["returning"]) or "nobody wrote to one before") + ".",
         "  Group chats that mentioned an agent: " + ("; ".join(
-            f"the {x['agent']}, {x['messages']} times in {x['chats']} chats, by {x['people']} "
-            "people" for x in m["groups"]) or "none") + ".",
+            f"the {x['agent']}, {_many(x['messages'], 'time')} in {_many(x['chats'], 'chat')}, "
+            f"by {_many(x['people'], 'person', 'people')}" for x in m["groups"]) or "none") + ".",
         "  Runs that called a model: " + ("; ".join(
             f"{x['instance']}, {x['runs']} on {x['model']}, {x['tokens_per_run']:,} tokens each"
             + (f", costing {x['cost_per_run']:.3f} each at its prices"
@@ -214,7 +214,8 @@ def told(m: dict[str, Any]) -> str:
             for x in m["questions"]) or "none") + ".",
         "  Notebooks: " + ("; ".join(
             f"{x['instance']}, {x['notes']} notes now, {x['kept']} kept and {x['refused']} "
-            f"refused, {x['let_go']} let go, given {x['given']} times in {x['runs_given']} runs"
+            f"refused, {x['let_go']} let go, given {_many(x['given'], 'time')} in "
+            f"{_many(x['runs_given'], 'run')}"
             for x in m["notebook"]) or "none") + ".",
     ]
     return "\n".join(lines)
@@ -232,6 +233,10 @@ def _share(part: int, whole: int) -> float | None:
 
 def _hours(seconds: Any) -> float | None:
     return None if seconds is None else float(seconds) / 3600
+
+
+def _many(n: int, one: str, more: str | None = None) -> str:
+    return f"{n} {one if n == 1 else more or one + 's'}"
 
 
 def _percent(share: float | None) -> str:

@@ -5,7 +5,7 @@ hour. The ledger records how much each sweep deleted, and stays whole."""
 from datetime import timedelta
 
 from a5s import db
-from a5s.core import budgets, digests
+from a5s.core import budgets
 
 WORDS = (("turns", "at"), ("inbound", "received_at"), ("outbox", "at"), ("summaries", "updated_at"))
 
@@ -144,17 +144,16 @@ def test_what_someone_owed_goes_twelve_months_after_the_records_stopped_owing_it
 
 
 def test_a_days_use_of_the_budget_goes_once_the_day_is_past(stack):
-    day = budgets.day_of(stack.gateway.scenario, "ana", stack.gateway.clock())
+    """By the core's clock, which stamps it, and whether or not they still use a5s."""
+    day = budgets.day_of(stack.gateway.scenario, "chen", stack.gateway.clock())
     with db.transaction(stack.admin) as conn:
         for ago in (5, 1):
             conn.execute("insert into spend (instance_id, person, day, tokens) values "
-                         "('assistant-finance', 'ana', %s, 100)", (day - timedelta(days=ago),))
-    stack.model.reply("Hello, Ana.")
-    stack.say("Hello")
+                         "('assistant-finance', 'chen', %s, 100)", (day - timedelta(days=ago),))
+    assert sweep(stack) == {"days": 1}
     with db.transaction(stack.admin) as conn:
-        days = [r["day"] for r in conn.execute("select day from spend where person = 'ana' "
-                                               "order by day")]
-    assert days == [day - timedelta(days=1), day]
+        days = [r["day"] for r in conn.execute("select day from spend order by day")]
+    assert days == [day - timedelta(days=1)]
 
 
 def test_the_log_of_someones_digests_keeps_only_their_last_days(stack):
@@ -162,7 +161,22 @@ def test_the_log_of_someones_digests_keeps_only_their_last_days(stack):
     with db.transaction(stack.admin) as conn:
         for ago in (5, 1):
             conn.execute("insert into digests (person, due_at, sent_at, items) values "
-                         "('ana', %s, %s, 1)", (due - timedelta(days=ago),) * 2)
-        digests.close(conn, "ana", due, due, [], None)
+                         "('chen', %s, %s, 1)", (due - timedelta(days=ago),) * 2)
+    assert sweep(stack) == {"days": 1}
+    with db.transaction(stack.admin) as conn:
         left = [r["due_at"] for r in conn.execute("select due_at from digests order by 1")]
-    assert left == [due - timedelta(days=1), due]
+    assert left == [due - timedelta(days=1)]
+
+
+def test_what_a_scenario_no_longer_run_owed_goes_twelve_months_after_it_last_changed(stack):
+    """Nothing syncs it again, so the records never stop owing it."""
+    with db.transaction(stack.admin) as conn:
+        for scenario, record in (("before", "Q-1"), ("sample", "Q-2")):  # both open, untouched
+            conn.execute("insert into obligations (scenario, source, record, person, title, "
+                         "opened_at, due_at, updated_at) values (%s, 'records', %s, 'ana', "
+                         "'A question', now() - interval '14 months', now() - interval "
+                         "'13 months', now() - interval '13 months')", (scenario, record))
+    assert sweep(stack) == {"obligations": 1}
+    with db.transaction(stack.admin) as conn:
+        left = [r["record"] for r in conn.execute("select record from obligations")]
+    assert left == ["Q-2"]  # still owed in the scenario it runs

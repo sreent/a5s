@@ -161,7 +161,7 @@ def test_the_measures_count_questions_agents_asked_and_mentions_in_groups(stack)
     assert found["groups"] == [{"agent": "assistant", "messages": 3, "chats": 1, "people": 2}]
     told = measures.told(found)
     assert "watcher-finance was asked 1 and answered 1" in told
-    assert "the assistant, 3 times in 1 chats, by 2 people" in told
+    assert "the assistant, 3 times in 1 chat, by 2 people" in told
 
 
 def test_the_measures_count_notes_kept_refused_given_and_let_go(stack):
@@ -181,5 +181,5 @@ def test_the_measures_count_notes_kept_refused_given_and_let_go(stack):
         found = measures.report(conn, "sample", {}, 30, stack.gateway.clock())
     assert found["notebook"] == [{"instance": "assistant-finance", "notes": 0, "kept": 1,
                                   "refused": 1, "let_go": 1, "given": 1, "runs_given": 1}]
-    assert ("assistant-finance, 0 notes now, 1 kept and 1 refused, 1 let go, given 1 times in "
-            "1 runs") in measures.told(found)
+    assert ("assistant-finance, 0 notes now, 1 kept and 1 refused, 1 let go, given 1 time in "
+            "1 run") in measures.told(found)
