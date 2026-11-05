@@ -12,8 +12,9 @@ the log of their digests let go. What they owed follows the records, to whoever 
 system makes their owner.
 
 Nothing is copied anywhere else. The archive goes on retention's usual clock, 12 months after
-the last thing said (core/retention.py), and so does the record of whose archive each is, kept
-for the data protection officer, such as to answer a request for someone's data. What they said
+the last thing said (core/retention.py), and the record of whose archive each is, kept for the
+data protection officer, such as to answer a request for someone's data (core/export.py), goes
+once nothing is left under its name. What they said
 in a group chat stays in the group's conversation, under the archive's name (core/groups.py).
 """
 

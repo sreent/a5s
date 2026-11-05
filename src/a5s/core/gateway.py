@@ -1675,8 +1675,13 @@ def create_app(gw: Gateway) -> FastAPI:
                                      f"about someone, and {by} isn't")
         if groups.of(person):
             raise HTTPException(400, "a group chat's conversation is nobody's own: name a person")
-        with db.transaction(gw.url) as conn:
-            found = export.gather(conn, person)
+        with db.transaction(gw.url) as conn:  # as of one moment, so that a sweep that
+            conn.execute("set transaction isolation level repeatable read read only")  # archives
+            found = export.gather(conn, person)  # them meanwhile moves nothing it reads
+        if gw.scenario.person(person) is None and not export.holds(found):
+            raise HTTPException(404, f"nobody in the directory has the id {person}, and a5s "
+                                     "keeps nothing under it: check the id")
+        with db.transaction(gw.url) as conn:  # before anything goes out
             ledger.append(conn, {"kind": "admin", "action": "export", "run": None,
                                  "instance": None, "acts_for": [person], "decision": "record",
                                  "args": {"person": person, "by": by, "identity": identity,
@@ -1691,7 +1696,7 @@ def create_app(gw: Gateway) -> FastAPI:
         go of those whose records changed (core/notebook.py): so neither holds up the other,
         nor the ledger's other writers."""
         with db.transaction(gw.url) as conn:
-            gone = retention.sweep(conn)
+            gone = retention.sweep(conn, gw.clock(), gw.scenario.name)
             if gone:
                 ledger.append(conn, {"kind": "retention", "action": "delete", "run": None,
                                      "instance": None, "acts_for": [], "decision": "record",

@@ -437,11 +437,18 @@ def main(argv: list[str] | None = None) -> None:
         text = json.dumps(found, indent=2, ensure_ascii=False) + "\n"
         if args.out is None:
             print(text, end="")
-        else:  # someone's data: for the officer's eyes, not everyone's on the machine
-            with os.fdopen(os.open(args.out, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600),
-                           "w") as out:
+        else:  # someone's data: a new file, for the officer's eyes, never one already there
+            try:
+                made = os.open(args.out, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            except FileExistsError:
+                sys.exit(f"{args.out} is there already: name a new file, which only you may read")
+            with os.fdopen(made, "w") as out:
                 out.write(text)
             print(f"Wrote all a5s keeps about {args.person} to {args.out}.")
+        for archive in found["archives"]:  # one holder at a time
+            print(f"{args.person} left on {archive['archived_at'][:10]}, and what a5s kept for "
+                  f"them then is archived as {archive['name']}: export it with --person "
+                  f"{archive['name']}.", file=sys.stderr)
     elif args.command == "anchor":
         _anchor(cfg, args.every)
     elif args.command == "status":
