@@ -285,9 +285,9 @@ def _release(cfg: Config, args: argparse.Namespace) -> None:
     print("Approved here.")
 
 
-def _admin(cfg: Config, path: str, body: dict | None = None) -> dict:
+def _admin(cfg: Config, path: str, body: dict | None = None, timeout: float = 30) -> dict:
     headers = {"Authorization": f"Bearer {cfg.service_token}"}
-    with httpx.Client(base_url=cfg.gateway_url, headers=headers, timeout=30) as gw:
+    with httpx.Client(base_url=cfg.gateway_url, headers=headers, timeout=timeout) as gw:
         response = gw.post(path, json=body) if body is not None else gw.get(path)
     if response.status_code >= 400:
         sys.exit(f"{response.status_code}: {response.text}")
@@ -432,7 +432,8 @@ def main(argv: list[str] | None = None) -> None:
                      {"by": args.by, "identity": os.environ.get("A5S_TOKEN")}))
     elif args.command == "export":
         found = _admin(cfg, f"/people/{quote(args.person, safe='')}/export",
-                       {"by": args.by, "identity": os.environ.get("A5S_TOKEN")})
+                       {"by": args.by, "identity": os.environ.get("A5S_TOKEN")},
+                       timeout=300)  # it counts their entries across the whole ledger
         text = json.dumps(found, indent=2, ensure_ascii=False) + "\n"
         if args.out is None:
             print(text, end="")
