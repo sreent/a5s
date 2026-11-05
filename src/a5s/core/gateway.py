@@ -1872,6 +1872,7 @@ def create_app(gw: Gateway) -> FastAPI:
                                           or CORE_TOOLS[n].offered(row))],  # only those that
             # can work for the run: nothing that could only refuse it
             "plain": own,
+            "skills": {} if own else definition.skills,  # read-only, from the release
         }
 
     def record(entry: dict) -> bool:

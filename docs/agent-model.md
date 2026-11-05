@@ -91,7 +91,7 @@ agents/assistant/
   agent.yaml     the definition
   AGENTS.md      instructions, loaded read-only on every run
   tools.lock     the schema of each tool it uses, pinned by hash
-  skills/        Agent Skills, one folder each, from a later step
+  skills/        Agent Skills, one folder each, whose SKILL.md names it and says what it's for
   tests/         its regression cases, run against the model it names before each release
 ```
 

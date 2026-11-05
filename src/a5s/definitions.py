@@ -155,6 +155,9 @@ class Definition(BaseModel):
     instructions: str = ""
     pins: dict[str, str] = {}
     digest: str = ""
+    # Agent Skills, one folder each under skills/, as files by their path in a run's read-only
+    # files, such as /skills/refunds/SKILL.md; the folder's digest and the release pin them
+    skills: dict[str, str] = {}
 
     @property
     def tool_names(self) -> list[str]:
@@ -206,7 +209,33 @@ def load(folder: Path) -> Definition:
         instructions=(folder / "AGENTS.md").read_text(),
         pins=yaml.safe_load(lock.read_text()) or {} if lock.exists() else {},
         digest=_folder_digest(folder),
+        skills=skills_of(folder / "skills"),
     )
+
+
+def skills_of(folder: Path) -> dict[str, str]:
+    """A definition's Agent Skills: each a folder with a SKILL.md, whose YAML front matter
+    names it, as its folder is named, and says what it's for, which is all a run sees of it
+    until it reads it. Every text file in the folder, by its path in a run's files."""
+    found: dict[str, str] = {}
+    for skill in sorted(p for p in folder.iterdir() if p.is_dir()) if folder.is_dir() else []:
+        told = skill / "SKILL.md"
+        if not told.is_file():
+            raise ValueError(f"the skill {skill.name} has no SKILL.md")
+        text = told.read_text()
+        head = text.split("---", 2)[1] if text.startswith("---") and text.count("---") >= 2 \
+            else ""
+        meta = yaml.safe_load(head) if head.strip() else None
+        if not isinstance(meta, dict) or meta.get("name") != skill.name \
+                or not str(meta.get("description") or "").strip():
+            raise ValueError(f"the skill {skill.name}'s SKILL.md must begin with front matter "
+                             f"naming it {skill.name}, and saying what it's for")
+        for path in sorted(p for p in skill.rglob("*") if p.is_file()):
+            try:
+                found[f"/skills/{path.relative_to(folder).as_posix()}"] = path.read_text()
+            except UnicodeDecodeError:  # an agent reads skills, and runs nothing
+                continue
+    return found
 
 
 def load_all(agents_dir: Path) -> dict[str, Definition]:
