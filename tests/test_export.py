@@ -63,10 +63,18 @@ def test_in_a_group_chat_it_gives_what_they_said_and_only_counts_what_others_did
             conn.execute("insert into turns (person, agent, topic, role, content, speaker, "
                          "heard_by) values (%s, 'assistant', 'general', %s, %s, %s, "
                          "array['ana', 'ben'])", (chat, role, content, speaker))
+        conn.execute(  # and the facts its summary keeps, each with who said it
+            "insert into summaries (person, agent, topic, body, through, heard_by) values "
+            "(%s, 'assistant', 'Q-1002', %s, 3, array['ana', 'ben'])",
+            (chat, json.dumps({"facts": [
+                {"value": "Q-1002", "who": "Ben Okafor", "speaker": "ben", "when": "Monday"},
+                {"value": "£1,240.50", "who": "Ana Ortiz", "speaker": "ana",
+                 "when": "Monday"}]})))
     found = export(stack, "ben").json()
     assert [t["content"] for t in found["said_in_group_chats"]] == ["Ben's own words"]
-    assert found["heard_in_group_chats"]["turns"] == 2
-    assert "Ana's words" not in json.dumps(found)
+    assert [f["value"] for f in found["facts_in_group_summaries"]] == ["Q-1002"]
+    assert found["heard_in_group_chats"] == {"turns": 2, "summaries": 1, "answers": 0}
+    assert "Ana's words" not in json.dumps(found) and "1,240.50" not in json.dumps(found)
     assert export(stack, chat).status_code == 400  # a group's conversation is nobody's own
 
 
@@ -135,6 +143,8 @@ def test_a_change_is_said_without_what_its_records_held_or_whom_else_it_was_for(
     officer = provider.id_token(person="noor")  # signed in, as the core asks now
     [change] = export(stack, "ben", identity=officer).json()["changes_for_them"]
     assert change["said"] == "Change a customer question's due date: Q-1002, with due 2026-11-13."
+    decider = export(stack, "ana", identity=officer).json()
+    assert decider["changes_they_could_decide"] == 1 and len(decider["decisions"]) == 1
     graded = export(stack, "dana", identity=officer).json()
     [sample] = graded["samples"]
     assert (sample["as"], sample["said"], sample["grade"]) == (["grader"], None, "right")

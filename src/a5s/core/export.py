@@ -3,8 +3,8 @@
 The data protection officer, signed in with the role, names someone, and gets all a5s keeps
 that names them: their conversations with each agent, with what a5s and the agents said to
 them there, and the summaries of those; their notes, preferences and reminders; what they
-owed; the changes asked for them, and those they decided; samples of those, and the grades
-they gave; the questions agents asked each other for them alone; the chats a5s writes to them
+owed; the changes asked for them, and those they could decide or did; samples of those, and
+the grades they gave; the questions agents asked each other for them alone; the chats a5s writes to them
 in; what reports told them; their use of each day's budget, and their digests.
 
 One holder at a time. When someone leaves, a5s archives what it kept for them under a name of
@@ -78,6 +78,12 @@ def gather(conn: psycopg.Connection, person: str) -> dict[str, Any]:
         "said_in_group_chats": rows(
             "select person as chat, agent, content, at from turns where speaker = any(%(names)s) "
             "and person like 'group:%%' order by at, id"),
+        "facts_in_group_summaries": rows(  # the keys, amounts and dates they said there,
+            "select s.person as chat, s.agent, s.topic, f ->> 'value' as value, "  # as a
+            "f ->> 'when' as said_at from summaries s cross join lateral "  # summary keeps them
+            "jsonb_array_elements(coalesce(s.body -> 'facts', '[]'::jsonb)) f "
+            "where s.person like 'group:%%' and f ->> 'speaker' = any(%(names)s) "
+            "order by s.person, s.topic"),
         "heard_in_group_chats": {  # others' words, which aren't theirs to have, counted
             "turns": count("select count(*) as n from turns where heard_by && %(names)s "
                            "and not coalesce(speaker = any(%(names)s), false)"),
@@ -117,6 +123,9 @@ def gather(conn: psycopg.Connection, person: str) -> dict[str, Any]:
             f"select id, action, {FIRST_LINE} as said, status, proposed_at, decided_at, "
             "ended_at from proposals where acts_for && %(ids)s "
             f"and {within('proposed_at')} order by id")],
+        "changes_they_could_decide": count(
+            "select count(*) as n from proposals where deciders && %(ids)s "
+            f"and {within('proposed_at')}"),
         "decisions": [{"change": proposals.key(r), **{k: v for k, v in r.items() if k != "id"}}
                       for r in rows(
             "select p.id, d.decision, d.reason, d.decided_at from proposal_decisions d "
