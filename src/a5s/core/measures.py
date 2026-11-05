@@ -11,7 +11,9 @@ the baseline phase 1 asks of its first users (docs/phase-1.md), which the pilot 
   approved list gives, what such a run costs.
 
 Each is over the last `days` days, by the database's clock, and counts people, never names
-them. Someone who has left is counted as not coming back.
+them. What people owed is the scenario's now, so a deployment that changed scenarios counts
+only the new one's. Someone who has left isn't counted as not coming back, once a5s has
+archived what it kept for them (core/departures.py).
 """
 
 from __future__ import annotations
@@ -25,10 +27,11 @@ from a5s.config import ModelConfig
 GRACE = "1 hour"  # a reminder for a particular time is on time within this of it [TBC]
 
 
-def report(conn: psycopg.Connection, models: dict[str, ModelConfig], days: int = 30
-           ) -> dict[str, Any]:
-    """The measures over the last `days` days."""
-    window = f"{max(1, int(days))} days"
+def report(conn: psycopg.Connection, scenario: str, models: dict[str, ModelConfig],
+           days: int = 30) -> dict[str, Any]:
+    """The measures over the last `days` days, at least one, for the scenario named."""
+    days = max(1, int(days))
+    window = f"{days} days"
     owed = conn.execute(
         "select count(*) as due, "
         "count(*) filter (where done_at <= due_at) as on_time, "
@@ -38,15 +41,16 @@ def report(conn: psycopg.Connection, models: dict[str, ModelConfig], days: int =
         "  filter (where done_at > due_at) as late_p50, "
         "percentile_cont(0.9) within group (order by extract(epoch from done_at - due_at)) "
         "  filter (where done_at > due_at) as late_p90 "
-        "from obligations where due_at > now() - %(window)s::interval and due_at <= now()",
-        {"window": window}).fetchone()
-    reminded = conn.execute(  # one for a day comes in that day's digest, at its own time
-        "select count(*) as due, "
-        "count(*) filter (where reminded_at <= due_at + case when in_digest "
-        "  then interval '1 day' else %(grace)s::interval end) as on_time, "
+        "from obligations where scenario = %(scenario)s "
+        "and due_at > now() - %(window)s::interval and due_at <= now()",
+        {"scenario": scenario, "window": window}).fetchone()
+    by = "due_at + case when in_digest then interval '1 day' else %(grace)s::interval end"
+    reminded = conn.execute(  # one for a day comes in that day's digest, at its own time, so
+        "select count(*) as due, "  # it's counted once that day is over
+        f"count(*) filter (where reminded_at <= {by}) as on_time, "
         "count(*) filter (where reminded_at is null) as missed "
         "from reminders where confirmed_at is not null and cancelled_at is null "
-        "and due_at > now() - %(window)s::interval and due_at <= now() - %(grace)s::interval",
+        f"and due_at > now() - %(window)s::interval and {by} <= now()",
         {"window": window, "grace": GRACE}).fetchone()
     returning = conn.execute(
         "with before as (select distinct agent, person from inbound where "
@@ -57,15 +61,16 @@ def report(conn: psycopg.Connection, models: dict[str, ModelConfig], days: int =
         "select b.agent, count(*) as wrote_before, count(s.person) as came_back "
         "from before b left join since s on s.agent = b.agent and s.person = b.person "
         "group by b.agent order by b.agent", {"window": window}).fetchall()
-    runs = conn.execute(
-        "select r.instance_id, i.model, count(*) as runs, sum(r.tokens)::bigint as tokens, "
+    runs = conn.execute(  # by the model each called, or, before runs said, their instance's
+        "select r.instance_id, coalesce(r.model, i.model) as model, count(*) as runs, "
+        "sum(r.tokens)::bigint as tokens, "
         "sum(r.tokens_in)::bigint as tokens_in, sum(r.tokens_out)::bigint as tokens_out, "
         "percentile_cont(0.9) within group (order by r.tokens) as p90 "
         "from runs r join instances i on i.id = r.instance_id "
         "where r.opened_at > now() - %(window)s::interval and r.tokens > 0 "
         "group by 1, 2 order by 1", {"window": window}).fetchall()
     return {
-        "days": int(days),
+        "days": days,
         "obligations": {"due": owed["due"], "on_time": owed["on_time"], "late": owed["late"],
                         "open": owed["open"], "on_time_share": _share(owed["on_time"], owed["due"]),
                         "late_hours_p50": _hours(owed["late_p50"]),
@@ -103,8 +108,8 @@ def told(m: dict[str, Any]) -> str:
                       for x in m["returning"]) or "nobody wrote to one before") + ".",
         "  Runs that called a model: " + ("; ".join(
             f"{x['instance']}, {x['runs']} on {x['model']}, {x['tokens_per_run']:,} tokens each"
-            + (f", {x['cost_per_run']:.3f} each" if x["cost_per_run"] is not None
-               else ", its model's prices unknown")
+            + (f", costing {x['cost_per_run']:.3f} each at its prices"
+               if x["cost_per_run"] is not None else ", its model's prices unknown")
             for x in m["runs"]) or "none") + ".",
     ]
     return "\n".join(lines)

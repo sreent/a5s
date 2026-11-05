@@ -1659,7 +1659,7 @@ def create_app(gw: Gateway) -> FastAPI:
         due and was met on time, how late the rest was, who came back, and what runs cost
         (core/measures.py)."""
         with db.transaction(gw.url) as conn:
-            return measures.report(conn, gw.models, days)
+            return measures.report(conn, gw.scenario.name, gw.models, days)
 
     @app.post("/retention/sweep", dependencies=[Depends(service)])
     def sweep_retention() -> dict:
@@ -3113,7 +3113,7 @@ def create_app(gw: Gateway) -> FastAPI:
             try:
                 with db.transaction(gw.url) as conn:
                     if warning := budgets.spent(conn, gw.scenario, release.budget, row, tokens,
-                                                gw.clock(), data.get("usage")):
+                                                gw.clock(), data.get("usage"), alias):
                         log.warning("%s has used %s of its %s tokens for %s today", row["id"],
                                     warning["used"], warning["budget"], warning["person"])
                         ledger.append(conn, {

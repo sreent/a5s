@@ -30,7 +30,7 @@ Each stage ends when what it shows is written down, here and in the phase it ser
 2. **One team, reading** (weeks 3 to 6).
    - The watcher at level 0, and the assistant at level 1 at most: they read, remind and chase, and people make the changes.
    - The data protection officer signs off the assessment before any of the team's data reaches a model.
-   - Shows: the baseline, the second half of phase 1's Done means. Promises and reminders met on time, time from something falling due to it being done, people who come back within a month, and cost per run, from `a5s measures` each week, beside what each person says in a short conversation at the end.
+   - Shows: the baseline, the second half of phase 1's Done means. Promises and reminders met on time, time from something falling due to it being done, people who come back, and cost per run, from `a5s measures` each week, beside what each person says in a short conversation at the end. Four weeks hold two fortnights but not two months, so who came back is over a fortnight here (`a5s measures --days 14`), and over a month from the end of stage 3.
 3. **Held changes** (weeks 7 to 10).
    - One type of action the team does often, such as moving a due date, held for the part's owner to decide on the core's page.
    - Graders grade a sample each week. Level 2 only if samples earn it ([phase 2](phase-2.md)).
@@ -46,7 +46,7 @@ Any of these suspends the instance first, which anyone with the role can do, and
 - something a5s should have stopped: a change it shouldn't have made, a message to the wrong person, or an answer or a note with what someone may not see;
 - a finding the pilot's own round of the critique marks high, until it's fixed;
 - cost per run more than twice the estimate for two weeks running;
-- fewer than a third of the team coming back within a month, which says a5s isn't worth their time as built.
+- fewer than a third of the team coming back to an agent, over a fortnight in stage 2 and a month after, which says a5s isn't worth their time as built.
 
 ## What it decides
 

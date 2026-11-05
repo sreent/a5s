@@ -78,13 +78,14 @@ def refused(conn: psycopg.Connection, scenario: Scenario, budget: Budget, instan
 
 
 def spent(conn: psycopg.Connection, scenario: Scenario, budget: Budget, run: dict, tokens: int,
-          now: datetime, usage: object = None) -> dict | None:
-    """Count a model call's tokens against its run, in and out apart, and its person's day.
-    The day's use, if this call took it past four fifths of the budget, for a warning."""
+          now: datetime, usage: object = None, model: str | None = None) -> dict | None:
+    """Count a model call's tokens against its run, in and out apart, with the model it
+    called, and against its person's day. The day's use, if this call took it past four fifths
+    of the budget, for a warning."""
     tokens_in, tokens_out = split(usage)
     conn.execute("update runs set tokens = tokens + %s, tokens_in = tokens_in + %s, "
-                 "tokens_out = tokens_out + %s where id = %s",
-                 (tokens, tokens_in, tokens_out, run["run"]))
+                 "tokens_out = tokens_out + %s, model = coalesce(%s, model) where id = %s",
+                 (tokens, tokens_in, tokens_out, model, run["run"]))
     person = payer(list(run["acts_for"]), run.get("trigger")) or ""
     row = conn.execute(
         "insert into spend (instance_id, person, day, tokens) values (%s, %s, %s, %s) "

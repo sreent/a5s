@@ -10,12 +10,12 @@ from a5s import db
 from a5s.core import measures
 
 
-def test_a_run_keeps_its_tokens_in_and_out_apart(stack):
+def test_a_run_keeps_its_tokens_in_and_out_apart_and_the_model_it_called(stack):
     stack.model.reply("Hello, Ana.")
     stack.say("Hello")
     with db.transaction(stack.admin) as conn:
-        [run] = conn.execute("select tokens, tokens_in, tokens_out from runs").fetchall()
-    assert (run["tokens"], run["tokens_in"], run["tokens_out"]) == (15, 10, 5)
+        [run] = conn.execute("select tokens, tokens_in, tokens_out, model from runs").fetchall()
+    assert (run["tokens"], run["tokens_in"], run["tokens_out"], run["model"]) == (15, 10, 5, "fake")
 
 
 def test_the_measures_say_what_fell_due_and_was_met(stack):
@@ -33,11 +33,16 @@ def test_the_measures_say_what_fell_due_and_was_met(stack):
                 "due_at) values ('sample', 'records', %s, 'ana', 'A question', "
                 "now() - interval '50 days', now() - %s::interval)",
                 (record, due, done) if done else (record, due))
+        conn.execute(  # owed under a scenario the deployment no longer runs
+            "insert into obligations (scenario, source, record, person, title, opened_at, "
+            "due_at) values ('before', 'records', 'Q-5', 'ana', 'A question', "
+            "now() - interval '50 days', now() - interval '2 days')")
         for due, reminded, in_digest in (("2 days", "2 days", False),  # at its time
                                          ("3 days", "1 day", False),  # two days late
                                          ("5 days", None, False),  # never sent
-                                         ("4 days", "3 days 18 hours", True)):  # in that day's
-            conn.execute(  # digest
+                                         ("4 days", "3 days 18 hours", True),  # in that day's
+                                         ("2 hours", None, True)):  # digest; today's, still to
+            conn.execute(  # come
                 "insert into reminders (person, agent, instance_id, about, due_at, offered_at, "
                 "offered_run, asked_at, confirmed_at, reminded_at, in_digest) values ('ana', "
                 "'assistant', 'assistant-finance', 'something', now() - %s::interval, "
@@ -49,7 +54,7 @@ def test_the_measures_say_what_fell_due_and_was_met(stack):
                 "'assistant-finance', 'something', now() - %s::interval, "
                 "now() - interval '9 days', gen_random_uuid(), now() - interval '9 days', "
                 "now() - interval '9 days', %s)", (due, in_digest))
-        found = measures.report(conn, {}, 30)
+        found = measures.report(conn, "sample", {}, 30)
     assert found["obligations"] == {"due": 3, "on_time": 1, "late": 1, "open": 1,
                                     "on_time_share": 1 / 3, "late_hours_p50": 48.0,
                                     "late_hours_p90": 48.0}
@@ -66,7 +71,7 @@ def test_the_measures_count_who_came_back_to_an_agent(stack):
                          "reply_to, received_at) values (gen_random_uuid(), 'local', "
                          "gen_random_uuid()::text, %s, 'assistant', 'Hello', '{}', "
                          "now() - %s::interval)", (person, ago))
-        found = measures.report(conn, {}, 30)
+        found = measures.report(conn, "sample", {}, 30)
     assert found["returning"] == [{"agent": "assistant", "wrote_before": 2, "came_back": 1,
                                    "share": 0.5}]
 
@@ -81,11 +86,12 @@ def test_the_measures_say_what_a_run_costs_on_a_model_with_prices(stack):
         unpriced = c.get("/measures", params={"days": 7}).json()
     assert unpriced["runs"] == [{"instance": "assistant-finance", "model": "fake", "runs": 2,
                                  "tokens_per_run": 15, "tokens_p90": 15, "cost_per_run": None}]
-    with db.transaction(stack.admin) as conn:
-        [run] = measures.report(conn, priced, 7)["runs"]
-        assert run["cost_per_run"] == (10 * 3.0 + 5 * 15.0) / 1_000_000
-        told = measures.told(measures.report(conn, priced, 7))
-    assert "assistant-finance, 2 on fake, 15 tokens each, 0.000 each" in told
+    with db.transaction(stack.admin) as conn:  # its settings since move it to another model
+        conn.execute("update instances set model = 'fake-2' where id = 'assistant-finance'")
+        [run] = measures.report(conn, "sample", priced, 7)["runs"]
+        assert run["model"] == "fake" and run["cost_per_run"] == (10 * 3.0 + 5 * 15.0) / 1_000_000
+        told = measures.told(measures.report(conn, "sample", priced, 7))
+    assert "assistant-finance, 2 on fake, 15 tokens each, costing 0.000 each at its prices" in told
 
 
 def test_an_approved_model_may_say_what_it_costs(tmp_path):
