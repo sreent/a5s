@@ -4,8 +4,8 @@
 # Then it checks that every message had one answer, in time, and no message was lost or
 # answered twice; that no part's memory, nor Postgres's connections, kept growing once the
 # stack had warmed up; that no part logged an error; and that the ledger verifies against its
-# locked copies. It finds what no test that runs for seconds can: leaks, locks that pile up,
-# and work done twice.
+# locked copies. Then it prints the measures, with what each run cost. It finds what no test
+# that runs for seconds can: leaks, locks that pile up, and work done twice.
 # Needs the image first: docker build -t a5s:dev .
 set -eu
 cd "$(dirname "$0")/.."
@@ -58,4 +58,6 @@ echo "No part logged an error while people were talking to it."
 
 compose exec -T anchor a5s anchor > /dev/null
 compose exec -T anchor a5s ledger verify
+echo "The measures, as the pilot's shadow week reads what a run costs:"
+compose exec -T gateway a5s measures --days 1
 echo "Soak test passed."

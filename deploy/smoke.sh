@@ -395,6 +395,11 @@ for v in versions:
 print(f"The ledger's {len(versions)} copies are locked: deleting them is refused.")
 PY
 compose exec -T anchor a5s ledger verify
+compose exec -T gateway a5s measures --days 1 > "$work/measures"  # from the core, as the pilot
+cat "$work/measures"                                               # reads them
+if grep -q "Runs that called a model: none" "$work/measures"; then
+  echo "The measures counted no run that called a model."; exit 1
+fi
 echo "Smoke test passed."
 
 if [ "$keep" = 1 ]; then
