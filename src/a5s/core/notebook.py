@@ -134,7 +134,8 @@ TOOL = CoreTool(
 def given(conn: psycopg.Connection, scenario: Any, run: dict) -> dict | None:
     """The entries a run is given: for people, those about the record its case is about, and
     for nobody, such as the schedule that keeps them, all of them. Only those whose every
-    record its run read all the run's people may see, newest first, within a budget."""
+    record its run read all the run's people may see, newest first, within a budget. How
+    many goes on the run, for the measures (core/measures.py)."""
     people = list(run["acts_for"])
     topic = (run.get("trigger") or {}).get("topic") or "general"
     if people and topic == "general":
@@ -155,6 +156,7 @@ def given(conn: psycopg.Connection, scenario: Any, run: dict) -> dict | None:
         used += len(line)
     if not shown:
         return None
+    conn.execute("update runs set notes_given = %s where id = %s", (len(shown), run["run"]))
     return {"title": f"What you've learned from records, about {topic}" if people
             else "What you've learned from records",
             "text": "Notes from your own earlier runs, from records alone, each with the records "

@@ -84,7 +84,7 @@ uv run a5s inbox --as ana    # her daily digest, from all her agents, once there
 uv run a5s summaries --as ana   # what a5s keeps of her conversation, once it outgrows a run
 uv run a5s ledger tail
 uv run a5s status           # how a5s is doing: its queue, runs, denials, budgets and objectives
-uv run a5s measures         # the measures first users baseline: what was met, who came back, costs
+uv run a5s measures         # what the pilot measures: what was met, who came back, costs, decisions
 uv run a5s ledger verify
 ```
 

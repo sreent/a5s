@@ -34,10 +34,10 @@ Each stage ends when what it shows is written down, here and in the phase it ser
 3. **Held changes** (weeks 7 to 10).
    - One type of action the team does often, such as moving a due date, held for the part's owner to decide on the core's page.
    - Graders grade a sample each week. Level 2 only if samples earn it ([phase 2](phase-2.md)).
-   - Shows: how long decisions take, how often the agent's changes are right, and graders' time against its estimate of five hours a quarter.
+   - Shows: how long decisions take and how many are approved, how often the agent's changes are right (`a5s measures`), and graders' time, which they note, against its estimate of five hours a quarter.
 4. **Groups, asking and the notebook** (weeks 11 and 12).
    - The team's own group chat with the assistant, the assistant asking the watcher, and a weekly schedule that notes what it learns from the records ([phase 3](phase-3.md)).
-   - Shows: how often people mention it, what the watcher is asked and answers, and how many notes are kept, read and let go.
+   - Shows: how often people mention it, what the watcher is asked and answers, and how many notes are kept, given to runs and let go (`a5s measures`).
 
 ## What stops it
 
@@ -53,7 +53,7 @@ Any of these suspends the instance first, which anyone with the role can do, and
 - **Phase 1's Done means,** with the suite on Azure and the baseline written into [phase 1](phase-1.md#done-means).
 - **The starting values marked [TBC],** such as budgets, digest times and the reply objective, from what the team used ([starting values](starting-values.md)).
 - **Phase 4,** from the critique's deferrals and what the pilot shows:
-  - if people rarely read or keep notes, notes from facts code works out from a5s's own records, such as which records keep coming up;
+  - if agents keep few notes, or runs are rarely given them, notes from facts code works out from a5s's own records, such as which records keep coming up;
   - if group chats reach their limit of 20, or the team works in Teams channels, bigger rooms;
   - if the team works with agents outside the organisation, agent to agent beyond a5s, with what they say treated as content from outside;
   - if a deployment needs one, adapters for managed runtimes, phase 3's last step;

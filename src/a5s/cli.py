@@ -338,9 +338,10 @@ def main(argv: list[str] | None = None) -> None:
         p.add_argument("--by", help="who you are, in development; else your sign-in in A5S_TOKEN")
     sub.add_parser("status", help="how a5s is doing: its queue, runs, denials, budgets and "
                                   "objectives")
-    measured = sub.add_parser("measures", help="the measures its first users baseline: what fell "
-                                               "due and was met, who came back, and what runs "
-                                               "cost")
+    measured = sub.add_parser("measures", help="the measures its first users baseline, and the "
+                                               "pilot's later stages show: what fell due and "
+                                               "was met, who came back, what runs cost, how "
+                                               "held changes were decided, and notes")
     measured.add_argument("--days", type=int, default=30, help="over the last so many days")
     held = sub.add_parser("proposals", help="the held changes that wait, or that a5s stopped "
                                             "part way through making; or end one of those")

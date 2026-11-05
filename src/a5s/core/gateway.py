@@ -1655,11 +1655,12 @@ def create_app(gw: Gateway) -> FastAPI:
 
     @app.get("/measures", dependencies=[Depends(service)])
     def measures_now(days: int = 30) -> dict:
-        """The measures phase 1's first users baseline, over the last `days` days: what fell
-        due and was met on time, how late the rest was, who came back, and what runs cost
-        (core/measures.py)."""
+        """The measures phase 1's first users baseline, and the pilot's later stages show,
+        over the last `days` days by the core's clock: what fell due and was met on time, how
+        late the rest was, who came back, what runs cost, how held changes were decided and
+        graded, and what agents asked each other and noted (core/measures.py)."""
         with db.transaction(gw.url) as conn:
-            return measures.report(conn, gw.scenario.name, gw.models, days)
+            return measures.report(conn, gw.scenario.name, gw.models, days, gw.clock())
 
     @app.post("/retention/sweep", dependencies=[Depends(service)])
     def sweep_retention() -> dict:
