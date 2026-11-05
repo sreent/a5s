@@ -116,3 +116,27 @@ def test_someone_who_left_long_after_they_last_spoke_is_let_go_too(stack):
     with db.transaction(stack.admin) as conn:
         left = conn.execute("select count(*) as n from preferences").fetchone()["n"]
     assert left == 0
+
+
+def test_the_chats_of_someone_who_left_go_with_the_record_of_their_archive(stack, monkeypatch):
+    stack.at(MONDAY)
+    stack.model.reply("Noted, Ben.")
+    stack.say("I'm working on Q-1002 today.", person="ben")
+    with db.transaction(stack.admin) as conn:  # where a5s writes to him first
+        conn.execute("insert into chats (channel, place, person, agent, reply_to, started_at) "
+                     "values ('matrix', '!ben:a5s.test', 'ben', 'assistant', "
+                     "'{\"room\": \"!ben:a5s.test\"}', now())")
+    people = dict(stack.gateway.scenario._people)
+    del people["ben"]  # Ben leaves
+    monkeypatch.setattr(stack.gateway.scenario, "_people", people)
+    sweep(stack)
+    stack.at(TUESDAY)
+    assert sweep(stack)["archived"] == 1
+    with db.transaction(stack.admin) as conn:
+        assert conn.execute("select person from chats").fetchone()["person"].startswith("former:")
+        conn.execute("update departures set archived_at = archived_at - interval '13 months'")
+    sweep(stack)
+    with db.transaction(stack.admin) as conn:
+        left = conn.execute("select (select count(*) from chats) as chats, "
+                            "(select count(*) from departures) as departures").fetchone()
+    assert (left["chats"], left["departures"]) == (0, 0)

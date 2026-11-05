@@ -6,7 +6,7 @@ What the data protection officer's assessment needs to know about a5s before any
 
 ## Whose data
 
-- **The team's people.** The directory names each of them: their id, such as Entra ID's object id, their name, roles, reporting line, working hours and time zone, and what they may see. a5s reads the directory at each run and keeps only their ids in its own records.
+- **The team's people.** The directory names each of them: their id, such as Entra ID's object id, their name, roles, reporting line, working hours and time zone, and what they may see. a5s reads the directory through the scenario, and its own records name people by their id, though what a5s and the agents say to them uses their names.
 - **What they and the agents say to each other,** one to one, and in the group chats they bring an agent into.
 - **What the records system holds,** such as customers' questions, names and amounts. It stays in the records system: a run reads it through the scenario's tools, and a5s keeps what the table below says, such as a record's key and title for what someone owes.
 - **Whoever decides, grades or approves,** by their id, with what they decided.
@@ -16,7 +16,8 @@ What the data protection officer's assessment needs to know about a5s before any
 | What | What it holds | Why | How long |
 | --- | --- | --- | --- |
 | Conversations: what each person and agent said, its summaries, the messages a5s received and sent for it, and what waited for a digest | The words, by the person's id. In a group chat, who said each turn and who heard it | So an agent picks up where they left off, and answers about the past from what was said | 12 months after the last thing either said |
-| Notes on how someone likes to work | In their words, only those they said yes to | So agents work the way they asked | Until they ask an agent to forget it, at once, or 12 months after it ended |
+| Notes on how someone likes to work | In their own words, as an agent offered it, kept once they said yes | So agents work the way they asked | Until they ask an agent to forget it, at once. Otherwise 12 months after it ended, or after it was offered if they never said yes |
+| Their preferences, such as their digest's time, what reports last told them of each of their records, and the chats a5s writes to them in | The setting, each record as last told, and each chat's own ids | So agents keep to their settings, a report says only what changed, and a5s reaches them | While they're here. When they leave, the first two go, and their chats are archived, until the record of their archive goes |
 | Reminders | What, when, and for whom | To remind them | 12 months after it was given or cancelled, or offered if nobody said yes |
 | What people owed | A record's key and its title from the records, whose it is, when it fell due and was done, whether an agent chased it or took it up the line, and what they said they're waiting on, in their words | To chase and escalate, from the records, to stop chasing while someone waits, and for the measures | While the records owe it, and 12 months after they stopped. What someone's waiting on, 12 months after they said it |
 | Held changes, and their decisions | The change asked for, the records as they stood, whom it was for, who decided and when | So a change waits for its decision, and the decision is evidence | 12 months after it ended |
@@ -25,12 +26,12 @@ What the data protection officer's assessment needs to know about a5s before any
 | The notebook | What an agent learned from records, with their keys. Nobody's words, since only a run that acts for nobody notes anything | So later runs know what to check | Until its records change, checked each day, and only its instance's newest 50 |
 | What a run handled: values passed as handles, what it read, and documents from outside | Sensitive values, such as contacts, and what the records and documents said | So a run can pass on values it never sees, and code can check what it says | An hour after the run ends |
 | A person's use of each day's budget, and the log of their digests | Tokens used each day, and when their digest went | So a budget holds for the day, and the digest goes once a day | Their last two days, and nothing once they leave |
-| Runs and the ledger | For each run and call: whom it acted for, by id, the tool or model, what was decided and why, and what was said only by hash and length, never the words | Evidence of what every agent did, for whom, under which settings | As long as the records it supports [TBC: the officer and assurance]. Its copies are in locked storage, where nobody can delete them before their time |
+| Runs and the ledger | For each run and call: whom it acted for, by id, the tool or model, the keys of the records it was about, what was decided and why, and what was said only by hash and length, never the words | Evidence of what every agent did, for whom, under which settings | As long as the records it supports [TBC: the officer and assurance]. Its copies are in locked storage, where nobody can delete them before their time |
 | Departures | Whose archive is which, once someone has left | To answer a request for a leaver's data | 12 months after archiving |
 | Traces | Masked spans: no prompt, reply, message, tool argument or person | To find what's slow or failing | 14 days |
 | Logs | What each service did. A few lines name a person by id, or a record by key, such as a budget's warning. Never what was said | To run a5s | The platform's [TBC] |
 
-Someone who leaves is archived a day after the directory stops naming them: what a5s kept for them goes under a name no person has, on the same clocks, and what was only for their day goes ([`core/departures.py`](../src/a5s/core/departures.py)). The retention sweep runs every hour and records in the ledger, in counts, what it deleted ([`core/retention.py`](../src/a5s/core/retention.py)).
+Someone who leaves is archived a day after the directory stops naming them: what a5s kept for them goes under a name no person has, on the same clocks, and what only served them while they were here goes ([`core/departures.py`](../src/a5s/core/departures.py)). The retention sweep runs every hour and records in the ledger, in counts, what it deleted ([`core/retention.py`](../src/a5s/core/retention.py)).
 
 ## Where it is
 

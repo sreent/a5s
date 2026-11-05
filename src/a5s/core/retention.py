@@ -12,7 +12,8 @@ their 30 days are past, and what someone owed goes 12 months after the records s
 owing it. A change a5s left marked as being made, which someone ends by hand
 (`a5s proposals`), goes 12 months after that. What a5s keeps for someone who left is archived
 where it is, a day after the directory stops naming them (core/departures.py), and goes on
-the same clocks, as does the record of whose archive it was. A note people ask
+the same clocks, as does the record of whose archive it was, and with it the chats a5s wrote
+to them in. A note people ask
 to forget goes at once (core/profiles.py). The ledger keeps what people and agents wrote only
 by hash and length (core/ledger.py), so retention needn't touch it. The values a run was handed as handles, what it read, and the documents from
 outside it read, go once the run has been over for an hour: a handle works only in its run, and nothing reads them after.
@@ -92,6 +93,8 @@ def sweep(conn: psycopg.Connection) -> dict[str, int]:
     delete("samples", "delete from samples where grade is null "
                       f"and drawn_at < now() - interval '{KEPT}'")  # nobody graded them
     delete("counts", "delete from action_counts where at < now() - interval '31 days'")
+    delete("chats", "delete from chats where person in (select archived_as from departures "
+                    f"where archived_at < now() - interval '{KEPT}')")  # an archive's, with it
     delete("departures", f"delete from departures where archived_at < now() - interval '{KEPT}'")
     delete("questions", f"delete from questions where asked_at < now() - interval '{KEPT}'")
     delete("obligations", "delete from obligations where done_at < now() - interval "
