@@ -63,7 +63,7 @@ Someone who leaves is archived a day after the directory stops naming them: what
 - **To see it:** the data protection officer, signed in with the role, runs `a5s export --person <id> --out <file>` with the team that runs a5s, whose service token reaches the core, and gets all a5s keeps that names them, as the table above lists it. It's one holder at a time: since the directory may give a leaver's id to someone new, an export by id gives what's its holder's since its last archive, and lists its archives, and the officer exports each by its own name. It gives nobody else's words: in a group chat, what they said, and how much they heard others say or were answered there, and of a question agents asked for others too, only that it was. It names records by key and title, and changes by what they do, never what records held, which is the records system's to answer for, nor whom else a change was for. What the ledger and runs hold, which is what was said only by hash, it counts. The ledger records each export, by whom and for whom, in counts ([`core/export.py`](../src/a5s/core/export.py)).
 - **To forget a note** on how they like to work: they ask an agent, and it goes at once, leaving no words in the ledger.
 - **To correct a summary:** they ask the agent, which corrects it, as they see it.
-- **To erase a conversation before its time:** not built. [TBC: whether the officer needs it.]
+- **To erase it:** the data protection officer runs `a5s erase --person <id> --confirm <id>` the same way, and a5s erases all it keeps that names them: their conversations and summaries, notes, preferences and reminders, chats, what reports told them, their days' budget and digests, what they said in group chats with the facts a group's summary keeps of it, the questions agents asked for them alone, what they said they were waiting on, and what they owed that the records no longer owe. If they've left, their archives go too, with the record of whose each was. It keeps what's evidence of what agents did, for as long as retention keeps it: the ledger, which keeps what was said only by hash, runs, the changes asked for them with their decisions and samples, and what they owe while the records owe it. Where they were in a group chat, a name no person has stands in their place, which nothing links back to them, and the agents' answers there are the group's and stay. The id, sent twice, guards against a mistyped one, and the ledger records each erasure, by whom and for whom, in counts ([`core/erasure.py`](../src/a5s/core/erasure.py)).
 - **What the records system holds** is the records system's to answer for.
 
 ## Measures
@@ -76,7 +76,7 @@ Someone who leaves is archived a day after the directory stops naming them: what
 - The retention periods: 12 months for conversations and what goes with them, and how long the ledger and runs are kept as evidence. [TBC]
 - The approved model for the class of the team's data, and its provider's terms. [TBC]
 - Who may reach the database itself, and how that's reviewed. [TBC]
-- Whether erasing a conversation on request must be built before stage 2. [TBC]
+- What erasure keeps as evidence of what agents did, and for how long. [TBC]
 - How long the platform keeps logs. [TBC]
 - The measures, and the flag for deciders. [TBC]
 - Whether a works council must agree. [TBC]

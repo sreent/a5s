@@ -344,6 +344,14 @@ def main(argv: list[str] | None = None) -> None:
                                        "A5S_TOKEN")
     exported.add_argument("--out", type=Path, help="write it to this file, which only you may "
                                                    "read, rather than print it")
+    erased = sub.add_parser("erase", help="erase all a5s keeps about someone, at their "
+                                          "request: for the data protection officer")
+    erased.add_argument("--person", required=True, help="their id in the directory, or an "
+                                                         "archive's name")
+    erased.add_argument("--confirm", required=True, help="the same again, so that a mistyped "
+                                                          "id erases nobody")
+    erased.add_argument("--by", help="who you are, in development; else your sign-in in "
+                                     "A5S_TOKEN")
     sub.add_parser("status", help="how a5s is doing: its queue, runs, denials, budgets and "
                                   "objectives")
     measured = sub.add_parser("measures", help="the measures its first users baseline, and the "
@@ -449,6 +457,14 @@ def main(argv: list[str] | None = None) -> None:
             print(f"{args.person} left on {archive['archived_at'][:10]}, and what a5s kept for "
                   f"them then is archived as {archive['name']}: export it with --person "
                   f"{archive['name']}.", file=sys.stderr)
+    elif args.command == "erase":
+        done = _admin(cfg, f"/people/{quote(args.person, safe='')}/erase",
+                      {"by": args.by, "identity": os.environ.get("A5S_TOKEN"),
+                       "confirm": args.confirm}, timeout=300)
+        print(f"Erased what a5s kept about {args.person}: " + (", ".join(
+            f"{n} from {kind.replace('_', ' ')}" for kind, n in sorted(done["gone"].items()))
+            or "it kept nothing") + ". The ledger, runs, the changes asked for them and what they "
+            "owe while the records owe it stay, as evidence of what agents did.")
     elif args.command == "anchor":
         _anchor(cfg, args.every)
     elif args.command == "status":

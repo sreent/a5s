@@ -169,6 +169,15 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 3. If they've left, the command names each archive of their id, and the officer exports it the same way, by its name: `--person former:...`. An id the directory later gave someone else exports only its new holder's.
 4. The ledger records the export, by whom and for whom, in counts. Delete the file once it's answered.
 
+## A request to erase someone's data
+
+**Shows as:** the data protection officer asking a5s to erase what it keeps about someone, at their request.
+
+1. Export it first, if the officer wants a copy of what goes (above): erasure can't be undone.
+2. The officer signs in, beside someone from the team that runs a5s, as for an export, and they run `a5s erase --person <id> --confirm <id>`, with the id twice, so that a mistyped one erases nobody. An archive's name erases that archive alone.
+3. It says how much of each kind went. What's evidence of what agents did stays: the ledger, runs, the changes asked for them with their decisions and samples, and what they owe while the records owe it, which the records system answers for. If they're still here, an agent that wrote first to them waits until they write again, since the chats a5s wrote in go too.
+4. The ledger records the erasure, by whom and for whom, in counts, and nothing that went.
+
 ## Old conversations aren't deleted
 
 **Shows as:** the scheduler's log saying it couldn't ask the core to delete what's past its time.

@@ -57,6 +57,7 @@ from a5s.core import (
     counts,
     departures,
     digests,
+    erasure,
     export,
     extractor,
     groups,
@@ -986,6 +987,10 @@ class StatusChange(BaseModel):
     identity: str | None = None  # their sign-in token: who's asking, everywhere else
 
 
+class Erasure(StatusChange):
+    confirm: str | None = None  # the id again, so that a mistyped one erases nobody
+
+
 class CapChange(StatusChange):
     agent: str
     part: str
@@ -1687,6 +1692,32 @@ def create_app(gw: Gateway) -> FastAPI:
                                  "args": {"person": person, "by": by, "identity": identity,
                                           "counts": export.counts(found)}})
         return found
+
+    @app.post("/people/{person}/erase", dependencies=[Depends(service)])
+    def erase_person(person: str, body: Erasure) -> dict:
+        """Erase all a5s keeps about someone, at their request, for the data protection officer
+        alone, signed in, who sends the id again to confirm it (core/erasure.py). What's
+        evidence of what agents did stays. The ledger records it, in counts."""
+        by, identity = who_asks(body)
+        officer = gw.scenario.person(by)
+        if officer is None or DATA_PROTECTION not in officer.roles:
+            raise HTTPException(403, f"only the data protection officer erases what a5s keeps "
+                                     f"about someone, and {by} isn't")
+        if groups.of(person):
+            raise HTTPException(400, "a group chat's conversation is nobody's own: name a person")
+        if body.confirm != person:
+            raise HTTPException(400, "send the id again as confirm, so that a mistyped id erases "
+                                     "nobody")
+        with db.transaction(gw.url) as conn:
+            gone = erasure.erase(conn, person, gw.clock())
+            if not gone and gw.scenario.person(person) is None:
+                raise HTTPException(404, f"nobody in the directory has the id {person}, and a5s "
+                                         "keeps nothing under it: check the id")
+            ledger.append(conn, {"kind": "admin", "action": "erase", "run": None,
+                                 "instance": None, "acts_for": [person], "decision": "record",
+                                 "args": {"person": person, "by": by, "identity": identity,
+                                          "erased": gone}})
+        return {"erased": person, "by": by, "gone": gone}
 
     @app.post("/retention/sweep", dependencies=[Depends(service)])
     def sweep_retention() -> dict:
