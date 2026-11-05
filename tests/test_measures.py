@@ -9,6 +9,7 @@ from dataclasses import replace
 from datetime import timedelta
 
 from a5s import db
+from a5s.config import Prices
 from a5s.core import groups, measures, notebook
 from test_asking import ASKED, may_ask
 from test_notebook import NOTED, learn, with_notebook
@@ -89,11 +90,12 @@ def test_the_measures_say_what_a_run_costs_on_a_model_with_prices(stack):
     stack.say("Hello")
     stack.model.reply("Hello again.")
     stack.say("Hello again")
-    priced = {"fake": replace(stack.gateway.models["fake"], prices=(3.0, 15.0))}
+    priced = {"fake": replace(stack.gateway.models["fake"], prices=Prices(3.0, 15.0))}
     with stack.client() as c:
         unpriced = c.get("/measures", params={"days": 7}).json()
     assert unpriced["runs"] == [{"instance": "assistant-finance", "model": "fake", "runs": 2,
-                                 "tokens_per_run": 15, "tokens_p90": 15, "cost_per_run": None}]
+                                 "tokens_per_run": 15, "tokens_p90": 15, "cached_share": 0.0,
+                                 "cost_per_run": None}]
     with db.transaction(stack.admin) as conn:  # its settings since move it to another model
         conn.execute("update instances set model = 'fake-2' where id = 'assistant-finance'")
         [run] = measures.report(conn, "sample", priced, 7)["runs"]
@@ -107,7 +109,7 @@ def test_an_approved_model_may_say_what_it_costs(tmp_path):
     from conftest import FAKE_MODELS
     path = tmp_path / "models.yaml"
     path.write_text(FAKE_MODELS + "    prices: {input: 3, output: 15}\n")
-    assert load_models(path)["fake"].prices == (3.0, 15.0)
+    assert load_models(path)["fake"].prices == Prices(3.0, 15.0)
     path.write_text(FAKE_MODELS)
     assert load_models(path)["fake"].prices is None
 

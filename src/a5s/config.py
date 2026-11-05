@@ -6,12 +6,23 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
+from typing import NamedTuple
 
 import yaml
 
 DEFAULT_DATABASE_URL = "postgresql://a5s@127.0.0.1:54329/postgres"
 DEFAULT_GATEWAY_URL = "http://127.0.0.1:8700"
 DEFAULT_CHANNELS_URL = "http://127.0.0.1:8703"
+
+
+class Prices(NamedTuple):
+    """What a million tokens cost: in, out, and in from the provider's cache, read or written,
+    which providers price apart, at the price in when they don't say."""
+
+    input: float
+    output: float
+    cached_input: float | None = None
+    cache_write: float | None = None
 
 
 @dataclass(frozen=True)
@@ -27,9 +38,9 @@ class ModelConfig:
     region: str = "[TBC]"
     data_classes: tuple[str, ...] = ("synthetic",)
     reported_model: str | None = None  # what every response must report, if not `model`
-    # What a million tokens in, and a million out, cost, as the provider charges, in the
-    # deployment's currency, for what a run costs (core/measures.py); none if not given
-    prices: tuple[float, float] | None = None
+    # What a million tokens cost, as the provider charges, in the deployment's currency, for
+    # what a run costs (core/measures.py); none if not given
+    prices: Prices | None = None
 
     @property
     def api_key(self) -> str | None:
@@ -55,8 +66,10 @@ def load_models(path: Path) -> dict[str, ModelConfig]:
             region=m.get("region", "[TBC]"),
             data_classes=tuple(m.get("data_classes", ["synthetic"])),
             reported_model=m.get("reported_model"),
-            prices=(float(m["prices"]["input"]), float(m["prices"]["output"]))
-            if m.get("prices") else None,
+            prices=Prices(float(p["input"]), float(p["output"]),
+                          *(None if p.get(k) is None else float(p[k])
+                            for k in ("cached_input", "cache_write")))
+            if (p := m.get("prices")) else None,
         )
     return models
 

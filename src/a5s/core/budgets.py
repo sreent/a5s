@@ -13,6 +13,7 @@ told so, in a5s's own words, with who to ask.
 from __future__ import annotations
 
 from datetime import date, datetime
+from typing import NamedTuple
 
 import psycopg
 
@@ -25,25 +26,41 @@ WARN = 0.8  # of each person's day, when a warning is recorded
 OWED = ("obligation", "reminder")  # the work that may use the share kept for it
 
 
-def split(usage: object) -> tuple[int, int]:
-    """The tokens a call took in and out, in either API's words, as providers price them."""
+class Tokens(NamedTuple):
+    taken_in: int  # all a call took in
+    cache_read: int  # of those, read from the provider's cache
+    cache_written: int  # and written to it
+    given_out: int
+
+
+def split(usage: object) -> Tokens:
+    """The tokens a call took, in either API's words, as providers price them: all it took in,
+    and of those, how many it read from the provider's cache and wrote to it, and what it
+    gave out. The Anthropic API counts cached input apart from the rest; the OpenAI API counts
+    it in, and DeepSeek says so in words of its own."""
     if not isinstance(usage, dict):
-        return 0, 0
-    tokens_in = usage.get("prompt_tokens", usage.get("input_tokens"))
-    tokens_out = usage.get("completion_tokens", usage.get("output_tokens"))
-    return (tokens_in if isinstance(tokens_in, int) else 0,
-            tokens_out if isinstance(tokens_out, int) else 0)
+        return Tokens(0, 0, 0, 0)
+
+    def n(value: object) -> int:
+        return value if isinstance(value, int) else 0
+
+    if "input_tokens" in usage:  # Anthropic's
+        read, written = n(usage.get("cache_read_input_tokens")), \
+            n(usage.get("cache_creation_input_tokens"))
+        return Tokens(n(usage.get("input_tokens")) + read + written, read, written,
+                      n(usage.get("output_tokens")))
+    details = usage.get("prompt_tokens_details")
+    read = n(details.get("cached_tokens")) if isinstance(details, dict) else 0
+    return Tokens(n(usage.get("prompt_tokens")), read or n(usage.get("prompt_cache_hit_tokens")),
+                  0, n(usage.get("completion_tokens")))
 
 
 def tokens_of(usage: object) -> int:
-    """The tokens a provider says a call took, in either API's words."""
-    if not isinstance(usage, dict):
-        return 0
-    if isinstance(usage.get("total_tokens"), int):
+    """The tokens a provider says a call took, in either API's words, its cache's included."""
+    if isinstance(usage, dict) and isinstance(usage.get("total_tokens"), int):
         return usage["total_tokens"]
-    return sum(v for k, v in usage.items()
-               if k in ("prompt_tokens", "completion_tokens", "input_tokens", "output_tokens")
-               and isinstance(v, int))
+    took = split(usage)
+    return took.taken_in + took.given_out
 
 
 def day_of(scenario: Scenario, person: str, now: datetime) -> date:
@@ -82,10 +99,13 @@ def spent(conn: psycopg.Connection, scenario: Scenario, budget: Budget, run: dic
     """Count a model call's tokens against its run, in and out apart, with the model it
     called, and against its person's day, whose earlier days retention lets go. The day's use,
     if this call took it past four fifths of the budget, for a warning."""
-    tokens_in, tokens_out = split(usage)
+    took = split(usage)
     conn.execute("update runs set tokens = tokens + %s, tokens_in = tokens_in + %s, "
-                 "tokens_out = tokens_out + %s, model = coalesce(%s, model) where id = %s",
-                 (tokens, tokens_in, tokens_out, model, run["run"]))
+                 "tokens_out = tokens_out + %s, tokens_cached = tokens_cached + %s, "
+                 "tokens_cache_written = tokens_cache_written + %s, "
+                 "model = coalesce(%s, model) where id = %s",
+                 (tokens, took.taken_in, took.given_out, took.cache_read, took.cache_written,
+                  model, run["run"]))
     person = payer(list(run["acts_for"]), run.get("trigger")) or ""
     row = conn.execute(
         "insert into spend (instance_id, person, day, tokens) values (%s, %s, %s, %s) "

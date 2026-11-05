@@ -25,7 +25,8 @@ _FIELDS = {
                "max_completion_tokens", "stop", "seed", "response_format", "parallel_tool_calls",
                "presence_penalty", "frequency_penalty", "stream"},
     "anthropic": {"model", "messages", "system", "tools", "tool_choice", "temperature", "top_p",
-                  "top_k", "max_tokens", "stop_sequences", "stream", "thinking"},
+                  "top_k", "max_tokens", "stop_sequences", "stream", "thinking",
+                  "cache_control"},  # where the provider may cache the prompt so far
 }
 
 

@@ -64,5 +64,5 @@ Any of these suspends the instance first, which anyone with the role can do, and
 | Cost | Estimate |
 | --- | --- |
 | People | The platform owner, and an engineer for about half their time, for the 12 weeks. The team's own time is a short conversation each at the end. Graders, about five hours a quarter for the one type of action. |
-| Models | About $0.50 a run before caching at illustrative prices, so about $500 for 1,000 runs a month ([phase 1](phase-1.md#costs)). The approved model's own prices may differ. [TBC] |
+| Models | About $0.50 a run before caching at illustrative prices, so about $500 for 1,000 runs a month ([phase 1](phase-1.md#costs)). The approved model's own prices may differ, and caching takes less: `a5s measures` says how much each run read from the cache, at the cached price the approved list gives. [TBC] |
 | Platform | AKS, managed Postgres, locked blob storage and telemetry in one region. [TBC: from Azure's prices] |

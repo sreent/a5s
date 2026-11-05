@@ -45,6 +45,7 @@ Someone who leaves is archived a day after the directory stops naming them: what
 - **A run's context:** the conversation it continues, what the records it read hold, its notes, and its instructions. Only what everyone it acts for may see.
 - **Not classified values.** The settings classify fields, such as a customer's name as personal, and a model sees only classes its approved entry allows. Others it sees as tokens. Values the agent shouldn't retype, such as contacts and bank accounts, it sees only as handles.
 - **Not outside content,** such as an email's body, which only the extractor reads, filling a fixed form.
+- **Cached for minutes.** A provider may keep what a run sent for a few minutes, so its next call reads it from a cache, for less. Deep Agents asks Anthropic models to, at the points it marks, and DeepSeek does it of itself. [TBC: the approved provider's terms for what it caches.]
 - **For the pilot,** one model on the organisation's approved list for the class of the team's data, such as one it runs in its own subscription. Models hosted by DeepSeek and Qwen see synthetic data only. [TBC: the approved model's provider keeps no prompt, and trains on none, under its terms.]
 
 ## Who can see it

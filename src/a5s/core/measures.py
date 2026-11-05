@@ -81,6 +81,8 @@ def report(conn: psycopg.Connection, scenario: str, models: dict[str, ModelConfi
         "select r.instance_id, coalesce(r.model, i.model) as model, count(*) as runs, "
         "sum(r.tokens)::bigint as tokens, "
         "sum(r.tokens_in)::bigint as tokens_in, sum(r.tokens_out)::bigint as tokens_out, "
+        "sum(r.tokens_cached)::bigint as cached, "
+        "sum(r.tokens_cache_written)::bigint as cache_written, "
         "percentile_cont(0.9) within group (order by r.tokens) as p90 "
         "from runs r join instances i on i.id = r.instance_id "
         f"where r.opened_at > {since} and r.tokens > 0 "
@@ -145,8 +147,8 @@ def report(conn: psycopg.Connection, scenario: str, models: dict[str, ModelConfi
         "runs": [{"instance": r["instance_id"], "model": r["model"], "runs": r["runs"],
                   "tokens_per_run": round(r["tokens"] / r["runs"]),
                   "tokens_p90": round(float(r["p90"])),
-                  "cost_per_run": _cost(models.get(r["model"]), r["tokens_in"], r["tokens_out"],
-                                        r["runs"])} for r in runs],
+                  "cached_share": _share(r["cached"], r["tokens_in"]),
+                  "cost_per_run": _cost(models.get(r["model"]), r)} for r in runs],
         "held": {"held": held["held"], "approved": held["approved"],
                  "rejected": held["rejected"], "lapsed": held["lapsed"],
                  "waiting": held["waiting"],
@@ -194,6 +196,8 @@ def told(m: dict[str, Any]) -> str:
             f"by {_many(x['people'], 'person', 'people')}" for x in m["groups"]) or "none") + ".",
         "  Runs that called a model: " + ("; ".join(
             f"{x['instance']}, {x['runs']} on {x['model']}, {x['tokens_per_run']:,} tokens each"
+            + (f", {_percent(x['cached_share'])} of what they took in from the cache"
+               if x["cached_share"] else "")
             + (f", costing {x['cost_per_run']:.3f} each at its prices"
                if x["cost_per_run"] is not None else ", its model's prices unknown")
             for x in m["runs"]) or "none") + ".",
@@ -221,10 +225,17 @@ def told(m: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
-def _cost(model: ModelConfig | None, tokens_in: int, tokens_out: int, runs: int) -> float | None:
-    if model is None or model.prices is None or not runs:
+def _cost(model: ModelConfig | None, r: dict[str, Any]) -> float | None:
+    """What a run costs on average, at its model's prices, with what it read from the cache, or
+    wrote to it, at the prices the provider charges for those."""
+    if model is None or model.prices is None or not r["runs"]:
         return None
-    return (tokens_in * model.prices[0] + tokens_out * model.prices[1]) / 1_000_000 / runs
+    p = model.prices
+    fresh = r["tokens_in"] - r["cached"] - r["cache_written"]
+    return (fresh * p.input + r["cached"] * (p.cached_input if p.cached_input is not None
+                                             else p.input)
+            + r["cache_written"] * (p.cache_write if p.cache_write is not None else p.input)
+            + r["tokens_out"] * p.output) / 1_000_000 / r["runs"]
 
 
 def _share(part: int, whole: int) -> float | None:
