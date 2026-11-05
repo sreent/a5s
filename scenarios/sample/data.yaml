@@ -28,6 +28,9 @@ people:
   - {id: lena, name: Lena Fischer, team: technology, timezone: Europe/London}
   - {id: rosa, name: Rosa Mendes, team: risk, timezone: Europe/London, roles: [release-approver]}
   - {id: kofi, name: Kofi Mensah, team: audit, timezone: Europe/London, roles: [assurance]}
+  # Answers requests for someone's data, such as to see what a5s keeps about them
+  - {id: noor, name: Noor Rahman, team: legal, timezone: Europe/London,
+     roles: [data-protection-officer]}
 
 # The parts of the business, each owned by whoever holds part-owner:<part> above. Each
 # record is in one. Its team may see its records, and so may any team it names as seeing

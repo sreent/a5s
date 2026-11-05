@@ -56,11 +56,11 @@ Someone who leaves is archived a day after the directory stops naming them: what
 - **An instance's owner:** its notes whose records they may see, on the core's page.
 - **The team that runs a5s:** the status and the measures, which count people and never name them; the held changes that wait, by whom they're for (`a5s proposals`); and the ledger, by ids and hashes.
 - **Anyone with access to the database itself** sees everything a5s keeps. [TBC: who, with the cloud's access reviews, and its audit log of who connected.]
-- **The data protection officer:** the record of whose archive is which.
+- **The data protection officer:** the record of whose archive is which, and for a request to see someone's data, all a5s keeps about them.
 
 ## A request for someone's data
 
-- **To see it:** what a5s keeps about someone is found by their id in the tables above, and for a leaver, by their archive's name, from the departures record. a5s has no command that exports it yet. [TBC: built before stage 2, or the team that runs a5s finds it in the database.]
+- **To see it:** the data protection officer, signed in with the role, runs `a5s export --person <id> --out <file>` with the team that runs a5s, whose service token reaches the core, and gets all a5s keeps that names them, as the table above lists it, with their archive if they've left. It gives nobody else's words: in a group chat, what they said, and how much they heard others say. It names records by key and title, and what they hold is the records system's to answer for. What the ledger and runs hold, which is what was said only by hash, it counts. The ledger records each export, by whom and for whom, in counts ([`core/export.py`](../src/a5s/core/export.py)).
 - **To forget a note** on how they like to work: they ask an agent, and it goes at once, leaving no words in the ledger.
 - **To correct a summary:** they ask the agent, which corrects it, as they see it.
 - **To erase a conversation before its time:** not built. [TBC: whether the officer needs it.]
@@ -76,7 +76,7 @@ Someone who leaves is archived a day after the directory stops naming them: what
 - The retention periods: 12 months for conversations and what goes with them, and how long the ledger and runs are kept as evidence. [TBC]
 - The approved model for the class of the team's data, and its provider's terms. [TBC]
 - Who may reach the database itself, and how that's reviewed. [TBC]
-- Whether an export for a request to see someone's data, or erasing a conversation on request, must be built before stage 2. [TBC]
+- Whether erasing a conversation on request must be built before stage 2. [TBC]
 - How long the platform keeps logs. [TBC]
 - The measures, and the flag for deciders. [TBC]
 - Whether a works council must agree. [TBC]

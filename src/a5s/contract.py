@@ -29,6 +29,7 @@ PART_DELEGATE = "part-delegate"
 # a5s's own roles, for approving its releases. An agent's owner holds agent-owner:<agent>.
 RELEASE_APPROVER = "release-approver"  # never from the team that runs a5s, nor above it
 ASSURANCE = "assurance"
+DATA_PROTECTION = "data-protection-officer"  # answers requests for someone's data (core/export.py)
 
 
 @dataclass(frozen=True)

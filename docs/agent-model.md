@@ -40,6 +40,7 @@ Roles are held by people, never by job titles. An organisation assigns people to
 | Release approver | Approves what loosens a5s: releases that change a tool or widen what an agent may do, changes to the trusted core, and anything else the scenario names nobody else for. Never from the team that runs a5s, or its manager's reporting line. |
 | Graders | Grade samples of an agent's work. Never from the team that built it, nor anyone a change was for or who decided it. |
 | Assurance | Holds the ledger's anchor, reads the ledger, and is told of everything that loosens a5s |
+| Data protection officer | Answers requests for someone's data, exporting all a5s keeps about them (`a5s export`), keeps the record of whose archive is which, and agrees the measures before they start ([data protection](data-protection.md)) |
 
 ## Lifecycle
 

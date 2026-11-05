@@ -36,6 +36,7 @@ from a5s import db
 from a5s.config import Config, ModelConfig
 from a5s.contract import (
     ASSURANCE,
+    DATA_PROTECTION,
     INSTANCE_APPROVER,
     PART_OWNER,
     Person,
@@ -56,6 +57,7 @@ from a5s.core import (
     counts,
     departures,
     digests,
+    export,
     extractor,
     groups,
     handles,
@@ -1661,6 +1663,25 @@ def create_app(gw: Gateway) -> FastAPI:
         graded, and what agents asked each other and noted (core/measures.py)."""
         with db.transaction(gw.url) as conn:
             return measures.report(conn, gw.scenario.name, gw.models, days, gw.clock())
+
+    @app.post("/people/{person}/export", dependencies=[Depends(service)])
+    def export_person(person: str, body: StatusChange) -> dict:
+        """All a5s keeps about someone, for their request to see it, for the data protection
+        officer alone, signed in (core/export.py). The ledger records it, in counts."""
+        by, identity = who_asks(body)
+        officer = gw.scenario.person(by)
+        if officer is None or DATA_PROTECTION not in officer.roles:
+            raise HTTPException(403, f"only the data protection officer exports what a5s keeps "
+                                     f"about someone, and {by} isn't")
+        if groups.of(person):
+            raise HTTPException(400, "a group chat's conversation is nobody's own: name a person")
+        with db.transaction(gw.url) as conn:
+            found = export.gather(conn, person)
+            ledger.append(conn, {"kind": "admin", "action": "export", "run": None,
+                                 "instance": None, "acts_for": [person], "decision": "record",
+                                 "args": {"person": person, "by": by, "identity": identity,
+                                          "counts": export.counts(found)}})
+        return found
 
     @app.post("/retention/sweep", dependencies=[Depends(service)])
     def sweep_retention() -> dict:
