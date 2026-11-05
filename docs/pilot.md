@@ -29,7 +29,7 @@ Each stage ends when what it shows is written down, here and in the phase it ser
    - Shows: replies within the objective, nine in ten within two minutes, nothing lost, and what a run costs on the approved model, once its prices are in the approved list (`a5s measures`).
 2. **One team, reading** (weeks 3 to 6).
    - The watcher at level 0, and the assistant at level 1 at most: they read, remind and chase, and people make the changes.
-   - The data protection officer signs off the assessment before any of the team's data reaches a model.
+   - The data protection officer signs off the assessment before any of the team's data reaches a model, from what a5s keeps about people, where, for how long and who sees it ([data protection](data-protection.md)).
    - Shows: the baseline, the second half of phase 1's Done means. Promises and reminders met on time, time from something falling due to it being done, people who come back, and cost per run, from `a5s measures` each week, beside what each person says in a short conversation at the end. Four weeks hold two fortnights but not two months, so who came back is over a fortnight here (`a5s measures --days 14`), and over a month from the end of stage 3.
 3. **Held changes** (weeks 7 to 10).
    - One type of action the team does often, such as moving a due date, held for the part's owner to decide on the core's page.

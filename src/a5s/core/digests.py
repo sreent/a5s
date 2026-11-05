@@ -90,8 +90,11 @@ def compose(person: Person, items: list[dict], due: datetime, agent: str | None 
 
 def close(conn: psycopg.Connection, person: str, due: datetime, now: datetime, items: list[dict],
           channel: str | None) -> None:
-    """The day's digest went, with these items, or with none, which closes the day all the same."""
+    """The day's digest went, with these items, or with none, which closes the day all the same.
+    The log lets go of days before yesterday, since only today's is asked after."""
     conn.execute("delete from digest_waits where person = %s and due_at <= %s", (person, due))
+    conn.execute("delete from digests where person = %s and due_at < %s",
+                 (person, due - timedelta(days=2)))
     conn.execute("insert into digests (person, due_at, sent_at, items, channel) "
                  "values (%s, %s, %s, %s, %s) on conflict do nothing",
                  (person, due, now, len(items), channel))

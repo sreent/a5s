@@ -8,7 +8,8 @@ work, and the reminders, 12 months after they ended, as do what someone said the
 waiting on, offers nobody said yes to, the record of each day's report, and the changes agents
 asked for, with their decisions, 12 months after they ended, and samples of agents' work 12
 months after they were graded, or, if nobody graded them, drawn. The counts of changes go once
-their 30 days are past. A change a5s left marked as being made, which someone ends by hand
+their 30 days are past, and what someone owed goes 12 months after the records stopped
+owing it. A change a5s left marked as being made, which someone ends by hand
 (`a5s proposals`), goes 12 months after that. What a5s keeps for someone who left is archived
 where it is, a day after the directory stops naming them (core/departures.py), and goes on
 the same clocks, as does the record of whose archive it was. A note people ask
@@ -93,4 +94,6 @@ def sweep(conn: psycopg.Connection) -> dict[str, int]:
     delete("counts", "delete from action_counts where at < now() - interval '31 days'")
     delete("departures", f"delete from departures where archived_at < now() - interval '{KEPT}'")
     delete("questions", f"delete from questions where asked_at < now() - interval '{KEPT}'")
+    delete("obligations", "delete from obligations where done_at < now() - interval "
+                          f"'{KEPT}'")  # with what the records called it, and whose it was
     return gone
