@@ -14,6 +14,7 @@ import threading
 import time
 from dataclasses import replace
 from pathlib import Path
+from urllib.parse import quote
 
 import httpx
 import yaml
@@ -284,9 +285,9 @@ def _release(cfg: Config, args: argparse.Namespace) -> None:
     print("Approved here.")
 
 
-def _admin(cfg: Config, path: str, body: dict | None = None) -> dict:
+def _admin(cfg: Config, path: str, body: dict | None = None, timeout: float = 30) -> dict:
     headers = {"Authorization": f"Bearer {cfg.service_token}"}
-    with httpx.Client(base_url=cfg.gateway_url, headers=headers, timeout=30) as gw:
+    with httpx.Client(base_url=cfg.gateway_url, headers=headers, timeout=timeout) as gw:
         response = gw.post(path, json=body) if body is not None else gw.get(path)
     if response.status_code >= 400:
         sys.exit(f"{response.status_code}: {response.text}")
@@ -336,6 +337,13 @@ def main(argv: list[str] | None = None) -> None:
         p = sub.add_parser(verb, help=f"{verb} an instance")
         p.add_argument("instance")
         p.add_argument("--by", help="who you are, in development; else your sign-in in A5S_TOKEN")
+    exported = sub.add_parser("export", help="all a5s keeps about someone, for their request "
+                                             "to see it: for the data protection officer")
+    exported.add_argument("--person", required=True, help="their id in the directory")
+    exported.add_argument("--by", help="who you are, in development; else your sign-in in "
+                                       "A5S_TOKEN")
+    exported.add_argument("--out", type=Path, help="write it to this file, which only you may "
+                                                   "read, rather than print it")
     sub.add_parser("status", help="how a5s is doing: its queue, runs, denials, budgets and "
                                   "objectives")
     measured = sub.add_parser("measures", help="the measures its first users baseline, and the "
@@ -422,6 +430,18 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command in ("suspend", "resume"):
         print(_admin(cfg, f"/instances/{args.instance}/{args.command}",
                      {"by": args.by, "identity": os.environ.get("A5S_TOKEN")}))
+    elif args.command == "export":
+        found = _admin(cfg, f"/people/{quote(args.person, safe='')}/export",
+                       {"by": args.by, "identity": os.environ.get("A5S_TOKEN")},
+                       timeout=300)  # it counts their entries across the whole ledger
+        text = json.dumps(found, indent=2, ensure_ascii=False) + "\n"
+        if args.out is None:
+            print(text, end="")
+        else:  # someone's data: for the officer's eyes, not everyone's on the machine
+            with os.fdopen(os.open(args.out, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600),
+                           "w") as out:
+                out.write(text)
+            print(f"Wrote all a5s keeps about {args.person} to {args.out}.")
     elif args.command == "anchor":
         _anchor(cfg, args.every)
     elif args.command == "status":

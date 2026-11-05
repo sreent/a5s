@@ -85,6 +85,7 @@ uv run a5s summaries --as ana   # what a5s keeps of her conversation, once it ou
 uv run a5s ledger tail
 uv run a5s status           # how a5s is doing: its queue, runs, denials, budgets and objectives
 uv run a5s measures         # what the pilot measures: what was met, who came back, costs, decisions
+uv run a5s export --person ben --by noor   # all a5s keeps about Ben, for the data protection officer
 uv run a5s ledger verify
 ```
 

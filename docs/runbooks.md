@@ -160,6 +160,14 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 1. Don't restart the copier to make the error go away. It stops when the ledger no longer matches its copies, which means the history changed.
 2. Run `a5s ledger verify`, and tell assurance what it says.
 
+## A request for someone's data
+
+**Shows as:** the data protection officer asking for what a5s keeps about someone, such as for their request to see it.
+
+1. The officer signs in and puts their sign-in in `A5S_TOKEN`, beside someone from the team that runs a5s, whose service token reaches the core, and they run `a5s export --person <id> --out <file>` with the person's id in the directory. It needs both: the team can't export without the officer's sign-in, nor can anyone else with a role, or the person themselves.
+2. The file holds all a5s keeps that names them, and their archive if they've left, and only the officer may read it. It gives nobody else's words, only how much they heard others say in group chats, and names records by key and title: what records hold is the records system's to answer for.
+3. The ledger records the export, by whom and for whom, in counts. Delete the file once it's answered.
+
 ## Old conversations aren't deleted
 
 **Shows as:** the scheduler's log saying it couldn't ask the core to delete what's past its time.

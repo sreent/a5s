@@ -21,7 +21,8 @@ def reply(body: dict, message: dict) -> dict:
             "model": body["model"],
             "choices": [{"index": 0, "message": message,
                          "finish_reason": "tool_calls" if "tool_calls" in message else "stop"}],
-            "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}}
+            "usage": {"prompt_tokens": 10, "completion_tokens": 5,  # a few, as the measures
+                      "total_tokens": 15}}  # count, but too few for any budget to stop
 
 
 @app.post("/v1/chat/completions")
