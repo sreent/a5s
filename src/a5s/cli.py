@@ -21,7 +21,7 @@ import yaml
 from a5s import build, db, definitions, devdb, worker
 from a5s.config import DEFAULT_DATABASE_URL, Config
 from a5s.contract import Signature
-from a5s.core import anchor, inbox, ledger, registry, releases, signing, status
+from a5s.core import anchor, inbox, ledger, measures, registry, releases, signing, status
 from a5s.services.scheduler import Scheduler, remote_worker
 
 log = logging.getLogger("a5s")
@@ -165,6 +165,8 @@ def _summaries(cfg: Config, person: str, agent: str) -> None:
 
 
 def _service(cfg: Config, name: str):
+    if name != "worker":  # never against a schema a later release made
+        db.known(cfg.database_url)
     if name == "gateway":
         return build.app(cfg)
     if name == "worker":
@@ -173,6 +175,7 @@ def _service(cfg: Config, name: str):
 
 
 def _scheduler(cfg: Config) -> None:
+    db.known(cfg.database_url)  # never against a schema a later release made
     hand_off = remote_worker(cfg.worker_url) if cfg.worker_url else worker.run_agent
     Scheduler(cfg, build.scenario(cfg), worker=hand_off).listen(threading.Event())
 
@@ -335,6 +338,11 @@ def main(argv: list[str] | None = None) -> None:
         p.add_argument("--by", help="who you are, in development; else your sign-in in A5S_TOKEN")
     sub.add_parser("status", help="how a5s is doing: its queue, runs, denials, budgets and "
                                   "objectives")
+    measured = sub.add_parser("measures", help="the measures its first users baseline, and the "
+                                               "pilot's later stages show: what fell due and "
+                                               "was met, who came back, what runs cost, how "
+                                               "held changes were decided, and notes")
+    measured.add_argument("--days", type=int, default=30, help="over the last so many days")
     held = sub.add_parser("proposals", help="the held changes that wait, or that a5s stopped "
                                             "part way through making; or end one of those")
     held.add_argument("end", nargs="?", choices=["end"], help="end a change a5s stopped making")
@@ -418,6 +426,8 @@ def main(argv: list[str] | None = None) -> None:
         _anchor(cfg, args.every)
     elif args.command == "status":
         print(status.told(_admin(cfg, "/status")))
+    elif args.command == "measures":
+        print(measures.told(_admin(cfg, f"/measures?days={args.days}")))
     elif args.command == "proposals" and args.end:
         if not args.key:
             sys.exit("name the change to end, such as P-12")

@@ -465,13 +465,22 @@ def told(proposal: dict, became: str, by: str | None = None, extra: str = "",
 
 
 def brief(conn: psycopg.Connection, instance: str, acts_for: list[str],
-          records: list[str]) -> list[str]:
+          records: list[str], conversation: str | None = None) -> list[str]:
     """The changes waiting for a decision on these records, asked for the same people, for a
-    run's brief: so the agent says it waits, rather than asking again."""
+    run's brief: so the agent says it waits, rather than asking again. In a group chat, those
+    asked for there while everyone now in it was there."""
     if not records:
         return []
-    rows = conn.execute(
-        "select * from proposals where instance_id = %s and acts_for = %s and status = 'waiting' "
-        "and records ?| %s order by id", (instance, acts_for, records)).fetchall()
+    if conversation is not None:
+        rows = conn.execute(
+            "select p.* from proposals p join runs r on r.id = p.run_id where p.instance_id = %s "
+            "and r.trigger->>'conversation' = %s and r.acts_for @> %s::text[] "
+            "and p.status = 'waiting' and p.records ?| %s order by p.id",
+            (instance, conversation, acts_for, records)).fetchall()
+    else:
+        rows = conn.execute(
+            "select * from proposals where instance_id = %s and acts_for = %s "
+            "and status = 'waiting' and records ?| %s order by id",
+            (instance, acts_for, records)).fetchall()
     return [f"{key(r)} waits for a decision, asked for on {r['proposed_at']:%d %b}: {first(r)}"
             for r in rows]

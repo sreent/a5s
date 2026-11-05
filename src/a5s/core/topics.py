@@ -52,7 +52,8 @@ def render(body: dict) -> str:
             f"{f['value']} ({f['who']}, {f['when']})" for f in body["facts"]))
     if body.get("corrections"):
         told.append("Corrections, in their words: " + " ".join(
-            f"{c['said']} ({c['when']})" for c in body["corrections"]))
+            f"{c['said']} ({c['by'] + ', ' if c.get('by') else ''}{c['when']})"
+            for c in body["corrections"]))
     return "\n".join(told)
 
 

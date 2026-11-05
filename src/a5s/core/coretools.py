@@ -93,6 +93,12 @@ class Call:
         return person
 
 
+def one_to_one(run: dict[str, Any]) -> bool:
+    """Whether a run answers in someone's own chat, not a group chat: where what's one
+    person's own is offered."""
+    return not groups.of((run.get("trigger") or {}).get("conversation"))
+
+
 @dataclass(frozen=True)
 class CoreTool:
     """One of a5s's own tools, run in the core on its own records."""
@@ -108,6 +114,9 @@ class CoreTool:
     # Arguments the ledger keeps as they are, such as a record's key or a reminder's number:
     # everything else in the arguments it keeps by hash and length only
     plain: tuple[str, ...] = ("record", "reminder")
+    # Which runs it's offered to, by their envelope: a run is never offered a tool that can
+    # only refuse it, whose refusal the agent would pass on to people
+    offered: Callable[[dict[str, Any]], bool] | None = None
 
     def definition(self) -> dict[str, Any]:
         return {"name": self.name, "description": self.description, "schema": self.schema,

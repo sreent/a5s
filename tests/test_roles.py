@@ -66,7 +66,6 @@ def test_not_even_the_administrator_truncates_the_ledger_without_disabling_its_g
     ("channels", "update instances set status = 'active'"),
     ("channels", "select * from turns"),
     ("gateway", "delete from instances"),
-    ("gateway", "delete from obligations"),
     ("gateway", "delete from schedule_fires"),
     ("channels", "update obligations set done_at = now()"),
     ("channels", ("insert into settings_versions (scenario, serial, version, signers) "

@@ -16,12 +16,13 @@ agent whose release lets them, with one of a5s's own tools (core/coretools.py).
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime, time, timedelta
 
 import psycopg
 
 from a5s.contract import Person
-from a5s.core.coretools import Call, CoreTool, Refused
+from a5s.core.coretools import Call, CoreTool, Refused, one_to_one
 from a5s.core.obligations import day, local, working
 
 KINDS = ("obligation", "report", "reminder")  # the runs whose messages wait for a digest
@@ -89,8 +90,11 @@ def compose(person: Person, items: list[dict], due: datetime, agent: str | None 
 
 def close(conn: psycopg.Connection, person: str, due: datetime, now: datetime, items: list[dict],
           channel: str | None) -> None:
-    """The day's digest went, with these items, or with none, which closes the day all the same."""
+    """The day's digest went, with these items, or with none, which closes the day all the same.
+    The log lets go of days before yesterday, since only today's is asked after."""
     conn.execute("delete from digest_waits where person = %s and due_at <= %s", (person, due))
+    conn.execute("delete from digests where person = %s and due_at < %s",
+                 (person, due - timedelta(days=2)))
     conn.execute("insert into digests (person, due_at, sent_at, items, channel) "
                  "values (%s, %s, %s, %s, %s) on conflict do nothing",
                  (person, due, now, len(items), channel))
@@ -124,3 +128,5 @@ TOOLS = {t.name: t for t in (
              {"type": "object", "required": ["time"], "properties": {
                  "time": {"type": "string", "description": "Such as 08:30"}}}, set_time),
 )}
+# One person's own: offered only in their own chat, never a group chat
+TOOLS = {n: replace(t, offered=one_to_one) for n, t in TOOLS.items()}

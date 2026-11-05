@@ -50,6 +50,7 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 1. a5s tries a message a chat didn't take after a minute, then two, four and eight. After five tries it leaves it in the person's inbox in the web chat and on the command line, and the ledger records a `message fallback` with the chat's answer.
 2. Read why with `a5s ledger tail`: a chat that's down, a bot's credentials that expired, or a person who left the conversation.
 3. Mend the chat. What's already in someone's inbox stays there, so tell them where to find it if they don't use the web chat.
+4. An answer kept back from a group chat someone joined while it was worked out isn't a chat that's down: the status counts it apart. It goes to whoever asked, in a chat of their own, which a5s starts on Matrix, or else their inbox in the web chat, and the group hears where it went.
 
 ## Changes wait, or stop part way
 
@@ -89,24 +90,41 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 
 **Shows as:** someone saying it ignores them in a group chat, or an inbound message denied with why.
 
-1. It answers only a message that mentions it, as people do. Anything else in the chat it never hears, and nothing is recorded.
-2. A mention it won't work on gets one message saying why, and the ledger records the reason: someone in the chat the directory doesn't know, more than 20 people, a Matrix room that shows people what was said before they joined, which its settings change, or a team's channel in Teams, where it doesn't work. Nothing else runs.
-3. If no instance of the agent serves everyone in the chat, it says so. A version of the settings that serves them all, which the part owners approve, lets it work there, or people ask one to one.
+1. It answers only a message that mentions it, as people do, and it's told so, so it asks for answers that mention it. Anything else in the chat it never hears, and nothing is recorded.
+2. A mention it won't work on gets one message saying why, naming who or what's in the way, and the ledger records the reason, which the status counts as a chat turned away, not a denial: someone in the chat the directory doesn't know, such as another organisation's app in Teams, more than 20 people, after which it leaves a Matrix room, a Matrix room that shows people what was said before they joined, which its administrator changes, someone a5s may not write to, or a team's channel in Teams. Nothing else runs.
+3. In an encrypted Matrix room it says once that it can't read it: people ask in a room made without encryption, or one to one.
+4. If no instance of the agent serves everyone in the chat, it says whom, and who can add them. A version of the settings that serves them all, which the part owners approve, lets it work there, or people ask one to one.
+5. If a message can't be read, such as when Teams won't say who's in the chat, the chat hears so and the ledger records it. A Matrix event that fails three deliveries running is skipped and recorded, so it can't hold up the rest.
 
 ## An agent's question to another goes unanswered
 
 **Shows as:** an `ask_agent` call that failed because the other agent didn't answer.
 
-1. The question's row in `questions` says why: the instance asked was suspended, out of budget, or not one the settings let it ask, the run that asked had ended, or no answer came within two minutes, such as when every worker was busy.
+1. The status counts questions answered and not over the last day. The question's row in `questions` says why one wasn't: the instance asked was suspended, its asker's day's budget was spent, or it wasn't one the settings let it ask, the run that asked had ended, or the run asked failed, such as when its model was down.
 2. The ledger links the two runs: the asked run's `open` names the run that asked, and its `answer` names it too.
-3. Nothing is left waiting: a question given up stays given up, and the agent tells the person it couldn't get an answer.
+3. Nothing is left waiting: the worker that asked runs the run asked itself, so no question waits for a worker, and the agent tells the person it couldn't get an answer. A run asks three questions at most.
 
-## A note in the notebook is wrong, or the notebook is full
+## A note in the notebook is wrong
 
-**Shows as:** an agent relying on a note its owner thinks wrong, or `note_learned` refused because the notebook holds 50 notes.
+**Shows as:** an agent relying on a note its owner thinks wrong. The status counts notes, and those let go in the last day.
 
-1. The agent's owner, or whoever runs the instance, removes the note on the core's page, `/notebook/`. The ledger records who removed it.
-2. A note can't carry anyone's words, nor anything from outside: only a run on a schedule writes one, from records it read. If one seems to, tell assurance, with the note's number.
+1. The agent's owner, or whoever runs the instance, removes the note on the core's page, `/notebook/`, which shows when each was noted and last checked, with a link to each of its records. The ledger records who removed it.
+2. A note goes by itself once its records change, checked each day apart from the retention sweep, so a records system that's down holds up no other sweep: its notes wait to be checked. The notebook keeps its newest 50.
+3. A note can't carry anyone's words, nor anything from outside: only a run on a schedule writes one, from records it read, and it reaches only people who may see every record that run read. If one seems to, tell assurance, with the note's number.
+
+## a5s won't start: the database is from a later release
+
+**Shows as:** a service exiting with "the database is at migration N, from a later release of a5s than this one".
+
+1. Someone rolled a5s back after a release migrated its database. The older release doesn't know what the newer migrations mean, such as messages from group chats, so it won't serve.
+2. Roll forward to the release that migrated it, or restore the database from before it, and roll back then. Migrations wait for a table's lock 15 seconds at most, and are tried three times, so one that can't get it fails the release rather than holding up a5s.
+
+## Connections to the database run out
+
+**Shows as:** errors that a connection couldn't be had, or Postgres refusing new connections.
+
+1. Each part keeps a pool of `A5S_DB_POOL_SIZE` connections, 10 by default, and connects afresh only as many again while they're all in use. Past that, work waits ten seconds for the pool and then fails, to be tried again. So each part uses at most twice its pool: size Postgres's limit to that, for every replica of each part.
+2. Work that waits behind the ledger's lock for 30 seconds fails, and is tried again: look for what held it, such as a slow records system read inside a transaction.
 
 ## Calls are denied
 

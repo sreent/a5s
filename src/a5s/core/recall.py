@@ -53,8 +53,12 @@ def _who(call: Call, row: dict) -> str:
 
 
 def correct(call: Call) -> dict:
-    """The person's correction to the summary of the topic the run is in, in their words."""
-    person, text = call.person, " ".join(str(call.args.get("correction", "")).split())
+    """A correction to the summary of the topic the run is in, in the words of whoever said
+    it: to their own summary, or in a group chat, to the group's, which everyone now in it
+    heard all of, with their name on it."""
+    group = call.conversation
+    person = call.asker if group else call.person
+    text = " ".join(str(call.args.get("correction", "")).split())
     if not text:
         raise Refused("say what's wrong with the summary, and what's right, in a sentence")
     if len(text) > 500:
@@ -67,16 +71,20 @@ def correct(call: Call) -> dict:
         raise Refused(f"a correction keeps only what they said, and they didn't say "
                       f"{', '.join(v.text for v in wrong)}: put it in their words")
     topic = call.run["trigger"].get("topic") or "general"
-    row = call.conn.execute("select body from summaries where person = %s and agent = %s "
-                            "and topic = %s for update", (person.id, call.run["definition"], topic)
+    whose, members = group or person.id, list(call.run["acts_for"])
+    row = call.conn.execute("select body, heard_by from summaries where person = %s and agent = %s "
+                            "and topic = %s for update", (whose, call.run["definition"], topic)
                             ).fetchone()
-    if row is None:
+    if row is None or (group and not set(members) <= set(row["heard_by"] or ())):
         raise Refused("there's no summary of this topic yet: what a5s keeps is the conversation")
+    said_by = {"by": person.name} if group else {}  # in a group, whose words they are
     body = {**row["body"], "corrections": [*row["body"].get("corrections", []),
-                                           {"said": text, "when": day(person, call.now)}]}
-    call.conn.execute("update summaries set body = %s, updated_at = now() where person = %s "
-                      "and agent = %s and topic = %s",
-                      (Jsonb(body), person.id, call.run["definition"], topic))
+                                           {"said": text, "when": day(person, call.now),
+                                            **said_by}]}
+    call.conn.execute("update summaries set body = %s, updated_at = now(), heard_by = %s "
+                      "where person = %s and agent = %s and topic = %s",  # those who heard it all
+                      (Jsonb(body), sorted(members) if group else row["heard_by"], whose,
+                       call.run["definition"], topic))
     return {"corrected": True, "topic": topic, "correction": text}
 
 
@@ -92,8 +100,8 @@ TOOLS = {t.name: t for t in (
                  *(f["said"] for f in found["found"]
                    if f["who"] not in (_WHO["agent"], _WHO["notice"]))]),
     CoreTool("correct_summary",
-             "When the person says the summary of this topic you were given is wrong, add their "
-             "correction to it, in their words.",
+             "When someone you're working for says the summary of this topic you were given is "
+             "wrong, add their correction to it, in their words.",
              {"type": "object", "required": ["correction"], "properties": {
                  "correction": {"type": "string", "description": "What's right, in their words"}}},
              correct, text_fields=("correction",)),

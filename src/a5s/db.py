@@ -8,7 +8,9 @@ rather than failing the work, and carries nothing from one transaction to the ne
 prepared statements, which a migration could leave stale, and only `set local`. A
 transaction that can't have a pooled connection at once, because every one is in use or none
 can connect, connects afresh, as before: so it never waits on the pool for long, and while
-the database is down it fails at once.
+the database is down it fails at once. Only as many connect afresh at once as the pool holds:
+past that, a transaction waits for the pool, and then fails, so a stall slows a5s rather than
+spending every connection the database allows.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ from __future__ import annotations
 import atexit
 import os
 import threading
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from importlib.resources import files
@@ -34,7 +37,9 @@ _LOCK = 0x0A5_5C4E  # one migrator at a time
 
 POOL_SIZE = int(os.environ.get("A5S_DB_POOL_SIZE", "10"))  # connections each part keeps [TBC]
 WAIT = 0.5  # seconds a transaction waits for a pooled connection before connecting afresh
+BUSY = 10.0  # seconds it waits for the pool when as many have connected afresh as it holds
 _pools: dict[str, ConnectionPool] = {}
+_spares: dict[str, threading.BoundedSemaphore] = {}  # connections of their own, beyond the pool
 _pooling = threading.Lock()
 
 
@@ -42,6 +47,11 @@ def connect(url: str) -> psycopg.Connection:
     """A connection of its own, for what outlives a transaction, such as listening, or a
     session's lock, and for migrations."""
     return psycopg.connect(url, row_factory=dict_row)
+
+
+def _spare(url: str) -> threading.BoundedSemaphore:
+    with _pooling:
+        return _spares.setdefault(url, threading.BoundedSemaphore(max(1, POOL_SIZE)))
 
 
 def _pool(url: str) -> ConnectionPool:
@@ -75,9 +85,15 @@ def transaction(url: str) -> Iterator[psycopg.Connection]:
     try:
         conn = pool.getconn(timeout=WAIT)
     except PoolTimeout:  # all in use, or the database is down: which, connecting says at once
-        with connect(url) as own:
-            yield own
-        return
+        spare = _spare(url)
+        if spare.acquire(blocking=False):
+            try:
+                with connect(url) as own:
+                    yield own
+            finally:
+                spare.release()
+            return
+        conn = pool.getconn(timeout=BUSY)  # as many of their own as the pool holds: it waits
     try:
         yield conn
     except BaseException:
@@ -101,10 +117,38 @@ def migrations() -> list[tuple[int, str, str]]:
     return sorted(found)
 
 
-def migrate(url: str) -> list[str]:
-    """Apply each migration the database hasn't had, in one transaction, and say which ran."""
+class NewerSchema(RuntimeError):
+    """The database has migrations this a5s doesn't know: a later release made it."""
+
+
+def known(url: str) -> None:
+    """Refuse to serve a database a later release of a5s migrated, such as after rolling a5s
+    back: this code doesn't know what those migrations mean, such as a message for a group."""
+    with transaction(url) as conn:
+        found = conn.execute("select max(version) as v from schema_migrations").fetchone()["v"]
+    if found is not None and found > max(v for v, _, _ in migrations()):
+        raise NewerSchema(f"the database is at migration {found}, from a later release of a5s "
+                          "than this one: run that release, or restore the database from before "
+                          "it (docs/runbooks.md)")
+
+
+def migrate(url: str, tries: int = 3) -> list[str]:
+    """Apply each migration the database hasn't had, in one transaction, and say which ran.
+    It waits for the tables' locks a while at most, as a5s serves meanwhile, and tries again."""
+    for attempt in range(1, tries + 1):
+        try:
+            return _migrate(url)
+        except psycopg.errors.LockNotAvailable:
+            if attempt == tries:
+                raise
+            time.sleep(2 * attempt)
+    return []
+
+
+def _migrate(url: str) -> list[str]:
     with connect(url) as conn:
         conn.execute("select pg_advisory_xact_lock(%s)", (_LOCK,))
+        conn.execute("set local lock_timeout = '15s'")
         if conn.info.server_version >= 160000:  # a managed Postgres's administrator, such as
             # Azure's, isn't a superuser: it takes the parts' roles as it makes them, so it may
             # give their tables to the owner role

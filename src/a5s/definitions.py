@@ -102,7 +102,7 @@ class Context(BaseModel):
     recall: bool = False
     # whether it may ask a5s's reader questions about documents from outside its run has read
     documents: bool = False
-    # whether it may ask other agents, whom the settings name, for what they know
+    # whether it may ask other agents questions, whom the settings name
     agents: bool = False
     # whether it notes what it learns from records, on its schedules, for its later runs
     notebook: bool = False

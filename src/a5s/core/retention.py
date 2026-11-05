@@ -8,10 +8,12 @@ work, and the reminders, 12 months after they ended, as do what someone said the
 waiting on, offers nobody said yes to, the record of each day's report, and the changes agents
 asked for, with their decisions, 12 months after they ended, and samples of agents' work 12
 months after they were graded, or, if nobody graded them, drawn. The counts of changes go once
-their 30 days are past. A change a5s left marked as being made, which someone ends by hand
+their 30 days are past, and what someone owed goes 12 months after the records stopped
+owing it. A change a5s left marked as being made, which someone ends by hand
 (`a5s proposals`), goes 12 months after that. What a5s keeps for someone who left is archived
 where it is, a day after the directory stops naming them (core/departures.py), and goes on
-the same clocks, as does the record of whose archive it was. A note people ask
+the same clocks, as does the record of whose archive it was, and with it the chats a5s wrote
+to them in. A note people ask
 to forget goes at once (core/profiles.py). The ledger keeps what people and agents wrote only
 by hash and length (core/ledger.py), so retention needn't touch it. The values a run was handed as handles, what it read, and the documents from
 outside it read, go once the run has been over for an hour: a handle works only in its run, and nothing reads them after.
@@ -32,6 +34,11 @@ LOCK = 7_310_018  # so two sweeps don't work at once
 # Where conversations' words are, and when each was said
 SAID = (("turns", "at"), ("inbound", "received_at"), ("outbox", "at"), ("digest_items", "at"),
         ("urgent_held", "at"))
+# Whose conversation each is: a person's own, or a group chat's (core/groups.py), whose
+# messages are kept under whoever sent them, and its answers under whoever asked
+WHOSE = {"inbound": "coalesce(conversation, person)",
+         "outbox": "coalesce((select conversation from inbound i where i.id = outbox.inbound_id), "
+                   "person)"}
 
 
 def sweep(conn: psycopg.Connection) -> dict[str, int]:
@@ -50,18 +57,20 @@ def sweep(conn: psycopg.Connection) -> dict[str, int]:
     delete("reads", f"delete from run_reads where run_id in {over}")
     delete("documents", f"delete from run_documents where run_id in {over}")
 
-    said = " union all ".join(f"select person, agent, {at} as at from {table}"
-                              for table, at in SAID)
+    said = " union all ".join(f"select {WHOSE.get(table, 'person')} as person, agent, {at} as at "
+                              f"from {table}" for table, at in SAID)
     idle = conn.execute(
         f"select person, agent from ({said}) said where agent is not null "
         f"group by person, agent having max(at) < now() - interval '{KEPT}'").fetchall()
     if idle:  # and only what's old, should someone write again as the sweep works
         people, agents = [r["person"] for r in idle], [r["agent"] for r in idle]
-        ended = "(person, agent) in (select * from unnest(%s::text[], %s::text[]))"
-        for table, at in SAID:
+        for table, at in sorted(SAID, key=lambda t: t[0] != "outbox"):  # answers before the
+            ended = (f"({WHOSE.get(table, 'person')}, agent) in "  # messages they answer
+                     "(select * from unnest(%s::text[], %s::text[]))")
             delete("messages" if table != "turns" else "turns",
                    f"delete from {table} where {ended} and {at} < now() - interval '{KEPT}'",
                    (people, agents))
+        ended = "(person, agent) in (select * from unnest(%s::text[], %s::text[]))"
         delete("summaries", f"delete from summaries where {ended} "
                             f"and updated_at < now() - interval '{KEPT}'", (people, agents))
     for table, at in SAID[2:]:  # a5s's own notices, about no agent
@@ -84,6 +93,10 @@ def sweep(conn: psycopg.Connection) -> dict[str, int]:
     delete("samples", "delete from samples where grade is null "
                       f"and drawn_at < now() - interval '{KEPT}'")  # nobody graded them
     delete("counts", "delete from action_counts where at < now() - interval '31 days'")
+    delete("chats", "delete from chats where person in (select archived_as from departures "
+                    f"where archived_at < now() - interval '{KEPT}')")  # an archive's, with it
     delete("departures", f"delete from departures where archived_at < now() - interval '{KEPT}'")
     delete("questions", f"delete from questions where asked_at < now() - interval '{KEPT}'")
+    delete("obligations", "delete from obligations where done_at < now() - interval "
+                          f"'{KEPT}'")  # with what the records called it, and whose it was
     return gone

@@ -64,7 +64,7 @@ def test_deliveries_a_chat_didnt_take_and_budget_warnings_show(stack):
                      "('assistant-finance', 'ana', current_date, 900, now())")
     with stack.client() as c:
         now = c.get("/status").json()
-    assert now["deliveries"] == {"retrying": 1, "left_in_inbox": 1}
+    assert now["deliveries"] == {"retrying": 1, "left_in_inbox": 1, "kept_back": 0}
     assert now["tokens"] == [{"instance": "assistant-finance", "tokens": 900, "budget_warnings": 1}]
     told = status.told(now)
     assert ("Deliveries a chat didn't take: 1 being tried again, 1 left in people's local "

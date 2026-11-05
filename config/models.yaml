@@ -36,6 +36,8 @@ models:
   #   reported_model: Qwen/Qwen3-32B    # what the server says each time it answers
   #   region: on-premises
   #   data_classes: [synthetic, internal]
+  #   prices: {input: 0.0, output: 0.0}   # a million tokens in, and out, for what a run
+  #                                       # costs (a5s measures): as the provider charges
 
   deepseek-v4-pro-anthropic:     # the same model, through the Anthropic-compatible API
     provider: deepseek

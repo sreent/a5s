@@ -46,4 +46,5 @@ These are the numbers a5s starts from, by the phase that needs them. They're sta
 | --- | --- | --- | --- |
 | Group chats | Up to 20 people, each known to the directory | A run in a group sees only what all of them may see, so a larger group sees little, and each of them counts toward its limits | The platform owner |
 | An answer from another agent | Waited for 2 minutes at most, after which the question is given up | Long enough for a run of a few tool calls, short enough that the person asking isn't left waiting | The platform owner |
-| Notebook entries | Up to 50 for each instance, of 300 characters, each naming up to 10 records. They expire after 90 days, and are renewed if their sources still hold | Long enough to learn a quarter's patterns, short enough to forget stale ones | The agent owner |
+| Notebook entries | The newest 50 for each instance, of 300 characters, each naming up to 10 records. Each goes once its records change, checked each day | A note is worth keeping only while the records it comes from say what it does | The agent owner |
+| Questions one run asks | 3 | Enough to ask two agents and follow one up, and no more of their budgets | The agent owner |

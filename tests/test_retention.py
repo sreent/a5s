@@ -2,7 +2,10 @@
 each other, and the values a run was handed, and what it read, once it has been over for an
 hour. The ledger records how much each sweep deleted, and stays whole."""
 
+from datetime import timedelta
+
 from a5s import db
+from a5s.core import budgets, digests
 
 WORDS = (("turns", "at"), ("inbound", "received_at"), ("outbox", "at"), ("summaries", "updated_at"))
 
@@ -124,3 +127,42 @@ def test_notes_reminders_and_a5s_notices_go_twelve_months_after_they_ended(stack
             "cancelled lately", "due next year"]
         assert [r["text"] for r in conn.execute("select text from outbox")] == [
             "An escalation, lately."]
+
+
+def test_what_someone_owed_goes_twelve_months_after_the_records_stopped_owing_it(stack):
+    """With what the records called it, and whose it was."""
+    with db.transaction(stack.admin) as conn:
+        for record, done in (("Q-1", "13 months"), ("Q-2", "11 months"), ("Q-3", None)):
+            conn.execute("insert into obligations (scenario, source, record, person, title, "
+                         "opened_at, due_at, done_at) values ('sample', 'records', %s, 'ana', "
+                         "'Northwind asks about an invoice', now() - interval '14 months', "
+                         "now() - interval '13 months', now() - %s::interval)", (record, done))
+    assert sweep(stack) == {"obligations": 1}
+    with db.transaction(stack.admin) as conn:
+        left = [r["record"] for r in conn.execute("select record from obligations order by 1")]
+    assert left == ["Q-2", "Q-3"]  # done since, and still owed
+
+
+def test_a_days_use_of_the_budget_goes_once_the_day_is_past(stack):
+    day = budgets.day_of(stack.gateway.scenario, "ana", stack.gateway.clock())
+    with db.transaction(stack.admin) as conn:
+        for ago in (5, 1):
+            conn.execute("insert into spend (instance_id, person, day, tokens) values "
+                         "('assistant-finance', 'ana', %s, 100)", (day - timedelta(days=ago),))
+    stack.model.reply("Hello, Ana.")
+    stack.say("Hello")
+    with db.transaction(stack.admin) as conn:
+        days = [r["day"] for r in conn.execute("select day from spend where person = 'ana' "
+                                               "order by day")]
+    assert days == [day - timedelta(days=1), day]
+
+
+def test_the_log_of_someones_digests_keeps_only_their_last_days(stack):
+    due = stack.gateway.clock()
+    with db.transaction(stack.admin) as conn:
+        for ago in (5, 1):
+            conn.execute("insert into digests (person, due_at, sent_at, items) values "
+                         "('ana', %s, %s, 1)", (due - timedelta(days=ago),) * 2)
+        digests.close(conn, "ana", due, due, [], None)
+        left = [r["due_at"] for r in conn.execute("select due_at from digests order by 1")]
+    assert left == [due - timedelta(days=1), due]

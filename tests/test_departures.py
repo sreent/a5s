@@ -80,3 +80,63 @@ def test_someone_back_within_the_day_keeps_their_conversation(stack, monkeypatch
     assert kept_for(stack, "ben")["turns"] == 2
     with db.transaction(stack.admin) as conn:
         assert conn.execute("select count(*) as n from departures").fetchone()["n"] == 0
+
+
+def test_what_was_someones_own_day_goes_when_they_leave(stack, monkeypatch):
+    """Their use of each day's budget, and the log of their digests, aren't archived."""
+    stack.at(MONDAY)
+    stack.model.reply("Noted, Ben.")
+    stack.say("I'm working on Q-1002 today.", person="ben")
+    with db.transaction(stack.admin) as conn:
+        conn.execute("insert into digests (person, due_at, sent_at, items) values "
+                     "('ben', %s, %s, 1)", (MONDAY, MONDAY))
+    people = dict(stack.gateway.scenario._people)
+    del people["ben"]  # Ben leaves
+    monkeypatch.setattr(stack.gateway.scenario, "_people", people)
+    sweep(stack)
+    stack.at(TUESDAY)
+    assert sweep(stack)["archived"] == 1
+    with db.transaction(stack.admin) as conn:
+        left = {table: conn.execute(f"select count(*) as n from {table} where person = 'ben' "
+                                    "or person like 'former:%%'").fetchone()["n"]
+                for table in ("spend", "digests")}
+    assert left == {"spend": 0, "digests": 0}
+
+
+def test_someone_who_left_long_after_they_last_spoke_is_let_go_too(stack):
+    """Their conversation went in its 12 months, but what was only for them while they were
+    here, such as when they like their digest, would stay under their own id for good."""
+    stack.at(MONDAY)
+    with db.transaction(stack.admin) as conn:
+        conn.execute("insert into preferences (person, name, value, set_at) values "
+                     "('zoe', 'digest-time', '08:30', now() - interval '14 months')")
+    sweep(stack)
+    stack.at(TUESDAY)
+    assert sweep(stack)["archived"] == 1
+    with db.transaction(stack.admin) as conn:
+        left = conn.execute("select count(*) as n from preferences").fetchone()["n"]
+    assert left == 0
+
+
+def test_the_chats_of_someone_who_left_go_with_the_record_of_their_archive(stack, monkeypatch):
+    stack.at(MONDAY)
+    stack.model.reply("Noted, Ben.")
+    stack.say("I'm working on Q-1002 today.", person="ben")
+    with db.transaction(stack.admin) as conn:  # where a5s writes to him first
+        conn.execute("insert into chats (channel, place, person, agent, reply_to, started_at) "
+                     "values ('matrix', '!ben:a5s.test', 'ben', 'assistant', "
+                     "'{\"room\": \"!ben:a5s.test\"}', now())")
+    people = dict(stack.gateway.scenario._people)
+    del people["ben"]  # Ben leaves
+    monkeypatch.setattr(stack.gateway.scenario, "_people", people)
+    sweep(stack)
+    stack.at(TUESDAY)
+    assert sweep(stack)["archived"] == 1
+    with db.transaction(stack.admin) as conn:
+        assert conn.execute("select person from chats").fetchone()["person"].startswith("former:")
+        conn.execute("update departures set archived_at = archived_at - interval '13 months'")
+    sweep(stack)
+    with db.transaction(stack.admin) as conn:
+        left = conn.execute("select (select count(*) from chats) as chats, "
+                            "(select count(*) from departures) as departures").fetchone()
+    assert (left["chats"], left["departures"]) == (0, 0)

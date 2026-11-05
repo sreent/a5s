@@ -15,13 +15,14 @@ sees it.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import timedelta
 
 import psycopg
 
 from a5s.contract import Person
 from a5s.core import digests
-from a5s.core.coretools import Call, CoreTool, Refused
+from a5s.core.coretools import Call, CoreTool, Refused, one_to_one
 
 CONFIRM_WITHIN = timedelta(days=1)  # an offer they don't confirm by then lapses [TBC]
 LONGEST = 600  # characters: it's a short note
@@ -154,3 +155,5 @@ TOOLS = {t.name: t for t in (
     CoreTool("forget_note", "Forget the person's note on how they like to work, when they ask "
                             "you to.", {"type": "object", "properties": {}}, forget),
 )}
+# One person's own: offered only in their own chat, never a group chat
+TOOLS = {n: replace(t, offered=one_to_one) for n, t in TOOLS.items()}

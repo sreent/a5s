@@ -106,9 +106,11 @@ def speakers(conn: psycopg.Connection, group: str, agent: str) -> list[str]:
 
 
 def _said(turn: dict, names: dict[str, str] | None) -> str:
-    """A turn's words, and in a group, who said them."""
+    """A turn's words, and in a group, who said them, each later line of theirs quoted, so
+    none of it reads as someone else's turn, or a5s's."""
     if turn.get("speaker") and turn["role"] == "person":
-        return f"{(names or {}).get(turn['speaker'], turn['speaker'])}: {turn['content']}"
+        words = turn["content"].replace("\r", "").replace("\n", "\n> ")
+        return f"{(names or {}).get(turn['speaker'], turn['speaker'])}: {words}"
     return turn["content"]
 
 

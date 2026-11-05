@@ -148,10 +148,18 @@ def test_an_answer_someone_joined_during_goes_to_whoever_asked_instead(stack, ho
     stack.model.reply("Q-1001 is Northwind's question about an invoice.")
     deliver(homeserver, mention("What's Q-1001?"))
     stack.scheduler().answer_waiting()
-    assert [m["body"] for m in homeserver.sent] == [groups.JOINED]  # not the answer
-    assert [m["text"] for m in stack.inbox("ana")] == [
-        "Q-1001 is Northwind's question about an invoice."]
+    [started] = homeserver.started  # a chat of her own with the assistant, on Matrix, where
+    in_room = [m["body"] for m in homeserver.sent if m["room"] == ROOM]  # she talks to it
+    assert in_room == [groups.JOINED.format(where="it's in a chat of their own with me")]
+    assert [m["body"] for m in homeserver.sent if m["room"] == started["room"]] == [
+        "Q-1001 is Northwind's question about an invoice."]  # not the room Chen joined
+    assert started["invite"] == [ANA]
     assert [e for e in stack.ledger() if e["action"] == "kept back"]
+    with db.transaction(stack.admin) as conn:  # the group's conversation keeps it as hers alone
+        turns = conn.execute("select role, heard_by from turns where person = %s order by id",
+                             (GROUP,)).fetchall()
+    assert [(t["role"], t["heard_by"]) for t in turns] == [
+        ("person", ["ana", "ben"]), ("notice", ["ana", "ben", "chen"]), ("agent", ["ana"])]
 
 
 def test_a_reminder_asked_for_in_a_group_is_the_askers_alone(stack, homeserver):
@@ -179,14 +187,20 @@ def test_a_reminder_asked_for_in_a_group_is_the_askers_alone(stack, homeserver):
 
 
 def test_whats_one_persons_own_is_asked_for_one_to_one(stack, homeserver):
-    stack.model.reply(None, ("offer_note", {"note": "Short answers."}), ("list_reminders", {}))
     stack.model.reply("Ask me one to one.")
     deliver(homeserver, mention("Note that I like short answers, and list my reminders"))
     stack.scheduler().answer_waiting()
-    outcomes = {e["action"]: e["outcome"] for e in stack.ledger() if e["kind"] == "tool"
-                and e["decision"] == "record"}
-    assert outcomes["offer_note"]["status"] == "refused"
-    assert outcomes["list_reminders"]["status"] == "refused"
+    offered = set(stack.model.tool_names(-1))  # not offered in a group, so never refused there
+    assert not offered & {"offer_note", "list_reminders"}
+    with stack.client() as c:  # and refused, were it asked for all the same
+        with db.transaction(stack.admin) as conn:
+            [row] = conn.execute("select id::text from inbound").fetchall()
+            conn.execute("update inbound set answered_at = null where id = %s", (row["id"],))
+        token = c.post("/runs", json={"instance": "assistant-finance", "trigger": {
+            "kind": "message", "inbound": row["id"]}}).json()["token"]
+    with stack.client(token) as c:
+        refused = c.post("/run/tools/offer_note", json={"args": {"note": "Short answers."}})
+    assert refused.status_code == 403
     with db.transaction(stack.admin) as conn:
         assert conn.execute("select count(*) as n from profile_notes").fetchone()["n"] == 0
 
@@ -195,7 +209,8 @@ def test_a_group_the_agent_doesnt_serve_everyone_in_hears_so(stack, homeserver):
     homeserver.rooms[ROOM] = {ANA, CHEN, BOT}  # the assistant serves Ana and Ben, not Chen
     deliver(homeserver, mention(ASKED))
     stack.scheduler().answer_waiting()
-    assert homeserver.sent[-1]["body"] == groups.NOBODY_SERVES.format(agent="assistant")
+    assert homeserver.sent[-1]["body"] == groups.UNSERVED.format(  # whom, and who adds them
+        who="Chen Wei", add="As the owner of the parts it works in, you can add them.")
     assert stack.model.requests == []
 
 
@@ -214,7 +229,8 @@ def test_a_room_the_agent_cant_work_in_hears_why(stack, homeserver, monkeypatch,
     assert queued(stack) == []
     assert homeserver.sent[-1]["body"] == {"history shown": groups.HISTORY,
                                            "shown from invitation": groups.HISTORY,
-                                           "a stranger": groups.STRANGERS,
+                                           "a stranger": groups.STRANGERS.format(
+                                               who="@stranger:a5s.test"),
                                            "too many": groups.TOO_MANY}[case]
 
 
@@ -443,7 +459,8 @@ def test_a_teams_chat_the_agent_doesnt_work_in(stack, team, case):
     assert queued(stack) == []
     assert [m["text"] for m in team.sent] == {"not mentioned": [],
                                               "a team's channel": [groups.CHANNELS],
-                                              "a stranger": [groups.STRANGERS]}[case]
+                                              "a stranger": [groups.STRANGERS.format(
+                                                  who="someone")]}[case]
 
 
 @pytest.mark.live
