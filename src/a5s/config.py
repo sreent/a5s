@@ -27,6 +27,9 @@ class ModelConfig:
     region: str = "[TBC]"
     data_classes: tuple[str, ...] = ("synthetic",)
     reported_model: str | None = None  # what every response must report, if not `model`
+    # What a million tokens in, and a million out, cost, as the provider charges, in the
+    # deployment's currency, for what a run costs (core/measures.py); none if not given
+    prices: tuple[float, float] | None = None
 
     @property
     def api_key(self) -> str | None:
@@ -52,6 +55,8 @@ def load_models(path: Path) -> dict[str, ModelConfig]:
             region=m.get("region", "[TBC]"),
             data_classes=tuple(m.get("data_classes", ["synthetic"])),
             reported_model=m.get("reported_model"),
+            prices=(float(m["prices"]["input"]), float(m["prices"]["output"]))
+            if m.get("prices") else None,
         )
     return models
 

@@ -26,11 +26,11 @@ Each stage ends when what it shows is written down, here and in the phase it ser
 1. **Shadow** (week 2).
    - The team that runs a5s works with the assistant and the watcher on the sample scenario, in Teams, for a week, with the [soak test](../deploy/soak.py) against the deployment beside them.
    - Each runbook is tried once: suspending and resuming an instance, a chat that won't take a message, a model that's down, and a release.
-   - Shows: replies within the objective, nine in ten within two minutes, nothing lost, and what a run costs on the approved model.
+   - Shows: replies within the objective, nine in ten within two minutes, nothing lost, and what a run costs on the approved model, once its prices are in the approved list (`a5s measures`).
 2. **One team, reading** (weeks 3 to 6).
    - The watcher at level 0, and the assistant at level 1 at most: they read, remind and chase, and people make the changes.
    - The data protection officer signs off the assessment before any of the team's data reaches a model.
-   - Shows: the baseline, the second half of phase 1's Done means. Promises and reminders met on time, time from something falling due to it being done, people who come back within a month, and cost per run, beside what each person says in a short conversation at the end.
+   - Shows: the baseline, the second half of phase 1's Done means. Promises and reminders met on time, time from something falling due to it being done, people who come back within a month, and cost per run, from `a5s measures` each week, beside what each person says in a short conversation at the end.
 3. **Held changes** (weeks 7 to 10).
    - One type of action the team does often, such as moving a due date, held for the part's owner to decide on the core's page.
    - Graders grade a sample each week. Level 2 only if samples earn it ([phase 2](phase-2.md)).

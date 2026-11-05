@@ -25,6 +25,16 @@ WARN = 0.8  # of each person's day, when a warning is recorded
 OWED = ("obligation", "reminder")  # the work that may use the share kept for it
 
 
+def split(usage: object) -> tuple[int, int]:
+    """The tokens a call took in and out, in either API's words, as providers price them."""
+    if not isinstance(usage, dict):
+        return 0, 0
+    tokens_in = usage.get("prompt_tokens", usage.get("input_tokens"))
+    tokens_out = usage.get("completion_tokens", usage.get("output_tokens"))
+    return (tokens_in if isinstance(tokens_in, int) else 0,
+            tokens_out if isinstance(tokens_out, int) else 0)
+
+
 def tokens_of(usage: object) -> int:
     """The tokens a provider says a call took, in either API's words."""
     if not isinstance(usage, dict):
@@ -68,10 +78,13 @@ def refused(conn: psycopg.Connection, scenario: Scenario, budget: Budget, instan
 
 
 def spent(conn: psycopg.Connection, scenario: Scenario, budget: Budget, run: dict, tokens: int,
-          now: datetime) -> dict | None:
-    """Count a model call's tokens against its run and its person's day. The day's use, if this
-    call took it past four fifths of the budget, for a warning."""
-    conn.execute("update runs set tokens = tokens + %s where id = %s", (tokens, run["run"]))
+          now: datetime, usage: object = None) -> dict | None:
+    """Count a model call's tokens against its run, in and out apart, and its person's day.
+    The day's use, if this call took it past four fifths of the budget, for a warning."""
+    tokens_in, tokens_out = split(usage)
+    conn.execute("update runs set tokens = tokens + %s, tokens_in = tokens_in + %s, "
+                 "tokens_out = tokens_out + %s where id = %s",
+                 (tokens, tokens_in, tokens_out, run["run"]))
     person = payer(list(run["acts_for"]), run.get("trigger")) or ""
     row = conn.execute(
         "insert into spend (instance_id, person, day, tokens) values (%s, %s, %s, %s) "

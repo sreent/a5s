@@ -60,6 +60,7 @@ from a5s.core import (
     groups,
     handles,
     ledger,
+    measures,
     models,
     notebook,
     obligations,
@@ -1652,6 +1653,14 @@ def create_app(gw: Gateway) -> FastAPI:
             return status.report(conn, gw.breakers.open(), gw.cfg.seal_keys,
                                  gw.cfg.flag_rubber_stamps)
 
+    @app.get("/measures", dependencies=[Depends(service)])
+    def measures_now(days: int = 30) -> dict:
+        """The measures phase 1's first users baseline, over the last `days` days: what fell
+        due and was met on time, how late the rest was, who came back, and what runs cost
+        (core/measures.py)."""
+        with db.transaction(gw.url) as conn:
+            return measures.report(conn, gw.models, days)
+
     @app.post("/retention/sweep", dependencies=[Depends(service)])
     def sweep_retention() -> dict:
         """Delete what's past its time to keep (core/retention.py), and record how much went.
@@ -3104,7 +3113,7 @@ def create_app(gw: Gateway) -> FastAPI:
             try:
                 with db.transaction(gw.url) as conn:
                     if warning := budgets.spent(conn, gw.scenario, release.budget, row, tokens,
-                                                gw.clock()):
+                                                gw.clock(), data.get("usage")):
                         log.warning("%s has used %s of its %s tokens for %s today", row["id"],
                                     warning["used"], warning["budget"], warning["person"])
                         ledger.append(conn, {

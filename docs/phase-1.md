@@ -154,7 +154,7 @@ The first day in the test tenant and the first cloud checks what only the real s
 - a5s's own suite passes on all three clouds, against the sample scenario in CI and in test. Among its tests: every call is in the ledger; calls are denied when policy, the settings or the ledger is down; a suspended instance's next call is denied; a change to the trusted core can't deploy without the outside approval; and a person who comes back a week later picks up where they left off.
 - The measures have a baseline from the first users: promises and reminders met on time, time from something falling due to it being done, people who come back to an agent, and cost per run.
 
-Both come from real use, which the [pilot](pilot.md) plans.
+Both come from real use, which the [pilot](pilot.md) plans. `a5s measures`, and the gateway's `/measures`, work the measures out from a5s's own records over the last 30 days, or as many as asked: what people owed that fell due and was done by then, reminders that came on time, how late the rest was, who came back to an agent, and each run's tokens, and its cost for a model whose prices its approved list gives ([`core/measures.py`](../src/a5s/core/measures.py)).
 
 ## Later
 
