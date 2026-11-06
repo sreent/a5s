@@ -13,6 +13,7 @@ from typing import Any
 
 import httpx
 from deepagents import HarnessProfile, create_deep_agent, register_harness_profile
+from deepagents.backends.utils import create_file_data
 from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.tools import StructuredTool
@@ -183,16 +184,20 @@ def run_agent(gateway_url: str, token: str, history: list[dict]) -> str:
                     raise why from exc
                 raise
             return text_of(answer)
-        agent = create_deep_agent(
+        skills = info.get("skills") or {}  # the release's, which the run reads, and can't
+        agent = create_deep_agent(  # change: no tool here writes a file
             model=chat_model(gateway_url, token, info["model"]),
             tools=[gateway_tool(gw, d) for d in info["tools"]],
             system_prompt=instructed(info["instructions"], info.get("context") or []),
+            skills=["/skills/"] if skills else None,
         )
+        files = {path: create_file_data(text) for path, text in skills.items()}
         try:
-            result = agent.invoke({"messages": [as_message(t) for t in history]},
+            result = agent.invoke({"messages": [as_message(t) for t in history], "files": files},
                                   config={"recursion_limit": 40})
             if not text_of(result["messages"][-1]).strip():  # it ended with nothing to say
-                result = agent.invoke({"messages": [*result["messages"], EMPTY]},
+                result = agent.invoke({"messages": [*result["messages"], EMPTY],
+                                       "files": result.get("files") or files},
                                       config={"recursion_limit": 40})
         except Exception as exc:
             if why := stopped(exc):  # from the model gateway

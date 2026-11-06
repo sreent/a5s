@@ -62,6 +62,21 @@ def sweep(conn: psycopg.Connection, scenario: Scenario, now: datetime) -> list[s
 
 def archive(conn: psycopg.Connection, person: str, now: datetime) -> str:
     """Archive what a5s keeps for someone who left, under a name of its own. The name."""
+    name = rename(conn, person, now)
+    conn.execute("update departures set archived_at = %s, archived_as = %s where person = %s "
+                 "and archived_at is null", (now, name, person))
+    ledger.append(conn, {"kind": "admin", "action": "archive", "run": None, "instance": None,
+                         "acts_for": [], "decision": "record",
+                         "args": {"person": person, "as": name,
+                                  "why": "the directory no longer names them"}})
+    return name
+
+
+def rename(conn: psycopg.Connection, person: str, now: datetime) -> str:
+    """Put what a5s keeps for someone under a name of its own, which no person has: ending
+    what was going on for them, and letting go of what served them only while they were here.
+    In group chats, the name stands where they were, so a run there still knows who heard what.
+    The name, which only its caller links back to them (core/erasure.py)."""
     name = f"{FORMER}{secrets.token_hex(8)}"
     conn.execute("update reminders set cancelled_at = %s where person = %s "
                  "and reminded_at is null and cancelled_at is null", (now, person))
@@ -93,10 +108,4 @@ def archive(conn: psycopg.Connection, person: str, now: datetime) -> str:
         conn.execute("update summaries set body = %s where person = %s and agent = %s "
                      "and topic = %s", (Jsonb({**row["body"], "facts": facts}), row["person"],
                                         row["agent"], row["topic"]))
-    conn.execute("update departures set archived_at = %s, archived_as = %s where person = %s "
-                 "and archived_at is null", (now, name, person))
-    ledger.append(conn, {"kind": "admin", "action": "archive", "run": None, "instance": None,
-                         "acts_for": [], "decision": "record",
-                         "args": {"person": person, "as": name,
-                                  "why": "the directory no longer names them"}})
     return name
