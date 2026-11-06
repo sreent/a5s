@@ -168,6 +168,6 @@ Both come from real use, which the [pilot](pilot.md) plans. `a5s measures`, and 
 | Cost | How it's worked out | Estimate |
 | --- | --- | --- |
 | Build | The six steps above | [TBC: about three engineers for two quarters for one cloud. Running on three at once adds two more clouds' adapters, deployments and operations.] |
-| Models | Runs × model calls per run × tokens per call × price | About $0.50 a run before caching: 5 calls of 30,000 tokens in and 1,000 out, at an illustrative $3 and $15 per million. 1,000 runs a month is about $500. Sweeps start no model when nothing has changed. |
+| Models | Runs × model calls per run × tokens per call × price | About $0.50 a run before caching: 5 calls of 30,000 tokens in and 1,000 out, at an illustrative $3 and $15 per million. 1,000 runs a month is about $500. Sweeps start no model when nothing has changed. In the live suite, the sample's short conversations took 2 or 3 calls a run, about 9,000 tokens in all, and DeepSeek's cache gave 84% to 97% of what they took in, on either API (November 2026). Real conversations are longer, so the pilot's `a5s measures` is what to plan by. |
 | Platform | Postgres, workers, gateways, object-lock storage and telemetry, on each of the three clouds | [TBC: from each cloud's prices] |
 | People | Agent owners' time, and the outside approver for widening and core releases. From phase 2, graders. | Graders: about 100 items a quarter for each type of action at level 2, at about 3 minutes each, is 5 hours a quarter |
