@@ -106,6 +106,10 @@ echo "The core waited for the release to be approved here, and a job recorded it
 k -n a5s exec deploy/a5s-scheduler -- a5s status | grep -q "a5s over the last day"
 echo "The scheduler reaches the gateway."
 
+[ "$(k -n a5s get pods -l app.kubernetes.io/component=anchor \
+  -o jsonpath='{.items[0].metadata.labels.a5s\.test/workload-identity}')" = on ]
+echo "The copier's pods carry the labels a cloud's workload identity needs."
+
 reach() {
   k -n a5s exec deploy/a5s-worker -- python -c \
     "import socket, sys; socket.create_connection((sys.argv[1], int(sys.argv[2])), 5)" "$1" "$2" \

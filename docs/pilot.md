@@ -21,7 +21,7 @@ Each stage ends when what it shows is written down, here and in the phase it ser
 
 0. **The first day** (week 1).
    - The release: `main` under its rulesets, the regression suites' keys in the repository's secrets, and `v0.1.0` tagged once its live suites pass and the release approver approves it.
-   - The four checks in [phase 1's first day](phase-1.md#progress), in the test tenant and Azure: signing in with Entra ID, Teams with its group chats, Azure's Postgres, locked storage and network policies, and what they sent kept as fixtures, so CI checks the real services' shapes from then on.
+   - The four checks in [phase 1's first day](phase-1.md#progress), in the test tenant and Azure, step by step in [the first day](first-day.md): signing in with Entra ID, Teams with its group chats, Azure's Postgres, locked storage and network policies, and what they sent kept as fixtures, so CI checks the real services' shapes from then on.
    - Shows: a5s's suite passes on Azure, the first half of phase 1's Done means.
 1. **Shadow** (week 2).
    - The team that runs a5s works with the assistant and the watcher on the sample scenario, in Teams, for a week, with the [soak test](../deploy/soak.py) against the deployment beside them.
