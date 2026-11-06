@@ -46,7 +46,7 @@ Any of these suspends the instance first, which anyone with the role can do, and
 - something a5s should have stopped: a change it shouldn't have made, a message to the wrong person, or an answer or a note with what someone may not see;
 - a finding the pilot's own round of the critique marks high, until it's fixed;
 - cost per run more than twice the estimate for two weeks running;
-- fewer than a third of the team coming back to an agent, over a fortnight in stage 2 and a month after, which says a5s isn't worth their time as built.
+- fewer than a third of the team coming back to an agent, over a fortnight in stage 2 and a month after, of everyone the agents serve, as `a5s measures` says, which says a5s isn't worth their time as built.
 
 ## What it decides
 

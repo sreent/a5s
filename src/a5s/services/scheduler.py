@@ -573,6 +573,14 @@ class Scheduler:
         except httpx.HTTPError:
             log.exception("couldn't ask the core to delete what's past its time")
 
+    def check_notes(self) -> None:
+        """Ask the core to check the notebook's notes against their records: on a thread of
+        its own, since the records system may be slow to answer."""
+        try:
+            self.gw.post("/notebook/sweep", headers=self.service).raise_for_status()
+        except httpx.HTTPError:
+            log.exception("couldn't ask the core to check the notebook")
+
     def sweep(self) -> None:
         """Close runs that outlived their time, and tell their people."""
         try:
@@ -589,7 +597,8 @@ class Scheduler:
     def listen(self, stop: threading.Event, workers: int = 8, sweep_every: float = 60,
                retain_every: float = 3600) -> None:
         """Answer messages as the core receives them, and work on what falls due, several at
-        once, until stopped. Every hour, ask the core to delete what's past its time to keep.
+        once, until stopped. Every hour, ask the core to delete what's past its time to keep,
+        and, on a thread of its own, to check the notebook against its records.
 
         Work is taken only when a worker is free for it. The sweeps run on their own thread,
         so a chat that's slow to take what the core delivers in them never holds up answers.
@@ -626,9 +635,16 @@ class Scheduler:
                     log.exception("a sweep failed")
                 stop.wait(max(0.0, sweep_every - (time.monotonic() - started)))
 
+        def checking() -> None:  # the notebook against its records, every hour, apart
+            while not stop.is_set():
+                self.check_notes()
+                stop.wait(retain_every)
+
         with ThreadPoolExecutor(workers) as pool:
             sweeper = threading.Thread(target=sweeping, name="a5s-sweeps", daemon=True)
             sweeper.start()
+            checker = threading.Thread(target=checking, name="a5s-notebook", daemon=True)
+            checker.start()
             while not stop.is_set():
                 try:
                     with psycopg.connect(self.cfg.database_url, autocommit=True) as conn:
@@ -646,3 +662,4 @@ class Scheduler:
                     log.exception("lost the database, so listening again shortly")
                     stop.wait(5)
             sweeper.join()
+            checker.join()

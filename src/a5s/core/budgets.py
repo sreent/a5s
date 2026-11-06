@@ -56,9 +56,8 @@ def split(usage: object) -> Tokens:
 
 
 def tokens_of(usage: object) -> int:
-    """The tokens a provider says a call took, in either API's words, its cache's included."""
-    if isinstance(usage, dict) and isinstance(usage.get("total_tokens"), int):
-        return usage["total_tokens"]
+    """The tokens a provider says a call took, in either API's words, its cache's included:
+    counted once, as a run's tokens in and out are, so the two never disagree."""
     took = split(usage)
     return took.taken_in + took.given_out
 

@@ -4,6 +4,8 @@ goes to them, and someone given the same id later starts afresh. Someone back wi
 is forgotten as missing. Nothing is copied anywhere else, and the archive goes on retention's
 usual clock."""
 
+import json
+
 from a5s import db
 
 MONDAY = "2026-11-02T10:00:00+00:00"
@@ -44,7 +46,8 @@ def test_a_day_after_someone_leaves_what_a5s_kept_for_them_is_archived(stack, mo
     assert left["person"] == "ben" and left["archived_as"].startswith("former:")
     assert archived == 2  # where it was, not copied anywhere
     [entry] = [e for e in stack.ledger() if e["kind"] == "admin" and e["action"] == "archive"]
-    assert entry["args"]["as"] == left["archived_as"]
+    assert entry["args"]["person"] == "ben"  # and not the archive's name, which only the
+    assert left["archived_as"] not in json.dumps(entry)  # record of whose archive it is keeps
 
 
 def test_someone_given_the_same_id_later_starts_afresh(stack, monkeypatch):

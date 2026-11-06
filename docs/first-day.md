@@ -35,7 +35,7 @@ tenant=$(az account show --query tenantId -o tsv)
 az group create --name a5s-test --location uksouth  # [TBC: the region]
 web=$(az ad app create --display-name "a5s" --sign-in-audience AzureADMyOrg \
   --public-client-redirect-uris https://$host/chat/ https://$host/approve/ https://$host/decide/ \
-    https://$host/grade/ https://$host/notebook/ https://$host/settings/ \
+    https://$host/grade/ https://$host/notebook/ https://$host/settings/ https://$host/officer/ \
   --optional-claims '{"idToken": [{"name": "auth_time", "essential": false}]}' \
   --query appId -o tsv)
 ```

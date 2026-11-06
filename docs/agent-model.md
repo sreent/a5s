@@ -40,7 +40,7 @@ Roles are held by people, never by job titles. An organisation assigns people to
 | Release approver | Approves what loosens a5s: releases that change a tool or widen what an agent may do, changes to the trusted core, and anything else the scenario names nobody else for. Never from the team that runs a5s, or its manager's reporting line. |
 | Graders | Grade samples of an agent's work. Never from the team that built it, nor anyone a change was for or who decided it. |
 | Assurance | Holds the ledger's anchor, reads the ledger, and is told of everything that loosens a5s |
-| Data protection officer | Answers requests for someone's data, exporting all a5s keeps about them (`a5s export`) and erasing it on request (`a5s erase`), keeps the record of whose archive is which, and agrees the measures before they start ([data protection](data-protection.md)) |
+| Data protection officer | Answers requests for someone's data, asking on the core's page for all a5s keeps about them to be exported (`a5s export`), or erased (`a5s erase`), which the team that runs a5s carries out, keeps the record of whose archive is which, and agrees the measures before they start ([data protection](data-protection.md)) |
 
 ## Lifecycle
 
@@ -91,7 +91,9 @@ agents/assistant/
   agent.yaml     the definition
   AGENTS.md      instructions, loaded read-only on every run
   tools.lock     the schema of each tool it uses, pinned by hash
-  skills/        Agent Skills, one folder each, whose SKILL.md names it and says what it's for
+  skills/        Agent Skills, one folder each, whose SKILL.md names it and says what it's for, as
+                 text a run reads: Markdown, text, CSV, JSON or YAML, never a script, since no
+                 run can run one
   tests/         its regression cases, run against the model it names before each release
 ```
 

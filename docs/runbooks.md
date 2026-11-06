@@ -164,19 +164,30 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 
 **Shows as:** the data protection officer asking for what a5s keeps about someone, such as for their request to see it.
 
-1. The officer signs in and puts their sign-in in `A5S_TOKEN`, beside someone from the team that runs a5s, whose service token reaches the core, and they run `a5s export --person <id> --out <file>` with the person's id in the directory. It needs both: the team can't export without the officer's sign-in, nor can anyone else with a role, or the person themselves.
-2. The file holds all a5s keeps that names them, and only the officer may read it: the command writes only a new file. It gives nobody else's words, only how much they heard others say in group chats or were answered there, and names records by key and title: what records hold is the records system's to answer for.
-3. If they've left, the command names each archive of their id, and the officer exports it the same way, by its name: `--person former:...`. An id the directory later gave someone else exports only its new holder's.
-4. The ledger records the export, by whom and for whom, in counts. Delete the file once it's answered.
+1. The officer asks on the core's page, `/officer/`, signed in afresh: export, and the person's id in the directory, or an archive's name. The page says whose the id is in the directory now, and the command to run.
+2. Within ten minutes, someone from the team that runs a5s, whose service token reaches the core, runs `a5s export --person <id> --out <file>`. It needs both: the team can't export without the officer's request, which does nothing else and works once, nor can anyone else with a role, or the person themselves. If ten minutes have passed, the officer asks again.
+3. The file holds all a5s keeps that names them, and only whoever runs the command may read it: the command writes only a new file, which goes to the officer. It gives nobody else's words, only how much they heard others say in group chats or were answered there, and names records by key and title: what records hold is the records system's to answer for.
+4. If the id was archived, the command names each archive, with when its holder left. An id the directory later gave someone else exports only its new holder's, so an archive may be someone else's: the officer asks for each that's the person's by its name, `former:...`, and the team exports it the same way.
+5. The ledger records the request and the export, by whom and for whom, in counts. Delete the file once it's answered.
 
 ## A request to erase someone's data
 
 **Shows as:** the data protection officer asking a5s to erase what it keeps about someone, at their request.
 
 1. Export it first, if the officer wants a copy of what goes (above): erasure can't be undone.
-2. The officer signs in, beside someone from the team that runs a5s, as for an export, and they run `a5s erase --person <id> --confirm <id>`, with the id twice, so that a mistyped one erases nobody. An archive's name erases that archive alone.
-3. It says how much of each kind went. What's evidence of what agents did stays: the ledger, runs, the changes asked for them with their decisions and samples, and what they owe while the records owe it, which the records system answers for. If they're still here, an agent that wrote first to them waits until they write again, since the chats a5s wrote in go too.
-4. The ledger records the erasure, by whom and for whom, in counts, and nothing that went.
+2. The officer asks on the core's page, as for an export: erase, with the id twice. The team runs `a5s erase --person <id> --confirm <id>` within ten minutes, with the id twice again, so that a mistyped one erases nobody.
+3. By an id, it erases what its holder now has said since the id's last archive, and lists the archives, which it leaves: if the person asking has left, the officer asks to erase their archive by its name instead, and the team erases that the same way. Check the page's name for the id against the person asking.
+4. If a5s is at work for them just then, it says so and erases nothing: try again in a minute or two, while the request lasts.
+5. It says how much of each kind went. What's evidence of what agents did stays: the ledger, runs, the changes asked for them with their decisions and samples, and what they owe while the records owe it. If they're still here, a5s still writes to them where it did, without a word they said.
+6. The ledger records the erasure, by whom and for whom, in counts, and nothing that went.
+
+## People the directory no longer names
+
+**Shows as:** the status saying people the directory no longer names wait to be archived.
+
+1. a5s archives someone a day after the directory stops naming them. When more than three, and more than a third of everyone a5s keeps anything for, go missing at once, it waits a week, since that's more likely the directory than people leaving.
+2. Check the directory, or the scenario's connection to it: a group emptied by mistake, or a refresh that failed. Once it names them again, they're forgotten as missing, and nothing was archived.
+3. If they really did leave, nothing needs doing: a5s archives them once they've been missing a week.
 
 ## Old conversations aren't deleted
 

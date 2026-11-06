@@ -76,18 +76,17 @@ def test_in_a_group_chat_their_words_go_and_nothing_links_them_to_where_they_wer
                 {"value": "£1,240.50", "who": "Ana Ortiz", "speaker": "ana",
                  "when": "Monday"}]})))
     gone = erase(stack, "ben").json()["gone"]
-    assert (gone["said_in_groups"], gone["facts_in_groups"]) == (1, 1)
+    assert (gone["said_in_groups"], gone["group_summaries"]) == (1, 1)
     with db.transaction(stack.admin) as conn:
         turns = conn.execute("select content, heard_by from turns where person = %s "
                              "order by id", (chat,)).fetchall()
-        [summary] = conn.execute("select body, heard_by from summaries").fetchall()
+        summaries = conn.execute("select body from summaries").fetchall()
     assert [t["content"] for t in turns] == ["Ana's words", "The assistant's answer"]
     assert all("ben" not in t["heard_by"] and "ana" in t["heard_by"] for t in turns)
-    assert [f["value"] for f in summary["body"]["facts"]] == ["£1,240.50"]
-    assert "ben" not in summary["heard_by"]
+    assert summaries == []  # it held what he said: the group's next run makes it again
 
 
-def test_someone_who_left_is_erased_with_their_archive_and_its_record(stack, monkeypatch):
+def test_someone_who_left_is_erased_by_their_archives_name(stack, monkeypatch):
     stack.at(MONDAY)
     stack.model.reply("Noted, Ben.")
     stack.say(SAID, person="ben")
@@ -98,7 +97,9 @@ def test_someone_who_left_is_erased_with_their_archive_and_its_record(stack, mon
     stack.at(TUESDAY)
     assert sweep(stack)["archived"] == 1
     [archive] = export(stack, "ben").json()["archives"]
-    gone = erase(stack, "ben").json()["gone"]
+    by_id = erase(stack, "ben").json()  # the id's: an archive may be someone else's before
+    assert (by_id["gone"], by_id["archives"]) == ({}, [archive["name"]])
+    gone = erase(stack, archive["name"]).json()["gone"]  # his, as the officer knows
     assert gone["archives"] == 1 and gone["turns"] == 2
     found = export(stack, "ben").json()  # no archive, nothing of his: only the evidence
     assert found["archives"] == [] and found["conversations"] == []
@@ -108,8 +109,9 @@ def test_someone_who_left_is_erased_with_their_archive_and_its_record(stack, mon
 
 def test_the_changes_asked_for_them_stay_as_evidence(stack, approving, provider):
     asked(stack)  # Ben asks for a change, held for Ana
-    officer = provider.id_token(person="noor")
-    r = erase(stack, "ben", identity=officer)
+    from test_officer import asked as officer_asked  # where people sign in, the officer asks
+    officer_asked(approving, provider, "erase", "ben")
+    r = erase(stack, "ben")
     assert r.status_code == 200, r.text
     assert [p["acts_for"] for p in held(stack)] == [["ben"]]
 
@@ -135,5 +137,7 @@ def test_the_command_line_says_what_went_and_what_stays(stack, monkeypatch, caps
     monkeypatch.setenv("A5S_SERVICE_TOKEN", SERVICE_TOKEN)
     cli.main(["erase", "--person", "ben", "--confirm", "ben", "--by", "noor"])
     said = capsys.readouterr().out
-    assert said.startswith("Erased what a5s kept about ben: ") and "2 from turns" in said
+    assert said.startswith("Erased what a5s kept about ben: ")
+    assert "what they and the agents said in their conversations, 2" in said  # not table names
+    assert "inbound" not in said and "outbox" not in said
     assert "stay, as evidence of what agents did" in said

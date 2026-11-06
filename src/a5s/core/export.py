@@ -30,22 +30,44 @@ import psycopg
 from a5s.core import departures, proposals, topics
 
 FIRST_LINE = "split_part(said, E'\\n', 1)"  # what a change does: the rest is records and people
+# What each kind of the ledger's entries is, in words the officer can pass on
+LEDGER = {"admin": "what the team that runs a5s and the officer did",
+          "inbound": "messages a5s received", "message": "messages agents sent",
+          "notice": "notices a5s sent", "run": "runs opened and closed",
+          "model": "calls to a model", "tool": "tools agents called",
+          "summary": "summaries kept", "proposal": "changes asked for and decided",
+          "obligation": "chases and escalations", "reminder": "reminders",
+          "schedule": "schedules", "report": "reports", "notebook": "notes kept",
+          "budget": "budget warnings", "cap": "caps", "breaker": "models turned off and on",
+          "retention": "deletions"}
 LEDGER_AT = "(entry::jsonb ->> 'at')::timestamptz"  # when an entry was written
+
+
+def holder(conn: psycopg.Connection, person: str) -> dict[str, Any]:
+    """Whose time an id, or an archive's name, covers: the id, and from when to when it was
+    theirs (core/export.py). An archive's runs from the id's archive before it, if any."""
+    if person.startswith(departures.FORMER):
+        left = conn.execute("select person, archived_at from departures where archived_as = %s",
+                            (person,)).fetchone()
+        if left is None:
+            return {"id": None, "since": None, "until": None, "archives": []}
+        before = conn.execute("select max(archived_at) as at from departures where person = %s "
+                              "and archived_at < %s", (left["person"], left["archived_at"])
+                              ).fetchone()["at"]
+        return {"id": left["person"], "since": before, "until": left["archived_at"],
+                "archives": []}
+    archives = [dict(r) for r in conn.execute(
+        "select archived_as as name, missing_since, archived_at from departures "
+        "where person = %s and archived_as is not null order by archived_at", (person,))]
+    return {"id": person, "since": archives[-1]["archived_at"] if archives else None,
+            "until": None, "archives": archives}
 
 
 def gather(conn: psycopg.Connection, person: str) -> dict[str, Any]:
     """All a5s keeps about one holder of an id, or of an archive's name."""
-    archives: list[dict[str, Any]] = []
-    if person.startswith(departures.FORMER):  # an archive: what its id held until it was made
-        left = conn.execute("select person, archived_at from departures where archived_as = %s",
-                            (person,)).fetchone()
-        ids, since, until = ([left["person"]], None, left["archived_at"]) if left else ([], None,
-                                                                                   None)
-    else:
-        archives = [dict(r) for r in conn.execute(
-            "select archived_as as name, missing_since, archived_at from departures "
-            "where person = %s and archived_as is not null order by archived_at", (person,))]
-        ids, since, until = [person], archives[-1]["archived_at"] if archives else None, None
+    whose = holder(conn, person)
+    archives, since, until = whose["archives"], whose["since"], whose["until"]
+    ids = [whose["id"]] if whose["id"] else []
     params = {"names": [person], "ids": ids, "since": since, "until": until}
 
     def rows(sql: str) -> list[dict[str, Any]]:
@@ -84,6 +106,12 @@ def gather(conn: psycopg.Connection, person: str) -> dict[str, Any]:
             "jsonb_array_elements(coalesce(s.body -> 'facts', '[]'::jsonb)) f "
             "where s.person like 'group:%%' and f ->> 'speaker' = any(%(names)s) "
             "order by s.person, s.topic"),
+        "corrections_in_group_summaries": rows(  # in their words, as they said them there
+            "select s.person as chat, s.agent, s.topic, c ->> 'said' as said, "
+            "c ->> 'when' as said_at from summaries s cross join lateral "
+            "jsonb_array_elements(coalesce(s.body -> 'corrections', '[]'::jsonb)) c "
+            "where s.person like 'group:%%' and c ->> 'speaker' = any(%(names)s) "
+            "order by s.person, s.topic"),
         "heard_in_group_chats": {  # others' words, which aren't theirs to have, counted
             "turns": count("select count(*) as n from turns where heard_by && %(names)s "
                            "and not coalesce(speaker = any(%(names)s), false)"),
@@ -114,10 +142,14 @@ def gather(conn: psycopg.Connection, person: str) -> dict[str, Any]:
         "reminders": rows(
             "select agent, about, record, due_at, offered_at, confirmed_at, reminded_at, "
             "cancelled_at from reminders where person = any(%(names)s) order by due_at, id"),
-        "owed": rows(
-            "select record, title, opened_at, due_at, done_at, chased_at, escalations, "
-            "waiting_on, waiting_until from obligations where person = any(%(ids)s) "
-            f"and {within('opened_at')} order by due_at, id"),
+        "owed": rows(  # what the id owed in their time, and what they said of it then
+            "select record, title, opened_at, due_at, done_at, handed_on, chased_at, "
+            f"escalations, case when {within('waiting_noted_at')} then waiting_on end "
+            f"as waiting_on, case when {within('waiting_noted_at')} then waiting_until end "
+            "as waiting_until from obligations where person = any(%(ids)s) "
+            "and (%(until)s::timestamptz is null or owed_since < %(until)s) "
+            "and (%(since)s::timestamptz is null or done_at is null or done_at > %(since)s) "
+            "order by due_at, id"),
         "changes_for_them": [{"change": proposals.key(r), **{k: v for k, v in r.items()
                                                              if k != "id"}} for r in rows(
             f"select id, action, {FIRST_LINE} as said, status, proposed_at, decided_at, "
@@ -169,7 +201,7 @@ def gather(conn: psycopg.Connection, person: str) -> dict[str, Any]:
         "evidence": {  # what the ledger and runs hold for them: what was said only by hash
             "runs": count("select count(*) as n from runs where acts_for && %(ids)s "
                           f"and {within('opened_at')}"),
-            "ledger": {r["kind"]: r["n"] for r in rows(
+            "ledger": {LEDGER.get(r["kind"], r["kind"]): r["n"] for r in rows(
                 "select kind, count(*) as n from ledger where (entry::jsonb -> 'acts_for') "
                 f"?| %(ids)s and {within(LEDGER_AT)} "
                 "group by kind order by kind")}},

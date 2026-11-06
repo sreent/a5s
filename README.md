@@ -85,8 +85,9 @@ uv run a5s summaries --as ana   # what a5s keeps of her conversation, once it ou
 uv run a5s ledger tail
 uv run a5s status           # how a5s is doing: its queue, runs, denials, budgets and objectives
 uv run a5s measures         # what the pilot measures: what was met, who came back, costs, decisions
-uv run a5s export --person ben --by noor   # all a5s keeps about Ben, for the data protection officer
-uv run a5s erase --person ben --confirm ben --by noor   # and erase it, at his request
+uv run a5s export --person ben --by noor   # all a5s keeps about Ben, for the data protection officer,
+uv run a5s erase --person ben --confirm ben --by noor   # and erase it, at his request: where people
+# sign in, the officer asks on the core's page, /officer/, and --by goes
 uv run a5s ledger verify
 ```
 
@@ -118,7 +119,7 @@ Each deployment turns on the chats its people use, by setting each one's setting
 | Chat | On where these are set | What it needs |
 | --- | --- | --- |
 | The command line | Always on | `a5s say` and `a5s inbox`, with the person's sign-in token in `A5S_TOKEN` |
-| The web chat | `A5S_WEBCHAT_CLIENT_ID`, or in development | A public client at your identity provider, using PKCE, that may return to the page at `/chat/` on the channels' address, to `/approve/` for approving settings, to `/settings/` for the settings app, and to `/notebook/` for the agents' notebook, over HTTPS or on localhost |
+| The web chat | `A5S_WEBCHAT_CLIENT_ID`, or in development | A public client at your identity provider, using PKCE, that may return to the page at `/chat/` on the channels' address, to `/approve/` for approving settings, to `/decide/` and `/grade/` for held changes and their samples, to `/settings/` for the settings app, to `/notebook/` for the agents' notebook, and to `/officer/` for the data protection officer's requests, over HTTPS or on localhost |
 | Matrix | `A5S_MATRIX_HOMESERVER`, `A5S_MATRIX_SERVER_NAME`, `A5S_MATRIX_AS_TOKEN` and `A5S_MATRIX_HS_TOKEN` | A homeserver of your own, such as Synapse, with a5s registered on it as an application service |
 | Teams | `A5S_TEAMS_APP_ID`, `A5S_TEAMS_APP_SECRET` and `A5S_TEAMS_TENANT_ID`, or `A5S_TEAMS_BOTS` | Microsoft 365, a bot registered in your Entra ID tenant, and the internet |
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from pathlib import Path
 from typing import Any
 
@@ -213,28 +214,44 @@ def load(folder: Path) -> Definition:
     )
 
 
+# What a skill's folder may hold: its instructions, and text they refer to. A run reads them,
+# and runs nothing, so a skill that brings a script is refused, not offered with a script no run
+# can run.
+SKILL_FILES = (".md", ".txt", ".csv", ".json", ".yaml", ".yml")
+_FRONT = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)  # as Deep Agents reads it
+
+
 def skills_of(folder: Path) -> dict[str, str]:
     """A definition's Agent Skills: each a folder with a SKILL.md, whose YAML front matter
     names it, as its folder is named, and says what it's for, which is all a run sees of it
-    until it reads it. Every text file in the folder, by its path in a run's files."""
+    until it reads it. Each file in the folder, by its path in a run's files."""
     found: dict[str, str] = {}
     for skill in sorted(p for p in folder.iterdir() if p.is_dir()) if folder.is_dir() else []:
         told = skill / "SKILL.md"
         if not told.is_file():
             raise ValueError(f"the skill {skill.name} has no SKILL.md")
-        text = told.read_text()
-        head = text.split("---", 2)[1] if text.startswith("---") and text.count("---") >= 2 \
-            else ""
-        meta = yaml.safe_load(head) if head.strip() else None
-        if not isinstance(meta, dict) or meta.get("name") != skill.name \
-                or not str(meta.get("description") or "").strip():
-            raise ValueError(f"the skill {skill.name}'s SKILL.md must begin with front matter "
-                             f"naming it {skill.name}, and saying what it's for")
+        head = _FRONT.match(told.read_text())
+        try:
+            meta = yaml.safe_load(head.group(1)) if head else None
+        except yaml.YAMLError:
+            meta = None
+        about = str(meta.get("description") or "").strip() if isinstance(meta, dict) else ""
+        if not isinstance(meta, dict) or meta.get("name") != skill.name or not about:
+            raise ValueError(f"the skill {skill.name}'s SKILL.md must begin with front matter, "
+                             f"between lines of ---, naming it {skill.name} and saying what "
+                             "it's for")
+        if len(about) > 1024:  # past which Deep Agents cuts what a run is told of it
+            raise ValueError(f"say what the skill {skill.name} is for in 1,024 characters or "
+                             "fewer")
         for path in sorted(p for p in skill.rglob("*") if p.is_file()):
+            if path.suffix.lower() not in SKILL_FILES:
+                raise ValueError(f"the skill {skill.name} brings {path.name}, which no run can "
+                                 "run: a skill holds instructions, and text they refer to, as "
+                                 + ", ".join(SKILL_FILES))
             try:
                 found[f"/skills/{path.relative_to(folder).as_posix()}"] = path.read_text()
-            except UnicodeDecodeError:  # an agent reads skills, and runs nothing
-                continue
+            except UnicodeDecodeError:
+                raise ValueError(f"the skill {skill.name}'s {path.name} isn't text") from None
     return found
 
 

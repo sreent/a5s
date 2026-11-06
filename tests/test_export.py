@@ -43,7 +43,7 @@ def test_the_data_protection_officer_exports_all_a5s_keeps_about_someone(stack):
     [owed] = found["owed"]
     assert (owed["record"], owed["waiting_on"]) == ("Q-1002", "the bank's reply")
     assert [d["tokens"] for d in found["days"]["budget"]] == [15]
-    assert found["evidence"]["runs"] == 1 and found["evidence"]["ledger"]["model"] == 1
+    assert found["evidence"]["runs"] == 1 and found["evidence"]["ledger"]["calls to a model"] == 1
     assert "Hello, Ana." not in json.dumps(found)
 
 
@@ -140,12 +140,14 @@ def test_a_change_is_said_without_what_its_records_held_or_whom_else_it_was_for(
     sweep_changes(stack)  # it's made, and drawn as a sample of the agent's work
     with db.transaction(stack.admin) as conn:  # which Dana grades
         conn.execute("update samples set grade = 'right', graded_by = 'dana', graded_at = now()")
-    officer = provider.id_token(person="noor")  # signed in, as the core asks now
-    [change] = export(stack, "ben", identity=officer).json()["changes_for_them"]
+    from test_officer import asked as officer_asked  # where people sign in, the officer asks
+    for person in ("ben", "ana", "dana"):  # for each, on the core's page
+        officer_asked(approving, provider, "export", person)
+    [change] = export(stack, "ben").json()["changes_for_them"]
     assert change["said"] == "Change a customer question's due date: Q-1002, with due 2026-11-13."
-    decider = export(stack, "ana", identity=officer).json()
+    decider = export(stack, "ana").json()
     assert decider["changes_they_could_decide"] == 1 and len(decider["decisions"]) == 1
-    graded = export(stack, "dana", identity=officer).json()
+    graded = export(stack, "dana").json()
     [sample] = graded["samples"]
     assert (sample["as"], sample["said"], sample["grade"]) == (["grader"], None, "right")
     assert "as it stood" not in json.dumps(graded) and "Ben Okafor" not in json.dumps(graded)
