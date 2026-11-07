@@ -36,27 +36,32 @@ APPROVED = ("making", "made", "not made", "stopped")  # a held change its decide
 
 
 def report(conn: psycopg.Connection, scenario: str, models: dict[str, ModelConfig],
-           days: int = 30, now: datetime | None = None) -> dict[str, Any]:
+           days: int = 30, now: datetime | None = None,
+           served: dict[str, list[str]] | None = None) -> dict[str, Any]:
     """The measures over the last `days` days, at least one, to `now`, the core's clock, or
-    else the database's, for the scenario named."""
+    else the database's, for the scenario named, with whom each agent's instances serve, as
+    the directory says now, to say who came back of everyone they serve."""
     days = max(1, int(days))
     at = {"scenario": scenario, "window": f"{days} days", "grace": GRACE,
           "now": now or conn.execute("select now() as t").fetchone()["t"],
           "approved": list(APPROVED), "note": notebook.NOTE}
     since = "%(now)s::timestamptz - %(window)s::interval"
-    owed = conn.execute(
-        "select count(*) as due, "
+    unknown = "seen_owed_at <= due_at and done_at > due_at"  # done between two reads of the
+    late = f"done_at > due_at and not coalesce({unknown}, false)"  # records, as it fell due
+    owed = conn.execute(  # what an agent acts on, once each, by whoever owed it as it fell
+        "select count(*) as due, "  # due: what the records handed on is its next owner's
         "count(*) filter (where done_at <= due_at) as on_time, "
-        "count(*) filter (where done_at > due_at) as late, "
+        f"count(*) filter (where {late}) as late, "
+        f"count(*) filter (where {unknown}) as unknown, "
         "count(*) filter (where done_at is null) as open, "
         "count(*) filter (where chased_at is not null) as chased, "
         "count(*) filter (where escalations > 0) as escalated, "
         "percentile_cont(0.5) within group (order by extract(epoch from done_at - due_at)) "
-        "  filter (where done_at > due_at) as late_p50, "
+        f"  filter (where {late}) as late_p50, "
         "percentile_cont(0.9) within group (order by extract(epoch from done_at - due_at)) "
-        "  filter (where done_at > due_at) as late_p90 "
+        f"  filter (where {late}) as late_p90 "
         f"from obligations where scenario = %(scenario)s and due_at > {since} "
-        "and due_at <= %(now)s", at).fetchone()
+        "and due_at <= %(now)s and instance_id is not null and not handed_on", at).fetchone()
     by = "due_at + case when in_digest then interval '1 day' else %(grace)s::interval end"
     reminded = conn.execute(  # one for a day comes in that day's digest, at its own time, so
         "select count(*) as due, "  # it's counted once that day is over
@@ -64,14 +69,16 @@ def report(conn: psycopg.Connection, scenario: str, models: dict[str, ModelConfi
         "count(*) filter (where reminded_at is null) as missed "
         "from reminders where confirmed_at is not null and cancelled_at is null "
         f"and due_at > {since} and {by} <= %(now)s", at).fetchone()
-    returning = conn.execute(
+    wrote = conn.execute(  # who wrote to each agent the window before, and again since
         "with before as (select distinct agent, person from inbound where "
         f"  received_at > {since} - %(window)s::interval and received_at <= {since} "
         "  and person not like 'former:%%'), "
         f"since as (select distinct agent, person from inbound where received_at > {since}) "
-        "select b.agent, count(*) as wrote_before, count(s.person) as came_back "
+        "select b.agent, b.person, s.person is not null as back "
         "from before b left join since s on s.agent = b.agent and s.person = b.person "
-        "group by b.agent order by b.agent", at).fetchall()
+        "order by b.agent, b.person", at).fetchall()
+    served = served or {}
+    team = set().union(*served.values()) if served else set()
     mentioned = conn.execute(  # in a group chat, an agent hears only what mentions it
         "select agent, count(*) as messages, count(distinct conversation) as chats, "
         "count(distinct person) as people from inbound "
@@ -131,17 +138,25 @@ def report(conn: psycopg.Connection, scenario: str, models: dict[str, ModelConfi
     return {
         "days": days,
         "obligations": {"due": owed["due"], "on_time": owed["on_time"], "late": owed["late"],
-                        "open": owed["open"], "chased": owed["chased"],
-                        "escalated": owed["escalated"],
-                        "on_time_share": _share(owed["on_time"], owed["due"]),
+                        "unknown": owed["unknown"], "open": owed["open"],
+                        "chased": owed["chased"], "escalated": owed["escalated"],
+                        "on_time_share": _share(owed["on_time"], owed["due"] - owed["unknown"]),
                         "late_hours_p50": _hours(owed["late_p50"]),
                         "late_hours_p90": _hours(owed["late_p90"])},
         "reminders": {"due": reminded["due"], "on_time": reminded["on_time"],
                       "missed": reminded["missed"],
                       "on_time_share": _share(reminded["on_time"], reminded["due"])},
-        "returning": [{"agent": r["agent"], "wrote_before": r["wrote_before"],
-                       "came_back": r["came_back"],
-                       "share": _share(r["came_back"], r["wrote_before"])} for r in returning],
+        "returning": [{"agent": agent, "wrote_before": len(people),
+                       "came_back": len(back := [p for p in people if p[1]]),
+                       "share": _share(len(back), len(people)),
+                       "served": len(served.get(agent, [])),
+                       "came_back_served": len(ours := [p for p in back
+                                                        if p[0] in served.get(agent, ())]),
+                       "served_share": _share(len(ours), len(served.get(agent, [])))}
+                      for agent, people in _by_agent(wrote).items()],
+        "returning_team": {"served": len(team), "came_back": len(
+            came := {r["person"] for r in wrote if r["back"] and r["person"] in team}),
+            "share": _share(len(came), len(team))},
         "groups": [{"agent": r["agent"], "messages": r["messages"], "chats": r["chats"],
                     "people": r["people"]} for r in mentioned],
         "runs": [{"instance": r["instance_id"], "model": r["model"], "runs": r["runs"],
@@ -178,9 +193,11 @@ def told(m: dict[str, Any]) -> str:
     o, r, h, s = m["obligations"], m["reminders"], m["held"], m["samples"]
     lines = [
         f"a5s over the last {m['days']} days:",
-        "  What people owed that fell due: " + (
+        "  What people owed that fell due, that an agent acts on: " + (
             f"{o['due']}, {_percent(o['on_time_share'])} done by when it was due, "
             f"{o['late']} done late, {o['open']} still open"
+            + (f", and {o['unknown']} done as it fell due, between two reads of the records, "
+               "so by when isn't known" if o["unknown"] else "")
             + (f"; done late, half within {o['late_hours_p50']:.0f} hours of falling due, "
                f"nine in ten within {o['late_hours_p90']:.0f}" if o["late"] else "")
             + f"; an agent chased {o['chased']} and took {o['escalated']} up the line"
@@ -190,7 +207,11 @@ def told(m: dict[str, Any]) -> str:
             if r["due"] else "none") + ".",
         "  People who came back to an agent, of those who wrote to it the window before: " + (
             "; ".join(f"the {x['agent']}, {x['came_back']} of {x['wrote_before']}"
-                      for x in m["returning"]) or "nobody wrote to one before") + ".",
+                      + (f", {x['came_back_served']} of the {x['served']} it serves"
+                         if x["served"] else "") for x in m["returning"])
+            or "nobody wrote to one before")
+        + (f"; of everyone the agents serve, {t['came_back']} of {t['served']} came back"
+           if (t := m["returning_team"])["served"] else "") + ".",
         "  Group chats that mentioned an agent: " + ("; ".join(
             f"the {x['agent']}, {_many(x['messages'], 'time')} in {_many(x['chats'], 'chat')}, "
             f"by {_many(x['people'], 'person', 'people')}" for x in m["groups"]) or "none") + ".",
@@ -223,6 +244,14 @@ def told(m: dict[str, Any]) -> str:
             for x in m["notebook"]) or "none") + ".",
     ]
     return "\n".join(lines)
+
+
+def _by_agent(rows: list[dict]) -> dict[str, list[tuple[str, bool]]]:
+    """Who wrote to each agent the window before, and whether they came back."""
+    found: dict[str, list[tuple[str, bool]]] = {}
+    for r in rows:
+        found.setdefault(r["agent"], []).append((r["person"], r["back"]))
+    return found
 
 
 def _cost(model: ModelConfig | None, r: dict[str, Any]) -> float | None:

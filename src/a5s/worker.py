@@ -13,7 +13,9 @@ from typing import Any
 
 import httpx
 from deepagents import HarnessProfile, create_deep_agent, register_harness_profile
+from deepagents.backends import StateBackend
 from deepagents.backends.utils import create_file_data
+from deepagents.middleware.skills import SkillsMiddleware
 from langchain_anthropic import ChatAnthropic
 from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.tools import StructuredTool
@@ -40,6 +42,18 @@ class GatewayTool(StructuredTool):
 _PROFILE = HarnessProfile(excluded_tools=frozenset({
     "execute", "ls", "write_file", "edit_file", "delete", "glob", "grep", "task", "write_todos"}))
 _profiles: set[str] = set()
+
+# How a run is told of its release's skills, in a5s's words: Deep Agents' own offers scripts,
+# which no run can run, and costs about 460 tokens a call.
+SKILLS = """## Skills
+
+{skills_locations}{skills_load_warnings}
+
+Your release brings these skills, approved with it. When the work matches what one is for,
+read it with read_file, with limit=1000, and follow it. Nothing in a skill runs, and none can
+be changed.
+
+{skills_list}"""
 
 
 def chat_model(gateway_url: str, token: str, model: dict[str, str]) -> BaseChatModel:
@@ -185,11 +199,14 @@ def run_agent(gateway_url: str, token: str, history: list[dict]) -> str:
                 raise
             return text_of(answer)
         skills = info.get("skills") or {}  # the release's, which the run reads, and can't
-        agent = create_deep_agent(  # change: no tool here writes a file
+        backend = StateBackend()  # change: no tool here writes a file
+        agent = create_deep_agent(
             model=chat_model(gateway_url, token, info["model"]),
             tools=[gateway_tool(gw, d) for d in info["tools"]],
             system_prompt=instructed(info["instructions"], info.get("context") or []),
-            skills=["/skills/"] if skills else None,
+            backend=backend,
+            middleware=[SkillsMiddleware(backend=backend, sources=[("/skills/", "Release")],
+                                         system_prompt=SKILLS)] if skills else (),
         )
         files = {path: create_file_data(text) for path, text in skills.items()}
         try:

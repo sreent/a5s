@@ -99,6 +99,8 @@ def report(conn: psycopg.Connection, breakers: list[str], keys: tuple[str, ...] 
         "and chased_at <= due_at) as on_time from obligations "
         "where due_at between now() - interval '7 days' and now()").fetchone()
     on_time = chased["on_time"] / chased["due"] if chased["due"] else None
+    missing = conn.execute(  # whom the directory no longer names, not yet archived
+        "select count(*) as n from departures where archived_at is null").fetchone()
     return {
         "queue": {"waiting": queue["waiting"], "oldest_seconds": _number(queue["oldest"])},
         "runs": [dict(r) for r in runs],
@@ -122,6 +124,7 @@ def report(conn: psycopg.Connection, breakers: list[str], keys: tuple[str, ...] 
                     "caps_lowered": lowered["n"],
                     "rubber_stamps": samples.rubber_stamps(conn) if rubber_stamps else None},
         "unsealed": unsealed,
+        "missing": missing["n"],
         "not_active": [dict(r) for r in stopped],
         "breakers_open": breakers,
         "objectives": {
@@ -214,6 +217,9 @@ def told(status: dict[str, Any]) -> str:
             f"{status['urgent_held']['messages']} for {status['urgent_held']['people']} "
             + ("person" if status["urgent_held"]["people"] == 1 else "people")
             if status["urgent_held"]["messages"] else "none") + ".",
+        *([(f"  People the directory no longer names, not yet archived: {status['missing']}"
+            " (many at once wait a week, in case it's the directory).")]
+          if status.get("missing") else []),
         "  Not active: " + (", ".join(f"{i['id']}, {i['status']}"
                                       + (f" by {i['suspended_by']}" if i["suspended_by"] else "")
                                       for i in status["not_active"]) or "none") + ".",

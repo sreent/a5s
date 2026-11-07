@@ -26,7 +26,7 @@ Each part runs as its own service account, which can't reach Kubernetes' own API
   - `database-<part>-url` and `database-<part>-password`, for `gateway`, `channels`, `scheduler` and `anchor`;
   - `service-token` and `seal-keys`;
   - and as the deployment needs them: `deepseek-api-key`, `qwen-api-key`, `teams-secret-<agent>`, `matrix-as-token` and `matrix-hs-token`.
-- **Locked storage** for the ledger's copies, given as `anchor.store`, and the copier's right to write there, through the cloud's workload identity, as an annotation on its service account (`serviceAccounts.annotations.anchor`).
+- **Locked storage** for the ledger's copies, given as `anchor.store`, and the copier's right to write there, through the cloud's workload identity, as an annotation on its service account (`serviceAccounts.annotations.anchor`), and on AKS a label on its pods too (`podLabels.anchor`). [The first day](../../docs/first-day.md) does it on Azure.
 - **Where Postgres is**, for the network policies: `networkPolicies.database`, by its pods' labels or its addresses.
 
 ## Install

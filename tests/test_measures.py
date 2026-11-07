@@ -30,19 +30,34 @@ def test_the_measures_say_what_fell_due_and_was_met(stack):
                                   ("Q-2", "3 days", "1 day"),  # done two days late
                                   ("Q-3", "2 days", None),  # still open
                                   ("Q-4", "40 days", "1 day")):  # due before the window
-            conn.execute(
+            conn.execute(  # each, as an agent acts on it
                 "insert into obligations (scenario, source, record, person, title, opened_at, "
-                "due_at, done_at) values ('sample', 'records', %s, 'ana', 'A question', "
-                "now() - interval '50 days', now() - %s::interval, "
-                "now() - %s::interval)" if done else
+                "due_at, done_at, instance_id) values ('sample', 'records', %s, 'ana', "
+                "'A question', now() - interval '50 days', now() - %s::interval, "
+                "now() - %s::interval, 'assistant-finance')" if done else
                 "insert into obligations (scenario, source, record, person, title, opened_at, "
-                "due_at) values ('sample', 'records', %s, 'ana', 'A question', "
-                "now() - interval '50 days', now() - %s::interval)",
+                "due_at, instance_id) values ('sample', 'records', %s, 'ana', 'A question', "
+                "now() - interval '50 days', now() - %s::interval, 'assistant-finance')",
                 (record, due, done) if done else (record, due))
         conn.execute(  # owed under a scenario the deployment no longer runs
             "insert into obligations (scenario, source, record, person, title, opened_at, "
-            "due_at) values ('before', 'records', 'Q-5', 'ana', 'A question', "
+            "due_at, instance_id) values ('before', 'records', 'Q-5', 'ana', 'A question', "
+            "now() - interval '50 days', now() - interval '2 days', 'assistant-finance')")
+        conn.execute(  # owed by someone no agent serves, which an agent can't act on
+            "insert into obligations (scenario, source, record, person, title, opened_at, "
+            "due_at) values ('sample', 'records', 'Q-6', 'chen', 'A question', "
             "now() - interval '50 days', now() - interval '2 days')")
+        conn.execute(  # handed to someone else before it fell due: counted as theirs
+            "insert into obligations (scenario, source, record, person, title, opened_at, "
+            "due_at, done_at, handed_on, instance_id) values ('sample', 'records', 'Q-3', "
+            "'ben', 'A question', now() - interval '50 days', now() - interval '2 days', "
+            "now() - interval '4 days', true, 'assistant-finance')")
+        conn.execute(  # done between two reads of the records, as it fell due: by when, a5s
+            "insert into obligations (scenario, source, record, person, title, opened_at, "  # can't
+            "due_at, done_at, seen_owed_at, instance_id) values ('sample', 'records', 'Q-7', "
+            "'ana', 'A question', now() - interval '50 days', now() - interval '3 days', "
+            "now() - interval '2 days', now() - interval '3 days 6 hours', "
+            "'assistant-finance')")
         conn.execute("update obligations set chased_at = due_at, escalations = 1 "
                      "where record = 'Q-2'")  # chased, then taken up the line
         conn.execute("update obligations set chased_at = due_at where record = 'Q-3'")
@@ -64,9 +79,10 @@ def test_the_measures_say_what_fell_due_and_was_met(stack):
                 "now() - interval '9 days', gen_random_uuid(), now() - interval '9 days', "
                 "now() - interval '9 days', %s)", (due, in_digest))
         found = measures.report(conn, "sample", {}, 30)
-    assert found["obligations"] == {"due": 3, "on_time": 1, "late": 1, "open": 1, "chased": 2,
-                                    "escalated": 1, "on_time_share": 1 / 3,
-                                    "late_hours_p50": 48.0, "late_hours_p90": 48.0}
+    assert found["obligations"] == {"due": 4, "on_time": 1, "late": 1, "unknown": 1,
+                                    "open": 1, "chased": 2, "escalated": 1,
+                                    "on_time_share": 1 / 3, "late_hours_p50": 48.0,
+                                    "late_hours_p90": 48.0}
     assert found["reminders"] == {"due": 4, "on_time": 2, "missed": 1, "on_time_share": 0.5}
 
 
@@ -80,9 +96,13 @@ def test_the_measures_count_who_came_back_to_an_agent(stack):
                          "reply_to, received_at) values (gen_random_uuid(), 'local', "
                          "gen_random_uuid()::text, %s, 'assistant', 'Hello', '{}', "
                          "now() - %s::interval)", (person, ago))
-        found = measures.report(conn, "sample", {}, 30)
+        found = measures.report(conn, "sample", {}, 30, served={  # as the directory says
+            "assistant": ["ana", "ben", "chen", "dana", "omar", "kofi"]})
     assert found["returning"] == [{"agent": "assistant", "wrote_before": 2, "came_back": 1,
-                                   "share": 0.5}]
+                                   "share": 0.5, "served": 6, "came_back_served": 1,
+                                   "served_share": 1 / 6}]  # which the pilot's stop rule reads
+    assert found["returning_team"] == {"served": 6, "came_back": 1, "share": 1 / 6}
+    assert "1 of the 6 it serves" in measures.told(found)
 
 
 def test_the_measures_say_what_a_run_costs_on_a_model_with_prices(stack):

@@ -67,6 +67,7 @@ from a5s.core import (
     models,
     notebook,
     obligations,
+    officer,
     parts,
     profiles,
     proposals,
@@ -1109,6 +1110,8 @@ def create_app(gw: Gateway) -> FastAPI:
                 conn.execute("update obligations set chased_at = %s, updated_at = %s where id = %s",
                              (now, now, opening.trigger["obligation"]))
             if not reasons:
+                for who in sorted(set(opening.acts_for)):  # not while they're erased or archived
+                    departures.hold(conn, who, shared=True)
                 conn.execute(
                     "insert into runs (id, instance_id, token_hash, trigger, acts_for, expires_at, "
                     "read_outside) values (%s, %s, %s, %s, %s, now() + make_interval(mins => %s), "
@@ -1252,9 +1255,16 @@ def create_app(gw: Gateway) -> FastAPI:
             if not conn.execute("select pg_try_advisory_xact_lock(%s) as got",
                                 (obligations.LOCK,)).fetchone()["got"]:
                 return []  # another sweep is at work
+            last = conn.execute(  # when a5s last read them: what's done since, was done since
+                "select read_at from record_reads where scenario = %s", (gw.scenario.name,)
+            ).fetchone()
+            conn.execute("insert into record_reads (scenario, read_at) values (%s, %s) on "
+                         "conflict (scenario) do update set read_at = excluded.read_at",
+                         (gw.scenario.name, now))
             obligations.sync(conn, gw.scenario.name, owed, gw.definitions, now,
                              gw.scenario.part_of,
-                             lambda serves, who: registry.serving(gw.scenario, serves, who))
+                             lambda serves, who: registry.serving(gw.scenario, serves, who),
+                             last["read_at"] if last else None)
             instances = {i["id"]: i for i in conn.execute("select * from instances")}
             able = gw.able(conn)  # else code escalates
             rows = conn.execute(
@@ -1667,19 +1677,22 @@ def create_app(gw: Gateway) -> FastAPI:
         late the rest was, who came back, what runs cost, how held changes were decided and
         graded, and what agents asked each other and noted (core/measures.py)."""
         with db.transaction(gw.url) as conn:
-            return measures.report(conn, gw.scenario.name, gw.models, days, gw.clock())
+            served: dict[str, set[str]] = {}  # whom each agent serves, as the directory says now
+            for inst in conn.execute("select definition, serves from instances "
+                                     "where status = 'active'"):
+                served.setdefault(inst["definition"], set()).update(
+                    registry.served(gw.scenario, inst["serves"]))
+            return measures.report(conn, gw.scenario.name, gw.models, days, gw.clock(),
+                                   {a: sorted(p) for a, p in served.items()})
 
     @app.post("/people/{person}/export", dependencies=[Depends(service)])
     def export_person(person: str, body: StatusChange) -> dict:
         """All a5s keeps about someone, for their request to see it, for the data protection
-        officer alone, signed in (core/export.py). The ledger records it, in counts."""
-        by, identity = who_asks(body)
-        officer = gw.scenario.person(by)
-        if officer is None or DATA_PROTECTION not in officer.roles:
-            raise HTTPException(403, f"only the data protection officer exports what a5s keeps "
-                                     f"about someone, and {by} isn't")
+        officer alone, who asked for it on the core's page (core/officer.py). The ledger records
+        it, in counts."""
         if groups.of(person):
             raise HTTPException(400, "a group chat's conversation is nobody's own: name a person")
+        by, identity = officer_asked("export", person, body)
         with db.transaction(gw.url) as conn:  # as of one moment, so that a sweep that
             conn.execute("set transaction isolation level repeatable read read only")  # archives
             found = export.gather(conn, person)  # them meanwhile moves nothing it reads
@@ -1696,36 +1709,37 @@ def create_app(gw: Gateway) -> FastAPI:
     @app.post("/people/{person}/erase", dependencies=[Depends(service)])
     def erase_person(person: str, body: Erasure) -> dict:
         """Erase all a5s keeps about someone, at their request, for the data protection officer
-        alone, signed in, who sends the id again to confirm it (core/erasure.py). What's
-        evidence of what agents did stays. The ledger records it, in counts."""
-        by, identity = who_asks(body)
-        officer = gw.scenario.person(by)
-        if officer is None or DATA_PROTECTION not in officer.roles:
-            raise HTTPException(403, f"only the data protection officer erases what a5s keeps "
-                                     f"about someone, and {by} isn't")
+        alone, who asked for it on the core's page (core/officer.py), with the id sent again to
+        confirm it (core/erasure.py). What's evidence of what agents did stays. The ledger
+        records it, in counts."""
         if groups.of(person):
             raise HTTPException(400, "a group chat's conversation is nobody's own: name a person")
         if body.confirm != person:
             raise HTTPException(400, "send the id again as confirm, so that a mistyped id erases "
                                      "nobody")
-        with db.transaction(gw.url) as conn:
-            gone = erasure.erase(conn, person, gw.clock())
-            if not gone and gw.scenario.person(person) is None:
+        here = gw.scenario.person(person) is not None
+        with db.transaction(gw.url) as conn:  # the request is used only if the erasure is made
+            by, identity = officer_asked("erase", person, body, conn)
+            try:
+                gone, archives = erasure.erase(conn, person, gw.clock(), here)
+            except erasure.Busy:
+                raise HTTPException(409, f"a5s is at work for {person} now, and might write what "
+                                         "it read of them after the erasure: try again in a "
+                                         "minute or two") from None
+            if not gone and not archives and not here:
                 raise HTTPException(404, f"nobody in the directory has the id {person}, and a5s "
                                          "keeps nothing under it: check the id")
             ledger.append(conn, {"kind": "admin", "action": "erase", "run": None,
                                  "instance": None, "acts_for": [person], "decision": "record",
                                  "args": {"person": person, "by": by, "identity": identity,
-                                          "erased": gone}})
-        return {"erased": person, "by": by, "gone": gone}
+                                          "erased": gone, "archives_left": len(archives)}})
+        return {"erased": person, "by": by, "gone": gone, "archives": archives}
 
     @app.post("/retention/sweep", dependencies=[Depends(service)])
     def sweep_retention() -> dict:
         """Delete what's past its time to keep (core/retention.py), and record how much went.
-        Archive what a5s keeps for anyone who has left (core/departures.py), apart. Then read
-        again the records of the notes not checked for a day, outside any transaction, and let
-        go of those whose records changed (core/notebook.py): so neither holds up the other,
-        nor the ledger's other writers."""
+        Archive what a5s keeps for anyone who has left (core/departures.py), apart, so neither
+        holds up the other, nor the ledger's other writers."""
         with db.transaction(gw.url) as conn:
             gone = retention.sweep(conn, gw.clock(), gw.scenario.name)
             if gone:
@@ -1734,8 +1748,43 @@ def create_app(gw: Gateway) -> FastAPI:
                                      "args": gone})
         with db.transaction(gw.url) as conn:
             archived = departures.sweep(conn, gw.scenario, gw.clock())
-        learned = notebook.check(gw.url, gw.scenario, gw.clock())
-        return {"deleted": gone, "archived": len(archived), "notebook": learned}
+        return {"deleted": gone, "archived": len(archived)}
+
+    @app.post("/notebook/sweep", dependencies=[Depends(service)])
+    def sweep_notebook() -> dict:
+        """Read again the records of the notes not checked for a day, outside any transaction,
+        and let go of those whose records changed (core/notebook.py): asked apart from the
+        other sweeps, so a records system that's slow to answer holds none of them up."""
+        return notebook.check(gw.url, gw.scenario, gw.clock())
+
+    def officer_asked(action: str, person: str, body: StatusChange,
+                      conn: psycopg.Connection | None = None) -> tuple[str, dict | str]:
+        """Who asked for this, and how a5s knows: where people sign in, the data protection
+        officer's request on the core's page, made for this alone, which it uses up, in `conn`'s
+        transaction if it's given one; in development, whoever they say, if they have the
+        role."""
+        if gw.identity is not None:
+            try:
+                if conn is not None:
+                    asked = officer.take(conn, gw.identity, gw.scenario,
+                                         gw.cfg.webchat_client_id, action, person)
+                else:
+                    with db.transaction(gw.url) as own:
+                        asked = officer.take(own, gw.identity, gw.scenario,
+                                             gw.cfg.webchat_client_id, action, person)
+            except approvals.Refused as exc:
+                raise HTTPException(exc.status, exc.reason) from None
+            return asked["officer"], {"verified": "a sign-in to ask for this alone",
+                                      "request": str(asked["id"]), "issuer": asked["issuer"],
+                                      "token_sha256": asked["token"].removeprefix(
+                                          approvals.HASHED)}
+        if not gw.cfg.development:
+            raise HTTPException(503, "the officer's requests need sign-in: set A5S_OIDC_ISSUER")
+        who = gw.scenario.person(body.by or "")
+        if who is None or DATA_PROTECTION not in who.roles:
+            raise HTTPException(403, f"only the data protection officer may {action} what a5s "
+                                     f"keeps about someone, and {body.by} isn't")
+        return who.id, "unverified (development)"
 
     # Instances: anyone with the role can make a5s safer alone.
 
@@ -1854,6 +1903,11 @@ def create_app(gw: Gateway) -> FastAPI:
                                     (group or person.id, row["definition"])).fetchall()
                 provenance.read(conn, row["run"], "when things were said",
                                 " ".join(d["day"] for d in said), gw.scenario.record_pattern)
+            released = gw.definitions.get(row["definition"])
+            if released and released.skills and row["trigger"].get("kind") not in OWN_RUNS:
+                provenance.read(conn, row["run"], "its release's skills",  # approved with it,
+                                "\n".join(released.skills.values()),  # not the agent's own
+                                gw.scenario.record_pattern)
         definition = gw.definitions.get(row["definition"])
         if definition is None or definition.release_id != row["release"]:
             raise HTTPException(409, f"release {row['release']} isn't loaded in this gateway")
@@ -2466,7 +2520,11 @@ def create_app(gw: Gateway) -> FastAPI:
                 decisions = [gw.decide(row, "send_message", recipient(who), [])
                              for who in (row["acts_for"] if group else [body.to])]
                 decision = next((d for d in decisions if not d.allowed), decisions[0])
-                route = (dict(gw.message_of(conn, inbound)) if inbound  # an answer, where asked
+                asked = gw.message_of(conn, inbound) if inbound else None
+                if inbound and asked is None:  # gone meanwhile, such as erased
+                    raise HTTPException(409, "the message this answers is gone: a5s answers "
+                                             "nothing in its place")
+                route = (dict(asked) if inbound  # an answer, where asked
                          else {"channel": "digest", "reply_to": {}} if gw.for_digest(conn, row)
                          else gw.at_once(conn, body.to, row["definition"],  # not what they
                                          count=decision.allowed  # asked to be reminded of then

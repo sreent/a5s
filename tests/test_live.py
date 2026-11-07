@@ -7,6 +7,7 @@ import httpx
 import pytest
 
 from a5s import db
+from a5s.core import measures
 from a5s.services import context
 from conftest import ROOT, FakeModel, build_root, running
 from test_agents import dated
@@ -180,4 +181,63 @@ def test_a_real_model_passes_on_a_contact_it_never_sees(database, tmp_path):
         print(told)
         assert "accounts@northwind.test" in told
         assert not any(b"accounts@northwind.test" in (r.content or b"") for r in model_calls)
+        assert stack.verify().ok
+
+
+REFUNDS = """---
+name: refunds
+description: How to answer a question about when a customer's refund is paid.
+---
+
+# Refunds
+
+1. Look up the question's record. Say its status, and when it's due, as the record says.
+2. End your answer with this line, as it is: "Finance's refund desk: extension 4417."
+"""
+
+
+@pytest.mark.live
+def test_a_real_model_reads_a_skill_when_it_needs_it_and_goes_by_it(database, tmp_path):
+    if not os.environ.get("DEEPSEEK_API_KEY"):
+        pytest.skip("DEEPSEEK_API_KEY isn't set")
+    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text())
+    folder = root / "agents" / "assistant" / "skills" / "refunds"  # the release brings it
+    folder.mkdir(parents=True)
+    (folder / "SKILL.md").write_text(REFUNDS)
+    calls = []
+    with running(database, root, httpx.Client(event_hooks={"request": [calls.append]}),
+                 FakeModel()) as stack:
+        told = stack.say("When will Contoso's refund for Q-1002 be paid?", person="ben")
+        print(told)
+        sent = [r.content or b"" for r in calls if r.url.host == "api.deepseek.com"]
+        assert b"/skills/refunds/SKILL.md" in sent[0]  # told of it by name and purpose,
+        assert b"extension 4417" not in sent[0]  # and read it once it needed it
+        assert any(b"extension 4417" in body for body in sent[1:])
+        assert "4417" in told and "2026-11-06" in told
+        assert stack.verify().ok
+
+
+@pytest.mark.live
+@pytest.mark.parametrize("alias", ["deepseek-v4-pro", "deepseek-v4-pro-anthropic"])
+def test_what_a_real_model_reads_from_its_providers_cache_is_counted(database, tmp_path, alias):
+    if not os.environ.get("DEEPSEEK_API_KEY"):
+        pytest.skip("DEEPSEEK_API_KEY isn't set")
+    root = build_root(tmp_path, alias, (ROOT / "config" / "models.yaml").read_text())
+    with running(database, root, httpx.Client(), FakeModel()) as stack:
+        asked = ("What's the key of the customer question about an invoice? Reply with the key.",
+                 "And when is it due? Reply with the date.")
+        for question in asked:  # each call starts as the one before did: its instructions, tools
+            stack.say(question)
+        usage = [e["outcome"]["usage"] for e in stack.ledger()
+                 if e["kind"] == "model" and e["decision"] == "record"]
+        with db.transaction(stack.admin) as conn:
+            runs = conn.execute("select tokens, tokens_in, tokens_out, tokens_cached, model "
+                                "from runs order by opened_at").fetchall()
+            [measured] = measures.report(conn, "sample", stack.gateway.models, 1,
+                                         stack.gateway.clock())["runs"]
+        print(*usage, *runs, measured, sep="\n")
+        assert sum(r["tokens_cached"] for r in runs) > 0
+        assert all(r["tokens"] == r["tokens_in"] + r["tokens_out"]  # in either API's words
+                   and r["tokens_cached"] <= r["tokens_in"] and r["model"] == alias for r in runs)
+        assert measured["cached_share"] > 0
         assert stack.verify().ok

@@ -30,6 +30,10 @@ app.kubernetes.io/component: {{ .part }}
 app.kubernetes.io/version: {{ .root.Chart.AppVersion | quote }}
 app.kubernetes.io/managed-by: {{ .root.Release.Service }}
 helm.sh/chart: {{ printf "%s-%s" .root.Chart.Name .root.Chart.Version }}
+{{- $extra := get (.root.Values.podLabels | default dict) .part | default dict }}
+{{- with omit $extra "app.kubernetes.io/name" "app.kubernetes.io/instance" "app.kubernetes.io/component" "app.kubernetes.io/version" "app.kubernetes.io/managed-by" "helm.sh/chart" }}
+{{ toYaml . }}
+{{- end }}
 {{- end }}
 
 {{/* Each container runs as a5s's own user, with nothing it doesn't need. */}}

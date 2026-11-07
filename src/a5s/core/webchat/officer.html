@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>a5s: the data protection officer's requests</title>
+<link rel="stylesheet" href="/chat/app.css">
+<script src="/officer/officer.js" defer></script>
+</head>
+<body>
+<header>
+  <h1>a5s</h1>
+</header>
+<main>
+  <h2>A request for someone's data</h2>
+  <p id="status" role="status"></p>
+  <form id="ask" hidden>
+    <p>
+      <label for="action">Ask to</label>
+      <select id="action">
+        <option value="export">export</option>
+        <option value="erase">erase</option>
+      </select>
+      <label for="person">all a5s keeps about</label>
+      <input id="person" autocomplete="off" spellcheck="false"
+             placeholder="their id in the directory, or an archive's name">
+    </p>
+    <p id="again" hidden>
+      <label for="confirm">Their id again, since an erasure can't be undone:</label>
+      <input id="confirm" autocomplete="off" spellcheck="false">
+    </p>
+    <p class="note">You sign in afresh, for this request alone. Someone from the team that runs
+      a5s then carries it out, once, within ten minutes: your sign-in does nothing else.</p>
+    <button type="submit">Sign in and ask</button>
+  </form>
+</main>
+</body>
+</html>

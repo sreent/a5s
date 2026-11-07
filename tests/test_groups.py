@@ -384,19 +384,19 @@ def test_nobody_added_later_is_given_a_summary_of_what_was_said_before(stack, ho
     assert "Q-1002" not in json.dumps(summary["body"])
 
 
-def test_someone_who_leaves_is_under_the_archives_name_in_the_groups_summary_too(
-        stack, homeserver):
+def test_someone_who_leaves_takes_the_groups_summary_of_what_they_said(stack, homeserver):
     a_long_group_conversation(stack)
     stack.model.reply("Hello, both.")
     stack.model.reply(folded([]))
     deliver(homeserver, mention("Hello"))
     stack.scheduler().answer_waiting()
+    assert any(f["speaker"] == "ben" for s in group_summaries(stack) for f in s["body"]["facts"])
     with db.transaction(stack.admin) as conn:
         name = departures.archive(conn, "ben", datetime.now(UTC))
-    [summary] = group_summaries(stack)
-    assert summary["heard_by"] == ["ana", name]
-    assert {(f["who"], f["speaker"]) for f in summary["body"]["facts"]} == {(name, name)}
-    assert "Ben" not in json.dumps(summary["body"])
+        speakers = {r["speaker"] for r in conn.execute("select speaker from turns where "
+                                                        "speaker is not null")}
+    assert group_summaries(stack) == []  # it named him: the group's next run makes it again,
+    assert speakers == {"ana", name}  # from the turns, where the archive's name stands for him
 
 
 # Teams: group chats, as the Bot Framework sends them

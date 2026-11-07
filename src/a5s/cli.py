@@ -22,7 +22,7 @@ import yaml
 from a5s import build, db, definitions, devdb, worker
 from a5s.config import DEFAULT_DATABASE_URL, Config
 from a5s.contract import Signature
-from a5s.core import anchor, inbox, ledger, measures, registry, releases, signing, status
+from a5s.core import anchor, erasure, inbox, ledger, measures, registry, releases, signing, status
 from a5s.services.scheduler import Scheduler, remote_worker
 
 log = logging.getLogger("a5s")
@@ -338,20 +338,21 @@ def main(argv: list[str] | None = None) -> None:
         p.add_argument("instance")
         p.add_argument("--by", help="who you are, in development; else your sign-in in A5S_TOKEN")
     exported = sub.add_parser("export", help="all a5s keeps about someone, for their request "
-                                             "to see it: for the data protection officer")
-    exported.add_argument("--person", required=True, help="their id in the directory")
-    exported.add_argument("--by", help="who you are, in development; else your sign-in in "
-                                       "A5S_TOKEN")
+                                             "to see it, once the data protection officer has "
+                                             "asked for it on the core's page, /officer/")
+    exported.add_argument("--person", required=True, help="their id in the directory, or an "
+                                                           "archive's name")
+    exported.add_argument("--by", help="in development, the officer, who asks nowhere else")
     exported.add_argument("--out", type=Path, help="write it to this file, which only you may "
                                                    "read, rather than print it")
     erased = sub.add_parser("erase", help="erase all a5s keeps about someone, at their "
-                                          "request: for the data protection officer")
+                                          "request, once the data protection officer has asked "
+                                          "for it on the core's page, /officer/")
     erased.add_argument("--person", required=True, help="their id in the directory, or an "
                                                          "archive's name")
     erased.add_argument("--confirm", required=True, help="the same again, so that a mistyped "
                                                           "id erases nobody")
-    erased.add_argument("--by", help="who you are, in development; else your sign-in in "
-                                     "A5S_TOKEN")
+    erased.add_argument("--by", help="in development, the officer, who asks nowhere else")
     sub.add_parser("status", help="how a5s is doing: its queue, runs, denials, budgets and "
                                   "objectives")
     measured = sub.add_parser("measures", help="the measures its first users baseline, and the "
@@ -439,9 +440,8 @@ def main(argv: list[str] | None = None) -> None:
         print(_admin(cfg, f"/instances/{args.instance}/{args.command}",
                      {"by": args.by, "identity": os.environ.get("A5S_TOKEN")}))
     elif args.command == "export":
-        found = _admin(cfg, f"/people/{quote(args.person, safe='')}/export",
-                       {"by": args.by, "identity": os.environ.get("A5S_TOKEN")},
-                       timeout=300)  # it counts their entries across the whole ledger
+        found = _admin(cfg, f"/people/{quote(args.person, safe='')}/export",  # as the officer
+                       {"by": args.by}, timeout=300)  # asked: it counts across the whole ledger
         text = json.dumps(found, indent=2, ensure_ascii=False) + "\n"
         if args.out is None:
             print(text, end="")
@@ -454,17 +454,21 @@ def main(argv: list[str] | None = None) -> None:
                 out.write(text)
             print(f"Wrote all a5s keeps about {args.person} to {args.out}.")
         for archive in found["archives"]:  # one holder at a time
-            print(f"{args.person} left on {archive['archived_at'][:10]}, and what a5s kept for "
-                  f"them then is archived as {archive['name']}: export it with --person "
-                  f"{archive['name']}.", file=sys.stderr)
+            print(f"Whoever held {args.person} until {archive['archived_at'][:10]}, maybe "
+                  "someone else, left then, and what a5s kept for them is archived as "
+                  f"{archive['name']}: if it's theirs, export it with --person {archive['name']}.",
+                  file=sys.stderr)
     elif args.command == "erase":
         done = _admin(cfg, f"/people/{quote(args.person, safe='')}/erase",
-                      {"by": args.by, "identity": os.environ.get("A5S_TOKEN"),
-                       "confirm": args.confirm}, timeout=300)
-        print(f"Erased what a5s kept about {args.person}: " + (", ".join(
-            f"{n} from {kind.replace('_', ' ')}" for kind, n in sorted(done["gone"].items()))
+                      {"by": args.by, "confirm": args.confirm}, timeout=300)
+        print(f"Erased what a5s kept about {args.person}: " + ("; ".join(
+            f"{erasure.WORDS.get(kind, kind)}, {n}" for kind, n in sorted(done["gone"].items()))
             or "it kept nothing") + ". The ledger, runs, the changes asked for them and what they "
             "owe while the records owe it stay, as evidence of what agents did.")
+        for name in done.get("archives", []):  # one holder at a time
+            print(f"The archive {name} stays: it's what a5s kept under {args.person} for "
+                  "whoever held the id before, maybe someone else. If it's theirs, erase it "
+                  f"with --person {name} --confirm {name}.", file=sys.stderr)
     elif args.command == "anchor":
         _anchor(cfg, args.every)
     elif args.command == "status":

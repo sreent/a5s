@@ -47,8 +47,7 @@ WHOSE = {"inbound": "coalesce(conversation, person)",
                    "person)"}
 
 
-def sweep(conn: psycopg.Connection, now: datetime | None = None,
-          scenario: str | None = None) -> dict[str, int]:
+def sweep(conn: psycopg.Connection, now: datetime, scenario: str) -> dict[str, int]:
     """Delete what's past its time, in the caller's transaction, with `now` the core's clock,
     which stamps a day's use and the digest log, and `scenario` the scenario it runs. How many
     of each kind went, leaving out the kinds where none did."""
@@ -112,10 +111,11 @@ def sweep(conn: psycopg.Connection, now: datetime | None = None,
     delete("questions", f"delete from questions where asked_at < now() - interval '{KEPT}'")
     delete("obligations", "delete from obligations where done_at < now() - interval "
                           f"'{KEPT}'")  # with what the records called it, and whose it was
-    if scenario:  # a scenario the deployment no longer runs: nothing syncs what it owed
-        delete("obligations", "delete from obligations where scenario <> %s and updated_at < "
-                              f"now() - interval '{KEPT}'", (scenario,))
-    if now is not None:  # each person's day: only today's is asked after, in any time zone
-        delete("days", "delete from spend where day < %s", ((now - timedelta(days=2)).date(),))
-        delete("days", "delete from digests where due_at < %s", (now - timedelta(days=3),))
+    delete("obligations", "delete from obligations where scenario <> %s and updated_at < "  # a
+           f"now() - interval '{KEPT}'", (scenario,))  # scenario it no longer runs: nothing
+    # syncs what it owed. Each person's day: only today's is asked after, in any time zone
+    delete("days", "delete from spend where day < %s", ((now - timedelta(days=2)).date(),))
+    delete("days", "delete from digests where due_at < %s", (now - timedelta(days=3),))
+    delete("requests", "delete from officer_requests where asked_at < now() - interval "
+                       "'1 day'")  # the officer's, carried out or not (core/officer.py)
     return gone

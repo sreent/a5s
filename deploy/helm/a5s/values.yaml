@@ -81,6 +81,10 @@ ingress:
 serviceAccounts:
   annotations: {}
 
+# Labels on each part's pods, for a cloud whose workload identity needs one there too. On AKS,
+# the copier's: {anchor: {azure.workload.identity/use: "true"}}.
+podLabels: {}
+
 networkPolicies:
   enabled: true
   # Where Postgres is: pods in the cluster, by their labels, or addresses outside it.

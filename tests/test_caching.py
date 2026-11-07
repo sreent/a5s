@@ -3,6 +3,7 @@ cache, and writes to it, apart. Deep Agents marks where an Anthropic model may c
 lets through; a5s counts what each call read from the cache, in budgets and on its run, and the
 measures price it."""
 
+import json
 from dataclasses import replace
 
 from a5s import db
@@ -28,6 +29,25 @@ def test_an_anthropic_model_may_be_told_where_to_cache_the_prompt():
     kept, left_out, refused = models.screen("anthropic", {
         "model": "m", "max_tokens": 10, "messages": [], "cache_control": {"type": "ephemeral"}})
     assert kept["cache_control"] == {"type": "ephemeral"} and left_out == [] and refused is None
+
+
+def test_the_core_not_the_worker_says_how_long_a_provider_caches_a_run():
+    hour = {"type": "ephemeral", "ttl": "1h"}  # as a worker might ask, anywhere it may
+    schema = {"type": "object", "properties": {"cache_control": {"type": "string"}}}
+    kept, _, refused = models.screen("anthropic", {
+        "model": "m", "max_tokens": 10, "cache_control": hour,
+        "system": [{"type": "text", "text": "Instructions", "cache_control": hour}],
+        "tools": [{"name": "t", "input_schema": schema, "cache_control": hour}],
+        "messages": [{"role": "user", "content": [
+            {"type": "text", "text": "Ana's records", "cache_control": hour},
+            {"type": "tool_result", "tool_use_id": "1", "cache_control": hour,
+             "content": [{"type": "text", "text": "Q-1001", "cache_control": hour}]}]}]})
+    assert refused is None and '"1h"' not in json.dumps(kept)  # a few minutes, as the officer
+    minutes = {"type": "ephemeral"}  # is told (docs/data-protection.md)
+    assert kept["cache_control"] == kept["system"][0]["cache_control"] == minutes
+    [said, result] = kept["messages"][0]["content"]
+    assert said["cache_control"] == result["content"][0]["cache_control"] == minutes
+    assert kept["tools"][0]["input_schema"] == schema  # a tool's own fields are its own
 
 
 def test_the_measures_price_what_runs_read_from_the_cache(stack):

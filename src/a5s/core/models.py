@@ -32,13 +32,29 @@ _FIELDS = {
 
 def screen(api: str, body: dict[str, Any]) -> tuple[dict[str, Any], list[str], str | None]:
     """The request as a5s would forward it, the fields it leaves out, and why it refuses it."""
-    kept = {k: v for k, v in body.items() if k in _FIELDS[api]}
+    kept = _for_minutes({k: v for k, v in body.items() if k in _FIELDS[api]})
     dropped = sorted(set(body) - set(kept))
     for tool in body.get("tools") or []:
         kind = tool.get("type") if isinstance(tool, dict) else None
         if (api == "openai" and kind != "function") or (api == "anthropic" and kind not in (None, "custom")):
             return kept, dropped, f"agents use only their own tools, not the provider's {kind}"
     return kept, dropped, None
+
+
+def _for_minutes(block: Any) -> Any:
+    """A request, or a block of it, with each place the provider may cache what came before
+    marked for the shortest time it keeps it, a few minutes: the core, not the worker, says
+    how long a provider holds what a run sent (docs/data-protection.md). Only where Anthropic's
+    API reads it: the request, its system blocks, tools and messages, and their content."""
+    if not isinstance(block, dict):
+        return block
+    out = dict(block)
+    if out.get("cache_control") is not None:
+        out["cache_control"] = {"type": "ephemeral"}
+    for key in ("system", "tools", "messages", "content"):
+        if isinstance(out.get(key), list):
+            out[key] = [_for_minutes(b) for b in out[key]]
+    return out
 
 
 def forward(model: ModelConfig, body: dict[str, Any], http: httpx.Client) -> tuple[int, dict]:

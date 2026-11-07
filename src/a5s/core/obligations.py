@@ -89,13 +89,16 @@ def chain(scenario: Scenario, person: str, record: str | None = None) -> list[Pe
 def sync(conn: psycopg.Connection, scenario: str, owed: list[Obligation],
          definitions: dict[str, Definition], now: datetime,
          part_of: Callable[[str], str | None] = lambda _: None,
-         serving: Callable[[list[str], str], bool] = lambda serves, who: who in serves) -> None:
+         serving: Callable[[list[str], str], bool] = lambda serves, who: who in serves,
+         read_before: datetime | None = None) -> None:
     """Bring the obligations in line with what the records owe now, each naming the
     instance that acts on it: one that serves its person, chases its kind of record, and
     works in the record's part, if it's in one.
 
-    A new due date, or a record that's open again, is owed afresh. One the
-    records no longer give is done.
+    A new due date, or a record that's open again, is owed afresh, and one owed again after
+    it ended is owed from now, to whoever holds its person's id now. One the records no longer
+    give is done, or handed on, if they owe its record to someone else: some time since
+    `read_before`, when a5s last read them and found it owed.
     """
     instances = conn.execute("select id, definition, serves, parts from instances "
                              "where status <> 'retired' order by (status = 'active') desc, id").fetchall()
@@ -114,11 +117,14 @@ def sync(conn: psycopg.Connection, scenario: str, owed: list[Obligation],
         conn.execute(
             f"""
             insert into obligations (scenario, source, record, person, title, link, opened_at,
-                                     due_at, instance_id, updated_at)
-            values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                     due_at, instance_id, updated_at, owed_since)
+            values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             on conflict (scenario, source, record, person) do update set
               title = excluded.title, link = excluded.link, opened_at = excluded.opened_at,
               instance_id = excluded.instance_id, updated_at = excluded.updated_at,
+              owed_since = case when obligations.done_at is not null then excluded.owed_since
+                                else obligations.owed_since end,
+              handed_on = false, seen_owed_at = null,
               chased_at = case when {afresh} then null else obligations.chased_at end,
               escalations = case when {afresh} then 0 else obligations.escalations end,
               escalated_at = case when {afresh} then null else obligations.escalated_at end,
@@ -130,12 +136,14 @@ def sync(conn: psycopg.Connection, scenario: str, owed: list[Obligation],
                                 excluded.due_at, excluded.instance_id, null)
             """,
             (scenario, o.source, o.record, o.person, o.title, o.link, o.opened, o.due,
-             acting(o.source, o.person, o.record), now),
+             acting(o.source, o.person, o.record), now, now),
         )
     conn.execute(
-        "update obligations set done_at = %s, updated_at = %s "
+        "update obligations set done_at = %s, updated_at = %s, seen_owed_at = %s, "
+        "handed_on = (source || '/' || record = any(%s)) "  # owed still, to someone else
         "where scenario = %s and done_at is null and not (source || '/' || record || '/' || person = any(%s))",
-        (now, now, scenario, [f"{o.source}/{o.record}/{o.person}" for o in owed]),
+        (now, now, read_before, [f"{o.source}/{o.record}" for o in owed], scenario,
+         [f"{o.source}/{o.record}/{o.person}" for o in owed]),
     )
 
 

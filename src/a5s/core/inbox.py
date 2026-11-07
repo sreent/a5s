@@ -51,6 +51,7 @@ from a5s.core import (
     ledger,
     matrix,
     notebook,
+    officer,
     proposals,
     registry,
     samples,
@@ -87,6 +88,15 @@ class LocalMessage(BaseModel):
 class Approval(BaseModel):
     """What the approval page sends with its sign-in: the salt its nonce was made with."""
 
+    salt: str
+
+
+class Asking(BaseModel):
+    """What the officer's page sends with its sign-in: what it's to do, for whom, and the salt
+    its nonce was made with."""
+
+    action: str
+    person: str
     salt: str
 
 
@@ -681,6 +691,59 @@ def create_app(gw: Any) -> FastAPI:
         before = parse_settings(bytes(last["raw"])) if last else None
         return {"approved": True, "serial": row["serial"], "by": person.name,
                 "needs": registry.missing(settings, gw.scenario.person, valid, before)}
+
+    # The data protection officer's requests: the page where they ask to export, or erase,
+    # what a5s keeps about someone, signed in afresh for that request alone, which someone from
+    # the team that runs a5s then carries out, once, within ten minutes (core/officer.py).
+
+    @app.get("/officer/", include_in_schema=False)
+    def officer_page() -> Response:
+        approving()
+        return page("officer.html")
+
+    @app.get("/officer/officer.js", include_in_schema=False)
+    def officer_script() -> Response:
+        approving()
+        return page("officer.js")
+
+    @app.get("/officer/config")
+    def officer_config() -> dict:
+        """Where the page signs the officer in."""
+        return approve_config()
+
+    @app.post("/officer/token")
+    def officer_token(body: TokenRequest) -> JSONResponse:
+        """The officer's sign-in, passed on to the identity provider: the signed sign-in alone."""
+        return approve_token(body)
+
+    @app.post("/officer/requests")
+    def officer_request(body: Asking, authorization: str | None = Header(default=None)) -> dict:
+        """The officer's request, signed through the identity provider for it alone, and
+        recorded for the gateway to check again and carry out, once."""
+        approving()
+        token = (authorization or "").removeprefix("Bearer ").strip()
+        if not token:
+            raise HTTPException(401, "sign in to ask: send your sign-in as a bearer token")
+        person = body.person.strip()
+        try:
+            who, claims = officer.check(gw.identity, gw.scenario, gw.cfg.webchat_client_id,
+                                        token, body.action, person, body.salt, time.time())
+            with db.transaction(gw.url) as conn:
+                officer.record(conn, body.action, person, who.id, token, body.salt, claims)
+                ledger.append(conn, {
+                    "kind": "admin", "action": "ask", "run": None, "instance": None,
+                    "acts_for": [person], "decision": "record",
+                    "args": {"to": body.action, "person": person, "by": who.id,
+                             "identity": "verified: a sign-in to ask for this alone",
+                             "issuer": claims["iss"],
+                             "token_sha256": hashlib.sha256(token.encode()).hexdigest()}})
+        except approvals.Refused as exc:
+            raise HTTPException(exc.status, exc.reason) from None
+        named = gw.scenario.person(person)
+        return {"asked": body.action, "person": person, "name": named.name if named else None,
+                "by": who.name, "lasts": "ten minutes",
+                "command": f"a5s export --person {person} --out <file>" if body.action == "export"
+                else f"a5s erase --person {person} --confirm {person}"}
 
     # Deciding held changes: the page a decider's card opens. They sign in to see what waits
     # for them, and again, afresh, to decide: that sign-in's nonce commits to their decision on

@@ -202,7 +202,7 @@ def test_a_groups_words_go_on_its_own_clock_and_a_persons_own_on_theirs(stack):
         _said(conn, person="ana", conversation=None, at="2025-09-01", text="OWN-OLD")
         _said(conn, person="ana", conversation=groups.key("matrix", "!other:a5s.test"),
               at="2026-10-28", text="OTHER-GROUP-NEW", members=["ana", "ben"])
-        retention.sweep(conn)
+        retention.sweep(conn, stack.gateway.clock(), "sample")
         kept = {t: conn.execute(f"select count(*) as n from {t} where {c} like '%%-OLD%%'"
                                 ).fetchone()["n"]
                 for t, c in (("inbound", "text"), ("outbox", "text"), ("turns", "content"))}

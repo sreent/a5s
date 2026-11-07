@@ -113,7 +113,8 @@ def test_a_records_system_that_fails_holds_up_no_other_sweep(stack, monkeypatch)
     monkeypatch.setattr(stack.gateway.scenario, "record", down)
     with stack.client() as c:
         swept = c.post("/retention/sweep")
-    assert swept.status_code == 200 and swept.json()["notebook"] == {"kept": 0, "lapsed": 0}
+        checked = c.post("/notebook/sweep")  # apart, so the records hold up no other sweep
+    assert swept.status_code == 200 and checked.json() == {"kept": 0, "lapsed": 0}
     with db.transaction(stack.admin) as conn:
         assert conn.execute("select count(*) as n from turns where content = 'old words'"
                             ).fetchone()["n"] == 0

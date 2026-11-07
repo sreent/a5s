@@ -77,7 +77,8 @@ def correct(call: Call) -> dict:
                             ).fetchone()
     if row is None or (group and not set(members) <= set(row["heard_by"] or ())):
         raise Refused("there's no summary of this topic yet: what a5s keeps is the conversation")
-    said_by = {"by": person.name} if group else {}  # in a group, whose words they are
+    said_by = {"by": person.name, "speaker": person.id} if group else {}  # in a group, whose
+    # words they are: by name, for the summary, and by id, for their export and erasure
     body = {**row["body"], "corrections": [*row["body"].get("corrections", []),
                                            {"said": text, "when": day(person, call.now),
                                             **said_by}]}
