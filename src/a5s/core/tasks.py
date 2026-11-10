@@ -19,10 +19,42 @@ from a5s.core import ledger
 log = logging.getLogger(__name__)
 MAX_DEPTH = 3
 MAX_CHILDREN = 8
+# A task's plan, as its runs keep it: a short list of named steps, each pending, in progress
+# or completed, in the shape of LangChain's todos (`write_todos`), which models know, but kept
+# by the core with the task, so a fresh worker's run is shown it and the task's owner sees it.
+# Deep Agents' own `write_todos` stays off: it would live in one run's state, and go with it.
+PLAN_STEPS = 20  # the most steps a plan names
+PLAN_CHARS = 200  # the most characters a step says
+PLANNED = ("pending", "in_progress", "completed")
 
 
 class TaskError(RuntimeError):
     pass
+
+
+def planned(before: list[dict], plan: Any) -> list[dict]:
+    """A task's plan as a run would have it, checked: its steps, each with its content and
+    whether it's pending, in_progress or completed, at most one in progress, and every step
+    that was completed still completed, in its words, so a plan moves forward as its task does.
+    Otherwise, TaskError."""
+    if not isinstance(plan, list) or len(plan) > PLAN_STEPS:
+        raise TaskError(f"a task's plan is a list of at most {PLAN_STEPS} steps")
+    steps = []
+    for item in plan:
+        said = " ".join(str(item.get("content", "")).split()) if isinstance(item, dict) else ""
+        status = item.get("status") if isinstance(item, dict) else None
+        if not said or len(said) > PLAN_CHARS or status not in PLANNED:
+            raise TaskError(f"each step of a plan says what it is, in at most {PLAN_CHARS} "
+                            "characters, as its content, and whether it's pending, in_progress "
+                            "or completed")
+        steps.append({"content": said, "status": status})
+    if sum(s["status"] == "in_progress" for s in steps) > 1:
+        raise TaskError("a plan has at most one step in progress at a time")
+    now_done = iter(s["content"] for s in steps if s["status"] == "completed")
+    if not all(any(step == d for d in now_done)
+               for step in (s["content"] for s in before if s["status"] == "completed")):
+        raise TaskError("a plan keeps every step it had completed, completed, in its words")
+    return steps
 
 
 class TaskStopped(RuntimeError):
@@ -189,13 +221,16 @@ class TaskService:
             if step < row["step"] or not 0 <= progress <= 1 or progress < row["progress"]:
                 raise TaskError("a checkpoint may only move a task forward")
             partial = change.get("partial", row["partial"])
-            conn.execute("update tasks set step = %s, progress = %s, partial = %s, tokens = %s, "
-                         "last_heartbeat_at = %s, lease_expires_at = %s, updated_at = %s "
-                         "where id = %s", (step, progress, Jsonb(partial), tokens, now,
-                                          now + timedelta(seconds=self.lease_seconds), now, task_id))
+            plan = planned(row["plan"], change["plan"]) if "plan" in change else row["plan"]
+            conn.execute("update tasks set step = %s, progress = %s, partial = %s, plan = %s, "
+                         "tokens = %s, last_heartbeat_at = %s, lease_expires_at = %s, "
+                         "updated_at = %s where id = %s",
+                         (step, progress, Jsonb(partial), Jsonb(plan), tokens, now,
+                          now + timedelta(seconds=self.lease_seconds), now, task_id))
             self._record(conn, task_id, "checkpoint", instance=row["instance_id"],
                          acts_for=row["audience"], args={"step": step, "progress": progress,
-                                                          "partial": partial, "tokens": tokens})
+                                                          "partial": partial, "tokens": tokens,
+                                                          **_planned(plan)})
 
     def heartbeat(self, task_id: str, lease: str) -> bool:
         with db.transaction(self.url) as conn:
@@ -249,16 +284,17 @@ class TaskService:
             if step < row["step"] or not 0 <= progress <= 1 or progress < row["progress"]:
                 raise TaskError("a result may only move a task forward")
             partial = result.get("partial", row["partial"])
+            plan = planned(row["plan"], result["plan"]) if "plan" in result else row["plan"]
             error = result.get("error") or result.get("reason")
             conn.execute("update tasks set status = %s, step = %s, progress = %s, partial = %s, "
-                         "result = %s, tokens = %s, lease_id = null, lease_expires_at = null, "
-                         "last_error = %s, updated_at = %s where id = %s",
-                         (status, step, progress, Jsonb(partial), Jsonb(result.get("result")),
-                          tokens, error, now, task_id))
+                         "plan = %s, result = %s, tokens = %s, lease_id = null, "
+                         "lease_expires_at = null, last_error = %s, updated_at = %s where id = %s",
+                         (status, step, progress, Jsonb(partial), Jsonb(plan),
+                          Jsonb(result.get("result")), tokens, error, now, task_id))
             self._record(conn, task_id, status, instance=row["instance_id"],
                          acts_for=row["audience"], args={"step": step, "progress": progress,
                                                           "partial": partial, "tokens": tokens,
-                                                          "error": error})
+                                                          "error": error, **_planned(plan)})
             return self._get(conn, task_id)
 
     def _tokens(self, row: dict, result: dict) -> int:
@@ -299,3 +335,9 @@ class TaskService:
         args = entry.pop("args", {})
         ledger.append(conn, {"kind": "task", "action": action, "task": task_id,
                              "decision": "record", **entry, "args": ledger.mask(args)})
+
+
+def _planned(plan: list[dict]) -> dict[str, Any]:
+    """How far a plan has come, for the ledger: its steps by hash, and how many are completed."""
+    return {"plan": plan, "steps": len(plan),
+            "completed": sum(s["status"] == "completed" for s in plan)}
