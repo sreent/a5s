@@ -107,7 +107,8 @@ def _models(config: Path) -> dict:
     return {alias: {k: m.get(k) for k in keep} for alias, m in sorted(listed.items())}
 
 
-def manifest(root: Path, scenario_dir: Path, *, built: dict | None = None) -> bytes:
+def manifest(root: Path, scenario_dir: Path, *, built: dict | None = None,
+             agents_dir: Path | None = None) -> bytes:
     """The release a5s is here. With `built`, the manifest its image was built with, what
     the image was built from comes from there, since the image doesn't carry it."""
     core, services = _code(root)
@@ -125,8 +126,8 @@ def manifest(root: Path, scenario_dir: Path, *, built: dict | None = None) -> by
                                or p.name in ("settings.yaml", "settings.sig")),
         },
         "models": _models(root / "config"),
-        "agents": {f.name: _agent(f) for f in sorted((root / "agents").iterdir())
-                   if (f / "agent.yaml").exists()} if (root / "agents").is_dir() else {},
+        "agents": {f.name: _agent(f) for f in sorted((agents_dir or root / "agents").iterdir())
+                   if (f / "agent.yaml").exists()} if (agents_dir or root / "agents").is_dir() else {},
     }
     return (_HEADER + yaml.safe_dump(data, sort_keys=True, width=1000)).encode()
 
@@ -147,10 +148,10 @@ class Running:
         return yaml.safe_load(self.raw)["version"]
 
 
-def running(root: Path, scenario_dir: Path) -> Running:
+def running(root: Path, scenario_dir: Path, agents_dir: Path | None = None) -> Running:
     built_path = root / "release.yaml"  # written when the image was built
     built = yaml.safe_load(built_path.read_bytes()) if built_path.exists() else None
-    raw = manifest(root, scenario_dir, built=built)
+    raw = manifest(root, scenario_dir, built=built, agents_dir=agents_dir)
     if built is None:
         return Running(raw)
     now = yaml.safe_load(raw)["parts"]

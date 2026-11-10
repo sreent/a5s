@@ -95,6 +95,7 @@ class Config:
     # The scenario a5s serves: a class built from its folder and a5s's database URL.
     scenario: str = "a5s.sample:SampleScenario"
     scenario_folder: Path | None = None  # by default, scenarios/sample
+    agents_folder: Path | None = None  # by default, the reference agents in root/agents
     # The core's own keys, which seal the approvals it has checked, such as of settings. Only
     # the core holds them. The first seals; any others are ones it's moving away from.
     seal_keys: tuple[str, ...] = ()
@@ -105,7 +106,7 @@ class Config:
 
     @property
     def agents_dir(self) -> Path:
-        return self.root / "agents"
+        return self.agents_folder or self.root / "agents"
 
     @property
     def models_file(self) -> Path:
@@ -140,6 +141,8 @@ class Config:
             team=os.environ.get("A5S_TEAM", "platform"),
             scenario=os.environ.get("A5S_SCENARIO", "a5s.sample:SampleScenario"),
             scenario_folder=Path(os.environ["A5S_SCENARIO_DIR"]) if os.environ.get("A5S_SCENARIO_DIR")
+            else None,
+            agents_folder=Path(os.environ["A5S_AGENTS_DIR"]) if os.environ.get("A5S_AGENTS_DIR")
             else None,
             seal_keys=tuple(k.strip() for k in seal.split(",") if k.strip()),
             public_url=os.environ.get("A5S_PUBLIC_URL", "").rstrip("/") or None,

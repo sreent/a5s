@@ -277,7 +277,7 @@ def _release(cfg: Config, args: argparse.Namespace) -> None:
                                                   for s in signed.get("signatures", [])],
                                       sc, cfg.team, args.advisory, baseline=args.baseline)
     else:
-        current = releases.running(cfg.root, cfg.scenario_dir)
+        current = releases.running(cfg.root, cfg.scenario_dir, cfg.agents_dir)
         if args.what == "show":
             sys.stdout.buffer.write(current.raw)
             return
