@@ -7,6 +7,7 @@ a5s already keeps work in records rather than in a process that must stay alive.
 ## Progress
 
 - [`core/tasks.py`](../src/a5s/core/tasks.py) and migration `0042_tasks.sql` implement the durable record, checkpoints, heartbeat-backed leases, stale-worker recovery, fresh-worker resume, cancellation, token/deadline limits, blocked/resume handling, and constrained parent/child tasks, with ledger evidence. `tests/test_tasks.py` exercises them against real Postgres.
+- Migration `0043_task_plans.sql` adds each task's plan, which checkpoints and results set and the core checks: at most 20 steps of 200 characters, one in progress at a time, and what's completed kept. The ledger keeps the plan by hash, with how many steps it has and how many are completed.
 - This is the engine only. Scheduler integration, agent tools, user-facing task pages and recurring user tasks remain separate steps before Done means below.
 
 ## Done means
@@ -16,7 +17,7 @@ A person can start a task that needs more than one run, watch its state and part
 ## Build in this order
 
 1. **The task record.** A durable id, owner, instance, audience, task text, status, current step, partial results, total token/duration budget, deadline, and optional parent. States are queued, running, waiting, blocked, done, cancelled and failed. The core alone writes its state through its own interfaces.
-2. **Bounded runs and checkpoints.** Each run opens for the task's current step. Code records progress and partial results at tool/action boundaries, never only in the model's context. A new run reads the task record, not an old worker's memory.
+2. **Bounded runs and checkpoints.** Each run opens for the task's current step. Code records progress and partial results at tool/action boundaries, never only in the model's context. A new run reads the task record, not an old worker's memory. The record keeps the task's plan too: up to 20 steps, each with its content and whether it's pending, in progress or completed, in the shape of LangChain's todos, which models know from `write_todos`. A run sets it at its checkpoints, the next run is shown it, and the owner sees it. A step once completed stays completed, in its words, so the plan moves forward as the task does. Deep Agents' own `write_todos` stays off: its list would live in one run's state, and go with it.
 3. **Leases and heartbeats.** An active worker renews the task's lease while it works. A stalled lease expires, but one with a live heartbeat does not. A lease is not a budget: both have limits.
 4. **Resume and cancellation.** A fresh worker resumes after failure or expiry, with no repeated idempotent effect. Cancellation takes effect at the next core call and stops future runs. A user can see what was already done.
 5. **Budgets and blocked work.** The core counts all runs against the task's total budget and deadline. When blocked, the task waits with a reason and its owner or another authorized person decides whether and how to resume it.

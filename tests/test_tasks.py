@@ -150,3 +150,60 @@ def test_a_child_cannot_widen_its_parents_audience_instance_or_budget(database):
                           deadline=deadline))
     with db.transaction(database) as conn:
         assert ledger.verify(conn).ok
+
+
+PLAN = [{"content": "Read the open records", "status": "completed"},  # as LangChain's todos
+        {"content": "Draft the summary for Ana", "status": "in_progress"},
+        {"content": "Send it to Ana", "status": "pending"}]
+
+
+def test_a_tasks_plan_is_kept_with_it_and_shown_to_the_next_run(database):
+    tasks = service(database)
+    task_id = tasks.create(spec())
+
+    def first(task, checkpoint):
+        assert task["plan"] == []  # nothing planned yet
+        checkpoint({"step": 1, "progress": 0.3, "plan": PLAN})
+        raise RuntimeError("the worker stopped")
+
+    assert tasks.run_next(task_id, first)["plan"] == PLAN  # what its owner sees
+
+    def second(task, checkpoint):  # a fresh worker, shown the plan from the task's record
+        assert task["plan"] == PLAN
+        return {"status": "done", "tokens": 25,
+                "plan": [{**s, "status": "completed"} for s in PLAN]}
+
+    done = tasks.run_next(task_id, second)
+    assert done["status"] == "done" and {s["status"] for s in done["plan"]} == {"completed"}
+    with db.transaction(database) as conn:
+        [entry] = [e for e in ledger.entries(conn) if e["action"] == "done"]
+        assert (entry["args"]["steps"], entry["args"]["completed"]) == (3, 3)
+        assert "Draft the summary" not in str(ledger.entries(conn))  # by hash, as all text is
+
+
+def test_a_plan_is_short_and_keeps_what_was_completed(database):
+    tasks = service(database)
+    task_id = tasks.create(spec())
+    refused: list[str] = []
+
+    def worker(task, checkpoint):
+        checkpoint({"plan": PLAN})
+        for plan in ([{"content": f"Step {n}", "status": "pending"} for n in range(21)],  # many
+                     [{"content": "x" * 201, "status": "pending"}],  # too long
+                     [{"content": "Read", "status": "started"}],  # not a status
+                     [{"content": "One", "status": "in_progress"},
+                      {"content": "Two", "status": "in_progress"}],  # one at a time
+                     PLAN[1:],  # what was completed, gone
+                     [{**PLAN[0], "status": "pending"}, *PLAN[1:]],  # completed, undone
+                     [{**PLAN[0], "content": "Read the records"}, *PLAN[1:]]):  # reworded
+            with pytest.raises(TaskError) as why:
+                checkpoint({"plan": plan})
+            refused.append(str(why.value))
+        checkpoint({"plan": [PLAN[0], {"content": "Ask finance first", "status": "completed"},
+                             {"content": "Send it to Ana", "status": "in_progress"}]})  # revised
+        return {"status": "waiting"}
+
+    found = tasks.run_next(task_id, worker)
+    assert len(refused) == 7 and found["status"] == "waiting"
+    assert [s["content"] for s in found["plan"]] == [
+        "Read the open records", "Ask finance first", "Send it to Ana"]
