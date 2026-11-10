@@ -57,6 +57,7 @@ Any of these suspends the instance first, which anyone with the role can do, and
   - if group chats reach their limit of 20, or the team works in Teams channels, bigger rooms;
   - if the team works with agents outside the organisation, agent to agent beyond a5s, with what they say treated as content from outside;
   - if a deployment needs one, adapters for managed runtimes, phase 3's last step;
+  - resumable long-running tasks, whose build plan and Done means are in [phase 4](phase-4.md);
   - and Google Cloud and AWS, which phase 1 decided on, once Azure is steady.
 
 ## Costs
