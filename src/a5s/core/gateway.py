@@ -2336,7 +2336,9 @@ def create_app(gw: Gateway) -> FastAPI:
                            "outcome": {"status": status_now}})
         if status_now != "ok":
             return JSONResponse(status_code=502, content={"error": "a5s's reader couldn't answer now"})
-        with db.transaction(gw.url) as conn:  # its values count as outside, never as read
+        with db.transaction(gw.url) as conn:  # its values count as the outside document's own
+            provenance.read(conn, row["run"], f"{provenance.OUTSIDE} D-{number}", said,
+                            gw.scenario.record_pattern)
             said = handles.masked(conn, row["run"], said)
         return {"result": {extractor.OUTSIDE: True, "document": f"D-{number}", "says": said,
                            "note": extractor.NOTE}, "recorded": recorded}

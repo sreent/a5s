@@ -34,6 +34,7 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 2. Check the provider's own status, and that its key is set where the gateway runs.
 3. A model that answers with another model's name is refused (`model_mismatch`). That's the provider changing its model, not a5s failing: tell the agent owner.
 4. There's no failover to a model that isn't approved. Moving an agent to another approved model is a new release, which the release approver signs.
+5. For slow providers, the provider timeout is `A5S_PROVIDER_TIMEOUT` (180 seconds by default), and the worker's calls to the core use `A5S_WORKER_TIMEOUT` (240), which should stay longer. The database's connection timeout is `A5S_DB_CONNECT_TIMEOUT` (2). Change them deliberately and record why, rather than letting calls wait forever.
 
 ## Budgets run out
 

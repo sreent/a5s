@@ -8,6 +8,7 @@ run's LangGraph thread ends with the run: nothing is checkpointed.
 from __future__ import annotations
 
 import json
+import os
 from datetime import UTC, datetime
 from typing import Any
 
@@ -21,6 +22,8 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.tools import StructuredTool
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
+
+TIMEOUT = float(os.environ.get("A5S_WORKER_TIMEOUT", "240"))
 
 
 def denial(verdict: dict[str, Any]) -> str:
@@ -61,12 +64,12 @@ def chat_model(gateway_url: str, token: str, model: dict[str, str]) -> BaseChatM
     if api == "openai":
         chat: BaseChatModel = ChatOpenAI(
             model=alias, base_url=f"{gateway_url}/v1", api_key=token,
-            use_responses_api=False, disable_streaming=True, max_retries=0, timeout=180,
+            use_responses_api=False, disable_streaming=True, max_retries=0, timeout=TIMEOUT,
         )
     else:
         chat = ChatAnthropic(
             model=alias, base_url=gateway_url, api_key=token,
-            disable_streaming=True, max_retries=0, max_tokens=4096,
+            disable_streaming=True, max_retries=0, max_tokens=4096, timeout=TIMEOUT,
         )
     key = f"{api}:{alias}"
     if key not in _profiles:
@@ -182,7 +185,7 @@ def instructed(instructions: str, context: list[dict]) -> str:
 def run_agent(gateway_url: str, token: str, history: list[dict]) -> str:
     """Run the agent on the conversation so far, and return its reply."""
     headers = {"Authorization": f"Bearer {token}"}
-    with httpx.Client(base_url=gateway_url, headers=headers, timeout=180) as gw:
+    with httpx.Client(base_url=gateway_url, headers=headers, timeout=TIMEOUT) as gw:
         info = gw.get("/run")
         info.raise_for_status()
         info = info.json()

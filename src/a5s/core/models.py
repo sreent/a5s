@@ -7,11 +7,14 @@ its own network, speaks the same API, and may need no key at all.
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 import httpx
 
 from a5s.config import ModelConfig
+
+TIMEOUT = float(os.environ.get("A5S_PROVIDER_TIMEOUT", "180"))
 
 
 class ModelUnavailable(Exception):
@@ -69,7 +72,7 @@ def forward(model: ModelConfig, body: dict[str, Any], http: httpx.Client) -> tup
         url = f"{model.base_url}/v1/messages"
         headers = {"anthropic-version": "2023-06-01", **({"x-api-key": key} if key else {})}
     try:
-        response = http.post(url, json=payload, headers=headers, timeout=180)
+        response = http.post(url, json=payload, headers=headers, timeout=TIMEOUT)
     except httpx.HTTPError as exc:
         raise ModelUnavailable(f"{model.provider} couldn't be reached: {exc}") from exc
     try:

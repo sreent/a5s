@@ -107,6 +107,17 @@ def test_an_agent_can_ask_the_reader_about_an_email(stack):
     assert answer["note"] == extractor.NOTE
 
 
+def test_values_from_the_readers_answer_count_as_the_documents(stack):
+    stack.model.reply(None, ("get_messages", {"key": "Q-1002"}))
+    stack.model.reply(json.dumps(FORM))
+    stack.model.reply(None, ("ask_about", {"document": "D-1", "question": "When did they pay twice?"}))
+    stack.model.reply("They paid twice on 2026-10-20.")
+    stack.model.reply("They paid twice on 2026-10-20.")
+    said = stack.say("When did Contoso pay twice?", person="ben")
+    assert "2026-10-20" in said
+    assert "came from the assistant itself" not in said
+
+
 def test_a_run_asks_only_about_documents_it_read(stack):
     _, token = stack.open_run(sender="ben")
     with stack.client(token) as c:
