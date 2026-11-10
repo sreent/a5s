@@ -58,6 +58,28 @@ A scenario plugs into a5s by providing these, or by taking a5s's defaults:
 
 Each scenario starts with a fake of its contract: fake systems, records and settings, which are also its test bench. a5s has a sample scenario of its own, a fake of every interface with synthetic data, for phase 1 and for building locally. An [IT service desk](../scenarios/it-service-desk.md), written against the contract alone in round 5's tests, checks that the contract is general: its tools answer with objects, as MCP tools do, its keys have their own pattern, and its night shift works across midnight.
 
+### Graphify code knowledge
+
+A coding scenario can expose a local [Graphify](https://docs.graphify.com/concepts/outputs) knowledge graph with the read-only `query_code` tool in [`a5s.graphify`](../src/a5s/graphify.py). Build the graph with `graphify extract /path/to/repository --code-only`, then add `Graphify(folder / "graphify-out" / "graph.json").tools()` to the scenario's tools and `query_code` to the agent's grants. `a5s pin` records its schema in the release like any other tool's.
+
+Local Graphify queries call no model and run without a shell. The scenario must give the graph only to instances whose people may all see the source repository, or wrap it with its own finer permissions: the graph carries source-derived context and source references. Building a graph semantically from documents, rather than code-only, may call a model and needs the deployment's data-class approval for that material.
+
+### Markdown and Obsidian knowledge
+
+A scenario can expose a folder of Markdown notes, including an Obsidian vault, with `MarkdownKnowledge(folder)` from [`a5s.knowledge`](../src/a5s/knowledge.py). Its read-only `search_knowledge` and `read_knowledge` tools use keyword search and fresh reads from disk, so a deleted note never lingers in an index. Hidden folders such as `.obsidian` are not read, and document reads are bounded. The text is source material, never instructions for the agent.
+
+YAML front matter names the document's audience and, optionally, when its review falls due:
+
+```yaml
+---
+title: Refund procedure
+people: [ana]       # or parts: [billing], with the scenario's part-permission callback
+review_by: 2027-01-31
+---
+```
+
+An unmarked document is denied. For a group, every person the run acts for must be named or allowed by the scenario's `sees_part(person, part)` callback. A document whose `review_by` has passed is marked `stale`, not silently served as current. Add both tools to the agent's grants and pin their schemas with `a5s pin`. The adapter doesn't replace the agent's notebook, which holds what it learned from records rather than these curated documents.
+
 ## A call, step by step
 
 Every tool call, model call and outgoing message takes the same path:

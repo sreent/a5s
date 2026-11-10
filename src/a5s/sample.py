@@ -29,6 +29,8 @@ from a5s.contract import (
     ToolCall,
     parse_settings,
 )
+from a5s.graphify import Graphify
+from a5s.knowledge import MarkdownKnowledge
 
 LINK = "https://sample.a5s.dev/"
 
@@ -272,7 +274,20 @@ class SampleScenario:
                 action="close-question",
             ),
         ]
-        return {t.name: t for t in tools}
+        by_name = {t.name: t for t in tools}
+        graph = self.folder / "graphify-out" / "graph.json"
+        if graph.is_file():
+            by_name.update(Graphify(graph).tools())
+        vault = self.folder / "knowledge"
+        if vault.is_dir():
+            by_name.update(MarkdownKnowledge(vault, sees_part=self._knowledge_part).tools())
+        return by_name
+
+    def _knowledge_part(self, person: str, part: str) -> bool:
+        who = self._people.get(person)
+        rule = self._parts.get(part) or {}
+        return bool(who and (who.team == rule.get("team") or
+                             who.team in (rule.get("seen_by") or ())))
 
     def _link(self, kind: str, key: Any) -> str:
         return f"{LINK}{kind}/{key}"
