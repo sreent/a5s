@@ -1,16 +1,23 @@
 # The studio: build, try, publish, run and watch agents
 
-**Status:** Proposed, to confirm before it's built · **Under:** [Agent model](agent-model.md)
+**Status:** Proposed. Step 1 is to be built alongside the pilot; authoring waits for the pilot's evidence · **Under:** [Agent model](agent-model.md)
 
 Today, people build and run a5s's agents in code: a folder for each agent, `a5s pin`, a release signed with `a5s release`, settings signed with `a5s sign`, and `a5s status` and `a5s measures` to see how they do. A few pages help: the settings app, and the pages for approving, deciding, grading, the notebook and the officer. The studio gives the people who make and run agents what a maker studio such as Microsoft Copilot Studio gives them: one place to create an agent, try it, publish it, choose where it runs, and watch how it does.
 
-It doesn't add a second way to change a5s. Everything the studio does is a change code can make too: a commit to the agents' folder, a release signed by the same people, a settings version signed by the same owners. Everything it reads and writes goes through the core's documented API, which code, the command line and CI use as well.
+It doesn't add a second way to change a5s. Everything the studio does is a change code can make too: a commit to the agents' folder, a release signed by the same people, a settings version signed by the same owners. The API comes first, and the studio is one client of it, as code, the command line and CI are.
 
 ## What it keeps
 
 - **The studio proposes, and people sign.** What it writes is a pull request, a draft release or a draft settings version, never a change in force. Nobody gets a right through the studio that they wouldn't have at the command line.
+- **It holds no keys of its own.** It acts as the person signed in. It opens a pull request as them, through the git host's own sign-in, or gives them the branch to push. It holds no git token, no signing key and no way to write the settings store, so it's never an easier way round a5s than the command line.
 - **The studio and the code show the same thing.** An agent is a folder in git, a release is a manifest, settings are a signed version. Someone can start an agent in the studio and finish it in an editor, or the other way round.
 - **It shows people only what they may see.** Its pages come from the measures, the status, the ledger and the releases, under the same need-to-know as today. An instance's runs are its owner's, its deputy's and its parts' owners' to see. What people said to an agent appears only by its hash, as [data protection](data-protection.md) requires.
+
+## Who builds what
+
+The development team builds tools, connectors and MCP servers, in the scenario's code. Each is reviewed, and pinned in each release with what it reads, writes or changes. The studio shows them, and an agent's owner chooses from them, but nobody makes or changes a tool in the studio.
+
+That's where most of a new use case's work is. In the [master data](../scenarios/master-data.md) scenario, the agents' definitions were about a tenth of it. The rest was the scenario's code: its rules, duplicate matching, routing, quality measures and who may see what, with their tests. It's also where the safety is. So beside the studio, the development team gets a starter kit for scenarios: a template scenario with the common patterns already wired, and its test bench. The patterns are records that are owed, held changes, a knowledge vault and a reader for outside content. Tools from an MCP server can be brought in the same way as any tool: wrapped in the scenario's code, reviewed, given their risk flags and pinned.
 
 ## How it maps
 
@@ -18,9 +25,9 @@ It doesn't add a second way to change a5s. Everything the studio does is a chang
 | --- | --- |
 | An agent, its instructions and topics | An agent's definition: `agent.yaml`, `AGENTS.md` and its skills |
 | Knowledge | The scenario's knowledge, such as a Markdown vault, through its tools |
-| Actions and connectors | The scenario's tools, written in code, reviewed, and pinned in each release |
+| Actions, connectors and MCP servers | The scenario's tools, which the development team builds, reviews and pins in each release |
 | Triggers and autonomous runs | Triggers, schedules, reports and obligations, in the definition |
-| The test pane | A chat with a draft agent against the scenario's fakes, and its test cases on real models |
+| The test pane | A chat with a draft agent in a sandbox deployment, and its test cases on real models |
 | Publishing | A release, signed by the people the change needs |
 | Channels | Teams, Matrix and the web chat, as each deployment configures them |
 | Environments and solutions | Deployments, each approving its own releases, and the agents' repository |
@@ -31,50 +38,55 @@ It doesn't add a second way to change a5s. Everything the studio does is a chang
 
 | Decision | Proposed |
 | --- | --- |
-| What comes first | Watching, then making, then running. A read-only catalogue and dashboards can't break anything, and they show what there is. Then authoring with a test pane, publishing as pull requests. Then instances, by folding the settings app in. |
-| Where it lives | Pages of the channels app, as the settings app is, signed in through the organisation's identity provider, with the core's API behind them. No new service. |
-| What publishing makes | A branch and a pull request to the agents' repository, where CI runs the agent's tests and its suite on real models, and the people the release needs sign it, as now. A deployment with no git host gets a draft release to sign instead. |
+| What comes first | Watching, then making, then running. A read-only catalogue and dashboards can't weaken any control, and the pilot's agent and part owners need them: today what they'd want to see is behind the command line. So step 1 is built alongside the pilot. Authoring waits until the pilot shows owners want to change their agents themselves. |
+| The API | First, not last. Each step ships its API, in one OpenAPI document, with a Python client and the command line on top, before its pages, so code and CI never wait for the studio. |
+| Where it lives | Pages of the channels app, as the settings app is, signed in through the organisation's identity provider. No new service. |
+| What the test pane runs in | A sandbox: a separate deployment of a5s, with the scenario's fakes, synthetic data and a budget of its own, as the tests run. A fake model by default, and a real model when asked. It can't reach the production deployment's records, channels or budgets, because it isn't that deployment, whatever a flag says. |
+| What publishing makes | A pull request to the agents' repository, opened as the person publishing. CI runs the agent's tests and its suite on real models, and the people the release needs sign it, as now. A deployment with no git host gets a draft release to sign instead. |
 | Who may author | An agent's owner, and engineers they name, for the agents they own. A new agent needs the release approver, as its first release does today. |
-| What the test pane runs on | A fake model by default. A real model only with synthetic data, the scenario's fakes and a budget of its own: never the deployment's records, channels or budgets. |
-| What stays in code | The trusted core, the policies, the scenario's code and tools, and which models are approved. The studio shows them, and changes none of them. |
-| Templates | The reference assistant and watcher, and each scenario's agents, such as the [master data](../scenarios/master-data.md) assistant and watcher. |
+| What stays in code | The trusted core, the policies, the scenario's code with its tools, connectors and MCP servers, and which models are approved. The studio shows them, and changes none of them. |
+| Where figures go | Operators' figures, with no personal data in them, may go to the organisation's own monitoring, such as Azure Monitor or Prometheus. What owners see stays in a5s, under its need-to-know: a business intelligence tool would show everyone everything. |
+| Templates | The reference assistant and watcher, and each scenario's agents, such as the master data assistant and watcher. |
 
 ## Build, in order
 
-Each step ends with something running and its tests passing.
+Each step ends with something running and its tests passing, and ships its API before its pages.
 
 1. **The catalogue and the dashboards, read only.**
+   - The API: each agent and instance, its release and figures, and each run, for the people who may see them, under the core's management API in its OpenAPI document. The command line on top of it: `a5s agents`, `a5s agents show <agent>`, and `a5s measures` for one agent or instance.
    - The catalogue: each agent's definition, release and owner; its tools, with what each reads, writes or changes; its knowledge, skills, triggers, schedules, reports, budgets and channels; and its instances, with whom they serve, their parts and levels.
-   - A dashboard for each agent and instance, over a period: runs and how they ended, tokens and cost with the share cached, denials and why, held changes and their decisions, grades and the cap, chases and escalations, reports sent, and who came back. It draws on the same figures as `a5s measures` and `a5s status`.
+   - A dashboard for each agent and instance, over a period: runs and how they ended, tokens and cost with the share cached, denials and why, held changes and their decisions, grades and the cap, chases and escalations, reports sent, and who came back. It shows the same figures as `a5s measures` and `a5s status`.
    - A page for each run: what started it, whom it acted for, each tool call with the policy's decision, and its ledger entries, as `a5s ledger` shows them.
-   - The API behind them, under the core's management API, and the command line on top of it: `a5s agents`, `a5s agents show <agent>`, and `a5s measures` for one agent or instance.
 2. **Authoring and the test pane.**
+   - The API and the command line first: `a5s agent new <template>` makes an agent's folder from a template, and the checks a definition must pass run from the command line as from the page.
    - Create an agent from a template, or copy one. Edit what it works for and does, its instructions and skills. Pick tools from the scenario's tools, each with its risk shown. Set its triggers, schedules, reports, obligations, preferences, channels, context and budgets. The definition's own checks run as people type: known tools, pinned schemas, budgets that fit.
    - Test cases: add one from a test conversation, with what an answer must and mustn't say, in the same form as each agent's test suite.
-   - The test pane: chat with the draft against the scenario's fakes, and see each tool call, the policy's decisions and the context the run was given. Run its test cases on a real model, with synthetic data.
-   - Publish: the studio shows who must sign the release, from what changed, before anyone publishes. It opens a pull request with the agent's folder, its pinned tools and its test cases, and CI runs them.
+   - The test pane, in the sandbox: chat with the draft against the scenario's fakes, and see each tool call, the policy's decisions and the context the run was given. Run its test cases on a real model, with synthetic data.
+   - Publish: the studio shows who must sign the release, from what changed, before anyone publishes. It opens a pull request as the person publishing, with the agent's folder, its pinned tools and its test cases, and CI runs them. Examples for CI test and publish an agent from its repository, and promote a release from one deployment to the next.
 3. **Instances.**
    - The settings app, folded in: instances, whom they serve, their parts and levels, owners and deputies, limits, and whom they may ask. Each change is a new settings version, which the owners of its parts sign, as now.
    - Suspend or resume an instance from its page, signed in afresh, as a5s asks today.
    - Held changes, grading, caps and the notebook: the existing pages, reached from each instance.
-4. **Code and APIs, documented.**
-   - One OpenAPI document for the core's management API, a Python client, and the command line on top of it.
-   - `a5s agent new <template>`, which makes the same folder the studio does.
-   - Examples for CI: test and publish an agent from its repository, and promote a release from one deployment to the next.
+
+## Later, with evidence
+
+- **Shadow runs.** People will want to try a draft on their real work, not on fakes. The safe way is for a draft release to answer live traffic beside the live one, sending nothing, under the same need-to-know, with its answers graded as samples are. That processes personal data, so it waits for the data protection officer's assessment, and for the pilot to show the sandbox isn't enough.
 
 ## Done means
 
-An agent's owner creates an agent from a template in the studio, tries it in the test pane, and publishes it as a pull request. CI passes, the people the release needs sign it, and the owners of its parts approve an instance of it. An engineer does the same from an editor, git and the command line, and gets the same result. Both watch it on a dashboard that shows the same figures `a5s measures` prints. The studio does nothing code can't, and skips no signature.
+An agent's owner creates an agent from a template in the studio, tries it in the sandbox's test pane, and publishes it as a pull request. CI passes, the people the release needs sign it, and the owners of its parts approve an instance of it. An engineer does the same from an editor, git and the command line, and gets the same result. Both watch it on a dashboard that shows the same figures `a5s measures` prints. The studio does nothing code can't, and skips no signature.
 
 ## Tests
 
 - What the studio publishes is the same folder, pins and manifest that `a5s pin` and `a5s release` make, byte for byte.
+- Everything a page does, the API and the command line do too, and the OpenAPI document describes it.
+- The studio holds no git token, signing key or way to write the settings store: a pull request it opens is the person's own.
 - Someone who isn't an agent's owner can't publish it. A new agent's release still needs the release approver, and a settings change each of its parts' owners.
-- The test pane never reaches the deployment's records, real channels or budgets, and a real model in it sees only synthetic data.
-- A dashboard shows an instance's runs only to the people who may see them, and what was said only by its hash.
+- The sandbox has its own database, budget and channels, and the production deployment's records can't be reached from it.
+- A dashboard shows an instance's runs only to the people who may see them, and what was said only by its hash. Figures sent to the organisation's monitoring carry no personal data.
 - Every action in the studio is in the ledger, as the command line's are.
 - Browser tests for the catalogue, the dashboards, authoring and the test pane, as the settings app has.
 
 ## What this doesn't change
 
-The studio holds no authority of its own: it proposes, and people sign. There's no low-code tool builder: tools stay the scenario's code, reviewed and pinned in each release. Nobody edits the trusted core, the policies or which models are approved from a page. Agents kept in code stay first class, since the studio reads and writes the same files.
+The studio holds no authority of its own: it proposes, and people sign. Tools, connectors and MCP servers stay the development team's: built in code, reviewed, and pinned in each release. Nobody edits the trusted core, the policies or which models are approved from a page. Agents kept in code stay first class, since the studio reads and writes the same files.
