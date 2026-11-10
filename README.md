@@ -157,10 +157,13 @@ The smoke test runs this way: Keycloak for sign-in, Synapse for Matrix, a model 
 | [Phase 2](docs/phase-2.md) | Agents that act: held proposals, signed decisions, counts, level 2 earned on graded samples, and the extractor |
 | [Phase 3](docs/phase-3.md) | Group conversations, agent to agent, and a notebook of what agents learn from records |
 | [Phase 4](docs/phase-4.md) | Resumable long-running tasks: durable state, bounded runs, heartbeats, budgets, cancellation and parent/child evidence |
+| [Studio](docs/studio.md) | Proposed: one place to build, try, publish, run and watch agents, as a maker studio does: its API first, drafts tried in a sandbox, tools built by the development team, and no signature skipped |
 | [Pilot](docs/pilot.md) | One team, on Azure and Teams, in stages: what it shows, what stops it, and how it chooses what comes after phase 3 |
 | [The first day](docs/first-day.md) | The pilot's stage 0, step by step: a5s in a Microsoft 365 test tenant and on Azure, and the four checks only the real services can make |
 | [Data protection](docs/data-protection.md) | For the data protection officer's assessment: what a5s keeps about people, why, where, for how long and who sees it, what models see, and requests for someone's data |
 | [IT service desk](scenarios/it-service-desk.md) | A working read-only service-desk scenario, with synthetic tickets, a Markdown knowledge vault, permissions, drafts and tests |
+| [Software delivery](scenarios/software-delivery.md) | A read-only scenario for an engineering team's issues and pull requests, with need-to-know for security issues, customers' comments through the reader, and its own dev assistant |
+| [SAP master data](scenarios/master-data.md) | Master data governance: change requests and data quality checked by code, bank details as handles, suppliers' letters through the reader, corrections each data object's owner decides, and daily reports to each owner |
 | [Critique](docs/critique.md) | What each adversarial review found, how the design answers it, and what each round removed |
 | [Starting values](docs/starting-values.md) | The numbers a5s starts from, by phase |
 | [Runbooks](docs/runbooks.md) | For the team that runs a5s: what to do when each part of `a5s status` goes wrong |

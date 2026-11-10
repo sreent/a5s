@@ -1,0 +1,31 @@
+id: dev-assistant
+release: 0.1.0
+works_for: Engineers, their leads and product, within their teams' issues and pull requests
+does: >-
+  Answers questions about issues, pull requests, their checks and reviews, and the
+  engineering handbook, saves drafts such as pull request descriptions and release
+  notes for people to post, and follows up on the reviews and fixes that fall due.
+scope: none
+model: deepseek-v4-pro
+autonomy:
+  start: 1
+  max: 1
+tools:
+  records: [search_records, get_record, get_comments]
+  knowledge: [search_knowledge, read_knowledge]
+  documents: [create_draft]
+triggers:
+  - message: from the engineer, lead or product manager it works for
+obligations: [records]
+schedules: []
+reminders: true
+preferences: [digest-time, how-i-work]
+channels: [matrix, teams]
+context:
+  budget_tokens: 24000
+  recall: true
+  documents: true
+  agents: false
+budget:
+  per_run: 200000
+  per_person_per_day: 1000000

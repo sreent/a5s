@@ -261,6 +261,14 @@ def approving(stack: Stack, provider: Provider) -> Iterator[str]:
     """The core, signing people in through the provider: the channels, where approvers
     decide and the settings app is, and the gateway, which asks them and applies what they
     approve."""
+    with deciding(stack, provider) as url:
+        yield url
+
+
+@contextmanager
+def deciding(stack: Stack, provider: Provider) -> Iterator[str]:
+    """The channels app where a stack's approvers decide, signing them in through the
+    provider, and the stack's gateway, which asks them: its address."""
     verifier = Verifier(IdentityConfig(issuer=provider.url, audience=("a5s", CLIENT)))
     port = free_port()
     stack.gateway.identity = verifier
