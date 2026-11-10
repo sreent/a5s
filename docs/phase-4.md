@@ -1,8 +1,13 @@
 # Phase 4: resumable long-running tasks
 
-**Status:** Planned, for implementation in small, separately reviewed steps · **Under:** [Architecture](architecture.md)
+**Status:** The core execution engine is built and tested; scheduler, agent and user-facing integration are next · **Under:** [Architecture](architecture.md)
 
 a5s already keeps work in records rather than in a process that must stay alive. Long-running tasks extend that rule: a task is a durable record, and each piece of work runs for a bounded time on a fresh worker when needed. There is no permanent LangGraph thread and no hidden state in a worker.
+
+## Progress
+
+- [`core/tasks.py`](../src/a5s/core/tasks.py) and migration `0042_tasks.sql` implement the durable record, checkpoints, heartbeat-backed leases, stale-worker recovery, fresh-worker resume, cancellation, token/deadline limits, blocked/resume handling, and constrained parent/child tasks, with ledger evidence. `tests/test_tasks.py` exercises them against real Postgres.
+- This is the engine only. Scheduler integration, agent tools, user-facing task pages and recurring user tasks remain separate steps before Done means below.
 
 ## Done means
 
