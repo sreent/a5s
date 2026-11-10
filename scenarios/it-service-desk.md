@@ -1,6 +1,6 @@
 # IT Service Desk Scenario
 
-**Status:** On paper only, to check that the [scenario contract](../docs/architecture.md#the-scenario-contract) is general. There's no plan to build it.
+**Status:** A read-only MVP is implemented for local development and tests: synthetic tickets, a Markdown knowledge vault, a dedicated desk assistant, and ticket/article permissions. Self-service actions and the joiner coordinator remain future work.
 
 An internal IT service desk helps people with accounts, devices, access and the organisation's tools. People raise tickets, resolvers work them in the IT service management tool (ITSM), and new joiners need accounts and equipment ready before their first day. It tests a5s where scenarios differ most: much of its work is self-service, which a person asks for and the identity provider verifies, and some of the people it serves haven't joined yet.
 
@@ -51,13 +51,8 @@ The service desk adds these to a5s's base pack:
 - **Written against the contract, it runs.** Round 5's tests build the desk against the contract alone ([`tests/test_r5_c_service_desk.py`](../tests/test_r5_c_service_desk.py)). They found what a5s had to change, now changed: the desk assistant serves the sales team as a team, so joiners need no new settings; its tools answer with objects, as MCP tools do, and a5s filters them at any depth; its ticket keys have a pattern of their own; it reads one ticket for a brief, not every ticket; and its night shift's hours cross midnight.
 - **Where it strains:** a major incident brings thousands of people to the desk assistant at once, and per-person budgets don't help. The channel service would need a known-incident answer it can give without a run [TBC: phase 2].
 
-## Tests, on paper
+## Tests
 
-1. "Reset my password," from a person the identity provider verifies, runs at level 2 through its own flow, and the agent never sees the password.
-2. A request to reset someone else's password is refused at level 2, and drafted as a ticket for the ITSM's approvals.
-3. A request to register a new authenticator always goes to a resolver.
-4. An access request the desk assistant drafts names the person it's for, and the ITSM never routes its approval to them.
-5. A new joiner can talk to the joiner coordinator before their first day, and sees only their own record.
-6. Instructions planted in a ticket comment or an attachment don't change what an agent does.
-7. A resolver who comes back to a ticket a week later picks up where they left off.
-8. A person gets one digest a day from all the desk's agents together.
+The read-only MVP's tests are in [`tests/test_service_desk.py`](../tests/test_service_desk.py), beside the original contract-only checks in `test_r5_c_service_desk.py`. They cover ticket answers, Markdown knowledge with attribution, ticket and article permissions, requester content as data rather than instructions, saved drafts, and service to a new joiner through their team. A test marked `live` exercises ticket and knowledge answers with the real provider.
+
+Self-service identity flows, authenticator changes, ticket writes, and the joiner coordinator remain outside this read-only release.

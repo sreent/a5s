@@ -99,6 +99,8 @@ agents/assistant/
 
 This is [`agent.yaml`](../agents/assistant/agent.yaml) for the assistant, one of the two reference agents [phase 1](phase-1.md) builds. Fields marked for later steps are read but not yet used.
 
+A scenario may instead carry its own definitions in `scenarios/<name>/agents/`, as the service-desk scenario does. Set `A5S_AGENTS_DIR` to that folder along with `A5S_SCENARIO_DIR`; the release then includes only those agents, leaving the reference deployment's release and web-chat agent list unchanged. With no such setting, agents come from the root's `agents/` folder.
+
 ```yaml
 id: assistant
 release: 0.1.0
