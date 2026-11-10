@@ -28,6 +28,19 @@ from a5s.services.scheduler import Scheduler, remote_worker
 log = logging.getLogger("a5s")
 
 
+def _officer_only(path: str) -> None:
+    if os.name != "nt":
+        return
+    import csv
+    import subprocess
+    system = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
+    who = subprocess.check_output([str(system / "whoami.exe"), "/user", "/fo", "csv", "/nh"],
+                                  text=True)
+    sid = next(csv.reader([who]))[1]
+    subprocess.run([str(system / "icacls.exe"), path, "/inheritance:r", "/grant:r", f"*{sid}:F"],
+                   capture_output=True, check=True)
+
+
 def _dev_up(root: Path) -> None:
     state = root / ".a5s"
     state.mkdir(exist_ok=True)
@@ -450,6 +463,12 @@ def main(argv: list[str] | None = None) -> None:
                 made = os.open(args.out, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
             except FileExistsError:
                 sys.exit(f"{args.out} is there already: name a new file, which only you may read")
+            try:
+                _officer_only(args.out)
+            except BaseException:
+                os.close(made)
+                os.unlink(args.out)
+                raise
             with os.fdopen(made, "w") as out:
                 out.write(text)
             print(f"Wrote all a5s keeps about {args.person} to {args.out}.")

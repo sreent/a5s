@@ -1,0 +1,2 @@
+*.sh text eol=lf
+settings.yaml text eol=lf

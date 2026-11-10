@@ -38,6 +38,7 @@ _LOCK = 0x0A5_5C4E  # one migrator at a time
 POOL_SIZE = int(os.environ.get("A5S_DB_POOL_SIZE", "10"))  # connections each part keeps [TBC]
 WAIT = 0.5  # seconds a transaction waits for a pooled connection before connecting afresh
 BUSY = 10.0  # seconds it waits for the pool when as many have connected afresh as it holds
+CONNECT = int(os.environ.get("A5S_DB_CONNECT_TIMEOUT", "2"))  # seconds before failing
 _pools: dict[str, ConnectionPool] = {}
 _spares: dict[str, threading.BoundedSemaphore] = {}  # connections of their own, beyond the pool
 _pooling = threading.Lock()
@@ -46,7 +47,7 @@ _pooling = threading.Lock()
 def connect(url: str) -> psycopg.Connection:
     """A connection of its own, for what outlives a transaction, such as listening, or a
     session's lock, and for migrations."""
-    return psycopg.connect(url, row_factory=dict_row)
+    return psycopg.connect(url, row_factory=dict_row, connect_timeout=CONNECT)
 
 
 def _spare(url: str) -> threading.BoundedSemaphore:
@@ -60,7 +61,8 @@ def _pool(url: str) -> ConnectionPool:
             pool = _pools[url] = ConnectionPool(
                 url, open=True, min_size=1, max_size=max(1, POOL_SIZE), max_idle=300,
                 max_lifetime=3600, check=ConnectionPool.check_connection,
-                kwargs={"row_factory": dict_row, "prepare_threshold": None},
+                kwargs={"row_factory": dict_row, "prepare_threshold": None,
+                        "connect_timeout": CONNECT},
                 name=f"a5s-{urlsplit(url).username or 'pool'}")
         return pool
 

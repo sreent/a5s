@@ -13,10 +13,17 @@
 set -eu
 cd "$(dirname "$0")/.."
 keep=$([ "${1:-}" = --keep ] && echo 1 || echo 0)
+if command -v cygpath >/dev/null 2>&1; then
+  export MSYS2_ARG_CONV_EXCL="${MSYS2_ARG_CONV_EXCL:+$MSYS2_ARG_CONV_EXCL;}/work;/keys;/config"
+fi
+if ! python3 -c '' >/dev/null 2>&1; then
+  python3() { uv run python "$@"; }
+fi
 
 env_file=${A5S_SMOKE_ENV:-$(mktemp)}
 reply=$(mktemp)
 work=${A5S_SMOKE_WORK:-$(mktemp -d)}
+host_path() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else printf '%s\n' "$1"; fi; }
 chmod a+rx "$work"  # for the containers that sign and record the release
 random() { head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9'; }
 idp_password=$(random)
@@ -44,10 +51,10 @@ fi
 grep -q "nobody here has approved it yet" "$reply"
 compose exec -T gateway a5s release show > "$work/release.yaml"
 for person in priya tomas rosa kofi; do
-  docker run --rm --user "$(id -u):$(id -g)" -v "$PWD/scenarios/sample/keys:/keys:ro" \
-    -v "$work:/work" -w /work "${A5S_IMAGE:-a5s:dev}" release sign --as "$person" --key "/keys/$person.key"
+  docker run --rm --user "$(id -u):$(id -g)" -v "$(host_path "$PWD/scenarios/sample/keys"):/keys:ro" \
+    -v "$(host_path "$work"):/work" -w /work "${A5S_IMAGE:-a5s:dev}" release sign --as "$person" --key "/keys/$person.key"
 done
-compose run --rm -T -v "$work:/work" -w /work setup release approve > /dev/null
+compose run --rm -T -v "$(host_path "$work"):/work" -w /work setup release approve > /dev/null
 compose exec -T gateway a5s release status | tail -1
 echo "The core waited for the release to be approved here, by the people its changes need."
 

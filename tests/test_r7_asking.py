@@ -70,7 +70,7 @@ def test_as_many_runs_asking_as_workers_still_get_their_answers(role_stack):
     stack.scheduler().work_due()
     stop = threading.Event()
     loop = threading.Thread(target=stack.scheduler().listen, args=(stop,), daemon=True,
-                            kwargs={"workers": 1, "sweep_every": 3600, "retain_every": 1e9})
+                            kwargs={"workers": 1, "sweep_every": 3600, "retain_every": 86400})
     loop.start()
     try:
         for person in ("ana", "ben"):

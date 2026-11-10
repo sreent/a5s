@@ -3,6 +3,9 @@ for the data protection officer alone, with nobody else's words, and recorded in
 counts."""
 
 import json
+import os
+import subprocess
+from pathlib import Path
 
 import pytest
 
@@ -181,7 +184,15 @@ def test_the_officer_writes_it_to_a_file_only_they_may_read(stack, tmp_path, mon
     out = tmp_path / "ben.json"
     cli.main(["export", "--person", "ben", "--by", "noor", "--out", str(out)])
     assert "Wrote all a5s keeps about ben" in capsys.readouterr().out
-    assert out.stat().st_mode & 0o777 == 0o600
+    if os.name == "nt":
+        system = Path(os.environ["SystemRoot"]) / "System32"
+        who = subprocess.check_output([str(system / "whoami.exe")], text=True).strip()
+        acl = subprocess.check_output([str(system / "icacls.exe"), str(out)], text=True)
+        entries = [line.strip() for line in acl.splitlines() if ":(" in line]
+        assert len(entries) == 1
+        assert entries[0].casefold().endswith(f"{who}:(F)".casefold())
+    else:
+        assert out.stat().st_mode & 0o777 == 0o600
     assert json.loads(out.read_text())["messages_received"][0]["text"] == SAID
 
 

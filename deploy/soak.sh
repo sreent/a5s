@@ -10,6 +10,9 @@
 set -eu
 cd "$(dirname "$0")/.."
 minutes=${1:-30}
+if ! python3 -c '' >/dev/null 2>&1; then
+  python3() { uv run python "$@"; }
+fi
 
 env_file=$(mktemp)
 work=$(mktemp -d)
