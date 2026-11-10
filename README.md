@@ -157,6 +157,7 @@ The smoke test runs this way: Keycloak for sign-in, Synapse for Matrix, a model 
 | [Phase 2](docs/phase-2.md) | Agents that act: held proposals, signed decisions, counts, level 2 earned on graded samples, and the extractor |
 | [Phase 3](docs/phase-3.md) | Group conversations, agent to agent, and a notebook of what agents learn from records |
 | [Phase 4](docs/phase-4.md) | Resumable long-running tasks: durable state, bounded runs, heartbeats, budgets, cancellation and parent/child evidence |
+| [Studio](docs/studio.md) | Proposed: one place to build, try, publish, run and watch agents, as a maker studio does, which does nothing code can't and skips no signature |
 | [Pilot](docs/pilot.md) | One team, on Azure and Teams, in stages: what it shows, what stops it, and how it chooses what comes after phase 3 |
 | [The first day](docs/first-day.md) | The pilot's stage 0, step by step: a5s in a Microsoft 365 test tenant and on Azure, and the four checks only the real services can make |
 | [Data protection](docs/data-protection.md) | For the data protection officer's assessment: what a5s keeps about people, why, where, for how long and who sees it, what models see, and requests for someone's data |
