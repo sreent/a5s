@@ -17,13 +17,14 @@ from a5s.config import Config, load_models
 from a5s.core import inbox, registry
 from a5s.core.gateway import Gateway, create_app
 from a5s.core.policy import PolicyEngine
-from conftest import ROOT, SEAL_KEY, SERVICE_TOKEN, FakeModel, Stack, free_port, serve
+from conftest import QUIET, ROOT, SEAL_KEY, SERVICE_TOKEN, FakeModel, Stack, free_port, serve
 
 
 @contextmanager
 def running_scenario(database: str, root: Path, model: FakeModel, scenario: str, folder: str,
                      http: httpx.Client | None = None, alias: str = "fake") -> Iterator[Stack]:
-    """The core, the channels and the scenario's agents, each agent on the model `alias`."""
+    """The core, the channels and the scenario's agents, each agent on the model `alias`, with
+    the core's clock where the sample's is, until a test sets it."""
     port = free_port()
     agents = root / "scenario-agents"
     shutil.copytree(ROOT / "scenarios" / folder / "agents", agents)
@@ -40,7 +41,8 @@ def running_scenario(database: str, root: Path, model: FakeModel, scenario: str,
     for agent in agents.iterdir():
         definitions.pin(agent, hashes)
     gw = Gateway(cfg, found, PolicyEngine(), load_models(cfg.models_file),
-                 definitions.load_all(cfg.agents_dir), http or httpx.Client())
+                 definitions.load_all(cfg.agents_dir), http or httpx.Client(),
+                 clock=lambda: QUIET)
     with db.transaction(database) as conn:
         applied = registry.apply(conn, gw.definitions, found.settings(), found.tools(),
                                  found.person, found.name)

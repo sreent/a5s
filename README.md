@@ -161,6 +161,8 @@ The smoke test runs this way: Keycloak for sign-in, Synapse for Matrix, a model 
 | [The first day](docs/first-day.md) | The pilot's stage 0, step by step: a5s in a Microsoft 365 test tenant and on Azure, and the four checks only the real services can make |
 | [Data protection](docs/data-protection.md) | For the data protection officer's assessment: what a5s keeps about people, why, where, for how long and who sees it, what models see, and requests for someone's data |
 | [IT service desk](scenarios/it-service-desk.md) | A working read-only service-desk scenario, with synthetic tickets, a Markdown knowledge vault, permissions, drafts and tests |
+| [Software delivery](scenarios/software-delivery.md) | A read-only scenario for an engineering team's issues and pull requests, with need-to-know for security issues, customers' comments through the reader, and its own dev assistant |
+| [SAP master data](scenarios/master-data.md) | Master data governance: change requests and data quality checked by code, bank details as handles, suppliers' letters through the reader, corrections each data object's owner decides, and daily reports to each owner |
 | [Critique](docs/critique.md) | What each adversarial review found, how the design answers it, and what each round removed |
 | [Starting values](docs/starting-values.md) | The numbers a5s starts from, by phase |
 | [Runbooks](docs/runbooks.md) | For the team that runs a5s: what to do when each part of `a5s status` goes wrong |

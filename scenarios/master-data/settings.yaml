@@ -1,0 +1,26 @@
+# Synthetic SAP master data governance settings. Sign changes with the owner of each data
+# object, the parts here, and the instance approver.
+serial: 1
+data_class: synthetic
+classified: {from: personal}
+
+# A correction an agent proposes waits for its data object's owner, whatever the level: past
+# these, it waits for them too, and a5s says why.
+limits:
+  correct-value: {per_run: 3, per_person_30_days: 20}
+
+instances:
+  mdg-desk:
+    definition: mdg-assistant
+    serves: [team:data-team, team:procurement, team:accounts-payable, team:sales, team:plant, una, pia, carl, mo]
+    parts: [supplier, supplier-bank, customer, material]
+    level: 1  # it checks, drafts and proposes: each data object's owner decides
+    owner: gita
+    deputy: tess
+  mdg-quality:
+    definition: mdg-watcher
+    serves: [una, pia, carl, mo, tess]
+    parts: [supplier, supplier-bank, customer, material]
+    level: 0  # it measures and reports
+    owner: gita
+    deputy: tess

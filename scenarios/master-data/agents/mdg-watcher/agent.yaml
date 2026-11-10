@@ -1,0 +1,30 @@
+id: mdg-watcher
+release: 0.1.0
+works_for: The owners of each data object, and the data stewards
+does: >-
+  Tells each data object's owner, in their daily digest, how its quality stands
+  against their target and what changed in it, and each person what changed in
+  the change requests that wait on them. It reads, and changes nothing.
+scope: none
+model: deepseek-v4-pro
+autonomy:
+  start: 0
+  max: 0
+tools:
+  records: [search_records, get_record, check_quality]
+triggers:
+  - message: from the owners and stewards it works for
+obligations: []
+schedules: []
+reports:
+  - source: quality
+  - source: records
+reminders: false
+preferences: [digest-time]
+channels: [matrix, teams]
+context:
+  budget_tokens: 16000
+  recall: true
+budget:
+  per_run: 150000
+  per_person_per_day: 700000
