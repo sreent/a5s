@@ -82,6 +82,11 @@ class Slots:
         with self._lock:
             self._free[pool] += 1
 
+    def busy(self) -> int:
+        """How many runs are in flight, in every pool."""
+        with self._lock:
+            return self.total - sum(self._free.values())
+
 
 class Retry(Exception):
     """The core couldn't be reached, so the work waits and is tried again."""
@@ -746,5 +751,9 @@ class Scheduler:
                 except psycopg.OperationalError:
                     log.exception("lost the database, so listening again shortly")
                     stop.wait(5)
+            if busy := slots.busy():  # so whoever watches an upgrade sees why it waits
+                log.info("Asked to stop: finishing %s in flight first, and taking no more",
+                         "1 run" if busy == 1 else f"{busy} runs")
             sweeper.join()
             checker.join()
+        log.info("Stopped, with every run it took finished")

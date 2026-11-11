@@ -4,6 +4,7 @@ and gives each pool slots of its own, so no agent's runs, however slow, take the
 another's need. Each pool refuses a run that isn't its own, so a run sent to the wrong one
 fails, and says so, rather than run where it shouldn't."""
 
+import logging
 import signal
 import threading
 import time
@@ -68,6 +69,7 @@ def test_no_agent_takes_the_slots_another_needs():
     assert slots.pool("assistant") == "assistant" and slots.pool("watcher") is None
     assert slots.take("assistant") and not slots.take("assistant")  # its one slot is busy
     assert slots.take(None) and slots.take(None) and not slots.take(None)  # the others' are
+    assert slots.busy() == 3
     slots.give("assistant")  # theirs alone
     assert slots.take("assistant") and slots.total == 3 and slots.pools() == ["assistant", None]
 
@@ -122,7 +124,7 @@ def test_an_agent_whose_runs_hang_never_holds_up_another_agents(stack):
         listening.join(30)
 
 
-def test_a_scheduler_asked_to_stop_finishes_its_runs_and_takes_no_more(stack):
+def test_a_scheduler_asked_to_stop_finishes_its_runs_and_takes_no_more(stack, caplog):
     started, release = threading.Event(), threading.Event()
 
     def slow(_url: str, _token: str, _history: list[dict]) -> str:
@@ -130,6 +132,7 @@ def test_a_scheduler_asked_to_stop_finishes_its_runs_and_takes_no_more(stack):
         release.wait(30)
         return "Answered before it stopped."
 
+    caplog.set_level(logging.INFO, logger="a5s.services.scheduler")
     first = stack.send("Hello", "ana")
     scheduler, stop = stack.scheduler(worker=slow), cli._stopping()
     listening = threading.Thread(target=scheduler.listen, args=(stop,),
@@ -145,6 +148,9 @@ def test_a_scheduler_asked_to_stop_finishes_its_runs_and_takes_no_more(stack):
         assert not listening.is_alive()
         assert stack.answers(first) == ["Answered before it stopped."]
         assert stack.answers(second, "ben") == []
+        said = [r.getMessage() for r in caplog.records]
+        assert "Asked to stop: finishing 1 run in flight first, and taking no more" in said
+        assert said[-1] == "Stopped, with every run it took finished"
     finally:
         signal.signal(signal.SIGTERM, signal.SIG_DFL)
         release.set()
