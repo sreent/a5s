@@ -22,7 +22,18 @@ import yaml
 from a5s import build, db, definitions, devdb, worker
 from a5s.config import DEFAULT_DATABASE_URL, Config
 from a5s.contract import Signature
-from a5s.core import anchor, erasure, inbox, ledger, measures, registry, releases, signing, status
+from a5s.core import (
+    anchor,
+    erasure,
+    inbox,
+    ledger,
+    measures,
+    registry,
+    releases,
+    signing,
+    status,
+    studio,
+)
 from a5s.services.scheduler import Scheduler, remote_worker
 
 log = logging.getLogger("a5s")
@@ -373,6 +384,19 @@ def main(argv: list[str] | None = None) -> None:
                                                "was met, who came back, what runs cost, how "
                                                "held changes were decided, and notes")
     measured.add_argument("--days", type=int, default=30, help="over the last so many days")
+    scope = measured.add_mutually_exclusive_group()
+    scope.add_argument("--agent", help="of one agent's instances alone")
+    scope.add_argument("--instance", help="of one instance alone")
+    agents = sub.add_parser("agents", help="the agents of the release, and where each runs; or "
+                                           "show one, with its tools and instructions")
+    agents.add_argument("what", nargs="?", choices=["show"], help="show one agent")
+    agents.add_argument("agent", nargs="?", help="with show, the agent, such as assistant")
+    ran = sub.add_parser("runs", help="an instance's runs, newest first; or show what one run "
+                                      "did")
+    ran.add_argument("instance", help="the instance, such as assistant-finance; or show")
+    ran.add_argument("run", nargs="?", help="with show, the run")
+    ran.add_argument("--before", help="runs opened before this time, for the next page")
+    ran.add_argument("-n", type=int, default=studio.RUNS, help="how many")
     held = sub.add_parser("proposals", help="the held changes that wait, or that a5s stopped "
                                             "part way through making; or end one of those")
     held.add_argument("end", nargs="?", choices=["end"], help="end a change a5s stopped making")
@@ -493,7 +517,25 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "status":
         print(status.told(_admin(cfg, "/status")))
     elif args.command == "measures":
-        print(measures.told(_admin(cfg, f"/measures?days={args.days}")))
+        path = (f"/studio/agents/{quote(args.agent, safe='')}/measures" if args.agent
+                else f"/studio/instances/{quote(args.instance, safe='')}/measures"
+                if args.instance else "/measures")
+        print(measures.told(_admin(cfg, f"{path}?days={args.days}")))
+    elif args.command == "agents" and args.what:
+        if not args.agent:
+            sys.exit("name the agent to show, such as assistant")
+        print(studio.told_agent(_admin(cfg, f"/studio/agents/{quote(args.agent, safe='')}")))
+    elif args.command == "agents":
+        print(studio.told_agents(_admin(cfg, "/studio/agents")["agents"]))
+    elif args.command == "runs" and args.instance == "show":
+        if not args.run:
+            sys.exit("name the run to show")
+        print(studio.told_run(_admin(cfg, f"/studio/runs/{quote(args.run, safe='')}")))
+    elif args.command == "runs":
+        query = f"?limit={args.n}" + (f"&before={quote(args.before, safe='')}"
+                                      if args.before else "")
+        print(studio.told_runs(_admin(
+            cfg, f"/studio/instances/{quote(args.instance, safe='')}/runs{query}")))
     elif args.command == "proposals" and args.end:
         if not args.key:
             sys.exit("name the change to end, such as P-12")
