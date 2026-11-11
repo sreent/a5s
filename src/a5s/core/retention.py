@@ -1,24 +1,26 @@
 """Retention: how long a5s keeps what people and agents say, and the values runs handle.
 
 A conversation, everything one person and one agent have said to each other, is kept for 12
-months after the last thing either said, and then deleted: its turns and summaries, the
-messages the core received and sent for it, and what waited for a digest or a batch. a5s's
-own notices go 12 months after they were written, and so do the notes on how someone likes to
-work, and the reminders, 12 months after they ended, as do what someone said they were
-waiting on, offers nobody said yes to, the record of each day's report, and the changes agents
-asked for, with their decisions, 12 months after they ended, and samples of agents' work 12
-months after they were graded, or, if nobody graded them, drawn. The counts of changes go once
-their 30 days are past, and what someone owed goes 12 months after the records stopped
-owing it, or, in a scenario the deployment no longer runs, after it last changed. Each
-person's use of a day's budget, and the log of their digests, go once the day's past, by the
-core's clock, which stamps them. A change a5s left marked as being made, which someone ends by hand
-(`a5s proposals`), goes 12 months after that. What a5s keeps for someone who left is archived
-where it is, a day after the directory stops naming them (core/departures.py), and goes on
-the same clocks. The chats a5s wrote to them in go 12 months after, and the record of whose
-archive it was once nothing is left under its name. A note people ask
-to forget goes at once (core/profiles.py). The ledger keeps what people and agents wrote only
-by hash and length (core/ledger.py), so retention needn't touch it. The values a run was handed as handles, what it read, and the documents from
-outside it read, go once the run has been over for an hour: a handle works only in its run, and nothing reads them after.
+months after the last thing either said, and then deleted: its turns and summaries, the messages
+the core received and sent for it, and what waited for a digest or a batch. a5s's own notices go
+12 months after they were written, and so do the notes on how someone likes to work, and the
+reminders, 12 months after they ended, as do what someone said they were waiting on, offers
+nobody said yes to, the record of each day's report, and the changes agents asked for, with
+their decisions, 12 months after they ended, and samples of agents' work 12 months after they
+were graded, or, if nobody graded them, drawn. A task, with its children, goes 12 months after
+the last of them ended, or passed its deadline. The counts of changes go once their 30 days are
+past, and what someone owed goes 12 months after the records stopped owing it, or, in a scenario
+the deployment no longer runs, after it last changed. Each person's use of a day's budget, and
+the log of their digests, go once the day's past, by the core's clock, which stamps them. A
+change a5s left marked as being made, which someone ends by hand (`a5s proposals`), goes 12
+months after that. What a5s keeps for someone who left is archived where it is, a day after the
+directory stops naming them (core/departures.py), and goes on the same clocks. The chats a5s
+wrote to them in go 12 months after, and the record of whose archive it was once nothing is left
+under its name. A note people ask to forget goes at once (core/profiles.py). The ledger keeps
+what people and agents wrote only by hash and length (core/ledger.py), so retention needn't
+touch it. The values a run was handed as handles, what it read, and the documents from outside
+it read, go once the run has been over for an hour: a handle works only in its run, and nothing
+reads them after.
 
 The core sweeps every hour, by the database's clock, and the ledger records what each sweep
 deleted, in counts, never what was said. The ledger itself is evidence, kept as long as the
@@ -104,11 +106,16 @@ def sweep(conn: psycopg.Connection, now: datetime, scenario: str) -> dict[str, i
                     f"where archived_at < now() - interval '{KEPT}')")  # an archive's, with it
     held = " or ".join([f"exists (select 1 from {table} x where x.person = d.archived_as)"
                         for table in departures.KEPT]
-                       + ["exists (select 1 from turns x where x.speaker = d.archived_as)"])
+                       + ["exists (select 1 from turns x where x.speaker = d.archived_as)",
+                          "exists (select 1 from tasks x where x.owner = d.archived_as)"])
     delete("departures", "delete from departures d where archived_at < now() - interval "  # once
            f"'{KEPT}' and not ({held})")  # nothing's left under the archive's name, such as in a
     # group chat, whose conversation goes by its own last message
     delete("questions", f"delete from questions where asked_at < now() - interval '{KEPT}'")
+    done = (f"(status in ('done', 'cancelled', 'failed') and updated_at < now() - interval "
+            f"'{KEPT}') or deadline < now() - interval '{KEPT}'")  # it can't run past its deadline
+    delete("tasks", "delete from tasks where root in (select root from tasks group by root "
+                    f"having bool_and({done}))")  # a task with its children, all ended long ago
     delete("obligations", "delete from obligations where done_at < now() - interval "
                           f"'{KEPT}'")  # with what the records called it, and whose it was
     delete("obligations", "delete from obligations where scenario <> %s and updated_at < "  # a

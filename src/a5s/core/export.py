@@ -173,6 +173,13 @@ def gather(conn: psycopg.Connection, person: str) -> dict[str, Any]:
         "questions_with_others": count(
             "select count(*) as n from questions where acts_for && %(names)s "
             "and not (acts_for <@ %(names)s)"),
+        "tasks": rows(  # what they asked agents to do over more than one run, in their words,
+            "select id::text as id, parent::text as parent, instance_id, task, status, plan, "
+            "partial, result, tokens, token_budget, deadline, created_at, updated_at "
+            "from tasks where owner = any(%(names)s) order by created_at, id"),  # as an archive
+        "tasks_for_them_by_others": count(  # takes them; someone else's words are counted
+            "select count(*) as n from tasks where audience && %(names)s "
+            "and not owner = any(%(names)s)"),
         "chats": rows(
             "select channel, place, agent, started_at, left_at, shared_at from chats "
             "where person = any(%(names)s) order by channel, place"),
