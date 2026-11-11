@@ -9,6 +9,10 @@ value came from. It makes one only once the last task it made has ended, so they
 up, and a time that comes round meanwhile is let go. It acts for its owner alone, who lists
 and stops it through the agent or on their own page, and a person has at most MOST of them
 with an agent at once. People name one by its number, such as E-3.
+
+To change one's days, time or words, the agent offers it again as it'll be, in place of the
+old one, and it takes the old one's place once its owner says yes: the old one stops then, and
+the new one waits for the task the old one made last.
 """
 
 from __future__ import annotations
@@ -76,22 +80,41 @@ def _record(conn: psycopg.Connection, row: dict, action: str, **args: Any) -> No
                          "decision": "record", "args": ledger.mask(args)})
 
 
+def theirs(conn: psycopg.Connection, person: Person, instance: str, wanted: Any) -> dict:
+    """One of someone's repeats with an agent that's going or offered, which they named, such
+    as E-3, to change. TaskError if it isn't one, or has stopped."""
+    found = number(wanted)
+    row = conn.execute(
+        "select * from task_repeats where owner = %s and instance_id = %s and number = %s",
+        (person.id, instance, found)).fetchone() if found is not None else None
+    if row is None:
+        raise TaskError(f"{wanted} isn't one of their repeating tasks with you")
+    if row["status"] == "stopped":
+        raise TaskError(f"{name(row)} has stopped: offer a new one instead")
+    return row
+
+
 def offer(conn: psycopg.Connection, person: Person, instance: str, run: str, asked_at: datetime,
-          text: str, schedule: Schedule) -> dict:
+          text: str, schedule: Schedule, instead_of: dict | None = None) -> dict:
     """Offer a repeat, which waits for its owner's yes in a later message, with what the run
-    offering it has read so far. TaskError if they have as many as they may."""
+    offering it has read so far: in place of `instead_of`, one of theirs, if it changes that.
+    TaskError if they have as many as they may."""
+    replaces = instead_of["id"] if instead_of else None
+    instead = {"in place of": name(instead_of)} if instead_of else {}
     again = conn.execute(  # the same, offered before: it waits for their yes
         "select number from task_repeats where owner = %s and instance_id = %s and status = "
-        "'offered' and task = %s and days = %s and at = %s and asked_at > %s order by number "
-        "desc limit 1", (person.id, instance, text, schedule.days, schedule.at,
-                         asked_at - timedelta(days=1))).fetchone()
+        "'offered' and task = %s and days = %s and at = %s and replaces is not distinct from "
+        "%s and asked_at > %s order by number desc limit 1",
+        (person.id, instance, text, schedule.days, schedule.at, replaces,
+         asked_at - timedelta(days=1))).fetchone()
     if again:
-        return {"repeat": name(again), "what": text, "when": said(schedule),
+        return {"repeat": name(again), "what": text, "when": said(schedule), **instead,
                 "offered": "you offered this already: if they've said yes, start it with "
                            "confirm_task"}
     going = conn.execute("select count(*) as n from task_repeats where owner = %s and "
-                         "instance_id = %s and status in ('offered', 'active')",
-                         (person.id, instance)).fetchone()["n"]
+                         "instance_id = %s and status in ('offered', 'active') and "
+                         "id is distinct from %s",  # the one it changes makes way for it
+                         (person.id, instance, replaces)).fetchone()["n"]
     if going >= MOST:
         raise TaskError(f"they have {MOST} repeating tasks with you already: they stop one first")
     reads = [dict(r) for r in conn.execute(
@@ -99,13 +122,15 @@ def offer(conn: psycopg.Connection, person: Person, instance: str, run: str, ask
     marked = conn.execute("select read_outside from runs where id = %s", (run,)).fetchone()
     row = conn.execute(
         "insert into task_repeats (id, instance_id, owner, task, days, at, offered_run, "
-        "asked_at, reads, read_outside) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) "
-        "returning *", (str(uuid.uuid4()), instance, person.id, text, schedule.days,
-                        schedule.at, run, asked_at, Jsonb(reads),
-                        bool(marked and marked["read_outside"]))).fetchone()
-    _record(conn, row, "offer", task=text, when=said(schedule))
-    return {"repeat": name(row), "what": text, "when": said(schedule),
-            "offered": "it starts only once they say yes, in their next message: ask them"}
+        "asked_at, reads, read_outside, replaces) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, "
+        "%s, %s) returning *", (str(uuid.uuid4()), instance, person.id, text, schedule.days,
+                                schedule.at, run, asked_at, Jsonb(reads),
+                                bool(marked and marked["read_outside"]), replaces)).fetchone()
+    _record(conn, row, "offer", task=text, when=said(schedule),
+            **({"instead_of": name(instead_of)} if instead_of else {}))
+    return {"repeat": name(row), "what": text, "when": said(schedule), **instead,
+            "offered": "it starts only once they say yes, in their next message: ask them"
+                       + (f", and {name(instead_of)} stops then" if instead_of else "")}
 
 
 def offered(conn: psycopg.Connection, person: Person, instance: str, run: str,
@@ -121,12 +146,21 @@ def offered(conn: psycopg.Connection, person: Person, instance: str, run: str,
 
 
 def start(conn: psycopg.Connection, scenario: Scenario, row: dict, now: datetime) -> dict:
-    """Start a repeat its owner said yes to: from its next time, not one already past."""
+    """Start a repeat its owner said yes to: from its next time, not one already past. If it
+    changes one of theirs, that one stops now, and this one waits for the task it made last."""
     last = schedules.latest(_of(row), schedules.zone(scenario, row["owner"]), now)
-    conn.execute("update task_repeats set status = 'active', last_due = %s, updated_at = %s "
-                 "where id = %s", (last, now, row["id"]))
+    old = conn.execute("select * from task_repeats where id = %s for update",
+                       (row["replaces"],)).fetchone() if row.get("replaces") else None
+    conn.execute("update task_repeats set status = 'active', last_due = %s, last_task = %s, "
+                 "updated_at = %s where id = %s",
+                 (last, old["last_task"] if old else None, now, row["id"]))
     _record(conn, row, "start")
+    if old and old["status"] != "stopped":
+        conn.execute("update task_repeats set status = 'stopped', updated_at = %s where id = %s",
+                     (now, old["id"]))
+        _record(conn, old, "stop", by=row["owner"], instead=name(row))
     return {"repeat": name(row), "started": True, "when": said(_of(row)),
+            **({"in place of": name(old)} if old else {}),
             "note": "each time, a5s makes it a task of its own, works on it in runs of its own, "
                     "and tells them when it's done or needs them"}
 

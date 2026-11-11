@@ -90,11 +90,15 @@ def offer(call: Call) -> dict:
     call.conn.execute(  # one offer at a time, as a reply's tool calls run together
         "select pg_advisory_xact_lock(hashtextextended(%s, 0))",
         (f"task-offer/{call.run['id']}/{person.id}",))
-    if call.args.get("days") or call.args.get("at"):  # again and again: a repeat
-        try:
+    instead = call.args.get("instead_of")
+    if call.args.get("days") or call.args.get("at") or instead:  # again and again: a repeat
+        try:  # in place of one of theirs, to change it: as that one comes round, unless said
+            old = repeats.theirs(call.conn, person, call.run["id"], instead) if instead else None
             found = repeats.offer(call.conn, person, call.run["id"], call.run["run"],
-                                  call.asked_at, text, repeats.when(call.args.get("days"),
-                                                                    call.args.get("at")))
+                                  call.asked_at, text, repeats.when(
+                                      call.args.get("days") or (old and list(old["days"])),
+                                      call.args.get("at") or (old and list(old["at"]))),
+                                  instead_of=old)
         except (ValueError, TaskError) as exc:
             raise Refused(str(exc)) from None
         studio.handled(call.conn, call.run["run"], studio.named(call.scenario, text))
@@ -439,13 +443,19 @@ TOOLS = {t.name: t for t in (
     CoreTool("offer_task",
              "Offer to take on a long task for the person you're answering: work that takes "
              "more than one run, which a5s works on in runs of its own. It starts only once "
-             "they say yes in their next message: ask them.",
+             "they say yes in their next message: ask them. To change a repeating one, offer "
+             "it as it'll be, instead_of the old one.",
              {"type": "object", "required": ["task"], "properties": {
                  "task": {"type": "string", "description": "What to do, in a sentence or two"},
                  "days": {"description": "Only if they want it done again and again: its days, "
                                          "such as monday, a list of them, weekdays or every day"},
                  "at": {"type": "string",
-                        "description": "And its time, in their time zone, such as 09:00"}}},
+                        "description": "And its time, in their time zone, such as 09:00"},
+                 "instead_of": {"type": "string",
+                                "description": "Only to change one of their repeating tasks, "
+                                               "such as E-3: the one this takes the place of "
+                                               "once they say yes. Say its task, and any days "
+                                               "or time that change"}}},
              offer, text_fields=("task",), offered=_theirs,
              sourced=lambda result: {k: v for k, v in result.items() if k != "what"}),
     CoreTool("confirm_task",
