@@ -316,7 +316,7 @@ def _core(cfg: Config, call, timeout: float = 30):
         try:
             return call(core)
         except Refused as exc:
-            sys.exit(f"{exc.status}: {exc.text}")
+            sys.exit(f"{exc.status}: {exc.text or exc.detail}" if exc.status else str(exc.detail))
 
 
 def _admin(cfg: Config, path: str, body: dict | None = None, timeout: float = 30) -> dict:

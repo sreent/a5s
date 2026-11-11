@@ -21,6 +21,7 @@ send it work but the core.
 from __future__ import annotations
 
 import logging
+import os
 import re
 import threading
 import time
@@ -40,6 +41,9 @@ from a5s.services import context, summaries
 from a5s.worker import BudgetSpent, ModelDown, run_agent
 
 log = logging.getLogger(__name__)
+# Seconds the scheduler waits for a worker's run: longer than the run may take on the worker
+# (A5S_WORKER_TIMEOUT), so the worker says why it stopped first
+WORKER_WAIT = float(os.environ.get("A5S_WORKER_WAIT", "600"))
 Worker = Callable[[str, str, list[dict]], str]
 LEASE = 120  # seconds a conversation stays leased without being renewed
 
@@ -58,7 +62,8 @@ def remote_worker(url: str) -> Worker:
     """Hand each run to a worker service, which holds nothing but the run's token."""
 
     def work(_gateway_url: str, token: str, history: list[dict]) -> str:
-        response = httpx.post(f"{url}/work", json={"token": token, "history": history}, timeout=600)
+        response = httpx.post(f"{url}/work", json={"token": token, "history": history},
+                              timeout=WORKER_WAIT)
         if response.status_code == 503 and response.json().get("error") == "model_unavailable":
             raise ModelDown(response.json().get("detail", ""))
         if response.status_code == 429 and response.json().get("error") == "budget_spent":

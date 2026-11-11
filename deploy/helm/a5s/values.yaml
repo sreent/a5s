@@ -107,6 +107,21 @@ networkPolicies:
   # Empty lets anything reach them, as a cluster with no ingress controller needs.
   ingressNamespace: {}
 
+# How long each part waits, in seconds: for a model provider's answer, in the gateway; for a
+# run, in the worker; for a worker's run, in the scheduler, longer than a run; and for a new
+# database connection, in every part.
+timeouts:
+  provider: 180  # A5S_PROVIDER_TIMEOUT
+  run: 240  # A5S_WORKER_TIMEOUT
+  workerWait: 600  # A5S_WORKER_WAIT
+  dbConnect: 2  # A5S_DB_CONNECT_TIMEOUT
+
+# What the data protection officer has agreed to (docs/data-protection.md): each is off until
+# they do.
+officerAgrees:
+  studioNames: false  # people's studio pages name whom each run acted for (A5S_STUDIO_NAMES)
+  rubberStampFlag: false  # the status flags rubber-stamping deciders (A5S_FLAG_RUBBER_STAMPS)
+
 # Where the gateway sends its traces and operators' figures, by OpenTelemetry over HTTP, such
 # as a collector that passes them on to Prometheus or Azure Monitor. Empty sends nothing.
 # Neither carries what anyone said, nor names a person or a record (core/traces.py and

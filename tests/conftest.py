@@ -6,6 +6,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import secrets
 import shutil
 import socket
@@ -18,7 +19,7 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlencode
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import httpx
 import jwt
@@ -81,6 +82,12 @@ def database(database_url: str) -> str:
     with db.transaction(database_url) as conn:
         SampleScenario(ROOT / "scenarios" / "sample", database_url).setup(conn, db.ROLES["gateway"])
     return database_url
+
+
+# The pages' redirects, as the first day's app registration lists them (docs/first-day.md):
+# the provider refuses any other, as the organisation's does
+REGISTERED = frozenset(re.findall(r"https://\$host(/[a-z]+/)",
+                                  (ROOT / "docs" / "first-day.md").read_text()))
 
 
 @dataclass
@@ -214,8 +221,11 @@ class Provider:
 
         @app.get("/auth")
         def auth(request: Request, client_id: str, redirect_uri: str, state: str, nonce: str,
-                 code_challenge: str, code_challenge_method: str) -> RedirectResponse:
+                 code_challenge: str, code_challenge_method: str) -> Any:
             self.asked.append(dict(request.query_params))
+            if urlparse(redirect_uri).path not in REGISTERED:  # as Entra ID refuses one
+                return JSONResponse(status_code=400, content={  # its app doesn't list
+                    "error": "invalid_request", "error_description": "redirect_uri mismatch"})
             code = secrets.token_urlsafe(16)
             fresh = int(time.time()) if "max_age" in request.query_params else None
             self.codes[code] = (client_id, redirect_uri, code_challenge, code_challenge_method,
