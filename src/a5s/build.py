@@ -7,10 +7,10 @@ from datetime import timedelta
 
 import httpx
 
-from a5s import definitions
+from a5s import db, definitions
 from a5s.config import Config, load_models
 from a5s.contract import Scenario
-from a5s.core import traces
+from a5s.core import metrics, status, traces
 from a5s.core.gateway import Gateway, create_app
 from a5s.core.identity import verifier_from_env
 from a5s.core.matrix import Matrix, MatrixConfig
@@ -54,4 +54,13 @@ def app(cfg: Config | None = None):
     if not cfg.service_token:
         raise RuntimeError("Set A5S_SERVICE_TOKEN, or run `a5s up` to create one.")
     traces.setup("a5s-gateway")  # if the deployment names an OpenTelemetry endpoint
-    return create_app(gateway(cfg))
+    gw = gateway(cfg)
+    metrics.setup("a5s-gateway", lambda: read_status(gw))  # and its figures, for its monitoring
+    return create_app(gw)
+
+
+def read_status(gw: Gateway) -> dict:
+    """The status, as `a5s status` reads it, but never naming the deciders a rubber-stamp flag
+    would name: for the operators' figures (core/metrics.py)."""
+    with db.transaction(gw.url) as conn:
+        return status.report(conn, gw.breakers.open(), gw.cfg.seal_keys)

@@ -97,9 +97,22 @@ networkPolicies:
   # the identity provider, the chats and the locked storage.
   outside:
     - 0.0.0.0/0
+  # Where the OpenTelemetry collector is, if it's in the cluster: its pods' labels, and their
+  # namespace's. One outside the cluster is reached as the rest outside is.
+  telemetry:
+    podSelector: {}
+    namespaceSelector: {}
+    port: 4318
   # The namespace of the ingress controller, by its labels, which alone reaches the channels.
   # Empty lets anything reach them, as a cluster with no ingress controller needs.
   ingressNamespace: {}
+
+# Where the gateway sends its traces and operators' figures, by OpenTelemetry over HTTP, such
+# as a collector that passes them on to Prometheus or Azure Monitor. Empty sends nothing.
+# Neither carries what anyone said, nor names a person or a record (core/traces.py and
+# core/metrics.py).
+telemetry:
+  endpoint: ""  # such as http://otel-collector.monitoring:4318
 
 resources:
   gateway:

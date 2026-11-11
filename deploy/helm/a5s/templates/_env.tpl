@@ -10,6 +10,10 @@
 - name: A5S_TEAM
   value: {{ .Values.team | quote }}
 {{ include "a5s.peopleEnv" . }}
+{{- with .Values.telemetry.endpoint }}
+- name: OTEL_EXPORTER_OTLP_ENDPOINT
+  value: {{ . | quote }}
+{{- end }}
 {{- end }}
 
 {{- define "a5s.env.channels" -}}
