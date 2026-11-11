@@ -24,7 +24,7 @@ It doesn't add a second way to change a5s. Everything the studio does is a chang
               figures = core.measures(days=7, instance=inst["id"])
   ```
 
-- Operators' figures go to the organisation's monitoring as OpenTelemetry metrics ([`core/metrics.py`](../src/a5s/core/metrics.py)): the status's figures, each minute, to the endpoint the deployment names for its traces (`telemetry.endpoint` in the chart), such as a collector that passes them on to Prometheus or Azure Monitor. Each is counted by what it counts, such as an instance, a model, a tool, a trigger or an outcome, and never by a person or a record, nor with anything said. The core gains no new way in: the gateway sends them out.
+- Operators' figures go to the organisation's monitoring as OpenTelemetry metrics ([`core/metrics.py`](../src/a5s/core/metrics.py)): the status's figures, each minute, to the endpoint the deployment names for its traces (`telemetry.endpoint` in the chart), such as a collector that passes them on to Prometheus or Azure Monitor. Each is counted by what it counts, such as an instance, a model, a tool, a trigger or an outcome, and never by a person or a record, nor with anything said. An instance's own figures go out only once it serves at least 5 people, since one that serves an executive alone would count their use of it; smaller ones go together, once together they serve as many. A collection reads the status once, within 5 seconds, and says first whether it could (`a5s.status.readable`), so a database that's down or hung still leaves the monitoring the 0 its runbook alerts on. The core gains no new way in: the gateway sends them out.
 - The cap for each type of action stays on the grading page, where the core checks its seal.
 
 ## What it keeps

@@ -1,10 +1,15 @@
-"""Round 9, reviewer B: operators' figures (core/metrics.py) when the database is down or hung.
-The runbook's alert for that is `a5s.status.readable` at 0 (docs/runbooks.md)."""
+"""Round 9 of the critique: operators' figures (core/metrics.py) when the database is down or
+hung, and for an instance that serves too few people to count by. A collection reads the
+status once, within its deadline, and says first whether it could, so the monitoring still
+gets the 0 its runbook alerts on (docs/runbooks.md), and the log one line; and an instance's
+own figures go out only once it serves enough people that they're nobody's own use of it
+(docs/critique.md, round 9)."""
 
 from __future__ import annotations
 
 import logging
 import socket
+import threading
 import time
 
 import psycopg
@@ -17,7 +22,9 @@ from opentelemetry.sdk.metrics.export import (
 )
 
 from a5s import db
-from a5s.core import metrics
+from a5s.core import metrics, registry
+from test_metrics import collected
+from test_studio_pages import with_ops
 
 
 class Recording(MetricExporter):
@@ -44,9 +51,7 @@ class Recording(MetricExporter):
 
 
 def test_a_status_that_cant_be_read_is_tried_once_a_collection_and_logged_once(caplog):
-    """Readings keeps a failure for no time at all (`not self._ok` forces a new read), so
-    each of the 31 gauges reads the status again in the same collection, and logs a full
-    traceback each time: 31 database round trips and 31 tracebacks a minute while it's down."""
+    """A failed reading serves the whole collection, as a good one does: one read, one line."""
     reads = 0
 
     def down() -> dict:
@@ -83,9 +88,7 @@ def hung_database():
 
 def test_while_the_database_hangs_the_figures_still_say_its_status_cant_be_read(hung_database):
     """The periodic reader collects within OTEL_METRIC_EXPORT_TIMEOUT, 30 seconds by default,
-    as its ticker does. Each of the 31 gauges waits 2.5 seconds for its own failed read, so
-    the collection times out about twelve gauges in, before a5s.status.readable, the last:
-    nothing at all is exported, not even the 0 the runbook alerts on."""
+    as its ticker does: one reading, within its deadline, leaves it time to send the 0."""
 
     def read_status() -> dict:  # as build.read_status reads it, against the hung database
         with db.transaction(hung_database) as conn:
@@ -109,8 +112,58 @@ def test_while_the_database_hangs_the_figures_still_say_its_status_cant_be_read(
         f"after {took:.0f}s, {problem}; the collector got {sent}")
 
 
-import pytest as _pytest
+def test_a_reading_that_hangs_is_given_up_on_in_time_and_not_started_again():
+    started, release = [], threading.Event()
 
-# Round 9: this reproduces a finding still to fix. Its test moves beside the code it covers
-# once its fix lands, and leaves here.
-pytestmark = _pytest.mark.xfail(strict=True, reason="round 9: a finding still to fix")
+    def hangs() -> dict:
+        started.append(1)
+        release.wait(30)
+        raise psycopg.OperationalError("it never answered")
+
+    reader = InMemoryMetricReader()
+    assert metrics.setup("a5s-gateway", hangs, reader)
+    try:
+        begun = time.monotonic()
+        assert collected(reader) == {"a5s.status.readable": [(0.0, {})]}
+        assert time.monotonic() - begun < metrics.DEADLINE + 2
+        assert started == [1]
+    finally:
+        release.set()
+        metrics.shutdown()
+
+
+@pytest.fixture
+def figures(stack):
+    from a5s import build
+    reader = InMemoryMetricReader()
+    assert metrics.setup("a5s-gateway", lambda: build.read_status(stack.gateway), reader)
+    yield reader
+    metrics.shutdown()
+
+
+def test_no_figure_is_one_persons_use(stack, figures):
+    with_ops(stack)  # assistant-ops, in orders, serving Chen alone
+    stack.model.reply("Nothing's open for you.")
+    stack.say("What's open?", person="chen")
+    stack.model.reply("Nothing's open for you.")
+    stack.say("What's open?", person="ana")
+    served = {i.id: registry.served(stack.gateway.scenario, i.serves)
+              for i in stack.gateway.scenario.settings().instances}
+    small = {i for i, people in served.items() if len(people) < metrics.FEWEST}
+    assert {"assistant-ops", "assistant-finance"} <= small  # Chen's alone; Ana's and Ben's
+    found = collected(figures)
+    theirs = [(name, value) for name, points in found.items() for value, attributes in points
+              if attributes.get("a5s.instance") in small]
+    assert theirs == [], theirs  # and the three of them together are still too few
+    assert "a5s.tokens" not in found or found["a5s.tokens"] == []
+
+
+def test_smaller_instances_go_out_together_once_together_they_serve_enough(stack, figures,
+                                                                          monkeypatch):
+    monkeypatch.setattr(metrics, "FEWEST", 3)
+    with_ops(stack)
+    for person in ("chen", "ana"):
+        stack.model.reply("Nothing's open for you.")
+        stack.say("What's open?", person=person)
+    found = collected(figures)
+    assert found["a5s.tokens"] == [(30.0, {"a5s.instance": metrics.SMALLER})]  # 1 + 2 people

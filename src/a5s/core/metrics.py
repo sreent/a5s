@@ -5,9 +5,16 @@ They're the status's figures (core/status.py), over the last day, each counted b
 counts, such as an instance, a model, a tool, a trigger or an outcome, and never by a person or
 a record, nor with anything anyone said: so whoever reads the monitoring learns how a5s is
 doing, and nothing about anyone. Who suspended an instance, and the deciders a rubber-stamp
-flag would name, stay in the status alone. The figures go to the OpenTelemetry endpoint the
-deployment names, as the traces do, each minute by default (OTEL_METRIC_EXPORT_INTERVAL), and
-nowhere if it names none. Only the gateway sends them, since it alone reads all they count.
+flag would name, stay in the status alone. An instance's own figures go out only once it
+serves at least FEWEST people, since one that serves an executive alone would count their use
+of it: smaller ones go together, once together they serve that many, and otherwise not at all.
+
+The figures go to the OpenTelemetry endpoint the deployment names, as the traces do, each
+minute by default (OTEL_METRIC_EXPORT_INTERVAL), and nowhere if it names none. Only the
+gateway sends them, since it alone reads all they count. A collection reads the status once,
+within DEADLINE seconds, and whether it could, a5s.status.readable, is the first figure, so a
+database that's down or hung still leaves the monitoring the 0 its runbook alerts on, and the
+log one line for each time it went.
 """
 
 from __future__ import annotations
@@ -27,9 +34,13 @@ from opentelemetry.sdk.resources import Resource
 
 log = logging.getLogger(__name__)
 FRESH = 10.0  # seconds one reading of the status serves, so a collection reads it once
+DEADLINE = 5.0  # seconds a collection waits for its reading, well within the export's 30
+FEWEST = 5  # people an instance serves before its own figures go out [TBC: the officer]
+SMALLER = "smaller instances"  # what instances serving fewer go out as, together
 
 # Each figure: its unit and what it says. Its values come from figures(), below.
 FIGURES: dict[str, tuple[str, str]] = {
+    "a5s.status.readable": ("1", "Whether the gateway could read its status: 1, or 0"),
     "a5s.queue.waiting": ("{message}", "Messages waiting for an answer"),
     "a5s.queue.oldest": ("s", "How long the oldest message waiting has waited"),
     "a5s.runs": ("{run}", "Runs opened over the last day, by trigger and how they ended"),
@@ -60,14 +71,25 @@ FIGURES: dict[str, tuple[str, str]] = {
     "a5s.questions.answered": ("{question}", "Questions agents answered each other, last day"),
     "a5s.questions.unanswered": ("{question}", "Questions agents left unanswered, last day"),
     "a5s.notebook.kept": ("{note}", "Notes agents keep"),
-    "a5s.status.readable": ("1", "Whether the gateway could read its status: 1, or 0"),
 }
 
 _provider: MeterProvider | None = None
 
 
+def by_instance(rows: list[dict], serving: dict[str, set[str]], *fields: str) -> list[dict]:
+    """Rows by instance as the monitoring may have them: each instance's own, if it serves at
+    least FEWEST people, and the rest's together, as SMALLER, if together they serve as many."""
+    kept = [r for r in rows if len(serving.get(r["instance"], ())) >= FEWEST]
+    rest = [r for r in rows if len(serving.get(r["instance"], ())) < FEWEST]
+    people = set().union(*(serving.get(r["instance"], set()) for r in rest))
+    if rest and len(people) >= FEWEST:
+        kept.append({"instance": SMALLER, **{f: sum(r[f] for r in rest) for f in fields}})
+    return kept
+
+
 def figures(status: dict[str, Any]) -> dict[str, list[tuple[float, dict[str, str]]]]:
-    """Each figure's values, each with what it counts: never whom."""
+    """Each figure's values, each with what it counts: never whom. By instance, only as
+    `status["serving"]` allows, whom each serves, as by_instance() has them."""
     queue, deliveries, changes = status["queue"], status["deliveries"], status["changes"]
     samples, replies = status["samples"], status["objectives"]["replies"]
     on_time = status["objectives"]["chases"]["on_time"]
@@ -76,6 +98,7 @@ def figures(status: dict[str, Any]) -> dict[str, list[tuple[float, dict[str, str
         return [] if value is None else [(float(value), {})]
 
     not_active = Counter(r["status"] for r in status["not_active"])  # never who suspended it
+    tokens = by_instance(status["tokens"], status.get("serving", {}), "tokens", "budget_warnings")
     return {
         "a5s.queue.waiting": one(queue["waiting"]),
         "a5s.queue.oldest": one(queue["oldest_seconds"] or 0),
@@ -85,10 +108,9 @@ def figures(status: dict[str, Any]) -> dict[str, list[tuple[float, dict[str, str
                                         "a5s.action": str(r["action"])})
                        for r in status["denied"]],
         "a5s.turned_away": one(status["turned_away"]),
-        "a5s.tokens": [(float(r["tokens"]), {"a5s.instance": r["instance"]})
-                       for r in status["tokens"]],
+        "a5s.tokens": [(float(r["tokens"]), {"a5s.instance": r["instance"]}) for r in tokens],
         "a5s.budget.warnings": [(float(r["budget_warnings"]), {"a5s.instance": r["instance"]})
-                                for r in status["tokens"]],
+                                for r in tokens],
         "a5s.deliveries.retrying": one(deliveries["retrying"]),
         "a5s.deliveries.left_in_inbox": one(deliveries["left_in_inbox"]),
         "a5s.deliveries.kept_back": one(deliveries["kept_back"]),
@@ -118,24 +140,44 @@ def figures(status: dict[str, Any]) -> dict[str, list[tuple[float, dict[str, str
 
 
 class Readings:
-    """The status, read at most once each FRESH seconds, so each figure of a collection comes
-    from the same reading. None while it can't be read: no figures, rather than stale ones."""
+    """The status, read at most once each FRESH seconds, whether or not it could be, so each
+    figure of a collection comes from the same reading. None while it can't be read, or takes
+    longer than DEADLINE: no figures, rather than stale ones. One read at a time: while one
+    hangs, the next collection waits for it again, and starts no other."""
 
-    def __init__(self, read: Callable[[], dict[str, Any]]):
-        self._read, self._lock = read, threading.Lock()
-        self._at, self._found = 0.0, None
-        self._ok = False
+    def __init__(self, read: Callable[[], dict[str, Any]], deadline: float = DEADLINE):
+        self._read, self._deadline, self._lock = read, deadline, threading.Lock()
+        self._at, self._found = float("-inf"), None
+        self._reading: threading.Thread | None = None
+        self._got: dict[str, Any] = {}
+        self._down = False  # whether it was last unreadable: said once a time it goes
 
     def now(self) -> dict[str, list[tuple[float, dict[str, str]]]] | None:
         with self._lock:
-            if not self._ok or time.monotonic() - self._at > FRESH:
-                self._at = time.monotonic()
-                try:
-                    self._found, self._ok = figures(self._read()), True
-                except Exception:
-                    log.exception("couldn't read the status for the metrics")
-                    self._found, self._ok = None, False
+            if time.monotonic() - self._at <= FRESH:
+                return self._found
+            if self._reading is None or not self._reading.is_alive():
+                self._got = {}
+                self._reading = threading.Thread(target=self._reads, args=(self._got,),
+                                                 name="a5s-metrics-status", daemon=True)
+                self._reading.start()
+            self._reading.join(self._deadline)
+            self._at = time.monotonic()
+            got = {} if self._reading.is_alive() else self._got
+            self._found = got.get("figures")
+            if self._found is None and not self._down:
+                log.error("couldn't read the status for the metrics: %s",
+                          got.get("error") or f"it took longer than {self._deadline:g}s")
+            elif self._found is not None and self._down:
+                log.info("could read the status for the metrics again")
+            self._down = self._found is None
             return self._found
+
+    def _reads(self, got: dict[str, Any]) -> None:
+        try:
+            got["figures"] = figures(self._read())
+        except Exception as exc:  # noqa: BLE001 - said by now(), once a time it goes
+            got["error"] = f"{type(exc).__name__}: {exc}"[:300]
 
 
 def setup(service: str, read: Callable[[], dict[str, Any]],
