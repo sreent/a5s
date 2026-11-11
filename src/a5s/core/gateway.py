@@ -82,6 +82,7 @@ from a5s.core import (
     schedules,
     sealing,
     status,
+    studio,
     topics,
     traces,
     urgent,
@@ -1684,6 +1685,65 @@ def create_app(gw: Gateway) -> FastAPI:
                     registry.served(gw.scenario, inst["serves"]))
             return measures.report(conn, gw.scenario.name, gw.models, days, gw.clock(),
                                    {a: sorted(p) for a, p in served.items()})
+
+    # The studio's API, for code, the command line and CI: everything, for the team that runs
+    # a5s. People see what they may watch through the studio's pages (core/studio.py).
+
+    @app.get("/studio/agents", dependencies=[Depends(service)])
+    def studio_agents() -> dict:
+        """Each agent of the release, and where it runs."""
+        with db.transaction(gw.url) as conn:
+            return {"agents": studio.catalogue(conn, gw.scenario, gw.definitions,
+                                               gw.scenario.tools())}
+
+    @app.get("/studio/agents/{agent}", dependencies=[Depends(service)])
+    def studio_agent(agent: str) -> dict:
+        """One agent, as its release defines it, its instructions included, and where it runs."""
+        definition = gw.definitions.get(agent)
+        if definition is None:
+            raise HTTPException(404, f"there's no agent {agent} in this release")
+        with db.transaction(gw.url) as conn:
+            return studio.agent(gw.scenario, definition, gw.scenario.tools(),
+                                studio.instances(conn), whole=True)
+
+    @app.get("/studio/agents/{agent}/measures", dependencies=[Depends(service)])
+    def studio_agent_measures(agent: str, days: int = 30) -> dict:
+        """How an agent's instances are doing over the last `days` days."""
+        with db.transaction(gw.url) as conn:
+            insts = [i for i in studio.instances(conn) if i["definition"] == agent]
+            if agent not in gw.definitions and not insts:
+                raise HTTPException(404, f"there's no agent {agent} here")
+            return studio.figures(conn, gw.scenario, gw.models, insts, days, gw.clock())
+
+    def studio_instance(conn: psycopg.Connection, instance: str) -> dict:
+        found = next((i for i in studio.instances(conn) if i["id"] == instance), None)
+        if found is None:
+            raise HTTPException(404, f"there's no instance {instance}")
+        return found
+
+    @app.get("/studio/instances/{instance}/measures", dependencies=[Depends(service)])
+    def studio_instance_measures(instance: str, days: int = 30) -> dict:
+        """How an instance is doing over the last `days` days."""
+        with db.transaction(gw.url) as conn:
+            return studio.figures(conn, gw.scenario, gw.models,
+                                  [studio_instance(conn, instance)], days, gw.clock())
+
+    @app.get("/studio/instances/{instance}/runs", dependencies=[Depends(service)])
+    def studio_runs(instance: str, before: datetime | None = None,
+                    limit: int = studio.RUNS) -> dict:
+        """An instance's runs, newest first, opened before `before`, if given."""
+        with db.transaction(gw.url) as conn:
+            return studio.runs(conn, gw.scenario, studio_instance(conn, instance),
+                               before=before, limit=limit)
+
+    @app.get("/studio/runs/{run_id}", dependencies=[Depends(service)])
+    def studio_run(run_id: str) -> dict:
+        """What a run did, with its entries in the ledger."""
+        with db.transaction(gw.url) as conn:
+            found = studio.run(conn, gw.scenario, run_id)
+        if found is None:
+            raise HTTPException(404, f"there's no run {run_id}")
+        return found
 
     @app.post("/people/{person}/export", dependencies=[Depends(service)])
     def export_person(person: str, body: StatusChange) -> dict:

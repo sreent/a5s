@@ -16,6 +16,8 @@ of the pilot shows (docs/pilot.md).
   notes each kept, had refused, gave its runs and let go.
 
 Each is over the last `days` days, by the core's clock, and counts people, never names them.
+It can be for some instances alone, such as one agent's or one instance's, for the studio's
+dashboards (core/studio.py): then who came back counts the people those instances serve.
 What people owed, held changes and samples are the scenario's now, so a deployment that
 changed scenarios counts only the new one's. Someone who has left isn't counted as not coming
 back, once a5s has archived what it kept for them (core/departures.py).
@@ -37,15 +39,24 @@ APPROVED = ("making", "made", "not made", "stopped")  # a held change its decide
 
 def report(conn: psycopg.Connection, scenario: str, models: dict[str, ModelConfig],
            days: int = 30, now: datetime | None = None,
-           served: dict[str, list[str]] | None = None) -> dict[str, Any]:
+           served: dict[str, list[str]] | None = None,
+           instances: list[str] | None = None) -> dict[str, Any]:
     """The measures over the last `days` days, at least one, to `now`, the core's clock, or
     else the database's, for the scenario named, with whom each agent's instances serve, as
-    the directory says now, to say who came back of everyone they serve."""
+    the directory says now, to say who came back of everyone they serve. With `instances`,
+    of those instances alone, and `served` is whom they serve."""
     days = max(1, int(days))
     at = {"scenario": scenario, "window": f"{days} days", "grace": GRACE,
           "now": now or conn.execute("select now() as t").fetchone()["t"],
-          "approved": list(APPROVED), "note": notebook.NOTE}
+          "approved": list(APPROVED), "note": notebook.NOTE, "instances": instances or [],
+          "agents": sorted(served or {}), "people": sorted(set().union(*(served or {}).values()))}
     since = "%(now)s::timestamptz - %(window)s::interval"
+    scoped = instances is not None
+
+    def only(column: str = "instance_id") -> str:  # those instances' alone, if scoped
+        return f" and {column} = any(%(instances)s)" if scoped else ""
+
+    theirs = " and agent = any(%(agents)s) and person = any(%(people)s)" if scoped else ""
     unknown = "seen_owed_at <= due_at and done_at > due_at"  # done between two reads of the
     late = f"done_at > due_at and not coalesce({unknown}, false)"  # records, as it fell due
     owed = conn.execute(  # what an agent acts on, once each, by whoever owed it as it fell
@@ -61,19 +72,21 @@ def report(conn: psycopg.Connection, scenario: str, models: dict[str, ModelConfi
         "percentile_cont(0.9) within group (order by extract(epoch from done_at - due_at)) "
         f"  filter (where {late}) as late_p90 "
         f"from obligations where scenario = %(scenario)s and due_at > {since} "
-        "and due_at <= %(now)s and instance_id is not null and not handed_on", at).fetchone()
+        f"and due_at <= %(now)s and instance_id is not null and not handed_on{only()}",
+        at).fetchone()
     by = "due_at + case when in_digest then interval '1 day' else %(grace)s::interval end"
     reminded = conn.execute(  # one for a day comes in that day's digest, at its own time, so
         "select count(*) as due, "  # it's counted once that day is over
         f"count(*) filter (where reminded_at <= {by}) as on_time, "
         "count(*) filter (where reminded_at is null) as missed "
         "from reminders where confirmed_at is not null and cancelled_at is null "
-        f"and due_at > {since} and {by} <= %(now)s", at).fetchone()
+        f"and due_at > {since} and {by} <= %(now)s{only()}", at).fetchone()
     wrote = conn.execute(  # who wrote to each agent the window before, and again since
         "with before as (select distinct agent, person from inbound where "
         f"  received_at > {since} - %(window)s::interval and received_at <= {since} "
-        "  and person not like 'former:%%'), "
-        f"since as (select distinct agent, person from inbound where received_at > {since}) "
+        f"  and person not like 'former:%%'{theirs}), "
+        "since as (select distinct agent, person from inbound where "
+        f"  received_at > {since}{theirs}) "
         "select b.agent, b.person, s.person is not null as back "
         "from before b left join since s on s.agent = b.agent and s.person = b.person "
         "order by b.agent, b.person", at).fetchall()
@@ -82,7 +95,8 @@ def report(conn: psycopg.Connection, scenario: str, models: dict[str, ModelConfi
     mentioned = conn.execute(  # in a group chat, an agent hears only what mentions it
         "select agent, count(*) as messages, count(distinct conversation) as chats, "
         "count(distinct person) as people from inbound "
-        f"where conversation is not null and received_at > {since} "
+        f"where conversation is not null and received_at > {since}"
+        f"{' and agent = any(%(agents)s)' if scoped else ''} "
         "group by agent order by agent", at).fetchall()
     runs = conn.execute(  # by the model each called, or, before runs said, their instance's
         "select r.instance_id, coalesce(r.model, i.model) as model, count(*) as runs, "
@@ -92,7 +106,7 @@ def report(conn: psycopg.Connection, scenario: str, models: dict[str, ModelConfi
         "sum(r.tokens_cache_written)::bigint as cache_written, "
         "percentile_cont(0.9) within group (order by r.tokens) as p90 "
         "from runs r join instances i on i.id = r.instance_id "
-        f"where r.opened_at > {since} and r.tokens > 0 "
+        f"where r.opened_at > {since} and r.tokens > 0{only('r.instance_id')} "
         "group by 1, 2 order by 1", at).fetchall()
     decided = "extract(epoch from coalesce(decided_at, ended_at) - proposed_at)"
     held = conn.execute(  # a rejection ends as it's decided, and an approval is made after it
@@ -105,7 +119,7 @@ def report(conn: psycopg.Connection, scenario: str, models: dict[str, ModelConfi
         "  filter (where status not in ('waiting', 'lapsed')) as decided_p50, "
         f"percentile_cont(0.9) within group (order by {decided}) "
         "  filter (where status not in ('waiting', 'lapsed')) as decided_p90 "
-        f"from proposals where scenario = %(scenario)s and proposed_at > {since}",
+        f"from proposals where scenario = %(scenario)s and proposed_at > {since}{only()}",
         at).fetchone()
     graded = conn.execute(
         f"select count(*) filter (where graded_at > {since}) as graded, "
@@ -113,14 +127,15 @@ def report(conn: psycopg.Connection, scenario: str, models: dict[str, ModelConfi
         f"count(*) filter (where graded_at > {since} and grade = 'wrong') as wrong, "
         f"count(*) filter (where graded_at > {since} and grade = 'critical') as critical, "
         f"count(*) filter (where lapsed_at > {since}) as lapsed "
-        "from samples where scenario = %(scenario)s", at).fetchone()
+        f"from samples where scenario = %(scenario)s{only()}", at).fetchone()
     asked = conn.execute(  # by the instance asked
         "select asked as instance, count(*) as questions, "
         "count(*) filter (where answered_at is not null) as answered, "
         "count(*) filter (where problem is not null) as unanswered, "
         "percentile_cont(0.9) within group (order by extract(epoch from answered_at - asked_at)) "
         "  filter (where answered_at is not null) as p90 "
-        f"from questions where asked_at > {since} group by asked order by asked", at).fetchall()
+        f"from questions where asked_at > {since}{only('asked')} group by asked order by asked",
+        at).fetchall()
     noted = {r["instance"]: r for r in conn.execute(  # each note offered, as the ledger has it
         "select instance_id as instance, "
         "count(*) filter (where kind = 'tool' and e #>> '{outcome,status}' = 'ok') as kept, "
@@ -129,12 +144,12 @@ def report(conn: psycopg.Connection, scenario: str, models: dict[str, ModelConfi
         "from (select kind, instance_id, entry::jsonb as e from ledger "
         "  where kind = 'tool' and action = %(note)s and decision = 'record' "
         "  or kind = 'notebook' and action in ('lapse', 'remove')) said "
-        f"where (e ->> 'at')::timestamptz > {since} group by 1", at)}
+        f"where (e ->> 'at')::timestamptz > {since}{only()} group by 1", at)}
     notes = {r["instance_id"]: r["n"] for r in conn.execute(
-        "select instance_id, count(*) as n from notebook group by 1")}
+        f"select instance_id, count(*) as n from notebook where true{only()} group by 1", at)}
     given = {r["instance_id"]: r for r in conn.execute(
         "select instance_id, count(*) as runs, sum(notes_given)::bigint as given from runs "
-        f"where opened_at > {since} and notes_given > 0 group by 1", at)}
+        f"where opened_at > {since} and notes_given > 0{only()} group by 1", at)}
     return {
         "days": days,
         "obligations": {"due": owed["due"], "on_time": owed["on_time"], "late": owed["late"],
