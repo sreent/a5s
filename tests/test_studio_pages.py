@@ -105,3 +105,17 @@ def test_the_channels_apps_openapi_document_describes_the_peoples_api(approving)
     assert {"/studio/api", "/studio/api/agents/{agent}", "/studio/api/agents/{agent}/measures",
             "/studio/api/instances/{instance}", "/studio/api/instances/{instance}/runs",
             "/studio/api/runs/{run_id}"} <= paths
+
+
+def test_a_chase_shows_only_to_those_who_may_see_the_record_it_chases(stack, approving, provider):
+    with_ops(stack)
+    stack.at("2026-10-30T02:00:00+00:00")  # 10:00 in Singapore: half Q-1003's time has passed
+    stack.model.reply("Chen, Q-1003 is due on Monday.")
+    assert stack.scheduler().work_due() == 1
+    api = signed_in(approving, provider)
+    [chase] = api("/studio/api/instances/assistant-ops/runs", "omar").json()["runs"]
+    assert chase["trigger"] == "obligation"
+    assert api(f"/studio/api/runs/{chase['run']}", "omar").json()["records"] == []  # read none
+    ana = api("/studio/api/instances/assistant-ops/runs", "ana").json()
+    assert (ana["runs"], ana["hidden"]) == ([], 1)  # it chases Q-1003, which she may not see
+    assert api(f"/studio/api/runs/{chase['run']}", "ana").status_code == 404

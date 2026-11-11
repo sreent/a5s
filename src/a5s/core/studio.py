@@ -172,6 +172,12 @@ def _read(conn: psycopg.Connection, runs: list[str]) -> dict[str, set[str]]:
     return found
 
 
+def _named(scenario: Scenario, *found: object) -> set[str]:
+    """The records named in what a run keeps, such as its trigger or its ledger entries."""
+    pattern = getattr(scenario, "record_pattern", None)
+    return set(re.findall(pattern, json.dumps(found, default=str))) if pattern else set()
+
+
 def _shown(scenario: Scenario, run: dict) -> dict:
     return {"run": run["run"], "instance": run["instance_id"],
             "trigger": (run["trigger"] or {}).get("kind"),
@@ -186,15 +192,16 @@ def runs(conn: psycopg.Connection, scenario: Scenario, inst: dict,
          viewer: Person | None = None, before: datetime | None = None,
          limit: int = RUNS) -> dict:
     """An instance's runs, newest first, a page at a time: for a viewer, those whose every
-    record they may see, and how many others there are."""
+    record they may see, those they read and those their trigger names, and how many others
+    there are."""
     rows = conn.execute(
         "select id::text as run, instance_id, trigger, acts_for, read_outside, opened_at, "
         "closed_at, outcome, tokens, model from runs where instance_id = %s "
         "and (%s::timestamptz is null or opened_at < %s) order by opened_at desc limit %s",
         (inst["id"], before, before, max(1, min(int(limit), 200)))).fetchall()
     read = _read(conn, [r["run"] for r in rows])
-    shown = [r for r in rows if viewer is None
-             or all(scenario.sees(viewer.id, k) for k in read[r["run"]])]
+    shown = [r for r in rows if viewer is None or all(
+        scenario.sees(viewer.id, k) for k in read[r["run"]] | _named(scenario, r["trigger"]))]
     return {"instance": inst["id"], "runs": [_shown(scenario, r) for r in shown],
             "hidden": len(rows) - len(shown),
             "before": rows[-1]["opened_at"].isoformat() if rows else None}
@@ -230,8 +237,7 @@ def run(conn: psycopg.Connection, scenario: Scenario, run_id: str,
         return None
     read = _read(conn, [row["run"]])[row["run"]]
     entries = ledger.entries(conn, run=row["run"])
-    pattern = getattr(scenario, "record_pattern", None)
-    named = set(re.findall(pattern, json.dumps([row["trigger"], entries]))) if pattern else set()
+    named = _named(scenario, row["trigger"], entries)
     if viewer is not None and not all(scenario.sees(viewer.id, k) for k in read | named):
         return None
     return {**_shown(scenario, row), "agent": inst["definition"] if inst else None,
