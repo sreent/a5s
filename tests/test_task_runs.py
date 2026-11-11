@@ -14,6 +14,7 @@ from datetime import timedelta
 from a5s import db
 from a5s.core import budgets
 from a5s.core.tasks import TaskService, TaskSpec
+from a5s.worker import run_agent
 from test_outside import FORM, marked
 
 ASKED = "Go through my open questions and say what each one waits on"
@@ -277,3 +278,34 @@ def test_only_a_task_that_needs_its_owner_goes_on_with_what_they_say(stack):
     stack.say("Go on with my task")
     assert tasks_of(stack)[0]["status"] == "queued"
     assert "only a task that needs them" in str(stack.model.requests[-1]["body"]["messages"][-1])
+
+
+def test_a_task_survives_a_scheduler_that_stops_mid_slice_and_goes_on_from_its_checkpoint(
+        stack):
+    a_task(stack)
+    stack.model.reply(None, ("checkpoint_task", {"step": 1, "progress": 0.5, "plan": PLAN,
+                                                 "partial": ["Q-1001 waits on the right address"]}))
+    stack.model.reply("Going on.")
+    stopping = stack.scheduler(worker=lambda url, token, history: (run_agent(
+        url, token, history), (_ for _ in ()).throw(SystemExit))[0])  # it stops part way
+    stopping._close = lambda run, outcome: None  # and never closes its run
+    try:
+        stopping.work_due()
+    except SystemExit:
+        pass
+    with db.transaction(stack.admin) as conn:  # its run outlives its time
+        conn.execute("update runs set expires_at = now() - interval '1 second'")
+    stack.scheduler().sweep()  # the core closes it, as abandoned, and the slice with it
+    [stopped] = tasks_of(stack)
+    assert (stopped["status"], stopped["failures"], stopped["step"]) == ("waiting", 1, 1)
+    stack.at((stack.gateway.clock() + timedelta(minutes=1)).isoformat())  # past its backoff
+    stack.model.reply(None, ("finish_task", {"status": "done", "plan": DONE,
+                                             "result": {"Q-1001": "the right address"}}))
+    stack.model.reply("Ana, your task is done: Q-1001 waits on the right address.")
+    assert stack.scheduler().work_due() == 1  # a fresh run, from what the task kept
+    brief = str(stack.model.requests[-2]["body"]["messages"])
+    assert "Q-1001 waits on the right address" in brief and "(in progress)" in brief
+    [done] = tasks_of(stack)
+    assert (done["status"], done["attempts"], done["failures"]) == ("done", 2, 0)
+    [heard] = told(stack)  # once, as the task's own message
+    assert heard.startswith("Ana, your task is done: Q-1001 waits on the right address.")
