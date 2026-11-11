@@ -76,6 +76,7 @@ from a5s.core import (
     registry,
     releases,
     reminders,
+    repeats,
     reports,
     retention,
     samples,
@@ -1154,7 +1155,7 @@ def create_app(gw: Gateway) -> FastAPI:
                         opening.marked = True
                     opening.task = tasking.brief(  # with its parts, or the task it's part of
                         task, gw.scenario.person(task["owner"]), tasking.parts(conn, task["id"]),
-                        tasking.whole(conn, task))
+                        tasking.whole(conn, task), tasking.repeat_of(conn, task))
             if kind == tasking.KIND and reasons and not opening.used:  # it waits a while,
                 put_off = gw.tasks.put_off(  # rather than be asked for again at every sweep,
                     opening.trigger["task"], "; ".join(reasons), within=conn)
@@ -1233,7 +1234,8 @@ def create_app(gw: Gateway) -> FastAPI:
     def tasks_sweep() -> list[dict]:
         """The tasks whose next slice is due, each for the scheduler to work on, as a run of
         its instance's (core/tasking.py)."""
-        with db.transaction(gw.url) as conn:
+        with db.transaction(gw.url) as conn:  # each repeat whose time has come, a task first
+            repeats.due(conn, gw.scenario, gw.definitions, gw.tasks, gw.clock())
             due = gw.tasks.due(gw.clock(), within=conn)
             rows = conn.execute(
                 "select t.id::text as id, t.instance_id, t.owner, i.definition from tasks t "

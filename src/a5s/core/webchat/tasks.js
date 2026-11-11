@@ -118,6 +118,31 @@ async function load() {
     }
     into.append(item);
   }
+  const again = $("repeats");
+  again.replaceChildren();
+  for (const repeat of now.repeats) {
+    const item = document.createElement("li");
+    item.append(line(`${repeat.repeat}, with the ${repeat.agent}: ${repeat.when}, ${repeat.status}`));
+    item.append(line(repeat.what));
+    if (repeat["last task"]) item.append(line(`Its last task: ${repeat["last task"]}.`, "note"));
+    if (repeat.status !== "stopped") {
+      const stop = document.createElement("button");
+      stop.type = "button";
+      stop.textContent = "Stop";
+      stop.addEventListener("click", async () => {
+        try {
+          await call(`/tasks/api/${repeat.repeat}/cancel`, "POST");
+          await load();
+          status(`Stopped ${repeat.repeat}.`);
+        } catch (error) {
+          status(error.message);
+        }
+      });
+      item.append(stop);
+    }
+    again.append(item);
+  }
+  if (!now.repeats.length) again.append(line("None. Ask an agent to do a task every week, say, in your chat with it.", "note"));
   status(now.tasks.length ? "" : "No tasks yet. Ask an agent for one in your chat with it.");
 }
 

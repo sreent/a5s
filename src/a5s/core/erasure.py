@@ -65,6 +65,7 @@ WORDS = {
     "group_summaries": "group chats' summaries that held what they said",
     "questions": "questions agents asked each other for them alone",
     "tasks": "tasks they asked for, with what each did",
+    "repeats": "tasks they asked to be done again and again",
 }
 
 
@@ -134,6 +135,7 @@ def erase(conn: psycopg.Connection, person: str, now: datetime,
     delete("said_in_groups", "delete from turns where speaker = any(%s)", (names,))
     delete("questions", "delete from questions where acts_for && %s and acts_for <@ %s",
            (names, names))  # for them alone: one for others too is theirs as well
+    delete("repeats", "delete from task_repeats where owner = any(%s)", (names,))
     delete("tasks", "delete from tasks where owner = any(%s)", (names,))  # and each one's
     # children, which are theirs too
     if count := departures.unsummarise(conn, names):  # what a group's summary held of theirs,

@@ -31,7 +31,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from a5s.contract import Person
-from a5s.core import studio
+from a5s.core import repeats, studio
 from a5s.core.coretools import Call, CoreTool, Refused, one_to_one
 from a5s.core.reminders import CONFIRM_WITHIN, say
 from a5s.core.tasks import (
@@ -90,6 +90,15 @@ def offer(call: Call) -> dict:
     call.conn.execute(  # one offer at a time, as a reply's tool calls run together
         "select pg_advisory_xact_lock(hashtextextended(%s, 0))",
         (f"task-offer/{call.run['id']}/{person.id}",))
+    if call.args.get("days") or call.args.get("at"):  # again and again: a repeat
+        try:
+            found = repeats.offer(call.conn, person, call.run["id"], call.run["run"],
+                                  call.asked_at, text, repeats.when(call.args.get("days"),
+                                                                    call.args.get("at")))
+        except (ValueError, TaskError) as exc:
+            raise Refused(str(exc)) from None
+        studio.handled(call.conn, call.run["run"], studio.named(call.scenario, text))
+        return found
     again = call.conn.execute(  # the same task, offered before: it waits for their yes
         "select number from tasks where owner = %s and instance_id = %s and status = %s "
         "and task = %s and asked_at > %s order by number desc limit 1",
@@ -111,14 +120,20 @@ def offer(call: Call) -> dict:
 
 
 def confirm(call: Call) -> dict:
-    person, asked = call.asker, call.asked_at
-    named = _number(call.args["task"]) if call.args.get("task") else None
-    row = call.conn.execute(  # one they said yes to after it was offered, not in this message
-        "select id::text as id, number, deadline from tasks where owner = %s and instance_id = %s "
+    person, asked, wanted = call.asker, call.asked_at, call.args.get("task")
+    repeat = None if wanted and not repeats.named(wanted) else repeats.offered(
+        call.conn, person, call.run["id"], call.run["run"], asked, repeats.number(wanted))
+    named = _number(wanted) if wanted and not repeats.named(wanted) else None
+    row = None if repeats.named(wanted) else call.conn.execute(  # one they said yes to
+        # after it was offered, not in this message
+        "select id::text as id, number, deadline, asked_at from tasks where owner = %s and "
+        "instance_id = %s "
         "and status = %s and offered_run <> %s and asked_at < %s and asked_at > %s "
         "and (%s::bigint is null or number = %s) order by asked_at desc, number desc limit 1 "
         "for update", (person.id, call.run["id"], OFFERED, call.run["run"], asked,
                        asked - CONFIRM_WITHIN, named, named)).fetchone()
+    if repeat and (row is None or repeat["asked_at"] >= row["asked_at"]):  # the later
+        return repeats.start(call.conn, call.scenario, repeat, call.now)  # offered of the two
     if row is None:
         raise Refused("no task is waiting for them to say yes here. Offer it first, and start "
                       "it once they say yes in a later message")
@@ -149,11 +164,19 @@ def mine(call: Call) -> dict:
                                      f"{len(r['plan'])}" if r["plan"] else None,
                        **({"parts done": f"{r['done']} of {r['parts']}"} if r["parts"] else {}),
                        **({"why": r["last_error"]} if r["last_error"] else {}),
-                       "has until": say(person, r["deadline"])} for r in rows]}
+                       "has until": say(person, r["deadline"])} for r in rows],
+            **({"repeats": found} if (found := repeats.listed(call.conn, person,
+                                                              call.run["id"])) else {})}
 
 
 def cancel(call: Call) -> dict:
     person = call.person
+    if repeats.named(call.args.get("task")):  # a repeat stops: its last task goes on
+        try:
+            return repeats.stop(call.conn, person, call.args.get("task"), call.now,
+                                call.run["id"])
+        except TaskError as exc:
+            raise Refused(str(exc)) from None
     row = call.conn.execute("select id::text as id, number from tasks where owner = %s "
                             "and instance_id = %s and number = %s",
                             (person.id, call.run["id"], _number(call.args.get("task")))).fetchone()
@@ -241,6 +264,8 @@ def cancel_theirs(conn: psycopg.Connection, person: Person, task: str,
                   now: datetime) -> dict:
     """Cancel one of someone's tasks at their word, on their page, as the agent would at
     their asking. TaskError if it isn't theirs, or has ended."""
+    if repeats.named(task):  # a repeat stops, at their word
+        return {"stopped": repeats.stop(conn, person, task, now)["repeat"]}
     number = task.strip().upper().removeprefix("T-")
     row = conn.execute("select id::text as id, number from tasks where owner = %s "
                        "and number = %s", (person.id, int(number))
@@ -416,7 +441,11 @@ TOOLS = {t.name: t for t in (
              "more than one run, which a5s works on in runs of its own. It starts only once "
              "they say yes in their next message: ask them.",
              {"type": "object", "required": ["task"], "properties": {
-                 "task": {"type": "string", "description": "What to do, in a sentence or two"}}},
+                 "task": {"type": "string", "description": "What to do, in a sentence or two"},
+                 "days": {"description": "Only if they want it done again and again: its days, "
+                                         "such as monday, a list of them, weekdays or every day"},
+                 "at": {"type": "string",
+                        "description": "And its time, in their time zone, such as 09:00"}}},
              offer, text_fields=("task",), offered=_theirs,
              sourced=lambda result: {k: v for k, v in result.items() if k != "what"}),
     CoreTool("confirm_task",
@@ -428,7 +457,8 @@ TOOLS = {t.name: t for t in (
              sourced=lambda result: [  # never what its agent wrote, nor why it's blocked
                  {k: v for k, v in t.items() if k not in ("what", "why")}
                  for t in result["tasks"]]),
-    CoreTool("cancel_task", "Stop one of the person's tasks, when they ask you to.",
+    CoreTool("cancel_task", "Stop one of the person's tasks, or a task they asked to repeat, "
+             "such as E-3, when they ask you to.",
              {"type": "object", "required": ["task"], "properties": {"task": _TASK}}, cancel,
              sourced=lambda result: result, offered=_theirs),
     CoreTool("resume_task",
@@ -475,7 +505,7 @@ TOOLS = {t.name: t for t in (
 # A task's slices, as runs
 
 def brief(task: dict, owner: Person | None, done: list[dict] | None = None,
-          whole: dict | None = None) -> str:
+          whole: dict | None = None, repeat: dict | None = None) -> str:
     """What a task's run is told: what its owner asked for, or for a part, the task it's
     part of; its plan; what its earlier slices found, and its parts; and the most it may
     spend."""
@@ -483,6 +513,9 @@ def brief(task: dict, owner: Person | None, done: list[dict] | None = None,
     said = [f"Work on {name(task)}, a part of {who}'s task {name(whole)}, which is to "
             f"{whole['task']}. This part is to {task['task']}" if whole else
             f"Work on {who}'s task, {name(task)}, which they asked you for: {task['task']}"]
+    if repeat:
+        again = repeats.said(repeats.when(list(repeat["days"]), list(repeat["at"])))
+        said.append(f"It's one of the times they asked for it, {again} ({repeats.name(repeat)}).")
     if task["plan"]:
         said.append("Its plan: " + "; ".join(f"{s['content']} ({s['status'].replace('_', ' ')})"
                                               for s in task["plan"]) + ".")
@@ -516,6 +549,12 @@ def brief(task: dict, owner: Person | None, done: list[dict] | None = None,
 def _cut(found: Any, most: int) -> str:
     text = found if isinstance(found, str) else str(found)
     return text if len(text) <= most else text[:most] + "..."
+
+
+def repeat_of(conn: psycopg.Connection, task: dict) -> dict | None:
+    """The repeat that made a task, or None."""
+    return conn.execute("select number, days, at from task_repeats where id = %s",
+                        (task["repeat"],)).fetchone() if task.get("repeat") else None
 
 
 def whole(conn: psycopg.Connection, task: dict) -> dict | None:

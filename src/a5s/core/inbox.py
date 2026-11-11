@@ -54,6 +54,7 @@ from a5s.core import (
     officer,
     proposals,
     registry,
+    repeats,
     samples,
     studio,
     tasking,
@@ -1127,7 +1128,8 @@ def create_app(gw: Any) -> FastAPI:
         person = tasked(authorization)
         with db.transaction(gw.url) as conn:
             return {"you": person.name,
-                    "tasks": tasking.theirs(conn, gw.scenario, person, gw.clock())}
+                    "tasks": tasking.theirs(conn, gw.scenario, person, gw.clock()),
+                    "repeats": repeats.listed(conn, person)}
 
     @app.post("/tasks/api/{task}/cancel")
     def tasks_cancel(task: str, authorization: str | None = Header(default=None)) -> dict:
