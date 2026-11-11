@@ -2,15 +2,19 @@
 work that takes more than one run, it starts once they say yes in a later message, and the
 scheduler works on it a slice at a time, each slice one of the assistant's runs, held to what's
 left of the task's budget. Its owner hears from it once it's done or needs them, and from a5s
-itself when it stops without a word."""
+itself when it stops without a word. Each of its runs is given what its earlier runs read,
+with where each value came from, and their mark if any read content from outside; and when
+it needs its owner, it goes on with what they say."""
 
 from __future__ import annotations
 
+import json
 from datetime import timedelta
 
 from a5s import db
 from a5s.core import budgets
 from a5s.core.tasks import TaskService, TaskSpec
+from test_outside import FORM, marked
 
 ASKED = "Go through my open questions and say what each one waits on"
 PLAN = [{"content": "Read Ana's open questions", "status": "completed"},
@@ -40,11 +44,11 @@ def spend_their_day(stack, person: str = "ana") -> None:
                      ("assistant-finance", person, day, 1_000_000))
 
 
-def a_task(stack, budget: int = 400_000, days: int = 3) -> dict:
-    """Ana's task with the assistant, said yes to."""
+def a_task(stack, budget: int = 400_000, days: int = 3, owner: str = "ana") -> dict:
+    """Someone's task with the assistant, Ana's unless it says, said yes to."""
     tasks = TaskService(stack.admin)
     tasks.clock = stack.gateway.clock
-    task_id = tasks.create(TaskSpec(instance="assistant-finance", owner="ana", task=ASKED,
+    task_id = tasks.create(TaskSpec(instance="assistant-finance", owner=owner, task=ASKED,
                                     token_budget=budget,
                                     deadline=stack.gateway.clock() + timedelta(days=days)))
     return tasks.get(task_id)
@@ -188,3 +192,88 @@ def test_a_tasks_owner_hears_once_when_its_run_stops_after_writing_to_them(stack
     assert (done["status"], done["result"]) == ("done", {"Q-1001": "an address"})
     [heard] = told(stack)  # the assistant's own message, and no word of a5s's besides
     assert heard.startswith("Ana, your task is done")
+
+
+def test_a_value_an_earlier_run_read_is_the_records_and_one_it_made_up_is_its_own(stack):
+    a_task(stack)
+    stack.model.reply(None, ("search_records", {"query": "invoice"}),
+                      ("checkpoint_task", {"step": 1, "partial": [
+                          "Q-1001 waits on the right address", "Q-7777 waits too"]}))
+    stack.model.reply(None, ("finish_task", {"status": "waiting"}))
+    stack.model.reply("Going on in a later run.")
+    stack.scheduler().work_due()
+    stack.model.reply(None, ("finish_task", {"status": "done"}))
+    stack.model.reply("Ana, your task is done: Q-1001 and Q-7777 wait on the right address.")
+    stack.scheduler().work_due()  # a later run, which read neither itself
+    [heard] = told(stack)
+    assert "(a5s: Q-7777 came from the assistant itself" in heard and "Q-1001 came" not in heard
+
+
+def test_what_the_agent_wrote_of_a_task_never_counts_as_read(stack):
+    stack.model.reply(None, ("offer_task", {"task": "Chase Q-7777 with Northwind"}))
+    stack.model.reply("I can chase Q-7777 for you as a task: shall I start it?")
+    said = stack.say("Could you chase Northwind for me?")
+    assert "(a5s: Q-7777 came from the assistant itself" in said
+
+
+def test_a_task_whose_run_read_a_customers_email_stays_marked_in_its_later_runs(stack):
+    a_task(stack, owner="ben")
+    stack.model.reply(None, ("get_messages", {"key": "Q-1002"}))
+    stack.model.reply(json.dumps(FORM))  # a5s's reader's form of Contoso's email
+    stack.model.reply(None, ("finish_task", {"status": "waiting"}))
+    stack.model.reply("Going on in a later run.")
+    stack.scheduler().work_due()
+    stack.model.reply(None, ("finish_task", {"status": "done"}))
+    stack.model.reply("Ben, your task is done: Contoso asks for a refund.")
+    stack.scheduler().work_due()
+    assert marked(stack) == [True, True]  # its later run read nothing from outside itself
+    assert tasks_of(stack)[0]["read_outside"] is True
+
+
+def test_a_task_that_needs_its_owner_goes_on_with_what_they_said(stack):
+    task = a_task(stack)
+    name = f"T-{task['number']}"
+    stack.model.reply(None, ("finish_task", {"status": "blocked",
+                                             "reason": "which quarter to go through"}))
+    stack.model.reply("Ana, which quarter should I go through?")
+    stack.scheduler().work_due()
+    [blocked] = tasks_of(stack)
+    assert (blocked["status"], blocked["last_error"]) == ("blocked", "which quarter to go through")
+    assert told(stack) == ["Ana, which quarter should I go through?"]  # the agent's, alone
+    assert stack.scheduler().work_due() == 0  # it waits for her
+    stack.model.reply(None, ("resume_task", {"task": name, "answer": "The third quarter"}))
+    stack.model.reply("Thanks: I'll go on with it.")
+    stack.say("The third quarter, please")
+    [resumed] = tasks_of(stack)
+    assert (resumed["status"], resumed["answered"]) == (
+        "waiting", {"needed": "which quarter to go through", "said": "The third quarter"})
+    stack.model.reply(None, ("finish_task", {"status": "done", "result": {"quarter": 3}}))
+    stack.model.reply("Ana, your task is done.")
+    assert stack.scheduler().work_due() == 1
+    brief = str(stack.model.requests[-2]["body"]["messages"])
+    assert "It needed Ana Ortiz: which quarter to go through. They said: The third quarter" in brief
+    assert tasks_of(stack)[0]["status"] == "done"
+
+
+def test_an_offer_made_twice_is_one_and_lapses_unless_its_said_yes_to(stack):
+    stack.model.reply(None, ("offer_task", {"task": ASKED}), ("offer_task", {"task": ASKED}))
+    stack.model.reply("I can take that on as a task: shall I start it?")
+    stack.say("Could you go through all my open questions and say what each waits on?")
+    [offered] = tasks_of(stack)
+    assert offered["status"] == "offered"
+    with db.transaction(stack.admin) as conn:  # offered two days before her next message
+        conn.execute("update tasks set asked_at = asked_at - interval '2 days'")
+    stack.model.reply(None, ("list_tasks", {}))
+    stack.model.reply("The one I offered lapsed: shall I offer it again?")
+    stack.say("What tasks do I have?")
+    listed = str(stack.model.requests[-1]["body"]["messages"][-1]["content"])
+    assert "offered, and lapsed" in listed
+
+
+def test_only_a_task_that_needs_its_owner_goes_on_with_what_they_say(stack):
+    task = a_task(stack)
+    stack.model.reply(None, ("resume_task", {"task": f"T-{task['number']}", "answer": "Go on"}))
+    stack.model.reply("It's queued already.")
+    stack.say("Go on with my task")
+    assert tasks_of(stack)[0]["status"] == "queued"
+    assert "only a task that needs them" in str(stack.model.requests[-1]["body"]["messages"][-1])

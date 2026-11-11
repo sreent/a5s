@@ -27,8 +27,9 @@ ASKING_TOOLS = ("ask_agent",)
 # and for noting what it learns from records, in a run that acts for nobody (core/notebook.py)
 NOTEBOOK_TOOLS = ("note_learned",)
 # and for the long tasks people ask it for, over more than one run (core/tasking.py): offered,
-# confirmed, listed and cancelled in a person's own chat, and kept, in each run of a task
-TASK_TOOLS = ("offer_task", "confirm_task", "list_tasks", "cancel_task")
+# confirmed, listed, cancelled and resumed in a person's own chat, and kept, in each run of
+# a task
+TASK_TOOLS = ("offer_task", "confirm_task", "list_tasks", "cancel_task", "resume_task")
 SLICE_TOOLS = ("checkpoint_task", "finish_task")
 _DAY_NAMES = {f"{d}{rest}": d for d, rest in zip(DAYS, ("day", "sday", "nesday", "rsday", "day",
                                                        "urday", "day"), strict=True)}

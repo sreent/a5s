@@ -4,18 +4,22 @@ Someone asks an agent, in their own chat with it, for work that takes more than 
 as going through a quarter's disputed invoices. The agent offers it with offer_task, and it
 starts only once they say yes in a later message, with confirm_task, as a reminder does: with
 the release's budget for a task, and the days it has (definitions.Tasks). It's theirs, so it
-acts for them alone, and they can list and cancel it, through the agent.
+acts for them alone, and they can list and cancel it, through the agent, and when it needs
+them, have it go on with what they say.
 
 The core works on it a slice at a time, each slice one of the agent's runs, which the
 scheduler opens like any other (`kind: task`). The run is told the task, its plan, what its
 earlier slices found, and the most it may spend: what's left of the task's budget, which the
 model gateway holds each of its calls to (core/budgets.py). It keeps what it does with
 checkpoint_task as it goes, and says what the slice came to with finish_task: done, waiting
-for a person, or to go on in a later run. The slice's lease lasts as long as the run may, and
-what it spent is the run's own count of its tokens, so nothing a worker says is counted. Only
-once it's done or waiting for them may the run write to its owner, and then only to them;
-when it ends without a word from its agent, such as when its deadline passes, a5s tells them
-itself, in its own words (core/tasks.py has the engine).
+for a person, or to go on in a later run. Each run is given what the task's earlier runs
+read, with where each value came from, and opens marked if any read content from outside, so
+a value its agent writes is traced to wherever it came from, whichever run read it, and
+nothing an earlier run made up passes as the records' (core/provenance.py). The slice's lease
+lasts as long as the run may, and what it spent is the run's own count of its tokens, so
+nothing a worker says is counted. Only once it's done or waiting for them may the run write
+to its owner, and then only to them; when it ends without a word from its agent, such as when
+its deadline passes, a5s tells them itself, in its own words (core/tasks.py has the engine).
 """
 
 from __future__ import annotations
@@ -27,6 +31,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from a5s.contract import Person
+from a5s.core import studio
 from a5s.core.coretools import Call, CoreTool, Refused, one_to_one
 from a5s.core.reminders import CONFIRM_WITHIN, say
 from a5s.core.tasks import ENDED, OFFERED, TaskError, TaskService, TaskSpec, planned
@@ -73,11 +78,24 @@ def offer(call: Call) -> dict:
     if not text or len(text) > MOST_CHARS:
         raise Refused(f"say what the task is, in a sentence or two, at most {MOST_CHARS:,} "
                       "characters")
+    call.conn.execute(  # one offer at a time, as a reply's tool calls run together
+        "select pg_advisory_xact_lock(hashtextextended(%s, 0))",
+        (f"task-offer/{call.run['id']}/{person.id}",))
+    again = call.conn.execute(  # the same task, offered before: it waits for their yes
+        "select number from tasks where owner = %s and instance_id = %s and status = %s "
+        "and task = %s and asked_at > %s order by number desc limit 1",
+        (person.id, call.run["id"], OFFERED, text, call.asked_at - CONFIRM_WITHIN)).fetchone()
+    if again:
+        return {"task": name(again), "what": text,
+                "offered": "you offered this already: if they've said yes, start it with "
+                           "confirm_task"}
     deadline = call.now + timedelta(days=tasks_of.days)
     task_id = _tasks(call).create(
         TaskSpec(instance=call.run["id"], owner=person.id, task=text, audience=(person.id,),
                  token_budget=tasks_of.budget_tokens, deadline=deadline),
         offered_run=call.run["run"], asked_at=call.asked_at, within=call.conn)
+    carry(call.conn, task_id, call.run["run"])  # what the run that offered it had read
+    studio.handled(call.conn, call.run["run"], studio.named(call.scenario, text))
     row = call.conn.execute("select number from tasks where id = %s", (task_id,)).fetchone()
     return {"task": name(row), "what": text, "has until": say(person, deadline),
             "offered": "it starts only once they say yes, in their next message: ask them"}
@@ -104,10 +122,17 @@ def confirm(call: Call) -> dict:
 def mine(call: Call) -> dict:
     person = call.person
     rows = call.conn.execute(
-        "select number, task, status, progress, plan, last_error, deadline, updated_at "
-        "from tasks where owner = %s and instance_id = %s and parent is null "
+        "select number, task, status, progress, plan, last_error, deadline, updated_at, "
+        "asked_at from tasks where owner = %s and instance_id = %s and parent is null "
         "order by updated_at desc limit 20", (person.id, call.run["id"])).fetchall()
-    return {"tasks": [{"task": name(r), "what": r["task"], "status": r["status"],
+    studio.handled(call.conn, call.run["run"], studio.named(
+        call.scenario, [r["task"] for r in rows]))
+    lapsed = call.asked_at - CONFIRM_WITHIN  # an offer not said yes to by then, as for
+    # confirm_task: by when the messages came
+    return {"tasks": [{"task": name(r), "what": r["task"], "status": (
+                           "offered, and lapsed: offer it again if they still want it"
+                           if r["status"] == OFFERED and r["asked_at"]
+                           and r["asked_at"] <= lapsed else r["status"]),
                        "progress": f"{round(100 * r['progress'])}%",
                        "steps done": f"{sum(s['status'] == 'completed' for s in r['plan'])} of "
                                      f"{len(r['plan'])}" if r["plan"] else None,
@@ -127,6 +152,34 @@ def cancel(call: Call) -> dict:
     except TaskError as exc:
         raise Refused(str(exc)) from None
     return {"task": name(row), "cancelled": True}
+
+
+def resume(call: Call) -> dict:
+    """Go on with a task that needed its owner, with what they said it needs, which its
+    next run is told, and whose values are theirs."""
+    person = call.person
+    row = call.conn.execute("select id::text as id, number, status, last_error from tasks "
+                            "where owner = %s and instance_id = %s and number = %s for update",
+                            (person.id, call.run["id"], _number(call.args.get("task")))
+                            ).fetchone()
+    if row is None:
+        raise Refused(f"{call.args['task']} isn't one of their tasks with you")
+    if row["status"] != "blocked":
+        raise Refused(f"{name(row)} is {row['status']}: only a task that needs them goes on "
+                      "with what they say")
+    answer = " ".join(str(call.args.get("answer") or "").split())
+    if not answer or len(answer) > MOST_CHARS:
+        raise Refused("say what they said it needs, in a sentence or two, at most "
+                      f"{MOST_CHARS:,} characters")
+    try:
+        _tasks(call).resume(row["id"], person.id, within=call.conn)
+    except TaskError as exc:
+        raise Refused(str(exc)) from None
+    call.conn.execute("update tasks set answered = %s where id = %s",
+                      (Jsonb({"needed": row["last_error"], "said": answer}), row["id"]))
+    carry(call.conn, row["id"], call.run["run"])  # what they said, as theirs
+    return {"task": name(row), "goes on": True,
+            "note": "a5s works on it again in a run of its own, with what they said"}
 
 
 # What a task's own run keeps, and says
@@ -178,6 +231,27 @@ def finish(call: Call) -> dict:
                     "what it came to, and nothing more"}
 
 
+def carry(conn: psycopg.Connection, task_id: str, run: str) -> None:
+    """Keep with a task what one of its runs read, with where each value came from, and
+    whether it read content from outside: the run that offered it, the one its owner said
+    what it needed in, and each of its slices, for its later runs to be given."""
+    conn.execute("insert into task_reads (task_id, source, kind, norm, text) "
+                 "select t.id, r.source, r.kind, r.norm, r.text from run_reads r "
+                 "join tasks t on t.id = %s where r.run_id = %s on conflict do nothing",
+                 (task_id, run))  # unless it's gone meanwhile, as an erasure takes it
+    conn.execute("update tasks set read_outside = true where id = %s and not read_outside "
+                 "and exists (select 1 from runs where id = %s and read_outside)",
+                 (task_id, run))
+
+
+def given(conn: psycopg.Connection, task_id: str, run: str) -> None:
+    """Give a task's run what its earlier runs read, with where each value came from: only
+    that, so what one of them wrote itself, in what it kept, stays its agent's own."""
+    conn.execute("insert into run_reads (run_id, source, kind, norm, text) "
+                 "select %s, source, kind, norm, text from task_reads where task_id = %s "
+                 "on conflict do nothing", (run, task_id))
+
+
 def _theirs(run: dict) -> bool:
     return one_to_one(run) and (run.get("trigger") or {}).get("kind") == "message"
 
@@ -199,17 +273,29 @@ TOOLS = {t.name: t for t in (
              "they say yes in their next message: ask them.",
              {"type": "object", "required": ["task"], "properties": {
                  "task": {"type": "string", "description": "What to do, in a sentence or two"}}},
-             offer, text_fields=("task",), sourced=lambda result: result, offered=_theirs),
+             offer, text_fields=("task",), offered=_theirs,
+             sourced=lambda result: {k: v for k, v in result.items() if k != "what"}),
     CoreTool("confirm_task",
              "Start a task you offered the person, once they've said yes to it.",
              {"type": "object", "properties": {"task": _TASK}}, confirm,
              sourced=lambda result: result, offered=_theirs),
     CoreTool("list_tasks", "The person's tasks with you, and how each stands.",
-             {"type": "object", "properties": {}}, mine, sourced=lambda result: result,
-             offered=_theirs),
+             {"type": "object", "properties": {}}, mine, offered=_theirs,
+             sourced=lambda result: [  # never what its agent wrote, nor why it's blocked
+                 {k: v for k, v in t.items() if k not in ("what", "why")}
+                 for t in result["tasks"]]),
     CoreTool("cancel_task", "Stop one of the person's tasks, when they ask you to.",
              {"type": "object", "required": ["task"], "properties": {"task": _TASK}}, cancel,
              sourced=lambda result: result, offered=_theirs),
+    CoreTool("resume_task",
+             "Go on with one of the person's tasks that needed them, once they've said what it "
+             "needs.",
+             {"type": "object", "required": ["task", "answer"], "properties": {
+                 "task": _TASK,
+                 "answer": {"type": "string",
+                            "description": "What they said it needs, in their words"}}},
+             resume, text_fields=("answer",), sourced=lambda result: result,
+             offered=_theirs),
     CoreTool("checkpoint_task",
              "Keep what you've done of the task so far, so a later run picks up from it: its "
              "step, how far it's come, what you've found, and its plan.",
@@ -242,12 +328,17 @@ def brief(task: dict, owner: Person | None) -> str:
     if task["plan"]:
         said.append("Its plan: " + "; ".join(f"{s['content']} ({s['status'].replace('_', ' ')})"
                                               for s in task["plan"]) + ".")
+    if answered := task.get("answered"):
+        said.append(f"It needed {who}: {answered.get('needed') or 'them'}. They said: "
+                    f"{answered['said']}")
     if task["partial"] not in (None, [], {}, ""):
         found = str(task["partial"])
         said.append("What its earlier runs found: " + (found if len(found) <= MOST_PARTIAL
                                                        else found[:MOST_PARTIAL] + "..."))
     said.append(f"This run may spend {task['tokens_left']:,} tokens at most. Keep what you do "
-                "with checkpoint_task as you go, so a later run picks up from it. When it's done, "
+                "with checkpoint_task as you go, so a later run picks up from it. A handle an "
+                "earlier run was given works only in that run: look its value up again if you "
+                "need it. When it's done, "
                 "or you can't go on without them, say so with finish_task, and then write to "
                 f"{who}, in one short message. Otherwise say it's waiting, and write to nobody: "
                 "a5s runs it again later.")
@@ -263,13 +354,16 @@ def begin(conn: psycopg.Connection, tasks: TaskService, task_id: str) -> tuple[s
         return None, {"id": task_id, "status": None, "last_error": str(exc)}
 
 
-def end(conn: psycopg.Connection, tasks: TaskService, run: dict, outcome: str) -> dict | None:
+def end(conn: psycopg.Connection, tasks: TaskService, run_id: str, run: dict,
+        outcome: str) -> dict | None:
     """End the slice a task's run was, as the run closes: with what it said the slice came to,
     or, if it said nothing, waiting to go on, or failed, if the run did, and what the run spent,
-    counted whatever came of it. The task as it then stands, or None if the run was no slice."""
+    counted whatever came of it, keeping what it read for the task's later runs. The task as
+    it then stands, or None if the run was no slice."""
     trigger = run.get("trigger") or {}
     if trigger.get("kind") != KIND or not trigger.get("lease"):
         return None
+    carry(conn, str(trigger["task"]), run_id)
     said = run.get("task_result")
     if said is None and outcome.startswith("done"):
         said = {"status": "waiting"}

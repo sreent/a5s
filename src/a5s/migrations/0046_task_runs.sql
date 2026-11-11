@@ -12,3 +12,21 @@ create unique index if not exists tasks_by_number on tasks (number);
 create index if not exists tasks_offered on tasks (owner, instance_id) where status = 'offered';
 alter table runs add column if not exists task_result jsonb;
 grant update (task_result) on runs to a5s_gateway;
+
+-- What a task's runs read, with where each value came from, kept with the task for its
+-- later runs: a value its agent writes is traced to wherever it came from, whichever of its
+-- runs read it, and nothing an earlier run made up passes as the records'
+-- (core/provenance.py). Whether any of them read content from outside, so the mark follows
+-- what they drew on, and what its owner said when it needed them.
+alter table tasks add column if not exists read_outside boolean not null default false;
+alter table tasks add column if not exists answered jsonb;
+create table if not exists task_reads (
+  task_id uuid not null references tasks (id) on delete cascade,
+  source text not null,
+  kind text not null,
+  norm text not null,
+  text text not null,
+  primary key (task_id, kind, norm, source)
+);
+alter table task_reads owner to a5s_owner;
+grant select, insert on task_reads to a5s_gateway;

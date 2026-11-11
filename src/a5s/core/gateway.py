@@ -1150,6 +1150,8 @@ def create_app(gw: Gateway) -> FastAPI:
                         pushing += tell_of_task(conn, task)
                 else:  # its run's model calls are held to what's left of its budget
                     opening.trigger.update(lease=lease, cap=int(task["tokens_left"]))
+                    if task["read_outside"]:  # one of its runs read content from outside
+                        opening.marked = True
                     opening.task = tasking.brief(task, gw.scenario.person(task["owner"]))
             if kind == tasking.KIND and reasons and not opening.used:  # it waits a while,
                 put_off = gw.tasks.put_off(  # rather than be asked for again at every sweep,
@@ -1173,7 +1175,9 @@ def create_app(gw: Gateway) -> FastAPI:
                 if kind == asking.KIND:  # whose run answers it, at work on it now
                     conn.execute("update questions set run_id = %s where id = %s",
                                  (run_id, opening.trigger["question"]))
-                if opening.task:  # what a5s asks it, from the records: something it has read,
+                if kind == tasking.KIND:  # what its task's earlier runs read, as they read it
+                    tasking.given(conn, opening.trigger["task"], run_id)
+                elif opening.task:  # what a5s asks it, from the records: something it has read,
                     provenance.read(conn, run_id, {  # or what a reminder's person asked for, in
                         "reminder": provenance.THEY,  # their words, or what another agent asked,
                         asking.KIND: asking.QUESTION}.get(kind, provenance.A5S),  # whose values
@@ -1265,7 +1269,7 @@ def create_app(gw: Gateway) -> FastAPI:
         """End the slice of a task that a closing run was, if it was one, with what it said
         and spent; and if that ended the task, and the run wrote nothing to its owner, a5s
         tells them itself. What to push once the transaction is done."""
-        task = tasking.end(conn, gw.tasks, row, outcome)
+        task = tasking.end(conn, gw.tasks, run_id, row, outcome)
         if not tasking.ended(task) or conn.execute(
                 "select 1 from turns where run_id = %s and role = 'agent' limit 1",
                 (run_id,)).fetchone():
