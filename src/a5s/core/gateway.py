@@ -1240,7 +1240,7 @@ def create_app(gw: Gateway) -> FastAPI:
             rows = conn.execute(
                 "select t.id::text as id, t.instance_id, t.owner, i.definition from tasks t "
                 "join instances i on i.id = t.instance_id where t.id = any(%s::uuid[]) "
-                "and i.status = 'active' order by t.updated_at, t.id", (due,)).fetchall()
+                "and i.status = 'active' order by t.updated_at, t.number", (due,)).fetchall()
         return [{"kind": tasking.KIND, "task": r["id"], "instance": r["instance_id"],
                  "agent": r["definition"], "owner": r["owner"]} for r in rows]
 
@@ -2205,13 +2205,14 @@ def create_app(gw: Gateway) -> FastAPI:
                     proposal, sends = held(conn, requested, tool, args, standing, deciding or [],
                                            seq, traced, change, over, found[0])
         if waits is not None or (again and again["state"] != "held"):
+            where = "task" if counts.work(row) != row["run"] else "run"
             return {"result": {"held": proposals.key(waits), "status": (
                 f"Asked for already, on {waits['proposed_at']:%d %b}: it still waits for a "
                 "decision, on a5s's own page, and a5s makes it once it's approved.")}
                 if waits is not None else {"made": (
-                    "a5s made this same change already, in this run, and doesn't make it twice"
-                    if again["state"] == "made" else "a5s is making this same change now, in "
-                    "this run, and doesn't make it twice")}, "recorded": True}
+                    f"a5s made this same change already, in this {where}, and doesn't make it "
+                    "twice" if again["state"] == "made" else "a5s is making this same change "
+                    f"now, in this {where}, and doesn't make it twice")}, "recorded": True}
         traces.note(current, **{"a5s.run.id": row["run"], "a5s.instance": row["id"],
                                 "a5s.decision": decision.label})
         if decision.held:
@@ -2243,7 +2244,8 @@ def create_app(gw: Gateway) -> FastAPI:
                                                    notes=False)
             result = tool.run(ToolCall(args=given, instance=row["id"], run=row["run"],
                                        acts_for=tuple(row["acts_for"]),
-                                       key=counts.key(row["run"], change) if change else None))
+                                       key=counts.key(counts.work(row), change) if change
+                                       else None))  # once for the run, or for its task
             refused = result.get("error") if action and isinstance(result, dict) else None
             outcome = ({"status": "error", "error": str(refused)[:200], "answered": True}
                        if refused else {"status": "ok", "result_sha256": ledger.digest(result)})
@@ -3015,11 +3017,14 @@ def create_app(gw: Gateway) -> FastAPI:
         tell people. It's marked as making first, so it's never made twice: if a5s stops part
         way, it stays marked, for someone to see (`a5s proposals`)."""
         tool = gw.scenario.tools()[p["tool"]]
+        with db.transaction(gw.url) as conn:  # the run that asked, or its task: the key's
+            asked = conn.execute("select trigger from runs where id = %s", (p["run_id"],)).fetchone()
+        work = counts.work({"run": str(p["run_id"]), "trigger": asked and asked["trigger"]})
         try:
             result = tool.run(ToolCall(args=proposals.resolved(p["args"], values),
                                        instance=p["instance_id"], run=str(p["run_id"]),
                                        acts_for=tuple(p["acts_for"]),
-                                       key=counts.key(str(p["run_id"]), p["change"] or p["digest"])))
+                                       key=counts.key(work, p["change"] or p["digest"])))
             failed = result.get("error") if isinstance(result, dict) else None
             outcome = ({"status": "error", "error": str(failed)[:200]} if failed
                        else {"status": "ok", "result_sha256": ledger.digest(result)})

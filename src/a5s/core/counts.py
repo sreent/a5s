@@ -34,15 +34,31 @@ def change(action: str, records: list[str], args: dict) -> str:
                                      "args": args}).encode()).hexdigest()
 
 
-def key(run: str, change_digest: str) -> str:
-    """The key a tool gets for a change, so a system that knows keys makes it once."""
-    return hashlib.sha256(f"a5s {run} {change_digest}".encode()).hexdigest()
+def work(run: dict) -> str:
+    """The piece of work a run's changes are part of: for a slice of a task, the task, so a
+    change a later slice asks for again, such as after its last one stopped part way, is the
+    same change (core/tasking.py); for any other run, the run."""
+    trigger = run.get("trigger") or {}
+    return str(trigger["task"]) if trigger.get("kind") == "task" and trigger.get("task") \
+        else str(run["run"])
+
+
+def key(work: str, change_digest: str) -> str:
+    """The key a tool gets for a change, so a system that knows keys makes it once: for the
+    piece of work it's part of, a run or a task (`work`)."""
+    return hashlib.sha256(f"a5s {work} {change_digest}".encode()).hexdigest()
 
 
 def before(conn: psycopg.Connection, run: dict, action: str, change_digest: str) -> dict | None:
-    """The same change asked for already in this run, if it was: whether it was held or made,
-    or is being made now. Taken under the type's lock, held until the transaction ends."""
+    """The same change asked for already in this run, or for a slice of a task, in any run of
+    the task, if it was: whether it was held or made, or is being made now, the last most of
+    all. Taken under the type's lock, held until the transaction ends."""
     conn.execute("select pg_advisory_xact_lock(hashtext(%s))", (f"a5s counts {action}",))
+    if (whole := work(run)) != str(run["run"]):  # its task's: any of its runs
+        return conn.execute(
+            "select a.state, a.over from action_counts a join runs r on r.id = a.run_id "
+            "where a.change = %s and r.trigger ->> 'task' = %s "
+            "order by a.state = 'held', a.id limit 1", (change_digest, whole)).fetchone()
     return conn.execute("select state, over from action_counts where run_id = %s and change = %s",
                         (run["run"], change_digest)).fetchone()
 

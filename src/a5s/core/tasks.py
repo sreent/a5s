@@ -218,7 +218,7 @@ class TaskService:
                 "(not_before is null or not_before <= %s)) "
                 "or (status = 'running' and lease_expires_at <= %s)) and not exists "
                 "(select 1 from tasks c where c.parent = t.id and c.status not in "
-                "('done', 'cancelled', 'failed')) order by created_at, id",
+                "('done', 'cancelled', 'failed')) order by created_at, number",
                 (now, now)).fetchall()]
 
     def cancel(self, task_id: str, by: str, within: psycopg.Connection | None = None) -> dict:
