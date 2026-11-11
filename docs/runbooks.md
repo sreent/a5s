@@ -4,7 +4,9 @@
 
 For the team that runs a5s. `a5s status` shows how a5s did over the last day, and the gateway's `/status` gives the same to a dashboard. Each section below says what to do when one of its lines goes wrong. Who's on call, and for what, is [below](#on-call).
 
-To follow one run, find its spans by `a5s.run.id`, where the deployment sends traces (`OTEL_EXPORTER_OTLP_ENDPOINT`), and its entries with `a5s ledger tail`. Traces are for debugging. The ledger is the evidence.
+To follow one run, find its spans by `a5s.run.id`, where the deployment sends traces (`OTEL_EXPORTER_OTLP_ENDPOINT`), and its entries with `a5s ledger tail`, or `a5s runs show <run>`. Traces are for debugging. The ledger is the evidence.
+
+The gateway sends the status's figures to the same endpoint as OpenTelemetry metrics, each minute, named `a5s.*` ([`core/metrics.py`](../src/a5s/core/metrics.py)), so the organisation's monitoring can alert on them: `a5s.status.readable` at 0 when the gateway can't read its status, which is the database ([below](#connections-to-the-database-run-out)); `a5s.queue.oldest` when [messages are waiting](#messages-are-waiting); `a5s.breakers.open` when [a model isn't answering](#runs-fail-or-a-model-isnt-answering); `a5s.changes.stuck` and `a5s.unsealed` when [changes stop part way, or aren't sealed](#changes-wait-or-stop-part-way); and `a5s.instances.not_active` when [an instance isn't active](#an-instance-isnt-active). `a5s agents`, `a5s runs <instance>` and `a5s measures --instance <instance>` show one agent's or instance's part in it.
 
 ## On call
 
