@@ -2085,6 +2085,7 @@ def create_app(gw: Gateway) -> FastAPI:
         return {
             "run": row["run"],
             "instance": row["id"],
+            "agent": row["definition"],  # so a worker pool runs only its own agents' runs
             "acts_for": list(row["acts_for"]),
             "instructions": topics.SUMMARY if own else definition.instructions,
             "context": [] if own else context,

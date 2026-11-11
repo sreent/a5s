@@ -3,6 +3,11 @@
 It holds no credentials, only the run's token. Its model is the gateway's model
 endpoint, and its tools are calls to the gateway, which decides each one. The
 run's LangGraph thread ends with the run: nothing is checkpointed.
+
+As a service, a worker is one of a pool: one agent's own, which runs that agent's
+runs alone, or the shared pool, which runs every agent that has no pool of its own.
+Each refuses a run that isn't its pool's, so a run sent to the wrong one fails, and
+says so, rather than run where it shouldn't.
 """
 
 from __future__ import annotations
@@ -138,6 +143,10 @@ class BudgetSpent(Exception):
     """The core stopped the run's model calls, because a budget is spent (core/budgets.py)."""
 
 
+class WrongPool(Exception):
+    """The run is another worker pool's: its agent has a pool of its own, or isn't this one's."""
+
+
 def stopped(exc: Exception) -> Exception | None:
     """What the model gateway's refusal means for the run, if it's one a5s says in its words."""
     status = getattr(exc, "status_code", None)
@@ -182,13 +191,22 @@ def instructed(instructions: str, context: list[dict]) -> str:
     return f"{instructions}\n\n# From a5s's records, for this run\n\n{told}"
 
 
-def run_agent(gateway_url: str, token: str, history: list[dict]) -> str:
-    """Run the agent on the conversation so far, and return its reply."""
+def run_agent(gateway_url: str, token: str, history: list[dict], *,
+              agents: frozenset[str] = frozenset(),
+              pooled: frozenset[str] = frozenset()) -> str:
+    """Run the agent on the conversation so far, and return its reply: in a worker pool,
+    only if the run's agent is one of `agents`, its pool's own, or, in the shared pool, not
+    one of `pooled`, which have pools of their own."""
     headers = {"Authorization": f"Bearer {token}"}
     with httpx.Client(base_url=gateway_url, headers=headers, timeout=TIMEOUT) as gw:
         info = gw.get("/run")
         info.raise_for_status()
         info = info.json()
+        agent = info.get("agent")
+        if agents and agent not in agents:
+            raise WrongPool(f"this pool runs the {', '.join(sorted(agents))}, not the {agent}")
+        if agent in pooled:
+            raise WrongPool(f"the {agent} runs in a pool of its own, not the shared one")
         if info["model"] is None:
             raise RuntimeError("the instance's model isn't on the approved list")
         if info.get("plain"):  # a5s's own work, such as a summary: one call, with no tools
@@ -231,8 +249,10 @@ class Work(BaseModel):
     history: list[dict[str, str]]
 
 
-def create_app(gateway_url: str) -> Any:
-    """The worker as a service. It holds no secrets: each request brings one run's token."""
+def create_app(gateway_url: str, agents: frozenset[str] = frozenset(),
+               pooled: frozenset[str] = frozenset()) -> Any:
+    """The worker as a service, in a pool that runs `agents`, or, shared, every agent but
+    `pooled`. It holds no secrets: each request brings one run's token."""
     from fastapi import FastAPI
     from fastapi.responses import JSONResponse
 
@@ -241,7 +261,11 @@ def create_app(gateway_url: str) -> Any:
     @app.post("/work")
     def work(body: Work) -> Any:
         try:
-            return {"reply": run_agent(gateway_url, body.token, body.history)}
+            return {"reply": run_agent(gateway_url, body.token, body.history, agents=agents,
+                                        pooled=pooled)}
+        except WrongPool as exc:
+            return JSONResponse(status_code=409, content={"error": "wrong_pool",
+                                                          "detail": str(exc)[:200]})
         except ModelDown as exc:
             return JSONResponse(status_code=503, content={"error": "model_unavailable",
                                                           "detail": str(exc)[:200]})

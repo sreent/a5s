@@ -2,8 +2,9 @@
 # Installs a5s's chart on a Kubernetes cluster of its own, k3s in Docker, which enforces network
 # policies, with Postgres beside it, and checks that: the setup job runs before the parts
 # start; the core runs no release its people haven't approved, and runs it once a job records
-# their signatures; the scheduler reaches the gateway; and the worker reaches the gateway
-# alone, never the database, the channels or the internet.
+# their signatures; the scheduler reaches the gateway; and each worker pool, the shared
+# one and each agent's own, reaches the gateway alone, never the database, the channels,
+# another pool or the internet.
 # Needs the image first: docker build -t a5s:dev .
 set -eu
 cd "$(dirname "$0")/../.."
@@ -110,18 +111,25 @@ echo "The scheduler reaches the gateway."
   -o jsonpath='{.items[0].metadata.labels.a5s\.test/workload-identity}')" = on ]
 echo "The copier's pods carry the labels a cloud's workload identity needs."
 
-reach() {
-  k -n a5s exec deploy/a5s-worker -- python -c \
-    "import socket, sys; socket.create_connection((sys.argv[1], int(sys.argv[2])), 5)" "$1" "$2" \
+reach() {  # from a part's pod: whether it reaches a host and port
+  k -n a5s exec "deploy/$1" -- python -c \
+    "import socket, sys; socket.create_connection((sys.argv[1], int(sys.argv[2])), 5)" "$2" "$3" \
     > /dev/null 2>&1
 }
-reach a5s-gateway 8700 || { echo "The worker can't reach the gateway."; exit 1; }
-for target in "postgres 5432" "a5s-channels 8703" "1.1.1.1 443"; do
-  # shellcheck disable=SC2086 # each is a host and a port
-  if reach $target; then
-    echo "The worker reached $target, which its network policy should stop."
-    exit 1
-  fi
+pools="a5s-worker a5s-worker-assistant a5s-worker-watcher"  # the shared, and each agent's
+for pool in $pools; do
+  reach "$pool" a5s-gateway 8700 || { echo "$pool can't reach the gateway."; exit 1; }
+  other=a5s-worker-watcher  # another pool
+  [ "$pool" = "$other" ] && other=a5s-worker
+  for target in "postgres 5432" "a5s-channels 8703" "$other 8702" "1.1.1.1 443"; do
+    # shellcheck disable=SC2086 # each is a host and a port
+    if reach "$pool" $target; then
+      echo "$pool reached $target, which its network policy should stop."
+      exit 1
+    fi
+  done
+  reach a5s-scheduler "$pool" 8702 || { echo "The scheduler can't reach $pool."; exit 1; }
 done
-echo "The worker reaches the gateway alone: not the database, the channels or the internet."
+echo "Each worker pool reaches the gateway alone: not the database, the channels, another pool"
+echo "or the internet. The scheduler reaches each."
 echo "Kubernetes test passed."

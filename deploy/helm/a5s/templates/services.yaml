@@ -1,4 +1,8 @@
-{{- range $part, $port := dict "gateway" 8700 "channels" 8703 "worker" 8702 }}
+{{- $ports := dict "gateway" 8700 "channels" 8703 "worker" 8702 }}
+{{- range include "a5s.pooled" . | fromJsonArray }}
+{{- $_ := set $ports (printf "worker-%s" .) 8702 }}
+{{- end }}
+{{- range $part, $port := $ports }}
 ---
 apiVersion: v1
 kind: Service

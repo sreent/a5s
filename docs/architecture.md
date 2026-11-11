@@ -37,7 +37,7 @@ flowchart LR
 | --- | --- | --- |
 | Trusted core | Policy, written in Cedar; the gateways for tools, models and outgoing messages; the endpoints where people's messages arrive, which check who sent each one; the credential broker; the ledger writer; masking. Also the data they keep, which changes only through their own interfaces: grants, caps, instance status, run envelopes and held calls. | Approval from outside the team that runs a5s, a protected branch and an attested build ([independence](#independence)) |
 | Services | The scheduler, context, channels, approvals and assurance services, and the register's interface. They change core data only through the core's own interfaces, which apply the rules for loosening. | The team's own review and tests |
-| Workers | Run each piece of work as a Deep Agents run, with no credentials and no network except to the gateways | As services |
+| Workers | Run each piece of work as a Deep Agents run, with no credentials and no network except to the gateways, in pools: each agent with a pool of its own runs there alone, and every other agent in the shared pool ([worker pools](../deploy/helm/README.md#worker-pools)) | As services |
 
 A fault or a compromise in a service or a worker can make an agent slow, wrong or silent. It can't make one do what policy denies, because every call goes through the core.
 
