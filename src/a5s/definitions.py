@@ -26,6 +26,10 @@ DOCUMENT_TOOLS = ("ask_about",)
 ASKING_TOOLS = ("ask_agent",)
 # and for noting what it learns from records, in a run that acts for nobody (core/notebook.py)
 NOTEBOOK_TOOLS = ("note_learned",)
+# and for the long tasks people ask it for, over more than one run (core/tasking.py): offered,
+# confirmed, listed and cancelled in a person's own chat, and kept, in each run of a task
+TASK_TOOLS = ("offer_task", "confirm_task", "list_tasks", "cancel_task")
+SLICE_TOOLS = ("checkpoint_task", "finish_task")
 _DAY_NAMES = {f"{d}{rest}": d for d, rest in zip(DAYS, ("day", "sday", "nesday", "rsday", "day",
                                                        "urday", "day"), strict=True)}
 
@@ -109,6 +113,16 @@ class Context(BaseModel):
     notebook: bool = False
 
 
+class Tasks(BaseModel):
+    """Long tasks the agent takes on for someone, over more than one run, once they say yes
+    (docs/phase-4.md): the most one may spend, and how long it has, from when it's offered."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    budget_tokens: int = Field(400_000, ge=10_000)
+    days: int = Field(3, ge=1, le=30)
+
+
 # Each model call in a run carries the whole context and, beside it, the instructions, the
 # tools, the run's records and its tool results, about BESIDE tokens. A release's budgets must
 # fit CALLS_A_RUN such calls in a run, and ANSWERS_A_DAY answers of two calls each in the part
@@ -151,6 +165,7 @@ class Definition(BaseModel):
     channels: list[str] = ["teams"]
     context: Context = Context()
     budget: Budget = Budget()
+    tasks: Tasks | None = None  # if it takes on long tasks for people
 
     # Filled in from the folder, not from agent.yaml.
     instructions: str = ""
@@ -188,7 +203,8 @@ class Definition(BaseModel):
                 *(RECALL_TOOLS if self.context.recall else ()),
                 *(DOCUMENT_TOOLS if self.context.documents else ()),
                 *(ASKING_TOOLS if self.context.agents else ()),
-                *(NOTEBOOK_TOOLS if self.context.notebook else ())]
+                *(NOTEBOOK_TOOLS if self.context.notebook else ()),
+                *(TASK_TOOLS + SLICE_TOOLS if self.tasks else ())]
 
     @property
     def release_id(self) -> str:

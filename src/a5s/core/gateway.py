@@ -83,6 +83,7 @@ from a5s.core import (
     sealing,
     status,
     studio,
+    tasking,
     topics,
     traces,
     urgent,
@@ -100,7 +101,8 @@ log = logging.getLogger(__name__)
 CORE_TOOLS = {**reminders.TOOLS, **digests.TOOLS, **profiles.TOOLS,  # a5s's own, on its
               **recall.TOOLS, extractor.ASK: extractor.TOOL,  # own records, and asking
               asking.ASK: asking.TOOL,  # another agent (core/asking.py), and the notebook
-              notebook.NOTE: notebook.TOOL}  # of what it learns from records
+              notebook.NOTE: notebook.TOOL,  # of what it learns from records, and long tasks
+              **tasking.TOOLS}  # people ask it for (core/tasking.py)
 RUN_MINUTES = 60  # the longest a run may last [TBC]; its token dies with it
 CHARS_PER_TOKEN = 4  # roughly, for a run's budget for its conversation
 OWN_RUNS = ("summary",)  # a5s's own work on a conversation: no tools, and it writes to nobody
@@ -231,6 +233,11 @@ class Gateway:
     @property
     def url(self) -> str:
         return self.cfg.database_url
+
+    @property
+    def tasks(self) -> Any:
+        """The task engine, as the core runs it: each slice a run (core/tasking.py)."""
+        return tasking.service(self.url, self.clock, RUN_MINUTES)
 
     def settings_in_force(self, conn: psycopg.Connection) -> tuple[Any, str | None]:
         """The latest signed version of the settings, checked again from the bytes that were
@@ -810,6 +817,29 @@ class Gateway:
             opening.reasons.append(f"it waits for {row['person']}'s digest")
         return opening
 
+    def slicing(self, conn: psycopg.Connection, inst: dict, trigger: dict,
+                now: datetime) -> Opening:
+        """A run of the next slice of someone's task, acting for its audience, on its owner's
+        day: the slice itself begins as the run opens, once nothing else stops it."""
+        try:
+            task_id = str(uuid.UUID(str(trigger.get("task"))))
+        except ValueError:
+            raise HTTPException(400, "name the task the run is for") from None
+        row = conn.execute("select * from tasks where id = %s", (task_id,)).fetchone()
+        if row is None:
+            return Opening({"kind": tasking.KIND, "task": task_id}, [], {"task": task_id},
+                           ["there's no such task"])
+        opening = Opening(trigger={"kind": tasking.KIND, "task": task_id, "payer": row["owner"]},
+                          acts_for=list(row["audience"]), args={"task": task_id}, reasons=[])
+        if row["instance_id"] != inst["id"]:
+            opening.reasons.append(f"{inst['id']} didn't take it")
+        if row["status"] not in ("queued", "waiting", "running"):
+            opening.reasons.append(f"it's {row['status']}")
+            opening.used = True
+        if self.scenario.person(row["owner"]) is None:
+            opening.reasons.append("the directory doesn't know whose it is")
+        return opening
+
     def summarising(self, conn: psycopg.Connection, inst: dict, trigger: dict,
                     now: datetime) -> Opening:
         """A run of a5s's own that folds the turns of a topic that no longer fit in its runs
@@ -1059,12 +1089,12 @@ def create_app(gw: Gateway) -> FastAPI:
         kind = body.trigger.get("kind")
         opens = {"message": gw.answering, "obligation": gw.reminding, "schedule": gw.scheduled,
                  "report": gw.reporting, "reminder": gw.following_up, "summary": gw.summarising,
-                 asking.KIND: gw.questioned}
+                 asking.KIND: gw.questioned, tasking.KIND: gw.slicing}
         if kind not in opens:
             raise HTTPException(400, "a run answers a message, reminds someone of an obligation "
                                      "or of what they asked, works on a schedule, tells someone "
-                                     "about their records, keeps a topic's summary, or answers "
-                                     "another agent's question")
+                                     "about their records, keeps a topic's summary, answers "
+                                     "another agent's question, or works on someone's task")
         token = secrets.token_urlsafe(32)
         run_id = str(uuid.uuid4())
         now = gw.clock()
@@ -1110,6 +1140,15 @@ def create_app(gw: Gateway) -> FastAPI:
             if kind == "obligation" and not reasons:
                 conn.execute("update obligations set chased_at = %s, updated_at = %s where id = %s",
                              (now, now, opening.trigger["obligation"]))
+            if kind == tasking.KIND and not reasons:  # the slice begins: its lease the run's time
+                lease, task = tasking.begin(conn, gw.tasks, opening.trigger["task"])
+                if lease is None:  # it can't go on, and its owner hears so if it has ended
+                    reasons.append(task.get("last_error") or "it can't go on now")
+                    if task.get("status") == "failed":
+                        pushing += tell_of_task(conn, task)
+                else:  # its run's model calls are held to what's left of its budget
+                    opening.trigger.update(lease=lease, cap=int(task["tokens_left"]))
+                    opening.task = tasking.brief(task, gw.scenario.person(task["owner"]))
             if not reasons:
                 for who in sorted(set(opening.acts_for)):  # not while they're erased or archived
                     departures.hold(conn, who, shared=True)
@@ -1165,16 +1204,31 @@ def create_app(gw: Gateway) -> FastAPI:
             stale = conn.execute(
                 "update runs set closed_at = now(), outcome = 'abandoned' "
                 "where closed_at is null and expires_at < now() "
-                "returning id::text as run, instance_id, trigger").fetchall()
+                "returning id::text as run, instance_id, trigger, tokens, task_result").fetchall()
             sends = []
             for row in stale:
                 ledger.append(conn, {"kind": "run", "action": "close", "run": row["run"],
                                      "instance": row["instance_id"], "decision": "record",
                                      "outcome": "abandoned"})
                 sends += give_instead(conn, row["trigger"], WHY["abandoned"])
+                if tasking.ended(task := tasking.end(conn, gw.tasks, row, "abandoned")):
+                    sends += tell_of_task(conn, task)  # its slices failed once too often
         push(sends)
         return [{"run": r["run"], "inbound": r["trigger"].get("inbound"),
                  "instance": r["instance_id"]} for r in stale]
+
+    @app.post("/tasks/sweep", dependencies=[Depends(service)])
+    def tasks_sweep() -> list[dict]:
+        """The tasks whose next slice is due, each for the scheduler to work on, as a run of
+        its instance's (core/tasking.py)."""
+        with db.transaction(gw.url) as conn:
+            due = gw.tasks.due(gw.clock(), within=conn)
+            rows = conn.execute(
+                "select t.id::text as id, t.instance_id, t.owner, i.definition from tasks t "
+                "join instances i on i.id = t.instance_id where t.id = any(%s::uuid[]) "
+                "and i.status = 'active' order by t.updated_at, t.id", (due,)).fetchall()
+        return [{"kind": tasking.KIND, "task": r["id"], "instance": r["instance_id"],
+                 "agent": r["definition"], "owner": r["owner"]} for r in rows]
 
     @app.post("/runs/{run_id}/close", dependencies=[Depends(service)])
     def close_run(run_id: str, body: CloseRun) -> dict:
@@ -1186,7 +1240,7 @@ def create_app(gw: Gateway) -> FastAPI:
         with db.transaction(gw.url) as conn:
             row = conn.execute(
                 "update runs set closed_at = now(), outcome = %s where id = %s and closed_at is null "
-                "returning instance_id, trigger",
+                "returning instance_id, trigger, tokens, task_result",
                 (ended, run_id),
             ).fetchone()
             if row is None:
@@ -1196,8 +1250,34 @@ def create_app(gw: Gateway) -> FastAPI:
                                  "outcome": ended})
             sends = [] if ended.startswith("done") else give_instead(conn, row["trigger"],
                                                                       WHY.get(ended))
+            task = tasking.end(conn, gw.tasks, row, ended)  # a task's slice, and what it spent
+            if tasking.ended(task) and not conn.execute(  # its owner hears, if its run didn't
+                    "select 1 from turns where run_id = %s and role = 'agent' limit 1",
+                    (run_id,)).fetchone():
+                sends += tell_of_task(conn, task)
         push(sends)
         return {"closed": run_id}
+
+    def tell_of_task(conn: psycopg.Connection, task: dict) -> list[int | None]:
+        """a5s's own word to a task's owner that it's done, needs them, or has stopped, when
+        its agent's run didn't say so: never the agent's own words. What to push once the
+        transaction is done."""
+        row = conn.execute("select t.*, i.definition as agent from tasks t join instances i "
+                           "on i.id = t.instance_id where t.id = %s", (task["id"],)).fetchone()
+        person = gw.scenario.person(row["owner"]) if row else None
+        if (row is None or row["status"] not in ("done", "blocked", "failed") or person is None
+                or not person.in_audience):
+            return []
+        text = tasking.notice(dict(row), row["agent"])
+        ledger.append(conn, {"kind": "notice", "action": "task", "run": None,
+                             "instance": row["instance_id"], "acts_for": [person.id],
+                             "decision": "record", "args": {
+                                 "task": str(row["id"]), "status": row["status"],
+                                 "chars": len(text),
+                                 "sha256": hashlib.sha256(text.encode()).hexdigest()}})
+        noted(conn, person.id, row["agent"], text, None)
+        return [outbound(conn, gw.reach(conn, person.id, row["agent"]), person.id, text,
+                         instance=row["instance_id"], agent=row["agent"])]
 
     def give_instead(conn: psycopg.Connection, trigger: dict, why: str | None) -> list[int | None]:
         """Give a reminder or a chase that its agent's run couldn't, in a5s's own words, so
@@ -2539,7 +2619,8 @@ def create_app(gw: Gateway) -> FastAPI:
         it would break is a denial, in words the agent passes on."""
         try:
             with db.transaction(gw.url) as conn:
-                result = core.run(coretools.Call(conn, row, args, gw.clock(), gw.scenario))
+                result = core.run(coretools.Call(conn, row, args, gw.clock(), gw.scenario,
+                                                 gw.definitions.get(row["definition"])))
         except coretools.Refused as exc:
             record({"kind": "tool", "action": core.name, "run": row["run"], "instance": row["id"],
                     "decision": "record", "of": seq,
@@ -2589,6 +2670,12 @@ def create_app(gw: Gateway) -> FastAPI:
             if row["trigger"].get("kind") in OWN_RUNS:
                 decision = Decision(False, ("a5s-runs-write-to-nobody",), explanations=(
                     "a5s's own runs, such as keeping a summary, write to nobody",))
+            elif row["trigger"].get("kind") == tasking.KIND and conn.execute(
+                    "select task_result ->> 'status' as said from runs where id = %s",
+                    (row["run"],)).fetchone()["said"] not in ("done", "blocked"):
+                decision = Decision(False, (tasking.HELD,), explanations=(
+                    ("a task's run writes to its owner only once it's done or needs them, and "
+                     "has said so with finish_task"),))
             elif row["trigger"].get("kind") == asking.KIND:
                 decision = Decision(False, ("answers-go-to-the-asker",), explanations=(
                     ("a run that answers another agent's question writes to nobody: its answer "

@@ -80,9 +80,12 @@ def payer(acts_for: list[str], trigger: dict | None) -> str | None:
 def refused(conn: psycopg.Connection, scenario: Scenario, budget: Budget, instance: str,
             acts_for: list[str], kind: str, tokens: int, now: datetime,
             trigger: dict | None = None) -> str | None:
-    """Why a run, or its next model call, would go past its budgets, if it would."""
+    """Why a run, or its next model call, would go past its budgets, if it would: a task's
+    run is held to what's left of the task's own, as its slice began (core/tasking.py)."""
     if tokens >= budget.per_run:
         return f"this run has used its budget of {budget.per_run:,} tokens"
+    if isinstance(cap := (trigger or {}).get("cap"), int) and tokens >= cap:
+        return f"this run has used what its task had left, {cap:,} tokens"
     if (person := payer(acts_for, trigger)) is None:
         return None
     row = conn.execute("select tokens from spend where instance_id = %s and person = %s and day = %s",

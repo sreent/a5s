@@ -11,8 +11,9 @@ the message waits and is tried again later.
 
 Every minute, it also asks the core what falls due: obligations whose agents
 should remind their people, and reports with something to tell someone, each
-taking the person's conversation in the same way, and schedules to fire, each
-taking a lease of its own. The core decides each run, and escalates overdue
+taking the person's conversation in the same way, and schedules to fire, and
+the next slices of people's tasks, each taking a lease of its own, so a task at
+work never holds up its owner's own chat. The core decides each run, and escalates overdue
 obligations itself. What can't run now is due
 again at the next sweep. The scheduler has no port of its own, so nothing can
 send it work but the core.
@@ -36,7 +37,7 @@ import psycopg
 from a5s import db
 from a5s.config import Config
 from a5s.contract import INSTANCE_APPROVER, PART_OWNER, Scenario
-from a5s.core import groups, registry
+from a5s.core import groups, registry, tasking
 from a5s.services import context, summaries
 from a5s.worker import BudgetSpent, ModelDown, run_agent
 
@@ -193,9 +194,11 @@ class Scheduler:
 
     def _take(self, item: dict) -> dict | None:
         """What's due, with what it needs leased: the person's conversation, for a reminder or
-        a report, or the schedule itself."""
+        a report, or the schedule, or the task, itself."""
         if item["kind"] in ("obligation", "report", "reminder"):
             key = f"{item['person']}/{item['agent']}/{context.GENERAL}"
+        elif item["kind"] == tasking.KIND:
+            key = f"task/{item['task']}"
         else:
             key = f"schedule/{item['instance']}/{item['schedule']}"
         holder = str(uuid.uuid4())
@@ -474,6 +477,10 @@ class Scheduler:
             reply = self.worker(self.cfg.gateway_url, token, [*history, asked])
             if person and not reply.strip():
                 raise RuntimeError("the agent's reply was empty")
+            if (kind == tasking.KIND and reply.strip()  # to its owner, once it's done or needs
+                    and not self._finished(claim, run, token, reply)):  # them
+                outcome = "reply denied"
+                return
             if person:  # the agent writes to the person it reminds, and to nobody else
                 sent = self.gw.post("/run/messages", headers={"Authorization": f"Bearer {token}"},
                                     json={"to": person, "text": reply})
@@ -502,6 +509,24 @@ class Scheduler:
         if person and outcome == "done":  # once the person has been told
             self._fold(claim["instance"], person, agent, topic, opened.json().get("history_chars"))
 
+    def _finished(self, claim: dict, run: str, token: str, reply: str) -> bool:
+        """Give a task's owner what its run wrote them, if the core lets it, now that the task
+        is done or needs them: kept in their conversation, as the agent's. Whether nothing was
+        denied: a task still at work writes to nobody, which isn't a denial."""
+        owner, agent = claim["owner"], claim["agent"]
+        sent = self.gw.post("/run/messages", headers={"Authorization": f"Bearer {token}"},
+                            json={"to": owner, "text": reply})
+        if sent.status_code == 403:
+            return tasking.HELD in (sent.json().get("reasons") or [])
+        sent.raise_for_status()
+        with db.transaction(self.cfg.database_url) as conn:
+            context.add_turn(conn, person=owner, agent=agent, role="agent",
+                             content=sent.json()["text"], run=run, topic=context.GENERAL)
+            if note := sent.json().get("note"):
+                context.add_turn(conn, person=owner, agent=agent, role="notice", content=note,
+                                 run=run, topic=context.GENERAL)
+        return True
+
     # Working through the queue, and what falls due
 
     def answer_waiting(self) -> int:
@@ -517,7 +542,8 @@ class Scheduler:
         people, schedules to fire, and reports with something to tell. The core escalates
         overdue obligations as it works this out."""
         found: list[dict] = []
-        for path in ("/obligations/sweep", "/schedules/sweep", "/reports/sweep", "/reminders/sweep"):
+        for path in ("/obligations/sweep", "/schedules/sweep", "/reports/sweep",
+                     "/reminders/sweep", "/tasks/sweep"):
             try:
                 response = self.gw.post(path, headers=self.service)
                 response.raise_for_status()
