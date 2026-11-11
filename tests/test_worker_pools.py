@@ -109,6 +109,8 @@ def test_an_agent_whose_runs_hang_never_holds_up_another_agents(stack):
     stack.model.reply("Hello from the watcher.")
     scheduler = stack.scheduler(pools={"assistant": hung})  # the watcher runs in the shared one
     scheduler.cfg = replace(scheduler.cfg, worker_slots={"assistant": 1})
+    scheduler.due = list  # its sweeps find nothing due, such as the watcher's reports,
+    # whose runs would race the messages for the model's answer
     first, second = stack.send("Hello", "ana"), stack.send("Hello", "ben")  # two of its runs
     asked = stack.send("Hello", "ana", agent="watcher")
     listening = threading.Thread(target=scheduler.listen, args=(stop,),
@@ -137,6 +139,7 @@ def test_a_scheduler_asked_to_stop_finishes_its_runs_and_takes_no_more(stack, ca
     caplog.set_level(logging.INFO, logger="a5s.services.scheduler")
     first = stack.send("Hello", "ana")
     scheduler, stop = stack.scheduler(worker=slow), cli._stopping()
+    scheduler.due = list  # its sweeps find nothing due: only the messages here
     listening = threading.Thread(target=scheduler.listen, args=(stop,),
                                  kwargs={"workers": 2, "sweep_every": 3600}, daemon=True)
     try:
