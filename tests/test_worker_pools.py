@@ -2,7 +2,8 @@
 and every other agent in the shared pool. The scheduler sends each run to its agent's pool,
 and gives each pool slots of its own, so no agent's runs, however slow, take the slots
 another's need. Each pool refuses a run that isn't its own, so a run sent to the wrong one
-fails, and says so, rather than run where it shouldn't."""
+fails, and says so, rather than run where it shouldn't. A question one agent asks another
+is answered in the asker's pool, as part of its run."""
 
 import logging
 import signal
@@ -17,6 +18,7 @@ from a5s import cli, worker
 from a5s.config import names, pools
 from a5s.services.scheduler import Slots, remote_worker
 from conftest import free_port, serve
+from test_asking import ASKED, may_ask
 
 
 def test_each_agent_runs_in_its_own_pool_and_any_other_in_the_shared_one(stack):
@@ -155,3 +157,18 @@ def test_a_scheduler_asked_to_stop_finishes_its_runs_and_takes_no_more(stack, ca
         signal.signal(signal.SIGTERM, signal.SIG_DFL)
         release.set()
         stop.set()
+
+
+def test_a_question_one_agent_asks_another_is_answered_in_the_askers_pool(stack):
+    may_ask(stack)
+    stack.model.reply(None, ("ask_agent", {"agent": "watcher", "question": ASKED}))
+    stack.model.reply("Q-1001 hasn't changed since you were last told.")  # the watcher's run
+    stack.model.reply("The watcher says Q-1001 hasn't changed lately.")
+
+    def shared(_url: str, _token: str, _history: list[dict]) -> str:
+        raise AssertionError("the shared pool ran it")
+
+    with serve(worker.create_app(stack.url, agents=frozenset({"assistant"})), free_port()) as own:
+        scheduler = stack.scheduler(worker=shared, pools={"assistant": remote_worker(own)})
+        assert stack.say(ASKED, scheduler=scheduler) == (
+            "The watcher says Q-1001 hasn't changed lately.")  # its run, in the assistant's pool

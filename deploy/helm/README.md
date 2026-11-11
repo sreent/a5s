@@ -32,7 +32,7 @@ Each part runs as its own service account, which can't reach Kubernetes' own API
 
 ## Worker pools
 
-Each agent `workers.pools` names runs in a pool of its own, `a5s-worker-<agent>`: a Deployment with its own replicas and resources, which the scheduler gives slots of their own, the most of the agent's runs it works on there at once. So a burst of one agent's work, such as the watcher's reports, never slows another's chats, and a fault in one pool's process reaches only its agent's runs in flight. Every other agent runs in the shared pool, `a5s-worker`. Each pool refuses any other agent's runs, so a run sent to the wrong one fails, and says so. No pool reaches another.
+Each agent `workers.pools` names runs in a pool of its own, `a5s-worker-<agent>`: a Deployment with its own replicas and resources, which the scheduler gives slots of their own, the most of the agent's runs it works on there at once. So a burst of one agent's work, such as the watcher's reports, never slows another's chats, and a fault in one pool's process reaches only its agent's runs in flight. Every other agent runs in the shared pool, `a5s-worker`. Each pool refuses any other agent's runs, so a run sent to the wrong one fails, and says so. No pool reaches another. A question one agent asks another, with `ask_agent`, is answered in the asker's pool, as part of the run that asked, so no question waits on another pool's slots.
 
 ```yaml
 workers:

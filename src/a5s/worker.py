@@ -7,7 +7,8 @@ run's LangGraph thread ends with the run: nothing is checkpointed.
 As a service, a worker is one of a pool: one agent's own, which runs that agent's
 runs alone, or the shared pool, which runs every agent that has no pool of its own.
 Each refuses a run that isn't its pool's, so a run sent to the wrong one fails, and
-says so, rather than run where it shouldn't.
+says so, rather than run where it shouldn't. A question its agent asks another is
+answered here, as part of the run that asked, so no question waits on another pool.
 """
 
 from __future__ import annotations
@@ -108,7 +109,7 @@ def answered(gateway_url: str, asked: dict[str, str]) -> dict[str, Any]:
     its answer, or why there's none: what the run that asked gets back. The token is the
     other run's own, so nothing of this run's reaches it but the question."""
     problem, reply = None, ""
-    try:
+    try:  # in this pool, whichever agent was asked: its answer is part of the asker's run
         reply = run_agent(gateway_url.rstrip("/"), asked["token"], [{
             "role": "task", "content": asked["task"], "at": datetime.now(UTC).isoformat()}])
     except ModelDown:
