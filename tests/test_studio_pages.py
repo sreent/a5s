@@ -98,3 +98,10 @@ def test_someone_watches_an_instance_in_the_browser(stack, approving, provider, 
     assert "invoice" not in page.inner_text("#entries")  # what was said, by its hash alone
     page.click("#to-instance")
     assert page.is_visible("#instance") and not page.is_visible("#run")
+
+
+def test_the_channels_apps_openapi_document_describes_the_peoples_api(approving):
+    paths = set(httpx.get(f"{approving}/openapi.json", timeout=30).json()["paths"])
+    assert {"/studio/api", "/studio/api/agents/{agent}", "/studio/api/agents/{agent}/measures",
+            "/studio/api/instances/{instance}", "/studio/api/instances/{instance}/runs",
+            "/studio/api/runs/{run_id}"} <= paths

@@ -56,7 +56,8 @@ Someone who leaves is archived a day after the directory stops naming them, or a
 - **Deciders:** the changes they may decide, on the core's page, signed in afresh for each decision.
 - **Graders:** samples of records they may see, on the core's page. Never from the team that built the agent, nor anyone a change was for or who decided it.
 - **An instance's owner:** its notes whose records they may see, on the core's page.
-- **The team that runs a5s:** the status and the measures, which count people and never name them; the held changes that wait, by whom they're for (`a5s proposals`); and the ledger, by ids and hashes.
+- **The people who run an instance, own its agent, own or decide for one of its parts, or approve instances:** on the studio's page, `/studio/`, its figures, which count people and never name them, and the runs whose every record they may see: when each ran, what started it, whom it acted for, by name, the keys of the records it read, its tool calls and their decisions, and its ledger entries, where what was said is only by hash. [TBC: the officer agrees, before the pilot's stage 1, that these people see whom each run acted for, as deciders and graders see whom a change was for.]
+- **The team that runs a5s:** the status and the measures, which count people and never name them; the held changes that wait, by whom they're for (`a5s proposals`); the ledger, by ids and hashes; and every instance's runs, as the studio shows them (`a5s runs`).
 - **Anyone with access to the database itself** sees everything a5s keeps. [TBC: who, with the cloud's access reviews, and its audit log of who connected.]
 - **The data protection officer:** the record of whose archive is which, and for a request to see someone's data, all a5s keeps about them, which someone from the team that runs a5s carries out for them.
 

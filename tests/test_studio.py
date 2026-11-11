@@ -133,3 +133,10 @@ def test_the_command_line_says_the_same(stack, monkeypatch, capsys):
     assert "search_records: allow (" in capsys.readouterr().out
     cli.main(["measures", "--instance", "assistant-finance"])
     assert capsys.readouterr().out.strip()
+
+
+def test_the_cores_openapi_document_describes_the_studios_api(stack):
+    paths = set(get(stack, "/openapi.json").json()["paths"])
+    assert {"/studio/agents", "/studio/agents/{agent}", "/studio/agents/{agent}/measures",
+            "/studio/instances/{instance}/measures", "/studio/instances/{instance}/runs",
+            "/studio/runs/{run_id}"} <= paths

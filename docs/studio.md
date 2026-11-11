@@ -1,10 +1,19 @@
 # The studio: build, try, publish, run and watch agents
 
-**Status:** Proposed. Step 1 is to be built alongside the pilot; authoring waits for the pilot's evidence · **Under:** [Agent model](agent-model.md)
+**Status:** Step 1 is built: the catalogue, the dashboards and each run's page, read only, with their API and command line ([progress](#progress)). Authoring waits for the pilot's evidence · **Under:** [Agent model](agent-model.md)
 
 Today, people build and run a5s's agents in code: a folder for each agent, `a5s pin`, a release signed with `a5s release`, settings signed with `a5s sign`, and `a5s status` and `a5s measures` to see how they do. A few pages help: the settings app, and the pages for approving, deciding, grading, the notebook and the officer. The studio gives the people who make and run agents what a maker studio such as Microsoft Copilot Studio gives them: one place to create an agent, try it, publish it, choose where it runs, and watch how it does.
 
 It doesn't add a second way to change a5s. Everything the studio does is a change code can make too: a commit to the agents' folder, a release signed by the same people, a settings version signed by the same owners. The API comes first, and the studio is one client of it, as code, the command line and CI are.
+
+## Progress
+
+- [`core/studio.py`](../src/a5s/core/studio.py) works out what step 1 shows: each agent of the release with its tools and what each reads, writes or changes, and its instances; how an agent's or an instance's runs are doing, from the measures counted for those instances alone, with how runs ended, what was denied and why, and the reports sent; an instance's runs, a page at a time; and what one run did, with each tool call's decision and its ledger entries.
+- The core serves it to code, the command line and CI, behind the service token, under `/studio/`: `a5s agents`, `a5s agents show <agent>`, `a5s runs <instance>`, `a5s runs show <run>`, and `a5s measures --agent <agent>` or `--instance <instance>`.
+- People see it on the channels app's page, `/studio/`, signed in as on the notebook's, through its own API under `/studio/api/`, from the same module. The chart lets only the worker and the scheduler reach the core, so the channels app reads the figures as its own role, which migration `0044_studio.sql` grants only the columns they count and each run's own record: never what people said, what a reminder, an obligation or a question is about, or a run's token.
+- Someone may watch an instance if they run it, as its owner or deputy, own its agent, own or decide for one of its parts, or approve instances. Of its runs, they see those whose every record they may see, and how many others there are.
+- Both apps describe these endpoints in their OpenAPI documents, at `/openapi.json`.
+- Still to come in step 1: a Python client, and operators' figures, with no personal data, for the organisation's monitoring. The cap for each type of action stays on the grading page, where the core checks its seal.
 
 ## What it keeps
 
@@ -53,7 +62,7 @@ That's where most of a new use case's work is. In the [master data](../scenarios
 Each step ends with something running and its tests passing, and ships its API before its pages.
 
 1. **The catalogue and the dashboards, read only.**
-   - The API: each agent and instance, its release and figures, and each run, for the people who may see them, under the core's management API in its OpenAPI document. The command line on top of it: `a5s agents`, `a5s agents show <agent>`, and `a5s measures` for one agent or instance.
+   - The API: each agent and instance, its release and figures, and each run. The core's, behind the service token, for code, the command line and CI, and the channels app's, for the people who may see them, signed in, from the same module, each in its app's OpenAPI document. The command line on top of the core's: `a5s agents`, `a5s agents show <agent>`, `a5s runs`, and `a5s measures` for one agent or instance.
    - The catalogue: each agent's definition, release and owner; its tools, with what each reads, writes or changes; its knowledge, skills, triggers, schedules, reports, budgets and channels; and its instances, with whom they serve, their parts and levels.
    - A dashboard for each agent and instance, over a period: runs and how they ended, tokens and cost with the share cached, denials and why, held changes and their decisions, grades and the cap, chases and escalations, reports sent, and who came back. It shows the same figures as `a5s measures` and `a5s status`.
    - A page for each run: what started it, whom it acted for, each tool call with the policy's decision, and its ledger entries, as `a5s ledger` shows them.
