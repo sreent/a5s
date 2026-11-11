@@ -66,9 +66,23 @@ def test_what_goes_to_a_part_that_stays_down_fails_once_its_time_is_up():
     assert 0.5 < time.monotonic() - began < 10
 
 
+def whole(conn: socket.socket) -> bytes:
+    """All of a request: its head, and as much of a body as it says it has."""
+    got = b""
+    while b"\r\n\r\n" not in got and (chunk := conn.recv(65536)):
+        got += chunk
+    head, _, body = got.partition(b"\r\n\r\n")
+    length = next((int(line.split(b":", 1)[1]) for line in head.split(b"\r\n")
+                   if line.lower().startswith(b"content-length:")), 0)
+    while len(body) < length and (chunk := conn.recv(65536)):
+        body += chunk
+    return head + b"\r\n\r\n" + body
+
+
 def test_what_a_part_got_is_never_sent_again():
     """A part that took the request and stopped before answering, as one killed part way
-    would, may have done it: it fails at once, rather than be done twice."""
+    would, may have done it: it fails at once, rather than be done twice, however the drop
+    reaches the sender, as a close or a reset."""
     taken = []
     with socket.socket() as listening:
         listening.bind(("127.0.0.1", 0))
@@ -81,14 +95,14 @@ def test_what_a_part_got_is_never_sent_again():
                 except OSError:
                     return
                 with conn:
-                    taken.append(conn.recv(65536))
+                    taken.append(whole(conn))
 
         threading.Thread(target=dropping, daemon=True).start()
         port = listening.getsockname()[1]
-        with reach.client(20) as c, pytest.raises(httpx.RemoteProtocolError):
+        with reach.client(20) as c, pytest.raises((httpx.RemoteProtocolError, httpx.ReadError)):
             c.post(f"http://127.0.0.1:{port}/", json={"change": 1})
         time.sleep(0.5)
-    assert len(taken) == 1
+    assert len(taken) == 1 and taken[0].endswith(b'{"change":1}')
 
 
 class Restartable:
