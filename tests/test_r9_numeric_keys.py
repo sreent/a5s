@@ -1,11 +1,7 @@
-"""Round 9, reviewer C: a scratch helpdesk of my own (tests/r9_c/helpdesk_scenario.py), written
-against the contract alone and plugged in as tests/test_master_data.py plugs in master data.
-
-Its tickets are numbered in plain digits, as Zendesk's are, so its record_pattern is \\b\\d{6}\\b.
-The contract says the pattern is for "its records' keys", which a5s finds in what people and
-tools say. The studio also runs it over a5s's own JSON, each ledger entry's time included,
-whose microseconds are six digits: so every run's page names "records" that don't exist, which
-nobody may see, and the studio refuses every run's page to everyone, the part's own owner too."""
+"""Round 9 of the critique: a scenario whose keys are plain digits, as a help desk's tickets
+are (tests/helpdesk_scenario.py, written against the contract alone). The studio hides a run
+by the keys it handled, which a5s keeps with the run, never by a pattern run over a5s's own
+JSON, whose times and ids hold digits too (docs/critique.md, round 9)."""
 
 from __future__ import annotations
 
@@ -55,18 +51,6 @@ def test_the_parts_owner_opens_a_run_on_a_ticket_she_may_see(help_desk, provider
                 "Authorization": f"Bearer {provider.id_token(person='olu')}"})
         [run] = api("/studio/api/instances/help-payroll/runs").json()["runs"]  # on the list
         page = api(f"/studio/api/runs/{run['run']}")
-    from a5s.core import studio
-    named = studio._named(help_desk.gateway.scenario, run["trigger"], help_desk.ledger(run["run"]))
-    print(page.status_code, page.text[:120], sorted(named))
-    assert named - {"104233"} and not any(help_desk.gateway.scenario.sees("olu", k)
-                                          for k in named - {"104233"})  # tickets that aren't
-    # FAILS: 404 "there's no such run that you may see", since the ledger's times hold six
-    # digits, which the studio takes for tickets that don't exist
-    assert page.status_code == 200, page.text
+    assert page.status_code == 200, page.text  # by the keys the run handled, not a pattern
+    assert page.json()["records"] == ["104233"]  # over a5s's own times and ids
 
-
-import pytest as _pytest
-
-# Round 9: this reproduces a finding still to fix. Its test moves beside the code it covers
-# once its fix lands, and leaves here.
-pytestmark = _pytest.mark.xfail(strict=True, reason="round 9: a finding still to fix")

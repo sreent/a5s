@@ -1,6 +1,6 @@
-"""Round 9, reviewer B: the studio's queries on a ledger and a runs table of a real size, and
-paging (core/studio.py, a5s/client.py). The ledger is append-only and kept as evidence, and
-runs are kept as evidence too, so both only grow."""
+"""Round 9 of the critique: the studio's queries on a ledger and a runs table of a real size,
+which both only grow, and paging by where the last page ended (core/studio.py,
+a5s/client.py; docs/critique.md, round 9)."""
 
 from __future__ import annotations
 
@@ -47,9 +47,8 @@ def answered(stack) -> str:
 
 
 def test_a_runs_page_reads_its_own_entries_not_the_whole_ledger(stack):
-    """GET /studio/runs/{run} and /studio/api/runs/{run} call ledger.entries(run=...), the
-    first callers of it: `where run_id = %s order by seq`, and the ledger has no index on
-    run_id, so each page view reads every entry the deployment ever made."""
+    """A run's page reads the ledger by run_id, by an index, not every entry the deployment
+    ever made."""
     run = answered(stack)
     seed_ledger(stack.admin, 1_000_000, OTHER_RUNS,
                 "json_build_object('kind', 'tool', 'action', 'search_records', 'decision', "
@@ -70,10 +69,8 @@ def test_a_runs_page_reads_its_own_entries_not_the_whole_ledger(stack):
 
 
 def test_an_instances_denials_arent_lost_behind_another_instances(stack):
-    """figures() takes the deployment's newest 10,000 denials and then keeps the instance's
-    and the window's: an instance's denials over 30 days drop out of its dashboard, silently,
-    once the deployment has 10,000 newer ones (about 333 a day across everything, such as a
-    noisy group chat's turn-aways or another agent's schema slips)."""
+    """An instance's denials are read by instance, so another instance's newer ones, however
+    many, don't push them out of its dashboard."""
     with db.transaction(stack.admin) as conn:
         top = conn.execute("select coalesce(max(seq), 0) as n from ledger").fetchone()["n"]
     deny = ("json_build_object('kind', 'tool', 'action', 'change_due_date', 'decision', 'deny', "
@@ -100,8 +97,8 @@ def seed_runs(admin: str, n: int, at: str | None = None) -> None:
 
 
 def test_paging_through_every_run_gives_every_run(stack):
-    """Client.each_run stops when a page has fewer runs than it asked for, but the core gives
-    200 at most, so a page of 500 ends the walk after 200."""
+    """Client.each_run walks until the core says there are no more, whatever the page's size,
+    though the core gives 200 at most."""
     seed_runs(stack.admin, 250)
     with Client(stack.url, SERVICE_TOKEN) as core:
         every = list(core.each_run("assistant-finance", page=500))
@@ -109,16 +106,20 @@ def test_paging_through_every_run_gives_every_run(stack):
 
 
 def test_paging_doesnt_skip_runs_opened_at_the_same_moment(stack):
-    """Pages go by opened_at < before, with no tie-breaker: a run opened at the same moment
-    as the last of a page is on neither page."""
+    """Pages go by when a run opened and its id, so runs opened at the same moment are each on
+    one page."""
     seed_runs(stack.admin, 3, at="2026-10-27T09:00:00+00:00")
     with Client(stack.url, SERVICE_TOKEN) as core:
         every = list(core.each_run("assistant-finance", page=2))
     assert len({r["run"] for r in every}) == 3, f"{len(every)} of 3 runs"
 
 
-import pytest as _pytest
 
-# Round 9: this reproduces a finding still to fix. Its test moves beside the code it covers
-# once its fix lands, and leaves here.
-pytestmark = _pytest.mark.xfail(strict=True, reason="round 9: a finding still to fix")
+def test_paging_from_where_no_page_ended_is_refused(stack, approving, provider):
+    from test_studio_pages import signed_in
+    api = signed_in(approving, provider)
+    with stack.client() as c:
+        for bad in ("yesterday", "2026-10-27T09:00:00+00:00|not-a-run"):
+            path = f"/studio/instances/assistant-finance/runs?before={bad}"
+            assert c.get(path).status_code == 400, bad
+            assert api(f"/studio/api{path.removeprefix('/studio')}", "ana").status_code == 400

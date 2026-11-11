@@ -110,20 +110,21 @@ class Client:
         """One agent as its release defines it, its instructions included, and where it runs."""
         return self.get(f"/studio/agents/{_part(agent)}")
 
-    def runs(self, instance: str, *, before: datetime | str | None = None,
-             limit: int = RUNS) -> dict:
-        """A page of an instance's runs, newest first, opened before `before`, if given."""
+    def runs(self, instance: str, *, before: str | None = None, limit: int = RUNS) -> dict:
+        """A page of an instance's runs, newest first: after where the page before ended, its
+        `before`, if given."""
         return self.get(f"/studio/instances/{_part(instance)}/runs", before=before, limit=limit)
 
     def each_run(self, instance: str, *, page: int = RUNS) -> Iterator[dict]:
-        """Every run of an instance, newest first, a page at a time."""
+        """Every run of an instance, newest first, a page at a time, until the core says
+        there are no more."""
         before = None
         while True:
             found = self.runs(instance, before=before, limit=page)
             yield from found["runs"]
-            if len(found["runs"]) < page or not found["before"]:
-                return
             before = found["before"]
+            if not before:
+                return
 
     def run(self, run: str) -> dict:
         """What one run did, with its entries in the ledger."""

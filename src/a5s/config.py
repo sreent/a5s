@@ -103,6 +103,9 @@ class Config:
     # Whether the status names deciders whose approvals are graded wrong far more often than
     # others': profiling people, so only once the data protection officer agrees [TBC: O6].
     flag_rubber_stamps: bool = False
+    # Whether the studio's pages name whom each run acted for: off until the data protection
+    # officer agrees (docs/data-protection.md); until then a run says how many people
+    studio_names: bool = False
 
     @property
     def agents_dir(self) -> Path:
@@ -148,4 +151,5 @@ class Config:
             public_url=os.environ.get("A5S_PUBLIC_URL", "").rstrip("/") or None,
             flag_rubber_stamps=os.environ.get("A5S_FLAG_RUBBER_STAMPS", "").lower()
             in ("1", "true", "yes"),
+            studio_names=os.environ.get("A5S_STUDIO_NAMES", "").lower() in ("1", "true", "yes"),
         )

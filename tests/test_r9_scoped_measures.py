@@ -1,7 +1,6 @@
-"""Round 9, reviewer B: the measures scoped to an agent or an instance (core/measures.py, for
-the studio's dashboards), against the deployment's. With two instances of the assistant, as
-the studio's own tests make (test_studio_pages.with_ops), each instance's figures should be
-its own, and together they should come to the agent's and the deployment's."""
+"""Round 9 of the critique: the measures scoped to an agent or an instance (core/measures.py)
+are each instance's own, and together they come to the agent's and the deployment's
+(docs/critique.md, round 9)."""
 
 from __future__ import annotations
 
@@ -88,9 +87,3 @@ def test_an_agents_figures_and_a5s_measures_agree_on_whom_it_serves_while_its_su
     agent = measures(stack, "/studio/agents/assistant/measures")["returning"]
     assert agent == whole, f"a5s measures: {whole}; the assistant's dashboard: {agent}"
 
-
-import pytest as _pytest
-
-# Round 9: this reproduces a finding still to fix. Its test moves beside the code it covers
-# once its fix lands, and leaves here.
-pytestmark = _pytest.mark.xfail(strict=True, reason="round 9: a finding still to fix")

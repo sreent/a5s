@@ -414,10 +414,10 @@ class Scheduler:
             with db.transaction(self.cfg.database_url) as conn:  # folded, either way, once
                 summaries.keep(conn, person, agent, topic, body, turns[-1]["id"], run,
                                summaries.heard_by(previous, turns))
-            if problems:
-                log.warning("kept %s's summary for %s without what code couldn't trace: %s",
-                            topic, person, "; ".join(problems))
-            outcome = "done" if not problems else "done, leaving out: " + "; ".join(problems)
+            if problems:  # how many, never what: they're what someone said
+                log.warning("kept %s's summary for %s without %d things code couldn't trace",
+                            topic, person, len(problems))
+            outcome = "done" if not problems else "done, leaving some out"
         except ModelDown:
             outcome = "model unavailable"
         except BudgetSpent:  # the turns wait to be folded in, with the next day's budget

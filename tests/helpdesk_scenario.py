@@ -1,5 +1,5 @@
-"""Reviewer C's scratch helpdesk, written against the contract alone (src/a5s/contract.py):
-tickets numbered as Zendesk numbers them, in plain digits, so its key pattern is \\b\\d{6}\\b."""
+"""A help desk written against the contract alone (src/a5s/contract.py), as round 9's reviewer
+C wrote it: its tickets are numbered in plain digits, so its key pattern is \\b\\d{6}\\b."""
 
 from __future__ import annotations
 

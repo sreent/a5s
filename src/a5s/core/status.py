@@ -20,6 +20,16 @@ from a5s.core import samples, sealing
 
 # a5s's starting objectives [TBC]: set from the first users' baseline
 OBJECTIVES = {"reply_seconds_p90": 120, "chased_on_time": 0.95}
+# How a run ends: a fixed set, so no figure, the status or the studio carries anyone's words
+OUTCOMES = ("done", "done, leaving some out", "failed", "reply denied", "model unavailable",
+            "budget spent", "abandoned")
+
+
+def outcome(found: str | None) -> str:
+    """A run's outcome as the figures say it: open, one of OUTCOMES, or other."""
+    if found is None:
+        return "open"
+    return found if found in OUTCOMES else "other"
 
 
 def report(conn: psycopg.Connection, breakers: list[str], keys: tuple[str, ...] = (),
@@ -103,7 +113,7 @@ def report(conn: psycopg.Connection, breakers: list[str], keys: tuple[str, ...] 
         "select count(*) as n from departures where archived_at is null").fetchone()
     return {
         "queue": {"waiting": queue["waiting"], "oldest_seconds": _number(queue["oldest"])},
-        "runs": [dict(r) for r in runs],
+        "runs": _outcomes(runs),
         "denied": [dict(r) for r in denied],
         "turned_away": sum(d["n"] for d in turned),
         "questions": {"answered": asked["answered"], "unanswered": asked["unanswered"],
@@ -138,6 +148,16 @@ def report(conn: psycopg.Connection, breakers: list[str], keys: tuple[str, ...] 
                        "met": None if on_time is None else on_time >= OBJECTIVES["chased_on_time"]},
         },
     }
+
+
+def _outcomes(rows: list[dict]) -> list[dict]:
+    """Runs by trigger and outcome, each outcome from the fixed set."""
+    found: dict[tuple[str, str], int] = {}
+    for r in rows:
+        key = (r["kind"], outcome(None if r["outcome"] == "open" else r["outcome"]))
+        found[key] = found.get(key, 0) + r["n"]
+    return [{"kind": k, "outcome": o, "n": n} for (k, o), n in sorted(found.items(),
+                                                                     key=lambda i: (str(i[0][0]), i[0][1]))]
 
 
 def told(status: dict[str, Any]) -> str:

@@ -1,8 +1,6 @@
-"""Round 9, reviewer C: the studio shows a watcher only "the runs whose every record they may
-see". It finds what a run read in run_reads, which retention deletes once the run has been
-over for an hour (core/retention.py). After that, nothing is left to hide a run by, unless its
-trigger or its ledger entries name a record, so a run that searched records shows, by whom it
-acted for and when, to every watcher of its instance."""
+"""Round 9 of the critique: the studio shows a watcher only the runs whose every record they
+may see, and an hour on is no different: a5s keeps the keys a run handled with the run, in
+run_records, while what it read goes after an hour (docs/critique.md, round 9)."""
 
 from __future__ import annotations
 
@@ -36,9 +34,7 @@ def test_a_run_stays_hidden_from_who_may_not_see_its_records(stack, approving, p
     shown = after["runs"]
     run = api(f"/studio/api/runs/{shown[0]['run']}", "ana").json() if shown else None
     print(after, run and (run["records"], [c["tool"] for c in run["calls"]]))
-    # FAILS: an hour on, the sweep has deleted what the run read, so Ana sees Chen's run,
-    # that he asked, when, and that it searched records, which she may not see.
-    assert (shown, after["hidden"]) == ([], 1)
+    assert (shown, after["hidden"]) == ([], 1)  # the records it handled are kept with the run
 
 
 def test_a_run_that_got_a_record_by_its_key_stays_off_the_list_too(stack, approving, provider):
@@ -49,16 +45,7 @@ def test_a_run_that_got_a_record_by_its_key_stays_off_the_list_too(stack, approv
     api = signed_in(approving, provider)
     _an_hour_later(stack)
     after = api("/studio/api/instances/assistant-ops/runs", "ana").json()
-    # The run's page still names Q-1003 in its ledger entries, so it stays hidden there...
     assert all(api(f"/studio/api/runs/{r['run']}", "ana").status_code == 404
                for r in after["runs"])
-    # FAILS: ...but the list checks only what the run read and its trigger, so an hour on it
-    # shows Chen's run to Ana, by name and time, though its page won't open for her.
-    assert (after["runs"], after["hidden"]) == ([], 1)
+    assert (after["runs"], after["hidden"]) == ([], 1)  # the list and the page agree
 
-
-import pytest as _pytest
-
-# Round 9: this reproduces a finding still to fix. Its test moves beside the code it covers
-# once its fix lands, and leaves here.
-pytestmark = _pytest.mark.xfail(strict=True, reason="round 9: a finding still to fix")

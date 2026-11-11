@@ -1,8 +1,6 @@
-"""Round 9, reviewer C: the studio shows a watcher "the runs whose every record they may see"
-(docs/data-protection.md, docs/studio.md). It counts the records a run read with its tools and
-those its trigger and ledger entries name, but not the records a5s itself gave the run: a
-report's facts, worked out by code from the person's records. So every report run reaches
-every watcher of the instance, by name and time, whatever records it told of."""
+"""Round 9 of the critique: a report run counts the records a5s itself gave it, its facts
+worked out by code from someone's records, so it shows only to those who may see them all
+(docs/critique.md, round 9)."""
 
 from __future__ import annotations
 
@@ -43,19 +41,10 @@ def test_a_report_run_shows_only_to_those_who_may_see_what_it_reported(mdg, prov
     assert not scenario.sees("una", "CR0000102")  # nor the bank change that waits on Pia
     with deciding(mdg, provider) as url:
         page = api(url, provider, "/studio/api/instances/mdg-quality/runs", "una").json()
-        for_pia = [r for r in page["runs"] if [p["id"] for p in r["acts_for"]] == ["pia"]]
-        assert for_pia, page  # the report run exists, and Una sees it
-        run = api(url, provider, f"/studio/api/runs/{for_pia[0]['run']}", "una").json()
-    told = [e for e in mdg.ledger(for_pia[0]["run"]) if e.get("kind") == "run"]
-    print(run["records"], run["started_by"], told[0]["args"])
-    # FAILS: Una, who owns supplier general data, sees Pia's report run, by name, and when it
-    # ran, though it told of Pia's bank data's quality, which she may not see: the records
-    # a5s gives a run in its task count for nothing in the studio's check.
-    assert for_pia == [], "Una sees a report run about records she may not see"
-
-
-import pytest as _pytest
-
-# Round 9: this reproduces a finding still to fix. Its test moves beside the code it covers
-# once its fix lands, and leaves here.
-pytestmark = _pytest.mark.xfail(strict=True, reason="round 9: a finding still to fix")
+    with mdg.client() as c:  # the team sees whom each acted for, and the records it handled
+        every = c.get("/studio/instances/mdg-quality/runs").json()["runs"]
+        shown = [c.get(f"/studio/runs/{r['run']}").json() for r in page["runs"]]
+    pias = [r for r in every if [p["id"] for p in r["acts_for"]] == ["pia"]]
+    assert pias and page["hidden"] >= len(pias)  # Pia's reports, among those hidden from Una
+    assert all(scenario.sees("una", k) for found in shown for k in found["records"])
+    assert not {r["run"] for r in pias} & {r["run"] for r in page["runs"]}

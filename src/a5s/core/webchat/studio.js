@@ -9,7 +9,6 @@ const $ = (id) => document.getElementById(id);
 const store = window.sessionStorage;
 const PENDING = "a5s.studio";
 const BACK = `${location.origin}/studio/`;
-const PAGE = 50;  // runs to a page, as the core gives them
 let token = null;
 let current = null;  // the instance shown, if any
 let older = null;  // where its next page of runs starts
@@ -182,8 +181,9 @@ function figuresOf(found) {
     + `${people(x.wrote_before)} who wrote to ${x.agent} before`).join("; ") || "nobody wrote before");
 }
 
-function aboutRun(run) {
-  const whom = run.acts_for.map((p) => p.name || p.id).join(", ") || "nobody";
+function aboutRun(run) {  // whom it acted for by name only once the officer agrees
+  const named = run.acts_for.map((p) => p.name || p.id).join(", ");
+  const whom = named || (run.people ? people(run.people) : "nobody");
   return `${when(run.opened_at)} ${run.trigger} for ${whom}: `
     + `${run.outcome}, ${run.tokens} tokens` + (run.read_outside ? ", read outside content" : "");
 }
@@ -200,7 +200,7 @@ function runsOf(page, more) {
   $("runs-hidden").textContent = page.hidden
     ? `And ${page.hidden} that read records you may not see.` : "";
   older = page.before;
-  $("more").hidden = !older || page.runs.length + page.hidden < PAGE;
+  $("more").hidden = !older;  // the core says when there are no more
 }
 
 async function loadInstance() {
@@ -248,7 +248,6 @@ async function openRun(id) {
     line.append(cell);
     calls.append(line);
   }
-  $("entries").textContent = found.entries.map((e) => JSON.stringify(e)).join("\n");
   status("");
   show("run");
 }

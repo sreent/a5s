@@ -4,7 +4,6 @@ of the release and where they run, how each agent and instance is doing, and wha
 
 import json
 import uuid
-from urllib.parse import quote
 
 from conftest import SERVICE_TOKEN
 from test_watcher import THURSDAY
@@ -97,9 +96,7 @@ def test_an_instances_runs_and_what_each_did(stack):
     [call] = shown["calls"]
     assert (call["tool"], call["decision"], call["outcome"]) == ("search_records", "allow", "ok")
     assert "invoice" not in json.dumps(shown["entries"])  # what was said, by its hash alone
-    later = get(stack, "/studio/instances/assistant-finance/runs?before="
-                       + quote(page["before"], safe=""))
-    assert later.json()["runs"] == []
+    assert page["before"] is None  # the last page says so
     assert get(stack, "/studio/runs/not-a-run").status_code == 404
     assert get(stack, f"/studio/runs/{uuid.uuid4()}").status_code == 404
 

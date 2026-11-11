@@ -23,7 +23,7 @@ import re
 import time
 import uuid
 from collections.abc import Callable
-from datetime import datetime, timedelta
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -1171,20 +1171,24 @@ def create_app(gw: Any) -> FastAPI:
                                   [watched(conn, person, instance)], days, gw.clock())
 
     @app.get("/studio/api/instances/{instance}/runs")
-    def studio_runs(instance: str, before: datetime | None = None, limit: int = studio.RUNS,
+    def studio_runs(instance: str, before: str | None = None, limit: int = studio.RUNS,
                     authorization: str | None = Header(default=None)) -> dict:
-        """An instance's runs that someone may see, newest first, and how many others."""
+        """An instance's runs that someone may see, newest first, and how many others: whom
+        each acted for named only once the officer agrees."""
         person = studying(authorization)
         with db.transaction(gw.url) as conn:
-            return studio.runs(conn, gw.scenario, watched(conn, person, instance), person,
-                               before, limit)
+            try:
+                return studio.runs(conn, gw.scenario, watched(conn, person, instance), person,
+                                   before, limit, names=gw.cfg.studio_names)
+            except ValueError:
+                raise HTTPException(400, "before is where the page before ended, as it said")
 
     @app.get("/studio/api/runs/{run_id}")
     def studio_run(run_id: str, authorization: str | None = Header(default=None)) -> dict:
         """What a run did, if someone may watch its instance and see every record it named."""
         person = studying(authorization)
         with db.transaction(gw.url) as conn:
-            found = studio.run(conn, gw.scenario, run_id, person)
+            found = studio.run(conn, gw.scenario, run_id, person, names=gw.cfg.studio_names)
         if found is None:
             raise HTTPException(404, "there's no such run that you may see")
         return found

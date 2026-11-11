@@ -8,7 +8,7 @@ It doesn't add a second way to change a5s. Everything the studio does is a chang
 
 ## Progress
 
-- [`core/studio.py`](../src/a5s/core/studio.py) works out what step 1 shows: each agent of the release with its tools and what each reads, writes or changes, and its instances; how an agent's or an instance's runs are doing, from the measures counted for those instances alone, with how runs ended, what was denied and why, and the reports sent; an instance's runs, a page at a time; and what one run did, with each tool call's decision and its ledger entries.
+- [`core/studio.py`](../src/a5s/core/studio.py) works out what step 1 shows: each agent of the release with its tools and what each reads, writes or changes, and its instances; how an agent's or an instance's runs are doing, from the measures counted for those instances alone, with how runs ended, what was denied and why, and the reports sent; an instance's runs, a page at a time; and what one run did, with each tool call's decision and, for the team that runs a5s, its ledger entries. A run shows only to those who may see every record it handled: what its tools returned, what a5s's brief or a report told it, and what its trigger named, which a5s keeps with the run by key (`run_records`), for as long as the run.
 - The core serves it to code, the command line and CI, behind the service token, under `/studio/`: `a5s agents`, `a5s agents show <agent>`, `a5s runs <instance>`, `a5s runs show <run>`, and `a5s measures --agent <agent>` or `--instance <instance>`.
 - People see it on the channels app's page, `/studio/`, signed in as on the notebook's, through its own API under `/studio/api/`, from the same module. The chart lets only the worker and the scheduler reach the core, so the channels app reads the figures as its own role, which migration `0044_studio.sql` grants only the columns they count and each run's own record: never what people said, what a reminder, an obligation or a question is about, or a run's token.
 - Someone may watch an instance if they run it, as its owner or deputy, own its agent, own or decide for one of its parts, or approve instances. Of its runs, they see those whose every record they may see, and how many others there are.
@@ -32,7 +32,7 @@ It doesn't add a second way to change a5s. Everything the studio does is a chang
 - **The studio proposes, and people sign.** What it writes is a pull request, a draft release or a draft settings version, never a change in force. Nobody gets a right through the studio that they wouldn't have at the command line.
 - **It holds no keys of its own.** It acts as the person signed in. It opens a pull request as them, through the git host's own sign-in, or gives them the branch to push. It holds no git token, no signing key and no way to write the settings store, so it's never an easier way round a5s than the command line.
 - **The studio and the code show the same thing.** An agent is a folder in git, a release is a manifest, settings are a signed version. Someone can start an agent in the studio and finish it in an editor, or the other way round.
-- **It shows people only what they may see.** Its pages come from the measures, the status, the ledger and the releases, under the same need-to-know as today. An instance's runs are its owner's, its deputy's and its parts' owners' to see. What people said to an agent appears only by its hash, as [data protection](data-protection.md) requires.
+- **It shows people only what they may see.** Its pages come from the measures, the status, the ledger and the releases, under the same need-to-know as today. An instance's runs are its owner's, its deputy's and its parts' owners' to see, each only if they may see every record it handled. People's pages show nothing anyone said, not even by its hash, and whom a run acted for only once the data protection officer agrees (`A5S_STUDIO_NAMES`), as [data protection](data-protection.md) requires.
 
 ## Who builds what
 
@@ -104,7 +104,7 @@ An agent's owner creates an agent from a template in the studio, tries it in the
 - The studio holds no git token, signing key or way to write the settings store: a pull request it opens is the person's own.
 - Someone who isn't an agent's owner can't publish it. A new agent's release still needs the release approver, and a settings change each of its parts' owners.
 - The sandbox has its own database, budget and channels, and the production deployment's records can't be reached from it.
-- A dashboard shows an instance's runs only to the people who may see them, and what was said only by its hash. Figures sent to the organisation's monitoring carry no personal data.
+- A dashboard shows an instance's runs only to the people who may see them, and nothing anyone said. Figures sent to the organisation's monitoring carry no personal data.
 - Every action in the studio is in the ledger, as the command line's are.
 - Browser tests for the catalogue, the dashboards, authoring and the test pane, as the settings app has.
 

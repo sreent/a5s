@@ -1,6 +1,7 @@
-"""Round 9, reviewer A: the operators' figures (core/metrics.py) and the studio's figures
-(core/studio.py) promise to count "never by a person or a record, nor with anything anyone
-said". Two ways they do anyway: a summary run's outcome, and the reasons for denials."""
+"""Round 9 of the critique: the operators' figures (core/metrics.py) and the studio's figures
+(core/studio.py) count never by a person or a record, nor with anything anyone said: a run's
+outcome comes from a fixed set, a denial's reasons show as the policies' ids, and an
+instance's figures count only its own group chats (docs/critique.md, round 9)."""
 
 import json
 
@@ -58,8 +59,7 @@ def test_what_someone_said_reaches_the_monitoring_through_a_summary_runs_outcome
     ended = httpx.get(f"{approving}/studio/api/instances/assistant-finance", headers=headers,
                       timeout=30).json()["ended"]
     shown = [e["outcome"] for e in ended if "18,500" in e["outcome"]]
-    # FAILS NOW: "done, leaving out: it says £18,500, which nobody said; it says £2,100, ..."
-    assert not leaked and not shown, (leaked, shown)
+    assert not leaked and not shown, (leaked, shown)  # outcomes come from a fixed set
 
 
 def test_the_studios_figures_name_people_in_the_reasons_for_denials(stack, approving, provider):
@@ -79,25 +79,7 @@ def test_the_studios_figures_name_people_in_the_reasons_for_denials(stack, appro
     denied = httpx.get(f"{approving}/studio/api/instances/assistant-finance", headers=headers,
                        timeout=30).json()["denied"]
     named = [r for d in denied for r in d["reasons"] if "ana" in r.split()]
-    # FAILS NOW: ["assistant-finance has used its budget for ana today"], to Ben, her deputy
-    assert not named, denied
-
-
-def test_an_instance_that_serves_one_person_counts_that_person(stack, figures):
-    """Figures by instance name nobody, but an instance that serves one person, such as an
-    executive's own assistant or the orders assistant that serves Chen alone, counts them: their
-    day's tokens and budget warnings go to the organisation's monitoring every minute."""
-    import yaml
-    ops = {"definition": "assistant", "serves": ["chen"], "parts": ["orders"], "level": 1,
-           "owner": "omar"}
-    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text())
-    assert not stack.settle(instances={**settings["instances"], "assistant-ops": ops},
-                            signers=("ana", "omar")).refused
-    stack.model.reply("Nothing's open for you.")
-    stack.say("What's open?", person="chen")
-    tokens = {a["a5s.instance"]: v for v, a in collected(figures)["a5s.tokens"]}
-    # FAILS NOW: Chen's own use of the assistant, as a figure by an instance only he uses
-    assert "assistant-ops" not in tokens, tokens
+    assert not named, denied  # reasons show as the policies' ids, any other words as "other"
 
 
 def test_an_instances_figures_count_group_chats_of_the_agents_other_instances(
@@ -122,12 +104,5 @@ def test_an_instances_figures_count_group_chats_of_the_agents_other_instances(
     headers = {"Authorization": f"Bearer {provider.id_token(person='omar')}"}
     groups = httpx.get(f"{approving}/studio/api/instances/assistant-ops", headers=headers,
                        timeout=30).json()["groups"]
-    # FAILS NOW: [{'agent': 'assistant', 'messages': 3, 'chats': 1, 'people': 2}]
-    assert groups == [], groups
+    assert groups == [], groups  # finance's chats are counted for those who watch finance
 
-
-import pytest as _pytest
-
-# Round 9: this reproduces a finding still to fix. Its test moves beside the code it covers
-# once its fix lands, and leaves here.
-pytestmark = _pytest.mark.xfail(strict=True, reason="round 9: a finding still to fix")
