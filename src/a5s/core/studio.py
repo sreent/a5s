@@ -268,7 +268,7 @@ def told_agents(agents: list[dict]) -> str:
     lines = []
     for found in agents:
         owners = ", ".join(found["owners"]) or "nobody the directory names"
-        lines += [f"{found['id']} {found['release']}: works for {found['works_for']}",
+        lines += [f"{found['id']} {found['release']}. Works for: {found['works_for']}",
                   (f"  {found['model']}, {_levels(found)}, {len(found['tools'])} of the "
                    f"scenario's tools, owned by {owners}")]
         lines += [f"  - {_instance_line(i)}" for i in found["instances"]] or [

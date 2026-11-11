@@ -128,7 +128,7 @@ async function loadAgents() {
   for (const agent of now.agents) {
     const block = element("article");
     block.append(element("h3", `${agent.id}, release ${agent.release}`),
-                 element("p", `Works for ${agent.works_for}. ${agent.does}`, "note"),
+                 element("p", `Works for: ${agent.works_for}. ${agent.does}`, "note"),
                  element("p", `${agent.model}, at ${levels(agent)}. Owned by `
                    + `${agent.owners.join(", ") || "nobody the directory names"}.`));
     const tools = element("ul", null, "plain");
