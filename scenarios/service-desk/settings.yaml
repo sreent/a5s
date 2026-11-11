@@ -1,7 +1,7 @@
 # Synthetic service-desk settings. Sign changes with the part owners and instance approver.
 serial: 1
 data_class: synthetic
-classified: {contact: personal}
+classified: {contact: personal, from: personal}
 
 instances:
   desk-access:

@@ -95,9 +95,8 @@ def report(conn: psycopg.Connection, scenario: str, models: dict[str, ModelConfi
     mentioned = conn.execute(  # in a group chat, an agent hears only what mentions it
         "select agent, count(*) as messages, count(distinct conversation) as chats, "
         "count(distinct person) as people from inbound "
-        f"where conversation is not null and received_at > {since}"
-        f"{' and agent = any(%(agents)s)' if scoped else ''} "
-        "group by agent order by agent", at).fetchall()
+        f"where conversation is not null and received_at > {since}{theirs} "
+        "group by agent order by agent", at).fetchall()  # those instances' people's, if scoped
     runs = conn.execute(  # by the model each called, or, before runs said, their instance's
         "select r.instance_id, coalesce(r.model, i.model) as model, count(*) as runs, "
         "sum(r.tokens)::bigint as tokens, "

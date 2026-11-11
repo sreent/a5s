@@ -14,11 +14,13 @@ they last approved ([independence](../../../docs/architecture.md#independence)):
 - the trusted core, or what its image is built from: the release approver, from
   outside the team that runs a5s and its reporting line, and assurance, after
   their tests, as well as an attested build;
-- the scenario's directory or tools, or anything that widens what an agent or a
-  model may do: the release approver;
-- an agent's instructions alone, or anything that narrows it: the agent's owner
-  and a second engineer;
-- the services alone: an engineer from the team;
+- the scenario's directory or tools, its knowledge, such as who may read each
+  note, the code of the scenarios a5s ships and their adapters, or anything that
+  widens what an agent or a model may do: the release approver;
+- an agent's instructions alone, a scenario's own agents' among them, or anything
+  that narrows it: the agent's owner and a second engineer;
+- the services alone, the client the team's jobs use among them: an engineer from
+  the team;
 - a fix for a security advisory that changes only what the image is built from:
   an engineer, at once.
 
@@ -75,13 +77,23 @@ def _files(folder: Path, under: str, leave_out: Callable[[Path], bool] = lambda 
     return found
 
 
-def _code(root: Path) -> tuple[dict, dict]:
+# Code in the package that isn't the trusted core: the scenarios a5s ships and their
+# adapters, which count as the scenario's part, and what the team runs beside the core
+SCENARIO_CODE = ("a5s/sample.py", "a5s/service_desk.py", "a5s/software_delivery.py",
+                 "a5s/master_data.py", "a5s/knowledge.py", "a5s/graphify.py")
+SERVICE_CODE = ("a5s/worker.py", "a5s/client.py")
+
+
+def _code(root: Path) -> tuple[dict, dict, dict]:
     """a5s's own code, from the source in a checkout or the installed package in an image:
-    the trusted core, and the services."""
+    the trusted core, the services, and the scenarios' code."""
     source = root / "src" / "a5s"
     files = _files(source if source.is_dir() else Path(a5s.__file__).parent, "a5s")
-    services = {k: v for k, v in files.items() if k.startswith("a5s/services/") or k == "a5s/worker.py"}
-    return {k: v for k, v in files.items() if k not in services}, services
+    services = {k: v for k, v in files.items()
+                if k.startswith("a5s/services/") or k in SERVICE_CODE}
+    scenarios = {k: v for k, v in files.items() if k in SCENARIO_CODE}
+    core = {k: v for k, v in files.items() if k not in services and k not in scenarios}
+    return core, services, scenarios
 
 
 def _agent(folder: Path) -> dict:
@@ -111,7 +123,20 @@ def manifest(root: Path, scenario_dir: Path, *, built: dict | None = None,
              agents_dir: Path | None = None) -> bytes:
     """The release a5s is here. With `built`, the manifest its image was built with, what
     the image was built from comes from there, since the image doesn't carry it."""
-    core, services = _code(root)
+    core, services, scenarios = _code(root)
+    agents = agents_dir or root / "agents"
+    try:  # a scenario's own agents count as agents, not as its folder's files
+        theirs = agents.resolve().relative_to(scenario_dir.resolve()).parts
+    except ValueError:
+        theirs = None
+
+    def kept_apart(inside: Path) -> bool:
+        """What a release leaves out of the scenario's part: its private keys, its settings,
+        which are signed on their own, its own agents, and the documents at its top."""
+        return (inside.suffix == ".key" or inside.name in ("settings.yaml", "settings.sig")
+                or (inside.suffix == ".md" and len(inside.parts) == 1)
+                or (theirs is not None and inside.parts[:len(theirs)] == theirs))
+
     data = {
         "version": built["version"] if built else importlib.metadata.version("a5s"),
         "parts": {
@@ -121,13 +146,14 @@ def manifest(root: Path, scenario_dir: Path, *, built: dict | None = None,
                 name: hashlib.sha256((root / name).read_bytes()).hexdigest()
                 for name in BUILT_FROM if (root / name).exists()},
             "models": _files(root / "config", "config"),
-            # The settings are signed on their own, and private keys never count.
-            "scenario": _files(scenario_dir, "scenario", lambda p: p.suffix in (".key", ".md")
-                               or p.name in ("settings.yaml", "settings.sig")),
+            # Its knowledge and data, and the code of the scenarios a5s ships, such as who
+            # may read each note: a change needs the release approver
+            "scenario": {**_files(scenario_dir, "scenario", kept_apart),
+                         **{f"code/{k}": v for k, v in scenarios.items()}},
         },
         "models": _models(root / "config"),
-        "agents": {f.name: _agent(f) for f in sorted((agents_dir or root / "agents").iterdir())
-                   if (f / "agent.yaml").exists()} if (agents_dir or root / "agents").is_dir() else {},
+        "agents": {f.name: _agent(f) for f in sorted(agents.iterdir())
+                   if (f / "agent.yaml").exists()} if agents.is_dir() else {},
     }
     return (_HEADER + yaml.safe_dump(data, sort_keys=True, width=1000)).encode()
 

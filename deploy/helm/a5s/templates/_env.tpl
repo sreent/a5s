@@ -14,11 +14,23 @@
 - name: OTEL_EXPORTER_OTLP_ENDPOINT
   value: {{ . | quote }}
 {{- end }}
+- name: A5S_PROVIDER_TIMEOUT
+  value: {{ .Values.timeouts.provider | quote }}
+{{ include "a5s.dbConnectEnv" . }}
+{{- if .Values.officerAgrees.rubberStampFlag }}
+- name: A5S_FLAG_RUBBER_STAMPS
+  value: "true"
+{{- end }}
 {{- end }}
 
 {{- define "a5s.env.channels" -}}
 {{ include "a5s.secretEnv" (dict "root" . "name" "A5S_DATABASE_URL" "key" "database-channels-url") }}
 {{ include "a5s.peopleEnv" . }}
+{{ include "a5s.dbConnectEnv" . }}
+{{- if .Values.officerAgrees.studioNames }}
+- name: A5S_STUDIO_NAMES
+  value: "true"
+{{- end }}
 {{- end }}
 
 {{- define "a5s.env.scheduler" -}}
@@ -28,6 +40,9 @@
   value: {{ printf "http://%s-gateway:8700" .Release.Name | quote }}
 - name: A5S_WORKER_URL
   value: {{ printf "http://%s-worker:8702" .Release.Name | quote }}
+- name: A5S_WORKER_WAIT
+  value: {{ .Values.timeouts.workerWait | quote }}
+{{ include "a5s.dbConnectEnv" . }}
 {{- end }}
 
 {{- define "a5s.env.anchor" -}}
@@ -36,11 +51,20 @@
   value: {{ required "set anchor.store, where the ledger's locked copies go" .Values.anchor.store | quote }}
 - name: A5S_ANCHOR_RETAIN_DAYS
   value: {{ .Values.anchor.retainDays | quote }}
+{{ include "a5s.dbConnectEnv" . }}
 {{- end }}
 
 {{- define "a5s.env.worker" -}}
 - name: A5S_GATEWAY_URL
   value: {{ printf "http://%s-gateway:8700" .Release.Name | quote }}
+- name: A5S_WORKER_TIMEOUT
+  value: {{ .Values.timeouts.run | quote }}
+{{- end }}
+
+{{/* How long a part waits for a new database connection. */}}
+{{- define "a5s.dbConnectEnv" -}}
+- name: A5S_DB_CONNECT_TIMEOUT
+  value: {{ .Values.timeouts.dbConnect | quote }}
 {{- end }}
 
 {{/* The jobs, as the database's administrator. */}}

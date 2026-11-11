@@ -208,7 +208,7 @@ The same events go out as OpenTelemetry spans, using the GenAI conventions at a 
   | A release that | Needs |
   | --- | --- |
   | Changes only instructions or skills, and widens nothing | The agent owner and a second engineer, after the regression suite and a re-run of the last graded samples |
-  | Changes a tool, or widens a grant, trigger, model, class of data or cap | The release approver, from outside the team |
+  | Changes a tool, a scenario's code, data or knowledge, such as who may read a note, or widens a grant, trigger, model, class of data or cap | The release approver, from outside the team |
   | Fixes a security advisory | Nothing more: it goes in at once, at level 1 at most |
   | Changes the trusted core | The release approver, an attested build, and assurance's tests |
 

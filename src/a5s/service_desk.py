@@ -75,7 +75,7 @@ class ServiceDeskScenario:
         return [Obligation("records", t["key"], t["assignee"], t["title"],
                            datetime.fromisoformat(f"{t['opened']}T09:00:00+00:00"),
                            datetime.fromisoformat(f"{t['due']}T17:00:00+00:00"), LINK + t["key"])
-                for t in self._tickets.values() if t["status"] != "closed"]
+                for t in self._tickets.values() if t.get("status") != "closed"]
 
     def watched(self) -> list[Record]:
         self.reads += 1
@@ -88,7 +88,7 @@ class ServiceDeskScenario:
     @staticmethod
     def _record(ticket: dict) -> Record:
         return Record("records", ticket["key"], ticket["assignee"], ticket["title"],
-                      {"status": ticket["status"]}, LINK + ticket["key"])
+                      {"status": ticket.get("status")}, LINK + ticket["key"])
 
     def settings(self) -> Settings:
         sig = self.folder / "settings.sig"
@@ -129,9 +129,10 @@ class ServiceDeskScenario:
             Tool("create_draft", "Save a draft ticket reply for a person to review and use.", body,
                  draft, writes=True, text_fields=("title", "body"), record_arg="record"),
             Tool("get_messages", "Get what requesters wrote on a ticket through a5s's reader.", key,
-                 comments, record_arg="key", record_field="key", outside=("body",),
+                 comments, handles=("from",), record_arg="key", record_field="key",
+                 outside=("body",),
                  extract={"asks_for": "choice:a reset|access|equipment|something else"}),
         )}
         tools.update(MarkdownKnowledge(self.folder / "knowledge",
-                                       sees_part=self._knowledge_part).tools())
+                                       sees_part=self._knowledge_part, person=self.person).tools())
         return tools

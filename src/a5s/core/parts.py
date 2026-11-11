@@ -82,8 +82,14 @@ def kept(scenario: Scenario, run: dict, field: str | None, result: Any) -> tuple
                 else:
                     found.append(walk(item))
             return found
-        if isinstance(value, dict):
-            return {k: walk(v) for k, v in value.items()}
+        if isinstance(value, dict):  # as an object's value, as MCP tools answer
+            kept = {}
+            for k, v in value.items():
+                if isinstance(v, dict) and field in v and not fits(v):
+                    withheld += 1
+                else:
+                    kept[k] = walk(v)
+            return kept
         return value
 
     if not field:

@@ -178,7 +178,7 @@ def test_a_question_whose_run_fails_says_why_and_its_run_is_over(stack):
     with db.transaction(stack.admin) as conn:
         [closed] = conn.execute("select closed_at, outcome from runs where id = %s",
                                 (asked["id"],)).fetchall()
-    assert closed["closed_at"] is not None and closed["outcome"] == "its model isn't answering"
+    assert closed["closed_at"] is not None and closed["outcome"] == "model unavailable"
 
 
 def test_settings_name_only_other_instances_to_ask_and_say_so_in_words(stack):

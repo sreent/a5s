@@ -44,11 +44,12 @@ FIELDS = {"supplier": ("name", "country", "postcode", "vat"),
           "customer": ("name", "country", "postcode", "vat", "payment_terms"),
           "material": ("description", "base_unit", "material_type")}
 # Fields whose change its data object's owner confirms, as the framework's sensitive changes
-SENSITIVE = {"supplier": ("name", "postcode", "vat"),
+SENSITIVE = {"supplier": ("name", "country", "postcode", "vat"),
              "supplier-bank": ("supplier", "iban", "payment_terms"),
-             "customer": ("vat", "payment_terms"), "material": ()}
-# What an agent may correct in a request, for the owner to decide: no object's sensitive field
-CORRECTABLE = ("country", "description", "base_unit", "material_type")
+             "customer": ("country", "vat", "payment_terms"), "material": ()}
+# What an agent may correct in a request, for the owner to decide: no object's sensitive field.
+# Not a country, which decides the VAT rule a supplier's or customer's number is checked by
+CORRECTABLE = ("description", "base_unit", "material_type")
 HANDLED = ("iban",)  # what reaches an agent only as a handle, and no record's fields hold
 SUFFIXES = {"ltd", "limited", "gmbh", "inc", "llc", "plc", "ag", "sa", "co"}
 
@@ -422,7 +423,9 @@ class MasterDataScenario:
                  record_field="key", outside=("body",),
                  extract={"asks_for": "choice:a bank change|an address change|a new record|"
                                       "a blocked record|something else",
-                          "date": "date", "request": "key"}),
+                          "date": "date", "request": "key",  # and the handbook's warning signs
+                          "says_it_is_urgent": "flag", "asks_to_skip_the_callback": "flag",
+                          "says_someone_approved_it_already": "flag"}),
             Tool("create_draft", "Save a draft, such as a note to a requester or a data quality "
                  "report, for a person to read, change and send.",
                  {"type": "object", "required": ["title", "body"], "properties": {
@@ -444,7 +447,7 @@ class MasterDataScenario:
                  correct, record_arg="key", action="correct-value"),
         )}
         tools.update(MarkdownKnowledge(self.folder / "knowledge",
-                                       sees_part=self._knowledge_part).tools())
+                                       sees_part=self._knowledge_part, person=self.person).tools())
         return tools
 
 

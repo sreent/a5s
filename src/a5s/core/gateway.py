@@ -1134,6 +1134,9 @@ def create_app(gw: Gateway) -> FastAPI:
                         opening.task, gw.scenario.record_pattern)  # an answer can't pass off
                 for source, text in opening.told:
                     provenance.read(conn, run_id, source, text, gw.scenario.record_pattern)
+                studio.handled(conn, run_id, studio.given(  # the records a5s gives it, kept
+                    gw.scenario, opening.trigger, opening.seen,  # as long as the run, for who
+                    [opening.task or "", *(text for _, text in opening.told)]))  # may see it
             if reasons and kind == asking.KIND and not opening.used:  # so the asker hears why
                 conn.execute("update questions set problem = %s where id = %s",
                              ("; ".join(reasons)[:200], opening.trigger["question"]))
@@ -1177,19 +1180,22 @@ def create_app(gw: Gateway) -> FastAPI:
     def close_run(run_id: str, body: CloseRun) -> dict:
         """Close a run, with how it ended. A reminder or chase whose run didn't get its message
         through, a5s gives itself, in its own words."""
+        ended = status.outcome(body.outcome)  # from the fixed set: never anyone's words
+        if ended != body.outcome:
+            log.warning("run %s ended with an outcome a5s doesn't know, kept as other", run_id)
         with db.transaction(gw.url) as conn:
             row = conn.execute(
                 "update runs set closed_at = now(), outcome = %s where id = %s and closed_at is null "
                 "returning instance_id, trigger",
-                (body.outcome, run_id),
+                (ended, run_id),
             ).fetchone()
             if row is None:
                 raise HTTPException(404, "no open run")
             ledger.append(conn, {"kind": "run", "action": "close", "run": run_id,
                                  "instance": row["instance_id"], "decision": "record",
-                                 "outcome": body.outcome})
-            sends = [] if body.outcome == "done" else give_instead(conn, row["trigger"],
-                                                                     WHY.get(body.outcome))
+                                 "outcome": ended})
+            sends = [] if ended.startswith("done") else give_instead(conn, row["trigger"],
+                                                                      WHY.get(ended))
         push(sends)
         return {"closed": run_id}
 
@@ -1274,10 +1280,13 @@ def create_app(gw: Gateway) -> FastAPI:
                 "where o.scenario = %s and o.done_at is null order by o.due_at, o.id",
                 (gw.scenario.name,)).fetchall()
             for row in rows:
-                to = obligations.to_escalate(row, gw.scenario, now, able.get(row["instance_id"], False))
-                if to is None:
+                found = obligations.to_escalate(row, gw.scenario, now,
+                                                able.get(row["instance_id"], False))
+                if found is None:
                     continue
-                text = obligations.escalation(row, gw.scenario, to, instances.get(row["instance_id"]))
+                to, why = found
+                text = obligations.escalation(row, gw.scenario, to,
+                                              instances.get(row["instance_id"]), why)
                 conn.execute("update obligations set escalations = escalations + 1, "
                              "escalated_at = %s, escalated_to = %s, updated_at = %s where id = %s",
                              (now, to.id, now, row["id"]))
@@ -1286,7 +1295,8 @@ def create_app(gw: Gateway) -> FastAPI:
                     "kind": "notice", "action": "escalate", "run": None,
                     "instance": row["instance_id"], "acts_for": [], "decision": "record",
                     "args": {"obligation": row["id"], "record": row["record"],
-                             "person": row["person"], "to": to.id, "step": row["escalations"] + 1,
+                             "person": row["person"], "to": to.id, "as": why,
+                             "step": row["escalations"] + 1,
                              "channel": route["channel"], "chars": len(text),
                              "sha256": hashlib.sha256(text.encode()).hexdigest()}})
                 if route["channel"] == "batch":  # they've had today's urgent messages
@@ -1294,7 +1304,7 @@ def create_app(gw: Gateway) -> FastAPI:
                 else:  # in the chat, after this transaction, or in the local channel's inbox
                     sends.append(outbound(conn, route, to.id, text, instance=row["instance_id"],
                                           agent=row["agent"]))
-                noted(conn, to.id, row["agent"], text, row["record"])
+                noted(conn, to.id, row["agent"], text, None if why == "unseen" else row["record"])
                 escalated.add(row["id"])
             due = [d for d in obligations.to_chase(rows, gw.scenario, now, able,
                                                    gw.digest_open(conn, now))
@@ -1677,14 +1687,9 @@ def create_app(gw: Gateway) -> FastAPI:
         over the last `days` days by the core's clock: what fell due and was met on time, how
         late the rest was, who came back, what runs cost, how held changes were decided and
         graded, and what agents asked each other and noted (core/measures.py)."""
-        with db.transaction(gw.url) as conn:
-            served: dict[str, set[str]] = {}  # whom each agent serves, as the directory says now
-            for inst in conn.execute("select definition, serves from instances "
-                                     "where status = 'active'"):
-                served.setdefault(inst["definition"], set()).update(
-                    registry.served(gw.scenario, inst["serves"]))
+        with db.transaction(gw.url) as conn:  # whom each agent serves, as the studio counts it
             return measures.report(conn, gw.scenario.name, gw.models, days, gw.clock(),
-                                   {a: sorted(p) for a, p in served.items()})
+                                   studio.served(gw.scenario, studio.instances(conn)))
 
     # The studio's API, for code, the command line and CI: everything, for the team that runs
     # a5s. People see what they may watch through the studio's pages (core/studio.py).
@@ -1709,14 +1714,15 @@ def create_app(gw: Gateway) -> FastAPI:
     @app.get("/studio/agents/{agent}/measures", dependencies=[Depends(service)])
     def studio_agent_measures(agent: str, days: int = 30) -> dict:
         """How an agent's instances are doing over the last `days` days."""
-        with db.transaction(gw.url) as conn:
-            insts = [i for i in studio.instances(conn) if i["definition"] == agent]
+        with db.transaction(gw.url) as conn:  # with those retired within the window
+            insts = [i for i in studio.instances(conn, retired=True) if i["definition"] == agent]
             if agent not in gw.definitions and not insts:
                 raise HTTPException(404, f"there's no agent {agent} here")
             return studio.figures(conn, gw.scenario, gw.models, insts, days, gw.clock())
 
     def studio_instance(conn: psycopg.Connection, instance: str) -> dict:
-        found = next((i for i in studio.instances(conn) if i["id"] == instance), None)
+        found = next((i for i in studio.instances(conn, retired=True) if i["id"] == instance),
+                     None)
         if found is None:
             raise HTTPException(404, f"there's no instance {instance}")
         return found
@@ -1729,12 +1735,16 @@ def create_app(gw: Gateway) -> FastAPI:
                                   [studio_instance(conn, instance)], days, gw.clock())
 
     @app.get("/studio/instances/{instance}/runs", dependencies=[Depends(service)])
-    def studio_runs(instance: str, before: datetime | None = None,
+    def studio_runs(instance: str, before: str | None = None,
                     limit: int = studio.RUNS) -> dict:
-        """An instance's runs, newest first, opened before `before`, if given."""
+        """An instance's runs, newest first, a page at a time: `before` is where the page
+        before ended, as it said."""
         with db.transaction(gw.url) as conn:
-            return studio.runs(conn, gw.scenario, studio_instance(conn, instance),
-                               before=before, limit=limit)
+            try:
+                return studio.runs(conn, gw.scenario, studio_instance(conn, instance),
+                                   before=before, limit=limit)
+            except ValueError:
+                raise HTTPException(400, "before is where the page before ended, as it said")
 
     @app.get("/studio/runs/{run_id}", dependencies=[Depends(service)])
     def studio_run(run_id: str) -> dict:
@@ -2083,6 +2093,7 @@ def create_app(gw: Gateway) -> FastAPI:
                                                    args=ledger.mask(args, plain),
                                                    links_removed=removed,
                                                    **({"values": values_of(traced)} if traced else {})))
+                studio.handled(conn, row["run"], keys)  # the records it named, whatever came of it
                 if change and (decision.allowed or decision.held):  # made or held: it counts
                     counts.count(conn, requested, action, change, max(len(keys), 1),
                                  over is not None, "making" if decision.allowed else "held",
@@ -2155,6 +2166,10 @@ def create_app(gw: Gateway) -> FastAPI:
                                             gw.scenario.record_pattern)  # apart
             except psycopg.Error:  # the values it wrote will be flagged as its own: never worse
                 log.exception("couldn't note what %s read from %s", row["run"], name)
+            if tool is not None and tool.record_field:  # the records it gives the run, kept
+                with db.transaction(gw.url) as conn:  # before the run has them, as the studio
+                    studio.handled(conn, row["run"],  # shows a run only to who may see them
+                                   studio.keys_in(result, tool.record_field))
         recorded = record({"kind": "tool", "action": name, "run": row["run"], "instance": row["id"],
                            "decision": "record", "of": seq, "outcome": outcome,
                            **({"level": about["level"]} if action else {})})
@@ -2396,9 +2411,12 @@ def create_app(gw: Gateway) -> FastAPI:
                            "outcome": {"status": status_now}})
         if status_now != "ok":
             return JSONResponse(status_code=502, content={"error": "a5s's reader couldn't answer now"})
-        with db.transaction(gw.url) as conn:  # its values count as the outside document's own
-            provenance.read(conn, row["run"], f"{provenance.OUTSIDE} D-{number}", said,
-                            gw.scenario.record_pattern)
+        pattern = gw.scenario.record_pattern  # its values are the outside document's own
+        held = values.found(found["text"], pattern)  # only where the document holds them, as
+        with db.transaction(gw.url) as conn:  # its form's are: one it made up is its own
+            provenance.noted(conn, row["run"], f"{provenance.OUTSIDE} D-{number}",
+                             [v for v in values.found(said, pattern)
+                              if any(v.matches(h) for h in held)])
             said = handles.masked(conn, row["run"], said)
         return {"result": {extractor.OUTSIDE: True, "document": f"D-{number}", "says": said,
                            "note": extractor.NOTE}, "recorded": recorded}
@@ -2484,12 +2502,14 @@ def create_app(gw: Gateway) -> FastAPI:
                                  "outcome": {"status": "error", "error": why[:200]} if why else
                                  {"status": "ok", "question": question, "marked": marked,
                                   "result_sha256": hashlib.sha256(text.encode()).hexdigest()}})
+            # Its outcome is one of the figures' own (core/status.py): its words stay with
+            # the question, for the run that asked.
+            ended = ("done" if why is None else "model unavailable" if "model" in why
+                     else "budget spent" if "budget" in why else "failed")
             conn.execute("update runs set closed_at = now(), outcome = %s where id = %s "
-                         "and closed_at is null", ("done" if why is None else why[:200],
-                                                   row["run"]))
+                         "and closed_at is null", (ended, row["run"]))
             ledger.append(conn, {"kind": "run", "action": "close", "run": row["run"],
-                                 "instance": row["id"], "decision": "record",
-                                 "outcome": "done" if why is None else why[:200]})
+                                 "instance": row["id"], "decision": "record", "outcome": ended})
         if why is not None:
             return {"error": f"the {agent} didn't answer: {why}"[:300]}
         result: dict[str, Any] = {"agent": agent, "answer": text}
@@ -2541,6 +2561,8 @@ def create_app(gw: Gateway) -> FastAPI:
                                     gw.scenario.record_pattern)
             except psycopg.Error:  # the values it wrote will be flagged as its own: never worse
                 log.exception("couldn't note what %s read from %s", row["run"], core.name)
+            with db.transaction(gw.url) as conn:  # the records it names, as for the scenario's
+                studio.handled(conn, row["run"], studio.named(gw.scenario, core.sourced(result)))
         return {"result": result, "recorded": recorded}
 
     @app.post("/run/messages")

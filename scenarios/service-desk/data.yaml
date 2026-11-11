@@ -11,7 +11,7 @@ people:
 
 tickets:
   - {key: INC0000001, part: access, title: "Can't reach the VPN", status: open, requester: sam, assignee: rae, contact: sam.home@mail.test, opened: "2026-10-26", due: "2026-11-04"}
-  - {key: INC0000002, part: hardware, title: Laptop battery is swollen, requester: sam, assignee: hal, contact: sam.home@mail.test, opened: "2026-10-26", due: "2026-11-04"}
+  - {key: INC0000002, part: hardware, title: Laptop battery is swollen, status: open, requester: sam, assignee: hal, contact: sam.home@mail.test, opened: "2026-10-26", due: "2026-11-04"}
   - {key: INC0000004, part: access, title: Reset MFA for the CFO, status: open, requester: pat, assignee: rae, contact: pat.mobile@mail.test, opened: "2026-10-27", due: "2026-11-05"}
 
 messages:

@@ -41,7 +41,16 @@ jobs:
             -scheme http -port 4443 -external-url http://127.0.0.1:4443
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6
       - run: uv sync --locked
-      - run: uv run playwright install --with-deps chromium
+      # Chromium itself, from Playwright's own downloads. Not --with-deps: the runner's image
+      # has every library Chromium needs, and the step only fetched fonts no test reads, from
+      # Ubuntu's mirror, which a runner can fail to reach (as on 11 November 2026). The
+      # browser tests still run, since A5S_TEST_BROWSER requires them, and the next step
+      # fails at once if Chromium can't start here.
+      - run: uv run playwright install chromium
+      - name: Check Chromium starts on this runner
+        run: >-
+          uv run python -c "from playwright.sync_api import sync_playwright;
+          p = sync_playwright().start(); p.chromium.launch().close(); p.stop()"
       - run: uv run ruff check .
       - run: uv run pytest
 

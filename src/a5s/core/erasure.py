@@ -2,16 +2,17 @@
 
 The data protection officer asks for it on the core's page (core/officer.py), naming someone,
 and a5s erases what it keeps that names them, one holder of an id at a time, as an export gives
-it (core/export.py). By an id, it erases what's its holder's since the id's last archive:
-their conversations with each agent, and what a5s and the agents said to them there, with the
-summaries of those; their notes, preferences and reminders; the chats a5s writes to them in,
-and what reports told them; their use of each day's budget, and their digests; what they said
-in group chats, with the summaries of the group's that hold any of it, which the group's next
-run makes again from what's left; the questions agents asked each other for them alone; what
-they said they were waiting on; and what they owed that the records no longer owe. An archive
-of the id may be someone else's, who held it before, so it stays, and the officer erases each
-of theirs by its name, which erases that archive alone, with what its holder said they were
-waiting on and what they owed that's done, and the record of whose archive it was.
+it (core/export.py). By an id, it erases what's its holder's since the id's last archive: their
+conversations with each agent, and what a5s and the agents said to them there, with the
+summaries of those; their notes, preferences and reminders; the chats a5s writes to them in, and
+what reports told them; their use of each day's budget, and their digests; what they said in
+group chats, with the summaries of the group's that hold any of it, which the group's next run
+makes again from what's left; the questions agents asked each other for them alone; what they
+said they were waiting on; the tasks they asked for; and what they owed that the records no
+longer owe. An archive of the id may be someone else's, who held it before, so it stays, and the
+officer erases each of theirs by its name, which erases that archive alone, with what its holder
+said they were waiting on and what they owed that's done, and the record of whose archive it
+was.
 
 It keeps what's evidence of what agents did, for as long as retention keeps it
 (core/retention.py): the ledger, which keeps what was said only by hash, and runs, which name
@@ -22,9 +23,10 @@ what: only the runs kept as evidence link it back to them. The agents' answers i
 are the group's, and stay. And while someone is still here, the chats a5s writes to them in
 stay, so what's for them, such as a card to decide a change, still reaches them.
 
-It waits for nothing: while a run is at work for them, which might write what it read of them
-after it's gone, it refuses, to be asked again in a minute or two. It holds them still while it
-works, as archiving does, and runs about to open for them wait for it (core/departures.py).
+It waits for nothing: while a run, or a task's slice, is at work for them, which might write
+what it read of them after it's gone, it refuses, to be asked again in a minute or two. It holds
+them still while it works, as archiving does, and runs about to open for them wait for it
+(core/departures.py).
 
 The ledger records each erasure, by whom and for whom, in counts, and nothing it erased.
 """
@@ -62,6 +64,7 @@ WORDS = {
     "said_in_groups": "what they said in group chats",
     "group_summaries": "group chats' summaries that held what they said",
     "questions": "questions agents asked each other for them alone",
+    "tasks": "tasks they asked for, with what each did",
 }
 
 
@@ -70,9 +73,12 @@ class Busy(Exception):
 
 
 def busy(conn: psycopg.Connection, person: str) -> bool:
-    """Whether a run is at work for someone now: open, and its token alive."""
-    return conn.execute("select 1 from runs where %s = any(acts_for) and closed_at is null "
-                        "and expires_at > now() limit 1", (person,)).fetchone() is not None
+    """Whether a run, or a task's slice, is at work for someone now: open, and alive."""
+    return conn.execute(
+        "select 1 from runs where %(p)s = any(acts_for) and closed_at is null "
+        "and expires_at > now() union all select 1 from tasks where (owner = %(p)s or "
+        "%(p)s = any(audience)) and status = 'running' and lease_expires_at > now() limit 1",
+        {"p": person}).fetchone() is not None
 
 
 def erase(conn: psycopg.Connection, person: str, now: datetime,
@@ -128,6 +134,8 @@ def erase(conn: psycopg.Connection, person: str, now: datetime,
     delete("said_in_groups", "delete from turns where speaker = any(%s)", (names,))
     delete("questions", "delete from questions where acts_for && %s and acts_for <@ %s",
            (names, names))  # for them alone: one for others too is theirs as well
+    delete("tasks", "delete from tasks where owner = any(%s)", (names,))  # and each one's
+    # children, which are theirs too
     if count := departures.unsummarise(conn, names):  # what a group's summary held of theirs,
         gone["group_summaries"] = count  # made again from what's left
     return gone, [a["name"] for a in whose["archives"]]

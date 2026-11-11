@@ -1,6 +1,6 @@
 ---
 title: Handling secrets and security issues
-people: [sol]
+audience: everyone  # what anyone does with a secret they find
 review_by: 2027-06-30
 ---
 

@@ -1,0 +1,9 @@
+serial: 1
+data_class: synthetic
+instances:
+  help-payroll:
+    definition: help-assistant
+    serves: [team:sales, team:payroll-team]
+    parts: [payroll]
+    level: 1
+    owner: ida

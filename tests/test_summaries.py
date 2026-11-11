@@ -87,7 +87,7 @@ def test_a_sentence_that_says_a_value_nobody_said_is_left_out(stack):
     assert kept["body"]["decisions"] == ["Ana will check Contoso's refund."]  # the rest goes
     assert {f["norm"] for f in kept["body"]["facts"]} >= {"Q-1002", "GBP 1240.50"}  # code's
     closed = [e for e in stack.ledger() if e["action"] == "close"]
-    assert closed[-1]["outcome"] == "done, leaving out: it says £1,999.00, which nobody said"
+    assert closed[-1]["outcome"] == "done, leaving some out"  # never what it left out
 
 
 def test_a_reply_that_isnt_a_summary_still_folds_codes_facts_once(stack):

@@ -1,0 +1,8 @@
+# Synthetic people and tickets for reviewer C's scratch helpdesk, whose tickets are numbered
+# as Zendesk numbers them: plain digits. Nothing here is real.
+people:
+  - {id: ida, name: Ida Holm, team: service, roles: [instance-approver], timezone: Europe/London}
+  - {id: olu, name: Olu Ade, team: payroll-team, roles: [part-owner:payroll], timezone: Europe/London}
+  - {id: tim, name: Tim Berg, team: sales, timezone: Europe/London}
+tickets:
+  - {key: "104233", part: payroll, title: Payslip shows the wrong tax code, status: open, requester: tim}

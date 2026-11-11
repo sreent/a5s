@@ -81,10 +81,18 @@
         "http://localhost:8703/chat/*",
         "http://127.0.0.1:8703/approve/*",
         "http://localhost:8703/approve/*",
+        "http://127.0.0.1:8703/decide/*",
+        "http://localhost:8703/decide/*",
+        "http://127.0.0.1:8703/grade/*",
+        "http://localhost:8703/grade/*",
+        "http://127.0.0.1:8703/notebook/*",
+        "http://localhost:8703/notebook/*",
         "http://127.0.0.1:8703/settings/*",
         "http://localhost:8703/settings/*",
-        "http://127.0.0.1:8703/notebook/*",
-        "http://localhost:8703/notebook/*"
+        "http://127.0.0.1:8703/officer/*",
+        "http://localhost:8703/officer/*",
+        "http://127.0.0.1:8703/studio/*",
+        "http://localhost:8703/studio/*"
       ],
       "webOrigins": [
         "+"

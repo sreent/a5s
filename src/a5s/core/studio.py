@@ -5,29 +5,43 @@ The core's API, for code, the command line and CI, and the studio's pages in the
 for people signed in, both work it out here, so each shows the same. The core's API is for the
 team that runs a5s, and shows everything. A person sees an instance if they may watch it: they
 run it, as its owner or deputy, own its agent, own or decide for one of its parts, or approve
-instances. Of its runs, they see those whose every record they may see, and of the rest, how
-many there are. Figures count people and never name them, as the measures do; a run shows
-whom it acted for, and what was said only by its hash, as the ledger keeps it.
+instances. Of its runs, they see those whose every record they may see, by the records each
+run handled, which a5s keeps as long as the run: those its tools gave it or it named, and those
+a5s gave it, such as a report's or a case's brief. Of the rest, they see how many there are.
+They never see the ledger's entries, whose digests of short texts can be guessed, and whom a
+run acted for is named to them only once the data protection officer agrees
+(A5S_STUDIO_NAMES): until then, a run says how many people it acted for. The figures count
+people and never name them, nor carry anyone's words: outcomes from a fixed set, and the
+reasons for denials by the policy's own ids.
 """
 
 from __future__ import annotations
 
 import json
 import re
-from datetime import datetime
+import uuid
+from collections import Counter
+from collections.abc import Iterable
+from datetime import datetime, timedelta
+from typing import Any
 
 import psycopg
 
 from a5s.config import ModelConfig
 from a5s.contract import INSTANCE_APPROVER, PART_DELEGATE, PART_OWNER, Person, Scenario, Tool
-from a5s.core import ledger, measures, provenance, registry
+from a5s.core import ledger, measures, registry, values
 from a5s.core.releases import agent_owner
+from a5s.core.status import outcome
 from a5s.definitions import Definition
 
 RUNS = 50  # runs to a page, newest first [TBC]
-DENIALS = 10_000  # the newest denials looked through, by the ledger's index of them
+MOST_RUNS = 200  # the most to a page
+DENIALS = 10_000  # each set of instances' newest denials looked through, by their own index
 COLUMNS = ("id, definition, release, status, level, model, serves, owner, deputy, parts, "
            "actions, asks")
+SERVING = ("active", "suspended")  # the instances whom an agent serves through
+REASON = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")  # a policy's own id: never words
+LAST = "ffffffff-ffff-ffff-ffff-ffffffffffff"  # after every run opened at the same moment
 
 
 def parts_of(inst: dict) -> list[str]:
@@ -44,11 +58,33 @@ def watches(inst: dict, person: Person) -> bool:
                    for p in parts_of(inst)))
 
 
-def instances(conn: psycopg.Connection, viewer: Person | None = None) -> list[dict]:
-    """The instances there are, but retired ones, or those the viewer may watch."""
-    rows = conn.execute(f"select {COLUMNS} from instances where status <> 'retired' "
-                        "order by id").fetchall()
+def instances(conn: psycopg.Connection, viewer: Person | None = None, *,
+              retired: bool = False) -> list[dict]:
+    """The instances there are, or those the viewer may watch: with the retired ones, whose
+    runs are still within an agent's figures, if `retired`."""
+    rows = conn.execute(f"select {COLUMNS} from instances"
+                        + ("" if retired else " where status <> 'retired'")
+                        + " order by id").fetchall()
     return [r for r in rows if viewer is None or watches(r, viewer)]
+
+
+def served(scenario: Scenario, insts: list[dict]) -> dict[str, list[str]]:
+    """Whom each agent serves through these instances, as the directory says now: through
+    each that's active or suspended, the same for `a5s measures` and for the studio."""
+    found: dict[str, set[str]] = {}
+    for inst in insts:
+        if inst["status"] in SERVING:
+            found.setdefault(inst["definition"], set()).update(
+                registry.served(scenario, inst["serves"]))
+    return {agent: sorted(people) for agent, people in found.items()}
+
+
+def reasons(found: Any) -> list[str]:
+    """A denial's reasons by the policy's own ids: any in words, which may name someone,
+    count as other."""
+    said = found if isinstance(found, list) else []
+    return list(dict.fromkeys(r if isinstance(r, str) and REASON.match(r) else "other"
+                              for r in said))
 
 
 def _name(scenario: Scenario, who: str | None) -> str | None:
@@ -131,29 +167,31 @@ def figures(conn: psycopg.Connection, scenario: Scenario, models: dict[str, Mode
     """How some instances are doing over the last `days` days: the measures, as `a5s
     measures` reports them, of those instances alone, and how their runs ended, what was
     denied and why, and the reports they sent."""
-    served: dict[str, set[str]] = {}
-    for inst in insts:
-        served.setdefault(inst["definition"], set()).update(
-            registry.served(scenario, inst["serves"]))
     ids = [i["id"] for i in insts]
-    found = measures.report(conn, scenario.name, models, days, now,
-                            {a: sorted(p) for a, p in served.items()}, instances=ids)
-    at = {"ids": ids, "window": f"{max(1, int(days))} days",
-          "now": now or conn.execute("select now() as t").fetchone()["t"]}
+    now = now or conn.execute("select now() as t").fetchone()["t"]
+    found = measures.report(conn, scenario.name, models, days, now, served(scenario, insts),
+                            instances=ids)
+    at = {"ids": ids, "window": f"{max(1, int(days))} days", "now": now}
     since = "%(now)s::timestamptz - %(window)s::interval"
-    found["ended"] = [dict(r) for r in conn.execute(
-        "select trigger->>'kind' as kind, coalesce(outcome, 'open') as outcome, "
-        f"count(*) as runs from runs where instance_id = any(%(ids)s) and opened_at > {since} "
-        "group by 1, 2 order by 1, 2", at)]
-    found["denied"] = [{"kind": r["kind"], "action": r["action"],
-                        "reasons": json.loads(r["reasons"] or "[]"), "times": r["n"]}
-                       for r in conn.execute(
-        "select kind, action, reasons, count(*) as n from ("
-        "  select kind, action, instance_id, entry::jsonb ->> 'at' as at, "
-        "  (entry::jsonb -> 'reasons')::text as reasons from ledger "
-        "  where decision = 'deny' order by seq desc limit %(most)s) recent "
-        f"where instance_id = any(%(ids)s) and at::timestamptz > {since} "
-        "group by 1, 2, 3 order by 4 desc, 1, 2 limit 20", {**at, "most": DENIALS})]
+    ended: Counter = Counter()
+    for r in conn.execute("select trigger->>'kind' as kind, outcome, count(*) as n from runs "
+                          f"where instance_id = any(%(ids)s) and opened_at > {since} "
+                          "group by 1, 2", at):
+        ended[(r["kind"], outcome(r["outcome"]))] += r["n"]
+    found["ended"] = [{"kind": k, "outcome": o, "runs": n}
+                      for (k, o), n in sorted(ended.items(), key=lambda i: (str(i[0][0]), i[0][1]))]
+    newest = conn.execute(  # these instances' own denials, by their own index, newest first
+        "select kind, action, entry::jsonb -> 'reasons' as reasons, "
+        "(entry::jsonb ->> 'at')::timestamptz as at from ledger "
+        "where decision = 'deny' and instance_id = any(%(ids)s) order by seq desc "
+        "limit %(most)s", {**at, "most": DENIALS}).fetchall()
+    within = [r for r in newest if r["at"] > now - _interval(days)]
+    denied = Counter((r["kind"], r["action"], tuple(reasons(r["reasons"]))) for r in within)
+    found["denied"] = [{"kind": k, "action": a, "reasons": list(why), "times": n}
+                       for (k, a, why), n in sorted(denied.items(),
+                                                    key=lambda i: (-i[1], str(i[0][0]),
+                                                                   str(i[0][1])))[:20]]
+    found["denied_partial"] = len(newest) == DENIALS and len(within) == len(newest)
     found["reports"] = [dict(r) for r in conn.execute(
         "select source, outcome, count(*) as reports from report_fires "
         f"where instance_id = any(%(ids)s) and fired_at > {since} group by 1, 2 order by 1, 2",
@@ -162,71 +200,140 @@ def figures(conn: psycopg.Connection, scenario: Scenario, models: dict[str, Mode
     return found
 
 
-def _read(conn: psycopg.Connection, runs: list[str]) -> dict[str, set[str]]:
-    """The records each run read with its tools, by key."""
-    found: dict[str, set[str]] = {r: set() for r in runs}
-    for row in conn.execute("select run_id::text as run, source from run_reads "
-                            "where run_id = any(%s::uuid[]) and source like %s",
-                            (runs, f"%{provenance.ABOUT}%")):
-        found[row["run"]].add(row["source"].rsplit(provenance.ABOUT, 1)[1])
+def _interval(days: int) -> timedelta:
+    return timedelta(days=max(1, int(days)))
+
+
+# The records each run handled, which the studio shows a run by
+
+
+def keys_in(value: Any, field: str | None) -> set[str]:
+    """The records a tool's result holds, by the field that names each, at any depth."""
+    found: set[str] = set()
+
+    def walk(v: Any) -> None:
+        if isinstance(v, dict):
+            if isinstance(v.get(field), str) and v[field]:
+                found.add(v[field])
+            for inner in v.values():
+                walk(inner)
+        elif isinstance(v, list):
+            for inner in v:
+                walk(inner)
+
+    if field:
+        walk(value)
     return found
 
 
-def _named(scenario: Scenario, *found: object) -> set[str]:
-    """The records named in what a run keeps, such as its trigger or its ledger entries."""
+def _trigger_records(trigger: dict | None) -> set[str]:
+    named = (trigger or {}).get("record")
+    return {named} if isinstance(named, str) and named else set()
+
+
+def named(scenario: Scenario, said: Any) -> set[str]:
+    """The records a text names, by the scenario's pattern for its keys: in what a5s tells a
+    run, or one of a5s's own tools gives it."""
     pattern = getattr(scenario, "record_pattern", None)
-    return set(re.findall(pattern, json.dumps(found, default=str))) if pattern else set()
+    text = said if isinstance(said, str) else json.dumps(said, ensure_ascii=False, default=str)
+    return {v.text for v in values.found(text or "", pattern) if v.kind == "key"}
 
 
-def _shown(scenario: Scenario, run: dict) -> dict:
+def given(scenario: Scenario, trigger: dict, seen: dict | None, texts: Iterable[str]) -> set[str]:
+    """The records a5s gives a run as it opens: what its trigger is about, what a report tells
+    of, and those a case's brief or a task names."""
+    found = set(seen or {}) | _trigger_records(trigger)
+    for text in texts:
+        found |= named(scenario, text)
+    return found
+
+
+def handled(conn: psycopg.Connection, run: str, keys: Iterable[str]) -> None:
+    """Keep, as long as the run, the records it handled, by key."""
+    found = sorted({k for k in keys if isinstance(k, str) and k})
+    if found:
+        conn.execute("insert into run_records (run_id, record) "
+                     "select %s::uuid, unnest(%s::text[]) on conflict do nothing", (run, found))
+
+
+def _handled(conn: psycopg.Connection, runs: list[str]) -> dict[str, set[str]]:
+    found: dict[str, set[str]] = {r: set() for r in runs}
+    for row in conn.execute("select run_id::text as run, record from run_records "
+                            "where run_id = any(%s::uuid[])", (runs,)):
+        found[row["run"]].add(row["record"])
+    return found
+
+
+def _sees(scenario: Scenario, viewer: Person, run: dict, keys: set[str]) -> bool:
+    """Whether someone may see a run: a5s kept its records, and they may see every one."""
+    return bool(run["records_kept"]) and all(
+        scenario.sees(viewer.id, k) for k in keys | _trigger_records(run["trigger"]))
+
+
+def _shown(scenario: Scenario, run: dict, names: bool) -> dict:
     return {"run": run["run"], "instance": run["instance_id"],
             "trigger": (run["trigger"] or {}).get("kind"),
-            "acts_for": [{"id": p, "name": _name(scenario, p)} for p in run["acts_for"]],
+            "acts_for": [{"id": p, "name": _name(scenario, p)} for p in run["acts_for"]]
+            if names else [],
+            "people": len(run["acts_for"]),
             "opened_at": run["opened_at"].isoformat(),
             "closed_at": run["closed_at"].isoformat() if run["closed_at"] else None,
-            "outcome": run["outcome"] or "open", "tokens": run["tokens"], "model": run["model"],
+            "outcome": outcome(run["outcome"]), "tokens": run["tokens"], "model": run["model"],
             "read_outside": run["read_outside"]}
 
 
+def _cursor(before: str | None) -> tuple[datetime, str] | None:
+    """Where a page of runs starts: after the run the page before ended at."""
+    if not before:
+        return None
+    at, _, run = before.partition("|")  # a bad time or id is a ValueError, for a 400
+    return datetime.fromisoformat(at), str(uuid.UUID(run)) if run else LAST
+
+
 def runs(conn: psycopg.Connection, scenario: Scenario, inst: dict,
-         viewer: Person | None = None, before: datetime | None = None,
-         limit: int = RUNS) -> dict:
-    """An instance's runs, newest first, a page at a time: for a viewer, those whose every
-    record they may see, those they read and those their trigger names, and how many others
-    there are."""
+         viewer: Person | None = None, before: str | None = None, limit: int = RUNS,
+         names: bool = True) -> dict:
+    """An instance's runs, newest first, a page at a time, each page after the run the one
+    before ended at: for a viewer, those whose every record they may see, and how many others
+    there are, with whom each acted for named only if `names`."""
+    page = max(1, min(int(limit), MOST_RUNS))
+    after = _cursor(before)
     rows = conn.execute(
         "select id::text as run, instance_id, trigger, acts_for, read_outside, opened_at, "
-        "closed_at, outcome, tokens, model from runs where instance_id = %s "
-        "and (%s::timestamptz is null or opened_at < %s) order by opened_at desc limit %s",
-        (inst["id"], before, before, max(1, min(int(limit), 200)))).fetchall()
-    read = _read(conn, [r["run"] for r in rows])
-    shown = [r for r in rows if viewer is None or all(
-        scenario.sees(viewer.id, k) for k in read[r["run"]] | _named(scenario, r["trigger"]))]
-    return {"instance": inst["id"], "runs": [_shown(scenario, r) for r in shown],
+        "closed_at, outcome, tokens, model, records_kept from runs where instance_id = %s "
+        "and (%s::timestamptz is null or (opened_at, id) < (%s::timestamptz, %s::uuid)) "
+        "order by opened_at desc, id desc limit %s",
+        (inst["id"], after and after[0], after and after[0], after and after[1], page)).fetchall()
+    keys = _handled(conn, [r["run"] for r in rows])
+    shown = [r for r in rows if viewer is None or _sees(scenario, viewer, r, keys[r["run"]])]
+    last = rows[-1] if len(rows) == page else None
+    return {"instance": inst["id"],
+            "runs": [_shown(scenario, r, viewer is None or names) for r in shown],
             "hidden": len(rows) - len(shown),
-            "before": rows[-1]["opened_at"].isoformat() if rows else None}
+            "before": f"{last['opened_at'].isoformat()}|{last['run']}" if last else None}
 
 
 def _calls(entries: list[dict]) -> list[dict]:
     """Each tool call a run made, with the policy's decision, and how it ended."""
     ended = {e["of"]: e for e in entries if e.get("kind") == "tool" and "of" in e}
     return [{"seq": e["seq"], "at": e["at"], "tool": e["action"], "decision": e["decision"],
-             "reasons": e.get("reasons") or [],
+             "reasons": reasons(e.get("reasons")),
              "outcome": (ended.get(e["seq"], {}).get("outcome") or {}).get("status")}
             for e in entries if e.get("kind") == "tool" and "of" not in e]
 
 
 def run(conn: psycopg.Connection, scenario: Scenario, run_id: str,
-        viewer: Person | None = None) -> dict | None:
-    """What a run did: what started it, whom it acted for, how it ended, the records it read,
-    each tool call with the policy's decision, and its entries in the ledger. None if there's
-    no such run, or the viewer may not watch its instance or see every record it read or its
-    entries name."""
+        viewer: Person | None = None, names: bool = True) -> dict | None:
+    """What a run did: what started it, whom it acted for, how it ended, the records it
+    handled, and each tool call with the policy's decision; and, for the team that runs a5s,
+    its entries in the ledger. None if there's no such run, or the viewer may not watch its
+    instance or see every record it handled. Whom it acted for, and what started it beyond
+    its kind, only if `names`."""
     try:
         row = conn.execute(
             "select id::text as run, instance_id, trigger, acts_for, read_outside, opened_at, "
-            "closed_at, outcome, tokens, tokens_in, tokens_out, tokens_cached, model "
-            "from runs where id = %s::uuid", (run_id,)).fetchone()
+            "closed_at, outcome, tokens, tokens_in, tokens_out, tokens_cached, model, "
+            "records_kept from runs where id = %s::uuid", (run_id,)).fetchone()
     except psycopg.errors.InvalidTextRepresentation:
         return None
     if row is None:
@@ -235,16 +342,20 @@ def run(conn: psycopg.Connection, scenario: Scenario, run_id: str,
                         (row["instance_id"],)).fetchone()
     if viewer is not None and (inst is None or not watches(inst, viewer)):
         return None
-    read = _read(conn, [row["run"]])[row["run"]]
-    entries = ledger.entries(conn, run=row["run"])
-    named = _named(scenario, row["trigger"], entries)
-    if viewer is not None and not all(scenario.sees(viewer.id, k) for k in read | named):
+    keys = _handled(conn, [row["run"]])[row["run"]]
+    if viewer is not None and not _sees(scenario, viewer, row, keys):
         return None
-    return {**_shown(scenario, row), "agent": inst["definition"] if inst else None,
-            "started_by": row["trigger"],
-            "tokens_in": row["tokens_in"], "tokens_out": row["tokens_out"],
-            "tokens_cached": row["tokens_cached"], "records": sorted(read),
-            "calls": _calls(entries), "entries": entries}
+    entries = ledger.entries(conn, run=row["run"])
+    named = viewer is None or names
+    found = {**_shown(scenario, row, named), "agent": inst["definition"] if inst else None,
+             "started_by": row["trigger"] if named else {"kind": (row["trigger"] or {}).get("kind")},
+             "tokens_in": row["tokens_in"], "tokens_out": row["tokens_out"],
+             "tokens_cached": row["tokens_cached"],
+             "records": sorted(keys | _trigger_records(row["trigger"])),
+             "calls": _calls(entries)}
+    if viewer is None:  # the team's: every entry, what was said by hash
+        found["entries"] = entries
+    return found
 
 
 # In words, for the command line
@@ -307,7 +418,9 @@ def told_agent(found: dict) -> str:
 
 
 def _run_line(found: dict) -> str:
-    whom = ", ".join(p["name"] or p["id"] for p in found["acts_for"]) or "nobody"
+    named = ", ".join(p["name"] or p["id"] for p in found["acts_for"])
+    count = found.get("people", 0)
+    whom = named or (f"{count} {'person' if count == 1 else 'people'}" if count else "nobody")
     return (f"{found['opened_at']} {found['run']} {found['trigger']} for {whom}: "
             f"{found['outcome']}, {found['tokens']:,} tokens"
             + (", read outside content" if found["read_outside"] else ""))

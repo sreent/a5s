@@ -68,7 +68,8 @@ def test_a_request_that_fails_its_rules_goes_back_to_its_requester(mdg):
                                 "why": "NT95 isn't an approved payment term: NT30, NT45, NT60"}]
     assert found["route"] == "back to its requester, Lin Zhou, to correct payment_terms"
     created = tool(mdg, "lin", "check_request", key="CR0000105").json()["result"]
-    assert created["failed"][0]["field"] == "vat" and created["sensitive"] == ["vat", "payment_terms"]
+    assert created["failed"][0]["field"] == "vat"
+    assert created["sensitive"] == ["country", "vat", "payment_terms"]  # its country, its VAT rule
     plain = tool(mdg, "raf", "check_request", key="CR0000106").json()["result"]
     assert plain["route"].startswith("SAP's workflow approves it with no owner's confirmation")
 

@@ -54,7 +54,9 @@ def test_a_run_shows_only_to_those_who_may_see_its_records(stack, approving, pro
     api = signed_in(approving, provider)
     [ran] = api("/studio/api/instances/assistant-ops/runs", "omar").json()["runs"]
     shown = api(f"/studio/api/runs/{ran['run']}", "omar").json()
-    assert shown["records"] == ["Q-1003"] and shown["acts_for"][0]["name"] == "Chen Wei"
+    assert shown["records"] == ["Q-1003"]
+    assert (shown["acts_for"], shown["people"]) == ([], 1)  # named once the officer agrees
+    assert "entries" not in shown and shown["started_by"] == {"kind": "message"}
     ana = api("/studio/api/instances/assistant-ops/runs", "ana").json()
     assert (ana["runs"], ana["hidden"]) == ([], 1)  # she approves it, but may not see Q-1003
     assert api(f"/studio/api/runs/{ran['run']}", "ana").status_code == 404
@@ -63,6 +65,21 @@ def test_a_run_shows_only_to_those_who_may_see_its_records(stack, approving, pro
     assert [r["runs"] for r in figures["runs"]] == [1]  # counted, and never named
     agent = api("/studio/api/agents/assistant/measures", "omar").json()
     assert agent["instances"] == ["assistant-ops"]  # of the instances he may watch alone
+
+
+def test_watchers_see_whom_a_run_acted_for_once_the_officer_agrees(stack, provider):
+    from dataclasses import replace
+
+    from conftest import deciding
+    stack.cfg = replace(stack.cfg, studio_names=True)  # A5S_STUDIO_NAMES, in the channels app
+    stack.model.reply("Nothing's open for you.")
+    stack.say("What's open?", person="ana")
+    with deciding(stack, provider) as url:
+        api = signed_in(url, provider)
+        [ran] = api("/studio/api/instances/assistant-finance/runs", "ben").json()["runs"]
+        shown = api(f"/studio/api/runs/{ran['run']}", "ben").json()
+    assert ran["acts_for"] == shown["acts_for"] == [{"id": "ana", "name": "Ana Ortiz"}]
+    assert shown["started_by"]["kind"] == "message" and "entries" not in shown
 
 
 @pytest.mark.parametrize("column", ["reminders.about", "obligations.title", "obligations.person",
@@ -95,7 +112,8 @@ def test_someone_watches_an_instance_in_the_browser(stack, approving, provider, 
     page.click("#runs button")
     page.wait_for_selector("#calls >> text=search_records", timeout=30000)
     assert "allow" in page.inner_text("#calls") and "Q-1001" in page.inner_text("#run-facts")
-    assert "invoice" not in page.inner_text("#entries")  # what was said, by its hash alone
+    assert "for 1 person" in page.inner_text("#run-facts")  # named once the officer agrees
+    assert page.locator("#entries").count() == 0  # what was said isn't shown at all
     page.click("#to-instance")
     assert page.is_visible("#instance") and not page.is_visible("#run")
 
@@ -115,7 +133,7 @@ def test_a_chase_shows_only_to_those_who_may_see_the_record_it_chases(stack, app
     api = signed_in(approving, provider)
     [chase] = api("/studio/api/instances/assistant-ops/runs", "omar").json()["runs"]
     assert chase["trigger"] == "obligation"
-    assert api(f"/studio/api/runs/{chase['run']}", "omar").json()["records"] == []  # read none
+    assert api(f"/studio/api/runs/{chase['run']}", "omar").json()["records"] == ["Q-1003"]
     ana = api("/studio/api/instances/assistant-ops/runs", "ana").json()
     assert (ana["runs"], ana["hidden"]) == ([], 1)  # it chases Q-1003, which she may not see
     assert api(f"/studio/api/runs/{chase['run']}", "ana").status_code == 404

@@ -10,7 +10,7 @@ import httpx
 from a5s import db, definitions
 from a5s.config import Config, load_models
 from a5s.contract import Scenario
-from a5s.core import metrics, status, traces
+from a5s.core import metrics, registry, status, traces
 from a5s.core.gateway import Gateway, create_app
 from a5s.core.identity import verifier_from_env
 from a5s.core.matrix import Matrix, MatrixConfig
@@ -39,7 +39,7 @@ def gateway(cfg: Config, http: httpx.Client | None = None) -> Gateway:
         identity=verifier_from_env(),
         teams=Teams(teams) if (teams := TeamsConfig.from_env()) else None,
         matrix=Matrix(matrix) if (matrix := MatrixConfig.from_env()) else None,
-        releases=Releases(running(cfg.root, cfg.scenario_dir)),
+        releases=Releases(running(cfg.root, cfg.scenario_dir, cfg.agents_dir)),
     )
 
 
@@ -61,6 +61,10 @@ def app(cfg: Config | None = None):
 
 def read_status(gw: Gateway) -> dict:
     """The status, as `a5s status` reads it, but never naming the deciders a rubber-stamp flag
-    would name: for the operators' figures (core/metrics.py)."""
+    would name, and whom each instance serves, which decides only which instances' own figures
+    may go out: for the operators' figures (core/metrics.py)."""
     with db.transaction(gw.url) as conn:
-        return status.report(conn, gw.breakers.open(), gw.cfg.seal_keys)
+        found = status.report(conn, gw.breakers.open(), gw.cfg.seal_keys)
+        found["serving"] = {i["id"]: set(registry.served(gw.scenario, i["serves"]))
+                            for i in conn.execute("select id, serves from instances")}
+    return found

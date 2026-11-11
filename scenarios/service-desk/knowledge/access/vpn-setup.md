@@ -1,6 +1,6 @@
 ---
 title: VPN setup for employees
-people: [sam, pat, jo, rae]
+audience: everyone  # every employee the desk serves
 review_by: 2027-06-30
 ---
 

@@ -25,9 +25,12 @@ def test_a_graphify_query_is_local_read_only_and_bounded(tmp_path, monkeypatch):
     tool = Graphify(graph, command="graphify-test", budget=750).tools()["query_code"]
     found = tool.run(call())
     assert found == {"answer": "NODE Client [src=httpx/_client.py]", "truncated": False}
-    assert commands == [(["graphify-test", "query", "authentication", "--graph", str(graph.resolve()),
-                         "--budget", "750"], {"capture_output": True, "text": True,
-                                              "check": False, "timeout": 60})]
+    [(command, given)] = commands
+    assert command == ["graphify-test", "query", "--graph", str(graph.resolve()), "--budget",
+                       "750", "--", "authentication"]
+    assert {k: v for k, v in given.items() if k != "env"} == {
+        "capture_output": True, "text": True, "check": False, "timeout": 60}
+    assert not any(k.startswith("A5S_") for k in given["env"])  # none of the core's
     assert tool.risk == {"reads": True, "writes": False, "destructive": False,
                          "sends_outside": False}
     assert tool.definition()["schema_hash"] == tool.schema_hash

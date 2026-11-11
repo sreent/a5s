@@ -29,7 +29,8 @@ RUNS = 50  # runs to a page, as the core gives them
 
 
 class Refused(Exception):
-    """The core turned a call down: its status, what it said why, and the body as it came."""
+    """The core turned a call down: its status, what it said why, and the body as it came. A
+    status of 0 says the core couldn't be reached at all."""
 
     def __init__(self, status: int, detail: Any, text: str):
         super().__init__(f"{status}: {detail}")
@@ -67,7 +68,11 @@ class Client:
         """Any of the core's calls, by its path: what it answered, or Refused."""
         given = {k: v.isoformat() if isinstance(v, datetime) else v
                  for k, v in params.items() if v is not None}
-        response = self._http.request(method, path, json=body, params=given or None)
+        try:
+            response = self._http.request(method, path, json=body, params=given or None)
+        except httpx.HTTPError as exc:  # down, unreachable or too slow: refused, with no status
+            raise Refused(0, f"the core at {self._http.base_url} can't be reached now "
+                             f"({type(exc).__name__})", "") from exc
         if response.status_code >= 400:
             try:
                 found = response.json()
@@ -75,7 +80,11 @@ class Client:
             except ValueError:
                 detail = response.text
             raise Refused(response.status_code, detail, response.text)
-        return response.json()
+        try:
+            return response.json()
+        except ValueError as exc:  # a page, such as a proxy's sign-in or maintenance page
+            raise Refused(response.status_code, "the core didn't answer with its JSON, so "
+                          "something stands in front of it", response.text[:500]) from exc
 
     def get(self, path: str, **params: Any) -> Any:
         return self.call("GET", path, **params)
@@ -110,20 +119,21 @@ class Client:
         """One agent as its release defines it, its instructions included, and where it runs."""
         return self.get(f"/studio/agents/{_part(agent)}")
 
-    def runs(self, instance: str, *, before: datetime | str | None = None,
-             limit: int = RUNS) -> dict:
-        """A page of an instance's runs, newest first, opened before `before`, if given."""
+    def runs(self, instance: str, *, before: str | None = None, limit: int = RUNS) -> dict:
+        """A page of an instance's runs, newest first: after where the page before ended, its
+        `before`, if given."""
         return self.get(f"/studio/instances/{_part(instance)}/runs", before=before, limit=limit)
 
     def each_run(self, instance: str, *, page: int = RUNS) -> Iterator[dict]:
-        """Every run of an instance, newest first, a page at a time."""
+        """Every run of an instance, newest first, a page at a time, until the core says
+        there are no more."""
         before = None
         while True:
             found = self.runs(instance, before=before, limit=page)
             yield from found["runs"]
-            if len(found["runs"]) < page or not found["before"]:
-                return
             before = found["before"]
+            if not before:
+                return
 
     def run(self, run: str) -> dict:
         """What one run did, with its entries in the ledger."""

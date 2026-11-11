@@ -46,7 +46,8 @@ def sweep(conn: psycopg.Connection, scenario: Scenario, now: datetime) -> list[s
     caller's transaction, or a week, when so many are missing at once that it looks like the
     directory. Someone back before then is forgotten as missing. Who was archived."""
     found = {r["person"] for r in conn.execute(  # what's left of them, even long after they
-        " union ".join(f"select distinct person from {table}" for table in KEPT + LET_GO))}
+        " union ".join([f"select distinct person from {table}" for table in KEPT + LET_GO]
+                       + ["select distinct owner from tasks"]))}
     gone = sorted(p for p in found if p and not p.startswith(FORMER) and not groups.of(p)
                   and scenario.person(p) is None)  # a group chat's conversation is nobody's,
     # and nor is a day's use of the budget by runs that act for nobody
@@ -137,4 +138,17 @@ def rename(conn: psycopg.Connection, person: str, now: datetime) -> str:
                  "where %s = any(acts_for)", (person, name, person))  # agents asked for them
     conn.execute("update reminders set heard_by = array_replace(heard_by, %s, %s) "  # and who
                  "where %s = any(heard_by)", (person, name, person))  # heard a reminder offered
+    for task in conn.execute(  # what they asked an agent to do, and is still open, ends
+            "update tasks set status = 'cancelled', lease_expires_at = null, not_before = null, "
+            "last_error = 'what a5s kept for its owner was put away', updated_at = now() "
+            "where owner = %s "
+            "and status not in ('done', 'cancelled', 'failed') "
+            "returning id::text as id, instance_id", (person,)).fetchall():
+        ledger.append(conn, {"kind": "task", "action": "cancel", "task": task["id"],
+                             "instance": task["instance_id"], "acts_for": [],
+                             "decision": "record",
+                             "args": {"why": "what a5s kept for its owner was put away"}})
+    conn.execute("update tasks set owner = case when owner = %s then %s else owner end, "
+                 "audience = array_replace(audience, %s, %s) where owner = %s "
+                 "or %s = any(audience)", (person, name, person, name, person, person))
     return name
