@@ -57,6 +57,41 @@ def test_a_run_sent_to_the_wrong_pool_fails_and_says_so(stack):
     assert closed == ["failed"] and stack.model.requests == []
 
 
+def test_a_run_waits_for_a_pool_that_cant_be_reached_for_a_moment(stack, caplog):
+    """As when the pool restarts: it never got the run, so the run is handed to it again
+    once it's back, and done once, rather than fail."""
+    stack.model.reply("Hello, from a pool just back.")
+    port, back, done = free_port(), threading.Event(), threading.Event()
+    app = worker.create_app(stack.url, agents=frozenset({"assistant"}))
+
+    def restarting() -> None:  # it's back a second after the run is first handed to it
+        time.sleep(1)
+        with serve(app, port):
+            back.set()
+            done.wait(30)
+
+    threading.Thread(target=restarting, daemon=True).start()
+    try:
+        with caplog.at_level(logging.WARNING, logger="a5s.services.scheduler"):
+            said = stack.say("Hi", scheduler=stack.scheduler(
+                pools={"assistant": remote_worker(f"http://127.0.0.1:{port}", reach=20)}))
+    finally:
+        done.set()
+    assert said == "Hello, from a pool just back." and back.is_set()
+    assert len(stack.model.requests) == 1  # the run, once
+    assert "can't be reached, so its run waits" in caplog.text
+
+
+def test_a_run_fails_once_its_pool_cant_be_reached_for_longer(stack):
+    nowhere = f"http://127.0.0.1:{free_port()}"  # nothing listens there
+    began = time.monotonic()
+    stack.say("Hi", scheduler=stack.scheduler(pools={"assistant": remote_worker(nowhere,
+                                                                                 reach=1)}))
+    assert time.monotonic() - began < 15
+    closed = [e["outcome"] for e in stack.ledger() if e["kind"] == "run" and e["action"] == "close"]
+    assert closed == ["failed"] and stack.model.requests == []
+
+
 def test_each_pool_claims_only_its_own_agents_messages(stack):
     stack.send("Hello assistant")
     stack.send("Hello watcher", agent="watcher")

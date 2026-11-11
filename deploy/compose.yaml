@@ -88,6 +88,7 @@ services:
   scheduler:  # answers the messages the core receives; it has no port of its own
     <<: *a5s
     command: ["scheduler"]
+    stop_grace_period: 630s  # asked to stop, it finishes its runs in flight first
     environment:
       A5S_DATABASE_URL: postgresql://a5s_scheduler:${A5S_DB_SCHEDULER_PASSWORD}@postgres:5432/postgres
       A5S_SERVICE_TOKEN: ${A5S_SERVICE_TOKEN:?set A5S_SERVICE_TOKEN}
@@ -111,10 +112,12 @@ services:
   # The workers, in pools: no secrets, no database, no internet. Each agent with a pool of
   # its own runs there alone, and every other agent in the shared pool, which refuses theirs.
   # Each pool has a network of its own, with the gateway and the scheduler, so no pool
-  # reaches another.
+  # reaches another. Asked to stop, as for an upgrade, a pool finishes its runs in flight
+  # first, and the scheduler holds what it hands one meanwhile until it's back.
   worker:  # the shared pool
     <<: *a5s
     command: ["worker", "--host", "0.0.0.0"]
+    stop_grace_period: 600s
     environment:
       A5S_GATEWAY_URL: http://gateway:8700
       A5S_WORKER_POOLED: assistant,watcher
@@ -123,6 +126,7 @@ services:
   worker-assistant:  # the assistant's own pool
     <<: *a5s
     command: ["worker", "--host", "0.0.0.0"]
+    stop_grace_period: 600s
     environment:
       A5S_GATEWAY_URL: http://gateway:8700
       A5S_WORKER_AGENTS: assistant
@@ -131,6 +135,7 @@ services:
   worker-watcher:  # the watcher's own pool
     <<: *a5s
     command: ["worker", "--host", "0.0.0.0"]
+    stop_grace_period: 600s
     environment:
       A5S_GATEWAY_URL: http://gateway:8700
       A5S_WORKER_AGENTS: watcher
