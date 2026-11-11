@@ -28,6 +28,7 @@ Each part runs as its own service account, which can't reach Kubernetes' own API
   - and as the deployment needs them: `deepseek-api-key`, `qwen-api-key`, `teams-secret-<agent>`, `matrix-as-token` and `matrix-hs-token`.
 - **Locked storage** for the ledger's copies, given as `anchor.store`, and the copier's right to write there, through the cloud's workload identity, as an annotation on its service account (`serviceAccounts.annotations.anchor`), and on AKS a label on its pods too (`podLabels.anchor`). [The first day](../../docs/first-day.md) does it on Azure.
 - **Where Postgres is**, for the network policies: `networkPolicies.database`, by its pods' labels or its addresses.
+- **Where traces and operators' figures go**, if anywhere: `telemetry.endpoint`, an OpenTelemetry collector reached over HTTP, such as one that passes them on to Prometheus or Azure Monitor. A collector in the cluster also needs `networkPolicies.telemetry`, by its pods' and namespace's labels. Neither carries what anyone said, nor names a person or a record.
 
 ## Install
 

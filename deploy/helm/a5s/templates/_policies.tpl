@@ -11,6 +11,23 @@
     - {protocol: TCP, port: 53}
 {{- end }}
 
+{{- define "a5s.policy.telemetry" -}}
+{{- $t := .Values.networkPolicies.telemetry -}}
+{{- if and .Values.telemetry.endpoint (or $t.podSelector $t.namespaceSelector) }}
+- to:
+    - {{- with $t.podSelector }}
+      podSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with $t.namespaceSelector }}
+      namespaceSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+  ports:
+    - {protocol: TCP, port: {{ $t.port }}}
+{{- end }}
+{{- end }}
+
 {{- define "a5s.policy.database" -}}
 {{- $db := .Values.networkPolicies.database -}}
 - to:

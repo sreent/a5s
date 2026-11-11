@@ -27,6 +27,7 @@ spec:
     {{- include "a5s.policy.dns" . | nindent 4 }}
     {{- include "a5s.policy.database" . | nindent 4 }}
     {{- include "a5s.policy.outside" . | nindent 4 }}
+    {{- include "a5s.policy.telemetry" . | nindent 4 }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

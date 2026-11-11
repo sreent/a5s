@@ -1,6 +1,6 @@
 # The studio: build, try, publish, run and watch agents
 
-**Status:** Step 1 is built: the catalogue, the dashboards and each run's page, read only, with their API and command line ([progress](#progress)). Authoring waits for the pilot's evidence · **Under:** [Agent model](agent-model.md)
+**Status:** Step 1 is built: the catalogue, the dashboards and each run's page, read only, with their API, a Python client, the command line, and operators' figures for the organisation's monitoring ([progress](#progress)). Authoring waits for the pilot's evidence · **Under:** [Agent model](agent-model.md)
 
 Today, people build and run a5s's agents in code: a folder for each agent, `a5s pin`, a release signed with `a5s release`, settings signed with `a5s sign`, and `a5s status` and `a5s measures` to see how they do. A few pages help: the settings app, and the pages for approving, deciding, grading, the notebook and the officer. The studio gives the people who make and run agents what a maker studio such as Microsoft Copilot Studio gives them: one place to create an agent, try it, publish it, choose where it runs, and watch how it does.
 
@@ -13,7 +13,19 @@ It doesn't add a second way to change a5s. Everything the studio does is a chang
 - People see it on the channels app's page, `/studio/`, signed in as on the notebook's, through its own API under `/studio/api/`, from the same module. The chart lets only the worker and the scheduler reach the core, so the channels app reads the figures as its own role, which migration `0044_studio.sql` grants only the columns they count and each run's own record: never what people said, what a reminder, an obligation or a question is about, or a run's token.
 - Someone may watch an instance if they run it, as its owner or deputy, own its agent, own or decide for one of its parts, or approve instances. Of its runs, they see those whose every record they may see, and how many others there are.
 - Both apps describe these endpoints in their OpenAPI documents, at `/openapi.json`.
-- Still to come in step 1: a Python client, and operators' figures, with no personal data, for the organisation's monitoring. The cap for each type of action stays on the grading page, where the core checks its seal.
+- [`a5s.client`](../src/a5s/client.py) is the Python client for the core's API, by its service token, for the team's own jobs and CI, and the command line makes its calls through it. For example, a job that reads a week of each instance's figures:
+
+  ```python
+  from a5s.client import Client
+
+  with Client.from_env() as core:  # A5S_GATEWAY_URL and A5S_SERVICE_TOKEN, as a5s finds them
+      for agent in core.agents():
+          for inst in agent["instances"]:
+              figures = core.measures(days=7, instance=inst["id"])
+  ```
+
+- Operators' figures go to the organisation's monitoring as OpenTelemetry metrics ([`core/metrics.py`](../src/a5s/core/metrics.py)): the status's figures, each minute, to the endpoint the deployment names for its traces (`telemetry.endpoint` in the chart), such as a collector that passes them on to Prometheus or Azure Monitor. Each is counted by what it counts, such as an instance, a model, a tool, a trigger or an outcome, and never by a person or a record, nor with anything said. The core gains no new way in: the gateway sends them out.
+- The cap for each type of action stays on the grading page, where the core checks its seal.
 
 ## What it keeps
 

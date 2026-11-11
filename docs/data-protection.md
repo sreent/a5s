@@ -30,6 +30,7 @@ What the data protection officer's assessment needs to know about a5s before any
 | Departures | Whose archive is which, once someone has left. The ledger records that they were archived, but not the archive's name | To answer a request for a leaver's data | Once nothing is left under the archive's name, such as what they said in a group chat that's still going, and 12 months after archiving at the soonest |
 | The officer's requests | What the officer asked for, for whom, and the sign-in that asked, kept until it's carried out | So the team carries out only what the officer asked for, once | A day |
 | Traces | Masked spans: no prompt, reply, message, tool argument or person | To find what's slow or failing | 14 days |
+| Operators' figures | The status's counts and times, by instance, model, tool, trigger and outcome: no person, record or anything said | So the team that runs a5s sees how it's doing in its own monitoring | The monitoring's own [TBC] |
 | Logs | What each service did. A few lines name a person by id, or a record by key, such as a budget's warning. Never what was said | To run a5s | The platform's [TBC] |
 
 Someone who leaves is archived a day after the directory stops naming them, or a week, if so many go missing at once that it looks like the directory: what a5s kept for them goes under a name no person has, on the same clocks, what only served them while they were here goes, and so does what they said they were waiting on. A group chat's summary that held anything they said goes too, and the group's next run makes it again from its turns, where the archive's name stands for them ([`core/departures.py`](../src/a5s/core/departures.py)). The retention sweep runs every hour and records in the ledger, in counts, what it deleted ([`core/retention.py`](../src/a5s/core/retention.py)).
@@ -39,7 +40,7 @@ Someone who leaves is archived a day after the directory stops naming them, or a
 - **a5s's database,** a managed Postgres in the deployment's region [TBC: which], and nowhere else. Nothing is copied out, apart from the ledger.
 - **The ledger's copies,** in locked object storage in the same region, which the copier writes and nobody can delete before their time.
 - **The models,** each in the region its approved entry names ([`config/models.yaml`](../config/models.yaml)). The model gateway refuses any model not on the list, and a failover to one.
-- **Traces and logs,** in the platform's telemetry [TBC: which, and where].
+- **Traces, operators' figures and logs,** in the platform's telemetry, which the deployment names [TBC: which, and where].
 
 ## What models see
 
