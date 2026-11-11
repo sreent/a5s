@@ -20,6 +20,7 @@ import httpx
 import yaml
 
 from a5s import build, db, definitions, devdb, worker
+from a5s.client import Client, Refused
 from a5s.config import DEFAULT_DATABASE_URL, Config
 from a5s.contract import Signature
 from a5s.core import (
@@ -309,13 +310,18 @@ def _release(cfg: Config, args: argparse.Namespace) -> None:
     print("Approved here.")
 
 
+def _core(cfg: Config, call, timeout: float = 30):
+    """A call to the core's API, through its client (a5s/client.py), or the reason it's refused."""
+    with Client(cfg.gateway_url, cfg.service_token, timeout=timeout) as core:
+        try:
+            return call(core)
+        except Refused as exc:
+            sys.exit(f"{exc.status}: {exc.text}")
+
+
 def _admin(cfg: Config, path: str, body: dict | None = None, timeout: float = 30) -> dict:
-    headers = {"Authorization": f"Bearer {cfg.service_token}"}
-    with httpx.Client(base_url=cfg.gateway_url, headers=headers, timeout=timeout) as gw:
-        response = gw.post(path, json=body) if body is not None else gw.get(path)
-    if response.status_code >= 400:
-        sys.exit(f"{response.status_code}: {response.text}")
-    return response.json()
+    return _core(cfg, lambda core: core.post(path, body) if body is not None else core.get(path),
+                 timeout)
 
 
 def main(argv: list[str] | None = None) -> None:
@@ -517,25 +523,21 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "status":
         print(status.told(_admin(cfg, "/status")))
     elif args.command == "measures":
-        path = (f"/studio/agents/{quote(args.agent, safe='')}/measures" if args.agent
-                else f"/studio/instances/{quote(args.instance, safe='')}/measures"
-                if args.instance else "/measures")
-        print(measures.told(_admin(cfg, f"{path}?days={args.days}")))
+        print(measures.told(_core(cfg, lambda core: core.measures(
+            args.days, agent=args.agent, instance=args.instance))))
     elif args.command == "agents" and args.what:
         if not args.agent:
             sys.exit("name the agent to show, such as assistant")
-        print(studio.told_agent(_admin(cfg, f"/studio/agents/{quote(args.agent, safe='')}")))
+        print(studio.told_agent(_core(cfg, lambda core: core.agent(args.agent))))
     elif args.command == "agents":
-        print(studio.told_agents(_admin(cfg, "/studio/agents")["agents"]))
+        print(studio.told_agents(_core(cfg, lambda core: core.agents())))
     elif args.command == "runs" and args.instance == "show":
         if not args.run:
             sys.exit("name the run to show")
-        print(studio.told_run(_admin(cfg, f"/studio/runs/{quote(args.run, safe='')}")))
+        print(studio.told_run(_core(cfg, lambda core: core.run(args.run))))
     elif args.command == "runs":
-        query = f"?limit={args.n}" + (f"&before={quote(args.before, safe='')}"
-                                      if args.before else "")
-        print(studio.told_runs(_admin(
-            cfg, f"/studio/instances/{quote(args.instance, safe='')}/runs{query}")))
+        print(studio.told_runs(_core(cfg, lambda core: core.runs(
+            args.instance, before=args.before, limit=args.n))))
     elif args.command == "proposals" and args.end:
         if not args.key:
             sys.exit("name the change to end, such as P-12")
