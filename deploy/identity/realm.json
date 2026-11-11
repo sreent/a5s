@@ -92,7 +92,9 @@
         "http://127.0.0.1:8703/officer/*",
         "http://localhost:8703/officer/*",
         "http://127.0.0.1:8703/studio/*",
-        "http://localhost:8703/studio/*"
+        "http://localhost:8703/studio/*",
+        "http://127.0.0.1:8703/tasks/*",
+        "http://localhost:8703/tasks/*"
       ],
       "webOrigins": [
         "+"

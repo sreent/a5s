@@ -4,8 +4,8 @@ Someone asks an agent, in their own chat with it, for work that takes more than 
 as going through a quarter's disputed invoices. The agent offers it with offer_task, and it
 starts only once they say yes in a later message, with confirm_task, as a reminder does: with
 the release's budget for a task, and the days it has (definitions.Tasks). It's theirs, so it
-acts for them alone, and they can list and cancel it, through the agent, and when it needs
-them, have it go on with what they say.
+acts for them alone, and they can list and cancel it, through the agent or on their own
+page (core/inbox.py), and when it needs them, have it go on with what they say.
 
 The core works on it a slice at a time, each slice one of the agent's runs, which the
 scheduler opens like any other (`kind: task`). The run is told the task, its plan, what its
@@ -24,7 +24,7 @@ its deadline passes, a5s tells them itself, in its own words (core/tasks.py has 
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 import psycopg
@@ -180,6 +180,62 @@ def resume(call: Call) -> dict:
     carry(call.conn, row["id"], call.run["run"])  # what they said, as theirs
     return {"task": name(row), "goes on": True,
             "note": "a5s works on it again in a run of its own, with what they said"}
+
+
+# Their own page (core/inbox.py): every task someone asked agents for, wherever they asked
+
+PAGE_MOST = 50  # the most tasks their page shows, the latest first
+
+
+def theirs(conn: psycopg.Connection, scenario: Any, person: Person,
+           now: datetime) -> list[dict]:
+    """Someone's own tasks, with every agent, for their page: how each stands, what it
+    waits on, and what it has spent. A task whose words name a record they may no longer
+    see shows how it stands alone, never its words."""
+    rows = conn.execute(
+        "select t.number, t.task, t.status, t.progress, t.plan, t.last_error, t.answered, "
+        "t.deadline, t.tokens, t.token_budget, t.asked_at, t.updated_at, i.definition as agent "
+        "from tasks t join instances i on i.id = t.instance_id where t.owner = %s "
+        "and t.parent is null order by t.updated_at desc, t.number desc limit %s",
+        (person.id, PAGE_MOST)).fetchall()
+    lapsed = now - CONFIRM_WITHIN  # an offer not said yes to by then
+    shown = []
+    for r in rows:
+        about: dict[str, Any] = {
+            "task": name(r), "agent": r["agent"],
+            "status": "offered, and lapsed" if r["status"] == OFFERED and r["asked_at"]
+                      and r["asked_at"] <= lapsed else r["status"],
+            "ended": r["status"] in ENDED, "progress": round(100 * r["progress"]),
+            "has until": say(person, r["deadline"]),
+            "spent": f"{r['tokens']:,} of {r['token_budget']:,} tokens",
+            "updated": r["updated_at"].date().isoformat()}
+        words = [r["task"], r["plan"], r["last_error"], r["answered"]]
+        if not all(scenario.sees(person.id, k) for k in studio.named(scenario, words)):
+            shown.append({**about, "withheld": True})
+            continue
+        about |= {"what": r["task"], "plan": r["plan"] or []}
+        if r["last_error"]:
+            about["why"] = r["last_error"]
+        if answered := r["answered"]:
+            about |= {"needed": answered.get("needed"), "said": answered.get("said")}
+        shown.append(about)
+    return shown
+
+
+def cancel_theirs(conn: psycopg.Connection, person: Person, task: str,
+                  now: datetime) -> dict:
+    """Cancel one of someone's tasks at their word, on their page, as the agent would at
+    their asking. TaskError if it isn't theirs, or has ended."""
+    number = task.strip().upper().removeprefix("T-")
+    row = conn.execute("select id::text as id, number from tasks where owner = %s "
+                       "and number = %s", (person.id, int(number))
+                       ).fetchone() if number.isdigit() else None
+    if row is None:
+        raise TaskError(f"{task} isn't one of your tasks")
+    tasks = TaskService("", lease_seconds=3600)  # in the page's own transaction
+    tasks.clock = lambda: now
+    tasks.cancel(row["id"], person.id, within=conn)
+    return {"cancelled": name(row)}
 
 
 # What a task's own run keeps, and says
