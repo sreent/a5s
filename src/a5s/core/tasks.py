@@ -48,6 +48,7 @@ OFFERED = "offered"  # asked for, and waiting for its owner's yes
 MAX_FAILURES = 5  # slices in a row that fail or lose their lease, before the task fails [TBC]
 BACKOFF = timedelta(seconds=30)  # how long a task waits after a slice fails, doubling [TBC]
 BACKOFF_MOST = timedelta(hours=1)
+PUT_OFF = timedelta(minutes=30)  # how long a task waits when its slice's run can't open [TBC]
 
 
 class TaskError(RuntimeError):
@@ -289,6 +290,31 @@ class TaskService:
                                                           "tokens_left": left,
                                                           **({"lapsed": True} if lapsed else {})})
             return lease, {**self._get(conn, task_id), "tokens_left": left}
+
+    def put_off(self, task_id: str, why: str, *,
+                within: psycopg.Connection | None = None) -> dict | None:
+        """Put a task's next slice off for PUT_OFF, when its run can't open now for a reason
+        outside the task, such as its owner's budget for the day being spent, so the task
+        isn't asked for again at every sweep. It isn't a failed slice, since nothing ran,
+        unless its last worker's lease lapsed. Past its deadline, the task fails instead. The
+        task as it then stands, or None if it's gone."""
+        with self._tx(within) as conn:
+            row = self._locked(conn, task_id)
+            if row is None:
+                return None
+            now = self.clock()
+            lapsed = row["status"] == "running" and row["lease_expires_at"] <= now
+            if row["status"] not in ("queued", "waiting") and not lapsed:
+                return self._get(conn, task_id)  # ended, or at work under a live lease
+            if row["deadline"] <= now:
+                reason = "its deadline passed"
+                self._status(conn, row, "failed", error=reason, failures=row["failures"] + lapsed)
+                self._record(conn, task_id, "stop", instance=row["instance_id"],
+                             acts_for=row["audience"], args={"why": reason})
+            else:
+                self._status(conn, row, "waiting" if lapsed else row["status"], error=why[:200],
+                             failures=row["failures"] + lapsed, not_before=now + PUT_OFF)
+            return self._get(conn, task_id)
 
     def run_next(self, task_id: str, worker: Callable[[dict, Callable[[dict], None]], dict]) -> dict:
         """Run a task's next slice on `worker`, under a lease of its own, which a heartbeat

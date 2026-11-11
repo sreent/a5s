@@ -831,8 +831,9 @@ class Gateway:
                            ["there's no such task"])
         opening = Opening(trigger={"kind": tasking.KIND, "task": task_id, "payer": row["owner"]},
                           acts_for=list(row["audience"]), args={"task": task_id}, reasons=[])
-        if row["instance_id"] != inst["id"]:
+        if row["instance_id"] != inst["id"]:  # nothing to put off: it's another's to run
             opening.reasons.append(f"{inst['id']} didn't take it")
+            opening.used = True
         if row["status"] not in ("queued", "waiting", "running"):
             opening.reasons.append(f"it's {row['status']}")
             opening.used = True
@@ -1144,11 +1145,17 @@ def create_app(gw: Gateway) -> FastAPI:
                 lease, task = tasking.begin(conn, gw.tasks, opening.trigger["task"])
                 if lease is None:  # it can't go on, and its owner hears so if it has ended
                     reasons.append(task.get("last_error") or "it can't go on now")
+                    opening.used = True
                     if task.get("status") == "failed":
                         pushing += tell_of_task(conn, task)
                 else:  # its run's model calls are held to what's left of its budget
                     opening.trigger.update(lease=lease, cap=int(task["tokens_left"]))
                     opening.task = tasking.brief(task, gw.scenario.person(task["owner"]))
+            if kind == tasking.KIND and reasons and not opening.used:  # it waits a while,
+                put_off = gw.tasks.put_off(  # rather than be asked for again at every sweep,
+                    opening.trigger["task"], "; ".join(reasons), within=conn)
+                if put_off and put_off["status"] == "failed":  # or fails, past its deadline
+                    pushing += tell_of_task(conn, put_off)
             if not reasons:
                 for who in sorted(set(opening.acts_for)):  # not while they're erased or archived
                     departures.hold(conn, who, shared=True)
@@ -1211,8 +1218,7 @@ def create_app(gw: Gateway) -> FastAPI:
                                      "instance": row["instance_id"], "decision": "record",
                                      "outcome": "abandoned"})
                 sends += give_instead(conn, row["trigger"], WHY["abandoned"])
-                if tasking.ended(task := tasking.end(conn, gw.tasks, row, "abandoned")):
-                    sends += tell_of_task(conn, task)  # its slices failed once too often
+                sends += slice_closed(conn, row["run"], row, "abandoned")
         push(sends)
         return [{"run": r["run"], "inbound": r["trigger"].get("inbound"),
                  "instance": r["instance_id"]} for r in stale]
@@ -1250,13 +1256,21 @@ def create_app(gw: Gateway) -> FastAPI:
                                  "outcome": ended})
             sends = [] if ended.startswith("done") else give_instead(conn, row["trigger"],
                                                                       WHY.get(ended))
-            task = tasking.end(conn, gw.tasks, row, ended)  # a task's slice, and what it spent
-            if tasking.ended(task) and not conn.execute(  # its owner hears, if its run didn't
-                    "select 1 from turns where run_id = %s and role = 'agent' limit 1",
-                    (run_id,)).fetchone():
-                sends += tell_of_task(conn, task)
+            sends += slice_closed(conn, run_id, row, ended)
         push(sends)
         return {"closed": run_id}
+
+    def slice_closed(conn: psycopg.Connection, run_id: str, row: dict,
+                     outcome: str) -> list[int | None]:
+        """End the slice of a task that a closing run was, if it was one, with what it said
+        and spent; and if that ended the task, and the run wrote nothing to its owner, a5s
+        tells them itself. What to push once the transaction is done."""
+        task = tasking.end(conn, gw.tasks, row, outcome)
+        if not tasking.ended(task) or conn.execute(
+                "select 1 from turns where run_id = %s and role = 'agent' limit 1",
+                (run_id,)).fetchone():
+            return []
+        return tell_of_task(conn, task)
 
     def tell_of_task(conn: psycopg.Connection, task: dict) -> list[int | None]:
         """a5s's own word to a task's owner that it's done, needs them, or has stopped, when

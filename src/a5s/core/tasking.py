@@ -46,7 +46,7 @@ def _number(given: Any) -> int:
     try:
         return int(str(given).strip().upper().removeprefix("T-"))
     except ValueError:
-        raise Refused(f"{given} isn't a task, such as T-12") from None
+        raise Refused(f"name the task, such as T-12, not {given!r}") from None
 
 
 def service(url: str, clock: Any, run_minutes: int) -> TaskService:
@@ -119,7 +119,7 @@ def cancel(call: Call) -> dict:
     person = call.person
     row = call.conn.execute("select id::text as id, number from tasks where owner = %s "
                             "and instance_id = %s and number = %s",
-                            (person.id, call.run["id"], _number(call.args["task"]))).fetchone()
+                            (person.id, call.run["id"], _number(call.args.get("task")))).fetchone()
     if row is None:
         raise Refused(f"{call.args['task']} isn't one of their tasks with you")
     try:
@@ -158,6 +158,8 @@ def finish(call: Call) -> dict:
         raise Refused("say what it needs of them to go on")
     row = call.conn.execute("select owner, plan from tasks where id = %s",
                             (task_id,)).fetchone()
+    if row is None:  # gone meanwhile, as an erasure takes it
+        raise Refused("the task is gone: stop now, and write to nobody")
     said: dict[str, Any] = {"status": status}
     for field in ("result", "reason", "partial"):
         if call.args.get(field) is not None:

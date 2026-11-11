@@ -9,6 +9,7 @@ from __future__ import annotations
 from datetime import timedelta
 
 from a5s import db
+from a5s.core import budgets
 from a5s.core.tasks import TaskService, TaskSpec
 
 ASKED = "Go through my open questions and say what each one waits on"
@@ -28,6 +29,15 @@ def told(stack, person: str = "ana") -> list[str]:
         return [r["text"] for r in conn.execute(
             "select text from outbox where person = %s and inbound_id is null order by id",
             (person,))]
+
+
+def spend_their_day(stack, person: str = "ana") -> None:
+    """Their budget with the assistant for the day it is now, spent."""
+    day = budgets.day_of(stack.gateway.scenario, person, stack.gateway.clock())
+    with db.transaction(stack.admin) as conn:
+        conn.execute("insert into spend (instance_id, person, day, tokens) values (%s, %s, %s, %s) "
+                     "on conflict (instance_id, person, day) do update set tokens = excluded.tokens",
+                     ("assistant-finance", person, day, 1_000_000))
 
 
 def a_task(stack, budget: int = 400_000, days: int = 3) -> dict:
@@ -111,8 +121,8 @@ def test_its_owner_hears_from_a5s_when_its_deadline_passes(stack):
     assert stack.scheduler().work_due() == 1  # its slice is due, and can't begin
     [stopped] = tasks_of(stack)
     assert (stopped["status"], stopped["last_error"]) == ("failed", "its deadline passed")
-    assert told(stack) == [f"T-{task['number']}, the task you asked the assistant for, has "
-                           "stopped: its deadline passed."]
+    assert told(stack) == [(f"T-{task['number']}, the task you asked the assistant for, has "
+                            "stopped: its deadline passed.")]
 
 
 def test_its_owner_sees_and_stops_their_task_through_the_assistant(stack):
@@ -136,3 +146,45 @@ def test_someone_else_cant_see_or_stop_anyones_task(stack):
     stack.say("Cancel T-1", person="ben")
     assert tasks_of(stack)[0]["status"] == "queued"
     assert "isn't one of their tasks" in str(stack.model.requests[-1]["body"]["messages"][-1])
+
+
+def test_a_task_whose_run_cant_open_waits_rather_than_being_asked_for_at_every_sweep(stack):
+    a_task(stack)
+    spend_their_day(stack)  # nothing ran, so it's no failed slice: it waits half an hour
+    assert stack.scheduler().work_due() == 1
+    [put_off] = tasks_of(stack)
+    assert (put_off["status"], put_off["failures"], put_off["attempts"]) == ("queued", 0, 0)
+    assert "used its budget for ana today" in put_off["last_error"]
+    assert stack.scheduler().work_due() == 0  # not asked for again at once
+    stack.at((stack.gateway.clock() + timedelta(minutes=31)).isoformat())
+    assert stack.scheduler().work_due() == 1
+    opened = [e for e in stack.ledger() if e["kind"] == "run" and e["action"] == "open"]
+    assert [e["decision"] for e in opened] == ["deny", "deny"] and told(stack) == []
+
+
+def test_a_task_put_off_past_its_deadline_fails_and_its_owner_hears_once(stack):
+    task = a_task(stack, days=1)
+    stack.at((stack.gateway.clock() + timedelta(days=2)).isoformat())
+    spend_their_day(stack)  # so its run can't open, and its slice never begins
+    assert stack.scheduler().work_due() == 1
+    [stopped] = tasks_of(stack)
+    assert (stopped["status"], stopped["last_error"]) == ("failed", "its deadline passed")
+    assert told(stack) == [(f"T-{task['number']}, the task you asked the assistant for, has "
+                            "stopped: its deadline passed.")]
+    assert stack.scheduler().work_due() == 0 and len(told(stack)) == 1
+
+
+def test_a_tasks_owner_hears_once_when_its_run_stops_after_writing_to_them(stack):
+    a_task(stack)
+    stack.model.reply(None, ("finish_task", {"status": "done", "result": {"Q-1001": "an address"}}))
+    stack.model.reply("Ana, your task is done: Q-1001 waits on the right address.")
+    stopping = stack.scheduler()
+    stopping._close = lambda run, outcome: None  # it stops once it has written, before closing
+    assert stopping.work_due() == 1
+    with db.transaction(stack.admin) as conn:
+        conn.execute("update runs set expires_at = now() - interval '1 second'")
+    stack.scheduler().sweep()  # its run is closed as abandoned, with what it said
+    [done] = tasks_of(stack)
+    assert (done["status"], done["result"]) == ("done", {"Q-1001": "an address"})
+    [heard] = told(stack)  # the assistant's own message, and no word of a5s's besides
+    assert heard.startswith("Ana, your task is done")

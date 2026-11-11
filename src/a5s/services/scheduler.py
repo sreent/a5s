@@ -13,10 +13,10 @@ Every minute, it also asks the core what falls due: obligations whose agents
 should remind their people, and reports with something to tell someone, each
 taking the person's conversation in the same way, and schedules to fire, and
 the next slices of people's tasks, each taking a lease of its own, so a task at
-work never holds up its owner's own chat. The core decides each run, and escalates overdue
-obligations itself. What can't run now is due
-again at the next sweep. The scheduler has no port of its own, so nothing can
-send it work but the core.
+work never holds up its owner's own chat. The core decides each run, and
+escalates overdue obligations itself. What can't run now is due again at the
+next sweep, but for a task, which the core puts off a while. The scheduler has
+no port of its own, so nothing can send it work but the core.
 """
 
 from __future__ import annotations
