@@ -20,7 +20,7 @@ from zoneinfo import ZoneInfo
 
 import psycopg
 
-from a5s.contract import Obligation, Person, Scenario
+from a5s.contract import PART_OWNER, Obligation, Person, Scenario
 from a5s.definitions import Definition
 
 LOCK = 0x0A5_0B16  # one sweep at a time
@@ -147,8 +147,24 @@ def sync(conn: psycopg.Connection, scenario: str, owed: list[Obligation],
     )
 
 
-def to_escalate(row: dict, scenario: Scenario, now: datetime, can_act: bool) -> Person | None:
-    """Whom to escalate an obligation to now, if anyone.
+def ladder(scenario: Scenario, person: str, record: str) -> tuple[list[Person], str]:
+    """Whom an obligation goes up to, in turn, and as what: "line", up the person's reporting
+    line, leaving out whoever may not see its record; when that leaves nobody, "part", the
+    owners of its record's part who may; and when nobody may, "unseen", the person's own
+    manager, to hear only that something they owe is late."""
+    if line := chain(scenario, person, record):
+        return line, "line"
+    part = scenario.part_of(record)
+    owners = [p for p in scenario.holders(f"{PART_OWNER}:{part}")
+              if p.in_audience and p.id != person and scenario.sees(p.id, record)] if part else []
+    if owners:
+        return owners, "part"
+    return chain(scenario, person)[:1], "unseen"
+
+
+def to_escalate(row: dict, scenario: Scenario, now: datetime,
+                can_act: bool) -> tuple[Person, str] | None:
+    """Whom to escalate an obligation to now, if anyone, and as what (ladder()).
 
     Once due, it goes one step up the person's reporting line at a time, each
     in that person's working hours, and no sooner than a working day after the
@@ -158,7 +174,7 @@ def to_escalate(row: dict, scenario: Scenario, now: datetime, can_act: bool) -> 
     person = scenario.person(row["person"])
     if row["done_at"] or now < row["due_at"] or person is None:
         return None
-    line = chain(scenario, row["person"], row["record"])
+    line, why = ladder(scenario, row["person"], row["record"])
     if row["escalations"] >= len(line):
         return None  # the top of the line has heard
     if row["escalations"]:
@@ -171,14 +187,21 @@ def to_escalate(row: dict, scenario: Scenario, now: datetime, can_act: bool) -> 
     elif can_act and now < a_working_day_after(person, row["due_at"]):
         return None
     recipient = line[row["escalations"]]
-    return recipient if working(recipient, now) else None
+    return (recipient, why) if working(recipient, now) else None
 
 
-def escalation(row: dict, scenario: Scenario, recipient: Person, inst: dict | None) -> str:
-    """a5s's own words to the next person up the line, from the records."""
+def escalation(row: dict, scenario: Scenario, recipient: Person, inst: dict | None,
+               reach: str = "line") -> str:
+    """a5s's own words to the next person up the line, or an owner of its part, from the
+    records: or, "unseen", that something is late, and nothing of what it is."""
     person = scenario.person(row["person"])
+    name = person.name if person else row["person"]
+    if reach == "unseen":
+        return (f"Something {name} owes was due on {day(recipient, row['due_at'])} and is still "
+                "open. Nobody up their reporting line may see the record it's in, so a5s can't "
+                f"take it up the line: ask {name} about it.")
     said = [(f"{row['record']}, {row['title']}, was due on {day(recipient, row['due_at'])} "
-             "and is still open."), f"It's {person.name if person else row['person']}'s."]
+             "and is still open."), f"It's {name}'s."]
     if row.get("waiting_on") and row.get("waiting_noted_at"):
         said.append(f"On {day(recipient, row['waiting_noted_at'])}, they said they were waiting on "
                     f"{row['waiting_on']} until {day(recipient, row['waiting_until'])}.")
@@ -191,7 +214,9 @@ def escalation(row: dict, scenario: Scenario, recipient: Person, inst: dict | No
         said.append(f"The {inst['definition']} couldn't remind them first{why}.")
     if row["escalations"] and (previous := scenario.person(row["escalated_to"])):
         said.append(f"{previous.name} heard on {day(recipient, row['escalated_at'])}.")
-    said.append("You're next in their reporting line, so a5s is letting you know.")
+    said.append("You own its part, and nobody up their reporting line may see it, so a5s is "
+                "letting you know." if reach == "part"
+                else "You're next in their reporting line, so a5s is letting you know.")
     if row["link"]:
         said.append(row["link"])
     return " ".join(said)

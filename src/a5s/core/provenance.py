@@ -26,7 +26,12 @@ OUTSIDE = "outside"  # a document from outside the organisation, as a5s's reader
 def read(conn: psycopg.Connection, run: str, source: str, said: Any, pattern: str | None) -> None:
     """Note the values a run read, and where from."""
     text = said if isinstance(said, str) else json.dumps(said, ensure_ascii=False, default=str)
-    for v in values.found(text, pattern):
+    noted(conn, run, source, values.found(text, pattern))
+
+
+def noted(conn: psycopg.Connection, run: str, source: str, found: list[Value]) -> None:
+    """Note values a run read, as found, and where from."""
+    for v in found:
         conn.execute("insert into run_reads (run_id, source, kind, norm, text) "
                      "values (%s, %s, %s, %s, %s) on conflict do nothing",
                      (run, source, v.kind, v.norm, v.text))

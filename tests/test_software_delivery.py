@@ -60,7 +60,7 @@ def test_a_security_issue_is_for_the_security_team_alone(dev):
                              json={"args": {"id": "security/secrets-handling.md"}}).json()
     keys = {r["key"] for r in found["result"]["records"]}
     assert "DEV-101" in keys and "DEV-103" not in keys  # left out, not just refused
-    assert "no readable" in secret["result"]["error"]
+    assert secret["result"]["title"] == "Handling secrets and security issues"  # everyone's
     sol = opened(dev, "dev-team", "sol", "dev-assistant")
     with dev.client(sol) as client:
         mine = client.post("/run/tools/get_record", json={"args": {"key": "DEV-103"}})

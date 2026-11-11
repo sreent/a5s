@@ -280,7 +280,7 @@ class SampleScenario:
             by_name.update(Graphify(graph).tools())
         vault = self.folder / "knowledge"
         if vault.is_dir():
-            by_name.update(MarkdownKnowledge(vault, sees_part=self._knowledge_part).tools())
+            by_name.update(MarkdownKnowledge(vault, sees_part=self._knowledge_part, person=self.person).tools())
         return by_name
 
     def _knowledge_part(self, person: str, part: str) -> bool:

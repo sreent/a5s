@@ -1280,10 +1280,13 @@ def create_app(gw: Gateway) -> FastAPI:
                 "where o.scenario = %s and o.done_at is null order by o.due_at, o.id",
                 (gw.scenario.name,)).fetchall()
             for row in rows:
-                to = obligations.to_escalate(row, gw.scenario, now, able.get(row["instance_id"], False))
-                if to is None:
+                found = obligations.to_escalate(row, gw.scenario, now,
+                                                able.get(row["instance_id"], False))
+                if found is None:
                     continue
-                text = obligations.escalation(row, gw.scenario, to, instances.get(row["instance_id"]))
+                to, why = found
+                text = obligations.escalation(row, gw.scenario, to,
+                                              instances.get(row["instance_id"]), why)
                 conn.execute("update obligations set escalations = escalations + 1, "
                              "escalated_at = %s, escalated_to = %s, updated_at = %s where id = %s",
                              (now, to.id, now, row["id"]))
@@ -1292,7 +1295,8 @@ def create_app(gw: Gateway) -> FastAPI:
                     "kind": "notice", "action": "escalate", "run": None,
                     "instance": row["instance_id"], "acts_for": [], "decision": "record",
                     "args": {"obligation": row["id"], "record": row["record"],
-                             "person": row["person"], "to": to.id, "step": row["escalations"] + 1,
+                             "person": row["person"], "to": to.id, "as": why,
+                             "step": row["escalations"] + 1,
                              "channel": route["channel"], "chars": len(text),
                              "sha256": hashlib.sha256(text.encode()).hexdigest()}})
                 if route["channel"] == "batch":  # they've had today's urgent messages
@@ -1300,7 +1304,7 @@ def create_app(gw: Gateway) -> FastAPI:
                 else:  # in the chat, after this transaction, or in the local channel's inbox
                     sends.append(outbound(conn, route, to.id, text, instance=row["instance_id"],
                                           agent=row["agent"]))
-                noted(conn, to.id, row["agent"], text, row["record"])
+                noted(conn, to.id, row["agent"], text, None if why == "unseen" else row["record"])
                 escalated.add(row["id"])
             due = [d for d in obligations.to_chase(rows, gw.scenario, now, able,
                                                    gw.digest_open(conn, now))
@@ -2407,9 +2411,12 @@ def create_app(gw: Gateway) -> FastAPI:
                            "outcome": {"status": status_now}})
         if status_now != "ok":
             return JSONResponse(status_code=502, content={"error": "a5s's reader couldn't answer now"})
-        with db.transaction(gw.url) as conn:  # its values count as the outside document's own
-            provenance.read(conn, row["run"], f"{provenance.OUTSIDE} D-{number}", said,
-                            gw.scenario.record_pattern)
+        pattern = gw.scenario.record_pattern  # its values are the outside document's own
+        held = values.found(found["text"], pattern)  # only where the document holds them, as
+        with db.transaction(gw.url) as conn:  # its form's are: one it made up is its own
+            provenance.noted(conn, row["run"], f"{provenance.OUTSIDE} D-{number}",
+                             [v for v in values.found(said, pattern)
+                              if any(v.matches(h) for h in held)])
             said = handles.masked(conn, row["run"], said)
         return {"result": {extractor.OUTSIDE: True, "document": f"D-{number}", "says": said,
                            "note": extractor.NOTE}, "recorded": recorded}

@@ -22,7 +22,7 @@ The model never validates. Code does, the same way each time, and the agent tell
 
 - **Critical-field rules.** A supplier or customer has a name, country and postcode, and a VAT number in its country's form where its country requires one. Payment terms are one of the approved terms. An IBAN has a valid form and check digits. A material has a description, a base unit and a material type from their lists.
 - **Likely duplicates.** The same VAT number; a similar name in the same country and postcode; a bank account another supplier already uses; a similar material description.
-- **Sensitive fields.** A supplier's name, postcode and VAT number; a supplier's bank account, payment terms, and the supplier its bank record belongs to; a customer's VAT number and payment terms.
+- **Sensitive fields.** A supplier's name, country, postcode and VAT number; a supplier's bank account, payment terms, and the supplier its bank record belongs to; a customer's country, VAT number and payment terms. A country is sensitive since it decides which VAT rule its number is checked by, so an agent never proposes one.
 - **Where a request goes.** Back to its requester if a rule fails; to its data object's owner if it's new, touches a sensitive field or looks like an existing record; otherwise through SAP's workflow with no owner's confirmation.
 - **Data quality.** The share of each data object's records that pass every rule, against its owner's target, which records fail and why, and its likely duplicates.
 
@@ -38,7 +38,7 @@ The model never validates. Code does, the same way each time, and the agent tell
 - A data object's records are its owner's team's and the data team's to see, and the teams that work with them: procurement and accounts payable see suppliers, accounts payable sees supplier bank data, sales sees customers, and the plant sees materials.
 - A change request is the data team's and its owner's team's, and its requester's.
 - A data object's quality is its owner's team's and the data team's.
-- Bank details reach an agent only as handles, which a5s fills in where people see them. What suppliers send reaches it only as a5s's reader fills a fixed form from it: what it asks for, and the dates and keys it names.
+- Bank details reach an agent only as handles, which a5s fills in where people see them, so the message a person got keeps the value as they read it, for as long as their conversation ([data protection](../docs/data-protection.md)). What suppliers send reaches it only as a5s's reader fills a fixed form from it: what it asks for, the dates and keys it names, and whether it says it's urgent, asks to skip the callback, or says someone approved it already, the handbook's warning signs. The assistant never asks the reader about a letter in words of its own, whose answer could carry a bank account's number.
 
 ## The agents
 

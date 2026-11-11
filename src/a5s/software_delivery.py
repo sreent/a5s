@@ -183,5 +183,5 @@ class SoftwareDeliveryScenario:
                  draft, writes=True, text_fields=("title", "body"), record_arg="record"),
         )}
         tools.update(MarkdownKnowledge(self.folder / "knowledge",
-                                       sees_part=self._knowledge_part).tools())
+                                       sees_part=self._knowledge_part, person=self.person).tools())
         return tools

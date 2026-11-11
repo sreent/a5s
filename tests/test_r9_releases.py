@@ -77,11 +77,11 @@ def read(scenario: SoftwareDeliveryScenario, who: str, note: str) -> dict:
 def test_widening_who_may_read_a_note_needs_a_release(tmp_path, database):
     folder = tmp_path / "software-delivery"
     shutil.copytree(ROOT / "scenarios" / "software-delivery", folder)
-    note = folder / "knowledge" / "security" / "secrets-handling.md"
+    note = folder / "knowledge" / "frontend" / "code-review-checklist.md"
     scenario = SoftwareDeliveryScenario(folder, database)
-    assert "error" in read(scenario, "raj", "security/secrets-handling.md")  # Sol's alone
+    assert "error" in read(scenario, "raj", "frontend/code-review-checklist.md")  # frontend's
     before = yaml.safe_load(releases.manifest(ROOT, folder, agents_dir=folder / "agents"))
-    note.write_text(note.read_text().replace("people: [sol]", "parts: [backend]"))
+    note.write_text(note.read_text().replace("parts: [frontend]", "audience: everyone"))
     after = yaml.safe_load(releases.manifest(ROOT, folder, agents_dir=folder / "agents"))
     assert {n.role for n in releases.needs(after, before)} == {releases.RELEASE_APPROVER}
 

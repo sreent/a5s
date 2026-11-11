@@ -1,14 +1,6 @@
-"""Round 9, reviewer C: what a requester wrote on a ticket, as the desk assistant gets it.
-
-The service desk's get_messages returns each message with whom it's from, and the body as a5s's
-reader's form: what it asks for, one of four choices, and nothing else. Two things follow:
-
-- whom it's from is the requester's own address, such as sam.home@mail.test, which the desk
-  hands over as a handle on a ticket ("contact") and its settings classify as personal, but
-  here it's neither, so the model reads it, unlike the other two scenarios' letters, which hand
-  "from" over as a handle and classify it;
-- the agent can't say what the requester wrote, such as that the VPN times out after MFA,
-  though tests/test_service_desk.py scripts the fake model to say just that."""
+"""Round 9 of the critique: the service desk. A ticket with no status no longer stops every
+sweep of what the tickets owe, and whom a requester's message is from reaches the agent as a
+handle, as a ticket's contact does (a5s/service_desk.py; docs/critique.md, round 9)."""
 
 from __future__ import annotations
 
@@ -35,22 +27,25 @@ def desk(database: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iter
         yield found
 
 
+def test_the_desk_follows_up_on_tickets_that_fall_due(desk):
+    desk.at("2026-11-02T10:00:00+00:00")  # past half of INC0000001's time, in Rae's hours
+    with desk.client() as client:
+        swept = client.post("/obligations/sweep")
+    assert swept.status_code == 200, swept.text
+    owed = {o.record for o in desk.gateway.scenario.obligations()}
+    assert {"INC0000001", "INC0000002"} <= owed
+
+
 def test_a_requesters_message_reaches_the_agent_without_their_address(desk):
     desk.model.reply(json.dumps({"asks_for": "access"}))  # a5s's reader fills its form
     token = opened(desk, "desk-access", "rae", "desk-assistant")  # Rae resolves it
     with desk.client(token) as client:
         got = client.post("/run/tools/get_messages", json={"args": {"key": "INC0000001"}})
+        ticket = client.post("/run/tools/get_record", json={"args": {"key": "INC0000001"}})
     assert got.status_code == 200, got.text
     seen = json.dumps(got.json()["result"])
-    print(seen)
     assert "times out" not in seen  # what Sam wrote never reaches the agent: only the form
-    assert desk.gateway.scenario.settings().classified == {"contact": "personal"}
-    # FAILS: whom it's from is Sam's own address, in plain, to the model
-    assert "sam.home@mail.test" not in seen, seen
-
-
-import pytest as _pytest
-
-# Round 9: this reproduces a finding still to fix. Its test moves beside the code it covers
-# once its fix lands, and leaves here.
-pytestmark = _pytest.mark.xfail(strict=True, reason="round 9: a finding still to fix")
+    assert "sam.home@mail.test" not in seen and "[h:" in seen, seen  # whom it's from: a handle
+    assert "sam.home@mail.test" not in ticket.text  # as a ticket's contact is
+    assert desk.gateway.scenario.settings().classified == {"contact": "personal",
+                                                           "from": "personal"}
