@@ -34,13 +34,22 @@ from a5s.contract import Person
 from a5s.core import studio
 from a5s.core.coretools import Call, CoreTool, Refused, one_to_one
 from a5s.core.reminders import CONFIRM_WITHIN, say
-from a5s.core.tasks import ENDED, OFFERED, TaskError, TaskService, TaskSpec, planned
+from a5s.core.tasks import (
+    ENDED,
+    MAX_CHILDREN,
+    OFFERED,
+    TaskError,
+    TaskService,
+    TaskSpec,
+    planned,
+)
 
 KIND = "task"
 HELD = "a-task-writes-once-it-ends"  # the policy's id when a task's run would write too soon
 MOST_CHARS = 2000  # the most a task's words may be
 MOST_PARTIAL = 4000  # the most of what its earlier slices found that a run is shown, in characters
 SAID = ("done", "blocked", "waiting")  # what a slice may say it came to
+LEAST_PART = 5_000  # the fewest tokens a part of a task may have to spend [TBC]
 
 
 def name(row: dict) -> str:
@@ -123,7 +132,9 @@ def mine(call: Call) -> dict:
     person = call.person
     rows = call.conn.execute(
         "select number, task, status, progress, plan, last_error, deadline, updated_at, "
-        "asked_at from tasks where owner = %s and instance_id = %s and parent is null "
+        "asked_at, (select count(*) from tasks c where c.parent = t.id) as parts, "
+        "(select count(*) from tasks c where c.parent = t.id and c.status = 'done') as done "
+        "from tasks t where owner = %s and instance_id = %s and parent is null "
         "order by updated_at desc limit 20", (person.id, call.run["id"])).fetchall()
     studio.handled(call.conn, call.run["run"], studio.named(
         call.scenario, [r["task"] for r in rows]))
@@ -136,6 +147,7 @@ def mine(call: Call) -> dict:
                        "progress": f"{round(100 * r['progress'])}%",
                        "steps done": f"{sum(s['status'] == 'completed' for s in r['plan'])} of "
                                      f"{len(r['plan'])}" if r["plan"] else None,
+                       **({"parts done": f"{r['done']} of {r['parts']}"} if r["parts"] else {}),
                        **({"why": r["last_error"]} if r["last_error"] else {}),
                        "has until": say(person, r["deadline"])} for r in rows]}
 
@@ -194,7 +206,9 @@ def theirs(conn: psycopg.Connection, scenario: Any, person: Person,
     see shows how it stands alone, never its words."""
     rows = conn.execute(
         "select t.number, t.task, t.status, t.progress, t.plan, t.last_error, t.answered, "
-        "t.deadline, t.tokens, t.token_budget, t.asked_at, t.updated_at, i.definition as agent "
+        "t.deadline, t.tokens, t.token_budget, t.asked_at, t.updated_at, i.definition as agent, "
+        "(select count(*) from tasks c where c.parent = t.id) as parts, "
+        "(select count(*) from tasks c where c.parent = t.id and c.status = 'done') as done "
         "from tasks t join instances i on i.id = t.instance_id where t.owner = %s "
         "and t.parent is null order by t.updated_at desc, t.number desc limit %s",
         (person.id, PAGE_MOST)).fetchall()
@@ -208,7 +222,8 @@ def theirs(conn: psycopg.Connection, scenario: Any, person: Person,
             "ended": r["status"] in ENDED, "progress": round(100 * r["progress"]),
             "has until": say(person, r["deadline"]),
             "spent": f"{r['tokens']:,} of {r['token_budget']:,} tokens",
-            "updated": r["updated_at"].date().isoformat()}
+            "updated": r["updated_at"].date().isoformat(),
+            **({"parts": f"{r['done']} of {r['parts']} done"} if r["parts"] else {})}
         words = [r["task"], r["plan"], r["last_error"], r["answered"]]
         if not all(scenario.sees(person.id, k) for k in studio.named(scenario, words)):
             shown.append({**about, "withheld": True})
@@ -265,10 +280,16 @@ def finish(call: Call) -> dict:
         raise Refused("say it's done, blocked on a person, or waiting to go on in a later run")
     if status == "blocked" and not str(call.args.get("reason") or "").strip():
         raise Refused("say what it needs of them to go on")
-    row = call.conn.execute("select owner, plan from tasks where id = %s",
+    row = call.conn.execute("select owner, plan, parent from tasks where id = %s",
                             (task_id,)).fetchone()
     if row is None:  # gone meanwhile, as an erasure takes it
         raise Refused("the task is gone: stop now, and write to nobody")
+    if status == "blocked" and row["parent"]:
+        raise Refused("a part of a task can't wait for its owner: say what it found, as "
+                      "done, and the task it's part of asks them what it needs")
+    if status == "done" and _open_parts(call.conn, task_id):
+        raise Refused("its parts are still at work: say it's waiting, and a5s runs it again "
+                      "once they're done, with what they found")
     said: dict[str, Any] = {"status": status}
     for field in ("result", "reason", "partial"):
         if call.args.get(field) is not None:
@@ -281,10 +302,68 @@ def finish(call: Call) -> dict:
     call.conn.execute("update runs set task_result = %s where id = %s",
                       (Jsonb(said), call.run["run"]))
     owner = call.scenario.person(row["owner"])
+    if row["parent"]:  # what it found goes to the task it's part of, never to anyone
+        return {"noted": status, "next": "stop now, and write to nobody: the task it's "
+                                          "part of goes on with what it found"}
     return {"noted": status,
             "next": "stop now: a5s runs it again later" if status == "waiting" else
                     f"write to {owner.name if owner else 'its owner'} now, in one short message, "
                     "what it came to, and nothing more"}
+
+
+def _open_parts(conn: psycopg.Connection, task_id: str) -> int:
+    return conn.execute("select count(*) as n from tasks where parent = %s and status not in "
+                        "('done', 'cancelled', 'failed')", (task_id,)).fetchone()["n"]
+
+
+def split(call: Call) -> dict:
+    """Split a task's work into parts, each a task of its own, which a5s works on in runs
+    of their own, at once if there's room: each with an equal share of what the task has
+    left, keeping one share for its own later runs, and its deadline. The task waits while
+    they're at work, and goes on once they've ended, told what each came to."""
+    task_id, _ = _slice(call)
+    parts = call.args.get("parts")
+    if not isinstance(parts, list) or not 1 <= len(parts) <= MAX_CHILDREN:
+        raise Refused(f"name from 1 to {MAX_CHILDREN} parts, each what to do in a sentence or two")
+    texts = [" ".join(str(p.get("task", "") if isinstance(p, dict) else p).split())
+             for p in parts]
+    if any(not t or len(t) > MOST_CHARS for t in texts):
+        raise Refused(f"say what each part is, in a sentence or two, at most {MOST_CHARS:,} "
+                      "characters")
+    row = call.conn.execute("select * from tasks where id = %s for update",
+                            (task_id,)).fetchone()
+    if row is None:
+        raise Refused("the task is gone: stop now, and write to nobody")
+    given_out = call.conn.execute("select coalesce(sum(token_budget), 0) as n from tasks "
+                                  "where parent = %s", (task_id,)).fetchone()["n"]
+    left = min(row["token_budget"] - row["tokens"] - given_out,
+               TaskService._tree_left(call.conn, row)) - int(call.run.get("tokens") or 0)
+    share = left // (len(texts) + 1)  # and one kept, for this task's own later runs
+    if share < LEAST_PART:
+        raise Refused(f"what the task has left, {max(left, 0):,} tokens, is too little to split "
+                      f"{len(texts)} ways: split it fewer ways, or go on with it whole")
+    carry(call.conn, task_id, call.run["run"])  # what this run read, for its parts too
+    tasks, made = _tasks(call), []
+    try:
+        for text in texts:
+            made.append(tasks.create(TaskSpec(
+                instance=row["instance_id"], owner=row["owner"], task=text,
+                audience=tuple(row["audience"]), token_budget=share, deadline=row["deadline"],
+                parent=task_id), within=call.conn))
+    except TaskError as exc:
+        raise Refused(str(exc)) from None
+    named = call.conn.execute("select number from tasks where id = any(%s::uuid[]) "
+                              "order by number", (made,)).fetchall()
+    return {"parts": [name(r) for r in named], "each may spend": share,
+            "next": "say it's waiting, with finish_task, and write to nobody: a5s works on "
+                    "each part in runs of its own, and runs this task again once they're "
+                    "done, with what they found"}
+
+
+def parts(conn: psycopg.Connection, task_id: str) -> list[dict]:
+    """A task's parts, each with what it came to, for its own later runs."""
+    return conn.execute("select number, task, status, result, last_error from tasks "
+                        "where parent = %s order by number", (task_id,)).fetchall()
 
 
 def carry(conn: psycopg.Connection, task_id: str, run: str) -> None:
@@ -301,11 +380,20 @@ def carry(conn: psycopg.Connection, task_id: str, run: str) -> None:
 
 
 def given(conn: psycopg.Connection, task_id: str, run: str) -> None:
-    """Give a task's run what its earlier runs read, with where each value came from: only
-    that, so what one of them wrote itself, in what it kept, stays its agent's own."""
+    """Give a task's run what its earlier runs read, and those of the tasks it's part of or
+    split into, with where each value came from: only that, so what one of them wrote
+    itself, in what it kept, stays its agent's own."""
     conn.execute("insert into run_reads (run_id, source, kind, norm, text) "
-                 "select %s, source, kind, norm, text from task_reads where task_id = %s "
-                 "on conflict do nothing", (run, task_id))
+                 "select %s, r.source, r.kind, r.norm, r.text from task_reads r "
+                 "join tasks t on t.id = r.task_id where t.root = "
+                 "(select root from tasks where id = %s) on conflict do nothing", (run, task_id))
+
+
+def marked(conn: psycopg.Connection, task: dict) -> bool:
+    """Whether a task's run opens marked: whether any run of it, or of the tasks it's part of
+    or split into, read content from outside."""
+    return bool(conn.execute("select 1 from tasks where root = %s and read_outside limit 1",
+                             (task["root"],)).fetchone())
 
 
 def _theirs(run: dict) -> bool:
@@ -361,6 +449,16 @@ TOOLS = {t.name: t for t in (
                  "partial": {"description": "What you've found so far"},
                  "plan": _PLAN}},
              keep, offered=_sliced),
+    CoreTool("split_task",
+             "Split the task's work into parts that can be done apart, each a task of its own "
+             "that a5s works on in runs of its own. Then say it's waiting: a5s runs it again "
+             "once they're done, with what each found.",
+             {"type": "object", "required": ["parts"], "properties": {
+                 "parts": {"type": "array", "items": {
+                     "type": "object", "required": ["task"], "properties": {
+                         "task": {"type": "string",
+                                  "description": "What the part is, in a sentence or two"}}}}}},
+             split, text_fields=(), offered=_sliced),
     CoreTool("finish_task",
              "Say what this run's work on the task came to: done, blocked on the person, or "
              "waiting to go on in a later run.",
@@ -376,11 +474,15 @@ TOOLS = {t.name: t for t in (
 
 # A task's slices, as runs
 
-def brief(task: dict, owner: Person | None) -> str:
-    """What a task's run is told: what its owner asked for, its plan, what its earlier slices
-    found, and the most it may spend."""
+def brief(task: dict, owner: Person | None, done: list[dict] | None = None,
+          whole: dict | None = None) -> str:
+    """What a task's run is told: what its owner asked for, or for a part, the task it's
+    part of; its plan; what its earlier slices found, and its parts; and the most it may
+    spend."""
     who = owner.name if owner else task["owner"]
-    said = [f"Work on {who}'s task, {name(task)}, which they asked you for: {task['task']}"]
+    said = [f"Work on {name(task)}, a part of {who}'s task {name(whole)}, which is to "
+            f"{whole['task']}. This part is to {task['task']}" if whole else
+            f"Work on {who}'s task, {name(task)}, which they asked you for: {task['task']}"]
     if task["plan"]:
         said.append("Its plan: " + "; ".join(f"{s['content']} ({s['status'].replace('_', ' ')})"
                                               for s in task["plan"]) + ".")
@@ -391,14 +493,49 @@ def brief(task: dict, owner: Person | None) -> str:
         found = str(task["partial"])
         said.append("What its earlier runs found: " + (found if len(found) <= MOST_PARTIAL
                                                        else found[:MOST_PARTIAL] + "..."))
+    if done:  # what its parts came to, each in runs of its own
+        most = MOST_PARTIAL // len(done)
+        said.append("Its parts: " + "; ".join(
+            f"{name(p)}, to {p['task']}: {p['status']}"
+            + (f", and found {_cut(p['result'], most)}" if p["result"] is not None else "")
+            + (f", as {p['last_error']}" if p["last_error"] else "") for p in done) + ".")
     said.append(f"This run may spend {task['tokens_left']:,} tokens at most. Keep what you do "
                 "with checkpoint_task as you go, so a later run picks up from it. A handle an "
                 "earlier run was given works only in that run: look its value up again if you "
-                "need it. When it's done, "
-                "or you can't go on without them, say so with finish_task, and then write to "
-                f"{who}, in one short message. Otherwise say it's waiting, and write to nobody: "
-                "a5s runs it again later.")
+                "need it. If it's work in parts that can be done apart, split it with "
+                "split_task, and say it's waiting.")
+    said.append("When this part is done, say what it found with finish_task, as its result, "
+                "and write to nobody: the task it's part of goes on with it. Otherwise say "
+                "it's waiting: a5s runs it again later." if whole else
+                "When it's done, or you can't go on without them, say so with finish_task, "
+                f"and then write to {who}, in one short message. Otherwise say it's waiting, "
+                "and write to nobody: a5s runs it again later.")
     return "\n\n".join(said)
+
+
+def _cut(found: Any, most: int) -> str:
+    text = found if isinstance(found, str) else str(found)
+    return text if len(text) <= most else text[:most] + "..."
+
+
+def whole(conn: psycopg.Connection, task: dict) -> dict | None:
+    """The task a part is part of, or None for a task someone asked for."""
+    return conn.execute("select number, task from tasks where id = %s", (task["parent"],)
+                        ).fetchone() if task.get("parent") else None
+
+
+def held(conn: psycopg.Connection, run: dict) -> str | None:
+    """Why a task's run may not write to its owner now, if it may not: a part of a task
+    writes to nobody, and a task's own run only once it has said it's done or needs them."""
+    found = conn.execute("select r.task_result ->> 'status' as said, t.parent from runs r "
+                         "left join tasks t on t.id = (r.trigger ->> 'task')::uuid "
+                         "where r.id = %s", (run["run"],)).fetchone()
+    if found and found["parent"]:
+        return "a part of a task writes to nobody: the task it's part of tells its owner"
+    if not found or found["said"] not in ("done", "blocked"):
+        return ("a task's run writes to its owner only once it's done or needs them, and "
+                "has said so with finish_task")
+    return None
 
 
 def begin(conn: psycopg.Connection, tasks: TaskService, task_id: str) -> tuple[str | None, dict]:

@@ -30,7 +30,7 @@ NOTEBOOK_TOOLS = ("note_learned",)
 # confirmed, listed, cancelled and resumed in a person's own chat, and kept, in each run of
 # a task
 TASK_TOOLS = ("offer_task", "confirm_task", "list_tasks", "cancel_task", "resume_task")
-SLICE_TOOLS = ("checkpoint_task", "finish_task")
+SLICE_TOOLS = ("checkpoint_task", "finish_task", "split_task")
 _DAY_NAMES = {f"{d}{rest}": d for d, rest in zip(DAYS, ("day", "sday", "nesday", "rsday", "day",
                                                        "urday", "day"), strict=True)}
 

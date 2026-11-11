@@ -209,13 +209,16 @@ class TaskService:
     def due(self, now: datetime | None = None,
             within: psycopg.Connection | None = None) -> list[str]:
         """The tasks a worker may take up now: queued, or waiting and not waiting longer after
-        a failed slice, or running under a lease that lapsed."""
+        a failed slice, or running under a lease that lapsed. Never a task whose parts are
+        still at work: it goes on once they've ended, with what they came to."""
         now = now or self.clock()
         with self._tx(within) as conn:
             return [str(r["id"]) for r in conn.execute(
-                "select id from tasks where (status in ('queued', 'waiting') and "
+                "select id from tasks t where ((status in ('queued', 'waiting') and "
                 "(not_before is null or not_before <= %s)) "
-                "or (status = 'running' and lease_expires_at <= %s) order by created_at, id",
+                "or (status = 'running' and lease_expires_at <= %s)) and not exists "
+                "(select 1 from tasks c where c.parent = t.id and c.status not in "
+                "('done', 'cancelled', 'failed')) order by created_at, id",
                 (now, now)).fetchall()]
 
     def cancel(self, task_id: str, by: str, within: psycopg.Connection | None = None) -> dict:

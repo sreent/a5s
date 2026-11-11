@@ -1150,9 +1150,11 @@ def create_app(gw: Gateway) -> FastAPI:
                         pushing += tell_of_task(conn, task)
                 else:  # its run's model calls are held to what's left of its budget
                     opening.trigger.update(lease=lease, cap=int(task["tokens_left"]))
-                    if task["read_outside"]:  # one of its runs read content from outside
+                    if tasking.marked(conn, task):  # a run of its tree read content from outside
                         opening.marked = True
-                    opening.task = tasking.brief(task, gw.scenario.person(task["owner"]))
+                    opening.task = tasking.brief(  # with its parts, or the task it's part of
+                        task, gw.scenario.person(task["owner"]), tasking.parts(conn, task["id"]),
+                        tasking.whole(conn, task))
             if kind == tasking.KIND and reasons and not opening.used:  # it waits a while,
                 put_off = gw.tasks.put_off(  # rather than be asked for again at every sweep,
                     opening.trigger["task"], "; ".join(reasons), within=conn)
@@ -1284,7 +1286,7 @@ def create_app(gw: Gateway) -> FastAPI:
                            "on i.id = t.instance_id where t.id = %s", (task["id"],)).fetchone()
         person = gw.scenario.person(row["owner"]) if row else None
         if (row is None or row["status"] not in ("done", "blocked", "failed") or person is None
-                or not person.in_audience):
+                or not person.in_audience or row["parent"]):  # a part: its task goes on
             return []
         text = tasking.notice(dict(row), row["agent"])
         ledger.append(conn, {"kind": "notice", "action": "task", "run": None,
@@ -2689,12 +2691,9 @@ def create_app(gw: Gateway) -> FastAPI:
             if row["trigger"].get("kind") in OWN_RUNS:
                 decision = Decision(False, ("a5s-runs-write-to-nobody",), explanations=(
                     "a5s's own runs, such as keeping a summary, write to nobody",))
-            elif row["trigger"].get("kind") == tasking.KIND and conn.execute(
-                    "select task_result ->> 'status' as said from runs where id = %s",
-                    (row["run"],)).fetchone()["said"] not in ("done", "blocked"):
-                decision = Decision(False, (tasking.HELD,), explanations=(
-                    ("a task's run writes to its owner only once it's done or needs them, and "
-                     "has said so with finish_task"),))
+            elif row["trigger"].get("kind") == tasking.KIND and (
+                    why := tasking.held(conn, row)):  # a part, or a task still at work
+                decision = Decision(False, (tasking.HELD,), explanations=(why,))
             elif row["trigger"].get("kind") == asking.KIND:
                 decision = Decision(False, ("answers-go-to-the-asker",), explanations=(
                     ("a run that answers another agent's question writes to nobody: its answer "
