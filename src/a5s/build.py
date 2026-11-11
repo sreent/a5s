@@ -39,7 +39,7 @@ def gateway(cfg: Config, http: httpx.Client | None = None) -> Gateway:
         identity=verifier_from_env(),
         teams=Teams(teams) if (teams := TeamsConfig.from_env()) else None,
         matrix=Matrix(matrix) if (matrix := MatrixConfig.from_env()) else None,
-        releases=Releases(running(cfg.root, cfg.scenario_dir)),
+        releases=Releases(running(cfg.root, cfg.scenario_dir, cfg.agents_dir)),
     )
 
 
