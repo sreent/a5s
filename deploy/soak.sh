@@ -1,11 +1,12 @@
 #!/bin/sh
 # A soak test. Starts the stack as the smoke test does, and checks it the same way, then has
 # the sample's people talk to its agents for a while: 30 minutes, unless given another number.
-# Ana asks for long tasks too, and half way through, the scheduler and the assistant's workers
-# restart. Then it checks that every message had one answer, in time, and no message was lost
-# or answered twice; that every task she started ended done, told her once, and left no lease;
-# that no part's memory, nor Postgres's connections, kept growing once the stack had warmed
-# up; that no part logged an error; and that the ledger verifies against its locked copies. Then it prints the measures, with what each run cost. It finds what no test
+# Ana asks for long tasks too, and half way through, the core, the scheduler and the
+# assistant's workers restart. Then it checks that every message had one answer, in time, and
+# no message was lost or answered twice; that every task she started ended done, told her once,
+# and left no lease; that no part's memory, nor Postgres's connections, kept growing once the
+# stack had warmed up; that no part logged an error; and that the ledger verifies against its
+# locked copies. Then it prints the measures, with what each run cost. It finds what no test
 # that runs for seconds can: leaks, locks that pile up, and work done twice.
 # Needs the image first: docker build -t a5s:dev .
 set -eu

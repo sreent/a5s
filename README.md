@@ -100,7 +100,7 @@ docker build -t a5s:dev .
 sh deploy/smoke.sh          # or: sh deploy/smoke.sh --keep
 ```
 
-The [soak test](deploy/soak.sh) starts the same stack, then has the sample's people talk to its agents for half an hour, or as many minutes as you give it. Ana asks the assistant for long tasks as well, and half way through, the scheduler and the assistant's workers restart. It checks that every message had one answer, in time; that every task she started ended done, told her once, and left no lease; that no part's memory or Postgres's connections kept growing; and that no part logged an error. CI runs it weekly, and when asked:
+The [soak test](deploy/soak.sh) starts the same stack, then has the sample's people talk to its agents for half an hour, or as many minutes as you give it. Ana asks the assistant for long tasks as well, and half way through, the core, the scheduler and the assistant's workers restart. It checks that every message had one answer, in time; that every task she started ended done, told her once, and left no lease; that no part's memory or Postgres's connections kept growing; and that no part logged an error. CI runs it weekly, and when asked:
 
 ```sh
 sh deploy/soak.sh 30

@@ -35,7 +35,7 @@ from datetime import UTC, datetime
 import httpx
 import psycopg
 
-from a5s import db
+from a5s import db, reach
 from a5s.config import Config
 from a5s.contract import INSTANCE_APPROVER, PART_OWNER, Scenario
 from a5s.core import groups, registry, tasking
@@ -46,9 +46,6 @@ log = logging.getLogger(__name__)
 # Seconds the scheduler waits for a worker's run: longer than the run may take on the worker
 # (A5S_WORKER_TIMEOUT), so the worker says why it stopped first
 WORKER_WAIT = float(os.environ.get("A5S_WORKER_WAIT", "600"))
-# Seconds a worker pool that can't be reached, such as one restarting, is tried again: it
-# never got the run, so trying again does nothing twice
-WORKER_REACH = 60.0
 Worker = Callable[[str, str, list[dict]], str]
 LEASE = 120  # seconds a conversation stays leased without being renewed
 
@@ -101,28 +98,14 @@ def what(claim: dict) -> str:
     return f"{claim['kind']} {claim.get(claim['kind']) or claim.get('id')}"
 
 
-def remote_worker(url: str, reach: float = WORKER_REACH) -> Worker:
+def remote_worker(url: str, within: float = reach.WITHIN) -> Worker:
     """Hand each run to a worker service, which holds nothing but the run's token. A pool
     that can't be reached, such as one restarting, never got the run, so it's tried again for
-    up to `reach` seconds, before the run fails: a restart holds its runs up, and loses none."""
-
-    def handed(token: str, history: list[dict]) -> httpx.Response:
-        until, wait = time.monotonic() + reach, 0.25
-        while True:
-            try:
-                return httpx.post(f"{url}/work", json={"token": token, "history": history},
-                                  timeout=httpx.Timeout(WORKER_WAIT, connect=10))
-            except (httpx.ConnectError, httpx.ConnectTimeout):  # it never got the run
-                if time.monotonic() + wait > until:
-                    raise
-                if wait == 0.25:
-                    log.warning("the worker pool at %s can't be reached, so its run waits "
-                                "for up to %.0f seconds", url, reach)
-                time.sleep(wait)
-                wait = min(wait * 2, 5)
+    up to `within` seconds before the run fails: a restart holds its runs up, and loses none."""
+    pool = reach.client(within, base_url=url, timeout=httpx.Timeout(WORKER_WAIT, connect=10))
 
     def work(_gateway_url: str, token: str, history: list[dict]) -> str:
-        response = handed(token, history)
+        response = pool.post("/work", json={"token": token, "history": history})
         if response.status_code == 503 and response.json().get("error") == "model_unavailable":
             raise ModelDown(response.json().get("detail", ""))
         if response.status_code == 429 and response.json().get("error") == "budget_spent":
@@ -143,7 +126,8 @@ class Scheduler:
         self.scenario = scenario
         self.worker = worker  # the shared pool, for every agent without a pool of its own
         self.pools = dict(pools or {})  # each agent's own, by its name
-        self.gw = http or httpx.Client(base_url=cfg.gateway_url, timeout=600)
+        self.gw = http or reach.client(base_url=cfg.gateway_url,  # waiting for it, a moment,
+                                       timeout=httpx.Timeout(600, connect=10))  # as it restarts
         self.service = {"Authorization": f"Bearer {cfg.service_token}"}
 
     def _worker(self, agent: str) -> Worker:

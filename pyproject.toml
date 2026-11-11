@@ -13,6 +13,7 @@ dependencies = [
     "fastapi",
     "uvicorn",
     "httpx",
+    "httpx2",  # the model providers' SDKs take it in httpx's place
     "psycopg[binary]",
     "pydantic>=2",
     "pyyaml",

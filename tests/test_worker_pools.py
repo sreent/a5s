@@ -72,21 +72,21 @@ def test_a_run_waits_for_a_pool_that_cant_be_reached_for_a_moment(stack, caplog)
 
     threading.Thread(target=restarting, daemon=True).start()
     try:
-        with caplog.at_level(logging.WARNING, logger="a5s.services.scheduler"):
+        with caplog.at_level(logging.WARNING, logger="a5s.reach"):
             said = stack.say("Hi", scheduler=stack.scheduler(
-                pools={"assistant": remote_worker(f"http://127.0.0.1:{port}", reach=20)}))
+                pools={"assistant": remote_worker(f"http://127.0.0.1:{port}", within=20)}))
     finally:
         done.set()
     assert said == "Hello, from a pool just back." and back.is_set()
     assert len(stack.model.requests) == 1  # the run, once
-    assert "can't be reached, so its run waits" in caplog.text
+    assert f"http://127.0.0.1:{port} can't be reached, so what's sent there waits" in caplog.text
 
 
 def test_a_run_fails_once_its_pool_cant_be_reached_for_longer(stack):
     nowhere = f"http://127.0.0.1:{free_port()}"  # nothing listens there
     began = time.monotonic()
     stack.say("Hi", scheduler=stack.scheduler(pools={"assistant": remote_worker(nowhere,
-                                                                                 reach=1)}))
+                                                                                 within=1)}))
     assert time.monotonic() - began < 15
     closed = [e["outcome"] for e in stack.ledger() if e["kind"] == "run" and e["action"] == "close"]
     assert closed == ["failed"] and stack.model.requests == []

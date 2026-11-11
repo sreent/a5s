@@ -3,7 +3,7 @@
 Each of the sample's people talks to each agent that serves them through a5s's own channel,
 as the web chat does: one message at a time, waiting for the answer before saying the next
 thing, for as many minutes as it's told. Ana also asks the assistant for long tasks, and says
-yes to each, and half way through, the scheduler and the assistant's workers restart. Every
+yes to each, and half way through, the core, the scheduler and the assistant's workers restart. Every
 30 seconds it notes how much memory each of a5s's containers holds, and how many connections
 Postgres has open. Then it checks that each message had one answer, in time; that every task
 she started ended done, and told her once, with none lost and no lease left over; and that
@@ -31,7 +31,7 @@ SIGN_IN = "http://127.0.0.1:8180/realms/a5s/protocol/openid-connect/token"
 PROJECT = "a5s-smoke"
 PARTS = ("gateway", "channels", "scheduler", "worker", "worker-assistant", "worker-watcher",
          "anchor", "postgres")
-RESTARTED = ("scheduler", "worker-assistant")  # half way, as an upgrade or a crash would
+RESTARTED = ("gateway", "scheduler", "worker-assistant")  # half way, as an upgrade would
 TASKS_EVERY = 60  # seconds between the tasks Ana asks for
 # Who talks to which agent: the agents that serve each of them once the smoke test is done
 TALKS = [("ana", "assistant"), ("ana", "watcher"), ("ben", "assistant"), ("ben", "watcher"),
@@ -103,7 +103,8 @@ def asking(token_for, until: float, started: list, lock: threading.Lock) -> None
 
 
 def restart(at: float) -> None:
-    """Restart the scheduler and the assistant's workers, once, at `at`."""
+    """Restart the core, the scheduler and the assistant's workers, one after another, once,
+    at `at`."""
     time.sleep(max(0.0, at - time.monotonic()))
     subprocess.run(["docker", "restart", *(f"{PROJECT}-{part}-1" for part in RESTARTED)],
                    capture_output=True, check=False)
