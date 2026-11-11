@@ -23,7 +23,7 @@ import re
 import time
 import uuid
 from collections.abc import Callable
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -55,10 +55,12 @@ from a5s.core import (
     proposals,
     registry,
     samples,
+    studio,
     topics,
 )
 from a5s.core.gateway import sanitize
 from a5s.core.identity import IdentityError, UnknownPerson, signed_in
+from a5s.core.releases import agent_owner
 from a5s.core.teams import UNKNOWN, Refused
 
 log = logging.getLogger(__name__)
@@ -1093,6 +1095,89 @@ def create_app(gw: Any) -> FastAPI:
                 raise HTTPException(404, "no such entry in a notebook you keep")
             ledger.append(conn, notebook.entry(row, "remove", "its keeper removed it", person.id))
         return {"removed": f"N-{row['id']}"}
+
+    # The studio's pages: what someone may watch, read only, worked out as the core's API works
+    # it out for the team that runs a5s (core/studio.py)
+
+    def studying(authorization: str | None) -> Person:
+        """Who signed in to the studio: someone who may watch an instance, or owns an agent."""
+        approving()
+        who, _ = sender(authorization, None)
+        person = gw.scenario.person(who)
+        if person is None:
+            raise HTTPException(403, "a5s doesn't know who you are")
+        with db.transaction(gw.url) as conn:
+            theirs = studio.instances(conn, person)
+        if not theirs and not any(r.startswith("agent-owner:") for r in person.roles):
+            raise HTTPException(403, "the studio is for the people who run an instance, own an "
+                                     "agent, own or decide for one of its parts, or approve "
+                                     "instances")
+        return person
+
+    def watched(conn: Any, person: Person, instance: str) -> dict:
+        found = next((i for i in studio.instances(conn, person) if i["id"] == instance), None)
+        if found is None:
+            raise HTTPException(404, "there's no such instance that you may watch")
+        return found
+
+    @app.get("/studio/api")
+    def studio_now(authorization: str | None = Header(default=None)) -> dict:
+        """The agents someone may watch, and where each runs: the instances they may watch."""
+        person = studying(authorization)
+        with db.transaction(gw.url) as conn:
+            return {"you": person.name, "agents": studio.catalogue(
+                conn, gw.scenario, gw.definitions, gw.scenario.tools(), person)}
+
+    @app.get("/studio/api/agents/{agent}")
+    def studio_agent(agent: str, authorization: str | None = Header(default=None)) -> dict:
+        """One agent someone owns, or watches an instance of, with its instructions."""
+        person = studying(authorization)
+        definition = gw.definitions.get(agent)
+        with db.transaction(gw.url) as conn:
+            insts = studio.instances(conn, person)
+        if definition is None or (agent_owner(agent) not in person.roles
+                                  and not any(i["definition"] == agent for i in insts)):
+            raise HTTPException(404, "there's no such agent that you may watch")
+        return studio.agent(gw.scenario, definition, gw.scenario.tools(), insts, whole=True)
+
+    @app.get("/studio/api/agents/{agent}/measures")
+    def studio_agent_measures(agent: str, days: int = 30,
+                              authorization: str | None = Header(default=None)) -> dict:
+        """How the instances of an agent that someone may watch are doing."""
+        person = studying(authorization)
+        with db.transaction(gw.url) as conn:
+            insts = [i for i in studio.instances(conn, person) if i["definition"] == agent]
+            if not insts:
+                raise HTTPException(404, "there's no instance of that agent that you may watch")
+            return studio.figures(conn, gw.scenario, gw.models, insts, days, gw.clock())
+
+    @app.get("/studio/api/instances/{instance}")
+    def studio_instance(instance: str, days: int = 30,
+                        authorization: str | None = Header(default=None)) -> dict:
+        """How an instance someone may watch is doing, over the last `days` days."""
+        person = studying(authorization)
+        with db.transaction(gw.url) as conn:
+            return studio.figures(conn, gw.scenario, gw.models,
+                                  [watched(conn, person, instance)], days, gw.clock())
+
+    @app.get("/studio/api/instances/{instance}/runs")
+    def studio_runs(instance: str, before: datetime | None = None, limit: int = studio.RUNS,
+                    authorization: str | None = Header(default=None)) -> dict:
+        """An instance's runs that someone may see, newest first, and how many others."""
+        person = studying(authorization)
+        with db.transaction(gw.url) as conn:
+            return studio.runs(conn, gw.scenario, watched(conn, person, instance), person,
+                               before, limit)
+
+    @app.get("/studio/api/runs/{run_id}")
+    def studio_run(run_id: str, authorization: str | None = Header(default=None)) -> dict:
+        """What a run did, if someone may watch its instance and see every record it named."""
+        person = studying(authorization)
+        with db.transaction(gw.url) as conn:
+            found = studio.run(conn, gw.scenario, run_id, person)
+        if found is None:
+            raise HTTPException(404, "there's no such run that you may see")
+        return found
 
     @app.get("/settings/", include_in_schema=False)
     def settings_page() -> Response:

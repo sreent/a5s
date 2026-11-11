@@ -231,7 +231,7 @@ def run(conn: psycopg.Connection, scenario: Scenario, run_id: str,
     read = _read(conn, [row["run"]])[row["run"]]
     entries = ledger.entries(conn, run=row["run"])
     pattern = getattr(scenario, "record_pattern", None)
-    named = set(re.findall(pattern, json.dumps(entries))) if pattern else set()
+    named = set(re.findall(pattern, json.dumps([row["trigger"], entries]))) if pattern else set()
     if viewer is not None and not all(scenario.sees(viewer.id, k) for k in read | named):
         return None
     return {**_shown(scenario, row), "agent": inst["definition"] if inst else None,
