@@ -102,3 +102,13 @@ article { border-top: 1px solid var(--line, #ddd); padding: 0.5rem 0; }
 .said { white-space: pre-wrap; margin: 0.25rem 0; }
 .flags { padding-left: 1.25rem; font-weight: 600; }
 .tick { margin-left: 0.75rem; }
+
+/* The studio: the agents someone may watch, an instance's figures and runs, and a run */
+#trail { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
+table.figures { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; font-size: 0.9rem; }
+table.figures th, table.figures td { text-align: left; vertical-align: top; padding: 0.3rem 0.5rem;
+                                     border-bottom: 1px solid var(--line); }
+table.figures th { font-weight: 600; white-space: nowrap; }
+#runs button { text-align: left; }
+pre.entries { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.75rem; max-height: 24rem;
+              overflow: auto; padding: 0.5rem; background: var(--agent); border: 1px solid var(--line); }

@@ -73,3 +73,28 @@ def test_the_channels_app_reads_what_figures_count_never_what_was_said(stack, co
     with (pytest.raises(psycopg.errors.InsufficientPrivilege),
           db.transaction(db.as_role(stack.admin, "channels")) as conn):
         conn.execute(f"select {name} from {table} limit 1")
+
+
+def test_someone_watches_an_instance_in_the_browser(stack, approving, provider, browser):
+    stack.model.reply(None, ("search_records", {"query": "invoice"}))
+    stack.model.reply("Q-1001 is open.")
+    stack.say("What's open?", person="ana")
+    served = httpx.get(f"{approving}/studio/", timeout=30)
+    assert "script-src 'self'" in served.headers["Content-Security-Policy"]
+    provider.person = "ben"  # the assistant's deputy signs in at the provider
+    page = browser.new_page()
+    page.goto(f"{approving}/studio/")
+    page.wait_for_selector("#agents >> text=assistant, release", timeout=30000)
+    assert page.inner_text("#who") == "Ben Okafor"
+    assert page.evaluate("window.location.search") == ""  # the code doesn't linger
+    assert "changes: change_due_date (reads, writes, changes change-due-date)" in page.inner_text(
+        "#agents")
+    page.click("#agents button:has-text('assistant-finance')")
+    page.wait_for_selector("#figures >> text=How runs ended", timeout=30000)
+    assert "message done: 1" in page.inner_text("#figures")
+    page.click("#runs button")
+    page.wait_for_selector("#calls >> text=search_records", timeout=30000)
+    assert "allow" in page.inner_text("#calls") and "Q-1001" in page.inner_text("#run-facts")
+    assert "invoice" not in page.inner_text("#entries")  # what was said, by its hash alone
+    page.click("#to-instance")
+    assert page.is_visible("#instance") and not page.is_visible("#run")

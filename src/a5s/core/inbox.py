@@ -1120,6 +1120,16 @@ def create_app(gw: Any) -> FastAPI:
             raise HTTPException(404, "there's no such instance that you may watch")
         return found
 
+    @app.get("/studio/", include_in_schema=False)
+    def studio_page() -> Response:
+        approving()
+        return page("studio.html")
+
+    @app.get("/studio/studio.js", include_in_schema=False)
+    def studio_script() -> Response:
+        approving()
+        return page("studio.js")
+
     @app.get("/studio/api")
     def studio_now(authorization: str | None = Header(default=None)) -> dict:
         """The agents someone may watch, and where each runs: the instances they may watch."""
