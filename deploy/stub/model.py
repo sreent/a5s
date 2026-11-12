@@ -40,6 +40,17 @@ def reply(body: dict, message: dict) -> dict:
                       "total_tokens": 15}}  # count, but too few for any budget to stop
 
 
+def keyed(found) -> list[str]:
+    """The records' keys in what a tool answered, at any depth: a list of records, as the
+    sample's tools answer, or an object that holds them, as other scenarios' tools do."""
+    if isinstance(found, list):
+        return [key for item in found for key in keyed(item)]
+    if not isinstance(found, dict):
+        return []
+    own = [found["key"]] if isinstance(found.get("key"), str) else []
+    return own + [key for value in found.values() for key in keyed(value)]
+
+
 @app.post("/v1/chat/completions")
 def complete(body: dict) -> dict:
     messages = body["messages"]
@@ -60,8 +71,8 @@ def complete(body: dict) -> dict:
             told = json.loads(last["content"])
             return reply(body, {"role": "assistant",
                                 "content": f"The {told['agent']} says: {told['answer']}"})
-        found = json.loads(last["content"]) if last["content"].startswith("[") else []
-        keys = ", ".join(r["key"] for r in found) or "nothing"
+        found = json.loads(last["content"]) if last["content"][:1] in ("[", "{") else []
+        keys = ", ".join(dict.fromkeys(keyed(found))) or "nothing"
         return reply(body, {"role": "assistant", "content": f"I looked it up and found {keys}."})
     said = str(last.get("content", "")).split("] ", 1)[-1]  # after when it was said
     if said.startswith("Work on ") and "checkpoint_task" in offered:  # a slice of a task

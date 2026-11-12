@@ -18,6 +18,12 @@ people:
   - {id: ada, name: Ada Kim, team: accounts-payable, manager: fay, timezone: Europe/London, identities: ["matrix:@ada:a5s.test"]}
   - {id: lin, name: Lin Zhou, team: sales, manager: gus, timezone: Europe/London, identities: ["matrix:@lin:a5s.test"]}
   - {id: raf, name: Raf Silva, team: plant, manager: mel, timezone: Europe/London, identities: ["matrix:@raf:a5s.test"]}
+  # The team that runs a5s, and the people from outside it who approve its releases
+  - {id: ines, name: Ines Duarte, team: platform, manager: noel, roles: [agent-owner:mdg-assistant, agent-owner:mdg-watcher], timezone: Europe/London, identities: ["matrix:@ines:a5s.test"]}
+  - {id: tao, name: Tao Lin, team: platform, manager: noel, timezone: Europe/London, identities: ["matrix:@tao:a5s.test"]}
+  - {id: noel, name: Noel Grant, team: technology, timezone: Europe/London, identities: ["matrix:@noel:a5s.test"]}
+  - {id: rhea, name: Rhea Byrne, team: risk, roles: [release-approver], timezone: Europe/London, identities: ["matrix:@rhea:a5s.test"]}
+  - {id: ken, name: Ken Adeyemi, team: internal-audit, roles: [assurance], timezone: Europe/London, identities: ["matrix:@ken:a5s.test"]}
 
 # Each data object, the team of its one named owner, who else sees its records, and the share
 # of its records that must pass every critical-field rule, as last measured, with the date by
