@@ -229,14 +229,24 @@ def checks(lines: Iterable[dict[str, Any]]) -> str | None:
     return None
 
 
-def _stored(store: Any) -> Iterator[tuple[str, dict[str, Any]]]:
-    """Each entry the ledger's locked copies hold, in order, with the copy that holds it, as
-    far as the copies go on from one another."""
+def _stored(store: Any, first: int = 1,
+            last: int | None = None) -> Iterator[tuple[str, dict[str, Any]]]:
+    """Each entry the ledger's locked copies hold from `first` to `last`, in order, with the
+    copy that holds it, as far as the copies go on from one another. A copy that ends before
+    `first` is passed by its head alone, which says the entry it ends at and that entry's
+    hash, so only the copies that hold what's asked for are read, as a year's ledger has
+    thousands: unless the copies fork there, or the head is from before heads said what they
+    continue from, when its copy is read to tell."""
     from a5s.core import anchor
 
     found, _ = anchor._heads(store)
     seq, prev = 0, GENESIS
-    while candidates := [c for c in found.pop(seq + 1, []) if c.head.prev in ("", prev.hex())]:
+    while (last is None or seq < last) and (candidates := [
+            c for c in found.pop(seq + 1, []) if c.head.prev in ("", prev.hex())]):
+        only = candidates[0] if len(candidates) == 1 else None
+        if only and only.head.prev and only.head.seq < first and (end := _hash(only.head.hash)):
+            seq, prev = only.head.seq, end
+            continue
         for copy in candidates:
             if (rows := anchor._rows(store, copy.head, prev)) is not None:
                 break
@@ -247,11 +257,22 @@ def _stored(store: Any) -> Iterator[tuple[str, dict[str, Any]]]:
         seq, prev = copy.head.seq, bytes.fromhex(copy.head.hash)
 
 
+def _hash(text: str) -> bytes | None:
+    try:
+        found = bytes.fromhex(text)
+    except ValueError:
+        return None
+    return found if len(found) == hashlib.sha256().digest_size else None
+
+
 def copied(lines: list[dict[str, Any]], store: Any) -> str | None:
     """Why an export doesn't match the ledger's locked copies, if it doesn't: each of its
-    entries must be in a copied segment, with the same hash. None if each is."""
+    entries must be in a copied segment, with the same hash. None if each is. Only the
+    copies that hold its entries are read (`_stored`)."""
     want = {line["seq"]: line["hash"] for line in lines}
-    for key, row in _stored(store):
+    if not want:
+        return None
+    for key, row in _stored(store, min(want), max(want)):
         if not want:
             break
         if row["seq"] in want and want.pop(row["seq"]) != row["hash"]:
@@ -269,7 +290,7 @@ def ended(bounds: dict[str, Any], store: Any) -> str | None:
     if bounds.get("after") or not bounds.get("until") or not isinstance(bounds.get("last"), int):
         return None
     until, nxt = datetime.fromisoformat(bounds["until"]), bounds["last"] + 1
-    for key, row in _stored(store):
+    for key, row in _stored(store, nxt, nxt):
         if row["seq"] == nxt:
             made = _made(row)
             if made is not None and made < until:

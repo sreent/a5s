@@ -176,3 +176,48 @@ def test_the_ledgers_times_never_go_back_whatever_a_writers_clock_says(stack, mo
     assert [e["action"] for e in found["entries"]][-2:] == ["ahead", "after"]
     assert "made-0" not in [e["action"] for e in found["entries"]] or (
         made[0]["at"] == made[1]["at"])  # only what was made from then on
+
+
+class Reading(FolderStore):
+    """The ledger's locked copies, noting each segment that's read."""
+
+    def __init__(self, path):
+        super().__init__(path)
+        self.read: list[str] = []
+
+    def get(self, key: str) -> bytes:
+        if key.startswith(anchor.SEGMENTS):
+            self.read.append(key)
+        return super().get(key)
+
+
+def test_verify_reads_only_the_copies_that_hold_an_exports_entries(stack, tmp_path, cli, capsys):
+    store = Reading(tmp_path / "copies")
+    for _ in range(4):  # four hours' copies, each a segment of its own
+        talked(stack, 2)
+        with db.transaction(db.as_role(stack.admin, "anchor")) as conn:
+            anchor.anchor(conn, store)
+    found, _ = anchor._heads(store)
+    third = sorted((c.head for group in found.values() for c in group), key=lambda h: h.first)[2]
+    with db.transaction(stack.admin) as conn:
+        at = {r["seq"]: datetime.fromisoformat(json.loads(r["entry"])["at"])
+              for r in conn.execute("select seq, entry from ledger")}
+    out = tmp_path / "p.jsonl"  # a period inside the third copy, with the entries either side
+    bounds, lines = export(cli, out, since=at[third.first + 1], until=at[third.seq - 1])
+    assert bounds["before"]["seq"] == third.first and bounds["after"]["seq"] == third.seq - 1
+    store.read.clear()
+    assert audit.copied(lines + audit.either_side(bounds), store) is None
+    assert audit.ended(bounds, store) is None  # which needn't read: it names the entry after
+    assert store.read == [third.segment]  # and no copy before it, nor after
+    capsys.readouterr()
+    cli(["audit", "verify", str(out)])  # and the command says so, from its own reading
+    assert "match the ledger's locked copies" in capsys.readouterr().out
+    forged = [dict(line) for line in lines]  # rewritten, with every hash after it again
+    forged[1]["entry"] = ledger.canonical({**json.loads(forged[1]["entry"]), "decision": "deny"})
+    prev = bytes.fromhex(forged[1]["prev_hash"])
+    for line in forged[1:]:
+        line["prev_hash"] = prev.hex()
+        line["hash"] = hashlib.sha256(prev + line["entry"].encode()).hexdigest()
+        prev = bytes.fromhex(line["hash"])
+    assert audit.checks(forged) is None  # it holds together...
+    assert "differs from the ledger's locked copy" in audit.copied(forged, store)  # ...not here
