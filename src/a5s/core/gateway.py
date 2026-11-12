@@ -114,6 +114,7 @@ CORE_TOOLS = {**reminders.TOOLS, **digests.TOOLS, **profiles.TOOLS,  # a5s's own
               notebook.NOTE: notebook.TOOL,  # of what it learns from records, and long tasks
               **tasking.TOOLS}  # people ask it for (core/tasking.py)
 RUN_MINUTES = 60  # the longest a run may last [TBC]; its token dies with it
+LAPSED = 120  # seconds past its time a scheduler's lease on a run's work is, once it's gone
 CHARS_PER_TOKEN = 4  # roughly, for a run's budget for its conversation
 OWN_RUNS = ("summary",)  # a5s's own work on a conversation: no tools, and it writes to nobody
 TRIES = 5  # deliveries to a chat before what it didn't take is left in the person's inbox
@@ -134,6 +135,16 @@ _MARKDOWN_LINK = re.compile(r"\[([^\]]*)\]\(\s*([^)\s]*)[^)]*\)")
 _URL = re.compile(r"(?i)(?:\b[a-z][a-z0-9+.-]*:[/\\]+|(?<![\w:/\\])//|\bwww\.)[^\s)>\]]*")
 # a5s's own note on values, which only a5s writes: an agent's copy of one is dropped
 _FORGED_NOTE = re.compile(r"(?is)\(\s*a5s\s*:.*?\)")
+
+
+def held_by(holder: Any) -> str | None:
+    """The scheduler's lease on the work a run does, if its trigger names one: a run whose
+    lease lapses, as when its scheduler stops without closing it, is closed at the next sweep
+    (`/runs/sweep`)."""
+    try:
+        return str(uuid.UUID(str(holder))) if holder else None
+    except ValueError:
+        return None
 
 
 def token_hash(token: str) -> bytes:
@@ -1165,6 +1176,8 @@ def create_app(gw: Gateway) -> FastAPI:
             if inst is None:
                 raise HTTPException(404, f"no instance {body.instance}")
             opening = opens[kind](conn, inst, body.trigger, now)
+            if holder := held_by(body.trigger.get("holder")):  # the scheduler's lease on it
+                opening.trigger["holder"] = holder
             reasons = opening.reasons
             if inst["status"] != "active":
                 reasons.append(f"{body.instance} is {inst['status']}")
@@ -1274,12 +1287,20 @@ def create_app(gw: Gateway) -> FastAPI:
 
     @app.post("/runs/sweep", dependencies=[Depends(service)])
     def sweep() -> list[dict]:
-        """Close runs that outlived their time, such as ones whose scheduler stopped."""
+        """Close runs that outlived their time, and runs whose scheduler stopped without
+        closing them, as when it's killed part way: once the lease it held on their work, which
+        it renews while a run is at work, is gone, or lapsed as long ago as a lease lasts, so a
+        moment it couldn't renew it costs no run, rather than once their time is up, an hour
+        on. Each, with whether its message had an answer, so nobody is told twice."""
         with db.transaction(gw.url) as conn:
             stale = conn.execute(
                 "update runs set closed_at = now(), outcome = 'abandoned' "
-                "where closed_at is null and expires_at < now() "
-                "returning id::text as run, instance_id, trigger, tokens, task_result").fetchall()
+                "where closed_at is null and (expires_at < now() or (trigger ? 'holder' and "
+                "not exists (select 1 from leases l where l.holder = runs.trigger->>'holder' "
+                "and l.expires_at > now() - make_interval(secs => %s)))) "
+                "returning id::text as run, instance_id, trigger, tokens, task_result, "
+                "exists (select 1 from outbox o where o.inbound_id = "
+                "(runs.trigger->>'inbound')::uuid) as answered", (LAPSED,)).fetchall()
             sends = []
             for row in stale:
                 ledger.append(conn, {"kind": "run", "action": "close", "run": row["run"],
@@ -1289,7 +1310,7 @@ def create_app(gw: Gateway) -> FastAPI:
                 sends += slice_closed(conn, row["run"], row, "abandoned")
         push(sends)
         return [{"run": r["run"], "inbound": r["trigger"].get("inbound"),
-                 "instance": r["instance_id"]} for r in stale]
+                 "instance": r["instance_id"], "answered": r["answered"]} for r in stale]
 
     @app.post("/tasks/sweep", dependencies=[Depends(service)])
     def tasks_sweep() -> list[dict]:

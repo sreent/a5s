@@ -26,7 +26,7 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 
 1. Check that the scheduler is running, and read its log. It has no port, so its log is the only way to see it.
 2. Check that it can reach the gateway, and the gateway the database.
-3. Restart the scheduler if it's stuck. A message outlives a scheduler that stops: the next one takes it again once the lease runs out, so nothing is lost or answered twice.
+3. Restart the scheduler if it's stuck. A message outlives a scheduler that stops: the next one takes it again once the lease runs out, so nothing is lost or answered twice. A message whose run had begun isn't run again, since the run may have done something already: once the stopped scheduler's lease on it has lapsed two minutes, the core's next sweep closes the run as abandoned, and its person is told to send it again, unless they had their answer. A task's slice ends the same way, and the task goes on from what it kept.
 
 ## Runs fail, or a model isn't answering
 

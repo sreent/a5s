@@ -345,7 +345,8 @@ class Scheduler:
             return
         try:
             opened = self.gw.post("/runs", headers=self.service, json={
-                "instance": inst["id"], "trigger": {"kind": "message", "inbound": inbound}})
+                "instance": inst["id"], "trigger": {"kind": "message", "inbound": inbound,
+                                                    "holder": claim.get("holder")}})
         except httpx.HTTPError as exc:
             raise Retry from exc
         if opened.status_code >= 500:
@@ -517,7 +518,8 @@ class Scheduler:
         kind = claim["kind"]
         try:
             opened = self.gw.post("/runs", headers=self.service, json={
-                "instance": claim["instance"], "trigger": {"kind": kind, kind: claim[kind]}})
+                "instance": claim["instance"], "trigger": {"kind": kind, kind: claim[kind],
+                                                           "holder": claim.get("holder")}})
         except httpx.HTTPError as exc:
             raise Retry from exc
         if opened.status_code >= 500:
@@ -681,7 +683,8 @@ class Scheduler:
             log.exception("couldn't ask the core to check the notebook")
 
     def sweep(self) -> None:
-        """Close runs that outlived their time, and tell their people."""
+        """Close runs that outlived their time, or whose scheduler stopped without closing them,
+        and tell their people, unless they had an answer."""
         try:
             stale = self.gw.post("/runs/sweep", headers=self.service)
             stale.raise_for_status()
@@ -689,7 +692,7 @@ class Scheduler:
             log.exception("couldn't sweep runs")
             return
         for run in stale.json():
-            if run.get("inbound"):
+            if run.get("inbound") and not run.get("answered"):
                 self._tell(run["inbound"], "I couldn't finish your last message, so I stopped. "
                                            "Send it again if you still need it.", run["instance"])
 
