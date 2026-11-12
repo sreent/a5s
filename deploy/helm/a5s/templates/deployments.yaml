@@ -26,14 +26,14 @@ metadata:
     app.kubernetes.io/component: {{ $part }}
 spec:
   replicas: {{ .replicas | default 1 }}
-  {{- if eq $role "worker" }}
-  # A pool's new pod is ready before an old one stops, so the pool is never without one,
-  # and the old one finishes the runs it has in flight first
+  {{- if has $role (list "worker" "gateway" "channels") }}
+  # A new pod is ready, its image pulled however long that takes, before an old one stops, so
+  # the part is never away on an upgrade, and the old one finishes what it has in flight first
   strategy:
     type: RollingUpdate
     rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
   {{- else }}
-  # One at a time, so two schedulers or copiers never overlap
+  # The old one stopped first, so two schedulers or copiers never overlap
   strategy:
     type: Recreate
   {{- end }}
@@ -50,6 +50,8 @@ spec:
       terminationGracePeriodSeconds: {{ $.Values.timeouts.workerWait }}  # its runs in flight
       {{- else if eq $role "scheduler" }}
       terminationGracePeriodSeconds: {{ add $.Values.timeouts.workerWait 30 }}  # and its sweeps
+      {{- else if eq $role "gateway" }}
+      terminationGracePeriodSeconds: {{ add $.Values.timeouts.provider 15 }}  # a model call in flight
       {{- end }}
       automountServiceAccountToken: false
       {{- with $.Values.imagePullSecrets }}
@@ -64,8 +66,8 @@ spec:
           image: {{ include "a5s.image" $ }}
           imagePullPolicy: {{ $.Values.image.pullPolicy }}
           args: {{ toJson .args }}
-          {{- if eq $role "worker" }}
-          lifecycle:  # a moment for its Service to stop sending it runs, before it stops taking them
+          {{- if .port }}
+          lifecycle:  # a moment for its Service to stop sending it work, before it stops taking it
             preStop:
               exec:
                 command: ["sleep", "5"]
