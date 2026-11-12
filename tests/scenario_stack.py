@@ -17,14 +17,26 @@ from a5s.config import Config, load_models
 from a5s.core import inbox, memberships, registry
 from a5s.core.gateway import Gateway, create_app
 from a5s.core.policy import PolicyEngine
-from conftest import QUIET, ROOT, SEAL_KEY, SERVICE_TOKEN, FakeModel, Stack, free_port, serve
+from conftest import (
+    QUIET,
+    ROOT,
+    SEAL_KEY,
+    SERVICE_TOKEN,
+    FakeModel,
+    Stack,
+    free_port,
+    serve,
+    worker_for,
+)
 
 
 @contextmanager
 def running_scenario(database: str, root: Path, model: FakeModel, scenario: str, folder: str,
-                     http: httpx.Client | None = None, alias: str = "fake") -> Iterator[Stack]:
+                     http: httpx.Client | None = None, alias: str = "fake",
+                     worker_image: str | None = None) -> Iterator[Stack]:
     """The core, the channels and the scenario's agents, each agent on the model `alias`, with
-    the core's clock where the sample's is, until a test sets it."""
+    the core's clock where the sample's is, until a test sets it. With `worker_image`, each
+    run goes to a worker from it, in a container of its own (conftest.py's `worker_for`)."""
     port = free_port()
     agents = root / "scenario-agents"
     shutil.copytree(ROOT / "scenarios" / folder / "agents", agents)
@@ -49,8 +61,10 @@ def running_scenario(database: str, root: Path, model: FakeModel, scenario: str,
                                  found.person, found.name)
     assert not applied.refused, applied.refused
     channels = replace(gw, cfg=replace(cfg, database_url=db.as_role(database, "channels")))
-    with serve(create_app(gw), port), serve(inbox.create_app(channels), free_port()) as url:
-        yield Stack(cfg, gw, model, database, url)
+    app = create_app(gw)
+    with (serve(app, port), serve(inbox.create_app(channels), free_port()) as url,
+          worker_for(app, worker_image) as worker):
+        yield Stack(cfg, gw, model, database, url, worker=worker)
 
 
 def opened(stack: Stack, instance: str, person: str, agent: str) -> str:

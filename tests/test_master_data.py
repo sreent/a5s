@@ -13,7 +13,7 @@ import httpx
 import pytest
 
 from a5s.contract import record_of
-from conftest import FAKE_MODELS, ROOT, FakeModel, Stack, build_root, deciding
+from conftest import FAKE_MODELS, ROOT, FakeModel, Stack, build_root, deciding, live_image
 from scenario_stack import opened, running_scenario
 from test_obligations import escalations
 from test_proposals import decide, held, sweep
@@ -232,7 +232,7 @@ def test_a_real_model_governs_master_data(database: str, tmp_path: Path):
         pytest.skip("DEEPSEEK_API_KEY isn't set")
     root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text())
     with running_scenario(database, root, FakeModel(), SCENARIO, "master-data",
-                          alias="deepseek-v4-pro") as found:
+                          alias="deepseek-v4-pro", worker_image=live_image()) as found:
         bank = say(found, "Can CR0000102 go ahead? Check it, and tell me who confirms it.")
         print(bank)
         assert "Pia" in bank and ("S-100077" in bank or "B-100077" in bank)

@@ -21,7 +21,7 @@ from a5s.core import departures, groups, inbox, topics
 from a5s.core.matrix import Matrix, MatrixConfig
 from a5s.core.teams import Bot, Teams, TeamsConfig
 from a5s.services import context
-from conftest import ROOT, FakeModel, build_root, free_port, running, serve
+from conftest import ROOT, FakeModel, build_root, free_port, live_image, running, serve
 from test_matrix import AS_TOKEN, BOT, HS_TOKEN, Homeserver, deliver, invite, said
 from test_teams import ANA as ANA_ENTRA
 from test_teams import APP_ID, TENANT, WATCHER_APP, FakeBotFramework, activity
@@ -472,7 +472,8 @@ def test_a_real_model_answers_a_group_and_knows_who_said_what(database, tmp_path
             pytest.fail(f"{model.key_env} isn't set, and a release needs its agents' suites")
         pytest.skip(f"{model.key_env} isn't set")
     root = build_root(tmp_path, release.model, (ROOT / "config" / "models.yaml").read_text())
-    with running(database, root, httpx.Client(), FakeModel()) as stack, group_room(stack) as room:
+    with (running(database, root, httpx.Client(), FakeModel(), worker_image=live_image()) as stack,
+          group_room(stack) as room):
         deliver(room, mention("Which of our customer questions mention an invoice?"))
         stack.scheduler().answer_waiting()
         first = room.sent[-1]

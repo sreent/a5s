@@ -473,12 +473,20 @@ def build_root(tmp: Path, model_alias: str, models_yaml: str) -> Path:
 BRIDGE = os.environ.get("A5S_TEST_BRIDGE", "172.17.0.1")
 
 
+def live_image() -> str | None:
+    """The image a live suite hands each run to a worker from, in a container of its own, as
+    a release's suites do (.github/workflows/release.yml): A5S_TEST_WORKER_IMAGE, such as
+    a5s:dev. Unset, each run goes to a worker in this process."""
+    return os.environ.get("A5S_TEST_WORKER_IMAGE") or None
+
+
 @contextmanager
 def contained(app: Any, image: str) -> Iterator[Any]:
     """A worker from a5s's image, in a container of its own on Docker's bridge, as a pool's
     pods run: it holds no secrets, and reaches the core at the bridge's address, which the
     core is served on for it alone. The scheduler hands it each run over HTTP, as it hands a
-    pool's (services/scheduler.py's remote_worker). What it yields counts the runs it took."""
+    pool's (services/scheduler.py's remote_worker). What it yields counts the runs it took,
+    and a test that hands it none fails: it would have tested the worker in this process."""
     import subprocess
     import uuid
 
@@ -514,11 +522,23 @@ def contained(app: Any, image: str) -> Iterator[Any]:
 
             work.runs = 0
             yield work
+            assert work.runs, f"no run went to the worker container {name}"
         finally:
             logs = subprocess.run(["docker", "logs", "--tail", "30", name], check=False,
                                   capture_output=True, text=True).stdout
             print(f"\n[the worker container's last lines]\n{logs}")
             subprocess.run(["docker", "rm", "-f", name], check=False, capture_output=True)
+
+
+@contextmanager
+def worker_for(app: Any, image: str | None) -> Iterator[Any]:
+    """Where the scheduler hands each run: with `image`, a worker from it in a container of
+    its own (`contained`); without, None, and each run goes to a worker in this process."""
+    if image is None:
+        yield None
+        return
+    with contained(app, image) as worker:
+        yield worker
 
 
 @contextmanager
@@ -543,12 +563,9 @@ def running(database: str, root: Path, http: httpx.Client, model: FakeModel,
     assert not applied.refused, applied.refused
     channels = replace(gw, cfg=replace(cfg, database_url=db.as_role(database, "channels")))
     app = create_app(gw)
-    with serve(app, port), serve(inbox.create_app(channels), free_port()) as channels_url:
-        if worker_image is None:
-            yield Stack(cfg, gw, model, database, channels_url)
-            return
-        with contained(app, worker_image) as worker:
-            yield Stack(cfg, gw, model, database, channels_url, worker=worker)
+    with (serve(app, port), serve(inbox.create_app(channels), free_port()) as channels_url,
+          worker_for(app, worker_image) as worker):
+        yield Stack(cfg, gw, model, database, channels_url, worker=worker)
 
 
 FAKE_MODELS = """

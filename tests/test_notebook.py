@@ -15,7 +15,7 @@ import yaml
 from a5s import db, definitions
 from a5s.config import load_models
 from a5s.core import notebook
-from conftest import ROOT, FakeModel, build_root, running
+from conftest import ROOT, FakeModel, build_root, live_image, running
 
 LEARN = {"name": "learn", "at": "09:00", "days": "weekdays",
          "task": "Look through the questions in your parts with search_records and get_record, "
@@ -179,7 +179,7 @@ def test_a_real_model_notes_what_records_show_on_its_schedule(database, tmp_path
             pytest.fail(f"{model.key_env} isn't set, and a release needs its agents' suites")
         pytest.skip(f"{model.key_env} isn't set")
     root = build_root(tmp_path, release.model, (ROOT / "config" / "models.yaml").read_text())
-    with running(database, root, httpx.Client(), FakeModel()) as stack:
+    with running(database, root, httpx.Client(), FakeModel(), worker_image=live_image()) as stack:
         with_notebook(stack)
         stack.at("2026-10-29T09:00:30+00:00")
         assert stack.scheduler().work_due() == 1

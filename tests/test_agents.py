@@ -4,7 +4,7 @@ release names, as each release is before its people approve it.
 Run with `uv run pytest -m live tests/test_agents.py`, with the providers' keys set. With
 A5S_TEST_WORKER_IMAGE naming a5s's image, such as a5s:dev, each run goes to a worker from it,
 in a container of its own, as a pool's pods run, with no secrets and the model reached only
-through the core (conftest.py's `contained`). A case
+through the core (conftest.py's `contained`), as a release runs every live suite. A case
 says what people say to the agent, or that what's due runs, and what must follow: the tools
 it uses and avoids, what it says, and what a5s keeps afterwards. Every reply is also checked
 for keys, amounts and dates the agent made up, which a5s notes (core/provenance.py), unless
@@ -26,7 +26,7 @@ from a5s import db, definitions
 from a5s.config import load_models
 from a5s.core.identity import IdentityConfig, Verifier
 from a5s.services import context
-from conftest import ROOT, SEAL_KEY, FakeModel, build_root, running
+from conftest import ROOT, SEAL_KEY, FakeModel, build_root, live_image, running
 
 NOTE = "(a5s: "  # how a5s starts its note on values the agent wrote itself
 FILLER = "We went through the open invoices, the refunds and the next payment run. " * 12
@@ -111,8 +111,7 @@ def test_each_agents_regression_suite(database: str, tmp_path: Path, monkeypatch
             pytest.fail(f"{model.key_env} isn't set, and a release needs its agents' suites")
         pytest.skip(f"{model.key_env} isn't set")
     root = build_root(tmp_path, release.model, (ROOT / "config" / "models.yaml").read_text())
-    image = os.environ.get("A5S_TEST_WORKER_IMAGE")  # each run in a worker from the image
-    with running(database, root, httpx.Client(), FakeModel(), worker_image=image) as stack:
+    with running(database, root, httpx.Client(), FakeModel(), worker_image=live_image()) as stack:
         if agent == "watcher" or case.get("with_watcher"):
             stack.with_watcher()
         if case.get("deciding"):  # a held change needs the page where its deciders decide
@@ -150,5 +149,3 @@ def test_each_agents_regression_suite(database: str, tmp_path: Path, monkeypatch
                 problems.append(f"{what}: {found}, not {expected}")
         assert not problems, "; ".join(problems)
         assert stack.verify().ok
-        if image:  # and every run was the container's
-            assert stack.worker.runs > 0, "no run went to the worker container"

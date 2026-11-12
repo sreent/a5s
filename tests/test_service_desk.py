@@ -24,13 +24,16 @@ from conftest import (
     Stack,
     build_root,
     free_port,
+    live_image,
     serve,
+    worker_for,
 )
 
 
 @contextmanager
 def running_desk(database: str, root: Path, model: FakeModel,
-                 http: httpx.Client | None = None, alias: str = "fake") -> Iterator[Stack]:
+                 http: httpx.Client | None = None, alias: str = "fake",
+                 worker_image: str | None = None) -> Iterator[Stack]:
     import shutil
     port = free_port()
     agents = root / "scenario-agents"
@@ -53,8 +56,10 @@ def running_desk(database: str, root: Path, model: FakeModel,
                                  scenario.person, scenario.name)
     assert not applied.refused, applied.refused
     channels = replace(gw, cfg=replace(cfg, database_url=db.as_role(database, "channels")))
-    with serve(create_app(gw), port), serve(inbox.create_app(channels), free_port()) as url:
-        yield Stack(cfg, gw, model, database, url)
+    app = create_app(gw)
+    with (serve(app, port), serve(inbox.create_app(channels), free_port()) as url,
+          worker_for(app, worker_image) as worker):
+        yield Stack(cfg, gw, model, database, url, worker=worker)
 
 
 @pytest.fixture
@@ -155,7 +160,8 @@ def test_service_desk_answers_with_a_real_model(database: str, tmp_path: Path):
             pytest.fail("DEEPSEEK_API_KEY isn't set, and a release needs its scenarios' suites")
         pytest.skip("DEEPSEEK_API_KEY isn't set")
     root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text())
-    with running_desk(database, root, FakeModel(), alias="deepseek-v4-pro") as found:
+    with running_desk(database, root, FakeModel(), alias="deepseek-v4-pro",
+                      worker_image=live_image()) as found:
         ticket = say(found, "What's happening with INC0000001?")
         assert "INC0000001" in ticket and "open" in ticket.casefold()
         guidance = say(found, "How do I set up the VPN? Name the knowledge article you used.")
