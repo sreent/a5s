@@ -111,7 +111,7 @@ seccompProfile:
 {{/* How people reach a5s and sign in: for the gateway and the channels. */}}
 {{- define "a5s.peopleEnv" -}}
 {{- $p := .Values.people -}}
-{{- range $name, $value := dict "A5S_OIDC_ISSUER" $p.oidcIssuer "A5S_OIDC_AUDIENCE" $p.oidcAudience "A5S_OIDC_PERSON_CLAIM" $p.oidcPersonClaim "A5S_OIDC_DIRECTORY_PREFIX" $p.oidcDirectoryPrefix "A5S_OIDC_METADATA_URL" $p.oidcMetadataUrl "A5S_OIDC_MFA" $p.oidcMfa "A5S_WEBCHAT_CLIENT_ID" $p.webchatClientId "A5S_PUBLIC_URL" $p.publicUrl "A5S_MATRIX_HOMESERVER" $.Values.matrix.homeserver "A5S_MATRIX_SERVER_NAME" $.Values.matrix.serverName }}
+{{- range $name, $value := dict "A5S_OIDC_ISSUER" $p.oidcIssuer "A5S_OIDC_AUDIENCE" $p.oidcAudience "A5S_OIDC_PERSON_CLAIM" $p.oidcPersonClaim "A5S_OIDC_DIRECTORY_PREFIX" $p.oidcDirectoryPrefix "A5S_OIDC_METADATA_URL" $p.oidcMetadataUrl "A5S_OIDC_MFA" $p.oidcMfa "A5S_OIDC_GROUPS_CLAIM" $p.oidcGroupsClaim "A5S_WEBCHAT_CLIENT_ID" $p.webchatClientId "A5S_PUBLIC_URL" $p.publicUrl "A5S_MATRIX_HOMESERVER" $.Values.matrix.homeserver "A5S_MATRIX_SERVER_NAME" $.Values.matrix.serverName }}
 {{- if $value }}
 - name: {{ $name }}
   value: {{ $value | quote }}

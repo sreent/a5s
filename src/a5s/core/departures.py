@@ -38,7 +38,8 @@ FORMER = "former:"  # what an archive's name starts with: never a person in the 
 KEPT = ("turns", "summaries", "inbound", "outbox", "chats", "digest_items", "urgent_held",
         "profile_notes", "reminders", "report_fires")
 # What only serves the person while they're here, which it lets go
-LET_GO = ("preferences", "report_seen", "digest_waits", "urgent_sent", "digests", "spend")
+LET_GO = ("preferences", "report_seen", "digest_waits", "urgent_sent", "digests", "spend",
+          "sign_in_groups")
 
 
 def sweep(conn: psycopg.Connection, scenario: Scenario, now: datetime) -> list[str]:

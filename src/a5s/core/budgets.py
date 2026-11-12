@@ -4,8 +4,10 @@ a run that loops, or a busy day, can't run up the bill unseen.
 Each release sets two (definitions.Budget): one for a single run, and one for each person an
 instance acts for, each day, in their own time zone. A fifth of each person's day is kept for
 what they owe and what they asked to be reminded of: chases and reminders may use all of it,
-and other work, such as answers and reports, stops short of that share. Crossing four fifths
-is recorded as a warning. The core checks before it opens a run and before each model call.
+and other work, such as answers and reports, stops short of that share. Their tasks, and the
+questions a task's runs ask other agents, stop short of another fifth, kept for what they ask
+themselves, so a day of long work never leaves someone's own chat unanswered. Crossing four
+fifths is recorded as a warning. The core checks before it opens a run and before each model call.
 Once a budget is spent, the work waits: a report for the next day, and someone asking is
 told so, in a5s's own words, with who to ask.
 """
@@ -20,10 +22,11 @@ import psycopg
 from a5s.contract import Scenario
 from a5s.core import groups
 from a5s.core.obligations import local
-from a5s.definitions import KEPT, Budget
+from a5s.definitions import ASKED, KEPT, Budget
 
 WARN = 0.8  # of each person's day, when a warning is recorded
 OWED = ("obligation", "reminder")  # the work that may use the share kept for it
+LONG = "task"  # the work that stops short of the share kept for what people ask themselves
 
 
 class Tokens(NamedTuple):
@@ -90,9 +93,14 @@ def refused(conn: psycopg.Connection, scenario: Scenario, budget: Budget, instan
         return None
     row = conn.execute("select tokens from spend where instance_id = %s and person = %s and day = %s",
                        (instance, person, day_of(scenario, person, now))).fetchone()
-    may = budget.per_person_per_day if kind in OWED else int(budget.per_person_per_day * (1 - KEPT))
+    long = kind == LONG or bool((trigger or {}).get("for_task"))  # a task's, or its question's
+    may = (budget.per_person_per_day if kind in OWED
+           else int(budget.per_person_per_day * (1 - KEPT - ASKED)) if long
+           else int(budget.per_person_per_day * (1 - KEPT)))
     if row and row["tokens"] >= may:
-        return f"{instance} has used its budget for {person} today"
+        return f"{instance} has used its budget for {person} today" + (
+            ", for tasks: the rest is kept for what they ask themselves"
+            if long and row["tokens"] < budget.per_person_per_day * (1 - KEPT) else "")
     return None
 
 

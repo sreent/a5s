@@ -123,7 +123,7 @@ def test_a_tasks_run_is_held_to_what_the_task_has_left(stack):
 def test_its_owner_hears_from_a5s_when_its_deadline_passes(stack):
     task = a_task(stack, days=1)
     stack.at((stack.gateway.clock() + timedelta(days=2)).isoformat())
-    assert stack.scheduler().work_due() == 1  # its slice is due, and can't begin
+    assert stack.scheduler().work_due() == 0  # it ends at the sweep: no slice is due
     [stopped] = tasks_of(stack)
     assert (stopped["status"], stopped["last_error"]) == ("failed", "its deadline passed")
     assert told(stack) == [(f"T-{task['number']}, the task you asked the assistant for, has "
@@ -170,8 +170,8 @@ def test_a_task_whose_run_cant_open_waits_rather_than_being_asked_for_at_every_s
 def test_a_task_put_off_past_its_deadline_fails_and_its_owner_hears_once(stack):
     task = a_task(stack, days=1)
     stack.at((stack.gateway.clock() + timedelta(days=2)).isoformat())
-    spend_their_day(stack)  # so its run can't open, and its slice never begins
-    assert stack.scheduler().work_due() == 1
+    spend_their_day(stack)  # its run couldn't open, but it ends before one is asked for
+    assert stack.scheduler().work_due() == 0
     [stopped] = tasks_of(stack)
     assert (stopped["status"], stopped["last_error"]) == ("failed", "its deadline passed")
     assert told(stack) == [(f"T-{task['number']}, the task you asked the assistant for, has "
@@ -277,7 +277,8 @@ def test_only_a_task_that_needs_its_owner_goes_on_with_what_they_say(stack):
     stack.model.reply("It's queued already.")
     stack.say("Go on with my task")
     assert tasks_of(stack)[0]["status"] == "queued"
-    assert "only a task that needs them" in str(stack.model.requests[-1]["body"]["messages"][-1])
+    assert "only a task waiting for them takes their answer" in str(
+        stack.model.requests[-1]["body"]["messages"][-1])
 
 
 def test_a_task_survives_a_scheduler_that_stops_mid_slice_and_goes_on_from_its_checkpoint(

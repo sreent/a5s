@@ -49,6 +49,7 @@ HELD = "a-task-writes-once-it-ends"  # the policy's id when a task's run would w
 MOST_CHARS = 2000  # the most a task's words may be
 MOST_PARTIAL = 4000  # the most of what its earlier slices found that a run is shown, in characters
 SAID = ("done", "blocked", "waiting")  # what a slice may say it came to
+KEPT = {"status": "kept"}  # what a run said that kept its work as it went, and no more
 LEAST_PART = 5_000  # the fewest tokens a part of a task may have to spend [TBC]
 
 
@@ -91,7 +92,10 @@ def offer(call: Call) -> dict:
         "select pg_advisory_xact_lock(hashtextextended(%s, 0))",
         (f"task-offer/{call.run['id']}/{person.id}",))
     instead = call.args.get("instead_of")
-    if call.args.get("days") or call.args.get("at") or instead:  # again and again: a repeat
+    if call.args.get("at") and not call.args.get("days") and not instead:
+        raise Refused("a time is for a task done again and again: give its days too. A task "
+                      "done once starts as soon as they say yes, and can't wait for a time")
+    if call.args.get("days") or instead:  # again and again: a repeat
         try:  # in place of one of theirs, to change it: as that one comes round, unless said
             old = repeats.theirs(call.conn, person, call.run["id"], instead) if instead else None
             found = repeats.offer(call.conn, person, call.run["id"], call.run["run"],
@@ -148,33 +152,52 @@ def confirm(call: Call) -> dict:
 
 
 def mine(call: Call) -> dict:
-    person = call.person
+    person = call.owner  # reading their own tasks widens nothing, in a marked run too
     rows = call.conn.execute(
         "select number, task, status, progress, plan, last_error, deadline, updated_at, "
-        "asked_at, (select count(*) from tasks c where c.parent = t.id) as parts, "
+        "asked_at, result, partial, read_outside, "
+        "(select count(*) from tasks c where c.parent = t.id) as parts, "
         "(select count(*) from tasks c where c.parent = t.id and c.status = 'done') as done "
         "from tasks t where owner = %s and instance_id = %s and parent is null "
         "order by updated_at desc limit 20", (person.id, call.run["id"])).fetchall()
-    studio.handled(call.conn, call.run["run"], studio.named(
-        call.scenario, [r["task"] for r in rows]))
+    named = [studio.named(call.scenario, [r["task"], r["plan"], r["last_error"], r["result"],
+                                          r["partial"]]) for r in rows]
+    seen = [all(call.scenario.sees(person.id, k) for k in keys) for keys in named]
+    studio.handled(call.conn, call.run["run"], {k for keys, shown in zip(named, seen, strict=True)
+                                                if shown for k in keys})
+    if any(r["read_outside"] and (r["result"] or r["partial"] or r["last_error"])
+           for r, shown in zip(rows, seen, strict=True) if shown):  # what its runs said came
+        # of content from outside: so does what this run says of it
+        call.conn.execute("update runs set read_outside = true where id = %s",
+                          (call.run["run"],))
     lapsed = call.asked_at - CONFIRM_WITHIN  # an offer not said yes to by then, as for
-    # confirm_task: by when the messages came
-    return {"tasks": [{"task": name(r), "what": r["task"], "status": (
-                           "offered, and lapsed: offer it again if they still want it"
-                           if r["status"] == OFFERED and r["asked_at"]
-                           and r["asked_at"] <= lapsed else r["status"]),
-                       "progress": f"{round(100 * r['progress'])}%",
+    # confirm_task, by when the messages came, has lapsed
+    listed = []
+    for r, shown in zip(rows, seen, strict=True):
+        about = {"task": name(r), "status": (
+                     "offered, and lapsed: offer it again if they still want it"
+                     if r["status"] == OFFERED and r["asked_at"] and r["asked_at"] <= lapsed
+                     else r["status"]),
+                 "progress": f"{round(100 * r['progress'])}%",
+                 **({"parts done": f"{r['done']} of {r['parts']}"} if r["parts"] else {}),
+                 "has until": say(person, r["deadline"])}
+        if not shown:  # its words name a record they may no longer see: how it stands alone
+            listed.append({**about, "withheld": "its words name a record they may no longer "
+                                                "see, so only how it stands is shown"})
+            continue
+        listed.append({**about, "what": r["task"],
                        "steps done": f"{sum(s['status'] == 'completed' for s in r['plan'])} of "
                                      f"{len(r['plan'])}" if r["plan"] else None,
-                       **({"parts done": f"{r['done']} of {r['parts']}"} if r["parts"] else {}),
                        **({"why": r["last_error"]} if r["last_error"] else {}),
-                       "has until": say(person, r["deadline"])} for r in rows],
-            **({"repeats": found} if (found := repeats.listed(call.conn, person,
-                                                              call.run["id"])) else {})}
+                       **({"found": found} if (found := _found(r)) else {}),
+                       **({"so far": r["partial"]} if r["partial"] else {})})
+    return {"tasks": listed,
+            **({"repeats": found} if (found := repeats.listed(
+                call.conn, call.scenario, person, call.run["id"])) else {})}
 
 
 def cancel(call: Call) -> dict:
-    person = call.person
+    person = call.owner  # stopping what's theirs widens nothing, in a marked run too
     if repeats.named(call.args.get("task")):  # a repeat stops: its last task goes on
         try:
             return repeats.stop(call.conn, person, call.args.get("task"), call.now,
@@ -196,7 +219,7 @@ def cancel(call: Call) -> dict:
 def resume(call: Call) -> dict:
     """Go on with a task that needed its owner, with what they said it needs, which its
     next run is told, and whose values are theirs."""
-    person = call.person
+    person = call.owner
     row = call.conn.execute("select id::text as id, number, status, last_error from tasks "
                             "where owner = %s and instance_id = %s and number = %s for update",
                             (person.id, call.run["id"], _number(call.args.get("task")))
@@ -204,9 +227,14 @@ def resume(call: Call) -> dict:
     if row is None:
         raise Refused(f"{call.args['task']} isn't one of their tasks with you")
     if row["status"] != "blocked":
-        raise Refused(f"{name(row)} is {row['status']}: only a task that needs them goes on "
-                      "with what they say")
+        why = f", as {row['last_error']}" if row["status"] == "failed" and row["last_error"] \
+            else ""
+        raise Refused(f"{name(row)} is {row['status']}{why}: only a task waiting for them takes "
+                      "their answer" + (". Offer it again, if they still want it"
+                                        if row["status"] in ENDED else ""))
     answer = " ".join(str(call.args.get("answer") or "").split())
+    if call.run["read_outside"]:  # its words could be the outside content's: theirs alone
+        answer = " ".join(call.said.split())
     if not answer or len(answer) > MOST_CHARS:
         raise Refused("say what they said it needs, in a sentence or two, at most "
                       f"{MOST_CHARS:,} characters")
@@ -233,7 +261,8 @@ def theirs(conn: psycopg.Connection, scenario: Any, person: Person,
     see shows how it stands alone, never its words."""
     rows = conn.execute(
         "select t.number, t.task, t.status, t.progress, t.plan, t.last_error, t.answered, "
-        "t.deadline, t.tokens, t.token_budget, t.asked_at, t.updated_at, i.definition as agent, "
+        "t.result, t.partial, t.deadline, t.tokens, t.token_budget, t.asked_at, t.updated_at, "
+        "i.definition as agent, "
         "(select count(*) from tasks c where c.parent = t.id) as parts, "
         "(select count(*) from tasks c where c.parent = t.id and c.status = 'done') as done "
         "from tasks t join instances i on i.id = t.instance_id where t.owner = %s "
@@ -251,7 +280,7 @@ def theirs(conn: psycopg.Connection, scenario: Any, person: Person,
             "spent": f"{r['tokens']:,} of {r['token_budget']:,} tokens",
             "updated": r["updated_at"].date().isoformat(),
             **({"parts": f"{r['done']} of {r['parts']} done"} if r["parts"] else {})}
-        words = [r["task"], r["plan"], r["last_error"], r["answered"]]
+        words = [r["task"], r["plan"], r["last_error"], r["answered"], r["result"], r["partial"]]
         if not all(scenario.sees(person.id, k) for k in studio.named(scenario, words)):
             shown.append({**about, "withheld": True})
             continue
@@ -260,6 +289,10 @@ def theirs(conn: psycopg.Connection, scenario: Any, person: Person,
             about["why"] = r["last_error"]
         if answered := r["answered"]:
             about |= {"needed": answered.get("needed"), "said": answered.get("said")}
+        if (found := _found(r)) is not None:  # what it came to, as its agent said
+            about["found"] = found
+        if r["partial"]:
+            about["so far"] = r["partial"]
         shown.append(about)
     return shown
 
@@ -297,6 +330,8 @@ def keep(call: Call) -> dict:
     stopped, refused = _tasks(call).kept(call.conn, task_id, lease, change)
     if refused:
         raise Refused(refused)
+    call.conn.execute("update runs set task_result = coalesce(task_result, %s) where id = %s",
+                      (Jsonb(KEPT), call.run["run"]))  # it got somewhere, if its run ends well
     if stopped:  # what it did is kept: it stops, and writes to nobody
         return {"stop": f"{stopped}: stop now, and write to nobody"}
     return {"kept": {k: v for k, v in change.items() if k != "partial"}}
@@ -381,9 +416,13 @@ def split(call: Call) -> dict:
                 parent=task_id), within=call.conn))
     except TaskError as exc:
         raise Refused(str(exc)) from None
+    spent = int(call.run.get("tokens") or 0)  # and this run is held to the share it kept
+    call.conn.execute("update runs set task_cap = least(coalesce(task_cap, %s), %s) "
+                      "where id = %s", (spent + share, spent + share, call.run["run"]))
     named = call.conn.execute("select number from tasks where id = any(%s::uuid[]) "
                               "order by number", (made,)).fetchall()
     return {"parts": [name(r) for r in named], "each may spend": share,
+            "this run may spend": share,
             "next": "say it's waiting, with finish_task, and write to nobody: a5s works on "
                     "each part in runs of its own, and runs this task again once they're "
                     "done, with what they found"}
@@ -429,6 +468,18 @@ def _theirs(run: dict) -> bool:
     return one_to_one(run) and (run.get("trigger") or {}).get("kind") == "message"
 
 
+def _theirs_to_set(run: dict) -> bool:
+    """Offered where it can set what's theirs: never in a run that read content from outside,
+    which would only be refused."""
+    return _theirs(run) and not run.get("read_outside")
+
+
+def _found(task: dict) -> Any:
+    """What a task said it came to, as its agent wrote it, if it said."""
+    result = task.get("result")
+    return result.strip() or None if isinstance(result, str) else result
+
+
 def _sliced(run: dict) -> bool:
     return (run.get("trigger") or {}).get("kind") == KIND
 
@@ -450,22 +501,23 @@ TOOLS = {t.name: t for t in (
                  "days": {"description": "Only if they want it done again and again: its days, "
                                          "such as monday, a list of them, weekdays or every day"},
                  "at": {"type": "string",
-                        "description": "And its time, in their time zone, such as 09:00"},
+                        "description": "Only with days: its time, in their time zone, such as "
+                                       "09:00. A task done once starts on their yes"},
                  "instead_of": {"type": "string",
                                 "description": "Only to change one of their repeating tasks, "
                                                "such as E-3: the one this takes the place of "
                                                "once they say yes. Say its task, and any days "
                                                "or time that change"}}},
-             offer, text_fields=("task",), offered=_theirs,
+             offer, text_fields=("task",), offered=_theirs_to_set,
              sourced=lambda result: {k: v for k, v in result.items() if k != "what"}),
     CoreTool("confirm_task",
              "Start a task you offered the person, once they've said yes to it.",
              {"type": "object", "properties": {"task": _TASK}}, confirm,
-             sourced=lambda result: result, offered=_theirs),
+             sourced=lambda result: result, offered=_theirs_to_set),
     CoreTool("list_tasks", "The person's tasks with you, and how each stands.",
              {"type": "object", "properties": {}}, mine, offered=_theirs,
              sourced=lambda result: [  # never what its agent wrote, nor why it's blocked
-                 {k: v for k, v in t.items() if k not in ("what", "why")}
+                 {k: v for k, v in t.items() if k not in ("what", "why", "found", "so far")}
                  for t in result["tasks"]]),
     CoreTool("cancel_task", "Stop one of the person's tasks, or a task they asked to repeat, "
              "such as E-3, when they ask you to.",
@@ -573,6 +625,32 @@ def whole(conn: psycopg.Connection, task: dict) -> dict | None:
                         ).fetchone() if task.get("parent") else None
 
 
+def capped(run: dict) -> dict:
+    """A run's trigger, with what its task's slice may still spend as its cap: what the task
+    had left as the slice began, or once it split the task, the share it kept for itself."""
+    trigger = run.get("trigger") or {}
+    if run.get("task_cap") is None:
+        return trigger
+    return {**trigger, "cap": min(int(trigger.get("cap", run["task_cap"])), int(run["task_cap"]))}
+
+
+def stopped(conn: psycopg.Connection, run: dict) -> str | None:
+    """Why a task's run must stop at its next call to the core, if it must: its task was
+    cancelled or has ended, or another run took it over. None for any other run."""
+    trigger = run.get("trigger") or {}
+    if trigger.get("kind") != KIND or not trigger.get("lease"):
+        return None
+    row = conn.execute("select status, lease_id::text as lease from tasks where id = %s",
+                       (str(trigger["task"]),)).fetchone()
+    if row is None:
+        return "the task is gone: stop now, and write to nobody"
+    if row["status"] != "running":
+        return f"the task is {row['status']}: stop now, and write to nobody"
+    if row["lease"] != str(trigger["lease"]):
+        return "another run has taken the task over: stop now, and write to nobody"
+    return None
+
+
 def held(conn: psycopg.Connection, run: dict) -> str | None:
     """Why a task's run may not write to its owner now, if it may not: a part of a task
     writes to nobody, and a task's own run only once it has said it's done or needs them."""
@@ -606,15 +684,20 @@ def end(conn: psycopg.Connection, tasks: TaskService, run_id: str, run: dict,
     if trigger.get("kind") != KIND or not trigger.get("lease"):
         return None
     carry(conn, str(trigger["task"]), run_id)
-    said = run.get("task_result")
-    if said is None and outcome.startswith("done"):
-        said = {"status": "waiting"}
+    said = run.get("task_result")  # a run that kept nothing, nor said it's done, failed
+    if said == KEPT:  # it kept its work as it went: it waits to go on, if its run ended well
+        said = {"status": "waiting"} if outcome.startswith("done") else None
     try:
-        return tasks.end(str(trigger["task"]), str(trigger["lease"]), said,
-                         None if said else f"its run ended as {outcome}",
-                         spent=int(run.get("tokens") or 0), within=conn)
+        ended = tasks.end(str(trigger["task"]), str(trigger["lease"]), said,
+                          None if said else "its run said nothing of the task"
+                          if outcome.startswith("done") else f"its run ended as {outcome}",
+                          spent=int(run.get("tokens") or 0), within=conn)
     except TaskError:  # it's gone, as an erasure takes it
-        return None
+        ended = None
+    # What it said is the task's now, which goes with it: its run keeps only the status
+    conn.execute("update runs set task_result = jsonb_build_object('status', "
+                 "task_result -> 'status') where id = %s and task_result is not null", (run_id,))
+    return ended
 
 
 def ended(task: dict | None) -> bool:
@@ -626,7 +709,7 @@ def notice(task: dict, agent: str) -> str:
     the agent's words, which only its own message carries."""
     what = f"{name(task)}, the task you asked the {agent} for"
     if task["status"] == "done":
-        return f"{what}, is done. Ask the {agent} what it found."
+        return f"{what}, is done. Ask the {agent} what it found, or see it on your tasks' page."
     if task["status"] == "blocked":
         return f"{what}, needs you before it can go on. Ask the {agent} what it needs."
     if task["status"] == "cancelled":

@@ -46,12 +46,22 @@ def mask(args: dict[str, Any], plain: tuple[str, ...] = ()) -> dict[str, Any]:
 def append(conn: psycopg.Connection, entry: dict[str, Any]) -> int:
     """Append an entry in the caller's transaction, and return its sequence number. It waits
     for the ledger's lock a while at most, so one stalled writer fails others rather than
-    holding them all, and the work fails, and is tried again, as a database error would."""
+    holding them all, and the work fails, and is tried again, as a database error would. Its
+    time is the database's clock, which every one of a5s's parts writes through, so none whose
+    own clock is behind puts an entry before the one it follows; and never before the last
+    entry's, if the database's clock went back, as after a failover. So a period's entries
+    are those between two times, in the chain's order."""
     conn.execute("set local lock_timeout = '30s'")
     conn.execute("select pg_advisory_xact_lock(%s)", (_LOCK,))
-    head = conn.execute("select seq, hash from ledger order by seq desc limit 1").fetchone()
-    seq, prev = (head["seq"] + 1, bytes(head["hash"])) if head else (1, GENESIS)
-    text = canonical({**entry, "seq": seq, "at": datetime.now(UTC).isoformat()})
+    head = conn.execute(
+        "select clock_timestamp() as now, h.seq, h.hash, h.entry::jsonb ->> 'at' as at "
+        "from (select 1) one left join (select seq, hash, entry from ledger "
+        "order by seq desc limit 1) h on true").fetchone()
+    seq, prev = (head["seq"] + 1, bytes(head["hash"])) if head["seq"] else (1, GENESIS)
+    at = head["now"].astimezone(UTC)
+    if head["at"] and (last := datetime.fromisoformat(head["at"])) > at:
+        at = last
+    text = canonical({**entry, "seq": seq, "at": at.isoformat()})
     hashed = hashlib.sha256(prev + text.encode()).digest()
     conn.execute(
         "insert into ledger (seq, entry, prev_hash, hash) values (%s, %s, %s, %s)",

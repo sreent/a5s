@@ -97,6 +97,12 @@ async function load() {
         }
         item.append(steps);
       }
+      if (task.found !== undefined) {
+        item.append(line(`What it found: ${typeof task.found === "string" ? task.found : JSON.stringify(task.found)}`));
+      }
+      if ((task["so far"] || []).length) {
+        item.append(line(`So far: ${task["so far"].map((each) => (typeof each === "string" ? each : JSON.stringify(each))).join("; ")}`, "note"));
+      }
       if (task.why) item.append(line(`Why: ${task.why}`, "note"));
       if (task.said) item.append(line(`It needed: ${task.needed || "you"}. You said: ${task.said}`, "note"));
     }

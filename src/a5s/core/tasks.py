@@ -221,6 +221,46 @@ class TaskService:
                 "('done', 'cancelled', 'failed')) order by created_at, number",
                 (now, now)).fetchall()]
 
+    def lapse(self, now: datetime | None = None, within: psycopg.Connection | None = None,
+              unserved: Callable[[dict], str | None] | None = None) -> list[dict]:
+        """End every task that can't go on, wherever it stands, waiting on its parts or its
+        owner too, with its parts still open: past its deadline, its agent retired, or, as
+        `unserved` says of a task and its instance, its agent no longer serving its owner. A
+        slice at work under a lease finishes first. The tasks ended, as they then stand."""
+        now = now or self.clock()
+        with self._tx(within) as conn:
+            rows = conn.execute(
+                "select t.id::text as id, t.owner, t.deadline, t.status, t.lease_expires_at, "
+                "i.status as instance_status, i.serves from tasks t join instances i on "
+                "i.id = t.instance_id where t.parent is null and t.status in "
+                "('queued', 'waiting', 'blocked', 'running') order by t.deadline").fetchall()
+            ended = []
+            for r in rows:
+                if r["status"] == "running" and r["lease_expires_at"] > now:
+                    continue
+                why = ("its agent was retired" if r["instance_status"] == "retired"
+                       else "its deadline passed" if r["deadline"] <= now
+                       else unserved(dict(r)) if unserved else None)
+                if why is None:
+                    continue
+                stopped = conn.execute(
+                    "with recursive tree as (select id from tasks where id = %(id)s union all "
+                    "select t.id from tasks t join tree on t.parent = tree.id) "
+                    "update tasks set status = case when id = %(id)s then 'failed' "
+                    "else 'cancelled' end, last_error = case when id = %(id)s then %(why)s end, "
+                    "lease_expires_at = null, not_before = null, updated_at = %(now)s "
+                    "where id in (select id from tree) and status not in "
+                    "('done', 'cancelled', 'failed') "
+                    "returning id::text as id, instance_id, audience",
+                    {"id": r["id"], "why": why, "now": now}).fetchall()
+                for s in stopped:
+                    self._record(conn, s["id"], "stop", instance=s["instance_id"],
+                                 acts_for=s["audience"],
+                                 args={"why": why, **({"with": r["id"]}
+                                                      if s["id"] != r["id"] else {})})
+                ended.append(self._get(conn, r["id"]))
+            return ended
+
     def cancel(self, task_id: str, by: str, within: psycopg.Connection | None = None) -> dict:
         """Cancel a task, and every child of it still open, at its owner's request. A slice at
         work keeps its lease, so what it did meanwhile still counts, but can do no more."""
@@ -247,6 +287,9 @@ class TaskService:
             row = self._owned(conn, task_id, by)
             if row["status"] not in ("blocked", "failed", "waiting"):
                 raise TaskError("only a blocked, failed or waiting task resumes")
+            if row["deadline"] <= self.clock():
+                raise TaskError("its deadline has passed, so it can't go on: offer it again, "
+                                "if they still want it")
             row = self._status(conn, row, "waiting", error=None, failures=0)
             self._record(conn, task_id, "resume", instance=row["instance_id"],
                          acts_for=row["audience"], args={"by": by})
@@ -482,8 +525,10 @@ class TaskService:
                 if status not in ("waiting", "blocked", "done", "failed")
                 else "a blocked task needs a reason"
                 if status == "blocked" and not result.get("reason") else None)
-            if refused:  # done again, it might repeat what it did: a person decides
-                self._keep(conn, row, tokens, None, "blocked", f"a5s refused its result: {refused}")
+            if refused:  # done again, it might repeat what it did: a person decides, and a
+                # part, which can't wait for anyone, fails, so the task it's part of goes on
+                self._keep(conn, row, tokens, None, "failed" if row["parent"] else "blocked",
+                           f"a5s refused its result: {refused}")
                 return self._get(conn, task_id)
             error = result.get("error") or result.get("reason")
             reason = self._over(conn, row, tokens)

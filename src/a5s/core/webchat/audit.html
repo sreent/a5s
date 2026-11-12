@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>a5s: audit trail</title>
+<link rel="stylesheet" href="/chat/app.css">
+<script src="/audit/audit.js" defer></script>
+</head>
+<body>
+<header>
+  <h1>a5s</h1>
+  <span id="who"></span>
+</header>
+<main>
+  <h2>Audit trail</h2>
+  <p class="note">The ledger, as an auditor reads it: everything a5s did and decided, in the
+    order it happened, and never what anyone said, which it keeps by hash alone. Whoever
+    approved, decided, signed or read the trail shows as themselves.
+    <span id="naming"></span> Each search here is itself in the ledger.</p>
+  <p id="status" role="status"></p>
+  <section id="find" hidden>
+    <h3>Find entries</h3>
+    <p>
+      <label for="since">From</label> <input id="since" type="datetime-local">
+      <label for="until">to before</label> <input id="until" type="datetime-local">
+      <span class="note">in UTC</span>
+    </p>
+    <p>
+      <label for="kind">Kind</label> <select id="kind"><option value="">any</option></select>
+      <label for="action">action</label> <input id="action" size="12">
+      <label for="decision">decision</label>
+      <select id="decision">
+        <option value="">any</option>
+        <option>allow</option>
+        <option>deny</option>
+        <option>record</option>
+      </select>
+    </p>
+    <p>
+      <label for="instance">Instance</label> <input id="instance" size="16">
+      <label for="for">acting for</label> <input id="for" size="20">
+      <label for="by">by</label> <input id="by" size="12">
+    </p>
+    <button type="button" id="search">Find</button>
+    <button type="button" id="report">Who holds each role, and who did what</button>
+    <button type="button" id="export" hidden>Export the period</button>
+    <ul id="entries" class="plain"></ul>
+    <button type="button" id="more" hidden>Later entries</button>
+  </section>
+  <section id="roles" hidden>
+    <h3>Who holds each role now</h3>
+    <ul id="holders" class="plain"></ul>
+    <h3>What was done in the period</h3>
+    <ul id="acts" class="plain"></ul>
+  </section>
+</main>
+</body>
+</html>

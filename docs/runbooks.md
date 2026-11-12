@@ -43,7 +43,7 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 **Shows as:** an instance's tokens past four fifths of a person's day, runs ending `budget spent`, or people told an agent has used its budget.
 
 1. Look for one run that used far more than the rest: an agent going round in circles stops at its run's budget, and the ledger shows each model call.
-2. Chases and reminders go on, on the fifth of each day kept for them. Reports wait for the next day.
+2. Chases and reminders go on, on the fifth of each day kept for them. Reports wait for the next day. A person's tasks stop at three fifths, so their own chat goes on beside them, and a task put off says so in its `last_error`.
 3. Budgets come with the release, so raising one is a new release that widens the agent, which the release approver signs. Don't raise one to get through a bad day.
 
 ## Deliveries a chat didn't take
@@ -106,6 +106,22 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 1. The status counts questions answered and not over the last day. The question's row in `questions` says why one wasn't: the instance asked was suspended, its asker's day's budget was spent, or it wasn't one the settings let it ask, the run that asked had ended, or the run asked failed, such as when its model was down.
 2. The ledger links the two runs: the asked run's `open` names the run that asked, and its `answer` names it too.
 3. Nothing is left waiting: the worker that asked runs the run asked itself, so no question waits for a worker, and the agent tells the person it couldn't get an answer. A run asks three questions at most.
+
+## Tasks wait, or their slices lapse
+
+**Shows as:** the status's tasks line: many due, the oldest for a long time, or slices whose lease lapsed.
+
+1. Tasks due wait for a slot in their agent's pool. Each pool keeps one of its slots for people's messages, which work that falls due never takes, so a pool of one slot runs tasks only between messages. Give a busy agent's pool more slots (`A5S_WORKER_SLOTS`, such as `assistant=8`, or `workers.pools.<agent>.slots` in the chart), or more replicas.
+2. A slice whose lease lapsed was cut off, as when its worker or the scheduler stopped part way: the runs' sweep closes its run, and the task goes on from its last checkpoint in a fresh run, after a wait. Five failed slices in a row fail the task, and its owner hears so.
+3. A task ends at the tasks' sweep once its deadline passes, its agent is retired, or its agent no longer serves its owner, waiting on its parts or its owner too. A person's tasks stop short of two fifths of their day with the agent, so a task put off for that says so in its `last_error`, and goes on the next day.
+
+## Sign-ins refused for want of a second factor
+
+**Shows as:** the status's line of refusals for want of a second factor, by what was refused: approving, deciding, grading, the officer's requests, reading the audit trail.
+
+1. Only the identity provider's policy makes a sign-in show a second factor: the people refused can't, and signing in again won't, which a5s tells them, with whom to ask. Check the policy that covers a5s's app asks for one, such as an Entra ID Conditional Access policy requiring multifactor authentication for it, and that the claim and values in `A5S_OIDC_MFA` are the ones its sign-ins show, such as `amr:mfa`.
+2. Where the second factor is a level, as `acr:<level>` names it, a5s's pages ask the provider for that level as people sign in to do what counts (`acr_values`), and a provider that supports it asks them for one then.
+3. The status counts refusals by the day, and by what was refused, never by whom: the counts go after a week.
 
 ## A note in the notebook is wrong
 

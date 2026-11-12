@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>a5s: administration</title>
+<link rel="stylesheet" href="/chat/app.css">
+<script src="/admin/admin.js" defer></script>
+</head>
+<body>
+<header>
+  <h1>a5s</h1>
+  <span id="who"></span>
+</header>
+<main>
+  <h2>Administration</h2>
+  <p class="note">Who holds each of a5s's roles, and by what: the directory, which a5s's release
+    covers, or a group in your identity provider, as the settings map it. What waits for whom,
+    and the latest administrative acts. It only shows: settings change in the settings app, and
+    releases with <code>a5s release</code>.</p>
+  <p id="status" role="status"></p>
+  <section id="shown" hidden>
+    <h3>Who holds each role</h3>
+    <ul id="roles" class="plain"></ul>
+    <h3>Groups that give roles</h3>
+    <p id="claim" class="note"></p>
+    <ul id="groups" class="plain"></ul>
+    <h3>What waits for whom</h3>
+    <ul id="waiting" class="plain"></ul>
+    <h3 id="latest-title">The latest acts</h3>
+    <ul id="latest" class="plain"></ul>
+  </section>
+</main>
+</body>
+</html>

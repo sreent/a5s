@@ -26,9 +26,11 @@ from psycopg.types.json import Jsonb
 from pydantic import ValidationError
 
 from a5s.contract import Person, Scenario
-from a5s.core import ledger, schedules
+from a5s.core import ledger, registry, schedules, studio
 from a5s.core.tasks import ENDED, TaskError, TaskService, TaskSpec
 from a5s.definitions import DAYS, Schedule
+
+WAITS = timedelta(days=1)  # an offer waits this long for its owner's yes, then lapses
 
 MOST = 5  # the most repeats someone may have with an agent at once, offered or going [TBC]
 PREFIX = "E-"
@@ -50,11 +52,17 @@ def number(given: Any) -> int | None:
     return int(digits) if digits.isdigit() else None
 
 
+MOST_TIMES = 4  # the most times a day a repeat comes round
+
+
 def when(days: Any, at: Any) -> Schedule:
     """When a repeat comes round, as a release's schedules say it: days such as monday, a list
     of them, weekdays or every day, and a time, such as "09:00". ValueError if it isn't one."""
     if isinstance(days, str) and days.strip().lower() in ("every day", "daily", "day", "days"):
         days = list(DAYS)
+    if isinstance(at, list) and len(set(map(str, at))) > MOST_TIMES:
+        raise ValueError(f"a repeat comes round at most {MOST_TIMES} times a day: say up to "
+                         f"{MOST_TIMES} times, such as \"09:00\"")
     try:
         return Schedule(name="repeat", task="repeat", at=at or "09:00", days=days or "weekdays")
     except ValidationError:
@@ -112,9 +120,10 @@ def offer(conn: psycopg.Connection, person: Person, instance: str, run: str, ask
                 "offered": "you offered this already: if they've said yes, start it with "
                            "confirm_task"}
     going = conn.execute("select count(*) as n from task_repeats where owner = %s and "
-                         "instance_id = %s and status in ('offered', 'active') and "
-                         "id is distinct from %s",  # the one it changes makes way for it
-                         (person.id, instance, replaces)).fetchone()["n"]
+                         "instance_id = %s and (status = 'active' or (status = 'offered' "
+                         "and asked_at > %s)) and id is distinct from %s",  # an offer that
+                         (person.id, instance, asked_at - WAITS, replaces)  # lapsed, and the
+                         ).fetchone()["n"]  # one it changes, make way for it
     if going >= MOST:
         raise TaskError(f"they have {MOST} repeating tasks with you already: they stop one first")
     reads = [dict(r) for r in conn.execute(
@@ -171,8 +180,9 @@ def stop(conn: psycopg.Connection, person: Person, wanted: Any, now: datetime,
     they stop that too. TaskError if it isn't theirs, or has stopped already."""
     found = number(wanted)
     row = conn.execute(
-        "select * from task_repeats where owner = %s and number = %s and (%s::text is null or "
-        "instance_id = %s) for update", (person.id, found, instance, instance)
+        "select id, number, instance_id, owner, status from task_repeats where owner = %s "
+        "and number = %s and (%s::text is null or instance_id = %s) for update",
+        (person.id, found, instance, instance)
     ).fetchone() if found is not None else None
     if row is None:
         raise TaskError(f"{wanted} isn't one of their repeating tasks")
@@ -186,17 +196,29 @@ def stop(conn: psycopg.Connection, person: Person, wanted: Any, now: datetime,
                     "they want it stopped"}
 
 
-def listed(conn: psycopg.Connection, person: Person, instance: str | None = None) -> list[dict]:
-    """Someone's repeats, with an agent or with every one, as they stand."""
+def listed(conn: psycopg.Connection, scenario: Scenario, person: Person,
+           instance: str | None = None) -> list[dict]:
+    """Someone's repeats, with an agent or with every one, as they stand. One whose words
+    name a record they may no longer see shows how it stands alone, as a task does."""
     rows = conn.execute(
-        "select r.*, i.definition as agent, t.number as last_number, t.status as last_status "
+        "select r.number, r.task, r.days, r.at, r.status, i.definition as agent, "
+        "t.number as last_number, t.status as last_status, "
+        "r.status = 'offered' and r.asked_at <= now() - %s as lapsed "
         "from task_repeats r join instances i on i.id = r.instance_id left join tasks t on "
         "t.id = r.last_task where r.owner = %s and (%s::text is null or r.instance_id = %s) "
-        "order by r.number desc limit 20", (person.id, instance, instance)).fetchall()
-    return [{"repeat": name(r), "agent": r["agent"], "what": r["task"], "when": said(_of(r)),
-             "status": r["status"],
-             **({"last task": f"T-{r['last_number']}, {r['last_status']}"}
-                if r["last_number"] else {})} for r in rows]
+        "order by r.number desc limit 20", (WAITS, person.id, instance, instance)).fetchall()
+    shown = []
+    for r in rows:
+        about = {"repeat": name(r), "agent": r["agent"], "when": said(_of(r)),
+                 "status": "offered, and lapsed: offer it again if they still want it"
+                           if r["lapsed"] else r["status"],
+                 **({"last task": f"T-{r['last_number']}, {r['last_status']}"}
+                    if r["last_number"] else {})}
+        if all(scenario.sees(person.id, k) for k in studio.named(scenario, r["task"])):
+            shown.append({**about, "what": r["task"]})
+        else:  # its words name a record they may no longer see
+            shown.append({**about, "withheld": True})
+    return shown
 
 
 def due(conn: psycopg.Connection, scenario: Scenario, definitions: dict[str, Any],
@@ -207,12 +229,22 @@ def due(conn: psycopg.Connection, scenario: Scenario, definitions: dict[str, Any
     let go. The tasks it made."""
     made = []
     for row in conn.execute(
-            "select r.*, i.definition from task_repeats r join instances i on "
-            "i.id = r.instance_id where r.status = 'active' and i.status = 'active' "
-            "order by r.number for update of r skip locked").fetchall():
+            "select r.*, i.definition, i.status as instance_status, i.serves from task_repeats r "
+            "join instances i on i.id = r.instance_id where r.status = 'active' and "
+            "i.status <> 'suspended' order by r.number for update of r skip locked").fetchall():
         owner = scenario.person(row["owner"])
         tasks_of = getattr(definitions.get(row["definition"]), "tasks", None)
-        if owner is None or tasks_of is None:  # gone, or the agent takes on no tasks now
+        why = ("its agent was retired" if row["instance_status"] != "active"
+               else "its agent takes on no tasks now" if tasks_of is None
+               else "its agent no longer serves them"
+               if owner is not None and not registry.serving(scenario, row["serves"], owner.id)
+               else None)
+        if why:  # it can't make a task again: it stops, so what it kept goes in time
+            conn.execute("update task_repeats set status = 'stopped', updated_at = %s "
+                         "where id = %s", (now, row["id"]))
+            _record(conn, row, "stop", why=why)
+            continue
+        if owner is None:  # gone from the directory: archiving puts what's theirs away
             continue
         at = schedules.due_now(_of(row), schedules.zone(scenario, row["owner"]), now)
         if at is None or (row["last_due"] and at <= row["last_due"]):

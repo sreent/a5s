@@ -33,7 +33,14 @@ import psycopg
 
 from a5s.contract import InstanceSettings, Person, Settings
 from a5s.core import registry, sealing
-from a5s.core.identity import IdentityError, UnknownPerson, Verifier, second_factor, whose
+from a5s.core.identity import (
+    IdentityError,
+    UnknownPerson,
+    Verifier,
+    second_factor,
+    whose,
+    without_second_factor,
+)
 from a5s.core.ledger import canonical
 from a5s.definitions import Definition
 
@@ -46,9 +53,10 @@ Directory = Callable[[str], Person | None]
 
 
 class Refused(Exception):
-    def __init__(self, status: int, reason: str):
+    def __init__(self, status: int, reason: str, second_factor: str | None = None):
         super().__init__(reason)
         self.status, self.reason = status, reason
+        self.second_factor = second_factor  # what was refused for want of one, to count it
 
 
 # What approving an instance's `asks` lets through, in words (core/asking.py)
@@ -85,6 +93,24 @@ def _mac(key: str, approval: dict) -> str:
     fields["token"] = (token.removeprefix(HASHED) if token.startswith(HASHED)
                        else hashlib.sha256(token.encode()).hexdigest())
     return hmac.new(key.encode(), canonical(fields).encode(), hashlib.sha256).hexdigest()
+
+
+def vouch(keys: tuple[str, ...], scenario: str, serial: int, raw: bytes) -> str:
+    """The core's seal on a version of the settings it checked while it was in force."""
+    return _vouching(keys[0], scenario, serial, raw)
+
+
+def vouched(keys: tuple[str, ...], scenario: str, serial: int, raw: bytes,
+            seal: str | None) -> bool:
+    """Whether the core sealed this version, with any of its keys, while it was in force."""
+    return bool(seal) and any(hmac.compare_digest(_vouching(key, scenario, serial, raw), seal)
+                              for key in keys)
+
+
+def _vouching(key: str, scenario: str, serial: int, raw: bytes) -> str:
+    fields = {"scenario": scenario, "serial": serial, "raw": hashlib.sha256(raw).hexdigest()}
+    return hmac.new(key.encode(), b"a5s settings in force\n" + canonical(fields).encode(),
+                    hashlib.sha256).hexdigest()
 
 
 # Proposing a version, and saying what it changes
@@ -251,6 +277,15 @@ def changes(before: Settings | None, after: Settings, definitions: dict[str, Def
     for gone in was.values():
         found.append({"text": f"Retires {gone.id}, which served {words.names(gone.serves)}.",
                       "widens": False})
+    given = before.groups if before else {}  # the roles groups give, in the identity provider
+    for group in sorted(set(given) | set(after.groups)):
+        a, b = set(given.get(group, ())), set(after.groups.get(group, ()))
+        if more := sorted(b - a):
+            found.append({"text": f"Everyone in the group {group} holds {names_of(more)}, as "
+                                  "their sign-ins show they're in it.", "widens": True})
+        if fewer := sorted(a - b):
+            found.append({"text": f"The group {group} no longer gives {names_of(fewer)}.",
+                          "widens": False})
     return found or [{"text": "It changes nothing the agents do: only its serial or notes.",
                       "widens": False}]
 
@@ -292,6 +327,8 @@ def described(settings: Settings, definitions: dict[str, Definition],
     told += [f"Limit for {action}: {said}." for action, said in Words.limits(settings).items()]
     told += [f"An agent earns level 2 in {part} once graded samples show it's {_percent(share)} "
              "accurate." for part, share in sorted(settings.thresholds.items())]
+    told += [f"Everyone in the group {group} holds {names_of(list(roles))}, as their sign-ins "
+             "show they're in it." for group, roles in sorted(settings.groups.items())]
     return told
 
 
@@ -354,8 +391,7 @@ def check(verifier: Verifier, scenario: Any, client_id: str, token: str, version
         raise Refused(401, "approving needs you to sign in again, from the last ten minutes, "
                            "not a sign-in your browser kept")
     if not second_factor(verifier.cfg, claims):
-        raise Refused(401, "approving needs you to sign in with your second factor too, as this "
-                           "deployment asks")
+        raise Refused(401, without_second_factor("approve"), "approve")
     try:
         person = whose(verifier, scenario, claims)
     except UnknownPerson as exc:

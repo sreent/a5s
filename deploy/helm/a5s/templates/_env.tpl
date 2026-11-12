@@ -31,6 +31,10 @@
 - name: A5S_STUDIO_NAMES
   value: "true"
 {{- end }}
+{{- if .Values.officerAgrees.auditNames }}
+- name: A5S_AUDIT_NAMES
+  value: "true"
+{{- end }}
 {{- end }}
 
 {{- define "a5s.env.scheduler" -}}

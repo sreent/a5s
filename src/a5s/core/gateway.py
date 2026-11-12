@@ -65,6 +65,7 @@ from a5s.core import (
     handles,
     ledger,
     measures,
+    memberships,
     models,
     notebook,
     obligations,
@@ -98,6 +99,7 @@ from a5s.core.identity import (
     Verifier,
     second_factor,
     whose,
+    without_second_factor,
 )
 from a5s.core.matrix import Matrix
 from a5s.core.policy import Decision, PolicyEngine
@@ -247,11 +249,13 @@ class Gateway:
         """The task engine, as the core runs it: each slice a run (core/tasking.py)."""
         return tasking.service(self.url, self.clock, RUN_MINUTES)
 
-    def settings_in_force(self, conn: psycopg.Connection) -> tuple[Any, str | None]:
+    def settings_in_force(self, conn: psycopg.Connection,
+                          seal: bool = True) -> tuple[Any, str | None]:
         """The latest signed version of the settings, checked again from the bytes that were
         signed, against the directory as it is now: every time, with nothing cached, so an
-        approver who loses their role, or a seal key withdrawn, counts at once."""
-        rows = conn.execute("select serial, version, raw, signatures from settings_versions "
+        approver who loses their role, or a seal key withdrawn, counts at once. With `seal`,
+        the core seals a version it found approved, once, in the caller's transaction."""
+        rows = conn.execute("select serial, version, raw, signatures, sealed from settings_versions "
                             "where scenario = %s order by serial desc limit 2",
                             (self.scenario.name,)).fetchall()
         if not rows:
@@ -267,10 +271,40 @@ class Gateway:
         settings, before = found[0][1], found[1][1] if len(found) > 1 else None
         approved, _ = approvals.approvers(conn, self.cfg.seal_keys, self.scenario.name,
                                           approvals.digest(settings.raw))
-        valid, _ = registry.signers(settings, self.scenario.person, approved)
-        if needs := registry.missing(settings, self.scenario.person, valid, before):
+        # The roles the version before gives groups count, read afresh, if the core sealed it
+        # while it was in force; a version's own never count towards it (core/memberships.py)
+        prior = found[1][0] if before else None
+        given = before.groups if before and approvals.vouched(
+            self.cfg.seal_keys, self.scenario.name, before.serial, before.raw,
+            prior["sealed"]) else {}
+        directory = memberships.under(self.scenario, conn, given)
+        valid, _ = registry.signers(settings, directory, approved)
+        if needs := registry.missing(settings, directory, valid, before,
+                                     memberships.under(self.scenario, conn, {})):
             return None, f"the settings in force aren't approved: {needs[0]}"
+        if seal and self.cfg.seal_keys and not approvals.vouched(
+                self.cfg.seal_keys, self.scenario.name, settings.serial, settings.raw,
+                found[0][0]["sealed"]):
+            conn.execute("update settings_versions set sealed = %s where scenario = %s and "
+                         "serial = %s", (approvals.vouch(self.cfg.seal_keys, self.scenario.name,
+                                                         settings.serial, settings.raw),
+                                         self.scenario.name, settings.serial))
         return settings, None
+
+    def groups_in_force(self, conn: psycopg.Connection) -> dict[str, tuple[str, ...]]:
+        """The roles the settings in force give groups: once checked, where the core can check
+        them; in the channels app, which holds no seal key, once the core sealed them."""
+        if self.cfg.seal_keys:  # read alone: it never waits on what its caller holds
+            settings, _ = self.settings_in_force(conn, seal=False)
+            return settings.groups if settings else {}
+        row = conn.execute("select raw, sealed from settings_versions where scenario = %s "
+                           "order by serial desc limit 1", (self.scenario.name,)).fetchone()
+        if not row or not row["sealed"]:
+            return {}
+        try:
+            return parse_settings(bytes(row["raw"])).groups
+        except ValueError:
+            return {}
 
     def check_instance(self, conn: psycopg.Connection, inst: dict) -> list[str]:
         """Whether an instance's record is exactly what its signed settings, its release and
@@ -492,10 +526,11 @@ class Gateway:
             return False
         heard = " and heard_by @> %(members)s::text[]" if group else ""  # the latest turns'
         it_heard = " and t.heard_by @> %(members)s::text[]" if group else ""  # and the turn's
-        return bool(conn.execute(
+        return bool(conn.execute(  # a task's own topic, which no other run reads, aside
             "select 1 from turns t join runs r on r.id = t.run_id where r.read_outside "
             "and t.person = %(person)s and t.agent = %(agent)s and (t.topic = %(topic)s or t.id in "
             f"(select id from turns where person = %(person)s and agent = %(agent)s{heard} "
+            "and (topic = %(topic)s or topic not like 'task %%') "
             f"order by id desc limit 200)){it_heard} limit 1",
             {"person": group or acts_for[0], "agent": agent, "topic": topic,
              "members": list(acts_for)}).fetchone())
@@ -690,8 +725,11 @@ class Gateway:
                                   (row["asked_by_run"],)).fetchone()
         payer = budgets.payer(list(asking_run["acts_for"]), asking_run["trigger"]) \
             if asking_run else None  # whose day it is: in a group chat, whoever asked there
+        for_task = bool(asking_run and (asking_run["trigger"] or {}).get("kind") == tasking.KIND)
         opening = Opening(trigger={"kind": asking.KIND, **by, **({"payer": payer} if payer else {}),
-                                   **({"asker_model": asker["model"]} if asker else {})},
+                                   **({"asker_model": asker["model"]} if asker else {}),
+                                   # a task's question is paid as its task is, short of their own
+                                   **({"for_task": True} if for_task else {})},
                           acts_for=list(row["acts_for"]),
                           args=by, reasons=[], marked=bool(row["read_outside"]),
                           used=bool(row["run_id"] or row["answered_at"] or row["problem"]))
@@ -837,7 +875,10 @@ class Gateway:
         if row is None:
             return Opening({"kind": tasking.KIND, "task": task_id}, [], {"task": task_id},
                            ["there's no such task"])
-        opening = Opening(trigger={"kind": tasking.KIND, "task": task_id, "payer": row["owner"]},
+        opening = Opening(trigger={"kind": tasking.KIND, "task": task_id, "payer": row["owner"],
+                                   # what it writes its owner, kept in a topic of its own, so a
+                                   # task that read content from outside marks no other topic
+                                   "topic": f"task {tasking.name(row)}"},
                           acts_for=list(row["audience"]), args={"task": task_id}, reasons=[])
         if row["instance_id"] != inst["id"]:  # nothing to put off: it's another's to run
             opening.reasons.append(f"{inst['id']} didn't take it")
@@ -845,6 +886,9 @@ class Gateway:
         if row["status"] not in ("queued", "waiting", "running"):
             opening.reasons.append(f"it's {row['status']}")
             opening.used = True
+        elif row["status"] != "running" and row["not_before"] and row["not_before"] > now:
+            opening.reasons.append("it waits a while before its next slice, after the last one")
+            opening.used = True  # it waits already, however its run was asked for
         if self.scenario.person(row["owner"]) is None:
             opening.reasons.append("the directory doesn't know whose it is")
         return opening
@@ -1000,7 +1044,8 @@ def values_of(traced: list[dict]) -> dict:
 def load_run(conn: psycopg.Connection, token: str) -> dict:
     row = conn.execute(
         """
-        select r.id::text as run, r.acts_for, r.read_outside, r.trigger, r.tokens, i.*
+        select r.id::text as run, r.acts_for, r.read_outside, r.trigger, r.tokens, r.task_cap,
+               i.*
         from runs r join instances i on i.id = r.instance_id
         where r.token_hash = %s and r.closed_at is null and r.expires_at > now()
         """,
@@ -1076,6 +1121,14 @@ def create_app(gw: Gateway) -> FastAPI:
     def service(authorization: str = Header(default="")) -> None:
         if not secrets.compare_digest(authorization, f"Bearer {gw.cfg.service_token}"):
             raise HTTPException(401, "service token required")
+
+    def counted(doing: str) -> None:
+        """Count a refusal for want of a second factor, for the status."""
+        try:
+            with db.transaction(gw.url) as conn:
+                status.second_factor_refused(conn, doing)
+        except psycopg.Error:  # counting never stands in the refusal's way
+            log.warning("couldn't count a refusal for want of a second factor", exc_info=True)
 
     def run_token(
         authorization: str | None = Header(default=None),
@@ -1157,7 +1210,8 @@ def create_app(gw: Gateway) -> FastAPI:
                     if task.get("status") == "failed":
                         pushing += tell_of_task(conn, task)
                 else:  # its run's model calls are held to what's left of its budget
-                    opening.trigger.update(lease=lease, cap=int(task["tokens_left"]))
+                    opening.trigger.update(lease=lease, cap=int(task["tokens_left"]),
+                                           root=str(task["root"]))  # its tree's: one piece of work
                     if tasking.marked(conn, task):  # a run of its tree read content from outside
                         opening.marked = True
                     opening.task = tasking.brief(  # with its parts, or the task it's part of
@@ -1241,13 +1295,20 @@ def create_app(gw: Gateway) -> FastAPI:
     def tasks_sweep() -> list[dict]:
         """The tasks whose next slice is due, each for the scheduler to work on, as a run of
         its instance's (core/tasking.py)."""
+        sends: list[int | None] = []
         with db.transaction(gw.url) as conn:  # each repeat whose time has come, a task first
             repeats.due(conn, gw.scenario, gw.definitions, gw.tasks, gw.clock())
+            for ended in gw.tasks.lapse(gw.clock(), within=conn, unserved=lambda task: (
+                    None if gw.scenario.person(task["owner"]) is None  # archiving's, if gone
+                    or registry.serving(gw.scenario, task["serves"], task["owner"])
+                    else "its agent no longer serves them")):  # past its deadline, its agent
+                sends += tell_of_task(conn, ended)  # retired, or not theirs: its owner hears
             due = gw.tasks.due(gw.clock(), within=conn)
             rows = conn.execute(
                 "select t.id::text as id, t.instance_id, t.owner, i.definition from tasks t "
                 "join instances i on i.id = t.instance_id where t.id = any(%s::uuid[]) "
                 "and i.status = 'active' order by t.updated_at, t.number", (due,)).fetchall()
+        push(sends)
         return [{"kind": tasking.KIND, "task": r["id"], "instance": r["instance_id"],
                  "agent": r["definition"], "owner": r["owner"]} for r in rows]
 
@@ -1660,7 +1721,8 @@ def create_app(gw: Gateway) -> FastAPI:
                                           "digest": row["digest"], **asker,
                                           "widens": any(c["widens"] for c in found)}})
             text = approvals.text(settings.serial, found, link)
-            for approver in registry.approvers(settings, gw.scenario.holders, before):
+            for approver in registry.approvers(settings, gw.scenario.holders, before,
+                                               memberships.rooted(gw.scenario).holders):
                 route = gw.reach(conn, approver.id, None)
                 ledger.append(conn, {
                     "kind": "notice", "action": "ask-approval", "run": None, "instance": None,
@@ -1734,7 +1796,8 @@ def create_app(gw: Gateway) -> FastAPI:
         settings = parse_settings(bytes(row["raw"]))
         valid, _ = registry.signers(settings, gw.scenario.person, approved)
         before = parse_settings(bytes(last["raw"])) if last and last.get("raw") else None
-        if registry.missing(settings, gw.scenario.person, valid, before):
+        if registry.missing(settings, gw.scenario.person, valid, before,
+                            memberships.rooted(gw.scenario).person):
             return None, approved  # it waits for the rest of the approvers it needs
         if refused := gw.unusable(settings, last):  # such as a release gone since
             ledger.append(conn, {"kind": "admin", "action": "apply", "decision": "deny",
@@ -1793,10 +1856,31 @@ def create_app(gw: Gateway) -> FastAPI:
 
     # The audit trail, for auditors and assurance (core/audit.py), behind the service token
 
-    def auditor(by: str) -> None:
+    def auditor(by: str, identity: str | None) -> tuple[str, str]:
+        """Who reads the trail through the core's API, and through what: their own sign-in,
+        checked here, with a second factor where the deployment asks for one, or the service
+        token, which names them, and says so in the ledger, since whoever holds it could
+        name anyone."""
+        through = "the service token"
+        if identity:
+            if gw.identity is None:
+                raise HTTPException(400, "a5s uses no identity provider here: name the reader "
+                                         "with by alone")
+            try:
+                claims = gw.identity.claims(identity)
+                by = whose(gw.identity, gw.scenario, claims).id
+            except UnknownPerson as exc:
+                raise HTTPException(403, str(exc)) from None
+            except IdentityError as exc:
+                raise HTTPException(401, f"the sign-in doesn't check out: {exc}") from None
+            if not second_factor(gw.identity.cfg, claims):
+                counted("read the audit trail")
+                raise HTTPException(401, without_second_factor("read the audit trail"))
+            through = "their sign-in"
         if not audit.reads(gw.scenario.person(by)):
             raise HTTPException(403, f"only an auditor, or assurance, reads the audit trail, and "
                                      f"{by} is neither")
+        return by, through
 
     def period(since: datetime | None, until: datetime | None) -> dict:
         return {"since": since.isoformat() if since else None,
@@ -1807,38 +1891,45 @@ def create_app(gw: Gateway) -> FastAPI:
                       kind: str | None = None, action: str | None = None,
                       decision: str | None = None, instance: str | None = None,
                       person: str | None = None, after: int = 0,
-                      limit: int = audit.MOST) -> dict:
+                      limit: int = audit.MOST,
+                      identity: str | None = Header(default=None, alias="X-A5S-Identity")
+                      ) -> dict:
         """A page of a period's ledger entries, as an auditor asks for them."""
-        auditor(by)
+        by, through = auditor(by, identity)
         with db.transaction(gw.url) as conn:
             found = audit.search(conn, since=since, until=until, kind=kind, action=action,
                                  decision=decision, instance=instance, person=person,
                                  after=after, limit=limit)
-            audit.noted(conn, by, "search", **period(since, until), kind=kind, action=action,
-                        decision=decision, instance=instance, person=person,
+            audit.noted(conn, by, "search", through, **period(since, until), kind=kind,
+                        action=action, decision=decision, instance=instance, person=person,
                         after=after or None, found=len(found["entries"]))
         return found
 
     @app.get("/audit/export", dependencies=[Depends(service)])
     def audit_export(by: str, since: datetime | None = None, until: datetime | None = None,
-                     after: int = 0) -> dict:
+                     after: int = 0,
+                     identity: str | None = Header(default=None, alias="X-A5S-Identity")
+                     ) -> dict:
         """A page of a period's entries exactly as the ledger holds them, to check and keep."""
-        auditor(by)
+        by, through = auditor(by, identity)
         with db.transaction(gw.url) as conn:
             page = audit.export(conn, since=since, until=until, after=after)
-            audit.noted(conn, by, "export", **period(since, until), after=after or None,
-                        entries=len(page["entries"]))
+            audit.noted(conn, by, "export", through, **period(since, until),
+                        after=after or None, entries=len(page["entries"]))
         return page
 
     @app.get("/audit/report", dependencies=[Depends(service)])
     def audit_report(by: str, since: datetime | None = None,
-                     until: datetime | None = None) -> dict:
+                     until: datetime | None = None,
+                     identity: str | None = Header(default=None, alias="X-A5S-Identity")
+                     ) -> dict:
         """Who holds each role, and who did what of a period's administration."""
-        auditor(by)
+        by, through = auditor(by, identity)
         with db.transaction(gw.url) as conn:
             found = audit.report(conn, gw.scenario, gw.definitions.keys(), since=since,
                                  until=until)
-            audit.noted(conn, by, "report", **period(since, until), acts=len(found["acts"]))
+            audit.noted(conn, by, "report", through, **period(since, until),
+                        acts=len(found["acts"]))
         return found
 
     @app.get("/measures", dependencies=[Depends(service)])
@@ -2003,6 +2094,8 @@ def create_app(gw: Gateway) -> FastAPI:
                         asked = officer.take(own, gw.identity, gw.scenario,
                                              gw.cfg.webchat_client_id, action, person)
             except approvals.Refused as exc:
+                if exc.second_factor:
+                    counted(exc.second_factor)
                 raise HTTPException(exc.status, exc.reason) from None
             return asked["officer"], {"verified": "a sign-in to ask for this alone",
                                       "request": str(asked["id"]), "issuer": asked["issuer"],
@@ -2034,8 +2127,8 @@ def create_app(gw: Gateway) -> FastAPI:
             if body.by and body.by != person:
                 raise HTTPException(403, f"you're signed in as {person}, not {body.by}")
             if loosens and not second_factor(gw.identity.cfg, claims):
-                raise HTTPException(401, "this needs you to sign in with your second factor "
-                                         "too, as this deployment asks")
+                counted("resume")
+                raise HTTPException(401, without_second_factor("do this"))
             return person, "verified"
         if not gw.cfg.development:
             raise HTTPException(503, "suspending and resuming need sign-in: set A5S_OIDC_ISSUER")
@@ -2241,6 +2334,8 @@ def create_app(gw: Gateway) -> FastAPI:
                 if row["trigger"].get("kind") in OWN_RUNS:
                     decision = Decision(False, ("a5s-runs-call-no-tools",), explanations=(
                         "a5s's own runs, such as keeping a summary, call no tools",))
+                if why := tasking.stopped(conn, row):  # cancelled, as a suspension stops runs
+                    decision = Decision(False, ("tasks-stop-when-stopped",), explanations=(why,))
                 deciding = holding(decision, records, requested)
                 if isinstance(deciding, str):  # nobody may decide it, or nothing can here
                     decision = Decision(False, ("someone-else-decides",), explanations=(deciding,))
@@ -2759,7 +2854,8 @@ def create_app(gw: Gateway) -> FastAPI:
                 decision = Decision(False, ("a5s-runs-write-to-nobody",), explanations=(
                     "a5s's own runs, such as keeping a summary, write to nobody",))
             elif row["trigger"].get("kind") == tasking.KIND and (
-                    why := tasking.held(conn, row)):  # a part, or a task still at work
+                    why := tasking.stopped(conn, row) or tasking.held(conn, row)):  # a part,
+                # a task still at work, or one cancelled meanwhile
                 decision = Decision(False, (tasking.HELD,), explanations=(why,))
             elif row["trigger"].get("kind") == asking.KIND:
                 decision = Decision(False, ("answers-go-to-the-asker",), explanations=(
@@ -2823,7 +2919,11 @@ def create_app(gw: Gateway) -> FastAPI:
         # As the agent wrote it, with its handles, for the conversation a later run reads, and
         # a5s's note apart, so no run takes a5s's words for the agent's, or learns to imitate them
         return {"sent": True, "text": said, "note": note, "links_removed": removed,
-                **({"kept_back": True} if kept else {})}
+                **({"kept_back": True} if kept else {}),
+                # where a task's message is kept: in its own topic, which no other run reads,
+                # if its run read content from outside, so it marks none of its owner's chats
+                **({"topic": row["trigger"].get("topic") if row["read_outside"] else topics.GENERAL}
+                   if row["trigger"].get("kind") == tasking.KIND else {})}
 
     def deliver(route: dict, text: str, run: str | None, instance: str | None,
                 card: dict | None = None) -> str | None:
@@ -3420,9 +3520,11 @@ def create_app(gw: Gateway) -> FastAPI:
             release = gw.definitions.get(row["definition"])
             spent = None if release is None else budgets.refused(
                 conn, gw.scenario, release.budget, row["id"], list(row["acts_for"]),
-                row["trigger"].get("kind"), row["tokens"], gw.clock(), row["trigger"])
+                row["trigger"].get("kind"), row["tokens"], gw.clock(), tasking.capped(row))
             if refusal:
                 decision = Decision(False, ("agents-use-their-own-tools",), explanations=(refusal,))
+            elif why := tasking.stopped(conn, row):  # its task was cancelled meanwhile
+                decision = Decision(False, ("tasks-stop-when-stopped",), explanations=(why,))
             elif spent:
                 decision = Decision(False, ("budgets",), explanations=(spent,))
             elif (found := gw.settings_in_force(conn))[0] is None:

@@ -50,6 +50,9 @@ class IdentityConfig:
     # The claim a sign-in shows a second factor by, and the values that do, if the deployment
     # asks for one for what counts (A5S_OIDC_MFA): such as amr holding mfa, for Entra ID
     mfa: tuple[str, tuple[str, ...]] | None = None
+    # The claim a sign-in shows its groups by, for the roles the settings give them
+    # (A5S_OIDC_GROUPS_CLAIM, groups if not set, and none if set empty): core/memberships.py
+    groups_claim: str | None = "groups"
 
     @classmethod
     def from_env(cls) -> IdentityConfig | None:
@@ -66,6 +69,7 @@ class IdentityConfig:
             metadata_url=os.environ.get("A5S_OIDC_METADATA_URL") or None,
             directory_prefix=os.environ.get("A5S_OIDC_DIRECTORY_PREFIX") or None,
             mfa=second_factor_of(os.environ.get("A5S_OIDC_MFA")),
+            groups_claim=os.environ.get("A5S_OIDC_GROUPS_CLAIM", "groups").strip() or None,
         )
 
 
@@ -91,6 +95,24 @@ def second_factor(cfg: IdentityConfig, claims: dict[str, Any]) -> bool:
     shown = claims.get(claim)
     values = [shown] if isinstance(shown, str) else shown if isinstance(shown, list) else []
     return any(str(v) in accepted for v in values)
+
+
+def without_second_factor(doing: str) -> str:
+    """What a5s tells someone whose sign-in showed no second factor where the deployment asks
+    for one: what to do, and whom to ask, since only their organisation's sign-in policy, never
+    they, makes a sign-in show one. `doing` is what they meant to do, such as "approve"."""
+    return (f"a5s needs you to sign in with your second factor to {doing}, as this deployment "
+            "asks, and your sign-in showed none. If you weren't asked for one as you signed "
+            "in, signing in again won't change that: your organisation's sign-in policy decides "
+            "when it asks, so ask whoever runs sign-ins for your organisation, such as your IT "
+            "team, to ask for a second factor when you sign in to a5s.")
+
+
+def asked_level(cfg: IdentityConfig) -> str | None:
+    """The level a page asks the identity provider for as someone signs in to do what counts,
+    as acr_values, where the deployment's second factor is a level (acr), so the provider asks
+    them for it then. None where it's one amr shows, which only the provider's policy asks for."""
+    return " ".join(cfg.mfa[1]) if cfg.mfa and cfg.mfa[0] == "acr" else None
 
 
 class Verifier:
@@ -183,14 +205,17 @@ class Verifier:
 
 
 def whose(verifier: Verifier, scenario: Any, claims: dict) -> Any:
-    """The person in the directory a checked token's claims are for. IdentityError if they
-    name nobody, and UnknownPerson if the directory doesn't know who they name."""
+    """The person in the directory a checked token's claims are for, with the roles this
+    sign-in's groups give them, where the settings give groups roles (core/memberships.py).
+    IdentityError if they name nobody, and UnknownPerson if the directory doesn't know who
+    they name."""
     claim = verifier.named(claims)
     prefix = verifier.cfg.directory_prefix
     person = scenario.find(f"{prefix}:{claim}") if prefix else scenario.person(claim)
     if person is None:
         raise UnknownPerson("a5s doesn't know who you are: ask an instance approver to add you")
-    return person
+    signed_in = getattr(scenario, "signed_in", None)
+    return signed_in(person, claims, verifier.cfg.groups_claim) if signed_in else person
 
 
 def signed_in(verifier: Verifier, scenario: Any, token: str) -> str:

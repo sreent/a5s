@@ -64,12 +64,16 @@ class Client:
     def close(self) -> None:
         self._http.close()
 
-    def call(self, method: str, path: str, body: Any = None, **params: Any) -> Any:
-        """Any of the core's calls, by its path: what it answered, or Refused."""
+    def call(self, method: str, path: str, body: Any = None, _identity: str | None = None,
+             **params: Any) -> Any:
+        """Any of the core's calls, by its path: what it answered, or Refused. `_identity`, a
+        person's own sign-in token, goes in a header of its own, never in the address."""
         given = {k: v.isoformat() if isinstance(v, datetime) else v
                  for k, v in params.items() if v is not None}
         try:
-            response = self._http.request(method, path, json=body, params=given or None)
+            response = self._http.request(method, path, json=body, params=given or None,
+                                          headers={"X-A5S-Identity": _identity}
+                                          if _identity else None)
         except httpx.HTTPError as exc:  # down, unreachable or too slow: refused, with no status
             raise Refused(0, f"the core at {self._http.base_url} can't be reached now "
                              f"({type(exc).__name__})", "") from exc
@@ -86,8 +90,8 @@ class Client:
             raise Refused(response.status_code, "the core didn't answer with its JSON, so "
                           "something stands in front of it", response.text[:500]) from exc
 
-    def get(self, path: str, **params: Any) -> Any:
-        return self.call("GET", path, **params)
+    def get(self, path: str, _identity: str | None = None, **params: Any) -> Any:
+        return self.call("GET", path, _identity=_identity, **params)
 
     def post(self, path: str, body: Any = None) -> Any:
         return self.call("POST", path, {} if body is None else body)
@@ -143,25 +147,45 @@ class Client:
 
     def audit_entries(self, by: str, *, since: datetime | None = None,
                       until: datetime | None = None, after: int = 0,
-                      **filters: str | None) -> dict:
+                      identity: str | None = None, **filters: str | None) -> dict:
         """A page of a period's ledger entries, as `by`, an auditor or assurance, asks: of a
-        kind, action, decision, instance or person, after an entry, for the next page."""
+        kind, action, decision, instance or person, after an entry, for the next page. With
+        `identity`, their own sign-in token, the ledger records the read as theirs; without
+        it, as the service token's, naming them."""
         return self.get("/audit/entries", by=by, since=since, until=until, after=after,
-                        **filters)
+                        _identity=identity, **filters)
 
     def audit_export(self, by: str, *, since: datetime | None = None,
-                     until: datetime | None = None) -> Iterator[dict]:
+                     until: datetime | None = None,
+                     identity: str | None = None) -> Iterator[dict]:
         """Each of a period's entries exactly as the ledger holds them, a page at a time, as
         `by` exports them."""
         after = 0
         while True:
-            page = self.get("/audit/export", by=by, since=since, until=until, after=after)
+            page = self.get("/audit/export", by=by, since=since, until=until, after=after,
+                            _identity=identity)
             yield from page["entries"]
             if not page["next"]:
                 return
             after = page["next"]
 
+    def audit_period(self, by: str, *, since: datetime | None = None,
+                     until: datetime | None = None,
+                     identity: str | None = None) -> tuple[dict, list[dict]]:
+        """A period's export as `a5s audit export` writes it: what it says of the period, its
+        bounds, the entries either side of it, and the ledger's head, as its last page gave
+        them, and each of its entries exactly as the ledger holds them."""
+        lines: list[dict] = []
+        after = 0
+        while True:
+            page = self.get("/audit/export", by=by, since=since, until=until, after=after,
+                            _identity=identity)
+            lines += page["entries"]
+            if not page["next"]:
+                return {**page["bounds"], "head": page["head"]}, lines
+            after = page["next"]
+
     def audit_report(self, by: str, *, since: datetime | None = None,
-                     until: datetime | None = None) -> dict:
+                     until: datetime | None = None, identity: str | None = None) -> dict:
         """Who holds each role, and each administrative act of a period, as `by` asks."""
-        return self.get("/audit/report", by=by, since=since, until=until)
+        return self.get("/audit/report", by=by, since=since, until=until, _identity=identity)

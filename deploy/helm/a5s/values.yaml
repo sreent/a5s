@@ -38,6 +38,10 @@ people:
   # mfa, as Entra ID writes it. Another provider may show it otherwise, such as acr:gold for a
   # step-up level, and "" checks for none, which `a5s status` warns of.
   oidcMfa: "amr:mfa"
+  # The claim a sign-in shows its groups by, for the roles the settings give groups
+  # (docs/administration.md): groups, as Entra ID writes it once its app registration sends
+  # the groups assigned to the app.
+  oidcGroupsClaim: groups
   webchatClientId: ""
   publicUrl: ""
 
@@ -125,6 +129,7 @@ timeouts:
 # they do.
 officerAgrees:
   studioNames: false  # people's studio pages name whom each run acted for (A5S_STUDIO_NAMES)
+  auditNames: false  # the auditors' page names whom agents acted for, and exports (A5S_AUDIT_NAMES)
   rubberStampFlag: false  # the status flags rubber-stamping deciders (A5S_FLAG_RUBBER_STAMPS)
 
 # Where the gateway sends its traces and operators' figures, by OpenTelemetry over HTTP, such

@@ -80,6 +80,29 @@ class Call:
         return person
 
     @property
+    def owner(self) -> Person:
+        """Whose own tasks these are, to read or stop: the person who wrote the message the run
+        answers, one to one, even in a run that read content from outside, since reading what's
+        theirs, or stopping it, widens nothing an agent may do."""
+        if self.conversation is not None:
+            raise Refused("that's one person's own, so they ask for it one to one, not in a "
+                          "group chat")
+        if self.run["trigger"].get("kind") != "message" or len(self.run["acts_for"]) != 1:
+            raise Refused("it's the person's own, so it's done only in answer to a message of "
+                          "theirs")
+        person = self.scenario.person(self.run["acts_for"][0])
+        if person is None:
+            raise Refused("the directory doesn't know them")
+        return person
+
+    @property
+    def said(self) -> str:
+        """What the person said in the message the run answers, in their own words."""
+        row = self.conn.execute("select text from inbound where id = %s",
+                                (self.run["trigger"].get("inbound"),)).fetchone()
+        return row["text"] if row else ""
+
+    @property
     def reader(self) -> Person:
         """Whose own records the run may read: the one person it acts for, whatever started it."""
         if self.conversation is not None:

@@ -53,7 +53,14 @@ from a5s.contract import (
 )
 from a5s.core import approvals, sealing
 from a5s.core.handles import TOKEN
-from a5s.core.identity import IdentityError, UnknownPerson, Verifier, second_factor, whose
+from a5s.core.identity import (
+    IdentityError,
+    UnknownPerson,
+    Verifier,
+    second_factor,
+    whose,
+    without_second_factor,
+)
 from a5s.core.ledger import canonical
 from a5s.core.obligations import a_working_day_after
 
@@ -66,9 +73,10 @@ REASON = 300  # characters a rejection may give for itself
 
 
 class Refused(Exception):
-    def __init__(self, status: int, reason: str):
+    def __init__(self, status: int, reason: str, second_factor: str | None = None):
         super().__init__(reason)
         self.status, self.reason = status, reason
+        self.second_factor = second_factor  # what was refused for want of one, to count it
 
 
 def key(proposal: dict) -> str:
@@ -284,8 +292,7 @@ def fresh(verifier: Verifier, scenario: Scenario, client_id: str, token: str, bo
         raise Refused(401, f"to {what} you sign in again, from the last ten minutes, not with "
                            "a sign-in your browser kept")
     if not second_factor(verifier.cfg, claims):
-        raise Refused(401, f"to {what} you sign in with your second factor too, as this "
-                           "deployment asks")
+        raise Refused(401, without_second_factor(what), what.split()[0])
     if not 16 <= len(salt) <= 128 or claims.get("nonce") != bound:
         raise Refused(403, f"your sign-in wasn't to {what}")
     try:

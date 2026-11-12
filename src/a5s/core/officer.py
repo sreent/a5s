@@ -24,7 +24,14 @@ import psycopg
 from a5s.contract import DATA_PROTECTION, Person
 from a5s.core import groups, sealing
 from a5s.core.approvals import FRESH, HASHED, Refused
-from a5s.core.identity import IdentityError, UnknownPerson, Verifier, second_factor, whose
+from a5s.core.identity import (
+    IdentityError,
+    UnknownPerson,
+    Verifier,
+    second_factor,
+    whose,
+    without_second_factor,
+)
 
 ACTIONS = ("export", "erase")
 LASTS = "10 minutes"  # how long a request waits for the team to carry it out
@@ -61,8 +68,7 @@ def check(verifier: Verifier, scenario: Any, client_id: str, token: str, action:
         raise Refused(401, "asking needs you to sign in again, from the last ten minutes, not a "
                            "sign-in your browser kept")
     if not second_factor(verifier.cfg, claims):
-        raise Refused(401, "asking needs you to sign in with your second factor too, as this "
-                           "deployment asks")
+        raise Refused(401, without_second_factor("ask for this"), "ask")
     try:
         officer = whose(verifier, scenario, claims)
     except UnknownPerson as exc:

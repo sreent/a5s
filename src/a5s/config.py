@@ -135,6 +135,9 @@ class Config:
     # Whether the studio's pages name whom each run acted for: off until the data protection
     # officer agrees (docs/data-protection.md); until then a run says how many people
     studio_names: bool = False
+    # Whether the auditors' page names whom agents acted for, once the data protection officer
+    # agrees, and exports the ledger there (A5S_AUDIT_NAMES); until then, stand-ins
+    audit_names: bool = False
 
     @property
     def agents_dir(self) -> Path:
@@ -186,4 +189,5 @@ class Config:
             flag_rubber_stamps=os.environ.get("A5S_FLAG_RUBBER_STAMPS", "").lower()
             in ("1", "true", "yes"),
             studio_names=os.environ.get("A5S_STUDIO_NAMES", "").lower() in ("1", "true", "yes"),
+            audit_names=os.environ.get("A5S_AUDIT_NAMES", "").lower() in ("1", "true", "yes"),
         )

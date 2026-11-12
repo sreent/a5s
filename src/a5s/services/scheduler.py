@@ -40,7 +40,7 @@ from a5s.config import Config
 from a5s.contract import INSTANCE_APPROVER, PART_OWNER, Scenario
 from a5s.core import groups, registry, tasking
 from a5s.services import context, summaries
-from a5s.worker import BudgetSpent, ModelDown, run_agent
+from a5s.worker import BudgetSpent, ModelDown, TaskStopped, run_agent
 
 log = logging.getLogger(__name__)
 # Seconds the scheduler waits for a worker's run: longer than the run may take on the worker
@@ -62,6 +62,7 @@ class Slots:
         self._lock = threading.Lock()
         self.pooled = frozenset(pools or {})
         self._free: dict[str | None, int] = {None: shared, **(pools or {})}
+        self._size = dict(self._free)
         self.total = sum(self._free.values())
 
     def pool(self, agent: str) -> str | None:
@@ -71,12 +72,18 @@ class Slots:
     def pools(self) -> list[str | None]:
         return [*sorted(self.pooled), None]
 
-    def take(self, pool: str | None) -> bool:
+    def take(self, pool: str | None, keep: int = 0) -> bool:
+        """A slot of the pool's, leaving `keep` free, or False if it has none to spare."""
         with self._lock:
-            if self._free[pool] <= 0:
+            if self._free[pool] <= keep:
                 return False
             self._free[pool] -= 1
             return True
+
+    def spare(self, pool: str | None) -> int:
+        """The slots a pool keeps for people's messages, which work that falls due, such as
+        a task's slice, never takes: one, where it has more than one."""
+        return 1 if self._size[pool] > 1 else 0
 
     def give(self, pool: str | None) -> None:
         with self._lock:
@@ -110,6 +117,8 @@ def remote_worker(url: str, within: float = reach.WITHIN) -> Worker:
             raise ModelDown(response.json().get("detail", ""))
         if response.status_code == 429 and response.json().get("error") == "budget_spent":
             raise BudgetSpent(response.json().get("detail", ""))
+        if response.status_code == 409 and response.json().get("error") == "task_stopped":
+            raise TaskStopped(response.json().get("detail", ""))
         if response.status_code == 409 and response.json().get("error") == "wrong_pool":
             raise RuntimeError(f"the worker pool at {url} refused the run: "
                                f"{response.json().get('detail', '')}")
@@ -532,7 +541,7 @@ class Scheduler:
             if person and not reply.strip():
                 raise RuntimeError("the agent's reply was empty")
             if (kind == tasking.KIND and reply.strip()  # to its owner, once it's done or needs
-                    and not self._finished(claim, run, token, reply)):  # them
+                    and not self._finished(claim, run, token, reply, topic)):  # them
                 outcome = "reply denied"
                 return
             if person:  # the agent writes to the person it reminds, and to nobody else
@@ -556,6 +565,8 @@ class Scheduler:
             outcome = "model unavailable"
         except BudgetSpent:  # it waits, for the next day's budget
             outcome = "budget spent"
+        except TaskStopped:  # its task was cancelled, or taken over, as it worked
+            outcome = "stopped"
         except Exception:
             log.exception("run %s failed", run)
         finally:
@@ -563,22 +574,25 @@ class Scheduler:
         if person and outcome == "done":  # once the person has been told
             self._fold(claim["instance"], person, agent, topic, opened.json().get("history_chars"))
 
-    def _finished(self, claim: dict, run: str, token: str, reply: str) -> bool:
+    def _finished(self, claim: dict, run: str, token: str, reply: str,
+                  topic: str = context.GENERAL) -> bool:
         """Give a task's owner what its run wrote them, if the core lets it, now that the task
-        is done or needs them: kept in their conversation, as the agent's. Whether nothing was
-        denied: a task still at work writes to nobody, which isn't a denial."""
+        is done or needs them: kept in their conversation, as the agent's, in the task's own
+        topic. Whether nothing was denied: a task still at work writes to nobody, which isn't
+        a denial."""
         owner, agent = claim["owner"], claim["agent"]
         sent = self.gw.post("/run/messages", headers={"Authorization": f"Bearer {token}"},
                             json={"to": owner, "text": reply})
         if sent.status_code == 403:
             return tasking.HELD in (sent.json().get("reasons") or [])
         sent.raise_for_status()
+        topic = sent.json().get("topic") or topic  # the core says where: its own, if marked
         with db.transaction(self.cfg.database_url) as conn:
             context.add_turn(conn, person=owner, agent=agent, role="agent",
-                             content=sent.json()["text"], run=run, topic=context.GENERAL)
+                             content=sent.json()["text"], run=run, topic=topic)
             if note := sent.json().get("note"):
                 context.add_turn(conn, person=owner, agent=agent, role="notice", content=note,
-                                 run=run, topic=context.GENERAL)
+                                 run=run, topic=topic)
         return True
 
     # Working through the queue, and what falls due
@@ -702,6 +716,20 @@ class Scheduler:
             finally:
                 slots.give(slots.pool(claim["agent"]))
 
+        def handed(each: str | None, take: Callable[[], dict | None]) -> bool:
+            """Take work for the slot the caller holds, and hand it to a worker: or give the
+            slot back, where there's no work, or taking it fails, as a database error makes
+            it, so no error costs a slot."""
+            try:
+                if (claim := take()) is not None:
+                    pool.submit(answer, claim)
+                    return True
+            except BaseException:
+                slots.give(each)
+                raise
+            slots.give(each)
+            return False
+
         def sweeping() -> None:
             kept = float("-inf")  # so the first sweeps are straight away
             while not stop.is_set():
@@ -710,18 +738,19 @@ class Scheduler:
                     self.sweep()
                     self.apply_approved()
                     for item in self.due():
-                        if not slots.take(slots.pool(item["agent"])):
+                        if stop.is_set():  # asked to stop: it takes nothing more
+                            break
+                        each = slots.pool(item["agent"])
+                        if not slots.take(each, keep=slots.spare(each)):
                             continue  # its pool is full: it's due again at the next sweep
-                        if (claim := self._take(item)) is None:
-                            slots.give(slots.pool(item["agent"]))
-                            continue
-                        pool.submit(answer, claim)
-                    self.digest()  # those whose work is done: the rest next time
-                    self.decided()
-                    self.deliveries()
-                    if time.monotonic() - kept > retain_every:
+                        handed(each, lambda item=item: self._take(item))
+                    for then in (self.digest, self.decided, self.deliveries):
+                        if not stop.is_set():  # those whose work is done: the rest next time
+                            then()
+                    if not stop.is_set() and time.monotonic() - kept > retain_every:
                         self.retain()
                         kept = time.monotonic()
+                    log.debug("%s runs in flight", slots.busy())
                 except Exception:  # each sweep logs its own; this keeps the thread going
                     log.exception("a sweep failed")
                 stop.wait(max(0.0, sweep_every - (time.monotonic() - started)))
@@ -742,13 +771,10 @@ class Scheduler:
                         conn.execute("listen a5s_inbound")
                         while not stop.is_set():
                             for each in slots.pools():  # each agent's own, then the shared
-                                while not stop.is_set() and slots.take(each):
-                                    claim = self._claim(each, frozenset() if each else
-                                                        slots.pooled)
-                                    if claim is None:
-                                        slots.give(each)
-                                        break
-                                    pool.submit(answer, claim)
+                                while not stop.is_set() and slots.take(each) and handed(
+                                        each, lambda each=each: self._claim(
+                                            each, frozenset() if each else slots.pooled)):
+                                    pass
                             for _ in conn.notifies(timeout=2, stop_after=1):
                                 pass
                 except psycopg.OperationalError:
