@@ -2,7 +2,9 @@
 # Starts a5s's containers with stand-ins for the model, the identity provider, a
 # Matrix homeserver and locked storage, then checks that the core runs only a
 # release its people approved, that a person must sign in, that a message runs end
-# to end from the command line and from Matrix, that the core works obligations out
+# to end from the command line and from Matrix, that a task someone asks for in Matrix, and
+# says yes to in a later message, is worked on in runs of its own and they hear it's done in
+# the same room, that the core works obligations out
 # from the records, that a worker reaches only the gateway, that the core can delete what's
 # past its time to keep, that an instance approver approves new settings where she works,
 # and that the ledger is copied, locked, and verifies against its copies.
@@ -200,6 +202,63 @@ with psycopg.connect(os.environ["A5S_DATABASE_URL"]) as conn:
 assert [(r[0], r[1]) for r in rows] == [("ana", ["ana", "ben"])], rows
 assert rows[0][2].startswith("group:"), rows
 print("In the group's room, the assistant answered only the mention, for Ana and Ben both.")
+PY
+
+# A task, in Ana's own Matrix chat with the assistant: she asks for one, says yes in a later
+# message, and a5s works on it in runs of its own, and tells her it's done in the same room
+A5S_PASSWORD="$idp_password" python3 - <<'PY'
+import json, os, re, time, uuid
+from urllib.parse import quote
+from urllib.request import Request, urlopen
+
+HOMESERVER = "http://127.0.0.1:8008/_matrix/client/v3"
+ANA, BOT = "@ana:a5s.test", "@a5s-assistant:a5s.test"
+
+def call(method, path, body=None, token=None):
+    headers = {"Content-Type": "application/json"} | ({"Authorization": f"Bearer {token}"} if token else {})
+    data = None if body is None else json.dumps(body).encode()
+    with urlopen(Request(HOMESERVER + path, data, headers, method=method), timeout=30) as answer:
+        return json.load(answer)
+
+def until(what, found, seconds=120):
+    for _ in range(seconds):
+        if result := found():
+            return result
+        time.sleep(1)
+    raise SystemExit(f"In Matrix, {what} didn't happen within {seconds} seconds.")
+
+ana = call("POST", "/login", {"type": "m.login.password", "password": os.environ["A5S_PASSWORD"],
+                               "identifier": {"type": "m.id.user", "user": "ana"}})["access_token"]
+[room] = [r for r in call("GET", "/joined_rooms", token=ana)["joined_rooms"]  # her own chat,
+          if set(call("GET", f"/rooms/{quote(r, safe='')}/joined_members",  # not the group's
+                      token=ana)["joined"]) == {ANA, BOT}]
+at = f"/rooms/{quote(room, safe='')}"
+
+def say(text):
+    call("PUT", f"{at}/send/m.room.message/{uuid.uuid4().hex}", {"msgtype": "m.text", "body": text}, ana)
+
+def heard(what, pattern, seconds=120):
+    return until(what, lambda: next((e["content"]["body"] for e in call(
+        "GET", f"{at}/messages?dir=b&limit=50", token=ana)["chunk"]
+        if e["sender"] == BOT and e["type"] == "m.room.message"
+        and re.search(pattern, e["content"].get("body", ""))), None), seconds)
+
+say("Could you take this on as a task: go through my open questions")
+offered = heard("the assistant offering a task", r"T-\d+: shall I start it\?")
+task = re.search(r"T-\d+", offered).group(0)
+print(f"Offered in Matrix: {offered}")
+say("Yes, start it")  # in a later message, as a task needs
+print(f"Started in Matrix: {heard('the assistant starting the task', rf'Started {task}')}")
+print(f"Told in Matrix: {heard('a5s saying the task is done', 'Your task is done', 240)}")
+PY
+compose exec -T gateway python - <<'PY'
+import os, psycopg
+with psycopg.connect(os.environ["A5S_DATABASE_URL"]) as conn:
+    tasks = conn.execute("select owner, status, attempts from tasks where parent is null").fetchall()
+    slices = conn.execute("select count(*) from runs where trigger ->> 'kind' = 'task'").fetchone()[0]
+assert [(t[0], t[1]) for t in tasks] == [("ana", "done")], tasks
+assert slices >= 1 and tasks[0][2] >= 1, (slices, tasks)
+print(f"Ana's task, asked for and said yes to in Matrix, is done, in {slices} run(s) of its own.")
 PY
 
 curl -sf -o "$reply" -H "authorization: Bearer $ana" http://127.0.0.1:8703/channels/local/inbox
