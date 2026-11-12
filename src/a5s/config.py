@@ -175,8 +175,8 @@ class Config:
             anchor_store=os.environ.get("A5S_ANCHOR_STORE"),
             webchat_client_id=os.environ.get("A5S_WEBCHAT_CLIENT_ID") or None,
             anchor_retain_days=int(os.environ.get("A5S_ANCHOR_RETAIN_DAYS", "365")),
-            team=os.environ.get("A5S_TEAM", "platform"),
-            scenario=os.environ.get("A5S_SCENARIO", "a5s.sample:SampleScenario"),
+            team=os.environ.get("A5S_TEAM") or "platform",  # set but empty, as compose may pass it
+            scenario=os.environ.get("A5S_SCENARIO") or "a5s.sample:SampleScenario",
             scenario_folder=Path(os.environ["A5S_SCENARIO_DIR"]) if os.environ.get("A5S_SCENARIO_DIR")
             else None,
             agents_folder=Path(os.environ["A5S_AGENTS_DIR"]) if os.environ.get("A5S_AGENTS_DIR")

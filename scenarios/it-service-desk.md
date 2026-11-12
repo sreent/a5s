@@ -8,7 +8,7 @@ An internal IT service desk helps people with accounts, devices, access and the 
 
 | Interface | In the service desk |
 | --- | --- |
-| Directory | The identity provider, including pre-start accounts for new joiners, which the HR system creates. The ITSM says who may see each ticket. |
+| Directory | The identity provider, including pre-start accounts for new joiners, which the HR system creates; and the team that runs a5s, who own its agent, with the people from outside it who approve its releases. The ITSM says who may see each ticket. |
 | Settings | a5s's own settings store. The parts are service areas, such as accounts and access, devices, and collaboration tools, and the audience includes new joiners, from their pre-start accounts. |
 | Tools | The ITSM's tickets, comments and request catalogue, the knowledge base, the identity provider's self-service flows, and device management, read only |
 | Records | Tickets with their response and resolution targets, and joiners' start dates from the HR system |
@@ -53,6 +53,6 @@ The service desk adds these to a5s's base pack:
 
 ## Tests
 
-The read-only MVP's tests are in [`tests/test_service_desk.py`](../tests/test_service_desk.py), beside the original contract-only checks in `test_r5_c_service_desk.py`. They cover ticket answers, Markdown knowledge with attribution, ticket and article permissions, requester content as data rather than instructions, saved drafts, and service to a new joiner through their team. A test marked `live` exercises ticket and knowledge answers with the real provider.
+The read-only MVP's tests are in [`tests/test_service_desk.py`](../tests/test_service_desk.py), beside the original contract-only checks in `test_r5_c_service_desk.py`. They cover ticket answers, Markdown knowledge with attribution, ticket and article permissions, requester content as data rather than instructions, saved drafts, and service to a new joiner through their team. A test marked `live` exercises ticket and knowledge answers with the real provider. And [`deploy/smoke-scenario.sh service-desk`](../deploy/smoke-scenario.sh) runs it on a5s's containers: the desk's own people approve its release, and a requester asks the desk assistant about their ticket in Matrix.
 
 Self-service identity flows, authenticator changes, ticket writes, and the joiner coordinator remain outside this read-only release.

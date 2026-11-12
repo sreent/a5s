@@ -62,10 +62,13 @@ jobs:
           fi
           echo "VERSION=$version" >> "$GITHUB_ENV"
           echo "IMAGE=ghcr.io/${GITHUB_REPOSITORY,,}" >> "$GITHUB_ENV"
-      - name: Build the image, and run the smoke test against it
+      - name: Build the image, and run the smoke tests against it, with each scenario
         run: |
           docker build -t "$IMAGE:$VERSION" .
           A5S_IMAGE="$IMAGE:$VERSION" sh deploy/smoke.sh
+          for scenario in master-data software-delivery service-desk; do
+            A5S_IMAGE="$IMAGE:$VERSION" sh deploy/smoke-scenario.sh "$scenario"
+          done
       - name: Push it
         env:
           TOKEN: ${{ github.token }}

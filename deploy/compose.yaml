@@ -16,6 +16,14 @@ x-admin: &admin
 
 # How people reach a5s. Each chat is on where its settings are set, and passed on
 # from the environment: the command line always, and any of the others.
+# The scenario a5s serves, from the image, which holds each one a5s ships: the sample's if
+# these aren't set. Master data's, for one, is A5S_SCENARIO=a5s.master_data:MasterDataScenario,
+# A5S_SCENARIO_DIR=/app/scenarios/master-data and A5S_AGENTS_DIR=/app/scenarios/master-data/agents.
+x-scenario: &scenario
+  A5S_SCENARIO:
+  A5S_SCENARIO_DIR:
+  A5S_AGENTS_DIR:
+
 x-people: &people
   A5S_OIDC_ISSUER:  # the identity provider people sign in with
   A5S_OIDC_AUDIENCE:
@@ -50,7 +58,7 @@ services:
     restart: "no"
     command: ["setup"]
     environment:
-      <<: *admin
+      <<: [*admin, *scenario]
       A5S_DB_GATEWAY_PASSWORD: ${A5S_DB_GATEWAY_PASSWORD:?set A5S_DB_GATEWAY_PASSWORD}
       A5S_DB_CHANNELS_PASSWORD: ${A5S_DB_CHANNELS_PASSWORD:?set A5S_DB_CHANNELS_PASSWORD}
       A5S_DB_SCHEDULER_PASSWORD: ${A5S_DB_SCHEDULER_PASSWORD:?set A5S_DB_SCHEDULER_PASSWORD}
@@ -64,7 +72,7 @@ services:
     <<: *a5s
     command: ["gateway", "--host", "0.0.0.0"]
     environment:
-      <<: *people
+      <<: [*people, *scenario]
       A5S_DATABASE_URL: postgresql://a5s_gateway:${A5S_DB_GATEWAY_PASSWORD}@postgres:5432/postgres
       A5S_SERVICE_TOKEN: ${A5S_SERVICE_TOKEN:?set A5S_SERVICE_TOKEN}
       A5S_SEAL_KEYS:  # the core's own, sealing what people approve, decide and grade: the gateway alone holds it
@@ -79,7 +87,7 @@ services:
     <<: *a5s
     command: ["channels", "--host", "0.0.0.0"]
     environment:
-      <<: *people
+      <<: [*people, *scenario]
       A5S_DATABASE_URL: postgresql://a5s_channels:${A5S_DB_CHANNELS_PASSWORD}@postgres:5432/postgres
     networks: [data, egress, edge]
     ports: ["127.0.0.1:${A5S_CHANNELS_PORT:-8703}:8703"]  # behind your ingress, for people and Teams
@@ -91,6 +99,7 @@ services:
     command: ["scheduler"]
     stop_grace_period: 630s  # asked to stop, it finishes its runs in flight first
     environment:
+      <<: *scenario
       A5S_DATABASE_URL: postgresql://a5s_scheduler:${A5S_DB_SCHEDULER_PASSWORD}@postgres:5432/postgres
       A5S_SERVICE_TOKEN: ${A5S_SERVICE_TOKEN:?set A5S_SERVICE_TOKEN}
       A5S_GATEWAY_URL: http://gateway:8700

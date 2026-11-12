@@ -29,7 +29,8 @@ COPY --from=build /app/.venv /app/.venv
 COPY --from=build /app/release.yaml ./release.yaml
 COPY agents ./agents
 COPY config ./config
-COPY scenarios/sample ./scenarios/sample
+# Every scenario a5s ships, for A5S_SCENARIO to choose; .dockerignore leaves out their keys
+COPY scenarios ./scenarios
 ENV PATH=/app/.venv/bin:$PATH A5S_ROOT=/app PYTHONUNBUFFERED=1
 USER a5s
 ENTRYPOINT ["a5s"]

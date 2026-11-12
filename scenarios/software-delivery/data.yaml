@@ -8,6 +8,12 @@ people:
   - {id: eva, name: Eva Lund, team: frontend-team, manager: nia, timezone: Europe/London, identities: ["matrix:@eva:a5s.test"]}
   - {id: sol, name: Sol Ortega, team: security-team, manager: mia, timezone: Europe/London, identities: ["matrix:@sol:a5s.test"]}
   - {id: kai, name: Kai Brooks, team: product, manager: mia, timezone: Europe/London, identities: ["matrix:@kai:a5s.test"]}
+  # The team that runs a5s, and the people from outside it who approve its releases
+  - {id: pam, name: Pam Osei, team: platform, manager: vik, roles: [agent-owner:dev-assistant], timezone: Europe/London, identities: ["matrix:@pam:a5s.test"]}
+  - {id: ugo, name: Ugo Ferri, team: platform, manager: vik, timezone: Europe/London, identities: ["matrix:@ugo:a5s.test"]}
+  - {id: vik, name: Vik Rao, team: technology, timezone: Europe/London, identities: ["matrix:@vik:a5s.test"]}
+  - {id: rue, name: Rue Hall, team: risk, roles: [release-approver], timezone: Europe/London, identities: ["matrix:@rue:a5s.test"]}
+  - {id: ash, name: Ash Moyo, team: internal-audit, roles: [assurance], timezone: Europe/London, identities: ["matrix:@ash:a5s.test"]}
 
 issues:
   - {key: DEV-101, part: backend, kind: bug, severity: high, title: Checkout API returns 500 for an empty cart, status: open, reporter: kai, assignee: raj, opened: "2026-10-27", due: "2026-11-04"}

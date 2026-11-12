@@ -100,6 +100,12 @@ docker build -t a5s:dev .
 sh deploy/smoke.sh          # or: sh deploy/smoke.sh --keep
 ```
 
+Each other scenario a5s ships runs on the same containers, from the same image, which holds them all. [`deploy/smoke-scenario.sh`](deploy/smoke-scenario.sh) starts the stack serving one, has the scenario's own people approve its release, with their made-up keys, and one of them ask its assistant in Matrix. It checks the answer comes from the scenario's records, and that the core works its obligations out, gives its assurance the audit trail, and copies its ledger to locked storage. CI runs it for each:
+
+```sh
+sh deploy/smoke-scenario.sh master-data   # or software-delivery, or service-desk
+```
+
 The [soak test](deploy/soak.sh) starts the same stack, then has the sample's people talk to its agents for half an hour, or as many minutes as you give it. Ana asks the assistant for long tasks as well, and half way through, the core, the scheduler and the assistant's workers restart. It checks that every message had one answer, in time; that every task she started ended done, told her once, and left no lease; that no part's memory or Postgres's connections kept growing; and that no part logged an error. CI runs it weekly, and when asked:
 
 ```sh
@@ -110,7 +116,7 @@ With a real model, start [`deploy/compose.yaml`](deploy/compose.yaml) with `A5S_
 
 Before the core runs a release, the people its changes need approve it. In the stack, `a5s release show` prints the release, each approver signs it with `a5s release sign --as <their id> --key <their private key>`, wherever they are, and the administrator records the signatures with `a5s release approve`. `a5s release status` says what it still needs, and why. Set `A5S_TEAM` to the directory's team that runs a5s, `platform` by default: nobody in it, or above it in its reporting line, can approve as the release approver. The smoke test does this with the sample's made-up people.
 
-To change the settings, edit [`settings.yaml`](scenarios/sample/settings.yaml), raise its serial, and sign the new version with `uv run a5s sign --as ana` before applying it. Or, where people sign in, have the instance approvers approve it where they work: `a5s propose` sends each a card in Teams, or a link in their other chats, and the core applies the version once one of them approves it on the page the card opens, signed in afresh. That needs `A5S_SEAL_KEYS`, the core's own key for sealing the approvals it checked, for the gateway and the channels, and `A5S_PUBLIC_URL`, where people reach the channels, for the gateway. `uv run pytest` runs the tests against a scripted model, and `uv run pytest -m live` against the real providers, including each agent's own regression suite, from its folder's `tests/`. To serve another scenario, set `A5S_SCENARIO` to its class, such as `a5s.sample:SampleScenario`, and `A5S_SCENARIO_DIR` to its folder.
+To change the settings, edit [`settings.yaml`](scenarios/sample/settings.yaml), raise its serial, and sign the new version with `uv run a5s sign --as ana` before applying it. Or, where people sign in, have the instance approvers approve it where they work: `a5s propose` sends each a card in Teams, or a link in their other chats, and the core applies the version once one of them approves it on the page the card opens, signed in afresh. That needs `A5S_SEAL_KEYS`, the core's own key for sealing the approvals it checked, for the gateway and the channels, and `A5S_PUBLIC_URL`, where people reach the channels, for the gateway. `uv run pytest` runs the tests against a scripted model, and `uv run pytest -m live` against the real providers, including each agent's own regression suite, from its folder's `tests/`. To serve another scenario, set `A5S_SCENARIO` to its class, such as `a5s.master_data:MasterDataScenario`, `A5S_SCENARIO_DIR` to its folder, such as `/app/scenarios/master-data` in the image, and `A5S_AGENTS_DIR` to its agents' folder, if it brings its own. The stack passes them on to each part that reads them.
 
 ### Chats
 

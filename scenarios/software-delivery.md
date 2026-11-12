@@ -8,13 +8,13 @@ An engineering team works in an issue tracker and code review. Engineers fix bug
 
 | Interface | In software delivery |
 | --- | --- |
-| Directory | The identity provider: engineers, their leads, security and product, by team |
+| Directory | The identity provider: engineers, their leads, security and product, by team; and the team that runs a5s, who own its agent, with the people from outside it who approve its releases |
 | Settings | a5s's own settings store. The parts are parts of the code, such as backend and frontend, each owned by its tech lead |
 | Tools | The issue tracker's issues and the code review's pull requests, with their checks and reviewers, customers' comments through a5s's reader, and the engineering handbook, read only, and drafts |
 | Records | Issues, with their due dates, and pull requests, with the date each review is due |
 | Governed process | The code review's branch protection and required reviews, and the issue tracker's workflow: a5s merges and approves nothing |
 | Decision surface | The code review and the issue tracker themselves |
-| Tests | [`tests/test_software_delivery.py`](../tests/test_software_delivery.py), against a fake issue tracker and code review, and live on a real model |
+| Tests | [`tests/test_software_delivery.py`](../tests/test_software_delivery.py), against a fake issue tracker and code review, and live on a real model; and on a5s's containers, through Matrix, with its release approved by its own people ([`deploy/smoke-scenario.sh`](../deploy/smoke-scenario.sh)) |
 
 ## Who sees what
 

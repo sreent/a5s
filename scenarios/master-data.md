@@ -8,13 +8,13 @@ A data team governs the master data an organisation runs on, in SAP MDG: supplie
 
 | Interface | In master data governance |
 | --- | --- |
-| Directory | The identity provider: requesters, data stewards, each data object's owner, and the global process data owners they report to |
+| Directory | The identity provider: requesters, data stewards, each data object's owner, and the global process data owners they report to; and the team that runs a5s, who own its agents, with the people from outside it who approve its releases |
 | Settings | a5s's own settings store. The parts are the data objects, each owned by its data object's owner, who signs the settings and decides what an agent proposes there |
 | Tools | SAP's change requests and master records, read only, with bank details as handles; change requests checked, and each data object's quality measured, by code; suppliers' letters through a5s's reader; the governance handbook; drafts; and corrections to a request's values, held for the data object's owner |
 | Records | Change requests, each owed by whoever has its next step, and each data object's quality, owed by its owner while it's below target or has likely duplicates |
 | Governed process | SAP MDG's own workflow: the data object's owner confirms sensitive changes, new records and likely duplicates there. a5s approves, rejects and posts nothing in SAP |
 | Decision surface | SAP MDG, and a5s's decision page for the corrections an agent proposes |
-| Tests | [`tests/test_master_data.py`](../tests/test_master_data.py), against a fake SAP MDG, and live on a real model |
+| Tests | [`tests/test_master_data.py`](../tests/test_master_data.py), against a fake SAP MDG, and live on a real model; and on a5s's containers, through Matrix, with its release approved by its own people ([`deploy/smoke-scenario.sh`](../deploy/smoke-scenario.sh)) |
 
 ## What code decides
 

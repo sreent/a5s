@@ -8,6 +8,12 @@ people:
   - {id: sam, name: Sam Reyes, team: sales, timezone: Europe/London, identities: [matrix:@sam:a5s.test]}
   - {id: pat, name: Pat Doyle, team: finance, timezone: Europe/London, identities: [matrix:@pat:a5s.test]}
   - {id: jo, name: Jo Joiner, team: sales, timezone: Europe/London, identities: [matrix:@jo:a5s.test]}
+  # The team that runs a5s, and the people from outside it who approve its releases
+  - {id: dev, name: Dev Shah, team: platform, manager: lou, roles: [agent-owner:desk-assistant], timezone: Europe/London, identities: [matrix:@dev:a5s.test]}
+  - {id: max, name: Max Berger, team: platform, manager: lou, timezone: Europe/London, identities: [matrix:@max:a5s.test]}
+  - {id: lou, name: Lou Price, team: technology, timezone: Europe/London, identities: [matrix:@lou:a5s.test]}
+  - {id: ren, name: Ren Ito, team: risk, roles: [release-approver], timezone: Europe/London, identities: [matrix:@ren:a5s.test]}
+  - {id: zia, name: Zia Malik, team: internal-audit, roles: [assurance], timezone: Europe/London, identities: [matrix:@zia:a5s.test]}
 
 tickets:
   - {key: INC0000001, part: access, title: "Can't reach the VPN", status: open, requester: sam, assignee: rae, contact: sam.home@mail.test, opened: "2026-10-26", due: "2026-11-04"}
