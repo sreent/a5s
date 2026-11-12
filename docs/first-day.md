@@ -37,11 +37,12 @@ web=$(az ad app create --display-name "a5s" --sign-in-audience AzureADMyOrg \
   --public-client-redirect-uris https://$host/chat/ https://$host/approve/ https://$host/decide/ \
     https://$host/grade/ https://$host/notebook/ https://$host/settings/ https://$host/officer/ \
     https://$host/studio/ https://$host/tasks/ \
-  --optional-claims '{"idToken": [{"name": "auth_time", "essential": false}]}' \
+  --optional-claims '{"idToken": [{"name": "auth_time", "essential": false},
+                                   {"name": "amr", "essential": false}]}' \
   --query appId -o tsv)
 ```
 
-Fills: `people.oidcIssuer: https://login.microsoftonline.com/<tenant>/v2.0`, `people.webchatClientId: <web>`, `people.oidcPersonClaim: oid`, `people.oidcDirectoryPrefix: entra` and `people.publicUrl: https://<host>`.
+Fills: `people.oidcIssuer: https://login.microsoftonline.com/<tenant>/v2.0`, `people.webchatClientId: <web>`, `people.oidcPersonClaim: oid`, `people.oidcDirectoryPrefix: entra` and `people.publicUrl: https://<host>`. `people.oidcMfa` stays `amr:mfa`, so approvals, decisions, grades and the officer's requests count only from a sign-in with a second factor. A Conditional Access policy that requires multifactor authentication for the `a5s` app makes every sign-in to it show one, which `amr` then holds as `mfa` ([administration](administration.md)).
 
 **A bot for each agent,** the assistant and the watcher, so each talks to people as itself: a single-tenant app registration with a secret, and an Azure Bot whose messaging endpoint is the channels' Teams endpoint, with Teams turned on. For the assistant:
 

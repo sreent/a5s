@@ -47,6 +47,9 @@ class IdentityConfig:
     # How the directory knows the claim: with "entra", an oid is found as entra:<oid>.
     # Without one, the claim is the person's id in the directory itself.
     directory_prefix: str | None = None
+    # The claim a sign-in shows a second factor by, and the values that do, if the deployment
+    # asks for one for what counts (A5S_OIDC_MFA): such as amr holding mfa, for Entra ID
+    mfa: tuple[str, tuple[str, ...]] | None = None
 
     @classmethod
     def from_env(cls) -> IdentityConfig | None:
@@ -62,7 +65,32 @@ class IdentityConfig:
             person_claim=os.environ.get("A5S_OIDC_PERSON_CLAIM", "preferred_username"),
             metadata_url=os.environ.get("A5S_OIDC_METADATA_URL") or None,
             directory_prefix=os.environ.get("A5S_OIDC_DIRECTORY_PREFIX") or None,
+            mfa=second_factor_of(os.environ.get("A5S_OIDC_MFA")),
         )
+
+
+def second_factor_of(given: str | None) -> tuple[str, tuple[str, ...]] | None:
+    """The claim and values `claim:value,value` names, such as amr:mfa, or acr:gold for a
+    provider's step-up level: None for none. ValueError if it names no claim or no value."""
+    if not given or not given.strip():
+        return None
+    claim, _, values = given.partition(":")
+    accepted = tuple(v.strip() for v in values.split(",") if v.strip())
+    if not claim.strip() or not accepted:
+        raise ValueError("A5S_OIDC_MFA names the claim a sign-in shows a second factor by, and "
+                         "the values that do, such as amr:mfa")
+    return claim.strip(), accepted
+
+
+def second_factor(cfg: IdentityConfig, claims: dict[str, Any]) -> bool:
+    """Whether a sign-in shows the second factor the deployment asks for, if it asks for one:
+    a claim such as amr, a list, holding one of its values, or one such as acr being one."""
+    if cfg.mfa is None:
+        return True
+    claim, accepted = cfg.mfa
+    shown = claims.get(claim)
+    values = [shown] if isinstance(shown, str) else shown if isinstance(shown, list) else []
+    return any(str(v) in accepted for v in values)
 
 
 class Verifier:

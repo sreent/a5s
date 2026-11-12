@@ -33,9 +33,12 @@ def outcome(found: str | None) -> str:
 
 
 def report(conn: psycopg.Connection, breakers: list[str], keys: tuple[str, ...] = (),
-           rubber_stamps: bool = False) -> dict[str, Any]:
+           rubber_stamps: bool = False,
+           sign_ins: tuple[str, tuple[str, ...]] | None | bool = False) -> dict[str, Any]:
     """The last day's status, by the database's clock. `keys` are the core's seal keys, for
-    the caps that count; deciders are named for rubber stamps only if `rubber_stamps`."""
+    the caps that count; deciders are named for rubber stamps only if `rubber_stamps`.
+    `sign_ins` is the second factor the identity provider's sign-ins must show for what
+    counts: None for none, and False with no identity provider."""
     queue = conn.execute(
         "select count(*) as waiting, extract(epoch from now() - min(received_at)) as oldest "
         "from inbound where answered_at is null and (retry_at is null or retry_at <= now())"
@@ -134,6 +137,8 @@ def report(conn: psycopg.Connection, breakers: list[str], keys: tuple[str, ...] 
                     "caps_lowered": lowered["n"],
                     "rubber_stamps": samples.rubber_stamps(conn) if rubber_stamps else None},
         "unsealed": unsealed,
+        "sign_ins": None if sign_ins is False else {  # what counts, with a second factor
+            "second_factor": f"{sign_ins[0]}:{','.join(sign_ins[1])}" if sign_ins else None},
         "missing": missing["n"],
         "not_active": [dict(r) for r in stopped],
         "breakers_open": breakers,
@@ -233,6 +238,12 @@ def told(status: dict[str, Any]) -> str:
         *([(f"  Approvals, decisions and grades the gateway hasn't sealed in 5 minutes: "
             f"{status['unsealed']}, which don't count until it does (see A5S_SEAL_KEYS).")]
           if status.get("unsealed") else []),
+        *([("  Approvals, decisions, grades and the officer's requests count with a second "
+            f"factor only: {status['sign_ins']['second_factor']}." if status["sign_ins"][
+                "second_factor"] else
+            "  Approvals, decisions, grades and the officer's requests aren't checked for a "
+            "second factor: set A5S_OIDC_MFA, such as amr:mfa (docs/administration.md).")]
+          if status.get("sign_ins") else []),
         "  Urgent messages held for a batch: " + (
             f"{status['urgent_held']['messages']} for {status['urgent_held']['people']} "
             + ("person" if status["urgent_held"]["people"] == 1 else "people")

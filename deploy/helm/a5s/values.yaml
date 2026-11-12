@@ -33,6 +33,11 @@ people:
   oidcPersonClaim: preferred_username
   oidcDirectoryPrefix: ""
   oidcMetadataUrl: ""
+  # The claim a sign-in shows a second factor by, and the values that do, which approvals,
+  # decisions, grades and the officer's requests need (docs/administration.md): amr holding
+  # mfa, as Entra ID writes it. Another provider may show it otherwise, such as acr:gold for a
+  # step-up level, and "" checks for none, which `a5s status` warns of.
+  oidcMfa: "amr:mfa"
   webchatClientId: ""
   publicUrl: ""
 

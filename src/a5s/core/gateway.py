@@ -91,7 +91,13 @@ from a5s.core import (
     values,
 )
 from a5s.core.breakers import FAILURES, Breakers
-from a5s.core.identity import IdentityError, UnknownPerson, Verifier, signed_in
+from a5s.core.identity import (
+    IdentityError,
+    UnknownPerson,
+    Verifier,
+    second_factor,
+    whose,
+)
 from a5s.core.matrix import Matrix
 from a5s.core.policy import Decision, PolicyEngine
 from a5s.core.teams import Teams
@@ -1781,7 +1787,8 @@ def create_app(gw: Gateway) -> FastAPI:
         """How a5s is doing, for the team that runs it and its dashboards (core/status.py)."""
         with db.transaction(gw.url) as conn:
             return status.report(conn, gw.breakers.open(), gw.cfg.seal_keys,
-                                 gw.cfg.flag_rubber_stamps)
+                                 gw.cfg.flag_rubber_stamps,
+                                 gw.identity.cfg.mfa if gw.identity else False)
 
     @app.get("/measures", dependencies=[Depends(service)])
     def measures_now(days: int = 30) -> dict:
@@ -1960,19 +1967,24 @@ def create_app(gw: Gateway) -> FastAPI:
 
     # Instances: anyone with the role can make a5s safer alone.
 
-    def who_asks(body: StatusChange) -> tuple[str, str]:
-        """Who's suspending or resuming, from their sign-in, and how a5s knows."""
+    def who_asks(body: StatusChange, loosens: bool = False) -> tuple[str, str]:
+        """Who's suspending or resuming, from their sign-in, and how a5s knows: with a second
+        factor, if what they ask loosens a5s and the deployment asks for one."""
         if gw.identity is not None:
             if not body.identity:
                 raise HTTPException(401, "sign in: send your token as identity")
             try:
-                person = signed_in(gw.identity, gw.scenario, body.identity)
+                claims = gw.identity.claims(body.identity)
+                person = whose(gw.identity, gw.scenario, claims).id
             except UnknownPerson as exc:
                 raise HTTPException(403, str(exc)) from None
             except IdentityError as exc:
                 raise HTTPException(401, f"your token doesn't check out: {exc}") from None
             if body.by and body.by != person:
                 raise HTTPException(403, f"you're signed in as {person}, not {body.by}")
+            if loosens and not second_factor(gw.identity.cfg, claims):
+                raise HTTPException(401, "this needs you to sign in with your second factor "
+                                         "too, as this deployment asks")
             return person, "verified"
         if not gw.cfg.development:
             raise HTTPException(503, "suspending and resuming need sign-in: set A5S_OIDC_ISSUER")
@@ -1991,7 +2003,7 @@ def create_app(gw: Gateway) -> FastAPI:
 
     @app.post("/instances/{instance}/resume", dependencies=[Depends(service)])
     def resume(instance: str, body: StatusChange) -> dict:
-        by, identity = who_asks(body)
+        by, identity = who_asks(body, loosens=True)
         with db.transaction(gw.url) as conn:
             problem = registry.set_status(conn, instance, by=by, suspend=False, identity=identity)
         if problem:
@@ -3229,7 +3241,7 @@ def create_app(gw: Gateway) -> FastAPI:
         may, once they've checked the records system for it: the instance's owner or deputy,
         an owner of a part it touches, an instance approver, or assurance. Whoever it was for
         is told."""
-        by, identity = who_asks(body)
+        by, identity = who_asks(body, loosens=True)
         number = key.removeprefix("P-")
         with db.transaction(gw.url) as conn:
             p = conn.execute("select * from proposals where id = %s and scenario = %s for update",
