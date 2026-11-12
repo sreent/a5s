@@ -277,18 +277,36 @@ def _audit(cfg: Config, args: argparse.Namespace) -> None:
         if not args.file:
             sys.exit("name the export to check")
         lines = [json.loads(line) for line in Path(args.file).read_text().splitlines() if line]
-        why = audit.checks(lines)
+        bounds = lines.pop(0)["export"] if lines and "export" in lines[0] else None
         store = build.store(cfg)
-        why = why or (audit.copied(lines, store) if store else None)
+        why = audit.checks(lines) or (audit.bounded(bounds, lines) if bounds else None)
+        if store:
+            why = why or audit.copied(lines + (audit.either_side(bounds) if bounds else []),
+                                      store) or (audit.ended(bounds, store) if bounds else None)
         if why:
             sys.exit(f"The export doesn't check out: {why}.")
-        print(f"The export's {len(lines)} entries hold together"
-              + (", and match the ledger's locked copies." if store else
-                 ". Set A5S_ANCHOR_STORE to check them against the ledger's locked copies too."))
+        held = f"The export's {len(lines)} entries" + (
+            f", the period's {bounds['first']} to {bounds['last']}," if bounds and lines else "")
+        if not bounds:
+            print(f"{held} hold together, but it doesn't say what period it holds, so a5s can't "
+                  "check it holds the whole of it: export it again with this version of a5s.")
+        elif store:
+            print(f"{held} hold together, and match the ledger's locked copies, with the "
+                  "entries either side of the period, so it's the whole period as the ledger "
+                  "holds it" + ("." if bounds.get("until") else ", up to the ledger's head "
+                                "as it was exported: export to a time, with --until, to have "
+                                "its end checked too."))
+        else:
+            print(f"{held} hold together, which alone proves little: someone who changed an "
+                  "entry could work out every hash after it again, and leave out the period's "
+                  "last entries with what it says of its end. Set A5S_ANCHOR_STORE to check "
+                  "them against the ledger's locked copies, which nobody can change.")
         return
     if not args.by:
         sys.exit("say who's reading it, with --by: an auditor, or assurance")
-    period = {"since": args.since, "until": args.until}
+    # their own sign-in, from the identity provider, if they have one: the ledger records
+    # the read as theirs; without it, as the service token's, naming them
+    period = {"since": args.since, "until": args.until, "identity": os.environ.get("A5S_TOKEN")}
     if args.what == "entries":
         found = _core(cfg, lambda core: core.audit_entries(
             args.by, **period, after=args.after, limit=args.n, kind=args.kind,
@@ -301,8 +319,10 @@ def _audit(cfg: Config, args: argparse.Namespace) -> None:
     elif args.what == "export":
         if not args.out:
             sys.exit("say where to write it, with --out")
-        lines = _core(cfg, lambda core: list(core.audit_export(args.by, **period)), timeout=300)
-        Path(args.out).write_text("".join(json.dumps(line) + "\n" for line in lines))
+        bounds, lines = _core(cfg, lambda core: core.audit_period(args.by, **period),
+                              timeout=300)
+        Path(args.out).write_text("".join(json.dumps(line) + "\n"
+                                          for line in [{"export": bounds}, *lines]))
         print(f"Wrote {len(lines)} entries to {args.out}"
               + (f", {lines[0]['seq']} to {lines[-1]['seq']}" if lines else "")
               + f". Check it with: a5s audit verify {args.out}")

@@ -71,7 +71,11 @@ def test_each_read_of_the_trail_is_in_the_ledger(stack):
     assert [e["action"] for e in reads] == ["search", "export", "report"]
     searched = reads[0]["args"]
     assert (searched["by"], searched["kind"]) == (AUDITOR, "run")
-    assert searched["person"] != "ana" and "sha256" in searched["person"]  # whom, by hash
+    # who read it, through the service token, which names them; and whom they asked about, as
+    # a stand-in under the deployment's own key, which no hash of an id in the directory finds
+    assert all(e["args"]["through"] == "the service token" for e in reads)
+    with db.transaction(stack.admin) as conn:
+        assert searched["person"] == audit.stand_in(audit.key(conn), "ana")
 
 
 def test_an_export_holds_together_and_a_changed_one_doesnt(stack):
@@ -132,8 +136,10 @@ def test_the_command_line_exports_a_period_and_checks_it(stack, monkeypatch, cap
     cli.main(["audit", "export", "--by", AUDITOR, "--out", str(out)])
     assert "Check it with: a5s audit verify" in capsys.readouterr().out
     cli.main(["audit", "verify", str(out)])
-    assert "entries hold together" in capsys.readouterr().out
+    said = capsys.readouterr().out  # without the locked copies, it says how little that proves
+    assert "hold together, which alone proves little" in said and "A5S_ANCHOR_STORE" in said
     lines = out.read_text().splitlines()
+    assert "export" in json.loads(lines[0])  # what it says of the period, first
     entry = json.loads(lines[1])
     lines[1] = json.dumps({**entry, "entry": entry["entry"].replace('"seq"', '"seq" ', 1)})
     out.write_text("\n".join(lines) + "\n")

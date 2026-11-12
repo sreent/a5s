@@ -35,12 +35,18 @@ def change(action: str, records: list[str], args: dict) -> str:
 
 
 def work(run: dict) -> str:
-    """The piece of work a run's changes are part of: for a slice of a task, the task, so a
-    change a later slice asks for again, such as after its last one stopped part way, is the
-    same change (core/tasking.py); for any other run, the run."""
+    """The piece of work a run's changes are part of: for a slice of a task, the task's tree,
+    its root and the parts it split into, so a change a later slice or a part asks for again,
+    such as after its last one stopped part way, is the same change (core/tasking.py), and the
+    scenario's limit for a piece of work counts all of their changes; for any other run, the
+    run."""
     trigger = run.get("trigger") or {}
-    return str(trigger["task"]) if trigger.get("kind") == "task" and trigger.get("task") \
-        else str(run["run"])
+    if trigger.get("kind") == "task" and trigger.get("task"):
+        return str(trigger.get("root") or trigger["task"])
+    return str(run["run"])
+
+
+_OF_WORK = "coalesce(r.trigger ->> 'root', r.trigger ->> 'task')"  # a task run's piece of work
 
 
 def key(work: str, change_digest: str) -> str:
@@ -57,7 +63,7 @@ def before(conn: psycopg.Connection, run: dict, action: str, change_digest: str)
     if (whole := work(run)) != str(run["run"]):  # its task's: any of its runs
         return conn.execute(
             "select a.state, a.over from action_counts a join runs r on r.id = a.run_id "
-            "where a.change = %s and r.trigger ->> 'task' = %s "
+            f"where a.change = %s and r.trigger ->> 'kind' = 'task' and {_OF_WORK} = %s "
             "order by a.state = 'held', a.id limit 1", (change_digest, whole)).fetchone()
     return conn.execute("select state, over from action_counts where run_id = %s and change = %s",
                         (run["run"], change_digest)).fetchone()
@@ -69,11 +75,20 @@ def over(conn: psycopg.Connection, run: dict, action: str, weight: int,
     does, in words for its decider. Call `before` first, in the same transaction."""
     limit = limits.get(action) or {}
     if (most := limit.get("per_run")) is not None:
-        made = conn.execute("select coalesce(sum(records), 0) as n from action_counts "
-                            "where run_id = %s and action = %s", (run["run"], action)).fetchone()["n"]
+        if (whole := work(run)) != str(run["run"]):  # a task's slices and parts share it
+            made = conn.execute(
+                "select coalesce(sum(a.records), 0) as n from action_counts a join runs r on "
+                f"r.id = a.run_id where a.action = %s and r.trigger ->> 'kind' = 'task' and "
+                f"{_OF_WORK} = %s", (action, whole)).fetchone()["n"]
+            asked = "this task, in its runs and its parts', asked"
+        else:
+            made = conn.execute("select coalesce(sum(records), 0) as n from action_counts "
+                                "where run_id = %s and action = %s",
+                                (run["run"], action)).fetchone()["n"]
+            asked = "this run asked"
         if made + weight > most:
-            return (f"it's past the scenario's limit of {most} {action} a run: this run asked "
-                    f"for {made} already, and this one changes {weight}")
+            return (f"it's past the scenario's limit of {most} {action} a run, which a task's "
+                    f"runs share: {asked} for {made} already, and this one changes {weight}")
     if (most := limit.get("per_person_30_days")) is not None:
         for person in run["acts_for"]:
             made = conn.execute("select coalesce(sum(records), 0) as n from action_counts "

@@ -43,7 +43,7 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 **Shows as:** an instance's tokens past four fifths of a person's day, runs ending `budget spent`, or people told an agent has used its budget.
 
 1. Look for one run that used far more than the rest: an agent going round in circles stops at its run's budget, and the ledger shows each model call.
-2. Chases and reminders go on, on the fifth of each day kept for them. Reports wait for the next day.
+2. Chases and reminders go on, on the fifth of each day kept for them. Reports wait for the next day. A person's tasks stop at three fifths, so their own chat goes on beside them, and a task put off says so in its `last_error`.
 3. Budgets come with the release, so raising one is a new release that widens the agent, which the release approver signs. Don't raise one to get through a bad day.
 
 ## Deliveries a chat didn't take

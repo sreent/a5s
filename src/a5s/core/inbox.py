@@ -1134,7 +1134,7 @@ def create_app(gw: Any) -> FastAPI:
         with db.transaction(gw.url) as conn:
             return {"you": person.name,
                     "tasks": tasking.theirs(conn, gw.scenario, person, gw.clock()),
-                    "repeats": repeats.listed(conn, person)}
+                    "repeats": repeats.listed(conn, gw.scenario, person)}
 
     @app.post("/tasks/api/{task}/cancel")
     def tasks_cancel(task: str, authorization: str | None = Header(default=None)) -> dict:
@@ -1310,7 +1310,8 @@ def create_app(gw: Any) -> FastAPI:
             found = {"entries": [], "next": None} if acted_for and whom is None else audit.search(
                 conn, since=since, until=until, kind=kind, action=action, decision=decision,
                 instance=instance, acted_for=whom, by=by, after=after, limit=limit)
-            audit.noted(conn, person.id, "search", **period(since, until), kind=kind,
+            audit.noted(conn, person.id, "search", "their sign-in", **period(since, until),
+                        kind=kind,
                         action=action, decision=decision, instance=instance,
                         acted_for=acted_for, acted_by=by, after=after or None,
                         found=len(found["entries"]), page=True)
@@ -1324,7 +1325,7 @@ def create_app(gw: Any) -> FastAPI:
         with db.transaction(gw.url) as conn:
             found = audit.report(conn, gw.scenario, gw.definitions.keys(), since=since,
                                  until=until)
-            audit.noted(conn, person.id, "report", **period(since, until),
+            audit.noted(conn, person.id, "report", "their sign-in", **period(since, until),
                         acts=len(found["acts"]), page=True)
             return shown(conn).report(found)
 
@@ -1341,7 +1342,7 @@ def create_app(gw: Any) -> FastAPI:
                                      "with `a5s audit export`")
         with db.transaction(gw.url) as conn:
             found = audit.export(conn, since=since, until=until, after=after)
-            audit.noted(conn, person.id, "export", **period(since, until),
+            audit.noted(conn, person.id, "export", "their sign-in", **period(since, until),
                         after=after or None, entries=len(found["entries"]), page=True)
         return found
 
@@ -1376,7 +1377,7 @@ def create_app(gw: Any) -> FastAPI:
         person = administering(authorization)
         with db.transaction(gw.url) as conn:
             found = administration.page(conn, gw, gw.clock())
-            audit.noted(conn, person.id, "administration", page=True,
+            audit.noted(conn, person.id, "administration", "their sign-in", page=True,
                         acts=len(found["latest"]))
         return {"you": person.name, **found}
 

@@ -139,8 +139,9 @@ def test_each_read_of_the_page_is_in_the_ledger(stack, approving, provider):
     api("/audit/api/report")
     reads = [e for e in stack.ledger() if e["kind"] == "audit"]
     assert [e["action"] for e in reads] == ["search", "search", "report"]
-    assert all(e["args"]["by"] == AUDITOR and e["args"]["page"] is True for e in reads)
-    assert "sha256" in reads[1]["args"]["acted_for"]  # whom they asked about, by hash
+    assert all(e["args"]["by"] == AUDITOR and e["args"]["page"] is True
+               and e["args"]["through"] == "their sign-in" for e in reads)
+    assert reads[1]["args"]["acted_for"] == stand_in  # whom they asked about, as the page shows
 
 
 def test_exports_are_on_the_page_only_once_the_officer_agrees(stack, approving, provider):

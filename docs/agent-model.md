@@ -129,7 +129,7 @@ context:
   recall: true                   # it searches its conversation with the person it acts for
 budget:                          # in tokens, as the providers count them [TBC: from current volumes]
   per_run: 200000
-  per_person_per_day: 1000000    # a fifth of it kept for chases and reminders
+  per_person_per_day: 1000000    # a fifth kept for chases and reminders, and tasks stop at three fifths
 ```
 
 Each model call carries the whole context and, beside it, the instructions, the tools and what the run has read so far, so the budgets are checked against the context when a release is loaded: a run's budget must fit six calls of the context and about 6,000 tokens beside it, and a person's day, beside the fifth kept for chases and reminders, twelve answers of two calls each. A release that doesn't fit is refused.

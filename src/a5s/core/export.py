@@ -176,9 +176,9 @@ def gather(conn: psycopg.Connection, person: str) -> dict[str, Any]:
             "select count(*) as n from questions where acts_for && %(names)s "
             "and not (acts_for <@ %(names)s)"),
         "tasks": rows(  # what they asked agents to do over more than one run, in their words,
-            "select id::text as id, parent::text as parent, instance_id, task, status, plan, "
-            "partial, result, answered, tokens, token_budget, deadline, created_at, "
-            "updated_at "
+            "select id::text as id, number, parent::text as parent, instance_id, task, "
+            "status, plan, partial, result, answered, last_error, tokens, token_budget, "
+            "deadline, created_at, updated_at "
             "from tasks where owner = any(%(names)s) order by created_at, id"),  # as an archive
         "repeats": rows(  # and what they asked to be done again and again, in their words
             "select number, instance_id, task, days, at, status, created_at, updated_at "

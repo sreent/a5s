@@ -190,20 +190,23 @@ async function report() {
 async function exported() {  // the period exactly as the ledger holds it, a page at a time
   const lines = [];
   let after = null;
+  let bounds = null;  // what the last page says of the period, and the entries either side
   do {
     const query = period();
     if (after) query.set("after", after);
     const page = await call(`/audit/api/export?${query}`);
     for (const entry of page.entries) lines.push(JSON.stringify(entry));
     after = page.next;
+    bounds = { ...page.bounds, head: page.head };
   } while (after);
+  lines.unshift(JSON.stringify({ export: bounds }));
   const file = new Blob([lines.map((each) => `${each}\n`).join("")], { type: "application/x-ndjson" });
   const link = document.createElement("a");
   link.href = URL.createObjectURL(file);
   link.download = "a5s-audit.jsonl";
   link.click();
   URL.revokeObjectURL(link.href);
-  status(`Exported ${lines.length} entries. Check them yourself with: a5s audit verify a5s-audit.jsonl`);
+  status(`Exported ${lines.length - 1} entries. Check them yourself, against the ledger's locked copies, with: a5s audit verify a5s-audit.jsonl`);
 }
 
 async function run(work) {

@@ -160,28 +160,40 @@ def mine(call: Call) -> dict:
         "(select count(*) from tasks c where c.parent = t.id and c.status = 'done') as done "
         "from tasks t where owner = %s and instance_id = %s and parent is null "
         "order by updated_at desc limit 20", (person.id, call.run["id"])).fetchall()
-    studio.handled(call.conn, call.run["run"], studio.named(
-        call.scenario, [r["task"] for r in rows]))
+    named = [studio.named(call.scenario, [r["task"], r["plan"], r["last_error"], r["result"],
+                                          r["partial"]]) for r in rows]
+    seen = [all(call.scenario.sees(person.id, k) for k in keys) for keys in named]
+    studio.handled(call.conn, call.run["run"], {k for keys, shown in zip(named, seen, strict=True)
+                                                if shown for k in keys})
     if any(r["read_outside"] and (r["result"] or r["partial"] or r["last_error"])
-           for r in rows):  # what its runs said came of content from outside: so does
+           for r, shown in zip(rows, seen, strict=True) if shown):  # what its runs said came
+        # of content from outside: so does what this run says of it
         call.conn.execute("update runs set read_outside = true where id = %s",
                           (call.run["run"],))
-    lapsed = call.asked_at - CONFIRM_WITHIN  # what this run says of it. An offer not said
-    # yes to by then, as for confirm_task, by when the messages came, has lapsed
-    return {"tasks": [{"task": name(r), "what": r["task"], "status": (
-                           "offered, and lapsed: offer it again if they still want it"
-                           if r["status"] == OFFERED and r["asked_at"]
-                           and r["asked_at"] <= lapsed else r["status"]),
-                       "progress": f"{round(100 * r['progress'])}%",
+    lapsed = call.asked_at - CONFIRM_WITHIN  # an offer not said yes to by then, as for
+    # confirm_task, by when the messages came, has lapsed
+    listed = []
+    for r, shown in zip(rows, seen, strict=True):
+        about = {"task": name(r), "status": (
+                     "offered, and lapsed: offer it again if they still want it"
+                     if r["status"] == OFFERED and r["asked_at"] and r["asked_at"] <= lapsed
+                     else r["status"]),
+                 "progress": f"{round(100 * r['progress'])}%",
+                 **({"parts done": f"{r['done']} of {r['parts']}"} if r["parts"] else {}),
+                 "has until": say(person, r["deadline"])}
+        if not shown:  # its words name a record they may no longer see: how it stands alone
+            listed.append({**about, "withheld": "its words name a record they may no longer "
+                                                "see, so only how it stands is shown"})
+            continue
+        listed.append({**about, "what": r["task"],
                        "steps done": f"{sum(s['status'] == 'completed' for s in r['plan'])} of "
                                      f"{len(r['plan'])}" if r["plan"] else None,
-                       **({"parts done": f"{r['done']} of {r['parts']}"} if r["parts"] else {}),
                        **({"why": r["last_error"]} if r["last_error"] else {}),
                        **({"found": found} if (found := _found(r)) else {}),
-                       **({"so far": r["partial"]} if r["partial"] else {}),
-                       "has until": say(person, r["deadline"])} for r in rows],
-            **({"repeats": found} if (found := repeats.listed(call.conn, person,
-                                                              call.run["id"])) else {})}
+                       **({"so far": r["partial"]} if r["partial"] else {})})
+    return {"tasks": listed,
+            **({"repeats": found} if (found := repeats.listed(
+                call.conn, call.scenario, person, call.run["id"])) else {})}
 
 
 def cancel(call: Call) -> dict:
@@ -404,9 +416,13 @@ def split(call: Call) -> dict:
                 parent=task_id), within=call.conn))
     except TaskError as exc:
         raise Refused(str(exc)) from None
+    spent = int(call.run.get("tokens") or 0)  # and this run is held to the share it kept
+    call.conn.execute("update runs set task_cap = least(coalesce(task_cap, %s), %s) "
+                      "where id = %s", (spent + share, spent + share, call.run["run"]))
     named = call.conn.execute("select number from tasks where id = any(%s::uuid[]) "
                               "order by number", (made,)).fetchall()
     return {"parts": [name(r) for r in named], "each may spend": share,
+            "this run may spend": share,
             "next": "say it's waiting, with finish_task, and write to nobody: a5s works on "
                     "each part in runs of its own, and runs this task again once they're "
                     "done, with what they found"}
@@ -609,6 +625,15 @@ def whole(conn: psycopg.Connection, task: dict) -> dict | None:
                         ).fetchone() if task.get("parent") else None
 
 
+def capped(run: dict) -> dict:
+    """A run's trigger, with what its task's slice may still spend as its cap: what the task
+    had left as the slice began, or once it split the task, the share it kept for itself."""
+    trigger = run.get("trigger") or {}
+    if run.get("task_cap") is None:
+        return trigger
+    return {**trigger, "cap": min(int(trigger.get("cap", run["task_cap"])), int(run["task_cap"]))}
+
+
 def stopped(conn: psycopg.Connection, run: dict) -> str | None:
     """Why a task's run must stop at its next call to the core, if it must: its task was
     cancelled or has ended, or another run took it over. None for any other run."""
@@ -663,12 +688,16 @@ def end(conn: psycopg.Connection, tasks: TaskService, run_id: str, run: dict,
     if said == KEPT:  # it kept its work as it went: it waits to go on, if its run ended well
         said = {"status": "waiting"} if outcome.startswith("done") else None
     try:
-        return tasks.end(str(trigger["task"]), str(trigger["lease"]), said,
-                         None if said else "its run said nothing of the task"
-                         if outcome.startswith("done") else f"its run ended as {outcome}",
-                         spent=int(run.get("tokens") or 0), within=conn)
+        ended = tasks.end(str(trigger["task"]), str(trigger["lease"]), said,
+                          None if said else "its run said nothing of the task"
+                          if outcome.startswith("done") else f"its run ended as {outcome}",
+                          spent=int(run.get("tokens") or 0), within=conn)
     except TaskError:  # it's gone, as an erasure takes it
-        return None
+        ended = None
+    # What it said is the task's now, which goes with it: its run keeps only the status
+    conn.execute("update runs set task_result = jsonb_build_object('status', "
+                 "task_result -> 'status') where id = %s and task_result is not null", (run_id,))
+    return ended
 
 
 def ended(task: dict | None) -> bool:

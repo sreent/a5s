@@ -724,8 +724,11 @@ class Gateway:
                                   (row["asked_by_run"],)).fetchone()
         payer = budgets.payer(list(asking_run["acts_for"]), asking_run["trigger"]) \
             if asking_run else None  # whose day it is: in a group chat, whoever asked there
+        for_task = bool(asking_run and (asking_run["trigger"] or {}).get("kind") == tasking.KIND)
         opening = Opening(trigger={"kind": asking.KIND, **by, **({"payer": payer} if payer else {}),
-                                   **({"asker_model": asker["model"]} if asker else {})},
+                                   **({"asker_model": asker["model"]} if asker else {}),
+                                   # a task's question is paid as its task is, short of their own
+                                   **({"for_task": True} if for_task else {})},
                           acts_for=list(row["acts_for"]),
                           args=by, reasons=[], marked=bool(row["read_outside"]),
                           used=bool(row["run_id"] or row["answered_at"] or row["problem"]))
@@ -1040,7 +1043,8 @@ def values_of(traced: list[dict]) -> dict:
 def load_run(conn: psycopg.Connection, token: str) -> dict:
     row = conn.execute(
         """
-        select r.id::text as run, r.acts_for, r.read_outside, r.trigger, r.tokens, i.*
+        select r.id::text as run, r.acts_for, r.read_outside, r.trigger, r.tokens, r.task_cap,
+               i.*
         from runs r join instances i on i.id = r.instance_id
         where r.token_hash = %s and r.closed_at is null and r.expires_at > now()
         """,
@@ -1197,7 +1201,8 @@ def create_app(gw: Gateway) -> FastAPI:
                     if task.get("status") == "failed":
                         pushing += tell_of_task(conn, task)
                 else:  # its run's model calls are held to what's left of its budget
-                    opening.trigger.update(lease=lease, cap=int(task["tokens_left"]))
+                    opening.trigger.update(lease=lease, cap=int(task["tokens_left"]),
+                                           root=str(task["root"]))  # its tree's: one piece of work
                     if tasking.marked(conn, task):  # a run of its tree read content from outside
                         opening.marked = True
                     opening.task = tasking.brief(  # with its parts, or the task it's part of
@@ -1842,10 +1847,31 @@ def create_app(gw: Gateway) -> FastAPI:
 
     # The audit trail, for auditors and assurance (core/audit.py), behind the service token
 
-    def auditor(by: str) -> None:
+    def auditor(by: str, identity: str | None) -> tuple[str, str]:
+        """Who reads the trail through the core's API, and through what: their own sign-in,
+        checked here, with a second factor where the deployment asks for one, or the service
+        token, which names them, and says so in the ledger, since whoever holds it could
+        name anyone."""
+        through = "the service token"
+        if identity:
+            if gw.identity is None:
+                raise HTTPException(400, "a5s uses no identity provider here: name the reader "
+                                         "with by alone")
+            try:
+                claims = gw.identity.claims(identity)
+                by = whose(gw.identity, gw.scenario, claims).id
+            except UnknownPerson as exc:
+                raise HTTPException(403, str(exc)) from None
+            except IdentityError as exc:
+                raise HTTPException(401, f"the sign-in doesn't check out: {exc}") from None
+            if not second_factor(gw.identity.cfg, claims):
+                raise HTTPException(401, "sign in with your second factor too, as this "
+                                         "deployment asks for reading the audit trail")
+            through = "their sign-in"
         if not audit.reads(gw.scenario.person(by)):
             raise HTTPException(403, f"only an auditor, or assurance, reads the audit trail, and "
                                      f"{by} is neither")
+        return by, through
 
     def period(since: datetime | None, until: datetime | None) -> dict:
         return {"since": since.isoformat() if since else None,
@@ -1856,38 +1882,45 @@ def create_app(gw: Gateway) -> FastAPI:
                       kind: str | None = None, action: str | None = None,
                       decision: str | None = None, instance: str | None = None,
                       person: str | None = None, after: int = 0,
-                      limit: int = audit.MOST) -> dict:
+                      limit: int = audit.MOST,
+                      identity: str | None = Header(default=None, alias="X-A5S-Identity")
+                      ) -> dict:
         """A page of a period's ledger entries, as an auditor asks for them."""
-        auditor(by)
+        by, through = auditor(by, identity)
         with db.transaction(gw.url) as conn:
             found = audit.search(conn, since=since, until=until, kind=kind, action=action,
                                  decision=decision, instance=instance, person=person,
                                  after=after, limit=limit)
-            audit.noted(conn, by, "search", **period(since, until), kind=kind, action=action,
-                        decision=decision, instance=instance, person=person,
+            audit.noted(conn, by, "search", through, **period(since, until), kind=kind,
+                        action=action, decision=decision, instance=instance, person=person,
                         after=after or None, found=len(found["entries"]))
         return found
 
     @app.get("/audit/export", dependencies=[Depends(service)])
     def audit_export(by: str, since: datetime | None = None, until: datetime | None = None,
-                     after: int = 0) -> dict:
+                     after: int = 0,
+                     identity: str | None = Header(default=None, alias="X-A5S-Identity")
+                     ) -> dict:
         """A page of a period's entries exactly as the ledger holds them, to check and keep."""
-        auditor(by)
+        by, through = auditor(by, identity)
         with db.transaction(gw.url) as conn:
             page = audit.export(conn, since=since, until=until, after=after)
-            audit.noted(conn, by, "export", **period(since, until), after=after or None,
-                        entries=len(page["entries"]))
+            audit.noted(conn, by, "export", through, **period(since, until),
+                        after=after or None, entries=len(page["entries"]))
         return page
 
     @app.get("/audit/report", dependencies=[Depends(service)])
     def audit_report(by: str, since: datetime | None = None,
-                     until: datetime | None = None) -> dict:
+                     until: datetime | None = None,
+                     identity: str | None = Header(default=None, alias="X-A5S-Identity")
+                     ) -> dict:
         """Who holds each role, and who did what of a period's administration."""
-        auditor(by)
+        by, through = auditor(by, identity)
         with db.transaction(gw.url) as conn:
             found = audit.report(conn, gw.scenario, gw.definitions.keys(), since=since,
                                  until=until)
-            audit.noted(conn, by, "report", **period(since, until), acts=len(found["acts"]))
+            audit.noted(conn, by, "report", through, **period(since, until),
+                        acts=len(found["acts"]))
         return found
 
     @app.get("/measures", dependencies=[Depends(service)])
@@ -3476,7 +3509,7 @@ def create_app(gw: Gateway) -> FastAPI:
             release = gw.definitions.get(row["definition"])
             spent = None if release is None else budgets.refused(
                 conn, gw.scenario, release.budget, row["id"], list(row["acts_for"]),
-                row["trigger"].get("kind"), row["tokens"], gw.clock(), row["trigger"])
+                row["trigger"].get("kind"), row["tokens"], gw.clock(), tasking.capped(row))
             if refusal:
                 decision = Decision(False, ("agents-use-their-own-tools",), explanations=(refusal,))
             elif why := tasking.stopped(conn, row):  # its task was cancelled meanwhile

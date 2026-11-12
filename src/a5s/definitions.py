@@ -132,6 +132,7 @@ BESIDE = 6000
 CALLS_A_RUN = 6
 ANSWERS_A_DAY = 12
 KEPT = 0.2  # of each person's day, for chases and reminders
+ASKED = 0.2  # and beside it, for what they ask themselves, which their tasks never spend
 
 
 class Budget(BaseModel):

@@ -26,7 +26,7 @@ from psycopg.types.json import Jsonb
 from pydantic import ValidationError
 
 from a5s.contract import Person, Scenario
-from a5s.core import ledger, registry, schedules
+from a5s.core import ledger, registry, schedules, studio
 from a5s.core.tasks import ENDED, TaskError, TaskService, TaskSpec
 from a5s.definitions import DAYS, Schedule
 
@@ -174,8 +174,9 @@ def stop(conn: psycopg.Connection, person: Person, wanted: Any, now: datetime,
     they stop that too. TaskError if it isn't theirs, or has stopped already."""
     found = number(wanted)
     row = conn.execute(
-        "select * from task_repeats where owner = %s and number = %s and (%s::text is null or "
-        "instance_id = %s) for update", (person.id, found, instance, instance)
+        "select id, number, instance_id, owner, status from task_repeats where owner = %s "
+        "and number = %s and (%s::text is null or instance_id = %s) for update",
+        (person.id, found, instance, instance)
     ).fetchone() if found is not None else None
     if row is None:
         raise TaskError(f"{wanted} isn't one of their repeating tasks")
@@ -189,19 +190,29 @@ def stop(conn: psycopg.Connection, person: Person, wanted: Any, now: datetime,
                     "they want it stopped"}
 
 
-def listed(conn: psycopg.Connection, person: Person, instance: str | None = None) -> list[dict]:
-    """Someone's repeats, with an agent or with every one, as they stand."""
+def listed(conn: psycopg.Connection, scenario: Scenario, person: Person,
+           instance: str | None = None) -> list[dict]:
+    """Someone's repeats, with an agent or with every one, as they stand. One whose words
+    name a record they may no longer see shows how it stands alone, as a task does."""
     rows = conn.execute(
-        "select r.*, i.definition as agent, t.number as last_number, t.status as last_status, "
+        "select r.number, r.task, r.days, r.at, r.status, i.definition as agent, "
+        "t.number as last_number, t.status as last_status, "
         "r.status = 'offered' and r.asked_at <= now() - %s as lapsed "
         "from task_repeats r join instances i on i.id = r.instance_id left join tasks t on "
         "t.id = r.last_task where r.owner = %s and (%s::text is null or r.instance_id = %s) "
         "order by r.number desc limit 20", (WAITS, person.id, instance, instance)).fetchall()
-    return [{"repeat": name(r), "agent": r["agent"], "what": r["task"], "when": said(_of(r)),
-             "status": "offered, and lapsed: offer it again if they still want it"
-                       if r["lapsed"] else r["status"],
-             **({"last task": f"T-{r['last_number']}, {r['last_status']}"}
-                if r["last_number"] else {})} for r in rows]
+    shown = []
+    for r in rows:
+        about = {"repeat": name(r), "agent": r["agent"], "when": said(_of(r)),
+                 "status": "offered, and lapsed: offer it again if they still want it"
+                           if r["lapsed"] else r["status"],
+                 **({"last task": f"T-{r['last_number']}, {r['last_status']}"}
+                    if r["last_number"] else {})}
+        if all(scenario.sees(person.id, k) for k in studio.named(scenario, r["task"])):
+            shown.append({**about, "what": r["task"]})
+        else:  # its words name a record they may no longer see
+            shown.append({**about, "withheld": True})
+    return shown
 
 
 def due(conn: psycopg.Connection, scenario: Scenario, definitions: dict[str, Any],
