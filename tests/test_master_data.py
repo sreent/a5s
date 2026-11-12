@@ -227,6 +227,8 @@ def test_the_scenarios_agents_stay_out_of_the_default_release():
 def test_a_real_model_governs_master_data(database: str, tmp_path: Path):
     import os
     if not os.environ.get("DEEPSEEK_API_KEY"):
+        if os.environ.get("A5S_REGRESSION") == "required":  # a release covers its agents
+            pytest.fail("DEEPSEEK_API_KEY isn't set, and a release needs its scenarios' suites")
         pytest.skip("DEEPSEEK_API_KEY isn't set")
     root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text())
     with running_scenario(database, root, FakeModel(), SCENARIO, "master-data",
