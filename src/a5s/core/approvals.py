@@ -33,7 +33,7 @@ import psycopg
 
 from a5s.contract import InstanceSettings, Person, Settings
 from a5s.core import registry, sealing
-from a5s.core.identity import IdentityError, UnknownPerson, Verifier, whose
+from a5s.core.identity import IdentityError, UnknownPerson, Verifier, second_factor, whose
 from a5s.core.ledger import canonical
 from a5s.definitions import Definition
 
@@ -353,6 +353,9 @@ def check(verifier: Verifier, scenario: Any, client_id: str, token: str, version
             for c in ("iat", "auth_time")):  # a session's silent sign-in doesn't approve
         raise Refused(401, "approving needs you to sign in again, from the last ten minutes, "
                            "not a sign-in your browser kept")
+    if not second_factor(verifier.cfg, claims):
+        raise Refused(401, "approving needs you to sign in with your second factor too, as this "
+                           "deployment asks")
     try:
         person = whose(verifier, scenario, claims)
     except UnknownPerson as exc:

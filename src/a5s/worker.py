@@ -3,6 +3,12 @@
 It holds no credentials, only the run's token. Its model is the gateway's model
 endpoint, and its tools are calls to the gateway, which decides each one. The
 run's LangGraph thread ends with the run: nothing is checkpointed.
+
+As a service, a worker is one of a pool: one agent's own, which runs that agent's
+runs alone, or the shared pool, which runs every agent that has no pool of its own.
+Each refuses a run that isn't its pool's, so a run sent to the wrong one fails, and
+says so, rather than run where it shouldn't. A question its agent asks another is
+answered here, as part of the run that asked, so no question waits on another pool.
 """
 
 from __future__ import annotations
@@ -10,9 +16,12 @@ from __future__ import annotations
 import json
 import os
 from datetime import UTC, datetime
+from functools import cache, cached_property
 from typing import Any
 
+import anthropic
 import httpx
+import httpx2  # what the model providers' SDKs take in httpx's place
 from deepagents import HarnessProfile, create_deep_agent, register_harness_profile
 from deepagents.backends import StateBackend
 from deepagents.backends.utils import create_file_data
@@ -22,6 +31,8 @@ from langchain_core.language_models.chat_models import BaseChatModel
 from langchain_core.tools import StructuredTool
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
+
+from a5s import reach
 
 TIMEOUT = float(os.environ.get("A5S_WORKER_TIMEOUT", "240"))
 
@@ -59,15 +70,32 @@ be changed.
 {skills_list}"""
 
 
+@cache
+def _to_models() -> httpx2.Client:
+    """How a run's model calls reach the core: waiting for it a moment, as while it restarts,
+    and shared by every run, as each call carries its run's own token. Of httpx2, which the
+    providers' SDKs are written for."""
+    return reach.client(http=httpx2, timeout=TIMEOUT)
+
+
+class _Anthropic(ChatAnthropic):
+    """Anthropic's chat model, reaching the core as a run's other calls do."""
+
+    @cached_property
+    def _client(self) -> anthropic.Client:
+        return anthropic.Client(**self._client_params, http_client=_to_models())
+
+
 def chat_model(gateway_url: str, token: str, model: dict[str, str]) -> BaseChatModel:
     alias, api = model["alias"], model["api"]
     if api == "openai":
         chat: BaseChatModel = ChatOpenAI(
             model=alias, base_url=f"{gateway_url}/v1", api_key=token,
             use_responses_api=False, disable_streaming=True, max_retries=0, timeout=TIMEOUT,
+            http_client=_to_models(), http_socket_options=(),  # runs call models in turn only
         )
     else:
-        chat = ChatAnthropic(
+        chat = _Anthropic(
             model=alias, base_url=gateway_url, api_key=token,
             disable_streaming=True, max_retries=0, max_tokens=4096, timeout=TIMEOUT,
         )
@@ -103,7 +131,7 @@ def answered(gateway_url: str, asked: dict[str, str]) -> dict[str, Any]:
     its answer, or why there's none: what the run that asked gets back. The token is the
     other run's own, so nothing of this run's reaches it but the question."""
     problem, reply = None, ""
-    try:
+    try:  # in this pool, whichever agent was asked: its answer is part of the asker's run
         reply = run_agent(gateway_url.rstrip("/"), asked["token"], [{
             "role": "task", "content": asked["task"], "at": datetime.now(UTC).isoformat()}])
     except ModelDown:
@@ -112,7 +140,7 @@ def answered(gateway_url: str, asked: dict[str, str]) -> dict[str, Any]:
         problem = "its budget is spent" + (" for today" if "today" in str(exc) else "")
     except Exception as exc:  # noqa: BLE001 - its own failure, which the asker hears of
         problem = f"its run failed: {type(exc).__name__}"
-    with httpx.Client(base_url=gateway_url, timeout=60,
+    with reach.client(base_url=gateway_url, timeout=60,
                       headers={"Authorization": f"Bearer {asked['token']}"}) as gw:
         given = gw.post("/run/answer", json={"text": reply, "problem": problem})
     if given.status_code >= 400:
@@ -136,6 +164,10 @@ class ModelDown(Exception):
 
 class BudgetSpent(Exception):
     """The core stopped the run's model calls, because a budget is spent (core/budgets.py)."""
+
+
+class WrongPool(Exception):
+    """The run is another worker pool's: its agent has a pool of its own, or isn't this one's."""
 
 
 def stopped(exc: Exception) -> Exception | None:
@@ -182,13 +214,22 @@ def instructed(instructions: str, context: list[dict]) -> str:
     return f"{instructions}\n\n# From a5s's records, for this run\n\n{told}"
 
 
-def run_agent(gateway_url: str, token: str, history: list[dict]) -> str:
-    """Run the agent on the conversation so far, and return its reply."""
+def run_agent(gateway_url: str, token: str, history: list[dict], *,
+              agents: frozenset[str] = frozenset(),
+              pooled: frozenset[str] = frozenset()) -> str:
+    """Run the agent on the conversation so far, and return its reply: in a worker pool,
+    only if the run's agent is one of `agents`, its pool's own, or, in the shared pool, not
+    one of `pooled`, which have pools of their own."""
     headers = {"Authorization": f"Bearer {token}"}
-    with httpx.Client(base_url=gateway_url, headers=headers, timeout=TIMEOUT) as gw:
+    with reach.client(base_url=gateway_url, headers=headers, timeout=TIMEOUT) as gw:
         info = gw.get("/run")
         info.raise_for_status()
         info = info.json()
+        agent = info.get("agent")
+        if agents and agent not in agents:
+            raise WrongPool(f"this pool runs the {', '.join(sorted(agents))}, not the {agent}")
+        if agent in pooled:
+            raise WrongPool(f"the {agent} runs in a pool of its own, not the shared one")
         if info["model"] is None:
             raise RuntimeError("the instance's model isn't on the approved list")
         if info.get("plain"):  # a5s's own work, such as a summary: one call, with no tools
@@ -231,8 +272,10 @@ class Work(BaseModel):
     history: list[dict[str, str]]
 
 
-def create_app(gateway_url: str) -> Any:
-    """The worker as a service. It holds no secrets: each request brings one run's token."""
+def create_app(gateway_url: str, agents: frozenset[str] = frozenset(),
+               pooled: frozenset[str] = frozenset()) -> Any:
+    """The worker as a service, in a pool that runs `agents`, or, shared, every agent but
+    `pooled`. It holds no secrets: each request brings one run's token."""
     from fastapi import FastAPI
     from fastapi.responses import JSONResponse
 
@@ -241,7 +284,11 @@ def create_app(gateway_url: str) -> Any:
     @app.post("/work")
     def work(body: Work) -> Any:
         try:
-            return {"reply": run_agent(gateway_url, body.token, body.history)}
+            return {"reply": run_agent(gateway_url, body.token, body.history, agents=agents,
+                                        pooled=pooled)}
+        except WrongPool as exc:
+            return JSONResponse(status_code=409, content={"error": "wrong_pool",
+                                                          "detail": str(exc)[:200]})
         except ModelDown as exc:
             return JSONResponse(status_code=503, content={"error": "model_unavailable",
                                                           "detail": str(exc)[:200]})

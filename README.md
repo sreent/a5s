@@ -100,7 +100,7 @@ docker build -t a5s:dev .
 sh deploy/smoke.sh          # or: sh deploy/smoke.sh --keep
 ```
 
-The [soak test](deploy/soak.sh) starts the same stack, then has the sample's people talk to its agents for half an hour, or as many minutes as you give it. It checks that every message had one answer, in time, that no part's memory or Postgres's connections kept growing, and that no part logged an error. CI runs it weekly, and when asked:
+The [soak test](deploy/soak.sh) starts the same stack, then has the sample's people talk to its agents for half an hour, or as many minutes as you give it. Ana asks the assistant for long tasks as well, and half way through, the core, the scheduler and the assistant's workers restart. It checks that every message had one answer, in time; that every task she started ended done, told her once, and left no lease; that no part's memory or Postgres's connections kept growing; and that no part logged an error. CI runs it weekly, and when asked:
 
 ```sh
 sh deploy/soak.sh 30
@@ -158,6 +158,7 @@ The smoke test runs this way: Keycloak for sign-in, Synapse for Matrix, a model 
 | [Phase 3](docs/phase-3.md) | Group conversations, agent to agent, and a notebook of what agents learn from records |
 | [Phase 4](docs/phase-4.md) | Resumable long-running tasks: durable state, bounded runs, heartbeats, budgets, cancellation and parent/child evidence |
 | [Studio](docs/studio.md) | One place to build, try, publish, run and watch agents, as a maker studio does: its API first, drafts tried in a sandbox, tools built by the development team, and no signature skipped. Step 1, watching, is built |
+| [Administration and audit](docs/administration.md) | Who administers what, scoped to parts and agents; how people sign in, with a second factor for what counts; and how auditors read the ledger. A draft: its first step, a second factor for what counts, is built |
 | [Pilot](docs/pilot.md) | One team, on Azure and Teams, in stages: what it shows, what stops it, and how it chooses what comes after phase 3 |
 | [The first day](docs/first-day.md) | The pilot's stage 0, step by step: a5s in a Microsoft 365 test tenant and on Azure, and the four checks only the real services can make |
 | [Data protection](docs/data-protection.md) | For the data protection officer's assessment: what a5s keeps about people, why, where, for how long and who sees it, what models see, and requests for someone's data |

@@ -31,3 +31,6 @@ context:
 budget:                          # in tokens, as the providers count them [TBC: from current volumes]
   per_run: 200000
   per_person_per_day: 1000000       # a fifth of it kept for chases and reminders
+tasks:                           # long tasks people ask it for, which start once they say yes
+  budget_tokens: 400000          # the most one task may spend, over all its runs [TBC]
+  days: 3                        # how long one has, from when it's offered [TBC]

@@ -188,6 +188,7 @@ class Provider:
         self.refreshes: dict[str, str] = {}
         self.forms: list[dict] = []
         self.asked: list[dict] = []  # what each sign-in asked for
+        self.claims: dict[str, Any] = {}  # more claims for each ID token, such as amr
         self.url = ""
 
     def rotate(self) -> None:
@@ -250,7 +251,7 @@ class Provider:
                     return JSONResponse(status_code=400, content={"error": "invalid_grant"})
             refresh = secrets.token_urlsafe(16)
             self.refreshes[refresh] = form["client_id"]
-            return JSONResponse({"id_token": self.id_token(nonce, person, fresh),
+            return JSONResponse({"id_token": self.id_token(nonce, person, fresh, **self.claims),
                                  "refresh_token": refresh, "access_token": "for-the-provider-only",
                                  "token_type": "Bearer"})
 

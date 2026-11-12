@@ -5,17 +5,19 @@ Every message arrives at the core first (core/inbox.py), which checks who sent
 it and records it. The scheduler takes the oldest message whose conversation is
 free, leasing the conversation in the same step, and keeps the lease alive while
 it works. It opens a run through the core, gives the worker the conversation,
-sends the reply through the gateway, and closes the run. If the scheduler stops,
-the lease runs out and the message is taken again. If the core can't be reached,
-the message waits and is tried again later.
+sends the reply through the gateway, and closes the run. Each agent's runs go to
+its own pool of workers, if it has one, and every other agent's to the shared
+pool. If the scheduler stops, the lease runs out and the message is taken again.
+If the core can't be reached, the message waits and is tried again later.
 
 Every minute, it also asks the core what falls due: obligations whose agents
 should remind their people, and reports with something to tell someone, each
-taking the person's conversation in the same way, and schedules to fire, each
-taking a lease of its own. The core decides each run, and escalates overdue
-obligations itself. What can't run now is due
-again at the next sweep. The scheduler has no port of its own, so nothing can
-send it work but the core.
+taking the person's conversation in the same way, and schedules to fire, and
+the next slices of people's tasks, each taking a lease of its own, so a task at
+work never holds up its owner's own chat. The core decides each run, and
+escalates overdue obligations itself. What can't run now is due again at the
+next sweep, but for a task, which the core puts off a while. The scheduler has
+no port of its own, so nothing can send it work but the core.
 """
 
 from __future__ import annotations
@@ -33,10 +35,10 @@ from datetime import UTC, datetime
 import httpx
 import psycopg
 
-from a5s import db
+from a5s import db, reach
 from a5s.config import Config
 from a5s.contract import INSTANCE_APPROVER, PART_OWNER, Scenario
-from a5s.core import groups, registry
+from a5s.core import groups, registry, tasking
 from a5s.services import context, summaries
 from a5s.worker import BudgetSpent, ModelDown, run_agent
 
@@ -46,6 +48,44 @@ log = logging.getLogger(__name__)
 WORKER_WAIT = float(os.environ.get("A5S_WORKER_WAIT", "600"))
 Worker = Callable[[str, str, list[dict]], str]
 LEASE = 120  # seconds a conversation stays leased without being renewed
+
+
+POOL_SLOTS = 4  # how many runs at once in an agent's own worker pool, unless it says
+
+
+class Slots:
+    """How many runs the scheduler works on at once in each worker pool: in each agent's
+    own, and in the shared pool, for every other agent. Each pool's are its own, so no
+    agent's runs, however slow, take the slots another's need."""
+
+    def __init__(self, shared: int, pools: dict[str, int] | None = None):
+        self._lock = threading.Lock()
+        self.pooled = frozenset(pools or {})
+        self._free: dict[str | None, int] = {None: shared, **(pools or {})}
+        self.total = sum(self._free.values())
+
+    def pool(self, agent: str) -> str | None:
+        """The agent's own pool, or None for the shared one."""
+        return agent if agent in self.pooled else None
+
+    def pools(self) -> list[str | None]:
+        return [*sorted(self.pooled), None]
+
+    def take(self, pool: str | None) -> bool:
+        with self._lock:
+            if self._free[pool] <= 0:
+                return False
+            self._free[pool] -= 1
+            return True
+
+    def give(self, pool: str | None) -> None:
+        with self._lock:
+            self._free[pool] += 1
+
+    def busy(self) -> int:
+        """How many runs are in flight, in every pool."""
+        with self._lock:
+            return self.total - sum(self._free.values())
 
 
 class Retry(Exception):
@@ -58,16 +98,21 @@ def what(claim: dict) -> str:
     return f"{claim['kind']} {claim.get(claim['kind']) or claim.get('id')}"
 
 
-def remote_worker(url: str) -> Worker:
-    """Hand each run to a worker service, which holds nothing but the run's token."""
+def remote_worker(url: str, within: float = reach.WITHIN) -> Worker:
+    """Hand each run to a worker service, which holds nothing but the run's token. A pool
+    that can't be reached, such as one restarting, never got the run, so it's tried again for
+    up to `within` seconds before the run fails: a restart holds its runs up, and loses none."""
+    pool = reach.client(within, base_url=url, timeout=httpx.Timeout(WORKER_WAIT, connect=10))
 
     def work(_gateway_url: str, token: str, history: list[dict]) -> str:
-        response = httpx.post(f"{url}/work", json={"token": token, "history": history},
-                              timeout=WORKER_WAIT)
+        response = pool.post("/work", json={"token": token, "history": history})
         if response.status_code == 503 and response.json().get("error") == "model_unavailable":
             raise ModelDown(response.json().get("detail", ""))
         if response.status_code == 429 and response.json().get("error") == "budget_spent":
             raise BudgetSpent(response.json().get("detail", ""))
+        if response.status_code == 409 and response.json().get("error") == "wrong_pool":
+            raise RuntimeError(f"the worker pool at {url} refused the run: "
+                               f"{response.json().get('detail', '')}")
         response.raise_for_status()
         return response.json()["reply"]
 
@@ -76,12 +121,18 @@ def remote_worker(url: str) -> Worker:
 
 class Scheduler:
     def __init__(self, cfg: Config, scenario: Scenario, worker: Worker = run_agent,
-                 http: httpx.Client | None = None):
+                 http: httpx.Client | None = None, pools: dict[str, Worker] | None = None):
         self.cfg = cfg
         self.scenario = scenario
-        self.worker = worker
-        self.gw = http or httpx.Client(base_url=cfg.gateway_url, timeout=600)
+        self.worker = worker  # the shared pool, for every agent without a pool of its own
+        self.pools = dict(pools or {})  # each agent's own, by its name
+        self.gw = http or reach.client(base_url=cfg.gateway_url,  # waiting for it, a moment,
+                                       timeout=httpx.Timeout(600, connect=10))  # as it restarts
         self.service = {"Authorization": f"Bearer {cfg.service_token}"}
+
+    def _worker(self, agent: str) -> Worker:
+        """Where an agent's runs go: its own worker pool, or the shared one."""
+        return self.pools.get(agent, self.worker)
 
     def _tell(self, inbound: str, text: str, instance: str | None = None) -> None:
         """a5s's own words, in answer to a message. They go through the core, like any message."""
@@ -161,9 +212,11 @@ class Scheduler:
             (key, holder, LEASE),
         ).fetchone() is not None
 
-    def _claim(self) -> dict | None:
+    def _claim(self, agent: str | None = None,
+               besides: frozenset[str] = frozenset()) -> dict | None:
         """The oldest waiting message whose conversation is free, with that conversation
-        leased."""
+        leased: for `agent` alone, if it says, and for none of `besides`, so each worker
+        pool takes only its own agents' messages."""
         holder = str(uuid.uuid4())
         with db.transaction(self.cfg.database_url) as conn:
             row = conn.execute(
@@ -174,6 +227,8 @@ class Scheduler:
                          as lease
                 from inbound i
                 where i.answered_at is null and (i.retry_at is null or i.retry_at <= now())
+                  and (%(agent)s::text is null or i.agent = %(agent)s)
+                  and not i.agent = any(%(besides)s::text[])
                   and not exists (
                     select 1 from leases l
                     where l.key = coalesce(i.conversation, i.person) || '/' || i.agent || '/'
@@ -182,7 +237,7 @@ class Scheduler:
                 order by i.received_at limit 1
                 for update of i skip locked
                 """,
-                {"topic": context.GENERAL},
+                {"topic": context.GENERAL, "agent": agent, "besides": sorted(besides)},
             ).fetchone()
             if row is None:
                 return None
@@ -193,9 +248,11 @@ class Scheduler:
 
     def _take(self, item: dict) -> dict | None:
         """What's due, with what it needs leased: the person's conversation, for a reminder or
-        a report, or the schedule itself."""
+        a report, or the schedule, or the task, itself."""
         if item["kind"] in ("obligation", "report", "reminder"):
             key = f"{item['person']}/{item['agent']}/{context.GENERAL}"
+        elif item["kind"] == tasking.KIND:
+            key = f"task/{item['task']}"
         else:
             key = f"schedule/{item['instance']}/{item['schedule']}"
         holder = str(uuid.uuid4())
@@ -331,7 +388,7 @@ class Scheduler:
                     chars=opened.get("history_chars") or context.CHARS, members=members,
                     names=self._names([*members, *context.speakers(conn, conversation, agent)])
                     if members else None)
-            reply = self.worker(self.cfg.gateway_url, token, history)
+            reply = self._worker(agent)(self.cfg.gateway_url, token, history)
             if not reply.strip():
                 raise RuntimeError("the agent's reply was empty")
             sent = self.gw.post("/run/messages", headers={"Authorization": f"Bearer {token}"},
@@ -413,7 +470,7 @@ class Scheduler:
                  "at": datetime.now(UTC).isoformat()}
         outcome = "failed"
         try:
-            reply = self.worker(self.cfg.gateway_url, token, [asked])
+            reply = self._worker(agent)(self.cfg.gateway_url, token, [asked])
             body, problems = summaries.checked(reply, previous, turns, name, self.scenario,
                                                names)
             with db.transaction(self.cfg.database_url) as conn:  # folded, either way, once
@@ -471,9 +528,13 @@ class Scheduler:
                         conn, person=person, agent=agent, topic=topic,
                         chars=opened.json().get("history_chars") or context.CHARS)
             asked = {"role": "task", "content": task, "at": datetime.now(UTC).isoformat()}
-            reply = self.worker(self.cfg.gateway_url, token, [*history, asked])
+            reply = self._worker(agent)(self.cfg.gateway_url, token, [*history, asked])
             if person and not reply.strip():
                 raise RuntimeError("the agent's reply was empty")
+            if (kind == tasking.KIND and reply.strip()  # to its owner, once it's done or needs
+                    and not self._finished(claim, run, token, reply)):  # them
+                outcome = "reply denied"
+                return
             if person:  # the agent writes to the person it reminds, and to nobody else
                 sent = self.gw.post("/run/messages", headers={"Authorization": f"Bearer {token}"},
                                     json={"to": person, "text": reply})
@@ -502,6 +563,24 @@ class Scheduler:
         if person and outcome == "done":  # once the person has been told
             self._fold(claim["instance"], person, agent, topic, opened.json().get("history_chars"))
 
+    def _finished(self, claim: dict, run: str, token: str, reply: str) -> bool:
+        """Give a task's owner what its run wrote them, if the core lets it, now that the task
+        is done or needs them: kept in their conversation, as the agent's. Whether nothing was
+        denied: a task still at work writes to nobody, which isn't a denial."""
+        owner, agent = claim["owner"], claim["agent"]
+        sent = self.gw.post("/run/messages", headers={"Authorization": f"Bearer {token}"},
+                            json={"to": owner, "text": reply})
+        if sent.status_code == 403:
+            return tasking.HELD in (sent.json().get("reasons") or [])
+        sent.raise_for_status()
+        with db.transaction(self.cfg.database_url) as conn:
+            context.add_turn(conn, person=owner, agent=agent, role="agent",
+                             content=sent.json()["text"], run=run, topic=context.GENERAL)
+            if note := sent.json().get("note"):
+                context.add_turn(conn, person=owner, agent=agent, role="notice", content=note,
+                                 run=run, topic=context.GENERAL)
+        return True
+
     # Working through the queue, and what falls due
 
     def answer_waiting(self) -> int:
@@ -517,7 +596,8 @@ class Scheduler:
         people, schedules to fire, and reports with something to tell. The core escalates
         overdue obligations as it works this out."""
         found: list[dict] = []
-        for path in ("/obligations/sweep", "/schedules/sweep", "/reports/sweep", "/reminders/sweep"):
+        for path in ("/obligations/sweep", "/schedules/sweep", "/reports/sweep",
+                     "/reminders/sweep", "/tasks/sweep"):
             try:
                 response = self.gw.post(path, headers=self.service)
                 response.raise_for_status()
@@ -605,16 +685,22 @@ class Scheduler:
         once, until stopped. Every hour, ask the core to delete what's past its time to keep,
         and, on a thread of its own, to check the notebook against its records.
 
-        Work is taken only when a worker is free for it. The sweeps run on their own thread,
-        so a chat that's slow to take what the core delivers in them never holds up answers.
+        Once stopped, it takes no more work, and returns when the runs it has in flight are
+        done, so none loses its answer.
+
+        Work is taken only when its agent's worker pool has a slot free for it: `workers` in
+        the shared pool, and each agent's own pool its own (Slots). The sweeps run on their
+        own thread, so a chat that's slow to take what the core delivers in them never holds
+        up answers.
         """
-        free = threading.Semaphore(workers)
+        slots = Slots(workers, {agent: self.cfg.worker_slots.get(agent, POOL_SLOTS)
+                                for agent in self.pools})
 
         def answer(claim: dict) -> None:
             try:
                 self._answer(claim)
             finally:
-                free.release()
+                slots.give(slots.pool(claim["agent"]))
 
         def sweeping() -> None:
             kept = float("-inf")  # so the first sweeps are straight away
@@ -624,10 +710,10 @@ class Scheduler:
                     self.sweep()
                     self.apply_approved()
                     for item in self.due():
-                        if not free.acquire(blocking=False):
-                            break  # the rest is due again at the next sweep
+                        if not slots.take(slots.pool(item["agent"])):
+                            continue  # its pool is full: it's due again at the next sweep
                         if (claim := self._take(item)) is None:
-                            free.release()
+                            slots.give(slots.pool(item["agent"]))
                             continue
                         pool.submit(answer, claim)
                     self.digest()  # those whose work is done: the rest next time
@@ -645,7 +731,7 @@ class Scheduler:
                 self.check_notes()
                 stop.wait(retain_every)
 
-        with ThreadPoolExecutor(workers) as pool:
+        with ThreadPoolExecutor(slots.total) as pool:
             sweeper = threading.Thread(target=sweeping, name="a5s-sweeps", daemon=True)
             sweeper.start()
             checker = threading.Thread(target=checking, name="a5s-notebook", daemon=True)
@@ -655,16 +741,22 @@ class Scheduler:
                     with psycopg.connect(self.cfg.database_url, autocommit=True) as conn:
                         conn.execute("listen a5s_inbound")
                         while not stop.is_set():
-                            while free.acquire(blocking=False):
-                                claim = self._claim()
-                                if claim is None:
-                                    free.release()
-                                    break
-                                pool.submit(answer, claim)
+                            for each in slots.pools():  # each agent's own, then the shared
+                                while not stop.is_set() and slots.take(each):
+                                    claim = self._claim(each, frozenset() if each else
+                                                        slots.pooled)
+                                    if claim is None:
+                                        slots.give(each)
+                                        break
+                                    pool.submit(answer, claim)
                             for _ in conn.notifies(timeout=2, stop_after=1):
                                 pass
                 except psycopg.OperationalError:
                     log.exception("lost the database, so listening again shortly")
                     stop.wait(5)
+            if busy := slots.busy():  # so whoever watches an upgrade sees why it waits
+                log.info("Asked to stop: finishing %s in flight first, and taking no more",
+                         "1 run" if busy == 1 else f"{busy} runs")
             sweeper.join()
             checker.join()
+        log.info("Stopped, with every run it took finished")

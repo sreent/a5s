@@ -223,22 +223,31 @@ assert running == [("assistant-finance", "active"), ("watcher-finance", "active"
 print("The assistant and the watcher are both at work, in the release their people approved.")
 PY
 
-compose exec -T worker python - <<'PY'
-import os, socket
+for pool in worker worker-assistant worker-watcher; do  # the shared pool, and each agent's
+  compose exec -T "$pool" python - "$pool" <<'PY'
+import os, socket, sys
+pool = sys.argv[1]
 secrets = [k for k in os.environ if any(w in k for w in ("TOKEN", "PASSWORD", "DATABASE", "API_KEY"))]
-assert not secrets, f"the worker holds secrets: {secrets}"
+assert not secrets, f"{pool} holds secrets: {secrets}"
 def reach(host, port):
     try:
         socket.create_connection((host, port), timeout=3).close()
         return True
     except OSError:
         return False
-assert reach("gateway", 8700), "the worker can't reach the gateway"
+assert reach("gateway", 8700), f"{pool} can't reach the gateway"
+other = "worker-watcher" if pool != "worker-watcher" else "worker"  # another pool
 for host, port in (("postgres", 5432), ("channels", 8703), ("keycloak", 8080), ("synapse", 8008),
-                   ("localstack", 4566), ("api.deepseek.com", 443), ("1.1.1.1", 443)):
-    assert not reach(host, port), f"the worker can reach {host}:{port}"
-print("The worker holds no secrets, and reaches only the gateway.")
+                   ("localstack", 4566), (other, 8702), ("api.deepseek.com", 443), ("1.1.1.1", 443)):
+    assert not reach(host, port), f"{pool} can reach {host}:{port}"
+print(f"{pool} holds no secrets, and reaches only the gateway: not another pool.")
 PY
+done
+compose logs worker-assistant 2>&1 | grep -q '"POST /work HTTP/1.1" 200' ||
+  { echo "The assistant's runs didn't go to its own pool."; exit 1; }
+! compose logs worker 2>&1 | grep -q '"POST /work HTTP/1.1" 200' ||
+  { echo "The shared pool ran a run of an agent with a pool of its own."; exit 1; }
+echo "The assistant's runs went to its own pool of workers, and none to the shared one."
 
 compose exec -T scheduler python - <<'PY'
 import os, psycopg

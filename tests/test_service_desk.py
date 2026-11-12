@@ -149,6 +149,11 @@ def test_scenario_agents_stay_out_of_the_default_release():
 
 @pytest.mark.live
 def test_service_desk_answers_with_a_real_model(database: str, tmp_path: Path):
+    import os
+    if not os.environ.get("DEEPSEEK_API_KEY"):
+        if os.environ.get("A5S_REGRESSION") == "required":  # a release covers its agents
+            pytest.fail("DEEPSEEK_API_KEY isn't set, and a release needs its scenarios' suites")
+        pytest.skip("DEEPSEEK_API_KEY isn't set")
     root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text())
     with running_desk(database, root, FakeModel(), alias="deepseek-v4-pro") as found:
         ticket = say(found, "What's happening with INC0000001?")

@@ -3,9 +3,19 @@
   (dict "part" "channels" "args" (list "channels" "--host" "0.0.0.0") "port" 8703)
   (dict "part" "scheduler" "args" (list "scheduler") "port" 0)
   (dict "part" "anchor" "args" (list "anchor" "--every" "3600") "port" 0)
-  (dict "part" "worker" "args" (list "worker" "--host" "0.0.0.0") "port" 8702) }}
+  (dict "part" "worker" "role" "worker" "args" (list "worker" "--host" "0.0.0.0") "port" 8702
+        "pooled" (include "a5s.pooled" . | fromJsonArray)) }}
+{{- /* and each agent's own worker pool, which runs its runs alone (workers.pools) */}}
+{{- range $agent := include "a5s.pooled" . | fromJsonArray }}
+{{- $pool := get $.Values.workers.pools $agent | default dict }}
+{{- $parts = append $parts (dict "part" (printf "worker-%s" $agent) "role" "worker"
+      "args" (list "worker" "--host" "0.0.0.0") "port" 8702 "agents" (list $agent)
+      "replicas" ($pool.replicas | default $.Values.workers.replicas)
+      "resources" ($pool.resources | default $.Values.resources.worker)) }}
+{{- end }}
 {{- range $parts }}
 {{- $part := .part }}
+{{- $role := .role | default $part }}
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -15,10 +25,18 @@ metadata:
     {{- include "a5s.labels" $ | nindent 4 }}
     app.kubernetes.io/component: {{ $part }}
 spec:
-  replicas: 1
+  replicas: {{ .replicas | default 1 }}
+  {{- if eq $role "worker" }}
+  # A pool's new pod is ready before an old one stops, so the pool is never without one,
+  # and the old one finishes the runs it has in flight first
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
+  {{- else }}
   # One at a time, so two schedulers or copiers never overlap
   strategy:
     type: Recreate
+  {{- end }}
   selector:
     matchLabels:
       {{- include "a5s.selector" (dict "root" $ "part" $part) | nindent 6 }}
@@ -27,7 +45,12 @@ spec:
       labels:
         {{- include "a5s.podLabels" (dict "root" $ "part" $part) | nindent 8 }}
     spec:
-      serviceAccountName: {{ printf "%s-%s" $.Release.Name $part }}
+      serviceAccountName: {{ printf "%s-%s" $.Release.Name $role }}
+      {{- if eq $role "worker" }}
+      terminationGracePeriodSeconds: {{ $.Values.timeouts.workerWait }}  # its runs in flight
+      {{- else if eq $role "scheduler" }}
+      terminationGracePeriodSeconds: {{ add $.Values.timeouts.workerWait 30 }}  # and its sweeps
+      {{- end }}
       automountServiceAccountToken: false
       {{- with $.Values.imagePullSecrets }}
       imagePullSecrets:
@@ -41,11 +64,25 @@ spec:
           image: {{ include "a5s.image" $ }}
           imagePullPolicy: {{ $.Values.image.pullPolicy }}
           args: {{ toJson .args }}
+          {{- if eq $role "worker" }}
+          lifecycle:  # a moment for its Service to stop sending it runs, before it stops taking them
+            preStop:
+              exec:
+                command: ["sleep", "5"]
+          {{- end }}
           securityContext:
             {{- include "a5s.securityContext" $ | nindent 12 }}
           env:
             {{- include "a5s.scratch" $ | nindent 12 }}
-            {{- include (printf "a5s.env.%s" $part) $ | nindent 12 }}
+            {{- include (printf "a5s.env.%s" $role) $ | nindent 12 }}
+            {{- with .agents }}
+            - name: A5S_WORKER_AGENTS  # the agent this pool runs, alone
+              value: {{ join "," . | quote }}
+            {{- end }}
+            {{- with .pooled }}
+            - name: A5S_WORKER_POOLED  # those with pools of their own, which it refuses
+              value: {{ join "," . | quote }}
+            {{- end }}
           {{- if .port }}
           ports:
             - name: http
@@ -61,7 +98,7 @@ spec:
             periodSeconds: 20
           {{- end }}
           resources:
-            {{- toYaml (get $.Values.resources $part) | nindent 12 }}
+            {{- toYaml (.resources | default (get $.Values.resources $role)) | nindent 12 }}
           volumeMounts:
             - name: scratch
               mountPath: /tmp

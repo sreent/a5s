@@ -1,8 +1,10 @@
 #!/bin/sh
 # A soak test. Starts the stack as the smoke test does, and checks it the same way, then has
 # the sample's people talk to its agents for a while: 30 minutes, unless given another number.
-# Then it checks that every message had one answer, in time, and no message was lost or
-# answered twice; that no part's memory, nor Postgres's connections, kept growing once the
+# Ana asks for long tasks too, and half way through, the core, the scheduler and the
+# assistant's workers restart. Then it checks that every message had one answer, in time, and
+# no message was lost or answered twice; that every task she started ended done, told her once,
+# and left no lease; that no part's memory, nor Postgres's connections, kept growing once the
 # stack had warmed up; that no part logged an error; and that the ledger verifies against its
 # locked copies. Then it prints the measures, with what each run cost. It finds what no test
 # that runs for seconds can: leaks, locks that pile up, and work done twice.
@@ -52,7 +54,8 @@ print(f"All {answered} messages the core received were answered, each by one run
       "no run was left open.")
 PY
 
-if compose logs --no-color --since "$started" gateway channels scheduler worker anchor 2>&1 |
+if compose logs --no-color --since "$started" gateway channels scheduler worker \
+       worker-assistant worker-watcher anchor 2>&1 |
      grep -E "Traceback|ERROR|CRITICAL" > "$work/errors"; then
   head -40 "$work/errors"
   echo "A part logged errors while people were talking to it."; exit 1

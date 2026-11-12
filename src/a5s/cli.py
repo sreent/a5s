@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import secrets
+import signal
 import sys
 import threading
 import time
@@ -196,14 +197,24 @@ def _service(cfg: Config, name: str):
     if name == "gateway":
         return build.app(cfg)
     if name == "worker":
-        return worker.create_app(cfg.gateway_url)
+        return worker.create_app(cfg.gateway_url, cfg.worker_agents, cfg.worker_pooled)
     return inbox.create_app(build.gateway(cfg))  # the channels' endpoints, in the core
+
+
+def _stopping() -> threading.Event:
+    """What's set once the process is asked to stop, as Kubernetes asks a pod before an
+    upgrade replaces it: the scheduler then takes no more work, and finishes the runs it has
+    in flight, so none loses its answer. What arrives meanwhile waits in the core."""
+    stop = threading.Event()
+    signal.signal(signal.SIGTERM, lambda *_: stop.set())
+    return stop
 
 
 def _scheduler(cfg: Config) -> None:
     db.known(cfg.database_url)  # never against a schema a later release made
     hand_off = remote_worker(cfg.worker_url) if cfg.worker_url else worker.run_agent
-    Scheduler(cfg, build.scenario(cfg), worker=hand_off).listen(threading.Event())
+    pools = {agent: remote_worker(url) for agent, url in cfg.worker_urls.items()}
+    Scheduler(cfg, build.scenario(cfg), worker=hand_off, pools=pools).listen(_stopping())
 
 
 def _dev(cfg: Config) -> None:

@@ -54,13 +54,16 @@ from a5s.core import (
     officer,
     proposals,
     registry,
+    repeats,
     samples,
     studio,
+    tasking,
     topics,
 )
 from a5s.core.gateway import sanitize
 from a5s.core.identity import IdentityError, UnknownPerson, signed_in
 from a5s.core.releases import agent_owner
+from a5s.core.tasks import TaskError
 from a5s.core.teams import UNKNOWN, Refused
 
 log = logging.getLogger(__name__)
@@ -1095,6 +1098,48 @@ def create_app(gw: Any) -> FastAPI:
                 raise HTTPException(404, "no such entry in a notebook you keep")
             ledger.append(conn, notebook.entry(row, "remove", "its keeper removed it", person.id))
         return {"removed": f"N-{row['id']}"}
+
+    # People's own tasks: what they asked agents to do over more than one run (core/tasking.py)
+
+    def tasked(authorization: str | None) -> Person:
+        """Who signed in to their tasks' page: anyone the directory knows."""
+        approving()
+        who, _ = sender(authorization, None)
+        person = gw.scenario.person(who)
+        if person is None:
+            raise HTTPException(403, "a5s doesn't know who you are")
+        return person
+
+    @app.get("/tasks/", include_in_schema=False)
+    def tasks_page() -> Response:
+        approving()
+        return page("tasks.html")
+
+    @app.get("/tasks/tasks.js", include_in_schema=False)
+    def tasks_script() -> Response:
+        approving()
+        return page("tasks.js")
+
+    @app.get("/tasks/api")
+    def tasks_now(authorization: str | None = Header(default=None)) -> dict:
+        """Someone's own tasks, with every agent: how each stands, what it waits on, and
+        what it has spent. One whose words name a record they may no longer see shows how it
+        stands alone."""
+        person = tasked(authorization)
+        with db.transaction(gw.url) as conn:
+            return {"you": person.name,
+                    "tasks": tasking.theirs(conn, gw.scenario, person, gw.clock()),
+                    "repeats": repeats.listed(conn, person)}
+
+    @app.post("/tasks/api/{task}/cancel")
+    def tasks_cancel(task: str, authorization: str | None = Header(default=None)) -> dict:
+        """Cancel one of someone's own tasks, at their word, and the parts of it still open."""
+        person = tasked(authorization)
+        try:
+            with db.transaction(gw.url) as conn:
+                return tasking.cancel_theirs(conn, person, task, gw.clock())
+        except TaskError as exc:
+            raise HTTPException(404 if "isn't one of" in str(exc) else 409, str(exc)) from None
 
     # The studio's pages: what someone may watch, read only, worked out as the core's API works
     # it out for the team that runs a5s (core/studio.py)

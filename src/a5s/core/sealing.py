@@ -5,8 +5,9 @@ The channels app, which people reach, checks each sign-in as it arrives, so peop
 once when one doesn't check out, and records what they did with the sign-in itself. It holds
 no seal key. Each minute the gateway, which nobody outside reaches, checks each recorded
 sign-in again against the identity provider's own keys: that the provider signed it, for
-a5s, with a nonce that commits to exactly what was recorded, from a sign-in made for it, for
-the person recorded, and less than a day ago. Then it seals it and lets the sign-in go,
+a5s, with a nonce that commits to exactly what was recorded, from a sign-in made for it, with
+a second factor if the deployment asks for one, for the person recorded, and less than a day
+ago. Then it seals it and lets the sign-in go,
 keeping its hash, so the seal outlasts the provider's keys. What doesn't check out is
 refused, and never counts. So breaking into the channels app gives nobody the key that makes
 anything count: it can only record what a person really signed in to do. A gateway without a
@@ -18,7 +19,7 @@ from __future__ import annotations
 import time
 from typing import Any
 
-from a5s.core.identity import IdentityError, UnknownPerson, Verifier, whose
+from a5s.core.identity import IdentityError, UnknownPerson, Verifier, second_factor, whose
 
 FRESH = 600  # seconds: how long before a sign-in its person must have signed in afresh
 OLDEST = 86_400  # seconds: a sign-in older than this, still unsealed, is refused
@@ -45,6 +46,8 @@ def check(verifier: Verifier | None, scenario: Any, client_id: str | None, token
     if not isinstance(issued, int | float) or not isinstance(signed_in, int | float) \
             or issued - signed_in > FRESH:
         return "the sign-in wasn't made afresh for it"
+    if not second_factor(verifier.cfg, claims):
+        return "the sign-in wasn't made with a second factor, which this deployment asks for"
     if (time.time() if now is None else now) - issued > OLDEST:
         return "the sign-in is more than a day old"
     try:

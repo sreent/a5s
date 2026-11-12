@@ -24,6 +24,53 @@ app.kubernetes.io/instance: {{ .root.Release.Name }}
 app.kubernetes.io/component: {{ .part }}
 {{- end }}
 
+{{/* The agents with worker pools of their own, by name, each checked: as JSON, for
+fromJsonArray. Each pool's Deployment and Service is named for it, so it must be a name
+they can take. */}}
+{{- define "a5s.pooled" -}}
+{{- $names := keys (.Values.workers.pools | default dict) | sortAlpha }}
+{{- range $names }}
+{{- if not (regexMatch "^[a-z]([-a-z0-9]{0,38}[a-z0-9])?$" .) }}
+{{- fail (printf "workers.pools: %q isn't a name a Deployment can take, such as desk-assistant" .) }}
+{{- end }}
+{{- end }}
+{{- toJson $names }}
+{{- end }}
+
+{{/* What selects every worker's pods, in each pool: call with the root. */}}
+{{- define "a5s.workersSelector" -}}
+matchLabels:
+  app.kubernetes.io/name: a5s
+  app.kubernetes.io/instance: {{ .Release.Name }}
+matchExpressions:
+  - key: app.kubernetes.io/component
+    operator: In
+    values:
+      - worker
+      {{- range include "a5s.pooled" . | fromJsonArray }}
+      - {{ printf "worker-%s" . }}
+      {{- end }}
+{{- end }}
+
+{{/* Where each agent's own worker pool is, for the scheduler: agent=url, comma-separated. */}}
+{{- define "a5s.workerUrls" -}}
+{{- $urls := list }}
+{{- range include "a5s.pooled" . | fromJsonArray }}
+{{- $urls = append $urls (printf "%s=http://%s-worker-%s:8702" . $.Release.Name .) }}
+{{- end }}
+{{- join "," $urls }}
+{{- end }}
+
+{{/* How many of each agent's runs the scheduler works on at once in its pool. */}}
+{{- define "a5s.workerSlots" -}}
+{{- $slots := list }}
+{{- range include "a5s.pooled" . | fromJsonArray }}
+{{- $pool := get $.Values.workers.pools . | default dict }}
+{{- $slots = append $slots (printf "%s=%v" . ($pool.slots | default $.Values.workers.slots)) }}
+{{- end }}
+{{- join "," $slots }}
+{{- end }}
+
 {{/* A part's pods: what selects them, and the rest of the labels, each once. */}}
 {{- define "a5s.podLabels" -}}
 {{ include "a5s.selector" . }}
@@ -64,7 +111,7 @@ seccompProfile:
 {{/* How people reach a5s and sign in: for the gateway and the channels. */}}
 {{- define "a5s.peopleEnv" -}}
 {{- $p := .Values.people -}}
-{{- range $name, $value := dict "A5S_OIDC_ISSUER" $p.oidcIssuer "A5S_OIDC_AUDIENCE" $p.oidcAudience "A5S_OIDC_PERSON_CLAIM" $p.oidcPersonClaim "A5S_OIDC_DIRECTORY_PREFIX" $p.oidcDirectoryPrefix "A5S_OIDC_METADATA_URL" $p.oidcMetadataUrl "A5S_WEBCHAT_CLIENT_ID" $p.webchatClientId "A5S_PUBLIC_URL" $p.publicUrl "A5S_MATRIX_HOMESERVER" $.Values.matrix.homeserver "A5S_MATRIX_SERVER_NAME" $.Values.matrix.serverName }}
+{{- range $name, $value := dict "A5S_OIDC_ISSUER" $p.oidcIssuer "A5S_OIDC_AUDIENCE" $p.oidcAudience "A5S_OIDC_PERSON_CLAIM" $p.oidcPersonClaim "A5S_OIDC_DIRECTORY_PREFIX" $p.oidcDirectoryPrefix "A5S_OIDC_METADATA_URL" $p.oidcMetadataUrl "A5S_OIDC_MFA" $p.oidcMfa "A5S_WEBCHAT_CLIENT_ID" $p.webchatClientId "A5S_PUBLIC_URL" $p.publicUrl "A5S_MATRIX_HOMESERVER" $.Values.matrix.homeserver "A5S_MATRIX_SERVER_NAME" $.Values.matrix.serverName }}
 {{- if $value }}
 - name: {{ $name }}
   value: {{ $value | quote }}

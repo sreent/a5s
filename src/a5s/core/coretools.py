@@ -34,6 +34,7 @@ class Call:
     args: dict[str, Any]
     now: datetime
     scenario: Scenario
+    release: Any = None  # the agent's definition, as its release has it (a5s/definitions.py)
 
     @property
     def asked_at(self) -> datetime:

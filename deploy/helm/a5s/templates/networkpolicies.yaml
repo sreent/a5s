@@ -1,6 +1,6 @@
 {{- if .Values.networkPolicies.enabled }}
-{{/* Each part reaches only what its job needs, as compose's networks keep them: the worker
-reaches the gateway alone, and only the worker and the scheduler reach the gateway. */}}
+{{/* Each part reaches only what its job needs, as compose's networks keep them: the workers,
+in every pool, reach the gateway alone, and only they and the scheduler reach the gateway. */}}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -16,8 +16,7 @@ spec:
   ingress:
     - from:
         - podSelector:
-            matchLabels:
-              {{- include "a5s.selector" (dict "root" . "part" "worker") | nindent 14 }}
+            {{- include "a5s.workersSelector" . | nindent 12 }}
         - podSelector:
             matchLabels:
               {{- include "a5s.selector" (dict "root" . "part" "scheduler") | nindent 14 }}
@@ -75,8 +74,7 @@ spec:
         - {protocol: TCP, port: 8700}
     - to:
         - podSelector:
-            matchLabels:
-              {{- include "a5s.selector" (dict "root" . "part" "worker") | nindent 14 }}
+            {{- include "a5s.workersSelector" . | nindent 12 }}
       ports:
         - {protocol: TCP, port: 8702}
 ---
@@ -96,8 +94,8 @@ spec:
     {{- include "a5s.policy.database" . | nindent 4 }}
     {{- include "a5s.policy.outside" . | nindent 4 }}
 ---
-# The worker holds no secrets, and reaches the gateway alone: not the database, the channels,
-# the internet, or Kubernetes' own API.
+# The workers, in every pool, hold no secrets, and reach the gateway alone: not the database,
+# the channels, the internet, Kubernetes' own API, or each other.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -105,9 +103,8 @@ metadata:
   labels:
     {{- include "a5s.labels" . | nindent 4 }}
 spec:
-  podSelector:
-    matchLabels:
-      {{- include "a5s.selector" (dict "root" . "part" "worker") | nindent 6 }}
+  podSelector:  # in every pool
+    {{- include "a5s.workersSelector" . | nindent 4 }}
   policyTypes: [Ingress, Egress]
   ingress:
     - from:

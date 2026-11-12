@@ -1,7 +1,7 @@
 # a5s on Kubernetes: the same parts as deploy/compose.yaml, on any cluster, in any cloud or
 # on the organisation's own premises. Each part runs from the same image, as its own
 # service account, reads only its own keys of the Secret, and reaches only what its network
-# policy lets it: the worker reaches the gateway alone.
+# policy lets it: the workers reach the gateway alone.
 
 image:
   repository: ghcr.io/sreent/a5s
@@ -33,6 +33,11 @@ people:
   oidcPersonClaim: preferred_username
   oidcDirectoryPrefix: ""
   oidcMetadataUrl: ""
+  # The claim a sign-in shows a second factor by, and the values that do, which approvals,
+  # decisions, grades and the officer's requests need (docs/administration.md): amr holding
+  # mfa, as Entra ID writes it. Another provider may show it otherwise, such as acr:gold for a
+  # step-up level, and "" checks for none, which `a5s status` warns of.
+  oidcMfa: "amr:mfa"
   webchatClientId: ""
   publicUrl: ""
 
@@ -128,6 +133,20 @@ officerAgrees:
 # core/metrics.py).
 telemetry:
   endpoint: ""  # such as http://otel-collector.monitoring:4318
+
+# The workers that run the agents, in pools. Each agent named here runs in a pool of its
+# own: a Deployment with its own replicas and resources, which the scheduler gives slots of
+# their own, so a burst of one agent's work never slows another's, and a fault in one
+# pool's process reaches only its agent's runs in flight. Every other agent runs in the
+# shared pool, a5s-worker. Each pool refuses any other agent's runs.
+workers:
+  pools:  # by the agent's name, as its release has it, such as desk-assistant
+    assistant: {}  # such as {replicas: 2, slots: 8, resources: {limits: {memory: 2Gi}}}
+    watcher: {}
+  # Each pool's, unless it says: one replica, resources.worker, and 4 slots, the most of
+  # its agent's runs the scheduler works on at once. The shared pool has 8.
+  replicas: 1
+  slots: 4
 
 resources:
   gateway:

@@ -38,8 +38,14 @@
 {{ include "a5s.secretEnv" (dict "root" . "name" "A5S_SERVICE_TOKEN" "key" "service-token") }}
 - name: A5S_GATEWAY_URL
   value: {{ printf "http://%s-gateway:8700" .Release.Name | quote }}
-- name: A5S_WORKER_URL
+- name: A5S_WORKER_URL  # the shared pool, for every agent without a pool of its own
   value: {{ printf "http://%s-worker:8702" .Release.Name | quote }}
+{{- if include "a5s.pooled" . | fromJsonArray }}
+- name: A5S_WORKER_URLS  # each agent's own pool
+  value: {{ include "a5s.workerUrls" . | quote }}
+- name: A5S_WORKER_SLOTS
+  value: {{ include "a5s.workerSlots" . | quote }}
+{{- end }}
 - name: A5S_WORKER_WAIT
   value: {{ .Values.timeouts.workerWait | quote }}
 {{ include "a5s.dbConnectEnv" . }}

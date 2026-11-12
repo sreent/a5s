@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import NamedTuple
 
@@ -74,6 +74,26 @@ def load_models(path: Path) -> dict[str, ModelConfig]:
     return models
 
 
+def pools(given: str, name: str = "A5S_WORKER_URLS") -> dict[str, str]:
+    """What each agent's own worker pool is, by its name: as A5S_WORKER_URLS gives their
+    URLs, such as assistant=http://a5s-worker-assistant:8702,watcher=http://..., and
+    A5S_WORKER_SLOTS how many runs each takes at once, such as assistant=4."""
+    found: dict[str, str] = {}
+    for item in (i.strip() for i in given.split(",")):
+        agent, sep, url = item.partition("=")
+        if not item:
+            continue
+        if not sep or not agent.strip() or not url.strip():
+            raise ValueError(f"{name}: {item!r} isn't an agent and its pool's, "
+                             "such as assistant=http://a5s-worker-assistant:8702")
+        found[agent.strip()] = url.strip().rstrip("/")
+    return found
+
+
+def names(given: str) -> frozenset[str]:
+    return frozenset(n.strip() for n in given.split(",") if n.strip())
+
+
 @dataclass(frozen=True)
 class Config:
     database_url: str
@@ -81,7 +101,16 @@ class Config:
     service_token: str
     root: Path
     channels_url: str = DEFAULT_CHANNELS_URL  # where people's messages arrive, in the core
-    worker_url: str | None = None  # set when workers run as a service
+    worker_url: str | None = None  # set when workers run as a service: the shared pool
+    # Each agent's own worker pool, by its name, such as assistant: an agent named here runs
+    # in its pool alone, and any other in the shared one, at worker_url (A5S_WORKER_URLS)
+    worker_urls: dict[str, str] = field(default_factory=dict)
+    # and how many of its runs the scheduler works on at once there (A5S_WORKER_SLOTS)
+    worker_slots: dict[str, int] = field(default_factory=dict)
+    # In a worker: the agents its pool runs, if it's one agent's (A5S_WORKER_AGENTS), and
+    # in the shared pool, those with pools of their own, which it refuses (A5S_WORKER_POOLED)
+    worker_agents: frozenset[str] = frozenset()
+    worker_pooled: frozenset[str] = frozenset()
     # Without an identity provider, the local channel takes people's word for who they are.
     # That's for development only, so it has to be asked for.
     development: bool = False
@@ -137,6 +166,11 @@ class Config:
             root=root,
             channels_url=os.environ.get("A5S_CHANNELS_URL", DEFAULT_CHANNELS_URL),
             worker_url=os.environ.get("A5S_WORKER_URL"),
+            worker_urls=pools(os.environ.get("A5S_WORKER_URLS", "")),
+            worker_slots={agent: int(n) for agent, n in pools(
+                os.environ.get("A5S_WORKER_SLOTS", ""), "A5S_WORKER_SLOTS").items()},
+            worker_agents=names(os.environ.get("A5S_WORKER_AGENTS", "")),
+            worker_pooled=names(os.environ.get("A5S_WORKER_POOLED", "")),
             development=os.environ.get("A5S_DEVELOPMENT", "").lower() in ("1", "true", "yes"),
             anchor_store=os.environ.get("A5S_ANCHOR_STORE"),
             webchat_client_id=os.environ.get("A5S_WEBCHAT_CLIENT_ID") or None,

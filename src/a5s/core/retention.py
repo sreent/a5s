@@ -116,6 +116,9 @@ def sweep(conn: psycopg.Connection, now: datetime, scenario: str) -> dict[str, i
             f"'{KEPT}') or deadline < now() - interval '{KEPT}'")  # it can't run past its deadline
     delete("tasks", "delete from tasks where root in (select root from tasks group by root "
                     f"having bool_and({done}))")  # a task with its children, all ended long ago
+    delete("repeats", "delete from task_repeats where (status = 'stopped' and updated_at < "
+           f"now() - interval '{KEPT}') or (status = 'offered' and asked_at < now() - "
+           f"interval '{KEPT}')")  # stopped, or never said yes to, long ago
     delete("obligations", "delete from obligations where done_at < now() - interval "
                           f"'{KEPT}'")  # with what the records called it, and whose it was
     delete("obligations", "delete from obligations where scenario <> %s and updated_at < "  # a

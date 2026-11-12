@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>a5s: your tasks</title>
+<link rel="stylesheet" href="/chat/app.css">
+<script src="/tasks/tasks.js" defer></script>
+</head>
+<body>
+<header>
+  <h1>a5s</h1>
+  <span id="who"></span>
+</header>
+<main>
+  <h2>Your tasks</h2>
+  <p class="note">The long tasks you asked your agents for: how each stands, what it's waiting
+    on, and what it has spent. To answer one that needs you, or to change what it's for, write
+    to the agent in your chat with it. Stop any here.</p>
+  <p id="status" role="status"></p>
+  <ul id="tasks" class="plain"></ul>
+  <h3>Again and again</h3>
+  <p class="note">The tasks you asked to be done again and again: each time one comes round, it's a
+    task of its own, above. Stopping one leaves its last task to go on.</p>
+  <ul id="repeats" class="plain"></ul>
+</main>
+</body>
+</html>
