@@ -138,3 +138,30 @@ class Client:
     def run(self, run: str) -> dict:
         """What one run did, with its entries in the ledger."""
         return self.get(f"/studio/runs/{_part(run)}")
+
+    # The audit trail, for an auditor or assurance (docs/administration.md)
+
+    def audit_entries(self, by: str, *, since: datetime | None = None,
+                      until: datetime | None = None, after: int = 0,
+                      **filters: str | None) -> dict:
+        """A page of a period's ledger entries, as `by`, an auditor or assurance, asks: of a
+        kind, action, decision, instance or person, after an entry, for the next page."""
+        return self.get("/audit/entries", by=by, since=since, until=until, after=after,
+                        **filters)
+
+    def audit_export(self, by: str, *, since: datetime | None = None,
+                     until: datetime | None = None) -> Iterator[dict]:
+        """Each of a period's entries exactly as the ledger holds them, a page at a time, as
+        `by` exports them."""
+        after = 0
+        while True:
+            page = self.get("/audit/export", by=by, since=since, until=until, after=after)
+            yield from page["entries"]
+            if not page["next"]:
+                return
+            after = page["next"]
+
+    def audit_report(self, by: str, *, since: datetime | None = None,
+                     until: datetime | None = None) -> dict:
+        """Who holds each role, and each administrative act of a period, as `by` asks."""
+        return self.get("/audit/report", by=by, since=since, until=until)

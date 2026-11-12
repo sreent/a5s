@@ -14,6 +14,7 @@ import sys
 import threading
 import time
 from dataclasses import replace
+from datetime import datetime
 from pathlib import Path
 from urllib.parse import quote
 
@@ -26,6 +27,7 @@ from a5s.config import DEFAULT_DATABASE_URL, Config
 from a5s.contract import Signature
 from a5s.core import (
     anchor,
+    audit,
     erasure,
     inbox,
     ledger,
@@ -268,6 +270,54 @@ def _verify(cfg: Config) -> None:
         sys.exit(1)
 
 
+def _audit(cfg: Config, args: argparse.Namespace) -> None:
+    """The audit trail (core/audit.py): through the core's API, but for an export's check,
+    which needs only the file, and the locked copies, where A5S_ANCHOR_STORE names them."""
+    if args.what == "verify":
+        if not args.file:
+            sys.exit("name the export to check")
+        lines = [json.loads(line) for line in Path(args.file).read_text().splitlines() if line]
+        why = audit.checks(lines)
+        store = build.store(cfg)
+        why = why or (audit.copied(lines, store) if store else None)
+        if why:
+            sys.exit(f"The export doesn't check out: {why}.")
+        print(f"The export's {len(lines)} entries hold together"
+              + (", and match the ledger's locked copies." if store else
+                 ". Set A5S_ANCHOR_STORE to check them against the ledger's locked copies too."))
+        return
+    if not args.by:
+        sys.exit("say who's reading it, with --by: an auditor, or assurance")
+    period = {"since": args.since, "until": args.until}
+    if args.what == "entries":
+        found = _core(cfg, lambda core: core.audit_entries(
+            args.by, **period, after=args.after, limit=args.n, kind=args.kind,
+            action=args.action, decision=args.decision, instance=args.instance,
+            person=args.person))
+        for entry in found["entries"]:
+            print(json.dumps(entry, ensure_ascii=False))
+        if found["next"]:
+            print(f"More: --after {found['next']}", file=sys.stderr)
+    elif args.what == "export":
+        if not args.out:
+            sys.exit("say where to write it, with --out")
+        lines = _core(cfg, lambda core: list(core.audit_export(args.by, **period)), timeout=300)
+        Path(args.out).write_text("".join(json.dumps(line) + "\n" for line in lines))
+        print(f"Wrote {len(lines)} entries to {args.out}"
+              + (f", {lines[0]['seq']} to {lines[-1]['seq']}" if lines else "")
+              + f". Check it with: a5s audit verify {args.out}")
+    else:
+        report = _core(cfg, lambda core: core.audit_report(args.by, **period))
+        print("Who holds each role:")
+        for row in report["roles"]:
+            print(f"  {row['role']}: {', '.join(row['held_by']) or 'nobody'}")
+        print("What was done:" if report["acts"] else "Nothing was done in the period.")
+        for act in report["acts"]:
+            by = act["by"] if isinstance(act["by"], str) else ", ".join(act["by"] or [])
+            print(f"  {act['at']}: {by or 'a5s'} {act['what']}"
+                  + (f", in {act['instance']}" if act["instance"] else ""))
+
+
 def _release(cfg: Config, args: argparse.Namespace) -> None:
     """Approving releases: each organisation's people sign what a5s is in their deployment."""
     if args.what == "manifest":  # of a source tree, such as when an image is built
@@ -450,6 +500,20 @@ def main(argv: list[str] | None = None) -> None:
     led = sub.add_parser("ledger", help="read or verify the ledger, against its copies too")
     led.add_argument("what", choices=["tail", "verify"])
     led.add_argument("-n", type=int, default=20)
+    aud = sub.add_parser("audit", help="the audit trail, for an auditor or assurance: find a "
+                                       "period's entries, export one, check an export, or "
+                                       "report who holds each role and who did what")
+    aud.add_argument("what", choices=["entries", "export", "verify", "report"])
+    aud.add_argument("file", nargs="?", help="with verify, the export to check")
+    aud.add_argument("--by", help="the auditor, or assurance, reading it: in the directory")
+    aud.add_argument("--since", type=datetime.fromisoformat, help="from this time, such as "
+                                                                  "2026-11-01, in UTC unless said")
+    aud.add_argument("--until", type=datetime.fromisoformat, help="up to this time")
+    for name in ("kind", "action", "decision", "instance", "person"):
+        aud.add_argument(f"--{name}", help=f"with entries, of this {name} alone")
+    aud.add_argument("--after", type=int, default=0, help="with entries, the page after this one")
+    aud.add_argument("-n", type=int, default=50, help="with entries, how many")
+    aud.add_argument("--out", help="with export, the file to write")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.WARNING,
@@ -566,6 +630,8 @@ def main(argv: list[str] | None = None) -> None:
         _release(cfg, args)
     elif args.command == "ledger" and args.what == "verify":
         _verify(cfg)
+    elif args.command == "audit":
+        _audit(cfg, args)
     elif args.command == "ledger":
         with db.transaction(cfg.database_url) as conn:
             for entry in ledger.entries(conn, limit=args.n):

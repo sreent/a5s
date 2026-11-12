@@ -51,6 +51,7 @@ from a5s.contract import (
 from a5s.core import (
     approvals,
     asking,
+    audit,
     budgets,
     chats,
     coretools,
@@ -1789,6 +1790,56 @@ def create_app(gw: Gateway) -> FastAPI:
             return status.report(conn, gw.breakers.open(), gw.cfg.seal_keys,
                                  gw.cfg.flag_rubber_stamps,
                                  gw.identity.cfg.mfa if gw.identity else False)
+
+    # The audit trail, for auditors and assurance (core/audit.py), behind the service token
+
+    def auditor(by: str) -> None:
+        if not audit.reads(gw.scenario.person(by)):
+            raise HTTPException(403, f"only an auditor, or assurance, reads the audit trail, and "
+                                     f"{by} is neither")
+
+    def period(since: datetime | None, until: datetime | None) -> dict:
+        return {"since": since.isoformat() if since else None,
+                "until": until.isoformat() if until else None}
+
+    @app.get("/audit/entries", dependencies=[Depends(service)])
+    def audit_entries(by: str, since: datetime | None = None, until: datetime | None = None,
+                      kind: str | None = None, action: str | None = None,
+                      decision: str | None = None, instance: str | None = None,
+                      person: str | None = None, after: int = 0,
+                      limit: int = audit.MOST) -> dict:
+        """A page of a period's ledger entries, as an auditor asks for them."""
+        auditor(by)
+        with db.transaction(gw.url) as conn:
+            found = audit.search(conn, since=since, until=until, kind=kind, action=action,
+                                 decision=decision, instance=instance, person=person,
+                                 after=after, limit=limit)
+            audit.noted(conn, by, "search", **period(since, until), kind=kind, action=action,
+                        decision=decision, instance=instance, person=person,
+                        after=after or None, found=len(found["entries"]))
+        return found
+
+    @app.get("/audit/export", dependencies=[Depends(service)])
+    def audit_export(by: str, since: datetime | None = None, until: datetime | None = None,
+                     after: int = 0) -> dict:
+        """A page of a period's entries exactly as the ledger holds them, to check and keep."""
+        auditor(by)
+        with db.transaction(gw.url) as conn:
+            page = audit.export(conn, since=since, until=until, after=after)
+            audit.noted(conn, by, "export", **period(since, until), after=after or None,
+                        entries=len(page["entries"]))
+        return page
+
+    @app.get("/audit/report", dependencies=[Depends(service)])
+    def audit_report(by: str, since: datetime | None = None,
+                     until: datetime | None = None) -> dict:
+        """Who holds each role, and who did what of a period's administration."""
+        auditor(by)
+        with db.transaction(gw.url) as conn:
+            found = audit.report(conn, gw.scenario, gw.definitions.keys(), since=since,
+                                 until=until)
+            audit.noted(conn, by, "report", **period(since, until), acts=len(found["acts"]))
+        return found
 
     @app.get("/measures", dependencies=[Depends(service)])
     def measures_now(days: int = 30) -> dict:
