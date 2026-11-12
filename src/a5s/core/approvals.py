@@ -87,6 +87,24 @@ def _mac(key: str, approval: dict) -> str:
     return hmac.new(key.encode(), canonical(fields).encode(), hashlib.sha256).hexdigest()
 
 
+def vouch(keys: tuple[str, ...], scenario: str, serial: int, raw: bytes) -> str:
+    """The core's seal on a version of the settings it checked while it was in force."""
+    return _vouching(keys[0], scenario, serial, raw)
+
+
+def vouched(keys: tuple[str, ...], scenario: str, serial: int, raw: bytes,
+            seal: str | None) -> bool:
+    """Whether the core sealed this version, with any of its keys, while it was in force."""
+    return bool(seal) and any(hmac.compare_digest(_vouching(key, scenario, serial, raw), seal)
+                              for key in keys)
+
+
+def _vouching(key: str, scenario: str, serial: int, raw: bytes) -> str:
+    fields = {"scenario": scenario, "serial": serial, "raw": hashlib.sha256(raw).hexdigest()}
+    return hmac.new(key.encode(), b"a5s settings in force\n" + canonical(fields).encode(),
+                    hashlib.sha256).hexdigest()
+
+
 # Proposing a version, and saying what it changes
 
 def propose(conn: psycopg.Connection, scenario: str, settings: Settings) -> tuple[dict, bool]:
@@ -251,6 +269,15 @@ def changes(before: Settings | None, after: Settings, definitions: dict[str, Def
     for gone in was.values():
         found.append({"text": f"Retires {gone.id}, which served {words.names(gone.serves)}.",
                       "widens": False})
+    given = before.groups if before else {}  # the roles groups give, in the identity provider
+    for group in sorted(set(given) | set(after.groups)):
+        a, b = set(given.get(group, ())), set(after.groups.get(group, ()))
+        if more := sorted(b - a):
+            found.append({"text": f"Everyone in the group {group} holds {names_of(more)}, as "
+                                  "their sign-ins show they're in it.", "widens": True})
+        if fewer := sorted(a - b):
+            found.append({"text": f"The group {group} no longer gives {names_of(fewer)}.",
+                          "widens": False})
     return found or [{"text": "It changes nothing the agents do: only its serial or notes.",
                       "widens": False}]
 
@@ -292,6 +319,8 @@ def described(settings: Settings, definitions: dict[str, Definition],
     told += [f"Limit for {action}: {said}." for action, said in Words.limits(settings).items()]
     told += [f"An agent earns level 2 in {part} once graded samples show it's {_percent(share)} "
              "accurate." for part, share in sorted(settings.thresholds.items())]
+    told += [f"Everyone in the group {group} holds {names_of(list(roles))}, as their sign-ins "
+             "show they're in it." for group, roles in sorted(settings.groups.items())]
     return told
 
 

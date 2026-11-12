@@ -38,6 +38,10 @@ people:
   # mfa, as Entra ID writes it. Another provider may show it otherwise, such as acr:gold for a
   # step-up level, and "" checks for none, which `a5s status` warns of.
   oidcMfa: "amr:mfa"
+  # The claim a sign-in shows its groups by, for the roles the settings give groups
+  # (docs/administration.md): groups, as Entra ID writes it once its app registration sends
+  # the groups assigned to the app.
+  oidcGroupsClaim: groups
   webchatClientId: ""
   publicUrl: ""
 

@@ -30,6 +30,7 @@ x-people: &people
   A5S_OIDC_PERSON_CLAIM:
   A5S_OIDC_METADATA_URL:
   A5S_OIDC_MFA:  # the second factor what counts needs, such as amr:mfa (docs/administration.md)
+  A5S_OIDC_GROUPS_CLAIM:  # the claim sign-ins show groups in, groups if not set
   A5S_WEBCHAT_CLIENT_ID:  # the web chat, signing people in through that provider
   A5S_PUBLIC_URL:  # where people reach the channels, for the links on approvers' cards
   A5S_TEAMS_APP_ID:  # the bot's registration in Entra ID, for Teams

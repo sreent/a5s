@@ -36,13 +36,22 @@ az group create --name a5s-test --location uksouth  # [TBC: the region]
 web=$(az ad app create --display-name "a5s" --sign-in-audience AzureADMyOrg \
   --public-client-redirect-uris https://$host/chat/ https://$host/approve/ https://$host/decide/ \
     https://$host/grade/ https://$host/notebook/ https://$host/settings/ https://$host/officer/ \
-    https://$host/studio/ https://$host/tasks/ https://$host/audit/ \
+    https://$host/studio/ https://$host/tasks/ https://$host/audit/ https://$host/admin/ \
   --optional-claims '{"idToken": [{"name": "auth_time", "essential": false},
                                    {"name": "amr", "essential": false}]}' \
   --query appId -o tsv)
 ```
 
 Fills: `people.oidcIssuer: https://login.microsoftonline.com/<tenant>/v2.0`, `people.webchatClientId: <web>`, `people.oidcPersonClaim: oid`, `people.oidcDirectoryPrefix: entra` and `people.publicUrl: https://<host>`. `people.oidcMfa` stays `amr:mfa`, so approvals, decisions, grades and the officer's requests count only from a sign-in with a second factor. A Conditional Access policy that requires multifactor authentication for the `a5s` app makes every sign-in to it show one, which `amr` then holds as `mfa` ([administration](administration.md)).
+
+**Roles from groups, if the deployment gives any.** For the settings to give groups roles, such as billing's owners or the auditors, the app registration sends the groups assigned to it, by their object ids, in `groups`: past 200, Entra ID sends none, and a5s gives nothing it can't see. Assign each group the settings name to the app's enterprise application, and name it in the settings by its object id ([administration](administration.md)):
+
+```sh
+az ad app update --id $web --set groupMembershipClaims=ApplicationGroup
+az ad group show --group "a5s billing owners" --query id -o tsv  # its id, for the settings
+```
+
+`people.oidcGroupsClaim` stays `groups`. Privileged Identity Management can then make someone an auditor, say, for a fortnight: a5s counts it from their next sign-in.
 
 **A bot for each agent,** the assistant and the watcher, so each talks to people as itself: a single-tenant app registration with a secret, and an Azure Bot whose messaging endpoint is the channels' Teams endpoint, with Teams turned on. For the assistant:
 

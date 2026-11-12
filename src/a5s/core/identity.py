@@ -50,6 +50,9 @@ class IdentityConfig:
     # The claim a sign-in shows a second factor by, and the values that do, if the deployment
     # asks for one for what counts (A5S_OIDC_MFA): such as amr holding mfa, for Entra ID
     mfa: tuple[str, tuple[str, ...]] | None = None
+    # The claim a sign-in shows its groups by, for the roles the settings give them
+    # (A5S_OIDC_GROUPS_CLAIM, groups if not set, and none if set empty): core/memberships.py
+    groups_claim: str | None = "groups"
 
     @classmethod
     def from_env(cls) -> IdentityConfig | None:
@@ -66,6 +69,7 @@ class IdentityConfig:
             metadata_url=os.environ.get("A5S_OIDC_METADATA_URL") or None,
             directory_prefix=os.environ.get("A5S_OIDC_DIRECTORY_PREFIX") or None,
             mfa=second_factor_of(os.environ.get("A5S_OIDC_MFA")),
+            groups_claim=os.environ.get("A5S_OIDC_GROUPS_CLAIM", "groups").strip() or None,
         )
 
 
@@ -183,14 +187,17 @@ class Verifier:
 
 
 def whose(verifier: Verifier, scenario: Any, claims: dict) -> Any:
-    """The person in the directory a checked token's claims are for. IdentityError if they
-    name nobody, and UnknownPerson if the directory doesn't know who they name."""
+    """The person in the directory a checked token's claims are for, with the roles this
+    sign-in's groups give them, where the settings give groups roles (core/memberships.py).
+    IdentityError if they name nobody, and UnknownPerson if the directory doesn't know who
+    they name."""
     claim = verifier.named(claims)
     prefix = verifier.cfg.directory_prefix
     person = scenario.find(f"{prefix}:{claim}") if prefix else scenario.person(claim)
     if person is None:
         raise UnknownPerson("a5s doesn't know who you are: ask an instance approver to add you")
-    return person
+    signed_in = getattr(scenario, "signed_in", None)
+    return signed_in(person, claims, verifier.cfg.groups_claim) if signed_in else person
 
 
 def signed_in(verifier: Verifier, scenario: Any, token: str) -> str:

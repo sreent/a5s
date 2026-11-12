@@ -30,6 +30,11 @@ PART_DELEGATE = "part-delegate"
 RELEASE_APPROVER = "release-approver"  # never from the team that runs a5s, nor above it
 ASSURANCE = "assurance"
 DATA_PROTECTION = "data-protection-officer"  # answers requests for someone's data (core/export.py)
+# The roles the identity provider's groups may give, as the settings map them: those people use
+# by signing in, each with a part's where it's a part's. The roles a release needs, which people
+# use by signing with keys of their own, stay the directory's (core/memberships.py).
+GROUP_ROLES = (INSTANCE_APPROVER, DATA_PROTECTION, "auditor", "grader")
+GROUP_PART_ROLES = (PART_OWNER, PART_DELEGATE)
 
 
 @dataclass(frozen=True)
@@ -224,6 +229,10 @@ class Settings:
     # How accurate an agent's work in a part must be, as graded samples show, before a5s raises
     # its cap to level 2 there, such as {"billing": 0.98}. A part with none never earns it.
     thresholds: dict[str, float] = field(default_factory=dict)
+    # Roles that come from the identity provider's groups: each group's id, as sign-ins show
+    # it, and the roles its members hold, such as {"<group id>": ("part-owner:billing",)}.
+    # A version's own map gives nothing towards its approval: the one in force before it does.
+    groups: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
 
 class SettingsError(ValueError):
@@ -241,6 +250,11 @@ _FIELD = Annotated[str, StringConstraints(strict=True, pattern=r"^[A-Za-z][A-Za-
 _LEVEL = Annotated[StrictInt, Field(ge=0, le=2)]
 _COUNT = Annotated[StrictInt, Field(ge=1, le=100_000)]
 _THRESHOLD = Annotated[float, Field(strict=True, ge=0.5, le=0.999)]
+# A group, by the id its sign-ins show it by: an Entra ID object id, or a group's name or path
+_GROUP = Annotated[str, StringConstraints(strict=True, pattern=(
+    r"^[A-Za-z0-9/_](?:[A-Za-z0-9._@:/ -]{0,254}[A-Za-z0-9._@:/-])?$"))]
+_GROUP_ROLE = Annotated[str, StringConstraints(strict=True, pattern=(
+    rf"^(?:{'|'.join(GROUP_ROLES)}|(?:{'|'.join(GROUP_PART_ROLES)}):[a-z0-9][a-z0-9-]{{0,62}})$"))]
 
 
 class _Part(BaseModel):
@@ -283,6 +297,7 @@ class _Version(BaseModel):
     limits: dict[_ID, _Limit] = Field(default_factory=dict)
     thresholds: dict[_ID, _THRESHOLD] = Field(default_factory=dict)
     instances: dict[_ID, _Instance] = Field(default_factory=dict)
+    groups: dict[_GROUP, list[_GROUP_ROLE]] = Field(default_factory=dict)
 
 
 def _plain_yaml(raw: bytes) -> Any:
@@ -317,6 +332,12 @@ def parse_settings(raw: bytes, signatures: tuple[Signature, ...] = ()) -> Settin
         if wrong := [a for a in i.asks if a == iid or a not in version.instances]:
             raise SettingsError(f"instances.{iid}.asks: {', '.join(wrong)} isn't another instance "
                                 "in these settings")
+    parts = {p for i in version.instances.values() for p in _part_levels(i.parts)} | set(
+        version.thresholds)
+    for group, roles in version.groups.items():  # a part's role, for a part these settings name
+        if wrong := sorted({r for r in roles if ":" in r and r.split(":", 1)[1] not in parts}):
+            raise SettingsError(f"groups.{group}: {', '.join(wrong)} names a part no instance "
+                                "here works in, nor has a threshold")
     return Settings(
         version=hashlib.sha256(raw).hexdigest()[:16],
         serial=version.serial,
@@ -327,6 +348,7 @@ def parse_settings(raw: bytes, signatures: tuple[Signature, ...] = ()) -> Settin
         limits={a: {k: v for k, v in limit.model_dump().items() if v is not None}
                 for a, limit in version.limits.items()},
         thresholds=dict(version.thresholds),
+        groups={g: tuple(sorted(set(roles))) for g, roles in version.groups.items() if roles},
         instances=tuple(
             InstanceSettings(id=iid, definition=i.definition, serves=tuple(i.serves),
                              level=i.level, owner=i.owner, deputy=i.deputy,

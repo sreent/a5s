@@ -139,6 +139,8 @@ def gather(conn: psycopg.Connection, person: str) -> dict[str, Any]:
         "preferences": rows(
             "select name, value, set_at from preferences where person = any(%(names)s) "
             "order by name"),
+        "groups": rows(  # those their latest sign-in showed, of the ones the settings name
+            "select groups, seen_at from sign_in_groups where person = any(%(names)s)"),
         "reminders": rows(
             "select agent, about, record, due_at, offered_at, confirmed_at, reminded_at, "
             "cancelled_at from reminders where person = any(%(names)s) order by due_at, id"),

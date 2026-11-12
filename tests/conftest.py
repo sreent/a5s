@@ -34,7 +34,7 @@ from jwt.algorithms import RSAAlgorithm
 
 from a5s import db, definitions, devdb
 from a5s.config import Config, load_models
-from a5s.core import inbox, ledger, registry, signing
+from a5s.core import inbox, ledger, memberships, registry, signing
 from a5s.core.gateway import Gateway, create_app
 from a5s.core.identity import IdentityConfig, Verifier
 from a5s.core.policy import PolicyEngine
@@ -475,7 +475,9 @@ def running(database: str, root: Path, http: httpx.Client, model: FakeModel) -> 
     scenario = SampleScenario(cfg.scenario_dir, cfg.database_url)  # its tools run in the gateway
     for agent in ("assistant", "watcher"):
         definitions.pin(root / "agents" / agent, {n: t.schema_hash for n, t in scenario.tools().items()})
-    gw = Gateway(cfg, scenario, PolicyEngine(), load_models(cfg.models_file),
+    # Its directory, with the roles groups give, as a5s builds it (core/memberships.py)
+    directory = memberships.grouped(scenario, cfg.database_url, lambda conn: gw.groups_in_force(conn))
+    gw = Gateway(cfg, directory, PolicyEngine(), load_models(cfg.models_file),
                  definitions.load_all(cfg.agents_dir), http, clock=lambda: QUIET)
     with db.transaction(database) as conn:
         applied = registry.apply(conn, gw.definitions, scenario.settings(), scenario.tools(),

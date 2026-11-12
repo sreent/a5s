@@ -96,7 +96,9 @@
         "http://127.0.0.1:8703/tasks/*",
         "http://localhost:8703/tasks/*",
         "http://127.0.0.1:8703/audit/*",
-        "http://localhost:8703/audit/*"
+        "http://localhost:8703/audit/*",
+        "http://127.0.0.1:8703/admin/*",
+        "http://localhost:8703/admin/*"
       ],
       "webOrigins": [
         "+"

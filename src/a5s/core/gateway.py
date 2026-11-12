@@ -65,6 +65,7 @@ from a5s.core import (
     handles,
     ledger,
     measures,
+    memberships,
     models,
     notebook,
     obligations,
@@ -247,11 +248,13 @@ class Gateway:
         """The task engine, as the core runs it: each slice a run (core/tasking.py)."""
         return tasking.service(self.url, self.clock, RUN_MINUTES)
 
-    def settings_in_force(self, conn: psycopg.Connection) -> tuple[Any, str | None]:
+    def settings_in_force(self, conn: psycopg.Connection,
+                          seal: bool = True) -> tuple[Any, str | None]:
         """The latest signed version of the settings, checked again from the bytes that were
         signed, against the directory as it is now: every time, with nothing cached, so an
-        approver who loses their role, or a seal key withdrawn, counts at once."""
-        rows = conn.execute("select serial, version, raw, signatures from settings_versions "
+        approver who loses their role, or a seal key withdrawn, counts at once. With `seal`,
+        the core seals a version it found approved, once, in the caller's transaction."""
+        rows = conn.execute("select serial, version, raw, signatures, sealed from settings_versions "
                             "where scenario = %s order by serial desc limit 2",
                             (self.scenario.name,)).fetchall()
         if not rows:
@@ -267,10 +270,40 @@ class Gateway:
         settings, before = found[0][1], found[1][1] if len(found) > 1 else None
         approved, _ = approvals.approvers(conn, self.cfg.seal_keys, self.scenario.name,
                                           approvals.digest(settings.raw))
-        valid, _ = registry.signers(settings, self.scenario.person, approved)
-        if needs := registry.missing(settings, self.scenario.person, valid, before):
+        # The roles the version before gives groups count, read afresh, if the core sealed it
+        # while it was in force; a version's own never count towards it (core/memberships.py)
+        prior = found[1][0] if before else None
+        given = before.groups if before and approvals.vouched(
+            self.cfg.seal_keys, self.scenario.name, before.serial, before.raw,
+            prior["sealed"]) else {}
+        directory = memberships.under(self.scenario, conn, given)
+        valid, _ = registry.signers(settings, directory, approved)
+        if needs := registry.missing(settings, directory, valid, before,
+                                     memberships.under(self.scenario, conn, {})):
             return None, f"the settings in force aren't approved: {needs[0]}"
+        if seal and self.cfg.seal_keys and not approvals.vouched(
+                self.cfg.seal_keys, self.scenario.name, settings.serial, settings.raw,
+                found[0][0]["sealed"]):
+            conn.execute("update settings_versions set sealed = %s where scenario = %s and "
+                         "serial = %s", (approvals.vouch(self.cfg.seal_keys, self.scenario.name,
+                                                         settings.serial, settings.raw),
+                                         self.scenario.name, settings.serial))
         return settings, None
+
+    def groups_in_force(self, conn: psycopg.Connection) -> dict[str, tuple[str, ...]]:
+        """The roles the settings in force give groups: once checked, where the core can check
+        them; in the channels app, which holds no seal key, once the core sealed them."""
+        if self.cfg.seal_keys:  # read alone: it never waits on what its caller holds
+            settings, _ = self.settings_in_force(conn, seal=False)
+            return settings.groups if settings else {}
+        row = conn.execute("select raw, sealed from settings_versions where scenario = %s "
+                           "order by serial desc limit 1", (self.scenario.name,)).fetchone()
+        if not row or not row["sealed"]:
+            return {}
+        try:
+            return parse_settings(bytes(row["raw"])).groups
+        except ValueError:
+            return {}
 
     def check_instance(self, conn: psycopg.Connection, inst: dict) -> list[str]:
         """Whether an instance's record is exactly what its signed settings, its release and
@@ -1660,7 +1693,8 @@ def create_app(gw: Gateway) -> FastAPI:
                                           "digest": row["digest"], **asker,
                                           "widens": any(c["widens"] for c in found)}})
             text = approvals.text(settings.serial, found, link)
-            for approver in registry.approvers(settings, gw.scenario.holders, before):
+            for approver in registry.approvers(settings, gw.scenario.holders, before,
+                                               memberships.rooted(gw.scenario).holders):
                 route = gw.reach(conn, approver.id, None)
                 ledger.append(conn, {
                     "kind": "notice", "action": "ask-approval", "run": None, "instance": None,
@@ -1734,7 +1768,8 @@ def create_app(gw: Gateway) -> FastAPI:
         settings = parse_settings(bytes(row["raw"]))
         valid, _ = registry.signers(settings, gw.scenario.person, approved)
         before = parse_settings(bytes(last["raw"])) if last and last.get("raw") else None
-        if registry.missing(settings, gw.scenario.person, valid, before):
+        if registry.missing(settings, gw.scenario.person, valid, before,
+                            memberships.rooted(gw.scenario).person):
             return None, approved  # it waits for the rest of the approvers it needs
         if refused := gw.unusable(settings, last):  # such as a release gone since
             ledger.append(conn, {"kind": "admin", "action": "apply", "decision": "deny",

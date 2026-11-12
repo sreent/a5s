@@ -10,7 +10,7 @@ import httpx
 from a5s import db, definitions
 from a5s.config import Config, load_models
 from a5s.contract import Scenario
-from a5s.core import metrics, registry, status, traces
+from a5s.core import memberships, metrics, registry, status, traces
 from a5s.core.gateway import Gateway, create_app
 from a5s.core.identity import verifier_from_env
 from a5s.core.matrix import Matrix, MatrixConfig
@@ -29,9 +29,12 @@ def scenario(cfg: Config) -> Scenario:
 def gateway(cfg: Config, http: httpx.Client | None = None) -> Gateway:
     sc = scenario(cfg)
     pack = sc.policy_pack()
-    return Gateway(
+    # Its directory, with the roles the identity provider's groups give, as the settings in
+    # force map them (core/memberships.py)
+    directory = memberships.grouped(sc, cfg.database_url, lambda conn: gw.groups_in_force(conn))
+    gw = Gateway(
         cfg=cfg,
-        scenario=sc,
+        scenario=directory,
         policy=PolicyEngine(packs=(pack,) if pack else ()),
         models=load_models(cfg.models_file),
         definitions=definitions.load_all(cfg.agents_dir),
@@ -41,6 +44,7 @@ def gateway(cfg: Config, http: httpx.Client | None = None) -> Gateway:
         matrix=Matrix(matrix) if (matrix := MatrixConfig.from_env()) else None,
         releases=Releases(running(cfg.root, cfg.scenario_dir, cfg.agents_dir)),
     )
+    return gw
 
 
 def store(cfg: Config) -> Store | None:

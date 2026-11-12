@@ -18,7 +18,7 @@ from a5s.contract import (
     Tool,
     parse_settings,
 )
-from a5s.core import ledger, samples, signing
+from a5s.core import ledger, memberships, samples, signing
 from a5s.definitions import Definition
 
 Directory = Callable[[str], Person | None]
@@ -108,15 +108,23 @@ def _classes_change(settings: Settings, before: Settings | None) -> bool:
 
 
 def missing(settings: Settings, directory: Directory, valid: Iterable[str],
-            before: Settings | None = None) -> list[str]:
+            before: Settings | None = None, rooted: Directory | None = None) -> list[str]:
     """Whose approval a version still needs, given who validly approved it: for each part an
     instance works in, or whose threshold it changes, its owner's, and an instance approver's
     for any instance in no part, and for the scenario's classes of data, if it sets them
     afresh. `before` is the version before it, whose instances a version that leaves them out
-    retires, so their approvers decide that too."""
+    retires, so their approvers decide that too. Giving a group a role needs the role's owner
+    as the directory alone names them (`rooted`), so no role a group gives grows itself."""
+    valid = list(valid)
     held = {role for who in valid if (p := directory(who)) for role in p.roles}
     if not held:
         return ["nobody who approves instances has approved it"]
+    rooted = rooted or directory
+    owners = {role for who in valid if (p := rooted(who)) for role in p.roles}
+    granting = [f"the {memberships.owner_of(role)} named in the directory hasn't approved giving "
+                f"{group} the {role} role"
+                for group, role in memberships.grants(settings, before)
+                if memberships.owner_of(role) not in owners]
     covered = _covered(settings, before)
     needs = [f"the owner of {part} hasn't approved it"
              for part in sorted({p for i in covered for p in i.parts}
@@ -127,13 +135,14 @@ def missing(settings: Settings, directory: Directory, valid: Iterable[str],
             needs.append(f"no {INSTANCE_APPROVER} has approved it, for the instances in no part")
         if _classes_change(settings, before):
             needs.append(f"no {INSTANCE_APPROVER} has approved its classes of data")
-    return needs
+    return needs + list(dict.fromkeys(granting))
 
 
-def approvers(settings: Settings, holders: Holders, before: Settings | None = None) -> list[Person]:
+def approvers(settings: Settings, holders: Holders, before: Settings | None = None,
+              rooted: Holders | None = None) -> list[Person]:
     """The people whose approval a version needs: each part's owners, and the instance
     approvers, if any instance it decides on is in no part, or it sets the classes of data
-    afresh."""
+    afresh; and, for each role it gives a group, the role's owners the directory names."""
     covered = _covered(settings, before)
     roles = [f"{PART_OWNER}:{p}" for p in sorted({p for i in covered for p in i.parts}
                                                  | _thresholds_change(settings, before))]
@@ -142,6 +151,8 @@ def approvers(settings: Settings, holders: Holders, before: Settings | None = No
     found: dict[str, Person] = {}
     for role in roles:
         found.update({p.id: p for p in holders(role) if p.id not in found})
+    for role in sorted({memberships.owner_of(r) for _, r in memberships.grants(settings, before)}):
+        found.update({p.id: p for p in (rooted or holders)(role) if p.id not in found})
     return list(found.values())
 
 

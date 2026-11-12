@@ -45,12 +45,14 @@ from a5s.contract import (
     parse_settings,
 )
 from a5s.core import (
+    administration,
     approvals,
     audit,
     chats,
     groups,
     ledger,
     matrix,
+    memberships,
     notebook,
     officer,
     proposals,
@@ -664,7 +666,8 @@ def create_app(gw: Any) -> FastAPI:
         return {"serial": row["serial"], "proposed_at": row["proposed_at"].isoformat(),
                 "in_force": last["serial"] if last else None, "changes": found,
                 "whole": approvals.described(settings, gw.definitions, gw.scenario.person),
-                "needs": registry.missing(settings, gw.scenario.person, valid, before)
+                "needs": registry.missing(settings, gw.scenario.person, valid, before,
+                                          memberships.rooted(gw.scenario).person)
                 if status == "waiting" else [],
                 "approved_by": [p.name if (p := gw.scenario.person(a)) else a for a in approved],
                 "you": person.name, "you_approved": person.id in approved, "status": status}
@@ -696,7 +699,8 @@ def create_app(gw: Any) -> FastAPI:
         valid, _ = registry.signers(settings, gw.scenario.person, approved)
         before = parse_settings(bytes(last["raw"])) if last else None
         return {"approved": True, "serial": row["serial"], "by": person.name,
-                "needs": registry.missing(settings, gw.scenario.person, valid, before)}
+                "needs": registry.missing(settings, gw.scenario.person, valid, before,
+                                          memberships.rooted(gw.scenario).person)}
 
     # The data protection officer's requests: the page where they ask to export, or erase,
     # what a5s keeps about someone, signed in afresh for that request alone, which someone from
@@ -1341,6 +1345,41 @@ def create_app(gw: Any) -> FastAPI:
                         after=after or None, entries=len(found["entries"]), page=True)
         return found
 
+    # The administrators' page: who holds each role, and by what, what waits for whom, and
+    # the latest administrative acts (core/administration.py). It shows; it changes nothing.
+
+    def administering(authorization: str | None) -> Person:
+        """Who signed in to the administrators' page: someone with one of a5s's roles, or
+        from the team that runs it."""
+        approving()
+        who, _ = sender(authorization, None)
+        person = gw.scenario.person(who)
+        if not administration.administers(person, gw.cfg.team):
+            raise HTTPException(403, "the administrators' page is for people who hold one of "
+                                     "a5s's roles, or run it")
+        return person
+
+    @app.get("/admin/", include_in_schema=False)
+    def admin_page() -> Response:
+        approving()
+        return page("admin.html")
+
+    @app.get("/admin/admin.js", include_in_schema=False)
+    def admin_script() -> Response:
+        approving()
+        return page("admin.js")
+
+    @app.get("/admin/api")
+    def admin_now(authorization: str | None = Header(default=None)) -> dict:
+        """Who holds each role and by what, what waits for whom, and the latest acts, read
+        from the trail, with whom each was about as a stand-in until the officer agrees."""
+        person = administering(authorization)
+        with db.transaction(gw.url) as conn:
+            found = administration.page(conn, gw, gw.clock())
+            audit.noted(conn, person.id, "administration", page=True,
+                        acts=len(found["latest"]))
+        return {"you": person.name, **found}
+
     @app.get("/settings/", include_in_schema=False)
     def settings_page() -> Response:
         approving()
@@ -1371,7 +1410,8 @@ def create_app(gw: Any) -> FastAPI:
                     "serial": row["serial"], "link": f"/approve/?settings={row['digest']}",
                     "changes": approvals.changes(in_force, settings, *words),
                     "approved_by": [p.name if (p := gw.scenario.person(a)) else a for a in valid],
-                    "needs": registry.missing(settings, gw.scenario.person, valid, in_force)})
+                    "needs": registry.missing(settings, gw.scenario.person, valid, in_force,
+                                              memberships.rooted(gw.scenario).person)})
             asked = conn.execute("select * from settings_requests where scenario = %s and "
                                  "person = %s order by id desc limit 5",
                                  (gw.scenario.name, person.id)).fetchall()
@@ -1402,8 +1442,9 @@ def create_app(gw: Any) -> FastAPI:
         return {"serial": settings.serial, "problems": problems,
                 "changes": approvals.changes(before, settings, *words),
                 "whole": approvals.described(settings, *words),
-                "approvers": [p.name for p in registry.approvers(settings, gw.scenario.holders,
-                                                                 before)]}
+                "approvers": [p.name for p in registry.approvers(
+                    settings, gw.scenario.holders, before,
+                    memberships.rooted(gw.scenario).holders)]}
 
     @app.post("/settings/api/requests", status_code=202)
     def settings_request(body: Draft, authorization: str | None = Header(default=None)) -> dict:
