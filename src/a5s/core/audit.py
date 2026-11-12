@@ -8,14 +8,20 @@ released, suspended, exported or erased what. Each search, export and report is 
 the ledger, so reading the trail leaves a trace too.
 
 The ledger keeps what anyone said only by hash, so nothing here holds it. Only someone with the
-auditor's role, or assurance's, reads the trail.
+auditor's role, or assurance's, reads the trail: through the core's API, for the team that runs
+a5s, and on their own page in the channels app. There, whoever acted in one of a5s's roles shows
+as themselves, and everyone else an entry names, such as whom agents acted for, shows as a
+stand-in, the same one each time, until the data protection officer agrees to names.
 """
 
 from __future__ import annotations
 
 import hashlib
+import hmac
 import json
+import secrets
 from collections.abc import Iterable
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
@@ -37,6 +43,12 @@ READERS = (AUDITOR, ASSURANCE)  # who reads the trail
 MOST = 500  # entries a page holds at most
 MOST_EXPORTED = 10_000  # entries an export's page holds at most
 _PLAIN = ("by", "since", "until", "kind", "action", "decision", "instance")
+STAND_IN = "person-"  # how a stand-in for someone starts
+ACTORS = ("admin", "audit", "proposal")  # entries whose `by` acted in one of a5s's roles
+ACTING = ("by", "signed_by")  # where those entries name who acted
+# The kinds of entry a5s writes, for the auditors' page to offer
+KINDS = ("admin", "audit", "breaker", "budget", "cap", "inbound", "message", "model", "notice",
+         "proposal", "repeat", "retention", "run", "task", "tool")
 
 
 def reads(person: Any) -> bool:
@@ -81,10 +93,13 @@ def _utc(at: datetime) -> datetime:
 def search(conn: psycopg.Connection, *, since: datetime | None = None,
            until: datetime | None = None, kind: str | None = None, action: str | None = None,
            decision: str | None = None, instance: str | None = None, person: str | None = None,
-           after: int = 0, limit: int = MOST) -> dict[str, Any]:
+           acted_for: str | None = None, by: str | None = None, after: int = 0,
+           limit: int = MOST) -> dict[str, Any]:
     """A page of a period's entries, oldest first, as asked: of a kind, such as admin; an
-    action, such as approve; a decision, such as deny; an instance; and acting for someone, or
-    by them. `next` is where the next page starts, after, if there's more."""
+    action, such as approve; a decision, such as deny; an instance; acting for someone, or by
+    them (`person`); acting for someone alone (`acted_for`); or where someone acted in one of
+    a5s's roles, such as approving (`by`). `next` is where the next page starts, after, if
+    there's more."""
     first, last = _span(conn, since, until, after)
     limit = max(1, min(limit, MOST))
     rows = conn.execute(
@@ -95,9 +110,13 @@ def search(conn: psycopg.Connection, *, since: datetime | None = None,
         "and (%(instance)s::text is null or instance_id = %(instance)s) "
         "and (%(person)s::text is null or (entry::jsonb->'acts_for') ? %(person)s "
         "     or entry::jsonb->'args'->>'by' = %(person)s) "
+        "and (%(acted_for)s::text is null or (entry::jsonb->'acts_for') ? %(acted_for)s) "
+        "and (%(by)s::text is null or (kind = any(%(actors)s) and ("
+        "     entry::jsonb->'args'->'by' ? %(by)s or entry::jsonb->'args'->'signed_by' ? %(by)s))) "
         "order by seq limit %(limit)s",
         {"first": first, "last": last, "kind": kind, "action": action, "decision": decision,
-         "instance": instance, "person": person, "limit": limit}).fetchall()
+         "instance": instance, "person": person, "acted_for": acted_for, "by": by,
+         "actors": list(ACTORS), "limit": limit}).fetchall()
     return {"entries": [json.loads(r["entry"]) for r in rows],
             "next": rows[-1]["seq"] if len(rows) == limit else None}
 
@@ -170,6 +189,92 @@ def copied(lines: list[dict[str, Any]], store: Any) -> str | None:
         return (f"entries from {min(want)} on aren't in the locked copies, which a5s makes "
                 "every hour: check again later")
     return None
+
+
+def key(conn: psycopg.Connection) -> bytes:
+    """The deployment's own key for stand-ins: made once, at random, and kept only in the
+    database, so nobody who reads the trail can work a stand-in back to whom it's for."""
+    conn.execute("insert into audit_key (key) values (%s) on conflict do nothing",
+                 (secrets.token_bytes(32),))
+    return bytes(conn.execute("select key from audit_key").fetchone()["key"])
+
+
+def stand_in(secret: bytes, person: str) -> str:
+    """Someone's stand-in, the same each time in a deployment, and no other's."""
+    return STAND_IN + hmac.new(secret, person.encode(), hashlib.sha256).hexdigest()[:12]
+
+
+@dataclass
+class Shown:
+    """How the auditors' page shows the trail. Whoever acted in one of a5s's roles, approving,
+    deciding, signing or reading the trail, shows as themselves, since that's what an audit
+    checks. Until the data protection officer agrees to names (`names`), everyone else an
+    entry names, whom agents acted for, told or asked about, shows as a stand-in. Text that
+    names someone in passing, such as a reason, and what the ledger keeps by hash, show as
+    the ledger keeps them."""
+
+    scenario: Any
+    secret: bytes
+    names: bool = False
+    _seen: dict[str, str] = field(default_factory=dict)
+
+    def person(self, value: Any) -> Any:
+        """Someone's id as the page shows it: themselves once names are agreed, else their
+        stand-in; and anything that isn't someone the directory knows, as it is."""
+        if self.names or not isinstance(value, str):
+            return value
+        if value not in self._seen:
+            known = self.scenario.person(value) is not None
+            self._seen[value] = stand_in(self.secret, value) if known else value
+        return self._seen[value]
+
+    def _named(self, value: Any) -> Any:
+        if isinstance(value, list):
+            return [self._named(v) for v in value]
+        if isinstance(value, dict):
+            return {k: self._named(v) for k, v in value.items()}
+        return self.person(value)
+
+    def entry(self, entry: dict[str, Any]) -> dict[str, Any]:
+        """An entry as the page shows it: whom it acted for, and everyone its arguments name,
+        as stand-ins, but for whoever acted in one of a5s's roles."""
+        if self.names:
+            return entry
+        args = entry.get("args") if isinstance(entry.get("args"), dict) else None
+        shown = dict(entry)
+        if "acts_for" in entry:
+            shown["acts_for"] = self._named(entry["acts_for"])
+        if args is not None:
+            acting = entry.get("kind") in ACTORS
+            shown["args"] = {k: v if acting and k in ACTING else self._named(v)
+                             for k, v in args.items()}
+        return shown
+
+    def report(self, found: dict[str, Any]) -> dict[str, Any]:
+        """The report as the page shows it: each role's holders, and who did each act, as
+        themselves; and whom an act was about, such as an export's subject, as a stand-in."""
+        if self.names:
+            return found
+        return {**found, "acts": [{**act, "about": self._named(act["about"])}
+                                  for act in found["acts"]]}
+
+    def whom(self, conn: psycopg.Connection, given: str, since: datetime | None = None,
+             until: datetime | None = None) -> str | None:
+        """Whom a stand-in stands for, among those the period's entries acted for; or, once
+        names are agreed, the id given. None for an id before then, so the page never says
+        whether agents acted for someone it names."""
+        if self.names:
+            return given
+        if not given.startswith(STAND_IN):
+            return None
+        first, last = _span(conn, since, until, 0)
+        for row in conn.execute(
+                "select distinct acted from ledger, "
+                "jsonb_array_elements_text(entry::jsonb->'acts_for') acted "
+                "where seq between %s and %s", (first, last)):
+            if hmac.compare_digest(stand_in(self.secret, row["acted"]), given):
+                return row["acted"]
+        return None
 
 
 ADMIN = {"approve": "approved settings", "propose": "proposed settings",

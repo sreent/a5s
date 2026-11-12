@@ -23,13 +23,13 @@ import re
 import time
 import uuid
 from collections.abc import Callable
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import httpx
 import yaml
-from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request, Response
+from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, RedirectResponse
 from psycopg.types.json import Jsonb
@@ -46,6 +46,7 @@ from a5s.contract import (
 )
 from a5s.core import (
     approvals,
+    audit,
     chats,
     groups,
     ledger,
@@ -61,7 +62,7 @@ from a5s.core import (
     topics,
 )
 from a5s.core.gateway import sanitize
-from a5s.core.identity import IdentityError, UnknownPerson, signed_in
+from a5s.core.identity import IdentityError, UnknownPerson, second_factor, signed_in, whose
 from a5s.core.releases import agent_owner
 from a5s.core.tasks import TaskError
 from a5s.core.teams import UNKNOWN, Refused
@@ -1236,6 +1237,108 @@ def create_app(gw: Any) -> FastAPI:
             found = studio.run(conn, gw.scenario, run_id, person, names=gw.cfg.studio_names)
         if found is None:
             raise HTTPException(404, "there's no such run that you may see")
+        return found
+
+    # The auditors' page: the ledger as an auditor reads it, read only, from the same module as
+    # the core's API (core/audit.py). Whoever acted in one of a5s's roles shows as themselves;
+    # whom agents acted for, as a stand-in until the officer agrees to names.
+
+    def auditing(authorization: str | None) -> Person:
+        """Who signed in to the audit trail: an auditor, or assurance, with a second factor
+        where the deployment asks for one, as for what counts: the trail is the most of a5s
+        anyone reads."""
+        approving()
+        token = (authorization or "").removeprefix("Bearer ").strip()
+        if gw.identity is None or not token:
+            sender(authorization, None)  # says what's missing, as everywhere
+            raise HTTPException(401, "sign in first")
+        try:
+            claims = gw.identity.claims(token)
+            person = whose(gw.identity, gw.scenario, claims)
+        except UnknownPerson as exc:
+            raise HTTPException(403, str(exc)) from None
+        except IdentityError as exc:
+            raise HTTPException(401, f"your token doesn't check out: {exc}") from None
+        if not audit.reads(person):
+            raise HTTPException(403, "only an auditor, or assurance, reads the audit trail")
+        if not second_factor(gw.identity.cfg, claims):
+            raise HTTPException(401, "sign in with your second factor too, as this deployment "
+                                     "asks for reading the audit trail")
+        return person
+
+    def shown(conn: Any) -> audit.Shown:
+        return audit.Shown(gw.scenario, audit.key(conn), names=gw.cfg.audit_names)
+
+    def period(since: datetime | None, until: datetime | None) -> dict:
+        return {"since": since.isoformat() if since else None,
+                "until": until.isoformat() if until else None}
+
+    @app.get("/audit/", include_in_schema=False)
+    def audit_page() -> Response:
+        approving()
+        return page("audit.html")
+
+    @app.get("/audit/audit.js", include_in_schema=False)
+    def audit_script() -> Response:
+        approving()
+        return page("audit.js")
+
+    @app.get("/audit/api")
+    def audit_now(authorization: str | None = Header(default=None)) -> dict:
+        """Who's reading, and how the page shows people: by name, or by stand-in."""
+        person = auditing(authorization)
+        return {"you": person.name, "names": gw.cfg.audit_names,
+                "exports": gw.cfg.audit_names, "kinds": list(audit.KINDS)}
+
+    @app.get("/audit/api/entries")
+    def audit_entries(since: datetime | None = None, until: datetime | None = None,
+                      kind: str | None = None, action: str | None = None,
+                      decision: str | None = None, instance: str | None = None,
+                      acted_for: str | None = Query(default=None, alias="for"),
+                      by: str | None = None, after: int = 0, limit: int = audit.MOST,
+                      authorization: str | None = Header(default=None)) -> dict:
+        """A page of a period's entries, as an auditor asks for them: whom agents acted for
+        as a stand-in, which finds them too, until the officer agrees to names."""
+        person = auditing(authorization)
+        with db.transaction(gw.url) as conn:
+            showing = shown(conn)
+            whom = showing.whom(conn, acted_for, since, until) if acted_for else None
+            found = {"entries": [], "next": None} if acted_for and whom is None else audit.search(
+                conn, since=since, until=until, kind=kind, action=action, decision=decision,
+                instance=instance, acted_for=whom, by=by, after=after, limit=limit)
+            audit.noted(conn, person.id, "search", **period(since, until), kind=kind,
+                        action=action, decision=decision, instance=instance,
+                        acted_for=acted_for, acted_by=by, after=after or None,
+                        found=len(found["entries"]), page=True)
+        return {"entries": [showing.entry(e) for e in found["entries"]], "next": found["next"]}
+
+    @app.get("/audit/api/report")
+    def audit_report(since: datetime | None = None, until: datetime | None = None,
+                     authorization: str | None = Header(default=None)) -> dict:
+        """Who holds each role, and who did what of a period's administration."""
+        person = auditing(authorization)
+        with db.transaction(gw.url) as conn:
+            found = audit.report(conn, gw.scenario, gw.definitions.keys(), since=since,
+                                 until=until)
+            audit.noted(conn, person.id, "report", **period(since, until),
+                        acts=len(found["acts"]), page=True)
+            return shown(conn).report(found)
+
+    @app.get("/audit/api/export")
+    def audit_export(since: datetime | None = None, until: datetime | None = None,
+                     after: int = 0, authorization: str | None = Header(default=None)) -> dict:
+        """A page of a period's entries exactly as the ledger holds them, to check and keep:
+        only once the officer agrees to names, since they hold whom agents acted for."""
+        person = auditing(authorization)
+        if not gw.cfg.audit_names:
+            raise HTTPException(403, "exports hold whom agents acted for, so they're on this "
+                                     "page only once the data protection officer agrees; until "
+                                     "then, the team that runs a5s exports a period for you "
+                                     "with `a5s audit export`")
+        with db.transaction(gw.url) as conn:
+            found = audit.export(conn, since=since, until=until, after=after)
+            audit.noted(conn, person.id, "export", **period(since, until),
+                        after=after or None, entries=len(found["entries"]), page=True)
         return found
 
     @app.get("/settings/", include_in_schema=False)

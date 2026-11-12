@@ -125,6 +125,7 @@ timeouts:
 # they do.
 officerAgrees:
   studioNames: false  # people's studio pages name whom each run acted for (A5S_STUDIO_NAMES)
+  auditNames: false  # the auditors' page names whom agents acted for, and exports (A5S_AUDIT_NAMES)
   rubberStampFlag: false  # the status flags rubber-stamping deciders (A5S_FLAG_RUBBER_STAMPS)
 
 # Where the gateway sends its traces and operators' figures, by OpenTelemetry over HTTP, such
