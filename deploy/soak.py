@@ -6,14 +6,17 @@ thing, for as many minutes as it's told. Ana also asks the assistant for long ta
 be done in two runs, so two slices, and says yes to each. While a slice is at work, a quarter
 of the way through, the assistant's worker is killed, and at three eighths the core, as a
 crash or the out-of-memory killer would; half way, the core, the scheduler and the assistant's
-workers restart, as an upgrade would; and at three quarters the scheduler is killed. Every 30
+workers restart, as an upgrade would; at five eighths Postgres is away for half a minute, as
+in a managed database's failover, and people try again whatever a5s refuses meanwhile, as the
+web chat's would; and at three quarters the scheduler is killed. Every 30
 seconds it notes how much memory each of a5s's containers holds, and how many connections
-Postgres has open. Then it checks that each message had one answer, in time, and that only
-those at work when something was killed were told it couldn't finish; that every task she
+Postgres has open. Then it checks that each message had one answer, in time, that only those
+at work when something was killed, or the database went away, were told it couldn't finish,
+and that only those sent while it was away were refused; that every task she
 started ended done, in two slices at least, and told her once, each by its number, with none
 lost and no lease left over; that neither memory nor connections kept growing once the stack
-had warmed up; and that no part logged an error but in the minutes after a kill. Standard
-library only.
+had warmed up; and that no part logged an error but in the minutes after a kill or the
+outage, and none more than two minutes after what caused it. Standard library only.
 
   A5S_PASSWORD=... python3 deploy/soak.py <minutes> <where to write what it found>
 """
@@ -28,7 +31,7 @@ import subprocess
 import sys
 import threading
 import time
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -39,6 +42,10 @@ PARTS = ("gateway", "channels", "scheduler", "worker", "worker-assistant", "work
          "anchor", "postgres")
 RESTARTED = ("gateway", "scheduler", "worker-assistant")  # half way, as an upgrade would
 KILLED = (("worker-assistant", 0.25), ("gateway", 0.375), ("scheduler", 0.75))  # mid-slice
+AWAY = (0.625, 30)  # how far through, and for how many seconds, Postgres is away, as a managed
+# database's failover takes it away
+AGAIN = 180  # seconds a person tries a message again for, while a5s refuses it for now
+RECOVERED = 120  # seconds after its cause a part may still log errors: later, it's slow to recover
 AFTER_KILL = 300  # seconds after a kill whose errors it explains: a run it cut off, and those
 # whose scheduler it was, closed once its lease has lapsed two minutes, at the next sweep
 CUT_OFF = ("I couldn't finish", "Something went wrong on my side")  # a5s's words for one
@@ -73,12 +80,38 @@ def sign_in(person: str) -> str:
                                        "password": os.environ["A5S_PASSWORD"]})["access_token"]
 
 
+def for_now(exc: Exception) -> bool:
+    """Whether a5s refused something only for now, as while its database is away: a 5xx, or
+    no answer at all, not a 4xx, which is a5s refusing it for good."""
+    return not isinstance(exc, HTTPError) or exc.code >= 500
+
+
+def send(token: str, agent: str, text: str) -> tuple[dict, int]:
+    """A message sent, as the web chat sends it, and tried again every few seconds while a5s
+    refuses it for now, as its person would: the core's answer, and how many tries it took."""
+    until, tries = time.monotonic() + AGAIN, 0
+    while True:
+        tries += 1
+        try:
+            return call("POST", CHANNEL, token, {"agent": agent, "text": text}), tries
+        except (URLError, ConnectionError) as exc:
+            if not for_now(exc) or time.monotonic() > until:
+                raise
+            time.sleep(3)
+
+
 def answers(token: str, message: str, within: float) -> list:
-    """The answers to a message, waiting up to `within` seconds for one."""
+    """The answers to a message, waiting up to `within` seconds for one, and asking again
+    while a5s can't say for now."""
     until, replies = time.monotonic() + within, []
     while not replies and time.monotonic() < until:
         wait = max(1, min(OBJECTIVE, int(until - time.monotonic())))
-        replies = call("GET", f"{CHANNEL}/{message}?wait={wait}", token).get("replies") or []
+        try:
+            replies = call("GET", f"{CHANNEL}/{message}?wait={wait}", token).get("replies") or []
+        except (URLError, ConnectionError) as exc:
+            if not for_now(exc):
+                raise
+            time.sleep(3)
     return replies
 
 
@@ -89,9 +122,9 @@ def talk(person: str, agent: str, until: float, said: list, lock: threading.Lock
     while time.monotonic() < until:
         if time.monotonic() - signed_in > 240:  # the stand-in's tokens last five minutes
             token, signed_in = sign_in(person), time.monotonic()
-        started, sent_at, cut = time.monotonic(), time.time(), False
+        started, sent_at, cut, tries = time.monotonic(), time.time(), False, 1
         try:
-            sent = call("POST", CHANNEL, token, {"agent": agent, "text": random.choice(ASKED)})
+            sent, tries = send(token, agent, random.choice(ASKED))
             replies = answers(token, sent["message"], AFTER_KILL + OBJECTIVE)
             outcome = "answered" if len(replies) == 1 else f"{len(replies)} answers"
             cut = any(str(r).startswith(CUT_OFF) for r in replies)
@@ -102,7 +135,8 @@ def talk(person: str, agent: str, until: float, said: list, lock: threading.Lock
             outcome = f"failed: {type(exc).__name__}: {exc}"
         with lock:
             said.append({"person": person, "agent": agent, "outcome": outcome, "cut_off": cut,
-                         "sent_at": sent_at, "seconds": round(time.monotonic() - started, 2)})
+                         "tries": tries, "sent_at": sent_at,
+                         "seconds": round(time.monotonic() - started, 2)})
         time.sleep(random.uniform(0.5, 3))
 
 
@@ -112,7 +146,7 @@ def asking(token_for, until: float, started: list, lock: threading.Lock) -> None
         token = token_for()
         try:
             for text in (TASK, "Yes, start it"):
-                sent = call("POST", CHANNEL, token, {"agent": "assistant", "text": text})
+                sent, _ = send(token, "assistant", text)
                 replies = answers(token, sent["message"], AFTER_KILL + OBJECTIVE)
             if found := next((r for r in replies if r.startswith("Started T-")), None):
                 with lock:  # by its number, as its owner knows it
@@ -153,6 +187,34 @@ def kill(part: str, at: float, killed: list, lock: threading.Lock) -> None:
         killed.append({"part": part, "task": task, "at": when})
     print(f"Killed the {part}" + (f" as T-{task}'s slice was at work." if task else
                                   ", though no task's slice was at work."))
+
+
+def outage(at: float, seconds: float, away: list, lock: threading.Lock) -> None:
+    """Take Postgres away at `at` for `seconds`, as a managed database's failover does, and
+    bring it back: when it was away."""
+    time.sleep(max(0.0, at - time.monotonic()))
+    began = time.time()
+    subprocess.run(["docker", "stop", "--time", "10", f"{PROJECT}-postgres-1"],
+                   capture_output=True, check=False)
+    time.sleep(seconds)
+    subprocess.run(["docker", "start", f"{PROJECT}-postgres-1"], capture_output=True, check=False)
+    with lock:
+        away.append({"from": began, "to": time.time()})
+    print(f"Postgres was away for {time.time() - began:.0f} seconds, as in a failover.")
+
+
+def explained(when: float, killed: list, away: list, after: float = AFTER_KILL) -> bool:
+    """Whether something at `when` came in the minutes after a kill, or while Postgres was
+    away and the minutes after it came back."""
+    return since_cause(when, killed, away, after) is not None
+
+
+def since_cause(when: float, killed: list, away: list, after: float = AFTER_KILL) -> float | None:
+    """How long after the kill, or Postgres's coming back, something at `when` came, if one
+    explains it: the nearest, and 0 for something while Postgres was away."""
+    found = [when - k["at"] for k in killed if k["at"] - 2 <= when <= k["at"] + after] + [
+        max(0.0, when - o["to"]) for o in away if o["from"] - 2 <= when <= o["to"] + after]
+    return min(found) if found else None
 
 
 def psql(query: str) -> list[str]:
@@ -198,11 +260,12 @@ def settled() -> dict:
             "leases_left": int(leases[0]) if leases else None}
 
 
-def errors(since: float, killed: list) -> tuple[list[str], int]:
-    """What a5s's parts logged as errors since `since`: those no kill explains, and how many
-    the minutes after one do, such as a run it cut off."""
+def errors(since: float, killed: list, away: list) -> tuple[list[str], dict]:
+    """What a5s's parts logged as errors since `since`: those no kill nor the database's
+    outage explains, and of those one does, such as a run it cut off, how many each part
+    logged, and how long after its cause the last came, so a part slow to recover shows."""
     stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(since))
-    found, explained = [], 0
+    found, after = [], {}
     for part in PARTS[:-1]:  # not Postgres's own
         logged = subprocess.run(["docker", "logs", "--timestamps", "--since", stamp,
                                  f"{PROJECT}-{part}-1"], capture_output=True, text=True,
@@ -212,11 +275,12 @@ def errors(since: float, killed: list) -> tuple[list[str], int]:
                 continue
             at = re.match(r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)", line)
             when = calendar.timegm(time.strptime(at.group(1), "%Y-%m-%dT%H:%M:%S")) if at else 0
-            if any(k["at"] - 2 <= when <= k["at"] + AFTER_KILL for k in killed):
-                explained += 1
+            if (late := since_cause(when, killed, away)) is not None:
+                n, last = after.get(part, (0, 0.0))
+                after[part] = (n + 1, max(last, late))
             else:
                 found.append(f"{part}: {line[:300]}")
-    return found, explained
+    return found, after
 
 
 def mebibytes(usage: str) -> float:
@@ -257,7 +321,7 @@ def grew(samples: list, measure) -> tuple[float, float]:
 
 def main() -> None:
     minutes, found_at = float(sys.argv[1]), sys.argv[2]
-    began, killed = time.time(), []
+    began, killed, away = time.time(), [], []
     until, said, samples, lock = time.monotonic() + minutes * 60, [], [], threading.Lock()
     threads = [threading.Thread(target=talk, args=(person, agent, until, said, lock))
                for person, agent in TALKS]
@@ -274,6 +338,8 @@ def main() -> None:
     threads.append(threading.Thread(target=restart, args=(time.monotonic() + minutes * 30,)))
     threads += [threading.Thread(target=kill, args=(part, time.monotonic() + minutes * 60 * share,
                                                     killed, lock)) for part, share in KILLED]
+    threads.append(threading.Thread(target=outage, args=(
+        time.monotonic() + minutes * 60 * AWAY[0], AWAY[1], away, lock)))
     for t in threads:
         t.start()
     for t in threads:
@@ -284,12 +350,17 @@ def main() -> None:
     if failed:
         problems.append(f"{len(failed)} of {len(said)} messages weren't answered once: "
                         + "; ".join(sorted({s["outcome"] for s in failed}))[:1000])
-    cut = [s for s in said if s["cut_off"]]  # told it couldn't finish: only as a kill would
-    unexplained = [s for s in cut if not any(
-        s["sent_at"] - 5 <= k["at"] <= s["sent_at"] + s["seconds"] + 5 for k in killed)]
+    cut = [s for s in said if s["cut_off"]]  # told it couldn't finish: only as a kill would,
+    unexplained = [s for s in cut if not any(  # or the database's going away
+        s["sent_at"] - 5 <= k["at"] <= s["sent_at"] + s["seconds"] + 5 for k in killed) and not any(
+        s["sent_at"] - 5 <= o["to"] and o["from"] <= s["sent_at"] + s["seconds"] + 5 for o in away)]
     if unexplained:
         problems.append(f"{len(unexplained)} messages were told it couldn't finish, though "
-                        "nothing was killed as they were at work")
+                        "nothing was killed, nor was the database away, as they were at work")
+    again = [s for s in said if s["tries"] > 1]  # refused for now: only while it was away
+    if refused := [s for s in again if not explained(s["sent_at"], [], away, after=60)]:
+        problems.append(f"{len(refused)} messages were refused for a while, though the "
+                        "database was there")
     seconds = sorted(s["seconds"] for s in said if s["outcome"] == "answered")
     p50 = statistics.median(seconds) if seconds else None
     p90 = seconds[int(len(seconds) * 0.9) - 1] if len(seconds) >= 10 else None
@@ -322,16 +393,21 @@ def main() -> None:
     if len(killed) < len(KILLED) or not all(k["task"] for k in killed):
         problems.append("not every kill came as a task's slice was at work: "
                         + "; ".join(f"the {k['part']}" for k in killed if not k["task"]))
-    logged, explained = errors(began, killed)
+    logged, after = errors(began, killed, away)
     if logged:
         problems.append(f"a5s's parts logged {len(logged)} errors no kill explains, such as: "
                         + " | ".join(logged[:5]))
+    if slow := {p: s for p, (_, s) in after.items() if s > RECOVERED}:
+        problems.append("slow to recover, still logging errors after what caused them: " + ", ".join(
+            f"the {p}, {s:.0f}s after" for p, s in sorted(slow.items())))
 
     found = {"minutes": minutes, "messages": len(said), "answered": len(seconds),
              "p50_seconds": p50, "p90_seconds": p90, "memory": memory,
              "connections": {"warm": round(warm, 1), "last": round(last, 1)},
              "tasks": {"started": len(started), **tasks}, "killed": killed,
-             "cut_off": len(cut), "errors_after_kills": explained,
+             "away": away, "cut_off": len(cut), "tried_again": len(again),
+             "errors_after_kills": {p: {"errors": n, "last_after_seconds": round(s)}
+                                    for p, (n, s) in after.items()},
              "samples": samples, "problems": problems}
     with open(found_at, "w") as out:
         json.dump(found, out, indent=1)
@@ -349,9 +425,16 @@ def main() -> None:
               f"ended {hit.get('status')} in {hit.get('slices')} slices, "
               f"{hit.get('cut_off')} cut off, and Ana was told once." if hit.get("told") == 1
               else f"The {k['part']}, killed as T-{k['task']}'s slice was at work: {hit}.")
-    print(f"Messages at work as something was killed, told it couldn't finish: {len(cut)}. "
-          f"Errors logged in the minutes after a kill: {explained}; at any other time: "
-          f"{len(logged)}.")
+    for o in away:
+        print(f"Postgres was away for {o['to'] - o['from']:.0f} seconds: {len(again)} messages "
+              "were refused meanwhile, and sent again once it was back.")
+    print(f"Messages at work as something was killed, or the database went away, told it "
+          f"couldn't finish: {len(cut)}.")
+    print(f"Errors logged in the minutes after a kill or the outage: "
+          f"{sum(n for n, _ in after.values())}"
+          + (" (" + ", ".join(f"{p} {n}, the last {s:.0f}s after its cause" for p, (n, s) in
+                             sorted(after.items())) + ")" if after else "")
+          + f"; at any other time: {len(logged)}.")
     if problems:
         raise SystemExit("The soak test found:\n- " + "\n- ".join(problems))
 

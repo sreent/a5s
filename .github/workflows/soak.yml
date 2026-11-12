@@ -2,7 +2,8 @@ name: soak
 
 # The soak test: the containers' stack, as the smoke test starts it, with the sample's people
 # talking to its agents for half an hour, or as long as asked, while a5s's parts are killed as
-# a task's slice is at work, and restarted as an upgrade would. It finds what a test of
+# a task's slice is at work, restarted as an upgrade would, and their database taken away for
+# half a minute, as in a failover. It finds what a test of
 # seconds can't: leaks, locks that pile up, work done twice, and what a crash leaves behind.
 # Weekly, and when asked.
 

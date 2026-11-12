@@ -3,10 +3,11 @@
 # the sample's people talk to its agents for a while: 30 minutes, unless given another number.
 # Ana asks for long tasks too, each in two slices. As a slice is at work, the assistant's
 # worker is killed a quarter of the way through, the core at three eighths and the scheduler at
-# three quarters, as a crash would; and half way, the core, the scheduler and the assistant's
-# workers restart, as an upgrade would. Then it checks that every message had one answer, in
-# time, and no message was lost or answered twice, and that only those at work as something
-# was killed were told it couldn't finish; that every task she started ended done, by its
+# three quarters, as a crash would; half way, the core, the scheduler and the assistant's
+# workers restart, as an upgrade would; and at five eighths Postgres is away for half a
+# minute, as in a failover. Then it checks that every message had one answer, in time, and no
+# message was lost or answered twice, and that only those at work as something was killed, or
+# the database went away, were told it couldn't finish; that every task she started ended done, by its
 # number, told her once, and left no lease; that no part's memory, nor Postgres's
 # connections, kept growing once the stack had warmed up; that no part logged an error but in
 # the minutes after a kill; and that the ledger verifies against its locked copies. Then it

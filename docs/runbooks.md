@@ -145,6 +145,14 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 1. Each part keeps a pool of `A5S_DB_POOL_SIZE` connections, 10 by default, and connects afresh only as many again while they're all in use. Past that, work waits ten seconds for the pool and then fails, to be tried again. So each part uses at most twice its pool: size Postgres's limit to that, for every replica of each part.
 2. Work that waits behind the ledger's lock for 30 seconds fails, and is tried again: look for what held it, such as a slow records system read inside a transaction.
 
+## The database is away
+
+**Shows as:** the status unreadable (`a5s.status.readable` at 0), and each part logging that it can't reach the database, as in a managed database's failover.
+
+1. a5s waits it out. People and their chats are asked to try again in a moment: the channels app answers 503 with `Retry-After: 5` and words the web chat shows its person, and Matrix delivers its transactions again on its own. Runs at work fail, and their people are told they couldn't finish; tasks' slices fail and go on later; the scheduler listens again once it can.
+2. Once it's back, a5s answers again within seconds, as the soak test checks with Postgres away for half a minute. A run whose scheduler couldn't close it meanwhile is closed at the next sweep once its lease has lapsed two minutes, and its person is told to send it again, unless they had their answer.
+3. If it isn't back within a few minutes, it's the database's own incident: see its provider's status, and its failover's.
+
 ## Calls are denied
 
 **Shows as:** many denials of one kind.
