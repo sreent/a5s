@@ -525,10 +525,11 @@ class Gateway:
             return False
         heard = " and heard_by @> %(members)s::text[]" if group else ""  # the latest turns'
         it_heard = " and t.heard_by @> %(members)s::text[]" if group else ""  # and the turn's
-        return bool(conn.execute(
+        return bool(conn.execute(  # a task's own topic, which no other run reads, aside
             "select 1 from turns t join runs r on r.id = t.run_id where r.read_outside "
             "and t.person = %(person)s and t.agent = %(agent)s and (t.topic = %(topic)s or t.id in "
             f"(select id from turns where person = %(person)s and agent = %(agent)s{heard} "
+            "and (topic = %(topic)s or topic not like 'task %%') "
             f"order by id desc limit 200)){it_heard} limit 1",
             {"person": group or acts_for[0], "agent": agent, "topic": topic,
              "members": list(acts_for)}).fetchone())
@@ -870,7 +871,10 @@ class Gateway:
         if row is None:
             return Opening({"kind": tasking.KIND, "task": task_id}, [], {"task": task_id},
                            ["there's no such task"])
-        opening = Opening(trigger={"kind": tasking.KIND, "task": task_id, "payer": row["owner"]},
+        opening = Opening(trigger={"kind": tasking.KIND, "task": task_id, "payer": row["owner"],
+                                   # what it writes its owner, kept in a topic of its own, so a
+                                   # task that read content from outside marks no other topic
+                                   "topic": f"task {tasking.name(row)}"},
                           acts_for=list(row["audience"]), args={"task": task_id}, reasons=[])
         if row["instance_id"] != inst["id"]:  # nothing to put off: it's another's to run
             opening.reasons.append(f"{inst['id']} didn't take it")
@@ -2858,7 +2862,11 @@ def create_app(gw: Gateway) -> FastAPI:
         # As the agent wrote it, with its handles, for the conversation a later run reads, and
         # a5s's note apart, so no run takes a5s's words for the agent's, or learns to imitate them
         return {"sent": True, "text": said, "note": note, "links_removed": removed,
-                **({"kept_back": True} if kept else {})}
+                **({"kept_back": True} if kept else {}),
+                # where a task's message is kept: in its own topic, which no other run reads,
+                # if its run read content from outside, so it marks none of its owner's chats
+                **({"topic": row["trigger"].get("topic") if row["read_outside"] else topics.GENERAL}
+                   if row["trigger"].get("kind") == tasking.KIND else {})}
 
     def deliver(route: dict, text: str, run: str | None, instance: str | None,
                 card: dict | None = None) -> str | None:

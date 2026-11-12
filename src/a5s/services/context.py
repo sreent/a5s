@@ -120,9 +120,10 @@ def _kept(conn: psycopg.Connection, person: str, agent: str, topic: str, chars: 
     In a group, only the turns all of `members` heard."""
     heard = "" if members is None else " and heard_by @> %(members)s::text[]"
     given = {"person": person, "agent": agent, "members": members, "topic": topic}
-    kept, used = _fit(conn.execute(
+    kept, used = _fit(conn.execute(  # never another task's own topic (core/tasking.py)
         "select id, role, content, at, topic, speaker from turns where person = %(person)s "
-        f"and agent = %(agent)s{heard} order by id desc limit 500", given),
+        f"and agent = %(agent)s{heard} and (topic = %(topic)s or topic not like 'task %%') "
+        "order by id desc limit 500", given),
         chars if topic == GENERAL else int(chars * LATEST))
     if topic != GENERAL:
         before = min(kept) if kept else None

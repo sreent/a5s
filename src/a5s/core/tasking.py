@@ -148,17 +148,22 @@ def confirm(call: Call) -> dict:
 
 
 def mine(call: Call) -> dict:
-    person = call.person
+    person = call.owner  # reading their own tasks widens nothing, in a marked run too
     rows = call.conn.execute(
         "select number, task, status, progress, plan, last_error, deadline, updated_at, "
-        "asked_at, (select count(*) from tasks c where c.parent = t.id) as parts, "
+        "asked_at, result, partial, read_outside, "
+        "(select count(*) from tasks c where c.parent = t.id) as parts, "
         "(select count(*) from tasks c where c.parent = t.id and c.status = 'done') as done "
         "from tasks t where owner = %s and instance_id = %s and parent is null "
         "order by updated_at desc limit 20", (person.id, call.run["id"])).fetchall()
     studio.handled(call.conn, call.run["run"], studio.named(
         call.scenario, [r["task"] for r in rows]))
-    lapsed = call.asked_at - CONFIRM_WITHIN  # an offer not said yes to by then, as for
-    # confirm_task: by when the messages came
+    if any(r["read_outside"] and (r["result"] or r["partial"] or r["last_error"])
+           for r in rows):  # what its runs said came of content from outside: so does
+        call.conn.execute("update runs set read_outside = true where id = %s",
+                          (call.run["run"],))
+    lapsed = call.asked_at - CONFIRM_WITHIN  # what this run says of it. An offer not said
+    # yes to by then, as for confirm_task, by when the messages came, has lapsed
     return {"tasks": [{"task": name(r), "what": r["task"], "status": (
                            "offered, and lapsed: offer it again if they still want it"
                            if r["status"] == OFFERED and r["asked_at"]
@@ -168,13 +173,15 @@ def mine(call: Call) -> dict:
                                      f"{len(r['plan'])}" if r["plan"] else None,
                        **({"parts done": f"{r['done']} of {r['parts']}"} if r["parts"] else {}),
                        **({"why": r["last_error"]} if r["last_error"] else {}),
+                       **({"found": found} if (found := _found(r)) else {}),
+                       **({"so far": r["partial"]} if r["partial"] else {}),
                        "has until": say(person, r["deadline"])} for r in rows],
             **({"repeats": found} if (found := repeats.listed(call.conn, person,
                                                               call.run["id"])) else {})}
 
 
 def cancel(call: Call) -> dict:
-    person = call.person
+    person = call.owner  # stopping what's theirs widens nothing, in a marked run too
     if repeats.named(call.args.get("task")):  # a repeat stops: its last task goes on
         try:
             return repeats.stop(call.conn, person, call.args.get("task"), call.now,
@@ -196,7 +203,7 @@ def cancel(call: Call) -> dict:
 def resume(call: Call) -> dict:
     """Go on with a task that needed its owner, with what they said it needs, which its
     next run is told, and whose values are theirs."""
-    person = call.person
+    person = call.owner
     row = call.conn.execute("select id::text as id, number, status, last_error from tasks "
                             "where owner = %s and instance_id = %s and number = %s for update",
                             (person.id, call.run["id"], _number(call.args.get("task")))
@@ -207,6 +214,8 @@ def resume(call: Call) -> dict:
         raise Refused(f"{name(row)} is {row['status']}: only a task that needs them goes on "
                       "with what they say")
     answer = " ".join(str(call.args.get("answer") or "").split())
+    if call.run["read_outside"]:  # its words could be the outside content's: theirs alone
+        answer = " ".join(call.said.split())
     if not answer or len(answer) > MOST_CHARS:
         raise Refused("say what they said it needs, in a sentence or two, at most "
                       f"{MOST_CHARS:,} characters")
@@ -233,7 +242,8 @@ def theirs(conn: psycopg.Connection, scenario: Any, person: Person,
     see shows how it stands alone, never its words."""
     rows = conn.execute(
         "select t.number, t.task, t.status, t.progress, t.plan, t.last_error, t.answered, "
-        "t.deadline, t.tokens, t.token_budget, t.asked_at, t.updated_at, i.definition as agent, "
+        "t.result, t.partial, t.deadline, t.tokens, t.token_budget, t.asked_at, t.updated_at, "
+        "i.definition as agent, "
         "(select count(*) from tasks c where c.parent = t.id) as parts, "
         "(select count(*) from tasks c where c.parent = t.id and c.status = 'done') as done "
         "from tasks t join instances i on i.id = t.instance_id where t.owner = %s "
@@ -251,7 +261,7 @@ def theirs(conn: psycopg.Connection, scenario: Any, person: Person,
             "spent": f"{r['tokens']:,} of {r['token_budget']:,} tokens",
             "updated": r["updated_at"].date().isoformat(),
             **({"parts": f"{r['done']} of {r['parts']} done"} if r["parts"] else {})}
-        words = [r["task"], r["plan"], r["last_error"], r["answered"]]
+        words = [r["task"], r["plan"], r["last_error"], r["answered"], r["result"], r["partial"]]
         if not all(scenario.sees(person.id, k) for k in studio.named(scenario, words)):
             shown.append({**about, "withheld": True})
             continue
@@ -260,6 +270,10 @@ def theirs(conn: psycopg.Connection, scenario: Any, person: Person,
             about["why"] = r["last_error"]
         if answered := r["answered"]:
             about |= {"needed": answered.get("needed"), "said": answered.get("said")}
+        if (found := _found(r)) is not None:  # what it came to, as its agent said
+            about["found"] = found
+        if r["partial"]:
+            about["so far"] = r["partial"]
         shown.append(about)
     return shown
 
@@ -429,6 +443,18 @@ def _theirs(run: dict) -> bool:
     return one_to_one(run) and (run.get("trigger") or {}).get("kind") == "message"
 
 
+def _theirs_to_set(run: dict) -> bool:
+    """Offered where it can set what's theirs: never in a run that read content from outside,
+    which would only be refused."""
+    return _theirs(run) and not run.get("read_outside")
+
+
+def _found(task: dict) -> Any:
+    """What a task said it came to, as its agent wrote it, if it said."""
+    result = task.get("result")
+    return result.strip() or None if isinstance(result, str) else result
+
+
 def _sliced(run: dict) -> bool:
     return (run.get("trigger") or {}).get("kind") == KIND
 
@@ -456,16 +482,16 @@ TOOLS = {t.name: t for t in (
                                                "such as E-3: the one this takes the place of "
                                                "once they say yes. Say its task, and any days "
                                                "or time that change"}}},
-             offer, text_fields=("task",), offered=_theirs,
+             offer, text_fields=("task",), offered=_theirs_to_set,
              sourced=lambda result: {k: v for k, v in result.items() if k != "what"}),
     CoreTool("confirm_task",
              "Start a task you offered the person, once they've said yes to it.",
              {"type": "object", "properties": {"task": _TASK}}, confirm,
-             sourced=lambda result: result, offered=_theirs),
+             sourced=lambda result: result, offered=_theirs_to_set),
     CoreTool("list_tasks", "The person's tasks with you, and how each stands.",
              {"type": "object", "properties": {}}, mine, offered=_theirs,
              sourced=lambda result: [  # never what its agent wrote, nor why it's blocked
-                 {k: v for k, v in t.items() if k not in ("what", "why")}
+                 {k: v for k, v in t.items() if k not in ("what", "why", "found", "so far")}
                  for t in result["tasks"]]),
     CoreTool("cancel_task", "Stop one of the person's tasks, or a task they asked to repeat, "
              "such as E-3, when they ask you to.",
@@ -626,7 +652,7 @@ def notice(task: dict, agent: str) -> str:
     the agent's words, which only its own message carries."""
     what = f"{name(task)}, the task you asked the {agent} for"
     if task["status"] == "done":
-        return f"{what}, is done. Ask the {agent} what it found."
+        return f"{what}, is done. Ask the {agent} what it found, or see it on your tasks' page."
     if task["status"] == "blocked":
         return f"{what}, needs you before it can go on. Ask the {agent} what it needs."
     if task["status"] == "cancelled":
