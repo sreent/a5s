@@ -97,6 +97,24 @@ def second_factor(cfg: IdentityConfig, claims: dict[str, Any]) -> bool:
     return any(str(v) in accepted for v in values)
 
 
+def without_second_factor(doing: str) -> str:
+    """What a5s tells someone whose sign-in showed no second factor where the deployment asks
+    for one: what to do, and whom to ask, since only their organisation's sign-in policy, never
+    they, makes a sign-in show one. `doing` is what they meant to do, such as "approve"."""
+    return (f"a5s needs you to sign in with your second factor to {doing}, as this deployment "
+            "asks, and your sign-in showed none. If you weren't asked for one as you signed "
+            "in, signing in again won't change that: your organisation's sign-in policy decides "
+            "when it asks, so ask whoever runs sign-ins for your organisation, such as your IT "
+            "team, to ask for a second factor when you sign in to a5s.")
+
+
+def asked_level(cfg: IdentityConfig) -> str | None:
+    """The level a page asks the identity provider for as someone signs in to do what counts,
+    as acr_values, where the deployment's second factor is a level (acr), so the provider asks
+    them for it then. None where it's one amr shows, which only the provider's policy asks for."""
+    return " ".join(cfg.mfa[1]) if cfg.mfa and cfg.mfa[0] == "acr" else None
+
+
 class Verifier:
     """Checks tokens against the identity provider's published keys.
 

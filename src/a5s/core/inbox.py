@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import psycopg
 import yaml
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.concurrency import run_in_threadpool
@@ -59,12 +60,21 @@ from a5s.core import (
     registry,
     repeats,
     samples,
+    status,
     studio,
     tasking,
     topics,
 )
 from a5s.core.gateway import sanitize
-from a5s.core.identity import IdentityError, UnknownPerson, second_factor, signed_in, whose
+from a5s.core.identity import (
+    IdentityError,
+    UnknownPerson,
+    asked_level,
+    second_factor,
+    signed_in,
+    whose,
+    without_second_factor,
+)
 from a5s.core.releases import agent_owner
 from a5s.core.tasks import TaskError
 from a5s.core.teams import UNKNOWN, Refused
@@ -237,6 +247,21 @@ def create_app(gw: Any) -> FastAPI:
 
     app.add_middleware(Small)
     log.info("people reach a5s through %s", ", ".join(chats_on(gw)))
+
+    def counted(doing: str) -> None:
+        """Count a refusal for want of a second factor, for the status: the identity
+        provider's policy, not the person refused, decides when a sign-in asks for one."""
+        try:
+            with db.transaction(gw.url) as conn:
+                status.second_factor_refused(conn, doing)
+        except psycopg.Error:  # counting never stands in the refusal's way
+            log.warning("couldn't count a refusal for want of a second factor", exc_info=True)
+
+    def refusal(exc: approvals.Refused | proposals.Refused) -> HTTPException:
+        """A sign-in's refusal as the page gets it: one for want of a second factor counted."""
+        if exc.second_factor:
+            counted(exc.second_factor)
+        return HTTPException(exc.status, exc.reason)
 
     # Teams
 
@@ -618,8 +643,10 @@ def create_app(gw: Any) -> FastAPI:
             where = gw.identity.endpoints()
         except Exception as exc:  # the provider's down: the page says so, and nothing else
             raise HTTPException(503, "the identity provider can't be reached") from exc
+        level = asked_level(gw.identity.cfg)  # what counts asks the provider for its level
         return {"signin": {"authorization_endpoint": where["authorization_endpoint"],
-                           "client_id": gw.cfg.webchat_client_id, "scope": "openid profile"}}
+                           "client_id": gw.cfg.webchat_client_id, "scope": "openid profile",
+                           **({"acr_values": level} if level else {})}}
 
     def approver(version: str, body: Approval, authorization: str | None) -> tuple:
         """Who signed in to approve this version, what the provider signed, and the token."""
@@ -633,7 +660,7 @@ def create_app(gw: Any) -> FastAPI:
             person, claims = approvals.check(gw.identity, gw.scenario, gw.cfg.webchat_client_id,
                                              token, version, body.salt, time.time())
         except approvals.Refused as exc:
-            raise HTTPException(exc.status, exc.reason) from None
+            raise refusal(exc) from None
         return person, claims, token
 
     def proposal(conn: Any, version: str) -> tuple[dict, dict | None, str]:
@@ -685,7 +712,7 @@ def create_app(gw: Any) -> FastAPI:
                 approvals.record(conn, gw.scenario.name, version, person.id, token, body.salt,
                                  claims)
             except approvals.Refused as exc:
-                raise HTTPException(exc.status, exc.reason) from None
+                raise refusal(exc) from None
             ledger.append(conn, {
                 "kind": "admin", "action": "approve", "run": None, "instance": None, "acts_for": [],
                 "decision": "record",
@@ -748,7 +775,7 @@ def create_app(gw: Any) -> FastAPI:
                              "issuer": claims["iss"],
                              "token_sha256": hashlib.sha256(token.encode()).hexdigest()}})
         except approvals.Refused as exc:
-            raise HTTPException(exc.status, exc.reason) from None
+            raise refusal(exc) from None
         named = gw.scenario.person(person)
         return {"asked": body.action, "person": person, "name": named.name if named else None,
                 "by": who.name, "lasts": "ten minutes",
@@ -846,7 +873,7 @@ def create_app(gw: Any) -> FastAPI:
             person, claims = proposals.check(gw.identity, gw.scenario, gw.cfg.webchat_client_id,
                                              token, digests, body.decision, body.salt, time.time())
         except proposals.Refused as exc:
-            raise HTTPException(exc.status, exc.reason) from None
+            raise refusal(exc) from None
         with db.transaction(gw.url) as conn:
             rows = conn.execute("select * from proposals where scenario = %s and digest = any(%s) "
                                 "order by id", (gw.scenario.name, digests)).fetchall()
@@ -865,7 +892,7 @@ def create_app(gw: Any) -> FastAPI:
                 proposals.record(conn, gw.scenario.name, rows, body.decision, person.id, token,
                                  body.salt, claims, gw.clock(), reason)
             except proposals.Refused as exc:
-                raise HTTPException(exc.status, exc.reason) from None
+                raise refusal(exc) from None
             ledger.append(conn, {
                 "kind": "admin", "action": "decide", "run": None, "instance": None, "acts_for": [],
                 "decision": "record",
@@ -957,7 +984,7 @@ def create_app(gw: Any) -> FastAPI:
                                              token, samples.nonce(grades, salt), salt, time.time(),
                                              "grade these samples")
         except proposals.Refused as exc:
-            raise HTTPException(exc.status, exc.reason) from None
+            raise refusal(exc) from None
         if samples.GRADER not in person.roles:
             raise HTTPException(403, "grading is for the people who grade agents' work")
         hashed = approvals.HASHED + hashlib.sha256(token.encode()).hexdigest()
@@ -1266,8 +1293,8 @@ def create_app(gw: Any) -> FastAPI:
         if not audit.reads(person):
             raise HTTPException(403, "only an auditor, or assurance, reads the audit trail")
         if not second_factor(gw.identity.cfg, claims):
-            raise HTTPException(401, "sign in with your second factor too, as this deployment "
-                                     "asks for reading the audit trail")
+            counted("read the audit trail")
+            raise HTTPException(401, without_second_factor("read the audit trail"))
         return person
 
     def shown(conn: Any) -> audit.Shown:

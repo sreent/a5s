@@ -125,6 +125,8 @@ def sweep(conn: psycopg.Connection, now: datetime, scenario: str) -> dict[str, i
            f"now() - interval '{KEPT}'", (scenario,))  # scenario it no longer runs: nothing
     # syncs what it owed. Each person's day: only today's is asked after, in any time zone
     delete("days", "delete from spend where day < %s", ((now - timedelta(days=2)).date(),))
+    delete("refusals", "delete from second_factor_refusals where day < %s",  # counts alone
+           ((now - timedelta(days=7)).date(),))
     delete("days", "delete from digests where due_at < %s", (now - timedelta(days=3),))
     delete("requests", "delete from officer_requests where asked_at < now() - interval "
                        "'1 day'")  # the officer's, carried out or not (core/officer.py)

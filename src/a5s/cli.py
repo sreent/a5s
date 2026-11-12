@@ -41,6 +41,7 @@ from a5s.core import (
 from a5s.services.scheduler import Scheduler, remote_worker
 
 log = logging.getLogger("a5s")
+KEEP_ALIVE = 30  # seconds a server keeps an idle connection open, past its clients' 5
 
 
 def _officer_only(path: str) -> None:
@@ -563,7 +564,11 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command in ("gateway", "worker", "channels"):
         import uvicorn
 
-        uvicorn.run(_service(cfg, args.command), host=args.host, port=args.port)
+        # An idle connection stays open longer than any client of a5s's keeps one, httpx's 5
+        # seconds, so no client sends a call down one the server is just closing, which fails
+        # it after it left, and so isn't tried again (reach.py)
+        uvicorn.run(_service(cfg, args.command), host=args.host, port=args.port,
+                    timeout_keep_alive=KEEP_ALIVE)
     elif args.command == "scheduler":
         _scheduler(cfg)
     elif args.command == "dev":

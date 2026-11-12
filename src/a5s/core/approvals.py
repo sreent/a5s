@@ -33,7 +33,14 @@ import psycopg
 
 from a5s.contract import InstanceSettings, Person, Settings
 from a5s.core import registry, sealing
-from a5s.core.identity import IdentityError, UnknownPerson, Verifier, second_factor, whose
+from a5s.core.identity import (
+    IdentityError,
+    UnknownPerson,
+    Verifier,
+    second_factor,
+    whose,
+    without_second_factor,
+)
 from a5s.core.ledger import canonical
 from a5s.definitions import Definition
 
@@ -46,9 +53,10 @@ Directory = Callable[[str], Person | None]
 
 
 class Refused(Exception):
-    def __init__(self, status: int, reason: str):
+    def __init__(self, status: int, reason: str, second_factor: str | None = None):
         super().__init__(reason)
         self.status, self.reason = status, reason
+        self.second_factor = second_factor  # what was refused for want of one, to count it
 
 
 # What approving an instance's `asks` lets through, in words (core/asking.py)
@@ -383,8 +391,7 @@ def check(verifier: Verifier, scenario: Any, client_id: str, token: str, version
         raise Refused(401, "approving needs you to sign in again, from the last ten minutes, "
                            "not a sign-in your browser kept")
     if not second_factor(verifier.cfg, claims):
-        raise Refused(401, "approving needs you to sign in with your second factor too, as this "
-                           "deployment asks")
+        raise Refused(401, without_second_factor("approve"), "approve")
     try:
         person = whose(verifier, scenario, claims)
     except UnknownPerson as exc:

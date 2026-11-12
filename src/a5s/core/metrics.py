@@ -71,6 +71,9 @@ FIGURES: dict[str, tuple[str, str]] = {
     "a5s.questions.answered": ("{question}", "Questions agents answered each other, last day"),
     "a5s.questions.unanswered": ("{question}", "Questions agents left unanswered, last day"),
     "a5s.notebook.kept": ("{note}", "Notes agents keep"),
+    "a5s.tasks": ("{task}", "People's tasks by state, and those done or failed in the last day"),
+    "a5s.tasks.oldest_due": ("s", "How long the task due longest has waited"),
+    "a5s.sign_ins.refused": ("{sign-in}", "Refused for want of a second factor, last day"),
 }
 
 _provider: MeterProvider | None = None
@@ -136,6 +139,12 @@ def figures(status: dict[str, Any]) -> dict[str, list[tuple[float, dict[str, str
         "a5s.questions.answered": one(status["questions"]["answered"]),
         "a5s.questions.unanswered": one(status["questions"]["unanswered"]),
         "a5s.notebook.kept": one(status["notebook"]["kept"]),
+        "a5s.tasks": [(float(tasks[k]), {"a5s.status": k}) for k in (
+            "at_work", "due", "blocked", "lapsed", "done", "failed")] if (
+                tasks := status.get("tasks")) else one(0),
+        "a5s.tasks.oldest_due": one((status.get("tasks") or {}).get("oldest_due_seconds") or 0),
+        "a5s.sign_ins.refused": [(float(n), {"a5s.action": doing}) for doing, n in sorted(
+            ((status.get("sign_ins") or {}).get("refused") or {}).items())] or one(0),
     }
 
 

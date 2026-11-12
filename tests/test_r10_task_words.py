@@ -194,3 +194,49 @@ def test_a_read_with_the_auditors_own_sign_in_is_theirs(stack, approving, provid
     assert mine.status_code == 200 and refused.status_code == 403
     [read] = [e for e in stack.ledger() if e["kind"] == "audit"]
     assert (read["args"]["by"], read["args"]["through"]) == (AUDITOR, "their sign-in")
+
+
+# C8: a decider refused for want of a second factor is told whom to ask, and a5s counts it
+
+def test_a_decider_refused_for_a_second_factor_is_told_whom_to_ask_and_its_counted(
+        stack, approving, provider):
+    from a5s.core import status
+    from test_mfa import PASSWORD, asking
+    from test_proposals import asked, decide, held
+
+    asking(stack)  # amr:mfa, as the chart asks of Entra ID
+    asked(stack)
+    [p] = held(stack)
+    provider.claims = PASSWORD  # the organisation's policy didn't ask her for one
+    refusals = [decide(approving, provider, [p["digest"]]) for _ in range(2)]
+    assert all(r.status_code == 401 for r in refusals)
+    said = refusals[0].json()["detail"]
+    assert "signing in again won't change that" in said and "your IT team" in said
+    with stack.client() as c:
+        now = c.get("/status").json()
+    assert now["sign_ins"]["refused"] == {"approve": 2}
+    assert "Refused for want of a second factor: approve 2" in status.told(now)
+
+
+def test_pages_ask_the_provider_for_the_level_what_counts_needs(stack, approving):
+    from dataclasses import replace
+
+    import httpx
+
+    assert "acr_values" not in httpx.get(f"{approving}/approve/config", timeout=30).json()[
+        "signin"]  # amr's, which only the provider's own policy asks for
+    stack.gateway.identity.cfg = replace(stack.gateway.identity.cfg, mfa=("acr", ("gold",)))
+    signin = httpx.get(f"{approving}/approve/config", timeout=30).json()["signin"]
+    assert signin["acr_values"] == "gold"
+
+
+def test_the_status_counts_tasks(stack):
+    from a5s.core import status
+    from test_task_runs import a_task
+
+    a_task(stack)
+    a_task(stack)
+    with stack.client() as c:
+        now = c.get("/status").json()
+    assert (now["tasks"]["due"], now["tasks"]["at_work"], now["tasks"]["blocked"]) == (2, 0, 0)
+    assert "Tasks: 0 at work, 2 due" in status.told(now)

@@ -99,6 +99,7 @@ from a5s.core.identity import (
     Verifier,
     second_factor,
     whose,
+    without_second_factor,
 )
 from a5s.core.matrix import Matrix
 from a5s.core.policy import Decision, PolicyEngine
@@ -1121,6 +1122,14 @@ def create_app(gw: Gateway) -> FastAPI:
         if not secrets.compare_digest(authorization, f"Bearer {gw.cfg.service_token}"):
             raise HTTPException(401, "service token required")
 
+    def counted(doing: str) -> None:
+        """Count a refusal for want of a second factor, for the status."""
+        try:
+            with db.transaction(gw.url) as conn:
+                status.second_factor_refused(conn, doing)
+        except psycopg.Error:  # counting never stands in the refusal's way
+            log.warning("couldn't count a refusal for want of a second factor", exc_info=True)
+
     def run_token(
         authorization: str | None = Header(default=None),
         x_api_key: str | None = Header(default=None),
@@ -1865,8 +1874,8 @@ def create_app(gw: Gateway) -> FastAPI:
             except IdentityError as exc:
                 raise HTTPException(401, f"the sign-in doesn't check out: {exc}") from None
             if not second_factor(gw.identity.cfg, claims):
-                raise HTTPException(401, "sign in with your second factor too, as this "
-                                         "deployment asks for reading the audit trail")
+                counted("read the audit trail")
+                raise HTTPException(401, without_second_factor("read the audit trail"))
             through = "their sign-in"
         if not audit.reads(gw.scenario.person(by)):
             raise HTTPException(403, f"only an auditor, or assurance, reads the audit trail, and "
@@ -2085,6 +2094,8 @@ def create_app(gw: Gateway) -> FastAPI:
                         asked = officer.take(own, gw.identity, gw.scenario,
                                              gw.cfg.webchat_client_id, action, person)
             except approvals.Refused as exc:
+                if exc.second_factor:
+                    counted(exc.second_factor)
                 raise HTTPException(exc.status, exc.reason) from None
             return asked["officer"], {"verified": "a sign-in to ask for this alone",
                                       "request": str(asked["id"]), "issuer": asked["issuer"],
@@ -2116,8 +2127,8 @@ def create_app(gw: Gateway) -> FastAPI:
             if body.by and body.by != person:
                 raise HTTPException(403, f"you're signed in as {person}, not {body.by}")
             if loosens and not second_factor(gw.identity.cfg, claims):
-                raise HTTPException(401, "this needs you to sign in with your second factor "
-                                         "too, as this deployment asks")
+                counted("resume")
+                raise HTTPException(401, without_second_factor("do this"))
             return person, "verified"
         if not gw.cfg.development:
             raise HTTPException(503, "suspending and resuming need sign-in: set A5S_OIDC_ISSUER")

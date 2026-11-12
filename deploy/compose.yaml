@@ -105,7 +105,12 @@ services:
       A5S_SERVICE_TOKEN: ${A5S_SERVICE_TOKEN:?set A5S_SERVICE_TOKEN}
       A5S_GATEWAY_URL: http://gateway:8700
       A5S_WORKER_URL: http://worker:8702  # the shared pool, for any agent without its own
-      A5S_WORKER_URLS: assistant=http://worker-assistant:8702,watcher=http://worker-watcher:8702
+      # The two agents with pools of their own: the sample's unless these name others, such
+      # as A5S_POOL_ASSISTANT=mdg-assistant and A5S_POOL_WATCHER=mdg-watcher for master data
+      A5S_WORKER_URLS: ${A5S_POOL_ASSISTANT:-assistant}=http://worker-assistant:8702,${A5S_POOL_WATCHER:-watcher}=http://worker-watcher:8702
+      # How many runs the scheduler works on at once in each, such as assistant=8: 4 unless
+      # said, and of those, one kept for people's messages, which work that falls due never takes
+      A5S_WORKER_SLOTS: ${A5S_WORKER_SLOTS:-}
     networks: [data, work, work-assistant, work-watcher]
     depends_on: [gateway, worker, worker-assistant, worker-watcher]
 
@@ -131,25 +136,25 @@ services:
     stop_grace_period: 600s
     environment:
       A5S_GATEWAY_URL: http://gateway:8700
-      A5S_WORKER_POOLED: assistant,watcher
+      A5S_WORKER_POOLED: ${A5S_POOL_ASSISTANT:-assistant},${A5S_POOL_WATCHER:-watcher}
     networks: [work]
 
-  worker-assistant:  # the assistant's own pool
+  worker-assistant:  # the assistant's own pool, or A5S_POOL_ASSISTANT's
     <<: *a5s
     command: ["worker", "--host", "0.0.0.0"]
     stop_grace_period: 600s
     environment:
       A5S_GATEWAY_URL: http://gateway:8700
-      A5S_WORKER_AGENTS: assistant
+      A5S_WORKER_AGENTS: ${A5S_POOL_ASSISTANT:-assistant}
     networks: [work-assistant]
 
-  worker-watcher:  # the watcher's own pool
+  worker-watcher:  # the watcher's own pool, or A5S_POOL_WATCHER's
     <<: *a5s
     command: ["worker", "--host", "0.0.0.0"]
     stop_grace_period: 600s
     environment:
       A5S_GATEWAY_URL: http://gateway:8700
-      A5S_WORKER_AGENTS: watcher
+      A5S_WORKER_AGENTS: ${A5S_POOL_WATCHER:-watcher}
     networks: [work-watcher]
 
 networks:

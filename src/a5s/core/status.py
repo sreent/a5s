@@ -32,6 +32,13 @@ def outcome(found: str | None) -> str:
     return found if found in OUTCOMES else "other"
 
 
+
+def second_factor_refused(conn: psycopg.Connection, doing: str) -> None:
+    """Count a refusal of what counts for want of a second factor, by what it was."""
+    conn.execute("insert into second_factor_refusals (day, doing, n) values (current_date, %s, 1) "
+                 "on conflict (day, doing) do update set n = second_factor_refusals.n + 1",
+                 (doing[:40],))
+
 def report(conn: psycopg.Connection, breakers: list[str], keys: tuple[str, ...] = (),
            rubber_stamps: bool = False,
            sign_ins: tuple[str, tuple[str, ...]] | None | bool = False) -> dict[str, Any]:
@@ -114,6 +121,24 @@ def report(conn: psycopg.Connection, breakers: list[str], keys: tuple[str, ...] 
     on_time = chased["on_time"] / chased["due"] if chased["due"] else None
     missing = conn.execute(  # whom the directory no longer names, not yet archived
         "select count(*) as n from departures where archived_at is null").fetchone()
+    tasked = conn.execute(  # people's tasks (core/tasks.py), their parts apart
+        "select count(*) filter (where status = 'running' and lease_expires_at > now()) "
+        "  as at_work, "
+        "count(*) filter (where status = 'running' and lease_expires_at <= now()) as lapsed, "
+        "count(*) filter (where status in ('queued', 'waiting') and (not_before is null "
+        "  or not_before <= now())) as due, "
+        "extract(epoch from now() - min(coalesce(not_before, updated_at)) filter ("
+        "  where status in ('queued', 'waiting') and (not_before is null "
+        "  or not_before <= now()))) as oldest_due, "
+        "count(*) filter (where status = 'blocked') as blocked, "
+        "count(*) filter (where status = 'done' and updated_at > now() - interval '1 day') "
+        "  as done, "
+        "count(*) filter (where status = 'failed' and updated_at > now() - interval '1 day') "
+        "  as failed "
+        "from tasks where parent is null").fetchone()
+    refused = conn.execute(  # what counts, refused for want of a second factor
+        "select doing, sum(n) as n from second_factor_refusals "
+        "where day >= current_date - 1 group by doing order by doing").fetchall()
     return {
         "queue": {"waiting": queue["waiting"], "oldest_seconds": _number(queue["oldest"])},
         "runs": _outcomes(runs),
@@ -138,7 +163,12 @@ def report(conn: psycopg.Connection, breakers: list[str], keys: tuple[str, ...] 
                     "rubber_stamps": samples.rubber_stamps(conn) if rubber_stamps else None},
         "unsealed": unsealed,
         "sign_ins": None if sign_ins is False else {  # what counts, with a second factor
-            "second_factor": f"{sign_ins[0]}:{','.join(sign_ins[1])}" if sign_ins else None},
+            "second_factor": f"{sign_ins[0]}:{','.join(sign_ins[1])}" if sign_ins else None,
+            "refused": {r["doing"]: int(r["n"]) for r in refused}},
+        "tasks": {"at_work": tasked["at_work"], "lapsed": tasked["lapsed"], "due": tasked["due"],
+                  "oldest_due_seconds": _number(tasked["oldest_due"]),
+                  "blocked": tasked["blocked"], "done": tasked["done"],
+                  "failed": tasked["failed"]},
         "missing": missing["n"],
         "not_active": [dict(r) for r in stopped],
         "breakers_open": breakers,
@@ -199,6 +229,7 @@ def told(status: dict[str, Any]) -> str:
             + f", {status['questions']['unanswered']} not"
             if status["questions"]["answered"] or status["questions"]["unanswered"]
             else "none") + ".",
+        *([_tasks_told(status["tasks"])] if status.get("tasks") else []),
         "  Notebook: " + f"{status['notebook']['kept']} notes"
         + (f", {status['notebook']['lapsed']} let go in the last day as their records changed"
            if status["notebook"]["lapsed"] else "") + ".",
@@ -244,6 +275,10 @@ def told(status: dict[str, Any]) -> str:
             "  Approvals, decisions, grades and the officer's requests aren't checked for a "
             "second factor: set A5S_OIDC_MFA, such as amr:mfa (docs/administration.md).")]
           if status.get("sign_ins") else []),
+        *([("  Refused for want of a second factor: "
+            + _listed(status["sign_ins"]["refused"]) + ". The identity provider's policy, "
+            "not the people refused, decides when a sign-in asks for one (docs/runbooks.md).")]
+          if (status.get("sign_ins") or {}).get("refused") else []),
         "  Urgent messages held for a batch: " + (
             f"{status['urgent_held']['messages']} for {status['urgent_held']['people']} "
             + ("person" if status["urgent_held"]["people"] == 1 else "people")
@@ -265,6 +300,16 @@ def _verdict(met: bool | None) -> str:
 
 def _number(value: Any) -> float | None:
     return None if value is None else float(value)
+
+
+def _tasks_told(tasks: dict[str, Any]) -> str:
+    oldest = tasks["oldest_due_seconds"]
+    return ("  Tasks: " + f"{tasks['at_work']} at work, {tasks['due']} due"
+            + (f", the oldest for {oldest:.0f}s" if oldest and tasks["due"] else "")
+            + f", {tasks['blocked']} waiting on their owners"
+            + (f", {tasks['lapsed']} whose slice's lease lapsed, for the runs' sweep"
+               if tasks["lapsed"] else "")
+            + f"; in the last day {tasks['done']} done and {tasks['failed']} failed.")
 
 
 def _listed(counts: dict[str, int]) -> str:

@@ -36,6 +36,7 @@ async function signIn(signin, action, person) {
     state: pending.state, nonce: pending.nonce, code_challenge: await sha256(pending.verifier),
     code_challenge_method: "S256", max_age: "0",
   };
+  if (signin.acr_values) query.acr_values = signin.acr_values;  // the level what counts needs
   for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
   location.assign(url.toString());
 }

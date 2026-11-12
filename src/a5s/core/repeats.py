@@ -52,11 +52,17 @@ def number(given: Any) -> int | None:
     return int(digits) if digits.isdigit() else None
 
 
+MOST_TIMES = 4  # the most times a day a repeat comes round
+
+
 def when(days: Any, at: Any) -> Schedule:
     """When a repeat comes round, as a release's schedules say it: days such as monday, a list
     of them, weekdays or every day, and a time, such as "09:00". ValueError if it isn't one."""
     if isinstance(days, str) and days.strip().lower() in ("every day", "daily", "day", "days"):
         days = list(DAYS)
+    if isinstance(at, list) and len(set(map(str, at))) > MOST_TIMES:
+        raise ValueError(f"a repeat comes round at most {MOST_TIMES} times a day: say up to "
+                         f"{MOST_TIMES} times, such as \"09:00\"")
     try:
         return Schedule(name="repeat", task="repeat", at=at or "09:00", days=days or "weekdays")
     except ValidationError:

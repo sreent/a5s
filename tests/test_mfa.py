@@ -109,7 +109,7 @@ def test_the_status_says_whether_what_counts_needs_one(stack, approving):
         unchecked = c.get("/status").json()
         asking(stack)
         checked = c.get("/status").json()
-    assert unchecked["sign_ins"] == {"second_factor": None}
+    assert unchecked["sign_ins"] == {"second_factor": None, "refused": {}}
     assert "aren't checked for a second factor: set A5S_OIDC_MFA" in status.told(unchecked)
-    assert checked["sign_ins"] == {"second_factor": "amr:mfa"}
+    assert checked["sign_ins"] == {"second_factor": "amr:mfa", "refused": {}}
     assert "count with a second factor only: amr:mfa" in status.told(checked)
