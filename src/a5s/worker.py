@@ -166,6 +166,11 @@ class BudgetSpent(Exception):
     """The core stopped the run's model calls, because a budget is spent (core/budgets.py)."""
 
 
+class TaskStopped(Exception):
+    """The core stopped a task's run, because its task was cancelled, or another run took
+    it over (core/tasking.py)."""
+
+
 class WrongPool(Exception):
     """The run is another worker pool's: its agent has a pool of its own, or isn't this one's."""
 
@@ -177,6 +182,8 @@ def stopped(exc: Exception) -> Exception | None:
         return ModelDown(str(exc))
     if status == 429 and "budget" in str(exc):
         return BudgetSpent(str(exc))
+    if status == 403 and "stop now" in str(exc):
+        return TaskStopped(str(exc))
     return None
 
 
@@ -294,6 +301,9 @@ def create_app(gateway_url: str, agents: frozenset[str] = frozenset(),
                                                           "detail": str(exc)[:200]})
         except BudgetSpent as exc:
             return JSONResponse(status_code=429, content={"error": "budget_spent",
+                                                          "detail": str(exc)[:200]})
+        except TaskStopped as exc:
+            return JSONResponse(status_code=409, content={"error": "task_stopped",
                                                           "detail": str(exc)[:200]})
 
     return app

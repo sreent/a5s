@@ -26,9 +26,11 @@ from psycopg.types.json import Jsonb
 from pydantic import ValidationError
 
 from a5s.contract import Person, Scenario
-from a5s.core import ledger, schedules
+from a5s.core import ledger, registry, schedules
 from a5s.core.tasks import ENDED, TaskError, TaskService, TaskSpec
 from a5s.definitions import DAYS, Schedule
+
+WAITS = timedelta(days=1)  # an offer waits this long for its owner's yes, then lapses
 
 MOST = 5  # the most repeats someone may have with an agent at once, offered or going [TBC]
 PREFIX = "E-"
@@ -112,9 +114,10 @@ def offer(conn: psycopg.Connection, person: Person, instance: str, run: str, ask
                 "offered": "you offered this already: if they've said yes, start it with "
                            "confirm_task"}
     going = conn.execute("select count(*) as n from task_repeats where owner = %s and "
-                         "instance_id = %s and status in ('offered', 'active') and "
-                         "id is distinct from %s",  # the one it changes makes way for it
-                         (person.id, instance, replaces)).fetchone()["n"]
+                         "instance_id = %s and (status = 'active' or (status = 'offered' "
+                         "and asked_at > %s)) and id is distinct from %s",  # an offer that
+                         (person.id, instance, asked_at - WAITS, replaces)  # lapsed, and the
+                         ).fetchone()["n"]  # one it changes, make way for it
     if going >= MOST:
         raise TaskError(f"they have {MOST} repeating tasks with you already: they stop one first")
     reads = [dict(r) for r in conn.execute(
@@ -189,12 +192,14 @@ def stop(conn: psycopg.Connection, person: Person, wanted: Any, now: datetime,
 def listed(conn: psycopg.Connection, person: Person, instance: str | None = None) -> list[dict]:
     """Someone's repeats, with an agent or with every one, as they stand."""
     rows = conn.execute(
-        "select r.*, i.definition as agent, t.number as last_number, t.status as last_status "
+        "select r.*, i.definition as agent, t.number as last_number, t.status as last_status, "
+        "r.status = 'offered' and r.asked_at <= now() - %s as lapsed "
         "from task_repeats r join instances i on i.id = r.instance_id left join tasks t on "
         "t.id = r.last_task where r.owner = %s and (%s::text is null or r.instance_id = %s) "
-        "order by r.number desc limit 20", (person.id, instance, instance)).fetchall()
+        "order by r.number desc limit 20", (WAITS, person.id, instance, instance)).fetchall()
     return [{"repeat": name(r), "agent": r["agent"], "what": r["task"], "when": said(_of(r)),
-             "status": r["status"],
+             "status": "offered, and lapsed: offer it again if they still want it"
+                       if r["lapsed"] else r["status"],
              **({"last task": f"T-{r['last_number']}, {r['last_status']}"}
                 if r["last_number"] else {})} for r in rows]
 
@@ -207,12 +212,22 @@ def due(conn: psycopg.Connection, scenario: Scenario, definitions: dict[str, Any
     let go. The tasks it made."""
     made = []
     for row in conn.execute(
-            "select r.*, i.definition from task_repeats r join instances i on "
-            "i.id = r.instance_id where r.status = 'active' and i.status = 'active' "
-            "order by r.number for update of r skip locked").fetchall():
+            "select r.*, i.definition, i.status as instance_status, i.serves from task_repeats r "
+            "join instances i on i.id = r.instance_id where r.status = 'active' and "
+            "i.status <> 'suspended' order by r.number for update of r skip locked").fetchall():
         owner = scenario.person(row["owner"])
         tasks_of = getattr(definitions.get(row["definition"]), "tasks", None)
-        if owner is None or tasks_of is None:  # gone, or the agent takes on no tasks now
+        why = ("its agent was retired" if row["instance_status"] != "active"
+               else "its agent takes on no tasks now" if tasks_of is None
+               else "its agent no longer serves them"
+               if owner is not None and not registry.serving(scenario, row["serves"], owner.id)
+               else None)
+        if why:  # it can't make a task again: it stops, so what it kept goes in time
+            conn.execute("update task_repeats set status = 'stopped', updated_at = %s "
+                         "where id = %s", (now, row["id"]))
+            _record(conn, row, "stop", why=why)
+            continue
+        if owner is None:  # gone from the directory: archiving puts what's theirs away
             continue
         at = schedules.due_now(_of(row), schedules.zone(scenario, row["owner"]), now)
         if at is None or (row["last_due"] and at <= row["last_due"]):

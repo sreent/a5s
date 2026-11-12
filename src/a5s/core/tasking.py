@@ -49,6 +49,7 @@ HELD = "a-task-writes-once-it-ends"  # the policy's id when a task's run would w
 MOST_CHARS = 2000  # the most a task's words may be
 MOST_PARTIAL = 4000  # the most of what its earlier slices found that a run is shown, in characters
 SAID = ("done", "blocked", "waiting")  # what a slice may say it came to
+KEPT = {"status": "kept"}  # what a run said that kept its work as it went, and no more
 LEAST_PART = 5_000  # the fewest tokens a part of a task may have to spend [TBC]
 
 
@@ -91,7 +92,10 @@ def offer(call: Call) -> dict:
         "select pg_advisory_xact_lock(hashtextextended(%s, 0))",
         (f"task-offer/{call.run['id']}/{person.id}",))
     instead = call.args.get("instead_of")
-    if call.args.get("days") or call.args.get("at") or instead:  # again and again: a repeat
+    if call.args.get("at") and not call.args.get("days") and not instead:
+        raise Refused("a time is for a task done again and again: give its days too. A task "
+                      "done once starts as soon as they say yes, and can't wait for a time")
+    if call.args.get("days") or instead:  # again and again: a repeat
         try:  # in place of one of theirs, to change it: as that one comes round, unless said
             old = repeats.theirs(call.conn, person, call.run["id"], instead) if instead else None
             found = repeats.offer(call.conn, person, call.run["id"], call.run["run"],
@@ -211,8 +215,11 @@ def resume(call: Call) -> dict:
     if row is None:
         raise Refused(f"{call.args['task']} isn't one of their tasks with you")
     if row["status"] != "blocked":
-        raise Refused(f"{name(row)} is {row['status']}: only a task that needs them goes on "
-                      "with what they say")
+        why = f", as {row['last_error']}" if row["status"] == "failed" and row["last_error"] \
+            else ""
+        raise Refused(f"{name(row)} is {row['status']}{why}: only a task waiting for them takes "
+                      "their answer" + (". Offer it again, if they still want it"
+                                        if row["status"] in ENDED else ""))
     answer = " ".join(str(call.args.get("answer") or "").split())
     if call.run["read_outside"]:  # its words could be the outside content's: theirs alone
         answer = " ".join(call.said.split())
@@ -311,6 +318,8 @@ def keep(call: Call) -> dict:
     stopped, refused = _tasks(call).kept(call.conn, task_id, lease, change)
     if refused:
         raise Refused(refused)
+    call.conn.execute("update runs set task_result = coalesce(task_result, %s) where id = %s",
+                      (Jsonb(KEPT), call.run["run"]))  # it got somewhere, if its run ends well
     if stopped:  # what it did is kept: it stops, and writes to nobody
         return {"stop": f"{stopped}: stop now, and write to nobody"}
     return {"kept": {k: v for k, v in change.items() if k != "partial"}}
@@ -476,7 +485,8 @@ TOOLS = {t.name: t for t in (
                  "days": {"description": "Only if they want it done again and again: its days, "
                                          "such as monday, a list of them, weekdays or every day"},
                  "at": {"type": "string",
-                        "description": "And its time, in their time zone, such as 09:00"},
+                        "description": "Only with days: its time, in their time zone, such as "
+                                       "09:00. A task done once starts on their yes"},
                  "instead_of": {"type": "string",
                                 "description": "Only to change one of their repeating tasks, "
                                                "such as E-3: the one this takes the place of "
@@ -599,6 +609,23 @@ def whole(conn: psycopg.Connection, task: dict) -> dict | None:
                         ).fetchone() if task.get("parent") else None
 
 
+def stopped(conn: psycopg.Connection, run: dict) -> str | None:
+    """Why a task's run must stop at its next call to the core, if it must: its task was
+    cancelled or has ended, or another run took it over. None for any other run."""
+    trigger = run.get("trigger") or {}
+    if trigger.get("kind") != KIND or not trigger.get("lease"):
+        return None
+    row = conn.execute("select status, lease_id::text as lease from tasks where id = %s",
+                       (str(trigger["task"]),)).fetchone()
+    if row is None:
+        return "the task is gone: stop now, and write to nobody"
+    if row["status"] != "running":
+        return f"the task is {row['status']}: stop now, and write to nobody"
+    if row["lease"] != str(trigger["lease"]):
+        return "another run has taken the task over: stop now, and write to nobody"
+    return None
+
+
 def held(conn: psycopg.Connection, run: dict) -> str | None:
     """Why a task's run may not write to its owner now, if it may not: a part of a task
     writes to nobody, and a task's own run only once it has said it's done or needs them."""
@@ -632,12 +659,13 @@ def end(conn: psycopg.Connection, tasks: TaskService, run_id: str, run: dict,
     if trigger.get("kind") != KIND or not trigger.get("lease"):
         return None
     carry(conn, str(trigger["task"]), run_id)
-    said = run.get("task_result")
-    if said is None and outcome.startswith("done"):
-        said = {"status": "waiting"}
+    said = run.get("task_result")  # a run that kept nothing, nor said it's done, failed
+    if said == KEPT:  # it kept its work as it went: it waits to go on, if its run ended well
+        said = {"status": "waiting"} if outcome.startswith("done") else None
     try:
         return tasks.end(str(trigger["task"]), str(trigger["lease"]), said,
-                         None if said else f"its run ended as {outcome}",
+                         None if said else "its run said nothing of the task"
+                         if outcome.startswith("done") else f"its run ended as {outcome}",
                          spent=int(run.get("tokens") or 0), within=conn)
     except TaskError:  # it's gone, as an erasure takes it
         return None

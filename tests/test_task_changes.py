@@ -2,6 +2,8 @@
 that stopped part way, after asking for a change, leaves the next to ask for it again, and a5s
 neither holds it twice nor makes it twice, and gives a system the same key for it each time."""
 
+from datetime import timedelta
+
 from a5s import db
 from a5s.core import counts
 from test_proposals import MOVE, held
@@ -24,6 +26,8 @@ def test_a_change_made_in_one_slice_is_made_already_for_the_next(stack):
     with stack.client() as c:  # two slices of the task, one after the other
         first = c.post("/runs", json={"instance": "assistant-finance", "trigger": trigger})
         c.post(f"/runs/{first.json()['run']}/close", json={"outcome": "done"}).raise_for_status()
+        # it said nothing of the task, so the next waits a while
+        stack.at((stack.gateway.clock() + timedelta(minutes=5)).isoformat())
         second = c.post("/runs", json={"instance": "assistant-finance", "trigger": trigger})
     first, second = first.json()["run"], second.json()["run"]
     with db.transaction(stack.admin) as conn:

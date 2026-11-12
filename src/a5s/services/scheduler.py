@@ -40,7 +40,7 @@ from a5s.config import Config
 from a5s.contract import INSTANCE_APPROVER, PART_OWNER, Scenario
 from a5s.core import groups, registry, tasking
 from a5s.services import context, summaries
-from a5s.worker import BudgetSpent, ModelDown, run_agent
+from a5s.worker import BudgetSpent, ModelDown, TaskStopped, run_agent
 
 log = logging.getLogger(__name__)
 # Seconds the scheduler waits for a worker's run: longer than the run may take on the worker
@@ -117,6 +117,8 @@ def remote_worker(url: str, within: float = reach.WITHIN) -> Worker:
             raise ModelDown(response.json().get("detail", ""))
         if response.status_code == 429 and response.json().get("error") == "budget_spent":
             raise BudgetSpent(response.json().get("detail", ""))
+        if response.status_code == 409 and response.json().get("error") == "task_stopped":
+            raise TaskStopped(response.json().get("detail", ""))
         if response.status_code == 409 and response.json().get("error") == "wrong_pool":
             raise RuntimeError(f"the worker pool at {url} refused the run: "
                                f"{response.json().get('detail', '')}")
@@ -563,6 +565,8 @@ class Scheduler:
             outcome = "model unavailable"
         except BudgetSpent:  # it waits, for the next day's budget
             outcome = "budget spent"
+        except TaskStopped:  # its task was cancelled, or taken over, as it worked
+            outcome = "stopped"
         except Exception:
             log.exception("run %s failed", run)
         finally:

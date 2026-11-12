@@ -882,6 +882,9 @@ class Gateway:
         if row["status"] not in ("queued", "waiting", "running"):
             opening.reasons.append(f"it's {row['status']}")
             opening.used = True
+        elif row["status"] != "running" and row["not_before"] and row["not_before"] > now:
+            opening.reasons.append("it waits a while before its next slice, after the last one")
+            opening.used = True  # it waits already, however its run was asked for
         if self.scenario.person(row["owner"]) is None:
             opening.reasons.append("the directory doesn't know whose it is")
         return opening
@@ -1278,13 +1281,20 @@ def create_app(gw: Gateway) -> FastAPI:
     def tasks_sweep() -> list[dict]:
         """The tasks whose next slice is due, each for the scheduler to work on, as a run of
         its instance's (core/tasking.py)."""
+        sends: list[int | None] = []
         with db.transaction(gw.url) as conn:  # each repeat whose time has come, a task first
             repeats.due(conn, gw.scenario, gw.definitions, gw.tasks, gw.clock())
+            for ended in gw.tasks.lapse(gw.clock(), within=conn, unserved=lambda task: (
+                    None if gw.scenario.person(task["owner"]) is None  # archiving's, if gone
+                    or registry.serving(gw.scenario, task["serves"], task["owner"])
+                    else "its agent no longer serves them")):  # past its deadline, its agent
+                sends += tell_of_task(conn, ended)  # retired, or not theirs: its owner hears
             due = gw.tasks.due(gw.clock(), within=conn)
             rows = conn.execute(
                 "select t.id::text as id, t.instance_id, t.owner, i.definition from tasks t "
                 "join instances i on i.id = t.instance_id where t.id = any(%s::uuid[]) "
                 "and i.status = 'active' order by t.updated_at, t.number", (due,)).fetchall()
+        push(sends)
         return [{"kind": tasking.KIND, "task": r["id"], "instance": r["instance_id"],
                  "agent": r["definition"], "owner": r["owner"]} for r in rows]
 
@@ -2280,6 +2290,8 @@ def create_app(gw: Gateway) -> FastAPI:
                 if row["trigger"].get("kind") in OWN_RUNS:
                     decision = Decision(False, ("a5s-runs-call-no-tools",), explanations=(
                         "a5s's own runs, such as keeping a summary, call no tools",))
+                if why := tasking.stopped(conn, row):  # cancelled, as a suspension stops runs
+                    decision = Decision(False, ("tasks-stop-when-stopped",), explanations=(why,))
                 deciding = holding(decision, records, requested)
                 if isinstance(deciding, str):  # nobody may decide it, or nothing can here
                     decision = Decision(False, ("someone-else-decides",), explanations=(deciding,))
@@ -2798,7 +2810,8 @@ def create_app(gw: Gateway) -> FastAPI:
                 decision = Decision(False, ("a5s-runs-write-to-nobody",), explanations=(
                     "a5s's own runs, such as keeping a summary, write to nobody",))
             elif row["trigger"].get("kind") == tasking.KIND and (
-                    why := tasking.held(conn, row)):  # a part, or a task still at work
+                    why := tasking.stopped(conn, row) or tasking.held(conn, row)):  # a part,
+                # a task still at work, or one cancelled meanwhile
                 decision = Decision(False, (tasking.HELD,), explanations=(why,))
             elif row["trigger"].get("kind") == asking.KIND:
                 decision = Decision(False, ("answers-go-to-the-asker",), explanations=(
@@ -3466,6 +3479,8 @@ def create_app(gw: Gateway) -> FastAPI:
                 row["trigger"].get("kind"), row["tokens"], gw.clock(), row["trigger"])
             if refusal:
                 decision = Decision(False, ("agents-use-their-own-tools",), explanations=(refusal,))
+            elif why := tasking.stopped(conn, row):  # its task was cancelled meanwhile
+                decision = Decision(False, ("tasks-stop-when-stopped",), explanations=(why,))
             elif spent:
                 decision = Decision(False, ("budgets",), explanations=(spent,))
             elif (found := gw.settings_in_force(conn))[0] is None:
