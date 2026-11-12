@@ -52,9 +52,10 @@ done
 printf 'A5S_ANCHOR_STORE=s3://a5s-ledger/%s\n' "$folder" >> "$env_file"
 printf 'A5S_SCENARIO=%s\nA5S_SCENARIO_DIR=/app/scenarios/%s\nA5S_AGENTS_DIR=/app/scenarios/%s/agents\n' \
   "$class" "$folder" "$folder" >> "$env_file"
-mapfile -t agents < <(ls "scenarios/$folder/agents")  # the first two, in pools of their own
-printf 'A5S_POOL_ASSISTANT=%s\n' "${agents[0]}" >> "$env_file"
-if [ "${#agents[@]}" -gt 1 ]; then printf 'A5S_POOL_WATCHER=%s\n' "${agents[1]}" >> "$env_file"; fi
+first=$(ls "scenarios/$folder/agents" | sed -n 1p)  # its first two agents, in pools of
+second=$(ls "scenarios/$folder/agents" | sed -n 2p)  # their own
+printf 'A5S_POOL_ASSISTANT=%s\n' "$first" >> "$env_file"
+if [ -n "$second" ]; then printf 'A5S_POOL_WATCHER=%s\n' "$second" >> "$env_file"; fi
 python3 deploy/matrix/configure.py "$work/matrix" >> "$env_file"
 compose() { docker compose -p "a5s-$folder" --env-file "$env_file" -f deploy/compose.yaml \
               -f deploy/compose.stub.yaml -f deploy/compose.storage.yaml \
