@@ -119,7 +119,7 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 
 **Shows as:** the status's line of refusals for want of a second factor, by what was refused: approving, deciding, grading, the officer's requests, reading the audit trail.
 
-1. Only the identity provider's policy makes a sign-in show a second factor: the people refused can't, and signing in again won't, which a5s tells them, with whom to ask. Check the policy that covers a5s's app asks for one, such as an Entra ID Conditional Access policy requiring multifactor authentication for it, and that the claim and values in `A5S_OIDC_MFA` are the ones its sign-ins show, such as `amr:mfa`.
+1. Only the identity provider's policy makes a sign-in show a second factor: the people refused can't, and signing in again won't, which a5s tells them, with whom to ask. Check that the provider's policy for a5s's client asks for one, such as a Conditional Access policy in Entra ID, a sign-on policy in Okta or a step-up flow in Keycloak, and that the claim and values in `A5S_OIDC_MFA` are the ones its sign-ins show, such as `amr:mfa` or `acr:<level>` ([the first day](first-day.md#2-peoples-sign-in)).
 2. Where the second factor is a level, as `acr:<level>` names it, a5s's pages ask the provider for that level as people sign in to do what counts (`acr_values`), and a provider that supports it asks them for one then.
 3. The status counts refusals by the day, and by what was refused, never by whom: the counts go after a week.
 

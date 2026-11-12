@@ -25,8 +25,9 @@ Each part runs as its own service account, which can't reach Kubernetes' own API
   - `database-admin-url`, for the jobs;
   - `database-<part>-url` and `database-<part>-password`, for `gateway`, `channels`, `scheduler` and `anchor`;
   - `service-token` and `seal-keys`;
-  - and as the deployment needs them: `deepseek-api-key`, `qwen-api-key`, `teams-secret-<agent>`, `matrix-as-token` and `matrix-hs-token`.
-- **Locked storage** for the ledger's copies, given as `anchor.store`, and the copier's right to write there, through the cloud's workload identity, as an annotation on its service account (`serviceAccounts.annotations.anchor`), and on AKS a label on its pods too (`podLabels.anchor`). [The first day](../../docs/first-day.md) does it on Azure.
+  - and as the deployment needs them: `deepseek-api-key`, `qwen-api-key`, `teams-secret-<agent>`, `matrix-as-token`, `matrix-hs-token`, and, for a store with S3's object lock that takes keys, `anchor-s3-access-key-id` and `anchor-s3-secret-access-key`.
+- **Locked storage** for the ledger's copies, given as `anchor.store`, and the copier's right to write there: in a cloud, through its workload identity, as an annotation on its service account (`serviceAccounts.annotations.anchor`), and on AKS a label on its pods too (`podLabels.anchor`); on premises, a store with S3's object lock, such as MinIO, at `anchor.s3Endpoint`, with its keys in the Secret. [The first day](../../docs/first-day.md#4-the-cluster-postgres-and-locked-storage) gives each cloud's side by side.
+- **How people sign in**, if through an identity provider: `people.oidcIssuer`, and `people.oidcMfa`, how that provider shows a second factor, such as `amr:mfa` or `acr:<level>`, or `none`. The chart assumes no provider, so it won't install with an issuer and no `oidcMfa`. [The first day](../../docs/first-day.md#2-peoples-sign-in) gives each provider's.
 - **Where Postgres is**, for the network policies: `networkPolicies.database`, by its pods' labels or its addresses.
 - **Where traces and operators' figures go**, if anywhere: `telemetry.endpoint`, an OpenTelemetry collector reached over HTTP, such as one that passes them on to Prometheus or Azure Monitor. A collector in the cluster also needs `networkPolicies.telemetry`, by its pods' and namespace's labels. Neither carries what anyone said, nor names a person or a record.
 

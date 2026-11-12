@@ -34,13 +34,14 @@ people:
   oidcDirectoryPrefix: ""
   oidcMetadataUrl: ""
   # The claim a sign-in shows a second factor by, and the values that do, which approvals,
-  # decisions, grades and the officer's requests need (docs/administration.md): amr holding
-  # mfa, as Entra ID writes it. Another provider may show it otherwise, such as acr:gold for a
-  # step-up level, and "" checks for none, which `a5s status` warns of.
-  oidcMfa: "amr:mfa"
+  # decisions, grades and the officer's requests need (docs/administration.md). Each identity
+  # provider shows it its own way, so the chart assumes none: with oidcIssuer set, say which,
+  # such as amr:mfa for a provider that lists the methods used in amr, acr:<level> for one
+  # whose step-up gives a level, or none for one whose tokens show no second factor, which
+  # `a5s status` warns of (docs/first-day.md has each provider's).
+  oidcMfa: ""
   # The claim a sign-in shows its groups by, for the roles the settings give groups
-  # (docs/administration.md): groups, as Entra ID writes it once its app registration sends
-  # the groups assigned to the app.
+  # (docs/administration.md): groups, as most providers name it once they're set to send it.
   oidcGroupsClaim: groups
   webchatClientId: ""
   publicUrl: ""
@@ -71,6 +72,11 @@ anchor:
   # or gs://bucket/prefix. The copier's service account needs the right to write there.
   store: ""
   retainDays: 365
+  # For s3:// on a store with S3's object lock that isn't Amazon's, such as MinIO on premises:
+  # its address and region. Its keys, unless the copier signs in some other way, go in the
+  # Secret, as anchor-s3-access-key-id and anchor-s3-secret-access-key.
+  s3Endpoint: ""
+  s3Region: ""
 
 release:
   # A ConfigMap with release.yaml and release.sig, the release's manifest and the signatures of
@@ -90,8 +96,8 @@ ingress:
 serviceAccounts:
   annotations: {}
 
-# Labels on each part's pods, for a cloud whose workload identity needs one there too. On AKS,
-# the copier's: {anchor: {azure.workload.identity/use: "true"}}.
+# Labels on each part's pods, for a cloud whose workload identity needs one there too, such as
+# AKS's, for the copier: {anchor: {azure.workload.identity/use: "true"}}.
 podLabels: {}
 
 networkPolicies:

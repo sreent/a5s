@@ -6,7 +6,7 @@ What the data protection officer's assessment needs to know about a5s before any
 
 ## Whose data
 
-- **The team's people.** The directory names each of them: their id, such as Entra ID's object id, their name, roles, reporting line, working hours and time zone, and what they may see. a5s reads the directory through the scenario, and its own records name people by their id, though what a5s and the agents say to them uses their names.
+- **The team's people.** The directory names each of them: their id, such as the identity provider's object id or user name, their name, roles, reporting line, working hours and time zone, and what they may see. a5s reads the directory through the scenario, and its own records name people by their id, though what a5s and the agents say to them uses their names.
 - **What they and the agents say to each other,** one to one, and in the group chats they bring an agent into.
 - **What the records system holds,** such as customers' questions, names and amounts. It stays in the records system: a run reads it through the scenario's tools, and a5s keeps what the table below says, such as a record's key and title for what someone owes.
 - **Whoever decides, grades or approves,** by their id, with what they decided.

@@ -61,6 +61,16 @@
   value: {{ required "set anchor.store, where the ledger's locked copies go" .Values.anchor.store | quote }}
 - name: A5S_ANCHOR_RETAIN_DAYS
   value: {{ .Values.anchor.retainDays | quote }}
+{{- with .Values.anchor.s3Endpoint }}
+- name: AWS_ENDPOINT_URL_S3
+  value: {{ . | quote }}
+{{ include "a5s.secretEnv" (dict "root" $ "name" "AWS_ACCESS_KEY_ID" "key" "anchor-s3-access-key-id" "optional" true) }}
+{{ include "a5s.secretEnv" (dict "root" $ "name" "AWS_SECRET_ACCESS_KEY" "key" "anchor-s3-secret-access-key" "optional" true) }}
+{{- end }}
+{{- with .Values.anchor.s3Region }}
+- name: AWS_REGION
+  value: {{ . | quote }}
+{{- end }}
 {{ include "a5s.dbConnectEnv" . }}
 {{- end }}
 
