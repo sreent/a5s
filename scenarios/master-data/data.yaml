@@ -59,6 +59,11 @@ requests:
   - {key: CR0000104, object: material, kind: create, title: Create material Hex nut M8 stainless steel, values: {description: Hex nut M8 stainless steel, base_unit: "", material_type: ROH}, status: needs info, requester: raf, steward: tess, opened: "2026-11-04", due: "2026-11-06"}
   - {key: CR0000105, object: customer, kind: create, title: Create customer Adventure Works, values: {name: Adventure Works Ltd, country: GB, postcode: N1 9GU, vat: GB12345, payment_terms: NT30}, status: submitted, requester: lin, steward: tess, opened: "2026-11-05", due: "2026-11-09"}
   - {key: CR0000106, object: material, kind: change, record: M-300003, title: Change the steel sheet's description, values: {description: Steel sheet 2 mm galvanised}, status: in review, requester: raf, steward: tess, opened: "2026-11-05", due: "2026-11-09"}
+  - {key: CR0000108, object: customer, kind: create, title: Create customer Blue Yonder Retail, values: {name: Blue Yonder Retail Ltd, country: GB, postcode: "", vat: BAD, payment_terms: NT99}, status: submitted, requester: lin, steward: tess, opened: "2026-11-06", due: "2026-11-10"}
+  - {key: CR0000109, object: supplier, kind: create, title: Create supplier Contoso Supplies Limited, values: {name: Contoso Supplies Limited, country: GB, postcode: EC1A 1BB, vat: GB555555555}, status: in review, requester: bea, steward: tess, opened: "2026-11-06", due: "2026-11-10"}
+  - {key: CR0000110, object: supplier-bank, kind: change, record: B-100045, title: Change Northwind Components' payment terms, values: {payment_terms: NT45}, status: awaiting owner, requester: ada, steward: tess, opened: "2026-11-06", due: "2026-11-10"}
+  - {key: CR0000111, object: material, kind: create, title: Create material Hex bolt M8x40 stainless, values: {description: Hex bolt M8x40 stainless, base_unit: "", material_type: RAW}, status: needs info, requester: raf, steward: tess, opened: "2026-11-06", due: "2026-11-10"}
+  - {key: CR0000112, object: material, kind: create, title: Create material Food-safe silicone gasket, values: {description: Food-safe silicone gasket 50 mm, base_unit: EA, material_type: ROH}, status: in review, requester: raf, steward: tess, opened: "2026-11-06", due: "2026-11-10"}
 
 # What suppliers sent with a request. It reaches an agent only through a5s's reader.
 letters:

@@ -98,7 +98,8 @@ def brief(conn: psycopg.Connection, scenario: Scenario, key: str, person: Person
     facts = ", ".join(f"{name} {value}" for name, value in record.fields.items()
                       if name not in unseen)
     called = WITHHELD if "title" in unseen else record.title
-    told = [f"{key}, {called}: {facts}. {owner.name if owner else record.person} owns it."
+    told = [f"{key}, {called}: {facts}. Its next step is with "
+            f"{owner.name if owner else record.person}."
             + (f" {record.link}" if record.link else "")]
     if person is not None:
         told += _theirs(conn, scenario, key, person, now)

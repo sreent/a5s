@@ -26,6 +26,9 @@ context:
   recall: true
   documents: true
   agents: false
+tasks:
+  budget_tokens: 120000
+  days: 2
 budget:
   per_run: 200000
   per_person_per_day: 1000000
