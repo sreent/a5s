@@ -222,6 +222,7 @@ class SampleScenario:
                 writes=True,
                 text_fields=("title", "body"),  # drafts keep only text and record links
                 record_arg="record",  # in that record's part
+                idempotent=True,
             ),
             Tool(
                 name="get_messages",
@@ -339,14 +340,21 @@ class SampleScenario:
         return self._change(call, "status", "closed")
 
     def _create_draft(self, call: ToolCall) -> dict:
+        if call.key is None:
+            raise ValueError("an idempotent draft needs the gateway's effect key")
         with db.transaction(self.database_url) as conn:
             row = conn.execute(
-                "insert into sample.drafts (title, body, created_for, record) "
-                "values (%s, %s, %s, %s) returning id",
+                "insert into sample.drafts (title, body, created_for, record, effect_key) "
+                "values (%s, %s, %s, %s, %s) on conflict (effect_key) do nothing returning id",
                 (call.args["title"], call.args["body"], ",".join(call.acts_for) or "nobody",
-                 call.args.get("record")),
+                 call.args.get("record"), call.key),
             ).fetchone()
-        return {"draft": row["id"], "link": self._link("drafts", row["id"])}
+            replayed = row is None
+            if replayed:
+                row = conn.execute("select id from sample.drafts where effect_key = %s",
+                                   (call.key,)).fetchone()
+        return {"draft": row["id"], "link": self._link("drafts", row["id"]),
+                **({"replayed": True} if replayed else {})}
 
 
 def _on(day: str | date, at: str, zone: ZoneInfo) -> datetime:

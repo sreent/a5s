@@ -95,8 +95,8 @@ class ToolCall:
     instance: str
     run: str
     acts_for: tuple[str, ...]
-    # For a change, the same each time the same change is asked for in a run, or made once
-    # approved: a system that adds something, such as a credit, makes it once for each key
+    # For a change, or a tool marked idempotent, the same whenever the same effect is asked for
+    # in a run or task: a system that adds something makes it once for each key
     key: str | None = None
 
 
@@ -123,6 +123,9 @@ class Tool:
     # names the record it changes, by record_arg. At level 1, a5s holds such a call for the
     # owner of the record's part to decide, and makes it once they approve it.
     action: str | None = None
+    # Whether the tool makes the same effect only once for the task or run's key, returning its
+    # original result if another slice asks again. The gateway supplies that key; the tool honors it.
+    idempotent: bool = False
     # Fields of what it returns that hold content from outside the organisation, such as an
     # email's body, whatever their type, and the fixed form a5s's extractor fills from them
     # instead, each field typed: key, amount, date, flag, or choice:<one>|<another>. The agent
@@ -161,6 +164,8 @@ class Tool:
             payload["records"] = [self.record_arg, self.record_field]
         if self.action:  # or that changes another type of thing
             payload["action"] = self.action
+        if self.idempotent:  # or that promises to return its original effect on a retry
+            payload["idempotent"] = True
         if self.outside:  # or reads outside content another way
             payload["outside"] = [list(self.outside), self.extract]
         return hashlib.sha256(canonical(payload).encode()).hexdigest()

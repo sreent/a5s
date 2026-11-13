@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -17,6 +18,7 @@ from a5s.contract import (
     ToolCall,
     parse_settings,
 )
+from a5s.effects import draft_once
 from a5s.knowledge import MarkdownKnowledge
 
 LINK = "https://itsm.desk.test/"
@@ -35,6 +37,7 @@ class ServiceDeskScenario:
         self._tickets = {t["key"]: t for t in data["tickets"]}
         self._messages = data.get("messages") or []
         self.drafts = []
+        self._draft_lock = threading.Lock()
         self.reads = 0
 
     @staticmethod
@@ -110,8 +113,7 @@ class ServiceDeskScenario:
             return {**found, "link": LINK + found["key"]} if found else {"error": "no such ticket"}
 
         def draft(call: ToolCall) -> dict:
-            self.drafts.append(call.args)
-            return {"draft": len(self.drafts), "link": f"{LINK}drafts/{len(self.drafts)}"}
+            return draft_once(call, self.drafts, LINK, self._draft_lock)
 
         def comments(call: ToolCall) -> dict:
             return {"key": call.args["key"], "messages": [
@@ -127,7 +129,8 @@ class ServiceDeskScenario:
             Tool("get_record", "Get one ITSM ticket by its key, such as INC0000001.", key, get,
                  handles=("contact",), record_arg="key", record_field="key"),
             Tool("create_draft", "Save a draft ticket reply for a person to review and use.", body,
-                 draft, writes=True, text_fields=("title", "body"), record_arg="record"),
+                 draft, writes=True, text_fields=("title", "body"), record_arg="record",
+                 idempotent=True),
             Tool("get_messages", "Get what requesters wrote on a ticket through a5s's reader.", key,
                  comments, handles=("from",), record_arg="key", record_field="key",
                  outside=("body",),
