@@ -17,7 +17,7 @@ from a5s import db, definitions
 from a5s.config import load_models
 from a5s.contract import SettingsError, parse_settings
 from a5s.core import approvals, asking
-from conftest import ROOT, WATCHER, FakeModel, build_root, running
+from conftest import ROOT, WATCHER, FakeModel, build_root, live_image, running
 
 ASKED = "What changed on Q-1001 lately?"
 
@@ -206,7 +206,7 @@ def test_a_real_model_asks_the_watcher_for_the_person(database, tmp_path):
             pytest.fail(f"{model.key_env} isn't set, and a release needs its agents' suites")
         pytest.skip(f"{model.key_env} isn't set")
     root = build_root(tmp_path, release.model, (ROOT / "config" / "models.yaml").read_text())
-    with running(database, root, httpx.Client(), FakeModel()) as stack:
+    with running(database, root, httpx.Client(), FakeModel(), worker_image=live_image()) as stack:
         may_ask(stack)
         with questions_answered(stack):
             reply = stack.say("Ask the watcher whether anything changed on Q-1001 lately, and "

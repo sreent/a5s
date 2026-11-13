@@ -26,7 +26,7 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 
 1. Check that the scheduler is running, and read its log. It has no port, so its log is the only way to see it.
 2. Check that it can reach the gateway, and the gateway the database.
-3. Restart the scheduler if it's stuck. A message outlives a scheduler that stops: the next one takes it again once the lease runs out, so nothing is lost or answered twice.
+3. Restart the scheduler if it's stuck. A message outlives a scheduler that stops: the next one takes it again once the lease runs out, so nothing is lost or answered twice. A message whose run had begun isn't run again, since the run may have done something already: once the stopped scheduler's lease on it has lapsed two minutes, the core's next sweep closes the run as abandoned, and its person is told to send it again, unless they had their answer. A task's slice ends the same way, and the task goes on from what it kept.
 
 ## Runs fail, or a model isn't answering
 
@@ -119,7 +119,7 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 
 **Shows as:** the status's line of refusals for want of a second factor, by what was refused: approving, deciding, grading, the officer's requests, reading the audit trail.
 
-1. Only the identity provider's policy makes a sign-in show a second factor: the people refused can't, and signing in again won't, which a5s tells them, with whom to ask. Check the policy that covers a5s's app asks for one, such as an Entra ID Conditional Access policy requiring multifactor authentication for it, and that the claim and values in `A5S_OIDC_MFA` are the ones its sign-ins show, such as `amr:mfa`.
+1. Only the identity provider's policy makes a sign-in show a second factor: the people refused can't, and signing in again won't, which a5s tells them, with whom to ask. Check that the provider's policy for a5s's client asks for one, such as a Conditional Access policy in Entra ID, a sign-on policy in Okta or a step-up flow in Keycloak, and that the claim and values in `A5S_OIDC_MFA` are the ones its sign-ins show, such as `amr:mfa` or `acr:<level>` ([the first day](first-day.md#2-peoples-sign-in)).
 2. Where the second factor is a level, as `acr:<level>` names it, a5s's pages ask the provider for that level as people sign in to do what counts (`acr_values`), and a provider that supports it asks them for one then.
 3. The status counts refusals by the day, and by what was refused, never by whom: the counts go after a week.
 
@@ -144,6 +144,14 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 
 1. Each part keeps a pool of `A5S_DB_POOL_SIZE` connections, 10 by default, and connects afresh only as many again while they're all in use. Past that, work waits ten seconds for the pool and then fails, to be tried again. So each part uses at most twice its pool: size Postgres's limit to that, for every replica of each part.
 2. Work that waits behind the ledger's lock for 30 seconds fails, and is tried again: look for what held it, such as a slow records system read inside a transaction.
+
+## The database is away
+
+**Shows as:** the status unreadable (`a5s.status.readable` at 0), and each part logging that it can't reach the database, as in a managed database's failover.
+
+1. a5s waits it out. People and their chats are asked to try again in a moment: the channels app answers 503 with `Retry-After: 5` and words the web chat shows its person, and Matrix delivers its transactions again on its own. Runs at work fail, and their people are told they couldn't finish; tasks' slices fail and go on later; the scheduler listens again once it can.
+2. Once it's back, a5s answers again within seconds, as the soak test checks with Postgres away for half a minute. A run whose scheduler couldn't close it meanwhile is closed at the next sweep once its lease has lapsed two minutes, and its person is told to send it again, unless they had their answer.
+3. If it isn't back within a few minutes, it's the database's own incident: see its provider's status, and its failover's.
 
 ## Calls are denied
 

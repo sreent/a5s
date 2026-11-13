@@ -2,9 +2,9 @@
 # Installs a5s's chart on a Kubernetes cluster of its own, k3s in Docker, which enforces network
 # policies, with Postgres beside it, and checks that: the setup job runs before the parts
 # start; the core runs no release its people haven't approved, and runs it once a job records
-# their signatures; the scheduler reaches the gateway; and each worker pool, the shared
-# one and each agent's own, reaches the gateway alone, never the database, the channels,
-# another pool or the internet.
+# their signatures; the scheduler reaches the gateway, and never finds it away while it's
+# replaced; and each worker pool, the shared one and each agent's own, reaches the gateway
+# alone, never the database, the channels, another pool or the internet.
 # Needs the image first: docker build -t a5s:dev .
 set -eu
 cd "$(dirname "$0")/../.."
@@ -106,6 +106,30 @@ echo "The core waited for the release to be approved here, and a job recorded it
 
 k -n a5s exec deploy/a5s-scheduler -- a5s status | grep -q "a5s over the last day"
 echo "The scheduler reaches the gateway."
+
+# As on an upgrade, the core is replaced: its new pod is ready before the old one stops, so
+# what the scheduler and the workers send it never finds it away. The scheduler connects to it
+# five times a second throughout, and none may fail.
+k -n a5s exec deploy/a5s-scheduler -- python -c '
+import socket, time
+failed, until = 0, time.monotonic() + 90
+while time.monotonic() < until:
+    try:
+        socket.create_connection(("a5s-gateway", 8700), 2).close()
+    except OSError:
+        failed += 1
+    time.sleep(0.2)
+print(failed)' > "$work/away" &
+watching=$!
+sleep 5
+k -n a5s rollout restart deployment/a5s-gateway > /dev/null
+k -n a5s rollout status deployment/a5s-gateway --timeout=120s > /dev/null
+wait "$watching"
+if [ "$(cat "$work/away")" != 0 ]; then
+  echo "The core was away as it was replaced: $(cat "$work/away") connections to it failed."
+  exit 1
+fi
+echo "The core was never away as it was replaced: its new pod was ready before the old one stopped."
 
 [ "$(k -n a5s get pods -l app.kubernetes.io/component=anchor \
   -o jsonpath='{.items[0].metadata.labels.a5s\.test/workload-identity}')" = on ]

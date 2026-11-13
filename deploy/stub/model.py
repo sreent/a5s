@@ -5,7 +5,10 @@ makes a model call, a tool call through the gateway, and another model call.
 Asked to ask the watcher, and offered the tool to, it asks it, and says what
 it answered. Asked for something "as a task:", it offers it as a task, starts it
 when told "yes, start it", and works on each slice: it keeps its work, says it's
-done, and tells its owner so.
+done, and tells its owner so. A task to do "in two runs" takes two slices, each
+a few seconds long, as the soak test asks, so what it kills part way is a slice
+at work: the first keeps half its work and says it's waiting, and the next, told
+what the first found, finishes it.
 """
 
 import json
@@ -19,6 +22,15 @@ app = FastAPI(title="stand-in model")
 
 
 TASKED = "as a task:"  # how the soak's people ask for one
+TWICE = "in two runs"  # a task the soak asks for, which takes two slices
+SLICE_SECONDS = 5  # how long each of its slices works, before keeping what it did
+EARLIER = "What its earlier runs found"  # what a5s tells a later slice of a task
+
+
+def briefed(messages: list) -> str:
+    """What a task's run was told to work on, if it's a slice of one."""
+    return next((str(m.get("content")) for m in messages
+                 if m["role"] == "user" and "Work on " in str(m.get("content"))), "")
 
 
 def calling(body: dict, name: str, args: dict) -> dict:
@@ -59,6 +71,9 @@ def complete(body: dict) -> dict:
     if last["role"] == "tool" and last["content"].startswith("{"):  # a task's tools
         told = json.loads(last["content"])
         if "kept" in told and "finish_task" in offered:  # its slice kept its work
+            brief = briefed(messages)
+            if TWICE in brief and EARLIER not in brief:  # half of it: the next run finishes
+                return saying(body, "Half way through: it's waiting, to go on in its next run.")
             return calling(body, "finish_task", {"status": "done", "result": "gone through"})
         if told.get("noted") == "done":
             return saying(body, "Your task is done: I went through it.")
@@ -76,6 +91,12 @@ def complete(body: dict) -> dict:
         return reply(body, {"role": "assistant", "content": f"I looked it up and found {keys}."})
     said = str(last.get("content", "")).split("] ", 1)[-1]  # after when it was said
     if said.startswith("Work on ") and "checkpoint_task" in offered:  # a slice of a task
+        if TWICE in said:  # it works a while, as real work does, then keeps what it did
+            time.sleep(SLICE_SECONDS)
+            later = EARLIER in said
+            return calling(body, "checkpoint_task", {
+                "step": 2 if later else 1, "progress": 1.0 if later else 0.5,
+                "partial": ["half way", "the rest"] if later else ["half way"]})
         return calling(body, "checkpoint_task", {"step": 1, "progress": 0.5,
                                                  "partial": ["half way"]})
     if TASKED in said.lower() and "offer_task" in offered:

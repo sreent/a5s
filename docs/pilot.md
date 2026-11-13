@@ -9,7 +9,7 @@ Phases 1 to 3 are built, and tested against the sample scenario, which is a fake
 | Decision | Proposed |
 | --- | --- |
 | Which team | One team of 5 to 15 people whose work lives in one records system and falls due, such as a finance team's customer questions or a service desk's queue. Enough people for group chats, few enough to ask each of them what they think. [TBC: which] |
-| Where | Azure, with Entra ID and Teams, as phase 1 decided, in the test tenant first. Google Cloud and AWS once Azure's first day is done. |
+| Where | Wherever the organisation runs a5s: its cloud's managed Kubernetes, or its own cluster, with its own identity provider and a chat its people use, Matrix or Teams, in a test setup first. a5s assumes no cloud, and the first day works the same on each ([the first day](first-day.md)). [TBC: where] |
 | Which model | One on the organisation's approved list for the class of the team's data, such as a model the organisation runs in its own subscription. DeepSeek and Qwen stay on synthetic data. [TBC: which] |
 | The scenario | The team's records system through [the contract](architecture.md#the-scenario-contract): its people from the directory, its records and their obligations, and its settings, as the service desk was written in [round 5](critique.md#round-5-steps-3-to-6). Its tools only read, until stage 3. |
 | Who holds the roles | The platform owner, a release approver outside the team that runs a5s, instance approvers, the part's owner, assurance, the data protection officer, and from stage 3, graders from outside the team. Each named before stage 2. [TBC: who] |
@@ -21,10 +21,10 @@ Each stage ends when what it shows is written down, here and in the phase it ser
 
 0. **The first day** (week 1).
    - The release: `main` under its rulesets, the regression suites' keys in the repository's secrets, and `v0.1.0` tagged once its live suites pass and the release approver approves it.
-   - The four checks in [phase 1's first day](phase-1.md#progress), in the test tenant and Azure, step by step in [the first day](first-day.md): signing in with Entra ID, Teams with its group chats, Azure's Postgres, locked storage and network policies, and what they sent kept as fixtures, so CI checks the real services' shapes from then on.
-   - Shows: a5s's suite passes on Azure, the first half of phase 1's Done means.
+   - The four checks in [phase 1's first day](phase-1.md#progress), on the organisation's own cluster, step by step in [the first day](first-day.md): signing in through its identity provider, its chat with group chats, its Postgres, locked storage and network policies, and what they sent kept as fixtures, so CI checks the real services' shapes from then on.
+   - Shows: a5s's suite passes there, the first half of phase 1's Done means.
 1. **Shadow** (week 2).
-   - The team that runs a5s works with the assistant and the watcher on the sample scenario, in Teams, for a week, with the [soak test](../deploy/soak.py) against the deployment beside them.
+   - The team that runs a5s works with the assistant and the watcher on the sample scenario, in its chat, for a week, with the [soak test](../deploy/soak.py) against the deployment beside them.
    - Each runbook is tried once: suspending and resuming an instance, a chat that won't take a message, a model that's down, and a release.
    - Shows: replies within the objective, nine in ten within two minutes, nothing lost, and what a run costs on the approved model, once its prices are in the approved list (`a5s measures`).
 2. **One team, reading** (weeks 3 to 6).
@@ -50,7 +50,7 @@ Any of these suspends the instance first, which anyone with the role can do, and
 
 ## What it decides
 
-- **Phase 1's Done means,** with the suite on Azure and the baseline written into [phase 1](phase-1.md#done-means).
+- **Phase 1's Done means,** with the suite on the organisation's own cluster and the baseline written into [phase 1](phase-1.md#done-means).
 - **The starting values marked [TBC],** such as budgets, digest times and the reply objective, from what the team used ([starting values](starting-values.md)).
 - **Phase 4,** from the critique's deferrals and what the pilot shows:
   - if agents keep few notes, or runs are rarely given them, notes from facts code works out from a5s's own records, such as which records keep coming up;
@@ -58,7 +58,7 @@ Any of these suspends the instance first, which anyone with the role can do, and
   - if the team works with agents outside the organisation, agent to agent beyond a5s, with what they say treated as content from outside;
   - if a deployment needs one, adapters for managed runtimes, phase 3's last step;
   - resumable long-running tasks, whose build plan and Done means are in [phase 4](phase-4.md);
-  - and Google Cloud and AWS, which phase 1 decided on, once Azure is steady.
+  - and any other cloud or cluster the organisation runs a5s on, each with its own first day.
 
 ## Costs
 
@@ -66,4 +66,4 @@ Any of these suspends the instance first, which anyone with the role can do, and
 | --- | --- |
 | People | The platform owner, and an engineer for about half their time, for the 12 weeks. The team's own time is a short conversation each at the end. Graders, about five hours a quarter for the one type of action. |
 | Models | About $0.50 a run before caching at illustrative prices, so about $500 for 1,000 runs a month ([phase 1](phase-1.md#costs)). The approved model's own prices may differ, and caching takes less: `a5s measures` says how much each run read from the cache, at the cached price the approved list gives. [TBC] |
-| Platform | AKS, managed Postgres, locked blob storage and telemetry in one region. [TBC: from Azure's prices] |
+| Platform | A Kubernetes cluster, managed Postgres, locked storage and telemetry in one region, or the organisation's own. [TBC: from its prices] |

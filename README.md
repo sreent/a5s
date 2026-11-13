@@ -18,7 +18,7 @@ flowchart LR
   end
   core --> contract["Scenario contract"]
   contract --> scenarios["Scenarios, each with its own people, systems and rules"]
-  core --> cloud["Azure, Google Cloud or AWS: identity, models, storage"]
+  core --> cloud["Any cloud, or the organisation's own: identity, models, storage"]
 ```
 
 ## Principles
@@ -32,7 +32,7 @@ flowchart LR
 | **Every action leaves evidence** | A tamper-evident ledger records what each agent did, for whom, under which policy and with what result. |
 | **Loosening needs someone else** | Anyone can make a5s safer alone. Widening what an agent may do, or changing the trusted core, needs someone outside the team that runs it. Everyday changes stay quick. |
 | **Scenarios plug in** | a5s knows no one business's rules. Each scenario brings its people, systems and restrictions through a [contract](docs/architecture.md#the-scenario-contract). |
-| **Own the rules, rent the plumbing** | Identity, models, storage and telemetry come from the cloud, through open standards, so a5s runs on Azure, Google Cloud and AWS alike, with any model behind an OpenAI- or Anthropic-compatible API. |
+| **Own the rules, rent the plumbing** | Identity, models, storage and telemetry come from wherever the organisation runs, through open standards, so a5s assumes no cloud and runs on Azure, Google Cloud, AWS and the organisation's own clusters alike, with any model behind an OpenAI- or Anthropic-compatible API. |
 
 ## A day with an agent
 
@@ -93,7 +93,7 @@ uv run a5s ledger verify
 
 `a5s dev` takes people's word for who they are, and runs whatever release it is, which is for development only. Everywhere else, people sign in, and the core runs only a release its deployment's people have approved. Every minute, the scheduler also asks the core what falls due: the assistant reminds people of their open records once half the time allowed has passed, the core escalates what's overdue along each person's reporting line, the watcher tells each person what changed in their records and what fell due, and schedules in a release fire at their times. What agents write to someone on their own goes in one digest a day, from all their agents together, at a time they choose: the start of their working day unless they ask an agent for another.
 
-To run it as containers, the way each cloud would, build the image and run the [smoke test](deploy/smoke.sh). It starts the stack with stand-ins for the model, the identity provider, a Matrix homeserver and locked storage, and checks it end to end, from sign-in and a chat in Matrix to the ledger's locked copies. With `--keep`, it leaves the stack running, to try the web chat and Matrix as the sample's people:
+To run it as containers, the way each cloud would, build the image and run the [smoke test](deploy/smoke.sh). It starts the stack with stand-ins for the model, the identity provider, a Matrix homeserver and locked storage, and checks it end to end, from sign-in and a chat in Matrix, and a task someone asks for there, says yes to in a later message and hears is done in the same room, to the ledger's locked copies. With `--keep`, it leaves the stack running, to try the web chat and Matrix as the sample's people:
 
 ```sh
 docker build -t a5s:dev .
@@ -106,7 +106,7 @@ Each other scenario a5s ships runs on the same containers, from the same image, 
 sh deploy/smoke-scenario.sh master-data   # or software-delivery, or service-desk
 ```
 
-The [soak test](deploy/soak.sh) starts the same stack, then has the sample's people talk to its agents for half an hour, or as many minutes as you give it. Ana asks the assistant for long tasks as well, and half way through, the core, the scheduler and the assistant's workers restart. It checks that every message had one answer, in time; that every task she started ended done, told her once, and left no lease; that no part's memory or Postgres's connections kept growing; and that no part logged an error. CI runs it weekly, and when asked:
+The [soak test](deploy/soak.sh) starts the same stack, then has the sample's people talk to its agents for half an hour, or as many minutes as you give it. Ana asks the assistant for long tasks as well, each in two slices. As a slice is at work, the assistant's worker is killed a quarter of the way through, the core at three eighths and the scheduler at three quarters, as a crash would; half way the core, the scheduler and the assistant's workers restart, as an upgrade would; and at five eighths Postgres is away for half a minute, as in a managed database's failover, while people try again what a5s refuses meanwhile. It checks that every message had one answer, in time, and that only those at work as something was killed, or the database went away, were told it couldn't finish; that every task she started ended done, by its number, told her once, and left no lease; that no part's memory or Postgres's connections kept growing; and that no part logged an error but in the minutes after a kill. CI runs it weekly, and when asked:
 
 ```sh
 sh deploy/soak.sh 30
@@ -131,7 +131,7 @@ Each deployment turns on the chats its people use, by setting each one's setting
 
 A reply goes back through the chat the message came from. An agent that writes first, such as with a reminder, writes only as its own bot: in the conversation the person last had with it, or else in the chat they last wrote in. In Matrix its bot starts a direct chat. In Teams it writes first only to people who've added its app, which an administrator can do for everyone. Otherwise, and once someone leaves an agent's chat, it waits in their inbox, in the web chat and on the command line. The directory names each person in each chat they use, such as `entra:<object id>` for Teams and `matrix:@ana:example.org` for Matrix. The command line and the web chat share the core's local channel, so the web chat shows what was said in either.
 
-To have people sign in, to the command line and the web chat, point a5s at your identity provider with `A5S_OIDC_ISSUER`, `A5S_OIDC_AUDIENCE` and `A5S_OIDC_PERSON_CLAIM`, the claim that holds each person's id in the directory, such as `oid` for Entra ID. [`compose.identity.yaml`](deploy/compose.identity.yaml) does this with Keycloak in place of Entra ID, Google Cloud Identity or Okta, and with a client for the web chat. `a5s say` sends the person's token from `A5S_TOKEN`.
+To have people sign in, to the command line and the web chat, point a5s at your identity provider with `A5S_OIDC_ISSUER`, `A5S_OIDC_AUDIENCE` and `A5S_OIDC_PERSON_CLAIM`, the claim that holds each person's id in the directory, such as `preferred_username` for Keycloak or `oid` for Entra ID, and `A5S_OIDC_MFA`, how the provider shows a second factor ([the first day](docs/first-day.md#2-peoples-sign-in) has each provider's). [`compose.identity.yaml`](deploy/compose.identity.yaml) does this with Keycloak, as an organisation's provider, whichever it is, and with a client for the web chat. `a5s say` sends the person's token from `A5S_TOKEN`.
 
 For Matrix, register a5s on your homeserver as an application service, with a registration file like the one [`configure.py`](deploy/matrix/configure.py) writes for the stand-in. The homeserver sends what happens in a5s's rooms to `/channels/matrix` on the channels' address, and a5s speaks as each agent's bot, `@a5s-<agent>:<your server>`. A person starts a direct chat with an agent's bot, and a5s joins if the directory knows them. People can also bring an agent's bot into a room of up to 20 people the directory knows, whose history shows people only what was said once they joined, and it answers whoever mentions it there. It reads only rooms without encryption: in any other, it says so and does nothing more. [`compose.matrix.yaml`](deploy/compose.matrix.yaml) runs Synapse as a stand-in that federates with nobody.
 
@@ -165,8 +165,8 @@ The smoke test runs this way: Keycloak for sign-in, Synapse for Matrix, a model 
 | [Phase 4](docs/phase-4.md) | Resumable long-running tasks: durable state, bounded runs, heartbeats, budgets, cancellation and parent/child evidence |
 | [Studio](docs/studio.md) | One place to build, try, publish, run and watch agents, as a maker studio does: its API first, drafts tried in a sandbox, tools built by the development team, and no signature skipped. Step 1, watching, is built |
 | [Administration and audit](docs/administration.md) | Who administers what, scoped to parts and agents, with roles from the identity provider's groups and a page for administrators; how people sign in, with a second factor for what counts; and how auditors read the ledger, on their own page and the command line. A draft, built but for sending the ledger to security monitoring |
-| [Pilot](docs/pilot.md) | One team, on Azure and Teams, in stages: what it shows, what stops it, and how it chooses what comes after phase 3 |
-| [The first day](docs/first-day.md) | The pilot's stage 0, step by step: a5s in a Microsoft 365 test tenant and on Azure, and the four checks only the real services can make |
+| [Pilot](docs/pilot.md) | One team, on whichever cloud or cluster the organisation runs a5s on, in stages: what it shows, what stops it, and how it chooses what comes after phase 3 |
+| [The first day](docs/first-day.md) | The pilot's stage 0, step by step: a5s on the organisation's own cluster, with each cloud's and identity provider's settings side by side, and the four checks only the real services can make |
 | [Data protection](docs/data-protection.md) | For the data protection officer's assessment: what a5s keeps about people, why, where, for how long and who sees it, what models see, and requests for someone's data |
 | [IT service desk](scenarios/it-service-desk.md) | A working read-only service-desk scenario, with synthetic tickets, a Markdown knowledge vault, permissions, drafts and tests |
 | [Software delivery](scenarios/software-delivery.md) | A read-only scenario for an engineering team's issues and pull requests, with need-to-know for security issues, customers' comments through the reader, and its own dev assistant |

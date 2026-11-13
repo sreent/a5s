@@ -79,6 +79,9 @@ from a5s.core.releases import agent_owner
 from a5s.core.tasks import TaskError
 from a5s.core.teams import UNKNOWN, Refused
 
+AWAY = "a5s can't reach its records just now, so it couldn't take that. Try again in a moment."
+AWAY_RETRY = 5  # seconds a chat or a person is asked to wait before trying again
+
 log = logging.getLogger(__name__)
 MAX_BYTES = 256 * 1024  # far more than one message needs
 TRIES = 3  # deliveries of a Matrix event a5s can't act on before it's skipped, and recorded
@@ -247,6 +250,17 @@ def create_app(gw: Any) -> FastAPI:
 
     app.add_middleware(Small)
     log.info("people reach a5s through %s", ", ".join(chats_on(gw)))
+
+    @app.exception_handler(psycopg.OperationalError)
+    def database_away(_request: Request, exc: psycopg.OperationalError) -> JSONResponse:
+        """While a5s's database is away, as in a managed database's failover: a refusal for a
+        moment, which says so and when to try again, so a person sends their message again and
+        a chat delivers it again, rather than an error of a5s's own. One line in the log, not a
+        trace for each request."""
+        log.warning("the database can't be reached, so a request was refused for now: %s",
+                    str(exc).splitlines()[0][:200] if str(exc) else type(exc).__name__)
+        return JSONResponse(status_code=503, headers={"Retry-After": str(AWAY_RETRY)},
+                            content={"detail": AWAY})
 
     def counted(doing: str) -> None:
         """Count a refusal for want of a second factor, for the status: the identity

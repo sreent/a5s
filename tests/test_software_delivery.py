@@ -10,7 +10,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from conftest import FAKE_MODELS, ROOT, FakeModel, Stack, build_root
+from conftest import FAKE_MODELS, ROOT, FakeModel, Stack, build_root, live_image
 from scenario_stack import opened, running_scenario
 
 SCENARIO = "a5s.software_delivery:SoftwareDeliveryScenario"
@@ -134,7 +134,7 @@ def test_a_real_model_answers_for_the_team(database: str, tmp_path: Path):
         pytest.skip("DEEPSEEK_API_KEY isn't set")
     root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text())
     with running_scenario(database, root, FakeModel(), SCENARIO, "software-delivery",
-                          alias="deepseek-v4-pro") as found:
+                          alias="deepseek-v4-pro", worker_image=live_image()) as found:
         fix = say(found, "Where's my fix for DEV-101? Name the pull request, its checks and "
                          "who reviews it.")
         print(fix)

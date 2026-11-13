@@ -14,7 +14,7 @@ networkPolicies:
       matchLabels:
         app: postgres
 
-# A label on the copier's pods, as AKS's workload identity needs one there (test.sh checks it).
+# A label on the copier's pods, as some clouds' workload identity needs, such as AKS's (test.sh checks it).
 podLabels:
   anchor:
     a5s.test/workload-identity: "on"

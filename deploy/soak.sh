@@ -1,13 +1,18 @@
 #!/bin/sh
 # A soak test. Starts the stack as the smoke test does, and checks it the same way, then has
 # the sample's people talk to its agents for a while: 30 minutes, unless given another number.
-# Ana asks for long tasks too, and half way through, the core, the scheduler and the
-# assistant's workers restart. Then it checks that every message had one answer, in time, and
-# no message was lost or answered twice; that every task she started ended done, told her once,
-# and left no lease; that no part's memory, nor Postgres's connections, kept growing once the
-# stack had warmed up; that no part logged an error; and that the ledger verifies against its
-# locked copies. Then it prints the measures, with what each run cost. It finds what no test
-# that runs for seconds can: leaks, locks that pile up, and work done twice.
+# Ana asks for long tasks too, each in two slices. As a slice is at work, the assistant's
+# worker is killed a quarter of the way through, the core at three eighths and the scheduler at
+# three quarters, as a crash would; half way, the core, the scheduler and the assistant's
+# workers restart, as an upgrade would; and at five eighths Postgres is away for half a
+# minute, as in a failover. Then it checks that every message had one answer, in time, and no
+# message was lost or answered twice, and that only those at work as something was killed, or
+# the database went away, were told it couldn't finish; that every task she started ended done, by its
+# number, told her once, and left no lease; that no part's memory, nor Postgres's
+# connections, kept growing once the stack had warmed up; that no part logged an error but in
+# the minutes after a kill; and that the ledger verifies against its locked copies. Then it
+# prints the measures, with what each run cost. It finds what no test that runs for seconds
+# can: leaks, locks that pile up, work done twice, and what a crash leaves behind.
 # Needs the image first: docker build -t a5s:dev .
 set -eu
 cd "$(dirname "$0")/.."
@@ -27,7 +32,6 @@ A5S_SMOKE_ENV="$env_file" A5S_SMOKE_WORK="$work" sh deploy/smoke.sh --keep > "$w
   { cat "$work/smoke.log"; exit 1; }
 echo "The smoke test passed, and left the stack running."
 
-started=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 A5S_PASSWORD=$(sed -n 's/^A5S_IDP_PASSWORD=//p' "$env_file") \
   python3 deploy/soak.py "$minutes" "${A5S_SOAK_FOUND:-$work/found.json}"
 
@@ -53,14 +57,6 @@ assert not open_runs, f"{open_runs} runs are still open after five minutes"
 print(f"All {answered} messages the core received were answered, each by one run, and "
       "no run was left open.")
 PY
-
-if compose logs --no-color --since "$started" gateway channels scheduler worker \
-       worker-assistant worker-watcher anchor 2>&1 |
-     grep -E "Traceback|ERROR|CRITICAL" > "$work/errors"; then
-  head -40 "$work/errors"
-  echo "A part logged errors while people were talking to it."; exit 1
-fi
-echo "No part logged an error while people were talking to it."
 
 compose exec -T anchor a5s anchor > /dev/null
 compose exec -T anchor a5s ledger verify

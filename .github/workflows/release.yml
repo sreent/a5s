@@ -1,7 +1,8 @@
 name: release
 
 # A release of a5s, on a version tag such as v0.2.0: the full suite, and each agent's own
-# regression suite against the model its release names, then the image, built,
+# regression suite against the model its release names, each run in a worker from the image,
+# then the image, built,
 # smoke-tested, pushed with its provenance signed, and published with the manifest it was
 # built with. Each organisation then approves the release for its
 # own deployment, by signing what `a5s release show` prints there.
@@ -39,10 +40,13 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6
       - run: uv sync --locked
+      - run: docker build -t a5s:dev .  # the image the agents' own suites run their runs in
       - run: >-  # each scenario's agents a release covers, on a real model
           uv run pytest -m live tests/test_agents.py tests/test_groups.py
           tests/test_asking.py tests/test_notebook.py tests/test_master_data.py
           tests/test_software_delivery.py tests/test_service_desk.py
+        env:  # each agent's own suite hands its runs to a worker from the image, in a
+          A5S_TEST_WORKER_IMAGE: a5s:dev  # container of its own, as a pool's pods run
 
   image:
     needs: [ci, agents]

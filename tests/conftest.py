@@ -306,8 +306,8 @@ def browser() -> Iterator[Any]:
 
 
 @contextmanager
-def serve(app: Any, port: int) -> Iterator[str]:
-    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+def serve(app: Any, port: int, host: str = "127.0.0.1") -> Iterator[str]:
+    server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_level="warning"))
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()
     deadline = time.monotonic() + 10
@@ -316,7 +316,7 @@ def serve(app: Any, port: int) -> Iterator[str]:
             raise RuntimeError("the gateway didn't start")
         time.sleep(0.02)
     try:
-        yield f"http://127.0.0.1:{port}"
+        yield f"http://{host}:{port}"
     finally:
         server.should_exit = True
         thread.join(5)
@@ -335,6 +335,7 @@ class Stack:
     model: FakeModel
     admin: str
     channels_url: str  # the core's endpoints, where messages arrive
+    worker: Any = None  # where the scheduler hands its runs, if not to a worker in this process
 
     def as_role(self, part: str) -> Config:
         return replace(self.cfg, database_url=db.as_role(self.admin, part))
@@ -403,6 +404,8 @@ class Stack:
             registry.set_status(conn, "assistant-finance", by=by, suspend=True)
 
     def scheduler(self, **kwargs: Any) -> Scheduler:
+        if self.worker is not None:
+            kwargs.setdefault("worker", self.worker)
         return Scheduler(self.as_role("scheduler"), self.gateway.scenario, **kwargs)
 
     def settle(self, instances: dict | None = None, signers: tuple[str, ...] = ("ana",),
@@ -466,8 +469,83 @@ def build_root(tmp: Path, model_alias: str, models_yaml: str) -> Path:
     return root
 
 
+# Docker's bridge, as the host sees it: a worker in a container reaches the core there
+BRIDGE = os.environ.get("A5S_TEST_BRIDGE", "172.17.0.1")
+
+
+def live_image() -> str | None:
+    """The image a live suite hands each run to a worker from, in a container of its own, as
+    a release's suites do (.github/workflows/release.yml): A5S_TEST_WORKER_IMAGE, such as
+    a5s:dev. Unset, each run goes to a worker in this process."""
+    return os.environ.get("A5S_TEST_WORKER_IMAGE") or None
+
+
 @contextmanager
-def running(database: str, root: Path, http: httpx.Client, model: FakeModel) -> Iterator[Stack]:
+def contained(app: Any, image: str) -> Iterator[Any]:
+    """A worker from a5s's image, in a container of its own on Docker's bridge, as a pool's
+    pods run: it holds no secrets, and reaches the core at the bridge's address, which the
+    core is served on for it alone. The scheduler hands it each run over HTTP, as it hands a
+    pool's (services/scheduler.py's remote_worker). What it yields counts the runs it took,
+    and a test that hands it none fails: it would have tested the worker in this process."""
+    import subprocess
+    import uuid
+
+    from a5s.services.scheduler import remote_worker
+
+    port, name = free_port(), f"a5s-test-worker-{uuid.uuid4().hex[:8]}"
+    with serve(app, port, host=BRIDGE):
+        subprocess.run(["docker", "run", "-d", "--rm", "--name", name,
+                        "--add-host", "host.docker.internal:host-gateway",
+                        "-p", "127.0.0.1::8702",  # for the scheduler, on this machine alone
+                        "-e", f"A5S_GATEWAY_URL=http://host.docker.internal:{port}",
+                        image, "worker", "--host", "0.0.0.0"],
+                       check=True, capture_output=True, timeout=120)
+        try:
+            mapped = subprocess.run(["docker", "port", name, "8702/tcp"], check=True,
+                                    capture_output=True, text=True).stdout.split()[0]
+            url = f"http://{mapped}"
+            deadline = time.monotonic() + 60
+            while True:  # it starts in a couple of seconds
+                try:
+                    if httpx.get(f"{url}/openapi.json", timeout=2).status_code == 200:
+                        break
+                except httpx.HTTPError:
+                    pass
+                if time.monotonic() > deadline:
+                    raise RuntimeError(f"the worker container {name} didn't start")
+                time.sleep(0.5)
+            pool = remote_worker(url)
+
+            def work(gateway_url: str, token: str, history: list[dict]) -> str:
+                work.runs += 1
+                return pool(gateway_url, token, history)
+
+            work.runs = 0
+            yield work
+            assert work.runs, f"no run went to the worker container {name}"
+        finally:
+            logs = subprocess.run(["docker", "logs", "--tail", "30", name], check=False,
+                                  capture_output=True, text=True).stdout
+            print(f"\n[the worker container's last lines]\n{logs}")
+            subprocess.run(["docker", "rm", "-f", name], check=False, capture_output=True)
+
+
+@contextmanager
+def worker_for(app: Any, image: str | None) -> Iterator[Any]:
+    """Where the scheduler hands each run: with `image`, a worker from it in a container of
+    its own (`contained`); without, None, and each run goes to a worker in this process."""
+    if image is None:
+        yield None
+        return
+    with contained(app, image) as worker:
+        yield worker
+
+
+@contextmanager
+def running(database: str, root: Path, http: httpx.Client, model: FakeModel,
+            worker_image: str | None = None) -> Iterator[Stack]:
+    """a5s, running: with each run in a worker in this process, or, with `worker_image`, in
+    a worker from that image, in a container of its own (`contained`)."""
     port = free_port()
     cfg = Config(database_url=db.as_role(database, "gateway"),
                  gateway_url=f"http://127.0.0.1:{port}", service_token=SERVICE_TOKEN, root=root,
@@ -484,8 +562,10 @@ def running(database: str, root: Path, http: httpx.Client, model: FakeModel) -> 
                                  scenario.person, scenario.name)
     assert not applied.refused, applied.refused
     channels = replace(gw, cfg=replace(cfg, database_url=db.as_role(database, "channels")))
-    with serve(create_app(gw), port), serve(inbox.create_app(channels), free_port()) as channels_url:
-        yield Stack(cfg, gw, model, database, channels_url)
+    app = create_app(gw)
+    with (serve(app, port), serve(inbox.create_app(channels), free_port()) as channels_url,
+          worker_for(app, worker_image) as worker):
+        yield Stack(cfg, gw, model, database, channels_url, worker=worker)
 
 
 FAKE_MODELS = """
