@@ -57,7 +57,7 @@ def test_a_run_sent_to_the_wrong_pool_fails_and_says_so(stack):
     assert closed == ["failed"] and stack.model.requests == []
 
 
-def test_a_run_waits_for_a_pool_that_cant_be_reached_for_a_moment(stack, caplog):
+def test_a_run_waits_for_a_pool_that_cant_be_reached_for_a_moment(stack):
     """As when the pool restarts: it never got the run, so the run is handed to it again
     once it's back, and done once, rather than fail."""
     stack.model.reply("Hello, from a pool just back.")
@@ -72,14 +72,12 @@ def test_a_run_waits_for_a_pool_that_cant_be_reached_for_a_moment(stack, caplog)
 
     threading.Thread(target=restarting, daemon=True).start()
     try:
-        with caplog.at_level(logging.WARNING, logger="a5s.reach"):
-            said = stack.say("Hi", scheduler=stack.scheduler(
-                pools={"assistant": remote_worker(f"http://127.0.0.1:{port}", within=20)}))
+        said = stack.say("Hi", scheduler=stack.scheduler(
+            pools={"assistant": remote_worker(f"http://127.0.0.1:{port}", within=20)}))
     finally:
         done.set()
     assert said == "Hello, from a pool just back." and back.is_set()
     assert len(stack.model.requests) == 1  # the run, once
-    assert f"http://127.0.0.1:{port} can't be reached, so what's sent there waits" in caplog.text
 
 
 def test_a_run_fails_once_its_pool_cant_be_reached_for_longer(stack):

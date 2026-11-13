@@ -14,6 +14,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import urlparse
+from urllib.request import url2pathname
 
 
 class Exists(Exception):
@@ -228,7 +229,10 @@ def store_from_url(url: str, retain: timedelta) -> Store:
         return f"{p}/" if p else ""
 
     if parsed.scheme == "file":
-        return FolderStore(Path(parsed.path))
+        path = url2pathname(parsed.path)
+        if parsed.netloc and parsed.netloc != "localhost":  # a shared folder, not a local drive
+            path = f"//{parsed.netloc}{path}"
+        return FolderStore(Path(path))
     if parsed.scheme == "s3":
         return S3Store(parsed.netloc, prefix(path), retain)
     if parsed.scheme == "azure":

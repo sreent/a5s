@@ -12,9 +12,17 @@ from moto import mock_aws
 
 from a5s import db
 from a5s.core import anchor, ledger
-from a5s.core.stores import AzureBlobStore, Exists, FolderStore, GcsStore, S3Store
+from a5s.core.stores import AzureBlobStore, Exists, FolderStore, GcsStore, S3Store, store_from_url
 
 DAY = timedelta(days=1)
+
+
+def test_a_file_store_url_names_its_actual_folder(tmp_path):
+    folder = tmp_path / "locked copies"
+    store = store_from_url(folder.as_uri(), DAY)
+    store.put("heads/one.json", b"{}")
+    assert store.path == folder and store.get("heads/one.json") == b"{}"
+    assert store.keys("heads/") == {"heads/one.json": False}
 
 
 def write(url: str, n: int) -> None:
@@ -219,7 +227,7 @@ def test_a_copier_that_finds_a_rewritten_history_stops_loudly(database, folder, 
 
     monkeypatch.setattr(anchor, "anchor", rewritten)
     cfg = Config(database_url=database, gateway_url="http://unused", service_token="",
-                 root=folder, anchor_store=f"file://{folder}")
+                 root=folder, anchor_store=folder.path.as_uri())
     with pytest.raises(SystemExit) as stopped:
         cli._anchor(cfg, every=3600)  # it doesn't wait an hour to try again
     assert stopped.value.code == 1
