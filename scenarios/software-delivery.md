@@ -16,6 +16,8 @@ An engineering team works in an issue tracker and code review. Engineers fix bug
 | Decision surface | The code review and the issue tracker themselves |
 | Tests | [`tests/test_software_delivery.py`](../tests/test_software_delivery.py), against a fake issue tracker and code review, and live on a real model; and on a5s's containers, through Matrix, with its release approved by its own people ([`deploy/smoke-scenario.sh`](../deploy/smoke-scenario.sh)) |
 
+The evaluation also covers release readiness across records and policy, approved reviews with failing checks, reopened fixes, ambiguous and unknown issues, changing records between task slices, cancellation, and multi-turn scope changes. Critical live questions run twice, with semantic assertions beside scorecards of latency, model calls, tokens, permission denials and forbidden tools ([`tests/scorecards.py`](../tests/scorecards.py)). The approved model list has no prices, so token use is measured but monetary cost is not claimed.
+
 ## Who sees what
 
 - An issue or pull request is its team's to see, and its assignee's, author's, reporter's and reviewers'.
@@ -26,6 +28,6 @@ An engineering team works in an issue tracker and code review. Engineers fix bug
 
 | Agent | Works for | Starts at | Does |
 | --- | --- | --- | --- |
-| Dev assistant (`dev-assistant`) | Engineers, their leads and product | Level 1 | Answers about issues, pull requests, checks and reviews, and how the team works, from the handbook; saves drafts such as pull request descriptions and release notes for people to post; and chases the fixes and reviews people owe, by when they're due |
+| Dev assistant (`dev-assistant`) | Engineers, their leads and product | Level 1 | Answers about issues, pull requests, checks and reviews, and how the team works, from the handbook; saves drafts such as pull request descriptions and release notes for people to post; takes on confirmed, resumable review tasks; and chases the fixes and reviews people owe, by when they're due |
 
 It never merges, approves a review, changes an issue, runs code or handles a secret: the code review's own controls decide those, and people make them.

@@ -30,6 +30,9 @@ context:
   documents: false  # a letter reaches it only as its form, which code checks: never in words,
   # which could hold a bank account's number
   agents: false
+tasks:
+  budget_tokens: 120000
+  days: 2
 budget:
   per_run: 200000
   per_person_per_day: 1000000

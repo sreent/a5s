@@ -16,6 +16,8 @@ A data team governs the master data an organisation runs on, in SAP MDG: supplie
 | Decision surface | SAP MDG, and a5s's decision page for the corrections an agent proposes |
 | Tests | [`tests/test_master_data.py`](../tests/test_master_data.py), against a fake SAP MDG, and live on a real model; and on a5s's containers, through Matrix, with its release approved by its own people ([`deploy/smoke-scenario.sh`](../deploy/smoke-scenario.sh)) |
 
+The evaluation also combines all the bank-change warning signs in one ask, checks every rule failure rather than the first, distinguishes likely duplicates from near-misses, tests indirect denials and stale decisions, checks quality boundaries, and changes requests between task slices. Critical live questions run twice, with semantic assertions beside scorecards of latency, model calls, tokens, permission denials and forbidden tools ([`tests/scorecards.py`](../tests/scorecards.py)). The approved model list has no prices, so token use is measured but monetary cost is not claimed.
+
 ## What code decides
 
 The model never validates. Code does, the same way each time, and the agent tells people what code found:
@@ -44,7 +46,7 @@ The model never validates. Code does, the same way each time, and the agent tell
 
 | Agent | Works for | Starts at | Does |
 | --- | --- | --- | --- |
-| Master data assistant (`mdg-assistant`) | Requesters, data stewards and each data object's owner | Level 1 | Checks requests and quality by code, answers from SAP and the handbook, proposes corrections for the owner to decide, drafts notes and quality reports, and chases each request's next step and each owner's quality fix |
+| Master data assistant (`mdg-assistant`) | Requesters, data stewards and each data object's owner | Level 1 | Checks requests and quality by code, answers from SAP and the handbook, proposes corrections for the owner to decide, drafts notes and quality reports, takes on confirmed, resumable review tasks, and chases each request's next step and each owner's quality fix |
 | Data quality watcher (`mdg-watcher`) | Each data object's owner, and the data stewards | Level 0 | Tells each owner every working morning how their data object stands against its target and what changed, and each person what changed in the requests that wait on them |
 
 Neither approves, rejects or posts anything in SAP, and neither ever sees a bank account's number.

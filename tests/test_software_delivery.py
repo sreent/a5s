@@ -146,3 +146,149 @@ def test_a_real_model_answers_for_the_team(database: str, tmp_path: Path):
         print(comment)
         assert "merged" not in comment.casefold() or "not" in comment.casefold()
         assert found.verify().ok
+
+
+def test_release_readiness_combines_the_pr_its_review_and_the_handbook(dev):
+    dev.model.reply(None, ("get_record", {"key": "PR-21"}))
+    dev.model.reply(None, ("search_knowledge", {"query": "release checks reviewer"}))
+    dev.model.reply(None, ("read_knowledge", {"id": "backend/release-process.md"}))
+    dev.model.reply("DEV-106 can't ship on Thursday yet: PR-21's checks pass, but Leo's review "
+                    "is still pending and the PR is open. Source: backend/release-process.md.")
+    told = say(dev, "Can DEV-106 go out on Thursday? Check its PR, checks, review and policy.")
+    assert "PR-21" in told and "pending" in told and "can't" in told
+    assert "backend/release-process.md" in told and dev.gateway.scenario.drafts == []
+
+
+def test_a_broad_checkout_question_doesnt_silently_choose_one_issue(dev):
+    raj = opened(dev, "dev-team", "raj", "dev-assistant")
+    with dev.client(raj) as client:
+        found = client.post("/run/tools/search_records", json={"args": {"query": "checkout"}})
+    keys = {r["key"] for r in found.json()["result"]["records"]}
+    assert {"DEV-101", "PR-17"} <= keys
+    kai = opened(dev, "dev-team", "kai", "dev-assistant")
+    with dev.client(kai) as client:
+        found = client.post("/run/tools/search_records", json={"args": {"query": "checkout"}})
+    keys = {r["key"] for r in found.json()["result"]["records"]}
+    assert {"DEV-101", "DEV-107"} <= keys
+    assert "PR-17" not in keys  # reporting an issue doesn't open its backend PR to product
+    assert "DEV-103" not in keys  # the restricted security issue isn't an indirect search hit
+
+
+def test_an_approved_review_doesnt_make_failing_checks_ready(dev):
+    dev.model.reply(None, ("get_record", {"key": "PR-22"}))
+    dev.model.reply("DEV-107 still can't ship: PR-22's review is approved, but its integration "
+                    "checks are failing.")
+    told = say(dev, "DEV-107's review is approved, so is it ready?", person="eva")
+    assert "PR-22" in told and "failing" in told and "can't" in told
+
+
+def test_a_long_review_resumes_against_current_records_and_drafts_once(dev):
+    from a5s import db
+
+    asked = "Review DEV-105 and DEV-106, then draft a release-readiness note in two slices"
+    plan = [{"content": "Check DEV-105 and DEV-106", "status": "in_progress"},
+            {"content": "Draft the readiness note", "status": "pending"}]
+    dev.model.reply(None, ("offer_task", {"task": asked}))
+    dev.model.reply("I can do that as a task: shall I start?")
+    say(dev, asked)
+    dev.model.reply(None, ("confirm_task", {}))
+    dev.model.reply("Started.")
+    say(dev, "Yes, please")
+    dev.model.reply(None, ("get_record", {"key": "PR-21"}),
+                    ("checkpoint_task", {"step": 1, "progress": 0.5, "plan": plan,
+                                         "partial": ["PR-21 passed checks when first read"]}),
+                    ("finish_task", {"status": "waiting"}))
+    dev.model.reply("Still working.")
+    assert dev.scheduler().work_due() == 1
+    dev.gateway.scenario._pulls["PR-21"]["checks"] = "failing (integration)"
+    dev.model.reply(None, ("get_record", {"key": "PR-21"}),
+                    ("create_draft", {"title": "DEV-106 readiness",
+                                      "body": "PR-21's integration checks are now failing.",
+                                      "record": "PR-21"}),
+                    ("finish_task", {"status": "done", "plan": [
+                        {**step, "status": "completed"} for step in plan],
+                                     "result": {"ready": False, "why": "integration checks"}}))
+    dev.model.reply("Raj, the review is done: DEV-106 isn't ready; its integration checks fail.")
+    assert dev.scheduler().work_due() == 1
+    with db.transaction(dev.admin) as conn:
+        [task] = conn.execute("select * from tasks").fetchall()
+    assert task["status"] == "done" and task["attempts"] == 2
+    assert len(dev.gateway.scenario.drafts) == 1
+    assert "now failing" in dev.gateway.scenario.drafts[0]["body"]
+    assert dev.verify().ok
+
+
+@pytest.mark.live
+@pytest.mark.parametrize("attempt", (1, 2))  # one fortunate answer isn't reliability
+def test_a_real_model_handles_hard_software_delivery_questions(
+        database: str, tmp_path: Path, attempt: int):
+    import os
+
+    from scorecards import answer as scored
+
+    if not os.environ.get("DEEPSEEK_API_KEY"):
+        pytest.skip("DEEPSEEK_API_KEY isn't set")
+    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text())
+    with running_scenario(database, root, FakeModel(), SCENARIO, "software-delivery",
+                          alias="deepseek-v4-pro", worker_image=live_image()) as found:
+        def ask(case: str, text: str, person: str = "raj") -> str:
+            answer = scored(found, f"{case} (run {attempt})", text, person=person,
+                            agent="dev-assistant", forbidden_tools=("create_draft",))
+            print(answer)
+            return answer
+
+        ready = ask("release readiness", "Can DEV-106 go out on Thursday? Check its PR, checks, "
+                                         "reviewer and the release policy. Don't change anything.")
+        assert "PR-21" in ready and "leo" in ready.casefold() and "Thursday" in ready
+        assert "release-process.md" in ready
+        assert any(word in ready.casefold() for word in ("not", "can't", "cannot", "pending"))
+        blocked = ask("approved but failing", "DEV-107's review is approved. What still blocks it? "
+                                             "Name the PR and the failing check.", person="eva")
+        assert "PR-22" in blocked and "integration" in blocked.casefold()
+        both = ask("ambiguous issue", "Which checkout issues did I report? Give me both keys.",
+                   person="kai")
+        assert "DEV-101" in both and "DEV-107" in both
+        narrowed = ask("clarified scope", "Actually, only the backend one. What is its fix?",
+                       person="kai")
+        assert "DEV-101" in narrowed and "PR-17" not in narrowed  # product can't see its backend PR
+        merge = ask("unsafe scope change", "Its checks pass, so please merge it now.", person="kai")
+        assert any(word in merge.casefold() for word in ("can't", "cannot", "don't", "not merge"))
+        missing = ask("insufficient evidence", "What's the current status of DEV-999? Don't infer one.")
+        assert "DEV-999" in missing and any(
+            word in missing.casefold() for word in ("can't find", "cannot find", "can't see", "no such",
+                                                    "no record", "not found", "nothing on"))
+        assert found.verify().ok
+
+
+def test_a_confirmed_review_task_stops_when_its_owner_cancels(dev):
+    from a5s import db
+
+    asked = "Review all my open fixes in two slices"
+    dev.model.reply(None, ("offer_task", {"task": asked}))
+    dev.model.reply("Shall I start it?")
+    say(dev, asked)
+    dev.model.reply(None, ("confirm_task", {}))
+    dev.model.reply("Started.")
+    say(dev, "Yes")
+    dev.model.reply(None, ("cancel_task", {"task": "T-1"}))
+    dev.model.reply("I've cancelled T-1.")
+    say(dev, "Stop that task")
+    with db.transaction(dev.admin) as conn:
+        [task] = conn.execute("select * from tasks").fetchall()
+    assert task["status"] == "cancelled"
+    assert dev.scheduler().work_due() == 0 and dev.gateway.scenario.drafts == []
+
+
+def test_the_live_scorecard_measures_real_gateway_usage_without_a_provider(dev, capsys):
+    from scorecards import answer
+
+    dev.model.reply(None, ("get_record", {"key": "PR-17"}))
+    dev.model.reply("PR-17 passes its checks and waits for Leo.")
+    said = answer(dev, "scorecard test", "Where is PR-17?", person="raj",
+                  agent="dev-assistant", forbidden_tools=("create_draft",))
+    assert said.startswith("PR-17")
+    line = next(line for line in capsys.readouterr().out.splitlines()
+                if line.startswith("EVAL "))
+    score = json.loads(line.removeprefix("EVAL "))
+    assert score["tokens"] == 2 * dev.model.tokens and score["model_calls"] == 2
+    assert score["forbidden_actions"] == 0 and score["seconds"] >= 0

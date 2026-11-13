@@ -7,7 +7,7 @@ from a5s.services import context
 
 MONDAY = "2026-11-02T09:30:00+00:00"  # half the time for Ana's and Ben's questions has passed
 RECORD = ("Q-1001, Invoice sent to the wrong address: status open, due date 2026-11-04, customer "
-          "Northwind. Ana Ortiz owns it. https://sample.a5s.dev/records/Q-1001")
+          "Northwind. Its next step is with Ana Ortiz. https://sample.a5s.dev/records/Q-1001")
 
 
 def system_prompt(stack, request: int = -1) -> str:

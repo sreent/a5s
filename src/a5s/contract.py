@@ -74,7 +74,7 @@ class Record:
 
     source: str  # the kind of record it is, such as "records"
     key: str
-    person: str  # whose it is, such as its owner
+    person: str  # who is responsible for its next step, such as its owner
     title: str
     # What a change in matters, named in words, such as {"status": "open"}: what a person
     # deciding a change to it weighs, never values that change by themselves, such as a time
