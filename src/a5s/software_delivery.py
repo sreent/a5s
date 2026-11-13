@@ -11,6 +11,7 @@ reader.
 
 from __future__ import annotations
 
+import threading
 from datetime import datetime
 from pathlib import Path
 
@@ -26,6 +27,7 @@ from a5s.contract import (
     ToolCall,
     parse_settings,
 )
+from a5s.effects import draft_once
 from a5s.knowledge import MarkdownKnowledge
 
 LINK = "https://code.dev.test/"
@@ -49,6 +51,7 @@ class SoftwareDeliveryScenario:
         self._pulls = {p["key"]: p for p in data["pulls"]}
         self._comments = data.get("comments") or []
         self.drafts: list[dict] = []
+        self._draft_lock = threading.Lock()
 
     @staticmethod
     def _person(folder: Path, entry: dict) -> Person:
@@ -154,8 +157,7 @@ class SoftwareDeliveryScenario:
                 c for c in self._comments if c["record"] == call.args["key"]]}
 
         def draft(call: ToolCall) -> dict:
-            self.drafts.append(dict(call.args))
-            return {"draft": len(self.drafts), "link": f"{LINK}drafts/{len(self.drafts)}"}
+            return draft_once(call, self.drafts, LINK, self._draft_lock)
 
         query = {"type": "object", "properties": {"query": {"type": "string"}},
                  "required": ["query"]}
@@ -180,7 +182,8 @@ class SoftwareDeliveryScenario:
                           "date": "date", "issue": "key"}),
             Tool("create_draft", "Save a draft, such as a pull request's description, a review "
                  "comment or a release note, for a person to read, change and post.", body,
-                 draft, writes=True, text_fields=("title", "body"), record_arg="record"),
+                 draft, writes=True, text_fields=("title", "body"), record_arg="record",
+                 idempotent=True),
         )}
         tools.update(MarkdownKnowledge(self.folder / "knowledge",
                                        sees_part=self._knowledge_part, person=self.person).tools())

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
+from datetime import timedelta
 from pathlib import Path
 
 import httpx
@@ -292,3 +293,60 @@ def test_the_live_scorecard_measures_real_gateway_usage_without_a_provider(dev, 
     score = json.loads(line.removeprefix("EVAL "))
     assert score["tokens"] == 2 * dev.model.tokens and score["model_calls"] == 2
     assert score["forbidden_actions"] == 0 and score["seconds"] >= 0
+
+
+@pytest.mark.live
+def test_a_real_model_resumes_a_task_without_repeating_its_draft(database: str, tmp_path: Path):
+    import os
+
+    from a5s import db
+    from a5s.config import load_models
+    from a5s.worker import run_agent
+
+    models = load_models(ROOT / "config" / "models.yaml")
+    alias = os.environ.get("A5S_EVAL_MODEL", "deepseek-v4-pro")
+    if models[alias].key_env and not os.environ.get(models[alias].key_env):
+        pytest.skip(f"{models[alias].key_env} isn't set")
+    root = build_root(tmp_path, alias, (ROOT / "config" / "models.yaml").read_text())
+    asked = (
+        "Do this as a task in two slices. In the first slice, call create_draft with title "
+        "'DEV-106 readiness', body 'PR-21 needs review before release', and record 'PR-21'; "
+        "save a checkpoint and finish waiting. Call create_draft exactly once per slice and make "
+        "no other changes. In the second slice, call create_draft again with exactly the same "
+        "title, body and record, then finish done. Do not change the wording.")
+    with running_scenario(database, root, FakeModel(), SCENARIO, "software-delivery",
+                          alias=alias, worker_image=live_image()) as found:
+        say(found, asked)
+        started = say(found, "Yes, start it with confirm_task")
+        model_outcomes = [(e["action"], e.get("outcome")) for e in found.ledger()
+                          if e["kind"] == "model"]
+        tool_outcomes = [(e["action"], e["decision"], e.get("outcome")) for e in found.ledger()
+                         if e["kind"] == "tool"]
+        assert "T-" in started, (started, model_outcomes, tool_outcomes)
+        stopping = found.scheduler(worker=lambda url, token, history: (
+            run_agent(url, token, history), (_ for _ in ()).throw(SystemExit))[0])
+        stopping._close = lambda run, outcome: None  # the scheduler disappears before closing
+        try:
+            stopping.work_due()
+        except SystemExit:
+            pass
+        with db.transaction(found.admin) as conn:
+            before = conn.execute("select status, attempts from tasks where parent is null").fetchall()
+            drafts = len(found.gateway.scenario.drafts)
+            conn.execute("update runs set expires_at = now() - interval '1 second'")
+        assert drafts == 1, (before, found.gateway.scenario.drafts)
+        found.scheduler().sweep()
+        found.at((found.gateway.clock() + timedelta(minutes=2)).isoformat())
+        for _ in range(4):
+            found.scheduler().work_due()
+            with db.transaction(found.admin) as conn:
+                [task] = conn.execute("select * from tasks where parent is null").fetchall()
+            if task["status"] == "done":
+                break
+        assert task["status"] == "done" and task["attempts"] >= 2, dict(task)
+        assert len(found.gateway.scenario.drafts) == 1
+        with db.transaction(found.admin) as conn:
+            told = [r["text"] for r in conn.execute(
+                "select text from outbox where person = 'raj' and inbound_id is null")]
+        assert len(told) == 1 and "done" in told[0].casefold()
+        assert found.verify().ok

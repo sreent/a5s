@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import math
 import re
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -31,6 +32,7 @@ from a5s.contract import (
     ToolCall,
     parse_settings,
 )
+from a5s.effects import draft_once
 from a5s.knowledge import MarkdownKnowledge
 
 LINK = "https://mdg.sap.test/"
@@ -127,6 +129,7 @@ class MasterDataScenario:
         self._requests = {r["key"]: r for r in data["requests"]}
         self._letters = data.get("letters") or []
         self.drafts: list[dict] = []
+        self._draft_lock = threading.Lock()
 
     @staticmethod
     def _person(folder: Path, entry: dict) -> Person:
@@ -374,8 +377,7 @@ class MasterDataScenario:
                 m for m in self._letters if m["record"] == call.args["key"]]}
 
         def draft(call: ToolCall) -> dict:
-            self.drafts.append(dict(call.args))
-            return {"draft": len(self.drafts), "link": f"{LINK}drafts/{len(self.drafts)}"}
+            return draft_once(call, self.drafts, LINK, self._draft_lock)
 
         def correct(call: ToolCall) -> dict:
             request = self._requests.get(str(call.args.get("key", "")))
@@ -431,7 +433,8 @@ class MasterDataScenario:
                  {"type": "object", "required": ["title", "body"], "properties": {
                      "title": {"type": "string"}, "body": {"type": "string"},
                      "record": {"type": "string"}}},
-                 draft, writes=True, text_fields=("title", "body"), record_arg="record"),
+                 draft, writes=True, text_fields=("title", "body"), record_arg="record",
+                 idempotent=True),
             Tool("correct_value", "Propose a correction to what a change request proposes, such "
                  "as a missing base unit, for its data object's owner to decide. A sensitive "
                  "field, such as bank details, a VAT number, payment terms or a supplier's name, "

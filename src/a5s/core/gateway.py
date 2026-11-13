@@ -2421,9 +2421,10 @@ def create_app(gw: Gateway) -> FastAPI:
                 if field_name in given:  # though a5s's own notes stay
                     given[field_name], _ = cleaned(given[field_name], gw.scenario.record_links,
                                                    notes=False)
+            effect = change or (counts.change(name, keys, args) if tool.idempotent else None)
             result = tool.run(ToolCall(args=given, instance=row["id"], run=row["run"],
                                        acts_for=tuple(row["acts_for"]),
-                                       key=counts.key(counts.work(row), change) if change
+                                       key=counts.key(counts.work(row), effect) if effect
                                        else None))  # once for the run, or for its task
             refused = result.get("error") if action and isinstance(result, dict) else None
             outcome = ({"status": "error", "error": str(refused)[:200], "answered": True}
