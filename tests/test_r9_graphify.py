@@ -20,10 +20,17 @@ def test_the_graphify_cli_runs_without_the_cores_secrets(tmp_path, monkeypatch):
     seen = tmp_path / "seen.json"
     cli = tmp_path / "bin" / "graphify"  # any binary of that name, as a deployment installs it
     cli.parent.mkdir()
-    cli.write_text(f"#!{sys.executable}\nimport json, os\n"
-                   f"json.dump(sorted(k for k in os.environ if k.startswith('A5S_')), open({str(seen)!r}, 'w'))\n"
-                   "print('NODE Client [src=app.py]')\n")
-    cli.chmod(cli.stat().st_mode | stat.S_IEXEC)
+    payload = (f"import json, os\n"
+               f"json.dump(sorted(k for k in os.environ if k.startswith('A5S_')), open({str(seen)!r}, 'w'))\n"
+               "print('NODE Client [src=app.py]')\n")
+    if os.name == "nt":
+        runner = tmp_path / "graphify_fake.py"
+        runner.write_text(payload)
+        cli = cli.with_suffix(".cmd")  # the command shim an installed CLI has on Windows
+        cli.write_text(f'@"{sys.executable}" "{runner}"\n')
+    else:
+        cli.write_text(f"#!{sys.executable}\n" + payload)
+        cli.chmod(cli.stat().st_mode | stat.S_IEXEC)
     monkeypatch.setenv("PATH", f"{cli.parent}{os.pathsep}{os.environ['PATH']}")
     for name, value in (("A5S_SEAL_KEYS", "synthetic-seal-key"),  # as the chart gives the
                         ("A5S_SERVICE_TOKEN", "synthetic-service-token"),  # gateway, and
@@ -32,7 +39,8 @@ def test_the_graphify_cli_runs_without_the_cores_secrets(tmp_path, monkeypatch):
     graph = tmp_path / "graph.json"
     graph.write_text("{}")
     tool = Graphify(graph)
-    assert tool.command == str(cli)  # settled as a5s starts, not at each call
+    # Windows preserves neither the extension's case nor POSIX's path case rules.
+    assert os.path.normcase(tool.command) == os.path.normcase(str(cli))
     answer = tool.tools()["query_code"].run(call("authentication"))
     assert answer["answer"].startswith("NODE")
     assert json.loads(seen.read_text()) == []  # none of the core's secrets, nor anything a5s's

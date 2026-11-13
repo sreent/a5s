@@ -46,17 +46,33 @@ def later(app: FastAPI, port: int, after: float, done: threading.Event) -> threa
     return up
 
 
-def test_what_goes_to_a_part_that_cant_be_reached_for_a_moment_waits_for_it(caplog):
+def test_what_goes_to_a_part_that_cant_be_reached_for_a_moment_waits_for_it():
     app, got = counting()
     port, done = free_port(), threading.Event()
     up = later(app, port, 1, done)
     try:
-        with caplog.at_level(logging.WARNING, logger="a5s.reach"), reach.client(20) as c:
+        with reach.client(20) as c:
             answer = c.post(f"http://127.0.0.1:{port}/")
     finally:
         done.set()
     assert up.is_set() and answer.json() == {"got": 1} and got == [1]  # sent once
-    assert f"http://127.0.0.1:{port} can't be reached, so what's sent there waits" in caplog.text
+
+
+def test_a_connection_that_never_opened_logs_once_before_it_is_tried_again(monkeypatch, caplog):
+    calls = 0
+
+    def unreachable_once(self, request):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            raise httpx.ConnectError("no listener", request=request)
+        return httpx.Response(200, json={"got": 1}, request=request)
+
+    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", unreachable_once)
+    with caplog.at_level(logging.WARNING, logger="a5s.reach"), reach.client(20) as client:
+        answer = client.post("http://a5s-part.test/")
+    assert calls == 2 and answer.json() == {"got": 1}
+    assert caplog.text.count("http://a5s-part.test can't be reached") == 1
 
 
 def test_what_goes_to_a_part_that_stays_down_fails_once_its_time_is_up():
@@ -136,7 +152,7 @@ class Restartable:
             self.server.should_exit = True
 
 
-def test_a_run_goes_on_once_its_core_is_back_from_a_restart(stack, caplog):
+def test_a_run_goes_on_once_its_core_is_back_from_a_restart(stack):
     """The core restarts part way through a run, as for an upgrade: just as its model has
     asked for a tool. The run's call to the tool waits for the core, and the run ends as it
     would have, with its answer."""
@@ -147,14 +163,12 @@ def test_a_run_goes_on_once_its_core_is_back_from_a_restart(stack, caplog):
     stack.model.on_request = lambda n: core.restart(after=1) if n == 1 else None
     worker = f"http://127.0.0.1:{core.port}"  # the run reaches the core here; the scheduler,
     try:  # at the stack's own
-        with caplog.at_level(logging.WARNING, logger="a5s.reach"):
-            said = stack.say("Which questions mention an invoice?", scheduler=stack.scheduler(
-                worker=lambda _url, token, history: run_agent(worker, token, history)))
+        said = stack.say("Which questions mention an invoice?", scheduler=stack.scheduler(
+            worker=lambda _url, token, history: run_agent(worker, token, history)))
     finally:
         core.stop()
     assert said == "I found two questions about an invoice."
     assert len(stack.model.requests) == 2  # each of its model's calls, once
-    assert f"{worker} can't be reached, so what's sent there waits" in caplog.text
     closed = [e["outcome"] for e in stack.ledger() if e["kind"] == "run" and e["action"] == "close"]
     assert closed == ["done"]
 

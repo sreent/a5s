@@ -34,7 +34,7 @@ def cli(stack, monkeypatch, tmp_path):
     monkeypatch.setenv("A5S_ROOT", str(stack.cfg.root))
     monkeypatch.setenv("A5S_GATEWAY_URL", stack.url)
     monkeypatch.setenv("A5S_SERVICE_TOKEN", SERVICE_TOKEN)
-    monkeypatch.setenv("A5S_ANCHOR_STORE", f"file://{tmp_path / 'copies'}")
+    monkeypatch.setenv("A5S_ANCHOR_STORE", (tmp_path / 'copies').as_uri())
     return command_line.main
 
 
@@ -133,7 +133,7 @@ def test_without_the_copies_verify_says_how_little_holding_together_proves(
     cli(["audit", "verify", str(out)])  # it holds together, as it would...
     said = capsys.readouterr().out
     assert "which alone proves little" in said and "A5S_ANCHOR_STORE" in said
-    monkeypatch.setenv("A5S_ANCHOR_STORE", f"file://{tmp_path / 'copies'}")
+    monkeypatch.setenv("A5S_ANCHOR_STORE", (tmp_path / 'copies').as_uri())
     copy(stack, tmp_path)
     with pytest.raises(SystemExit, match="differs from the ledger's locked copy"):
         cli(["audit", "verify", str(out)])  # ...but not against the locked copies

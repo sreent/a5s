@@ -14,13 +14,14 @@ import json
 import httpx
 
 from a5s import db
-from test_proposals import asked, decide, held, sweep
+from test_proposals import asked, decide, held, invented, sweep
 
 
 def test_a_grader_sees_what_code_flagged_to_the_decider(stack, approving, provider):
-    asked(stack, said="Please move Q-1002 out a week.")  # Ben named no date
+    call, day = invented()
+    asked(stack, call, said="Please move Q-1002 out a week.")  # Ben named no date
     [p] = held(stack)
-    assert p["flags"] == [("2026-11-13 came from the assistant itself, not from the records or "
+    assert p["flags"] == [(f"{day} came from the assistant itself, not from the records or "
                            "from Ben Okafor")]
     decide(approving, provider, [p["digest"]])
     sweep(stack)

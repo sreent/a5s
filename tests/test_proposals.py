@@ -8,7 +8,7 @@ import hashlib
 import json
 import secrets
 from dataclasses import replace
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from urllib.parse import parse_qs
 
 import httpx
@@ -20,6 +20,12 @@ from a5s.core import proposals
 from conftest import CLIENT
 
 MOVE = ("change_due_date", {"key": "Q-1002", "due": "2026-11-13"})
+
+
+def invented() -> tuple[tuple[str, dict], str]:
+    """A date not already recorded among the run's turns, whatever day the tests run."""
+    day = (datetime.now(UTC).date() + timedelta(days=30)).isoformat()
+    return ("change_due_date", {"key": "Q-1002", "due": day}), day
 
 
 def asked(stack, call=MOVE, person: str = "ben", said: str = "Please move Q-1002 to 2026-11-13.") -> dict:
@@ -209,12 +215,13 @@ def test_a_sensitive_change_is_decided_on_its_own(stack, approving, provider):
 
 
 def test_deciders_see_values_the_agent_wrote_itself(stack, approving):
-    asked(stack, said="Please move Q-1002 out a week.")  # Ben named no date
+    call, day = invented()
+    asked(stack, call, said="Please move Q-1002 out a week.")  # Ben named no date
     [p] = held(stack)
-    assert p["flags"] == [("2026-11-13 came from the assistant itself, not from the records or "
+    assert p["flags"] == [(f"{day} came from the assistant itself, not from the records or "
                            "from Ben Okafor")]
     [card] = [m for m in stack.inbox("ana") if m["text"].startswith("P-1 waits")]
-    assert "What to know:\n- 2026-11-13 came from the assistant itself" in card["text"]
+    assert f"What to know:\n- {day} came from the assistant itself" in card["text"]
 
 
 def test_the_page_shows_a_decider_what_waits_for_them_and_nobody_else(stack, approving, provider):
@@ -306,7 +313,8 @@ def test_the_decision_page_runs_only_its_own_script_and_shows_only_text(approvin
 
 
 def test_a_decider_reviews_and_approves_in_the_browser(stack, approving, provider, browser):
-    asked(stack, said="Please move Q-1002 out a week.")
+    call, day = invented()
+    asked(stack, call, said="Please move Q-1002 out a week.")
     [p] = held(stack)
     page = browser.new_page()
     page.goto(f"{approving}/decide/?proposal={p['digest']}")  # signed in, to see what waits
@@ -317,13 +325,13 @@ def test_a_decider_reviews_and_approves_in_the_browser(stack, approving, provide
     assert "as it stood when it was asked for: status waiting on finance" in page.inner_text(
         "article .said")
     assert page.locator("article .flags li").all_inner_texts() == [
-        "2026-11-13 came from the assistant itself, not from the records or from Ben Okafor"]
+        f"{day} came from the assistant itself, not from the records or from Ben Okafor"]
     page.click("article button >> text=Approve")  # afresh, for this decision alone
     page.wait_for_selector("#status >> text=You approved P-1", timeout=30000)
     assert provider.asked[-1]["max_age"] == "0"
     assert page.evaluate("window.location.search") == ""  # the code doesn't linger
     stack.scheduler().decided()
-    assert due_of(stack) == "2026-11-13"
+    assert due_of(stack) == day
 
 
 def test_a_change_and_its_decision_go_a_year_after_it_ended(stack, approving, provider):
