@@ -270,6 +270,8 @@ button.quiet { background: transparent; border-color: var(--line); color: var(--
 .wait { padding: 0.6rem 0.8rem; border: 1px solid var(--line); border-radius: 8px; }
 .wait > a, .wait > span:first-child { font-weight: 500; }
 .wait ul { margin: 0.3rem 0 0; }
+.agent-card .why { margin: 0; font-size: 0.85em; }
+.hand-over { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
 .publish { display: grid; gap: 0.75rem; }
 .publish p { margin: 0; }
 .sign-in-code { padding: 0.9rem 1rem; border: 1px solid var(--line); border-radius: 10px; background: var(--sunken); display: grid; gap: 0.5rem; max-width: 34rem; }

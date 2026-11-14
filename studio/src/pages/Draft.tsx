@@ -82,7 +82,7 @@ function Tools({ files, offered, change }: { files: Files; offered: Offered[]; c
   );
 }
 
-function Raw({ files, change }: { files: Files; change: (f: Files) => void }) {
+function Raw({ files, change, readOnly = false }: { files: Files; change: (f: Files) => void; readOnly?: boolean }) {
   const names = Object.keys(files).sort();
   const [open, setOpen] = useState(names.includes("agent.yaml") ? "agent.yaml" : names[0]);
   const pinned = open === "tools.lock";
@@ -95,10 +95,81 @@ function Raw({ files, change }: { files: Files; change: (f: Files) => void }) {
       </ul>
       <div className="raw-file">
         {pinned && <p className="note">a5s pins its tools as the scenario has them each time it's kept, as `a5s pin` does.</p>}
-        <textarea id="file-text" aria-label={open} spellCheck={false} readOnly={pinned} value={files[open] ?? ""}
+        <textarea id="file-text" aria-label={open} spellCheck={false} readOnly={pinned || readOnly} value={files[open] ?? ""}
                   onChange={(e) => change({ ...files, [open]: e.target.value })} />
       </div>
     </div>
+  );
+}
+
+/** A co-author's draft, read only: what would stop its release, who'd sign it, its map and its
+ * files, and a copy of it into a draft of one's own, to change it. */
+function TheirDraft({ draft }: { draft: Draft }) {
+  const [problem, setProblem] = useState<string | null>(null);
+  const copy = async () => {
+    try {
+      const made = await send<Draft>("POST", "/studio/api/drafts", { copy: draft.id });
+      go({ page: "draft", draft: made.id });
+    } catch (e) {
+      setProblem((e as Error).message);
+    }
+  };
+  return (
+    <>
+      <PageHead crumbs={[{ label: "Agents", to: { page: "agents" } }]} title={draft.agent}
+                badges={<><span className="chip">draft</span> <span className="chip">read only</span></>}
+                about={`${draft.author}'s draft, from ${draft.based_on}, kept ${when(draft.updated_at)}. You may author the ${draft.agent} too, so you may read it: copy it into a draft of your own to change it.`}>
+        <div className="meta"><button type="button" className="primary" id="copy-draft" onClick={copy}>Make a copy of your own</button></div>
+      </PageHead>
+      {problem && <p className="problem">{problem}</p>}
+      <section className={`card ${draft.problems.length ? "" : "ready"}`} id="problems">
+        {draft.problems.length === 0
+          ? <p><span className="badge good">ready</span> Nothing would stop its release here, by the checks <span className="mono">a5s agent check</span> makes.</p>
+          : <><h3>What would stop its release</h3><ul className="plain">{draft.problems.map((p) => <li key={p}>{p}</li>)}</ul></>}
+      </section>
+      <section className="card map-card">
+        <h3>How it's wired</h3>
+        {draft.preview ? <AgentMap agent={draft.preview} /> : <p className="note">Its map shows once its definition loads.</p>}
+      </section>
+      <section className="card editor" id="their-files">
+        <h3>Its files</h3>
+        <Raw files={draft.files} change={() => undefined} readOnly />
+      </section>
+    </>
+  );
+}
+
+/** Hand one's own draft over to a co-author, who may author its agent too: it's theirs then. */
+function HandOver({ id }: { id: string }) {
+  const [open, setOpen] = useState(false);
+  const [to, setTo] = useState("");
+  const [problem, setProblem] = useState<string | null>(null);
+  const people = useLoad(() => (open ? get<{ people: { id: string; name: string }[] }>(
+    `/studio/api/drafts/${encodeURIComponent(id)}/co-authors`) : Promise.resolve({ people: [] })), [open, id]);
+  if (!open) return <button type="button" className="quiet" id="hand-over" onClick={() => setOpen(true)}>Hand it over</button>;
+  const found = people.data?.people ?? [];
+  const hand = async () => {
+    try {
+      await send("POST", `/studio/api/drafts/${encodeURIComponent(id)}/hand-over`, { to: to || found[0]?.id });
+      go({ page: "agents" });
+    } catch (e) {
+      setProblem((e as Error).message);
+    }
+  };
+  return (
+    <span className="hand-over">
+      {people.data && found.length === 0 && <span className="faint">Nobody else may take it: they may author its agent, and have no draft of it.</span>}
+      {found.length > 0 && (
+        <>
+          <select id="hand-to" value={to || found[0].id} onChange={(e) => setTo(e.target.value)} aria-label="Hand it over to">
+            {found.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+          <button type="button" className="primary" id="hand-over-to" onClick={hand}>Hand it over to them</button>
+        </>
+      )}
+      <button type="button" className="quiet" onClick={() => setOpen(false)}>Keep it</button>
+      {problem && <span className="problem"> {problem}</span>}
+    </span>
   );
 }
 
@@ -157,14 +228,16 @@ export function DraftPage({ id }: { id: string }) {
   };
 
   const draft = loaded.data;
+  if (draft && !draft.yours) return <TheirDraft draft={draft} />;
   const status = typeof kept === "object" ? <span className="badge bad">{kept.problem}</span>
     : kept === "keeping" ? <span className="badge">keeping…</span> : <span className="badge good">kept</span>;
   return (
     <>
       <PageHead crumbs={[{ label: "Agents", to: { page: "agents" } }]} title={draft ? draft.agent : "A draft"}
                 badges={draft && <span className="chip">draft</span>}
-                about={draft && `From ${draft.based_on}, started ${when(draft.created_at)}. Yours alone: nothing runs it until it's published and its release signed.`}>
+                about={draft && `From ${draft.based_on}, started ${when(draft.created_at)}. Yours to change, and readable by the agent's other owners and authors: nothing runs it until it's published and its release signed.`}>
         {draft && <div className="meta"><span id="kept">{status}</span>
+          <HandOver id={id} />
           <button type="button" className="quiet" onClick={drop}>Drop the draft</button></div>}
       </PageHead>
       {(!draft || !files || !said) && <Waiting error={loaded.error} />}

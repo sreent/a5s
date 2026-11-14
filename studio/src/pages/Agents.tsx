@@ -24,6 +24,7 @@ function AgentCard({ agent }: { agent: Agent }) {
         </div>
       </div>
       <p className="clamp">{agent.works_for}</p>
+      {agent.why && agent.why.length > 0 && <p className="why faint">{agent.why.join(" · ")}</p>}
       <div className="chips">
         <span className="chip">{agent.model}</span>
         <span className="chip">{levels(agent.autonomy)}</span>
@@ -49,17 +50,29 @@ function AgentCard({ agent }: { agent: Agent }) {
   );
 }
 
+function DraftList({ drafts }: { drafts: DraftLine[] }) {
+  return (
+    <ul className="plain">{drafts.map((d) => (
+      <li key={d.id}><Link to={{ page: "draft", draft: d.id }} className="mono">{d.agent}</Link>
+        <span className="faint">{d.author && ` · ${d.author}'s`} · from {d.based_on} · kept {when(d.updated_at)}</span>
+        {d.published && <> <a href={d.published} target="_blank" rel="noopener noreferrer" className="badge good">published</a></>}</li>
+    ))}</ul>
+  );
+}
+
 function Drafts() {
-  const { data } = useLoad(() => get<{ drafts: DraftLine[] }>("/studio/api/drafts"), []);
-  if (!data || data.drafts.length === 0) return null;
+  const { data } = useLoad(() => get<{ drafts: DraftLine[]; theirs: DraftLine[] }>("/studio/api/drafts"), []);
+  if (!data || data.drafts.length + data.theirs.length === 0) return null;
   return (
     <section className="card" id="drafts">
-      <h3>Your drafts</h3>
-      <ul className="plain">{data.drafts.map((d) => (
-        <li key={d.id}><Link to={{ page: "draft", draft: d.id }} className="mono">{d.agent}</Link>
-          <span className="faint"> · from {d.based_on} · kept {when(d.updated_at)}</span>
-          {d.published && <> <a href={d.published} target="_blank" rel="noopener noreferrer" className="badge good">published</a></>}</li>
-      ))}</ul>
+      {data.drafts.length > 0 && <><h3>Your drafts</h3><DraftList drafts={data.drafts} /></>}
+      {data.theirs.length > 0 && (
+        <div id="co-drafts">
+          <h3>Your co-authors' drafts</h3>
+          <p className="note">Of the agents you may author too: read them, or copy one into a draft of your own.</p>
+          <DraftList drafts={data.theirs} />
+        </div>
+      )}
     </section>
   );
 }

@@ -162,13 +162,35 @@ def agent(scenario: Scenario, definition: Definition, tools: dict[str, Tool],
 
 def catalogue(conn: psycopg.Connection, scenario: Scenario, definitions: dict[str, Definition],
               tools: dict[str, Tool], viewer: Person | None = None) -> list[dict]:
-    """Each agent of the release, and where it runs: for a viewer, the agents they own and
-    those with an instance they may watch, with those instances alone."""
+    """Each agent of the release, and where it runs: for a viewer, the agents they own or
+    author, and those with an instance they may watch, with those instances alone, and why
+    their roles bring each into their view."""
     insts = instances(conn, viewer)
     watched = {i["definition"] for i in insts}
-    return [agent(scenario, d, tools, insts) for name, d in sorted(definitions.items())
-            if viewer is None or name in watched
-            or agent_owner(name) in viewer.roles]
+    if viewer is None:
+        return [agent(scenario, d, tools, insts) for _, d in sorted(definitions.items())]
+    return [{**agent(scenario, d, tools, insts), "why": seen_by(name, insts, viewer)}
+            for name, d in sorted(definitions.items())
+            if name in watched or {agent_owner(name), f"agent-author:{name}"} & set(viewer.roles)]
+
+
+def seen_by(name: str, insts: list[dict], viewer: Person) -> list[str]:
+    """Why someone's roles bring an agent into their view: owning or authoring it, running an
+    instance of it, its instances' parts, or approving instances."""
+    roles, why = set(viewer.roles), []
+    if agent_owner(name) in roles:
+        why.append("you own it")
+    if f"agent-author:{name}" in roles:
+        why.append("you author it")
+    for inst in (i for i in insts if i["definition"] == name):
+        if viewer.id in (inst.get("owner"), inst.get("deputy")):
+            why.append(f"you run {inst['id']}")
+        why += [f"it works in {part}, which you {'own' if f'{PART_OWNER}:{part}' in roles else 'decide for'}"
+                for part in parts_of(inst)
+                if f"{PART_OWNER}:{part}" in roles or f"{PART_DELEGATE}:{part}" in roles]
+        if INSTANCE_APPROVER in roles and not parts_of(inst):
+            why.append(f"you approve {inst['id']}, in no part")
+    return list(dict.fromkeys(why))
 
 
 class UnknownZone(ValueError):

@@ -80,7 +80,7 @@ from a5s.core.identity import (
     whose,
     without_second_factor,
 )
-from a5s.core.releases import agent_owner
+from a5s.core.releases import ENGINEER, agent_owner
 from a5s.core.tasks import TaskError
 from a5s.core.teams import UNKNOWN, Refused
 
@@ -205,12 +205,19 @@ def record(conn: Any, *, channel: str, source_id: str, person: str, agent: str, 
 
 
 class DraftStart(BaseModel):
-    """A new draft: a new agent's name and the template it starts from, or an agent of the
-    release to change."""
+    """A new draft: a new agent's name and the template it starts from, an agent of the
+    release to change, or a co-author's draft to copy."""
 
     name: str | None = None
     template: str | None = None
     agent: str | None = None
+    copy: str | None = None
+
+
+class HandOver(BaseModel):
+    """Whom to hand one's draft over to: someone who may author its agent too."""
+
+    to: str
 
 
 class DraftFiles(BaseModel):
@@ -1334,7 +1341,7 @@ def create_app(gw: Any) -> FastAPI:
         definition = gw.definitions.get(agent)
         with db.transaction(gw.url) as conn:
             insts = studio.instances(conn, person)
-        if definition is None or (agent_owner(agent) not in person.roles
+        if definition is None or (not {agent_owner(agent), drafts.agent_author(agent)} & set(person.roles)
                                   and not any(i["definition"] == agent for i in insts)):
             raise HTTPException(404, "there's no such agent that you may watch")
         return studio.agent(gw.scenario, definition, gw.scenario.tools(), insts, whole=True)
@@ -1410,7 +1417,8 @@ def create_app(gw: Any) -> FastAPI:
         """A draft, what would stop its release, and, if it loads, how it would look in the
         catalogue, for its map."""
         tools = gw.scenario.tools()
-        return {**draft, "problems": drafts.check(draft["agent"], draft["files"], tools, gw.models),
+        return {"yours": True, "author": None, **draft,
+                "problems": drafts.check(draft["agent"], draft["files"], tools, gw.models),
                 "preview": drafts.preview(gw.scenario, draft["agent"], draft["files"], tools),
                 "signers": drafts.signers(draft["agent"], draft["files"], gw.cfg.agents_dir,
                                           gw.definitions),
@@ -1423,11 +1431,36 @@ def create_app(gw: Any) -> FastAPI:
         drafting(authorization)
         return {"tools": studio.offered(gw.scenario.tools()), "models": sorted(gw.models)}
 
-    def in_ledger(conn: Any, person: Person, action: str, draft: dict) -> None:
+    def in_ledger(conn: Any, person: Person, action: str, draft: dict, **more: str) -> None:
         ledger.append(conn, {"kind": "admin", "action": action, "run": None, "instance": None,
                              "acts_for": [], "decision": "record",
                              "args": {"agent": draft["agent"], "draft": draft["id"],
-                                      "based_on": draft["based_on"], "by": person.id}})
+                                      "based_on": draft["based_on"], "by": person.id, **more}})
+
+    def coauthored(person: Person) -> list[str]:
+        """The agents of the release someone may author: their co-authors' drafts of them
+        they may read."""
+        return [a for a in gw.definitions if drafts.may_author(person, a)]
+
+    def named(pid: str) -> str:
+        found = gw.scenario.person(pid)
+        return found.name if found else pid
+
+    def readable(conn: Any, person: Person, draft: str) -> dict | None:
+        """One of someone's drafts, theirs to change; or a co-author's, of an agent of the
+        release they may author too, to read."""
+        try:
+            uuid.UUID(draft)  # before asking, so a bad one doesn't spoil the transaction
+        except ValueError:
+            return None
+        found = drafts.get(conn, person, draft)
+        if found is not None:
+            return {**found, "yours": True, "author": person.name}
+        other = drafts.by_id(conn, draft)
+        if other is None or other["agent"] not in coauthored(person):
+            return None
+        author = other.pop("person")
+        return {**other, "yours": False, "author": named(author)}
 
     @app.get("/studio/api/templates")
     def studio_templates(authorization: str | None = Header(default=None)) -> dict:
@@ -1448,7 +1481,9 @@ def create_app(gw: Any) -> FastAPI:
         """Someone's drafts, latest first."""
         person = drafting(authorization)
         with db.transaction(gw.url) as conn:
-            return {"drafts": drafts.mine(conn, person)}
+            return {"drafts": drafts.mine(conn, person), "theirs": [
+                {**{k: v for k, v in d.items() if k != "person"}, "author": named(d["person"])}
+                for d in drafts.theirs(conn, person, coauthored(person))]}
 
     @app.post("/studio/api/drafts")
     def studio_draft_start(body: DraftStart, authorization: str | None = Header(default=None)) -> dict:
@@ -1456,7 +1491,15 @@ def create_app(gw: Any) -> FastAPI:
         release, from its folder as released."""
         person = drafting(authorization)
         tools = gw.scenario.tools()
-        if body.agent and not (body.name or body.template):
+        copied: dict | None = None
+        if body.copy and not (body.name or body.template or body.agent):
+            with db.transaction(gw.url) as conn:
+                copied = readable(conn, person, body.copy)
+            if copied is None or copied["yours"]:
+                raise HTTPException(404, "there's no such draft of a co-author's for you to copy")
+            name, files = copied["agent"], copied["files"]
+            based_on = f"a co-author's draft, from {copied['based_on']}"
+        elif body.agent and not (body.name or body.template):
             if body.agent not in gw.definitions:
                 raise HTTPException(404, f"there's no agent {body.agent} here")
             if not drafts.may_author(person, body.agent):
@@ -1481,25 +1524,72 @@ def create_app(gw: Any) -> FastAPI:
                 name, files = body.name, drafts.folder_files(made)
             based_on = f"template {body.template}"
         else:
-            raise HTTPException(400, "name a new agent and the template it starts from, or an "
-                                     "agent of the release to change")
+            raise HTTPException(400, "name a new agent and the template it starts from, an agent "
+                                     "of the release to change, or a co-author's draft to copy")
         with db.transaction(gw.url) as conn:
             try:
                 draft = drafts.start(conn, person, name, based_on, files)
             except drafts.Refused as e:
                 raise HTTPException(409, str(e)) from None
-            in_ledger(conn, person, "draft", draft)
+            if copied is not None:
+                in_ledger(conn, person, "copy draft", draft, copied=copied["id"])
+            else:
+                in_ledger(conn, person, "draft", draft)
         return checked(draft)
 
     @app.get("/studio/api/drafts/{draft}")
     def studio_draft(draft: str, authorization: str | None = Header(default=None)) -> dict:
-        """One of someone's drafts, its files, and what would stop its release."""
+        """One of someone's drafts, or a co-author's, to read: its files, and what would stop
+        its release."""
         person = drafting(authorization)
         with db.transaction(gw.url) as conn:
-            found = drafts.get(conn, person, draft)
+            found = readable(conn, person, draft)
         if found is None:
             raise HTTPException(404, "you have no such draft")
         return checked(found)
+
+    @app.get("/studio/api/drafts/{draft}/co-authors")
+    def studio_draft_co_authors(draft: str, authorization: str | None = Header(default=None)) -> dict:
+        """Whom someone may hand one of their drafts over to: those who may author its agent
+        too, as the directory and their latest sign-ins' groups have it, with none of it."""
+        person = drafting(authorization)
+        with db.transaction(gw.url) as conn:
+            found = drafts.get(conn, person, draft)
+            if found is None:
+                raise HTTPException(404, "you have no such draft")
+            agent = found["agent"]
+            roles = ([agent_owner(agent), drafts.agent_author(agent)] if agent in gw.definitions
+                     else [ENGINEER] + [agent_owner(a) for a in gw.definitions])
+            holders = {h["id"]: h["name"] for row in administration.held(gw.scenario, conn, roles)
+                       for h in row["held_by"]}
+            busy = {r["person"] for r in conn.execute(
+                "select person from agent_drafts where agent = %s", (agent,))}
+        return {"people": [{"id": pid, "name": name} for pid, name
+                           in sorted(holders.items(), key=lambda h: h[1])
+                           if pid != person.id and pid not in busy]}
+
+    @app.post("/studio/api/drafts/{draft}/hand-over")
+    def studio_draft_hand_over(draft: str, body: HandOver,
+                               authorization: str | None = Header(default=None)) -> dict:
+        """Hand one of someone's drafts over to a co-author, who may author its agent too: it's
+        theirs to change, and publish, then."""
+        person = drafting(authorization)
+        taker = gw.scenario.person(body.to)
+        with db.transaction(gw.url) as conn:
+            found = drafts.get(conn, person, draft)
+            if found is None:
+                raise HTTPException(404, "you have no such draft")
+            agent = found["agent"]
+            if taker is None or taker.id == person.id or not drafts.may_author(
+                    taker, agent if agent in gw.definitions else None):
+                raise HTTPException(400, f"{named(body.to)} may not author the {agent}")
+            if len(drafts.mine(conn, taker)) >= drafts.MOST_DRAFTS:
+                raise HTTPException(409, f"{taker.name} keeps {drafts.MOST_DRAFTS} drafts already")
+            handed = drafts.hand_over(conn, person, draft, taker.id)
+            if handed is None:
+                raise HTTPException(409, f"{taker.name} has a draft of the {agent} already")
+            in_ledger(conn, person, "hand over draft", handed, to=taker.id)
+        return {"handed": handed["id"], "to": taker.name}
 
     @app.put("/studio/api/drafts/{draft}")
     def studio_draft_save(draft: str, body: DraftFiles,

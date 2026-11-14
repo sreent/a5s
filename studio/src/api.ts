@@ -85,6 +85,7 @@ export type Instance = {
 export type Schedule = { name: string; at: string[]; days: string[]; task: string };
 
 export type Agent = {
+  why?: string[];  // why the viewer's roles bring it into their view
   id: string;
   release: string;
   works_for: string;
@@ -121,6 +122,7 @@ export type Template = { name: string; works_for: string; does: string; model: s
 export type DraftLine = {
   id: string; agent: string; based_on: string; created_at: string; updated_at: string;
   published: string | null;  // the pull request it was last published as, if it has been
+  author?: string;  // a co-author's, whose draft of an agent they may author too
 };
 
 export type Draft = DraftLine & {
@@ -129,6 +131,8 @@ export type Draft = DraftLine & {
   preview: Agent | null;  // as the catalogue would show it, if it loads
   signers: { role: string; who: string; why: string }[] | null;  // whom its release would need
   publishing: boolean;  // whether the studio opens its pull request, or its author does
+  yours: boolean;  // or a co-author's, read only
+  author: string;
 };
 
 export type Offered = Omit<Tool, "group" | "pinned" | "missing">;

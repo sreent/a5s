@@ -109,8 +109,8 @@ def test_a_draft_is_its_authors_alone(stack, approving, provider):
     draft = started(as_(approving, provider, "priya"))
     omar = stack.gateway.scenario.person("omar")  # whom the organisation names its author
     stack.gateway.scenario._people["omar"] = replace(omar, roles=(*omar.roles, "agent-author:assistant"))
-    theirs = as_(approving, provider, "omar")
-    assert theirs("GET", "/studio/api/drafts").json() == {"drafts": []}
+    theirs = as_(approving, provider, "omar")  # a new agent's: nobody else may author it yet
+    assert theirs("GET", "/studio/api/drafts").json() == {"drafts": [], "theirs": []}
     for method, body in (("GET", None), ("PUT", {"files": draft["files"]}), ("DELETE", None)):
         assert theirs(method, f"/studio/api/drafts/{draft['id']}", body).status_code == 404
     assert theirs("GET", "/studio/api/drafts/not-a-draft").status_code == 404
