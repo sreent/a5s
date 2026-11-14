@@ -82,15 +82,49 @@ export type Call = {
   outcome: string | null;
 };
 
+export type CaseLine = {
+  number: number;
+  name: string;
+  file: string;
+  suite_alone: string[];
+};
+
+// A test case run in the sandbox, or why it wasn't.
+export type CaseRan = {
+  name: string;
+  file: string;
+  ran: boolean;
+  why?: string;
+  passed?: boolean;
+  problems?: string[];
+  steps?: CaseStep[];
+};
+
 // Running one of a draft's test cases in the sandbox: on which of the models it offers.
 export type CaseRun = {
   model?: string;
+};
+
+export type CaseStep = {
+  say: string;
+  reply: string;
+  called: string[];
+  wrong: string[];
+};
+
+export type Cases = {
+  cases: CaseLine[];
+  problem?: string;
 };
 
 export type Catalogue = {
   you: string;
   agents: Agent[];
   authoring: Authoring;
+};
+
+export type CoAuthors = {
+  people: Named[];
 };
 
 // What an agent's runs are given beyond the conversation.
@@ -109,11 +143,55 @@ export type Day = {
   ended: Record<string, number>;
 };
 
+// An agent as its folder defines it, whole, as the catalogue would show it: a draft's
+// preview.
+export type Defined = {
+  id: string;
+  release: string;
+  works_for: string;
+  does: string;
+  owners: string[];
+  model: string;
+  autonomy: Autonomy;
+  tools: Tool[];
+  a5s_tools: string[];
+  skills: string[];
+  triggers: Record<string, unknown>[];
+  schedules: Schedule[];
+  reports: string[];
+  obligations: string[];
+  reminders: boolean;
+  preferences: string[];
+  channels: string[];
+  context: Context;
+  budget: Budget;
+  instances: Instance[];
+  instructions: string;
+};
+
 export type Denied = {
   kind: string;
   action: string;
   reasons: string[];
   times: number;
+};
+
+// A draft: its agent's folder, file by file, what would stop its release, and how the
+// catalogue would show it, if it loads.
+export type Draft = {
+  id: string;
+  agent: string;
+  based_on: string | null;
+  created_at: string;
+  updated_at: string;
+  published: string | null;
+  files: Record<string, string>;
+  yours: boolean;
+  author: string | null;
+  problems: string[];
+  preview: Defined | null;
+  signers: Signer[] | null;
+  publishing: boolean;
 };
 
 // A draft's agent's folder: each file's text, by its path in it.
@@ -147,6 +225,15 @@ export type DraftTry = {
   person: string;
   text: string;
   model?: string;
+};
+
+export type Drafts = {
+  drafts: DraftLine[];
+  theirs: DraftLine[];
+};
+
+export type Dropped = {
+  dropped: string;
 };
 
 export type Ended = {
@@ -193,6 +280,11 @@ export type HandOver = {
   to: string;
 };
 
+export type HandedOver = {
+  handed: string;
+  to: string;
+};
+
 export type Held = {
   held: number;
   approved: number;
@@ -230,6 +322,13 @@ export type Instance = {
   asks: string[];
 };
 
+// One call to the model a try made: what it was sent, what came back, and how.
+export type ModelCall = {
+  sent: Sent;
+  came: unknown;
+  status: number;
+};
+
 export type ModelRuns = {
   instance: string;
   model: string | null;
@@ -238,6 +337,11 @@ export type ModelRuns = {
   tokens_p90: number;
   cached_share: number | null;
   cost_per_run: number | null;
+};
+
+export type Named = {
+  id: string;
+  name: string;
 };
 
 export type Notebook = {
@@ -261,6 +365,48 @@ export type Obligations = {
   on_time_share: number | null;
   late_hours_p50: number | null;
   late_hours_p90: number | null;
+};
+
+export type Offer = {
+  tools: Offered[];
+  models: string[];
+};
+
+// One of the scenario's tools an agent may be given, with what it reads, writes or
+// changes.
+export type Offered = {
+  name: string;
+  description: string | null;
+  reads: boolean;
+  writes: boolean;
+  destructive: boolean;
+  sends_outside: boolean;
+  changes: string | null;
+  handles: string[];
+  outside: string[];
+};
+
+// A publish under way: the code to enter at GitHub's sign-in, and how it stands.
+export type Publish = {
+  id: string;
+  status: "signing in" | "opened" | "refused" | "lapsed";
+  agent: string;
+  user_code: string | null;
+  verify_at: string | null;
+  interval: number;
+  expires_in: number;
+  pull: string | null;
+  problem: string | null;
+  branch: string;
+};
+
+// A draft's pull request, for its author to open themselves: where its folder goes, and
+// what it says.
+export type PullRequest = {
+  folder: string;
+  title: string;
+  body: string;
+  ready: boolean;
 };
 
 export type Questions = {
@@ -364,6 +510,12 @@ export type Samples = {
   right_share: number | null;
 };
 
+// Whom a draft may be tried as, of the sandbox's made-up people, and on which models.
+export type Sandbox = {
+  people: Named[];
+  models: string[];
+};
+
 // When an agent works on its own, in its instance owner's time zone, and what it's asked.
 export type Schedule = {
   name: string;
@@ -372,9 +524,43 @@ export type Schedule = {
   task: string;
 };
 
+export type Sent = {
+  messages: SentMessage[];
+  tools?: Record<string, unknown>[];
+  [key: string]: unknown;
+};
+
+export type SentMessage = {
+  role: string;
+  content?: unknown;
+  tool_calls?: Record<string, unknown>[];
+  [key: string]: unknown;
+};
+
 // Which of an agent's instances is to serve someone who asked for it.
 export type Serve = {
   instance: string;
+};
+
+// Whose signature a draft's release would need, and why.
+export type Signer = {
+  role: string;
+  who: string;
+  why: string;
+};
+
+// An agent a new one may start from, and the tools it needs that the scenario hasn't.
+export type Template = {
+  name: string;
+  works_for: string;
+  does: string;
+  model: string;
+  tools: string[];
+  lacks: string[];
+};
+
+export type Templates = {
+  templates: Template[];
 };
 
 // One of an agent's tools, with what it reads, writes or changes.
@@ -391,6 +577,37 @@ export type Tool = {
   outside: string[];
   pinned: string | null;
   missing: boolean;
+};
+
+export type Tried = {
+  agent: string;
+  reply: string;
+  run: TriedRun | null;
+  model_calls: ModelCall[];
+};
+
+// A try's run, as the sandbox shows it: its entries in the sandbox's own ledger too, of
+// made-up people alone.
+export type TriedRun = {
+  run: string;
+  instance: string;
+  trigger: string | null;
+  acts_for: ActedFor[];
+  people: number;
+  opened_at: string;
+  closed_at: string | null;
+  outcome: string;
+  tokens: number;
+  model: string | null;
+  read_outside: boolean;
+  agent: string | null;
+  started_by: Record<string, unknown>;
+  tokens_in: number;
+  tokens_out: number;
+  tokens_cached: number;
+  records: string[];
+  calls: Call[];
+  entries: Record<string, unknown>[];
 };
 
 export type ValidationError = {

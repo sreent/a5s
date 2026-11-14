@@ -5,21 +5,9 @@
 // publish alone.
 
 import { useEffect, useState } from "react";
-import { download, get, send } from "./api";
+import { download, get, type Publish as Publishing, type PullRequest, send } from "./api";
 import { useLoad } from "./ui";
 
-type Publishing = {
-  id: string;
-  status: "signing in" | "opened" | "refused" | "lapsed";
-  user_code: string | null;
-  verify_at: string | null;
-  interval: number;
-  expires_in: number;
-  pull: string | null;
-  problem: string | null;
-};
-
-type PullRequest = { folder: string; title: string; body: string; ready: boolean };
 
 /** Where publishing isn't set up: its folder, where it goes, and the pull request's words, for
  * its author to open it with themselves, on whichever git host the agents' repository is on. */

@@ -2,8 +2,8 @@
 // it works, what it knows, its budget, and where it runs.
 
 import { useState } from "react";
-import { type AgentKnown, type AgentUses, ApiError, builtOf, type Catalogue, type Draft, type DraftLine, get,
-         send, usesOf } from "../api";
+import { type AgentKnown, type AgentUses, ApiError, builtOf, type Catalogue, type Draft,
+         type Drafts, get, send, usesOf } from "../api";
 import { AgentMap } from "../AgentMap";
 import { go, Link } from "../router";
 import { aboutInstance, levels, PageHead, people, type Risk, risk, RISK_NAMES, runners, StatusBadge,
@@ -136,7 +136,7 @@ function DraftAChange({ id }: { id: string }) {
       go({ page: "draft", draft: draft.id });
     } catch (e) {
       const mine = e instanceof ApiError && e.status === 409  // theirs already: carry on with it
-        && (await get<{ drafts: DraftLine[] }>("/studio/api/drafts")).drafts.find((d) => d.agent === id);
+        && (await get<Drafts>("/studio/api/drafts")).drafts.find((d) => d.agent === id);
       if (mine) go({ page: "draft", draft: mine.id });
       else setProblem((e as Error).message);
     }

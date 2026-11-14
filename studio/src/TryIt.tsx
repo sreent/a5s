@@ -4,29 +4,22 @@
 // Nothing said here reaches anyone's real records, and nothing of it is kept in this deployment.
 
 import { type FormEvent, useState } from "react";
-import { get, type Run, send } from "./api";
+import { type CaseRan, type Cases, get, type Sandbox, type SentMessage, send,
+         type Tried } from "./api";
 import { type Case, CASES } from "./definition";
 import { DecisionBadge, useLoad } from "./ui";
 
-type Offered = { people: { id: string; name: string }[]; models: string[] };
-type Message = { role: string; content?: string | null; tool_calls?: { function: { name: string; arguments: string } }[] };
-type ModelCall = { sent: { messages: Message[]; tools?: { function: { name: string } }[] }; came: unknown; status: number };
-type Tried = { agent: string; reply: string; run: Run | null; model_calls: ModelCall[] };
 type Turn = { id: number; as: string; said: string; model: string; tried?: Tried; problem?: string };
 
 const SHOWN = 3000;  // characters of each message shown before it's cut
 const STAND_IN = "stand-in";
 
-type CaseLine = { number: number; name: string; file: string; suite_alone: string[] };
-type CaseStep = { say: string; reply: string; called: string[]; wrong: string[] };
-type CaseRun = { name: string; file: string; ran: boolean; why?: string; passed?: boolean;
-                 problems?: string[]; steps?: CaseStep[] };
-type Outcome = { running: true } | { problem: string } | { run: CaseRun };
+type Outcome = { running: true } | { problem: string } | { run: CaseRan };
 
 /** A draft's test cases, run in the sandbox one at a time, each in a conversation of its own,
  * as its suite runs them: those that need what the suite alone does, it says so of. */
 function Cases({ draft, model, ready, revision }: { draft: string; model: string; ready: boolean; revision: number }) {
-  const listed = useLoad(() => get<{ cases: CaseLine[]; problem?: string }>(
+  const listed = useLoad(() => get<Cases>(
     `/studio/api/drafts/${encodeURIComponent(draft)}/cases`), [draft, revision]);
   const [outcomes, setOutcomes] = useState<Record<number, Outcome>>({});
   const [running, setRunning] = useState(false);
@@ -41,7 +34,7 @@ function Cases({ draft, model, ready, revision }: { draft: string; model: string
     for (const c of runnable) {
       setOutcomes((o) => ({ ...o, [c.number]: { running: true } }));
       try {
-        const ran = await send<CaseRun>("POST", `/studio/api/drafts/${encodeURIComponent(draft)}/cases/${c.number}`, { model });
+        const ran = await send<CaseRan>("POST", `/studio/api/drafts/${encodeURIComponent(draft)}/cases/${c.number}`, { model });
         setOutcomes((o) => ({ ...o, [c.number]: { run: ran } }));
       } catch (e) {
         setOutcomes((o) => ({ ...o, [c.number]: { problem: (e as Error).message } }));
@@ -111,9 +104,15 @@ function used(tried: Tried): string[] {
     .map((c) => c.tool))];
 }
 
-function shown(message: Message): string {
-  const text = message.content ?? "";
-  const calls = (message.tool_calls ?? []).map((c) => `→ ${c.function.name}(${c.function.arguments})`).join("\n");
+// A model's message as the provider's own format has it: its text, and each tool it called, in
+// the OpenAI-style form the gateway speaks; anything else of it, as it came
+type Called = { function?: { name?: string; arguments?: string } };
+
+function shown(message: SentMessage): string {
+  const said = message.content;
+  const text = typeof said === "string" ? said : said == null ? "" : JSON.stringify(said);
+  const calls = ((message.tool_calls ?? []) as Called[])
+    .map((c) => `→ ${c.function?.name}(${c.function?.arguments ?? ""})`).join("\n");
   const whole = [text, calls].filter(Boolean).join("\n");
   return whole.length > SHOWN ? `${whole.slice(0, SHOWN)}…` : whole;
 }
@@ -160,7 +159,7 @@ function Answer({ tried, name }: { tried: Tried; name: string }) {
 export function TryIt({ draft, name, ready, keep, revision }: {
   draft: string; name: string; ready: boolean; keep: (testCase: Case) => void; revision: number;
 }) {
-  const offered = useLoad(() => get<Offered>("/studio/api/sandbox"), []);
+  const offered = useLoad(() => get<Sandbox>("/studio/api/sandbox"), []);
   const [person, setPerson] = useState("");
   const [model, setModel] = useState("stand-in");
   const [text, setText] = useState("");

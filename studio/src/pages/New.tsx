@@ -3,14 +3,14 @@
 // until they publish it as a pull request, which the people its first release needs sign.
 
 import { type FormEvent, useState } from "react";
-import { type Draft, send, get, type Template } from "../api";
+import { type Draft, send, get, type Templates } from "../api";
 import { go } from "../router";
 import { PageHead, useLoad, Waiting } from "../ui";
 
 const NAME = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 
 export function NewPage() {
-  const { data, error } = useLoad(() => get<{ templates: Template[] }>("/studio/api/templates"), []);
+  const { data, error } = useLoad(() => get<Templates>("/studio/api/templates"), []);
   const [name, setName] = useState("");
   const [chosen, setChosen] = useState("");
   const [problem, setProblem] = useState<string>();

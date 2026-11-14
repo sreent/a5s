@@ -5,7 +5,8 @@ change to an answer changes the studio's types with it, or the tests fail
 (tests/test_studio_types.py).
 
 It covers what the API's models use, and fails on anything else rather than guess: objects,
-their fields, required or not, lists, maps, unions, null, strings, numbers and booleans.
+their fields, required or not, and any others a provider's payload may have; lists, maps,
+unions, null, strings, numbers and booleans.
 """
 
 from __future__ import annotations
@@ -64,8 +65,8 @@ def _object(schema: dict[str, Any], indent: str) -> str:
         if isinstance(extra, dict):
             return f"Record<string, {_type(extra, indent)}>"
         return "Record<string, unknown>"
-    if extra not in (None, False):
-        raise Unsupported("an object with named fields and others besides")
+    if extra not in (None, False, True):
+        raise Unsupported("an object with named fields, and others of a type besides")
     required = set(schema.get("required", []))
     inner = indent + "  "
     lines = []
@@ -73,6 +74,8 @@ def _object(schema: dict[str, Any], indent: str) -> str:
         key = name if _NAME.match(name) else json.dumps(name)
         mark = "" if name in required else "?"
         lines.append(f"{inner}{key}{mark}: {_type(field, inner)};")
+    if extra is True:  # a provider's own payload: the fields named, and whatever else it has
+        lines.append(f"{inner}[key: string]: unknown;")
     return "{\n" + "\n".join(lines) + f"\n{indent}}}"
 
 

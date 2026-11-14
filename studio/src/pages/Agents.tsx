@@ -1,7 +1,8 @@
 // The catalogue: every agent someone may know exists, as cards, each as far as the layers they
 // see of it go: what it does and who owns it, what it may do, and where it runs.
 
-import { type AgentKnown, type AgentUses, type Catalogue, type DraftLine, get, usesOf } from "../api";
+import { type AgentKnown, type AgentUses, type Catalogue, type DraftLine, type Drafts, get,
+         usesOf } from "../api";
 import { Icon } from "../icons";
 import { Link } from "../router";
 import { aboutInstance, levels, PageHead, plural, risk, StatusBadge, useLoad, Waiting, when } from "../ui";
@@ -66,7 +67,7 @@ function DraftList({ drafts }: { drafts: DraftLine[] }) {
 }
 
 function Drafts() {
-  const { data } = useLoad(() => get<{ drafts: DraftLine[]; theirs: DraftLine[] }>("/studio/api/drafts"), []);
+  const { data } = useLoad(() => get<Drafts>("/studio/api/drafts"), []);
   if (!data || data.drafts.length + data.theirs.length === 0) return null;
   return (
     <section className="card" id="drafts">

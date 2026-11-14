@@ -84,23 +84,27 @@ export type Waiting = gen.Waiting;
 export type You = gen.You;
 export type Role = gen.Role;
 
-// Making agents (core/drafts.py)
-
-export type Template = { name: string; works_for: string; does: string; model: string; tools: string[]; lacks: string[] };
-
+// Making agents: drafts, trying them in the sandbox, and publishing them (core/drafts.py)
+export type Template = gen.Template;
 export type DraftLine = gen.DraftLine;
-
-export type Draft = DraftLine & {
-  files: Record<string, string>;  // the agent's folder, each file's text by its path in it
-  problems: string[];  // what would stop its release, as `a5s agent check` says it
-  preview: Agent | null;  // as the catalogue would show it, if it loads
-  signers: { role: string; who: string; why: string }[] | null;  // whom its release would need
-  publishing: boolean;  // whether the studio opens its pull request, or its author does
-  yours: boolean;  // or a co-author's, read only
-  author: string;
-};
-
-export type Offered = Omit<Tool, "group" | "pinned" | "missing">;
+export type Draft = gen.Draft;
+export type Defined = gen.Defined;  // an agent as its folder defines it: a draft's preview
+export type Offered = gen.Offered;
+export type Offer = gen.Offer;
+export type Templates = gen.Templates;
+export type Drafts = gen.Drafts;
+export type CoAuthors = gen.CoAuthors;
+export type Named = gen.Named;
+export type Sandbox = gen.Sandbox;
+export type Tried = gen.Tried;
+export type ModelCall = gen.ModelCall;
+export type SentMessage = gen.SentMessage;  // a provider's own, as it went
+export type Cases = gen.Cases;
+export type CaseLine = gen.CaseLine;
+export type CaseStep = gen.CaseStep;
+export type CaseRan = gen.CaseRan;
+export type Publish = gen.Publish;
+export type PullRequest = gen.PullRequest;
 
 export type ModelRuns = gen.ModelRuns;
 export type Figures = gen.Figures;

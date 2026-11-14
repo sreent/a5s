@@ -11,7 +11,7 @@ a field that may be left out, but is never null, is optional there (`SkipJsonSch
 """
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict
 from pydantic.json_schema import SkipJsonSchema
@@ -417,3 +417,222 @@ class Run(RunLine):
     tokens_cached: int
     records: list[str]
     calls: list[Call]
+
+
+# Making agents: drafts, trying them in the sandbox, and publishing them (core/drafts.py,
+# core/publishing.py, sandbox.py)
+
+
+class Offered(Shape):
+    """One of the scenario's tools an agent may be given, with what it reads, writes or
+    changes."""
+
+    name: str
+    description: str | None
+    reads: bool
+    writes: bool
+    destructive: bool
+    sends_outside: bool
+    changes: str | None
+    handles: list[str]
+    outside: list[str]
+
+
+class Offer(Shape):
+    tools: list[Offered]
+    models: list[str]  # the models the deployment approves
+
+
+class Template(Shape):
+    """An agent a new one may start from, and the tools it needs that the scenario hasn't."""
+
+    name: str
+    works_for: str
+    does: str
+    model: str
+    tools: list[str]
+    lacks: list[str]
+
+
+class Templates(Shape):
+    templates: list[Template]
+
+
+class Drafts(Shape):
+    drafts: list[DraftLine]  # someone's own, latest first
+    theirs: list[DraftLine]  # their co-authors', of the agents they may author too
+
+
+class Defined(Shape):
+    """An agent as its folder defines it, whole, as the catalogue would show it: a draft's
+    preview."""
+
+    id: str
+    release: str
+    works_for: str
+    does: str
+    owners: list[str]
+    model: str
+    autonomy: Autonomy
+    tools: list[Tool]
+    a5s_tools: list[str]
+    skills: list[str]
+    triggers: list[dict[str, Any]]
+    schedules: list[Schedule]
+    reports: list[str]
+    obligations: list[str]
+    reminders: bool
+    preferences: list[str]
+    channels: list[str]
+    context: Context
+    budget: Budget
+    instances: list[Instance]
+    instructions: str
+
+
+class Signer(Shape):
+    """Whose signature a draft's release would need, and why."""
+
+    role: str
+    who: str
+    why: str
+
+
+class Draft(Shape):
+    """A draft: its agent's folder, file by file, what would stop its release, and how the
+    catalogue would show it, if it loads."""
+
+    id: str
+    agent: str
+    based_on: str | None
+    created_at: datetime
+    updated_at: datetime
+    published: str | None
+    files: dict[str, str]  # each file's text, by its path in the agent's folder
+    yours: bool  # or a co-author's, read only
+    author: str | None
+    problems: list[str]  # what would stop its release, as `a5s agent check` says it
+    preview: Defined | None
+    signers: list[Signer] | None  # whom its release would need, if that can be worked out
+    publishing: bool  # whether the studio opens its pull request, or its author does
+
+
+class Named(Shape):
+    id: str
+    name: str
+
+
+class CoAuthors(Shape):
+    people: list[Named]  # whom a draft may be handed over to
+
+
+class HandedOver(Shape):
+    handed: str
+    to: str
+
+
+class Dropped(Shape):
+    dropped: str
+
+
+class Loose(BaseModel):
+    """A model provider's own payload, as it went: the fields the studio reads, and whatever
+    else the provider's format has."""
+
+    model_config = ConfigDict(extra="allow")
+
+
+class SentMessage(Loose):
+    role: str
+    content: Any = None
+    tool_calls: list[dict[str, Any]] | SkipJsonSchema[None] = None
+
+
+class Sent(Loose):
+    messages: list[SentMessage]
+    tools: list[dict[str, Any]] | SkipJsonSchema[None] = None
+
+
+class ModelCall(Shape):
+    """One call to the model a try made: what it was sent, what came back, and how."""
+
+    sent: Sent
+    came: Any
+    status: int
+
+
+class Sandbox(Shape):
+    """Whom a draft may be tried as, of the sandbox's made-up people, and on which models."""
+
+    people: list[Named]
+    models: list[str]
+
+
+class TriedRun(Run):
+    """A try's run, as the sandbox shows it: its entries in the sandbox's own ledger too, of
+    made-up people alone."""
+
+    entries: list[dict[str, Any]]
+
+
+class Tried(Shape):
+    agent: str
+    reply: str
+    run: TriedRun | None
+    model_calls: list[ModelCall]
+
+
+class CaseLine(Shape):
+    number: int
+    name: str
+    file: str
+    suite_alone: list[str]  # what of it only the agent's suite does, which the sandbox doesn't
+
+
+class Cases(Shape):
+    cases: list[CaseLine]
+    problem: str | SkipJsonSchema[None] = None  # why its cases can't be read, if they can't
+
+
+class CaseStep(Shape):
+    say: str
+    reply: str
+    called: list[str]
+    wrong: list[str]
+
+
+class CaseRan(Shape):
+    """A test case run in the sandbox, or why it wasn't."""
+
+    name: str
+    file: str
+    ran: bool
+    why: str | SkipJsonSchema[None] = None
+    passed: bool | SkipJsonSchema[None] = None
+    problems: list[str] | SkipJsonSchema[None] = None
+    steps: list[CaseStep] | SkipJsonSchema[None] = None
+
+
+class Publish(Shape):
+    """A publish under way: the code to enter at GitHub's sign-in, and how it stands."""
+
+    id: str
+    status: Literal["signing in", "opened", "refused", "lapsed"]
+    agent: str
+    user_code: str | None
+    verify_at: str | None
+    interval: int
+    expires_in: int
+    pull: str | None
+    problem: str | None
+    branch: str
+
+
+class PullRequest(Shape):
+    """A draft's pull request, for its author to open themselves: where its folder goes, and
+    what it says."""
+
+    folder: str
+    title: str
+    body: str
+    ready: bool  # whether nothing would stop its release

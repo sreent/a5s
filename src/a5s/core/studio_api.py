@@ -366,7 +366,7 @@ def router(gw: Any) -> APIRouter:
                                           gw.definitions),
                 "publishing": publishing.configured(gw.cfg)}  # or its author opens it
 
-    @api.get("/studio/api/tools")
+    @api.get("/studio/api/tools", **shapes.answers(shapes.Offer))
     def studio_tools(_: Annotated[Person, Depends(drafting)]) -> dict:
         """The scenario's tools an agent may be given, each with what it reads, writes or
         changes, and the models the deployment approves."""
@@ -403,7 +403,7 @@ def router(gw: Any) -> APIRouter:
         author = other.pop("person")
         return {**other, "yours": False, "author": named(author)}
 
-    @api.get("/studio/api/templates")
+    @api.get("/studio/api/templates", **shapes.answers(shapes.Templates))
     def studio_templates(_: Annotated[Person, Depends(drafting)]) -> dict:
         """The agents a new one may start from, and the tools each needs that this scenario
         hasn't got: none, if it fits."""
@@ -416,7 +416,7 @@ def router(gw: Any) -> APIRouter:
                           "lacks": authoring.lacks(folder, tools)})
         return {"templates": found}
 
-    @api.get("/studio/api/drafts")
+    @api.get("/studio/api/drafts", **shapes.answers(shapes.Drafts))
     def studio_drafts(person: Annotated[Person, Depends(drafting)]) -> dict:
         """Someone's drafts, latest first."""
         with db.transaction(gw.url) as conn:
@@ -424,7 +424,7 @@ def router(gw: Any) -> APIRouter:
                 {**{k: v for k, v in d.items() if k != "person"}, "author": named(d["person"])}
                 for d in drafts.theirs(conn, person, coauthored(person))]}
 
-    @api.post("/studio/api/drafts")
+    @api.post("/studio/api/drafts", **shapes.answers(shapes.Draft))
     def studio_draft_start(body: DraftStart, person: Annotated[Person, Depends(drafting)]) -> dict:
         """A new draft: of a new agent, from a template, or of a change to an agent of the
         release, from its folder as released."""
@@ -475,7 +475,7 @@ def router(gw: Any) -> APIRouter:
                 in_ledger(conn, person, "draft", draft)
         return checked(draft)
 
-    @api.get("/studio/api/drafts/{draft}")
+    @api.get("/studio/api/drafts/{draft}", **shapes.answers(shapes.Draft))
     def studio_draft(draft: str, person: Annotated[Person, Depends(drafting)]) -> dict:
         """One of someone's drafts, or a co-author's, to read: its files, and what would stop
         its release."""
@@ -485,7 +485,7 @@ def router(gw: Any) -> APIRouter:
             raise HTTPException(404, "you have no such draft")
         return checked(found)
 
-    @api.get("/studio/api/drafts/{draft}/co-authors")
+    @api.get("/studio/api/drafts/{draft}/co-authors", **shapes.answers(shapes.CoAuthors))
     def studio_draft_co_authors(draft: str, person: Annotated[Person, Depends(drafting)]) -> dict:
         """Whom someone may hand one of their drafts over to: those who may author its agent
         too, as the directory and their latest sign-ins' groups have it, with none of it."""
@@ -504,7 +504,7 @@ def router(gw: Any) -> APIRouter:
                            in sorted(holders.items(), key=lambda h: h[1])
                            if pid != person.id and pid not in busy]}
 
-    @api.post("/studio/api/drafts/{draft}/hand-over")
+    @api.post("/studio/api/drafts/{draft}/hand-over", **shapes.answers(shapes.HandedOver))
     def studio_draft_hand_over(draft: str, body: HandOver,
                                person: Annotated[Person, Depends(drafting)]) -> dict:
         """Hand one of someone's drafts over to a co-author, who may author its agent too: it's
@@ -526,7 +526,7 @@ def router(gw: Any) -> APIRouter:
             in_ledger(conn, person, "hand over draft", handed, to=taker.id)
         return {"handed": handed["id"], "to": taker.name}
 
-    @api.put("/studio/api/drafts/{draft}")
+    @api.put("/studio/api/drafts/{draft}", **shapes.answers(shapes.Draft))
     def studio_draft_save(draft: str, body: DraftFiles,
                           person: Annotated[Person, Depends(drafting)]) -> dict:
         """Keep a draft's files as they are now, its tools pinned as the scenario has them, as
@@ -544,7 +544,7 @@ def router(gw: Any) -> APIRouter:
             raise HTTPException(404, "you have no such draft")
         return checked(saved)
 
-    @api.delete("/studio/api/drafts/{draft}")
+    @api.delete("/studio/api/drafts/{draft}", **shapes.answers(shapes.Dropped))
     def studio_draft_drop(draft: str, person: Annotated[Person, Depends(drafting)]) -> dict:
         """Let one of someone's drafts go."""
         with db.transaction(gw.url) as conn:
@@ -575,13 +575,13 @@ def router(gw: Any) -> APIRouter:
             raise HTTPException(502, f"the sandbox said {answer.status_code}")
         return answer.json()
 
-    @api.get("/studio/api/sandbox")
+    @api.get("/studio/api/sandbox", **shapes.answers(shapes.Sandbox))
     def studio_sandbox(_: Annotated[Person, Depends(drafting)]) -> dict:
         """Whom a draft may be tried as in the sandbox, of its made-up people, and on which
         models."""
         return sandboxed("/sandbox")
 
-    @api.post("/studio/api/drafts/{draft}/try")
+    @api.post("/studio/api/drafts/{draft}/try", **shapes.answers(shapes.Tried))
     def studio_draft_try(draft: str, body: DraftTry,
                          person: Annotated[Person, Depends(drafting)]) -> dict:
         """Say something to one of someone's drafts in the sandbox, as one of its made-up
@@ -602,7 +602,7 @@ def router(gw: Any) -> APIRouter:
                                           "by": person.id}})
         return said
 
-    @api.get("/studio/api/drafts/{draft}/cases")
+    @api.get("/studio/api/drafts/{draft}/cases", **shapes.answers(shapes.Cases))
     def studio_draft_cases(draft: str, person: Annotated[Person, Depends(drafting)]) -> dict:
         """One of someone's drafts' test cases, as its suite runs them, and of each, what only
         the suite does, if anything, which the sandbox doesn't."""
@@ -618,7 +618,7 @@ def router(gw: Any) -> APIRouter:
                            "suite_alone": cases.suite_alone(case)}
                           for n, case in enumerate(listed)]}
 
-    @api.post("/studio/api/drafts/{draft}/cases/{number}")
+    @api.post("/studio/api/drafts/{draft}/cases/{number}", **shapes.answers(shapes.CaseRan))
     def studio_draft_case(draft: str, number: int, body: CaseRun,
                           person: Annotated[Person, Depends(drafting)]) -> dict:
         """Run one of someone's drafts' test cases in the sandbox, on the scenario's made-up
@@ -646,7 +646,7 @@ def router(gw: Any) -> APIRouter:
 
     publishes = publishing.Publishing(gw.cfg)
 
-    @api.post("/studio/api/drafts/{draft}/publish")
+    @api.post("/studio/api/drafts/{draft}/publish", **shapes.answers(shapes.Publish))
     def studio_draft_publish(draft: str, person: Annotated[Person, Depends(drafting)]) -> dict:
         """Start publishing one of someone's drafts: the code they enter at GitHub's sign-in,
         to let a5s publish it as them, and where to enter it."""
@@ -673,7 +673,7 @@ def router(gw: Any) -> APIRouter:
         except publishing.Refused as e:
             raise HTTPException(502, str(e)) from None
 
-    @api.get("/studio/api/publishes/{publish}")
+    @api.get("/studio/api/publishes/{publish}", **shapes.answers(shapes.Publish))
     def studio_publish(publish: str, person: Annotated[Person, Depends(drafting)]) -> dict:
         """How a publish of someone's stands: waiting for them at GitHub's sign-in, its pull
         request once it's open, or why it isn't."""
@@ -691,7 +691,7 @@ def router(gw: Any) -> APIRouter:
                                               "by": person.id}})
         return found.shown()
 
-    @api.get("/studio/api/drafts/{draft}/pull-request")
+    @api.get("/studio/api/drafts/{draft}/pull-request", **shapes.answers(shapes.PullRequest))
     def studio_draft_pull_request(draft: str, person: Annotated[Person, Depends(drafting)]) -> dict:
         """The pull request one of someone's drafts makes, for them to open it with on any git
         host: where its folder goes in the agents' repository, its title, and its description,
