@@ -12,10 +12,11 @@ import re
 import tempfile
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Annotated, Any
 
 import httpx
-from fastapi import APIRouter, Depends, Header, HTTPException, Response
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Response
 from pydantic import BaseModel
 
 from a5s import authoring, cases, db, definitions
@@ -30,9 +31,11 @@ from a5s.core import (
     registry,
     settings_app,
     studio,
+    typescript,
     web,
 )
 from a5s.core import home as homes  # the studio's home: `home` is the site's
+from a5s.core import studio_models as shapes  # what each route answers
 from a5s.core.releases import ENGINEER, agent_owner
 
 STUDIO = web.WEBCHAT / "studio"  # as `npm run build` in studio/ builds it, which the image does
@@ -173,7 +176,7 @@ def router(gw: Any) -> APIRouter:
             found.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return found
 
-    @api.get("/studio/api/home")
+    @api.get("/studio/api/home", **shapes.answers(shapes.Home))
     def studio_home(person: Annotated[Person, Depends(someone)]) -> dict:
         """What waits for whoever signed in, their drafts, and what of the studio they may
         use, whether or not they hold a role: the catalogue is everyone's."""
@@ -183,7 +186,7 @@ def router(gw: Any) -> APIRouter:
                     "drafts": drafts.mine(conn, person), "catalogue": True,
                     "authoring": drafts.authors(person)}
 
-    @api.get("/studio/api/you")
+    @api.get("/studio/api/you", **shapes.answers(shapes.You))
     def studio_you(person: Annotated[Person, Depends(someone)]) -> dict:
         """Each role whoever signed in holds, what gave it them, the directory or a group of
         the identity provider's, and what it lets them do; and the groups their sign-in
@@ -192,7 +195,7 @@ def router(gw: Any) -> APIRouter:
             return {"you": person.name, "id": person.id, "roles": homes.roles(conn, gw, person),
                     "groups": list(memberships.stored(conn, person.id).get(person.id, ()))}
 
-    @api.get("/studio/api")
+    @api.get("/studio/api", **shapes.answers(shapes.Catalogue))
     def studio_now(person: Annotated[Person, Depends(someone)]) -> dict:
         """The catalogue: every agent someone may know exists, each as far as the layers they
         see of it go, with the instances they may watch, and why."""
@@ -203,7 +206,7 @@ def router(gw: Any) -> APIRouter:
                                   "agents": sorted(a for a in gw.definitions
                                                    if drafts.may_author(person, a))}}
 
-    @api.get("/studio/api/agents/{agent}")
+    @api.get("/studio/api/agents/{agent}", **shapes.answers(shapes.Agent))
     def studio_agent(agent: str, person: Annotated[Person, Depends(someone)]) -> dict:
         """One agent, as far as the layers someone sees of it go: its instructions only if
         they see how it's built. The same refusal for one they may not know exists as for
@@ -238,7 +241,7 @@ def router(gw: Any) -> APIRouter:
             raise HTTPException(404, "there's no such agent that you may see")
         return definition, every
 
-    @api.post("/studio/api/agents/{agent}/ask")
+    @api.post("/studio/api/agents/{agent}/ask", **shapes.answers(shapes.Ask))
     def studio_ask(agent: str, person: Annotated[Person, Depends(someone)]) -> dict:
         """Ask to be served by an agent someone knows of: their open ask, if they have one."""
         with db.transaction(gw.url) as conn:
@@ -248,7 +251,7 @@ def router(gw: Any) -> APIRouter:
             except asks.Refused as e:
                 raise HTTPException(409, str(e)) from None
 
-    @api.delete("/studio/api/agents/{agent}/ask")
+    @api.delete("/studio/api/agents/{agent}/ask", **shapes.answers(shapes.Ask))
     def studio_unask(agent: str, person: Annotated[Person, Depends(someone)]) -> dict:
         """Withdraw someone's open ask for an agent."""
         with db.transaction(gw.url) as conn:
@@ -268,7 +271,7 @@ def router(gw: Any) -> APIRouter:
             raise HTTPException(404, "there's no such ask waiting on you")
         return found
 
-    @api.post("/studio/api/asks/{ask}/decline")
+    @api.post("/studio/api/asks/{ask}/decline", **shapes.answers(shapes.Ask))
     def studio_decline(ask: str, person: Annotated[Person, Depends(someone)]) -> dict:
         """Decline an ask that waits on someone."""
         with db.transaction(gw.url) as conn:
@@ -278,7 +281,8 @@ def router(gw: Any) -> APIRouter:
             raise HTTPException(404, "there's no such ask waiting on you")
         return asks.shown(ended)
 
-    @api.post("/studio/api/asks/{ask}/serve", status_code=202)
+    @api.post("/studio/api/asks/{ask}/serve", status_code=202,
+              **shapes.answers(shapes.Requested))
     def studio_serve(ask: str, body: Serve, person: Annotated[Person, Depends(someone)]) -> dict:
         """Answer an ask that waits on someone with a version of the settings that serves its
         asker through one of the agent's instances: a request, as the settings app makes, for
@@ -299,7 +303,7 @@ def router(gw: Any) -> APIRouter:
             except settings_app.Refused as e:  # in words, as the studio shows them
                 raise HTTPException(e.status, "; ".join(e.problems)) from None
 
-    @api.get("/studio/api/agents/{agent}/measures")
+    @api.get("/studio/api/agents/{agent}/measures", **shapes.answers(shapes.Figures))
     def studio_agent_measures(agent: str, person: Annotated[Person, Depends(studying)], days: int = 30,
                               zone: str = "UTC") -> dict:
         """How the instances of an agent that someone may watch are doing, with their runs on
@@ -313,7 +317,7 @@ def router(gw: Any) -> APIRouter:
             except studio.UnknownZone as e:
                 raise HTTPException(400, str(e)) from e
 
-    @api.get("/studio/api/instances/{instance}")
+    @api.get("/studio/api/instances/{instance}", **shapes.answers(shapes.Figures))
     def studio_instance(instance: str, person: Annotated[Person, Depends(studying)], days: int = 30,
                         zone: str = "UTC") -> dict:
         """How an instance someone may watch is doing, over the last `days` days, with its
@@ -325,7 +329,7 @@ def router(gw: Any) -> APIRouter:
             except studio.UnknownZone as e:
                 raise HTTPException(400, str(e)) from e
 
-    @api.get("/studio/api/instances/{instance}/runs")
+    @api.get("/studio/api/instances/{instance}/runs", **shapes.answers(shapes.RunsPage))
     def studio_runs(instance: str, person: Annotated[Person, Depends(studying)], before: str | None = None,
                     limit: int = studio.RUNS) -> dict:
         """An instance's runs that someone may see, newest first, and how many others: whom
@@ -337,7 +341,7 @@ def router(gw: Any) -> APIRouter:
             except ValueError:
                 raise HTTPException(400, "before is where the page before ended, as it said")
 
-    @api.get("/studio/api/runs/{run_id}")
+    @api.get("/studio/api/runs/{run_id}", **shapes.answers(shapes.Run))
     def studio_run(run_id: str, person: Annotated[Person, Depends(studying)]) -> dict:
         """What a run did, if someone may watch its instance and see every record it named."""
         with db.transaction(gw.url) as conn:
@@ -716,3 +720,15 @@ def router(gw: Any) -> APIRouter:
 
     pages.include_router(api)
     return pages
+
+
+def described() -> dict:
+    """The studio API's own description, its OpenAPI document: what each route takes and
+    answers, with no deployment behind it."""
+    app = FastAPI(title="a5s studio")
+    app.include_router(router(SimpleNamespace(cfg=None)))  # nothing it serves is asked
+    return app.openapi()
+
+
+if __name__ == "__main__":  # uv run python -m a5s.core.studio_api > studio/src/api.gen.ts
+    print(typescript.types(described()), end="")

@@ -2,12 +2,9 @@
 // or at the command line; their drafts; and where to go next. Everyone the directory knows
 // has one, whether or not they hold a role.
 
-import { get, type DraftLine } from "../api";
+import { get, type Home } from "../api";
 import { Link } from "../router";
 import { PageHead, useLoad, Waiting, when } from "../ui";
-
-type Waits = { kind: string; what: string; why: string[]; go: string | null; how?: string };
-type Home = { you: string; waiting: Waits[]; drafts: DraftLine[]; catalogue: boolean; authoring: boolean };
 
 export function HomePage() {
   const { data, error } = useLoad(() => get<Home>("/studio/api/home"), []);

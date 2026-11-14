@@ -4,7 +4,7 @@
   "type": "module",
   "description": "The studio: a5s's agents, how each is doing, and what each run did. Built into the channels app's pages.",
   "scripts": {
-    "build": "vite build",
+    "build": "tsc --noEmit && vite build",
     "check": "tsc --noEmit",
     "dev": "vite"
   },

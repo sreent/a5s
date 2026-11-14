@@ -64,7 +64,8 @@ function When({ agent }: { agent: AgentUses }) {
 }
 
 // What each run may do beside its tools, as the release's context says (definitions.Context)
-const ABILITIES: Record<string, string> = {
+type Ability = Exclude<keyof AgentUses["context"], "budget_tokens">;
+const ABILITIES: Record<Ability, string> = {
   recall: "search its conversations",
   documents: "ask about documents from outside",
   agents: "ask other agents",
@@ -73,8 +74,9 @@ const ABILITIES: Record<string, string> = {
 
 function Knows({ agent }: { agent: AgentUses }) {
   const { budget_tokens: conversation, ...rest } = agent.context;
-  const may = Object.keys(ABILITIES).filter((key) => rest[key] === true).map((key) => ABILITIES[key]);
-  const not = Object.keys(ABILITIES).filter((key) => rest[key] === false).map((key) => ABILITIES[key]);
+  const abilities = Object.keys(ABILITIES) as Ability[];
+  const may = abilities.filter((key) => rest[key] === true).map((key) => ABILITIES[key]);
+  const not = abilities.filter((key) => rest[key] === false).map((key) => ABILITIES[key]);
   const other = Object.entries(rest).filter(([key]) => !(key in ABILITIES));
   return (
     <section className="card">
