@@ -7,9 +7,11 @@ import { signIn } from "./auth";
 import { AgentPage } from "./pages/Agent";
 import { AgentsPage } from "./pages/Agents";
 import { DraftPage } from "./pages/Draft";
+import { HomePage } from "./pages/Home";
 import { InstancePage } from "./pages/Instance";
 import { NewPage } from "./pages/New";
 import { RunPage } from "./pages/Run";
+import { YouPage } from "./pages/You";
 import { reread, useRoute } from "./router";
 import { Sidebar } from "./Sidebar";
 
@@ -37,7 +39,9 @@ export function App() {
   else if (route.page === "run") content = <RunPage key={route.run} id={route.run} />;
   else if (route.page === "new") content = <NewPage />;
   else if (route.page === "draft") content = <DraftPage key={route.draft} id={route.draft} />;
-  else content = <AgentsPage />;
+  else if (route.page === "agents") content = <AgentsPage />;
+  else if (route.page === "you") content = <YouPage />;
+  else content = <HomePage />;
   return (
     <>
       <Sidebar signedIn={state === "ready"} />

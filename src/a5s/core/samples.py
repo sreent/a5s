@@ -286,6 +286,28 @@ def may_grade(scenario: Scenario, sample: dict, person: Person,
     return None
 
 
+def gradeable(conn: psycopg.Connection, scenario: Scenario, person: Person,
+              most: int = 20) -> list[dict]:
+    """The samples waiting for a grade that someone may grade, oldest first, up to `most`:
+    read in pages, leaving out in the query what it can."""
+    minders = {r["id"]: (r["owner"], r["deputy"]) for r in conn.execute(
+        "select id, owner, deputy from instances")}
+    found: list[dict] = []
+    after = 0
+    while len(found) < most:
+        rows = conn.execute(
+            "select * from samples where scenario = %s and grade is null and lapsed_at "
+            "is null and id > %s and not (%s = any(acts_for)) and decided_by is distinct "
+            "from %s order by id limit 200",
+            (scenario.name, after, person.id, person.id)).fetchall()
+        if not rows:
+            break
+        after = rows[-1]["id"]
+        found += [r for r in rows
+                  if may_grade(scenario, r, person, minders.get(r["instance_id"], ())) is None]
+    return found[:most]
+
+
 def nonce(grades: dict[int, str], salt: str) -> str:
     """What a sign-in to grade carries, so the provider's signature covers exactly these
     grades of these samples. The page picks the salt, so each sign-in is different."""

@@ -286,6 +286,43 @@ class Verdict:
     signed_by: tuple[str, ...] = ()
 
 
+def _inside(scenario: Scenario, team: str) -> set[str]:
+    """The team that runs a5s, and everyone above them in their reporting lines."""
+    return {p.id for p in scenario.team(team)} | {
+        boss for member in scenario.team(team) for boss in _line(scenario, member)}
+
+
+def _can(person: Person, role: str, team: str, inside: set[str]) -> bool:
+    """Whether someone's signature meets what a release needs of a role."""
+    if role == RELEASE_APPROVER:
+        return role in person.roles and person.id not in inside
+    if role == ENGINEER:
+        return person.team == team
+    return role in person.roles
+
+
+def awaiting(conn: psycopg.Connection, running: Running | None, scenario: Scenario, team: str,
+             person: Person) -> list[Need]:
+    """What the release a5s is waits for from someone, if this deployment hasn't approved it:
+    each of its needs they could meet, unless they've signed it already."""
+    if running is None or running.problems:
+        return []
+    row = conn.execute("select previous, signatures, advisory, approved_at from releases "
+                       "where digest = %s", (running.digest,)).fetchone()
+    if row and row["approved_at"]:
+        return []
+    if row and any(s["signer"] == person.id for s in row["signatures"] or []):
+        return []
+    old, advisory = last_approved(conn), None
+    if row:
+        before = row["previous"] and conn.execute(
+            "select manifest from releases where digest = %s", (row["previous"],)).fetchone()
+        old, advisory = (yaml.safe_load(bytes(before["manifest"])) if before else None), row["advisory"]
+    inside = _inside(scenario, team)
+    return [n for n in needs(yaml.safe_load(running.raw), old, advisory)
+            if _can(person, n.role, team, inside)]
+
+
 def _line(scenario: Scenario, person: Person) -> list[str]:
     """Everyone above someone in their reporting line."""
     above, seen = [], {person.id}
@@ -300,6 +337,7 @@ def judge(need: list[Need], raw: bytes, signatures: list[Signature], scenario: S
           team: str) -> Verdict:
     """Whether different people, each holding what's needed, signed exactly these bytes."""
     people, problems = {}, []
+    inside = _inside(scenario, team)
     for sig in signatures:
         person = scenario.person(sig.signer)
         if person is None:
@@ -309,15 +347,9 @@ def judge(need: list[Need], raw: bytes, signatures: list[Signature], scenario: S
             problems.append(f"{sig.signer}'s signature isn't for this release")
         else:
             people[person.id] = person
-    inside = {p.id for p in scenario.team(team)} | {
-        boss for member in scenario.team(team) for boss in _line(scenario, member)}
 
     def can(person: Person, role: str) -> bool:
-        if role == RELEASE_APPROVER:
-            return role in person.roles and person.id not in inside
-        if role == ENGINEER:
-            return person.team == team
-        return role in person.roles
+        return _can(person, role, team, inside)
 
     def match(i: int, taken: dict[str, str]) -> bool:
         """Each need met by someone different, though one owner may own several agents."""

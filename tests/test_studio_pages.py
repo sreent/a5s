@@ -112,7 +112,7 @@ def test_someone_watches_an_instance_in_the_browser(stack, approving, provider, 
     page = browser.new_page(viewport={"width": 1440, "height": 900}, timezone_id="Asia/Singapore")
     refused = []  # anything the page's policy stopped, such as an inline script or style
     page.on("console", lambda m: refused.append(m.text) if "Content Security Policy" in m.text else None)
-    page.goto(f"{approving}/studio/")
+    page.goto(f"{approving}/studio/agents")
     page.wait_for_selector(".agent-card >> text=assistant", timeout=30000)
     assert page.inner_text("#me").endswith("Ben Okafor")
     assert page.evaluate("window.location.search") == ""  # the code doesn't linger
@@ -177,7 +177,7 @@ def test_a_runs_path_shows_what_a5s_refused_it(stack, approving, provider, brows
 
 def test_the_studio_serves_its_one_page_and_its_own_files_alone(approving, monkeypatch, tmp_path):
     policy = "default-src 'none'; script-src 'self'"
-    for path in ("/studio/", "/studio/agents/assistant", "/studio/instances/assistant-finance",
+    for path in ("/studio/", "/studio/agents", "/studio/you", "/studio/agents/assistant", "/studio/instances/assistant-finance",
                  "/studio/runs/7c1e9a52-0d4b-4bb4-9a0e-1f3c5d7e9b21", "/studio/new",
                  "/studio/drafts/7c1e9a52-0d4b-4bb4-9a0e-1f3c5d7e9b21"):
         shown = httpx.get(f"{approving}{path}", timeout=30)

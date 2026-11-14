@@ -51,7 +51,7 @@ def test_the_docs_pictures_of_the_studio(stack, approving, provider, browser):
     provider.person = "ana"
     page = browser.new_page(viewport={"width": 1440, "height": 900}, timezone_id="Asia/Singapore")
     page.emulate_media(color_scheme="light")
-    page.goto(f"{approving}/studio/")
+    page.goto(f"{approving}/studio/agents")
     page.wait_for_selector(".agent-card >> text=watcher", timeout=30000)
     page.screenshot(path=f"{FOLDER}/a5s-studio-catalogue.png")
 

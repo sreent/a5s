@@ -266,6 +266,10 @@ button.quiet { background: transparent; border-color: var(--line); color: var(--
 .case-name { font-weight: 500; }
 .case-problems { margin: 0; color: var(--bad); }
 .case-step { padding: 0.4rem 0 0.4rem 0.7rem; border-left: 2px solid var(--line); display: grid; gap: 0.2rem; }
+.waits { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.6rem; }
+.wait { padding: 0.6rem 0.8rem; border: 1px solid var(--line); border-radius: 8px; }
+.wait > a, .wait > span:first-child { font-weight: 500; }
+.wait ul { margin: 0.3rem 0 0; }
 .publish { display: grid; gap: 0.75rem; }
 .publish p { margin: 0; }
 .sign-in-code { padding: 0.9rem 1rem; border: 1px solid var(--line); border-radius: 10px; background: var(--sunken); display: grid; gap: 0.5rem; max-width: 34rem; }

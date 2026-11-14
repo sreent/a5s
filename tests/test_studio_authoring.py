@@ -23,7 +23,7 @@ def test_an_agents_owner_makes_an_agent_in_the_studio(stack, approving, provider
     refused = []
     page.on("console", lambda m: refused.append(m.text) if "Content Security Policy" in m.text else None)
     page.on("dialog", lambda dialog: dialog.accept())
-    page.goto(f"{approving}/studio/")
+    page.goto(f"{approving}/studio/agents")
     page.click("a:has-text('New agent')")
     page.wait_for_selector(".template >> text=assistant", timeout=30000)
     page.fill("#agent-name", "finance-helper")

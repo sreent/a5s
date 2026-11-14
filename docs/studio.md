@@ -76,6 +76,37 @@ Then a5s needs the App's client id and the repository: `A5S_GITHUB_CLIENT_ID` an
 
 Other hosts could open it as the person too, each its own way. [Forgejo](https://forgejo.org/docs/v15.0/user/oauth2-provider/), for one, has no device flow, but signs people in for a public application, with no secret, by its own sign-in page and PKCE, and its API commits a whole folder to a new branch in one call. That's for when someone needs it.
 
+## People, roles and spaces
+
+Many people share one studio: those who make agents, those who own and approve them, those who watch them work, and those who audit them. It gives none of them a permission system of its own, and has no administrator over everything.
+
+- **Who people are, and which groups they're in, is the identity provider's.** The signed settings give its groups a5s's roles, each with a scope: a part, such as billing, or an agent ([administration](administration.md)). Joiners, leavers and access reviews happen there, and a role someone loses stops working at their next sign-in.
+- **What the studio does takes effect only once the right people sign.** Drafts and pull requests propose; releases and settings, signed, decide. Nobody gets a right through the studio that they wouldn't have at the command line.
+- **So its spaces are views over the roles people hold, not permissions of their own.** In tools where editing changes what runs, such as n8n's projects or Copilot Studio's environments, a space is where permissions live. Here editing changes nothing that runs, so a space is only what someone's roles let them see together:
+
+| View | What's in it | Who's in it |
+| --- | --- | --- |
+| Theirs, the studio's home | What waits on them, each where they do it: versions of the settings they approve, changes agents asked for that they decide, samples to grade, the release if it needs their signature, and their tasks that wait for them. Their drafts, and what each of their roles lets them do, and what gave it them | Anyone the directory knows, with a role or without one |
+| Their team's | The agents and instances their groups' roles cover, those instances' figures by need-to-know, their parts, and the drafts of agents they may author | Whoever the identity provider's group holds: there's no membership to keep in a5s |
+| Everyone's | The catalogue: the agents listed for everyone, what each does, who owns it, and how to ask for it | Everyone signed in |
+
+What someone sees of an agent comes in five layers, each from the roles they hold:
+
+| Layer | What it shows | Who sees it |
+| --- | --- | --- |
+| That it exists | Its name, what it does, its owner, and how to ask for it | Anyone with a role on it, the people it serves, and everyone else only if its owner lists it for everyone, in its definition. Agents are unlisted by default: a name such as redundancy planning says too much on its own |
+| How it's built | Its tools and what each may do, its instructions, skills, test cases and map, and drafts of it | Its owners and their deputies, its authors, engineers, release approvers, auditors, read only, and anyone with `agent-viewer:<agent>`, which the settings give a group. The people it serves see what it may do with their records, its tools by what each reads, writes or changes, not its instructions |
+| How it's doing | Its instances, how many people they serve, and their figures and dashboards | Its owners, its instances' owners and deputies, the owners and delegates of the parts its instances work in, and instance approvers |
+| What it did | Each run, with the records it handled | As before: someone who may see every record the run handled |
+| Changing it | Drafts, trying them, publishing; signing releases and settings | As before: its authors draft, and its owners, the parts' owners and the approvers sign |
+
+Two choices follow from it:
+
+- **No personal agents on real data.** People try anything in drafts and the sandbox, on made-up records. Anything that touches real records goes through its owners' signatures, even for one person: an assistant of someone's own is an instance of a released agent that serves them alone. That keeps unsanctioned agents out without stopping anyone trying things.
+- **One deployment for the organisation, with a part for each team.** Another deployment only where something forces one, such as a regulator, a data region or a separate legal entity, with releases promoted from one to the next.
+
+In order: the home, with what waits on someone and what they may do; the team's view, with an agent's owners and authors reading each other's drafts and handing them over; the five layers, with the catalogue open to everyone signed in and someone asking for an agent there as a settings change for its approvers to sign; and the agents and instances nobody owns any more, on the administrators' page. The first is built: the studio's home, at `/studio/`, says what waits on whoever signed in, and `/studio/you` each role they hold, what gave it them, the directory or a group, and what it lets them do. The catalogue moved to `/studio/agents`.
+
 ## Who builds what
 
 The development team builds tools, connectors and MCP servers, in the scenario's code. Each is reviewed, and pinned in each release with what it reads, writes or changes. The studio shows them, and an agent's owner chooses from them, but nobody makes or changes a tool in the studio.

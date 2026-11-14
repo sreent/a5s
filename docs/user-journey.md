@@ -36,7 +36,7 @@ To answer a task that needs its owner, the person returns to their chat with the
 
 ## For the person who runs an agent
 
-The studio at `/studio/` is currently **read-only**: the agents, each agent's page with a map of how it's wired, a dashboard for each instance, and a page for each run with its path. Every page of a5s shares its sidebar, which lists only the pages the signed-in person may use, and the studio shows only what they may see. These pictures come from a5s running, with synthetic records: `A5S_DOC_IMAGES=docs/images uv run pytest tests/test_doc_images.py` makes them again.
+The studio's home, at `/studio/`, says what waits on whoever signed in, and where they do it, and `/studio/you` what each of their roles lets them do and what gave it them. Its pages for watching are read-only: the agents, at `/studio/agents`, each agent's page with a map of how it's wired, a dashboard for each instance, and a page for each run with its path. Every page of a5s shares its sidebar, which lists only the pages the signed-in person may use, and the studio shows only what they may see. These pictures come from a5s running, with synthetic records: `A5S_DOC_IMAGES=docs/images uv run pytest tests/test_doc_images.py` makes them again.
 
 ### The agents
 

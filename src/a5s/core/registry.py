@@ -116,26 +116,39 @@ def missing(settings: Settings, directory: Directory, valid: Iterable[str],
     retires, so their approvers decide that too. Giving a group a role needs the role's owner
     as the directory alone names them (`rooted`), so no role a group gives grows itself."""
     valid = list(valid)
-    held = {role for who in valid if (p := directory(who)) for role in p.roles}
-    if not held:
+    if not any(p.roles for who in valid if (p := directory(who))):
         return ["nobody who approves instances has approved it"]
+    return list(dict.fromkeys(why for _, why, _ in needed(settings, directory, valid, before,
+                                                           rooted)))
+
+
+def needed(settings: Settings, directory: Directory, valid: Iterable[str],
+           before: Settings | None = None,
+           rooted: Directory | None = None) -> list[tuple[str, str, bool]]:
+    """What `missing` says a version still needs, as each role whose holder's approval would
+    give it, why, and whether only someone the directory itself gives the role counts, as for
+    giving a group a role: so a page can tell each approver what waits for them."""
+    valid = list(valid)
+    held = {role for who in valid if (p := directory(who)) for role in p.roles}
     rooted = rooted or directory
     owners = {role for who in valid if (p := rooted(who)) for role in p.roles}
-    granting = [f"the {memberships.owner_of(role)} named in the directory hasn't approved giving "
-                f"{group} the {role} role"
-                for group, role in memberships.grants(settings, before)
-                if memberships.owner_of(role) not in owners]
     covered = _covered(settings, before)
-    needs = [f"the owner of {part} hasn't approved it"
+    needs = [(f"{PART_OWNER}:{part}", f"the owner of {part} hasn't approved it", False)
              for part in sorted({p for i in covered for p in i.parts}
                                 | _thresholds_change(settings, before))
              if f"{PART_OWNER}:{part}" not in held]
     if INSTANCE_APPROVER not in held:
         if any(not i.parts for i in covered):
-            needs.append(f"no {INSTANCE_APPROVER} has approved it, for the instances in no part")
+            why = f"no {INSTANCE_APPROVER} has approved it, for the instances in no part"
+            needs.append((INSTANCE_APPROVER, why, False))
         if _classes_change(settings, before):
-            needs.append(f"no {INSTANCE_APPROVER} has approved its classes of data")
-    return needs + list(dict.fromkeys(granting))
+            why = f"no {INSTANCE_APPROVER} has approved its classes of data"
+            needs.append((INSTANCE_APPROVER, why, False))
+    for group, role in memberships.grants(settings, before):
+        if (owner := memberships.owner_of(role)) not in owners:
+            why = f"the {owner} named in the directory hasn't approved giving {group} the {role} role"
+            needs.append((owner, why, True))
+    return needs
 
 
 def approvers(settings: Settings, holders: Holders, before: Settings | None = None,

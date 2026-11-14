@@ -1,9 +1,12 @@
 // Where in the studio someone is, in its address, so links and the browser's back button work:
-// all the agents, one agent, an instance's dashboard, a run, a new agent, or a draft of one.
+// their home, what they may do, all the agents, one agent, an instance's dashboard, a run, a
+// new agent, or a draft of one.
 
 import { type MouseEvent, type ReactNode, useEffect, useState } from "react";
 
 export type Route =
+  | { page: "home" }
+  | { page: "you" }
   | { page: "agents" }
   | { page: "agent"; agent: string }
   | { page: "instance"; instance: string }
@@ -18,7 +21,9 @@ export function parse(path: string): Route {
   if (kind === "runs" && id) return { page: "run", run: id };
   if (kind === "drafts" && id) return { page: "draft", draft: id };
   if (kind === "new") return { page: "new" };
-  return { page: "agents" };
+  if (kind === "agents") return { page: "agents" };
+  if (kind === "you") return { page: "you" };
+  return { page: "home" };
 }
 
 export function href(route: Route): string {
@@ -28,6 +33,8 @@ export function href(route: Route): string {
     case "run": return `/studio/runs/${encodeURIComponent(route.run)}`;
     case "draft": return `/studio/drafts/${encodeURIComponent(route.draft)}`;
     case "new": return "/studio/new";
+    case "agents": return "/studio/agents";
+    case "you": return "/studio/you";
     default: return "/studio/";
   }
 }

@@ -69,6 +69,7 @@ from a5s.core import (
     tasking,
     topics,
 )
+from a5s.core import home as homes  # the studio's home: `home` is the site's
 from a5s.core.gateway import sanitize
 from a5s.core.identity import (
     IdentityError,
@@ -990,27 +991,13 @@ def create_app(gw: Any) -> FastAPI:
         """The samples waiting for a grade that whoever signed in may grade, oldest first: read
         in pages, leaving out in the query what it can, until 20 are found."""
         person = grader(authorization)
-        shown: list[dict] = []
-        after = 0
         with db.transaction(gw.url) as conn:
-            minders = {r["id"]: (r["owner"], r["deputy"]) for r in conn.execute(
-                "select id, owner, deputy from instances")}
-            while len(shown) < 20:
-                rows = conn.execute(
-                    "select * from samples where scenario = %s and grade is null and lapsed_at "
-                    "is null and id > %s and not (%s = any(acts_for)) and decided_by is distinct "
-                    "from %s order by id limit 200",
-                    (gw.scenario.name, after, person.id, person.id)).fetchall()
-                if not rows:
-                    break
-                after = rows[-1]["id"]
-                shown += [{"id": r["id"], "kind": r["kind"], "agent": r["definition"],
-                           "part": r["part"], "action": r["action"], "said": r["said"],
-                           "records": r["records"], "flags": r["flags"],
-                           "decided": r["decided"], "drawn_at": r["drawn_at"].isoformat()}
-                          for r in rows if samples.may_grade(
-                              gw.scenario, r, person, minders.get(r["instance_id"], ())) is None]
-        return {"you": person.name, "samples": shown[:20]}
+            rows = samples.gradeable(conn, gw.scenario, person)
+        return {"you": person.name, "samples": [
+            {"id": r["id"], "kind": r["kind"], "agent": r["definition"], "part": r["part"],
+             "action": r["action"], "said": r["said"], "records": r["records"],
+             "flags": r["flags"], "decided": r["decided"], "drawn_at": r["drawn_at"].isoformat()}
+            for r in rows]}
 
     @app.post("/grade/samples")
     def grade_samples(body: Grading, authorization: str | None = Header(default=None)) -> dict:
@@ -1277,8 +1264,11 @@ def create_app(gw: Any) -> FastAPI:
         return built("index.html")
 
     @app.get("/studio/new", include_in_schema=False)
+    @app.get("/studio/agents", include_in_schema=False)
+    @app.get("/studio/you", include_in_schema=False)
     def studio_new() -> Response:
-        """The studio, where someone starts a new agent."""
+        """The studio, where someone starts a new agent, sees all the agents they may, or what
+        they may do."""
         approving()
         return built("index.html")
 
@@ -1292,6 +1282,39 @@ def create_app(gw: Any) -> FastAPI:
         if found.status_code == 200:
             found.headers["Cache-Control"] = "public, max-age=31536000, immutable"
         return found
+
+    def someone(authorization: str | None) -> Person:
+        """Whoever signed in, whom the directory knows: the studio's home is everyone's."""
+        approving()
+        who, _ = sender(authorization, None)
+        person = gw.scenario.person(who)
+        if person is None:
+            raise HTTPException(403, "a5s doesn't know who you are")
+        return person
+
+    @app.get("/studio/api/home")
+    def studio_home(authorization: str | None = Header(default=None)) -> dict:
+        """What waits for whoever signed in, their drafts, and what of the studio they may
+        use, whether or not they hold a role."""
+        person = someone(authorization)
+        with db.transaction(gw.url) as conn:
+            watched = studio.instances(conn, person)
+            return {"you": person.name, "waiting": homes.waiting(conn, gw, person),
+                    "drafts": drafts.mine(conn, person),
+                    "catalogue": bool(watched) or any(r.startswith("agent-owner:")
+                                                      for r in person.roles)
+                    or drafts.authors(person),
+                    "authoring": drafts.authors(person)}
+
+    @app.get("/studio/api/you")
+    def studio_you(authorization: str | None = Header(default=None)) -> dict:
+        """Each role whoever signed in holds, what gave it them, the directory or a group of
+        the identity provider's, and what it lets them do; and the groups their sign-in
+        showed, of those the settings name."""
+        person = someone(authorization)
+        with db.transaction(gw.url) as conn:
+            return {"you": person.name, "id": person.id, "roles": homes.roles(conn, gw, person),
+                    "groups": list(memberships.stored(conn, person.id).get(person.id, ()))}
 
     @app.get("/studio/api")
     def studio_now(authorization: str | None = Header(default=None)) -> dict:
