@@ -140,6 +140,12 @@ def test_someone_watches_an_instance_in_the_browser(stack, approving, provider, 
 
     page.click("table.runs-table a:has-text('Open')")  # a run, and what it did
     page.wait_for_selector(".step >> text=search_records", timeout=30000)
+    # its path on its agent's map: what started it, and the tool it called, once; the rest faded
+    page.wait_for_selector(".agent-map .map-node >> text=search_records", timeout=30000)
+    called = page.locator(".agent-map .map-node", has_text="search_records")
+    assert called.locator(".map-count").inner_text() == "×1"
+    assert "dim" not in page.locator(".agent-map .map-node", has_text="A message").get_attribute("class")
+    assert "dim" in page.locator(".agent-map .map-node", has_text="change_due_date").get_attribute("class")
     assert "allow" in page.inner_text(".steps") and "Q-1001" in page.inner_text(".chips")
     assert "1 person" in page.inner_text(".tiles")  # named once the officer agrees
     assert page.locator("#entries").count() == 0  # what was said isn't shown at all
@@ -151,6 +157,22 @@ def test_someone_watches_an_instance_in_the_browser(stack, approving, provider, 
     page.wait_for_selector(".tile >> text=Runs", timeout=30000)
     assert page.evaluate("location.pathname") == "/studio/instances/assistant-finance"
     assert refused == []
+
+
+def test_a_runs_path_shows_what_a5s_refused_it(stack, approving, provider, browser):
+    run, token = stack.open_run(sender="ben")
+    with stack.client(token) as c:  # a tool it hasn't got, and then one it has
+        assert c.post("/run/tools/delete_everything", json={"args": {}}).status_code == 403
+        assert c.post("/run/tools/search_records", json={"args": {"query": "invoice"}}).status_code == 200
+    provider.person = "ben"
+    page = browser.new_page(viewport={"width": 1440, "height": 900})
+    page.goto(f"{approving}/studio/runs/{run}")
+    page.wait_for_selector(".agent-map .map-node >> text=delete_everything", timeout=30000)
+    refused = page.locator(".agent-map .map-node", has_text="delete_everything").inner_text()
+    assert "not among its tools" in refused and "1 of 1 refused" in refused
+    assert page.locator(".agent-map .map-node", has_text="search_records").locator(".map-count").inner_text() == "×1"
+    assert "2 calls, 1 refused" in page.inner_text(".agent-map .map-node.checks")
+    assert page.locator(".agent-map .react-flow__edge.refused").count() == 1
 
 
 def test_the_studio_serves_its_one_page_and_its_own_files_alone(approving, monkeypatch, tmp_path):

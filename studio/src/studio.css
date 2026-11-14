@@ -115,6 +115,10 @@ table.runs-table tbody tr:hover { background: var(--sunken); }
 .agent-map .react-flow__edge.edge-reads path { stroke: var(--reads); }
 .agent-map .react-flow__edge.edge-own path { stroke: var(--own); }
 .agent-map .react-flow__handle { opacity: 0; }
+/* A run's path on its agent's map: what it used, bolder; what it didn't, faded; refusals red */
+.agent-map .react-flow__edge.used path { stroke-width: 2.6; }
+.agent-map .react-flow__edge.unused path { opacity: 0.22; }
+.agent-map .react-flow__edge.refused path, .agent-map .react-flow__edge.edge-denied path { stroke: var(--bad); }
 
 .map-node { display: flex; align-items: center; gap: 0.6rem; width: 15rem; padding: 0.55rem 0.75rem;
             background: var(--surface); border: 1px solid var(--line-strong); border-left-width: 4px;
@@ -132,6 +136,11 @@ table.runs-table tbody tr:hover { background: var(--sunken); }
 .map-node.writes { border-left-color: var(--writes); }
 .map-node.reads { border-left-color: var(--reads); }
 .map-node.own { border-left-color: var(--own); }
+.map-node.denied { border-left-color: var(--bad); }
+.map-node.dim { opacity: 0.42; }
+.map-count { flex: none; margin-left: auto; padding: 0.05rem 0.45rem; border-radius: 999px; font-size: 0.72rem;
+             font-weight: 600; font-variant-numeric: tabular-nums; background: var(--accent-soft); color: var(--accent); }
+.map-count.bad { background: var(--bad-bg); color: var(--bad); }
 
 /* An instance's figures */
 

@@ -2,7 +2,8 @@
 // decision on it and how it ended. What was said isn't shown: the team that runs a5s keeps it in
 // the ledger, by its hash alone.
 
-import { get, type Run } from "../api";
+import { AgentMap } from "../AgentMap";
+import { type Agent, get, type Run } from "../api";
 import { DecisionBadge, OutcomeBadge, PageHead, people, plural, time, useLoad, Waiting, when } from "../ui";
 
 function whom(run: Run): string {
@@ -18,6 +19,8 @@ function took(run: Run): string {
 
 export function RunPage({ id }: { id: string }) {
   const { data: run, error } = useLoad(() => get<Run>(`/studio/api/runs/${encodeURIComponent(id)}`), [id]);
+  const agent = useLoad(() => (run?.agent ? get<Agent>(`/studio/api/agents/${encodeURIComponent(run.agent)}`)
+                                          : Promise.resolve(undefined)), [run?.agent]);
   const crumbs = run ? [
     { label: "Agents", to: { page: "agents" as const } },
     ...(run.agent ? [{ label: run.agent, to: { page: "agent" as const, agent: run.agent } }] : []),
@@ -58,8 +61,15 @@ export function RunPage({ id }: { id: string }) {
               {run.read_outside && <p><span className="badge outside">read content from outside the organisation</span></p>}
             </section>
           </div>
+          {agent.data && (
+            <section className="card map-card">
+              <h3>Its path</h3>
+              <p className="note">What started it, and the tools it called through a5s's checks, with how many times and how many a5s refused, on its agent's map. What it didn't use is faded.</p>
+              <AgentMap agent={agent.data} run={run} />
+            </section>
+          )}
           <section className="card wide">
-            <h3>What it did</h3>
+            <h3>What it did, in order</h3>
             {run.calls.length === 0 && <p className="note">It called no tools.</p>}
             {run.calls.length > 0 && (
               <ol className="steps">
