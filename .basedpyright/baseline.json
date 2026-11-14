@@ -1070,14 +1070,6 @@
                     "endColumn": 51,
                     "lineCount": 1
                 }
-            },
-            {
-                "code": "reportArgumentType",
-                "range": {
-                    "startColumn": 54,
-                    "endColumn": 62,
-                    "lineCount": 1
-                }
             }
         ],
         "./src/a5s/core/ledger.py": [

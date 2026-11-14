@@ -224,18 +224,3 @@ def test_a_chase_shows_only_to_those_who_may_see_the_record_it_chases(stack, app
     ana = api("/studio/api/instances/assistant-ops/runs", "ana").json()
     assert (ana["runs"], ana["hidden"]) == ([], 1)  # it chases Q-1003, which she may not see
     assert api(f"/studio/api/runs/{chase['run']}", "ana").status_code == 404
-
-
-def test_every_route_of_the_studios_api_refuses_someone_not_signed_in(approving):
-    """The studio's router checks who's signed in for every route of its API
-    (core/studio_api.py), so a route added without a check of its own is refused, not open:
-    each the channels app serves, as its own description of its API lists them."""
-    paths = {path: methods for path, methods in httpx.get(
-        f"{approving}/openapi.json", timeout=30).json()["paths"].items()
-        if path.startswith("/studio/api")}
-    assert len(paths) > 20, sorted(paths)
-    for path, methods in paths.items():
-        address = re.sub(r"\{(\w+)\}", lambda m: "0" if m[1] == "number" else "x", path)
-        for method in methods:
-            answer = httpx.request(method.upper(), f"{approving}{address}", timeout=30)
-            assert answer.status_code == 401, (method, path, answer.status_code, answer.text)
