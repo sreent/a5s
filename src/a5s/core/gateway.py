@@ -27,7 +27,7 @@ from typing import Any
 import httpx
 import psycopg
 import yaml
-from fastapi import Depends, FastAPI, Header, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
 from fastapi.responses import JSONResponse
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel
@@ -1133,7 +1133,9 @@ class Proposal(BaseModel):
 
 
 def create_app(gw: Gateway) -> FastAPI:
-    app = FastAPI(title="a5s gateway")
+    explorer = gw.cfg.development  # FastAPI's explorer pages load scripts from a CDN
+    app = FastAPI(title="a5s gateway", docs_url="/docs" if explorer else None,
+                  redoc_url="/redoc" if explorer else None)
 
     @app.exception_handler(psycopg.OperationalError)
     def database_down(_request, exc: psycopg.OperationalError) -> JSONResponse:
@@ -1164,9 +1166,16 @@ def create_app(gw: Gateway) -> FastAPI:
             raise HTTPException(401, "run token required")
         return token
 
+    # Every route of the core's API is on one of two routers, each guarded for all of its
+    # routes, so a route added to either can't be reached without its token: the service
+    # token's, for the scheduler, the command line and the team that runs a5s, and the run
+    # token's, for a worker, for its run alone, which each route then looks up
+    services = APIRouter(dependencies=[Depends(service)])
+    runs = APIRouter(dependencies=[Depends(run_token)])
+
     # Runs, opened and closed by the scheduler.
 
-    @app.post("/runs", dependencies=[Depends(service)])
+    @services.post("/runs")
     def open_run(body: OpenRun) -> dict:
         with traces.span("open_run", **{"a5s.instance": body.instance,
                                         "a5s.trigger": str(body.trigger.get("kind"))}) as current:
@@ -1299,7 +1308,7 @@ def create_app(gw: Gateway) -> FastAPI:
                 "history_chars": CHARS_PER_TOKEN * (release.context.budget_tokens if release
                                                     else Context().budget_tokens)}
 
-    @app.post("/runs/sweep", dependencies=[Depends(service)])
+    @services.post("/runs/sweep")
     def sweep() -> list[dict]:
         """Close runs that outlived their time, and runs whose scheduler stopped without
         closing them, as when it's killed part way: once the lease it held on their work, which
@@ -1326,7 +1335,7 @@ def create_app(gw: Gateway) -> FastAPI:
         return [{"run": r["run"], "inbound": r["trigger"].get("inbound"),
                  "instance": r["instance_id"], "answered": r["answered"]} for r in stale]
 
-    @app.post("/tasks/sweep", dependencies=[Depends(service)])
+    @services.post("/tasks/sweep")
     def tasks_sweep() -> list[dict]:
         """The tasks whose next slice is due, each for the scheduler to work on, as a run of
         its instance's (core/tasking.py)."""
@@ -1347,7 +1356,7 @@ def create_app(gw: Gateway) -> FastAPI:
         return [{"kind": tasking.KIND, "task": r["id"], "instance": r["instance_id"],
                  "agent": r["definition"], "owner": r["owner"]} for r in rows]
 
-    @app.post("/runs/{run_id}/close", dependencies=[Depends(service)])
+    @services.post("/runs/{run_id}/close")
     def close_run(run_id: str, body: CloseRun) -> dict:
         """Close a run, with how it ended. A reminder or chase whose run didn't get its message
         through, a5s gives itself, in its own words."""
@@ -1450,7 +1459,7 @@ def create_app(gw: Gateway) -> FastAPI:
 
     # What falls due: obligations to remind people of or escalate, and schedules to fire.
 
-    @app.post("/obligations/sweep", dependencies=[Depends(service)])
+    @services.post("/obligations/sweep")
     def sweep_obligations() -> list[dict]:
         """Bring the obligations in line with the records, and escalate those due, in code.
 
@@ -1517,7 +1526,7 @@ def create_app(gw: Gateway) -> FastAPI:
         push(sends)
         return due
 
-    @app.post("/schedules/sweep", dependencies=[Depends(service)])
+    @services.post("/schedules/sweep")
     def sweep_schedules() -> list[dict]:
         """The schedules due to fire now, for the scheduler to run. A time that falls while
         an instance is suspended is recorded as skipped, so it isn't made up later."""
@@ -1550,7 +1559,7 @@ def create_app(gw: Gateway) -> FastAPI:
                                      "due": at.isoformat()}})
         return due
 
-    @app.post("/reports/sweep", dependencies=[Depends(service)])
+    @services.post("/reports/sweep")
     def sweep_reports() -> list[dict]:
         """The reports due now that have something to tell, for the scheduler to run. A day
         with nothing new is recorded here, so no model starts, and so is one that falls while
@@ -1593,7 +1602,7 @@ def create_app(gw: Gateway) -> FastAPI:
                         reports.fire(conn, inst["id"], who, report.source, at, now, "nothing new")
         return due
 
-    @app.post("/reminders/sweep", dependencies=[Depends(service)])
+    @services.post("/reminders/sweep")
     def sweep_reminders() -> list[dict]:
         """The reminders people agreed to that are due now, for their agents to give. If an
         agent can't act, the core reminds them itself, in code, so nothing they asked for is
@@ -1650,7 +1659,7 @@ def create_app(gw: Gateway) -> FastAPI:
         push(sends)
         return due
 
-    @app.post("/digests/sweep", dependencies=[Depends(service)])
+    @services.post("/digests/sweep")
     def sweep_digests() -> list[dict]:
         """Send each person's digest, once its time has come today and their agents' work for
         it is done, or has had half an hour: what's ready goes then, and the rest waits for the
@@ -1771,7 +1780,7 @@ def create_app(gw: Gateway) -> FastAPI:
         return {"refused": [], "row": row, "new": new, "changes": found, "link": link,
                 "asked": asked, "sends": sends}
 
-    @app.post("/settings/proposals", dependencies=[Depends(service)])
+    @services.post("/settings/proposals")
     def propose(body: Proposal) -> dict:
         """Ask a version's approvers to approve it: each gets a card in the chat they last had
         with a5s, or a link where there are no cards. A version asked about before is asked
@@ -1843,7 +1852,7 @@ def create_app(gw: Gateway) -> FastAPI:
                                      gw.scenario.person, gw.scenario.name, approved).refused
         return ("refused: " + "; ".join(refused)) if refused else "applied", approved
 
-    @app.post("/settings/sweep", dependencies=[Depends(service)])
+    @services.post("/settings/sweep")
     def sweep_settings() -> dict:
         """Propose the versions people asked for in the settings app. Apply the newest version
         that everyone it needs has approved where they work, and let go of the versions it
@@ -1882,7 +1891,7 @@ def create_app(gw: Gateway) -> FastAPI:
         push(sends)  # what the settings app's requests ask their approvers
         return {"applied": applied}
 
-    @app.get("/status", dependencies=[Depends(service)])
+    @services.get("/status")
     def status_now() -> dict:
         """How a5s is doing, for the team that runs it and its dashboards (core/status.py)."""
         with db.transaction(gw.url) as conn:
@@ -1924,7 +1933,7 @@ def create_app(gw: Gateway) -> FastAPI:
         return {"since": since.isoformat() if since else None,
                 "until": until.isoformat() if until else None}
 
-    @app.get("/audit/entries", dependencies=[Depends(service)])
+    @services.get("/audit/entries")
     def audit_entries(by: str, since: datetime | None = None, until: datetime | None = None,
                       kind: str | None = None, action: str | None = None,
                       decision: str | None = None, instance: str | None = None,
@@ -1943,7 +1952,7 @@ def create_app(gw: Gateway) -> FastAPI:
                         after=after or None, found=len(found["entries"]))
         return found
 
-    @app.get("/audit/export", dependencies=[Depends(service)])
+    @services.get("/audit/export")
     def audit_export(by: str, since: datetime | None = None, until: datetime | None = None,
                      after: int = 0,
                      identity: str | None = Header(default=None, alias="X-A5S-Identity")
@@ -1956,7 +1965,7 @@ def create_app(gw: Gateway) -> FastAPI:
                         after=after or None, entries=len(page["entries"]))
         return page
 
-    @app.get("/audit/report", dependencies=[Depends(service)])
+    @services.get("/audit/report")
     def audit_report(by: str, since: datetime | None = None,
                      until: datetime | None = None,
                      identity: str | None = Header(default=None, alias="X-A5S-Identity")
@@ -1970,7 +1979,7 @@ def create_app(gw: Gateway) -> FastAPI:
                         acts=len(found["acts"]))
         return found
 
-    @app.get("/measures", dependencies=[Depends(service)])
+    @services.get("/measures")
     def measures_now(days: int = 30) -> dict:
         """The measures phase 1's first users baseline, and the pilot's later stages show,
         over the last `days` days by the core's clock: what fell due and was met on time, how
@@ -1983,14 +1992,14 @@ def create_app(gw: Gateway) -> FastAPI:
     # The studio's API, for code, the command line and CI: everything, for the team that runs
     # a5s. People see what they may watch through the studio's pages (core/studio.py).
 
-    @app.get("/studio/agents", dependencies=[Depends(service)])
+    @services.get("/studio/agents")
     def studio_agents() -> dict:
         """Each agent of the release, and where it runs."""
         with db.transaction(gw.url) as conn:
             return {"agents": studio.catalogue(conn, gw.scenario, gw.definitions,
                                                gw.scenario.tools())}
 
-    @app.get("/studio/agents/{agent}", dependencies=[Depends(service)])
+    @services.get("/studio/agents/{agent}")
     def studio_agent(agent: str) -> dict:
         """One agent, as its release defines it, its instructions included, and where it runs."""
         definition = gw.definitions.get(agent)
@@ -2000,7 +2009,7 @@ def create_app(gw: Gateway) -> FastAPI:
             return studio.agent(gw.scenario, definition, gw.scenario.tools(),
                                 studio.instances(conn), whole=True)
 
-    @app.get("/studio/agents/{agent}/measures", dependencies=[Depends(service)])
+    @services.get("/studio/agents/{agent}/measures")
     def studio_agent_measures(agent: str, days: int = 30, zone: str = "UTC") -> dict:
         """How an agent's instances are doing over the last `days` days, with their runs on
         each day in `zone`."""
@@ -2020,7 +2029,7 @@ def create_app(gw: Gateway) -> FastAPI:
             raise HTTPException(404, f"there's no instance {instance}")
         return found
 
-    @app.get("/studio/instances/{instance}/measures", dependencies=[Depends(service)])
+    @services.get("/studio/instances/{instance}/measures")
     def studio_instance_measures(instance: str, days: int = 30, zone: str = "UTC") -> dict:
         """How an instance is doing over the last `days` days, with its runs on each day in
         `zone`."""
@@ -2031,7 +2040,7 @@ def create_app(gw: Gateway) -> FastAPI:
             except studio.UnknownZone as e:
                 raise HTTPException(400, str(e)) from e
 
-    @app.get("/studio/instances/{instance}/runs", dependencies=[Depends(service)])
+    @services.get("/studio/instances/{instance}/runs")
     def studio_runs(instance: str, before: str | None = None,
                     limit: int = studio.RUNS) -> dict:
         """An instance's runs, newest first, a page at a time: `before` is where the page
@@ -2043,7 +2052,7 @@ def create_app(gw: Gateway) -> FastAPI:
             except ValueError:
                 raise HTTPException(400, "before is where the page before ended, as it said")
 
-    @app.get("/studio/runs/{run_id}", dependencies=[Depends(service)])
+    @services.get("/studio/runs/{run_id}")
     def studio_run(run_id: str) -> dict:
         """What a run did, with its entries in the ledger."""
         with db.transaction(gw.url) as conn:
@@ -2052,7 +2061,7 @@ def create_app(gw: Gateway) -> FastAPI:
             raise HTTPException(404, f"there's no run {run_id}")
         return found
 
-    @app.post("/people/{person}/export", dependencies=[Depends(service)])
+    @services.post("/people/{person}/export")
     def export_person(person: str, body: StatusChange) -> dict:
         """All a5s keeps about someone, for their request to see it, for the data protection
         officer alone, who asked for it on the core's page (core/officer.py). The ledger records
@@ -2073,7 +2082,7 @@ def create_app(gw: Gateway) -> FastAPI:
                                           "counts": export.counts(found)}})
         return found
 
-    @app.post("/people/{person}/erase", dependencies=[Depends(service)])
+    @services.post("/people/{person}/erase")
     def erase_person(person: str, body: Erasure) -> dict:
         """Erase all a5s keeps about someone, at their request, for the data protection officer
         alone, who asked for it on the core's page (core/officer.py), with the id sent again to
@@ -2102,7 +2111,7 @@ def create_app(gw: Gateway) -> FastAPI:
                                           "erased": gone, "archives_left": len(archives)}})
         return {"erased": person, "by": by, "gone": gone, "archives": archives}
 
-    @app.post("/retention/sweep", dependencies=[Depends(service)])
+    @services.post("/retention/sweep")
     def sweep_retention() -> dict:
         """Delete what's past its time to keep (core/retention.py), and record how much went.
         Archive what a5s keeps for anyone who has left (core/departures.py), apart, so neither
@@ -2120,7 +2129,7 @@ def create_app(gw: Gateway) -> FastAPI:
             archived = departures.sweep(conn, gw.scenario, gw.clock())
         return {"deleted": gone, "archived": len(archived)}
 
-    @app.post("/notebook/sweep", dependencies=[Depends(service)])
+    @services.post("/notebook/sweep")
     def sweep_notebook() -> dict:
         """Read again the records of the notes not checked for a day, outside any transaction,
         and let go of those whose records changed (core/notebook.py): asked apart from the
@@ -2185,7 +2194,7 @@ def create_app(gw: Gateway) -> FastAPI:
             raise HTTPException(400, "say who you are, as someone in the directory")
         return body.by, "unverified (development)"
 
-    @app.post("/instances/{instance}/suspend", dependencies=[Depends(service)])
+    @services.post("/instances/{instance}/suspend")
     def suspend(instance: str, body: StatusChange) -> dict:
         by, identity = who_asks(body)
         with db.transaction(gw.url) as conn:
@@ -2194,7 +2203,7 @@ def create_app(gw: Gateway) -> FastAPI:
             raise HTTPException(404, problem)
         return {"suspended": instance, "by": by}
 
-    @app.post("/instances/{instance}/resume", dependencies=[Depends(service)])
+    @services.post("/instances/{instance}/resume")
     def resume(instance: str, body: StatusChange) -> dict:
         by, identity = who_asks(body, loosens=True)
         with db.transaction(gw.url) as conn:
@@ -2205,7 +2214,7 @@ def create_app(gw: Gateway) -> FastAPI:
 
     # What a worker may ask, with its run token.
 
-    @app.get("/run")
+    @runs.get("/run")
     def run_info(token: str = Depends(run_token)) -> dict:
         """What a worker needs for its run: the release's instructions, the model, the tools,
         and what a5s knows from its own records for the run, built by code, such as the
@@ -2317,7 +2326,7 @@ def create_app(gw: Gateway) -> FastAPI:
             log.exception("couldn't record the outcome of %s %s", entry["kind"], entry["action"])
             return False
 
-    @app.post("/run/tools/{name}")
+    @runs.post("/run/tools/{name}")
     def call_tool(name: str, body: ToolArgs, token: str = Depends(run_token)) -> Any:
         with traces.span(f"execute_tool {name}", **{
                 "gen_ai.operation.name": "execute_tool", "gen_ai.tool.name": name,
@@ -2772,7 +2781,7 @@ def create_app(gw: Gateway) -> FastAPI:
         return {"answer_with": {"token": opened["token"], "task": opened["task"],
                                 "question": question, "agent": agent}, "recorded": True}
 
-    @app.post("/run/answer")
+    @runs.post("/run/answer")
     def answer_question(body: Answer, token: str = Depends(run_token)) -> dict:
         """A run's answer to the question it was opened for, back to the run that asked: with
         its mark, and the values in it the run had read, from its tools and what a5s told it,
@@ -2879,7 +2888,7 @@ def create_app(gw: Gateway) -> FastAPI:
                 studio.handled(conn, row["run"], studio.named(gw.scenario, core.sourced(result)))
         return {"result": result, "recorded": recorded}
 
-    @app.post("/run/messages")
+    @runs.post("/run/messages")
     def send_message(body: Message, token: str = Depends(run_token)) -> Any:
         with traces.span("send_message") as current:
             return sending_message(body, token, current)
@@ -3122,7 +3131,7 @@ def create_app(gw: Gateway) -> FastAPI:
                                              "why": "someone joined the chat while it was answering"}})
         return [row["id"] if pushed else None, notice]
 
-    @app.post("/proposals/sweep", dependencies=[Depends(service)])
+    @services.post("/proposals/sweep")
     def sweep_proposals() -> dict:
         """Make the held changes their deciders approved, and tell whoever each was for what
         became of it: made, rejected, lapsed, or not made since its records changed or the
@@ -3376,7 +3385,7 @@ def create_app(gw: Gateway) -> FastAPI:
         return {"sends": sends}
 
 
-    @app.post("/samples/sweep", dependencies=[Depends(service)])
+    @services.post("/samples/sweep")
     def sweep_samples() -> dict:
         """Weigh the sealed grades of each behaviour's samples, for each part and type of
         action, and raise or lower a5s's cap where they now show it should (core/samples.py),
@@ -3420,7 +3429,7 @@ def create_app(gw: Gateway) -> FastAPI:
             for person in dict.fromkeys(p for p in (inst["owner"], inst["deputy"]) if p):
                 digests.keep(conn, person, inst["definition"], inst["id"], None, text, now)
 
-    @app.get("/proposals", dependencies=[Depends(service)])
+    @services.get("/proposals")
     def list_proposals() -> dict:
         """The held changes that wait, or that a5s stopped part way through making, for the
         team that runs it: what each does, whom it's for, and since when."""
@@ -3433,7 +3442,7 @@ def create_app(gw: Gateway) -> FastAPI:
                                "for": list(r["acts_for"]), "change": proposals.first(r)}
                               for r in rows]}
 
-    @app.post("/proposals/{key}/end", dependencies=[Depends(service)])
+    @services.post("/proposals/{key}/end")
     def end_proposal(key: str, body: StatusChange) -> dict:
         """End a held change a5s stopped part way through making, at the word of someone who
         may, once they've checked the records system for it: the instance's owner or deputy,
@@ -3461,7 +3470,7 @@ def create_app(gw: Gateway) -> FastAPI:
         push(going["sends"])
         return {"ended": key, "by": by}
 
-    @app.post("/caps/lower", dependencies=[Depends(service)])
+    @services.post("/caps/lower")
     def lower_cap(body: CapChange) -> dict:
         """Lower an agent's cap for a type of action in a part to 1, at the word of someone who
         may: the part's owners, the instance approvers, the agent's owners, or assurance.
@@ -3485,7 +3494,7 @@ def create_app(gw: Gateway) -> FastAPI:
                 capped(conn, found, gw.clock())
         return {"lowered": bool(found), "cap": 1}
 
-    @app.post("/deliveries/sweep", dependencies=[Depends(service)])
+    @services.post("/deliveries/sweep")
     def sweep_deliveries() -> dict:
         """Try again what a chat a5s writes to itself didn't take, once it's due."""
         push()
@@ -3507,7 +3516,7 @@ def create_app(gw: Gateway) -> FastAPI:
             chats.started(conn, channel, person, agent, reply_to)
             return reply_to, True
 
-    @app.post("/notices", dependencies=[Depends(service)])
+    @services.post("/notices")
     def notice(body: Notice) -> dict:
         """a5s's own words, such as "the assistant is suspended", only ever in answer to someone."""
         text, _ = sanitize(body.text, ())
@@ -3651,12 +3660,14 @@ def create_app(gw: Gateway) -> FastAPI:
         return JSONResponse(status_code=status, content=data,
                             headers=None if recorded else {"x-a5s-recorded": "false"})
 
-    @app.post("/v1/chat/completions")
+    @runs.post("/v1/chat/completions")
     def openai_style(body: dict[str, Any], token: str = Depends(run_token)) -> JSONResponse:
         return model_call("openai", body, token)
 
-    @app.post("/v1/messages")
+    @runs.post("/v1/messages")
     def anthropic_style(body: dict[str, Any], token: str = Depends(run_token)) -> JSONResponse:
         return model_call("anthropic", body, token)
 
+    app.include_router(services)
+    app.include_router(runs)
     return app

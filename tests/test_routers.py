@@ -9,12 +9,20 @@ sign-in made for that act alone (core/approve_api.py and the others): each act i
 with a body of the shape it takes, and none is open to someone not signed in.
 
 The sidebar every page shows lists a page by the check its router makes, so it lists exactly the
-pages whose API lets each person in."""
+pages whose API lets each person in.
+
+The core's own API is two routers, each guarded for every route (core/gateway.py): the service
+token's, for the scheduler, the command line and the team that runs a5s, and the run token's, for
+a worker's own run."""
 
 import re
+from dataclasses import replace
 
 import httpx
 import pytest
+from fastapi.testclient import TestClient
+
+from a5s.core import gateway
 
 SIGNED_IN = ("/studio/api", "/settings/api", "/notebook/api", "/tasks/api", "/audit/api",
              "/admin/api")
@@ -80,3 +88,26 @@ def test_the_sidebar_lists_exactly_the_pages_whose_api_lets_each_person_in(appro
             answer = httpx.get(f"{approving}{api}", headers=headers, timeout=30)
             assert answer.status_code in (200, 403), (person, api, answer.text)
             assert (answer.status_code == 200) == (page in listed), (person, page, listed)
+
+
+def test_every_route_of_the_cores_api_refuses_a_call_without_its_token(stack):
+    """The core's API is two routers, each guarded for all of its routes (core/gateway.py): the
+    service token's, for the scheduler, the command line and the team that runs a5s, and the
+    run token's, for a worker's own run. So each route the core serves refuses a call with no
+    token, and a route added outside the two, with no check, fails here."""
+    routes = described(stack.url)
+    assert {"/runs", "/status", "/run", "/run/tools/{name}", "/v1/messages"} <= set(routes)
+    for path, methods in routes.items():
+        address = re.sub(r"\{(\w+)\}", "x", path)
+        for method in methods:
+            answer = httpx.request(method.upper(), f"{stack.url}{address}", timeout=30)
+            assert answer.status_code == 401, (method, path, answer.status_code, answer.text)
+
+
+def test_the_core_serves_no_api_explorer_but_in_development(stack):
+    """FastAPI's explorer pages load their scripts from a CDN, so the core serves them in
+    development alone; its API's description stays."""
+    deployed = TestClient(gateway.create_app(
+        replace(stack.gateway, cfg=replace(stack.gateway.cfg, development=False))))
+    assert [deployed.get(page).status_code for page in ("/docs", "/redoc")] == [404, 404]
+    assert deployed.get("/openapi.json").status_code == 200

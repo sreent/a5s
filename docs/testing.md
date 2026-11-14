@@ -161,7 +161,7 @@ Start with a user need and an observable result, not a new tool call for its own
 - measures model use for a live case;
 - includes ambiguity, correction or a second turn where a real conversation would need it.
 
-For a new page people sign in to, put its routes in a router of its own, as each page of the channels app is, whose API checks who's signed in before any route runs ([`core/web.py`](../src/a5s/core/web.py)). `tests/test_routers.py` asks every route of each such API with no sign-in and expects a refusal, fails on a route that's in none of them and isn't one of those that check for themselves, and holds the sidebar to each page's own check.
+For a new page people sign in to, put its routes in a router of its own, as each page of the channels app is, whose API checks who's signed in before any route runs ([`core/web.py`](../src/a5s/core/web.py)). `tests/test_routers.py` asks every route of each such API with no sign-in and expects a refusal, fails on a route that's in none of them and isn't one of those that check for themselves, and holds the sidebar to each page's own check. A route of the core's own API goes on one of its two routers ([`core/gateway.py`](../src/a5s/core/gateway.py)), the service token's or a worker's run token's, and the same test asks every route the core serves with no token.
 
 For a new tool or connector, pin its schema and test its risk flags, credentials, permissions, pagination, timeouts, failures and hostile inputs. If it makes an effect, test idempotency under retries and fresh task workers. Skills remain reviewed instructions and reference material: they do not grant tools or run scripts.
 
