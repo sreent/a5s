@@ -132,7 +132,7 @@ def test_only_an_instance_approvers_fresh_sign_in_for_this_approves(stack, appro
     version = asked["digest"]
     token, salt = sign_in(approving, provider, version, person="ben")
     ben = decide(approving, version, token, salt)
-    assert ben.status_code == 403 and "Ben Okafor is neither" in ben.json()["detail"]
+    assert ben.status_code == 403 and "Ben Okafor is none of them" in ben.json()["detail"]
 
     salt = secrets.token_urlsafe(32)
     bound = approvals.nonce(version, salt)

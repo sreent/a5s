@@ -398,8 +398,8 @@ def check(verifier: Verifier, scenario: Any, client_id: str, token: str, version
     except IdentityError as exc:
         raise Refused(401, f"your sign-in doesn't check out: {exc}") from None
     if not registry.approves(person):
-        raise Refused(403, f"only a part's owner or an instance approver can approve settings, "
-                           f"and {person.name} is neither")
+        raise Refused(403, f"only a part's owner, an instance approver or the data protection "
+                           f"officer can approve settings, and {person.name} is none of them")
     return person, claims
 
 

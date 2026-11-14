@@ -86,7 +86,7 @@ Someone who leaves is archived a day after the directory stops naming them, or a
 
 ## What the officer decides
 
-Five of the officer's choices take effect in a5s itself, in the signed settings' `data_protection`, so they need no release, and nobody else can make them. A version of the settings that changes any of them needs the approval of the officer the directory names, besides whoever else it needs. The officer approves only that: their approval counts towards nothing else a version decides. Until they choose otherwise, each is a5s's own, which keeps people's data closest:
+Five of the officer's choices take effect in a5s itself, in the signed settings' `data_protection`, so they need no release, and nobody else can make them. A version of the settings that changes any of them needs the approval of the officer the directory names, besides whoever else it needs. The officer approves only that, and a group being given the officer's own role, which lets its members export and erase what a5s keeps about anyone: their approval counts towards nothing else a version decides. Until they choose otherwise, each is a5s's own, which keeps people's data closest:
 
 | Choice | a5s's own | What it decides |
 | --- | --- | --- |

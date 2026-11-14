@@ -1080,13 +1080,14 @@ def create_app(gw: Any) -> FastAPI:
     # it on the page above, so asking for a version changes nothing by itself.
 
     def settling(authorization: str | None) -> Person:
-        """Who signed in to the settings app: someone who approves instances."""
+        """Who signed in to the settings app: someone who approves versions of the settings."""
         approving()
         who, _ = sender(authorization, None)
         person = gw.scenario.person(who)
         if person is None or not registry.approves(person):
-            raise HTTPException(403, "the settings app is for the people who approve instances: "
-                                     "each part's owner, and the instance approvers")
+            raise HTTPException(403, "the settings app is for the people who approve versions "
+                                     "of the settings: each part's owner, the instance "
+                                     "approvers, and the data protection officer")
         return person
 
     def drafted(text: str, last: dict | None) -> tuple[Settings | None, bytes, list[str]]:

@@ -118,6 +118,16 @@ def test_giving_a_group_a_role_needs_its_owner_in_the_directory(stack, approving
     assert in_force(stack) == (asked["serial"], None)
 
 
+def test_only_the_officer_the_directory_names_gives_a_group_theirs(stack, approving, provider):
+    asked = version(stack, {"privacy-team": ["data-protection-officer"]})  # export and erase
+    told = approve(stack, approving, provider, asked["digest"], "ana")  # who approves instances
+    assert any("data-protection-officer named in the directory hasn't approved giving "
+               "privacy-team" in need for need in told["needs"]), told
+    assert in_force(stack)[0] < asked["serial"]  # it waits for the officer
+    approve(stack, approving, provider, asked["digest"], "noor")  # who's the officer
+    assert in_force(stack) == (asked["serial"], None)
+
+
 def test_someone_a_group_makes_an_owner_approves_their_part_while_theyre_in_it(
         stack, approving, provider):
     mapped(stack, approving, provider)

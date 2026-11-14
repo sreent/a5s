@@ -11,8 +11,9 @@ time-bound elevation, and a5s's settings say what each group may do.
   what they approved stops counting then, as when the directory takes a role away. What they do
   with a sign-in counts by the groups that sign-in shows.
 - Giving a group a role needs the role's owner, as the directory names them: a part's owner for
-  its part's roles, else an instance approver. Nobody who holds a role through a group gives it
-  to another, so every grant goes back to someone the release names.
+  its part's roles, the data protection officer for theirs, which lets its holders export and
+  erase what a5s keeps about anyone, else an instance approver. Nobody who holds a role through
+  a group gives it to another, so every grant goes back to someone the release names.
 - A version's own map gives nothing towards its approval: the one in force before it does, and
   only for the grants the directory's owners approved.
 - Groups give a5s's powers alone: what someone may see stays the directory's, by their team.
@@ -30,7 +31,7 @@ from typing import Any
 import psycopg
 
 from a5s import db
-from a5s.contract import INSTANCE_APPROVER, PART_OWNER, Person, Settings
+from a5s.contract import DATA_PROTECTION, INSTANCE_APPROVER, PART_OWNER, Person, Settings
 
 log = logging.getLogger(__name__)
 
@@ -74,10 +75,13 @@ def grants(settings: Settings, before: Settings | None) -> list[tuple[str, str]]
 
 
 def owner_of(role: str) -> str:
-    """Whose role gives a group this one: a part's owner, for its part's roles; else an
+    """Whose role gives a group this one: a part's owner, for its part's roles; the data
+    protection officer, for theirs, as what it lets someone do, export and erase what a5s
+    keeps about anyone, is the officer's to answer for, not an instance approver's; else an
     instance approver's."""
-    part = role.partition(":")[2]
-    return f"{PART_OWNER}:{part}" if part else INSTANCE_APPROVER
+    if part := role.partition(":")[2]:
+        return f"{PART_OWNER}:{part}"
+    return DATA_PROTECTION if role == DATA_PROTECTION else INSTANCE_APPROVER
 
 
 def stored(conn: db.Connection, person: str | None = None) -> dict[str, tuple[str, ...]]:

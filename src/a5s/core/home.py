@@ -42,7 +42,8 @@ MAY = {
     ASSURANCE: "hold the ledger's locked copies, test releases, and read the ledger",
     DATA_PROTECTION: "export or erase what a5s keeps about one person, one request at a time; "
                      "where the directory names you, approve the settings' choices for people's "
-                     "data: how long a5s keeps it, and whom it names",
+                     "data: how long a5s keeps it, and whom it names; and give a group "
+                     "your role",
 }
 TEAM = "the team that runs a5s"
 TEAM_MAY = ("run it, and make it safer alone: suspend an instance, lower a cap or withdraw a "

@@ -1800,7 +1800,7 @@ def create_app(gw: Gateway) -> FastAPI:
                     if problem:  # such as no seal key here, though the channels have one
                         outcome = f"refused: {problem}"
                     elif person is None or not registry.approves(person):
-                        outcome = "refused: they don't approve instances"
+                        outcome = "refused: they approve no settings"
                     else:
                         done = proposing(conn, parse_settings(bytes(req["raw"])), by=person.id)
                         outcome = ("refused: " + "; ".join(done["refused"])) if done["refused"] \

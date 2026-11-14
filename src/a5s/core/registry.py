@@ -70,8 +70,8 @@ def signers(settings: Settings, directory: Directory,
         if person is None:
             problems.append(f"{sig.signer} isn't in the directory")
         elif not approves(person):
-            problems.append(f"{sig.signer} approves no instances: they own no part, and don't "
-                            f"hold the {INSTANCE_APPROVER} role")
+            problems.append(f"{sig.signer} approves no settings: they own no part, and hold "
+                            f"neither the {INSTANCE_APPROVER} role nor the {DATA_PROTECTION}'s")
         elif not person.public_key or not signing.verify(person.public_key, settings.raw, sig.value):
             problems.append(f"{sig.signer}'s signature isn't for this version")
         else:
@@ -81,7 +81,7 @@ def signers(settings: Settings, directory: Directory,
         if person is None:
             problems.append(f"{who}, who approved it, isn't in the directory")
         elif not approves(person):
-            problems.append(f"{who}, who approved it, approves no instances")
+            problems.append(f"{who}, who approved it, approves no settings")
         elif who not in valid:
             valid.append(who)
     return valid, problems
