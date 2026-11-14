@@ -37,7 +37,11 @@ The command line, which serves nothing, warns of a name that isn't a setting rat
 - Each part's first log line says what it starts with: every setting its environment sets, masked as above. Everything else is at a5s's default.
 - The core's status, `a5s status` and its `/status`, says what the core runs with, in the same way.
 
-The tests check that every `A5S_` name anywhere in the repository is a setting, or said not to be one, and that this page's table is the code's.
+## Defaults, written once
+
+Each default is in the list alone, so there's nothing for it to drift from. Compose and the chart set only what a deployment chooses, such as an address, a secret or a name, and pass everything else through unset, so a5s's own default holds. The chart's values leave each such setting empty, saying which variable it sets. Two are the exception: the chart sizes the core's and the scheduler's shutdown by the timeouts for a model's answer and a worker's run, so it states them, and a test holds them to a5s's own. How often the copier copies the ledger is in the code too, not in the commands that start it.
+
+The tests check that neither compose nor the chart sets a setting to its default, that the chart sets no `A5S_` variable a5s doesn't read, that every `A5S_` name anywhere in the repository is a setting, or said not to be one, and that this page's table is the code's.
 
 ## Every setting
 
@@ -69,7 +73,7 @@ The tests check that every `A5S_` name anywhere in the repository is a setting, 
 | --- | --- | --- | --- |
 | `A5S_WORKER_URL` | none | an http(s):// address | The shared worker pool, for every agent without a pool of its own |
 | `A5S_WORKER_URLS` | none | agent=address pairs, by commas | Each agent's own worker pool, by its name |
-| `A5S_WORKER_SLOTS` | none | agent=number pairs, by commas | How many of an agent's runs the scheduler works on at once in its pool |
+| `A5S_WORKER_SLOTS` | none | agent=number pairs, by commas | How many of an agent's runs the scheduler works on at once in its own pool: 4 unless it says |
 | `A5S_WORKER_AGENTS` | none | agents, by commas | In a worker: the agents its pool runs, if it's their own |
 | `A5S_WORKER_POOLED` | none | agents, by commas | In the shared pool: the agents with pools of their own, which it refuses |
 | `A5S_WORKER_TIMEOUT` | `240` | seconds, from 10 to 3,600 | Seconds a worker waits for the core, and for a model through it |

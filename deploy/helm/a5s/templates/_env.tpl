@@ -7,8 +7,7 @@
 {{- range $name, $key := .Values.models.keys }}
 {{ include "a5s.secretEnv" (dict "root" $ "name" $name "key" $key "optional" true) }}
 {{- end }}
-- name: A5S_TEAM
-  value: {{ .Values.team | quote }}
+{{ include "a5s.teamEnv" . }}
 {{ include "a5s.peopleEnv" . }}
 {{ include "a5s.scenarioEnv" . }}
 {{- with .Values.telemetry.endpoint }}
@@ -32,8 +31,10 @@
 {{- if and .Values.publishing.repo .Values.publishing.githubClientId }}
 {{- $p := .Values.publishing }}
 {{- range $name, $value := dict "A5S_GITHUB_CLIENT_ID" $p.githubClientId "A5S_GITHUB_REPO" $p.repo "A5S_GITHUB_BASE" $p.base "A5S_GITHUB_URL" $p.githubUrl "A5S_GITHUB_API_URL" $p.githubApiUrl }}
+{{- if $value }}
 - name: {{ $name }}  # publishing drafts as pull requests, as whoever publishes
   value: {{ $value | quote }}
+{{- end }}
 {{- end }}
 {{- end }}
 {{- with .Values.sandbox.url }}
@@ -74,8 +75,10 @@
 {{ include "a5s.secretEnv" (dict "root" . "name" "A5S_DATABASE_URL" "key" "database-anchor-url") }}
 - name: A5S_ANCHOR_STORE
   value: {{ required "set anchor.store, where the ledger's locked copies go" .Values.anchor.store | quote }}
+{{- with .Values.anchor.retainDays }}
 - name: A5S_ANCHOR_RETAIN_DAYS
-  value: {{ .Values.anchor.retainDays | quote }}
+  value: {{ . | quote }}
+{{- end }}
 {{- with .Values.anchor.s3Endpoint }}
 - name: AWS_ENDPOINT_URL_S3
   value: {{ . | quote }}
@@ -92,21 +95,32 @@
 {{- define "a5s.env.worker" -}}
 - name: A5S_GATEWAY_URL
   value: {{ printf "http://%s-gateway:8700" .Release.Name | quote }}
+{{- with .Values.timeouts.run }}
 - name: A5S_WORKER_TIMEOUT
-  value: {{ .Values.timeouts.run | quote }}
+  value: {{ . | quote }}
+{{- end }}
 {{- end }}
 
 {{/* How long a part waits for a new database connection. */}}
 {{- define "a5s.dbConnectEnv" -}}
+{{- with .Values.timeouts.dbConnect }}
 - name: A5S_DB_CONNECT_TIMEOUT
-  value: {{ .Values.timeouts.dbConnect | quote }}
+  value: {{ . | quote }}
+{{- end }}
+{{- end }}
+
+{{/* The directory's team that runs a5s, if the deployment names one. */}}
+{{- define "a5s.teamEnv" -}}
+{{- with .Values.team }}
+- name: A5S_TEAM
+  value: {{ . | quote }}
+{{- end }}
 {{- end }}
 
 {{/* The jobs, as the database's administrator. */}}
 {{- define "a5s.env.admin" -}}
 {{ include "a5s.secretEnv" (dict "root" . "name" "A5S_DATABASE_URL" "key" "database-admin-url") }}
-- name: A5S_TEAM
-  value: {{ .Values.team | quote }}
+{{ include "a5s.teamEnv" . }}
 {{ include "a5s.scenarioEnv" . }}
 {{- end }}
 

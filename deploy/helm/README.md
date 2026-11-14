@@ -41,7 +41,7 @@ Each agent `workers.pools` names runs in a pool of its own, `a5s-worker-<agent>`
 workers:
   pools:
     assistant: {replicas: 2, slots: 8}
-    watcher: {}                        # one replica, 4 slots and resources.worker
+    watcher: {}                        # one replica, a5s's default slots, resources.worker
     desk-assistant: {resources: {limits: {memory: 2Gi}}}
 ```
 

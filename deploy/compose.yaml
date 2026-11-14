@@ -31,7 +31,7 @@ x-scenario: &scenario
 x-publishing: &publishing
   A5S_GITHUB_CLIENT_ID:
   A5S_GITHUB_REPO:
-  A5S_GITHUB_BASE:  # its branch, main if not set
+  A5S_GITHUB_BASE:  # its branch, if not a5s's default
   A5S_GITHUB_URL:  # a GitHub Enterprise server's, if not github.com's
   A5S_GITHUB_API_URL:  # and its API, such as https://github.example.com/api/v3
 
@@ -41,7 +41,7 @@ x-people: &people
   A5S_OIDC_PERSON_CLAIM:
   A5S_OIDC_METADATA_URL:
   A5S_OIDC_MFA:  # the second factor what counts needs, such as amr:mfa (docs/administration.md)
-  A5S_OIDC_GROUPS_CLAIM:  # the claim sign-ins show groups in, groups if not set
+  A5S_OIDC_GROUPS_CLAIM:  # the claim sign-ins show groups in, if not a5s's default
   A5S_WEBCHAT_CLIENT_ID:  # the web chat, signing people in through that provider
   A5S_PUBLIC_URL:  # where people reach the channels, for the links on approvers' cards
   A5S_TEAMS_APP_ID:  # the bot's registration in Entra ID, for Teams
@@ -75,7 +75,7 @@ services:
       A5S_DB_CHANNELS_PASSWORD: ${A5S_DB_CHANNELS_PASSWORD:?set A5S_DB_CHANNELS_PASSWORD}
       A5S_DB_SCHEDULER_PASSWORD: ${A5S_DB_SCHEDULER_PASSWORD:?set A5S_DB_SCHEDULER_PASSWORD}
       A5S_DB_ANCHOR_PASSWORD: ${A5S_DB_ANCHOR_PASSWORD:?set A5S_DB_ANCHOR_PASSWORD}
-      A5S_TEAM:  # the directory's team that runs a5s, platform if not set
+      A5S_TEAM:  # the directory's team that runs a5s, if not a5s's default
     networks: [data]
     depends_on:
       postgres: {condition: service_healthy}
@@ -127,11 +127,11 @@ services:
 
   anchor:  # copies the ledger to locked storage every hour, so a rewritten history shows
     <<: *a5s
-    command: ["anchor", "--every", "3600"]
+    command: ["anchor", "--every"]  # as often as a5s copies by default
     environment:
       A5S_DATABASE_URL: postgresql://a5s_anchor:${A5S_DB_ANCHOR_PASSWORD}@postgres:5432/postgres
       A5S_ANCHOR_STORE: ${A5S_ANCHOR_STORE:?set A5S_ANCHOR_STORE, such as s3://bucket/a5s}
-      A5S_ANCHOR_RETAIN_DAYS: ${A5S_ANCHOR_RETAIN_DAYS:-365}
+      A5S_ANCHOR_RETAIN_DAYS:  # longer than a5s's default, if set
     networks: [data, egress]
     depends_on:
       setup: {condition: service_completed_successfully}

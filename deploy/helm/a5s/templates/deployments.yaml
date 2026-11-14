@@ -3,7 +3,7 @@
   (dict "part" "gateway" "args" (list "gateway" "--host" "0.0.0.0") "port" 8700)
   (dict "part" "channels" "args" (list "channels" "--host" "0.0.0.0") "port" 8703)
   (dict "part" "scheduler" "args" (list "scheduler") "port" 0)
-  (dict "part" "anchor" "args" (list "anchor" "--every" "3600") "port" 0)
+  (dict "part" "anchor" "args" (list "anchor" "--every") "port" 0)
   (dict "part" "worker" "role" "worker" "args" (list "worker" "--host" "0.0.0.0") "port" 8702
         "pooled" (include "a5s.pooled" . | fromJsonArray)) }}
 {{- /* and each agent's own worker pool, which runs its runs alone (workers.pools) */}}

@@ -61,12 +61,15 @@ matchExpressions:
 {{- join "," $urls }}
 {{- end }}
 
-{{/* How many of each agent's runs the scheduler works on at once in its pool. */}}
+{{/* How many of each agent's runs the scheduler works on at once in its pool, for the pools
+that say, or whose slots the chart's values set: a5s's default for every other. */}}
 {{- define "a5s.workerSlots" -}}
 {{- $slots := list }}
-{{- range include "a5s.pooled" . | fromJsonArray }}
-{{- $pool := get $.Values.workers.pools . | default dict }}
-{{- $slots = append $slots (printf "%s=%v" . ($pool.slots | default $.Values.workers.slots)) }}
+{{- range $agent := include "a5s.pooled" . | fromJsonArray }}
+{{- $pool := get $.Values.workers.pools $agent | default dict }}
+{{- with $pool.slots | default $.Values.workers.slots }}
+{{- $slots = append $slots (printf "%s=%v" $agent .) }}
+{{- end }}
 {{- end }}
 {{- join "," $slots }}
 {{- end }}

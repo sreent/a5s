@@ -261,9 +261,11 @@ WORKER_URL = Var("A5S_WORKER_URL", "the shared worker pool, for every agent with
 WORKER_URLS = Var("A5S_WORKER_URLS", "each agent's own worker pool, by its name", {},
                   _pairs(_url(*_WEB), "assistant=http://a5s-worker-assistant:8702"),
                   "agent=address pairs, by commas", area=WORKERS)
+POOL_SLOTS = 4  # how many of its agent's runs a pool takes at once, unless it says
 WORKER_SLOTS = Var("A5S_WORKER_SLOTS", "how many of an agent's runs the scheduler works on at "
-                   "once in its pool", {}, _pairs(_whole(1, 1000), "assistant=4"),
-                   "agent=number pairs, by commas", area=WORKERS)
+                   f"once in its own pool: {POOL_SLOTS} unless it says", {},
+                   _pairs(_whole(1, 1000), "assistant=4"), "agent=number pairs, by commas",
+                   area=WORKERS)
 WORKER_AGENTS = Var("A5S_WORKER_AGENTS", "in a worker: the agents its pool runs, if it's their "
                     "own", frozenset(), _names, "agents, by commas", area=WORKERS)
 WORKER_POOLED = Var("A5S_WORKER_POOLED", "in the shared pool: the agents with pools of their "

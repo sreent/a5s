@@ -466,6 +466,9 @@ def _admin(cfg: Config, path: str, body: dict | None = None, timeout: float = 30
                  timeout)
 
 
+# How often the copier copies the ledger, when it keeps copying: assurance's, by a release
+ANCHOR_EVERY = 3600
+
 # The commands that run one of a5s's parts, or set it up: each stops at once on a setting it
 # can't use, or an A5S_ name that isn't a setting, which elsewhere it's only told of
 PARTS = frozenset({"setup", "gateway", "worker", "channels", "scheduler", "anchor", "sandbox",
@@ -619,7 +622,9 @@ def main(argv: list[str] | None = None) -> None:
     caps.add_argument("action")
     caps.add_argument("--by", help="who you are, in development; else your sign-in in A5S_TOKEN")
     copy = sub.add_parser("anchor", help="copy the ledger to locked storage")
-    copy.add_argument("--every", type=int, metavar="SECONDS", help="keep copying, this often")
+    copy.add_argument("--every", type=int, nargs="?", const=ANCHOR_EVERY, metavar="SECONDS",
+                      help=f"keep copying, this often: every {ANCHOR_EVERY // 60} minutes if it "
+                           "doesn't say")
     rel = sub.add_parser("release", help="approve a release of a5s for this deployment")
     rel_sub = rel.add_subparsers(dest="what", required=True)
     manifest = rel_sub.add_parser("manifest", help="print the manifest of a source tree, as an "

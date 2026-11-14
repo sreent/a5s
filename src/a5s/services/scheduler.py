@@ -46,7 +46,6 @@ Worker = Callable[[str, str, list[dict]], str]
 LEASE = 120  # seconds a conversation stays leased without being renewed
 
 
-POOL_SLOTS = 4  # how many runs at once in an agent's own worker pool, unless it says
 
 
 class Slots:
@@ -708,7 +707,7 @@ class Scheduler:
         own thread, so a chat that's slow to take what the core delivers in them never holds
         up answers.
         """
-        slots = Slots(workers, {agent: self.cfg.worker_slots.get(agent, POOL_SLOTS)
+        slots = Slots(workers, {agent: self.cfg.worker_slots.get(agent, config.POOL_SLOTS)
                                 for agent in self.pools})
 
         def answer(claim: dict) -> None:

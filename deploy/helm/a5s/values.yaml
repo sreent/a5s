@@ -40,14 +40,15 @@ scenario:
   folder: ""  # A5S_SCENARIO_DIR
   agents: ""  # A5S_AGENTS_DIR
 
-# The directory's team that runs a5s.
-team: platform
+# The directory's team that runs a5s, if not a5s's default (docs/configuration.md).
+team: ""
 
 # How people sign in, through the organisation's identity provider, and where they reach a5s.
+# Each left empty is a5s's default (docs/configuration.md).
 people:
   oidcIssuer: ""
-  oidcAudience: a5s
-  oidcPersonClaim: preferred_username
+  oidcAudience: ""  # the audiences a5s takes tokens for (A5S_OIDC_AUDIENCE)
+  oidcPersonClaim: ""  # the claim that says who someone is (A5S_OIDC_PERSON_CLAIM)
   oidcDirectoryPrefix: ""
   oidcMetadataUrl: ""
   # The claim a sign-in shows a second factor by, and the values that do, which approvals,
@@ -58,8 +59,9 @@ people:
   # `a5s status` warns of (docs/first-day.md has each provider's).
   oidcMfa: ""
   # The claim a sign-in shows its groups by, for the roles the settings give groups
-  # (docs/administration.md): groups, as most providers name it once they're set to send it.
-  oidcGroupsClaim: groups
+  # (docs/administration.md), if not a5s's default, the name most providers give it once
+  # they're set to send it (A5S_OIDC_GROUPS_CLAIM)
+  oidcGroupsClaim: ""
   webchatClientId: ""
   publicUrl: ""
 
@@ -88,7 +90,7 @@ anchor:
   # Where the ledger's locked copies go: s3://bucket/prefix, azure://account/container/prefix
   # or gs://bucket/prefix. The copier's service account needs the right to write there.
   store: ""
-  retainDays: 365
+  retainDays: ""  # days each copy stays locked, longer than a5s's default (A5S_ANCHOR_RETAIN_DAYS)
   # For s3:// on a store with S3's object lock that isn't Amazon's, such as MinIO on premises:
   # its address and region. Its keys, unless the copier signs in some other way, go in the
   # Secret, as anchor-s3-access-key-id and anchor-s3-secret-access-key.
@@ -124,9 +126,9 @@ sandbox:
 publishing:
   githubClientId: ""
   repo: ""
-  base: main
-  githubUrl: https://github.com  # or a GitHub Enterprise server's
-  githubApiUrl: https://api.github.com  # and its API, such as https://github.example.com/api/v3
+  base: ""  # its branch, if not a5s's default
+  githubUrl: ""  # a GitHub Enterprise server's, if not github.com's
+  githubApiUrl: ""  # and its API, such as https://github.example.com/api/v3
 
 release:
   # A ConfigMap with release.yaml and release.sig, the release's manifest and the signatures of
@@ -175,11 +177,14 @@ networkPolicies:
 # How long each part waits, in seconds: for a model provider's answer, in the gateway; for a
 # run, in the worker; for a worker's run, in the scheduler, longer than a run; and for a new
 # database connection, in every part.
+# In seconds. The chart sizes the core's and the scheduler's shutdown by the first two, so it
+# states them, as a5s's own defaults, which a test holds them to; the rest are a5s's defaults
+# unless set here (docs/configuration.md).
 timeouts:
-  provider: 180  # A5S_PROVIDER_TIMEOUT
-  run: 240  # A5S_WORKER_TIMEOUT
-  workerWait: 600  # A5S_WORKER_WAIT
-  dbConnect: 2  # A5S_DB_CONNECT_TIMEOUT
+  provider: 180  # for a model provider's answer (A5S_PROVIDER_TIMEOUT)
+  workerWait: 600  # for a worker's run, in the scheduler (A5S_WORKER_WAIT)
+  run: ""  # for the core, in a worker (A5S_WORKER_TIMEOUT)
+  dbConnect: ""  # to connect to the database (A5S_DB_CONNECT_TIMEOUT)
 
 # What the data protection officer has agreed to (docs/data-protection.md): each is off until
 # they do.
@@ -204,10 +209,10 @@ workers:
   pools:  # by the agent's name, as its release has it, such as desk-assistant
     assistant: {}  # such as {replicas: 2, slots: 8, resources: {limits: {memory: 2Gi}}}
     watcher: {}
-  # Each pool's, unless it says: one replica, resources.worker, and 4 slots, the most of
-  # its agent's runs the scheduler works on at once. The shared pool has 8.
+  # Each pool's, unless it says: one replica and resources.worker. Its slots, the most of its
+  # agent's runs the scheduler works on at once, are a5s's default unless set (A5S_WORKER_SLOTS).
   replicas: 1
-  slots: 4
+  slots: ""
 
 resources:
   gateway:
