@@ -18,8 +18,8 @@ import yaml
 from a5s import cli, db
 from a5s.contract import Signature
 from a5s.core import releases, signing
-from a5s.core.inbox import STUDIO_UNBUILT
 from a5s.core.releases import ASSURANCE, ENGINEER, RELEASE_APPROVER, Releases
+from a5s.core.studio_api import STUDIO_UNBUILT
 from conftest import ROOT
 
 OWNER = releases.agent_owner("assistant")
