@@ -162,6 +162,26 @@ def test_the_catalogue_says_what_someone_may_author_and_offers_the_scenarios_too
     assert offered["models"] and ben("GET", "/studio/api/tools").status_code == 403
 
 
+def test_a_draft_says_who_would_sign_its_release(stack, approving, provider):
+    priya = as_(approving, provider, "priya")
+    new = started(priya)
+    assert {(s["who"], s["why"]) for s in new["signers"]} == {
+        ("the release approver, from outside the team that runs a5s", "the finance-helper is new"),
+        ("the finance-helper's owner", "the finance-helper is new")}
+    change = priya("POST", "/studio/api/drafts", {"agent": "assistant"}).json()
+    assert change["signers"] == []  # as released: it changes nothing yet
+    files = {**change["files"], "AGENTS.md": change["files"]["AGENTS.md"] + "\nBe brief.\n"}
+    worded = priya("PUT", f"/studio/api/drafts/{change['id']}", {"files": files}).json()
+    assert [s["role"] for s in worded["signers"]] == ["agent-owner:assistant", "engineer"]
+    files["agent.yaml"] = files["agent.yaml"].replace("documents: [create_draft]",
+                                                      "documents: [create_draft, shred_it]")
+    widened = priya("PUT", f"/studio/api/drafts/{change['id']}", {"files": files}).json()
+    assert [s["role"] for s in widened["signers"]] == ["release-approver"]
+    broken = priya("PUT", f"/studio/api/drafts/{change['id']}",
+                   {"files": {**files, "agent.yaml": "id: [assistant\n"}}).json()
+    assert broken["signers"] is None
+
+
 def test_a_draft_that_loads_shows_as_the_catalogue_would(stack, approving, provider):
     priya = as_(approving, provider, "priya")
     draft = started(priya)

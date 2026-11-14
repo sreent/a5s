@@ -28,6 +28,7 @@ def test_an_agents_owner_makes_an_agent_in_the_studio(stack, approving, provider
 
     page.wait_for_selector("#problems >> text=Nothing would stop its release", timeout=30000)
     assert page.evaluate("location.pathname").startswith("/studio/drafts/")
+    assert "the finance-helper is new" in page.inner_text("#signers")  # who'd sign, before anything
     page.wait_for_selector(".agent-map .map-node >> text=close_question", timeout=30000)
     page.click("[role=tab]:has-text('Tools')")  # one tool fewer, and its map shows it
     page.uncheck("input[aria-label=close_question]")

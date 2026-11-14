@@ -97,7 +97,9 @@ def _code(root: Path) -> tuple[dict, dict, dict]:
     return core, services, scenarios
 
 
-def _agent(folder: Path) -> dict:
+def agent_part(folder: Path) -> dict:
+    """An agent's part of a release: its files, by their hashes, and what it may do, as a
+    release manifest holds it."""
     d = definitions.load(folder)
     return {
         "release": d.release_id,
@@ -153,7 +155,7 @@ def manifest(root: Path, scenario_dir: Path, *, built: dict | None = None,
                          **{f"code/{k}": v for k, v in scenarios.items()}},
         },
         "models": _models(root / "config"),
-        "agents": {f.name: _agent(f) for f in sorted(agents.iterdir())
+        "agents": {f.name: agent_part(f) for f in sorted(agents.iterdir())
                    if (f / "agent.yaml").exists()} if agents.is_dir() else {},
     }
     return (_HEADER + yaml.safe_dump(data, sort_keys=True, width=1000)).encode()

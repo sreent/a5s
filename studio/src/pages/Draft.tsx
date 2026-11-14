@@ -5,7 +5,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AgentMap } from "../AgentMap";
-import { type Agent, type Draft, get, type Offered, send } from "../api";
+import { type Draft, get, type Offered, send } from "../api";
 import { read, Unreadable, withTool, withValue } from "../definition";
 import { go } from "../router";
 import { PageHead, type Risk, risk, RISK_NAMES, ToolBadges, useLoad, Waiting, when } from "../ui";
@@ -104,7 +104,7 @@ export function DraftPage({ id }: { id: string }) {
   const loaded = useLoad(() => get<Draft>(`/studio/api/drafts/${encodeURIComponent(id)}`), [id]);
   const tools = useLoad(() => get<{ tools: Offered[]; models: string[] }>("/studio/api/tools"), []);
   const [files, setFiles] = useState<Files | null>(null);
-  const [said, setSaid] = useState<{ problems: string[]; preview: Agent | null } | null>(null);
+  const [said, setSaid] = useState<Pick<Draft, "problems" | "preview" | "signers"> | null>(null);
   const [kept, setKept] = useState<Kept>("kept");
   const [tab, setTab] = useState<Tab>("basics");
   const latest = useRef(0);
@@ -112,7 +112,7 @@ export function DraftPage({ id }: { id: string }) {
   useEffect(() => {
     if (loaded.data && files === null) {
       setFiles(loaded.data.files);
-      setSaid({ problems: loaded.data.problems, preview: loaded.data.preview });
+      setSaid({ problems: loaded.data.problems, preview: loaded.data.preview, signers: loaded.data.signers });
     }
   }, [loaded.data, files]);
   useEffect(() => () => window.clearTimeout(timer.current), []);
@@ -121,7 +121,7 @@ export function DraftPage({ id }: { id: string }) {
     try {
       const saved = await send<Draft>("PUT", `/studio/api/drafts/${encodeURIComponent(id)}`, { files: next });
       if (mine !== latest.current) return;  // a later change is on its way
-      setSaid({ problems: saved.problems, preview: saved.preview });
+      setSaid({ problems: saved.problems, preview: saved.preview, signers: saved.signers });
       setFiles((now) => {  // a5s's pins, beside what they've typed since
         if (!now) return now;
         const { ["tools.lock"]: _old, ...rest } = now;
@@ -170,6 +170,17 @@ export function DraftPage({ id }: { id: string }) {
             {said.problems.length === 0
               ? <p><span className="badge good">ready</span> Nothing would stop its release here, by the checks <span className="mono">a5s agent check</span> makes.</p>
               : <><h3>What would stop its release</h3><ul className="plain">{said.problems.map((p) => <li key={p}>{p}</li>)}</ul></>}
+          </section>
+          <section className="card" id="signers">
+            <h3>Who would sign its release</h3>
+            {said.signers === null && <p className="note">Once its definition loads.</p>}
+            {said.signers?.length === 0 && <p className="note">Nobody yet: it changes nothing of what's released here.</p>}
+            {said.signers && said.signers.length > 0 && (
+              <ul className="plain">{said.signers.map((s) => (
+                <li key={s.role}><strong>{s.who}</strong><span className="faint">, because {s.why}</span></li>
+              ))}</ul>
+            )}
+            <p className="note">As <span className="mono">a5s release</span> works it out, from what it changes of the agents released here. Publishing it opens nothing yet: that's next.</p>
           </section>
           <section className="card map-card">
             <h3>How it's wired</h3>

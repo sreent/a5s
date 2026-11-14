@@ -110,6 +110,7 @@ export type Draft = DraftLine & {
   files: Record<string, string>;  // the agent's folder, each file's text by its path in it
   problems: string[];  // what would stop its release, as `a5s agent check` says it
   preview: Agent | null;  // as the catalogue would show it, if it loads
+  signers: { role: string; who: string; why: string }[] | null;  // whom its release would need
 };
 
 export type Offered = Omit<Tool, "group" | "pinned" | "missing">;

@@ -13,6 +13,7 @@ pin` pins them, and the checks `a5s agent check` makes say what would stop its r
 from __future__ import annotations
 
 import tempfile
+from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -23,7 +24,7 @@ from psycopg.types.json import Jsonb
 from a5s import authoring, definitions
 from a5s.config import ModelConfig
 from a5s.contract import Person, Scenario, Tool
-from a5s.core import studio
+from a5s.core import releases, studio
 from a5s.core.releases import ENGINEER, agent_owner
 
 MOST_FILES = 64  # in one draft's folder
@@ -130,6 +131,27 @@ def preview(scenario: Scenario, agent: str, files: dict[str, str],
         except (ValueError, TypeError, OSError, yaml.YAMLError):
             return None
     return studio.agent(scenario, found, tools, [], whole=True)
+
+
+def signers(agent: str, files: dict[str, str], agents_dir: Path,
+            released: Iterable[str]) -> list[dict] | None:
+    """Who would have to sign the release this draft makes, and why, as `a5s release` works it
+    out: from what it changes of the agents released here, with everything else as it is.
+    None if its definition doesn't load as it is."""
+    if shape(files):
+        return None
+    with tempfile.TemporaryDirectory() as there:
+        folder = Path(there) / agent
+        _written(files, folder)
+        try:
+            after = releases.agent_part(folder)
+        except (ValueError, TypeError, OSError, yaml.YAMLError):
+            return None
+    before = {name: releases.agent_part(agents_dir / name) for name in released}
+    old = {"parts": {}, "models": {}, "agents": before}
+    new = {"parts": {}, "models": {}, "agents": {**before, agent: after}}
+    return [{"role": n.role, "who": releases.who(n.role), "why": n.why}
+            for n in releases.needs(new, old)]
 
 
 # What a5s keeps of them

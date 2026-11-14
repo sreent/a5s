@@ -1372,7 +1372,9 @@ def create_app(gw: Any) -> FastAPI:
         catalogue, for its map."""
         tools = gw.scenario.tools()
         return {**draft, "problems": drafts.check(draft["agent"], draft["files"], tools, gw.models),
-                "preview": drafts.preview(gw.scenario, draft["agent"], draft["files"], tools)}
+                "preview": drafts.preview(gw.scenario, draft["agent"], draft["files"], tools),
+                "signers": drafts.signers(draft["agent"], draft["files"], gw.cfg.agents_dir,
+                                          gw.definitions)}
 
     @app.get("/studio/api/tools")
     def studio_tools(authorization: str | None = Header(default=None)) -> dict:
