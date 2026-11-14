@@ -6,14 +6,15 @@ Only then does the scheduler take it, and a run that answers it acts for the
 sender the core recorded. So no service can say a message came from someone
 else, and a person's token goes no further than this.
 
-The web chat is served from here too: a page where people sign in with their
-organisation's identity provider and talk to the agents through the local
-channel, as the command line does. So is the page where instance approvers
-approve a version of the settings, which the card in their chat opens
-(core/approvals.py), and the pages people sign in to for one thing, each a router
-of its own whose API checks who's signed in (core/web.py): the studio's, the
-settings app's, the notebook's, people's own tasks', the auditors' and the
-administrators'.
+The channels app is made here too: the chats' routes, Teams', Matrix's and the
+local channel's, which the command line and the web chat use; and the pages
+people use, each a router of its own (core/web.py). They are the web chat's
+(core/chat_api.py); those where someone signs in afresh for one act, such as
+approving a version of the settings from the card in their chat
+(core/approve_api.py); and those people sign in to for one thing, whose API
+checks who's signed in: the studio's, the settings app's, the notebook's,
+people's own tasks', the auditors' and the administrators', with every page's
+sidebar (core/shell_api.py).
 """
 
 from __future__ import annotations
@@ -28,25 +29,27 @@ from typing import Any
 
 import httpx
 import psycopg
-from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Request, Response
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    Header,
+    HTTPException,
+    Request,
+    Response,
+)
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel
 
 from a5s import db
-from a5s.contract import (
-    DATA_PROTECTION,
-    INSTANCE_APPROVER,
-    PART_DELEGATE,
-    PART_OWNER,
-)
 from a5s.core import (
     admin_api,
-    administration,
     approve_api,
-    audit,
     audit_api,
+    chat_api,
     chats,
     decide_api,
     grade_api,
@@ -55,9 +58,8 @@ from a5s.core import (
     matrix,
     notebook_api,
     officer_api,
-    registry,
-    samples,
     settings_api,
+    shell_api,
     studio_api,
     tasks_api,
     topics,
@@ -154,7 +156,9 @@ def chats_on(gw: Any) -> list[str]:
 
 def create_app(gw: Any) -> FastAPI:
     """The core's endpoints for channels: the only part of the core people reach."""
-    app = FastAPI(title="a5s channels")
+    explorer = gw.cfg.development  # FastAPI's explorer pages load scripts from a CDN
+    app = FastAPI(title="a5s channels", docs_url="/docs" if explorer else None,
+                  redoc_url="/redoc" if explorer else None)
 
     app.add_middleware(Small)
     log.info("people reach a5s through %s", ", ".join(chats_on(gw)))
@@ -240,7 +244,9 @@ def create_app(gw: Any) -> FastAPI:
 
     # Matrix: the homeserver sends what happens in the rooms the agents' bots are in
 
-    def matrix_check(authorization: str | None, access_token: str | None) -> None:
+    def homeserver(authorization: str | None = Header(default=None),
+                   access_token: str | None = None) -> None:
+        """The homeserver's own token, which every route of Matrix's needs."""
         if gw.matrix is None:
             raise HTTPException(404, "Matrix isn't set up")
         try:
@@ -248,6 +254,8 @@ def create_app(gw: Any) -> FastAPI:
         except matrix.Refused as exc:  # not recorded: anyone could send these
             log.warning("refused a delivery from Matrix: %s", exc.reason)
             raise HTTPException(exc.status, {"errcode": "M_FORBIDDEN", "error": exc.reason}) from None
+
+    matrix_api = APIRouter(dependencies=[Depends(homeserver)])
 
     def tell_in_matrix(reply_to: dict[str, str], text: str) -> None:
         try:
@@ -263,11 +271,8 @@ def create_app(gw: Any) -> FastAPI:
 
     failures: dict[str, int] = {}  # Matrix events a5s couldn't act on, by id, and how often
 
-    @app.put("/channels/matrix/_matrix/app/v1/transactions/{txn}")
-    def matrix_transaction(txn: str, body: dict[str, Any], background: BackgroundTasks,
-                           authorization: str | None = Header(default=None),
-                           access_token: str | None = None) -> dict:
-        matrix_check(authorization, access_token)
+    @matrix_api.put("/channels/matrix/_matrix/app/v1/transactions/{txn}")
+    def matrix_transaction(txn: str, body: dict[str, Any], background: BackgroundTasks) -> dict:
         agents = sorted(gw.definitions)
         for event in body.get("events") or []:
             try:
@@ -311,27 +316,23 @@ def create_app(gw: Any) -> FastAPI:
                     chats.shared(conn, "matrix", *detail)
         return {}
 
-    @app.get("/channels/matrix/_matrix/app/v1/users/{user}")
-    def matrix_user(user: str, authorization: str | None = Header(default=None),
-                    access_token: str | None = None) -> JSONResponse:
+    @matrix_api.get("/channels/matrix/_matrix/app/v1/users/{user}")
+    def matrix_user(user: str) -> JSONResponse:
         """Whether a bot exists, made on demand, such as when someone first invites it."""
-        matrix_check(authorization, access_token)
         if gw.matrix.agent_of(user) not in gw.definitions:
             return JSONResponse(status_code=404, content={"errcode": "M_NOT_FOUND"})
         gw.matrix.register(user)
         return JSONResponse({})
 
-    @app.get("/channels/matrix/_matrix/app/v1/rooms/{alias}")
-    def matrix_room(alias: str, authorization: str | None = Header(default=None),
-                    access_token: str | None = None) -> JSONResponse:
-        matrix_check(authorization, access_token)
+    @matrix_api.get("/channels/matrix/_matrix/app/v1/rooms/{alias}")
+    def matrix_room(alias: str) -> JSONResponse:
         return JSONResponse(status_code=404, content={"errcode": "M_NOT_FOUND"})
 
-    @app.post("/channels/matrix/_matrix/app/v1/ping")
-    def matrix_ping(authorization: str | None = Header(default=None),
-                    access_token: str | None = None) -> dict:
-        matrix_check(authorization, access_token)
+    @matrix_api.post("/channels/matrix/_matrix/app/v1/ping")
+    def matrix_ping() -> dict:
         return {}
+
+    app.include_router(matrix_api)
 
     # The local channel, for the command line and the web chat
 
@@ -423,60 +424,8 @@ def create_app(gw: Any) -> FastAPI:
              "instance": r["instance_id"], "text": r["text"], "at": r["at"].isoformat()}
             for r in sorted(await waiting(request, wait, take), key=lambda r: r["id"])]}
 
-    # The web chat
-
-    def page(name: str) -> Response:
-        return web.page(gw, name)
-
-    @app.get("/", include_in_schema=False)
-    def home() -> RedirectResponse:
-        if not web.webchat(gw):
-            raise HTTPException(404, "the web chat isn't set up here")
-        return RedirectResponse("/chat/")
-
-    @app.get("/chat/", include_in_schema=False)
-    def chat() -> Response:
-        return page("index.html")
-
-    @app.get("/chat/config")
-    def chat_config() -> dict:
-        """How the page signs people in, and which agents they can talk to."""
-        if not web.webchat(gw):
-            raise HTTPException(404, "the web chat isn't set up here")
-        signin = None
-        if gw.identity is not None and gw.cfg.webchat_client_id:
-            try:
-                where = gw.identity.endpoints()
-            except Exception as exc:  # the provider's down: the page says so, and nothing else
-                raise HTTPException(503, "the identity provider can't be reached") from exc
-            signin = {"authorization_endpoint": where["authorization_endpoint"],
-                      "end_session_endpoint": where.get("end_session_endpoint"),
-                      "client_id": gw.cfg.webchat_client_id, "scope": "openid profile"}
-        return {"signin": signin, "development": gw.identity is None and gw.cfg.development,
-                "agents": sorted(gw.definitions)}
-
-    @app.post("/chat/token")
-    def chat_token(body: web.TokenRequest) -> JSONResponse:
-        """The web chat's sign-in, passed on to the identity provider, which checks the code
-        and its PKCE verifier. It needs no secret, and the page never calls the provider
-        itself, so the provider needn't allow it to."""
-        if gw.identity is None or not gw.cfg.webchat_client_id:
-            raise HTTPException(404, "the web chat's sign-in isn't set up")
-        form = {"grant_type": body.grant_type, "client_id": gw.cfg.webchat_client_id}
-        if body.grant_type == "authorization_code" and body.code and body.code_verifier and body.redirect_uri:
-            form |= {"code": body.code, "code_verifier": body.code_verifier,
-                     "redirect_uri": body.redirect_uri}
-        elif body.grant_type == "refresh_token" and body.refresh_token:
-            form |= {"refresh_token": body.refresh_token, "scope": "openid profile"}
-        else:
-            raise HTTPException(400, "send a code and its verifier, or a refresh token")
-        return web.exchange(gw, form, ("id_token", "refresh_token", "expires_in"))
-
-    @app.get("/chat/{name}", include_in_schema=False)
-    def chat_file(name: str) -> Response:
-        if name not in ("app.js", "app.css", "shell.js"):
-            raise HTTPException(404, "no such file")
-        return page(name)
+    # The web chat (core/chat_api.py), which talks to the agents through the local channel
+    app.include_router(chat_api.router(gw))
 
     # The pages where people sign in afresh for one act, each a router of its own whose act's
     # route checks its sign-in: approving a version of the settings (core/approve_api.py), the
@@ -490,22 +439,7 @@ def create_app(gw: Any) -> FastAPI:
     for pages in (studio_api, settings_api, notebook_api, tasks_api, audit_api, admin_api):
         app.include_router(pages.router(gw))
 
-    # Every page's sidebar: who signed in, and the pages they may use (webchat/shell.js)
-
-    @app.get("/shell/api")
-    def shell(authorization: str | None = Header(default=None)) -> dict:
-        """Who signed in, and the pages they may use, for the sidebar every page shows: each
-        by the check its own page makes, as its router makes it. Every page still checks for
-        itself, so this only leaves out the pages that would refuse them."""
-        person = web.known(gw, authorization)
-        roles = set(person.roles)
-        decides = INSTANCE_APPROVER in roles or any(
-            r.startswith((f"{PART_OWNER}:", f"{PART_DELEGATE}:")) for r in roles)
-        found = {"chat": True, "tasks": True, "notebook": bool(notebook_api.kept(gw, person)),
-                 "studio": True, "decide": decides, "grade": samples.GRADER in roles,
-                 "settings": registry.approves(person), "audit": audit.reads(person),
-                 "admin": administration.administers(person, gw.cfg.team),
-                 "officer": DATA_PROTECTION in roles}
-        return {"you": person.name, "pages": [name for name, may in found.items() if may]}
+    # Every page's sidebar: who signed in, and the pages they may use (core/shell_api.py)
+    app.include_router(shell_api.router(gw))
 
     return app

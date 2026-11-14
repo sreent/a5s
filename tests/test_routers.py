@@ -25,11 +25,11 @@ from fastapi.testclient import TestClient
 from a5s.core import gateway
 
 SIGNED_IN = ("/studio/api", "/settings/api", "/notebook/api", "/tasks/api", "/audit/api",
-             "/admin/api")
+             "/admin/api", "/shell/api")
 ACTING = ("/approve/", "/officer/", "/decide/", "/grade/")
 # The routes that check for themselves: the chats', each with its own sign-in or token; the web
-# chat's; each act's page; and the sidebar
-OWN = ("/channels/", "/chat/", *ACTING, "/shell/api")
+# chat's, which hold nobody's data; and each act's page
+OWN = ("/channels/", "/chat/", *ACTING)
 SIGNS_IN = ("config", "token")  # where an act's page signs someone in, which holds nothing
 DIGEST = "0" * 64
 ACTS = {  # each act, with a body of the shape it takes, so it's refused for want of a sign-in
@@ -111,3 +111,11 @@ def test_the_core_serves_no_api_explorer_but_in_development(stack):
         replace(stack.gateway, cfg=replace(stack.gateway.cfg, development=False))))
     assert [deployed.get(page).status_code for page in ("/docs", "/redoc")] == [404, 404]
     assert deployed.get("/openapi.json").status_code == 200
+
+
+def test_the_channels_app_serves_no_api_explorer_but_in_development(approving):
+    """FastAPI's explorer pages load their scripts from a CDN, so the channels app, the part of
+    a5s people reach, serves them in development alone; its API's description stays."""
+    assert [httpx.get(f"{approving}{page}", timeout=30).status_code
+            for page in ("/docs", "/redoc")] == [404, 404]
+    assert httpx.get(f"{approving}/openapi.json", timeout=30).status_code == 200
