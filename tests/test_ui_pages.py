@@ -16,6 +16,7 @@ def shot(page, name: str) -> None:
     """The page as it looks, light and dark, into A5S_SCREENSHOTS, if it names a folder."""
     if folder := os.environ.get("A5S_SCREENSHOTS"):
         Path(folder).mkdir(parents=True, exist_ok=True)
+        page.evaluate("window.scrollTo(0, 0)")  # from its top, where its sidebar sits
         for scheme in ("light", "dark"):
             page.emulate_media(color_scheme=scheme)
             page.screenshot(path=f"{folder}/{name}-{scheme}.png", full_page=True)

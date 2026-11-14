@@ -18,7 +18,14 @@ export class ApiError extends Error {
 }
 
 export async function get<T>(path: string): Promise<T> {
-  const answer = await fetch(path, { headers: { Authorization: `Bearer ${token}` } });
+  return send<T>("GET", path);
+}
+
+/** A call to the people's API, as the person signed in, with a body to write, if any. */
+export async function send<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const answer = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   const found = await answer.json().catch(() => ({}));
   if (!answer.ok) {
     const said = typeof found.detail === "string" ? found.detail : `a5s said ${answer.status}.`;
@@ -87,7 +94,25 @@ export type Agent = {
   instructions?: string;
 };
 
-export type Catalogue = { you: string; agents: Agent[] };
+export type Catalogue = {
+  you: string;
+  agents: Agent[];
+  authoring: { new: boolean; agents: string[] };  // whether they may start an agent, and which they may change
+};
+
+// Making agents (core/drafts.py)
+
+export type Template = { name: string; works_for: string; does: string; model: string; tools: string[]; lacks: string[] };
+
+export type DraftLine = { id: string; agent: string; based_on: string; created_at: string; updated_at: string };
+
+export type Draft = DraftLine & {
+  files: Record<string, string>;  // the agent's folder, each file's text by its path in it
+  problems: string[];  // what would stop its release, as `a5s agent check` says it
+  preview: Agent | null;  // as the catalogue would show it, if it loads
+};
+
+export type Offered = Omit<Tool, "group" | "pinned" | "missing">;
 
 export type ModelRuns = {
   model: string;

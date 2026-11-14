@@ -22,7 +22,8 @@ from psycopg.types.json import Jsonb
 
 from a5s import authoring, definitions
 from a5s.config import ModelConfig
-from a5s.contract import Person, Tool
+from a5s.contract import Person, Scenario, Tool
+from a5s.core import studio
 from a5s.core.releases import ENGINEER, agent_owner
 
 MOST_FILES = 64  # in one draft's folder
@@ -113,6 +114,22 @@ def check(agent: str, files: dict[str, str], tools: dict[str, Tool],
         folder = Path(there) / agent
         _written(files, folder)
         return authoring.check(folder, tools, models)
+
+
+def preview(scenario: Scenario, agent: str, files: dict[str, str],
+            tools: dict[str, Tool]) -> dict | None:
+    """How a draft would look in the studio's catalogue, if it loads as it is: for its map,
+    and its tools by what they do. None if it doesn't."""
+    if shape(files):
+        return None
+    with tempfile.TemporaryDirectory() as there:
+        folder = Path(there) / agent
+        _written(files, folder)
+        try:
+            found = definitions.load(folder)
+        except (ValueError, TypeError, OSError, yaml.YAMLError):
+            return None
+    return studio.agent(scenario, found, tools, [], whole=True)
 
 
 # What a5s keeps of them

@@ -1221,10 +1221,11 @@ def create_app(gw: Any) -> FastAPI:
             raise HTTPException(403, "a5s doesn't know who you are")
         with db.transaction(gw.url) as conn:
             theirs = studio.instances(conn, person)
-        if not theirs and not any(r.startswith("agent-owner:") for r in person.roles):
+        if (not theirs and not any(r.startswith("agent-owner:") for r in person.roles)
+                and not drafts.authors(person)):
             raise HTTPException(403, "the studio is for the people who run an instance, own an "
-                                     "agent, own or decide for one of its parts, or approve "
-                                     "instances")
+                                     "agent, own or decide for one of its parts, approve "
+                                     "instances, or make agents")
         return person
 
     def watched(conn: Any, person: Person, instance: str) -> dict:
@@ -1253,8 +1254,15 @@ def create_app(gw: Any) -> FastAPI:
     @app.get("/studio/agents/{name}", include_in_schema=False)
     @app.get("/studio/instances/{name}", include_in_schema=False)
     @app.get("/studio/runs/{name}", include_in_schema=False)
+    @app.get("/studio/drafts/{name}", include_in_schema=False)
     def studio_view(name: str) -> Response:
-        """The studio, at the address of one of its agents, instances or runs."""
+        """The studio, at the address of one of its agents, instances, runs or drafts."""
+        approving()
+        return built("index.html")
+
+    @app.get("/studio/new", include_in_schema=False)
+    def studio_new() -> Response:
+        """The studio, where someone starts a new agent."""
         approving()
         return built("index.html")
 
@@ -1275,7 +1283,10 @@ def create_app(gw: Any) -> FastAPI:
         person = studying(authorization)
         with db.transaction(gw.url) as conn:
             return {"you": person.name, "agents": studio.catalogue(
-                conn, gw.scenario, gw.definitions, gw.scenario.tools(), person)}
+                conn, gw.scenario, gw.definitions, gw.scenario.tools(), person),
+                    "authoring": {"new": drafts.may_author(person, None),  # what they may make
+                                  "agents": sorted(a for a in gw.definitions
+                                                   if drafts.may_author(person, a))}}
 
     @app.get("/studio/api/agents/{agent}")
     def studio_agent(agent: str, authorization: str | None = Header(default=None)) -> dict:
@@ -1357,8 +1368,18 @@ def create_app(gw: Any) -> FastAPI:
         return person
 
     def checked(draft: dict) -> dict:
-        problems = drafts.check(draft["agent"], draft["files"], gw.scenario.tools(), gw.models)
-        return {**draft, "problems": problems}
+        """A draft, what would stop its release, and, if it loads, how it would look in the
+        catalogue, for its map."""
+        tools = gw.scenario.tools()
+        return {**draft, "problems": drafts.check(draft["agent"], draft["files"], tools, gw.models),
+                "preview": drafts.preview(gw.scenario, draft["agent"], draft["files"], tools)}
+
+    @app.get("/studio/api/tools")
+    def studio_tools(authorization: str | None = Header(default=None)) -> dict:
+        """The scenario's tools an agent may be given, each with what it reads, writes or
+        changes, and the models the deployment approves."""
+        drafting(authorization)
+        return {"tools": studio.offered(gw.scenario.tools()), "models": sorted(gw.models)}
 
     def in_ledger(conn: Any, person: Person, action: str, draft: dict) -> None:
         ledger.append(conn, {"kind": "admin", "action": action, "run": None, "instance": None,

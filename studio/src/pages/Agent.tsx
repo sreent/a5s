@@ -1,9 +1,10 @@
 // One agent, as its release defines it: its map, what it's for, its tools by what they do, when
 // it works, what it knows, its budget, and where it runs.
 
-import { type Agent, get } from "../api";
+import { useState } from "react";
+import { type Agent, ApiError, type Catalogue, type Draft, type DraftLine, get, send } from "../api";
 import { AgentMap } from "../AgentMap";
-import { Link } from "../router";
+import { go, Link } from "../router";
 import { aboutInstance, levels, PageHead, people, type Risk, risk, RISK_NAMES, runners, StatusBadge,
          ToolBadges, triggers, useLoad, Waiting } from "../ui";
 
@@ -124,8 +125,31 @@ function Where({ agent }: { agent: Agent }) {
   );
 }
 
+function DraftAChange({ id }: { id: string }) {
+  const [problem, setProblem] = useState<string>();
+  const start = async () => {
+    try {
+      const draft = await send<Draft>("POST", "/studio/api/drafts", { agent: id });
+      go({ page: "draft", draft: draft.id });
+    } catch (e) {
+      const mine = e instanceof ApiError && e.status === 409  // theirs already: carry on with it
+        && (await get<{ drafts: DraftLine[] }>("/studio/api/drafts")).drafts.find((d) => d.agent === id);
+      if (mine) go({ page: "draft", draft: mine.id });
+      else setProblem((e as Error).message);
+    }
+  };
+  return (
+    <div className="actions">
+      <button type="button" className="primary" id="draft-change" onClick={start}>Draft a change</button>
+      {problem && <span className="problem">{problem}</span>}
+    </div>
+  );
+}
+
 export function AgentPage({ id }: { id: string }) {
   const { data: agent, error } = useLoad(() => get<Agent>(`/studio/api/agents/${encodeURIComponent(id)}`), [id]);
+  const catalogue = useLoad(() => get<Catalogue>("/studio/api"), []);
+  const changes = catalogue.data?.authoring.agents.includes(id) ?? false;
   return (
     <>
       <PageHead crumbs={[{ label: "Agents", to: { page: "agents" } }]} title={id}
@@ -138,6 +162,7 @@ export function AgentPage({ id }: { id: string }) {
             {agent.instances.map((i) => <span key={i.id}>{i.id}: {aboutInstance(i)}</span>)}
           </div>
         )}
+        {agent && changes && <DraftAChange id={id} />}
       </PageHead>
       {!agent && <Waiting error={error} />}
       {agent && (

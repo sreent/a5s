@@ -178,7 +178,8 @@ def test_a_runs_path_shows_what_a5s_refused_it(stack, approving, provider, brows
 def test_the_studio_serves_its_one_page_and_its_own_files_alone(approving, monkeypatch, tmp_path):
     policy = "default-src 'none'; script-src 'self'"
     for path in ("/studio/", "/studio/agents/assistant", "/studio/instances/assistant-finance",
-                 "/studio/runs/7c1e9a52-0d4b-4bb4-9a0e-1f3c5d7e9b21"):
+                 "/studio/runs/7c1e9a52-0d4b-4bb4-9a0e-1f3c5d7e9b21", "/studio/new",
+                 "/studio/drafts/7c1e9a52-0d4b-4bb4-9a0e-1f3c5d7e9b21"):
         shown = httpx.get(f"{approving}{path}", timeout=30)
         assert shown.status_code == 200 and '<div id="root">' in shown.text
         assert shown.headers["content-security-policy"].startswith(policy)

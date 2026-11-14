@@ -1,0 +1,199 @@
+// A draft of an agent, as its author edits it: what it works for and does, its model and levels,
+// its tools from the scenario's, each by what it does, its instructions, and any of its files as
+// text. Each change is kept a moment after it's made, its tools pinned by a5s, and what would
+// stop its release said beside the map of how it's wired, as both stand now.
+
+import { useEffect, useRef, useState } from "react";
+import { AgentMap } from "../AgentMap";
+import { type Agent, type Draft, get, type Offered, send } from "../api";
+import { read, Unreadable, withTool, withValue } from "../definition";
+import { go } from "../router";
+import { PageHead, type Risk, risk, RISK_NAMES, ToolBadges, useLoad, Waiting, when } from "../ui";
+
+type Files = Record<string, string>;
+type Tab = "basics" | "tools" | "instructions" | "files";
+const TABS: [Tab, string][] = [["basics", "Basics"], ["tools", "Tools"], ["instructions", "Instructions"], ["files", "Files"]];
+const ORDER: Risk[] = ["changes", "outside", "writes", "reads"];
+const WAIT = 600;  // ms after the last change before it's kept
+
+type Kept = "kept" | "keeping" | { problem: string };
+
+function Basics({ files, models, change }: { files: Files; models: string[]; change: (f: Files) => void }) {
+  const spec = read(files["agent.yaml"] ?? "");
+  if (!spec) return <p className="problem">{new Unreadable().message}</p>;
+  const set = (path: string[], value: string | number) =>
+    change({ ...files, "agent.yaml": withValue(files["agent.yaml"], path, value) });
+  return (
+    <div className="form-grid">
+      <label className="field"><span>Works for</span>
+        <input id="works-for" value={spec.works_for} onChange={(e) => set(["works_for"], e.target.value)} /></label>
+      <label className="field"><span>What it does</span>
+        <textarea id="does" rows={4} value={spec.does} onChange={(e) => set(["does"], e.target.value)} /></label>
+      <label className="field"><span>Model, of those the deployment approves</span>
+        <select id="model" value={spec.model} onChange={(e) => set(["model"], e.target.value)}>
+          {[...new Set([spec.model, ...models])].map((m) => <option key={m} value={m}>{m}</option>)}
+        </select></label>
+      <div className="field-pair">
+        {(["start", "max"] as const).map((end) => (
+          <label key={end} className="field"><span>{end === "start" ? "Level it starts at" : "Highest level"}</span>
+            <select id={`level-${end}`} value={spec.autonomy[end]}
+                    onChange={(e) => set(["autonomy", end], Number(e.target.value))}>
+              {[0, 1, 2].map((n) => <option key={n} value={n}>{n}</option>)}
+            </select></label>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Tools({ files, offered, change }: { files: Files; offered: Offered[]; change: (f: Files) => void }) {
+  const spec = read(files["agent.yaml"] ?? "");
+  if (!spec) return <p className="problem">{new Unreadable().message}</p>;
+  const has = new Set(Object.values(spec.tools).flat());
+  const kinds = new Map(offered.map((t) => [t.name, risk({ ...t, group: "", pinned: null, missing: false })]));
+  const kindOf = (name: string) => kinds.get(name) ?? "reads";
+  const flip = (tool: Offered, on: boolean) =>
+    change({ ...files, "agent.yaml": withTool(files["agent.yaml"], tool.name, on, kindOf(tool.name), kindOf) });
+  return (
+    <div className="tool-picker">
+      {ORDER.map((kind) => {
+        const these = offered.filter((t) => kindOf(t.name) === kind);
+        if (!these.length) return null;
+        return (
+          <div key={kind} className="tool-group">
+            <div className={`label tone-${kind}`}>{RISK_NAMES[kind]}</div>
+            {these.map((tool) => (
+              <label key={tool.name} className="tool-row pick">
+                <input type="checkbox" checked={has.has(tool.name)} onChange={(e) => flip(tool, e.target.checked)}
+                       aria-label={tool.name} />
+                <span>
+                  <span className="tool-name mono">{tool.name}</span>
+                  {tool.description && <span className="tool-about">{tool.description}</span>}
+                  <ToolBadges tool={{ ...tool, group: "", pinned: null, missing: false }} />
+                </span>
+              </label>
+            ))}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function Raw({ files, change }: { files: Files; change: (f: Files) => void }) {
+  const names = Object.keys(files).sort();
+  const [open, setOpen] = useState(names.includes("agent.yaml") ? "agent.yaml" : names[0]);
+  const pinned = open === "tools.lock";
+  return (
+    <div className="raw">
+      <ul className="file-list" aria-label="Its files">
+        {names.map((name) => (
+          <li key={name}><button type="button" className={name === open ? "on" : ""} onClick={() => setOpen(name)}>{name}</button></li>
+        ))}
+      </ul>
+      <div className="raw-file">
+        {pinned && <p className="note">a5s pins its tools as the scenario has them each time it's kept, as `a5s pin` does.</p>}
+        <textarea id="file-text" aria-label={open} spellCheck={false} readOnly={pinned} value={files[open] ?? ""}
+                  onChange={(e) => change({ ...files, [open]: e.target.value })} />
+      </div>
+    </div>
+  );
+}
+
+export function DraftPage({ id }: { id: string }) {
+  const loaded = useLoad(() => get<Draft>(`/studio/api/drafts/${encodeURIComponent(id)}`), [id]);
+  const tools = useLoad(() => get<{ tools: Offered[]; models: string[] }>("/studio/api/tools"), []);
+  const [files, setFiles] = useState<Files | null>(null);
+  const [said, setSaid] = useState<{ problems: string[]; preview: Agent | null } | null>(null);
+  const [kept, setKept] = useState<Kept>("kept");
+  const [tab, setTab] = useState<Tab>("basics");
+  const latest = useRef(0);
+  const timer = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (loaded.data && files === null) {
+      setFiles(loaded.data.files);
+      setSaid({ problems: loaded.data.problems, preview: loaded.data.preview });
+    }
+  }, [loaded.data, files]);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+
+  const keep = async (next: Files, mine: number) => {
+    try {
+      const saved = await send<Draft>("PUT", `/studio/api/drafts/${encodeURIComponent(id)}`, { files: next });
+      if (mine !== latest.current) return;  // a later change is on its way
+      setSaid({ problems: saved.problems, preview: saved.preview });
+      setFiles((now) => {  // a5s's pins, beside what they've typed since
+        if (!now) return now;
+        const { ["tools.lock"]: _old, ...rest } = now;
+        return saved.files["tools.lock"] === undefined ? rest : { ...rest, "tools.lock": saved.files["tools.lock"] };
+      });
+      setKept("kept");
+    } catch (e) {
+      if (mine === latest.current) setKept({ problem: (e as Error).message });
+    }
+  };
+  const change = (next: Files) => {
+    setFiles(next);
+    setKept("keeping");
+    const mine = ++latest.current;
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => keep(next, mine), WAIT);
+  };
+  const edit = (make: () => Files) => {
+    try {
+      change(make());
+    } catch (e) {
+      setKept({ problem: (e as Error).message });
+    }
+  };
+  const drop = async () => {
+    if (!window.confirm("Drop this draft? It can't be had back.")) return;
+    await send("DELETE", `/studio/api/drafts/${encodeURIComponent(id)}`);
+    go({ page: "agents" });
+  };
+
+  const draft = loaded.data;
+  const status = typeof kept === "object" ? <span className="badge bad">{kept.problem}</span>
+    : kept === "keeping" ? <span className="badge">keeping…</span> : <span className="badge good">kept</span>;
+  return (
+    <>
+      <PageHead crumbs={[{ label: "Agents", to: { page: "agents" } }]} title={draft ? draft.agent : "A draft"}
+                badges={draft && <span className="chip">draft</span>}
+                about={draft && `From ${draft.based_on}, started ${when(draft.created_at)}. Yours alone: nothing runs it until it's published and its release signed.`}>
+        {draft && <div className="meta"><span id="kept">{status}</span>
+          <button type="button" className="quiet" onClick={drop}>Drop the draft</button></div>}
+      </PageHead>
+      {(!draft || !files || !said) && <Waiting error={loaded.error} />}
+      {draft && files && said && (
+        <>
+          <section className={`card ${said.problems.length ? "" : "ready"}`} id="problems" aria-live="polite">
+            {said.problems.length === 0
+              ? <p><span className="badge good">ready</span> Nothing would stop its release here, by the checks <span className="mono">a5s agent check</span> makes.</p>
+              : <><h3>What would stop its release</h3><ul className="plain">{said.problems.map((p) => <li key={p}>{p}</li>)}</ul></>}
+          </section>
+          <section className="card map-card">
+            <h3>How it's wired</h3>
+            {said.preview ? <AgentMap agent={said.preview} /> : <p className="note">Its map shows once its definition loads.</p>}
+          </section>
+          <section className="card editor">
+            <div className="tabs" role="tablist">
+              {TABS.map(([key, label]) => (
+                <button key={key} type="button" role="tab" aria-selected={tab === key} className={tab === key ? "on" : ""}
+                        onClick={() => setTab(key)}>{label}</button>
+              ))}
+            </div>
+            {tab === "basics" && <Basics files={files} models={tools.data?.models ?? []} change={(f) => edit(() => f)} />}
+            {tab === "tools" && (tools.data ? <Tools files={files} offered={tools.data.tools} change={(f) => edit(() => f)} />
+                                            : <Waiting error={tools.error} />)}
+            {tab === "instructions" && (
+              <label className="field"><span>What it's told at the start of each run, its AGENTS.md</span>
+                <textarea id="instructions" rows={18} value={files["AGENTS.md"] ?? ""}
+                          onChange={(e) => change({ ...files, "AGENTS.md": e.target.value })} /></label>
+            )}
+            {tab === "files" && <Raw files={files} change={change} />}
+          </section>
+        </>
+      )}
+    </>
+  );
+}

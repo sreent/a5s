@@ -202,3 +202,43 @@ table.runs-table tbody tr:hover { background: var(--sunken); }
 .as-table summary { font-size: 0.86rem; }
 .as-table table { margin-top: 0.5rem; }
 .stale { opacity: 0.55; transition: opacity 0.2s; }
+
+/* Making agents: a new one from a template, and a draft's editor */
+.page-head .actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.85rem; }
+a.button { display: inline-flex; align-items: center; text-decoration: none; }
+button.quiet { background: transparent; border-color: var(--line); color: var(--muted); }
+.field { display: grid; gap: 0.35rem; font-size: 0.9rem; }
+.field > span { color: var(--muted); font-size: 0.84rem; }
+.field input, .field select, .field textarea { width: 100%; font: inherit; }
+.field textarea { resize: vertical; line-height: 1.5; }
+.form-grid { display: grid; gap: 1rem; max-width: 46rem; }
+.field-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+.new-agent { display: grid; gap: 1rem; max-width: 60rem; }
+.new-agent .card { margin: 0; }
+.new-agent button[type=submit] { justify-self: start; }
+.template-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(17rem, 1fr)); gap: 0.75rem; }
+.template { display: grid; gap: 0.25rem; padding: 0.8rem 0.9rem; border: 1px solid var(--line); border-radius: 10px;
+            cursor: pointer; background: var(--surface); }
+.template input { position: absolute; opacity: 0; pointer-events: none; }
+.template.chosen { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.template:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+.template.lacking { cursor: not-allowed; opacity: 0.55; }
+.template-name { font-weight: 600; }
+.template-for { font-size: 0.88rem; }
+.card.ready { border-color: var(--good); }
+.editor .tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--line); margin: -0.25rem 0 1rem; }
+.editor .tabs button { background: transparent; border: 0; border-bottom: 2px solid transparent; border-radius: 0;
+                       color: var(--muted); padding: 0.5rem 0.85rem; font-weight: 500; }
+.editor .tabs button.on { color: var(--text); border-bottom-color: var(--accent); }
+.tool-row.pick { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.75rem; align-items: start; cursor: pointer; }
+.tool-row.pick input { margin-top: 0.3rem; }
+.tool-row.pick .tool-about { display: block; }
+.raw { display: grid; grid-template-columns: 14rem minmax(0, 1fr); gap: 1rem; }
+.file-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.15rem; align-content: start; }
+.file-list button { width: 100%; text-align: left; background: transparent; border: 0; border-radius: 6px;
+                    padding: 0.35rem 0.55rem; font-family: var(--mono, ui-monospace, monospace); font-size: 0.82rem;
+                    color: var(--text); overflow-wrap: anywhere; }
+.file-list button.on { background: var(--accent-soft); color: var(--accent); }
+.raw-file textarea { width: 100%; min-height: 26rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+                     font-size: 0.82rem; line-height: 1.5; resize: vertical; }
+@media (max-width: 50rem) { .raw { grid-template-columns: minmax(0, 1fr); } .field-pair { grid-template-columns: minmax(0, 1fr); } }

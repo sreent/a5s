@@ -112,6 +112,14 @@ def _tools(definition: Definition, tools: dict[str, Tool]) -> list[dict]:
     return found
 
 
+def offered(tools: dict[str, Tool]) -> list[dict]:
+    """Each of the scenario's tools an agent may be given, with what it reads, writes or
+    changes, as an agent's page shows its own."""
+    return [{"name": name, "description": tool.description, **tool.risk, "changes": tool.action,
+             "handles": list(tool.handles), "outside": list(tool.outside)}
+            for name, tool in sorted(tools.items())]
+
+
 def _instance(scenario: Scenario, definition: Definition | None, inst: dict) -> dict:
     return {"id": inst["id"], "agent": inst["definition"], "status": inst["status"],
             "release": inst["release"],

@@ -149,3 +149,26 @@ def test_drafts_show_in_their_authors_export_and_go_when_theirs_is_erased(stack)
     assert r.status_code == 200, r.text
     assert r.json()["gone"]["agent_drafts"] == 1
     assert export(stack, "priya").json()["drafts"] == []
+
+
+def test_the_catalogue_says_what_someone_may_author_and_offers_the_scenarios_tools(stack, approving, provider):
+    priya, ben = as_(approving, provider, "priya"), as_(approving, provider, "ben")
+    assert priya("GET", "/studio/api").json()["authoring"] == {"new": True, "agents": ["assistant", "watcher"]}
+    assert ben("GET", "/studio/api").json()["authoring"] == {"new": False, "agents": []}
+    offered = priya("GET", "/studio/api/tools").json()
+    tools = {t["name"]: t for t in offered["tools"]}
+    assert tools["search_records"]["reads"] and not tools["search_records"]["writes"]
+    assert tools["change_due_date"]["changes"] == "change-due-date"
+    assert offered["models"] and ben("GET", "/studio/api/tools").status_code == 403
+
+
+def test_a_draft_that_loads_shows_as_the_catalogue_would(stack, approving, provider):
+    priya = as_(approving, provider, "priya")
+    draft = started(priya)
+    preview = draft["preview"]
+    assert preview["id"] == "finance-helper" and preview["instances"] == []
+    assert {t["name"] for t in preview["tools"]} >= {"search_records", "change_due_date"}
+    assert preview["instructions"] == draft["files"]["AGENTS.md"]
+    broken = {**draft["files"], "agent.yaml": "id: [finance-helper\n"}
+    saved = priya("PUT", f"/studio/api/drafts/{draft['id']}", {"files": broken}).json()
+    assert saved["preview"] is None and saved["problems"][0].startswith("its YAML doesn't read")

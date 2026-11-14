@@ -81,7 +81,7 @@ The settings app and the approval, decision, grading, notebook and officer pages
 
 ## What is not here yet
 
-The studio does not yet create or edit an agent visually, run a sandbox test pane, or publish an agent from the page. Those are the next authoring steps in [the studio plan](studio.md#build-in-order), not capabilities claimed by the screens above.
+The studio now keeps drafts: an agent's owner starts a new agent from a template, or a change to one they own, and edits it, its tools and its instructions, with what would stop its release and its map shown as they go. It does not yet run a sandbox test pane, or publish a draft from the page. Those are the next authoring steps in [the studio plan](studio.md#build-in-order), not capabilities claimed by the screens above.
 
 The present journey is therefore:
 

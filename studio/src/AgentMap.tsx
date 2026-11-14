@@ -78,6 +78,9 @@ export function AgentMap({ agent, run }: { agent: Agent; run?: Run }) {
   const tools = [...agent.tools].sort((a, b) => ORDER.indexOf(risk(a)) - ORDER.indexOf(risk(b)));
   const right: (Card & { risk?: Risk })[] = tools.map((tool) => {
     const these = tally(calls.filter((c) => c.tool === tool.name));
+    if (tool.missing) {  // as a draft may name it: a tool the scenario hasn't got
+      return { icon: "tool", title: tool.name, tone: "denied", detail: "not one of the scenario's tools", ...these };
+    }
     return { icon: "tool", title: tool.name, tone: risk(tool), risk: risk(tool), ...these,
              detail: tool.changes ? `changes ${tool.changes}` : RISK_NAMES[risk(tool)],
              dim: run !== undefined && !these.calls };

@@ -1,9 +1,9 @@
 // All the agents someone may watch, as cards: what each does, what it may do, and where it runs.
 
-import { type Agent, type Catalogue, get } from "../api";
+import { type Agent, type Catalogue, type DraftLine, get } from "../api";
 import { Icon } from "../icons";
 import { Link } from "../router";
-import { aboutInstance, levels, PageHead, plural, risk, StatusBadge, useLoad, Waiting } from "../ui";
+import { aboutInstance, levels, PageHead, plural, risk, StatusBadge, useLoad, Waiting, when } from "../ui";
 
 function counts(agent: Agent): [string, number][] {
   const by = { changes: 0, outside: 0, writes: 0, reads: 0 };
@@ -49,13 +49,31 @@ function AgentCard({ agent }: { agent: Agent }) {
   );
 }
 
+function Drafts() {
+  const { data } = useLoad(() => get<{ drafts: DraftLine[] }>("/studio/api/drafts"), []);
+  if (!data || data.drafts.length === 0) return null;
+  return (
+    <section className="card" id="drafts">
+      <h3>Your drafts</h3>
+      <ul className="plain">{data.drafts.map((d) => (
+        <li key={d.id}><Link to={{ page: "draft", draft: d.id }} className="mono">{d.agent}</Link>
+          <span className="faint"> · from {d.based_on} · kept {when(d.updated_at)}</span></li>
+      ))}</ul>
+    </section>
+  );
+}
+
 export function AgentsPage() {
   const { data, error } = useLoad(() => get<Catalogue>("/studio/api"), []);
+  const authors = data && (data.authoring.new || data.authoring.agents.length > 0);
   return (
     <>
       <PageHead title="Agents"
-                about="The agents you may watch: what each does and may do, where it runs, and how each instance is doing. Changes to an instance go through the settings app; the changes agents ask for are decided on the decisions page." />
+                about="The agents you may watch: what each does and may do, where it runs, and how each instance is doing. Changes to an instance go through the settings app; the changes agents ask for are decided on the decisions page.">
+        {data?.authoring.new && <div className="actions"><Link to={{ page: "new" }} className="button primary">New agent</Link></div>}
+      </PageHead>
       {!data && <Waiting error={error} />}
+      {authors && <Drafts />}
       {data && data.agents.length === 0 && <p className="note">There are no agents you may watch.</p>}
       {data && <div className="agent-grid">{data.agents.map((a) => <AgentCard key={a.id} agent={a} />)}</div>}
     </>

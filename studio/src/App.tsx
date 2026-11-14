@@ -6,7 +6,9 @@ import { signedIn } from "./api";
 import { signIn } from "./auth";
 import { AgentPage } from "./pages/Agent";
 import { AgentsPage } from "./pages/Agents";
+import { DraftPage } from "./pages/Draft";
 import { InstancePage } from "./pages/Instance";
+import { NewPage } from "./pages/New";
 import { RunPage } from "./pages/Run";
 import { reread, useRoute } from "./router";
 import { Sidebar } from "./Sidebar";
@@ -33,6 +35,8 @@ export function App() {
   else if (route.page === "agent") content = <AgentPage key={route.agent} id={route.agent} />;
   else if (route.page === "instance") content = <InstancePage key={route.instance} id={route.instance} />;
   else if (route.page === "run") content = <RunPage key={route.run} id={route.run} />;
+  else if (route.page === "new") content = <NewPage />;
+  else if (route.page === "draft") content = <DraftPage key={route.draft} id={route.draft} />;
   else content = <AgentsPage />;
   return (
     <>
