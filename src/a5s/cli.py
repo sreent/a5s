@@ -21,9 +21,9 @@ from urllib.parse import quote
 import httpx
 import yaml
 
-from a5s import build, db, definitions, devdb, worker
+from a5s import authoring, build, db, definitions, devdb, worker
 from a5s.client import Client, Refused
-from a5s.config import DEFAULT_DATABASE_URL, Config
+from a5s.config import DEFAULT_DATABASE_URL, Config, load_models
 from a5s.contract import Signature
 from a5s.core import (
     anchor,
@@ -141,6 +141,43 @@ def _pin(cfg: Config, agent: str) -> None:
     tools = build.scenario(cfg).tools()
     lock = definitions.pin(cfg.agents_dir / agent, {n: t.schema_hash for n, t in tools.items()})
     print(f"Pinned {agent}'s tools in {lock}. Run `a5s apply` to roll the new release out.")
+
+
+def _agent(cfg: Config, args: argparse.Namespace) -> None:
+    """Making agents: from a template, and checking them before their release, as the studio
+    will (authoring.py)."""
+    tools = build.scenario(cfg).tools()
+    found = authoring.templates(cfg.root)
+    if args.what == "templates":
+        for name, folder in found.items():
+            missing = authoring.lacks(folder, tools)
+            print(f"{name}: {definitions.load(folder).works_for}"
+                  + (f" (needs {', '.join(missing)}, which this scenario hasn't got)" if missing else ""))
+    elif args.what == "new":
+        if args.template not in found:
+            sys.exit(f"There's no template {args.template}: `a5s agent templates` lists them.")
+        try:
+            made = authoring.new(found[args.template], args.name, cfg.agents_dir, tools)
+        except ValueError as e:
+            sys.exit(f"Can't make {args.name}: {e}.")
+        print(f"Made {made} from {args.template}, with its tools pinned. Edit its agent.yaml and "
+              f"AGENTS.md, check it with `a5s agent check {made}`, and release it as any agent: "
+              "a new agent's first release needs the release approver. Its owners are the people "
+              f"the directory gives the role {releases.agent_owner(args.name)}.")
+    else:
+        folders = args.folders or [f for f in sorted(cfg.agents_dir.iterdir())
+                                   if (f / "agent.yaml").is_file()]
+        models = load_models(cfg.models_file)
+        stopped = False
+        for folder in folders:
+            problems = authoring.check(folder, tools, models)
+            stopped = stopped or bool(problems)
+            print(f"{folder.name}: " + ("ready to release" if not problems else
+                                         f"{len(problems)} to fix before its release"))
+            for problem in problems:
+                print(f"- {problem}")
+        if stopped:
+            sys.exit(1)
 
 
 def _say(cfg: Config, person: str, agent: str, text: str, wait: float = 600) -> None:
@@ -415,6 +452,18 @@ def main(argv: list[str] | None = None) -> None:
     sub.add_parser("apply", help="bring instances in line with the settings and releases")
     pin = sub.add_parser("pin", help="pin the schemas of an agent's tools in its release")
     pin.add_argument("agent")
+    agent = sub.add_parser("agent", help="make an agent from a template, or check agents before "
+                                         "their release")
+    agent_sub = agent.add_subparsers(dest="what", required=True)
+    agent_sub.add_parser("templates", help="the agents a new one may start from")
+    made = agent_sub.add_parser("new", help="make an agent's folder from a template, its tools "
+                                            "pinned")
+    made.add_argument("name", help="the new agent's, such as finance-assistant")
+    made.add_argument("--from", dest="template", required=True,
+                      help="the template, such as assistant or master-data/mdg-assistant")
+    checked = agent_sub.add_parser("check", help="what stops agents from being released here")
+    checked.add_argument("folders", nargs="*", type=Path,
+                         help="their folders (default: every agent in the agents folder)")
     keygen = sub.add_parser("keygen", help="make a signing key for a person")
     keygen.add_argument("person")
     keygen.add_argument("--out", type=Path, default=Path("keys"))
@@ -554,6 +603,8 @@ def main(argv: list[str] | None = None) -> None:
         _apply(cfg)
     elif args.command == "pin":
         _pin(cfg, args.agent)
+    elif args.command == "agent":
+        _agent(cfg, args)
     elif args.command == "sign":
         _sign(cfg, args.person, args.key)
     elif args.command == "setup":

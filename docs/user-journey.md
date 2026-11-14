@@ -68,8 +68,8 @@ The command line, Python client and core API expose the same operational model t
 
 Today that path is deliberately code-led:
 
-1. Create the agent's folder: `agent.yaml`, `AGENTS.md`, skills and test cases.
-2. Choose existing reviewed tools, connectors and MCP tools; pin their schemas in `tools.lock`.
+1. Create the agent's folder: `agent.yaml`, `AGENTS.md`, skills and test cases. `a5s agent templates` lists the agents a new one may start from, the reference agents and each scenario's, and `a5s agent new finance-helper --from assistant` makes its folder from one, with its own id, a first release and its tools pinned.
+2. Choose existing reviewed tools, connectors and MCP tools; pin their schemas in `tools.lock`. `a5s agent check` then says what would stop its release here: a definition that doesn't load, budgets that don't fit, a tool the scenario hasn't got or that's no longer pinned as it is, or a model the deployment doesn't approve.
 3. Run the agent's tests with synthetic equivalents and, where the release requires it, real models.
 4. Open a pull request and let CI run.
 5. Have the people the release needs sign its manifest with `a5s release`.
