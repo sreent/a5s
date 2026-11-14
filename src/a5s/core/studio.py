@@ -20,10 +20,11 @@ from __future__ import annotations
 import json
 import re
 import uuid
-from collections import Counter
+from collections import Counter, defaultdict
 from collections.abc import Iterable
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import psycopg
 
@@ -162,24 +163,54 @@ def catalogue(conn: psycopg.Connection, scenario: Scenario, definitions: dict[st
             or agent_owner(name) in viewer.roles]
 
 
+class UnknownZone(ValueError):
+    """A time zone a5s doesn't know."""
+
+
+def time_zone(name: str) -> ZoneInfo:
+    """A time zone by its name in the IANA database, such as Asia/Singapore."""
+    try:
+        if len(name) <= 64:
+            return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError, OSError):
+        pass
+    raise UnknownZone(f"there's no time zone {name[:64]!r}")
+
+
 def figures(conn: psycopg.Connection, scenario: Scenario, models: dict[str, ModelConfig],
-            insts: list[dict], days: int = 30, now: datetime | None = None) -> dict:
+            insts: list[dict], days: int = 30, now: datetime | None = None,
+            zone: str = "UTC") -> dict:
     """How some instances are doing over the last `days` days: the measures, as `a5s
-    measures` reports them, of those instances alone, and how their runs ended, what was
-    denied and why, and the reports they sent."""
+    measures` reports them, of those instances alone; how their runs ended, and how many
+    ended each way on each day of the period, in `zone`, such as the viewer's own; what was
+    denied and why; and the reports they sent."""
     ids = [i["id"] for i in insts]
+    here = time_zone(zone)
     now = now or conn.execute("select now() as t").fetchone()["t"]
     found = measures.report(conn, scenario.name, models, days, now, served(scenario, insts),
                             instances=ids)
-    at = {"ids": ids, "window": f"{max(1, int(days))} days", "now": now}
+    at = {"ids": ids, "window": f"{max(1, int(days))} days", "now": now, "zone": zone}
     since = "%(now)s::timestamptz - %(window)s::interval"
     ended: Counter = Counter()
-    for r in conn.execute("select trigger->>'kind' as kind, outcome, count(*) as n from runs "
-                          f"where instance_id = any(%(ids)s) and opened_at > {since} "
-                          "group by 1, 2", at):
+    daily: dict[date, Counter] = defaultdict(Counter)
+    try:
+        opened = conn.execute(
+            "select trigger->>'kind' as kind, outcome, (opened_at at time zone %(zone)s)::date "
+            f"as day, count(*) as n from runs where instance_id = any(%(ids)s) and opened_at > "
+            f"{since} group by 1, 2, 3", at).fetchall()
+    except psycopg.errors.InvalidParameterValue as e:  # one Python knows and Postgres doesn't
+        raise UnknownZone(f"there's no time zone {zone!r} here") from e
+    for r in opened:
         ended[(r["kind"], outcome(r["outcome"]))] += r["n"]
+        daily[r["day"]][outcome(r["outcome"])] += r["n"]
     found["ended"] = [{"kind": k, "outcome": o, "runs": n}
                       for (k, o), n in sorted(ended.items(), key=lambda i: (str(i[0][0]), i[0][1]))]
+    first = (now - _interval(days)).astimezone(here).date()
+    last = max([now.astimezone(here).date(), *daily])  # and a run the clock hasn't reached
+    found["daily"] = [{"day": d.isoformat(), "runs": sum(daily[d].values()),
+                       "ended": dict(sorted(daily[d].items()))}
+                      for d in (first + timedelta(days=i) for i in range((last - first).days + 1))]
+    found["zone"] = zone
     newest = conn.execute(  # these instances' own denials, by their own index, newest first
         "select kind, action, entry::jsonb -> 'reasons' as reasons, "
         "(entry::jsonb ->> 'at')::timestamptz as at from ledger "

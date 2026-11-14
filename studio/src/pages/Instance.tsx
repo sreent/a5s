@@ -4,6 +4,7 @@
 import { useState } from "react";
 import { type Catalogue, type Figures, get, type RunLine, type RunsPage } from "../api";
 import { Link } from "../router";
+import { RunsByDay } from "../RunsByDay";
 import { aboutInstance, OutcomeBadge, PageHead, people, plural, runners, share, StatusBadge, useLoad,
          Waiting, when } from "../ui";
 
@@ -130,10 +131,14 @@ function Runs({ instance }: { instance: string }) {
   );
 }
 
+// The viewer's own time zone, for which days the runs fall on
+const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+
 export function InstancePage({ id }: { id: string }) {
   const [days, setDays] = useState(30);
   const catalogue = useLoad(() => get<Catalogue>("/studio/api"), []);
-  const figures = useLoad(() => get<Figures>(`/studio/api/instances/${encodeURIComponent(id)}?days=${days}`), [id, days]);
+  const figures = useLoad(() => get<Figures>(
+    `/studio/api/instances/${encodeURIComponent(id)}?days=${days}&zone=${encodeURIComponent(ZONE)}`), [id, days]);
   const inst = catalogue.data?.agents.flatMap((a) => a.instances).find((i) => i.id === id);
   return (
     <>
@@ -148,7 +153,16 @@ export function InstancePage({ id }: { id: string }) {
         </label>
       </PageHead>
       {!figures.data && <Waiting error={figures.error} />}
-      {figures.data && <><Tiles figures={figures.data} /><Breakdown figures={figures.data} /></>}
+      {figures.data && (
+        <div className={figures.stale ? "stale" : undefined}>
+          <Tiles figures={figures.data} />
+          <section className="card">
+            <h3>Runs by day</h3>
+            <RunsByDay days={figures.data.daily} zone={figures.data.zone} />
+          </section>
+          <Breakdown figures={figures.data} />
+        </div>
+      )}
       <Runs instance={id} />
     </>
   );

@@ -71,6 +71,12 @@
 .agent-body > div { display: grid; gap: 1rem; min-width: 0; }
 .agent-body .card { margin: 0; }
 @media (max-width: 70rem) { .agent-body { grid-template-columns: minmax(0, 1fr); } }
+/* In the narrow column, each fact's name above it, so what it says has the card's width */
+@media (min-width: 70.01rem) {
+  .agent-body .side .facts { grid-template-columns: minmax(0, 1fr); gap: 0.1rem; }
+  .agent-body .side .facts dt { font-size: 0.8rem; margin-top: 0.55rem; }
+  .agent-body .side .facts > dt:first-child { margin-top: 0; }
+}
 .card.wide { margin-bottom: 1rem; }
 .tool-group { margin-bottom: 1rem; }
 .tool-group:last-child { margin-bottom: 0; }
@@ -150,3 +156,40 @@ table.runs-table tbody tr:hover { background: var(--sunken); }
 .step-time { color: var(--faint); font-size: 0.8rem; font-variant-numeric: tabular-nums; min-width: 5.5rem; }
 .step-tool { font-weight: 600; }
 .step-why { flex-basis: 100%; padding-left: 6rem; font-size: 0.82rem; }
+
+/* Runs by day. Its marks wear the status colours, the same in both modes, since a status
+   means what it means in either; its text wears the text colours alone. */
+.runs-chart { --chart-good: #0ca30c; --chart-warn: #fab219; --chart-bad: #d03b3b; --chart-open: #898781;
+              position: relative; }
+.runs-chart svg { display: block; overflow: visible; }
+.runs-chart .grid { stroke: var(--line); stroke-width: 1; shape-rendering: crispEdges; }
+.runs-chart .baseline { stroke: var(--line-strong); stroke-width: 1; shape-rendering: crispEdges; }
+.runs-chart .tick { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.runs-chart .figure { fill: var(--text); font-size: 11px; font-weight: 600; }
+.runs-chart .mark.done { fill: var(--chart-good); }
+.runs-chart .mark.short { fill: var(--chart-warn); }
+.runs-chart .mark.failed { fill: var(--chart-bad); }
+.runs-chart .mark.open { fill: var(--chart-open); }
+.runs-chart .hit { fill: transparent; }
+.runs-chart .day { cursor: default; outline: none; }
+.runs-chart .day:hover .hit, .runs-chart .day:focus .hit { fill: var(--sunken); }
+.runs-chart .day:focus-visible .hit { stroke: var(--focus); stroke-width: 1.5; }
+.legend { display: flex; flex-wrap: wrap; gap: 0.35rem 1.1rem; list-style: none; margin: 0 0 0.75rem; padding: 0;
+          font-size: 0.84rem; color: var(--muted); }
+.legend li { display: inline-flex; align-items: center; gap: 0.45rem; }
+.swatch { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 2px; }
+.line-key { display: inline-block; width: 0.85rem; height: 2px; border-radius: 1px; }
+.swatch.done, .line-key.done { background: var(--chart-good); }
+.swatch.short, .line-key.short { background: var(--chart-warn); }
+.swatch.failed, .line-key.failed { background: var(--chart-bad); }
+.swatch.open, .line-key.open { background: var(--chart-open); }
+.tip { position: absolute; top: 2rem; width: 11rem; pointer-events: none; z-index: 2; padding: 0.55rem 0.7rem;
+       background: var(--surface); border: 1px solid var(--line-strong); border-radius: 8px;
+       box-shadow: var(--shadow); font-size: 0.82rem; }
+.tip-head { color: var(--muted); margin-bottom: 0.25rem; }
+.tip-row { display: flex; align-items: center; gap: 0.45rem; color: var(--muted); }
+.tip-row strong { color: var(--text); font-variant-numeric: tabular-nums; }
+.as-table { margin-top: 0.75rem; }
+.as-table summary { font-size: 0.86rem; }
+.as-table table { margin-top: 0.5rem; }
+.stale { opacity: 0.55; transition: opacity 0.2s; }

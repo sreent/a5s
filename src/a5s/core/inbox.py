@@ -1273,24 +1273,32 @@ def create_app(gw: Any) -> FastAPI:
         return studio.agent(gw.scenario, definition, gw.scenario.tools(), insts, whole=True)
 
     @app.get("/studio/api/agents/{agent}/measures")
-    def studio_agent_measures(agent: str, days: int = 30,
+    def studio_agent_measures(agent: str, days: int = 30, zone: str = "UTC",
                               authorization: str | None = Header(default=None)) -> dict:
-        """How the instances of an agent that someone may watch are doing."""
+        """How the instances of an agent that someone may watch are doing, with their runs on
+        each day in `zone`, such as their own time zone."""
         person = studying(authorization)
         with db.transaction(gw.url) as conn:
             insts = [i for i in studio.instances(conn, person) if i["definition"] == agent]
             if not insts:
                 raise HTTPException(404, "there's no instance of that agent that you may watch")
-            return studio.figures(conn, gw.scenario, gw.models, insts, days, gw.clock())
+            try:
+                return studio.figures(conn, gw.scenario, gw.models, insts, days, gw.clock(), zone)
+            except studio.UnknownZone as e:
+                raise HTTPException(400, str(e)) from e
 
     @app.get("/studio/api/instances/{instance}")
-    def studio_instance(instance: str, days: int = 30,
+    def studio_instance(instance: str, days: int = 30, zone: str = "UTC",
                         authorization: str | None = Header(default=None)) -> dict:
-        """How an instance someone may watch is doing, over the last `days` days."""
+        """How an instance someone may watch is doing, over the last `days` days, with its
+        runs on each day in `zone`, such as their own time zone."""
         person = studying(authorization)
         with db.transaction(gw.url) as conn:
-            return studio.figures(conn, gw.scenario, gw.models,
-                                  [watched(conn, person, instance)], days, gw.clock())
+            try:
+                return studio.figures(conn, gw.scenario, gw.models,
+                                      [watched(conn, person, instance)], days, gw.clock(), zone)
+            except studio.UnknownZone as e:
+                raise HTTPException(400, str(e)) from e
 
     @app.get("/studio/api/instances/{instance}/runs")
     def studio_runs(instance: str, before: str | None = None, limit: int = studio.RUNS,

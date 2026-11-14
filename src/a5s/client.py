@@ -103,15 +103,17 @@ class Client:
         return self.get("/status")
 
     def measures(self, days: int = 30, *, agent: str | None = None,
-                 instance: str | None = None) -> dict:
+                 instance: str | None = None, zone: str = "UTC") -> dict:
         """The measures over the last `days` days: of the whole deployment, or of one agent's
-        instances, or of one instance, as `a5s measures` reads them."""
+        instances, or of one instance, as `a5s measures` reads them. An agent's or an
+        instance's say how many runs ended each way on each day, in `zone`."""
         if agent and instance:
             raise ValueError("name an agent or an instance, not both")
+        if not (agent or instance):
+            return self.get("/measures", days=days)
         path = (f"/studio/agents/{_part(agent)}/measures" if agent
-                else f"/studio/instances/{_part(instance)}/measures" if instance
-                else "/measures")
-        return self.get(path, days=days)
+                else f"/studio/instances/{_part(instance)}/measures")
+        return self.get(path, days=days, zone=zone)
 
     # The studio
 

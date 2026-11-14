@@ -5,13 +5,15 @@ import { type DependencyList, type ReactNode, useEffect, useState } from "react"
 import type { Agent, Instance, Tool } from "./api";
 import { Link, type Route } from "./router";
 
-export type Loaded<T> = { data?: T; error?: string };
+/** What a page shows, once loaded; while it loads again, as for another period, what it
+ * showed before stays, `stale`, so nothing jumps. */
+export type Loaded<T> = { data?: T; error?: string; stale?: boolean };
 
 export function useLoad<T>(load: () => Promise<T>, deps: DependencyList): Loaded<T> {
   const [state, setState] = useState<Loaded<T>>({});
   useEffect(() => {
     let current = true;
-    setState({});
+    setState((was) => ({ data: was.data, stale: was.data !== undefined }));
     load().then((data) => current && setState({ data }))
       .catch((error: Error) => current && setState({ error: error.message }));
     return () => { current = false; };
@@ -82,9 +84,13 @@ export function StatusBadge({ status }: { status: string }) {
   return <span className={`badge ${tone}`}><span className="dot" />{status}</span>;
 }
 
+// How a run ends, as core/status.py's OUTCOMES says it: done; failed, in one of these ways;
+// or else cut short, such as with its budget spent
+export const FAILED_OUTCOMES: readonly string[] = ["failed", "abandoned", "reply denied"];
+
 export function outcomeTone(outcome: string): string {
   if (outcome === "done") return "good";
-  if (["failed", "abandoned", "reply denied"].includes(outcome)) return "bad";
+  if (FAILED_OUTCOMES.includes(outcome)) return "bad";
   return "warn";
 }
 

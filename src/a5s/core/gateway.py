@@ -1984,13 +1984,17 @@ def create_app(gw: Gateway) -> FastAPI:
                                 studio.instances(conn), whole=True)
 
     @app.get("/studio/agents/{agent}/measures", dependencies=[Depends(service)])
-    def studio_agent_measures(agent: str, days: int = 30) -> dict:
-        """How an agent's instances are doing over the last `days` days."""
+    def studio_agent_measures(agent: str, days: int = 30, zone: str = "UTC") -> dict:
+        """How an agent's instances are doing over the last `days` days, with their runs on
+        each day in `zone`."""
         with db.transaction(gw.url) as conn:  # with those retired within the window
             insts = [i for i in studio.instances(conn, retired=True) if i["definition"] == agent]
             if agent not in gw.definitions and not insts:
                 raise HTTPException(404, f"there's no agent {agent} here")
-            return studio.figures(conn, gw.scenario, gw.models, insts, days, gw.clock())
+            try:
+                return studio.figures(conn, gw.scenario, gw.models, insts, days, gw.clock(), zone)
+            except studio.UnknownZone as e:
+                raise HTTPException(400, str(e)) from e
 
     def studio_instance(conn: psycopg.Connection, instance: str) -> dict:
         found = next((i for i in studio.instances(conn, retired=True) if i["id"] == instance),
@@ -2000,11 +2004,15 @@ def create_app(gw: Gateway) -> FastAPI:
         return found
 
     @app.get("/studio/instances/{instance}/measures", dependencies=[Depends(service)])
-    def studio_instance_measures(instance: str, days: int = 30) -> dict:
-        """How an instance is doing over the last `days` days."""
+    def studio_instance_measures(instance: str, days: int = 30, zone: str = "UTC") -> dict:
+        """How an instance is doing over the last `days` days, with its runs on each day in
+        `zone`."""
         with db.transaction(gw.url) as conn:
-            return studio.figures(conn, gw.scenario, gw.models,
-                                  [studio_instance(conn, instance)], days, gw.clock())
+            try:
+                return studio.figures(conn, gw.scenario, gw.models,
+                                      [studio_instance(conn, instance)], days, gw.clock(), zone)
+            except studio.UnknownZone as e:
+                raise HTTPException(400, str(e)) from e
 
     @app.get("/studio/instances/{instance}/runs", dependencies=[Depends(service)])
     def studio_runs(instance: str, before: str | None = None,

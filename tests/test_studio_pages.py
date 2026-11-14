@@ -11,6 +11,7 @@ import yaml
 
 from a5s import db
 from a5s.core import inbox
+from conftest import QUIET
 
 OPS = {"definition": "assistant", "serves": ["chen"], "parts": ["orders"], "level": 1,
        "owner": "omar"}
@@ -46,6 +47,7 @@ def test_each_person_watches_what_they_run_own_or_decide_for(stack, approving, p
     assert api("/studio/api/instances/assistant-ops", "ben").status_code == 404
     assert api("/studio/api/agents/watcher", "ben").status_code == 404
     assert api("/studio/api/agents/assistant", "ben").json()["instructions"]
+    assert api("/studio/api/instances/assistant-finance?zone=Mars/Olympus", "ben").status_code == 400
     assert httpx.get(f"{approving}/studio/api", timeout=30).status_code == 401
 
 
@@ -101,10 +103,13 @@ def test_someone_watches_an_instance_in_the_browser(stack, approving, provider, 
     stack.model.reply(None, ("search_records", {"query": "invoice"}))
     stack.model.reply("Q-1001 is open.")
     stack.say("What's open?", person="ana")
+    with db.transaction(stack.admin) as conn:  # on the core's day, which the tests keep apart
+        conn.execute("update runs set opened_at = opened_at - (now() - %(quiet)s), "
+                     "closed_at = closed_at - (now() - %(quiet)s)", {"quiet": QUIET})
     served = httpx.get(f"{approving}/studio/", timeout=30)
     assert "script-src 'self'" in served.headers["Content-Security-Policy"]
     provider.person = "ben"  # the assistant's deputy signs in at the provider
-    page = browser.new_page(viewport={"width": 1440, "height": 900})
+    page = browser.new_page(viewport={"width": 1440, "height": 900}, timezone_id="Asia/Singapore")
     refused = []  # anything the page's policy stopped, such as an inline script or style
     page.on("console", lambda m: refused.append(m.text) if "Content Security Policy" in m.text else None)
     page.goto(f"{approving}/studio/")
@@ -123,8 +128,15 @@ def test_someone_watches_an_instance_in_the_browser(stack, approving, provider, 
 
     page.click("table.grid-table a:has-text('assistant-finance')")  # its instance
     page.wait_for_selector(".tile >> text=Runs", timeout=30000)
-    assert "done" in page.inner_text("table.grid-table.compact")
+    assert "done" in page.inner_text("section.card:has(h3:text-is('How runs ended')) table")
+    # Its runs by day, on his own days: today's, as it says on hover and on focus
+    today = page.locator(".runs-chart .day[tabindex='0']")
+    assert today.get_attribute("aria-label").endswith(": 1 run, 1 done")
+    assert "Days in Asia/Singapore" in page.text_content(".runs-chart .as-table")
+    today.focus()
+    assert page.locator(".runs-chart .tip").is_visible()
     shot(page, "studio-instance")
+    today.blur()
 
     page.click("table.runs-table a:has-text('Open')")  # a run, and what it did
     page.wait_for_selector(".step >> text=search_records", timeout=30000)

@@ -108,9 +108,13 @@ export type Figures = {
   denied_partial: boolean;
   reports: { source: string; outcome: string; reports: number }[];
   returning: { agent: string; wrote_before: number; came_back: number }[];
-  daily?: { day: string; outcome: string; runs: number }[];
+  daily: Day[];  // each day of the period, in `zone`, the viewer's own
+  zone: string;
   instances: string[];
 };
+
+/** One day's runs, by how each ended, as core/status.py's outcome() says it. */
+export type Day = { day: string; runs: number; ended: Record<string, number> };
 
 export type Person = { id: string; name: string | null };
 

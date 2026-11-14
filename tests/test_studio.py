@@ -5,6 +5,7 @@ of the release and where they run, how each agent and instance is doing, and wha
 import json
 import uuid
 
+from a5s import db
 from conftest import SERVICE_TOKEN
 from test_watcher import THURSDAY
 
@@ -55,6 +56,35 @@ def test_an_instances_figures_are_the_measures_of_it_alone(stack):
     assert [r["runs"] for r in one["runs"]] == [1]
     assert one["ended"] == [{"kind": "message", "outcome": "done", "runs": 1}]
     assert one["instances"] == ["assistant-finance"] and one["denied"] == []
+
+
+def test_an_instances_runs_fall_on_each_day_in_the_viewers_own_time_zone(stack):
+    for _ in range(3):
+        answered(stack)
+    opened = ["2026-10-29T17:30:00+00:00",  # 01:30 on 30 October in Singapore
+              "2026-10-29T15:00:00+00:00",  # 23:00 on 29 October there
+              "2026-10-31T02:00:00+00:00"]
+    with db.transaction(stack.admin) as conn:
+        runs = [r["id"] for r in conn.execute("select id from runs order by opened_at")]
+        for run, at in zip(runs, opened, strict=True):
+            conn.execute("update runs set opened_at = %s where id = %s", (at, run))
+        conn.execute("update runs set outcome = 'failed' where id = %s", (runs[1],))
+    stack.at("2026-11-01T00:00:00+00:00")
+    week = "/studio/instances/assistant-finance/measures?days=7"
+    singapore = get(stack, f"{week}&zone=Asia/Singapore").json()
+    days = {d["day"]: d for d in singapore["daily"]}
+    assert singapore["zone"] == "Asia/Singapore"
+    assert list(days) == [f"2026-10-{d}" for d in range(25, 32)] + ["2026-11-01"]  # quiet ones too
+    assert days["2026-10-28"] == {"day": "2026-10-28", "runs": 0, "ended": {}}
+    assert (days["2026-10-29"]["ended"], days["2026-10-30"]["ended"]) == ({"failed": 1}, {"done": 1})
+    assert days["2026-10-31"] == {"day": "2026-10-31", "runs": 1, "ended": {"done": 1}}
+    assert sum(d["runs"] for d in singapore["daily"]) == sum(e["runs"] for e in singapore["ended"])
+    london = {d["day"]: d["runs"] for d in get(stack, f"{week}&zone=Europe/London").json()["daily"]}
+    assert (london["2026-10-29"], london["2026-10-30"]) == (2, 0)  # both on the 29th there
+    assert get(stack, week).json()["zone"] == "UTC"  # unless someone says
+    for zone in ("Mars/Olympus", "../etc/passwd", "x" * 300):
+        assert get(stack, f"{week}&zone={zone}").status_code == 400
+    assert get(stack, "/studio/agents/assistant/measures?zone=Asia/Singapore").json()["daily"]
 
 
 def test_each_instance_counts_its_own_runs_and_reports(stack):

@@ -161,7 +161,7 @@ export function AgentPage({ id }: { id: string }) {
               </section>
               <Tools agent={agent} />
             </div>
-            <div>
+            <div className="side">
               <When agent={agent} />
               <Knows agent={agent} />
             </div>
