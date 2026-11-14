@@ -128,6 +128,7 @@ export type Draft = DraftLine & {
   problems: string[];  // what would stop its release, as `a5s agent check` says it
   preview: Agent | null;  // as the catalogue would show it, if it loads
   signers: { role: string; who: string; why: string }[] | null;  // whom its release would need
+  publishing: boolean;  // whether the studio opens its pull request, or its author does
 };
 
 export type Offered = Omit<Tool, "group" | "pinned" | "missing">;

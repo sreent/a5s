@@ -61,6 +61,7 @@ def test_a_new_agent_is_published_as_a_pull_request_opened_as_its_author(stack, 
                                                                         provider):
     priya = as_(approving, provider, "priya")
     draft = started(priya)
+    assert draft["publishing"] is True  # a5s opens it, on GitHub, as them
     done = published(priya, github, draft["id"], login="priya-gh")
     [pull] = github.pulls
     assert done["pull"] == pull["html_url"] and pull["user"] == "priya-gh"  # as them, not a5s
@@ -154,9 +155,24 @@ def test_only_a_drafts_author_publishes_it_and_only_once_nothing_stops_its_relea
     assert refused.status_code == 409 and "would stop its release" in refused.json()["detail"]
 
 
-def test_without_github_set_up_its_author_downloads_the_folder(stack, approving, provider):
+def test_without_github_set_up_its_author_opens_the_pull_request(stack, approving, provider):
     priya = as_(approving, provider, "priya")
     draft = started(priya)
+    assert draft["publishing"] is False  # its author opens it, on whichever git host
+    words = priya("GET", f"/studio/api/drafts/{draft['id']}/pull-request").json()
+    assert (words["folder"], words["title"], words["ready"]) == (
+        "agents/finance-helper", "Add finance-helper", True)  # where the deployment has its agents
+    assert words["body"].startswith("Drafted in the a5s studio by Priya")
+    for signer in draft["signers"]:  # who must sign its release, and why
+        assert f"**{signer['who']}**, because {signer['why']}" in words["body"]
+    assert "Nothing a5s checks there would stop its release" in words["body"]
+    broken = {**draft["files"], "agent.yaml": draft["files"]["agent.yaml"].replace(
+        "search_records", "shred_everything")}
+    assert priya("PUT", f"/studio/api/drafts/{draft['id']}", {"files": broken}).status_code == 200
+    words = priya("GET", f"/studio/api/drafts/{draft['id']}/pull-request").json()
+    assert words["ready"] is False  # it says so, not that nothing would
+    assert "would stop its release, as it stands: " in words["body"] and "shred_everything" in words["body"]
+    assert priya("PUT", f"/studio/api/drafts/{draft['id']}", {"files": draft["files"]}).status_code == 200
     refused = priya("POST", f"/studio/api/drafts/{draft['id']}/publish")
     assert refused.status_code == 503 and "download its folder" in refused.json()["detail"]
     got = priya("GET", f"/studio/api/drafts/{draft['id']}/folder")
@@ -168,6 +184,7 @@ def test_without_github_set_up_its_author_downloads_the_folder(stack, approving,
     assert found == draft["files"]
     assert yaml.safe_load(found["agent.yaml"])["id"] == "finance-helper"
     assert as_(approving, provider, "ben")("GET", f"/studio/api/drafts/{draft['id']}/folder").status_code in (403, 404)
+    assert as_(approving, provider, "ben")("GET", f"/studio/api/drafts/{draft['id']}/pull-request").status_code in (403, 404)
 
 
 def test_its_author_publishes_a_draft_from_its_page(stack, github, approving, provider, browser):

@@ -142,14 +142,13 @@ class Config:
     # at this address, by a token they share (a5s/sandbox.py). None if there isn't one
     sandbox_url: str | None = None
     sandbox_token: str = ""
-    # Publishing drafts from the studio as pull requests, opened as whoever publishes, through
-    # GitHub's own sign-in (core/publishing.py): a5s's GitHub App's client id, a public thing,
-    # the agents' repository, as owner/name, its branch, and where the agents' folders are in
-    # it. Without a repository, the studio offers a draft's folder to download instead
+    # Publishing drafts from the studio as pull requests on GitHub, opened as whoever publishes,
+    # through GitHub's own sign-in (core/publishing.py): a5s's GitHub App's client id, a public
+    # thing, and the agents' repository, as owner/name, and its branch. Without them, the studio
+    # offers a draft's folder, and the pull request's words, for its author to open it with
     github_client_id: str | None = None
     github_repo: str | None = None
     github_base: str = "main"
-    github_agents_path: str = "agents"
     github_url: str = "https://github.com"  # or a GitHub Enterprise server's
     github_api_url: str = "https://api.github.com"  # and its API, such as https://<it>/api/v3
 
@@ -209,7 +208,6 @@ class Config:
             github_client_id=os.environ.get("A5S_GITHUB_CLIENT_ID") or None,
             github_repo=os.environ.get("A5S_GITHUB_REPO") or None,
             github_base=os.environ.get("A5S_GITHUB_BASE") or "main",
-            github_agents_path=os.environ.get("A5S_GITHUB_AGENTS_PATH") or "agents",
             github_url=(os.environ.get("A5S_GITHUB_URL") or "https://github.com").rstrip("/"),
             github_api_url=(os.environ.get("A5S_GITHUB_API_URL") or "https://api.github.com").rstrip("/"),
         )

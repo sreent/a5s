@@ -123,4 +123,10 @@ def test_an_agents_owner_tries_their_draft_in_the_sandbox(stack, with_sandbox, a
     alone = page.locator(".case:has-text('offers a reminder, and keeps it on the yes')").inner_text()
     assert "its suite alone" in alone and "It needs then" in alone
     shot(page, "studio-cases")
+    # Nothing set up to publish with here: its author opens the pull request, on whichever git
+    # host, with its folder and the words a5s gives for it, which say who must sign
+    assert page.locator("#publish").count() == 0
+    assert page.inner_text("#pull-folder") == "agents/finance-helper/"
+    assert page.input_value("#pull-title") == "Add finance-helper"
+    assert "## Who must sign its release" in page.input_value("#pull-body")
     assert refused == []

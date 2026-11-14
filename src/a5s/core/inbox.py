@@ -1390,7 +1390,8 @@ def create_app(gw: Any) -> FastAPI:
         return {**draft, "problems": drafts.check(draft["agent"], draft["files"], tools, gw.models),
                 "preview": drafts.preview(gw.scenario, draft["agent"], draft["files"], tools),
                 "signers": drafts.signers(draft["agent"], draft["files"], gw.cfg.agents_dir,
-                                          gw.definitions)}
+                                          gw.definitions),
+                "publishing": publishing.configured(gw.cfg)}  # or its author opens it
 
     @app.get("/studio/api/tools")
     def studio_tools(authorization: str | None = Header(default=None)) -> dict:
@@ -1647,6 +1648,23 @@ def create_app(gw: Any) -> FastAPI:
                                               "based_on": found.based_on, "pull": found.pull,
                                               "by": person.id}})
         return found.shown()
+
+    @app.get("/studio/api/drafts/{draft}/pull-request")
+    def studio_draft_pull_request(draft: str, authorization: str | None = Header(default=None)) -> dict:
+        """The pull request one of someone's drafts makes, for them to open it with on any git
+        host: where its folder goes in the agents' repository, its title, and its description,
+        which says who must sign its release, and why."""
+        person = drafting(authorization)
+        with db.transaction(gw.url) as conn:
+            found = drafts.get(conn, person, draft)
+        if found is None:
+            raise HTTPException(404, "you have no such draft")
+        new = found["agent"] not in gw.definitions
+        shown = checked(found)
+        title, body, _ = publishing.described(found, person, shown["signers"] or [], new,
+                                              shown["problems"])
+        return {"folder": publishing.folder(gw.cfg, found["agent"]), "title": title, "body": body,
+                "ready": not shown["problems"]}
 
     @app.get("/studio/api/drafts/{draft}/folder")
     def studio_draft_folder(draft: str, authorization: str | None = Header(default=None)) -> Response:

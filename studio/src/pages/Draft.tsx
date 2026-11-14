@@ -216,7 +216,7 @@ export function DraftPage({ id }: { id: string }) {
           <section className="card" id="publishing">
             <h3>Publish it</h3>
             <Publish draft={id} name={draft.agent} ready={said.problems.length === 0 && kept === "kept"}
-                     published={draft.published} />
+                     published={draft.published} publishing={draft.publishing} revision={revision} />
           </section>
         </>
       )}

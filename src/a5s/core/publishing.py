@@ -74,14 +74,26 @@ def configured(cfg: Config) -> bool:
     return bool(cfg.github_client_id and cfg.github_repo)
 
 
+def folder(cfg: Config, agent: str) -> str:
+    """Where an agent's folder goes in the agents' repository: where this deployment has its
+    agents, in the repository its image was built from, such as agents/<agent>, or
+    scenarios/master-data/agents/<agent> for master data's."""
+    try:
+        base = cfg.agents_dir.resolve().relative_to(cfg.root.resolve()).as_posix()
+    except ValueError:  # agents from outside it
+        base = "agents"
+    return f"{base}/{agent}" if base not in ("", ".") else agent
+
+
 def branch(agent: str, draft: str) -> str:
     """A draft's own branch: each publish of it adds a commit there."""
     return f"a5s/{agent}-{draft.replace('-', '')[:8]}"
 
 
-def described(draft: dict, person: Any, signers: list[dict], new: bool) -> tuple[str, str, str]:
+def described(draft: dict, person: Any, signers: list[dict], new: bool,
+              problems: list[str] | None = None) -> tuple[str, str, str]:
     """A publish's pull request, its title and body, and its commit's message: who drafted it,
-    from what, and who must sign the release it makes, and why."""
+    from what, who must sign the release it makes, and why, and what a5s's checks found."""
     title = f"{'Add' if new else 'Change'} {draft['agent']}"
     by = f"Drafted in the a5s studio by {person.name} ({person.id}), from {draft['based_on']}."
     lines = [by, "", "## Who must sign its release", ""]
@@ -90,7 +102,10 @@ def described(draft: dict, person: Any, signers: list[dict], new: bool) -> tuple
     checks = ("As `a5s release` works it out, from what it changes of the agents released where "
               "it was drafted. Nothing a5s checks there would stop its release: its definition "
               "loads as the core loads it, its tools are the scenario's, pinned as it has them, "
-              "and its model is approved.")
+              "and its model is approved.") if not problems else (
+        "As `a5s release` works it out, from what it changes of the agents released where it was "
+        "drafted. What a5s checks there would stop its release, as it stands: "
+        + "; ".join(problems) + ".")
     lines += ["", checks, "",
               "CI runs its checks, and its test cases on its model, as for any change to an agent."]
     return title, "\n".join(lines), f"{title}\n\n{by}"
@@ -220,9 +235,9 @@ class Publishing:
         mine = call("GET", f"/git/ref/heads/{quote(publish.branch)}", ok=(200, 404))
         parent = mine.json()["object"]["sha"] if mine.status_code == 200 else start
         tree = call("GET", f"/git/commits/{parent}").json()["tree"]["sha"]
-        folder = [p for p in self.cfg.github_agents_path.strip("/").split("/") if p] + [publish.agent]
-        there = self._files(call, tree, folder)
-        prefix = "/".join(folder) + "/"
+        path = folder(self.cfg, publish.agent).split("/")
+        there = self._files(call, tree, path)
+        prefix = "/".join(path) + "/"
         entries = [{"path": prefix + path, "mode": MODE, "type": "blob", "content": text}
                    for path, text in sorted(publish.files.items())]
         entries += [{"path": prefix + path, "mode": MODE, "type": "blob", "sha": None}
