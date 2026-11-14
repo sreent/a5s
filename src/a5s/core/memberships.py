@@ -11,8 +11,12 @@ time-bound elevation, and a5s's settings say what each group may do.
   what they approved stops counting then, as when the directory takes a role away. What they do
   with a sign-in counts by the groups that sign-in shows.
 - Giving a group a role needs the role's owner, as the directory names them: a part's owner for
-  its part's roles, else an instance approver. Nobody who holds a role through a group gives it
-  to another, so every grant goes back to someone the release names.
+  its part's roles, an agent's owner for its authors' and viewers', the data protection officer
+  for theirs, which lets its holders export and erase what a5s keeps about anyone, assurance for
+  the auditor's, so those an audit checks don't choose who audits them, else an instance
+  approver. Nobody who holds a role through a group gives it to another, so every grant goes
+  back to someone the release names. The team that runs a5s writes the version; the owner
+  approves it.
 - A version's own map gives nothing towards its approval: the one in force before it does, and
   only for the grants the directory's owners approved.
 - Groups give a5s's powers alone: what someone may see stays the directory's, by their team.
@@ -30,7 +34,17 @@ from typing import Any
 import psycopg
 
 from a5s import db
-from a5s.contract import INSTANCE_APPROVER, PART_OWNER, Person, Settings
+from a5s.contract import (
+    AGENT_OWNER,
+    ASSURANCE,
+    AUDITOR,
+    DATA_PROTECTION,
+    GROUP_AGENT_ROLES,
+    INSTANCE_APPROVER,
+    PART_OWNER,
+    Person,
+    Settings,
+)
 
 log = logging.getLogger(__name__)
 
@@ -74,20 +88,28 @@ def grants(settings: Settings, before: Settings | None) -> list[tuple[str, str]]
 
 
 def owner_of(role: str) -> str:
-    """Whose role gives a group this one: a part's owner, for its part's roles; else an
-    instance approver's."""
-    part = role.partition(":")[2]
-    return f"{PART_OWNER}:{part}" if part else INSTANCE_APPROVER
+    """Whose role gives a group this one: an agent's owner, for its authors' and viewers'; a
+    part's owner, for its part's roles; the data protection officer, for theirs, as what it
+    lets someone do, export and erase what a5s keeps about anyone, is the officer's to answer
+    for, not an instance approver's; assurance, for the auditor's, as auditors check what the
+    team that runs a5s and the approvers did, so neither chooses them; else an instance
+    approver's."""
+    kind, _, scope = role.partition(":")
+    if kind in GROUP_AGENT_ROLES:
+        return f"{AGENT_OWNER}:{scope}"
+    if scope:
+        return f"{PART_OWNER}:{scope}"
+    return {DATA_PROTECTION: DATA_PROTECTION, AUDITOR: ASSURANCE}.get(role, INSTANCE_APPROVER)
 
 
-def stored(conn: psycopg.Connection, person: str | None = None) -> dict[str, tuple[str, ...]]:
+def stored(conn: db.Connection, person: str | None = None) -> dict[str, tuple[str, ...]]:
     """The groups each person's latest sign-in showed, of those the settings name."""
     rows = conn.execute("select person, groups from sign_in_groups "
                         "where %(p)s::text is null or person = %(p)s", {"p": person}).fetchall()
     return {r["person"]: tuple(r["groups"]) for r in rows}
 
 
-def keep(conn: psycopg.Connection, person: str, groups: tuple[str, ...], at: datetime) -> None:
+def keep(conn: db.Connection, person: str, groups: tuple[str, ...], at: datetime) -> None:
     """Keep the groups a sign-in made at `at` showed, unless a later sign-in's are kept."""
     conn.execute(
         "insert into sign_in_groups (person, groups, seen_at) values (%s, %s, %s) "
@@ -100,7 +122,7 @@ def rooted(scenario: Any) -> Any:
     return Own(scenario) if isinstance(scenario, Grouped) else scenario
 
 
-def under(scenario: Any, conn: psycopg.Connection, mapping: Mapping) -> Callable[[str], Person | None]:
+def under(scenario: Any, conn: db.Connection, mapping: Mapping) -> Callable[[str], Person | None]:
     """Who someone is, with the roles their latest sign-in's groups give them under `mapping`,
     read afresh, for checking a version of the settings: never what a part kept."""
     inner = rooted(scenario)
@@ -116,7 +138,7 @@ def under(scenario: Any, conn: psycopg.Connection, mapping: Mapping) -> Callable
 @dataclass
 class _State:
     url: str
-    mapped: Callable[[psycopg.Connection], Mapping]
+    mapped: Callable[[db.Connection], Mapping]
     every: float = EVERY
     clock: Callable[[], float] = time.monotonic
     mapping: Mapping = field(default_factory=dict)
@@ -132,7 +154,7 @@ class Grouped:
 
     _a5s_roles: _State
 
-    def fresh(self, conn: psycopg.Connection | None = None) -> None:
+    def fresh(self, conn: db.Connection | None = None) -> None:
         """Read the map and everyone's groups again, if they're older than its `every`. Asked
         again while it reads, as reading the settings may, what it read last stands."""
         state = self._a5s_roles
@@ -218,7 +240,7 @@ class Own:
         return super(Grouped, self.scenario).holders(role)  # type: ignore[misc]
 
 
-def grouped(scenario: Any, url: str, mapped: Callable[[psycopg.Connection], Mapping], *,
+def grouped(scenario: Any, url: str, mapped: Callable[[db.Connection], Mapping], *,
             every: float = EVERY, clock: Callable[[], float] = time.monotonic) -> Any:
     """A scenario, with the roles its people's groups give them mixed into its own class: the
     same object, so all it does, and all that's set on it, stays as it was."""

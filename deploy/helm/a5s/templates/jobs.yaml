@@ -1,3 +1,4 @@
+{{- if ne .Values.mode "sandbox" }}
 {{/* The jobs that run as the database's administrator: setting up the schema and applying the
 signed settings before each install or upgrade, and recording a release's approval after. They
 run as Helm hooks, with their own account and network policy, made first. */}}
@@ -67,4 +68,5 @@ spec:
   activeDeadlineSeconds: 600
   template:
     {{- include "a5s.adminPod" (dict "root" . "args" (list "release" "approve" "--manifest" "/approval/release.yaml" "--signatures" "/approval/release.sig") "passwords" false "approval" true) | nindent 4 }}
+{{- end }}
 {{- end }}

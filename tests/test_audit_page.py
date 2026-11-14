@@ -60,9 +60,11 @@ def talked(stack) -> None:
 @contextmanager
 def agreed(stack, provider):
     """The channels app once the data protection officer agrees to names on this page."""
+    assert not stack.settle(data_protection={"audit_names": True},
+                            signers=("ana", "noor")).refused
     port = free_port()
     cfg = replace(stack.as_role("channels"), webchat_client_id=CLIENT, development=False,
-                  seal_keys=(), audit_names=True)
+                  seal_keys=())
     with serve(inbox.create_app(replace(stack.gateway, cfg=cfg,
                                         identity=stack.gateway.identity)), port) as url:
         yield url

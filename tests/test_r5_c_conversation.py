@@ -67,7 +67,7 @@ class Chat:
     def __init__(self) -> None:
         self.sent: list[tuple[str, str]] = []
 
-    def send(self, reply_to: dict, text: str) -> None:
+    def send(self, reply_to: dict, text: str, card: dict | None = None) -> None:
         self.sent.append((reply_to.get("bot", ""), text))
 
     def user_of(self, person) -> str:

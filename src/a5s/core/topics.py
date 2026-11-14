@@ -19,15 +19,14 @@ import logging
 import re
 from datetime import datetime, timedelta
 
-import psycopg
-
+from a5s import db
 from a5s.contract import Person, Scenario, record_of
 from a5s.core.obligations import WITHHELD, day
 from a5s.core.reminders import say
 
 log = logging.getLogger(__name__)
 GENERAL = "general"
-CURRENT = timedelta(hours=4)  # how long a conversation stays on its topic without a word [TBC]
+CURRENT = timedelta(hours=4)  # how long a conversation stays on its topic without a word [starting value]
 # What a summary run is told: a5s's own words, not a release's. It has no tools, writes to
 # nobody, and what it says is checked by code before it's kept (services/summaries.py).
 SUMMARY = (
@@ -63,7 +62,7 @@ def named(scenario: Scenario, text: str) -> list[str]:
     return list(dict.fromkeys(m.group(0) for m in re.finditer(pattern, text))) if pattern else []
 
 
-def of_message(conn: psycopg.Connection, scenario: Scenario, person: str, agent: str,
+def of_message(conn: db.Connection, scenario: Scenario, person: str, agent: str,
                text: str, members: list[str] | None = None) -> str:
     """The topic a message goes in: the one record it names, or else the conversation's
     current topic, which in a group chat is from what all of `members` heard, so nobody added
@@ -81,7 +80,7 @@ def of_message(conn: psycopg.Connection, scenario: Scenario, person: str, agent:
     return row["topic"] if row else GENERAL
 
 
-def brief(conn: psycopg.Connection, scenario: Scenario, key: str, person: Person | None,
+def brief(conn: db.Connection, scenario: Scenario, key: str, person: Person | None,
           now: datetime, unseen: set[str] = frozenset()) -> dict:
     """What the records say about a case, for a run in it, built by code, leaving out the
     fields of a class its model isn't approved for."""
@@ -106,7 +105,7 @@ def brief(conn: psycopg.Connection, scenario: Scenario, key: str, person: Person
     return {"title": title, "text": "\n".join(told)}
 
 
-def _theirs(conn: psycopg.Connection, scenario: Scenario, key: str, person: Person,
+def _theirs(conn: db.Connection, scenario: Scenario, key: str, person: Person,
             now: datetime) -> list[str]:
     """What a5s keeps about a case for one person: what they owe, and their reminders."""
     told = []

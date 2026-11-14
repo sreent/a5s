@@ -22,6 +22,7 @@ from opentelemetry.sdk.metrics.export import (
 )
 
 from a5s import db
+from a5s.contract import DataProtection
 from a5s.core import metrics, registry
 from test_metrics import collected
 from test_studio_pages import with_ops
@@ -149,7 +150,8 @@ def test_no_figure_is_one_persons_use(stack, figures):
     stack.say("What's open?", person="ana")
     served = {i.id: registry.served(stack.gateway.scenario, i.serves)
               for i in stack.gateway.scenario.settings().instances}
-    small = {i for i, people in served.items() if len(people) < metrics.FEWEST}
+    small = {i for i, people in served.items()  # by a5s's own choice, until the officer's
+             if len(people) < DataProtection.fewest_people}
     assert {"assistant-ops", "assistant-finance"} <= small  # Chen's alone; Ana's and Ben's
     found = collected(figures)
     theirs = [(name, value) for name, points in found.items() for value, attributes in points
@@ -158,9 +160,9 @@ def test_no_figure_is_one_persons_use(stack, figures):
     assert "a5s.tokens" not in found or found["a5s.tokens"] == []
 
 
-def test_smaller_instances_go_out_together_once_together_they_serve_enough(stack, figures,
-                                                                          monkeypatch):
-    monkeypatch.setattr(metrics, "FEWEST", 3)
+def test_smaller_instances_go_out_together_once_together_they_serve_enough(stack, figures):
+    assert not stack.settle(data_protection={"fewest_people": 3},  # the officer's choice
+                            signers=("ana", "noor")).refused
     with_ops(stack)
     for person in ("chen", "ana"):
         stack.model.reply("Nothing's open for you.")

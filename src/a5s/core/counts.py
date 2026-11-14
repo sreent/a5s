@@ -20,8 +20,7 @@ from __future__ import annotations
 import hashlib
 from datetime import datetime, timedelta
 
-import psycopg
-
+from a5s import db
 from a5s.core.ledger import canonical
 
 WINDOW = timedelta(days=30)
@@ -55,7 +54,7 @@ def key(work: str, change_digest: str) -> str:
     return hashlib.sha256(f"a5s {work} {change_digest}".encode()).hexdigest()
 
 
-def before(conn: psycopg.Connection, run: dict, action: str, change_digest: str) -> dict | None:
+def before(conn: db.Connection, run: dict, action: str, change_digest: str) -> dict | None:
     """The same change asked for already in this run, or for a slice of a task, in any run of
     the task, if it was: whether it was held or made, or is being made now, the last most of
     all. Taken under the type's lock, held until the transaction ends."""
@@ -69,7 +68,7 @@ def before(conn: psycopg.Connection, run: dict, action: str, change_digest: str)
                         (run["run"], change_digest)).fetchone()
 
 
-def over(conn: psycopg.Connection, run: dict, action: str, weight: int,
+def over(conn: db.Connection, run: dict, action: str, weight: int,
          limits: dict[str, dict], now: datetime) -> str | None:
     """Why a change of `weight` records goes past the scenario's limits for its type, if it
     does, in words for its decider. Call `before` first, in the same transaction."""
@@ -107,7 +106,7 @@ def over(conn: psycopg.Connection, run: dict, action: str, weight: int,
     return None
 
 
-def count(conn: psycopg.Connection, run: dict, action: str, change_digest: str, weight: int,
+def count(conn: db.Connection, run: dict, action: str, change_digest: str, weight: int,
           was_over: bool, state: str, now: datetime) -> None:
     """Count a change that's held, or being made, once."""
     conn.execute("insert into action_counts (run_id, instance_id, action, change, acts_for, at, "
@@ -117,12 +116,12 @@ def count(conn: psycopg.Connection, run: dict, action: str, change_digest: str, 
                   was_over, weight, state))
 
 
-def made(conn: psycopg.Connection, run: str, change_digest: str) -> None:
+def made(conn: db.Connection, run: str, change_digest: str) -> None:
     conn.execute("update action_counts set state = 'made' where run_id = %s and change = %s",
                  (run, change_digest))
 
 
-def failed(conn: psycopg.Connection, run: str, change_digest: str) -> None:
+def failed(conn: db.Connection, run: str, change_digest: str) -> None:
     """A change the records system didn't take: it doesn't count, and may be asked for again."""
     conn.execute("delete from action_counts where run_id = %s and change = %s and state = 'making'",
                  (run, change_digest))

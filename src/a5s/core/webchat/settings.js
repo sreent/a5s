@@ -184,6 +184,7 @@ async function main() {
     const params = new URLSearchParams(location.search);
     if (params.has("code") || params.has("error")) {
       token = await signedIn(params);
+      window.a5s?.signedIn(token);  // the sidebar, of the pages they may use
       await load();
       $("review").addEventListener("click", () => review().catch((e) => status(e.message)));
       $("send").addEventListener("click", () => send().catch((e) => status(e.message)));

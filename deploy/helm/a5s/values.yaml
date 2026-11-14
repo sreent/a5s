@@ -3,6 +3,12 @@
 # service account, reads only its own keys of the Secret, and reaches only what its network
 # policy lets it: the workers reach the gateway alone.
 
+# What this release runs: a5s itself, or its sandbox, where the studio tries the agents people
+# are making (docs/studio.md#the-sandbox). The sandbox is a second release of this chart, from
+# the same image, in a namespace of its own, with a database server of its own: it runs nothing
+# else, and only a5s's channels reach it.
+mode: a5s  # or sandbox
+
 image:
   repository: ghcr.io/sreent/a5s
   # A release's image, by its digest, such as sha256:..., so what runs is what was approved.
@@ -20,17 +26,29 @@ imagePullSecrets: []
 #   database-<part>-url and database-<part>-password, for gateway, channels, scheduler and anchor;
 #   service-token and seal-keys;
 #   and as the deployment needs them: deepseek-api-key, qwen-api-key, teams-secret-<agent>,
-#   matrix-as-token and matrix-hs-token.
+#   matrix-as-token and matrix-hs-token, and sandbox-token, which it shares with its sandbox.
+# The sandbox's release has its own, in its own namespace, with sandbox-database-url, its own
+# database server's administrator, and sandbox-token, and the models' keys if it has them.
 secret: a5s
 
-# The directory's team that runs a5s.
-team: platform
+# The scenario a5s serves, from the image, which holds each one a5s ships: the sample's if these
+# aren't set. Master data's, for one, is {class: a5s.master_data:MasterDataScenario, folder:
+# /app/scenarios/master-data, agents: /app/scenarios/master-data/agents}. Its sandbox's release
+# names the same, so it tries drafts on that scenario's made-up records and tools.
+scenario:
+  class: ""  # A5S_SCENARIO
+  folder: ""  # A5S_SCENARIO_DIR
+  agents: ""  # A5S_AGENTS_DIR
+
+# The directory's team that runs a5s, if not a5s's default (docs/configuration.md).
+team: ""
 
 # How people sign in, through the organisation's identity provider, and where they reach a5s.
+# Each left empty is a5s's default (docs/configuration.md).
 people:
   oidcIssuer: ""
-  oidcAudience: a5s
-  oidcPersonClaim: preferred_username
+  oidcAudience: ""  # the audiences a5s takes tokens for (A5S_OIDC_AUDIENCE)
+  oidcPersonClaim: ""  # the claim that says who someone is (A5S_OIDC_PERSON_CLAIM)
   oidcDirectoryPrefix: ""
   oidcMetadataUrl: ""
   # The claim a sign-in shows a second factor by, and the values that do, which approvals,
@@ -41,8 +59,9 @@ people:
   # `a5s status` warns of (docs/first-day.md has each provider's).
   oidcMfa: ""
   # The claim a sign-in shows its groups by, for the roles the settings give groups
-  # (docs/administration.md): groups, as most providers name it once they're set to send it.
-  oidcGroupsClaim: groups
+  # (docs/administration.md), if not a5s's default, the name most providers give it once
+  # they're set to send it (A5S_OIDC_GROUPS_CLAIM)
+  oidcGroupsClaim: ""
   webchatClientId: ""
   publicUrl: ""
 
@@ -71,12 +90,45 @@ anchor:
   # Where the ledger's locked copies go: s3://bucket/prefix, azure://account/container/prefix
   # or gs://bucket/prefix. The copier's service account needs the right to write there.
   store: ""
-  retainDays: 365
+  retainDays: ""  # days each copy stays locked, longer than a5s's default (A5S_ANCHOR_RETAIN_DAYS)
   # For s3:// on a store with S3's object lock that isn't Amazon's, such as MinIO on premises:
   # its address and region. Its keys, unless the copier signs in some other way, go in the
   # Secret, as anchor-s3-access-key-id and anchor-s3-secret-access-key.
   s3Endpoint: ""
   s3Region: ""
+
+sandbox:
+  # In a5s's release: where its sandbox is, which the studio sends people's drafts to try, by
+  # the Secret's sandbox-token, such as http://a5s-sandbox.a5s-sandbox:8710 for the sandbox
+  # released as a5s in the namespace a5s-sandbox. Empty, there's none, and the studio says so.
+  url: ""
+  # and the release and namespace it's installed as, whose pods alone the channels may reach
+  # of it: this release's namespace if empty
+  release: a5s
+  namespace: ""
+  # In the sandbox's release: a5s's, whose channels alone reach it, by the release and
+  # namespace it's installed as: this release's namespace if empty
+  studio:
+    release: a5s
+    namespace: ""
+  # Whether it may try drafts on the approved models as well as on its stand-in, which thinks
+  # nothing: with their keys from its own Secret, as models.keys names them, reaching outside
+  # as networkPolicies.outside lets it, with the scenario's made-up records alone. Off, it has
+  # the stand-in alone, and reaches nothing but its own database.
+  realModels: false
+
+# Publishing drafts from the studio as pull requests on GitHub, opened as whoever publishes,
+# through GitHub's own sign-in (docs/studio.md#publishing): the client id of a5s's GitHub App, a
+# public thing, which needs no secret, since its device flow is on; and the agents' repository,
+# as owner/name, and its branch. The App needs Contents and Pull requests to read and write, on
+# that repository alone. Without them, the studio offers a draft's folder, and the pull
+# request's words, for its author to open it on any git host.
+publishing:
+  githubClientId: ""
+  repo: ""
+  base: ""  # its branch, if not a5s's default
+  githubUrl: ""  # a GitHub Enterprise server's, if not github.com's
+  githubApiUrl: ""  # and its API, such as https://github.example.com/api/v3
 
 release:
   # A ConfigMap with release.yaml and release.sig, the release's manifest and the signatures of
@@ -125,18 +177,14 @@ networkPolicies:
 # How long each part waits, in seconds: for a model provider's answer, in the gateway; for a
 # run, in the worker; for a worker's run, in the scheduler, longer than a run; and for a new
 # database connection, in every part.
+# In seconds. The chart sizes the core's and the scheduler's shutdown by the first two, so it
+# states them, as a5s's own defaults, which a test holds them to; the rest are a5s's defaults
+# unless set here (docs/configuration.md).
 timeouts:
-  provider: 180  # A5S_PROVIDER_TIMEOUT
-  run: 240  # A5S_WORKER_TIMEOUT
-  workerWait: 600  # A5S_WORKER_WAIT
-  dbConnect: 2  # A5S_DB_CONNECT_TIMEOUT
-
-# What the data protection officer has agreed to (docs/data-protection.md): each is off until
-# they do.
-officerAgrees:
-  studioNames: false  # people's studio pages name whom each run acted for (A5S_STUDIO_NAMES)
-  auditNames: false  # the auditors' page names whom agents acted for, and exports (A5S_AUDIT_NAMES)
-  rubberStampFlag: false  # the status flags rubber-stamping deciders (A5S_FLAG_RUBBER_STAMPS)
+  provider: 180  # for a model provider's answer (A5S_PROVIDER_TIMEOUT)
+  workerWait: 600  # for a worker's run, in the scheduler (A5S_WORKER_WAIT)
+  run: ""  # for the core, in a worker (A5S_WORKER_TIMEOUT)
+  dbConnect: ""  # to connect to the database (A5S_DB_CONNECT_TIMEOUT)
 
 # Where the gateway sends its traces and operators' figures, by OpenTelemetry over HTTP, such
 # as a collector that passes them on to Prometheus or Azure Monitor. Empty sends nothing.
@@ -154,10 +202,10 @@ workers:
   pools:  # by the agent's name, as its release has it, such as desk-assistant
     assistant: {}  # such as {replicas: 2, slots: 8, resources: {limits: {memory: 2Gi}}}
     watcher: {}
-  # Each pool's, unless it says: one replica, resources.worker, and 4 slots, the most of
-  # its agent's runs the scheduler works on at once. The shared pool has 8.
+  # Each pool's, unless it says: one replica and resources.worker. Its slots, the most of its
+  # agent's runs the scheduler works on at once, are a5s's default unless set (A5S_WORKER_SLOTS).
   replicas: 1
-  slots: 4
+  slots: ""
 
 resources:
   gateway:
@@ -178,3 +226,6 @@ resources:
   jobs:
     requests: {cpu: 100m, memory: 256Mi}
     limits: {memory: 512Mi}
+  sandbox:  # every part of a5s in one process, for one try at a time
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {memory: 1Gi}

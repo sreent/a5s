@@ -48,15 +48,15 @@ def _time(value: Any) -> str:
 class Autonomy(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    start: int = Field(1, ge=0, le=1)  # level 2 only ever comes from the settings
-    max: int = Field(1, ge=0, le=2)
+    start: int = Field(default=1, ge=0, le=1)  # level 2 only ever comes from the settings
+    max: int = Field(default=1, ge=0, le=2)
 
 
 class Schedule(BaseModel):
     """When the agent works on its own, and what it's asked to do each time.
 
     Times are in the time zone of the instance's owner. A schedule run acts for
-    nobody, so it writes to nobody [TBC: whose digest a schedule's findings go in].
+    nobody, so it writes to nobody, and whose digest its findings might go in is still an open question.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -102,7 +102,7 @@ class Context(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    budget_tokens: int = Field(24000, ge=1000)  # for the conversation, split by part
+    budget_tokens: int = Field(default=24000, ge=1000)  # for the conversation, split by part
     # whether it may search its conversation with the person it acts for, and correct its
     # summaries at their word
     recall: bool = False
@@ -120,8 +120,8 @@ class Tasks(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    budget_tokens: int = Field(400_000, ge=10_000)
-    days: int = Field(3, ge=1, le=30)
+    budget_tokens: int = Field(default=400_000, ge=10_000)
+    days: int = Field(default=3, ge=1, le=30)
 
 
 # Each model call in a run carries the whole context and, beside it, the instructions, the
@@ -141,8 +141,8 @@ class Budget(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    per_run: int = Field(200_000, ge=1000)
-    per_person_per_day: int = Field(1_000_000, ge=1000)
+    per_run: int = Field(default=200_000, ge=1000)
+    per_person_per_day: int = Field(default=1_000_000, ge=1000)
 
 
 class Definition(BaseModel):
@@ -168,6 +168,10 @@ class Definition(BaseModel):
     context: Context = Context()
     budget: Budget = Budget()
     tasks: Tasks | None = None  # if it takes on long tasks for people
+    # Whether the studio's catalogue shows everyone signed in that it exists: its name, what it
+    # does, its owner, and how to ask for it. Unlisted, only those with a role on it, and the
+    # people it serves, know of it, as a name such as redundancy planning says too much alone
+    listed: bool = False
 
     # Filled in from the folder, not from agent.yaml.
     instructions: str = ""
@@ -285,9 +289,11 @@ def pin(folder: Path, schema_hashes: dict[str, str]) -> Path:
     if missing:
         raise ValueError(f"the scenario doesn't provide: {', '.join(missing)}")
     lock = folder / "tools.lock"
-    pins = {t: schema_hashes[t] for t in definition.tool_names}
-    lock.write_text(
-        "# Written by `a5s pin`. A tool whose schema no longer matches is refused.\n"
-        + yaml.safe_dump(pins, sort_keys=True)
-    )
+    lock.write_text(lock_text({t: schema_hashes[t] for t in definition.tool_names}))
     return lock
+
+
+def lock_text(pins: dict[str, str]) -> str:
+    """A tools.lock, as `a5s pin` writes it: each tool's schema, by its hash."""
+    return ("# Written by `a5s pin`. A tool whose schema no longer matches is refused.\n"
+            + yaml.safe_dump(pins, sort_keys=True))

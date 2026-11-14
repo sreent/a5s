@@ -19,8 +19,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import UTC, datetime, time, timedelta
 
-import psycopg
-
+from a5s import db
 from a5s.contract import Person
 from a5s.core.coretools import Call, CoreTool, Refused, one_to_one
 from a5s.core.obligations import day, local, working
@@ -30,14 +29,14 @@ TIME = "digest-time"
 WAIT = timedelta(minutes=30)  # the longest a digest waits for its agents' work
 
 
-def chosen(conn: psycopg.Connection, person: Person) -> str:
+def chosen(conn: db.Connection, person: Person) -> str:
     """The time the person's digest goes, such as 09:00, in their own time zone."""
     row = conn.execute("select value from preferences where person = %s and name = %s",
                        (person.id, TIME)).fetchone()
     return row["value"] if row else person.hours[0]
 
 
-def window(conn: psycopg.Connection, person: Person, now: datetime) -> datetime | None:
+def window(conn: db.Connection, person: Person, now: datetime) -> datetime | None:
     """Today's digest time for someone, once it has come, while they're at work and the
     day's digest hasn't gone. Their agents' work for it falls due then."""
     here = local(person, now)
@@ -53,14 +52,14 @@ def window(conn: psycopg.Connection, person: Person, now: datetime) -> datetime 
     return at.astimezone(UTC)
 
 
-def keep(conn: psycopg.Connection, person: str, agent: str | None, instance: str | None,
+def keep(conn: db.Connection, person: str, agent: str | None, instance: str | None,
          run: str | None, text: str, now: datetime) -> None:
     """An item for someone's next digest."""
     conn.execute("insert into digest_items (person, agent, instance_id, run_id, text, at) "
                  "values (%s, %s, %s, %s, %s, %s)", (person, agent, instance, run, text, now))
 
 
-def waiting_since(conn: psycopg.Connection, person: str, due: datetime, now: datetime) -> datetime:
+def waiting_since(conn: db.Connection, person: str, due: datetime, now: datetime) -> datetime:
     """When a5s first found someone's digest waiting for its agents' work."""
     conn.execute("insert into digest_waits (person, due_at, since) values (%s, %s, %s) "
                  "on conflict do nothing", (person, due, now))
@@ -68,7 +67,7 @@ def waiting_since(conn: psycopg.Connection, person: str, due: datetime, now: dat
                         (person, due)).fetchone()["since"]
 
 
-def waiting(conn: psycopg.Connection, person: str) -> list[dict]:
+def waiting(conn: db.Connection, person: str) -> list[dict]:
     return conn.execute("select * from digest_items where person = %s and digest_due is null "
                         "order by id for update", (person,)).fetchall()
 
@@ -88,7 +87,7 @@ def compose(person: Person, items: list[dict], due: datetime, agent: str | None 
     return "\n\n".join(parts)
 
 
-def close(conn: psycopg.Connection, person: str, due: datetime, now: datetime, items: list[dict],
+def close(conn: db.Connection, person: str, due: datetime, now: datetime, items: list[dict],
           channel: str | None) -> None:
     """The day's digest went, with these items, or with none, which closes the day all the same.
     Retention lets go of earlier days', since only today's is asked after."""

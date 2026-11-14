@@ -1,3 +1,11 @@
+{{- if eq .Values.mode "sandbox" -}}
+a5s's sandbox is installed as {{ .Release.Name }}, in {{ .Release.Namespace }}, at
+  http://{{ .Release.Name }}-sandbox.{{ .Release.Namespace }}:8710
+Only the channels of a5s's release {{ .Values.sandbox.studio.release }}, in {{ .Values.sandbox.studio.namespace | default .Release.Namespace }}, reach it. There, set sandbox.url to
+that address, sandbox.release and sandbox.namespace to this release's, and the same
+sandbox-token in its Secret, and the studio tries people's drafts here, on the scenario's
+made-up records, with {{ ternary "the stand-in model or an approved one it has the key for" "the stand-in model alone" .Values.sandbox.realModels }}.
+{{- else -}}
 a5s is installed as {{ .Release.Name }}, in {{ .Release.Namespace }}.
 
 The core opens no run until this deployment's people approve the release it runs:
@@ -12,4 +20,5 @@ People reach a5s at https://{{ .Values.ingress.host }}.
 
 Nothing outside the cluster reaches a5s yet: set ingress.enabled, with a host, for people and
 their chats to reach the channels.
+{{- end }}
 {{- end }}

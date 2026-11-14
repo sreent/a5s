@@ -27,7 +27,6 @@ import logging
 from datetime import datetime, timedelta
 from typing import Any
 
-import psycopg
 from psycopg.types.json import Jsonb
 
 from a5s import db
@@ -40,7 +39,7 @@ log = logging.getLogger(__name__)
 NOTE = "note_learned"
 LONGEST = 300  # characters of an entry
 SOURCES = 10  # records an entry may name
-MOST = 50  # entries an instance keeps: the newest [TBC]
+MOST = 50  # entries an instance keeps: the newest [starting value]
 CHECK_EVERY = timedelta(days=1)  # how often a note's records are read again
 CHECKED = 200  # notes checked in one sweep, oldest checked first
 SHOWN = 2000  # characters of entries a run is given
@@ -131,7 +130,7 @@ TOOL = CoreTool(
     offered=lambda run: not run["acts_for"] and run["trigger"].get("kind") == "schedule")
 
 
-def given(conn: psycopg.Connection, scenario: Any, run: dict) -> dict | None:
+def given(conn: db.Connection, scenario: Any, run: dict) -> dict | None:
     """The entries a run is given: for people, those about the record its case is about, and
     for nobody, such as the schedule that keeps them, all of them. Only those whose every
     record its run read all the run's people may see, newest first, within a budget. How

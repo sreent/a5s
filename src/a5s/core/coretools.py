@@ -15,8 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-import psycopg
-
+from a5s import db
 from a5s.contract import Person, Scenario
 from a5s.core import groups
 
@@ -29,7 +28,7 @@ class Refused(Exception):
 class Call:
     """A call to one of a5s's own tools, with what the core knows of the run."""
 
-    conn: psycopg.Connection
+    conn: db.Connection
     run: dict[str, Any]  # the run, with its instance
     args: dict[str, Any]
     now: datetime

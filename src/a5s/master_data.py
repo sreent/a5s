@@ -123,19 +123,13 @@ class MasterDataScenario:
         self.folder = folder
         self.database_url = database_url
         data = yaml.safe_load((folder / "data.yaml").read_text())
-        self._people = {p["id"]: self._person(folder, p) for p in data["people"]}
+        self._people = {p["id"]: Person.listed(p, folder) for p in data["people"]}
         self._objects: dict[str, dict] = data["objects"]
         self._records = {r["key"]: r for r in data["records"]}
         self._requests = {r["key"]: r for r in data["requests"]}
         self._letters = data.get("letters") or []
         self.drafts: list[dict] = []
         self._draft_lock = threading.Lock()
-
-    @staticmethod
-    def _person(folder: Path, entry: dict) -> Person:
-        key = folder / "keys" / f"{entry['id']}.pub"
-        return Person(**{k: tuple(v) if isinstance(v, list) else v for k, v in entry.items()},
-                      public_key=key.read_text().strip() if key.exists() else None)
 
     # The directory
 

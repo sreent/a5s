@@ -71,10 +71,11 @@ a5s is the small layer they leave out: levels that business owners set, conversa
 
 ## Run it
 
-You need Python 3.12 or later, [uv](https://docs.astral.sh/uv/), Postgres 16, and a key for a model with an OpenAI- or Anthropic-compatible API. On Windows, the development database runs in Docker Desktop instead of a local Postgres installation. The approved models are in [`config/models.yaml`](config/models.yaml), and need `DEEPSEEK_API_KEY` or `QWEN_API_KEY`.
+You need Python 3.12 or later, [uv](https://docs.astral.sh/uv/), Postgres 16, Node 20.19 or later for the studio's pages, and a key for a model with an OpenAI- or Anthropic-compatible API. On Windows, the development database runs in Docker Desktop instead of a local Postgres installation. The approved models are in [`config/models.yaml`](config/models.yaml), and need `DEEPSEEK_API_KEY` or `QWEN_API_KEY`.
 
 ```sh
 uv sync
+npm ci --prefix studio && npm run build --prefix studio   # the studio's pages, as the image builds them
 uv run a5s up        # a local Postgres, the schema, and the core's own token and seal key
 uv run a5s apply     # the assistant, from agents/ and the sample's signed settings
 uv run a5s dev &     # the core, its channels and the scheduler, in one process
@@ -165,7 +166,7 @@ The smoke test runs this way: Keycloak for sign-in, Synapse for Matrix, a model 
 | [Phase 2](docs/phase-2.md) | Agents that act: held proposals, signed decisions, counts, level 2 earned on graded samples, and the extractor |
 | [Phase 3](docs/phase-3.md) | Group conversations, agent to agent, and a notebook of what agents learn from records |
 | [Phase 4](docs/phase-4.md) | Resumable long-running tasks: durable state, bounded runs, heartbeats, budgets, cancellation and parent/child evidence |
-| [Studio](docs/studio.md) | One place to build, try, publish, run and watch agents, as a maker studio does: its API first, drafts tried in a sandbox, tools built by the development team, and no signature skipped. Step 1, watching, is built |
+| [Studio](docs/studio.md) | One place to build, try, publish, run and watch agents, as a maker studio does: its API first, drafts tried in a sandbox, tools built by the development team, and no signature skipped. Step 1, watching, is built; of step 2, drafts, the sandbox's test pane and its test cases, and publishing a draft as a pull request, by its author |
 | [Administration and audit](docs/administration.md) | Who administers what, scoped to parts and agents, with roles from the identity provider's groups and a page for administrators; how people sign in, with a second factor for what counts; and how auditors read the ledger, on their own page and the command line. A draft, built but for sending the ledger to security monitoring |
 | [Pilot](docs/pilot.md) | One team, on whichever cloud or cluster the organisation runs a5s on, in stages: what it shows, what stops it, and how it chooses what comes after phase 3 |
 | [The first day](docs/first-day.md) | The pilot's stage 0, step by step: a5s on the organisation's own cluster, with each cloud's and identity provider's settings side by side, and the four checks only the real services can make |
@@ -176,6 +177,7 @@ The smoke test runs this way: Keycloak for sign-in, Synapse for Matrix, a model 
 | [Critique](docs/critique.md) | What each adversarial review found, how the design answers it, and what each round removed |
 | [Starting values](docs/starting-values.md) | The numbers a5s starts from, by phase |
 | [Runbooks](docs/runbooks.md) | For the team that runs a5s: what to do when each part of `a5s status` goes wrong |
+| [Configuration](docs/configuration.md) | Every setting a deployment gives a5s, with its default and what it takes; where each kind of value lives and who decides it; how each part checks its settings as it starts, and how to see what a part runs with |
 | [Research](docs/research/platform-lessons.md) | What Deep Agents, Microsoft, AWS, Google and Hermes Agent offer, with the [notes](docs/research/notes/) behind it |
 
 Every change to the design gets an adversarial review before it settles, from six angles: an outside attacker, insiders, failure, colleagues, the builder and funder, and a second scenario. Each round reports what it removed as well as what it added.

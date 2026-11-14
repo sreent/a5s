@@ -10,8 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any
 
-import psycopg
-
+from a5s import db
 from a5s.contract import (
     ASSURANCE,
     DATA_PROTECTION,
@@ -23,6 +22,7 @@ from a5s.contract import (
     parse_settings,
 )
 from a5s.core import approvals, audit, memberships, registry
+from a5s.core.releases import agent_owner
 
 LATEST = 20  # administrative acts the page shows, newest first
 DAYS = 30  # over how many days
@@ -36,7 +36,7 @@ def administers(person: Person | None, team: str) -> bool:
         for r in person.roles))
 
 
-def held(scenario: Any, conn: psycopg.Connection, roles: list[str]) -> list[dict[str, Any]]:
+def held(scenario: Any, conn: db.Connection, roles: list[str]) -> list[dict[str, Any]]:
     """Who holds each role, and by what: the directory, or a group, as their latest sign-in
     showed it and the settings in force map it."""
     own = memberships.rooted(scenario)
@@ -69,7 +69,7 @@ def mapped(scenario: Any) -> list[dict[str, Any]]:
             for group, roles in sorted(state.mapping.items())]
 
 
-def waiting(conn: psycopg.Connection, gw: Any) -> dict[str, Any]:
+def waiting(conn: db.Connection, gw: Any) -> dict[str, Any]:
     """What waits for whom: versions of the settings, for their approvers; the release, for
     the people its changes need; and held changes, for each part's deciders, by how many."""
     last = approvals.latest(conn, gw.scenario.name)
@@ -93,15 +93,51 @@ def waiting(conn: psycopg.Connection, gw: Any) -> dict[str, Any]:
     return {"settings": versions, "release": gw.release_problems(conn), "held_changes": changes}
 
 
-def page(conn: psycopg.Connection, gw: Any, now: datetime, days: int = DAYS) -> dict[str, Any]:
+def ownerless(conn: db.Connection, gw: Any) -> dict[str, list[dict[str, Any]]]:
+    """What nobody answers for any more, so the work its owner does waits, with what to do about
+    each: every agent of the release nobody the directory names owns; every instance not retired
+    that names nobody to run it, or someone the directory no longer knows; and every part an
+    instance works in that nobody owns, so nobody approves its instances' settings."""
+    scenario = gw.scenario
+    names = sorted(gw.definitions)
+    agents = [{"agent": name, "what": "nobody the directory names owns it, so nobody signs its "
+                                      "releases as its owner, gives a group its roles, or "
+                                      "answers the asks for it",
+               "do": "name its owner in the directory, in a release, or retire it"}
+              for name, row in zip(names, held(scenario, conn, [agent_owner(n) for n in names]),
+                                   strict=True) if not row["held_by"]]
+    insts = conn.execute("select id, definition, owner, deputy, parts from instances "
+                         "where status <> 'retired' order by id").fetchall()
+    instances = []
+    for inst in insts:
+        gone = [who for who in (inst["owner"], inst["deputy"])
+                if who and scenario.person(who) is None]
+        if inst["owner"] is None or gone:
+            instances.append({
+                "instance": inst["id"], "agent": inst["definition"],
+                "what": (f"the directory no longer knows {', '.join(gone)}, who "
+                         f"{'run' if len(gone) > 1 else 'runs'} it") if gone
+                        else "it names nobody to run it",
+                "do": "a version of the settings naming whoever runs it now"})
+    used = sorted({part for i in insts for part in (i["parts"] or {})})
+    parts = [{"part": part, "what": "nobody the directory names owns it, so nobody approves its "
+                                    "instances' settings, and its held changes wait for its "
+                                    "delegates alone",
+              "do": "name its owner in the directory, in a release"}
+             for part, row in zip(used, held(scenario, conn, [f"{PART_OWNER}:{p}" for p in used]),
+                                  strict=True) if not row["held_by"]]
+    return {"agents": agents, "instances": instances, "parts": parts}
+
+
+def page(conn: db.Connection, gw: Any, now: datetime, days: int = DAYS) -> dict[str, Any]:
     """All the page shows."""
     parts = [r["part"] for r in conn.execute(
         "select distinct jsonb_object_keys(parts) as part from instances")]
     roles = [row["role"] for row in audit.roles_of(gw.scenario, parts, gw.definitions.keys())]
     report = audit.report(conn, gw.scenario, gw.definitions.keys(),
                           since=now - timedelta(days=days))
-    shown = audit.Shown(gw.scenario, audit.key(conn), names=gw.cfg.audit_names)
+    shown = audit.Shown(gw.scenario, audit.key(conn), names=gw.data_protection(conn).audit_names)
     return {"roles": held(gw.scenario, conn, roles), "groups": mapped(gw.scenario),
             "claim": gw.identity.cfg.groups_claim if gw.identity else None,
-            "waiting": waiting(conn, gw), "days": days,
+            "waiting": waiting(conn, gw), "ownerless": ownerless(conn, gw), "days": days,
             "latest": shown.report({"acts": report["acts"][-LATEST:][::-1]})["acts"]}

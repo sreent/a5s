@@ -19,7 +19,7 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse, urlsplit, urlunsplit
 
 import httpx
 import jwt
@@ -55,6 +55,16 @@ def free_port() -> int:
     with socket.socket() as s:
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
+
+
+def eventually(check, seconds: float = 10.0) -> bool:
+    """Whether `check` comes true within `seconds`: for what a5s does after it has answered,
+    such as the reply the channels app sends a chat in the background, once Teams or the
+    homeserver has its 200."""
+    deadline = time.monotonic() + seconds
+    while not (found := check()) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    return bool(found)
 
 
 @pytest.fixture(scope="session")
@@ -409,14 +419,17 @@ class Stack:
         return Scheduler(self.as_role("scheduler"), self.gateway.scenario, **kwargs)
 
     def settle(self, instances: dict | None = None, signers: tuple[str, ...] = ("ana",),
-               **changes: Any) -> registry.Applied:
+               data_protection: dict | None = None, **changes: Any) -> registry.Applied:
         """Sign a new version of the settings as Ana, an instance approver who owns billing,
         or as `signers`, and apply it.
 
         `changes`, such as level=0, apply to assistant-finance; `instances` replaces them all.
+        `data_protection` is the data protection officer's choices, which Noor signs for.
         """
         folder = self.cfg.scenario_dir
         settings = yaml.safe_load((folder / "settings.yaml").read_text())
+        if data_protection is not None:
+            settings["data_protection"] = data_protection
         if instances is not None:
             settings["instances"] = instances
         else:
@@ -613,3 +626,42 @@ def seal_grades(stack: Stack) -> None:
                                 "and grade_seal is null").fetchall():
             conn.execute("update samples set grade_seal = %s where id = %s",
                          (samples.seal((SEAL_KEY,), row), row["id"]))
+
+
+# The sandbox (a5s/sandbox.py): a deployment of its own, on a database of its own beside the
+# tests', for the sample's agents and scenario
+
+@pytest.fixture
+def sandbox_database(database_url: str) -> Iterator[str]:
+    """A database of the sandbox's own, beside the tests' own, on the same server."""
+    name = f"a5s_sandbox_{secrets.token_hex(4)}"
+    with psycopg.connect(database_url, autocommit=True) as conn:
+        conn.execute(f'create database "{name}"')
+    try:
+        yield urlunsplit(urlsplit(database_url)._replace(path=f"/{name}"))
+    finally:
+        with psycopg.connect(database_url, autocommit=True) as conn:
+            conn.execute(f'drop database "{name}" with (force)')
+
+
+def deployment(root: Path = ROOT) -> Config:
+    """A deployment's config, as the sandbox reads it: its scenario, agents and models."""
+    return Config(database_url="postgresql://unused", gateway_url="http://unused",
+                  service_token="", root=root)
+
+
+@pytest.fixture
+def box(sandbox_database: str, tmp_path: Path) -> Iterator[Any]:
+    from a5s import sandbox
+    with sandbox.opened(deployment(), sandbox_database, tmp_path / "sandbox") as opened:
+        yield opened
+
+
+@pytest.fixture
+def with_sandbox(stack: Stack, box: Any) -> Iterator[str]:
+    """The stack's studio with a sandbox at hand, by the token they share. Ask for it before
+    the channels app, as `approving`, so the app knows where the sandbox is."""
+    from a5s import sandbox
+    with serve(sandbox.create_app(box, "shared-token"), free_port()) as url:
+        stack.cfg = replace(stack.cfg, sandbox_url=url, sandbox_token="shared-token")
+        yield url

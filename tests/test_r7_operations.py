@@ -21,7 +21,7 @@ from a5s.core import status
 def test_a_busy_pool_opens_no_more_connections_than_twice_its_size(database, monkeypatch):
     """Thirty transactions waiting at once, on a pool of two: four connections, not thirty
     (B7)."""
-    monkeypatch.setattr(db, "POOL_SIZE", 2)
+    monkeypatch.setenv("A5S_DB_POOL_SIZE", "2")  # as a deployment sets it
     db.close_pools()
     db._spares.clear()
     with db.transaction(database) as conn:

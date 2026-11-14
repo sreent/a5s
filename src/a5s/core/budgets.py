@@ -17,8 +17,7 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import NamedTuple
 
-import psycopg
-
+from a5s import db
 from a5s.contract import Scenario
 from a5s.core import groups
 from a5s.core.obligations import local
@@ -80,7 +79,7 @@ def payer(acts_for: list[str], trigger: dict | None) -> str | None:
     return groups.asker({"acts_for": acts_for, "trigger": trigger or {}})
 
 
-def refused(conn: psycopg.Connection, scenario: Scenario, budget: Budget, instance: str,
+def refused(conn: db.Connection, scenario: Scenario, budget: Budget, instance: str,
             acts_for: list[str], kind: str, tokens: int, now: datetime,
             trigger: dict | None = None) -> str | None:
     """Why a run, or its next model call, would go past its budgets, if it would: a task's
@@ -104,7 +103,7 @@ def refused(conn: psycopg.Connection, scenario: Scenario, budget: Budget, instan
     return None
 
 
-def spent(conn: psycopg.Connection, scenario: Scenario, budget: Budget, run: dict, tokens: int,
+def spent(conn: db.Connection, scenario: Scenario, budget: Budget, run: dict, tokens: int,
           now: datetime, usage: object = None, model: str | None = None) -> dict | None:
     """Count a model call's tokens against its run, in and out apart, with the model it
     called, and against its person's day, whose earlier days retention lets go. The day's use,

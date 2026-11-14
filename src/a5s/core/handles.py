@@ -15,12 +15,12 @@ import re
 import secrets
 from typing import Any
 
-import psycopg
+from a5s import db
 
 TOKEN = re.compile(r"\[h:([0-9a-f]{8})\]")
 
 
-def issue(conn: psycopg.Connection, run: str, source: str, result: Any,
+def issue(conn: db.Connection, run: str, source: str, result: Any,
           fields: tuple[str, ...]) -> Any:
     """What a tool returned, with the values in the named fields handed over as handles, at
     any depth, and any value the run already holds a handle for hidden behind it wherever
@@ -38,7 +38,7 @@ def issue(conn: psycopg.Connection, run: str, source: str, result: Any,
     return masked(conn, run, given(result) if fields else result)
 
 
-def masked(conn: psycopg.Connection, run: str, value: Any) -> Any:
+def masked(conn: db.Connection, run: str, value: Any) -> Any:
     """A value with every value the run holds a handle for replaced by its handle, at any
     depth, so a handle's value never comes back to the model."""
     held = {r["value"]: r["handle"] for r in conn.execute(
@@ -60,7 +60,7 @@ def masked(conn: psycopg.Connection, run: str, value: Any) -> Any:
     return hide(value)
 
 
-def _handle(conn: psycopg.Connection, run: str, source: str, field: str, value: str) -> str:
+def _handle(conn: db.Connection, run: str, source: str, field: str, value: str) -> str:
     row = conn.execute("select handle from run_handles where run_id = %s and field = %s "
                        "and value = %s", (run, field, value)).fetchone()
     if row:
@@ -71,7 +71,7 @@ def _handle(conn: psycopg.Connection, run: str, source: str, field: str, value: 
     return handle
 
 
-def resolved(conn: psycopg.Connection, run: str, text: str) -> str:
+def resolved(conn: db.Connection, run: str, text: str) -> str:
     """Text with the run's own handles replaced by their values. Any other is left as it is."""
     if not TOKEN.search(text):
         return text
@@ -80,7 +80,7 @@ def resolved(conn: psycopg.Connection, run: str, text: str) -> str:
     return TOKEN.sub(lambda m: held.get(m.group(1), m.group(0)), text)
 
 
-def resolved_args(conn: psycopg.Connection, run: str, args: Any) -> Any:
+def resolved_args(conn: db.Connection, run: str, args: Any) -> Any:
     """A tool's arguments, with the run's handles replaced by their values at any depth, as a
     system gets them."""
     if isinstance(args, str):

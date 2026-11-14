@@ -15,7 +15,6 @@ signed in as themselves, which show them only what they may watch.
 
 from __future__ import annotations
 
-import os
 from collections.abc import Iterator
 from datetime import datetime
 from typing import Any, Self
@@ -23,7 +22,7 @@ from urllib.parse import quote
 
 import httpx
 
-from a5s.config import DEFAULT_GATEWAY_URL
+from a5s import config
 
 RUNS = 50  # runs to a page, as the core gives them
 
@@ -52,8 +51,7 @@ class Client:
     @classmethod
     def from_env(cls, **kwargs: Any) -> Client:
         """The core at A5S_GATEWAY_URL, by the token in A5S_SERVICE_TOKEN, as `a5s` finds it."""
-        return cls(os.environ.get("A5S_GATEWAY_URL", DEFAULT_GATEWAY_URL),
-                   os.environ.get("A5S_SERVICE_TOKEN", ""), **kwargs)
+        return cls(config.GATEWAY_URL.read(), config.SERVICE_TOKEN.read(), **kwargs)
 
     def __enter__(self) -> Self:
         return self
@@ -103,15 +101,17 @@ class Client:
         return self.get("/status")
 
     def measures(self, days: int = 30, *, agent: str | None = None,
-                 instance: str | None = None) -> dict:
+                 instance: str | None = None, zone: str = "UTC") -> dict:
         """The measures over the last `days` days: of the whole deployment, or of one agent's
-        instances, or of one instance, as `a5s measures` reads them."""
+        instances, or of one instance, as `a5s measures` reads them. An agent's or an
+        instance's say how many runs ended each way on each day, in `zone`."""
         if agent and instance:
             raise ValueError("name an agent or an instance, not both")
+        if not (agent or instance):
+            return self.get("/measures", days=days)
         path = (f"/studio/agents/{_part(agent)}/measures" if agent
-                else f"/studio/instances/{_part(instance)}/measures" if instance
-                else "/measures")
-        return self.get(path, days=days)
+                else f"/studio/instances/{_part(instance)}/measures")
+        return self.get(path, days=days, zone=zone)
 
     # The studio
 

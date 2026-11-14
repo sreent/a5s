@@ -12,13 +12,12 @@ each is in docs/runbooks.md.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-import psycopg
-
+from a5s import db
 from a5s.core import samples, sealing
 
-# a5s's starting objectives [TBC]: set from the first users' baseline
+# a5s's starting objectives [starting value]: set from the first users' baseline
 OBJECTIVES = {"reply_seconds_p90": 120, "chased_on_time": 0.95}
 # How a run ends: a fixed set, so no figure, the status or the studio carries anyone's words
 OUTCOMES = ("done", "done, leaving some out", "failed", "reply denied", "model unavailable",
@@ -33,15 +32,16 @@ def outcome(found: str | None) -> str:
 
 
 
-def second_factor_refused(conn: psycopg.Connection, doing: str) -> None:
+def second_factor_refused(conn: db.Connection, doing: str) -> None:
     """Count a refusal of what counts for want of a second factor, by what it was."""
     conn.execute("insert into second_factor_refusals (day, doing, n) values (current_date, %s, 1) "
                  "on conflict (day, doing) do update set n = second_factor_refusals.n + 1",
                  (doing[:40],))
 
-def report(conn: psycopg.Connection, breakers: list[str], keys: tuple[str, ...] = (),
+def report(conn: db.Connection, breakers: list[str], keys: tuple[str, ...] = (),
            rubber_stamps: bool = False,
-           sign_ins: tuple[str, tuple[str, ...]] | None | bool = False) -> dict[str, Any]:
+           sign_ins: tuple[str, tuple[str, ...]] | Literal[False] | None = False
+           ) -> dict[str, Any]:
     """The last day's status, by the database's clock. `keys` are the core's seal keys, for
     the caps that count; deciders are named for rubber stamps only if `rubber_stamps`.
     `sign_ins` is the second factor the identity provider's sign-ins must show for what
@@ -290,8 +290,16 @@ def told(status: dict[str, Any]) -> str:
                                       + (f" by {i['suspended_by']}" if i["suspended_by"] else "")
                                       for i in status["not_active"]) or "none") + ".",
         "  Breakers open: " + (", ".join(status["breakers_open"]) or "none") + ".",
+        *([_configuration_told(status["configuration"])] if status.get("configuration") else []),
     ]
     return "\n".join(lines)
+
+
+def _configuration_told(found: dict[str, Any]) -> str:
+    """What the core runs with, as its environment sets it: the rest are a5s's defaults."""
+    here = ", ".join(f"{k}={v}" for k, v in found["set"].items()) or "nothing"
+    return (f"  The core's configuration: {here} set here, and {found['defaults']} settings at "
+            "a5s's defaults (`a5s config` in its container lists every one).")
 
 
 def _verdict(met: bool | None) -> str:

@@ -21,7 +21,7 @@ from a5s.core import departures, groups, inbox, topics
 from a5s.core.matrix import Matrix, MatrixConfig
 from a5s.core.teams import Bot, Teams, TeamsConfig
 from a5s.services import context
-from conftest import ROOT, FakeModel, build_root, free_port, live_image, running, serve
+from conftest import ROOT, FakeModel, build_root, eventually, free_port, live_image, running, serve
 from test_matrix import AS_TOKEN, BOT, HS_TOKEN, Homeserver, deliver, invite, said
 from test_teams import ANA as ANA_ENTRA
 from test_teams import APP_ID, TENANT, WATCHER_APP, FakeBotFramework, activity
@@ -227,6 +227,7 @@ def test_a_room_the_agent_cant_work_in_hears_why(stack, homeserver, monkeypatch,
         monkeypatch.setattr(groups, "LIMIT", 1)
     deliver(homeserver, mention(ASKED))
     assert queued(stack) == []
+    assert eventually(lambda: homeserver.sent)  # told after the 200, in the background
     assert homeserver.sent[-1]["body"] == {"history shown": groups.HISTORY,
                                            "shown from invitation": groups.HISTORY,
                                            "a stranger": groups.STRANGERS.format(
@@ -457,10 +458,10 @@ def test_a_teams_chat_the_agent_doesnt_work_in(stack, team, case):
                       kind="channel" if case == "a team's channel" else "groupChat")
     assert httpx.post(team.url, json=sent, headers=team.auth()).status_code == 200
     assert queued(stack) == []
-    assert [m["text"] for m in team.sent] == {"not mentioned": [],
-                                              "a team's channel": [groups.CHANNELS],
-                                              "a stranger": [groups.STRANGERS.format(
-                                                  who="someone")]}[case]
+    told = {"not mentioned": [], "a team's channel": [groups.CHANNELS],
+            "a stranger": [groups.STRANGERS.format(who="someone")]}[case]
+    eventually(lambda: len(team.sent) >= len(told))  # told after the 200, in the background
+    assert [m["text"] for m in team.sent] == told
 
 
 @pytest.mark.live

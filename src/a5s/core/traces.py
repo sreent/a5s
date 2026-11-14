@@ -5,7 +5,7 @@ they're still at Development stability: each run opening, model call, tool call 
 Spans are masked by what they leave out: no prompt, reply, message or tool argument, and no
 person, only what a call was, how it was decided, how long it took, and its tokens. They go
 to the OpenTelemetry endpoint the deployment names in OTEL_EXPORTER_OTLP_ENDPOINT, kept
-there for 14 days [TBC], and nowhere if it names none.
+there as long as it keeps them, and nowhere if it names none.
 """
 
 from __future__ import annotations

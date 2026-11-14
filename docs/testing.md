@@ -23,6 +23,7 @@ Install the locked development dependencies and run the normal suite:
 ```sh
 uv sync --locked
 uv run ruff check .
+uv run basedpyright
 uv run pytest
 ```
 
@@ -38,6 +39,18 @@ uv run pytest tests/test_connectors.py -q
 
 The default marker configuration excludes live-provider tests. `-m 'not live'` makes that exclusion explicit when selecting a module.
 
+### Static types
+
+[basedpyright](https://docs.basedpyright.com/), pyright with a baseline, checks a5s's own code, `src/a5s`, at pyright's standard strictness (`[tool.basedpyright]` in `pyproject.toml`). It runs in CI beside ruff, from the locked development dependencies, with its own Node, so nothing else needs installing.
+
+What it found when it was added, and wasn't fixed then, is in `.basedpyright/baseline.json`: chiefly rows read with `fetchone()` that the code takes to be there, such as a count's, and branches the checker can't tell go together. Anything else fails. The baseline only shrinks: fix one of its errors and the checker drops it from the file, and CI fails until that change is committed with the fix. Only `uv run basedpyright --writebaseline` adds to it, which review sees in the diff: fix the error instead, unless a refactor only moved one that was there.
+
+Some of what the checker holds a5s to:
+
+- Every database connection is `db.Connection`, which gives each row as a dict, from a pool typed to match.
+- SQL is text in the code, never input: psycopg takes a `LiteralString`, so helpers that build SQL take and give `LiteralString`, and constants they draw on, such as the tables a sweep empties, are `Final`. A value goes in as a parameter. A migration's file is a5s's own, the one cast.
+- A lookup that may find nothing says `| None`, and a caller that knows it's there, such as for a task its transaction has locked, uses one that raises instead (`TaskService._held`).
+
 ### Postgres
 
 Tests use a real Postgres, not a mocked database. By default they start a throwaway Postgres in Docker on Windows and a local instance where the platform supports it. `A5S_TEST_DATABASE_URL` can name a test Postgres instead; the fixture resets its schemas, so never point it at a database containing anything to keep.
@@ -49,6 +62,14 @@ Install Chromium for Playwright:
 ```sh
 uv run playwright install chromium
 ```
+
+The studio's pages are built, not kept in git. Build them before the tests, as CI does, by the image's own Node stage:
+
+```sh
+docker build --target studio-built --output src/a5s/core/webchat/studio .
+```
+
+or, with Node 20.19 or later, `npm ci --prefix studio && npm run build --prefix studio`. Unbuilt, the studio answers 503 with how to build it, and its tests fail.
 
 If Chromium is unavailable, browser tests may skip locally. To require them, as CI does:
 
@@ -139,6 +160,8 @@ Start with a user need and an observable result, not a new tool call for its own
 - verifies the ledger;
 - measures model use for a live case;
 - includes ambiguity, correction or a second turn where a real conversation would need it.
+
+For a new page people sign in to, put its routes in a router of its own, as each page of the channels app is, whose API checks who's signed in before any route runs ([`core/web.py`](../src/a5s/core/web.py)). `tests/test_routers.py` asks every route of each such API with no sign-in and expects a refusal, fails on a route that's in none of them and isn't one of those that check for themselves, and holds the sidebar to each page's own check. A route of the core's own API goes on one of its two routers ([`core/gateway.py`](../src/a5s/core/gateway.py)), the service token's or a worker's run token's, and the same test asks every route the core serves with no token.
 
 For a new tool or connector, pin its schema and test its risk flags, credentials, permissions, pagination, timeouts, failures and hostile inputs. If it makes an effect, test idempotency under retries and fresh task workers. Skills remain reviewed instructions and reference material: they do not grant tools or run scripts.
 

@@ -6,12 +6,15 @@ Only then does the scheduler take it, and a run that answers it acts for the
 sender the core recorded. So no service can say a message came from someone
 else, and a person's token goes no further than this.
 
-The web chat is served from here too: a page where people sign in with their
-organisation's identity provider and talk to the agents through the local
-channel, as the command line does. So is the page where instance approvers
-approve a version of the settings, which the card in their chat opens
-(core/approvals.py), and the settings app, where they review the whole version in
-force and ask for a new one, which the gateway then proposes to everyone it needs.
+The channels app is made here too: the chats' routes, Teams', Matrix's and the
+local channel's, which the command line and the web chat use; and the pages
+people use, each a router of its own (core/web.py). They are the web chat's
+(core/chat_api.py); those where someone signs in afresh for one act, such as
+approving a version of the settings from the card in their chat
+(core/approve_api.py); and those people sign in to for one thing, whose API
+checks who's signed in: the studio's, the settings app's, the notebook's,
+people's own tasks', the auditors' and the administrators', with every page's
+sidebar (core/shell_api.py).
 """
 
 from __future__ import annotations
@@ -19,64 +22,49 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
-import re
 import time
 import uuid
 from collections.abc import Callable
-from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Any
 
 import httpx
 import psycopg
-import yaml
-from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Query, Request, Response
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    FastAPI,
+    Header,
+    HTTPException,
+    Request,
+    Response,
+)
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel
 
 from a5s import db
-from a5s.contract import (
-    INSTANCE_APPROVER,
-    PART_DELEGATE,
-    PART_OWNER,
-    Person,
-    Settings,
-    parse_settings,
-)
 from a5s.core import (
-    administration,
-    approvals,
-    audit,
+    admin_api,
+    approve_api,
+    audit_api,
+    chat_api,
     chats,
+    decide_api,
+    grade_api,
     groups,
     ledger,
     matrix,
-    memberships,
-    notebook,
-    officer,
-    proposals,
-    registry,
-    repeats,
-    samples,
-    status,
-    studio,
-    tasking,
+    notebook_api,
+    officer_api,
+    settings_api,
+    shell_api,
+    studio_api,
+    tasks_api,
     topics,
+    web,
 )
-from a5s.core.gateway import sanitize
-from a5s.core.identity import (
-    IdentityError,
-    UnknownPerson,
-    asked_level,
-    second_factor,
-    signed_in,
-    whose,
-    without_second_factor,
-)
-from a5s.core.releases import agent_owner
-from a5s.core.tasks import TaskError
 from a5s.core.teams import UNKNOWN, Refused
 
 AWAY = "a5s can't reach its records just now, so it couldn't take that. Try again in a moment."
@@ -85,83 +73,12 @@ AWAY_RETRY = 5  # seconds a chat or a person is asked to wait before trying agai
 log = logging.getLogger(__name__)
 MAX_BYTES = 256 * 1024  # far more than one message needs
 TRIES = 3  # deliveries of a Matrix event a5s can't act on before it's skipped, and recorded
-REQUESTS_A_DAY = 5  # versions one person may ask for in the settings app [TBC]
-MAX_SETTINGS = 64 * 1024  # characters of settings, as written
-WEBCHAT = Path(__file__).parent / "webchat"
-_PAGE_HEADERS = {  # the page runs only its own script, shows only text, and goes in no frame
-    "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; "
-                               "connect-src 'self'; img-src 'self' data:; base-uri 'none'; "
-                               "form-action 'none'; frame-ancestors 'none'",
-    "Referrer-Policy": "no-referrer",
-    "X-Content-Type-Options": "nosniff",
-    "Cache-Control": "no-cache",
-}
-_TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
-          ".css": "text/css; charset=utf-8"}
 
 
 class LocalMessage(BaseModel):
     agent: str
     text: str
     person: str | None = None  # in development, without an identity provider, who it's from
-
-
-class Approval(BaseModel):
-    """What the approval page sends with its sign-in: the salt its nonce was made with."""
-
-    salt: str
-
-
-class Asking(BaseModel):
-    """What the officer's page sends with its sign-in: what it's to do, for whom, and the salt
-    its nonce was made with."""
-
-    action: str
-    person: str
-    salt: str
-
-
-class Deciding(BaseModel):
-    """What the decision page sends with a sign-in made to decide: the changes it decides, by
-    their digests, the decision, the salt its nonce was made with, and, for a rejection, why,
-    if the decider says."""
-
-    proposals: list[str]
-    decision: str
-    salt: str
-    reason: str | None = None
-
-
-class Grade(BaseModel):
-    """A grader's grade of one sample of an agent's work, with the salt of the sign-in made
-    to give it."""
-
-    grade: str
-    salt: str = ""
-
-
-class Grading(BaseModel):
-    """What the grading page sends with a sign-in made to grade: the grades, by sample, and the
-    salt its nonce was made with."""
-
-    grades: dict[int, str]
-    salt: str
-
-
-class Draft(BaseModel):
-    """A version of the settings as someone wrote it in the settings app."""
-
-    text: str
-
-
-class TokenRequest(BaseModel):
-    """The web chat's sign-in, passed on to the identity provider."""
-
-    grant_type: str
-    code: str | None = None
-    code_verifier: str | None = None
-    redirect_uri: str | None = None
-    refresh_token: str | None = None
 
 
 def record(conn: Any, *, channel: str, source_id: str, person: str, agent: str, text: str,
@@ -230,23 +147,18 @@ def turned_away(conn: Any, channel: str, reason: str, people: list[str], text: s
                          "args": {"chars": len(text)}})
 
 
-def webchat(gw: Any) -> bool:
-    """The web chat is on where people can sign in to it, or in development."""
-    if gw.identity is None:
-        return gw.cfg.development
-    return bool(gw.cfg.webchat_client_id)
-
-
 def chats_on(gw: Any) -> list[str]:
     """The chats a deployment has turned on, each by setting its own settings."""
-    on = {"the command line": True, "the web chat": webchat(gw), "Teams": gw.teams is not None,
+    on = {"the command line": True, "the web chat": web.webchat(gw), "Teams": gw.teams is not None,
           "Matrix": gw.matrix is not None}
     return [chat for chat, is_on in on.items() if is_on]
 
 
 def create_app(gw: Any) -> FastAPI:
     """The core's endpoints for channels: the only part of the core people reach."""
-    app = FastAPI(title="a5s channels")
+    explorer = gw.cfg.development  # FastAPI's explorer pages load scripts from a CDN
+    app = FastAPI(title="a5s channels", docs_url="/docs" if explorer else None,
+                  redoc_url="/redoc" if explorer else None)
 
     app.add_middleware(Small)
     log.info("people reach a5s through %s", ", ".join(chats_on(gw)))
@@ -261,21 +173,6 @@ def create_app(gw: Any) -> FastAPI:
                     str(exc).splitlines()[0][:200] if str(exc) else type(exc).__name__)
         return JSONResponse(status_code=503, headers={"Retry-After": str(AWAY_RETRY)},
                             content={"detail": AWAY})
-
-    def counted(doing: str) -> None:
-        """Count a refusal for want of a second factor, for the status: the identity
-        provider's policy, not the person refused, decides when a sign-in asks for one."""
-        try:
-            with db.transaction(gw.url) as conn:
-                status.second_factor_refused(conn, doing)
-        except psycopg.Error:  # counting never stands in the refusal's way
-            log.warning("couldn't count a refusal for want of a second factor", exc_info=True)
-
-    def refusal(exc: approvals.Refused | proposals.Refused) -> HTTPException:
-        """A sign-in's refusal as the page gets it: one for want of a second factor counted."""
-        if exc.second_factor:
-            counted(exc.second_factor)
-        return HTTPException(exc.status, exc.reason)
 
     # Teams
 
@@ -347,7 +244,9 @@ def create_app(gw: Any) -> FastAPI:
 
     # Matrix: the homeserver sends what happens in the rooms the agents' bots are in
 
-    def matrix_check(authorization: str | None, access_token: str | None) -> None:
+    def homeserver(authorization: str | None = Header(default=None),
+                   access_token: str | None = None) -> None:
+        """The homeserver's own token, which every route of Matrix's needs."""
         if gw.matrix is None:
             raise HTTPException(404, "Matrix isn't set up")
         try:
@@ -355,6 +254,8 @@ def create_app(gw: Any) -> FastAPI:
         except matrix.Refused as exc:  # not recorded: anyone could send these
             log.warning("refused a delivery from Matrix: %s", exc.reason)
             raise HTTPException(exc.status, {"errcode": "M_FORBIDDEN", "error": exc.reason}) from None
+
+    matrix_api = APIRouter(dependencies=[Depends(homeserver)])
 
     def tell_in_matrix(reply_to: dict[str, str], text: str) -> None:
         try:
@@ -370,11 +271,8 @@ def create_app(gw: Any) -> FastAPI:
 
     failures: dict[str, int] = {}  # Matrix events a5s couldn't act on, by id, and how often
 
-    @app.put("/channels/matrix/_matrix/app/v1/transactions/{txn}")
-    def matrix_transaction(txn: str, body: dict[str, Any], background: BackgroundTasks,
-                           authorization: str | None = Header(default=None),
-                           access_token: str | None = None) -> dict:
-        matrix_check(authorization, access_token)
+    @matrix_api.put("/channels/matrix/_matrix/app/v1/transactions/{txn}")
+    def matrix_transaction(txn: str, body: dict[str, Any], background: BackgroundTasks) -> dict:
         agents = sorted(gw.definitions)
         for event in body.get("events") or []:
             try:
@@ -418,53 +316,29 @@ def create_app(gw: Any) -> FastAPI:
                     chats.shared(conn, "matrix", *detail)
         return {}
 
-    @app.get("/channels/matrix/_matrix/app/v1/users/{user}")
-    def matrix_user(user: str, authorization: str | None = Header(default=None),
-                    access_token: str | None = None) -> JSONResponse:
+    @matrix_api.get("/channels/matrix/_matrix/app/v1/users/{user}")
+    def matrix_user(user: str) -> JSONResponse:
         """Whether a bot exists, made on demand, such as when someone first invites it."""
-        matrix_check(authorization, access_token)
         if gw.matrix.agent_of(user) not in gw.definitions:
             return JSONResponse(status_code=404, content={"errcode": "M_NOT_FOUND"})
         gw.matrix.register(user)
         return JSONResponse({})
 
-    @app.get("/channels/matrix/_matrix/app/v1/rooms/{alias}")
-    def matrix_room(alias: str, authorization: str | None = Header(default=None),
-                    access_token: str | None = None) -> JSONResponse:
-        matrix_check(authorization, access_token)
+    @matrix_api.get("/channels/matrix/_matrix/app/v1/rooms/{alias}")
+    def matrix_room(alias: str) -> JSONResponse:
         return JSONResponse(status_code=404, content={"errcode": "M_NOT_FOUND"})
 
-    @app.post("/channels/matrix/_matrix/app/v1/ping")
-    def matrix_ping(authorization: str | None = Header(default=None),
-                    access_token: str | None = None) -> dict:
-        matrix_check(authorization, access_token)
+    @matrix_api.post("/channels/matrix/_matrix/app/v1/ping")
+    def matrix_ping() -> dict:
         return {}
+
+    app.include_router(matrix_api)
 
     # The local channel, for the command line and the web chat
 
     def sender(authorization: str | None, claimed: str | None) -> tuple[str, str]:
-        """Who's writing, and how a5s knows."""
-        if gw.identity is not None:
-            token = (authorization or "").removeprefix("Bearer ").strip()
-            if not token:
-                raise HTTPException(401, "sign in first: send your token as a bearer token")
-            try:
-                person = signed_in(gw.identity, gw.scenario, token)
-            except UnknownPerson as exc:
-                raise HTTPException(403, str(exc)) from None
-            except IdentityError as exc:
-                raise HTTPException(401, f"your token doesn't check out: {exc}") from None
-            if claimed and claimed != person:
-                raise HTTPException(403, f"you're signed in as {person}, not {claimed}")
-            return person, "verified"
-        if not gw.cfg.development:
-            raise HTTPException(503, "the local channel needs sign-in: set A5S_OIDC_ISSUER, "
-                                     "or A5S_DEVELOPMENT=1 to develop without it")
-        if not claimed:
-            raise HTTPException(400, "say who the message is from")
-        if gw.scenario.person(claimed) is None:
-            raise HTTPException(403, "a5s doesn't know who you are")
-        return claimed, "unverified (development)"
+        """Who's writing, and how a5s knows (core/web.py)."""
+        return web.sender(gw, authorization, claimed)
 
     @app.post("/channels/local/messages", status_code=202)
     def local_message(body: LocalMessage, authorization: str | None = Header(default=None)) -> dict:
@@ -550,972 +424,22 @@ def create_app(gw: Any) -> FastAPI:
              "instance": r["instance_id"], "text": r["text"], "at": r["at"].isoformat()}
             for r in sorted(await waiting(request, wait, take), key=lambda r: r["id"])]}
 
-    # The web chat
-
-    def page(name: str) -> Response:
-        if not webchat(gw):
-            raise HTTPException(404, "the web chat isn't set up here")
-        path = WEBCHAT / name
-        return Response(path.read_bytes(), media_type=_TYPES[path.suffix], headers=_PAGE_HEADERS)
-
-    @app.get("/", include_in_schema=False)
-    def home() -> RedirectResponse:
-        if not webchat(gw):
-            raise HTTPException(404, "the web chat isn't set up here")
-        return RedirectResponse("/chat/")
-
-    @app.get("/chat/", include_in_schema=False)
-    def chat() -> Response:
-        return page("index.html")
-
-    @app.get("/chat/config")
-    def chat_config() -> dict:
-        """How the page signs people in, and which agents they can talk to."""
-        if not webchat(gw):
-            raise HTTPException(404, "the web chat isn't set up here")
-        signin = None
-        if gw.identity is not None and gw.cfg.webchat_client_id:
-            try:
-                where = gw.identity.endpoints()
-            except Exception as exc:  # the provider's down: the page says so, and nothing else
-                raise HTTPException(503, "the identity provider can't be reached") from exc
-            signin = {"authorization_endpoint": where["authorization_endpoint"],
-                      "end_session_endpoint": where.get("end_session_endpoint"),
-                      "client_id": gw.cfg.webchat_client_id, "scope": "openid profile"}
-        return {"signin": signin, "development": gw.identity is None and gw.cfg.development,
-                "agents": sorted(gw.definitions)}
-
-    @app.post("/chat/token")
-    def chat_token(body: TokenRequest) -> JSONResponse:
-        """The web chat's sign-in, passed on to the identity provider, which checks the code
-        and its PKCE verifier. It needs no secret, and the page never calls the provider
-        itself, so the provider needn't allow it to."""
-        if gw.identity is None or not gw.cfg.webchat_client_id:
-            raise HTTPException(404, "the web chat's sign-in isn't set up")
-        form = {"grant_type": body.grant_type, "client_id": gw.cfg.webchat_client_id}
-        if body.grant_type == "authorization_code" and body.code and body.code_verifier and body.redirect_uri:
-            form |= {"code": body.code, "code_verifier": body.code_verifier,
-                     "redirect_uri": body.redirect_uri}
-        elif body.grant_type == "refresh_token" and body.refresh_token:
-            form |= {"refresh_token": body.refresh_token, "scope": "openid profile"}
-        else:
-            raise HTTPException(400, "send a code and its verifier, or a refresh token")
-        return exchange(form, ("id_token", "refresh_token", "expires_in"))
-
-    def exchange(form: dict, kept: tuple[str, ...]) -> JSONResponse:
-        """A code or refresh token, passed on to the identity provider, and what it gives back
-        that the page may keep: never the provider's access token."""
-        try:
-            answer = gw.identity.http.post(gw.identity.endpoints()["token_endpoint"], data=form,
-                                           timeout=15)
-            tokens = answer.json()
-        except (httpx.HTTPError, ValueError, KeyError) as exc:
-            raise HTTPException(502, "the identity provider didn't answer") from exc
-        return JSONResponse(status_code=answer.status_code if answer.status_code < 500 else 502,
-                            content={k: tokens[k] for k in (*kept, "error", "error_description")
-                                     if k in tokens})
-
-    @app.get("/chat/{name}", include_in_schema=False)
-    def chat_file(name: str) -> Response:
-        if name not in ("app.js", "app.css"):
-            raise HTTPException(404, "no such file")
-        return page(name)
-
-    # Approving settings: the page an approver's card opens, where they decide
-
-    def approving() -> None:
-        if problem := gw.approving(sealing=False):  # the gateway seals, never the channels app
-            raise HTTPException(404, problem)
-
-    @app.get("/approve/", include_in_schema=False)
-    def approve_page() -> Response:
-        approving()
-        return page("approve.html")
-
-    @app.get("/approve/approve.js", include_in_schema=False)
-    def approve_script() -> Response:
-        approving()
-        return page("approve.js")
-
-    @app.post("/approve/token")
-    def approve_token(body: TokenRequest) -> JSONResponse:
-        """The approval page's sign-in, passed on to the identity provider. The page gets the
-        signed sign-in alone, with no refresh token to make more like it."""
-        approving()
-        if body.grant_type != "authorization_code" or not (body.code and body.code_verifier
-                                                            and body.redirect_uri):
-            raise HTTPException(400, "send a code and its verifier")
-        return exchange({"grant_type": "authorization_code", "client_id": gw.cfg.webchat_client_id,
-                         "code": body.code, "code_verifier": body.code_verifier,
-                         "redirect_uri": body.redirect_uri}, ("id_token",))
-
-    @app.get("/approve/config")
-    def approve_config() -> dict:
-        """Where the page signs the approver in."""
-        approving()
-        try:
-            where = gw.identity.endpoints()
-        except Exception as exc:  # the provider's down: the page says so, and nothing else
-            raise HTTPException(503, "the identity provider can't be reached") from exc
-        level = asked_level(gw.identity.cfg)  # what counts asks the provider for its level
-        return {"signin": {"authorization_endpoint": where["authorization_endpoint"],
-                           "client_id": gw.cfg.webchat_client_id, "scope": "openid profile",
-                           **({"acr_values": level} if level else {})}}
-
-    def approver(version: str, body: Approval, authorization: str | None) -> tuple:
-        """Who signed in to approve this version, what the provider signed, and the token."""
-        approving()
-        if not re.fullmatch(r"[0-9a-f]{64}", version):
-            raise HTTPException(404, "a5s has no such version of the settings")
-        token = (authorization or "").removeprefix("Bearer ").strip()
-        if not token:
-            raise HTTPException(401, "sign in to approve: send your sign-in as a bearer token")
-        try:
-            person, claims = approvals.check(gw.identity, gw.scenario, gw.cfg.webchat_client_id,
-                                             token, version, body.salt, time.time())
-        except approvals.Refused as exc:
-            raise refusal(exc) from None
-        return person, claims, token
-
-    def proposal(conn: Any, version: str) -> tuple[dict, dict | None, str]:
-        """A version proposed for approval, the version in force, and where it stands."""
-        row = conn.execute("select * from settings_proposals where scenario = %s and digest = %s",
-                           (gw.scenario.name, version)).fetchone()
-        if row is None:
-            raise HTTPException(404, "a5s has no such version of the settings to approve")
-        last = approvals.latest(conn, gw.scenario.name)
-        if row["outcome"]:
-            status = row["outcome"]
-        elif last and row["serial"] <= last["serial"]:
-            status = "superseded"
-        else:
-            status = "waiting"
-        return row, last, status
-
-    @app.post("/approve/settings/{version}/review")
-    def review(version: str, body: Approval, authorization: str | None = Header(default=None)) -> dict:
-        """What a version changes from the one in force, as code works it out, for an instance
-        approver who signed in to approve it."""
-        person, _, _ = approver(version, body, authorization)
-        with db.transaction(gw.url) as conn:
-            row, last, status = proposal(conn, version)
-            approved = approvals.recorded(conn, gw.scenario.name, version)
-        before = parse_settings(bytes(last["raw"])) if last else None
-        settings = parse_settings(bytes(row["raw"]))
-        found = approvals.changes(before, settings, gw.definitions, gw.scenario.person)
-        valid, _ = registry.signers(settings, gw.scenario.person, approved)
-        return {"serial": row["serial"], "proposed_at": row["proposed_at"].isoformat(),
-                "in_force": last["serial"] if last else None, "changes": found,
-                "whole": approvals.described(settings, gw.definitions, gw.scenario.person),
-                "needs": registry.missing(settings, gw.scenario.person, valid, before,
-                                          memberships.rooted(gw.scenario).person)
-                if status == "waiting" else [],
-                "approved_by": [p.name if (p := gw.scenario.person(a)) else a for a in approved],
-                "you": person.name, "you_approved": person.id in approved, "status": status}
-
-    @app.post("/approve/settings/{version}")
-    def approve(version: str, body: Approval, authorization: str | None = Header(default=None)) -> dict:
-        """An instance approver's approval of a version, signed through the identity provider
-        for this version alone. It's recorded once, and sealed. The gateway applies the version."""
-        person, claims, token = approver(version, body, authorization)
-        with db.transaction(gw.url) as conn:
-            row, _, status = proposal(conn, version)
-            if status != "waiting":
-                raise HTTPException(409, f"this version isn't waiting for approval: it's {status}")
-            try:
-                approvals.record(conn, gw.scenario.name, version, person.id, token, body.salt,
-                                 claims)
-            except approvals.Refused as exc:
-                raise refusal(exc) from None
-            ledger.append(conn, {
-                "kind": "admin", "action": "approve", "run": None, "instance": None, "acts_for": [],
-                "decision": "record",
-                "args": {"settings": row["version"], "serial": row["serial"], "digest": version,
-                         "by": person.id, "identity": "verified: a sign-in to approve this version alone",
-                         "issuer": claims["iss"],
-                         "token_sha256": hashlib.sha256(token.encode()).hexdigest()}})
-            approved = approvals.recorded(conn, gw.scenario.name, version)
-            last = approvals.latest(conn, gw.scenario.name)
-        settings = parse_settings(bytes(row["raw"]))
-        valid, _ = registry.signers(settings, gw.scenario.person, approved)
-        before = parse_settings(bytes(last["raw"])) if last else None
-        return {"approved": True, "serial": row["serial"], "by": person.name,
-                "needs": registry.missing(settings, gw.scenario.person, valid, before,
-                                          memberships.rooted(gw.scenario).person)}
-
-    # The data protection officer's requests: the page where they ask to export, or erase,
-    # what a5s keeps about someone, signed in afresh for that request alone, which someone from
-    # the team that runs a5s then carries out, once, within ten minutes (core/officer.py).
-
-    @app.get("/officer/", include_in_schema=False)
-    def officer_page() -> Response:
-        approving()
-        return page("officer.html")
-
-    @app.get("/officer/officer.js", include_in_schema=False)
-    def officer_script() -> Response:
-        approving()
-        return page("officer.js")
-
-    @app.get("/officer/config")
-    def officer_config() -> dict:
-        """Where the page signs the officer in."""
-        return approve_config()
-
-    @app.post("/officer/token")
-    def officer_token(body: TokenRequest) -> JSONResponse:
-        """The officer's sign-in, passed on to the identity provider: the signed sign-in alone."""
-        return approve_token(body)
-
-    @app.post("/officer/requests")
-    def officer_request(body: Asking, authorization: str | None = Header(default=None)) -> dict:
-        """The officer's request, signed through the identity provider for it alone, and
-        recorded for the gateway to check again and carry out, once."""
-        approving()
-        token = (authorization or "").removeprefix("Bearer ").strip()
-        if not token:
-            raise HTTPException(401, "sign in to ask: send your sign-in as a bearer token")
-        person = body.person.strip()
-        try:
-            who, claims = officer.check(gw.identity, gw.scenario, gw.cfg.webchat_client_id,
-                                        token, body.action, person, body.salt, time.time())
-            with db.transaction(gw.url) as conn:
-                officer.record(conn, body.action, person, who.id, token, body.salt, claims)
-                ledger.append(conn, {
-                    "kind": "admin", "action": "ask", "run": None, "instance": None,
-                    "acts_for": [person], "decision": "record",
-                    "args": {"to": body.action, "person": person, "by": who.id,
-                             "identity": "verified: a sign-in to ask for this alone",
-                             "issuer": claims["iss"],
-                             "token_sha256": hashlib.sha256(token.encode()).hexdigest()}})
-        except approvals.Refused as exc:
-            raise refusal(exc) from None
-        named = gw.scenario.person(person)
-        return {"asked": body.action, "person": person, "name": named.name if named else None,
-                "by": who.name, "lasts": "ten minutes",
-                "command": f"a5s export --person {person} --out <file>" if body.action == "export"
-                else f"a5s erase --person {person} --confirm {person}"}
-
-    # Deciding held changes: the page a decider's card opens. They sign in to see what waits
-    # for them, and again, afresh, to decide: that sign-in's nonce commits to their decision on
-    # exactly the changes they chose, so the provider signs the decision. The gateway makes
-    # what's approved.
-
-    @app.get("/decide/", include_in_schema=False)
-    def decide_page() -> Response:
-        approving()
-        return page("decide.html")
-
-    @app.get("/decide/decide.js", include_in_schema=False)
-    def decide_script() -> Response:
-        approving()
-        return page("decide.js")
-
-    @app.post("/decide/token")
-    def decide_token(body: TokenRequest) -> JSONResponse:
-        """The decision page's sign-ins, passed on to the identity provider, as for approving."""
-        return approve_token(body)
-
-    @app.get("/decide/config")
-    def decide_config() -> dict:
-        return approve_config()
-
-    @app.post("/decide/review")
-    def review_proposals(authorization: str | None = Header(default=None)) -> dict:
-        """The held changes whoever signed in may decide now, oldest first, since those lapse
-        first, as the directory stands now; those they were told of as a decider's manager,
-        which they may see but not decide; and those they decided lately. Each in the words
-        code worked out when it was asked for, with a link to each record, and whether it has
-        changed since."""
-        approving()
-        who, _ = sender(authorization, None)
-        person = gw.scenario.person(who)
-        roles = person.roles if person else ()
-        mine = sorted({r.split(":", 1)[1] for r in roles
-                       if r.startswith((f"{PART_OWNER}:", f"{PART_DELEGATE}:"))})
-        with db.transaction(gw.url) as conn:
-            rows = conn.execute(
-                "select p.*, d.decision as yours from proposals p left join proposal_decisions d "
-                "on d.digest = p.digest and d.person = %(who)s where p.scenario = %(scenario)s "
-                "and ((p.status = 'waiting' and (p.parts && %(parts)s or %(who)s = any(p.escalated) "
-                "or (%(approver)s and cardinality(p.parts) = 0))) or (d.id is not null and "
-                "(p.ended_at is null or p.ended_at > %(week)s))) "
-                "order by (p.status = 'waiting') desc, p.id limit 500",
-                {"who": who, "scenario": gw.scenario.name, "parts": mine,
-                 "approver": INSTANCE_APPROVER in roles,
-                 "week": gw.clock() - timedelta(days=7)}).fetchall()
-        shown = []
-        for row in rows:
-            waits = row["status"] == "waiting"
-            decides = waits and proposals.may_decide(gw.scenario, row, who)
-            if waits and not decides and who not in (row["escalated"] or []):
-                continue  # they no longer own what it touches, or may no longer see it
-            if len(shown) >= 50:
-                break
-            try:
-                changed = proposals.changed(gw.scenario, row) if waits else []
-            except Exception:  # the records system didn't answer: say so, rather than nothing
-                log.exception("couldn't read the records of %s", proposals.key(row))
-                changed = list(row["records"])
-            standing = row["standing"] or {}
-            shown.append({"key": proposals.key(row), "digest": row["digest"], "said": row["said"],
-                          "flags": row["flags"], "sensitive": row["sensitive"],
-                          "status": row["status"], "yours": row["yours"], "may_decide": decides,
-                          "outcome": row["outcome"], "proposed_at": row["proposed_at"].isoformat(),
-                          "lapses_at": row["lapses_at"].isoformat(),
-                          "links": [r["link"] for r in standing.values() if r and r.get("link")],
-                          "changed": [f"{k} has changed since it was asked for" for k in changed]})
-        return {"you": person.name if person else who, "proposals": shown}
-
-    @app.post("/decide/proposals")
-    def decide_proposals(body: Deciding, authorization: str | None = Header(default=None)) -> dict:
-        """A decision on held changes, signed through the identity provider for that decision on
-        exactly those changes. It's recorded once, and sealed. The gateway makes what's approved."""
-        approving()
-        digests = sorted(set(body.proposals))
-        if not 1 <= len(digests) <= 20 or not all(re.fullmatch(r"[0-9a-f]{64}", d) for d in digests):
-            raise HTTPException(400, "name from one to 20 changes to decide, by their digests")
-        reason = None
-        if body.reason and body.reason.strip() and body.decision == "reject":
-            if len(body.reason) > proposals.REASON:
-                raise HTTPException(400, f"say why in at most {proposals.REASON} characters")
-            reason, _ = sanitize(" ".join(body.reason.split()), gw.scenario.record_links)
-        token = (authorization or "").removeprefix("Bearer ").strip()
-        if not token:
-            raise HTTPException(401, "sign in to decide: send your sign-in as a bearer token")
-        try:
-            person, claims = proposals.check(gw.identity, gw.scenario, gw.cfg.webchat_client_id,
-                                             token, digests, body.decision, body.salt, time.time())
-        except proposals.Refused as exc:
-            raise refusal(exc) from None
-        with db.transaction(gw.url) as conn:
-            rows = conn.execute("select * from proposals where scenario = %s and digest = any(%s) "
-                                "order by id", (gw.scenario.name, digests)).fetchall()
-            if len(rows) != len(digests):
-                raise HTTPException(404, "a5s has no such change to decide")
-            for row in rows:
-                if row["status"] != "waiting":
-                    raise HTTPException(409, f"{proposals.key(row)} isn't waiting for a decision: "
-                                             f"it's {row['status']}")
-                if not proposals.may_decide(gw.scenario, row, person.id):
-                    raise HTTPException(403, f"{person.name} may not decide {proposals.key(row)}")
-            if len(rows) > 1 and any(r["sensitive"] for r in rows):
-                raise HTTPException(409, "a sensitive change is decided on its own, with a sign-in "
-                                         "of its own")
-            try:
-                proposals.record(conn, gw.scenario.name, rows, body.decision, person.id, token,
-                                 body.salt, claims, gw.clock(), reason)
-            except proposals.Refused as exc:
-                raise refusal(exc) from None
-            ledger.append(conn, {
-                "kind": "admin", "action": "decide", "run": None, "instance": None, "acts_for": [],
-                "decision": "record",
-                "args": {"proposals": [proposals.key(r) for r in rows], "decided": body.decision,
-                         "by": person.id,
-                         "identity": "verified: a sign-in to make this decision on these alone",
-                         "issuer": claims["iss"],
-                         "token_sha256": hashlib.sha256(token.encode()).hexdigest()}})
-        return {"decided": [proposals.key(r) for r in rows], "decision": body.decision,
-                "by": person.name}
-
-    # Grading: where people outside the team that built an agent grade samples of its changes,
-    # whose grades raise or lower a5s's cap on its level (core/samples.py).
-
-    @app.get("/grade/", include_in_schema=False)
-    def grade_page() -> Response:
-        approving()
-        return page("grade.html")
-
-    @app.get("/grade/grade.js", include_in_schema=False)
-    def grade_script() -> Response:
-        approving()
-        return page("grade.js")
-
-    @app.post("/grade/token")
-    def grade_token(body: TokenRequest) -> JSONResponse:
-        return approve_token(body)
-
-    @app.get("/grade/config")
-    def grade_config() -> dict:
-        return approve_config()
-
-    def grader(authorization: str | None) -> Person:
-        approving()
-        who, _ = sender(authorization, None)
-        person = gw.scenario.person(who)
-        if person is None or samples.GRADER not in person.roles:
-            raise HTTPException(403, "grading is for the people who grade agents' work")
-        return person
-
-    @app.post("/grade/review")
-    def review_samples(authorization: str | None = Header(default=None)) -> dict:
-        """The samples waiting for a grade that whoever signed in may grade, oldest first: read
-        in pages, leaving out in the query what it can, until 20 are found."""
-        person = grader(authorization)
-        shown: list[dict] = []
-        after = 0
-        with db.transaction(gw.url) as conn:
-            minders = {r["id"]: (r["owner"], r["deputy"]) for r in conn.execute(
-                "select id, owner, deputy from instances")}
-            while len(shown) < 20:
-                rows = conn.execute(
-                    "select * from samples where scenario = %s and grade is null and lapsed_at "
-                    "is null and id > %s and not (%s = any(acts_for)) and decided_by is distinct "
-                    "from %s order by id limit 200",
-                    (gw.scenario.name, after, person.id, person.id)).fetchall()
-                if not rows:
-                    break
-                after = rows[-1]["id"]
-                shown += [{"id": r["id"], "kind": r["kind"], "agent": r["definition"],
-                           "part": r["part"], "action": r["action"], "said": r["said"],
-                           "records": r["records"], "flags": r["flags"],
-                           "decided": r["decided"], "drawn_at": r["drawn_at"].isoformat()}
-                          for r in rows if samples.may_grade(
-                              gw.scenario, r, person, minders.get(r["instance_id"], ())) is None]
-        return {"you": person.name, "samples": shown[:20]}
-
-    @app.post("/grade/samples")
-    def grade_samples(body: Grading, authorization: str | None = Header(default=None)) -> dict:
-        """Grades of samples, signed through the identity provider for exactly those grades of
-        exactly those samples, by someone who may grade each, once. The core seals each."""
-        return grading(body.grades, body.salt, authorization)
-
-    @app.post("/grade/samples/{sample}")
-    def grade_sample(sample: int, body: Grade, authorization: str | None = Header(default=None)
-                     ) -> dict:
-        """One sample's grade, as above."""
-        return grading({sample: body.grade}, body.salt, authorization)
-
-    def grading(grades: dict[int, str], salt: str, authorization: str | None) -> dict:
-        approving()
-        if not 1 <= len(grades) <= 20 or any(g not in samples.GRADES for g in grades.values()):
-            raise HTTPException(400, "grade from one to 20 samples, each right, wrong or critical")
-        token = (authorization or "").removeprefix("Bearer ").strip()
-        if not token:
-            raise HTTPException(401, "sign in to grade: send your sign-in as a bearer token")
-        try:
-            person, claims = proposals.fresh(gw.identity, gw.scenario, gw.cfg.webchat_client_id,
-                                             token, samples.nonce(grades, salt), salt, time.time(),
-                                             "grade these samples")
-        except proposals.Refused as exc:
-            raise refusal(exc) from None
-        if samples.GRADER not in person.roles:
-            raise HTTPException(403, "grading is for the people who grade agents' work")
-        hashed = approvals.HASHED + hashlib.sha256(token.encode()).hexdigest()
-        with db.transaction(gw.url) as conn:
-            if conn.execute("select 1 from samples where grade_token = %s limit 1",
-                            (hashed,)).fetchone():
-                raise HTTPException(409, "that sign-in has graded already: sign in again")
-            rows = {r["id"]: r for r in conn.execute(
-                "select * from samples where scenario = %s and id = any(%s) order by id for update",
-                (gw.scenario.name, sorted(grades)))}
-            minders = {r["id"]: (r["owner"], r["deputy"]) for r in conn.execute(
-                "select id, owner, deputy from instances")}
-            for sample in sorted(grades):
-                row = rows.get(sample)
-                if row is None:
-                    raise HTTPException(404, f"a5s has no sample {sample}")
-                if (why := samples.may_grade(gw.scenario, row, person,
-                                             minders.get(row["instance_id"], ()))) is not None:
-                    raise HTTPException(403, why)
-                if row["grade"] is not None or row["lapsed_at"] is not None:
-                    raise HTTPException(409, f"sample {sample} has been graded already, or lapsed")
-            now = gw.clock()
-            for sample, grade in sorted(grades.items()):
-                entry = {**rows[sample], "grade": grade, "graded_by": person.id, "graded_at": now,
-                         "grade_token": hashed, "grade_nonce": claims["nonce"], "grade_salt": salt,
-                         "grade_issuer": claims["iss"],
-                         "grade_subject": str(claims.get("sub") or ""), "grade_proof": token}
-                conn.execute(  # with the sign-in, which the gateway checks again and seals
-                    "update samples set grade = %(grade)s, graded_by = %(graded_by)s, "
-                    "graded_at = %(graded_at)s, grade_token = %(grade_token)s, grade_nonce = "
-                    "%(grade_nonce)s, grade_salt = %(grade_salt)s, grade_issuer = %(grade_issuer)s, "
-                    "grade_subject = %(grade_subject)s, grade_proof = %(grade_proof)s "
-                    "where id = %(id)s", entry)
-                ledger.append(conn, {
-                    "kind": "admin", "action": "grade", "run": str(rows[sample]["run_id"]),
-                    "instance": rows[sample]["instance_id"], "acts_for": [], "decision": "record",
-                    "args": {"sample": sample, "grade": grade, "by": person.id,
-                             "release": rows[sample]["release"], "part": rows[sample]["part"],
-                             "action": rows[sample]["action"],
-                             "identity": "verified: a sign-in to give these grades alone",
-                             "token_sha256": hashed.removeprefix(approvals.HASHED)}})
-        return {"graded": sorted(grades), "grades": {str(k): v for k, v in grades.items()},
-                "by": person.name}
-
-    # The settings app: where the people who approve instances review the whole version in
-    # force, and ask for a new one. The gateway proposes it to everyone it needs, who approve
-    # it on the page above, so asking for a version changes nothing by itself.
-
-    def settling(authorization: str | None) -> Person:
-        """Who signed in to the settings app: someone who approves instances."""
-        approving()
-        who, _ = sender(authorization, None)
-        person = gw.scenario.person(who)
-        if person is None or not registry.approves(person):
-            raise HTTPException(403, "the settings app is for the people who approve instances: "
-                                     "each part's owner, and the instance approvers")
-        return person
-
-    def drafted(text: str, last: dict | None) -> tuple[Settings | None, bytes, list[str]]:
-        """The version someone wrote, with the next serial, and why it can't be proposed. It's
-        checked strictly before a5s works with it: no YAML anchors or aliases, which can make a
-        few bytes into gigabytes, and only what a5s's format allows."""
-        if len(text) > MAX_SETTINGS:
-            return None, b"", [f"settings are at most {MAX_SETTINGS // 1024} KB"]
-        try:
-            parse_settings(text.encode())
-            data = yaml.safe_load(text)
-            data["serial"] = (last["serial"] if last else 0) + 1
-            raw = yaml.safe_dump(data, sort_keys=False, allow_unicode=True).encode()
-            settings = parse_settings(raw)
-        except (yaml.YAMLError, ValueError, KeyError, TypeError, AttributeError) as exc:
-            return None, b"", [f"a5s can't read it as settings: {exc}"]
-        return settings, raw, gw.unusable(settings, last)
-
-    # The notebook: what agents learned from records, for their owners to read and remove
-
-    def keeping(authorization: str | None) -> tuple[Person, list[dict]]:
-        """Who signed in to the notebook, and the instances whose entries they keep: those of an
-        agent they own, or that they run, as its owner or deputy."""
-        approving()
-        who, _ = sender(authorization, None)
-        person = gw.scenario.person(who)
-        if person is None:
-            raise HTTPException(403, "a5s doesn't know who you are")
-        owns = {r.removeprefix("agent-owner:") for r in person.roles if r.startswith("agent-owner:")}
-        with db.transaction(gw.url) as conn:
-            kept = [i for i in conn.execute("select id, definition, owner, deputy from instances "
-                                            "where status <> 'retired' order by id")
-                    if i["definition"] in owns or person.id in (i["owner"], i["deputy"])]
-        if not kept:
-            raise HTTPException(403, "the notebook is for the people who own an agent, or run one "
-                                     "of its instances")
-        return person, kept
-
-    @app.get("/notebook/", include_in_schema=False)
-    def notebook_page() -> Response:
-        approving()
-        return page("notebook.html")
-
-    @app.get("/notebook/notebook.js", include_in_schema=False)
-    def notebook_script() -> Response:
-        approving()
-        return page("notebook.js")
-
-    def may_see(person: Person, row: dict) -> bool:
-        """Whether someone may see a note: every record its run read, as it reached runs."""
-        return all(gw.scenario.sees(person.id, k) for k in row["read_records"] or row["sources"])
-
-    @app.get("/notebook/api")
-    def notebook_now(authorization: str | None = Header(default=None)) -> dict:
-        """The entries of the instances someone keeps, those whose every record they may see,
-        each with links to its records, and who else keeps the ones they may not see."""
-        person, kept = keeping(authorization)
-        with db.transaction(gw.url) as conn:
-            rows = conn.execute("select * from notebook where instance_id = any(%s) "
-                                "order by instance_id, written_at desc, id desc",
-                                ([i["id"] for i in kept],)).fetchall()
-        shown = [r for r in rows if may_see(person, r)]
-        hidden = {r["instance_id"] for r in rows if not may_see(person, r)}
-        others = sorted({p.name for i in kept if i["id"] in hidden
-                         for k in (i["owner"], i["deputy"])
-                         if k and k != person.id and (p := gw.scenario.person(k))})
-        return {"you": person.name, "instances": [i["id"] for i in kept],
-                "entries": [{"entry": f"N-{r['id']}", "instance": r["instance_id"],
-                             "text": r["text"],
-                             "sources": [{"key": k, "link": (r["links"] or {}).get(k)}
-                                         for k in r["sources"]],
-                             "noted": r["written_at"].date().isoformat(),
-                             "checked": r["checked_at"].date().isoformat()} for r in shown],
-                "hidden": len(rows) - len(shown), "others": others}
-
-    @app.post("/notebook/api/{entry}/remove")
-    def notebook_remove(entry: str, authorization: str | None = Header(default=None)) -> dict:
-        """Remove an entry, as someone who keeps its instance's notebook and may see its records."""
-        person, kept = keeping(authorization)
-        number = entry.removeprefix("N-")
-        if not number.isdigit():
-            raise HTTPException(404, "no such entry")
-        with db.transaction(gw.url) as conn:
-            row = conn.execute("delete from notebook where id = %s and instance_id = any(%s) "
-                               "returning *", (int(number), [i["id"] for i in kept])).fetchone()
-            if row is None or not may_see(person, row):
-                raise HTTPException(404, "no such entry in a notebook you keep")
-            ledger.append(conn, notebook.entry(row, "remove", "its keeper removed it", person.id))
-        return {"removed": f"N-{row['id']}"}
-
-    # People's own tasks: what they asked agents to do over more than one run (core/tasking.py)
-
-    def tasked(authorization: str | None) -> Person:
-        """Who signed in to their tasks' page: anyone the directory knows."""
-        approving()
-        who, _ = sender(authorization, None)
-        person = gw.scenario.person(who)
-        if person is None:
-            raise HTTPException(403, "a5s doesn't know who you are")
-        return person
-
-    @app.get("/tasks/", include_in_schema=False)
-    def tasks_page() -> Response:
-        approving()
-        return page("tasks.html")
-
-    @app.get("/tasks/tasks.js", include_in_schema=False)
-    def tasks_script() -> Response:
-        approving()
-        return page("tasks.js")
-
-    @app.get("/tasks/api")
-    def tasks_now(authorization: str | None = Header(default=None)) -> dict:
-        """Someone's own tasks, with every agent: how each stands, what it waits on, and
-        what it has spent. One whose words name a record they may no longer see shows how it
-        stands alone."""
-        person = tasked(authorization)
-        with db.transaction(gw.url) as conn:
-            return {"you": person.name,
-                    "tasks": tasking.theirs(conn, gw.scenario, person, gw.clock()),
-                    "repeats": repeats.listed(conn, gw.scenario, person)}
-
-    @app.post("/tasks/api/{task}/cancel")
-    def tasks_cancel(task: str, authorization: str | None = Header(default=None)) -> dict:
-        """Cancel one of someone's own tasks, at their word, and the parts of it still open."""
-        person = tasked(authorization)
-        try:
-            with db.transaction(gw.url) as conn:
-                return tasking.cancel_theirs(conn, person, task, gw.clock())
-        except TaskError as exc:
-            raise HTTPException(404 if "isn't one of" in str(exc) else 409, str(exc)) from None
-
-    # The studio's pages: what someone may watch, read only, worked out as the core's API works
-    # it out for the team that runs a5s (core/studio.py)
-
-    def studying(authorization: str | None) -> Person:
-        """Who signed in to the studio: someone who may watch an instance, or owns an agent."""
-        approving()
-        who, _ = sender(authorization, None)
-        person = gw.scenario.person(who)
-        if person is None:
-            raise HTTPException(403, "a5s doesn't know who you are")
-        with db.transaction(gw.url) as conn:
-            theirs = studio.instances(conn, person)
-        if not theirs and not any(r.startswith("agent-owner:") for r in person.roles):
-            raise HTTPException(403, "the studio is for the people who run an instance, own an "
-                                     "agent, own or decide for one of its parts, or approve "
-                                     "instances")
-        return person
-
-    def watched(conn: Any, person: Person, instance: str) -> dict:
-        found = next((i for i in studio.instances(conn, person) if i["id"] == instance), None)
-        if found is None:
-            raise HTTPException(404, "there's no such instance that you may watch")
-        return found
-
-    @app.get("/studio/", include_in_schema=False)
-    def studio_page() -> Response:
-        approving()
-        return page("studio.html")
-
-    @app.get("/studio/studio.js", include_in_schema=False)
-    def studio_script() -> Response:
-        approving()
-        return page("studio.js")
-
-    @app.get("/studio/api")
-    def studio_now(authorization: str | None = Header(default=None)) -> dict:
-        """The agents someone may watch, and where each runs: the instances they may watch."""
-        person = studying(authorization)
-        with db.transaction(gw.url) as conn:
-            return {"you": person.name, "agents": studio.catalogue(
-                conn, gw.scenario, gw.definitions, gw.scenario.tools(), person)}
-
-    @app.get("/studio/api/agents/{agent}")
-    def studio_agent(agent: str, authorization: str | None = Header(default=None)) -> dict:
-        """One agent someone owns, or watches an instance of, with its instructions."""
-        person = studying(authorization)
-        definition = gw.definitions.get(agent)
-        with db.transaction(gw.url) as conn:
-            insts = studio.instances(conn, person)
-        if definition is None or (agent_owner(agent) not in person.roles
-                                  and not any(i["definition"] == agent for i in insts)):
-            raise HTTPException(404, "there's no such agent that you may watch")
-        return studio.agent(gw.scenario, definition, gw.scenario.tools(), insts, whole=True)
-
-    @app.get("/studio/api/agents/{agent}/measures")
-    def studio_agent_measures(agent: str, days: int = 30,
-                              authorization: str | None = Header(default=None)) -> dict:
-        """How the instances of an agent that someone may watch are doing."""
-        person = studying(authorization)
-        with db.transaction(gw.url) as conn:
-            insts = [i for i in studio.instances(conn, person) if i["definition"] == agent]
-            if not insts:
-                raise HTTPException(404, "there's no instance of that agent that you may watch")
-            return studio.figures(conn, gw.scenario, gw.models, insts, days, gw.clock())
-
-    @app.get("/studio/api/instances/{instance}")
-    def studio_instance(instance: str, days: int = 30,
-                        authorization: str | None = Header(default=None)) -> dict:
-        """How an instance someone may watch is doing, over the last `days` days."""
-        person = studying(authorization)
-        with db.transaction(gw.url) as conn:
-            return studio.figures(conn, gw.scenario, gw.models,
-                                  [watched(conn, person, instance)], days, gw.clock())
-
-    @app.get("/studio/api/instances/{instance}/runs")
-    def studio_runs(instance: str, before: str | None = None, limit: int = studio.RUNS,
-                    authorization: str | None = Header(default=None)) -> dict:
-        """An instance's runs that someone may see, newest first, and how many others: whom
-        each acted for named only once the officer agrees."""
-        person = studying(authorization)
-        with db.transaction(gw.url) as conn:
-            try:
-                return studio.runs(conn, gw.scenario, watched(conn, person, instance), person,
-                                   before, limit, names=gw.cfg.studio_names)
-            except ValueError:
-                raise HTTPException(400, "before is where the page before ended, as it said")
-
-    @app.get("/studio/api/runs/{run_id}")
-    def studio_run(run_id: str, authorization: str | None = Header(default=None)) -> dict:
-        """What a run did, if someone may watch its instance and see every record it named."""
-        person = studying(authorization)
-        with db.transaction(gw.url) as conn:
-            found = studio.run(conn, gw.scenario, run_id, person, names=gw.cfg.studio_names)
-        if found is None:
-            raise HTTPException(404, "there's no such run that you may see")
-        return found
-
-    # The auditors' page: the ledger as an auditor reads it, read only, from the same module as
-    # the core's API (core/audit.py). Whoever acted in one of a5s's roles shows as themselves;
-    # whom agents acted for, as a stand-in until the officer agrees to names.
-
-    def auditing(authorization: str | None) -> Person:
-        """Who signed in to the audit trail: an auditor, or assurance, with a second factor
-        where the deployment asks for one, as for what counts: the trail is the most of a5s
-        anyone reads."""
-        approving()
-        token = (authorization or "").removeprefix("Bearer ").strip()
-        if gw.identity is None or not token:
-            sender(authorization, None)  # says what's missing, as everywhere
-            raise HTTPException(401, "sign in first")
-        try:
-            claims = gw.identity.claims(token)
-            person = whose(gw.identity, gw.scenario, claims)
-        except UnknownPerson as exc:
-            raise HTTPException(403, str(exc)) from None
-        except IdentityError as exc:
-            raise HTTPException(401, f"your token doesn't check out: {exc}") from None
-        if not audit.reads(person):
-            raise HTTPException(403, "only an auditor, or assurance, reads the audit trail")
-        if not second_factor(gw.identity.cfg, claims):
-            counted("read the audit trail")
-            raise HTTPException(401, without_second_factor("read the audit trail"))
-        return person
-
-    def shown(conn: Any) -> audit.Shown:
-        return audit.Shown(gw.scenario, audit.key(conn), names=gw.cfg.audit_names)
-
-    def period(since: datetime | None, until: datetime | None) -> dict:
-        return {"since": since.isoformat() if since else None,
-                "until": until.isoformat() if until else None}
-
-    @app.get("/audit/", include_in_schema=False)
-    def audit_page() -> Response:
-        approving()
-        return page("audit.html")
-
-    @app.get("/audit/audit.js", include_in_schema=False)
-    def audit_script() -> Response:
-        approving()
-        return page("audit.js")
-
-    @app.get("/audit/api")
-    def audit_now(authorization: str | None = Header(default=None)) -> dict:
-        """Who's reading, and how the page shows people: by name, or by stand-in."""
-        person = auditing(authorization)
-        return {"you": person.name, "names": gw.cfg.audit_names,
-                "exports": gw.cfg.audit_names, "kinds": list(audit.KINDS)}
-
-    @app.get("/audit/api/entries")
-    def audit_entries(since: datetime | None = None, until: datetime | None = None,
-                      kind: str | None = None, action: str | None = None,
-                      decision: str | None = None, instance: str | None = None,
-                      acted_for: str | None = Query(default=None, alias="for"),
-                      by: str | None = None, after: int = 0, limit: int = audit.MOST,
-                      authorization: str | None = Header(default=None)) -> dict:
-        """A page of a period's entries, as an auditor asks for them: whom agents acted for
-        as a stand-in, which finds them too, until the officer agrees to names."""
-        person = auditing(authorization)
-        with db.transaction(gw.url) as conn:
-            showing = shown(conn)
-            whom = showing.whom(conn, acted_for, since, until) if acted_for else None
-            found = {"entries": [], "next": None} if acted_for and whom is None else audit.search(
-                conn, since=since, until=until, kind=kind, action=action, decision=decision,
-                instance=instance, acted_for=whom, by=by, after=after, limit=limit)
-            audit.noted(conn, person.id, "search", "their sign-in", **period(since, until),
-                        kind=kind,
-                        action=action, decision=decision, instance=instance,
-                        acted_for=acted_for, acted_by=by, after=after or None,
-                        found=len(found["entries"]), page=True)
-        return {"entries": [showing.entry(e) for e in found["entries"]], "next": found["next"]}
-
-    @app.get("/audit/api/report")
-    def audit_report(since: datetime | None = None, until: datetime | None = None,
-                     authorization: str | None = Header(default=None)) -> dict:
-        """Who holds each role, and who did what of a period's administration."""
-        person = auditing(authorization)
-        with db.transaction(gw.url) as conn:
-            found = audit.report(conn, gw.scenario, gw.definitions.keys(), since=since,
-                                 until=until)
-            audit.noted(conn, person.id, "report", "their sign-in", **period(since, until),
-                        acts=len(found["acts"]), page=True)
-            return shown(conn).report(found)
-
-    @app.get("/audit/api/export")
-    def audit_export(since: datetime | None = None, until: datetime | None = None,
-                     after: int = 0, authorization: str | None = Header(default=None)) -> dict:
-        """A page of a period's entries exactly as the ledger holds them, to check and keep:
-        only once the officer agrees to names, since they hold whom agents acted for."""
-        person = auditing(authorization)
-        if not gw.cfg.audit_names:
-            raise HTTPException(403, "exports hold whom agents acted for, so they're on this "
-                                     "page only once the data protection officer agrees; until "
-                                     "then, the team that runs a5s exports a period for you "
-                                     "with `a5s audit export`")
-        with db.transaction(gw.url) as conn:
-            found = audit.export(conn, since=since, until=until, after=after)
-            audit.noted(conn, person.id, "export", "their sign-in", **period(since, until),
-                        after=after or None, entries=len(found["entries"]), page=True)
-        return found
-
-    # The administrators' page: who holds each role, and by what, what waits for whom, and
-    # the latest administrative acts (core/administration.py). It shows; it changes nothing.
-
-    def administering(authorization: str | None) -> Person:
-        """Who signed in to the administrators' page: someone with one of a5s's roles, or
-        from the team that runs it."""
-        approving()
-        who, _ = sender(authorization, None)
-        person = gw.scenario.person(who)
-        if not administration.administers(person, gw.cfg.team):
-            raise HTTPException(403, "the administrators' page is for people who hold one of "
-                                     "a5s's roles, or run it")
-        return person
-
-    @app.get("/admin/", include_in_schema=False)
-    def admin_page() -> Response:
-        approving()
-        return page("admin.html")
-
-    @app.get("/admin/admin.js", include_in_schema=False)
-    def admin_script() -> Response:
-        approving()
-        return page("admin.js")
-
-    @app.get("/admin/api")
-    def admin_now(authorization: str | None = Header(default=None)) -> dict:
-        """Who holds each role and by what, what waits for whom, and the latest acts, read
-        from the trail, with whom each was about as a stand-in until the officer agrees."""
-        person = administering(authorization)
-        with db.transaction(gw.url) as conn:
-            found = administration.page(conn, gw, gw.clock())
-            audit.noted(conn, person.id, "administration", "their sign-in", page=True,
-                        acts=len(found["latest"]))
-        return {"you": person.name, **found}
-
-    @app.get("/settings/", include_in_schema=False)
-    def settings_page() -> Response:
-        approving()
-        return page("settings.html")
-
-    @app.get("/settings/settings.js", include_in_schema=False)
-    def settings_script() -> Response:
-        approving()
-        return page("settings.js")
-
-    @app.get("/settings/api")
-    def settings_now(authorization: str | None = Header(default=None)) -> dict:
-        """The whole version in force, in words and as written, the versions waiting for
-        approval, and what the person asked for lately."""
-        person = settling(authorization)
-        words = (gw.definitions, gw.scenario.person)
-        with db.transaction(gw.url) as conn:
-            last = approvals.latest(conn, gw.scenario.name)
-            in_force = parse_settings(bytes(last["raw"])) if last else None
-            waiting = []
-            for row in conn.execute("select * from settings_proposals where scenario = %s and "
-                                    "outcome is null and serial > %s order by serial desc",
-                                    (gw.scenario.name, last["serial"] if last else -1)):
-                settings = parse_settings(bytes(row["raw"]))
-                approved = approvals.recorded(conn, gw.scenario.name, row["digest"])
-                valid, _ = registry.signers(settings, gw.scenario.person, approved)
-                waiting.append({
-                    "serial": row["serial"], "link": f"/approve/?settings={row['digest']}",
-                    "changes": approvals.changes(in_force, settings, *words),
-                    "approved_by": [p.name if (p := gw.scenario.person(a)) else a for a in valid],
-                    "needs": registry.missing(settings, gw.scenario.person, valid, in_force,
-                                              memberships.rooted(gw.scenario).person)})
-            asked = conn.execute("select * from settings_requests where scenario = %s and "
-                                 "person = %s order by id desc limit 5",
-                                 (gw.scenario.name, person.id)).fetchall()
-        return {
-            "you": person.name,
-            "in_force": {"serial": last["serial"], "text": bytes(last["raw"]).decode(),
-                         "whole": approvals.described(in_force, *words)} if last else None,
-            "waiting": waiting,
-            "requests": [{"asked_at": r["asked_at"].isoformat(),
-                          "serial": parse_settings(bytes(r["raw"])).serial,
-                          "outcome": r["outcome"] or "waiting for a5s to ask its approvers",
-                          "link": f"/approve/?settings={r['digest']}" if r["digest"] else None}
-                         for r in asked],
-        }
-
-    @app.post("/settings/api/review")
-    def settings_review(body: Draft, authorization: str | None = Header(default=None)) -> dict:
-        """What a version someone wrote would change, the whole of it in words, and who'd
-        have to approve it, before they ask for it."""
-        settling(authorization)
-        with db.transaction(gw.url) as conn:
-            last = approvals.latest(conn, gw.scenario.name)
-        settings, _, problems = drafted(body.text, last)
-        if settings is None:
-            return {"problems": problems}
-        before = parse_settings(bytes(last["raw"])) if last else None
-        words = (gw.definitions, gw.scenario.person)
-        return {"serial": settings.serial, "problems": problems,
-                "changes": approvals.changes(before, settings, *words),
-                "whole": approvals.described(settings, *words),
-                "approvers": [p.name for p in registry.approvers(
-                    settings, gw.scenario.holders, before,
-                    memberships.rooted(gw.scenario).holders)]}
-
-    @app.post("/settings/api/requests", status_code=202)
-    def settings_request(body: Draft, authorization: str | None = Header(default=None)) -> dict:
-        """Ask for a version: the gateway proposes it to everyone it needs within a minute."""
-        person = settling(authorization)
-        with db.transaction(gw.url) as conn:
-            conn.execute("select pg_advisory_xact_lock(hashtext(%s))", (f"settings {person.id}",))
-            asked = conn.execute(
-                "select count(*) filter (where outcome is null) as waiting, count(*) filter "
-                "(where asked_at > now() - interval '1 day') as today from settings_requests "
-                "where scenario = %s and person = %s", (gw.scenario.name, person.id)).fetchone()
-            if asked["waiting"]:
-                raise HTTPException(409, {"problems": [
-                    "a5s is still proposing what you asked for last: try again in a minute"]})
-            if asked["today"] >= REQUESTS_A_DAY:
-                raise HTTPException(429, {"problems": [(
-                    f"you've asked for {REQUESTS_A_DAY} versions today, which is as many as a "
-                    "day allows: try again tomorrow")]})
-            last = approvals.latest(conn, gw.scenario.name)
-            settings, raw, problems = drafted(body.text, last)
-            if settings is None or problems:
-                raise HTTPException(409, {"problems": problems})
-            row = conn.execute("insert into settings_requests (scenario, person, raw) "
-                               "values (%s, %s, %s) returning id",
-                               (gw.scenario.name, person.id, raw)).fetchone()
-            ledger.append(conn, {"kind": "admin", "action": "request", "run": None,
-                                 "instance": None, "acts_for": [], "decision": "record",
-                                 "args": {"settings": settings.version, "serial": settings.serial,
-                                          "by": person.id, "identity": "verified"}})
-        return {"request": row["id"], "serial": settings.serial}
+    # The web chat (core/chat_api.py), which talks to the agents through the local channel
+    app.include_router(chat_api.router(gw))
+
+    # The pages where people sign in afresh for one act, each a router of its own whose act's
+    # route checks its sign-in: approving a version of the settings (core/approve_api.py), the
+    # officer's requests, deciding held changes, and grading samples
+    for acts in (approve_api, officer_api, decide_api, grade_api):
+        app.include_router(acts.router(gw))
+
+    # The pages people sign in to for one thing, each a router whose API checks who's signed in:
+    # the studio's (core/studio_api.py), the settings app's, the notebook's, people's own tasks',
+    # the auditors' and the administrators'
+    for pages in (studio_api, settings_api, notebook_api, tasks_api, audit_api, admin_api):
+        app.include_router(pages.router(gw))
+
+    # Every page's sidebar: who signed in, and the pages they may use (core/shell_api.py)
+    app.include_router(shell_api.router(gw))
 
     return app

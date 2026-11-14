@@ -1,3 +1,4 @@
+{{- if ne .Values.mode "sandbox" }}
 {{- if .Values.networkPolicies.enabled }}
 {{/* Each part reaches only what its job needs, as compose's networks keep them: the workers,
 in every pool, reach the gateway alone, and only they and the scheduler reach the gateway. */}}
@@ -51,6 +52,17 @@ spec:
     {{- include "a5s.policy.dns" . | nindent 4 }}
     {{- include "a5s.policy.database" . | nindent 4 }}
     {{- include "a5s.policy.outside" . | nindent 4 }}
+    {{- if .Values.sandbox.url }}
+    - to:  # the sandbox's pods, where the studio tries people's drafts
+        - podSelector:
+            matchLabels:
+              {{- include "a5s.selector" (dict "root" (dict "Release" (dict "Name" .Values.sandbox.release)) "part" "sandbox") | nindent 14 }}
+          namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.sandbox.namespace | default .Release.Namespace }}
+      ports:
+        - {protocol: TCP, port: 8710}
+    {{- end }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -121,4 +133,5 @@ spec:
               {{- include "a5s.selector" (dict "root" . "part" "gateway") | nindent 14 }}
       ports:
         - {protocol: TCP, port: 8700}
+{{- end }}
 {{- end }}

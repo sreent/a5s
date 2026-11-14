@@ -9,13 +9,22 @@ governed process and the decision surface follow in later steps.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Annotated, Any, Protocol
+from pathlib import Path
+from typing import Annotated, Any, Protocol, cast
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, StringConstraints, ValidationError
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictInt,
+    StringConstraints,
+    ValidationError,
+)
 
 from a5s.core.ledger import canonical
 
@@ -26,15 +35,24 @@ PART_OWNER = "part-owner"
 # Someone a part's owner names to decide the changes agents ask for there, beside them, such
 # as while they're away: part-delegate:<part>. They approve no settings.
 PART_DELEGATE = "part-delegate"
-# a5s's own roles, for approving its releases. An agent's owner holds agent-owner:<agent>.
+# An agent's own roles, each for one agent, such as agent-owner:assistant. Its owner owns its
+# definition and releases, by the directory alone; its authors draft changes to it; and its
+# viewers see how it's built, read only (docs/studio.md#people-roles-and-spaces).
+AGENT_OWNER = "agent-owner"
+AGENT_AUTHOR = "agent-author"
+AGENT_VIEWER = "agent-viewer"
+# a5s's own roles, for approving its releases
 RELEASE_APPROVER = "release-approver"  # never from the team that runs a5s, nor above it
 ASSURANCE = "assurance"
+AUDITOR = "auditor"  # reads the ledger; only assurance gives a group it (core/memberships.py)
 DATA_PROTECTION = "data-protection-officer"  # answers requests for someone's data (core/export.py)
 # The roles the identity provider's groups may give, as the settings map them: those people use
-# by signing in, each with a part's where it's a part's. The roles a release needs, which people
-# use by signing with keys of their own, stay the directory's (core/memberships.py).
-GROUP_ROLES = (INSTANCE_APPROVER, DATA_PROTECTION, "auditor", "grader")
+# by signing in, each with a part's or an agent's where it's theirs. The roles a release needs,
+# which people use by signing with keys of their own, stay the directory's, an agent's owner
+# among them (core/memberships.py).
+GROUP_ROLES = (INSTANCE_APPROVER, DATA_PROTECTION, AUDITOR, "grader")
 GROUP_PART_ROLES = (PART_OWNER, PART_DELEGATE)
+GROUP_AGENT_ROLES = (AGENT_AUTHOR, AGENT_VIEWER)
 
 
 @dataclass(frozen=True)
@@ -53,6 +71,15 @@ class Person:
     # When their authenticator was last reset, if the directory says: how a stolen identity
     # usually starts, so their decisions wait a day after it
     reset_at: datetime | None = None
+
+    @classmethod
+    def listed(cls, entry: Mapping[str, Any], folder: Path) -> Person:
+        """Someone as a scenario's directory lists them, its lists as tuples, with the public
+        key its folder keeps for them in keys/<id>.pub, if there is one."""
+        given: dict[str, Any] = {k: tuple(v) if isinstance(v, list) else v
+                                 for k, v in entry.items()}
+        key = folder / "keys" / f"{entry['id']}.pub"
+        return cls(**given, public_key=key.read_text().strip() if key.exists() else None)
 
 
 @dataclass(frozen=True)
@@ -215,6 +242,28 @@ class Signature:
 
 
 @dataclass(frozen=True)
+class DataProtection:
+    """What the data protection officer decides about people's data, in the signed settings:
+    a version that changes any of it needs their approval (core/registry.py). Each starts
+    private, as here, until they choose otherwise."""
+
+    # How long a5s keeps what's said, after a conversation's last message, and what goes with
+    # it: summaries, notes, reminders, what people owed, held changes and their decisions,
+    # samples, questions agents asked each other, and tasks (core/retention.py)
+    kept_for: str = "12 months"
+    # The fewest people an instance serves before its own figures go out to the team's
+    # dashboards: fewer, and its figures could say what one person did (core/metrics.py)
+    fewest_people: int = 5
+    # Whether the studio's pages name whom each run acted for, rather than how many
+    studio_names: bool = False
+    # Whether the auditors' page names whom agents acted for, and exports the ledger there
+    audit_names: bool = False
+    # Whether the status names deciders whose approvals are graded wrong far more often than
+    # others': profiling people
+    flag_rubber_stamps: bool = False
+
+
+@dataclass(frozen=True)
 class Settings:
     version: str
     instances: tuple[InstanceSettings, ...] = field(default_factory=tuple)
@@ -238,6 +287,7 @@ class Settings:
     # it, and the roles its members hold, such as {"<group id>": ("part-owner:billing",)}.
     # A version's own map gives nothing towards its approval: the one in force before it does.
     groups: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    data_protection: DataProtection = field(default_factory=DataProtection)
 
 
 class SettingsError(ValueError):
@@ -259,7 +309,8 @@ _THRESHOLD = Annotated[float, Field(strict=True, ge=0.5, le=0.999)]
 _GROUP = Annotated[str, StringConstraints(strict=True, pattern=(
     r"^[A-Za-z0-9/_](?:[A-Za-z0-9._@:/ -]{0,254}[A-Za-z0-9._@:/-])?$"))]
 _GROUP_ROLE = Annotated[str, StringConstraints(strict=True, pattern=(
-    rf"^(?:{'|'.join(GROUP_ROLES)}|(?:{'|'.join(GROUP_PART_ROLES)}):[a-z0-9][a-z0-9-]{{0,62}})$"))]
+    rf"^(?:{'|'.join(GROUP_ROLES)}|(?:{'|'.join(GROUP_PART_ROLES + GROUP_AGENT_ROLES)})"
+    r":[a-z0-9][a-z0-9-]{0,62})$"))]
 
 
 class _Part(BaseModel):
@@ -290,6 +341,30 @@ class _Limit(BaseModel):
     per_person_30_days: _COUNT | None = None
 
 
+def _ten_years_at_most(given: str) -> str:
+    n, unit = given.split()
+    if int(n) > (3650 if unit.startswith("day") else 120):
+        raise ValueError("a5s keeps things ten years at most: 3650 days, or 120 months")
+    return given
+
+
+# How long a5s keeps what's said: a number of days or months, from a day to ten years
+_KEPT = Annotated[str, StringConstraints(strict=True, pattern=r"^[1-9][0-9]{0,3} (?:day|month)s?$"),
+                  AfterValidator(_ten_years_at_most)]
+
+
+class _DataProtection(BaseModel):
+    """The data protection officer's choices: what a5s keeps, and whom it names."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    kept_for: _KEPT = DataProtection.kept_for
+    fewest_people: Annotated[StrictInt, Field(ge=3, le=1000)] = DataProtection.fewest_people
+    studio_names: bool = DataProtection.studio_names
+    audit_names: bool = DataProtection.audit_names
+    flag_rubber_stamps: bool = DataProtection.flag_rubber_stamps
+
+
 class _Version(BaseModel):
     """a5s's own settings format, checked strictly: names are plain words, levels are whole
     numbers from 0 to 2, and nothing else may be there."""
@@ -303,6 +378,7 @@ class _Version(BaseModel):
     thresholds: dict[_ID, _THRESHOLD] = Field(default_factory=dict)
     instances: dict[_ID, _Instance] = Field(default_factory=dict)
     groups: dict[_GROUP, list[_GROUP_ROLE]] = Field(default_factory=dict)
+    data_protection: _DataProtection = Field(default_factory=_DataProtection)
 
 
 def _plain_yaml(raw: bytes) -> Any:
@@ -340,7 +416,8 @@ def parse_settings(raw: bytes, signatures: tuple[Signature, ...] = ()) -> Settin
     parts = {p for i in version.instances.values() for p in _part_levels(i.parts)} | set(
         version.thresholds)
     for group, roles in version.groups.items():  # a part's role, for a part these settings name
-        if wrong := sorted({r for r in roles if ":" in r and r.split(":", 1)[1] not in parts}):
+        if wrong := sorted({r for r in roles if r.partition(":")[0] in GROUP_PART_ROLES
+                            and r.partition(":")[2] not in parts}):
             raise SettingsError(f"groups.{group}: {', '.join(wrong)} names a part no instance "
                                 "here works in, nor has a threshold")
     return Settings(
@@ -354,6 +431,7 @@ def parse_settings(raw: bytes, signatures: tuple[Signature, ...] = ()) -> Settin
                 for a, limit in version.limits.items()},
         thresholds=dict(version.thresholds),
         groups={g: tuple(sorted(set(roles))) for g, roles in version.groups.items() if roles},
+        data_protection=DataProtection(**version.data_protection.model_dump()),
         instances=tuple(
             InstanceSettings(id=iid, definition=i.definition, serves=tuple(i.serves),
                              level=i.level, owner=i.owner, deputy=i.deputy,
@@ -395,6 +473,7 @@ class Scenario(Protocol):
 
     def holders(self, role: str) -> list[Person]:
         """The people the directory assigns a role to."""
+        ...
 
     def part_of(self, record: str) -> str | None:
         """The part a record is in, by its key, or None if it's in none."""
@@ -402,9 +481,11 @@ class Scenario(Protocol):
     def sees(self, person: str, record: str) -> bool:
         """Whether the directory lets someone see a record, by its key. False for a record
         that doesn't exist."""
+        ...
 
     def team(self, name: str) -> list[Person]:
         """The people in a team, such as the one that runs a5s."""
+        ...
 
     def setup(self, conn: Any, tools_role: str) -> None:
         """Set up anything the scenario keeps in a5s's database, such as a fake system's
@@ -416,11 +497,13 @@ class Scenario(Protocol):
         """What people owe now, from the records: one for each record and person.
         Something that's done, such as a closed case, owes nothing. If the records
         can't be read, raise: an empty list means nothing is owed."""
+        ...
 
     def watched(self) -> list[Record]:
         """Each person's records as they stand now, closed ones included, so an agent that
         reports on them can say what changed. If the records can't be read, raise: an
         empty list means nobody has any."""
+        ...
 
     def settings(self) -> Settings: ...
 
@@ -432,5 +515,5 @@ def record_of(scenario: Scenario, key: str) -> Record | None:
     one, else from every record it watches. None if there's no such record."""
     one = getattr(scenario, "record", None)
     if callable(one):
-        return one(key)
+        return cast("Record | None", one(key))
     return next((r for r in scenario.watched() if r.key == key), None)

@@ -14,8 +14,12 @@ from conftest import REGISTERED, ROOT
 
 
 def _pages() -> set[str]:
+    """Where each page asks to come back to once someone signs in: from the pages' scripts,
+    and the studio's from its sources, which its build bundles."""
     found = set()
-    for script in (ROOT / "src" / "a5s" / "core" / "webchat").glob("*.js"):
+    studio = ROOT / "studio" / "src"
+    for script in [*(ROOT / "src" / "a5s" / "core" / "webchat").glob("*.js"),
+                   *studio.rglob("*.ts"), *studio.rglob("*.tsx")]:
         if m := re.search(r"const BACK = `\$\{location\.origin\}(/[a-z]+/)`", script.read_text()):
             found.add(m.group(1))
     return found

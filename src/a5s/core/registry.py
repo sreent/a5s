@@ -6,12 +6,16 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
-import psycopg
 from psycopg.types.json import Jsonb
 
+from a5s import db
 from a5s.contract import (
+    AGENT_OWNER,
+    ASSURANCE,
+    DATA_PROTECTION,
     INSTANCE_APPROVER,
     PART_OWNER,
+    DataProtection,
     InstanceSettings,
     Person,
     Settings,
@@ -51,9 +55,12 @@ def served(scenario: Any, serves: Iterable[str]) -> list[str]:
 
 
 def approves(person: Person) -> bool:
-    """Whether someone approves instances: the owner of a part, or an instance approver."""
-    return INSTANCE_APPROVER in person.roles or any(r.startswith(f"{PART_OWNER}:")
-                                                    for r in person.roles)
+    """Whether someone approves versions of the settings: the owner of a part, or an instance
+    approver, for what agents may do; an agent's owner, for the groups given its roles; the
+    data protection officer, for what's theirs; or assurance, for the groups given the
+    auditor's role. Each approval counts towards what's theirs alone (`needed`)."""
+    return (any(r in person.roles for r in (INSTANCE_APPROVER, DATA_PROTECTION, ASSURANCE))
+            or any(r.startswith((f"{PART_OWNER}:", f"{AGENT_OWNER}:")) for r in person.roles))
 
 
 def signers(settings: Settings, directory: Directory,
@@ -67,8 +74,9 @@ def signers(settings: Settings, directory: Directory,
         if person is None:
             problems.append(f"{sig.signer} isn't in the directory")
         elif not approves(person):
-            problems.append(f"{sig.signer} approves no instances: they own no part, and don't "
-                            f"hold the {INSTANCE_APPROVER} role")
+            problems.append(f"{sig.signer} approves no settings: they own no part or agent, "
+                            f"and hold none of the {INSTANCE_APPROVER}, {DATA_PROTECTION} and "
+                            f"{ASSURANCE} roles")
         elif not person.public_key or not signing.verify(person.public_key, settings.raw, sig.value):
             problems.append(f"{sig.signer}'s signature isn't for this version")
         else:
@@ -78,7 +86,7 @@ def signers(settings: Settings, directory: Directory,
         if person is None:
             problems.append(f"{who}, who approved it, isn't in the directory")
         elif not approves(person):
-            problems.append(f"{who}, who approved it, approves no instances")
+            problems.append(f"{who}, who approved it, approves no settings")
         elif who not in valid:
             valid.append(who)
     return valid, problems
@@ -100,6 +108,12 @@ def _thresholds_change(settings: Settings, before: Settings | None) -> set[str]:
             if settings.thresholds.get(p) != before.thresholds.get(p)}
 
 
+def _data_protection_change(settings: Settings, before: Settings | None) -> bool:
+    """Whether a version changes what the data protection officer decides: from the version
+    in force, or for the first, from a5s's defaults, each of which keeps people's data close."""
+    return settings.data_protection != (before.data_protection if before else DataProtection())
+
+
 def _classes_change(settings: Settings, before: Settings | None) -> bool:
     """Whether a version sets the scenario's classes of data afresh, which decide which models
     may see what: the first version does, and so does one that changes them."""
@@ -114,35 +128,54 @@ def missing(settings: Settings, directory: Directory, valid: Iterable[str],
     for any instance in no part, and for the scenario's classes of data, if it sets them
     afresh. `before` is the version before it, whose instances a version that leaves them out
     retires, so their approvers decide that too. Giving a group a role needs the role's owner
-    as the directory alone names them (`rooted`), so no role a group gives grows itself."""
+    as the directory alone names them (`rooted`), so no role a group gives grows itself; and
+    changing the data protection officer's choices needs the officer, named the same way."""
+    valid = list(valid)
+    if not any(p.roles for who in valid if (p := directory(who))):
+        return ["nobody who approves instances has approved it"]
+    return list(dict.fromkeys(why for _, why, _ in needed(settings, directory, valid, before,
+                                                           rooted)))
+
+
+def needed(settings: Settings, directory: Directory, valid: Iterable[str],
+           before: Settings | None = None,
+           rooted: Directory | None = None) -> list[tuple[str, str, bool]]:
+    """What `missing` says a version still needs, as each role whose holder's approval would
+    give it, why, and whether only someone the directory itself gives the role counts, as for
+    giving a group a role: so a page can tell each approver what waits for them."""
     valid = list(valid)
     held = {role for who in valid if (p := directory(who)) for role in p.roles}
-    if not held:
-        return ["nobody who approves instances has approved it"]
     rooted = rooted or directory
     owners = {role for who in valid if (p := rooted(who)) for role in p.roles}
-    granting = [f"the {memberships.owner_of(role)} named in the directory hasn't approved giving "
-                f"{group} the {role} role"
-                for group, role in memberships.grants(settings, before)
-                if memberships.owner_of(role) not in owners]
     covered = _covered(settings, before)
-    needs = [f"the owner of {part} hasn't approved it"
+    needs = [(f"{PART_OWNER}:{part}", f"the owner of {part} hasn't approved it", False)
              for part in sorted({p for i in covered for p in i.parts}
                                 | _thresholds_change(settings, before))
              if f"{PART_OWNER}:{part}" not in held]
     if INSTANCE_APPROVER not in held:
         if any(not i.parts for i in covered):
-            needs.append(f"no {INSTANCE_APPROVER} has approved it, for the instances in no part")
+            why = f"no {INSTANCE_APPROVER} has approved it, for the instances in no part"
+            needs.append((INSTANCE_APPROVER, why, False))
         if _classes_change(settings, before):
-            needs.append(f"no {INSTANCE_APPROVER} has approved its classes of data")
-    return needs + list(dict.fromkeys(granting))
+            why = f"no {INSTANCE_APPROVER} has approved its classes of data"
+            needs.append((INSTANCE_APPROVER, why, False))
+    for group, role in memberships.grants(settings, before):
+        if (owner := memberships.owner_of(role)) not in owners:
+            why = f"the {owner} named in the directory hasn't approved giving {group} the {role} role"
+            needs.append((owner, why, True))
+    if _data_protection_change(settings, before) and DATA_PROTECTION not in owners:
+        why = (f"the {DATA_PROTECTION} named in the directory hasn't approved its choices for "
+               "people's data")
+        needs.append((DATA_PROTECTION, why, True))
+    return needs
 
 
 def approvers(settings: Settings, holders: Holders, before: Settings | None = None,
               rooted: Holders | None = None) -> list[Person]:
     """The people whose approval a version needs: each part's owners, and the instance
     approvers, if any instance it decides on is in no part, or it sets the classes of data
-    afresh; and, for each role it gives a group, the role's owners the directory names."""
+    afresh; for each role it gives a group, the role's owners the directory names; and the data
+    protection officer the directory names, if it changes their choices."""
     covered = _covered(settings, before)
     roles = [f"{PART_OWNER}:{p}" for p in sorted({p for i in covered for p in i.parts}
                                                  | _thresholds_change(settings, before))]
@@ -151,7 +184,10 @@ def approvers(settings: Settings, holders: Holders, before: Settings | None = No
     found: dict[str, Person] = {}
     for role in roles:
         found.update({p.id: p for p in holders(role) if p.id not in found})
-    for role in sorted({memberships.owner_of(r) for _, r in memberships.grants(settings, before)}):
+    rooted_roles = {memberships.owner_of(r) for _, r in memberships.grants(settings, before)}
+    if _data_protection_change(settings, before):
+        rooted_roles.add(DATA_PROTECTION)
+    for role in sorted(rooted_roles):
         found.update({p.id: p for p in (rooted or holders)(role) if p.id not in found})
     return list(found.values())
 
@@ -182,7 +218,7 @@ class Applied:
 
 
 def apply(
-    conn: psycopg.Connection,
+    conn: db.Connection,
     definitions: dict[str, Definition],
     settings: Settings,
     tools: dict[str, Tool],
@@ -309,7 +345,7 @@ def apply(
     return applied
 
 
-def set_status(conn: psycopg.Connection, instance: str, *, by: str, suspend: bool,
+def set_status(conn: db.Connection, instance: str, *, by: str, suspend: bool,
                identity: str = "unverified (development)") -> str:
     """Suspend or resume an instance, and return the reason if it can't be done."""
     row = conn.execute("select status, suspended_by from instances where id = %s for update",

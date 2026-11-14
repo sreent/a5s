@@ -19,8 +19,7 @@ import base64
 import hashlib
 from typing import Any
 
-import psycopg
-
+from a5s import db
 from a5s.contract import DATA_PROTECTION, Person
 from a5s.core import groups, sealing
 from a5s.core.approvals import FRESH, HASHED, Refused
@@ -81,7 +80,7 @@ def check(verifier: Verifier, scenario: Any, client_id: str, token: str, action:
     return officer, claims
 
 
-def record(conn: psycopg.Connection, action: str, person: str, officer: str, token: str,
+def record(conn: db.Connection, action: str, person: str, officer: str, token: str,
            salt: str, claims: dict) -> dict:
     """Record the officer's request, with the sign-in that made it, for the gateway to check
     again and carry out. Refused if the sign-in was used before."""
@@ -96,7 +95,7 @@ def record(conn: psycopg.Connection, action: str, person: str, officer: str, tok
     return dict(row)
 
 
-def take(conn: psycopg.Connection, verifier: Verifier | None, scenario: Any,
+def take(conn: db.Connection, verifier: Verifier | None, scenario: Any,
          client_id: str | None, action: str, person: str) -> dict:
     """The officer's latest request to do this, from the last ten minutes, checked again, and
     used up, so it does nothing more. Refused if there's none, or it doesn't check out."""

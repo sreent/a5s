@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-import psycopg
+from a5s import db
 
 GENESIS = bytes(32)
 _LOCK = 0x0A5_1ED6E7  # serialises appends, so the chain has no forks
@@ -43,7 +43,7 @@ def mask(args: dict[str, Any], plain: tuple[str, ...] = ()) -> dict[str, Any]:
     return masked
 
 
-def append(conn: psycopg.Connection, entry: dict[str, Any]) -> int:
+def append(conn: db.Connection, entry: dict[str, Any]) -> int:
     """Append an entry in the caller's transaction, and return its sequence number. It waits
     for the ledger's lock a while at most, so one stalled writer fails others rather than
     holding them all, and the work fails, and is tried again, as a database error would. Its
@@ -78,7 +78,7 @@ class Verification:
     broken_at: int | None = None
 
 
-def verify(conn: psycopg.Connection) -> Verification:
+def verify(conn: db.Connection) -> Verification:
     """Recompute the chain from the start, and say where it breaks, if it does."""
     prev, count = GENESIS, 0
     for row in conn.execute("select seq, entry, prev_hash, hash from ledger order by seq"):
@@ -95,7 +95,7 @@ def verify(conn: psycopg.Connection) -> Verification:
     return Verification(True, count, prev.hex())
 
 
-def entries(conn: psycopg.Connection, *, run: str | None = None, limit: int = 100) -> list[dict]:
+def entries(conn: db.Connection, *, run: str | None = None, limit: int = 100) -> list[dict]:
     if run:
         rows = conn.execute(
             "select entry from ledger where run_id = %s order by seq", (run,)

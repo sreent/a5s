@@ -21,9 +21,9 @@ from urllib.parse import quote
 import httpx
 import yaml
 
-from a5s import build, db, definitions, devdb, worker
+from a5s import authoring, build, config, db, definitions, devdb, worker
 from a5s.client import Client, Refused
-from a5s.config import DEFAULT_DATABASE_URL, Config
+from a5s.config import DEFAULT_DATABASE_URL, Config, load_models
 from a5s.contract import Signature
 from a5s.core import (
     anchor,
@@ -78,8 +78,7 @@ def _migrate(cfg: Config, url: str | None = None) -> None:
     ran = db.migrate(url)
     with db.transaction(url) as conn:
         build.scenario(cfg).setup(conn, db.ROLES["gateway"])
-    passwords = {part: os.environ[f"A5S_DB_{part.upper()}_PASSWORD"] for part in db.ROLES
-                 if os.environ.get(f"A5S_DB_{part.upper()}_PASSWORD")}
+    passwords = config.db_passwords(list(db.ROLES))
     db.set_passwords(url, passwords)
     print(f"Migrated: {', '.join(ran) or 'nothing new'}. "
           f"Passwords set for {', '.join(passwords) or 'no roles'}.")
@@ -143,9 +142,70 @@ def _pin(cfg: Config, agent: str) -> None:
     print(f"Pinned {agent}'s tools in {lock}. Run `a5s apply` to roll the new release out.")
 
 
+def _agent(cfg: Config, args: argparse.Namespace) -> None:
+    """Making agents: from a template, and checking them before their release, as the studio
+    will (authoring.py)."""
+    tools = build.scenario(cfg).tools()
+    found = authoring.templates(cfg.root)
+    if args.what == "templates":
+        for name, folder in found.items():
+            missing = authoring.lacks(folder, tools)
+            print(f"{name}: {definitions.load(folder).works_for}"
+                  + (f" (needs {', '.join(missing)}, which this scenario hasn't got)" if missing else ""))
+    elif args.what == "new":
+        if args.template not in found:
+            sys.exit(f"There's no template {args.template}: `a5s agent templates` lists them.")
+        try:
+            made = authoring.new(found[args.template], args.name, cfg.agents_dir, tools)
+        except ValueError as e:
+            sys.exit(f"Can't make {args.name}: {e}.")
+        print(f"Made {made} from {args.template}, with its tools pinned. Edit its agent.yaml and "
+              f"AGENTS.md, check it with `a5s agent check {made}`, and release it as any agent: "
+              "a new agent's first release needs the release approver. Its owners are the people "
+              f"the directory gives the role {releases.agent_owner(args.name)}.")
+    else:
+        folders = args.folders or [f for f in sorted(cfg.agents_dir.iterdir())
+                                   if (f / "agent.yaml").is_file()]
+        models = load_models(cfg.models_file)
+        stopped = False
+        for folder in folders:
+            problems = authoring.check(folder, tools, models)
+            stopped = stopped or bool(problems)
+            print(f"{folder.name}: " + ("ready to release" if not problems else
+                                         f"{len(problems)} to fix before its release"))
+            for problem in problems:
+                print(f"- {problem}")
+        if stopped:
+            sys.exit(1)
+
+
+def _sandbox(cfg: Config, host: str, port: int) -> None:
+    """The sandbox: a deployment of its own, where people try the agents they're making, on
+    its own database, with the deployment's scenario's made-up records (a5s/sandbox.py)."""
+    import tempfile
+
+    import uvicorn
+
+    from a5s import sandbox
+
+    admin, token = config.SANDBOX_DATABASE_URL.read(), config.SANDBOX_TOKEN.read()
+    if not admin or not token:
+        sys.exit("Set A5S_SANDBOX_DATABASE_URL, the address of the sandbox's own database, as its "
+                 "administrator, and A5S_SANDBOX_TOKEN, which the studio it answers shares.")
+    if admin == config.DATABASE_URL.read():
+        sys.exit("The sandbox needs a database of its own, not the deployment's.")
+    work = config.SANDBOX_DIR.read() or Path(tempfile.mkdtemp(prefix="a5s-sandbox-"))
+    try:
+        with sandbox.opened(cfg, admin, work) as box:
+            uvicorn.run(sandbox.create_app(box, token), host=host, port=port,
+                        timeout_keep_alive=KEEP_ALIVE)
+    except sandbox.Refused as e:
+        sys.exit(f"The sandbox won't start: {e}.")
+
+
 def _say(cfg: Config, person: str, agent: str, text: str, wait: float = 600) -> None:
     """Send a message through the core's local channel, and print what a5s says back."""
-    token = os.environ.get("A5S_TOKEN")  # the person's, from the identity provider, if a5s uses one
+    token = config.TOKEN.read()  # the person's, from the identity provider, if a5s uses one
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     with httpx.Client(base_url=cfg.channels_url, headers=headers, timeout=90) as channel:
         sent = channel.post("/channels/local/messages",
@@ -166,7 +226,7 @@ def _say(cfg: Config, person: str, agent: str, text: str, wait: float = 600) -> 
 
 def _inbox(cfg: Config, person: str, wait: float) -> None:
     """Print what's been written to a person without answering them, such as reminders."""
-    token = os.environ.get("A5S_TOKEN")
+    token = config.TOKEN.read()
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     with httpx.Client(base_url=cfg.channels_url, headers=headers, timeout=wait + 30) as channel:
         found = channel.get("/channels/local/inbox", params={"person": person, "wait": wait})
@@ -181,7 +241,7 @@ def _inbox(cfg: Config, person: str, wait: float) -> None:
 def _summaries(cfg: Config, person: str, agent: str) -> None:
     """Print what a5s keeps of a person's conversation with an agent beyond what each run is
     given: a summary of each topic, which they can have the agent correct."""
-    token = os.environ.get("A5S_TOKEN")
+    token = config.TOKEN.read()
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     with httpx.Client(base_url=cfg.channels_url, headers=headers, timeout=30) as channel:
         found = channel.get("/channels/local/summaries", params={"person": person, "agent": agent})
@@ -307,7 +367,7 @@ def _audit(cfg: Config, args: argparse.Namespace) -> None:
         sys.exit("say who's reading it, with --by: an auditor, or assurance")
     # their own sign-in, from the identity provider, if they have one: the ledger records
     # the read as theirs; without it, as the service token's, naming them
-    period = {"since": args.since, "until": args.until, "identity": os.environ.get("A5S_TOKEN")}
+    period = {"since": args.since, "until": args.until, "identity": config.TOKEN.read()}
     if args.what == "entries":
         found = _core(cfg, lambda core: core.audit_entries(
             args.by, **period, after=args.after, limit=args.n, kind=args.kind,
@@ -406,15 +466,76 @@ def _admin(cfg: Config, path: str, body: dict | None = None, timeout: float = 30
                  timeout)
 
 
+# How often the copier copies the ledger, when it keeps copying: assurance's, by a release
+ANCHOR_EVERY = 3600
+
+# The commands that run one of a5s's parts, or set it up: each stops at once on a setting it
+# can't use, or an A5S_ name that isn't a setting, which elsewhere it's only told of
+PARTS = frozenset({"setup", "gateway", "worker", "channels", "scheduler", "anchor", "sandbox",
+                   "dev"})
+
+
+def _config(args: argparse.Namespace) -> None:
+    """Every setting, what this environment sets it to, and what a part would refuse."""
+    problems, _ = config.check(serving=True)
+    if args.markdown:
+        print(config.markdown(), end="")
+        return
+    if args.json:
+        print(json.dumps({"settings": [
+            {"name": v.name, "area": v.area, "value": config.shown(v)[0],
+             "source": config.shown(v)[1], "takes": v.takes, "means": v.means}
+            for v in config.VARS], "problems": problems}, indent=2))
+    else:
+        print(config.described(only_set=args.set))
+        if problems:
+            print("\nWhat a part would refuse to start with:\n  " + "\n  ".join(problems))
+    if problems:
+        sys.exit(1)
+
+
+def _checked(command: str) -> None:
+    """Stop before anything starts if a setting can't be used, saying which and why."""
+    problems, warnings = config.check(serving=command in PARTS)
+    for warning in warnings:
+        log.warning(warning)
+    if problems:
+        sys.exit(f"a5s {command} can't start, as its settings need changing:\n  "
+                 + "\n  ".join(problems)
+                 + "\n`a5s config` shows every setting and what it takes (docs/configuration.md).")
+    if command in PARTS:
+        here = config.set_here()
+        log.info("a5s %s starts with %s: every other setting is a5s's default", command,
+                 ", ".join(f"{k}={v}" for k, v in here.items()) or "nothing set")
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="a5s", description="An agent OS on Deep Agents.")
     sub = parser.add_subparsers(dest="command", required=True)
+    shown = sub.add_parser("config", help="every setting a5s reads, what this environment sets "
+                                          "it to, and what a part would refuse to start with")
+    shown.add_argument("--set", action="store_true", help="only those set here")
+    shown.add_argument("--json", action="store_true", help="as JSON")
+    shown.add_argument("--markdown", action="store_true",
+                       help="the table docs/configuration.md shows")
     sub.add_parser("up", help="start a local Postgres and set up the schema")
     sub.add_parser("down", help="stop the local Postgres")
     sub.add_parser("migrate", help="bring the schema up to date, as the administrator")
     sub.add_parser("apply", help="bring instances in line with the settings and releases")
     pin = sub.add_parser("pin", help="pin the schemas of an agent's tools in its release")
     pin.add_argument("agent")
+    agent = sub.add_parser("agent", help="make an agent from a template, or check agents before "
+                                         "their release")
+    agent_sub = agent.add_subparsers(dest="what", required=True)
+    agent_sub.add_parser("templates", help="the agents a new one may start from")
+    made = agent_sub.add_parser("new", help="make an agent's folder from a template, its tools "
+                                            "pinned")
+    made.add_argument("name", help="the new agent's, such as finance-assistant")
+    made.add_argument("--from", dest="template", required=True,
+                      help="the template, such as assistant or master-data/mdg-assistant")
+    checked = agent_sub.add_parser("check", help="what stops agents from being released here")
+    checked.add_argument("folders", nargs="*", type=Path,
+                         help="their folders (default: every agent in the agents folder)")
     keygen = sub.add_parser("keygen", help="make a signing key for a person")
     keygen.add_argument("person")
     keygen.add_argument("--out", type=Path, default=Path("keys"))
@@ -434,6 +555,10 @@ def main(argv: list[str] | None = None) -> None:
         service.add_argument("--port", type=int, default=port)
     sub.add_parser("scheduler", help="answer the messages the core receives")
     sub.add_parser("dev", help="run the core, the channels and the scheduler, for development")
+    boxed = sub.add_parser("sandbox", help="run the sandbox, where people try the agents they're "
+                                           "making, on its own database")
+    boxed.add_argument("--host", default="0.0.0.0")
+    boxed.add_argument("--port", type=int, default=8710)
     say = sub.add_parser("say", help="send an agent a message, as a person")
     say.add_argument("--as", dest="person", required=True)
     say.add_argument("agent")
@@ -497,7 +622,9 @@ def main(argv: list[str] | None = None) -> None:
     caps.add_argument("action")
     caps.add_argument("--by", help="who you are, in development; else your sign-in in A5S_TOKEN")
     copy = sub.add_parser("anchor", help="copy the ledger to locked storage")
-    copy.add_argument("--every", type=int, metavar="SECONDS", help="keep copying, this often")
+    copy.add_argument("--every", type=int, nargs="?", const=ANCHOR_EVERY, metavar="SECONDS",
+                      help=f"keep copying, this often: every {ANCHOR_EVERY // 60} minutes if it "
+                           "doesn't say")
     rel = sub.add_parser("release", help="approve a release of a5s for this deployment")
     rel_sub = rel.add_subparsers(dest="what", required=True)
     manifest = rel_sub.add_parser("manifest", help="print the manifest of a source tree, as an "
@@ -540,6 +667,9 @@ def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=logging.WARNING,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     logging.getLogger("a5s").setLevel(logging.INFO)
+    if args.command == "config":
+        return _config(args)
+    _checked(args.command)
     root = Path.cwd()
     if args.command == "up":
         return _dev_up(root)
@@ -554,6 +684,8 @@ def main(argv: list[str] | None = None) -> None:
         _apply(cfg)
     elif args.command == "pin":
         _pin(cfg, args.agent)
+    elif args.command == "agent":
+        _agent(cfg, args)
     elif args.command == "sign":
         _sign(cfg, args.person, args.key)
     elif args.command == "setup":
@@ -573,6 +705,8 @@ def main(argv: list[str] | None = None) -> None:
         _scheduler(cfg)
     elif args.command == "dev":
         _dev(cfg)
+    elif args.command == "sandbox":
+        _sandbox(cfg, args.host, args.port)
     elif args.command == "say":
         _say(cfg, args.person, args.agent, args.text)
     elif args.command == "inbox":
@@ -581,7 +715,7 @@ def main(argv: list[str] | None = None) -> None:
         _summaries(cfg, args.person, args.agent)
     elif args.command in ("suspend", "resume"):
         print(_admin(cfg, f"/instances/{args.instance}/{args.command}",
-                     {"by": args.by, "identity": os.environ.get("A5S_TOKEN")}))
+                     {"by": args.by, "identity": config.TOKEN.read()}))
     elif args.command == "export":
         found = _admin(cfg, f"/people/{quote(args.person, safe='')}/export",  # as the officer
                        {"by": args.by}, timeout=300)  # asked: it counts across the whole ledger
@@ -642,7 +776,7 @@ def main(argv: list[str] | None = None) -> None:
         if not args.key:
             sys.exit("name the change to end, such as P-12")
         print(_admin(cfg, f"/proposals/{args.key}/end",
-                     {"by": args.by, "identity": os.environ.get("A5S_TOKEN")}))
+                     {"by": args.by, "identity": config.TOKEN.read()}))
     elif args.command == "proposals":
         for p in _admin(cfg, "/proposals")["proposals"]:
             print(f"{p['key']} {p['status']} since {p['decided_at'] or p['proposed_at']}, "
@@ -650,7 +784,7 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "caps":
         print(_admin(cfg, "/caps/lower", {"agent": args.agent, "part": args.part,
                                           "action": args.action, "by": args.by,
-                                          "identity": os.environ.get("A5S_TOKEN")}))
+                                          "identity": config.TOKEN.read()}))
     elif args.command == "release":
         _release(cfg, args)
     elif args.command == "ledger" and args.what == "verify":

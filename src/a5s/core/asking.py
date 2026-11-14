@@ -26,15 +26,14 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-import psycopg
-
+from a5s import db
 from a5s.core import groups, handles, registry
 from a5s.core.coretools import Call, CoreTool, Refused
 
 ASK = "ask_agent"
 KIND = "question"  # the trigger of the run that answers one
 QUESTION = "the question it was asked"  # whence what the run asked read of the question
-ASKS = 3  # questions a run may ask [TBC]
+ASKS = 3  # questions a run may ask [starting value]
 LONGEST = 1000  # characters of a question
 KEPT_BACK = "[a value the {agent} can't pass on]"
 
@@ -80,7 +79,7 @@ def task(row: dict) -> dict:
     return found
 
 
-def whom(conn: psycopg.Connection, scenario: Any, row: dict, agent: str) -> dict:
+def whom(conn: db.Connection, scenario: Any, row: dict, agent: str) -> dict:
     """The instance of `agent` that the run's instance may ask, and that serves everyone the
     run acts for. Refused, in words the agent passes on, if there's none."""
     if row["trigger"].get("kind") == KIND:
@@ -100,7 +99,7 @@ def whom(conn: psycopg.Connection, scenario: Any, row: dict, agent: str) -> dict
     raise Refused(f"you may not ask the {agent} here: the settings name the agents you may ask")
 
 
-def ask(conn: psycopg.Connection, row: dict, inst: dict, text: str, now: datetime) -> str:
+def ask(conn: db.Connection, row: dict, inst: dict, text: str, now: datetime) -> str:
     """Keep a question a run asks, for the run that answers it, which the core opens at once.
     Its id. A run asks a few at most."""
     asked = conn.execute("select count(*) as n from questions where asked_by_run = %s",

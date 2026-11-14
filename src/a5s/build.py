@@ -71,4 +71,5 @@ def read_status(gw: Gateway) -> dict:
         found = status.report(conn, gw.breakers.open(), gw.cfg.seal_keys)
         found["serving"] = {i["id"]: set(registry.served(gw.scenario, i["serves"]))
                             for i in conn.execute("select id, serves from instances")}
+        found["fewest_people"] = gw.data_protection(conn).fewest_people
     return found

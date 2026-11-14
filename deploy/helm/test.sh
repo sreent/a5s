@@ -3,8 +3,10 @@
 # policies, with Postgres beside it, and checks that: the setup job runs before the parts
 # start; the core runs no release its people haven't approved, and runs it once a job records
 # their signatures; the scheduler reaches the gateway, and never finds it away while it's
-# replaced; and each worker pool, the shared one and each agent's own, reaches the gateway
-# alone, never the database, the channels, another pool or the internet.
+# replaced; each worker pool, the shared one and each agent's own, reaches the gateway alone,
+# never the database, the channels, another pool or the internet; and the sandbox, a second
+# release in a namespace of its own, on a database server of its own, tries a draft the
+# studio sends it, is reached by a5s's channels alone, and reaches nothing of a5s's.
 # Needs the image first: docker build -t a5s:dev .
 set -eu
 cd "$(dirname "$0")/../.."
@@ -25,6 +27,8 @@ cleanup() {
       docker exec "$CLUSTER" kubectl -n a5s logs "job/a5s-$part" 2>&1 | tail -30 || true
     done
     docker exec "$CLUSTER" kubectl -n a5s logs deploy/a5s-gateway --tail=30 2>&1 || true
+    docker exec "$CLUSTER" kubectl -n a5s-sandbox get pods 2>&1 || true
+    docker exec "$CLUSTER" kubectl -n a5s-sandbox logs deploy/a5s-sandbox --tail=30 2>&1 || true
   fi
   docker rm -f "$CLUSTER" > /dev/null 2>&1 || true
   rm -rf "$work"
@@ -49,9 +53,8 @@ docker save "$IMAGE" | docker exec -i "$CLUSTER" ctr -n k8s.io images import - >
 echo "A cluster of its own is up, with the image in it."
 
 # Postgres, as the deployment's own would be, and the Secret each part reads its own keys of
-k create namespace a5s > /dev/null
-admin=$(random)
-k -n a5s apply -f - > /dev/null <<YAML
+postgres() {  # a database server, in a namespace, as its administrator's password has it
+  k -n "$1" apply -f - > /dev/null <<YAML
 apiVersion: v1
 kind: Pod
 metadata: {name: postgres, labels: {app: postgres}}
@@ -61,7 +64,7 @@ spec:
       image: $POSTGRES
       env:
         - {name: POSTGRES_USER, value: a5s}
-        - {name: POSTGRES_PASSWORD, value: "$admin"}
+        - {name: POSTGRES_PASSWORD, value: "$2"}
       ports: [{containerPort: 5432}]
       readinessProbe: {exec: {command: [pg_isready, -U, a5s]}, periodSeconds: 2}
 ---
@@ -70,7 +73,12 @@ kind: Service
 metadata: {name: postgres}
 spec: {selector: {app: postgres}, ports: [{port: 5432}]}
 YAML
-k -n a5s wait --for=condition=Ready pod/postgres --timeout=300s > /dev/null
+  k -n "$1" wait --for=condition=Ready pod/postgres --timeout=300s > /dev/null
+}
+k create namespace a5s > /dev/null
+admin=$(random)
+shared=$(random)  # the token the studio and the sandbox share
+postgres a5s "$admin"
 set -- --from-literal=database-admin-url="postgresql://a5s:$admin@postgres:5432/postgres"
 for part in gateway channels scheduler anchor; do
   password=$(random)
@@ -78,7 +86,7 @@ for part in gateway channels scheduler anchor; do
     --from-literal="database-$part-password=$password"
 done
 k -n a5s create secret generic a5s "$@" --from-literal=service-token="$(random)" \
-  --from-literal=seal-keys="$(random)" > /dev/null
+  --from-literal=seal-keys="$(random)" --from-literal=sandbox-token="$shared" > /dev/null
 
 helm install a5s /charts/a5s -n a5s -f /charts/ci-values.yaml --wait --timeout 10m > /dev/null
 [ "$(k -n a5s get job a5s-setup -o jsonpath='{.status.succeeded}')" = 1 ]
@@ -135,11 +143,12 @@ echo "The core was never away as it was replaced: its new pod was ready before t
   -o jsonpath='{.items[0].metadata.labels.a5s\.test/workload-identity}')" = on ]
 echo "The copier's pods carry the labels a cloud's workload identity needs."
 
-reach() {  # from a part's pod: whether it reaches a host and port
-  k -n a5s exec "deploy/$1" -- python -c \
-    "import socket, sys; socket.create_connection((sys.argv[1], int(sys.argv[2])), 5)" "$2" "$3" \
+reach_from() {  # from a part's pod, in a namespace: whether it reaches a host and port
+  k -n "$1" exec "deploy/$2" -- python -c \
+    "import socket, sys; socket.create_connection((sys.argv[1], int(sys.argv[2])), 5)" "$3" "$4" \
     > /dev/null 2>&1
 }
+reach() { reach_from a5s "$@"; }
 pools="a5s-worker a5s-worker-assistant a5s-worker-watcher"  # the shared, and each agent's
 for pool in $pools; do
   reach "$pool" a5s-gateway 8700 || { echo "$pool can't reach the gateway."; exit 1; }
@@ -156,4 +165,49 @@ for pool in $pools; do
 done
 echo "Each worker pool reaches the gateway alone: not the database, the channels, another pool"
 echo "or the internet. The scheduler reaches each."
+
+# The sandbox: a second release of the chart, in a namespace of its own, on a database server
+# of its own, which a5s's channels, set up for it by ci-values.yaml, send a draft to try
+k create namespace a5s-sandbox > /dev/null
+own=$(random)
+postgres a5s-sandbox "$own"
+k -n a5s-sandbox create secret generic a5s --from-literal=sandbox-token="$shared" \
+  --from-literal=sandbox-database-url="postgresql://a5s:$own@postgres:5432/postgres" > /dev/null
+helm install a5s /charts/a5s -n a5s-sandbox -f /charts/ci-values.yaml --set mode=sandbox \
+  --wait --timeout 10m > /dev/null
+k -n a5s exec deploy/a5s-channels -- python -c '
+import os
+from pathlib import Path
+
+import httpx
+
+from a5s.core import drafts
+
+url, token = os.environ["A5S_SANDBOX_URL"], os.environ["A5S_SANDBOX_TOKEN"]
+said = httpx.post(f"{url}/sandbox/tries", headers={"Authorization": f"Bearer {token}"}, timeout=120,
+                  json={"key": "chart1", "files": drafts.folder_files(Path("/app/agents/assistant")),
+                        "person": "ana", "text": "Which questions mention an invoice?"})
+assert said.status_code == 200, said.text
+said = said.json()
+assert said["reply"].startswith("(A stand-in model.)"), said["reply"]
+assert [c["decision"] for c in said["run"]["calls"]] == ["allow"], said["run"]["calls"]
+assert httpx.get(f"{url}/sandbox", timeout=30).status_code == 401  # without the token
+' || { echo "The studio couldn't try a draft in the sandbox."; exit 1; }
+echo "The sandbox tried a draft a5s's channels sent it, through the core's checks, on its stand-in."
+for part in a5s-gateway a5s-scheduler a5s-worker; do
+  if reach "$part" a5s-sandbox.a5s-sandbox 8710; then
+    echo "$part reached the sandbox, which only the channels should."
+    exit 1
+  fi
+done
+reach_from a5s-sandbox a5s-sandbox postgres 5432 || { echo "The sandbox can't reach its database."; exit 1; }
+for target in "postgres.a5s 5432" "a5s-gateway.a5s 8700" "a5s-channels.a5s 8703" "1.1.1.1 443"; do
+  # shellcheck disable=SC2086 # each is a host and a port
+  if reach_from a5s-sandbox a5s-sandbox $target; then
+    echo "The sandbox reached $target, which its network policy should stop."
+    exit 1
+  fi
+done
+echo "Only the channels reach the sandbox, and it reaches its own database alone: nothing of"
+echo "a5s's, nor the internet, with only its stand-in model."
 echo "Kubernetes test passed."

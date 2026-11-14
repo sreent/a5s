@@ -3,16 +3,18 @@ agent and instance is doing, and what each run did (docs/studio.md).
 
 The core's API, for code, the command line and CI, and the studio's pages in the channels app,
 for people signed in, both work it out here, so each shows the same. The core's API is for the
-team that runs a5s, and shows everything. A person sees an instance if they may watch it: they
+team that runs a5s, and shows everything. What a person sees of an agent comes in layers
+(`layers`), each from the roles they hold: that it exists, what it may do, how it's built, how
+it's doing, what it did, and changing it. A person sees an instance if they may watch it: they
 run it, as its owner or deputy, own its agent, own or decide for one of its parts, or approve
 instances. Of its runs, they see those whose every record they may see, by the records each
 run handled, which a5s keeps as long as the run: those its tools gave it or it named, and those
 a5s gave it, such as a report's or a case's brief. Of the rest, they see how many there are.
 They never see the ledger's entries, whose digests of short texts can be guessed, and whom a
-run acted for is named to them only once the data protection officer agrees
-(A5S_STUDIO_NAMES): until then, a run says how many people it acted for. The figures count
-people and never name them, nor carry anyone's words: outcomes from a fixed set, and the
-reasons for denials by the policy's own ids.
+run acted for is named to them only once the data protection officer chooses it in the signed
+settings (data_protection.studio_names): until then, a run says how many people it acted
+for. The figures count people and never name them, nor carry anyone's words: outcomes from a
+fixed set, and the reasons for denials by the policy's own ids.
 """
 
 from __future__ import annotations
@@ -20,21 +22,33 @@ from __future__ import annotations
 import json
 import re
 import uuid
-from collections import Counter
+from collections import Counter, defaultdict
 from collections.abc import Iterable
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import psycopg
 
+from a5s import db
 from a5s.config import ModelConfig
-from a5s.contract import INSTANCE_APPROVER, PART_DELEGATE, PART_OWNER, Person, Scenario, Tool
-from a5s.core import ledger, measures, registry, values
-from a5s.core.releases import agent_owner
+from a5s.contract import (
+    AGENT_AUTHOR,
+    AGENT_VIEWER,
+    INSTANCE_APPROVER,
+    PART_DELEGATE,
+    PART_OWNER,
+    RELEASE_APPROVER,
+    Person,
+    Scenario,
+    Tool,
+)
+from a5s.core import audit, ledger, measures, registry, values
+from a5s.core.releases import ENGINEER, agent_owner
 from a5s.core.status import outcome
 from a5s.definitions import Definition
 
-RUNS = 50  # runs to a page, newest first [TBC]
+RUNS = 50  # runs to a page, newest first
 MOST_RUNS = 200  # the most to a page
 DENIALS = 10_000  # each set of instances' newest denials looked through, by their own index
 COLUMNS = ("id, definition, release, status, level, model, serves, owner, deputy, parts, "
@@ -58,7 +72,7 @@ def watches(inst: dict, person: Person) -> bool:
                    for p in parts_of(inst)))
 
 
-def instances(conn: psycopg.Connection, viewer: Person | None = None, *,
+def instances(conn: db.Connection, viewer: Person | None = None, *,
               retired: bool = False) -> list[dict]:
     """The instances there are, or those the viewer may watch: with the retired ones, whose
     runs are still within an agent's figures, if `retired`."""
@@ -111,6 +125,14 @@ def _tools(definition: Definition, tools: dict[str, Tool]) -> list[dict]:
     return found
 
 
+def offered(tools: dict[str, Tool]) -> list[dict]:
+    """Each of the scenario's tools an agent may be given, with what it reads, writes or
+    changes, as an agent's page shows its own."""
+    return [{"name": name, "description": tool.description, **tool.risk, "changes": tool.action,
+             "handles": list(tool.handles), "outside": list(tool.outside)}
+            for name, tool in sorted(tools.items())]
+
+
 def _instance(scenario: Scenario, definition: Definition | None, inst: dict) -> dict:
     return {"id": inst["id"], "agent": inst["definition"], "status": inst["status"],
             "release": inst["release"],
@@ -151,35 +173,157 @@ def agent(scenario: Scenario, definition: Definition, tools: dict[str, Tool],
     return found
 
 
-def catalogue(conn: psycopg.Connection, scenario: Scenario, definitions: dict[str, Definition],
+def catalogue(conn: db.Connection, scenario: Scenario, definitions: dict[str, Definition],
               tools: dict[str, Tool], viewer: Person | None = None) -> list[dict]:
-    """Each agent of the release, and where it runs: for a viewer, the agents they own and
-    those with an instance they may watch, with those instances alone."""
-    insts = instances(conn, viewer)
-    watched = {i["definition"] for i in insts}
-    return [agent(scenario, d, tools, insts) for name, d in sorted(definitions.items())
-            if viewer is None or name in watched
-            or agent_owner(name) in viewer.roles]
+    """Each agent of the release, and where it runs: for a viewer, each agent they may know
+    exists, as far as the layers they see of it go (`layers`), with the instances they may
+    watch alone, and why their roles bring each into their view."""
+    if viewer is None:
+        insts = instances(conn)
+        return [agent(scenario, d, tools, insts) for _, d in sorted(definitions.items())]
+    every = instances(conn)
+    watched = [i for i in every if watches(i, viewer)]
+    found = []
+    for name, d in sorted(definitions.items()):
+        if view := layers(name, d, every, viewer, scenario):
+            found.append(seen(scenario, d, tools, watched, view))
+    return found
 
 
-def figures(conn: psycopg.Connection, scenario: Scenario, models: dict[str, ModelConfig],
-            insts: list[dict], days: int = 30, now: datetime | None = None) -> dict:
+def seen_by(name: str, insts: list[dict], viewer: Person) -> list[str]:
+    """Why someone's roles bring an agent into their view: owning or authoring it, running an
+    instance of it, its instances' parts, or approving instances."""
+    roles, why = set(viewer.roles), []
+    if agent_owner(name) in roles:
+        why.append("you own it")
+    if f"agent-author:{name}" in roles:
+        why.append("you author it")
+    for inst in (i for i in insts if i["definition"] == name):
+        if viewer.id in (inst.get("owner"), inst.get("deputy")):
+            why.append(f"you run {inst['id']}")
+        why += [f"it works in {part}, which you {'own' if f'{PART_OWNER}:{part}' in roles else 'decide for'}"
+                for part in parts_of(inst)
+                if f"{PART_OWNER}:{part}" in roles or f"{PART_DELEGATE}:{part}" in roles]
+        if INSTANCE_APPROVER in roles and not parts_of(inst):
+            why.append(f"you approve {inst['id']}, in no part")
+    return list(dict.fromkeys(why))
+
+
+# What someone sees of an agent, in layers, each from the roles they hold
+# (docs/studio.md#people-roles-and-spaces): that it exists; what it may do, its tools by what
+# each reads, writes or changes and when it works, for the people it serves and those who watch
+# its instances; how it's built, its instructions and skills, which the rest of its making
+# follows; how it's doing; what it did; and changing it
+LAYERS = ("exists", "uses", "built", "doing", "did", "changing")
+# What each layer adds to an agent as someone sees it
+SHOWN = {"exists": ("id", "release", "works_for", "does", "owners"),
+         "uses": ("tools", "a5s_tools", "model", "autonomy", "triggers", "schedules", "reports",
+                  "obligations", "reminders", "preferences", "channels", "context", "budget"),
+         "built": ("skills", "instructions"),
+         "doing": ("instances",)}
+
+
+def layers(name: str, definition: Definition, insts: list[dict], viewer: Person,
+           scenario: Scenario) -> dict[str, list[str]]:
+    """Each layer of an agent someone sees, with why their roles give it them: none at all if
+    they may not know it exists. `insts` are the instances there are, of every agent."""
+    roles = set(viewer.roles)
+    mine = [i for i in insts if i["definition"] == name]
+    watched = [i for i in mine if watches(i, viewer)]
+    served = [i["id"] for i in mine if i["status"] in SERVING
+              and registry.serving(scenario, i["serves"], viewer.id)]
+    building = [why for role, why in ((agent_owner(name), "you own it"),
+                                      (f"{AGENT_AUTHOR}:{name}", "you author it"),
+                                      (f"{AGENT_VIEWER}:{name}", "you may see how it's built"),
+                                      (ENGINEER, "you're an engineer"),
+                                      (RELEASE_APPROVER, "you approve its releases"))
+                if role in roles] + (["you audit it"] if audit.reads(viewer) else [])
+    doing = [why for why in seen_by(name, watched, viewer) if why != "you author it"]
+    if watched and not doing:
+        doing = ["you approve instances"]
+    found: dict[str, list[str]] = {}
+    for layer, reasons in (("exists", building + doing + [f"it serves you, through {i}"
+                                                          for i in served]),
+                           ("built", building), ("doing", doing)):
+        if reasons:
+            found[layer] = list(dict.fromkeys(reasons))
+    if "exists" not in found and definition.listed:
+        found["exists"] = ["its owner lists it for everyone"]
+    if "exists" not in found:
+        return {}
+    if "built" in found:  # whoever sees how it's built sees what it may do
+        found["uses"] = found["built"]
+    elif served or watched:
+        found["uses"] = ["it serves you: what it may do with your records"] if served else [
+            "you watch its instances: what it may do"]
+    if watched:
+        found["did"] = ["its runs whose every record you may see"]
+    if {agent_owner(name), f"{AGENT_AUTHOR}:{name}"} & roles:
+        found["changing"] = ["you may draft changes to it"]
+    return {layer: found[layer] for layer in LAYERS if layer in found}
+
+
+def seen(scenario: Scenario, definition: Definition, tools: dict[str, Tool], watched: list[dict],
+         view: dict[str, list[str]]) -> dict:
+    """An agent as someone sees it, layer by layer (`layers`): with its instructions only if
+    they see how it's built, and the instances they watch only if they see how it's doing."""
+    found = agent(scenario, definition, tools, watched, whole=True)
+    shown = {"layers": view, "listed": definition.listed, "why": view.get("exists", []),
+             "instances": []}
+    for layer in ("exists", "uses", "built", "doing"):
+        if layer in view:
+            shown.update({k: found[k] for k in SHOWN[layer]})
+    return shown
+
+
+class UnknownZone(ValueError):
+    """A time zone a5s doesn't know."""
+
+
+def time_zone(name: str) -> ZoneInfo:
+    """A time zone by its name in the IANA database, such as Asia/Singapore."""
+    try:
+        if len(name) <= 64:
+            return ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError, OSError):
+        pass
+    raise UnknownZone(f"there's no time zone {name[:64]!r}")
+
+
+def figures(conn: db.Connection, scenario: Scenario, models: dict[str, ModelConfig],
+            insts: list[dict], days: int = 30, now: datetime | None = None,
+            zone: str = "UTC") -> dict:
     """How some instances are doing over the last `days` days: the measures, as `a5s
-    measures` reports them, of those instances alone, and how their runs ended, what was
-    denied and why, and the reports they sent."""
+    measures` reports them, of those instances alone; how their runs ended, and how many
+    ended each way on each day of the period, in `zone`, such as the viewer's own; what was
+    denied and why; and the reports they sent."""
     ids = [i["id"] for i in insts]
+    here = time_zone(zone)
     now = now or conn.execute("select now() as t").fetchone()["t"]
     found = measures.report(conn, scenario.name, models, days, now, served(scenario, insts),
                             instances=ids)
-    at = {"ids": ids, "window": f"{max(1, int(days))} days", "now": now}
+    at = {"ids": ids, "window": f"{max(1, int(days))} days", "now": now, "zone": zone}
     since = "%(now)s::timestamptz - %(window)s::interval"
     ended: Counter = Counter()
-    for r in conn.execute("select trigger->>'kind' as kind, outcome, count(*) as n from runs "
-                          f"where instance_id = any(%(ids)s) and opened_at > {since} "
-                          "group by 1, 2", at):
+    daily: dict[date, Counter] = defaultdict(Counter)
+    try:
+        opened = conn.execute(
+            "select trigger->>'kind' as kind, outcome, (opened_at at time zone %(zone)s)::date "
+            f"as day, count(*) as n from runs where instance_id = any(%(ids)s) and opened_at > "
+            f"{since} group by 1, 2, 3", at).fetchall()
+    except psycopg.errors.InvalidParameterValue as e:  # one Python knows and Postgres doesn't
+        raise UnknownZone(f"there's no time zone {zone!r} here") from e
+    for r in opened:
         ended[(r["kind"], outcome(r["outcome"]))] += r["n"]
+        daily[r["day"]][outcome(r["outcome"])] += r["n"]
     found["ended"] = [{"kind": k, "outcome": o, "runs": n}
                       for (k, o), n in sorted(ended.items(), key=lambda i: (str(i[0][0]), i[0][1]))]
+    first = (now - _interval(days)).astimezone(here).date()
+    last = max([now.astimezone(here).date(), *daily])  # and a run the clock hasn't reached
+    found["daily"] = [{"day": d.isoformat(), "runs": sum(daily[d].values()),
+                       "ended": dict(sorted(daily[d].items()))}
+                      for d in (first + timedelta(days=i) for i in range((last - first).days + 1))]
+    found["zone"] = zone
     newest = conn.execute(  # these instances' own denials, by their own index, newest first
         "select kind, action, entry::jsonb -> 'reasons' as reasons, "
         "(entry::jsonb ->> 'at')::timestamptz as at from ledger "
@@ -248,7 +392,7 @@ def given(scenario: Scenario, trigger: dict, seen: dict | None, texts: Iterable[
     return found
 
 
-def handled(conn: psycopg.Connection, run: str, keys: Iterable[str]) -> None:
+def handled(conn: db.Connection, run: str, keys: Iterable[str]) -> None:
     """Keep, as long as the run, the records it handled, by key."""
     found = sorted({k for k in keys if isinstance(k, str) and k})
     if found:
@@ -256,7 +400,7 @@ def handled(conn: psycopg.Connection, run: str, keys: Iterable[str]) -> None:
                      "select %s::uuid, unnest(%s::text[]) on conflict do nothing", (run, found))
 
 
-def _handled(conn: psycopg.Connection, runs: list[str]) -> dict[str, set[str]]:
+def _handled(conn: db.Connection, runs: list[str]) -> dict[str, set[str]]:
     found: dict[str, set[str]] = {r: set() for r in runs}
     for row in conn.execute("select run_id::text as run, record from run_records "
                             "where run_id = any(%s::uuid[])", (runs,)):
@@ -290,7 +434,7 @@ def _cursor(before: str | None) -> tuple[datetime, str] | None:
     return datetime.fromisoformat(at), str(uuid.UUID(run)) if run else LAST
 
 
-def runs(conn: psycopg.Connection, scenario: Scenario, inst: dict,
+def runs(conn: db.Connection, scenario: Scenario, inst: dict,
          viewer: Person | None = None, before: str | None = None, limit: int = RUNS,
          names: bool = True) -> dict:
     """An instance's runs, newest first, a page at a time, each page after the run the one
@@ -322,7 +466,7 @@ def _calls(entries: list[dict]) -> list[dict]:
             for e in entries if e.get("kind") == "tool" and "of" not in e]
 
 
-def run(conn: psycopg.Connection, scenario: Scenario, run_id: str,
+def run(conn: db.Connection, scenario: Scenario, run_id: str,
         viewer: Person | None = None, names: bool = True) -> dict | None:
     """What a run did: what started it, whom it acted for, how it ended, the records it
     handled, and each tool call with the policy's decision; and, for the team that runs a5s,

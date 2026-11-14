@@ -20,9 +20,9 @@ import json
 import re
 from datetime import datetime
 
-import psycopg
 from psycopg.types.json import Jsonb
 
+from a5s import db
 from a5s.contract import Scenario
 from a5s.core import values
 from a5s.core.topics import PARTS, render
@@ -32,7 +32,7 @@ FACTS = 500  # the newest keys, amounts and dates a summary keeps
 _JSON = re.compile(r"\{.*\}", re.DOTALL)
 
 
-def load(conn: psycopg.Connection, person: str, agent: str, topic: str,
+def load(conn: db.Connection, person: str, agent: str, topic: str,
          members: list[str] | None = None) -> dict | None:
     """The topic's summary: in a group chat's conversation, only if all of `members` heard
     everything it holds."""
@@ -113,7 +113,7 @@ def checked(reply: str, previous: dict | None, turns: list[dict], person: str,
             "corrections": list(before.get("corrections") or [])}, problems
 
 
-def keep(conn: psycopg.Connection, person: str, agent: str, topic: str, body: dict,
+def keep(conn: db.Connection, person: str, agent: str, topic: str, body: dict,
          through: int, run: str, heard: list[str] | None = None) -> None:
     """Keep the topic's summary, in place of the one before: in a group chat's conversation,
     with who heard everything it holds."""

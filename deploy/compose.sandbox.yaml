@@ -1,0 +1,46 @@
+# The sandbox (docs/studio.md, a5s/sandbox.py): a deployment of a5s of its own, where people
+# try the agents they're making, on the scenario's made-up records, with a stand-in model
+# unless they ask for an approved model it has the key for. It has a database server of its
+# own, on a network only it reaches, and reaches nothing of the stack's: only the studio, in the
+# channels app, reaches it, by the token they share. Layer it on the stack:
+#
+#   A5S_SANDBOX_TOKEN=$(openssl rand -hex 32) A5S_SANDBOX_DB_PASSWORD=$(openssl rand -hex 32) \
+#     docker compose -f deploy/compose.yaml -f deploy/compose.sandbox.yaml up -d
+
+services:
+  sandbox-db:  # its own server: a5s's roles belong to a whole server, and the stack's are its own
+    image: postgres:16@sha256:1beaa3084eee2676f20a9cd9928f0bf2c5bf674f8e49f81017912183d377c61c
+    environment:
+      POSTGRES_USER: a5s
+      POSTGRES_PASSWORD: ${A5S_SANDBOX_DB_PASSWORD:?set A5S_SANDBOX_DB_PASSWORD}
+    networks: [sandbox-data]
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "a5s"]
+      interval: 2s
+      retries: 30
+
+  sandbox:
+    image: ${A5S_IMAGE:-a5s:dev}
+    restart: unless-stopped
+    command: ["sandbox", "--port", "8710"]
+    environment:
+      A5S_SCENARIO:  # the stack's scenario, whose made-up records and fakes it runs
+      A5S_SCENARIO_DIR:
+      A5S_AGENTS_DIR:
+      A5S_SANDBOX_DATABASE_URL: postgresql://a5s:${A5S_SANDBOX_DB_PASSWORD}@sandbox-db:5432/postgres
+      A5S_SANDBOX_TOKEN: ${A5S_SANDBOX_TOKEN:?set A5S_SANDBOX_TOKEN}
+      DEEPSEEK_API_KEY:  # an approved model's key, for trying drafts on it, with made-up data alone
+      QWEN_API_KEY:
+    networks: [sandbox-data, sandbox, egress]
+    depends_on:
+      sandbox-db: {condition: service_healthy}
+
+  channels:  # the studio, which reaches the sandbox, and nothing of the sandbox's reaches back
+    environment:
+      A5S_SANDBOX_URL: http://sandbox:8710
+      A5S_SANDBOX_TOKEN: ${A5S_SANDBOX_TOKEN:?set A5S_SANDBOX_TOKEN}
+    networks: [data, egress, edge, sandbox]
+
+networks:
+  sandbox-data: {internal: true}
+  sandbox: {internal: true}

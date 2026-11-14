@@ -1,3 +1,4 @@
+{{- if ne .Values.mode "sandbox" }}
 {{- if .Values.ingress.enabled }}
 # The only way in from outside the cluster: to the channels, where people and their chats reach a5s.
 apiVersion: networking.k8s.io/v1
@@ -30,4 +31,5 @@ spec:
                 name: {{ printf "%s-channels" .Release.Name }}
                 port:
                   name: http
+{{- end }}
 {{- end }}

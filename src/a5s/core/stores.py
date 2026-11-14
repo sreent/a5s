@@ -29,9 +29,11 @@ class Store(Protocol):
 
     def get(self, key: str) -> bytes:
         """The first version written under the key. Raises KeyError if there's none."""
+        ...
 
     def keys(self, prefix: str) -> dict[str, bool]:
         """Every key under the prefix, and whether anyone tried to replace or delete it."""
+        ...
 
 
 class FolderStore:

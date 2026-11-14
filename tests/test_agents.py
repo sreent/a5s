@@ -13,9 +13,7 @@ than skips.
 """
 
 import os
-import re
 from dataclasses import replace
-from datetime import date, timedelta
 from pathlib import Path
 
 import httpx
@@ -23,12 +21,12 @@ import pytest
 import yaml
 
 from a5s import db, definitions
+from a5s.cases import check, dated  # the checks the sandbox makes of a draft's cases too
 from a5s.config import load_models
 from a5s.core.identity import IdentityConfig, Verifier
 from a5s.services import context
 from conftest import ROOT, SEAL_KEY, FakeModel, build_root, live_image, running
 
-NOTE = "(a5s: "  # how a5s starts its note on values the agent wrote itself
 FILLER = "We went through the open invoices, the refunds and the next payment run. " * 12
 
 
@@ -40,18 +38,6 @@ def cases() -> list:
                 found.append(pytest.param(folder.name, case,
                                           id=f"{folder.name}/{path.stem}/{case['name']}"))
     return found
-
-
-def dated(text: str) -> str:
-    """A case's words, with each {in N days} the working day that many days from today, so a
-    case about a date ahead stays ahead."""
-    def day(found: re.Match) -> str:
-        when = date.today() + timedelta(days=int(found.group(1)))
-        while when.isoweekday() > 5:
-            when += timedelta(days=1)
-        return when.isoformat()
-
-    return re.sub(r"\{in (\d+) days\}", day, text)
 
 
 def turns_called(stack, after: int) -> list[str]:
@@ -82,22 +68,6 @@ def kept(stack, what: str):
             return conn.execute("select count(*) from proposals where status = 'waiting'"
                                 ).fetchone()["count"]
     raise ValueError(f"a case can't check {what}")
-
-
-def check(step: dict, reply: str, called: list[str], allow_own: bool) -> list[str]:
-    """What's wrong with a step's outcome, if anything."""
-    said, wrong = reply.lower(), []
-    wrong += [f"didn't use {t}" for t in step.get("uses", []) if t not in called]
-    if (any_of := step.get("uses_any")) and not set(any_of) & set(called):
-        wrong.append(f"used none of {', '.join(any_of)}")
-    wrong += [f"used {t}" for t in step.get("avoids", []) if t in called]
-    wrong += [f"didn't say {s!r}" for s in step.get("says", []) if s.lower() not in said]
-    if (any_of := step.get("says_any")) and not any(s.lower() in said for s in any_of):
-        wrong.append(f"said none of {any_of}")
-    wrong += [f"said {s!r}" for s in step.get("never_says", []) if s.lower() in said]
-    if not allow_own and NOTE in reply:
-        wrong.append("wrote a key, an amount or a date it didn't read, and a5s noted it")
-    return wrong
 
 
 @pytest.mark.live

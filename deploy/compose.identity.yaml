@@ -14,7 +14,6 @@
 x-identity: &identity
   A5S_OIDC_ISSUER: http://127.0.0.1:${A5S_IDP_PORT:-8180}/realms/a5s
   A5S_OIDC_METADATA_URL: http://keycloak:8080/realms/a5s/.well-known/openid-configuration
-  A5S_OIDC_AUDIENCE: a5s
 
 services:
   keycloak:

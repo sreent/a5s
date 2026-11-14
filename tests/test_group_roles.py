@@ -61,9 +61,11 @@ def in_force(stack) -> tuple[int, str | None]:
 
 def mapped(stack, approving, provider, groups: dict = MAP) -> int:
     """A version that gives groups roles, approved by Ana, who owns billing and approves
-    instances in the directory, and in force."""
+    instances in the directory, and by Kofi, who's assurance there, for the auditors, and in
+    force."""
     asked = version(stack, groups)
     approve(stack, approving, provider, asked["digest"], "ana")
+    approve(stack, approving, provider, asked["digest"], "kofi")
     serial, problem = in_force(stack)
     assert serial == asked["serial"] and problem is None
     return serial
@@ -111,10 +113,41 @@ def test_giving_a_group_a_role_needs_its_owner_in_the_directory(stack, approving
     assert {"text": "Everyone in the group a5s-auditors holds auditor, as their sign-ins show "
                     "they're in it.", "widens": True} in asked["changes"]  # what they approve
     told = approve(stack, approving, provider, asked["digest"], "omar")  # who owns orders
-    assert any("instance-approver named in the directory hasn't approved giving a5s-auditors"
+    assert any("assurance named in the directory hasn't approved giving a5s-auditors"
                in need for need in told["needs"])
     assert in_force(stack)[0] < asked["serial"]  # it waits
-    approve(stack, approving, provider, asked["digest"], "ana")  # who approves instances
+    told = approve(stack, approving, provider, asked["digest"], "kofi")  # who's assurance
+    assert not any("a5s-auditors" in need for need in told["needs"]), told
+    approve(stack, approving, provider, asked["digest"], "ana")  # billing's owner, for its instance
+    assert in_force(stack) == (asked["serial"], None)
+
+
+def test_only_assurance_the_directory_names_gives_a_group_the_auditor_role(
+        stack, approving, provider):
+    """Auditors check what the team that runs a5s and the approvers did, so neither chooses
+    them: the team writes the version, and assurance approves it, once for the group. It
+    waits on assurance's own home in the studio until they do."""
+    asked = version(stack, {AUDITORS: ["auditor"]})
+    told = approve(stack, approving, provider, asked["digest"], "ana")  # who approves instances
+    assert any("assurance named in the directory hasn't approved giving a5s-auditors the "
+               "auditor role" in need for need in told["needs"]), told
+    assert in_force(stack)[0] < asked["serial"]  # an instance approver's isn't enough
+    token = provider.id_token(person="kofi")
+    home = httpx.get(f"{approving}/studio/api/home", timeout=30,
+                     headers={"Authorization": f"Bearer {token}"}).json()
+    assert [(w["kind"], w["what"]) for w in home["waiting"] if w["kind"] == "settings"] == [
+        ("settings", f"Version {asked['serial']} of the settings waits for your approval")]
+    approve(stack, approving, provider, asked["digest"], "kofi")  # who's assurance
+    assert in_force(stack) == (asked["serial"], None)
+
+
+def test_only_the_officer_the_directory_names_gives_a_group_theirs(stack, approving, provider):
+    asked = version(stack, {"privacy-team": ["data-protection-officer"]})  # export and erase
+    told = approve(stack, approving, provider, asked["digest"], "ana")  # who approves instances
+    assert any("data-protection-officer named in the directory hasn't approved giving "
+               "privacy-team" in need for need in told["needs"]), told
+    assert in_force(stack)[0] < asked["serial"]  # it waits for the officer
+    approve(stack, approving, provider, asked["digest"], "noor")  # who's the officer
     assert in_force(stack) == (asked["serial"], None)
 
 

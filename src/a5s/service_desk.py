@@ -33,18 +33,12 @@ class ServiceDeskScenario:
         self.folder = folder
         self.database_url = database_url
         data = yaml.safe_load((folder / "data.yaml").read_text())
-        self._people = {p["id"]: self._person(folder, p) for p in data["people"]}
+        self._people = {p["id"]: Person.listed(p, folder) for p in data["people"]}
         self._tickets = {t["key"]: t for t in data["tickets"]}
         self._messages = data.get("messages") or []
         self.drafts = []
         self._draft_lock = threading.Lock()
         self.reads = 0
-
-    @staticmethod
-    def _person(folder: Path, entry: dict) -> Person:
-        key = folder / "keys" / f"{entry['id']}.pub"
-        return Person(**{k: tuple(v) if isinstance(v, list) else v for k, v in entry.items()},
-                      public_key=key.read_text().strip() if key.exists() else None)
 
     def person(self, person_id: str) -> Person | None:
         return self._people.get(person_id)

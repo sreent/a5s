@@ -36,18 +36,18 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import psycopg
 import yaml
 from psycopg.types.json import Jsonb
 
 import a5s
-from a5s import definitions
-from a5s.contract import ASSURANCE, RELEASE_APPROVER, Person, Scenario, Signature
+from a5s import db, definitions
+from a5s.contract import AGENT_OWNER, ASSURANCE, RELEASE_APPROVER, Person, Scenario, Signature
 from a5s.core import ledger, signing
 
 ENGINEER = "engineer"  # anyone in the team that runs a5s
 PARTS = ("core", "services", "build", "models", "scenario")
-BUILT_FROM = ("pyproject.toml", "uv.lock", "Dockerfile", ".dockerignore")
+BUILT_FROM = ("pyproject.toml", "uv.lock", "Dockerfile", ".dockerignore",
+              "studio/package.json", "studio/package-lock.json", "studio/.npmrc")
 _HEADER = ("# A release of a5s: every file it runs, by part, and what each agent and model may\n"
            "# do. An organisation approves it for its deployment by signing exactly these bytes.\n")
 _PEOPLE = {RELEASE_APPROVER: "the release approver, from outside the team that runs a5s",
@@ -55,7 +55,7 @@ _PEOPLE = {RELEASE_APPROVER: "the release approver, from outside the team that r
 
 
 def agent_owner(agent: str) -> str:
-    return f"agent-owner:{agent}"
+    return f"{AGENT_OWNER}:{agent}"
 
 
 def who(role: str) -> str:
@@ -96,7 +96,9 @@ def _code(root: Path) -> tuple[dict, dict, dict]:
     return core, services, scenarios
 
 
-def _agent(folder: Path) -> dict:
+def agent_part(folder: Path) -> dict:
+    """An agent's part of a release: its files, by their hashes, and what it may do, as a
+    release manifest holds it."""
     d = definitions.load(folder)
     return {
         "release": d.release_id,
@@ -152,7 +154,7 @@ def manifest(root: Path, scenario_dir: Path, *, built: dict | None = None,
                          **{f"code/{k}": v for k, v in scenarios.items()}},
         },
         "models": _models(root / "config"),
-        "agents": {f.name: _agent(f) for f in sorted(agents.iterdir())
+        "agents": {f.name: agent_part(f) for f in sorted(agents.iterdir())
                    if (f / "agent.yaml").exists()} if agents.is_dir() else {},
     }
     return (_HEADER + yaml.safe_dump(data, sort_keys=True, width=1000)).encode()
@@ -283,6 +285,43 @@ class Verdict:
     signed_by: tuple[str, ...] = ()
 
 
+def _inside(scenario: Scenario, team: str) -> set[str]:
+    """The team that runs a5s, and everyone above them in their reporting lines."""
+    return {p.id for p in scenario.team(team)} | {
+        boss for member in scenario.team(team) for boss in _line(scenario, member)}
+
+
+def _can(person: Person, role: str, team: str, inside: set[str]) -> bool:
+    """Whether someone's signature meets what a release needs of a role."""
+    if role == RELEASE_APPROVER:
+        return role in person.roles and person.id not in inside
+    if role == ENGINEER:
+        return person.team == team
+    return role in person.roles
+
+
+def awaiting(conn: db.Connection, running: Running | None, scenario: Scenario, team: str,
+             person: Person) -> list[Need]:
+    """What the release a5s is waits for from someone, if this deployment hasn't approved it:
+    each of its needs they could meet, unless they've signed it already."""
+    if running is None or running.problems:
+        return []
+    row = conn.execute("select previous, signatures, advisory, approved_at from releases "
+                       "where digest = %s", (running.digest,)).fetchone()
+    if row and row["approved_at"]:
+        return []
+    if row and any(s["signer"] == person.id for s in row["signatures"] or []):
+        return []
+    old, advisory = last_approved(conn), None
+    if row:
+        before = row["previous"] and conn.execute(
+            "select manifest from releases where digest = %s", (row["previous"],)).fetchone()
+        old, advisory = (yaml.safe_load(bytes(before["manifest"])) if before else None), row["advisory"]
+    inside = _inside(scenario, team)
+    return [n for n in needs(yaml.safe_load(running.raw), old, advisory)
+            if _can(person, n.role, team, inside)]
+
+
 def _line(scenario: Scenario, person: Person) -> list[str]:
     """Everyone above someone in their reporting line."""
     above, seen = [], {person.id}
@@ -297,6 +336,7 @@ def judge(need: list[Need], raw: bytes, signatures: list[Signature], scenario: S
           team: str) -> Verdict:
     """Whether different people, each holding what's needed, signed exactly these bytes."""
     people, problems = {}, []
+    inside = _inside(scenario, team)
     for sig in signatures:
         person = scenario.person(sig.signer)
         if person is None:
@@ -306,15 +346,9 @@ def judge(need: list[Need], raw: bytes, signatures: list[Signature], scenario: S
             problems.append(f"{sig.signer}'s signature isn't for this release")
         else:
             people[person.id] = person
-    inside = {p.id for p in scenario.team(team)} | {
-        boss for member in scenario.team(team) for boss in _line(scenario, member)}
 
     def can(person: Person, role: str) -> bool:
-        if role == RELEASE_APPROVER:
-            return role in person.roles and person.id not in inside
-        if role == ENGINEER:
-            return person.team == team
-        return role in person.roles
+        return _can(person, role, team, inside)
 
     def match(i: int, taken: dict[str, str]) -> bool:
         """Each need met by someone different, though one owner may own several agents."""
@@ -337,7 +371,7 @@ def judge(need: list[Need], raw: bytes, signatures: list[Signature], scenario: S
     return Verdict(False, tuple(need), tuple(missing + problems), signed)
 
 
-def check(conn: psycopg.Connection, digest: str, scenario: Scenario, team: str,
+def check(conn: db.Connection, digest: str, scenario: Scenario, team: str,
           _seen: frozenset[str] = frozenset()) -> Verdict:
     """Whether this deployment approved a release, checked again from what was signed,
     back to the first release it approved, or the last baseline. Editing the record
@@ -369,7 +403,7 @@ def check(conn: psycopg.Connection, digest: str, scenario: Scenario, team: str,
     return judge(needs(yaml.safe_load(raw), old, row["advisory"]), raw, signatures, scenario, team)
 
 
-def record(conn: psycopg.Connection, raw: bytes, signatures: list[Signature], scenario: Scenario,
+def record(conn: db.Connection, raw: bytes, signatures: list[Signature], scenario: Scenario,
            team: str, advisory: str | None = None, *, baseline: bool = False) -> Verdict:
     """Record people's signatures over a release, as the database's administrator.
 
@@ -410,7 +444,7 @@ def record(conn: psycopg.Connection, raw: bytes, signatures: list[Signature], sc
     return verdict
 
 
-def last_approved(conn: psycopg.Connection) -> dict | None:
+def last_approved(conn: db.Connection) -> dict | None:
     row = conn.execute("select manifest from releases where approved_at is not null "
                        "order by approved_at desc limit 1").fetchone()
     return yaml.safe_load(bytes(row["manifest"])) if row else None
@@ -423,7 +457,7 @@ class Releases:
     current: Running | None
     approved: set[str] = field(default_factory=set)
 
-    def problems(self, conn: psycopg.Connection, scenario: Scenario, team: str) -> list[str]:
+    def problems(self, conn: db.Connection, scenario: Scenario, team: str) -> list[str]:
         if self.current is None:
             return []
         if self.current.problems:
