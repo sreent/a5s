@@ -158,6 +158,7 @@ The smoke test runs this way: Keycloak for sign-in, Synapse for Matrix, a model 
 | Document | What it holds |
 | --- | --- |
 | [Using a5s today](docs/user-journey.md) | The current interface in pictures: sign-in, chat, confirmed tasks, the studio, and today's code-led build and deploy path |
+| [Testing](docs/testing.md) | Unit, integration, live-model, browser, container and soak tests: how to run them, what each proves, and how to read failures and scorecards |
 | [Architecture](docs/architecture.md) | The trusted core, the scenario contract, a call step by step, policy, provenance, how an agent lives, context, evidence, independence, failure, operations and hosting |
 | [Agent model](docs/agent-model.md) | Definitions, releases, instances, conversations and runs, roles, lifecycle, autonomy, and the definition format |
 | [Phase 1](docs/phase-1.md) | What to decide, what to build in what order, what done means, and costs |

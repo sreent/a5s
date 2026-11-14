@@ -76,3 +76,5 @@ The present journey is therefore:
 - **A user:** sign in → converse → confirm longer work → inspect or cancel it.
 - **An operator:** catalogue → instance dashboard → run detail.
 - **A developer:** code and tests → PR and CI → signed release → approved settings → deployment → studio monitoring.
+
+[Testing a5s](testing.md) has the commands for each test layer, what each proves, and how to read failures and scorecards.
