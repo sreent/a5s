@@ -45,6 +45,8 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/a5s"]
+# The studio's pages, which `npm run build` in studio/ builds and git leaves out
+artifacts = ["src/a5s/core/webchat/studio/"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

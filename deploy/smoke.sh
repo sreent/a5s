@@ -337,6 +337,16 @@ curl -sf -o "$reply" http://127.0.0.1:8703/settings/
 grep -q "a5s: settings" "$reply" || { echo "The settings app's page isn't served."; exit 1; }
 echo "The settings app is served, and asks people to sign in."
 
+curl -sf -o "$reply" -D "$work/headers" http://127.0.0.1:8703/studio/agents/assistant
+grep -q '<title>a5s: studio</title>' "$reply" || { echo "The studio's page isn't served."; exit 1; }
+grep -qi "content-security-policy: default-src 'none'" "$work/headers"
+for asset in $(grep -o '/studio/assets/[A-Za-z0-9_-]*\.\(js\|css\)' "$reply"); do
+  curl -sf -o /dev/null "http://127.0.0.1:8703$asset" || { echo "The studio's $asset isn't served."; exit 1; }
+done
+status=$(curl -s -o "$reply" -w '%{http_code}' http://127.0.0.1:8703/studio/api)
+[ "$status" = 401 ] || { echo "The studio's API without a sign-in got $status, not 401."; exit 1; }
+echo "The studio is served as the image built it, and asks people to sign in."
+
 # An instance approver approves a new version of the settings where she works. a5s asks her
 # in the Matrix chat she last wrote in, and she approves on the core's page, having signed in
 # afresh at Keycloak for that version alone.

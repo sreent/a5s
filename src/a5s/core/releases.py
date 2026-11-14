@@ -47,7 +47,8 @@ from a5s.core import ledger, signing
 
 ENGINEER = "engineer"  # anyone in the team that runs a5s
 PARTS = ("core", "services", "build", "models", "scenario")
-BUILT_FROM = ("pyproject.toml", "uv.lock", "Dockerfile", ".dockerignore")
+BUILT_FROM = ("pyproject.toml", "uv.lock", "Dockerfile", ".dockerignore",
+              "studio/package.json", "studio/package-lock.json", "studio/.npmrc")
 _HEADER = ("# A release of a5s: every file it runs, by part, and what each agent and model may\n"
            "# do. An organisation approves it for its deployment by signing exactly these bytes.\n")
 _PEOPLE = {RELEASE_APPROVER: "the release approver, from outside the team that runs a5s",

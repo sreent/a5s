@@ -1,0 +1,152 @@
+/* The studio, on the look every page of a5s shares (webchat/app.css). */
+
+#root { display: contents; }  /* its sidebar and page sit in the body's frame, as every page's do */
+.nav-group { display: contents; }
+.page.studio main { max-width: 80rem; }
+
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85em; }
+.faint { color: var(--faint); }
+.problem { color: var(--bad); }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* A page's heading: the way back, its title, and what it is */
+
+.page-head { margin-bottom: 1.25rem; }
+.crumbs { display: flex; flex-wrap: wrap; gap: 0.15rem; font-size: 0.85rem; margin-bottom: 0.35rem; }
+.crumbs a { color: var(--muted); text-decoration: none; }
+.crumbs a:hover { color: var(--accent); }
+.crumbs .sep { color: var(--faint); margin: 0 0.35rem; }
+.title-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.title-row h2 { margin: 0; }
+.about { color: var(--muted); margin: 0.45rem 0 0; max-width: 56rem; }
+.meta { display: flex; flex-wrap: wrap; gap: 0.35rem 1.1rem; margin-top: 0.6rem; color: var(--muted); font-size: 0.88rem; }
+.period { display: inline-flex; align-items: center; gap: 0.4rem; margin-top: 0.85rem; }
+
+/* Chips: plain facts, beside the badges that mean something */
+
+.chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.chip { display: inline-flex; align-items: center; padding: 0.08rem 0.55rem; border-radius: 999px;
+        border: 1px solid var(--line); background: var(--sunken); color: var(--muted); font-size: 0.78rem;
+        white-space: nowrap; }
+.badges { display: inline-flex; flex-wrap: wrap; gap: 0.3rem; }
+.badge .dot { width: 0.45rem; height: 0.45rem; border-radius: 50%; background: currentColor; }
+.label { font-size: 0.74rem; font-weight: 650; text-transform: uppercase; letter-spacing: 0.05em; color: var(--faint);
+         margin: 0 0 0.45rem; }
+.tone-changes { color: var(--changes); }
+.tone-outside { color: var(--outside); }
+.tone-writes { color: var(--writes); }
+.tone-reads { color: var(--reads); }
+.tone-own { color: var(--own); }
+
+/* All the agents, as cards */
+
+.agent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(22rem, 1fr)); gap: 1rem; }
+.agent-card { display: flex; flex-direction: column; gap: 0.75rem; margin: 0; padding: 1.15rem 1.25rem; }
+.agent-card-head { display: flex; align-items: center; gap: 0.75rem; }
+.agent-glyph { display: grid; place-items: center; width: 2.4rem; height: 2.4rem; border-radius: 10px;
+               background: var(--accent-soft); color: var(--accent); flex: none; }
+.agent-glyph .icon { width: 1.35rem; height: 1.35rem; }
+.agent-name { font-weight: 650; font-size: 1.05rem; color: var(--text); text-decoration: none; }
+.agent-name:hover { color: var(--accent); }
+.clamp { margin: 0; color: var(--muted); font-size: 0.9rem; display: -webkit-box; -webkit-line-clamp: 2;
+         -webkit-box-orient: vertical; overflow: hidden; }
+.card-section { border-top: 1px solid var(--line); padding-top: 0.75rem; }
+.instance-row { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; padding: 0.35rem 0.45rem;
+                margin: 0 -0.45rem; border-radius: 8px; color: var(--text); text-decoration: none; font-size: 0.9rem; }
+.instance-row:hover { background: var(--sunken); }
+.instance-id { font-weight: 600; }
+.card-foot { font-size: 0.82rem; margin-top: auto; }
+
+/* An agent's page */
+
+.two-up { display: grid; grid-template-columns: repeat(auto-fit, minmax(24rem, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+.two-up > .card { margin: 0; }
+.two-up.pairs { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+@media (max-width: 60rem) { .two-up.pairs { grid-template-columns: minmax(0, 1fr); } }
+
+/* What the agent does and its tools, beside when it works and what it knows: each card as tall
+   as what it holds, not as its neighbour */
+.agent-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(18rem, 24rem); gap: 1rem;
+              align-items: start; margin-bottom: 1rem; }
+.agent-body > div { display: grid; gap: 1rem; min-width: 0; }
+.agent-body .card { margin: 0; }
+@media (max-width: 70rem) { .agent-body { grid-template-columns: minmax(0, 1fr); } }
+.card.wide { margin-bottom: 1rem; }
+.tool-group { margin-bottom: 1rem; }
+.tool-group:last-child { margin-bottom: 0; }
+.tool-row { padding: 0.55rem 0; border-bottom: 1px solid var(--line); }
+.tool-row:last-child { border-bottom: 0; }
+.tool-name { font-weight: 600; }
+.tool-about { color: var(--muted); font-size: 0.88rem; margin: 0.15rem 0 0.35rem; }
+details summary { cursor: pointer; color: var(--accent); font-weight: 500; margin-top: 0.75rem; }
+pre.instructions { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.82rem; line-height: 1.55;
+                   background: var(--sunken); border: 1px solid var(--line); border-radius: 8px; padding: 0.85rem 1rem;
+                   max-height: 28rem; overflow: auto; }
+
+.facts { display: grid; grid-template-columns: minmax(8rem, max-content) 1fr; gap: 0.45rem 1rem; margin: 0; font-size: 0.92rem; }
+.facts dt { color: var(--muted); }
+.facts dd { margin: 0; overflow-wrap: anywhere; }
+.facts .fact-pair { display: contents; }
+
+table.grid-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+table.grid-table th { text-align: left; font-size: 0.76rem; font-weight: 650; text-transform: uppercase;
+                      letter-spacing: 0.04em; color: var(--faint); padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--line); }
+table.grid-table td { padding: 0.55rem 0.6rem; border-bottom: 1px solid var(--line); vertical-align: middle; }
+table.grid-table tr:last-child td { border-bottom: 0; }
+table.grid-table.compact td { padding: 0.35rem 0.6rem; }
+table.runs-table td .badge { margin-left: 0.4rem; }
+table.runs-table tbody tr:hover { background: var(--sunken); }
+
+/* The map of how an agent is wired */
+
+.map-card { padding-bottom: 1.25rem; }
+.agent-map { width: 100%; border: 1px solid var(--line); border-radius: 10px; background: var(--sunken); overflow: hidden; }
+.agent-map .react-flow { --xy-background-color: var(--sunken); --xy-edge-stroke: var(--line-strong);
+                          --xy-edge-stroke-width: 1.6; }
+.agent-map .react-flow__edge.edge-changes path { stroke: var(--changes); }
+.agent-map .react-flow__edge.edge-outside path { stroke: var(--outside); }
+.agent-map .react-flow__edge.edge-writes path { stroke: var(--writes); }
+.agent-map .react-flow__edge.edge-reads path { stroke: var(--reads); }
+.agent-map .react-flow__edge.edge-own path { stroke: var(--own); }
+.agent-map .react-flow__handle { opacity: 0; }
+
+.map-node { display: flex; align-items: center; gap: 0.6rem; width: 15rem; padding: 0.55rem 0.75rem;
+            background: var(--surface); border: 1px solid var(--line-strong); border-left-width: 4px;
+            border-radius: 10px; box-shadow: var(--shadow); color: var(--text); }
+.map-node .map-icon { width: 1.25rem; height: 1.25rem; color: var(--muted); }
+.map-text { min-width: 0; }
+.map-title { font-weight: 600; font-size: 0.86rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.map-detail { font-size: 0.74rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.map-node.agent { border-color: var(--accent); background: var(--accent-soft); }
+.map-node.agent .map-icon { color: var(--accent); }
+.map-node.checks { border-color: var(--own); }
+.map-node.checks .map-icon { color: var(--own); }
+.map-node.changes { border-left-color: var(--changes); }
+.map-node.outside { border-left-color: var(--outside); }
+.map-node.writes { border-left-color: var(--writes); }
+.map-node.reads { border-left-color: var(--reads); }
+.map-node.own { border-left-color: var(--own); }
+
+/* An instance's figures */
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr)); gap: 0.75rem; margin-bottom: 1rem; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow);
+        padding: 0.85rem 1rem; }
+.tile-label { font-size: 0.78rem; color: var(--muted); font-weight: 600; }
+.tile-value { font-size: 1.6rem; font-weight: 650; letter-spacing: -0.01em; margin-top: 0.15rem;
+              font-variant-numeric: tabular-nums; }
+.tile-value.small { font-size: 1.05rem; margin-top: 0.3rem; overflow-wrap: anywhere; }
+.tile-detail { font-size: 0.78rem; color: var(--faint); margin-top: 0.15rem; }
+
+/* What a run did */
+
+.steps { list-style: none; margin: 0; padding: 0 0 0 0.25rem; }
+.step { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;
+        padding: 0.55rem 0 0.55rem 1.4rem; border-left: 2px solid var(--line); }
+.step::before { content: ""; position: absolute; left: -0.42rem; top: 0.95rem; width: 0.7rem; height: 0.7rem;
+                border-radius: 50%; background: var(--surface); border: 2px solid var(--good); }
+.step.deny::before { border-color: var(--bad); }
+.step.hold::before, .step.held::before { border-color: var(--warn); }
+.step-time { color: var(--faint); font-size: 0.8rem; font-variant-numeric: tabular-nums; min-width: 5.5rem; }
+.step-tool { font-weight: 600; }
+.step-why { flex-basis: 100%; padding-left: 6rem; font-size: 0.82rem; }

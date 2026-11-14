@@ -50,6 +50,14 @@ Install Chromium for Playwright:
 uv run playwright install chromium
 ```
 
+The studio's pages are built, not kept in git. Build them before the tests, as CI does, by the image's own Node stage:
+
+```sh
+docker build --target studio-built --output src/a5s/core/webchat/studio .
+```
+
+or, with Node 20.19 or later, `npm ci --prefix studio && npm run build --prefix studio`. Unbuilt, the studio answers 503 with how to build it, and its tests fail.
+
 If Chromium is unavailable, browser tests may skip locally. To require them, as CI does:
 
 ```sh

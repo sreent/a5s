@@ -89,6 +89,10 @@ TRIES = 3  # deliveries of a Matrix event a5s can't act on before it's skipped, 
 REQUESTS_A_DAY = 5  # versions one person may ask for in the settings app [TBC]
 MAX_SETTINGS = 64 * 1024  # characters of settings, as written
 WEBCHAT = Path(__file__).parent / "webchat"
+STUDIO = WEBCHAT / "studio"  # as `npm run build` in studio/ builds it, which the image does
+STUDIO_UNBUILT = ("The studio isn't built here. Build it from the repository with "
+                  "`npm ci --prefix studio && npm run build --prefix studio`, as the image does.")
+_ASSET = re.compile(r"[\w-]+\.(js|css)")  # its own files, by name alone: nothing else
 _PAGE_HEADERS = {  # the page runs only its own script, shows only text, and goes in no frame
     "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; "
                                "connect-src 'self'; img-src 'self' data:; base-uri 'none'; "
@@ -1212,15 +1216,41 @@ def create_app(gw: Any) -> FastAPI:
             raise HTTPException(404, "there's no such instance that you may watch")
         return found
 
+    # The studio itself: one page, built from studio/ (`npm run build`, as the image does),
+    # which keeps someone's sign-in in memory as they move between its agents, instances and
+    # runs, each at an address of its own
+
+    def built(name: str) -> Response:
+        if not (STUDIO / "index.html").is_file():
+            return Response(STUDIO_UNBUILT, status_code=503, media_type="text/plain; charset=utf-8")
+        path = STUDIO / name
+        if not path.is_file():
+            raise HTTPException(404, "no such file")
+        return Response(path.read_bytes(), media_type=_TYPES[path.suffix], headers=_PAGE_HEADERS)
+
     @app.get("/studio/", include_in_schema=False)
     def studio_page() -> Response:
         approving()
-        return page("studio.html")
+        return built("index.html")
 
-    @app.get("/studio/studio.js", include_in_schema=False)
-    def studio_script() -> Response:
+    @app.get("/studio/agents/{name}", include_in_schema=False)
+    @app.get("/studio/instances/{name}", include_in_schema=False)
+    @app.get("/studio/runs/{name}", include_in_schema=False)
+    def studio_view(name: str) -> Response:
+        """The studio, at the address of one of its agents, instances or runs."""
         approving()
-        return page("studio.js")
+        return built("index.html")
+
+    @app.get("/studio/assets/{name}", include_in_schema=False)
+    def studio_asset(name: str) -> Response:
+        """One of the studio's own files, named by its digest, so it never changes."""
+        approving()
+        if not _ASSET.fullmatch(name):
+            raise HTTPException(404, "no such file")
+        found = built(f"assets/{name}")
+        if found.status_code == 200:
+            found.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return found
 
     @app.get("/studio/api")
     def studio_now(authorization: str | None = Header(default=None)) -> dict:

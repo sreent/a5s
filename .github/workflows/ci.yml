@@ -41,6 +41,9 @@ jobs:
             -scheme http -port 4443 -external-url http://127.0.0.1:4443
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6
       - run: uv sync --locked
+      # The studio's pages, built by the image's own Node stage and taken out of it alone, so
+      # its tests see what the image serves, without Node on the runner
+      - run: docker build --target studio-built --output src/a5s/core/webchat/studio .
       # Chromium itself, from Playwright's own downloads. Not --with-deps: the runner's image
       # has every library Chromium needs, and the step only fetched fonts no test reads, from
       # Ubuntu's mirror, which a runner can fail to reach (as on 11 November 2026). The

@@ -71,10 +71,11 @@ a5s is the small layer they leave out: levels that business owners set, conversa
 
 ## Run it
 
-You need Python 3.12 or later, [uv](https://docs.astral.sh/uv/), Postgres 16, and a key for a model with an OpenAI- or Anthropic-compatible API. On Windows, the development database runs in Docker Desktop instead of a local Postgres installation. The approved models are in [`config/models.yaml`](config/models.yaml), and need `DEEPSEEK_API_KEY` or `QWEN_API_KEY`.
+You need Python 3.12 or later, [uv](https://docs.astral.sh/uv/), Postgres 16, Node 20.19 or later for the studio's pages, and a key for a model with an OpenAI- or Anthropic-compatible API. On Windows, the development database runs in Docker Desktop instead of a local Postgres installation. The approved models are in [`config/models.yaml`](config/models.yaml), and need `DEEPSEEK_API_KEY` or `QWEN_API_KEY`.
 
 ```sh
 uv sync
+npm ci --prefix studio && npm run build --prefix studio   # the studio's pages, as the image builds them
 uv run a5s up        # a local Postgres, the schema, and the core's own token and seal key
 uv run a5s apply     # the assistant, from agents/ and the sample's signed settings
 uv run a5s dev &     # the core, its channels and the scheduler, in one process

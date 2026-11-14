@@ -7,6 +7,7 @@ and Kofi is assurance.
 
 import copy
 import hashlib
+import json
 import re
 from dataclasses import replace
 from pathlib import Path
@@ -17,6 +18,7 @@ import yaml
 from a5s import cli, db
 from a5s.contract import Signature
 from a5s.core import releases, signing
+from a5s.core.inbox import STUDIO_UNBUILT
 from a5s.core.releases import ASSURANCE, ENGINEER, RELEASE_APPROVER, Releases
 from conftest import ROOT
 
@@ -61,7 +63,10 @@ def test_a_release_lists_every_file_it_runs_and_what_its_agents_may_do():
     data = yaml.safe_load(raw)
     parts = data["parts"]
     assert "a5s/core/gateway.py" in parts["core"] and "a5s/worker.py" in parts["services"]
-    assert set(parts["build"]) == {"pyproject.toml", "uv.lock", "Dockerfile", ".dockerignore"}
+    assert set(parts["build"]) == {"pyproject.toml", "uv.lock", "Dockerfile", ".dockerignore",
+                                   "studio/package.json", "studio/package-lock.json", "studio/.npmrc"}
+    # the studio's pages, as its build makes them, are the core's code, as its Python is
+    assert "a5s/core/webchat/studio/index.html" in parts["core"], STUDIO_UNBUILT
     assert "scenario/data.yaml" in parts["scenario"] and "scenario/keys/rosa.pub" in parts["scenario"]
     assert not [p for p in parts["scenario"] if p.endswith((".key", "settings.yaml", "settings.sig"))]
     assert not [p for part in parts.values() for p in part if "__pycache__" in p]
@@ -258,8 +263,19 @@ def test_people_sign_and_the_administrator_records_with_the_command_line(deploye
 def test_everything_a5s_is_built_and_tested_with_is_pinned():
     unpinned = []
     for line in (ROOT / "Dockerfile").read_text().splitlines():
-        if line.startswith("FROM ") and "@sha256:" not in line:
+        # scratch is no image, only the empty start of one, so there's nothing to pin
+        if line.startswith("FROM ") and "@sha256:" not in line and line.split()[1] != "scratch":
             unpinned.append(line)
+    # The studio's packages: each at one version, each locked by its hash, and none runs a
+    # script of its own as it installs
+    studio = json.loads((ROOT / "studio" / "package.json").read_text())
+    for name, version in {**studio["dependencies"], **studio["devDependencies"]}.items():
+        if not re.fullmatch(r"\d+\.\d+\.\d+", version):
+            unpinned.append(f"studio/package.json: {name}@{version}")
+    locked = json.loads((ROOT / "studio" / "package-lock.json").read_text())
+    unpinned += [f"studio/package-lock.json: {path}" for path, package in locked["packages"].items()
+                 if path and not package.get("integrity")]  # each but the studio itself
+    assert "ignore-scripts=true" in (ROOT / "studio" / ".npmrc").read_text().splitlines()
     for workflow in (ROOT / ".github" / "workflows").glob("*.yml"):
         for used in re.findall(r"uses:\s*(\S+)", workflow.read_text()):
             if not used.startswith("./") and not re.search(r"@[0-9a-f]{40}$", used):
