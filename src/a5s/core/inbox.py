@@ -38,6 +38,7 @@ from pydantic import BaseModel
 
 from a5s import db
 from a5s.contract import (
+    DATA_PROTECTION,
     INSTANCE_APPROVER,
     PART_DELEGATE,
     PART_OWNER,
@@ -617,7 +618,7 @@ def create_app(gw: Any) -> FastAPI:
 
     @app.get("/chat/{name}", include_in_schema=False)
     def chat_file(name: str) -> Response:
-        if name not in ("app.js", "app.css"):
+        if name not in ("app.js", "app.css", "shell.js"):
             raise HTTPException(404, "no such file")
         return page(name)
 
@@ -1517,5 +1518,34 @@ def create_app(gw: Any) -> FastAPI:
                                  "args": {"settings": settings.version, "serial": settings.serial,
                                           "by": person.id, "identity": "verified"}})
         return {"request": row["id"], "serial": settings.serial}
+
+    # Every page's sidebar: who signed in, and the pages they may use (webchat/shell.js)
+
+    @app.get("/shell/api")
+    def shell(authorization: str | None = Header(default=None)) -> dict:
+        """Who signed in, and the pages they may use, for the sidebar every page shows: each
+        by the check its own page makes. Every page still checks for itself, so this only
+        leaves out the pages that would refuse them."""
+        approving()
+        who, _ = sender(authorization, None)
+        person = gw.scenario.person(who)
+        if person is None:
+            raise HTTPException(403, "a5s doesn't know who you are")
+
+        def lets(check: Callable[[str | None], Any]) -> bool:
+            try:
+                check(authorization)
+            except HTTPException:
+                return False
+            return True
+
+        roles = set(person.roles)
+        decides = INSTANCE_APPROVER in roles or any(
+            r.startswith((f"{PART_OWNER}:", f"{PART_DELEGATE}:")) for r in roles)
+        found = {"chat": True, "tasks": True, "notebook": lets(keeping), "studio": lets(studying),
+                 "decide": decides, "grade": lets(grader), "settings": lets(settling),
+                 "audit": audit.reads(person), "admin": lets(administering),
+                 "officer": DATA_PROTECTION in roles}
+        return {"you": person.name, "pages": [name for name, may in found.items() if may]}
 
     return app

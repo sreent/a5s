@@ -250,6 +250,7 @@ async function main() {
       if (!(await signIn())) return;  // gone to the identity provider
       const who = claims(JSON.parse(store.getItem("a5s.tokens")).id);
       $("who").textContent = who.name || who.preferred_username || "";
+      window.a5s?.signedIn(JSON.parse(store.getItem("a5s.tokens")).id);  // the sidebar
       $("signout").hidden = false;
       $("signout").addEventListener("click", signOut);
     } else if (state.config.development) {

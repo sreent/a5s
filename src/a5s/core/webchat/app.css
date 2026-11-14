@@ -1,31 +1,70 @@
+/* a5s's pages: one look for all of them. Calm surfaces, a sidebar of the pages someone may
+   use (shell.js), cards for what belongs together, and colour only where it means something:
+   what a tool does, how an instance or a run stands. Light and dark. */
+
 :root {
-  --text: #1d2125;
-  --muted: #5d6670;
-  --line: #d7dce1;
-  --page: #f6f7f9;
-  --you: #e3eefc;
+  --text: #1d2026;
+  --muted: #646b75;
+  --faint: #8a919b;
+  --line: #e2e5ea;
+  --line-strong: #cfd4db;
+  --page: #f5f6f8;
+  --surface: #ffffff;
+  --sunken: #f0f2f5;
+  --accent: #3858d6;
+  --accent-text: #ffffff;
+  --accent-soft: #e8edfd;
+  --focus: #6f8ef0;
+  --you: #e6edfd;
   --agent: #ffffff;
-  --a5s: #fff6e0;
-  --accent: #1f5fbf;
+  --a5s: #fff6df;
+  /* what a tool does, and how something stands */
+  --reads: #4b5563;      --reads-bg: #eef0f3;
+  --writes: #9a5b00;     --writes-bg: #fff2d6;
+  --changes: #b4233a;    --changes-bg: #fde6ea;
+  --outside: #6d3fc9;    --outside-bg: #efe8fd;
+  --own: #0f7468;        --own-bg: #daf5ef;
+  --good: #1d7a3e;       --good-bg: #e0f4e6;
+  --warn: #9a5b00;       --warn-bg: #fff2d6;
+  --bad: #b4233a;        --bad-bg: #fde6ea;
+  --idle: #5b6470;       --idle-bg: #eceef1;
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
+  --radius: 10px;
   color-scheme: light dark;
-  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --text: #e6e9ec;
-    --muted: #9aa4ae;
-    --line: #333a41;
-    --page: #15181b;
-    --you: #1d3352;
-    --agent: #1f2328;
+    --text: #e7e9ec;
+    --muted: #a0a7b1;
+    --faint: #7c838d;
+    --line: #2d3138;
+    --line-strong: #3b4048;
+    --page: #16181c;
+    --surface: #1e2126;
+    --sunken: #191c20;
+    --accent: #8ea6ff;
+    --accent-text: #10172e;
+    --accent-soft: #232c4a;
+    --focus: #8ea6ff;
+    --you: #22304f;
+    --agent: #1e2126;
     --a5s: #3a3220;
-    --accent: #7fb0ff;
+    --reads: #c3c8cf;      --reads-bg: #2a2e35;
+    --writes: #f3c46b;     --writes-bg: #3a2f17;
+    --changes: #ff8a9b;    --changes-bg: #45202a;
+    --outside: #c4a8ff;    --outside-bg: #2f2547;
+    --own: #6fdcc9;        --own-bg: #17352f;
+    --good: #7ad79a;       --good-bg: #183323;
+    --warn: #f3c46b;       --warn-bg: #3a2f17;
+    --bad: #ff8a9b;        --bad-bg: #45202a;
+    --idle: #b3b9c2;       --idle-bg: #2a2e35;
+    --shadow: none;
   }
 }
 
 * { box-sizing: border-box; }
-
 [hidden] { display: none !important; }
 
 body {
@@ -37,78 +76,259 @@ body {
   color: var(--text);
 }
 
+a { color: var(--accent); text-underline-offset: 2px; }
+code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88em; }
+button, select, input, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* The frame: a sidebar, and the page beside it (shell.js) */
+
+body.app {
+  display: grid;
+  grid-template-columns: 236px minmax(0, 1fr);
+  /* the sidebar's column, all the way down however long the page */
+  background: linear-gradient(to right, var(--surface) 235px, var(--line) 235px 236px, var(--page) 236px);
+}
+
+.sidebar {
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.9rem 0.65rem;
+  overflow-y: auto;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.3rem 0.55rem 0.9rem;
+  color: var(--text);
+  font-weight: 700;
+  font-size: 1.05rem;
+  text-decoration: none;
+  letter-spacing: 0.01em;
+}
+
+.brand .mark {
+  display: grid;
+  place-items: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 7px;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 0.8rem;
+}
+
+.sidebar nav { display: flex; flex-direction: column; gap: 0.1rem; flex: 1; }
+.sidebar .group { margin: 0.85rem 0.6rem 0.3rem; color: var(--faint); font-size: 0.72rem;
+                  font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; }
+
+.sidebar nav a {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.42rem 0.6rem;
+  border-radius: 8px;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.93rem;
+}
+
+.sidebar nav a:hover { background: var(--sunken); }
+.sidebar nav a[aria-current="page"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.icon { width: 1.15rem; height: 1.15rem; flex: none; fill: none; stroke: currentColor;
+        stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+
+.me {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.75rem 0.55rem 0.2rem;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.me:empty { display: none; }
+.avatar { display: grid; place-items: center; width: 1.9rem; height: 1.9rem; border-radius: 50%;
+          background: var(--sunken); color: var(--text); font-weight: 600; font-size: 0.78rem; flex: none; }
+
+.page { display: flex; flex-direction: column; min-width: 0; min-height: 100vh; }
+
 header, footer {
   display: flex;
   gap: 1rem;
   align-items: center;
-  padding: 0.75rem 1rem;
-  background: var(--agent);
+  padding: 0.7rem 1.5rem;
+  background: var(--surface);
   border-bottom: 1px solid var(--line);
 }
 
+body.app header h1 { display: none; }  /* the sidebar names a5s */
+body.app header { min-height: 3.25rem; }
 footer { border-top: 1px solid var(--line); border-bottom: 0; position: sticky; bottom: 0; }
 
 h1 { font-size: 1.1rem; margin: 0 auto 0 0; }
+#who { color: var(--muted); margin-left: auto; }
 
-#who { color: var(--muted); }
+main { flex: 1; width: 100%; max-width: 76rem; margin: 0 auto; padding: 1.75rem 2rem 3rem; }
 
-main { flex: 1; width: 100%; max-width: 50rem; margin: 0 auto; padding: 1rem; }
+@media (max-width: 760px) {
+  body.app { display: flex; flex-direction: column; background: var(--page); }
+  .sidebar { position: static; height: auto; flex-direction: row; align-items: center;
+             padding: 0.4rem 0.6rem; background: var(--surface); border-bottom: 1px solid var(--line);
+             overflow-x: auto; }
+  .brand { padding: 0.2rem 0.4rem; }
+  .sidebar nav { flex-direction: row; gap: 0.15rem; }
+  .sidebar .group, .me, .sidebar nav a span { display: none; }
+  main { padding: 1.25rem 1rem 2.5rem; }
+}
 
+/* Type */
+
+h2 { font-size: 1.45rem; font-weight: 650; letter-spacing: -0.01em; margin: 0 0 0.35rem; }
+h3 { font-size: 1.02rem; font-weight: 600; margin: 1.5rem 0 0.6rem; }
+h4 { font-size: 0.92rem; font-weight: 600; margin: 1.1rem 0 0.4rem; color: var(--muted); }
+section > h3:first-child, .card > h3:first-child { margin-top: 0; }
+.note { color: var(--muted); font-size: 0.9rem; }
+main > h2 + .note { margin: 0 0 1.5rem; max-width: 52rem; }
 #status:empty { display: none; }
 #status { color: var(--muted); }
 
-ol { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.75rem; }
+/* Surfaces */
 
-li {
-  max-width: 85%;
-  padding: 0.6rem 0.8rem;
+main > section, .card {
+  background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: 0.6rem;
-  background: var(--agent);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 1.25rem 1.5rem;
+  margin: 0 0 1rem;
 }
 
-li.you { align-self: flex-end; background: var(--you); }
-li.a5s { background: var(--a5s); }
+main > section > :last-child, .card > :last-child { margin-bottom: 0; }
 
-li strong:first-child { font-weight: 600; }
-li time { color: var(--muted); font-size: 0.8rem; }
-li div { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 0.2rem; }
+/* Lists: rows with a line between them */
 
-a { color: var(--accent); }
-code { font-family: ui-monospace, monospace; font-size: 0.9em; }
+ul, ol { margin: 0.25rem 0 0.75rem; }
+.plain { list-style: none; padding: 0; }
+.plain > li { padding: 0.55rem 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
+.plain > li:last-child { border-bottom: 0; }
+.plain > li.widens, #changes li.widens { font-weight: 600; }
+#changes { padding-left: 1.25rem; }
+#changes li { padding: 0.2rem 0; }
 
-#compose { display: flex; gap: 0.5rem; width: 100%; max-width: 50rem; margin: 0 auto; }
-textarea { flex: 1; font: inherit; padding: 0.5rem; resize: vertical; }
-button, select, input { font: inherit; }
+/* Controls */
+
+button {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.42rem 0.85rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font-weight: 500;
+}
+
+button:hover { background: var(--sunken); }
+button.primary, #approve, #send, #search, #compose button, #name button, #ask button[type="submit"] {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+button.primary:hover, #approve:hover, #send:hover, #search:hover, #compose button:hover {
+  filter: brightness(1.06);
+}
+button:disabled { opacity: 0.55; cursor: default; }
+button.link { border: 0; background: none; padding: 0; color: var(--accent); font-weight: 500; }
+
+input, select, textarea {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+textarea { resize: vertical; }
+label { color: var(--muted); font-size: 0.9rem; }
 .hidden { position: absolute; left: -10000px; }
+
+/* Badges: what a tool does, and how something stands */
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.08rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: nowrap;
+  background: var(--idle-bg);
+  color: var(--idle);
+}
+
+.badge.reads { background: var(--reads-bg); color: var(--reads); }
+.badge.writes { background: var(--writes-bg); color: var(--writes); }
+.badge.changes { background: var(--changes-bg); color: var(--changes); }
+.badge.outside { background: var(--outside-bg); color: var(--outside); }
+.badge.own { background: var(--own-bg); color: var(--own); }
+.badge.good { background: var(--good-bg); color: var(--good); }
+.badge.warn { background: var(--warn-bg); color: var(--warn); }
+.badge.bad { background: var(--bad-bg); color: var(--bad); }
+
+/* Tables */
+
+table.figures { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; font-size: 0.92rem; }
+table.figures th, table.figures td { text-align: left; vertical-align: top; padding: 0.55rem 0.6rem;
+                                     border-bottom: 1px solid var(--line); }
+table.figures th { font-weight: 600; color: var(--muted); font-size: 0.82rem; }
+table.figures tr:last-child td { border-bottom: 0; }
+pre.entries { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.75rem; max-height: 24rem;
+              overflow: auto; padding: 0.6rem; background: var(--sunken); border: 1px solid var(--line);
+              border-radius: 8px; }
+
+/* The chat */
+
+#conversation { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.75rem; }
+
+#conversation > li {
+  max-width: 85%;
+  padding: 0.6rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--agent);
+  box-shadow: var(--shadow);
+}
+
+#conversation > li.you { align-self: flex-end; background: var(--you); border-color: transparent; }
+#conversation > li.a5s { background: var(--a5s); }
+#conversation > li strong:first-child { font-weight: 600; }
+#conversation > li time { color: var(--muted); font-size: 0.8rem; }
+#conversation > li div { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 0.2rem; }
+body.app header label { color: var(--muted); }
+#compose { display: flex; gap: 0.5rem; align-items: flex-end; width: 100%; max-width: 50rem; margin: 0 auto; }
+#compose textarea { flex: 1; min-height: 2.6rem; max-height: 12rem; }
 #name { display: flex; gap: 0.5rem; align-items: end; margin-bottom: 1rem; }
 
-/* The page where an instance approver decides on a version of the settings */
-h2 { font-size: 1.2rem; margin: 0 0 0.75rem; }
-#changes { padding-left: 1.25rem; }
-#changes li { max-width: none; padding: 0.2rem 0; border: 0; border-radius: 0; background: none; }
-#changes li.widens { font-weight: 600; }
-.note { color: var(--muted); font-size: 0.9rem; }
-.plain { list-style: disc; display: block; padding-left: 1.25rem; margin: 0.25rem 0 0.75rem; }
-.plain li { max-width: none; padding: 0.15rem 0; border: 0; border-radius: 0; background: none; }
-.plain li.widens { font-weight: 600; }
-h3 { font-size: 1rem; margin: 1.25rem 0 0.5rem; }
-h4 { font-size: 0.95rem; margin: 1rem 0 0.25rem; }
-#text { display: block; width: 100%; box-sizing: border-box; min-height: 22rem;
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85rem; }
+/* The settings, as written */
 
-/* The page where a decider decides the changes agents asked for */
-article { border-top: 1px solid var(--line, #ddd); padding: 0.5rem 0; }
+#edit #text { display: block; width: 100%; min-height: 22rem; font-size: 0.85rem; background: var(--sunken);
+              font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+/* Decisions and grades: each change or sample a card of its own */
+
+article { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+          padding: 1rem 1.25rem; margin: 0 0 0.75rem; box-shadow: var(--shadow); }
 .said { white-space: pre-wrap; margin: 0.25rem 0; }
 .flags { padding-left: 1.25rem; font-weight: 600; }
 .tick { margin-left: 0.75rem; }
-
-/* The studio: the agents someone may watch, an instance's figures and runs, and a run */
-#trail { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
-table.figures { border-collapse: collapse; width: 100%; margin: 0.5rem 0 1rem; font-size: 0.9rem; }
-table.figures th, table.figures td { text-align: left; vertical-align: top; padding: 0.3rem 0.5rem;
-                                     border-bottom: 1px solid var(--line); }
-table.figures th { font-weight: 600; white-space: nowrap; }
-#runs button { text-align: left; }
-pre.entries { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.75rem; max-height: 24rem;
-              overflow: auto; padding: 0.5rem; background: var(--agent); border: 1px solid var(--line); }
