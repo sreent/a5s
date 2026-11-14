@@ -36,19 +36,31 @@ To answer a task that needs its owner, the person returns to their chat with the
 
 ## For the person who runs an agent
 
-The studio at `/studio/` is currently **read-only**: a catalogue, a dashboard for each instance, and a page for each run. It shows only what the signed-in person may see.
+The studio at `/studio/` is currently **read-only**: the agents, each agent's page with a map of how it's wired, a dashboard for each instance, and a page for each run with its path. Every page of a5s shares its sidebar, which lists only the pages the signed-in person may use, and the studio shows only what they may see. These pictures come from a5s running, with synthetic records: `A5S_DOC_IMAGES=docs/images uv run pytest tests/test_doc_images.py` makes them again.
 
-### The catalogue
+### The agents
 
-Each agent shows its release, model, autonomy levels, owners, tools and what those tools read or write, and the instances that run it. An instance shows its status, parts, audience and the people who run it.
+Each agent shows its release, model, autonomy levels and how many of its tools change records, write or only read, and the instances that run it, with each one's status, level, part and the people it serves.
 
-![The studio's catalogue of an agent, its tools and its instance](images/a5s-studio-catalogue.png)
+![The studio's agents, each with its tools by what they do and the instance that runs it](images/a5s-studio-catalogue.png)
+
+### An agent's page
+
+An agent's page opens on a map of how it's wired: what starts its runs, the agent, a5s's checks, which every call to a tool passes through, and its tools, coloured by what they do, changes first. Below the map are what it does and its instructions, its tools by kind, when it works, what it knows and may spend, and where it runs.
+
+![An agent's page, opening on the map of what starts it, a5s's checks and its tools](images/a5s-studio-agent.png)
 
 ### The instance's dashboard and runs
 
-An owner or another authorised person can choose an instance and period to see model usage, run outcomes, obligations, reminders, held changes, graded samples, denials and reports. Each run can show its trigger, records read and each tool call's policy decision. Conversation text is not shown.
+An owner or another authorised person can choose an instance and period to see its runs, how they ended and their tokens, its runs by day in their own time zone, split by how they ended, and its obligations, reminders, held changes, graded samples, denials and reports. Each day's figures show on hover or keyboard focus, and the same figures are in a table under the chart. Conversation text is not shown.
 
-![An instance's dashboard and recent run](images/a5s-studio-dashboard.png)
+![An instance's dashboard: its figures, and its runs by day, split by how they ended](images/a5s-studio-dashboard.png)
+
+### A run
+
+Each run shows what started it, whom it acted for, the records it read, and its path on its agent's map: each tool it called, how many times, and how many of those a5s refused, with what it didn't use faded. Its calls follow in order, each with the policy's decision.
+
+![A run's page, with its path on its agent's map](images/a5s-studio-run.png)
 
 The command line, Python client and core API expose the same operational model to code and CI, not just to the page. Operators' aggregate metrics can also go to the organisation's monitoring, without personal data.
 
