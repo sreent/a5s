@@ -29,6 +29,7 @@ from typing import Any
 from a5s import db
 from a5s.contract import (
     ASSURANCE,
+    AUDITOR,
     DATA_PROTECTION,
     INSTANCE_APPROVER,
     PART_DELEGATE,
@@ -38,7 +39,6 @@ from a5s.contract import (
 from a5s.core import ledger
 from a5s.core.ledger import GENESIS
 
-AUDITOR = "auditor"
 READERS = (AUDITOR, ASSURANCE)  # who reads the trail
 MOST = 500  # entries a page holds at most
 MOST_EXPORTED = 10_000  # entries an export's page holds at most

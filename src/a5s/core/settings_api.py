@@ -25,8 +25,8 @@ class Draft(BaseModel):
 
 
 SETTLES = ("the settings app is for the people who approve versions of the settings: each "
-           "part's owner, the instance approvers, agents' owners and the data protection "
-           "officer, each for what's theirs")
+           "part's owner, the instance approvers, agents' owners, the data protection officer "
+           "and assurance, each for what's theirs")
 
 
 def router(gw: Any) -> APIRouter:

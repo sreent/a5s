@@ -44,12 +44,13 @@ AGENT_VIEWER = "agent-viewer"
 # a5s's own roles, for approving its releases
 RELEASE_APPROVER = "release-approver"  # never from the team that runs a5s, nor above it
 ASSURANCE = "assurance"
+AUDITOR = "auditor"  # reads the ledger; only assurance gives a group it (core/memberships.py)
 DATA_PROTECTION = "data-protection-officer"  # answers requests for someone's data (core/export.py)
 # The roles the identity provider's groups may give, as the settings map them: those people use
 # by signing in, each with a part's or an agent's where it's theirs. The roles a release needs,
 # which people use by signing with keys of their own, stay the directory's, an agent's owner
 # among them (core/memberships.py).
-GROUP_ROLES = (INSTANCE_APPROVER, DATA_PROTECTION, "auditor", "grader")
+GROUP_ROLES = (INSTANCE_APPROVER, DATA_PROTECTION, AUDITOR, "grader")
 GROUP_PART_ROLES = (PART_OWNER, PART_DELEGATE)
 GROUP_AGENT_ROLES = (AGENT_AUTHOR, AGENT_VIEWER)
 

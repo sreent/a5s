@@ -51,7 +51,8 @@ MAY = {
     RELEASE_APPROVER: "approve releases, from outside the team that runs a5s",
     samples.GRADER: "grade agents' work, never your own team's",
     audit.AUDITOR: "read the ledger: find what was done and decided, and export it",
-    ASSURANCE: "hold the ledger's locked copies, test releases, and read the ledger",
+    ASSURANCE: "hold the ledger's locked copies, test releases, and read the ledger; where the "
+               "directory names you, give a group the auditor's role",
     DATA_PROTECTION: "export or erase what a5s keeps about one person, one request at a time; "
                      "where the directory names you, approve the settings' choices for people's "
                      "data: how long a5s keeps it, and whom it names; and give a group "
