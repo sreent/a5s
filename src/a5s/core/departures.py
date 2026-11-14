@@ -39,7 +39,7 @@ KEPT = ("turns", "summaries", "inbound", "outbox", "chats", "digest_items", "urg
         "profile_notes", "reminders", "report_fires")
 # What only serves the person while they're here, which it lets go
 LET_GO = ("preferences", "report_seen", "digest_waits", "urgent_sent", "digests", "spend",
-          "sign_in_groups")
+          "sign_in_groups", "agent_drafts")
 
 
 def sweep(conn: psycopg.Connection, scenario: Scenario, now: datetime) -> list[str]:

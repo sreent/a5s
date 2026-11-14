@@ -204,7 +204,8 @@ def test_the_channels_apps_openapi_document_describes_the_peoples_api(approving)
     paths = set(httpx.get(f"{approving}/openapi.json", timeout=30).json()["paths"])
     assert {"/studio/api", "/studio/api/agents/{agent}", "/studio/api/agents/{agent}/measures",
             "/studio/api/instances/{instance}", "/studio/api/instances/{instance}/runs",
-            "/studio/api/runs/{run_id}"} <= paths
+            "/studio/api/runs/{run_id}", "/studio/api/templates", "/studio/api/drafts",
+            "/studio/api/drafts/{draft}"} <= paths
 
 
 def test_a_chase_shows_only_to_those_who_may_see_the_record_it_chases(stack, approving, provider):

@@ -285,9 +285,11 @@ def pin(folder: Path, schema_hashes: dict[str, str]) -> Path:
     if missing:
         raise ValueError(f"the scenario doesn't provide: {', '.join(missing)}")
     lock = folder / "tools.lock"
-    pins = {t: schema_hashes[t] for t in definition.tool_names}
-    lock.write_text(
-        "# Written by `a5s pin`. A tool whose schema no longer matches is refused.\n"
-        + yaml.safe_dump(pins, sort_keys=True)
-    )
+    lock.write_text(lock_text({t: schema_hashes[t] for t in definition.tool_names}))
     return lock
+
+
+def lock_text(pins: dict[str, str]) -> str:
+    """A tools.lock, as `a5s pin` writes it: each tool's schema, by its hash."""
+    return ("# Written by `a5s pin`. A tool whose schema no longer matches is refused.\n"
+            + yaml.safe_dump(pins, sort_keys=True))

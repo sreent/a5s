@@ -20,6 +20,7 @@ import asyncio
 import hashlib
 import logging
 import re
+import tempfile
 import time
 import uuid
 from collections.abc import Callable
@@ -36,7 +37,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel
 
-from a5s import db
+from a5s import authoring, db, definitions
 from a5s.contract import (
     DATA_PROTECTION,
     INSTANCE_APPROVER,
@@ -51,6 +52,7 @@ from a5s.core import (
     approvals,
     audit,
     chats,
+    drafts,
     groups,
     ledger,
     matrix,
@@ -198,6 +200,21 @@ def record(conn: Any, *, channel: str, source_id: str, person: str, agent: str, 
     })
     conn.execute("notify a5s_inbound")
     return inbound
+
+
+class DraftStart(BaseModel):
+    """A new draft: a new agent's name and the template it starts from, or an agent of the
+    release to change."""
+
+    name: str | None = None
+    template: str | None = None
+    agent: str | None = None
+
+
+class DraftFiles(BaseModel):
+    """A draft's agent's folder: each file's text, by its path in it."""
+
+    files: dict[str, str]
 
 
 class Small:
@@ -1322,6 +1339,133 @@ def create_app(gw: Any) -> FastAPI:
         if found is None:
             raise HTTPException(404, "there's no such run that you may see")
         return found
+
+    # Making agents (core/drafts.py, docs/studio.md, step 2): drafts the studio keeps for their
+    # authors, each an agent's folder, file by file, checked as `a5s agent check` checks one.
+    # None is in force, nothing about one is signed, and publishing one is a pull request.
+
+    def drafting(authorization: str | None) -> Person:
+        """Who signed in to make agents: an agent's owner or named author, or an engineer."""
+        approving()
+        who, _ = sender(authorization, None)
+        person = gw.scenario.person(who)
+        if person is None:
+            raise HTTPException(403, "a5s doesn't know who you are")
+        if not drafts.authors(person):
+            raise HTTPException(403, "making agents is for their owners, the people the "
+                                     "organisation names their authors, and engineers")
+        return person
+
+    def checked(draft: dict) -> dict:
+        problems = drafts.check(draft["agent"], draft["files"], gw.scenario.tools(), gw.models)
+        return {**draft, "problems": problems}
+
+    def in_ledger(conn: Any, person: Person, action: str, draft: dict) -> None:
+        ledger.append(conn, {"kind": "admin", "action": action, "run": None, "instance": None,
+                             "acts_for": [], "decision": "record",
+                             "args": {"agent": draft["agent"], "draft": draft["id"],
+                                      "based_on": draft["based_on"], "by": person.id}})
+
+    @app.get("/studio/api/templates")
+    def studio_templates(authorization: str | None = Header(default=None)) -> dict:
+        """The agents a new one may start from, and the tools each needs that this scenario
+        hasn't got: none, if it fits."""
+        drafting(authorization)
+        tools = gw.scenario.tools()
+        found = []
+        for name, folder in authoring.templates(gw.cfg.root).items():
+            definition = definitions.load(folder)
+            found.append({"name": name, "works_for": definition.works_for, "does": definition.does,
+                          "model": definition.model, "tools": definition.tool_names,
+                          "lacks": authoring.lacks(folder, tools)})
+        return {"templates": found}
+
+    @app.get("/studio/api/drafts")
+    def studio_drafts(authorization: str | None = Header(default=None)) -> dict:
+        """Someone's drafts, latest first."""
+        person = drafting(authorization)
+        with db.transaction(gw.url) as conn:
+            return {"drafts": drafts.mine(conn, person)}
+
+    @app.post("/studio/api/drafts")
+    def studio_draft_start(body: DraftStart, authorization: str | None = Header(default=None)) -> dict:
+        """A new draft: of a new agent, from a template, or of a change to an agent of the
+        release, from its folder as released."""
+        person = drafting(authorization)
+        tools = gw.scenario.tools()
+        if body.agent and not (body.name or body.template):
+            if body.agent not in gw.definitions:
+                raise HTTPException(404, f"there's no agent {body.agent} here")
+            if not drafts.may_author(person, body.agent):
+                raise HTTPException(403, f"changing {body.agent} is for its owners and the people "
+                                         "the organisation names its authors")
+            name, files = body.agent, drafts.folder_files(gw.cfg.agents_dir / body.agent)
+            based_on = f"{body.agent} {gw.definitions[body.agent].release_id}"
+        elif body.name and body.template and not body.agent:
+            if not drafts.may_author(person, None):
+                raise HTTPException(403, "a new agent is for the people who own one, and engineers")
+            if body.name in gw.definitions:
+                raise HTTPException(409, f"there's an agent {body.name} already: draft a change "
+                                         "to it instead")
+            template = authoring.templates(gw.cfg.root).get(body.template)
+            if template is None:
+                raise HTTPException(404, f"there's no template {body.template}")
+            with tempfile.TemporaryDirectory() as there:
+                try:
+                    made = authoring.new(template, body.name, Path(there), tools)
+                except ValueError as e:
+                    raise HTTPException(400, str(e)) from None
+                name, files = body.name, drafts.folder_files(made)
+            based_on = f"template {body.template}"
+        else:
+            raise HTTPException(400, "name a new agent and the template it starts from, or an "
+                                     "agent of the release to change")
+        with db.transaction(gw.url) as conn:
+            try:
+                draft = drafts.start(conn, person, name, based_on, files)
+            except drafts.Refused as e:
+                raise HTTPException(409, str(e)) from None
+            in_ledger(conn, person, "draft", draft)
+        return checked(draft)
+
+    @app.get("/studio/api/drafts/{draft}")
+    def studio_draft(draft: str, authorization: str | None = Header(default=None)) -> dict:
+        """One of someone's drafts, its files, and what would stop its release."""
+        person = drafting(authorization)
+        with db.transaction(gw.url) as conn:
+            found = drafts.get(conn, person, draft)
+        if found is None:
+            raise HTTPException(404, "you have no such draft")
+        return checked(found)
+
+    @app.put("/studio/api/drafts/{draft}")
+    def studio_draft_save(draft: str, body: DraftFiles,
+                          authorization: str | None = Header(default=None)) -> dict:
+        """Keep a draft's files as they are now, its tools pinned as the scenario has them, as
+        `a5s pin` pins them, and say what would stop its release."""
+        person = drafting(authorization)
+        if problems := drafts.shape(body.files):
+            raise HTTPException(400, "; ".join(problems))
+        with db.transaction(gw.url) as conn:
+            found = drafts.get(conn, person, draft)
+            if found is None:
+                raise HTTPException(404, "you have no such draft")
+            files = drafts.pinned(found["agent"], {path: text for path, text in body.files.items()
+                                                   if path != "tools.lock"}, gw.scenario.tools())
+            saved = drafts.save(conn, person, draft, files)
+        return checked(saved)
+
+    @app.delete("/studio/api/drafts/{draft}")
+    def studio_draft_drop(draft: str, authorization: str | None = Header(default=None)) -> dict:
+        """Let one of someone's drafts go."""
+        person = drafting(authorization)
+        with db.transaction(gw.url) as conn:
+            gone = drafts.drop(conn, person, draft)
+            if gone is not None:
+                in_ledger(conn, person, "drop draft", gone)
+        if gone is None:
+            raise HTTPException(404, "you have no such draft")
+        return {"dropped": gone["id"]}
 
     # The auditors' page: the ledger as an auditor reads it, read only, from the same module as
     # the core's API (core/audit.py). Whoever acted in one of a5s's roles shows as themselves;
