@@ -102,6 +102,12 @@ async function load() {
     waits.push(item(`${held.waiting} held ${held.waiting === 1 ? "change" : "changes"} in ${held.part}, for ${held.deciders.join(", ") || "nobody"} to decide`));
   }
   list("waiting", waits, "Nothing waits.");
+  const none = [
+    ...now.ownerless.agents.map((a) => item(`The ${a.agent}: ${a.what}. To do: ${a.do}.`, "warn")),
+    ...now.ownerless.instances.map((i) => item(`${i.instance}, of the ${i.agent}: ${i.what}. To do: ${i.do}.`, "warn")),
+    ...now.ownerless.parts.map((p) => item(`${p.part}: ${p.what}. To do: ${p.do}.`, "warn")),
+  ];
+  list("ownerless", none, "Everything has someone who answers for it.");
   $("latest-title").textContent = `The latest acts, over the last ${now.days} days`;
   list("latest", now.latest.map((act) => item(
     `${act.at}: ${act.by || "a5s"} ${act.what}${act.instance ? `, ${act.instance}` : ""}`)),
