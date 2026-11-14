@@ -1,0 +1,153 @@
+{{- if not (has .Values.mode (list "a5s" "sandbox")) }}
+{{- fail (printf "mode: %q isn't a5s or sandbox" .Values.mode) }}
+{{- end }}
+{{- if eq .Values.mode "sandbox" }}
+{{/* The sandbox (docs/studio.md#the-sandbox): where the studio tries the agents people are
+making, every part of a5s in one process, on a database server of its own, with the
+scenario's made-up records. It holds none of a5s's keys: it makes its made-up people's when it
+starts and keeps them in memory alone. Only a5s's channels reach it, by the token they share.
+It runs one replica, the old one stopped first, since two would each sign its settings with
+keys of their own. */}}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ printf "%s-sandbox" .Release.Name }}
+  labels:
+    {{- include "a5s.labels" . | nindent 4 }}
+  {{- with (get .Values.serviceAccounts.annotations "sandbox") }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+automountServiceAccountToken: false
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ printf "%s-sandbox" .Release.Name }}
+  labels:
+    {{- include "a5s.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sandbox
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "a5s.selector" (dict "root" . "part" "sandbox") | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "a5s.podLabels" (dict "root" . "part" "sandbox") | nindent 8 }}
+    spec:
+      serviceAccountName: {{ printf "%s-sandbox" .Release.Name }}
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 10001
+      containers:
+        - name: sandbox
+          image: {{ include "a5s.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["sandbox", "--host", "0.0.0.0", "--port", "8710"]
+          securityContext:
+            {{- include "a5s.securityContext" . | nindent 12 }}
+          env:
+            {{- include "a5s.scratch" . | nindent 12 }}
+            {{- include "a5s.secretEnv" (dict "root" . "name" "A5S_SANDBOX_DATABASE_URL" "key" "sandbox-database-url") | nindent 12 }}
+            {{- include "a5s.secretEnv" (dict "root" . "name" "A5S_SANDBOX_TOKEN" "key" "sandbox-token") | nindent 12 }}
+            - name: A5S_SANDBOX_DIR  # its copies of the scenario and the agents
+              value: /tmp/sandbox
+            {{- include "a5s.scenarioEnv" . | nindent 12 }}
+            {{- if .Values.sandbox.realModels }}
+            {{- range $name, $key := .Values.models.keys }}
+            {{- include "a5s.secretEnv" (dict "root" $ "name" $name "key" $key "optional" true) | nindent 12 }}
+            {{- end }}
+            {{- end }}
+            - name: A5S_PROVIDER_TIMEOUT
+              value: {{ .Values.timeouts.provider | quote }}
+            {{- include "a5s.dbConnectEnv" . | nindent 12 }}
+          ports:
+            - name: http
+              containerPort: 8710
+          startupProbe:  # it sets up its database and signs its settings first
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.resources.sandbox | nindent 12 }}
+          volumeMounts:
+            - name: scratch
+              mountPath: /tmp
+            {{- if .Values.models.configMap }}
+            - name: models  # the models a5s approves, as its gateway has them
+              mountPath: /app/config/models.yaml
+              subPath: models.yaml
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: scratch
+          emptyDir: {}
+        {{- if .Values.models.configMap }}
+        - name: models
+          configMap:
+            name: {{ .Values.models.configMap }}
+        {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ printf "%s-sandbox" .Release.Name }}
+  labels:
+    {{- include "a5s.labels" . | nindent 4 }}
+    app.kubernetes.io/component: sandbox
+spec:
+  selector:
+    {{- include "a5s.selector" (dict "root" . "part" "sandbox") | nindent 4 }}
+  ports:
+    - name: http
+      port: 8710
+      targetPort: http
+{{- if .Values.networkPolicies.enabled }}
+---
+# Only a5s's channels reach it, and it reaches its own database alone, and outside only for
+# the approved models, if it may try drafts on them: nothing of a5s's.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ printf "%s-sandbox" .Release.Name }}
+  labels:
+    {{- include "a5s.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "a5s.selector" (dict "root" . "part" "sandbox") | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "a5s.selector" (dict "root" (dict "Release" (dict "Name" .Values.sandbox.studio.release)) "part" "channels") | nindent 14 }}
+          namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.sandbox.studio.namespace | default .Release.Namespace }}
+      ports:
+        - {protocol: TCP, port: 8710}
+  egress:
+    {{- include "a5s.policy.dns" . | nindent 4 }}
+    {{- include "a5s.policy.database" . | nindent 4 }}
+    {{- if .Values.sandbox.realModels }}
+    {{- include "a5s.policy.outside" . | nindent 4 }}
+    {{- end }}
+{{- end }}
+{{- end }}

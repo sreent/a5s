@@ -5,6 +5,10 @@ and is there again after a reload; and they draft a change to an agent they own,
 
 from __future__ import annotations
 
+import yaml
+
+from a5s import db
+
 
 def kept(page) -> None:
     """Once the page has kept the latest change."""
@@ -30,6 +34,7 @@ def test_an_agents_owner_makes_an_agent_in_the_studio(stack, approving, provider
     assert page.evaluate("location.pathname").startswith("/studio/drafts/")
     assert "the finance-helper is new" in page.inner_text("#signers")  # who'd sign, before anything
     page.wait_for_selector(".agent-map .map-node >> text=close_question", timeout=30000)
+    assert "no sandbox here" in page.inner_text("#try")  # where there's none, it says so
     page.click("[role=tab]:has-text('Tools')")  # one tool fewer, and its map shows it
     page.uncheck("input[aria-label=close_question]")
     kept(page)
@@ -60,4 +65,52 @@ def test_an_agents_owner_makes_an_agent_in_the_studio(stack, approving, provider
     page.click("button:has-text('Drop the draft')")
     page.wait_for_selector("#drafts >> text=finance-helper", timeout=30000)
     assert page.locator("#drafts li").count() == 1  # the change dropped, the new one kept
+    assert refused == []
+
+
+def test_an_agents_owner_tries_their_draft_in_the_sandbox(stack, with_sandbox, approving, provider,
+                                                          browser):
+    from test_ui_pages import shot
+
+    provider.person = "priya"
+    page = browser.new_page(viewport={"width": 1440, "height": 900})
+    refused = []
+    page.on("console", lambda m: refused.append(m.text) if "Content Security Policy" in m.text else None)
+    page.goto(f"{approving}/studio/new")
+    page.wait_for_selector(".template >> text=assistant", timeout=30000)
+    page.fill("#agent-name", "finance-helper")
+    page.click(".template:has-text('assistant') >> nth=0")
+    page.click("#make")
+    page.wait_for_selector("#problems >> text=Nothing would stop its release", timeout=30000)
+    page.wait_for_selector("#try-as", timeout=30000)
+    page.select_option("#try-as", "ben")  # one of the sandbox's made-up people
+    page.fill("#try-text", "Which questions mention an invoice?")
+    page.click("#try button:has-text('Say it')")
+    page.wait_for_selector(".try-answer >> text=I looked it up and found Q-1001", timeout=60000)
+    assert "Ben Okafor said" in page.inner_text(".try-said")
+    steps = page.inner_text(".try-answer .steps")
+    assert "search_records" in steps and "allow" in steps
+    page.click("details.sent summary")  # what the model was sent, whole: it's all made up
+    page.wait_for_selector(".said-to.role-system", timeout=30000)
+    assert page.inner_text(".try-answer .faint >> nth=0") == "finance-helper answered"
+    assert page.locator(".said-to.role-system").count() == 1  # the second call shows what's new
+    shot(page, "studio-try")
+    page.fill("#try-text", "And which mention a refund?")  # a second turn, as the same person
+    page.click("#try button:has-text('Say it')")
+    page.wait_for_selector(".try-turns > li:nth-child(2) .try-answer", timeout=60000)
+    assert "since what the stand-in used isn't the agent's choice" in page.inner_text(".try-keep")
+    page.fill("#case-name", "finds questions by what they mention")
+    page.click("#keep-case")
+    page.wait_for_selector("#case-kept >> text=Kept as finds questions by what they mention", timeout=30000)
+    page.wait_for_selector("#kept >> text=kept", timeout=30000)
+    draft = page.evaluate("location.pathname").rsplit("/", 1)[-1]
+    with db.transaction(stack.admin) as conn:
+        files = conn.execute("select files from agent_drafts where id = %s", (draft,)).fetchone()["files"]
+    [case] = yaml.safe_load(files["tests/tried.yaml"])  # as the agent's suite runs it
+    assert case == {"name": "finds questions by what they mention", "as": "ben", "steps": [
+        {"say": "Which questions mention an invoice?"}, {"say": "And which mention a refund?"}]}
+    assert files["tests/tried.yaml"].startswith("# Test cases kept from the sandbox's test pane")
+    page.fill("#case-name", "finds questions by what they mention")  # the same name again
+    page.click("#keep-case")
+    page.wait_for_selector(".try-keep .problem >> text=it has a test case called", timeout=30000)
     assert refused == []

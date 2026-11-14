@@ -10,6 +10,7 @@
 - name: A5S_TEAM
   value: {{ .Values.team | quote }}
 {{ include "a5s.peopleEnv" . }}
+{{ include "a5s.scenarioEnv" . }}
 {{- with .Values.telemetry.endpoint }}
 - name: OTEL_EXPORTER_OTLP_ENDPOINT
   value: {{ . | quote }}
@@ -26,7 +27,13 @@
 {{- define "a5s.env.channels" -}}
 {{ include "a5s.secretEnv" (dict "root" . "name" "A5S_DATABASE_URL" "key" "database-channels-url") }}
 {{ include "a5s.peopleEnv" . }}
+{{ include "a5s.scenarioEnv" . }}
 {{ include "a5s.dbConnectEnv" . }}
+{{- with .Values.sandbox.url }}
+- name: A5S_SANDBOX_URL  # where the studio tries people's drafts, by the token it shares
+  value: {{ . | quote }}
+{{ include "a5s.secretEnv" (dict "root" $ "name" "A5S_SANDBOX_TOKEN" "key" "sandbox-token") }}
+{{- end }}
 {{- if .Values.officerAgrees.studioNames }}
 - name: A5S_STUDIO_NAMES
   value: "true"
@@ -52,6 +59,7 @@
 {{- end }}
 - name: A5S_WORKER_WAIT
   value: {{ .Values.timeouts.workerWait | quote }}
+{{ include "a5s.scenarioEnv" . }}
 {{ include "a5s.dbConnectEnv" . }}
 {{- end }}
 
@@ -92,4 +100,15 @@
 {{ include "a5s.secretEnv" (dict "root" . "name" "A5S_DATABASE_URL" "key" "database-admin-url") }}
 - name: A5S_TEAM
   value: {{ .Values.team | quote }}
+{{ include "a5s.scenarioEnv" . }}
+{{- end }}
+
+{{/* The scenario a5s serves, if not the image's sample: for the parts compose gives it to. */}}
+{{- define "a5s.scenarioEnv" -}}
+{{- range $name, $value := dict "A5S_SCENARIO" .Values.scenario.class "A5S_SCENARIO_DIR" .Values.scenario.folder "A5S_AGENTS_DIR" .Values.scenario.agents }}
+{{- if $value }}
+- name: {{ $name }}
+  value: {{ $value | quote }}
+{{- end }}
+{{- end }}
 {{- end }}

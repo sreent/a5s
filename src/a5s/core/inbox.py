@@ -217,6 +217,15 @@ class DraftFiles(BaseModel):
     files: dict[str, str]
 
 
+class DraftTry(BaseModel):
+    """Trying a draft in the sandbox: who to be, of its made-up people, what to say, and on
+    which of the models it offers."""
+
+    person: str
+    text: str
+    model: str = "stand-in"
+
+
 class Small:
     """Refuses a body bigger than one message needs, before reading any of it. It's plain
     ASGI, so the endpoints still hear when someone has gone."""
@@ -1489,6 +1498,55 @@ def create_app(gw: Any) -> FastAPI:
         if gone is None:
             raise HTTPException(404, "you have no such draft")
         return {"dropped": gone["id"]}
+
+    # Trying a draft in the sandbox, a deployment of its own (a5s/sandbox.py): the draft's
+    # files go there, with who to be of its made-up people and what to say, and what came of
+    # it comes back. Nothing of this deployment's goes, nor comes back to be kept
+
+    def sandboxed(path: str, body: dict | None = None) -> dict:
+        if not gw.cfg.sandbox_url:
+            raise HTTPException(503, "there's no sandbox here to try drafts in: the team that "
+                                     "runs a5s sets one up (A5S_SANDBOX_URL)")
+        try:
+            answer = httpx.request("GET" if body is None else "POST", f"{gw.cfg.sandbox_url}{path}",
+                                   json=body, timeout=300,
+                                   headers={"Authorization": f"Bearer {gw.cfg.sandbox_token}"})
+        except httpx.HTTPError:
+            raise HTTPException(502, "the sandbox didn't answer: try again in a moment") from None
+        if answer.status_code == 400:
+            raise HTTPException(400, str(answer.json().get("detail")))
+        if answer.status_code != 200:
+            raise HTTPException(502, f"the sandbox said {answer.status_code}")
+        return answer.json()
+
+    @app.get("/studio/api/sandbox")
+    def studio_sandbox(authorization: str | None = Header(default=None)) -> dict:
+        """Whom a draft may be tried as in the sandbox, of its made-up people, and on which
+        models."""
+        drafting(authorization)
+        return sandboxed("/sandbox")
+
+    @app.post("/studio/api/drafts/{draft}/try")
+    def studio_draft_try(draft: str, body: DraftTry,
+                         authorization: str | None = Header(default=None)) -> dict:
+        """Say something to one of someone's drafts in the sandbox, as one of its made-up
+        people: what it answered, each call it made with the policy's decision, and what the
+        model was sent and said."""
+        person = drafting(authorization)
+        with db.transaction(gw.url) as conn:
+            found = drafts.get(conn, person, draft)
+        if found is None:
+            raise HTTPException(404, "you have no such draft")
+        said = sandboxed("/sandbox/tries", {"key": found["id"].replace("-", "")[:12],
+                                            "files": found["files"], "person": body.person,
+                                            "text": body.text, "model": body.model})
+        with db.transaction(gw.url) as conn:
+            ledger.append(conn, {"kind": "admin", "action": "try draft", "run": None,
+                                 "instance": None, "acts_for": [], "decision": "record",
+                                 "args": {"agent": found["agent"], "draft": found["id"],
+                                          "as": body.person, "model": body.model,
+                                          "by": person.id}})
+        return said
 
     # The auditors' page: the ledger as an auditor reads it, read only, from the same module as
     # the core's API (core/audit.py). Whoever acted in one of a5s's roles shows as themselves;

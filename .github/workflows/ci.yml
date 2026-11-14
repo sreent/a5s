@@ -84,5 +84,10 @@ jobs:
           docker run --rm -v "$PWD/deploy/helm:/charts:ro"
           alpine/helm:3.16.3@sha256:ed9dfc49d43d034df3f9880eb777caf0183e5156508672478b80412c63f3db4f
           lint /charts/a5s --strict -f /charts/ci-values.yaml
+      - name: Lint the chart as the sandbox's release
+        run: >-
+          docker run --rm -v "$PWD/deploy/helm:/charts:ro"
+          alpine/helm:3.16.3@sha256:ed9dfc49d43d034df3f9880eb777caf0183e5156508672478b80412c63f3db4f
+          lint /charts/a5s --strict -f /charts/ci-values.yaml --set mode=sandbox
       - run: docker build -t a5s:dev .
       - run: sh deploy/helm/test.sh

@@ -14,6 +14,14 @@ networkPolicies:
       matchLabels:
         app: postgres
 
+# Its sandbox, which test.sh installs as a second release, in the namespace a5s-sandbox: for
+# a5s's release, where it is, and for the sandbox's, a5s's namespace, whose channels reach it.
+sandbox:
+  url: http://a5s-sandbox.a5s-sandbox:8710
+  namespace: a5s-sandbox
+  studio:
+    namespace: a5s
+
 # A label on the copier's pods, as some clouds' workload identity needs, such as AKS's (test.sh checks it).
 podLabels:
   anchor:

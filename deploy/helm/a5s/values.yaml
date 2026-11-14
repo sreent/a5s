@@ -3,6 +3,12 @@
 # service account, reads only its own keys of the Secret, and reaches only what its network
 # policy lets it: the workers reach the gateway alone.
 
+# What this release runs: a5s itself, or its sandbox, where the studio tries the agents people
+# are making (docs/studio.md#the-sandbox). The sandbox is a second release of this chart, from
+# the same image, in a namespace of its own, with a database server of its own: it runs nothing
+# else, and only a5s's channels reach it.
+mode: a5s  # or sandbox
+
 image:
   repository: ghcr.io/sreent/a5s
   # A release's image, by its digest, such as sha256:..., so what runs is what was approved.
@@ -20,8 +26,19 @@ imagePullSecrets: []
 #   database-<part>-url and database-<part>-password, for gateway, channels, scheduler and anchor;
 #   service-token and seal-keys;
 #   and as the deployment needs them: deepseek-api-key, qwen-api-key, teams-secret-<agent>,
-#   matrix-as-token and matrix-hs-token.
+#   matrix-as-token and matrix-hs-token, and sandbox-token, which it shares with its sandbox.
+# The sandbox's release has its own, in its own namespace, with sandbox-database-url, its own
+# database server's administrator, and sandbox-token, and the models' keys if it has them.
 secret: a5s
+
+# The scenario a5s serves, from the image, which holds each one a5s ships: the sample's if these
+# aren't set. Master data's, for one, is {class: a5s.master_data:MasterDataScenario, folder:
+# /app/scenarios/master-data, agents: /app/scenarios/master-data/agents}. Its sandbox's release
+# names the same, so it tries drafts on that scenario's made-up records and tools.
+scenario:
+  class: ""  # A5S_SCENARIO
+  folder: ""  # A5S_SCENARIO_DIR
+  agents: ""  # A5S_AGENTS_DIR
 
 # The directory's team that runs a5s.
 team: platform
@@ -77,6 +94,26 @@ anchor:
   # Secret, as anchor-s3-access-key-id and anchor-s3-secret-access-key.
   s3Endpoint: ""
   s3Region: ""
+
+sandbox:
+  # In a5s's release: where its sandbox is, which the studio sends people's drafts to try, by
+  # the Secret's sandbox-token, such as http://a5s-sandbox.a5s-sandbox:8710 for the sandbox
+  # released as a5s in the namespace a5s-sandbox. Empty, there's none, and the studio says so.
+  url: ""
+  # and the release and namespace it's installed as, whose pods alone the channels may reach
+  # of it: this release's namespace if empty
+  release: a5s
+  namespace: ""
+  # In the sandbox's release: a5s's, whose channels alone reach it, by the release and
+  # namespace it's installed as: this release's namespace if empty
+  studio:
+    release: a5s
+    namespace: ""
+  # Whether it may try drafts on the approved models as well as on its stand-in, which thinks
+  # nothing: with their keys from its own Secret, as models.keys names them, reaching outside
+  # as networkPolicies.outside lets it, with the scenario's made-up records alone. Off, it has
+  # the stand-in alone, and reaches nothing but its own database.
+  realModels: false
 
 release:
   # A ConfigMap with release.yaml and release.sig, the release's manifest and the signatures of
@@ -178,3 +215,6 @@ resources:
   jobs:
     requests: {cpu: 100m, memory: 256Mi}
     limits: {memory: 512Mi}
+  sandbox:  # every part of a5s in one process, for one try at a time
+    requests: {cpu: 250m, memory: 512Mi}
+    limits: {memory: 1Gi}

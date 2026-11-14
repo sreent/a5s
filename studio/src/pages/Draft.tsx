@@ -6,8 +6,9 @@
 import { useEffect, useRef, useState } from "react";
 import { AgentMap } from "../AgentMap";
 import { type Draft, get, type Offered, send } from "../api";
-import { read, Unreadable, withTool, withValue } from "../definition";
+import { CASES, read, Unreadable, withCase, withTool, withValue } from "../definition";
 import { go } from "../router";
+import { TryIt } from "../TryIt";
 import { PageHead, type Risk, risk, RISK_NAMES, ToolBadges, useLoad, Waiting, when } from "../ui";
 
 type Files = Record<string, string>;
@@ -202,6 +203,11 @@ export function DraftPage({ id }: { id: string }) {
                           onChange={(e) => change({ ...files, "AGENTS.md": e.target.value })} /></label>
             )}
             {tab === "files" && <Raw files={files} change={change} />}
+          </section>
+          <section className="card" id="try">
+            <h3>Try it in the sandbox</h3>
+            <TryIt draft={id} name={draft.agent} ready={said.problems.length === 0 && kept === "kept"}
+                   keep={(testCase) => change({ ...files, [CASES]: withCase(files[CASES] ?? "", testCase) })} />
           </section>
         </>
       )}

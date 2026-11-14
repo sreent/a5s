@@ -180,6 +180,30 @@ def _agent(cfg: Config, args: argparse.Namespace) -> None:
             sys.exit(1)
 
 
+def _sandbox(cfg: Config, host: str, port: int) -> None:
+    """The sandbox: a deployment of its own, where people try the agents they're making, on
+    its own database, with the deployment's scenario's made-up records (a5s/sandbox.py)."""
+    import tempfile
+
+    import uvicorn
+
+    from a5s import sandbox
+
+    admin, token = os.environ.get("A5S_SANDBOX_DATABASE_URL"), os.environ.get("A5S_SANDBOX_TOKEN")
+    if not admin or not token:
+        sys.exit("Set A5S_SANDBOX_DATABASE_URL, the address of the sandbox's own database, as its "
+                 "administrator, and A5S_SANDBOX_TOKEN, which the studio it answers shares.")
+    if admin == os.environ.get("A5S_DATABASE_URL"):
+        sys.exit("The sandbox needs a database of its own, not the deployment's.")
+    work = Path(os.environ.get("A5S_SANDBOX_DIR") or tempfile.mkdtemp(prefix="a5s-sandbox-"))
+    try:
+        with sandbox.opened(cfg, admin, work) as box:
+            uvicorn.run(sandbox.create_app(box, token), host=host, port=port,
+                        timeout_keep_alive=KEEP_ALIVE)
+    except sandbox.Refused as e:
+        sys.exit(f"The sandbox won't start: {e}.")
+
+
 def _say(cfg: Config, person: str, agent: str, text: str, wait: float = 600) -> None:
     """Send a message through the core's local channel, and print what a5s says back."""
     token = os.environ.get("A5S_TOKEN")  # the person's, from the identity provider, if a5s uses one
@@ -483,6 +507,10 @@ def main(argv: list[str] | None = None) -> None:
         service.add_argument("--port", type=int, default=port)
     sub.add_parser("scheduler", help="answer the messages the core receives")
     sub.add_parser("dev", help="run the core, the channels and the scheduler, for development")
+    boxed = sub.add_parser("sandbox", help="run the sandbox, where people try the agents they're "
+                                           "making, on its own database")
+    boxed.add_argument("--host", default="0.0.0.0")
+    boxed.add_argument("--port", type=int, default=8710)
     say = sub.add_parser("say", help="send an agent a message, as a person")
     say.add_argument("--as", dest="person", required=True)
     say.add_argument("agent")
@@ -624,6 +652,8 @@ def main(argv: list[str] | None = None) -> None:
         _scheduler(cfg)
     elif args.command == "dev":
         _dev(cfg)
+    elif args.command == "sandbox":
+        _sandbox(cfg, args.host, args.port)
     elif args.command == "say":
         _say(cfg, args.person, args.agent, args.text)
     elif args.command == "inbox":

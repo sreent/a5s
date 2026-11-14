@@ -29,6 +29,7 @@ records it supports, and so are runs, which it names.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta
 
 import psycopg
@@ -36,6 +37,7 @@ import psycopg
 from a5s.core import departures
 
 KEPT = "12 months"  # after a conversation's last message [TBC: the data protection officer]
+HORIZON = re.compile(r"[1-9][0-9]{0,3} (hour|day|month)s?")
 OVER = "1 hour"  # after a run closes, before its handles and what it read go
 LOCK = 7_310_018  # so two sweeps don't work at once
 
@@ -49,10 +51,14 @@ WHOSE = {"inbound": "coalesce(conversation, person)",
                    "person)"}
 
 
-def sweep(conn: psycopg.Connection, now: datetime, scenario: str) -> dict[str, int]:
+def sweep(conn: psycopg.Connection, now: datetime, scenario: str,
+          kept: str = KEPT) -> dict[str, int]:
     """Delete what's past its time, in the caller's transaction, with `now` the core's clock,
     which stamps a day's use and the digest log, and `scenario` the scenario it runs. How many
-    of each kind went, leaving out the kinds where none did."""
+    of each kind went, leaving out the kinds where none did. What's kept for KEPT is kept for
+    `kept` instead, if given, as the sandbox keeps what's said in it for an hour."""
+    if not HORIZON.fullmatch(kept):
+        raise ValueError(f"{kept!r} isn't a time to keep things for, such as 12 months")
     if not conn.execute("select pg_try_advisory_xact_lock(%s) as got", (LOCK,)).fetchone()["got"]:
         return {}  # another sweep is at work
     gone: dict[str, int] = {}
@@ -70,59 +76,59 @@ def sweep(conn: psycopg.Connection, now: datetime, scenario: str) -> dict[str, i
                               f"from {table}" for table, at in SAID)
     idle = conn.execute(
         f"select person, agent from ({said}) said where agent is not null "
-        f"group by person, agent having max(at) < now() - interval '{KEPT}'").fetchall()
+        f"group by person, agent having max(at) < now() - interval '{kept}'").fetchall()
     if idle:  # and only what's old, should someone write again as the sweep works
         people, agents = [r["person"] for r in idle], [r["agent"] for r in idle]
         for table, at in sorted(SAID, key=lambda t: t[0] != "outbox"):  # answers before the
             ended = (f"({WHOSE.get(table, 'person')}, agent) in "  # messages they answer
                      "(select * from unnest(%s::text[], %s::text[]))")
             delete("messages" if table != "turns" else "turns",
-                   f"delete from {table} where {ended} and {at} < now() - interval '{KEPT}'",
+                   f"delete from {table} where {ended} and {at} < now() - interval '{kept}'",
                    (people, agents))
         ended = "(person, agent) in (select * from unnest(%s::text[], %s::text[]))"
         delete("summaries", f"delete from summaries where {ended} "
-                            f"and updated_at < now() - interval '{KEPT}'", (people, agents))
+                            f"and updated_at < now() - interval '{kept}'", (people, agents))
     for table, at in SAID[2:]:  # a5s's own notices, about no agent
         delete("messages", f"delete from {table} where agent is null "
-                           f"and {at} < now() - interval '{KEPT}'")
-    delete("notes", f"delete from profile_notes where ended_at < now() - interval '{KEPT}'")
+                           f"and {at} < now() - interval '{kept}'")
+    delete("notes", f"delete from profile_notes where ended_at < now() - interval '{kept}'")
     delete("notes", "delete from profile_notes where confirmed_at is null and ended_at is null "
-                    f"and offered_at < now() - interval '{KEPT}'")  # offers nobody said yes to
+                    f"and offered_at < now() - interval '{kept}'")  # offers nobody said yes to
     delete("waiting", "update obligations set waiting_on = null where waiting_on is not null "
-                      f"and waiting_noted_at < now() - interval '{KEPT}'")  # in their words
-    delete("reports", f"delete from report_fires where fired_at < now() - interval '{KEPT}'")
+                      f"and waiting_noted_at < now() - interval '{kept}'")  # in their words
+    delete("reports", f"delete from report_fires where fired_at < now() - interval '{kept}'")
     delete("reminders", "delete from reminders where greatest(reminded_at, cancelled_at, "
                         "case when confirmed_at is null then offered_at end) "
-                        f"< now() - interval '{KEPT}'")
+                        f"< now() - interval '{kept}'")
     delete("counts", "delete from urgent_sent where day < (now() - interval '2 days')::date")
-    ended_changes = f"select digest from proposals where ended_at < now() - interval '{KEPT}'"
+    ended_changes = f"select digest from proposals where ended_at < now() - interval '{kept}'"
     delete("decisions", f"delete from proposal_decisions where digest in ({ended_changes})")
-    delete("changes", f"delete from proposals where ended_at < now() - interval '{KEPT}'")
-    delete("samples", f"delete from samples where graded_at < now() - interval '{KEPT}'")
+    delete("changes", f"delete from proposals where ended_at < now() - interval '{kept}'")
+    delete("samples", f"delete from samples where graded_at < now() - interval '{kept}'")
     delete("samples", "delete from samples where grade is null "
-                      f"and drawn_at < now() - interval '{KEPT}'")  # nobody graded them
+                      f"and drawn_at < now() - interval '{kept}'")  # nobody graded them
     delete("counts", "delete from action_counts where at < now() - interval '31 days'")
     delete("chats", "delete from chats where person in (select archived_as from departures "
-                    f"where archived_at < now() - interval '{KEPT}')")  # an archive's, with it
+                    f"where archived_at < now() - interval '{kept}')")  # an archive's, with it
     held = " or ".join([f"exists (select 1 from {table} x where x.person = d.archived_as)"
                         for table in departures.KEPT]
                        + ["exists (select 1 from turns x where x.speaker = d.archived_as)",
                           "exists (select 1 from tasks x where x.owner = d.archived_as)"])
     delete("departures", "delete from departures d where archived_at < now() - interval "  # once
-           f"'{KEPT}' and not ({held})")  # nothing's left under the archive's name, such as in a
+           f"'{kept}' and not ({held})")  # nothing's left under the archive's name, such as in a
     # group chat, whose conversation goes by its own last message
-    delete("questions", f"delete from questions where asked_at < now() - interval '{KEPT}'")
+    delete("questions", f"delete from questions where asked_at < now() - interval '{kept}'")
     done = (f"(status in ('done', 'cancelled', 'failed') and updated_at < now() - interval "
-            f"'{KEPT}') or deadline < now() - interval '{KEPT}'")  # it can't run past its deadline
+            f"'{kept}') or deadline < now() - interval '{kept}'")  # it can't run past its deadline
     delete("tasks", "delete from tasks where root in (select root from tasks group by root "
                     f"having bool_and({done}))")  # a task with its children, all ended long ago
     delete("repeats", "delete from task_repeats where (status = 'stopped' and updated_at < "
-           f"now() - interval '{KEPT}') or (status = 'offered' and asked_at < now() - "
-           f"interval '{KEPT}')")  # stopped, or never said yes to, long ago
+           f"now() - interval '{kept}') or (status = 'offered' and asked_at < now() - "
+           f"interval '{kept}')")  # stopped, or never said yes to, long ago
     delete("obligations", "delete from obligations where done_at < now() - interval "
-                          f"'{KEPT}'")  # with what the records called it, and whose it was
+                          f"'{kept}'")  # with what the records called it, and whose it was
     delete("obligations", "delete from obligations where scenario <> %s and updated_at < "  # a
-           f"now() - interval '{KEPT}'", (scenario,))  # scenario it no longer runs: nothing
+           f"now() - interval '{kept}'", (scenario,))  # scenario it no longer runs: nothing
     # syncs what it owed. Each person's day: only today's is asked after, in any time zone
     delete("days", "delete from spend where day < %s", ((now - timedelta(days=2)).date(),))
     delete("refusals", "delete from second_factor_refusals where day < %s",  # counts alone

@@ -1,3 +1,4 @@
+{{- if ne .Values.mode "sandbox" }}
 {{- $ports := dict "gateway" 8700 "channels" 8703 "worker" 8702 }}
 {{- range include "a5s.pooled" . | fromJsonArray }}
 {{- $_ := set $ports (printf "worker-%s" .) 8702 }}
@@ -18,4 +19,5 @@ spec:
     - name: http
       port: {{ $port }}
       targetPort: http
+{{- end }}
 {{- end }}

@@ -81,7 +81,7 @@ The settings app and the approval, decision, grading, notebook and officer pages
 
 ## What is not here yet
 
-The studio now keeps drafts: an agent's owner starts a new agent from a template, or a change to one they own, and edits it, its tools and its instructions, with what would stop its release and its map shown as they go. It does not yet run a sandbox test pane, or publish a draft from the page. Those are the next authoring steps in [the studio plan](studio.md#build-in-order), not capabilities claimed by the screens above.
+The studio now keeps drafts: an agent's owner starts a new agent from a template, or a change to one they own, and edits it, its tools and its instructions, with what would stop its release, who would sign it, and its map shown as they go. They try it in [the sandbox](studio.md#the-sandbox), a deployment of its own, as one of the scenario's made-up people, and see what it answered, each call it made with the policy's decision, and what its model was sent. It does not yet publish a draft from the page: that's the next authoring step in [the studio plan](studio.md#build-in-order), not a capability claimed by the screens above.
 
 The present journey is therefore:
 

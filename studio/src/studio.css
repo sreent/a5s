@@ -242,3 +242,23 @@ button.quiet { background: transparent; border-color: var(--line); color: var(--
 .raw-file textarea { width: 100%; min-height: 26rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
                      font-size: 0.82rem; line-height: 1.5; resize: vertical; }
 @media (max-width: 50rem) { .raw { grid-template-columns: minmax(0, 1fr); } .field-pair { grid-template-columns: minmax(0, 1fr); } }
+
+/* Trying a draft in the sandbox */
+.try-it { display: grid; gap: 1rem; }
+.try-it > .field-pair { max-width: 40rem; }
+.try-turns { list-style: none; margin: 0; padding: 0; display: grid; gap: 1rem; }
+.try-said, .try-answer { padding: 0.75rem 0.9rem; border-radius: 10px; border: 1px solid var(--line); }
+.try-said { background: var(--sunken); max-width: 46rem; }
+.try-said p, .try-reply { margin: 0.25rem 0 0; white-space: pre-wrap; }
+.try-answer { background: var(--surface); margin-top: 0.5rem; }
+.try-answer .steps { margin: 0.75rem 0 0; }
+.try-say { display: flex; gap: 0.6rem; }
+.try-keep { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: end; padding-top: 0.9rem; border-top: 1px solid var(--line); }
+.try-keep .field { flex: 1; min-width: 18rem; margin: 0; }
+.try-keep .note, .try-keep .problem { flex-basis: 100%; margin: 0; }
+.try-say input { flex: 1; font: inherit; }
+details.sent { margin-top: 0.75rem; }
+.model-call { margin-top: 0.75rem; display: grid; gap: 0.4rem; }
+.said-to { display: grid; grid-template-columns: 6rem minmax(0, 1fr); gap: 0.5rem; align-items: start; }
+.said-to pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.8rem; line-height: 1.5;
+               max-height: 16rem; overflow: auto; background: var(--sunken); border-radius: 6px; padding: 0.4rem 0.6rem; }

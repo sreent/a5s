@@ -1,3 +1,4 @@
+{{- if ne .Values.mode "sandbox" }}
 {{- $parts := list
   (dict "part" "gateway" "args" (list "gateway" "--host" "0.0.0.0") "port" 8700)
   (dict "part" "channels" "args" (list "channels" "--host" "0.0.0.0") "port" 8703)
@@ -118,4 +119,5 @@ spec:
           configMap:
             name: {{ $.Values.models.configMap }}
         {{- end }}
+{{- end }}
 {{- end }}

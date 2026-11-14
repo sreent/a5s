@@ -19,7 +19,7 @@ from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse, urlsplit, urlunsplit
 
 import httpx
 import jwt
@@ -613,3 +613,42 @@ def seal_grades(stack: Stack) -> None:
                                 "and grade_seal is null").fetchall():
             conn.execute("update samples set grade_seal = %s where id = %s",
                          (samples.seal((SEAL_KEY,), row), row["id"]))
+
+
+# The sandbox (a5s/sandbox.py): a deployment of its own, on a database of its own beside the
+# tests', for the sample's agents and scenario
+
+@pytest.fixture
+def sandbox_database(database_url: str) -> Iterator[str]:
+    """A database of the sandbox's own, beside the tests' own, on the same server."""
+    name = f"a5s_sandbox_{secrets.token_hex(4)}"
+    with psycopg.connect(database_url, autocommit=True) as conn:
+        conn.execute(f'create database "{name}"')
+    try:
+        yield urlunsplit(urlsplit(database_url)._replace(path=f"/{name}"))
+    finally:
+        with psycopg.connect(database_url, autocommit=True) as conn:
+            conn.execute(f'drop database "{name}" with (force)')
+
+
+def deployment(root: Path = ROOT) -> Config:
+    """A deployment's config, as the sandbox reads it: its scenario, agents and models."""
+    return Config(database_url="postgresql://unused", gateway_url="http://unused",
+                  service_token="", root=root)
+
+
+@pytest.fixture
+def box(sandbox_database: str, tmp_path: Path) -> Iterator[Any]:
+    from a5s import sandbox
+    with sandbox.opened(deployment(), sandbox_database, tmp_path / "sandbox") as opened:
+        yield opened
+
+
+@pytest.fixture
+def with_sandbox(stack: Stack, box: Any) -> Iterator[str]:
+    """The stack's studio with a sandbox at hand, by the token they share. Ask for it before
+    the channels app, as `approving`, so the app knows where the sandbox is."""
+    from a5s import sandbox
+    with serve(sandbox.create_app(box, "shared-token"), free_port()) as url:
+        stack.cfg = replace(stack.cfg, sandbox_url=url, sandbox_token="shared-token")
+        yield url

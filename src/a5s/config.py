@@ -138,6 +138,10 @@ class Config:
     # Whether the auditors' page names whom agents acted for, once the data protection officer
     # agrees, and exports the ledger there (A5S_AUDIT_NAMES); until then, stand-ins
     audit_names: bool = False
+    # The sandbox, where the studio tries the agents people are making: a deployment of its own,
+    # at this address, by a token they share (a5s/sandbox.py). None if there isn't one
+    sandbox_url: str | None = None
+    sandbox_token: str = ""
 
     @property
     def agents_dir(self) -> Path:
@@ -190,4 +194,6 @@ class Config:
             in ("1", "true", "yes"),
             studio_names=os.environ.get("A5S_STUDIO_NAMES", "").lower() in ("1", "true", "yes"),
             audit_names=os.environ.get("A5S_AUDIT_NAMES", "").lower() in ("1", "true", "yes"),
+            sandbox_url=os.environ.get("A5S_SANDBOX_URL", "").rstrip("/") or None,
+            sandbox_token=os.environ.get("A5S_SANDBOX_TOKEN", ""),
         )
