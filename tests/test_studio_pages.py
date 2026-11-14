@@ -43,10 +43,14 @@ def test_each_person_watches_what_they_run_own_or_decide_for(stack, approving, p
     assert instances(ana) == {"assistant-finance", "assistant-ops"}  # she approves instances
     assert instances(api("/studio/api", "ben").json()) == {"assistant-finance"}  # its deputy
     assert instances(api("/studio/api", "omar").json()) == {"assistant-ops"}  # he runs it
-    assert api("/studio/api", "chen").status_code == 403  # it serves her, but she runs nothing
+    chen = api("/studio/api", "chen").json()  # it serves her, so she knows of it: no more
+    assert [(a["id"], list(a["layers"]), a["instances"]) for a in chen["agents"]] == [
+        ("assistant", ["exists", "uses"], [])]
+    assert api("/studio/api/instances/assistant-ops", "chen").status_code == 403  # she runs none
     assert api("/studio/api/instances/assistant-ops", "ben").status_code == 404
     assert api("/studio/api/agents/watcher", "ben").status_code == 404
-    assert api("/studio/api/agents/assistant", "ben").json()["instructions"]
+    ben = api("/studio/api/agents/assistant", "ben").json()  # he runs it: what it may do, and
+    assert ben["tools"] and ben["instances"] and "instructions" not in ben  # not how it's told
     assert api("/studio/api/instances/assistant-finance?zone=Mars/Olympus", "ben").status_code == 400
     assert httpx.get(f"{approving}/studio/api", timeout=30).status_code == 401
 

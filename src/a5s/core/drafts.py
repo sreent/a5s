@@ -25,7 +25,7 @@ from psycopg.types.json import Jsonb
 
 from a5s import authoring, db, definitions
 from a5s.config import ModelConfig
-from a5s.contract import Person, Scenario, Tool
+from a5s.contract import AGENT_AUTHOR, Person, Scenario, Tool
 from a5s.core import releases, studio
 from a5s.core.releases import ENGINEER, agent_owner
 
@@ -42,7 +42,7 @@ class Refused(ValueError):
 
 
 def agent_author(agent: str) -> str:
-    return f"agent-author:{agent}"
+    return f"{AGENT_AUTHOR}:{agent}"
 
 
 def may_author(person: Person, agent: str | None) -> bool:

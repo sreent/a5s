@@ -37,6 +37,7 @@ from a5s.config import Config, ModelConfig
 from a5s.contract import (
     ASSURANCE,
     DATA_PROTECTION,
+    GROUP_AGENT_ROLES,
     INSTANCE_APPROVER,
     PART_OWNER,
     DataProtection,
@@ -632,6 +633,11 @@ class Gateway:
             if empty := sorted(g for g in groups if not registry.served(self.scenario, [g])):
                 problems.append(f"{instance.id} serves groups nobody in the directory is in: "
                                 f"{', '.join(empty)}")
+        for group, roles in sorted(settings.groups.items()):  # an agent's role, for one here
+            if wrong := [r for r in roles if r.partition(":")[0] in GROUP_AGENT_ROLES
+                         and r.partition(":")[2] not in self.definitions]:
+                problems.append(f"groups.{group}: {', '.join(wrong)} names an agent no release "
+                                "here has")
         return problems
 
     # What each kind of run brings when it opens.

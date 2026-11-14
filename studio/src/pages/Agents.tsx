@@ -1,11 +1,12 @@
-// All the agents someone may watch, as cards: what each does, what it may do, and where it runs.
+// The catalogue: every agent someone may know exists, as cards, each as far as the layers they
+// see of it go: what it does and who owns it, what it may do, and where it runs.
 
-import { type Agent, type Catalogue, type DraftLine, get } from "../api";
+import { type AgentKnown, type AgentUses, type Catalogue, type DraftLine, get, usesOf } from "../api";
 import { Icon } from "../icons";
 import { Link } from "../router";
 import { aboutInstance, levels, PageHead, plural, risk, StatusBadge, useLoad, Waiting, when } from "../ui";
 
-function counts(agent: Agent): [string, number][] {
+function counts(agent: AgentUses): [string, number][] {
   const by = { changes: 0, outside: 0, writes: 0, reads: 0 };
   for (const tool of agent.tools) by[risk(tool)] += 1;
   return (Object.entries(by) as [string, number][]).filter(([, n]) => n > 0);
@@ -13,7 +14,8 @@ function counts(agent: Agent): [string, number][] {
 
 const SAYS: Record<string, string> = { changes: "change", outside: "send out", writes: "write", reads: "read" };
 
-function AgentCard({ agent }: { agent: Agent }) {
+function AgentCard({ agent }: { agent: AgentKnown }) {
+  const uses = usesOf(agent) ? agent : undefined;
   return (
     <article className="agent-card">
       <div className="agent-card-head">
@@ -25,13 +27,15 @@ function AgentCard({ agent }: { agent: Agent }) {
       </div>
       <p className="clamp">{agent.works_for}</p>
       {agent.why && agent.why.length > 0 && <p className="why faint">{agent.why.join(" · ")}</p>}
-      <div className="chips">
-        <span className="chip">{agent.model}</span>
-        <span className="chip">{levels(agent.autonomy)}</span>
-        {counts(agent).map(([kind, n]) => (
-          <span key={kind} className={`badge ${kind}`}>{n} {SAYS[kind]}</span>
-        ))}
-      </div>
+      {uses && (
+        <div className="chips">
+          <span className="chip">{uses.model}</span>
+          <span className="chip">{levels(uses.autonomy)}</span>
+          {counts(uses).map(([kind, n]) => (
+            <span key={kind} className={`badge ${kind}`}>{n} {SAYS[kind]}</span>
+          ))}
+        </div>
+      )}
       <div className="card-section">
         <div className="label">Where it runs</div>
         {agent.instances.length === 0 && <p className="note">No instance you may watch runs it.</p>}
@@ -44,7 +48,8 @@ function AgentCard({ agent }: { agent: Agent }) {
         ))}
       </div>
       <div className="card-foot faint">
-        Owned by {agent.owners.join(", ") || "nobody the directory names"} · {plural(agent.tools.length, "tool")}
+        Owned by {agent.owners.join(", ") || "nobody the directory names"}
+        {uses && <> · {plural(uses.tools.length, "tool")}</>}
       </div>
     </article>
   );
@@ -83,12 +88,12 @@ export function AgentsPage() {
   return (
     <>
       <PageHead title="Agents"
-                about="The agents you may watch: what each does and may do, where it runs, and how each instance is doing. Changes to an instance go through the settings app; the changes agents ask for are decided on the decisions page.">
+                about="The agents you may know of: those you have a role on, those that serve you, and those their owners list for everyone. Each shows as much as your roles let you see: what it does and who owns it, what it may do, and where it runs. Changes to an instance go through the settings app; the changes agents ask for are decided on the decisions page.">
         {data?.authoring.new && <div className="actions"><Link to={{ page: "new" }} className="button primary">New agent</Link></div>}
       </PageHead>
       {!data && <Waiting error={error} />}
       {authors && <Drafts />}
-      {data && data.agents.length === 0 && <p className="note">There are no agents you may watch.</p>}
+      {data && data.agents.length === 0 && <p className="note">There are no agents you may know of yet.</p>}
       {data && <div className="agent-grid">{data.agents.map((a) => <AgentCard key={a.id} agent={a} />)}</div>}
     </>
   );

@@ -3,7 +3,9 @@ agent and instance is doing, and what each run did (docs/studio.md).
 
 The core's API, for code, the command line and CI, and the studio's pages in the channels app,
 for people signed in, both work it out here, so each shows the same. The core's API is for the
-team that runs a5s, and shows everything. A person sees an instance if they may watch it: they
+team that runs a5s, and shows everything. What a person sees of an agent comes in layers
+(`layers`), each from the roles they hold: that it exists, what it may do, how it's built, how
+it's doing, what it did, and changing it. A person sees an instance if they may watch it: they
 run it, as its owner or deputy, own its agent, own or decide for one of its parts, or approve
 instances. Of its runs, they see those whose every record they may see, by the records each
 run handled, which a5s keeps as long as the run: those its tools gave it or it named, and those
@@ -30,9 +32,19 @@ import psycopg
 
 from a5s import db
 from a5s.config import ModelConfig
-from a5s.contract import INSTANCE_APPROVER, PART_DELEGATE, PART_OWNER, Person, Scenario, Tool
-from a5s.core import ledger, measures, registry, values
-from a5s.core.releases import agent_owner
+from a5s.contract import (
+    AGENT_AUTHOR,
+    AGENT_VIEWER,
+    INSTANCE_APPROVER,
+    PART_DELEGATE,
+    PART_OWNER,
+    RELEASE_APPROVER,
+    Person,
+    Scenario,
+    Tool,
+)
+from a5s.core import audit, ledger, measures, registry, values
+from a5s.core.releases import ENGINEER, agent_owner
 from a5s.core.status import outcome
 from a5s.definitions import Definition
 
@@ -163,16 +175,19 @@ def agent(scenario: Scenario, definition: Definition, tools: dict[str, Tool],
 
 def catalogue(conn: db.Connection, scenario: Scenario, definitions: dict[str, Definition],
               tools: dict[str, Tool], viewer: Person | None = None) -> list[dict]:
-    """Each agent of the release, and where it runs: for a viewer, the agents they own or
-    author, and those with an instance they may watch, with those instances alone, and why
-    their roles bring each into their view."""
-    insts = instances(conn, viewer)
-    watched = {i["definition"] for i in insts}
+    """Each agent of the release, and where it runs: for a viewer, each agent they may know
+    exists, as far as the layers they see of it go (`layers`), with the instances they may
+    watch alone, and why their roles bring each into their view."""
     if viewer is None:
+        insts = instances(conn)
         return [agent(scenario, d, tools, insts) for _, d in sorted(definitions.items())]
-    return [{**agent(scenario, d, tools, insts), "why": seen_by(name, insts, viewer)}
-            for name, d in sorted(definitions.items())
-            if name in watched or {agent_owner(name), f"agent-author:{name}"} & set(viewer.roles)]
+    every = instances(conn)
+    watched = [i for i in every if watches(i, viewer)]
+    found = []
+    for name, d in sorted(definitions.items()):
+        if view := layers(name, d, every, viewer, scenario):
+            found.append(seen(scenario, d, tools, watched, view))
+    return found
 
 
 def seen_by(name: str, insts: list[dict], viewer: Person) -> list[str]:
@@ -192,6 +207,73 @@ def seen_by(name: str, insts: list[dict], viewer: Person) -> list[str]:
         if INSTANCE_APPROVER in roles and not parts_of(inst):
             why.append(f"you approve {inst['id']}, in no part")
     return list(dict.fromkeys(why))
+
+
+# What someone sees of an agent, in layers, each from the roles they hold
+# (docs/studio.md#people-roles-and-spaces): that it exists; what it may do, its tools by what
+# each reads, writes or changes and when it works, for the people it serves and those who watch
+# its instances; how it's built, its instructions and skills, which the rest of its making
+# follows; how it's doing; what it did; and changing it
+LAYERS = ("exists", "uses", "built", "doing", "did", "changing")
+# What each layer adds to an agent as someone sees it
+SHOWN = {"exists": ("id", "release", "works_for", "does", "owners"),
+         "uses": ("tools", "a5s_tools", "model", "autonomy", "triggers", "schedules", "reports",
+                  "obligations", "reminders", "preferences", "channels", "context", "budget"),
+         "built": ("skills", "instructions"),
+         "doing": ("instances",)}
+
+
+def layers(name: str, definition: Definition, insts: list[dict], viewer: Person,
+           scenario: Scenario) -> dict[str, list[str]]:
+    """Each layer of an agent someone sees, with why their roles give it them: none at all if
+    they may not know it exists. `insts` are the instances there are, of every agent."""
+    roles = set(viewer.roles)
+    mine = [i for i in insts if i["definition"] == name]
+    watched = [i for i in mine if watches(i, viewer)]
+    served = [i["id"] for i in mine if i["status"] in SERVING
+              and registry.serving(scenario, i["serves"], viewer.id)]
+    building = [why for role, why in ((agent_owner(name), "you own it"),
+                                      (f"{AGENT_AUTHOR}:{name}", "you author it"),
+                                      (f"{AGENT_VIEWER}:{name}", "you may see how it's built"),
+                                      (ENGINEER, "you're an engineer"),
+                                      (RELEASE_APPROVER, "you approve its releases"))
+                if role in roles] + (["you audit it"] if audit.reads(viewer) else [])
+    doing = [why for why in seen_by(name, watched, viewer) if why != "you author it"]
+    if watched and not doing:
+        doing = ["you approve instances"]
+    found: dict[str, list[str]] = {}
+    for layer, reasons in (("exists", building + doing + [f"it serves you, through {i}"
+                                                          for i in served]),
+                           ("built", building), ("doing", doing)):
+        if reasons:
+            found[layer] = list(dict.fromkeys(reasons))
+    if "exists" not in found and definition.listed:
+        found["exists"] = ["its owner lists it for everyone"]
+    if "exists" not in found:
+        return {}
+    if "built" in found:  # whoever sees how it's built sees what it may do
+        found["uses"] = found["built"]
+    elif served or watched:
+        found["uses"] = ["it serves you: what it may do with your records"] if served else [
+            "you watch its instances: what it may do"]
+    if watched:
+        found["did"] = ["its runs whose every record you may see"]
+    if {agent_owner(name), f"{AGENT_AUTHOR}:{name}"} & roles:
+        found["changing"] = ["you may draft changes to it"]
+    return {layer: found[layer] for layer in LAYERS if layer in found}
+
+
+def seen(scenario: Scenario, definition: Definition, tools: dict[str, Tool], watched: list[dict],
+         view: dict[str, list[str]]) -> dict:
+    """An agent as someone sees it, layer by layer (`layers`): with its instructions only if
+    they see how it's built, and the instances they watch only if they see how it's doing."""
+    found = agent(scenario, definition, tools, watched, whole=True)
+    shown = {"layers": view, "listed": definition.listed, "why": view.get("exists", []),
+             "instances": []}
+    for layer in ("exists", "uses", "built", "doing"):
+        if layer in view:
+            shown.update({k: found[k] for k in SHOWN[layer]})
+    return shown
 
 
 class UnknownZone(ValueError):

@@ -10,6 +10,7 @@ from psycopg.types.json import Jsonb
 
 from a5s import db
 from a5s.contract import (
+    AGENT_OWNER,
     DATA_PROTECTION,
     INSTANCE_APPROVER,
     PART_OWNER,
@@ -54,9 +55,11 @@ def served(scenario: Any, serves: Iterable[str]) -> list[str]:
 
 def approves(person: Person) -> bool:
     """Whether someone approves versions of the settings: the owner of a part, or an instance
-    approver, for what agents may do, or the data protection officer, for what's theirs."""
+    approver, for what agents may do; an agent's owner, for the groups given its roles; or the
+    data protection officer, for what's theirs. Each approval counts towards what's theirs
+    alone (`needed`)."""
     return (INSTANCE_APPROVER in person.roles or DATA_PROTECTION in person.roles
-            or any(r.startswith(f"{PART_OWNER}:") for r in person.roles))
+            or any(r.startswith((f"{PART_OWNER}:", f"{AGENT_OWNER}:")) for r in person.roles))
 
 
 def signers(settings: Settings, directory: Directory,
@@ -70,8 +73,9 @@ def signers(settings: Settings, directory: Directory,
         if person is None:
             problems.append(f"{sig.signer} isn't in the directory")
         elif not approves(person):
-            problems.append(f"{sig.signer} approves no settings: they own no part, and hold "
-                            f"neither the {INSTANCE_APPROVER} role nor the {DATA_PROTECTION}'s")
+            problems.append(f"{sig.signer} approves no settings: they own no part or agent, "
+                            f"and hold neither the {INSTANCE_APPROVER} role nor the "
+                            f"{DATA_PROTECTION}'s")
         elif not person.public_key or not signing.verify(person.public_key, settings.raw, sig.value):
             problems.append(f"{sig.signer}'s signature isn't for this version")
         else:

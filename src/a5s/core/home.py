@@ -31,9 +31,11 @@ MAY = {
                 "decide the changes agents ask for there; watch those instances' runs",
     PART_DELEGATE: "decide the changes agents ask for in {scope}, beside its owner",
     "agent-owner": "own the {scope}: its definition and releases, drafts of it, and its "
-                   "instances' runs; start new agents; suspend it",
+                   "instances' runs; start new agents; suspend it; and give a group its "
+                   "authors' or viewers' role",
     "agent-author": "draft changes to the {scope}, try them in the sandbox, and publish them for "
                     "its owners to sign",
+    "agent-viewer": "see how the {scope} is built, read only: its instructions and skills",
     releases.ENGINEER: "start new agents, and draft them",
     INSTANCE_APPROVER: "approve the instances that work in no part, and set their levels",
     RELEASE_APPROVER: "approve releases, from outside the team that runs a5s",

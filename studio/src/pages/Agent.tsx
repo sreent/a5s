@@ -2,7 +2,8 @@
 // it works, what it knows, its budget, and where it runs.
 
 import { useState } from "react";
-import { type Agent, ApiError, type Catalogue, type Draft, type DraftLine, get, send } from "../api";
+import { type AgentKnown, type AgentUses, ApiError, builtOf, type Catalogue, type Draft, type DraftLine, get,
+         send, usesOf } from "../api";
 import { AgentMap } from "../AgentMap";
 import { go, Link } from "../router";
 import { aboutInstance, levels, PageHead, people, type Risk, risk, RISK_NAMES, runners, StatusBadge,
@@ -10,7 +11,7 @@ import { aboutInstance, levels, PageHead, people, type Risk, risk, RISK_NAMES, r
 
 const ORDER: Risk[] = ["changes", "outside", "writes", "reads"];
 
-function Tools({ agent }: { agent: Agent }) {
+function Tools({ agent }: { agent: AgentUses }) {
   return (
     <section className="card">
       <h3>Tools</h3>
@@ -41,7 +42,7 @@ function Tools({ agent }: { agent: Agent }) {
   );
 }
 
-function When({ agent }: { agent: Agent }) {
+function When({ agent }: { agent: AgentUses }) {
   return (
     <section className="card">
       <h3>When it works</h3>
@@ -70,7 +71,7 @@ const ABILITIES: Record<string, string> = {
   notebook: "keep a notebook",
 };
 
-function Knows({ agent }: { agent: Agent }) {
+function Knows({ agent }: { agent: AgentUses }) {
   const { budget_tokens: conversation, ...rest } = agent.context;
   const may = Object.keys(ABILITIES).filter((key) => rest[key] === true).map((key) => ABILITIES[key]);
   const not = Object.keys(ABILITIES).filter((key) => rest[key] === false).map((key) => ABILITIES[key]);
@@ -79,7 +80,7 @@ function Knows({ agent }: { agent: Agent }) {
     <section className="card">
       <h3>What it knows, and may spend</h3>
       <dl className="facts">
-        <dt>Skills</dt><dd>{agent.skills.join(", ") || "none"}</dd>
+        {builtOf(agent) && <div className="fact-pair"><dt>Skills</dt><dd>{agent.skills.join(", ") || "none"}</dd></div>}
         {typeof conversation === "number" && (
           <div className="fact-pair"><dt>Its conversation</dt><dd>up to {conversation.toLocaleString()} tokens of it each run</dd></div>
         )}
@@ -98,7 +99,7 @@ function Knows({ agent }: { agent: Agent }) {
   );
 }
 
-function Where({ agent }: { agent: Agent }) {
+function Where({ agent }: { agent: AgentKnown }) {
   return (
     <section className="card wide">
       <h3>Where it runs</h3>
@@ -146,8 +147,33 @@ function DraftAChange({ id }: { id: string }) {
   );
 }
 
+// Why someone sees each layer of an agent, in a line: the roles that give it them
+function Seen({ agent }: { agent: AgentKnown }) {
+  const layers = agent.layers;
+  if (!layers) return null;
+  const lines: [string, string[] | undefined][] = [
+    ["You know of it", layers.exists], ["You see what it may do", layers.uses],
+    ["You see how it's built", layers.built], ["You see how it's doing", layers.doing],
+    ["You may change it", layers.changing]];
+  return (
+    <section className="card" id="seen">
+      <h3>What you see of it, and why</h3>
+      <dl className="facts">
+        {lines.filter(([, why]) => why).map(([what, why]) => (
+          <div key={what} className="fact-pair"><dt>{what}</dt><dd>{why!.join("; ")}</dd></div>
+        ))}
+      </dl>
+      {!layers.built && (
+        <p className="note">{layers.uses ? "Its instructions are for those who make it, own it, approve its releases or audit it."
+          : `What it may do is for the people it serves and those who run it. To have it serve you, ask its owner, ${agent.owners.join(" or ") || "whom the directory names"}.`}</p>
+      )}
+    </section>
+  );
+}
+
 export function AgentPage({ id }: { id: string }) {
-  const { data: agent, error } = useLoad(() => get<Agent>(`/studio/api/agents/${encodeURIComponent(id)}`), [id]);
+  const { data: agent, error } = useLoad(() => get<AgentKnown>(`/studio/api/agents/${encodeURIComponent(id)}`), [id]);
+  const uses = agent && usesOf(agent) ? agent : undefined;
   const catalogue = useLoad(() => get<Catalogue>("/studio/api"), []);
   const changes = catalogue.data?.authoring.agents.includes(id) ?? false;
   return (
@@ -157,7 +183,7 @@ export function AgentPage({ id }: { id: string }) {
                 badges={agent && <span className="chip mono">{agent.release}</span>}>
         {agent && (
           <div className="meta">
-            <span>{agent.model}</span><span>{levels(agent.autonomy)}</span>
+            {uses && <><span>{uses.model}</span><span>{levels(uses.autonomy)}</span></>}
             <span>Owned by {agent.owners.join(", ") || "nobody the directory names"}</span>
             {agent.instances.map((i) => <span key={i.id}>{i.id}: {aboutInstance(i)}</span>)}
           </div>
@@ -167,31 +193,34 @@ export function AgentPage({ id }: { id: string }) {
       {!agent && <Waiting error={error} />}
       {agent && (
         <>
-          <section className="card map-card">
-            <h3>How it's wired</h3>
-            <p className="note">What starts its runs, and the tools it may call, each through a5s's checks. Changes to records wait for a person to decide at level 1.</p>
-            <AgentMap agent={agent} />
-          </section>
+          {uses && (
+            <section className="card map-card">
+              <h3>How it's wired</h3>
+              <p className="note">What starts its runs, and the tools it may call, each through a5s's checks. Changes to records wait for a person to decide at level 1.</p>
+              <AgentMap agent={uses} />
+            </section>
+          )}
           <div className="agent-body">
             <div>
               <section className="card">
                 <h3>What it does</h3>
                 <p>{agent.does}</p>
-                {agent.instructions && (
+                {builtOf(agent) && agent.instructions && (
                   <details>
                     <summary>Its instructions</summary>
                     <pre className="instructions">{agent.instructions}</pre>
                   </details>
                 )}
               </section>
-              <Tools agent={agent} />
+              {uses && <Tools agent={uses} />}
             </div>
             <div className="side">
-              <When agent={agent} />
-              <Knows agent={agent} />
+              <Seen agent={agent} />
+              {uses && <When agent={uses} />}
+              {uses && <Knows agent={uses} />}
             </div>
           </div>
-          <Where agent={agent} />
+          {(!agent.layers || agent.layers.doing) && <Where agent={agent} />}
         </>
       )}
     </>

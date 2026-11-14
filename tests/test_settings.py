@@ -86,8 +86,9 @@ def test_only_an_instance_approver_can_sign(sample):
     folder, keys, database = sample
     write(folder, 1)
     sign(folder, "ben", keys["ben"])
-    assert ("ben approves no settings: they own no part, and hold neither the instance-approver "
-            "role nor the data-protection-officer's") in apply(folder, database).refused
+    assert ("ben approves no settings: they own no part or agent, and hold neither the "
+            "instance-approver role nor the data-protection-officer's") in apply(
+                folder, database).refused
 
 
 def test_an_older_version_cant_be_replayed(sample):

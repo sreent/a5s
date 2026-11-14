@@ -2,7 +2,7 @@
 // the badges that say what a tool does, how something stands, and how a run ended.
 
 import { type DependencyList, type ReactNode, useEffect, useState } from "react";
-import type { Agent, Instance, Tool } from "./api";
+import type { AgentUses, Instance, Tool } from "./api";
 import { Link, type Route } from "./router";
 
 /** What a page shows, once loaded; while it loads again, as for another period, what it
@@ -104,7 +104,7 @@ export function DecisionBadge({ decision }: { decision: string }) {
 }
 
 /** What starts an agent's runs, as its release says: each kind, and what it says of it. */
-export function triggers(agent: Agent): { kind: string; about: string }[] {
+export function triggers(agent: AgentUses): { kind: string; about: string }[] {
   return agent.triggers.flatMap((t) => Object.entries(t).map(([kind, about]) =>
     ({ kind, about: typeof about === "string" ? about : JSON.stringify(about) })));
 }

@@ -168,6 +168,10 @@ class Definition(BaseModel):
     context: Context = Context()
     budget: Budget = Budget()
     tasks: Tasks | None = None  # if it takes on long tasks for people
+    # Whether the studio's catalogue shows everyone signed in that it exists: its name, what it
+    # does, its owner, and how to ask for it. Unlisted, only those with a role on it, and the
+    # people it serves, know of it, as a name such as redundancy planning says too much alone
+    listed: bool = False
 
     # Filled in from the folder, not from agent.yaml.
     instructions: str = ""

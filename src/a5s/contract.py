@@ -35,15 +35,23 @@ PART_OWNER = "part-owner"
 # Someone a part's owner names to decide the changes agents ask for there, beside them, such
 # as while they're away: part-delegate:<part>. They approve no settings.
 PART_DELEGATE = "part-delegate"
-# a5s's own roles, for approving its releases. An agent's owner holds agent-owner:<agent>.
+# An agent's own roles, each for one agent, such as agent-owner:assistant. Its owner owns its
+# definition and releases, by the directory alone; its authors draft changes to it; and its
+# viewers see how it's built, read only (docs/studio.md#people-roles-and-spaces).
+AGENT_OWNER = "agent-owner"
+AGENT_AUTHOR = "agent-author"
+AGENT_VIEWER = "agent-viewer"
+# a5s's own roles, for approving its releases
 RELEASE_APPROVER = "release-approver"  # never from the team that runs a5s, nor above it
 ASSURANCE = "assurance"
 DATA_PROTECTION = "data-protection-officer"  # answers requests for someone's data (core/export.py)
 # The roles the identity provider's groups may give, as the settings map them: those people use
-# by signing in, each with a part's where it's a part's. The roles a release needs, which people
-# use by signing with keys of their own, stay the directory's (core/memberships.py).
+# by signing in, each with a part's or an agent's where it's theirs. The roles a release needs,
+# which people use by signing with keys of their own, stay the directory's, an agent's owner
+# among them (core/memberships.py).
 GROUP_ROLES = (INSTANCE_APPROVER, DATA_PROTECTION, "auditor", "grader")
 GROUP_PART_ROLES = (PART_OWNER, PART_DELEGATE)
+GROUP_AGENT_ROLES = (AGENT_AUTHOR, AGENT_VIEWER)
 
 
 @dataclass(frozen=True)
@@ -300,7 +308,8 @@ _THRESHOLD = Annotated[float, Field(strict=True, ge=0.5, le=0.999)]
 _GROUP = Annotated[str, StringConstraints(strict=True, pattern=(
     r"^[A-Za-z0-9/_](?:[A-Za-z0-9._@:/ -]{0,254}[A-Za-z0-9._@:/-])?$"))]
 _GROUP_ROLE = Annotated[str, StringConstraints(strict=True, pattern=(
-    rf"^(?:{'|'.join(GROUP_ROLES)}|(?:{'|'.join(GROUP_PART_ROLES)}):[a-z0-9][a-z0-9-]{{0,62}})$"))]
+    rf"^(?:{'|'.join(GROUP_ROLES)}|(?:{'|'.join(GROUP_PART_ROLES + GROUP_AGENT_ROLES)})"
+    r":[a-z0-9][a-z0-9-]{0,62})$"))]
 
 
 class _Part(BaseModel):
@@ -406,7 +415,8 @@ def parse_settings(raw: bytes, signatures: tuple[Signature, ...] = ()) -> Settin
     parts = {p for i in version.instances.values() for p in _part_levels(i.parts)} | set(
         version.thresholds)
     for group, roles in version.groups.items():  # a part's role, for a part these settings name
-        if wrong := sorted({r for r in roles if ":" in r and r.split(":", 1)[1] not in parts}):
+        if wrong := sorted({r for r in roles if r.partition(":")[0] in GROUP_PART_ROLES
+                            and r.partition(":")[2] not in parts}):
             raise SettingsError(f"groups.{group}: {', '.join(wrong)} names a part no instance "
                                 "here works in, nor has a threshold")
     return Settings(

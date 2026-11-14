@@ -1014,7 +1014,8 @@ def create_app(gw: Any) -> FastAPI:
         if person is None or not registry.approves(person):
             raise HTTPException(403, "the settings app is for the people who approve versions "
                                      "of the settings: each part's owner, the instance "
-                                     "approvers, and the data protection officer")
+                                     "approvers, agents' owners and the data protection "
+                                     "officer, each for what's theirs")
         return person
 
     def drafted(text: str, last: dict | None) -> tuple[Settings | None, bytes, list[str]]:
@@ -1412,8 +1413,7 @@ def create_app(gw: Any) -> FastAPI:
         roles = set(person.roles)
         decides = INSTANCE_APPROVER in roles or any(
             r.startswith((f"{PART_OWNER}:", f"{PART_DELEGATE}:")) for r in roles)
-        found = {"chat": True, "tasks": True, "notebook": lets(keeping),
-                 "studio": studio_api.may_study(gw, person),
+        found = {"chat": True, "tasks": True, "notebook": lets(keeping), "studio": True,
                  "decide": decides, "grade": lets(grader), "settings": lets(settling),
                  "audit": audit.reads(person), "admin": lets(administering),
                  "officer": DATA_PROTECTION in roles}

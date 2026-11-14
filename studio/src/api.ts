@@ -84,18 +84,29 @@ export type Instance = {
 
 export type Schedule = { name: string; at: string[]; days: string[]; task: string };
 
-export type Agent = {
+// What someone sees of an agent comes in layers, each from the roles they hold (core/studio.py):
+// that it exists; what it may do; how it's built; how it's doing; what it did; changing it
+export type Layer = "exists" | "uses" | "built" | "doing" | "did" | "changing";
+
+// That it exists: for anyone who may know of it
+export type AgentKnown = {
+  layers?: Partial<Record<Layer, string[]>>;  // each they see, with why: the team's own API gives it all
+  listed?: boolean;  // whether its owner lists it for everyone
   why?: string[];  // why the viewer's roles bring it into their view
   id: string;
   release: string;
   works_for: string;
   does: string;
   owners: string[];
+  instances: Instance[];  // those they may watch, if they see how it's doing
+};
+
+// What it may do: for the people it serves, those who watch its instances, and its makers
+export type AgentUses = AgentKnown & {
   model: string;
   autonomy: { start: number; max: number };
   tools: Tool[];
   a5s_tools: string[];
-  skills: string[];
   triggers: Record<string, unknown>[];  // each one kind and what it says, such as {message: "from ..."}
   schedules: Schedule[];
   reports: string[];
@@ -105,13 +116,20 @@ export type Agent = {
   channels: string[];
   context: Record<string, unknown>;
   budget: { per_run: number; per_person_per_day: number };
-  instances: Instance[];
+};
+
+// How it's built: for its owners, authors, engineers, release approvers, auditors and viewers
+export type Agent = AgentUses & {
+  skills: string[];
   instructions?: string;
 };
 
+export const usesOf = (agent: AgentKnown): agent is AgentUses => "tools" in agent;
+export const builtOf = (agent: AgentKnown): agent is Agent => "skills" in agent;
+
 export type Catalogue = {
   you: string;
-  agents: Agent[];
+  agents: AgentKnown[];
   authoring: { new: boolean; agents: string[] };  // whether they may start an agent, and which they may change
 };
 

@@ -124,6 +124,8 @@ schedules: []                    # none: what it does, it does for someone
 reminders: true                  # it offers reminders, and keeps those people confirm
 preferences: [digest-time, how-i-work]
 channels: [teams]
+listed: false                    # the studio's catalogue shows it to everyone, if true: else
+                                 # only to those with a role on it, and the people it serves
 context:
   budget_tokens: 24000           # split by part, tested at release
   recall: true                   # it searches its conversation with the person it acts for

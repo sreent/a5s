@@ -89,9 +89,9 @@ def router(gw: Any) -> APIRouter:
     def studying(person: Annotated[Person, Depends(someone)]) -> Person:
         """Who signed in to the studio: someone who may watch an instance, or owns an agent."""
         if not may_study(gw, person):
-            raise HTTPException(403, "the studio is for the people who run an instance, own an "
-                                     "agent, own or decide for one of its parts, approve "
-                                     "instances, or make agents")
+            raise HTTPException(403, "the studio's dashboards are for the people who run an "
+                                     "instance, own an agent, own or decide for one of its "
+                                     "parts, approve instances, or make agents")
         return person
 
     def drafting(person: Annotated[Person, Depends(someone)]) -> Person:
@@ -159,14 +159,10 @@ def router(gw: Any) -> APIRouter:
     @api.get("/studio/api/home")
     def studio_home(person: Annotated[Person, Depends(someone)]) -> dict:
         """What waits for whoever signed in, their drafts, and what of the studio they may
-        use, whether or not they hold a role."""
+        use, whether or not they hold a role: the catalogue is everyone's."""
         with db.transaction(gw.url) as conn:
-            watched = studio.instances(conn, person)
             return {"you": person.name, "waiting": homes.waiting(conn, gw, person),
-                    "drafts": drafts.mine(conn, person),
-                    "catalogue": bool(watched) or any(r.startswith("agent-owner:")
-                                                      for r in person.roles)
-                    or drafts.authors(person),
+                    "drafts": drafts.mine(conn, person), "catalogue": True,
                     "authoring": drafts.authors(person)}
 
     @api.get("/studio/api/you")
@@ -179,8 +175,9 @@ def router(gw: Any) -> APIRouter:
                     "groups": list(memberships.stored(conn, person.id).get(person.id, ()))}
 
     @api.get("/studio/api")
-    def studio_now(person: Annotated[Person, Depends(studying)]) -> dict:
-        """The agents someone may watch, and where each runs: the instances they may watch."""
+    def studio_now(person: Annotated[Person, Depends(someone)]) -> dict:
+        """The catalogue: every agent someone may know exists, each as far as the layers they
+        see of it go, with the instances they may watch, and why."""
         with db.transaction(gw.url) as conn:
             return {"you": person.name, "agents": studio.catalogue(
                 conn, gw.scenario, gw.definitions, gw.scenario.tools(), person),
@@ -189,15 +186,18 @@ def router(gw: Any) -> APIRouter:
                                                    if drafts.may_author(person, a))}}
 
     @api.get("/studio/api/agents/{agent}")
-    def studio_agent(agent: str, person: Annotated[Person, Depends(studying)]) -> dict:
-        """One agent someone owns, or watches an instance of, with its instructions."""
+    def studio_agent(agent: str, person: Annotated[Person, Depends(someone)]) -> dict:
+        """One agent, as far as the layers someone sees of it go: its instructions only if
+        they see how it's built. The same refusal for one they may not know exists as for
+        one there isn't, so asking says nothing of it."""
         definition = gw.definitions.get(agent)
         with db.transaction(gw.url) as conn:
-            insts = studio.instances(conn, person)
-        if definition is None or (not {agent_owner(agent), drafts.agent_author(agent)} & set(person.roles)
-                                  and not any(i["definition"] == agent for i in insts)):
-            raise HTTPException(404, "there's no such agent that you may watch")
-        return studio.agent(gw.scenario, definition, gw.scenario.tools(), insts, whole=True)
+            every = studio.instances(conn)
+        if definition is None or not (view := studio.layers(agent, definition, every, person,
+                                                             gw.scenario)):
+            raise HTTPException(404, "there's no such agent that you may see")
+        watched = [i for i in every if studio.watches(i, person)]
+        return studio.seen(gw.scenario, definition, gw.scenario.tools(), watched, view)
 
     @api.get("/studio/api/agents/{agent}/measures")
     def studio_agent_measures(agent: str, person: Annotated[Person, Depends(studying)], days: int = 30,

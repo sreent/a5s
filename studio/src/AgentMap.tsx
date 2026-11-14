@@ -7,7 +7,7 @@
 
 import { Background, type Edge, Handle, type Node, type NodeProps, Position, ReactFlow } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import type { Agent, Call, Run } from "./api";
+import type { AgentUses, Call, Run } from "./api";
 import { Icon } from "./icons";
 import { levels, plural, type Risk, risk, RISK_NAMES, triggers } from "./ui";
 
@@ -42,7 +42,7 @@ const NODE_TYPES = { card: CardNode };
 const ROW = 66;
 const ORDER: Risk[] = ["changes", "outside", "writes", "reads"];
 
-function starts(agent: Agent): Card[] {
+function starts(agent: AgentUses): Card[] {
   const found: Card[] = [];
   for (const t of triggers(agent).filter((t) => t.kind === "message")) {
     found.push({ icon: "message", title: "A message", kind: "message",
@@ -68,7 +68,7 @@ function tally(calls: Call[]): Pick<Card, "calls" | "refused"> {
   return { calls: calls.length, refused: calls.filter((c) => c.decision === "deny").length };
 }
 
-export function AgentMap({ agent, run }: { agent: Agent; run?: Run }) {
+export function AgentMap({ agent, run }: { agent: AgentUses; run?: Run }) {
   const kind = run ? String(run.started_by.kind ?? run.trigger ?? "") : undefined;
   const left = starts(agent).map((card) => ({ ...card, dim: run !== undefined && card.kind !== kind }));
   if (run && kind && !left.some((card) => card.kind === kind)) {  // started some other way

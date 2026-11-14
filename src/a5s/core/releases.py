@@ -41,7 +41,7 @@ from psycopg.types.json import Jsonb
 
 import a5s
 from a5s import db, definitions
-from a5s.contract import ASSURANCE, RELEASE_APPROVER, Person, Scenario, Signature
+from a5s.contract import AGENT_OWNER, ASSURANCE, RELEASE_APPROVER, Person, Scenario, Signature
 from a5s.core import ledger, signing
 
 ENGINEER = "engineer"  # anyone in the team that runs a5s
@@ -55,7 +55,7 @@ _PEOPLE = {RELEASE_APPROVER: "the release approver, from outside the team that r
 
 
 def agent_owner(agent: str) -> str:
-    return f"agent-owner:{agent}"
+    return f"{AGENT_OWNER}:{agent}"
 
 
 def who(role: str) -> str:

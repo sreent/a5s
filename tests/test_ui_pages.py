@@ -66,9 +66,10 @@ def test_the_sidebar_lists_only_the_pages_each_person_may_use(stack, approving, 
         return answer.json()["pages"]
 
     # Ana approves instances and owns billing; Ben deputises for the instance, which is no role
-    # of a5s's own; Chen is served; Kofi is assurance, who reads the trail
+    # of a5s's own; Chen is served; Kofi is assurance, who reads the trail. The studio's home and
+    # its catalogue are everyone's
     assert listed("ana") == ["chat", "tasks", "notebook", "studio", "decide", "settings", "admin"]
     assert listed("ben") == ["chat", "tasks", "notebook", "studio"]
     assert "audit" in listed("kofi")
-    assert listed("chen") == ["chat", "tasks"]
+    assert listed("chen") == ["chat", "tasks", "studio"]
     assert httpx.get(f"{approving}/shell/api", timeout=30).status_code == 401
