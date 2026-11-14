@@ -37,7 +37,7 @@ from fastapi.responses import JSONResponse, RedirectResponse
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel
 
-from a5s import authoring, db, definitions
+from a5s import authoring, cases, db, definitions
 from a5s.contract import (
     DATA_PROTECTION,
     INSTANCE_APPROVER,
@@ -224,6 +224,12 @@ class DraftTry(BaseModel):
 
     person: str
     text: str
+    model: str = "stand-in"
+
+
+class CaseRun(BaseModel):
+    """Running one of a draft's test cases in the sandbox: on which of the models it offers."""
+
     model: str = "stand-in"
 
 
@@ -1548,6 +1554,45 @@ def create_app(gw: Any) -> FastAPI:
                                           "as": body.person, "model": body.model,
                                           "by": person.id}})
         return said
+
+    @app.get("/studio/api/drafts/{draft}/cases")
+    def studio_draft_cases(draft: str, authorization: str | None = Header(default=None)) -> dict:
+        """One of someone's drafts' test cases, as its suite runs them, and of each, what only
+        the suite does, if anything, which the sandbox doesn't."""
+        person = drafting(authorization)
+        with db.transaction(gw.url) as conn:
+            found = drafts.get(conn, person, draft)
+        if found is None:
+            raise HTTPException(404, "you have no such draft")
+        try:
+            listed = cases.found(found["files"])
+        except cases.Unreadable as e:
+            return {"cases": [], "problem": str(e)}
+        return {"cases": [{"number": n, "name": case["name"], "file": case["file"],
+                           "suite_alone": cases.suite_alone(case)}
+                          for n, case in enumerate(listed)]}
+
+    @app.post("/studio/api/drafts/{draft}/cases/{number}")
+    def studio_draft_case(draft: str, number: int, body: CaseRun,
+                          authorization: str | None = Header(default=None)) -> dict:
+        """Run one of someone's drafts' test cases in the sandbox, on the scenario's made-up
+        records: what it answered at each step, the tools it used, and whether that's as the
+        case says."""
+        person = drafting(authorization)
+        with db.transaction(gw.url) as conn:
+            found = drafts.get(conn, person, draft)
+        if found is None:
+            raise HTTPException(404, "you have no such draft")
+        ran = sandboxed("/sandbox/cases", {"key": found["id"].replace("-", "")[:12],
+                                           "files": found["files"], "number": number,
+                                           "model": body.model})
+        with db.transaction(gw.url) as conn:
+            ledger.append(conn, {"kind": "admin", "action": "run draft case", "run": None,
+                                 "instance": None, "acts_for": [], "decision": "record",
+                                 "args": {"agent": found["agent"], "draft": found["id"],
+                                          "case": ran.get("name"), "model": body.model,
+                                          "passed": ran.get("passed"), "by": person.id}})
+        return ran
 
     # Publishing a draft (core/publishing.py): a pull request to the agents' repository, opened
     # as its author, once they let a5s's GitHub App act as them at GitHub's own sign-in. The

@@ -35,7 +35,7 @@ import yaml
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
-from a5s import authoring, build, db, definitions
+from a5s import authoring, build, cases, db, definitions
 from a5s.config import Config, load_models
 from a5s.core import inbox, registry, retention, signing, studio
 from a5s.core.gateway import Gateway
@@ -234,6 +234,33 @@ class Sandbox:
         self.gateway.definitions.clear()  # the same mapping the channels app reads
         self.gateway.definitions.update(found)
 
+    def _serving(self, instance: str, agent: str, person: str) -> None:
+        """An instance of a draft's agent, which serves `person` too, in its settings."""
+        instances = self.standing.setdefault("instances", {})
+        serving = set((instances.get(instance) or {}).get("serves") or [])
+        instances[instance] = {"definition": agent, "serves": sorted(serving | {person}),
+                               "parts": self.parts, "level": 1, "owner": person}
+
+    def _said(self, instance: str, person: str, text: str) -> tuple[str, dict | None, list[dict]]:
+        """Say something to an instance, as a person: what it answered, its run, and each call
+        to the model."""
+        self.recording.calls = []
+        try:
+            sent = httpx.post(f"{self.channels_url}/channels/local/messages", timeout=60,
+                              json={"person": person, "agent": instance, "text": text})
+            if sent.status_code != 202:
+                raise Refused(str(sent.json().get("detail")))
+            Scheduler(self.cfg, self.gateway.scenario).answer_waiting()
+            said = httpx.get(f"{self.channels_url}/channels/local/messages/{sent.json()['message']}",
+                             params={"person": person}, timeout=60).json()["replies"]
+        finally:
+            calls, self.recording.calls = self.recording.calls or [], None
+        with db.transaction(self.admin) as conn:
+            last = conn.execute("select id::text as id from runs where instance_id = %s "
+                                "order by opened_at desc limit 1", (instance,)).fetchone()
+            run = studio.run(conn, self.scenario, last["id"]) if last else None
+        return "\n".join(said), run, calls
+
     def turn(self, key: str, files: dict[str, str], person: str, text: str, model: str) -> dict:
         """Try a draft: say `text` to it as `person`, one of the made-up people, and what came
         of it: what it answered, the run, with each call to a tool and the policy's decision,
@@ -245,27 +272,52 @@ class Sandbox:
         agent = f"try-{key}"
         with self.lock:
             self._install(agent, files, model)
-            instances = self.standing.setdefault("instances", {})
-            serving = set((instances.get(agent) or {}).get("serves") or [])
-            instances[agent] = {"definition": agent, "serves": sorted(serving | {person}),
-                                "parts": self.parts, "level": 1, "owner": person}
+            self._serving(agent, agent, person)
             self._settle()
-            self.recording.calls = []
-            try:
-                sent = httpx.post(f"{self.channels_url}/channels/local/messages", timeout=60,
-                                  json={"person": person, "agent": agent, "text": text})
-                if sent.status_code != 202:
-                    raise Refused(str(sent.json().get("detail")))
-                Scheduler(self.cfg, self.gateway.scenario).answer_waiting()
-                said = httpx.get(f"{self.channels_url}/channels/local/messages/{sent.json()['message']}",
-                                 params={"person": person}, timeout=60).json()["replies"]
-            finally:
-                calls, self.recording.calls = self.recording.calls or [], None
-            with db.transaction(self.admin) as conn:
-                last = conn.execute("select id::text as id from runs where instance_id = %s "
-                                    "order by opened_at desc limit 1", (agent,)).fetchone()
-                run = studio.run(conn, self.scenario, last["id"]) if last else None
-        return {"agent": agent, "reply": "\n".join(said), "run": run, "model_calls": calls}
+            reply, run, calls = self._said(agent, person, text)
+        return {"agent": agent, "reply": reply, "run": run, "model_calls": calls}
+
+    def case(self, key: str, files: dict[str, str], model: str, number: int) -> dict:
+        """Run one of a draft's test cases, by its place among them, as the agent's suite runs
+        it, in a conversation of its own: what it answered at each step, the tools it used, and
+        whether that's as the case says, and if not, why. A case that needs what the suite
+        alone does, such as a time to be at, it doesn't run, and says so."""
+        if not KEY.fullmatch(key):
+            raise Refused("a draft is tried by its key, of lower case letters and digits")
+        try:
+            found = cases.found(files)
+        except cases.Unreadable as e:
+            raise Refused(str(e)) from None
+        if not 0 <= number < len(found):
+            raise Refused(f"the draft has {len(found)} test cases, not a case {number + 1}")
+        case = found[number]
+        shown = {"name": case["name"], "file": case["file"]}
+        if alone := cases.suite_alone(case):
+            return {**shown, "ran": False, "why": f"it needs {', '.join(alone)}, which the "
+                                                  "agent's suite alone runs"}
+        person = case.get("as", "ana")  # as the suite says it, unless the case says
+        if person not in {p["id"] for p in self.people()}:
+            return {**shown, "ran": False, "why": f"it's said as {person}, and the sandbox has "
+                                                  "nobody called that"}
+        # The draft as an agent of its own, for this case alone: a conversation is a person's
+        # with an agent, so each case starts one afresh, as the suite's do
+        agent = f"case-{secrets.token_hex(5)}"
+        steps, problems = [], []
+        with self.lock:
+            instances = self.standing.setdefault("instances", {})
+            for done in [name for name in instances if name.startswith("case-")]:
+                del instances[done]  # an earlier case's, which its settings retire
+                shutil.rmtree(self.cfg.agents_dir / done, ignore_errors=True)
+            self._install(agent, files, model)
+            self._serving(agent, agent, person)
+            self._settle()
+            for n, step in enumerate(case["steps"], 1):
+                reply, run, _ = self._said(agent, person, cases.dated(str(step["say"])))
+                called = used(run)
+                wrong = cases.check(step, reply, called, case.get("own_values") == "allowed")
+                problems += [f"step {n}: {w}" for w in wrong]
+                steps.append({"say": step["say"], "reply": reply, "called": called, "wrong": wrong})
+        return {**shown, "ran": True, "passed": not problems, "problems": problems, "steps": steps}
 
     def forget(self) -> dict[str, int]:
         """Sweep what's past its time, as a5s's retention sweep does, but with what's said
@@ -279,6 +331,14 @@ class Sandbox:
         """Every part its scenario's instances work in: a draft tried here may see them all."""
         return sorted({p for inst in (self.standing.get("instances") or {}).values()
                        for p in (inst.get("parts") or [])} - {""})
+
+
+def used(run: dict | None) -> list[str]:
+    """The tools a run used and a5s let it, or held for someone to decide, as an agent's suite
+    counts them."""
+    calls = (run or {}).get("calls") or []
+    return list(dict.fromkeys(c["tool"] for c in calls if c["decision"] == "hold"
+                              or (c["decision"] == "allow" and c["outcome"] == "ok")))
 
 
 def _own(admin: str) -> None:
@@ -380,6 +440,13 @@ class _Both:
 
 # Its API, for the studio of the deployment people work in, by the token they share
 
+class Case(BaseModel):
+    key: str  # the draft's, as the studio names it
+    files: dict[str, str]  # its agent's folder, each file's text by its path in it
+    number: int  # which of its test cases, by its place among them, from 0
+    model: str = STAND_IN
+
+
 class Try(BaseModel):
     key: str  # the draft's, as the studio names it
     files: dict[str, str]  # its agent's folder, each file's text by its path in it
@@ -410,6 +477,14 @@ def create_app(sandbox: Sandbox, token: str) -> FastAPI:
         allowed(authorization)
         try:
             return sandbox.turn(body.key, body.files, body.person, body.text[:4000], body.model)
+        except Refused as e:
+            raise HTTPException(400, str(e)) from None
+
+    @app.post("/sandbox/cases")
+    def run_case(body: Case, authorization: str | None = Header(default=None)) -> dict:
+        allowed(authorization)
+        try:
+            return sandbox.case(body.key, body.files, body.model, body.number)
         except Refused as e:
             raise HTTPException(400, str(e)) from None
 

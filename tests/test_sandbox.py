@@ -14,7 +14,7 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from a5s import authoring, sandbox
+from a5s import authoring, cases, sandbox
 from a5s.core import drafts, retention, signing
 from a5s.sample import SampleScenario
 from conftest import ROOT, deployment
@@ -175,3 +175,56 @@ def test_the_sweep_keeps_things_only_for_a_time_it_can_read():
     for kept in ("1 hour; drop table turns", "0 days", "forever", ""):
         with pytest.raises(ValueError, match="isn't a time to keep things for"):
             retention.sweep(None, None, "sample", kept=kept)
+
+
+def test_a_drafts_test_cases_run_there_as_its_suite_runs_them(box):
+    files = drafted()
+    numbered = {case["name"]: n for n, case in enumerate(cases.found(files))}
+    ran = box.case("3f2a9c1d", files, "stand-in", numbered["finds a question by what it's about"])
+    assert (ran["ran"], ran["passed"], ran["problems"]) == (True, True, [])
+    [step] = ran["steps"]
+    assert step["called"] == ["search_records"] and "Q-1001" in step["reply"]
+    ran = box.case("3f2a9c1d", files, "stand-in", numbered["says when it can't find a record"])
+    assert ran["ran"] and not ran["passed"]  # what the stand-in says isn't what the agent would
+    assert ran["problems"][0].startswith("step 1: said none of")
+    ran = box.case("3f2a9c1d", files, "stand-in", numbered["offers a reminder, and keeps it on the yes"])
+    assert (ran["ran"], ran["why"]) == (False, "it needs then, which the agent's suite alone runs")
+    with psycopg.connect(box.admin) as conn:  # each case that ran, in a conversation of its own
+        talked = conn.execute("select count(distinct agent) from turns where agent like 'case-%'").fetchone()[0]
+    assert talked == 2
+    assert [i for i in box.standing["instances"] if i.startswith("case-")] != []  # the last's alone
+    assert len([i for i in box.standing["instances"] if i.startswith("case-")]) == 1
+
+
+def test_the_sandbox_says_which_cases_it_cant_run(box):
+    stranger = {**drafted(), "tests/stranger.yaml": "- name: as someone it hasn't got\n  as: zed\n"
+                                                    "  steps: [{say: Hello}]\n"}
+    found = cases.found(stranger)
+    ran = box.case("3f2a9c1d", stranger, "stand-in",
+                   next(n for n, c in enumerate(found) if c["file"] == "tests/stranger.yaml"))
+    assert (ran["ran"], ran["why"]) == (False, "it's said as zed, and the sandbox has nobody called that")
+    with pytest.raises(sandbox.Refused, match="tests/broken.yaml doesn't read as YAML"):
+        box.case("3f2a9c1d", {**drafted(), "tests/broken.yaml": "- name: [\n"}, "stand-in", 0)
+    with pytest.raises(sandbox.Refused, match="not a case 100"):
+        box.case("3f2a9c1d", drafted(), "stand-in", 99)
+
+
+def test_someone_runs_their_drafts_cases_from_the_studio(stack, with_sandbox, approving, provider):
+    from test_drafts import as_, recorded, started
+
+    priya = as_(approving, provider, "priya")
+    draft = started(priya)
+    listed = priya("GET", f"/studio/api/drafts/{draft['id']}/cases").json()["cases"]
+    runs = [c for c in listed if not c["suite_alone"]]
+    assert [c["name"] for c in runs] == ["finds a question by what it's about",
+                                         "says when it can't find a record",
+                                         "never makes up an amount the records don't have"]
+    ran = priya("POST", f"/studio/api/drafts/{draft['id']}/cases/{runs[0]['number']}", {})
+    assert ran.status_code == 200 and ran.json()["passed"] is True, ran.text
+    [entry] = recorded(stack, "run draft case")
+    assert entry["args"] == {"agent": "finance-helper", "draft": draft["id"], "model": "stand-in",
+                             "case": "finds a question by what it's about", "passed": True, "by": "priya"}
+    broken = {**draft["files"], "tests/tried.yaml": "- name: [\n"}
+    assert priya("PUT", f"/studio/api/drafts/{draft['id']}", {"files": broken}).status_code == 200
+    said = priya("GET", f"/studio/api/drafts/{draft['id']}/cases").json()
+    assert said == {"cases": [], "problem": "tests/tried.yaml doesn't read as YAML"}

@@ -17,6 +17,92 @@ type Turn = { id: number; as: string; said: string; model: string; tried?: Tried
 const SHOWN = 3000;  // characters of each message shown before it's cut
 const STAND_IN = "stand-in";
 
+type CaseLine = { number: number; name: string; file: string; suite_alone: string[] };
+type CaseStep = { say: string; reply: string; called: string[]; wrong: string[] };
+type CaseRun = { name: string; file: string; ran: boolean; why?: string; passed?: boolean;
+                 problems?: string[]; steps?: CaseStep[] };
+type Outcome = { running: true } | { problem: string } | { run: CaseRun };
+
+/** A draft's test cases, run in the sandbox one at a time, each in a conversation of its own,
+ * as its suite runs them: those that need what the suite alone does, it says so of. */
+function Cases({ draft, model, ready, revision }: { draft: string; model: string; ready: boolean; revision: number }) {
+  const listed = useLoad(() => get<{ cases: CaseLine[]; problem?: string }>(
+    `/studio/api/drafts/${encodeURIComponent(draft)}/cases`), [draft, revision]);
+  const [outcomes, setOutcomes] = useState<Record<number, Outcome>>({});
+  const [running, setRunning] = useState(false);
+  if (listed.error) return <p className="problem">{listed.error}</p>;
+  if (!listed.data) return null;
+  if (listed.data.problem) return <p className="problem" id="cases">{listed.data.problem}</p>;
+  const all = listed.data.cases;
+  const runnable = all.filter((c) => c.suite_alone.length === 0);
+  const run = async () => {
+    setRunning(true);
+    setOutcomes({});
+    for (const c of runnable) {
+      setOutcomes((o) => ({ ...o, [c.number]: { running: true } }));
+      try {
+        const ran = await send<CaseRun>("POST", `/studio/api/drafts/${encodeURIComponent(draft)}/cases/${c.number}`, { model });
+        setOutcomes((o) => ({ ...o, [c.number]: { run: ran } }));
+      } catch (e) {
+        setOutcomes((o) => ({ ...o, [c.number]: { problem: (e as Error).message } }));
+      }
+    }
+    setRunning(false);
+  };
+  const ran = Object.values(outcomes).flatMap((o) => ("run" in o && o.run.ran ? [o.run] : []));
+  const passed = ran.filter((r) => r.passed).length;
+  return (
+    <div className="cases" id="cases">
+      <div className="cases-head">
+        <h4>Its test cases</h4>
+        <button type="button" className="quiet" id="run-cases" disabled={!ready || running || runnable.length === 0} onClick={run}>
+          {running ? "Running them…" : `Run the ${runnable.length} the sandbox can`}</button>
+      </div>
+      {all.length === 0 && <p className="note">It has none yet: keep what you said to it as one, above.</p>}
+      {all.length > 0 && model === STAND_IN && <p className="note">On the stand-in, a case shows how the draft is wired, not what it would say: run them on a real model for that.</p>}
+      {ran.length > 0 && !running && (
+        <p id="cases-summary"><span className={`badge ${passed === ran.length ? "good" : "bad"}`}>{passed} of {ran.length} passed</span></p>
+      )}
+      <ol className="case-list">
+        {all.map((c) => {
+          const outcome = outcomes[c.number];
+          const done = outcome && "run" in outcome ? outcome.run : null;
+          return (
+            <li key={c.number} className="case">
+              <div className="case-line">
+                <span className="case-name">{c.name}</span>
+                <span className="faint mono">{c.file}</span>
+                {c.suite_alone.length > 0 && <span className="badge">its suite alone</span>}
+                {outcome && "running" in outcome && <span className="badge">running…</span>}
+                {outcome && "problem" in outcome && <span className="badge bad">{outcome.problem}</span>}
+                {done && done.ran && <span className={`badge ${done.passed ? "good" : "bad"}`}>{done.passed ? "passed" : "failed"}</span>}
+                {done && !done.ran && <span className="badge">not run</span>}
+              </div>
+              {c.suite_alone.length > 0 && <div className="faint">It needs {c.suite_alone.join(", ")}, which the agent's suite runs, on a stack of its own.</div>}
+              {done && !done.ran && <div className="faint">{done.why}</div>}
+              {done?.problems && done.problems.length > 0 && (
+                <ul className="plain case-problems">{done.problems.map((p) => <li key={p}>{p}</li>)}</ul>
+              )}
+              {done?.steps && (
+                <details className="sent">
+                  <summary>What it was told, and answered</summary>
+                  {done.steps.map((step, i) => (
+                    <div key={i} className="case-step">
+                      <div><span className="faint">Told</span> {step.say}</div>
+                      <div><span className="faint">Answered</span> {step.reply || "(nothing)"}</div>
+                      {step.called.length > 0 && <div className="faint mono">used {step.called.join(", ")}</div>}
+                    </div>
+                  ))}
+                </details>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </div>
+  );
+}
+
 /** The tools a turn's run used, and a5s let it, or held for someone to decide, as an agent's
  * suite counts them. */
 function used(tried: Tried): string[] {
@@ -71,8 +157,8 @@ function Answer({ tried, name }: { tried: Tried; name: string }) {
   );
 }
 
-export function TryIt({ draft, name, ready, keep }: {
-  draft: string; name: string; ready: boolean; keep: (testCase: Case) => void;
+export function TryIt({ draft, name, ready, keep, revision }: {
+  draft: string; name: string; ready: boolean; keep: (testCase: Case) => void; revision: number;
 }) {
   const offered = useLoad(() => get<Offered>("/studio/api/sandbox"), []);
   const [person, setPerson] = useState("");
@@ -160,6 +246,7 @@ export function TryIt({ draft, name, ready, keep }: {
                disabled={!ready} onChange={(e) => setText(e.target.value)} autoComplete="off" />
         <button type="submit" className="primary" disabled={!ready || busy || !text.trim()}>{busy ? "Running…" : "Say it"}</button>
       </form>
+      <Cases draft={draft} model={model} ready={ready && !busy} revision={revision} />
     </div>
   );
 }

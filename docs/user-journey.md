@@ -81,7 +81,7 @@ The settings app and the approval, decision, grading, notebook and officer pages
 
 ## What is not here yet
 
-The studio now keeps drafts: an agent's owner starts a new agent from a template, or a change to one they own, and edits it, its tools and its instructions, with what would stop its release, who would sign it, and its map shown as they go. They try it in [the sandbox](studio.md#the-sandbox), a deployment of its own, as one of the scenario's made-up people, and see what it answered, each call it made with the policy's decision, and what its model was sent. What they said there, they can keep as one of its test cases. They [publish it](studio.md#publishing) from the page as a pull request to the agents' repository, opened as them through GitHub's own sign-in, which says who must sign its release; or download its folder, where publishing isn't set up.
+The studio now keeps drafts: an agent's owner starts a new agent from a template, or a change to one they own, and edits it, its tools and its instructions, with what would stop its release, who would sign it, and its map shown as they go. They try it in [the sandbox](studio.md#the-sandbox), a deployment of its own, as one of the scenario's made-up people, and see what it answered, each call it made with the policy's decision, and what its model was sent. What they said there, they can keep as one of its test cases, and they run its cases there, as its suite would, to see which pass. They [publish it](studio.md#publishing) from the page as a pull request to the agents' repository, opened as them through GitHub's own sign-in, which says who must sign its release; or download its folder, where publishing isn't set up.
 
 The present journey is therefore:
 

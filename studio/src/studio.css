@@ -256,6 +256,16 @@ button.quiet { background: transparent; border-color: var(--line); color: var(--
 .try-keep { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: end; padding-top: 0.9rem; border-top: 1px solid var(--line); }
 .try-keep .field { flex: 1; min-width: 18rem; margin: 0; }
 .try-keep .note, .try-keep .problem { flex-basis: 100%; margin: 0; }
+.cases { display: grid; gap: 0.6rem; padding-top: 0.9rem; border-top: 1px solid var(--line); }
+.cases-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
+.cases-head h4 { margin: 0; }
+.cases p { margin: 0; }
+.case-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
+.case { padding: 0.5rem 0.7rem; border: 1px solid var(--line); border-radius: 8px; display: grid; gap: 0.3rem; }
+.case-line { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.5rem; }
+.case-name { font-weight: 500; }
+.case-problems { margin: 0; color: var(--bad); }
+.case-step { padding: 0.4rem 0 0.4rem 0.7rem; border-left: 2px solid var(--line); display: grid; gap: 0.2rem; }
 .publish { display: grid; gap: 0.75rem; }
 .publish p { margin: 0; }
 .sign-in-code { padding: 0.9rem 1rem; border: 1px solid var(--line); border-radius: 10px; background: var(--sunken); display: grid; gap: 0.5rem; max-width: 34rem; }

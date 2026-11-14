@@ -108,6 +108,7 @@ export function DraftPage({ id }: { id: string }) {
   const [files, setFiles] = useState<Files | null>(null);
   const [said, setSaid] = useState<Pick<Draft, "problems" | "preview" | "signers"> | null>(null);
   const [kept, setKept] = useState<Kept>("kept");
+  const [revision, setRevision] = useState(0);  // each time a change is kept
   const [tab, setTab] = useState<Tab>("basics");
   const latest = useRef(0);
   const timer = useRef<number | undefined>(undefined);
@@ -130,6 +131,7 @@ export function DraftPage({ id }: { id: string }) {
         return saved.files["tools.lock"] === undefined ? rest : { ...rest, "tools.lock": saved.files["tools.lock"] };
       });
       setKept("kept");
+      setRevision((n) => n + 1);
     } catch (e) {
       if (mine === latest.current) setKept({ problem: (e as Error).message });
     }
@@ -208,7 +210,8 @@ export function DraftPage({ id }: { id: string }) {
           <section className="card" id="try">
             <h3>Try it in the sandbox</h3>
             <TryIt draft={id} name={draft.agent} ready={said.problems.length === 0 && kept === "kept"}
-                   keep={(testCase) => change({ ...files, [CASES]: withCase(files[CASES] ?? "", testCase) })} />
+                   keep={(testCase) => change({ ...files, [CASES]: withCase(files[CASES] ?? "", testCase) })}
+                   revision={revision} />
           </section>
           <section className="card" id="publishing">
             <h3>Publish it</h3>

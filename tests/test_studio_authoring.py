@@ -113,4 +113,14 @@ def test_an_agents_owner_tries_their_draft_in_the_sandbox(stack, with_sandbox, a
     page.fill("#case-name", "finds questions by what they mention")  # the same name again
     page.click("#keep-case")
     page.wait_for_selector(".try-keep .problem >> text=it has a test case called", timeout=30000)
+    # Its test cases, the template's and the one just kept, run as its suite runs them: those
+    # that need what the suite alone does say so, and on the stand-in, one fails, and says why
+    page.wait_for_selector(".case >> text=finds questions by what they mention", timeout=30000)
+    page.click("#run-cases")
+    page.wait_for_selector("#cases-summary >> text=3 of 4 passed", timeout=120000)
+    failed = page.locator(""".case:has-text("says when it can't find a record")""").inner_text()
+    assert "failed" in failed and "step 1: said none of" in failed
+    alone = page.locator(".case:has-text('offers a reminder, and keeps it on the yes')").inner_text()
+    assert "its suite alone" in alone and "It needs then" in alone
+    shot(page, "studio-cases")
     assert refused == []
