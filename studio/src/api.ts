@@ -99,7 +99,13 @@ export type AgentKnown = {
   does: string;
   owners: string[];
   instances: Instance[];  // those they may watch, if they see how it's doing
+  ask?: Ask | null;  // their own open ask for it, if they asked for it and it serves them not
+  asks?: Asked[];  // the open asks for it that wait on them
 };
+
+// Asking for an agent (core/asks.py)
+export type Ask = { id: string; agent: string; asked_at: string; ended_at: string | null; outcome: string | null };
+export type Asked = { id: string; agent: string; person: string; asked_at: string; why: string[] };
 
 // What it may do: for the people it serves, those who watch its instances, and its makers
 export type AgentUses = AgentKnown & {

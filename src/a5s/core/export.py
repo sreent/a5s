@@ -140,6 +140,9 @@ def gather(conn: db.Connection, person: str) -> dict[str, Any]:
             "order by name"),
         "groups": rows(  # those their latest sign-in showed, of the ones the settings name
             "select groups, seen_at from sign_in_groups where person = any(%(names)s)"),
+        "asks": rows(  # the agents they asked for in the studio, and how each ask ended
+            "select agent, asked_at, ended_at, outcome from agent_asks "
+            "where person = any(%(names)s) order by asked_at"),
         "drafts": rows(  # the agents they're making in the studio, file by file
             "select agent, based_on, files, published, created_at, updated_at from agent_drafts "
             "where person = any(%(names)s) order by created_at, agent"),

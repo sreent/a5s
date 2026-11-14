@@ -7,7 +7,7 @@ import { type AgentKnown, type AgentUses, ApiError, builtOf, type Catalogue, typ
 import { AgentMap } from "../AgentMap";
 import { go, Link } from "../router";
 import { aboutInstance, levels, PageHead, people, type Risk, risk, RISK_NAMES, runners, StatusBadge,
-         ToolBadges, triggers, useLoad, Waiting } from "../ui";
+         ToolBadges, triggers, useLoad, Waiting, when } from "../ui";
 
 const ORDER: Risk[] = ["changes", "outside", "writes", "reads"];
 
@@ -165,14 +165,78 @@ function Seen({ agent }: { agent: AgentKnown }) {
       </dl>
       {!layers.built && (
         <p className="note">{layers.uses ? "Its instructions are for those who make it, own it, approve its releases or audit it."
-          : `What it may do is for the people it serves and those who run it. To have it serve you, ask its owner, ${agent.owners.join(" or ") || "whom the directory names"}.`}</p>
+          : "What it may do is for the people it serves and those who run it: to have it serve you, ask for it."}</p>
       )}
     </section>
   );
 }
 
+// Asking for an agent, on its page: for someone it doesn't serve, ask for it or withdraw their
+// ask; for those an ask waits on, serve its asker through one of the agent's instances, as a
+// version of the settings for its approvers to sign, or decline it.
+
+function AskFor({ agent, reload }: { agent: AgentKnown; reload: () => void }) {
+  const [problem, setProblem] = useState<string>();
+  const act = async (method: "POST" | "DELETE") => {
+    try {
+      await send(method, `/studio/api/agents/${encodeURIComponent(agent.id)}/ask`);
+      reload();
+    } catch (e) {
+      setProblem((e as Error).message);
+    }
+  };
+  return (
+    <section className="card" id="ask">
+      <h3>Asking for it</h3>
+      {agent.ask
+        ? <p>You asked for it {when(agent.ask.asked_at)}. It waits on its owners and those who approve its instances, who answer it with a version of the settings that serves you.</p>
+        : <p>To have it serve you, ask for it: its owners and those who approve its instances see what you asked.</p>}
+      <div className="actions">
+        {agent.ask
+          ? <button type="button" id="unask" onClick={() => act("DELETE")}>Withdraw it</button>
+          : <button type="button" className="primary" id="ask-for" onClick={() => act("POST")}>Ask for it</button>}
+        {problem && <span className="problem">{problem}</span>}
+      </div>
+    </section>
+  );
+}
+
+function AsksWaiting({ agent, reload }: { agent: AgentKnown; reload: () => void }) {
+  const [said, setSaid] = useState<string>();
+  const instances = agent.instances;
+  const answer = async (ask: string, how: "serve" | "decline", instance?: string) => {
+    try {
+      const done = await send<{ serial?: number }>("POST", `/studio/api/asks/${ask}/${how}`,
+                                                 how === "serve" ? { instance } : undefined);
+      setSaid(how === "serve" ? `You asked for version ${done.serial} of the settings: a5s asks its approvers within a minute.` : "Declined.");
+      reload();
+    } catch (e) {
+      setSaid((e as Error).message);
+    }
+  };
+  if (!agent.asks?.length) return null;
+  return (
+    <section className="card" id="asks">
+      <h3>Asked for</h3>
+      <ul className="plain">{agent.asks.map((a) => (
+        <li key={a.id}>{a.person} asked for it {when(a.asked_at)} <span className="faint">· {a.why.join("; ")}</span>
+          <div className="actions">
+            {instances.map((i) => (
+              <button key={i.id} type="button" onClick={() => answer(a.id, "serve", i.id)}>Serve them through {i.id}</button>
+            ))}
+            <button type="button" onClick={() => answer(a.id, "decline")}>Decline</button>
+          </div>
+        </li>
+      ))}</ul>
+      {said && <p className="note">{said}</p>}
+    </section>
+  );
+}
+
 export function AgentPage({ id }: { id: string }) {
-  const { data: agent, error } = useLoad(() => get<AgentKnown>(`/studio/api/agents/${encodeURIComponent(id)}`), [id]);
+  const [version, setVersion] = useState(0);  // asked again after an ask, or its answer
+  const reload = () => setVersion((v) => v + 1);
+  const { data: agent, error } = useLoad(() => get<AgentKnown>(`/studio/api/agents/${encodeURIComponent(id)}`), [id, version]);
   const uses = agent && usesOf(agent) ? agent : undefined;
   const catalogue = useLoad(() => get<Catalogue>("/studio/api"), []);
   const changes = catalogue.data?.authoring.agents.includes(id) ?? false;
@@ -216,6 +280,8 @@ export function AgentPage({ id }: { id: string }) {
             </div>
             <div className="side">
               <Seen agent={agent} />
+              {agent.ask !== undefined && <AskFor agent={agent} reload={reload} />}
+              <AsksWaiting agent={agent} reload={reload} />
               {uses && <When agent={uses} />}
               {uses && <Knows agent={uses} />}
             </div>

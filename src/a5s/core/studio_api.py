@@ -20,7 +20,18 @@ from pydantic import BaseModel
 
 from a5s import authoring, cases, db, definitions
 from a5s.contract import Person
-from a5s.core import administration, drafts, ledger, memberships, publishing, studio, web
+from a5s.core import (
+    administration,
+    asks,
+    drafts,
+    ledger,
+    memberships,
+    publishing,
+    registry,
+    settings_app,
+    studio,
+    web,
+)
 from a5s.core import home as homes  # the studio's home: `home` is the site's
 from a5s.core.releases import ENGINEER, agent_owner
 
@@ -59,6 +70,12 @@ class DraftTry(BaseModel):
     person: str
     text: str
     model: str = "stand-in"
+
+
+class Serve(BaseModel):
+    """Which of an agent's instances is to serve someone who asked for it."""
+
+    instance: str
 
 
 class CaseRun(BaseModel):
@@ -161,6 +178,7 @@ def router(gw: Any) -> APIRouter:
         """What waits for whoever signed in, their drafts, and what of the studio they may
         use, whether or not they hold a role: the catalogue is everyone's."""
         with db.transaction(gw.url) as conn:
+            asks.settle(conn, gw.scenario, studio.instances(conn))  # served since, or lapsed
             return {"you": person.name, "waiting": homes.waiting(conn, gw, person),
                     "drafts": drafts.mine(conn, person), "catalogue": True,
                     "authoring": drafts.authors(person)}
@@ -197,7 +215,89 @@ def router(gw: Any) -> APIRouter:
                                                              gw.scenario)):
             raise HTTPException(404, "there's no such agent that you may see")
         watched = [i for i in every if studio.watches(i, person)]
-        return studio.seen(gw.scenario, definition, gw.scenario.tools(), watched, view)
+        shown = studio.seen(gw.scenario, definition, gw.scenario.tools(), watched, view)
+        with db.transaction(gw.url) as conn:  # asking for it, or the asks that wait on them
+            asks.settle(conn, gw.scenario, every)
+            if not asks.serving(gw.scenario, every, agent, person.id):
+                mine = asks.theirs(conn, gw.scenario.name, person.id, agent)
+                shown["ask"] = asks.shown(mine) if mine else None
+            if waiting := [a for a in asks.waiting(conn, gw.scenario, every, person)
+                           if a["agent"] == agent]:
+                shown["asks"] = waiting
+        return shown
+
+    # Asking for an agent (core/asks.py): someone who knows of it asks to be served by it, and
+    # the people it waits on answer it with a version of the settings, or decline it
+
+    def known_agent(conn: Any, person: Person, agent: str) -> tuple[Any, list[dict]]:
+        """An agent someone may know of, and the instances there are; refused as for one there
+        isn't, if they may not."""
+        definition = gw.definitions.get(agent)
+        every = studio.instances(conn)
+        if definition is None or not studio.layers(agent, definition, every, person, gw.scenario):
+            raise HTTPException(404, "there's no such agent that you may see")
+        return definition, every
+
+    @api.post("/studio/api/agents/{agent}/ask")
+    def studio_ask(agent: str, person: Annotated[Person, Depends(someone)]) -> dict:
+        """Ask to be served by an agent someone knows of: their open ask, if they have one."""
+        with db.transaction(gw.url) as conn:
+            _, every = known_agent(conn, person, agent)
+            try:
+                return asks.shown(asks.ask(conn, gw.scenario, every, person, agent))
+            except asks.Refused as e:
+                raise HTTPException(409, str(e)) from None
+
+    @api.delete("/studio/api/agents/{agent}/ask")
+    def studio_unask(agent: str, person: Annotated[Person, Depends(someone)]) -> dict:
+        """Withdraw someone's open ask for an agent."""
+        with db.transaction(gw.url) as conn:
+            mine = asks.theirs(conn, gw.scenario.name, person.id, agent)
+            ended = asks.end(conn, gw.scenario.name, str(mine["id"]), "withdrawn",
+                             person.id) if mine else None
+        if ended is None:
+            raise HTTPException(404, "you haven't asked for it")
+        return asks.shown(ended)
+
+    def waiting_on(conn: Any, person: Person, ask: str) -> dict:
+        """An open ask that waits on someone, with whose it is."""
+        every = studio.instances(conn)
+        found = next((a for a in asks.waiting(conn, gw.scenario, every, person) if a["id"] == ask),
+                     None)
+        if found is None:
+            raise HTTPException(404, "there's no such ask waiting on you")
+        return found
+
+    @api.post("/studio/api/asks/{ask}/decline")
+    def studio_decline(ask: str, person: Annotated[Person, Depends(someone)]) -> dict:
+        """Decline an ask that waits on someone."""
+        with db.transaction(gw.url) as conn:
+            waiting_on(conn, person, ask)
+            ended = asks.end(conn, gw.scenario.name, ask, "declined", person.id)
+        if ended is None:
+            raise HTTPException(404, "there's no such ask waiting on you")
+        return asks.shown(ended)
+
+    @api.post("/studio/api/asks/{ask}/serve", status_code=202)
+    def studio_serve(ask: str, body: Serve, person: Annotated[Person, Depends(someone)]) -> dict:
+        """Answer an ask that waits on someone with a version of the settings that serves its
+        asker through one of the agent's instances: a request, as the settings app makes, for
+        the core to propose to everyone it needs, which takes effect once they approve it."""
+        if not registry.approves(person):
+            raise HTTPException(403, "answering an ask is for the people who approve versions of "
+                                     "the settings")
+        with db.transaction(gw.url) as conn:
+            found = waiting_on(conn, person, ask)
+            instance = next((i for i in studio.instances(conn) if i["id"] == body.instance
+                             and i["definition"] == found["agent"]), None)
+            if instance is None:
+                raise HTTPException(404, f"there's no instance {body.instance} of the "
+                                         f"{found['agent']}")
+            try:
+                text = settings_app.serving(conn, gw, body.instance, found["asker"])
+                return settings_app.request(conn, gw, person, text, ask=ask)
+            except settings_app.Refused as e:  # in words, as the studio shows them
+                raise HTTPException(e.status, "; ".join(e.problems)) from None
 
     @api.get("/studio/api/agents/{agent}/measures")
     def studio_agent_measures(agent: str, person: Annotated[Person, Depends(studying)], days: int = 30,

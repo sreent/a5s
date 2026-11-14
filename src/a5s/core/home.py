@@ -20,7 +20,17 @@ from a5s.contract import (
     Person,
     parse_settings,
 )
-from a5s.core import administration, approvals, audit, memberships, registry, releases, samples
+from a5s.core import (
+    administration,
+    approvals,
+    asks,
+    audit,
+    memberships,
+    registry,
+    releases,
+    samples,
+    studio,
+)
 from a5s.core.tasks import OFFERED
 
 MOST = 20  # samples counted to grade, beyond which the home says "20 or more"
@@ -114,6 +124,9 @@ def waiting(conn: db.Connection, gw: Any, person: Person) -> list[dict]:
         found.append({"kind": "release", "what": f"Release {running.version} of a5s waits for "
                       f"your signature, as {releases.who(need.role)}", "why": [need.why],
                       "go": None, "how": "a5s release sign"})
+    for ask in asks.waiting(conn, scenario, studio.instances(conn), person):
+        found.append({"kind": "ask", "what": f"{ask['person']} asks for the {ask['agent']}",
+                      "why": ask["why"], "go": f"/studio/agents/{ask['agent']}"})
     tasks = conn.execute("select count(*) as n from tasks where owner = %s and parent is null "
                          "and status in ('blocked', %s)", (person.id, OFFERED)).fetchone()["n"]
     if tasks:

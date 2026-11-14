@@ -53,6 +53,7 @@ from a5s.contract import (
 from a5s.core import (
     approvals,
     asking,
+    asks,
     audit,
     budgets,
     chats,
@@ -2106,6 +2107,8 @@ def create_app(gw: Gateway) -> FastAPI:
         """Delete what's past its time to keep (core/retention.py), and record how much went.
         Archive what a5s keeps for anyone who has left (core/departures.py), apart, so neither
         holds up the other, nor the ledger's other writers."""
+        with db.transaction(gw.url) as conn:  # asks now served, or nobody answered
+            asks.settle(conn, gw.scenario, studio.instances(conn))
         with db.transaction(gw.url) as conn:
             gone = retention.sweep(conn, gw.clock(), gw.scenario.name,
                                    kept=gw.data_protection(conn).kept_for)

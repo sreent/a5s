@@ -123,6 +123,7 @@ def sweep(conn: db.Connection, now: datetime, scenario: str, kept: str = KEPT) -
            f"and not ({held})")  # nothing's left under the archive's name, such as in a
     # group chat, whose conversation goes by its own last message
     delete("questions", f"delete from questions where asked_at < {AGO}")
+    delete("asks", f"delete from agent_asks where ended_at < {AGO}")  # asking for an agent
     done = (f"(status in ('done', 'cancelled', 'failed') and updated_at < {AGO}) "
             f"or deadline < {AGO}")  # it can't run past its deadline
     delete("tasks", "delete from tasks where root in (select root from tasks group by root "

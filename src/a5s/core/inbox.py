@@ -28,7 +28,6 @@ from typing import Any
 
 import httpx
 import psycopg
-import yaml
 from fastapi import BackgroundTasks, FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -60,6 +59,7 @@ from a5s.core import (
     registry,
     repeats,
     samples,
+    settings_app,
     status,
     studio_api,
     tasking,
@@ -84,8 +84,6 @@ AWAY_RETRY = 5  # seconds a chat or a person is asked to wait before trying agai
 log = logging.getLogger(__name__)
 MAX_BYTES = 256 * 1024  # far more than one message needs
 TRIES = 3  # deliveries of a Matrix event a5s can't act on before it's skipped, and recorded
-REQUESTS_A_DAY = 5  # versions one person may ask for in the settings app [starting value]
-MAX_SETTINGS = 64 * 1024  # characters of settings, as written
 
 
 class LocalMessage(BaseModel):
@@ -1019,20 +1017,7 @@ def create_app(gw: Any) -> FastAPI:
         return person
 
     def drafted(text: str, last: dict | None) -> tuple[Settings | None, bytes, list[str]]:
-        """The version someone wrote, with the next serial, and why it can't be proposed. It's
-        checked strictly before a5s works with it: no YAML anchors or aliases, which can make a
-        few bytes into gigabytes, and only what a5s's format allows."""
-        if len(text) > MAX_SETTINGS:
-            return None, b"", [f"settings are at most {MAX_SETTINGS // 1024} KB"]
-        try:
-            parse_settings(text.encode())
-            data = yaml.safe_load(text)
-            data["serial"] = (last["serial"] if last else 0) + 1
-            raw = yaml.safe_dump(data, sort_keys=False, allow_unicode=True).encode()
-            settings = parse_settings(raw)
-        except (yaml.YAMLError, ValueError, KeyError, TypeError, AttributeError) as exc:
-            return None, b"", [f"a5s can't read it as settings: {exc}"]
-        return settings, raw, gw.unusable(settings, last)
+        return settings_app.drafted(gw, text, last)
 
     # The notebook: what agents learned from records, for their owners to read and remove
 
@@ -1365,30 +1350,10 @@ def create_app(gw: Any) -> FastAPI:
         """Ask for a version: the gateway proposes it to everyone it needs within a minute."""
         person = settling(authorization)
         with db.transaction(gw.url) as conn:
-            conn.execute("select pg_advisory_xact_lock(hashtext(%s))", (f"settings {person.id}",))
-            asked = conn.execute(
-                "select count(*) filter (where outcome is null) as waiting, count(*) filter "
-                "(where asked_at > now() - interval '1 day') as today from settings_requests "
-                "where scenario = %s and person = %s", (gw.scenario.name, person.id)).fetchone()
-            if asked["waiting"]:
-                raise HTTPException(409, {"problems": [
-                    "a5s is still proposing what you asked for last: try again in a minute"]})
-            if asked["today"] >= REQUESTS_A_DAY:
-                raise HTTPException(429, {"problems": [(
-                    f"you've asked for {REQUESTS_A_DAY} versions today, which is as many as a "
-                    "day allows: try again tomorrow")]})
-            last = approvals.latest(conn, gw.scenario.name)
-            settings, raw, problems = drafted(body.text, last)
-            if settings is None or problems:
-                raise HTTPException(409, {"problems": problems})
-            row = conn.execute("insert into settings_requests (scenario, person, raw) "
-                               "values (%s, %s, %s) returning id",
-                               (gw.scenario.name, person.id, raw)).fetchone()
-            ledger.append(conn, {"kind": "admin", "action": "request", "run": None,
-                                 "instance": None, "acts_for": [], "decision": "record",
-                                 "args": {"settings": settings.version, "serial": settings.serial,
-                                          "by": person.id, "identity": "verified"}})
-        return {"request": row["id"], "serial": settings.serial}
+            try:
+                return settings_app.request(conn, gw, person, body.text)
+            except settings_app.Refused as e:
+                raise HTTPException(e.status, {"problems": e.problems}) from None
 
     # Every page's sidebar: who signed in, and the pages they may use (webchat/shell.js)
 

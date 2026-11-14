@@ -68,3 +68,4 @@ These are the numbers a5s starts from, by the phase that needs them, and where e
 | Repeating tasks | 5 at once for each person with an agent, offered or going | Enough for a week's routine, few enough that one person's can't fill an agent's time | The platform owner | The code, by a release |
 | Reports | 20 facts in one report, and the rest counted | One message stays readable | The agent owner | The code, by a release |
 | Drafts | 20 at once for each person in the studio | Enough to work on, few enough to keep tidy | The platform owner | The code, by a release |
+| Asking for an agent | An ask nobody answers lapses after 30 days, and one person has one open for each agent | Long enough for its approvers to get to it, short enough that their home doesn't fill with what nobody wants any more | The platform owner | The code, by a release |
