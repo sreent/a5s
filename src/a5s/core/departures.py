@@ -22,9 +22,9 @@ from __future__ import annotations
 
 import secrets
 from datetime import datetime, timedelta
+from typing import Final
 
-import psycopg
-
+from a5s import db
 from a5s.contract import Scenario
 from a5s.core import groups, ledger
 
@@ -35,21 +35,21 @@ MANY, MANY_GRACE = 3, timedelta(days=7)
 FORMER = "former:"  # what an archive's name starts with: never a person in the directory
 
 # What a5s keeps for a person, which it archives under the archive's name
-KEPT = ("turns", "summaries", "inbound", "outbox", "chats", "digest_items", "urgent_held",
+KEPT: Final = ("turns", "summaries", "inbound", "outbox", "chats", "digest_items", "urgent_held",
         "profile_notes", "reminders", "report_fires")
 # What only serves the person while they're here, which it lets go
-LET_GO = ("preferences", "report_seen", "digest_waits", "urgent_sent", "digests", "spend",
+LET_GO: Final = ("preferences", "report_seen", "digest_waits", "urgent_sent", "digests", "spend",
           "sign_in_groups", "agent_drafts")
 
 
-def sweep(conn: psycopg.Connection, scenario: Scenario, now: datetime) -> list[str]:
+def sweep(conn: db.Connection, scenario: Scenario, now: datetime) -> list[str]:
     """Archive what a5s keeps for each person the directory has missed for a day, in the
     caller's transaction, or a week, when so many are missing at once that it looks like the
     directory. Someone back before then is forgotten as missing. Who was archived."""
     found = {r["person"] for r in conn.execute(  # what's left of them, even long after they
-        " union ".join([f"select distinct person from {table}" for table in KEPT + LET_GO]
-                       + ["select distinct owner from tasks",
-                          "select distinct owner from task_repeats"]))}
+        " union ".join((*(f"select distinct person from {table}" for table in KEPT + LET_GO),
+                        "select distinct owner from tasks",
+                        "select distinct owner from task_repeats")))}
     gone = sorted(p for p in found if p and not p.startswith(FORMER) and not groups.of(p)
                   and scenario.person(p) is None)  # a group chat's conversation is nobody's,
     # and nor is a day's use of the budget by runs that act for nobody
@@ -68,7 +68,7 @@ def sweep(conn: psycopg.Connection, scenario: Scenario, now: datetime) -> list[s
     return due
 
 
-def hold(conn: psycopg.Connection, person: str, *, shared: bool = False) -> None:
+def hold(conn: db.Connection, person: str, *, shared: bool = False) -> None:
     """Hold what a5s keeps for someone still, until the caller's transaction ends: archiving
     and erasing them each alone, and runs opening for them alongside each other, so neither
     archiving nor erasure works under a run that has just begun for them (core/erasure.py)."""
@@ -76,7 +76,7 @@ def hold(conn: psycopg.Connection, person: str, *, shared: bool = False) -> None
     conn.execute(f"select {took}(hashtextextended(%s, 0))", (f"a5s person {person}",))
 
 
-def archive(conn: psycopg.Connection, person: str, now: datetime) -> str:
+def archive(conn: db.Connection, person: str, now: datetime) -> str:
     """Archive what a5s keeps for someone who left, under a name of its own. The name, which
     the record of whose archive it is keeps, and the ledger doesn't, so that once the archive
     is erased, nothing a5s keeps of what others said links it back to them."""
@@ -93,7 +93,7 @@ def archive(conn: psycopg.Connection, person: str, now: datetime) -> str:
     return name
 
 
-def unsummarise(conn: psycopg.Connection, names: list[str]) -> int:
+def unsummarise(conn: db.Connection, names: list[str]) -> int:
     """Let go of each group chat's summary that holds anything these said: folded from their
     turns, or kept as their facts or corrections. The group's turns stay, and its next run
     summarises them again, without what's gone. How many went."""
@@ -107,7 +107,7 @@ def unsummarise(conn: psycopg.Connection, names: list[str]) -> int:
         "  '[]')) c where c ->> 'speaker' = any(%(names)s)))", {"names": names}).rowcount
 
 
-def rename(conn: psycopg.Connection, person: str, now: datetime) -> str:
+def rename(conn: db.Connection, person: str, now: datetime) -> str:
     """Put what a5s keeps for someone under a name of its own, which no person has: ending
     what was going on for them, and letting go of what served them only while they were here.
     In group chats, the name stands where they were, so a run there still knows who heard what,

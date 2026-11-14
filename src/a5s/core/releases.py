@@ -36,12 +36,11 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import psycopg
 import yaml
 from psycopg.types.json import Jsonb
 
 import a5s
-from a5s import definitions
+from a5s import db, definitions
 from a5s.contract import ASSURANCE, RELEASE_APPROVER, Person, Scenario, Signature
 from a5s.core import ledger, signing
 
@@ -301,7 +300,7 @@ def _can(person: Person, role: str, team: str, inside: set[str]) -> bool:
     return role in person.roles
 
 
-def awaiting(conn: psycopg.Connection, running: Running | None, scenario: Scenario, team: str,
+def awaiting(conn: db.Connection, running: Running | None, scenario: Scenario, team: str,
              person: Person) -> list[Need]:
     """What the release a5s is waits for from someone, if this deployment hasn't approved it:
     each of its needs they could meet, unless they've signed it already."""
@@ -372,7 +371,7 @@ def judge(need: list[Need], raw: bytes, signatures: list[Signature], scenario: S
     return Verdict(False, tuple(need), tuple(missing + problems), signed)
 
 
-def check(conn: psycopg.Connection, digest: str, scenario: Scenario, team: str,
+def check(conn: db.Connection, digest: str, scenario: Scenario, team: str,
           _seen: frozenset[str] = frozenset()) -> Verdict:
     """Whether this deployment approved a release, checked again from what was signed,
     back to the first release it approved, or the last baseline. Editing the record
@@ -404,7 +403,7 @@ def check(conn: psycopg.Connection, digest: str, scenario: Scenario, team: str,
     return judge(needs(yaml.safe_load(raw), old, row["advisory"]), raw, signatures, scenario, team)
 
 
-def record(conn: psycopg.Connection, raw: bytes, signatures: list[Signature], scenario: Scenario,
+def record(conn: db.Connection, raw: bytes, signatures: list[Signature], scenario: Scenario,
            team: str, advisory: str | None = None, *, baseline: bool = False) -> Verdict:
     """Record people's signatures over a release, as the database's administrator.
 
@@ -445,7 +444,7 @@ def record(conn: psycopg.Connection, raw: bytes, signatures: list[Signature], sc
     return verdict
 
 
-def last_approved(conn: psycopg.Connection) -> dict | None:
+def last_approved(conn: db.Connection) -> dict | None:
     row = conn.execute("select manifest from releases where approved_at is not null "
                        "order by approved_at desc limit 1").fetchone()
     return yaml.safe_load(bytes(row["manifest"])) if row else None
@@ -458,7 +457,7 @@ class Releases:
     current: Running | None
     approved: set[str] = field(default_factory=set)
 
-    def problems(self, conn: psycopg.Connection, scenario: Scenario, team: str) -> list[str]:
+    def problems(self, conn: db.Connection, scenario: Scenario, team: str) -> list[str]:
         if self.current is None:
             return []
         if self.current.problems:

@@ -23,10 +23,9 @@ and for whom, in counts.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, LiteralString
 
-import psycopg
-
+from a5s import db
 from a5s.core import departures, proposals, topics
 
 FIRST_LINE = "split_part(said, E'\\n', 1)"  # what a change does: the rest is records and people
@@ -43,7 +42,7 @@ LEDGER = {"admin": "what the team that runs a5s and the officer did",
 LEDGER_AT = "(entry::jsonb ->> 'at')::timestamptz"  # when an entry was written
 
 
-def holder(conn: psycopg.Connection, person: str) -> dict[str, Any]:
+def holder(conn: db.Connection, person: str) -> dict[str, Any]:
     """Whose time an id, or an archive's name, covers: the id, and from when to when it was
     theirs (core/export.py). An archive's runs from the id's archive before it, if any."""
     if person.startswith(departures.FORMER):
@@ -63,20 +62,20 @@ def holder(conn: psycopg.Connection, person: str) -> dict[str, Any]:
             "until": None, "archives": archives}
 
 
-def gather(conn: psycopg.Connection, person: str) -> dict[str, Any]:
+def gather(conn: db.Connection, person: str) -> dict[str, Any]:
     """All a5s keeps about one holder of an id, or of an archive's name."""
     whose = holder(conn, person)
     archives, since, until = whose["archives"], whose["since"], whose["until"]
     ids = [whose["id"]] if whose["id"] else []
     params = {"names": [person], "ids": ids, "since": since, "until": until}
 
-    def rows(sql: str) -> list[dict[str, Any]]:
+    def rows(sql: LiteralString) -> list[dict[str, Any]]:
         return [dict(r) for r in conn.execute(sql, params)]
 
-    def count(sql: str) -> int:
+    def count(sql: LiteralString) -> int:
         return conn.execute(sql, params).fetchone()["n"]
 
-    def within(column: str) -> str:  # what a5s keeps by the id itself: this holder's time
+    def within(column: LiteralString) -> LiteralString:  # what a5s keeps by the id itself: this holder's time
         return (f"(%(since)s::timestamptz is null or {column} >= %(since)s) "
                 f"and (%(until)s::timestamptz is null or {column} < %(until)s)")
 

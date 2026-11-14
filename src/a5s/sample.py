@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
-import psycopg
 import yaml
 from psycopg import sql
 
@@ -44,26 +43,19 @@ class SampleScenario:
         self.folder = folder
         self.database_url = database_url
         data = yaml.safe_load((folder / "data.yaml").read_text())
-        self._people = {p["id"]: self._person(p) for p in data["people"]}
+        self._people = {p["id"]: Person.listed(p, self.folder) for p in data["people"]}
         self._parts = data.get("parts") or {}
         self._records = {r["key"]: r for r in data["records"]}
         self._messages = data.get("messages") or []
 
     # Directory
 
-    def _person(self, entry: dict) -> Person:
-        key = self.folder / "keys" / f"{entry['id']}.pub"
-        return Person(
-            **{k: tuple(v) if isinstance(v, list) else v for k, v in entry.items()},
-            public_key=key.read_text().strip() if key.exists() else None,
-        )
-
     def person(self, person_id: str) -> Person | None:
         return self._people.get(person_id)
 
     # Its own system, kept apart from a5s's tables
 
-    def setup(self, conn: psycopg.Connection, tools_role: str) -> None:
+    def setup(self, conn: db.Connection, tools_role: str) -> None:
         conn.execute("""
             create schema if not exists sample;
             create table if not exists sample.drafts (

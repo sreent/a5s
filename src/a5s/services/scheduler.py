@@ -208,7 +208,7 @@ class Scheduler:
     # Taking work, and holding its conversation, or its schedule, while working on it
 
     @staticmethod
-    def _lease(conn: psycopg.Connection, key: str, holder: str) -> bool:
+    def _lease(conn: db.Connection, key: str, holder: str) -> bool:
         return conn.execute(
             """
             insert into leases (key, holder, expires_at)

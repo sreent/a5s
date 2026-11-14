@@ -34,10 +34,12 @@ The ledger records each erasure, by whom and for whom, in counts, and nothing it
 from __future__ import annotations
 
 from datetime import datetime
+from typing import LiteralString
 
-import psycopg
+from psycopg.abc import Params
 from psycopg.types.json import Jsonb
 
+from a5s import db
 from a5s.core import chats, departures, export
 
 # What each kind an erasure counts is, in the words of what a5s keeps (docs/data-protection.md)
@@ -73,7 +75,7 @@ class Busy(Exception):
     """A run is at work for them: it might write what it read of them once they're erased."""
 
 
-def busy(conn: psycopg.Connection, person: str) -> bool:
+def busy(conn: db.Connection, person: str) -> bool:
     """Whether a run, or a task's slice, is at work for someone now: open, and alive."""
     return conn.execute(
         "select 1 from runs where %(p)s = any(acts_for) and closed_at is null "
@@ -82,7 +84,7 @@ def busy(conn: psycopg.Connection, person: str) -> bool:
         {"p": person}).fetchone() is not None
 
 
-def erase(conn: psycopg.Connection, person: str, now: datetime,
+def erase(conn: db.Connection, person: str, now: datetime,
           here: bool = False) -> tuple[dict[str, int], list[str]]:
     """Erase what a5s keeps about one holder of an id, or one archive, in the caller's
     transaction, holding them still: `here` if the directory names them now. How much of each
@@ -94,7 +96,7 @@ def erase(conn: psycopg.Connection, person: str, now: datetime,
         raise Busy(person)
     gone: dict[str, int] = {}
 
-    def delete(kind: str, sql: str, params: tuple) -> None:
+    def delete(kind: str, sql: LiteralString, params: Params) -> None:
         if count := conn.execute(sql, params).rowcount:
             gone[kind] = gone.get(kind, 0) + count
 

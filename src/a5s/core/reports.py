@@ -17,23 +17,23 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-import psycopg
 from psycopg.types.json import Jsonb
 
+from a5s import db
 from a5s.contract import Person, Record
 from a5s.core.obligations import WITHHELD, day, local
 
 MOST = 20  # facts in one report; the rest are counted [TBC]
 
 
-def fired(conn: psycopg.Connection, instance: str, person: str, source: str,
+def fired(conn: db.Connection, instance: str, person: str, source: str,
           due: datetime) -> bool:
     return conn.execute("select 1 from report_fires where instance_id = %s and person = %s "
                         "and source = %s and due_at = %s",
                         (instance, person, source, due)).fetchone() is not None
 
 
-def fire(conn: psycopg.Connection, instance: str, person: str, source: str, due: datetime,
+def fire(conn: db.Connection, instance: str, person: str, source: str, due: datetime,
          now: datetime, outcome: str, run: str | None = None,
          records: dict[str, Any] | None = None) -> bool:
     """Record that the day's report went, whether it ran or not, with what a run tells them
@@ -55,7 +55,7 @@ class News:
     records: dict[str, dict[str, Any]] = field(default_factory=dict)  # theirs now, kept once told
 
 
-def news(conn: psycopg.Connection, scenario: str, instance: str, person: Person, source: str,
+def news(conn: db.Connection, scenario: str, instance: str, person: Person, source: str,
          records: list[Record], now: datetime, *, withheld: bool = False,
          beyond: frozenset[str] = frozenset()) -> News:
     """What changed in someone's records of a kind since the agent last told them, and what
@@ -145,7 +145,7 @@ def task(person: Person, news: News) -> str:
     return "\n".join([head, *(f"- {fact}" for fact in news.facts), close])
 
 
-def told(conn: psycopg.Connection, run: str) -> None:
+def told(conn: db.Connection, run: str) -> None:
     """The person has the report a run made, sent or waiting in their inbox: remember what it
     told them, as of when it looked, so the next report says only what changed since. A
     report that never reached them is told again, with whatever else changed, next time."""

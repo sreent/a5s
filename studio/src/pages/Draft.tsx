@@ -108,7 +108,7 @@ function TheirDraft({ draft }: { draft: Draft }) {
   const [problem, setProblem] = useState<string | null>(null);
   const copy = async () => {
     try {
-      const made = await send<Draft>("POST", "/studio/api/drafts", { copy: draft.id });
+      const made = await send<Draft>("POST", "/studio/api/drafts", { copy_of: draft.id });
       go({ page: "draft", draft: made.id });
     } catch (e) {
       setProblem((e as Error).message);

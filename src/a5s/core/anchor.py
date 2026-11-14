@@ -17,8 +17,7 @@ from collections import defaultdict
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 
-import psycopg
-
+from a5s import db
 from a5s.core.ledger import GENESIS, canonical
 from a5s.core.stores import Exists, Store
 
@@ -87,12 +86,12 @@ def _rows(store: Store, head: Head, prev: bytes) -> list[dict] | None:
     return rows if rows[-1]["seq"] == head.seq and prev.hex() == head.hash else None
 
 
-def _hashes(conn: psycopg.Connection, seqs: set[int]) -> dict[int, str]:
+def _hashes(conn: db.Connection, seqs: set[int]) -> dict[int, str]:
     rows = conn.execute("select seq, hash from ledger where seq = any(%s)", (list(seqs),))
     return {r["seq"]: bytes(r["hash"]).hex() for r in rows}
 
 
-def tip(conn: psycopg.Connection, store: Store) -> Copy | None:
+def tip(conn: db.Connection, store: Store) -> Copy | None:
     """The last copy that continues the ones before it and matches the ledger.
 
     Heads that continue nothing, or that the ledger never had, are passed over. But
@@ -128,7 +127,7 @@ def _put(store: Store, base: str, ext: str, body: bytes) -> str:
     raise AnchorError(f"{base}{ext} and the names after it are all taken")
 
 
-def anchor(conn: psycopg.Connection, store: Store, *, batch: int = 10_000) -> list[Head]:
+def anchor(conn: db.Connection, store: Store, *, batch: int = 10_000) -> list[Head]:
     """Copy every entry not yet copied, in segments of up to `batch` entries."""
     if not conn.execute("select pg_try_advisory_xact_lock(%s) as got", (_LOCK,)).fetchone()["got"]:
         return []  # another copier is at work
@@ -157,7 +156,7 @@ def anchor(conn: psycopg.Connection, store: Store, *, batch: int = 10_000) -> li
     return made
 
 
-def _difference(conn: psycopg.Connection, rows: list[dict]) -> str | None:
+def _difference(conn: db.Connection, rows: list[dict]) -> str | None:
     """The first way the ledger differs from a copy of some of its entries, if it does."""
     stored = {r["seq"]: r for r in conn.execute(
         "select seq, entry, hash from ledger where seq between %s and %s",
@@ -171,7 +170,7 @@ def _difference(conn: psycopg.Connection, rows: list[dict]) -> str | None:
     return None
 
 
-def check(conn: psycopg.Connection, store: Store, *, every: timedelta = timedelta(hours=1),
+def check(conn: db.Connection, store: Store, *, every: timedelta = timedelta(hours=1),
           now: datetime | None = None) -> AnchorCheck:
     """Whether the ledger matches its copies, the copies are whole, and they're up to date."""
     problems = [f"someone tried to replace or delete {key}"

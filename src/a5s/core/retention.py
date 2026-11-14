@@ -31,28 +31,30 @@ from __future__ import annotations
 
 import re
 from datetime import datetime, timedelta
+from typing import Final, LiteralString
 
-import psycopg
-
+from a5s import db
 from a5s.core import departures
 
-KEPT = "12 months"  # after a conversation's last message [TBC: the data protection officer]
+KEPT: Final = "12 months"  # after a conversation's last message [TBC: the data protection officer]
 HORIZON = re.compile(r"[1-9][0-9]{0,3} (hour|day|month)s?")
-OVER = "1 hour"  # after a run closes, before its handles and what it read go
+OVER: Final = "1 hour"  # after a run closes, before its handles and what it read go
 LOCK = 7_310_018  # so two sweeps don't work at once
 
 # Where conversations' words are, and when each was said
-SAID = (("turns", "at"), ("inbound", "received_at"), ("outbox", "at"), ("digest_items", "at"),
-        ("urgent_held", "at"))
+SAID: Final[tuple[tuple[LiteralString, LiteralString], ...]] = (
+    ("turns", "at"), ("inbound", "received_at"), ("outbox", "at"), ("digest_items", "at"),
+    ("urgent_held", "at"))
 # Whose conversation each is: a person's own, or a group chat's (core/groups.py), whose
 # messages are kept under whoever sent them, and its answers under whoever asked
-WHOSE = {"inbound": "coalesce(conversation, person)",
-         "outbox": "coalesce((select conversation from inbound i where i.id = outbox.inbound_id), "
-                   "person)"}
+WHOSE: Final[dict[str, LiteralString]] = {
+    "inbound": "coalesce(conversation, person)",
+    "outbox": "coalesce((select conversation from inbound i where i.id = outbox.inbound_id), "
+              "person)"}
 
 
-def sweep(conn: psycopg.Connection, now: datetime, scenario: str,
-          kept: str = KEPT) -> dict[str, int]:
+def sweep(conn: db.Connection, now: datetime, scenario: str,
+          kept: LiteralString = KEPT) -> dict[str, int]:
     """Delete what's past its time, in the caller's transaction, with `now` the core's clock,
     which stamps a day's use and the digest log, and `scenario` the scenario it runs. How many
     of each kind went, leaving out the kinds where none did. What's kept for KEPT is kept for
@@ -63,7 +65,7 @@ def sweep(conn: psycopg.Connection, now: datetime, scenario: str,
         return {}  # another sweep is at work
     gone: dict[str, int] = {}
 
-    def delete(kind: str, sql: str, params: tuple = ()) -> None:
+    def delete(kind: str, sql: LiteralString, params: tuple = ()) -> None:
         if count := conn.execute(sql, params).rowcount:
             gone[kind] = gone.get(kind, 0) + count
 
@@ -110,10 +112,10 @@ def sweep(conn: psycopg.Connection, now: datetime, scenario: str,
     delete("counts", "delete from action_counts where at < now() - interval '31 days'")
     delete("chats", "delete from chats where person in (select archived_as from departures "
                     f"where archived_at < now() - interval '{kept}')")  # an archive's, with it
-    held = " or ".join([f"exists (select 1 from {table} x where x.person = d.archived_as)"
-                        for table in departures.KEPT]
-                       + ["exists (select 1 from turns x where x.speaker = d.archived_as)",
-                          "exists (select 1 from tasks x where x.owner = d.archived_as)"])
+    held = " or ".join((*(f"exists (select 1 from {table} x where x.person = d.archived_as)"
+                          for table in departures.KEPT),
+                        "exists (select 1 from turns x where x.speaker = d.archived_as)",
+                        "exists (select 1 from tasks x where x.owner = d.archived_as)"))
     delete("departures", "delete from departures d where archived_at < now() - interval "  # once
            f"'{kept}' and not ({held})")  # nothing's left under the archive's name, such as in a
     # group chat, whose conversation goes by its own last message

@@ -28,6 +28,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import psycopg
 
+from a5s import db
 from a5s.config import ModelConfig
 from a5s.contract import INSTANCE_APPROVER, PART_DELEGATE, PART_OWNER, Person, Scenario, Tool
 from a5s.core import ledger, measures, registry, values
@@ -59,7 +60,7 @@ def watches(inst: dict, person: Person) -> bool:
                    for p in parts_of(inst)))
 
 
-def instances(conn: psycopg.Connection, viewer: Person | None = None, *,
+def instances(conn: db.Connection, viewer: Person | None = None, *,
               retired: bool = False) -> list[dict]:
     """The instances there are, or those the viewer may watch: with the retired ones, whose
     runs are still within an agent's figures, if `retired`."""
@@ -160,7 +161,7 @@ def agent(scenario: Scenario, definition: Definition, tools: dict[str, Tool],
     return found
 
 
-def catalogue(conn: psycopg.Connection, scenario: Scenario, definitions: dict[str, Definition],
+def catalogue(conn: db.Connection, scenario: Scenario, definitions: dict[str, Definition],
               tools: dict[str, Tool], viewer: Person | None = None) -> list[dict]:
     """Each agent of the release, and where it runs: for a viewer, the agents they own or
     author, and those with an instance they may watch, with those instances alone, and why
@@ -207,7 +208,7 @@ def time_zone(name: str) -> ZoneInfo:
     raise UnknownZone(f"there's no time zone {name[:64]!r}")
 
 
-def figures(conn: psycopg.Connection, scenario: Scenario, models: dict[str, ModelConfig],
+def figures(conn: db.Connection, scenario: Scenario, models: dict[str, ModelConfig],
             insts: list[dict], days: int = 30, now: datetime | None = None,
             zone: str = "UTC") -> dict:
     """How some instances are doing over the last `days` days: the measures, as `a5s
@@ -309,7 +310,7 @@ def given(scenario: Scenario, trigger: dict, seen: dict | None, texts: Iterable[
     return found
 
 
-def handled(conn: psycopg.Connection, run: str, keys: Iterable[str]) -> None:
+def handled(conn: db.Connection, run: str, keys: Iterable[str]) -> None:
     """Keep, as long as the run, the records it handled, by key."""
     found = sorted({k for k in keys if isinstance(k, str) and k})
     if found:
@@ -317,7 +318,7 @@ def handled(conn: psycopg.Connection, run: str, keys: Iterable[str]) -> None:
                      "select %s::uuid, unnest(%s::text[]) on conflict do nothing", (run, found))
 
 
-def _handled(conn: psycopg.Connection, runs: list[str]) -> dict[str, set[str]]:
+def _handled(conn: db.Connection, runs: list[str]) -> dict[str, set[str]]:
     found: dict[str, set[str]] = {r: set() for r in runs}
     for row in conn.execute("select run_id::text as run, record from run_records "
                             "where run_id = any(%s::uuid[])", (runs,)):
@@ -351,7 +352,7 @@ def _cursor(before: str | None) -> tuple[datetime, str] | None:
     return datetime.fromisoformat(at), str(uuid.UUID(run)) if run else LAST
 
 
-def runs(conn: psycopg.Connection, scenario: Scenario, inst: dict,
+def runs(conn: db.Connection, scenario: Scenario, inst: dict,
          viewer: Person | None = None, before: str | None = None, limit: int = RUNS,
          names: bool = True) -> dict:
     """An instance's runs, newest first, a page at a time, each page after the run the one
@@ -383,7 +384,7 @@ def _calls(entries: list[dict]) -> list[dict]:
             for e in entries if e.get("kind") == "tool" and "of" not in e]
 
 
-def run(conn: psycopg.Connection, scenario: Scenario, run_id: str,
+def run(conn: db.Connection, scenario: Scenario, run_id: str,
         viewer: Person | None = None, names: bool = True) -> dict | None:
     """What a run did: what started it, whom it acted for, how it ended, the records it
     handled, and each tool call with the policy's decision; and, for the team that runs a5s,

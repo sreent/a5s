@@ -19,7 +19,7 @@ from __future__ import annotations
 import hashlib
 from typing import Any
 
-import psycopg
+from a5s import db
 
 LIMIT = 20  # people in a group chat an agent works in [TBC]
 PREFIX = "group:"  # what a group's name starts with: never a person in the directory
@@ -53,7 +53,7 @@ def key(channel: str, place: str) -> str:
     return PREFIX + hashlib.sha256(f"{channel}\n{place}".encode()).hexdigest()[:16]
 
 
-def record(conn: psycopg.Connection, channel: str, place: str) -> str:
+def record(conn: db.Connection, channel: str, place: str) -> str:
     """The group's name, noting the chat the first time a5s hears from it."""
     name = key(channel, place)
     conn.execute("insert into groups (id, channel, place) values (%s, %s, %s) "

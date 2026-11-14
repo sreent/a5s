@@ -29,8 +29,7 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
-import psycopg
-
+from a5s import db
 from a5s.contract import InstanceSettings, Person, Settings
 from a5s.core import registry, sealing
 from a5s.core.identity import (
@@ -115,7 +114,7 @@ def _vouching(key: str, scenario: str, serial: int, raw: bytes) -> str:
 
 # Proposing a version, and saying what it changes
 
-def propose(conn: psycopg.Connection, scenario: str, settings: Settings) -> tuple[dict, bool]:
+def propose(conn: db.Connection, scenario: str, settings: Settings) -> tuple[dict, bool]:
     """Record a version for the instance approvers to approve: its record, and whether it's new."""
     version = digest(settings.raw)
     row = conn.execute(
@@ -128,7 +127,7 @@ def propose(conn: psycopg.Connection, scenario: str, settings: Settings) -> tupl
                         (scenario, version)).fetchone(), False
 
 
-def latest(conn: psycopg.Connection, scenario: str) -> dict | None:
+def latest(conn: db.Connection, scenario: str) -> dict | None:
     """The version in force: the one applied last."""
     return conn.execute("select serial, version, raw from settings_versions where scenario = %s "
                         "order by serial desc limit 1", (scenario,)).fetchone()
@@ -404,7 +403,7 @@ def check(verifier: Verifier, scenario: Any, client_id: str, token: str, version
     return person, claims
 
 
-def record(conn: psycopg.Connection, scenario: str, version: str, person: str, token: str,
+def record(conn: db.Connection, scenario: str, version: str, person: str, token: str,
            salt: str, claims: dict) -> dict:
     """Record an approval, with the sign-in that made it, for the gateway to seal. Refused if
     the person has approved this version already, or the sign-in was used before."""
@@ -425,7 +424,7 @@ def record(conn: psycopg.Connection, scenario: str, version: str, person: str, t
     return {**approval, **row}
 
 
-def recorded(conn: psycopg.Connection, scenario: str, version: str) -> list[str]:
+def recorded(conn: db.Connection, scenario: str, version: str) -> list[str]:
     """Who has approved a version, as the channels app recorded it, sealed yet or not: for
     saying who's still needed. Only what the gateway sealed counts (approvers)."""
     return [r["person"] for r in conn.execute(
@@ -433,7 +432,7 @@ def recorded(conn: psycopg.Connection, scenario: str, version: str) -> list[str]
         "and refused is null order by id", (scenario, version))]
 
 
-def seal_pending(conn: psycopg.Connection, keys: tuple[str, ...], verifier: Verifier | None,
+def seal_pending(conn: db.Connection, keys: tuple[str, ...], verifier: Verifier | None,
                  scenario: Any, client_id: str | None) -> list[str]:
     """Check again each approval the channels app recorded, seal it, and let its sign-in go,
     in the gateway: or refuse it. Why each refused one was."""
@@ -457,7 +456,7 @@ def seal_pending(conn: psycopg.Connection, keys: tuple[str, ...], verifier: Veri
     return refused
 
 
-def approvers(conn: psycopg.Connection, keys: tuple[str, ...], scenario: str,
+def approvers(conn: db.Connection, keys: tuple[str, ...], scenario: str,
               version: str) -> tuple[list[str], list[str]]:
     """Who approved a version, by approvals the core sealed, and what's wrong with any other."""
     valid, problems = [], []

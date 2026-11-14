@@ -27,7 +27,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import httpx
 import uvicorn
@@ -48,7 +48,7 @@ STAND_IN = "stand-in"  # the model a draft tries with, unless a real one is aske
 STAND_IN_URL = "https://stand-in.sandbox.a5s/v1"  # never leaves the sandbox: it answers itself
 SIGNERS = ("instance-approver", "part-owner:")  # whose signatures its own settings carry
 KEY = re.compile(r"[a-z0-9]{6,32}")  # a draft's, as the studio names it to the sandbox
-QUIET = "1 hour"  # how long it keeps what's said in it, after it's quiet: a try's alone
+QUIET: Final = "1 hour"  # how long it keeps what's said in it, after it's quiet: a try's alone
 SWEEP_EVERY = 600  # seconds between its sweeps
 
 

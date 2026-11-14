@@ -229,8 +229,9 @@ class Matrix:
         self._rooms.setdefault(made.json()["room_id"], set()).add(bot)
         return {"room": made.json()["room_id"], "bot": bot}
 
-    def send(self, reply_to: dict[str, str], text: str) -> None:
-        """Send text into a room, as the bot that's in it."""
+    def send(self, reply_to: dict[str, str], text: str, card: dict | None = None) -> None:
+        """Send text into a room, as the bot that's in it. A card is Teams's alone: Matrix
+        sends the text, which says what the card would."""
         if self.agent_of(reply_to.get("bot", "")) is None:
             raise ValueError("a5s speaks only as its own bots")
         self._call("PUT", f"/rooms/{quote(reply_to['room'], safe='')}/send/m.room.message/"

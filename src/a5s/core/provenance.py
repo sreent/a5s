@@ -12,8 +12,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import psycopg
-
+from a5s import db
 from a5s.contract import Scenario
 from a5s.core import groups, values
 from a5s.core.values import Value
@@ -23,13 +22,13 @@ A5S = "a5s"
 OUTSIDE = "outside"  # a document from outside the organisation, as a5s's reader read it
 
 
-def read(conn: psycopg.Connection, run: str, source: str, said: Any, pattern: str | None) -> None:
+def read(conn: db.Connection, run: str, source: str, said: Any, pattern: str | None) -> None:
     """Note the values a run read, and where from."""
     text = said if isinstance(said, str) else json.dumps(said, ensure_ascii=False, default=str)
     noted(conn, run, source, values.found(text, pattern))
 
 
-def noted(conn: psycopg.Connection, run: str, source: str, found: list[Value]) -> None:
+def noted(conn: db.Connection, run: str, source: str, found: list[Value]) -> None:
     """Note values a run read, as found, and where from."""
     for v in found:
         conn.execute("insert into run_reads (run_id, source, kind, norm, text) "
@@ -40,7 +39,7 @@ def noted(conn: psycopg.Connection, run: str, source: str, found: list[Value]) -
 ABOUT = " about "  # in what a run read of each record a tool's result held: "<tool> about <key>"
 
 
-def read_records(conn: psycopg.Connection, run: str, tool: str, field: str | None, result: Any,
+def read_records(conn: db.Connection, run: str, tool: str, field: str | None, result: Any,
                  pattern: str | None) -> None:
     """Note what a tool's result said of each record in it, by its key, apart: each item that
     names a record by `field`, without the records within it, which are items of their own. So
@@ -69,7 +68,7 @@ def read_records(conn: psycopg.Connection, run: str, tool: str, field: str | Non
     walk(result)
 
 
-def records_read(conn: psycopg.Connection, run: str) -> dict[str, list[Value]]:
+def records_read(conn: db.Connection, run: str) -> dict[str, list[Value]]:
     """The records a run read with its tools, by key, each with what it read of it."""
     found: dict[str, list[Value]] = {}
     for r in conn.execute("select source, kind, norm, text from run_reads where run_id = %s "
@@ -79,7 +78,7 @@ def records_read(conn: psycopg.Connection, run: str) -> dict[str, list[Value]]:
     return found
 
 
-def sources(conn: psycopg.Connection, scenario: Scenario, run: dict) -> list[tuple[Value, str]]:
+def sources(conn: db.Connection, scenario: Scenario, run: dict) -> list[tuple[Value, str]]:
     """What the run has read, and from where: its tools, a5s's briefs and tasks, and, when it
     acts for one person, what they said."""
     pattern = getattr(scenario, "record_pattern", None)
@@ -112,7 +111,7 @@ def sources(conn: psycopg.Connection, scenario: Scenario, run: dict) -> list[tup
     return found
 
 
-def traced(conn: psycopg.Connection, scenario: Scenario, run: dict, text: str) -> list[dict]:
+def traced(conn: db.Connection, scenario: Scenario, run: dict, text: str) -> list[dict]:
     """Each key, amount and date in what an agent wrote, with where it came from, or None
     where it's the agent's own."""
     known = sources(conn, scenario, run)  # where else a value came from, before outside

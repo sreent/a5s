@@ -38,9 +38,9 @@ import secrets
 from datetime import datetime, timedelta
 from typing import Any
 
-import psycopg
 from psycopg.types.json import Jsonb
 
+from a5s import db
 from a5s.contract import (
     INSTANCE_APPROVER,
     PART_DELEGATE,
@@ -177,7 +177,7 @@ def resolved(args: Any, values: dict[str, str]) -> Any:
     return args
 
 
-def waiting(conn: psycopg.Connection, run: dict, change: str) -> dict | None:
+def waiting(conn: db.Connection, run: dict, change: str) -> dict | None:
     """The same change, for the same people, from the same instance, still waiting: the call
     made again, in its run or another."""
     return conn.execute("select * from proposals where instance_id = %s and change = %s "
@@ -185,7 +185,7 @@ def waiting(conn: psycopg.Connection, run: dict, change: str) -> dict | None:
                         (run["id"], change, list(run["acts_for"]))).fetchone()
 
 
-def sensitive(conn: psycopg.Connection, run: str, tool: Tool, args: dict,
+def sensitive(conn: db.Connection, run: str, tool: Tool, args: dict,
               classified: dict[str, str]) -> bool:
     """Whether a change is decided on its own: one that can't be undone, sends outside, or
     writes a value of a class of data the settings name, which it carries as a handle."""
@@ -196,7 +196,7 @@ def sensitive(conn: psycopg.Connection, run: str, tool: Tool, args: dict,
         "select field from run_handles where run_id = %s and handle = any(%s)", (run, found)))
 
 
-def hold(conn: psycopg.Connection, scenario: Scenario, run: dict, tool: Tool, args: dict,
+def hold(conn: db.Connection, scenario: Scenario, run: dict, tool: Tool, args: dict,
          standing: dict[str, dict | None], who: list[Person], seq: int, flags: list[str],
          now: datetime, change: str | None, is_sensitive: bool) -> dict:
     """Keep a held call for its deciders, in the transaction that decided it, with its records
@@ -249,7 +249,7 @@ def changed(scenario: Scenario, proposal: dict) -> list[str]:
             if fingerprint_of(snapshot({r: record_of(scenario, r)})[r]) != was]
 
 
-def values(conn: psycopg.Connection, proposal: dict) -> dict[str, str]:
+def values(conn: db.Connection, proposal: dict) -> dict[str, str]:
     return {r["handle"]: r["value"] for r in conn.execute(
         "select handle, value from proposal_values where proposal_id = %s", (proposal["id"],))}
 
@@ -312,7 +312,7 @@ def may_decide(scenario: Scenario, proposal: dict, person: str) -> bool:
     return person in {p.id for p in everyone(by_part)}
 
 
-def record(conn: psycopg.Connection, scenario: str, found: list[dict], decision: str,
+def record(conn: db.Connection, scenario: str, found: list[dict], decision: str,
            person: str, token: str, salt: str, claims: dict, now: datetime,
            reason: str | None = None) -> list[dict]:
     """Record a decision on each of these changes, with the sign-in that made it, and why, for
@@ -339,7 +339,7 @@ def record(conn: psycopg.Connection, scenario: str, found: list[dict], decision:
     return made
 
 
-def seal_pending(conn: psycopg.Connection, keys: tuple[str, ...], verifier: Verifier | None,
+def seal_pending(conn: db.Connection, keys: tuple[str, ...], verifier: Verifier | None,
                  scenario: Scenario, client_id: str | None) -> list[str]:
     """Check again each decision the channels app recorded, by its sign-in, which covers every
     change decided with it, seal each, and let the sign-in go, in the gateway: or refuse them.
@@ -380,7 +380,7 @@ def _mac(key: str, entry: dict) -> str:
     return hmac.new(key.encode(), canonical(fields).encode(), hashlib.sha256).hexdigest()
 
 
-def decision(conn: psycopg.Connection, keys: tuple[str, ...], scenario: Scenario,
+def decision(conn: db.Connection, keys: tuple[str, ...], scenario: Scenario,
              proposal: dict) -> tuple[dict | None, list[str]]:
     """What counts of the decisions on a held change, in the order they were made: a rejection
     by anyone who may decide it, or an approval for every part it touches, each the core
@@ -474,7 +474,7 @@ def told(proposal: dict, became: str, by: str | None = None, extra: str = "",
     }[became]
 
 
-def brief(conn: psycopg.Connection, instance: str, acts_for: list[str],
+def brief(conn: db.Connection, instance: str, acts_for: list[str],
           records: list[str], conversation: str | None = None) -> list[str]:
     """The changes waiting for a decision on these records, asked for the same people, for a
     run's brief: so the agent says it waits, rather than asking again. In a group chat, those

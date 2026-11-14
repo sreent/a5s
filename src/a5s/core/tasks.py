@@ -117,7 +117,7 @@ class TaskService:
         self.clock = lambda: datetime.now(UTC)
 
     @contextmanager
-    def _tx(self, within: psycopg.Connection | None) -> Iterator[psycopg.Connection]:
+    def _tx(self, within: db.Connection | None) -> Iterator[db.Connection]:
         if within is not None:
             yield within
             return
@@ -126,7 +126,7 @@ class TaskService:
 
     def create(self, spec: TaskSpec, *, offered_run: str | None = None,
                asked_at: datetime | None = None,
-               within: psycopg.Connection | None = None) -> str:
+               within: db.Connection | None = None) -> str:
         """A new task, queued, or, with `offered_run`, the run that offered it, waiting for its
         owner's yes to a message that came after `asked_at`."""
         now = self.clock()
@@ -179,7 +179,7 @@ class TaskService:
                                "deadline": deadline.isoformat(), "parent": spec.parent})
         return task_id
 
-    def confirm(self, task_id: str, by: str, within: psycopg.Connection | None = None) -> dict:
+    def confirm(self, task_id: str, by: str, within: db.Connection | None = None) -> dict:
         """Start a task its owner said yes to."""
         with self._tx(within) as conn:
             row = self._owned(conn, task_id, by)
@@ -188,16 +188,14 @@ class TaskService:
             row = self._status(conn, row, "queued")
             self._record(conn, task_id, "start", instance=row["instance_id"],
                          acts_for=row["audience"], args={"by": by})
-            return self._get(conn, task_id)
+            return self._held(conn, task_id)
 
     @staticmethod
-    def _public(row: dict | None) -> dict | None:
-        if row is None:
-            return None
+    def _public(row: dict) -> dict:
         return {**row, **{key: str(row[key]) for key in ("id", "parent", "lease_id", "root")
                           if row.get(key) is not None}}
 
-    def get(self, task_id: str, within: psycopg.Connection | None = None) -> dict | None:
+    def get(self, task_id: str, within: db.Connection | None = None) -> dict | None:
         with self._tx(within) as conn:
             return self._get(conn, task_id)
 
@@ -207,7 +205,7 @@ class TaskService:
                 "select * from tasks where owner = %s order by created_at, id", (owner,)).fetchall()]
 
     def due(self, now: datetime | None = None,
-            within: psycopg.Connection | None = None) -> list[str]:
+            within: db.Connection | None = None) -> list[str]:
         """The tasks a worker may take up now: queued, or waiting and not waiting longer after
         a failed slice, or running under a lease that lapsed. Never a task whose parts are
         still at work: it goes on once they've ended, with what they came to."""
@@ -221,7 +219,7 @@ class TaskService:
                 "('done', 'cancelled', 'failed')) order by created_at, number",
                 (now, now)).fetchall()]
 
-    def lapse(self, now: datetime | None = None, within: psycopg.Connection | None = None,
+    def lapse(self, now: datetime | None = None, within: db.Connection | None = None,
               unserved: Callable[[dict], str | None] | None = None) -> list[dict]:
         """End every task that can't go on, wherever it stands, waiting on its parts or its
         owner too, with its parts still open: past its deadline, its agent retired, or, as
@@ -258,10 +256,10 @@ class TaskService:
                                  acts_for=s["audience"],
                                  args={"why": why, **({"with": r["id"]}
                                                       if s["id"] != r["id"] else {})})
-                ended.append(self._get(conn, r["id"]))
+                ended.append(self._held(conn, r["id"]))
             return ended
 
-    def cancel(self, task_id: str, by: str, within: psycopg.Connection | None = None) -> dict:
+    def cancel(self, task_id: str, by: str, within: db.Connection | None = None) -> dict:
         """Cancel a task, and every child of it still open, at its owner's request. A slice at
         work keeps its lease, so what it did meanwhile still counts, but can do no more."""
         with self._tx(within) as conn:
@@ -280,9 +278,9 @@ class TaskService:
                 self._record(conn, t["id"], "cancel", instance=t["instance_id"],
                              acts_for=t["audience"],
                              args={"by": by, **({"with": task_id} if t["id"] != task_id else {})})
-            return self._get(conn, task_id)
+            return self._held(conn, task_id)
 
-    def resume(self, task_id: str, by: str, within: psycopg.Connection | None = None) -> dict:
+    def resume(self, task_id: str, by: str, within: db.Connection | None = None) -> dict:
         with self._tx(within) as conn:
             row = self._owned(conn, task_id, by)
             if row["status"] not in ("blocked", "failed", "waiting"):
@@ -296,7 +294,7 @@ class TaskService:
             return row
 
     def begin(self, task_id: str, *, lease_seconds: float | None = None,
-              within: psycopg.Connection | None = None) -> tuple[str | None, dict]:
+              within: db.Connection | None = None) -> tuple[str | None, dict]:
         """Begin a task's next slice, under a lease of its own for `lease_seconds`: the lease
         and the task as it then stands, with `tokens_left`, the most the slice may spend. Or
         None and the task, ended, if it can't go on: past its deadline, its budget or its tree's
@@ -323,7 +321,7 @@ class TaskService:
                 self._status(conn, row, "failed", error=reason, failures=failures)
                 self._record(conn, task_id, "stop", instance=row["instance_id"],
                              acts_for=row["audience"], args={"why": reason})
-                return None, self._get(conn, task_id)
+                return None, self._held(conn, task_id)
             lease = str(uuid.uuid4())
             conn.execute("update tasks set status = 'running', lease_id = %s, "
                          "lease_expires_at = %s, last_heartbeat_at = %s, attempts = attempts + 1, "
@@ -335,10 +333,10 @@ class TaskService:
                          acts_for=row["audience"], args={"attempt": row["attempts"] + 1,
                                                           "tokens_left": left,
                                                           **({"lapsed": True} if lapsed else {})})
-            return lease, {**self._get(conn, task_id), "tokens_left": left}
+            return lease, {**self._held(conn, task_id), "tokens_left": left}
 
     def put_off(self, task_id: str, why: str, *,
-                within: psycopg.Connection | None = None) -> dict | None:
+                within: db.Connection | None = None) -> dict | None:
         """Put a task's next slice off for PUT_OFF, when its run can't open now for a reason
         outside the task, such as its owner's budget for the day being spent, so the task
         isn't asked for again at every sweep. It isn't a failed slice, since nothing ran,
@@ -396,7 +394,7 @@ class TaskService:
         if refused:
             raise TaskError(refused)
 
-    def kept(self, conn: psycopg.Connection, task_id: str, lease: str,
+    def kept(self, conn: db.Connection, task_id: str, lease: str,
              change: dict) -> tuple[str | None, str | None]:
         """A checkpoint, in the caller's transaction: why the slice must stop, if it must, and
         why what it said is refused, if it is. What it spent counts either way."""
@@ -474,14 +472,14 @@ class TaskService:
                 failing = False
 
     def end(self, task_id: str, lease: str, result: dict | None, failed: str | None = None, *,
-            spent: int = 0, within: psycopg.Connection | None = None) -> dict:
+            spent: int = 0, within: db.Connection | None = None) -> dict:
         """End a slice begun with begin: with its result, or None if it stopped or `failed`,
         and `spent`, the tokens its run used, which count whatever it came to."""
         return self._finish(task_id, lease, result, failed, spent=spent, within=within)
 
     def _finish(self, task_id: str, lease: str, result: dict | None,
                 failed: str | None = None, *, spent: int = 0,
-                within: psycopg.Connection | None = None) -> dict:
+                within: db.Connection | None = None) -> dict:
         """What a slice ended with: its result, or None if it stopped or `failed`."""
         with self._tx(within) as conn:
             row = self._locked(conn, task_id)
@@ -491,7 +489,7 @@ class TaskService:
             now = self.clock()
             if result is None and spent:  # what its run spent counts, whatever came of it
                 self._spend(conn, row, row["tokens"] + spent, "spent", spent)
-                row = self._locked(conn, task_id)
+                row = self._held(conn, task_id)  # locked already, as it now stands
             if result is None:
                 if ours and row["status"] == "running":  # it failed, or stopped: it waits
                     failures = row["failures"] + 1
@@ -506,19 +504,19 @@ class TaskService:
                                  acts_for=row["audience"], args={"why": why})
                 elif ours:  # cancelled under it: the lease goes with the slice
                     conn.execute("update tasks set lease_id = null where id = %s", (task_id,))
-                return self._get(conn, task_id)
+                return self._held(conn, task_id)
             used, bad = self._used(result)
             used += spent
             tokens = row["tokens"] + used
             if not ours:  # a stale slice's, whose lease another took: what it spent counts
                 self._spend(conn, row, tokens, "late", used)
-                return self._get(conn, task_id)
+                return self._held(conn, task_id)
             moved = self._moved(row, result)
             if row["status"] != "running":  # cancelled as it worked: what it did is kept
                 self._keep(conn, row, tokens, moved if moved.refused is None and not bad else None,
                            row["status"], row["last_error"],
                            result=result.get("result"), lease=lease)
-                return self._get(conn, task_id)
+                return self._held(conn, task_id)
             status = result.get("status", "waiting")
             refused = bad or moved.refused or (
                 f"a worker returned an unknown task status: {status}"
@@ -529,7 +527,7 @@ class TaskService:
                 # part, which can't wait for anyone, fails, so the task it's part of goes on
                 self._keep(conn, row, tokens, None, "failed" if row["parent"] else "blocked",
                            f"a5s refused its result: {refused}")
-                return self._get(conn, task_id)
+                return self._held(conn, task_id)
             error = result.get("error") or result.get("reason")
             reason = self._over(conn, row, tokens)
             if reason:
@@ -537,7 +535,7 @@ class TaskService:
             if status == "done":
                 moved.progress = 1.0
             self._keep(conn, row, tokens, moved, status, error, result=result.get("result"))
-            return self._get(conn, task_id)
+            return self._held(conn, task_id)
 
     # What a slice reports, checked
 
@@ -571,7 +569,7 @@ class TaskService:
             return _Moved(row["step"], row["progress"], row["partial"], row["plan"], str(exc))
         return _Moved(step, progress, partial, plan)
 
-    def _over(self, conn: psycopg.Connection, row: dict, tokens: int) -> str | None:
+    def _over(self, conn: db.Connection, row: dict, tokens: int) -> str | None:
         """Why a task must end now, with `tokens` spent: its deadline, or a budget."""
         if row["deadline"] <= self.clock():
             return "its deadline passed"
@@ -581,7 +579,7 @@ class TaskService:
             return "the budget its tree shares is spent"
         return None
 
-    def _keep(self, conn: psycopg.Connection, row: dict, tokens: int, moved: _Moved | None,
+    def _keep(self, conn: db.Connection, row: dict, tokens: int, moved: _Moved | None,
               status: str, error: str | None, *, result: Any = None,
               lease: str | None = None) -> None:
         """Keep what a slice did, as `moved`, or only what it spent, and end its lease."""
@@ -600,7 +598,7 @@ class TaskService:
                                                      "partial": moved.partial, "tokens": tokens,
                                                      "error": error, **_planned(moved.plan)})
 
-    def _spend(self, conn: psycopg.Connection, row: dict, tokens: int, action: str, used: int,
+    def _spend(self, conn: db.Connection, row: dict, tokens: int, action: str, used: int,
                why: str | None = None) -> None:
         """Count what a slice spent, and nothing else of what it said."""
         if not used and why is None:
@@ -612,7 +610,7 @@ class TaskService:
                                                      **({"why": why} if why else {})})
 
     @staticmethod
-    def _tree_left(conn: psycopg.Connection, row: dict) -> int:
+    def _tree_left(conn: db.Connection, row: dict) -> int:
         """What's left of the budget a task's tree shares: its root's, less all it spent."""
         found = conn.execute(
             "select r.token_budget - coalesce((select sum(t.tokens) from tasks t "
@@ -624,7 +622,14 @@ class TaskService:
     def _get(conn, task_id: str, lock: bool = False) -> dict | None:
         found = conn.execute("select * from tasks where id = %s" + (" for update" if lock else ""),
                              (task_id,)).fetchone()
-        return TaskService._public(found)
+        return TaskService._public(found) if found else None
+
+    @staticmethod
+    def _held(conn, task_id: str) -> dict:
+        """A task as it stands, in a transaction that has it locked: so it's there."""
+        if (row := TaskService._get(conn, task_id)) is None:
+            raise TaskError("no such task")
+        return row
 
     @staticmethod
     def _locked(conn, task_id: str) -> dict | None:

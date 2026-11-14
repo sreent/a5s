@@ -9,8 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-import psycopg
-
+from a5s import db
 from a5s.contract import (
     ASSURANCE,
     DATA_PROTECTION,
@@ -55,7 +54,7 @@ def may(role: str) -> str:
     return words.format(scope=scope) if words else "what the scenario gives it"
 
 
-def roles(conn: psycopg.Connection, gw: Any, person: Person) -> list[dict]:
+def roles(conn: db.Connection, gw: Any, person: Person) -> list[dict]:
     """Each role someone holds, what gave it them, and what it lets them do: the team that
     runs a5s first, if they're in it."""
     found = [{"role": h["role"], "by": by, "may": may(h["role"])}
@@ -67,7 +66,7 @@ def roles(conn: psycopg.Connection, gw: Any, person: Person) -> list[dict]:
     return found
 
 
-def waiting(conn: psycopg.Connection, gw: Any, person: Person) -> list[dict]:
+def waiting(conn: db.Connection, gw: Any, person: Person) -> list[dict]:
     """What waits for someone: each with what it is, why it's theirs, and where they do it, a
     page of a5s's, or the command line."""
     found: list[dict] = []

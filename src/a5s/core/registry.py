@@ -6,9 +6,9 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
-import psycopg
 from psycopg.types.json import Jsonb
 
+from a5s import db
 from a5s.contract import (
     INSTANCE_APPROVER,
     PART_OWNER,
@@ -195,7 +195,7 @@ class Applied:
 
 
 def apply(
-    conn: psycopg.Connection,
+    conn: db.Connection,
     definitions: dict[str, Definition],
     settings: Settings,
     tools: dict[str, Tool],
@@ -322,7 +322,7 @@ def apply(
     return applied
 
 
-def set_status(conn: psycopg.Connection, instance: str, *, by: str, suspend: bool,
+def set_status(conn: db.Connection, instance: str, *, by: str, suspend: bool,
                identity: str = "unverified (development)") -> str:
     """Suspend or resume an instance, and return the reason if it can't be done."""
     row = conn.execute("select status, suspended_by from instances where id = %s for update",

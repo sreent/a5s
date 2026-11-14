@@ -18,8 +18,7 @@ from datetime import datetime, timedelta
 from typing import Any
 from zoneinfo import ZoneInfo
 
-import psycopg
-
+from a5s import db
 from a5s.contract import PART_OWNER, Obligation, Person, Scenario
 from a5s.definitions import Definition
 
@@ -86,7 +85,7 @@ def chain(scenario: Scenario, person: str, record: str | None = None) -> list[Pe
     return line
 
 
-def sync(conn: psycopg.Connection, scenario: str, owed: list[Obligation],
+def sync(conn: db.Connection, scenario: str, owed: list[Obligation],
          definitions: dict[str, Definition], now: datetime,
          part_of: Callable[[str], str | None] = lambda _: None,
          serving: Callable[[list[str], str], bool] = lambda serves, who: who in serves,

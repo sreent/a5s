@@ -18,8 +18,7 @@ from __future__ import annotations
 from dataclasses import replace
 from datetime import timedelta
 
-import psycopg
-
+from a5s import db
 from a5s.contract import Person
 from a5s.core import digests
 from a5s.core.coretools import Call, CoreTool, Refused, one_to_one
@@ -29,7 +28,7 @@ LONGEST = 600  # characters: it's a short note
 _DAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 
 
-def note(conn: psycopg.Connection, person: str) -> str | None:
+def note(conn: db.Connection, person: str) -> str | None:
     """How someone likes to work, in their own words, as they last confirmed it."""
     row = conn.execute("select text from profile_notes where person = %s and confirmed_at is not null "
                        "and ended_at is null order by confirmed_at desc limit 1", (person,)).fetchone()
@@ -45,7 +44,7 @@ def workdays(person: Person) -> str:
     return names[0] if len(names) == 1 else f"{', '.join(names[:-1])} and {names[-1]}"
 
 
-def section(conn: psycopg.Connection, person: Person) -> dict:
+def section(conn: db.Connection, person: Person) -> dict:
     """The person's profile, as a run that acts for them is given it."""
     told = [(f"{person.name} works {person.hours[0]} to {person.hours[1]}, {workdays(person)}, "
              f"in {person.timezone} time. Their digest comes at {digests.chosen(conn, person)}.")]
@@ -54,7 +53,7 @@ def section(conn: psycopg.Connection, person: Person) -> dict:
     return {"title": f"Who you're working for: {person.name}", "text": "\n".join(told)}
 
 
-def waiting(conn: psycopg.Connection, person: Person, agent: str) -> list[str]:
+def waiting(conn: db.Connection, person: Person, agent: str) -> list[str]:
     """The note this agent offered the person, if it waits for their yes, for its context.
     Offers count from when the core received the message, by the database's clock."""
     row = conn.execute("select text from profile_notes where person = %s and agent = %s "

@@ -26,8 +26,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-import psycopg
-
+from a5s import db
 from a5s.contract import (
     ASSURANCE,
     DATA_PROTECTION,
@@ -58,11 +57,11 @@ def reads(person: Any) -> bool:
     return person is not None and any(role in person.roles for role in READERS)
 
 
-def _head(conn: psycopg.Connection) -> int:
+def _head(conn: db.Connection) -> int:
     return conn.execute("select coalesce(max(seq), 0) as n from ledger").fetchone()["n"]
 
 
-def _first_at(conn: psycopg.Connection, at: datetime, head: int) -> int:
+def _first_at(conn: db.Connection, at: datetime, head: int) -> int:
     """The first entry made at or after `at`, or head + 1 if none was, found by halving: the
     ledger's entries are in the order they were made."""
     low, high = 1, head + 1
@@ -77,7 +76,7 @@ def _first_at(conn: psycopg.Connection, at: datetime, head: int) -> int:
     return low
 
 
-def _span(conn: psycopg.Connection, since: datetime | None, until: datetime | None,
+def _span(conn: db.Connection, since: datetime | None, until: datetime | None,
           after: int) -> tuple[int, int]:
     """The first and last entries of a period, from `since` up to but not including `until`,
     after the entry `after`."""
@@ -92,7 +91,7 @@ def _utc(at: datetime) -> datetime:
     return at if at.tzinfo else at.replace(tzinfo=UTC)
 
 
-def search(conn: psycopg.Connection, *, since: datetime | None = None,
+def search(conn: db.Connection, *, since: datetime | None = None,
            until: datetime | None = None, kind: str | None = None, action: str | None = None,
            decision: str | None = None, instance: str | None = None, person: str | None = None,
            acted_for: str | None = None, by: str | None = None, after: int = 0,
@@ -128,7 +127,7 @@ def _line(row: dict) -> dict[str, Any]:
             "hash": bytes(row["hash"]).hex()}
 
 
-def export(conn: psycopg.Connection, *, since: datetime | None = None,
+def export(conn: db.Connection, *, since: datetime | None = None,
            until: datetime | None = None, after: int = 0,
            limit: int = MOST_EXPORTED) -> dict[str, Any]:
     """A page of a period's entries exactly as the ledger holds them, oldest first: each with
@@ -300,7 +299,7 @@ def ended(bounds: dict[str, Any], store: Any) -> str | None:
     return None
 
 
-def key(conn: psycopg.Connection) -> bytes:
+def key(conn: db.Connection) -> bytes:
     """The deployment's own key for stand-ins: made once, at random, and kept only in the
     database, so nobody who reads the trail can work a stand-in back to whom it's for."""
     conn.execute("insert into audit_key (key) values (%s) on conflict do nothing",
@@ -367,7 +366,7 @@ class Shown:
         return {**found, "acts": [{**act, "about": self._named(act["about"])}
                                   for act in found["acts"]]}
 
-    def whom(self, conn: psycopg.Connection, given: str, since: datetime | None = None,
+    def whom(self, conn: db.Connection, given: str, since: datetime | None = None,
              until: datetime | None = None) -> str | None:
         """Whom a stand-in stands for, among those the period's entries acted for; or, once
         names are agreed, the id given. None for an id before then, so the page never says
@@ -406,7 +405,7 @@ def roles_of(scenario: Any, parts: Iterable[str], agents: Iterable[str]) -> list
             for name in names]
 
 
-def report(conn: psycopg.Connection, scenario: Any, agents: Iterable[str], *,
+def report(conn: db.Connection, scenario: Any, agents: Iterable[str], *,
            since: datetime | None = None, until: datetime | None = None) -> dict[str, Any]:
     """Who holds each role now, and each administrative act of a period: who did it, when,
     and to what, as the ledger records it."""
@@ -431,7 +430,7 @@ def report(conn: psycopg.Connection, scenario: Any, agents: Iterable[str], *,
 WHOM = ("person", "acted_for", "acted_by")  # whom a read asked about, kept as a stand-in
 
 
-def noted(conn: psycopg.Connection, by: str, read: str, through: str | None = None,
+def noted(conn: db.Connection, by: str, read: str, through: str | None = None,
           **what: Any) -> int:
     """Put a read of the trail, a search, an export or a report, in the ledger: who read it,
     and through what, their own sign-in or the core's service token naming them, and what they

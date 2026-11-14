@@ -16,8 +16,7 @@ only if everyone now in it heard all it holds.
 
 from __future__ import annotations
 
-import psycopg
-
+from a5s import db
 from a5s.core.topics import render
 from a5s.services import summaries
 
@@ -28,7 +27,7 @@ FOLD = 0.1  # turns that no longer fit are folded into the summary once they're 
 
 
 def add_turn(
-    conn: psycopg.Connection,
+    conn: db.Connection,
     *,
     person: str,
     agent: str,
@@ -48,7 +47,7 @@ def add_turn(
 
 
 def history(
-    conn: psycopg.Connection, *, person: str, agent: str, topic: str = GENERAL,
+    conn: db.Connection, *, person: str, agent: str, topic: str = GENERAL,
     chars: int = CHARS, members: list[str] | None = None, names: dict[str, str] | None = None,
 ) -> list[dict]:
     """What a run is given of the conversation, oldest first, with when each was and its
@@ -66,7 +65,7 @@ def history(
             if told else []) + turns
 
 
-def dropped(conn: psycopg.Connection, *, person: str, agent: str, topic: str,
+def dropped(conn: db.Connection, *, person: str, agent: str, topic: str,
             chars: int, members: list[str] | None = None) -> tuple[dict | None, list[dict]]:
     """The topic's summary, and its turns that no run is given any more and the summary
     doesn't hold yet, oldest first: what to fold into it. In a group, of what all of
@@ -98,7 +97,7 @@ def _told(summary: dict | None, chars: int) -> str:
     return told
 
 
-def speakers(conn: psycopg.Connection, group: str, agent: str) -> list[str]:
+def speakers(conn: db.Connection, group: str, agent: str) -> list[str]:
     """Whoever has said anything in a group chat's conversation with the agent."""
     return [r["speaker"] for r in conn.execute(
         "select distinct speaker from turns where person = %s and agent = %s "
@@ -114,7 +113,7 @@ def _said(turn: dict, names: dict[str, str] | None) -> str:
     return turn["content"]
 
 
-def _kept(conn: psycopg.Connection, person: str, agent: str, topic: str, chars: int,
+def _kept(conn: db.Connection, person: str, agent: str, topic: str, chars: int,
           members: list[str] | None = None) -> dict:
     """The turns that fit, by id: the conversation's latest, and in a case, its older ones.
     In a group, only the turns all of `members` heard."""

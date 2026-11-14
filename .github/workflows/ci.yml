@@ -55,6 +55,15 @@ jobs:
           uv run python -c "from playwright.sync_api import sync_playwright;
           p = sync_playwright().start(); p.chromium.launch().close(); p.stop()"
       - run: uv run ruff check .
+      # Static types (docs/testing.md#static-types): anything new fails, and the baseline of
+      # what was there when checking began only shrinks. The checker drops what's been fixed
+      # from it, and that change must be committed with the fix.
+      - name: Check types
+        run: |
+          uv run basedpyright
+          git diff --exit-code .basedpyright/baseline.json || {
+            echo "::error::Errors in the baseline were fixed: commit the baseline basedpyright shrank"
+            exit 1; }
       - run: uv run pytest
 
   containers:

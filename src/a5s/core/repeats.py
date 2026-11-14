@@ -21,10 +21,10 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Any
 
-import psycopg
 from psycopg.types.json import Jsonb
 from pydantic import ValidationError
 
+from a5s import db
 from a5s.contract import Person, Scenario
 from a5s.core import ledger, registry, schedules, studio
 from a5s.core.tasks import ENDED, TaskError, TaskService, TaskSpec
@@ -82,13 +82,13 @@ def _of(row: dict) -> Schedule:
     return when(list(row["days"]), list(row["at"]))
 
 
-def _record(conn: psycopg.Connection, row: dict, action: str, **args: Any) -> None:
+def _record(conn: db.Connection, row: dict, action: str, **args: Any) -> None:
     ledger.append(conn, {"kind": "repeat", "action": action, "repeat": str(row["id"]),
                          "instance": row["instance_id"], "acts_for": [row["owner"]],
                          "decision": "record", "args": ledger.mask(args)})
 
 
-def theirs(conn: psycopg.Connection, person: Person, instance: str, wanted: Any) -> dict:
+def theirs(conn: db.Connection, person: Person, instance: str, wanted: Any) -> dict:
     """One of someone's repeats with an agent that's going or offered, which they named, such
     as E-3, to change. TaskError if it isn't one, or has stopped."""
     found = number(wanted)
@@ -102,7 +102,7 @@ def theirs(conn: psycopg.Connection, person: Person, instance: str, wanted: Any)
     return row
 
 
-def offer(conn: psycopg.Connection, person: Person, instance: str, run: str, asked_at: datetime,
+def offer(conn: db.Connection, person: Person, instance: str, run: str, asked_at: datetime,
           text: str, schedule: Schedule, instead_of: dict | None = None) -> dict:
     """Offer a repeat, which waits for its owner's yes in a later message, with what the run
     offering it has read so far: in place of `instead_of`, one of theirs, if it changes that.
@@ -142,7 +142,7 @@ def offer(conn: psycopg.Connection, person: Person, instance: str, run: str, ask
                        + (f", and {name(instead_of)} stops then" if instead_of else "")}
 
 
-def offered(conn: psycopg.Connection, person: Person, instance: str, run: str,
+def offered(conn: db.Connection, person: Person, instance: str, run: str,
             asked_at: datetime, wanted: int | None) -> dict | None:
     """The repeat a later message of its owner's says yes to: the one named, or the latest
     offered, within the time an offer waits."""
@@ -154,7 +154,7 @@ def offered(conn: psycopg.Connection, person: Person, instance: str, run: str,
                        wanted, wanted)).fetchone()
 
 
-def start(conn: psycopg.Connection, scenario: Scenario, row: dict, now: datetime) -> dict:
+def start(conn: db.Connection, scenario: Scenario, row: dict, now: datetime) -> dict:
     """Start a repeat its owner said yes to: from its next time, not one already past. If it
     changes one of theirs, that one stops now, and this one waits for the task it made last."""
     last = schedules.latest(_of(row), schedules.zone(scenario, row["owner"]), now)
@@ -174,7 +174,7 @@ def start(conn: psycopg.Connection, scenario: Scenario, row: dict, now: datetime
                     "and tells them when it's done or needs them"}
 
 
-def stop(conn: psycopg.Connection, person: Person, wanted: Any, now: datetime,
+def stop(conn: db.Connection, person: Person, wanted: Any, now: datetime,
          instance: str | None = None) -> dict:
     """Stop one of someone's repeats, at their word: the task it made last goes on, unless
     they stop that too. TaskError if it isn't theirs, or has stopped already."""
@@ -196,7 +196,7 @@ def stop(conn: psycopg.Connection, person: Person, wanted: Any, now: datetime,
                     "they want it stopped"}
 
 
-def listed(conn: psycopg.Connection, scenario: Scenario, person: Person,
+def listed(conn: db.Connection, scenario: Scenario, person: Person,
            instance: str | None = None) -> list[dict]:
     """Someone's repeats, with an agent or with every one, as they stand. One whose words
     name a record they may no longer see shows how it stands alone, as a task does."""
@@ -221,7 +221,7 @@ def listed(conn: psycopg.Connection, scenario: Scenario, person: Person,
     return shown
 
 
-def due(conn: psycopg.Connection, scenario: Scenario, definitions: dict[str, Any],
+def due(conn: db.Connection, scenario: Scenario, definitions: dict[str, Any],
         tasks: TaskService, now: datetime) -> list[str]:
     """Make a task of each repeat whose time has come, once the last one it made has ended:
     acting for its owner, with the release's budget and days for a task, and what the run

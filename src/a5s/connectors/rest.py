@@ -94,13 +94,16 @@ class RestClient:
     def _request(self, path: str, query: dict[str, Any] | None, accept: str,
                  max_bytes: int) -> tuple[Any, httpx.Headers]:
         url = self._url(path, query)
+
+        def get() -> httpx.Response:
+            return self.http.get(url, headers=self._headers(accept), follow_redirects=False)
+
         try:
-            for attempt in range(2):
-                answer = self.http.get(url, headers=self._headers(accept), follow_redirects=False)
-                if answer.status_code not in (429, 502, 503, 504) or attempt:
-                    break
+            answer = get()
+            if answer.status_code in (429, 502, 503, 504):  # busy, or restarting: once more
                 delay = answer.headers.get("Retry-After", "")
                 time.sleep(min(float(delay) if delay.isdigit() else 0.25, 1.0))
+                answer = get()
         except (httpx.HTTPError, ValueError) as exc:
             raise ConnectorError(f"the records system couldn't be reached: {type(exc).__name__}") from None
         if answer.status_code >= 400:

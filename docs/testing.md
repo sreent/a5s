@@ -23,6 +23,7 @@ Install the locked development dependencies and run the normal suite:
 ```sh
 uv sync --locked
 uv run ruff check .
+uv run basedpyright
 uv run pytest
 ```
 
@@ -37,6 +38,18 @@ uv run pytest tests/test_connectors.py -q
 ```
 
 The default marker configuration excludes live-provider tests. `-m 'not live'` makes that exclusion explicit when selecting a module.
+
+### Static types
+
+[basedpyright](https://docs.basedpyright.com/), pyright with a baseline, checks a5s's own code, `src/a5s`, at pyright's standard strictness (`[tool.basedpyright]` in `pyproject.toml`). It runs in CI beside ruff, from the locked development dependencies, with its own Node, so nothing else needs installing.
+
+What it found when it was added, and wasn't fixed then, is in `.basedpyright/baseline.json`: chiefly rows read with `fetchone()` that the code takes to be there, such as a count's, and branches the checker can't tell go together. Anything else fails. The baseline only shrinks: fix one of its errors and the checker drops it from the file, and CI fails until that change is committed with the fix. Only `uv run basedpyright --writebaseline` adds to it, which review sees in the diff: fix the error instead, unless a refactor only moved one that was there.
+
+Some of what the checker holds a5s to:
+
+- Every database connection is `db.Connection`, which gives each row as a dict, from a pool typed to match.
+- SQL is text in the code, never input: psycopg takes a `LiteralString`, so helpers that build SQL take and give `LiteralString`, and constants they draw on, such as the tables a sweep empties, are `Final`. A value goes in as a parameter. A migration's file is a5s's own, the one cast.
+- A lookup that may find nothing says `| None`, and a caller that knows it's there, such as for a task its transaction has locked, uses one that raises instead (`TaskService._held`).
 
 ### Postgres
 

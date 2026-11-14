@@ -27,9 +27,9 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any
 
-import psycopg
 from psycopg.types.json import Jsonb
 
+from a5s import db
 from a5s.contract import Person
 from a5s.core import repeats, studio
 from a5s.core.coretools import Call, CoreTool, Refused, one_to_one
@@ -254,7 +254,7 @@ def resume(call: Call) -> dict:
 PAGE_MOST = 50  # the most tasks their page shows, the latest first
 
 
-def theirs(conn: psycopg.Connection, scenario: Any, person: Person,
+def theirs(conn: db.Connection, scenario: Any, person: Person,
            now: datetime) -> list[dict]:
     """Someone's own tasks, with every agent, for their page: how each stands, what it
     waits on, and what it has spent. A task whose words name a record they may no longer
@@ -297,7 +297,7 @@ def theirs(conn: psycopg.Connection, scenario: Any, person: Person,
     return shown
 
 
-def cancel_theirs(conn: psycopg.Connection, person: Person, task: str,
+def cancel_theirs(conn: db.Connection, person: Person, task: str,
                   now: datetime) -> dict:
     """Cancel one of someone's tasks at their word, on their page, as the agent would at
     their asking. TaskError if it isn't theirs, or has ended."""
@@ -375,7 +375,7 @@ def finish(call: Call) -> dict:
                     "what it came to, and nothing more"}
 
 
-def _open_parts(conn: psycopg.Connection, task_id: str) -> int:
+def _open_parts(conn: db.Connection, task_id: str) -> int:
     return conn.execute("select count(*) as n from tasks where parent = %s and status not in "
                         "('done', 'cancelled', 'failed')", (task_id,)).fetchone()["n"]
 
@@ -428,13 +428,13 @@ def split(call: Call) -> dict:
                     "done, with what they found"}
 
 
-def parts(conn: psycopg.Connection, task_id: str) -> list[dict]:
+def parts(conn: db.Connection, task_id: str) -> list[dict]:
     """A task's parts, each with what it came to, for its own later runs."""
     return conn.execute("select number, task, status, result, last_error from tasks "
                         "where parent = %s order by number", (task_id,)).fetchall()
 
 
-def carry(conn: psycopg.Connection, task_id: str, run: str) -> None:
+def carry(conn: db.Connection, task_id: str, run: str) -> None:
     """Keep with a task what one of its runs read, with where each value came from, and
     whether it read content from outside: the run that offered it, the one its owner said
     what it needed in, and each of its slices, for its later runs to be given."""
@@ -447,7 +447,7 @@ def carry(conn: psycopg.Connection, task_id: str, run: str) -> None:
                  (task_id, run))
 
 
-def given(conn: psycopg.Connection, task_id: str, run: str) -> None:
+def given(conn: db.Connection, task_id: str, run: str) -> None:
     """Give a task's run what its earlier runs read, and those of the tasks it's part of or
     split into, with where each value came from: only that, so what one of them wrote
     itself, in what it kept, stays its agent's own."""
@@ -457,7 +457,7 @@ def given(conn: psycopg.Connection, task_id: str, run: str) -> None:
                  "(select root from tasks where id = %s) on conflict do nothing", (run, task_id))
 
 
-def marked(conn: psycopg.Connection, task: dict) -> bool:
+def marked(conn: db.Connection, task: dict) -> bool:
     """Whether a task's run opens marked: whether any run of it, or of the tasks it's part of
     or split into, read content from outside."""
     return bool(conn.execute("select 1 from tasks where root = %s and read_outside limit 1",
@@ -613,13 +613,13 @@ def _cut(found: Any, most: int) -> str:
     return text if len(text) <= most else text[:most] + "..."
 
 
-def repeat_of(conn: psycopg.Connection, task: dict) -> dict | None:
+def repeat_of(conn: db.Connection, task: dict) -> dict | None:
     """The repeat that made a task, or None."""
     return conn.execute("select number, days, at from task_repeats where id = %s",
                         (task["repeat"],)).fetchone() if task.get("repeat") else None
 
 
-def whole(conn: psycopg.Connection, task: dict) -> dict | None:
+def whole(conn: db.Connection, task: dict) -> dict | None:
     """The task a part is part of, or None for a task someone asked for."""
     return conn.execute("select number, task from tasks where id = %s", (task["parent"],)
                         ).fetchone() if task.get("parent") else None
@@ -634,7 +634,7 @@ def capped(run: dict) -> dict:
     return {**trigger, "cap": min(int(trigger.get("cap", run["task_cap"])), int(run["task_cap"]))}
 
 
-def stopped(conn: psycopg.Connection, run: dict) -> str | None:
+def stopped(conn: db.Connection, run: dict) -> str | None:
     """Why a task's run must stop at its next call to the core, if it must: its task was
     cancelled or has ended, or another run took it over. None for any other run."""
     trigger = run.get("trigger") or {}
@@ -651,7 +651,7 @@ def stopped(conn: psycopg.Connection, run: dict) -> str | None:
     return None
 
 
-def held(conn: psycopg.Connection, run: dict) -> str | None:
+def held(conn: db.Connection, run: dict) -> str | None:
     """Why a task's run may not write to its owner now, if it may not: a part of a task
     writes to nobody, and a task's own run only once it has said it's done or needs them."""
     found = conn.execute("select r.task_result ->> 'status' as said, t.parent from runs r "
@@ -665,7 +665,7 @@ def held(conn: psycopg.Connection, run: dict) -> str | None:
     return None
 
 
-def begin(conn: psycopg.Connection, tasks: TaskService, task_id: str) -> tuple[str | None, dict]:
+def begin(conn: db.Connection, tasks: TaskService, task_id: str) -> tuple[str | None, dict]:
     """Begin a task's next slice, as its run opens: its lease and the task, or None and the
     task, ended, or None and a reason if it can't run now."""
     try:
@@ -674,7 +674,7 @@ def begin(conn: psycopg.Connection, tasks: TaskService, task_id: str) -> tuple[s
         return None, {"id": task_id, "status": None, "last_error": str(exc)}
 
 
-def end(conn: psycopg.Connection, tasks: TaskService, run_id: str, run: dict,
+def end(conn: db.Connection, tasks: TaskService, run_id: str, run: dict,
         outcome: str) -> dict | None:
     """End the slice a task's run was, as the run closes: with what it said the slice came to,
     or, if it said nothing, waiting to go on, or failed, if the run did, and what the run spent,

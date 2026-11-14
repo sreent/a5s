@@ -21,8 +21,7 @@ from dataclasses import replace
 from datetime import date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-import psycopg
-
+from a5s import db
 from a5s.contract import Person, record_of
 from a5s.core import parts
 from a5s.core.coretools import Call, CoreTool, Refused, one_to_one
@@ -100,7 +99,7 @@ def offer(call: Call) -> dict:
             "offered: it's set only once they say yes, in their next message"}
 
 
-def waiting_for_yes(conn: psycopg.Connection, person: Person, agent: str,
+def waiting_for_yes(conn: db.Connection, person: Person, agent: str,
                     conversation: str | None = None,
                     members: list[str] | None = None) -> list[str]:
     """The reminders this agent offered the person that wait for their yes, for its context:

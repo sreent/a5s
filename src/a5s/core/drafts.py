@@ -23,7 +23,7 @@ import psycopg
 import yaml
 from psycopg.types.json import Jsonb
 
-from a5s import authoring, definitions
+from a5s import authoring, db, definitions
 from a5s.config import ModelConfig
 from a5s.contract import Person, Scenario, Tool
 from a5s.core import releases, studio
@@ -158,13 +158,13 @@ def signers(agent: str, files: dict[str, str], agents_dir: Path,
 
 # What a5s keeps of them
 
-def mine(conn: psycopg.Connection, person: Person) -> list[dict]:
+def mine(conn: db.Connection, person: Person) -> list[dict]:
     return [dict(r) for r in conn.execute(
         f"select {SHOWN} from agent_drafts where person = %s order by updated_at desc",
         (person.id,))]
 
 
-def get(conn: psycopg.Connection, person: Person, draft: str) -> dict | None:
+def get(conn: db.Connection, person: Person, draft: str) -> dict | None:
     """One of someone's drafts, with its files; None if it isn't theirs, or isn't there."""
     try:
         found = conn.execute(f"select {SHOWN}, files from agent_drafts where id = %s::uuid "
@@ -174,7 +174,7 @@ def get(conn: psycopg.Connection, person: Person, draft: str) -> dict | None:
     return dict(found) if found else None
 
 
-def start(conn: psycopg.Connection, person: Person, agent: str, based_on: str,
+def start(conn: db.Connection, person: Person, agent: str, based_on: str,
           files: dict[str, str]) -> dict:
     """A new draft of someone's: their first of `agent`, among no more than MOST_DRAFTS."""
     held = conn.execute("select count(*) as n, bool_or(agent = %s) as already from agent_drafts "
@@ -188,7 +188,7 @@ def start(conn: psycopg.Connection, person: Person, agent: str, based_on: str,
         f"returning {SHOWN}, files", (person.id, agent, based_on, Jsonb(files))).fetchone())
 
 
-def save(conn: psycopg.Connection, person: Person, draft: str, files: dict[str, str]) -> dict | None:
+def save(conn: db.Connection, person: Person, draft: str, files: dict[str, str]) -> dict | None:
     """A draft of someone's, with these files now; None if it isn't theirs, or isn't there."""
     try:
         found = conn.execute(
@@ -208,7 +208,7 @@ def zipped(draft: dict) -> bytes:
     return packed.getvalue()
 
 
-def by_id(conn: psycopg.Connection, draft: str) -> dict | None:
+def by_id(conn: db.Connection, draft: str) -> dict | None:
     """A draft, whoever's, with its files and its author's id; None if it isn't there."""
     try:
         found = conn.execute(f"select {SHOWN}, files, person from agent_drafts "
@@ -218,7 +218,7 @@ def by_id(conn: psycopg.Connection, draft: str) -> dict | None:
     return dict(found) if found else None
 
 
-def theirs(conn: psycopg.Connection, person: Person, agents: Iterable[str]) -> list[dict]:
+def theirs(conn: db.Connection, person: Person, agents: Iterable[str]) -> list[dict]:
     """Others' drafts of the agents someone may author too, latest first, with their
     authors' ids: read only, to them."""
     return [dict(r) for r in conn.execute(
@@ -226,7 +226,7 @@ def theirs(conn: psycopg.Connection, person: Person, agents: Iterable[str]) -> l
         "order by updated_at desc", (sorted(set(agents)), person.id))]
 
 
-def hand_over(conn: psycopg.Connection, person: Person, draft: str, to: str) -> dict | None:
+def hand_over(conn: db.Connection, person: Person, draft: str, to: str) -> dict | None:
     """Give one of someone's drafts to someone who has none of its agent: theirs to change,
     then. None if it isn't the giver's, or the taker has one of its agent already."""
     try:
@@ -240,13 +240,13 @@ def hand_over(conn: psycopg.Connection, person: Person, draft: str, to: str) -> 
     return dict(found) if found else None
 
 
-def published(conn: psycopg.Connection, person: Person, draft: str, pull: str) -> None:
+def published(conn: db.Connection, person: Person, draft: str, pull: str) -> None:
     """Note the pull request someone published one of their drafts as."""
     conn.execute("update agent_drafts set published = %s where id = %s::uuid and person = %s",
                  (pull, draft, person.id))
 
 
-def drop(conn: psycopg.Connection, person: Person, draft: str) -> dict | None:
+def drop(conn: db.Connection, person: Person, draft: str) -> dict | None:
     """Let one of someone's drafts go; what it was, or None if it isn't theirs, or isn't there."""
     try:
         found = conn.execute(f"delete from agent_drafts where id = %s::uuid and person = %s "

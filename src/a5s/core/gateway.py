@@ -260,7 +260,7 @@ class Gateway:
         """The task engine, as the core runs it: each slice a run (core/tasking.py)."""
         return tasking.service(self.url, self.clock, RUN_MINUTES)
 
-    def settings_in_force(self, conn: psycopg.Connection,
+    def settings_in_force(self, conn: db.Connection,
                           seal: bool = True) -> tuple[Any, str | None]:
         """The latest signed version of the settings, checked again from the bytes that were
         signed, against the directory as it is now: every time, with nothing cached, so an
@@ -302,7 +302,7 @@ class Gateway:
                                          self.scenario.name, settings.serial))
         return settings, None
 
-    def groups_in_force(self, conn: psycopg.Connection) -> dict[str, tuple[str, ...]]:
+    def groups_in_force(self, conn: db.Connection) -> dict[str, tuple[str, ...]]:
         """The roles the settings in force give groups: once checked, where the core can check
         them; in the channels app, which holds no seal key, once the core sealed them."""
         if self.cfg.seal_keys:  # read alone: it never waits on what its caller holds
@@ -317,7 +317,7 @@ class Gateway:
         except ValueError:
             return {}
 
-    def check_instance(self, conn: psycopg.Connection, inst: dict) -> list[str]:
+    def check_instance(self, conn: db.Connection, inst: dict) -> list[str]:
         """Whether an instance's record is exactly what its signed settings, its release and
         the ledger say, so that nobody can widen it by editing the database."""
         settings, problem = self.settings_in_force(conn)
@@ -352,14 +352,14 @@ class Gateway:
             return [f"{inst['id']}'s status doesn't match the ledger"]
         return []
 
-    def release_problems(self, conn: psycopg.Connection) -> list[str]:
+    def release_problems(self, conn: db.Connection) -> list[str]:
         """Why the release a5s is can't run here, if it can't: in development, it always can."""
         if self.releases is None or self.cfg.development:
             return []
         return self.releases.problems(conn, self.scenario, self.cfg.team)
 
     @staticmethod
-    def take_message(conn: psycopg.Connection, inbound: str) -> tuple[dict | None, str | None]:
+    def take_message(conn: db.Connection, inbound: str) -> tuple[dict | None, str | None]:
         """The message a run will answer, which the core received and checked, used once.
 
         It names the sender, so no service can. The problem, if it can't be used.
@@ -375,14 +375,14 @@ class Gateway:
         return None, "the message it answers isn't one the core received"
 
     @staticmethod
-    def message_of(conn: psycopg.Connection, inbound: str | None) -> dict | None:
+    def message_of(conn: db.Connection, inbound: str | None) -> dict | None:
         """Who wrote the message a run answers, on which channel, and where answers go."""
         if inbound is None:
             return None
         return conn.execute("select id::text, person, channel, reply_to from inbound where id = %s",
                             (inbound,)).fetchone()
 
-    def reach(self, conn: psycopg.Connection, person: str, agent: str | None) -> dict:
+    def reach(self, conn: db.Connection, person: str, agent: str | None) -> dict:
         """How to write to someone who isn't waiting for an answer, as the agent's own bot and
         never another's: in the conversation they last had with this agent, whoever started
         it, or else in the chat they last wrote in, where the agent's bot starts one if the
@@ -422,7 +422,7 @@ class Gateway:
                     "start": {"person": person, "agent": agent, "user": user}}
         return local  # such as in Teams, where only people who added the agent's app can hear it
 
-    def at_once(self, conn: psycopg.Connection, person: str, agent: str | None, *,
+    def at_once(self, conn: db.Connection, person: str, agent: str | None, *,
                 count: bool = True) -> dict:
         """How to write at once to someone who isn't waiting for it, as reach says, unless
         they've had today's urgent messages, when it waits for their next batch. Only a
@@ -431,7 +431,7 @@ class Gateway:
             return {"channel": "batch", "reply_to": {}}
         return self.reach(conn, person, agent)
 
-    def _in(self, conn: psycopg.Connection, conversation: dict) -> dict | None:
+    def _in(self, conn: db.Connection, conversation: dict) -> dict | None:
         """A new message in a conversation, not a reply, unless it's local, its chat is off
         here now, or the person left it."""
         channel = conversation["channel"]
@@ -441,14 +441,14 @@ class Gateway:
         return {"channel": channel,
                 "reply_to": {k: v for k, v in conversation["reply_to"].items() if k != "activity"}}
 
-    def able(self, conn: psycopg.Connection) -> dict[str, bool]:
+    def able(self, conn: db.Connection) -> dict[str, bool]:
         """Which instances can act now: active, as signed and released, in a release this
         deployment approved."""
         runs = not self.release_problems(conn)
         return {i["id"]: runs and i["status"] == "active" and not self.check_instance(conn, i)
                 for i in conn.execute("select * from instances").fetchall()}
 
-    def busy(self, conn: psycopg.Connection, person: Person, due: datetime, now: datetime,
+    def busy(self, conn: db.Connection, person: Person, due: datetime, now: datetime,
              able: dict[str, bool]) -> bool:
         """Whether the agents' work for someone's digest is still due, or still running: a
         chase, a report, or a reminder for the day. What's due is checked before what's
@@ -478,7 +478,7 @@ class Gateway:
                                  (person.id, list(digests.KINDS))).fetchone())
 
     @staticmethod
-    def for_digest(conn: psycopg.Connection, run: dict) -> bool:
+    def for_digest(conn: db.Connection, run: dict) -> bool:
         """Whether what a run writes waits for its person's digest: a chase, a report, or a
         reminder for a day, but not a reminder for a particular time, which goes at once."""
         kind = run["trigger"].get("kind")
@@ -488,7 +488,7 @@ class Gateway:
             return bool(row and row["in_digest"])
         return kind in digests.KINDS
 
-    def digest_open(self, conn: psycopg.Connection, now: datetime) -> Callable[[Person], bool]:
+    def digest_open(self, conn: db.Connection, now: datetime) -> Callable[[Person], bool]:
         """Whether someone's digest time has come today, and its digest hasn't gone, so their
         agents' work for it falls due: asked once a sweep for each person."""
         found: dict[str, bool] = {}
@@ -510,7 +510,7 @@ class Gateway:
         return (self.cfg.public_url or self.cfg.channels_url).rstrip("/")
 
     @staticmethod
-    def spoke(conn: psycopg.Connection, group: str, agent: str, topic: str,
+    def spoke(conn: db.Connection, group: str, agent: str, topic: str,
               members: list[str], sender: str | None) -> list[str]:
         """Whose words a run in a group chat may be given, so whose its changes are: whoever
         asked, and whoever said anything everyone now in it heard, in its topic or among its
@@ -525,7 +525,7 @@ class Gateway:
         return sorted({*(r["speaker"] for r in said), *([sender] if sender else [])})
 
     @staticmethod
-    def reads_outside(conn: psycopg.Connection, agent: str, acts_for: list[str],
+    def reads_outside(conn: db.Connection, agent: str, acts_for: list[str],
                       topic: str, conversation: str | None = None) -> bool:
         """Whether a run opens marked: whether the conversation it reads holds a turn from a
         run that read outside content, in its topic, which its summary may have folded, or
@@ -546,13 +546,13 @@ class Gateway:
             {"person": group or acts_for[0], "agent": agent, "topic": topic,
              "members": list(acts_for)}).fetchone())
 
-    def approvers_in_force(self, conn: psycopg.Connection) -> list[str]:
+    def approvers_in_force(self, conn: db.Connection) -> list[str]:
         """Who approved the settings in force, by key or on a card the core sealed."""
         row = conn.execute("select signers from settings_versions where scenario = %s "
                            "order by serial desc limit 1", (self.scenario.name,)).fetchone()
         return list(row["signers"]) if row else []
 
-    def caps(self, conn: psycopg.Connection, release: str) -> dict[tuple[str, str], int]:
+    def caps(self, conn: db.Connection, release: str) -> dict[tuple[str, str], int]:
         """a5s's caps for a release's types of action in each part, as the core sealed them
         with the ledger's last word on each: 1 where there's none."""
         return samples.caps(conn, self.cfg.seal_keys, release)
@@ -569,7 +569,7 @@ class Gateway:
             return "approving settings where people work needs the core's seal key: see A5S_SEAL_KEYS"
         return None
 
-    def seal_pending(self, conn: psycopg.Connection) -> None:
+    def seal_pending(self, conn: db.Connection) -> None:
         """Check again, and seal, what the channels app recorded people approving, deciding and
         grading, in the gateway alone (core/sealing.py): what doesn't check out is refused.
         Without its seal key or the identity provider, it leaves them waiting, and says so."""
@@ -629,7 +629,7 @@ class Gateway:
 
     # What each kind of run brings when it opens.
 
-    def answering(self, conn: psycopg.Connection, inst: dict, trigger: dict,
+    def answering(self, conn: db.Connection, inst: dict, trigger: dict,
                   _now: datetime) -> Opening:
         """A run that answers a message the core received, acting for its sender, or in a
         group chat, for everyone in it when it was sent (core/groups.py)."""
@@ -659,7 +659,7 @@ class Gateway:
                                    f"not the {inst['definition']}")
         return opening
 
-    def reminding(self, conn: psycopg.Connection, inst: dict, trigger: dict,
+    def reminding(self, conn: db.Connection, inst: dict, trigger: dict,
                   now: datetime) -> Opening:
         """A run that reminds someone of what they owe, acting for them."""
         try:
@@ -691,7 +691,7 @@ class Gateway:
             opening.reasons.append(f"it waits for {row['person']}'s digest")
         return opening
 
-    def scheduled(self, conn: psycopg.Connection, inst: dict, trigger: dict,
+    def scheduled(self, conn: db.Connection, inst: dict, trigger: dict,
                   now: datetime) -> Opening:
         """A run on one of the release's schedules, acting for nobody."""
         name = str(trigger.get("schedule"))
@@ -714,7 +714,7 @@ class Gateway:
             opening.used = True
         return opening
 
-    def questioned(self, conn: psycopg.Connection, inst: dict, trigger: dict,
+    def questioned(self, conn: db.Connection, inst: dict, trigger: dict,
                    now: datetime) -> Opening:
         """A run that answers another agent's question, acting for the same people as the run
         that asked, with its day's budget and its mark, and the question as a5s's task: with
@@ -762,7 +762,7 @@ class Gateway:
             opening.told.append(("the records, as its reports would tell them", "\n".join(changed)))
         return opening
 
-    def changed_for(self, conn: psycopg.Connection, inst: dict, people: list[str],
+    def changed_for(self, conn: db.Connection, inst: dict, people: list[str],
                     now: datetime, other_model: str | None) -> list[str]:
         """What changed in the records of each of these people, and what's open, as the
         instance's reports would tell them, of the records all of them may see, without
@@ -792,7 +792,7 @@ class Gateway:
             log.exception("couldn't work out what changed for a question to %s", inst["id"])
             return []
 
-    def reporting(self, conn: psycopg.Connection, inst: dict, trigger: dict,
+    def reporting(self, conn: db.Connection, inst: dict, trigger: dict,
                   now: datetime) -> Opening:
         """A run that tells someone what changed in their records, and what fell due, acting
         for them. The facts come from the records, worked out by code."""
@@ -840,7 +840,7 @@ class Gateway:
             opening.task, opening.due, opening.seen = reports.task(person, news), due, news.records
         return opening
 
-    def following_up(self, conn: psycopg.Connection, inst: dict, trigger: dict,
+    def following_up(self, conn: db.Connection, inst: dict, trigger: dict,
                      now: datetime) -> Opening:
         """A run that reminds someone of what they agreed to be reminded of, acting for them."""
         try:
@@ -874,7 +874,7 @@ class Gateway:
             opening.reasons.append(f"it waits for {row['person']}'s digest")
         return opening
 
-    def slicing(self, conn: psycopg.Connection, inst: dict, trigger: dict,
+    def slicing(self, conn: db.Connection, inst: dict, trigger: dict,
                 now: datetime) -> Opening:
         """A run of the next slice of someone's task, acting for its audience, on its owner's
         day: the slice itself begins as the run opens, once nothing else stops it."""
@@ -904,7 +904,7 @@ class Gateway:
             opening.reasons.append("the directory doesn't know whose it is")
         return opening
 
-    def summarising(self, conn: psycopg.Connection, inst: dict, trigger: dict,
+    def summarising(self, conn: db.Connection, inst: dict, trigger: dict,
                     now: datetime) -> Opening:
         """A run of a5s's own that folds the turns of a topic that no longer fit in its runs
         into the topic's summary, acting for the person whose conversation it is: in a group
@@ -988,7 +988,7 @@ class Gateway:
             entities=[self.instance_entity(row), resource, *extra],
         )
 
-    def unseen(self, conn: psycopg.Connection, alias: str) -> set[str]:
+    def unseen(self, conn: db.Connection, alias: str) -> set[str]:
         """The fields of a class the instance's model isn't approved for, which it never sees.
         If the settings in force don't check out, nothing a5s could hand over is safe: it
         raises, and the call fails closed."""
@@ -999,14 +999,14 @@ class Gateway:
         classes = model.data_classes if model else ()
         return {f for f, cls in settings.classified.items() if cls not in classes}
 
-    def hidden_from(self, conn: psycopg.Connection, row: dict) -> set[str]:
+    def hidden_from(self, conn: db.Connection, row: dict) -> set[str]:
         """The fields of a class a run's model isn't approved for, which it never sees: for a
         run that answers another agent's question, the asking model's too, since the answer
         goes there (core/asking.py)."""
         other = (row.get("trigger") or {}).get("asker_model")
         return self.unseen(conn, row["model"]) | (self.unseen(conn, other) if other else set())
 
-    def title_hidden(self, conn: psycopg.Connection, alias: str) -> bool:
+    def title_hidden(self, conn: db.Connection, alias: str) -> bool:
         """Whether records' titles are of a class the model isn't approved for, or the settings
         in force can't say, so a5s writes no title into what it tells the model."""
         try:
@@ -1052,7 +1052,7 @@ def values_of(traced: list[dict]) -> dict:
             "own": [t["value"] for t in traced if not t["from"]]}
 
 
-def load_run(conn: psycopg.Connection, token: str) -> dict:
+def load_run(conn: db.Connection, token: str) -> dict:
     row = conn.execute(
         """
         select r.id::text as run, r.acts_for, r.read_outside, r.trigger, r.tokens, r.task_cap,
@@ -1357,7 +1357,7 @@ def create_app(gw: Gateway) -> FastAPI:
         push(sends)
         return {"closed": run_id}
 
-    def slice_closed(conn: psycopg.Connection, run_id: str, row: dict,
+    def slice_closed(conn: db.Connection, run_id: str, row: dict,
                      outcome: str) -> list[int | None]:
         """End the slice of a task that a closing run was, if it was one, with what it said
         and spent; and if that ended the task, and the run wrote nothing to its owner, a5s
@@ -1369,7 +1369,7 @@ def create_app(gw: Gateway) -> FastAPI:
             return []
         return tell_of_task(conn, task)
 
-    def tell_of_task(conn: psycopg.Connection, task: dict) -> list[int | None]:
+    def tell_of_task(conn: db.Connection, task: dict) -> list[int | None]:
         """a5s's own word to a task's owner that it's done, needs them, or has stopped, when
         its agent's run didn't say so: never the agent's own words. What to push once the
         transaction is done."""
@@ -1390,7 +1390,7 @@ def create_app(gw: Gateway) -> FastAPI:
         return [outbound(conn, gw.reach(conn, person.id, row["agent"]), person.id, text,
                          instance=row["instance_id"], agent=row["agent"])]
 
-    def give_instead(conn: psycopg.Connection, trigger: dict, why: str | None) -> list[int | None]:
+    def give_instead(conn: db.Connection, trigger: dict, why: str | None) -> list[int | None]:
         """Give a reminder or a chase that its agent's run couldn't, in a5s's own words, so
         nothing someone agreed to or owes lapses because a model, a budget or a run failed.
         What to push once the transaction is done."""
@@ -1720,7 +1720,7 @@ def create_app(gw: Gateway) -> FastAPI:
 
     # Settings the instance approvers approve where they work (core/approvals.py)
 
-    def proposing(conn: psycopg.Connection, settings: Settings, by: str | None = None) -> dict:
+    def proposing(conn: db.Connection, settings: Settings, by: str | None = None) -> dict:
         """Record a version for its approvers, and ask each of them where they work, once. What
         to send them once the transaction is done, and what the version changes; or why it
         can't be proposed. `by` is who asked for it in the settings app, if anyone did."""
@@ -1778,7 +1778,7 @@ def create_app(gw: Gateway) -> FastAPI:
                 "digest": done["row"]["digest"], "link": done["link"], "changes": done["changes"],
                 "asked": done["asked"], "new": done["new"]}
 
-    def requested(conn: psycopg.Connection) -> list[int | None]:
+    def requested(conn: db.Connection) -> list[int | None]:
         """Propose the versions people asked for in the settings app, once each, if they still
         approve instances. What to send their approvers once the transaction is done. Each
         request is worked on alone, so one a5s can't use is refused, and holds up nothing."""
@@ -1810,7 +1810,7 @@ def create_app(gw: Gateway) -> FastAPI:
                          "where id = %s", (outcome, digest, req["id"]))
         return sends
 
-    def applying(conn: psycopg.Connection, row: dict, last: dict | None) -> tuple[str | None, list]:
+    def applying(conn: db.Connection, row: dict, last: dict | None) -> tuple[str | None, list]:
         """Apply a proposed version once everyone it needs has approved it: what became of it,
         or None while it waits, and who approved it."""
         approved, _ = approvals.approvers(conn, gw.cfg.seal_keys, gw.scenario.name, row["digest"])
@@ -1852,10 +1852,11 @@ def create_app(gw: Gateway) -> FastAPI:
                         with conn.transaction():  # a savepoint
                             outcome, approved = applying(conn, row, last)
                     except ValueError as exc:
-                        outcome = f"refused: {exc}"[:500]
+                        outcome, approved = f"refused: {exc}"[:500], []
                     except Exception as exc:  # recorded on the proposal, and logged
                         log.exception("couldn't apply settings %s", row["digest"])
-                        outcome = f"refused: a5s couldn't apply it ({type(exc).__name__})"
+                        outcome, approved = (
+                            f"refused: a5s couldn't apply it ({type(exc).__name__})", [])
                     if outcome is None:
                         continue
                     if outcome == "applied":
@@ -1996,7 +1997,7 @@ def create_app(gw: Gateway) -> FastAPI:
             except studio.UnknownZone as e:
                 raise HTTPException(400, str(e)) from e
 
-    def studio_instance(conn: psycopg.Connection, instance: str) -> dict:
+    def studio_instance(conn: db.Connection, instance: str) -> dict:
         found = next((i for i in studio.instances(conn, retired=True) if i["id"] == instance),
                      None)
         if found is None:
@@ -2108,7 +2109,7 @@ def create_app(gw: Gateway) -> FastAPI:
         return notebook.check(gw.url, gw.scenario, gw.clock())
 
     def officer_asked(action: str, person: str, body: StatusChange,
-                      conn: psycopg.Connection | None = None) -> tuple[str, dict | str]:
+                      conn: db.Connection | None = None) -> tuple[str, dict | str]:
         """Who asked for this, and how a5s knows: where people sign in, the data protection
         officer's request on the core's page, made for this alone, which it uses up, in `conn`'s
         transaction if it's given one; in development, whoever they say, if they have the
@@ -2555,7 +2556,7 @@ def create_app(gw: Gateway) -> FastAPI:
                 "to the records of one part at a time, or ask someone who may see them all to "
                 "make it")
 
-    def held(conn: psycopg.Connection, row: dict, tool: Tool, args: dict, standing: dict,
+    def held(conn: db.Connection, row: dict, tool: Tool, args: dict, standing: dict,
              deciding: list[Person], seq: int, traced: list[dict], change: str | None,
              over: str | None, settings: Settings) -> tuple[dict, list]:
         """Keep a held call for its deciders, and ask each of them, where they work with the
@@ -2586,7 +2587,7 @@ def create_app(gw: Gateway) -> FastAPI:
                      ([p.id for p in deciding], proposal["id"]))
         return proposal, sends
 
-    def ask(conn: psycopg.Connection, p: dict, person: str, again: bool = False) -> int | None:
+    def ask(conn: db.Connection, p: dict, person: str, again: bool = False) -> int | None:
         """Ask, or remind, a decider to decide a held change, where they work with its agent,
         as an urgent message. What to push once the transaction is done."""
         link = f"{gw.public_url}/decide/?proposal={p['digest']}"
@@ -2649,7 +2650,7 @@ def create_app(gw: Gateway) -> FastAPI:
                 room -= len(text) + 2_000
                 answer = model_call(model.api, extractor.form_request(
                     model.api, row["model"], tool.extract, text), token)
-                reply = extractor.reply_text(model.api, json.loads(answer.body))
+                reply = extractor.reply_text(model.api, json.loads(bytes(answer.body)))
                 if answer.status_code < 400:
                     filled, dropped = extractor.checked(reply, text, tool.extract,
                                                         gw.scenario.record_pattern)
@@ -2697,7 +2698,7 @@ def create_app(gw: Gateway) -> FastAPI:
                 "denied": True, "explanations": ["this run has read no such document"]})
         answer = model_call(model.api, extractor.answer_request(
             model.api, row["model"], found["text"], str(args.get("question", ""))[:500]), token)
-        said = extractor.reply_text(model.api, json.loads(answer.body))
+        said = extractor.reply_text(model.api, json.loads(bytes(answer.body)))
         status_now = "ok" if answer.status_code < 400 and said else "error"
         recorded = record({"kind": "tool", "action": extractor.ASK, "run": row["run"],
                            "instance": row["id"], "decision": "record", "of": seq,
@@ -2811,7 +2812,7 @@ def create_app(gw: Gateway) -> FastAPI:
                               "outside content now too, and works as one that has.")
         return {"result": result}
 
-    def carry(conn: psycopg.Connection, row: dict, text: str, agent: str) -> list[tuple[str, str]]:
+    def carry(conn: db.Connection, row: dict, text: str, agent: str) -> list[tuple[str, str]]:
         """The values in an answer the run that gave it had read, from its tools and what a5s
         told it, but not from the question, which are the asker's own: each with where the
         run that asked takes it as from, outside staying outside."""
@@ -2959,7 +2960,7 @@ def create_app(gw: Gateway) -> FastAPI:
                 card: dict | None = None) -> str | None:
         """Send text through a chat a5s writes to itself, such as Teams or Matrix, starting the
         conversation first if the route says to, and record whether it got there. The problem,
-        if not. In Teams, a card goes instead of the text, if there is one."""
+        if not. In Teams, a card goes instead of the text, if there is one: elsewhere, the text."""
         channel, problem, started = route["channel"], None, False
         chat = gw.chat(channel)
         if chat is None:
@@ -2969,10 +2970,7 @@ def create_app(gw: Gateway) -> FastAPI:
                 reply_to = route["reply_to"]
                 if "start" in route:
                     reply_to, started = start(channel, chat, **route["start"])
-                if card is not None and channel == "teams":
-                    chat.send(reply_to, text, card=card)
-                else:
-                    chat.send(reply_to, text)
+                chat.send(reply_to, text, card=card)
             except (httpx.HTTPError, ValueError) as exc:
                 problem = f"{channel} didn't take it: {type(exc).__name__}: {exc}"[:200]
         record({"kind": "message", "action": "deliver", "run": run, "instance": instance,
@@ -2980,7 +2978,7 @@ def create_app(gw: Gateway) -> FastAPI:
                 else {"status": "ok", "channel": channel, **({"started": True} if started else {})}})
         return problem
 
-    def outbound(conn: psycopg.Connection, route: dict, person: str, text: str, *,
+    def outbound(conn: db.Connection, route: dict, person: str, text: str, *,
                  run: str | None = None, instance: str | None = None, agent: str | None = None,
                  inbound: str | None = None, card: dict | None = None) -> int | None:
         """Keep what a5s will write to someone, in the transaction that decides it: in the
@@ -2994,7 +2992,7 @@ def create_app(gw: Gateway) -> FastAPI:
              Jsonb(route) if pushed else None, Jsonb(card) if card else None)).fetchone()
         return row["id"] if pushed else None
 
-    def noted(conn: psycopg.Connection, person: str, agent: str | None, text: str,
+    def noted(conn: db.Connection, person: str, agent: str | None, text: str,
               topic: str | None, heard_by: list[str] | None = None) -> None:
         """a5s's own words to someone, in their conversation with the agent whose chat they
         go in, so the agent's next run knows what the person is answering: or in a group
@@ -3056,15 +3054,15 @@ def create_app(gw: Gateway) -> FastAPI:
     def present(route: dict) -> list[str | None] | None:
         """Who's in a group chat now, by their ids in the directory, None for anyone it doesn't
         know: or None if the chat can't say."""
-        chat, reply_to = gw.chat(route["channel"]), route.get("reply_to") or {}
+        reply_to = route.get("reply_to") or {}
         try:
-            if route["channel"] == "matrix" and chat is not None:
-                joined = chat.members(reply_to["room"], reply_to["bot"])
+            if route["channel"] == "matrix" and (matrix := gw.matrix) is not None:
+                joined = matrix.members(reply_to["room"], reply_to["bot"])
                 return None if joined is None else [
-                    p.id if (p := chat.person_of(u, gw.scenario)) else None
-                    for u in joined if not chat.agent_of(u)]
-            if route["channel"] == "teams" and chat is not None:
-                return chat.members(reply_to, gw.scenario)
+                    p.id if (p := matrix.person_of(u, gw.scenario)) else None
+                    for u in joined if not matrix.agent_of(u)]
+            if route["channel"] == "teams" and (teams := gw.teams) is not None:
+                return teams.members(reply_to, gw.scenario)
         except (httpx.HTTPError, ValueError, KeyError):
             log.warning("couldn't read who's in a %s chat", route["channel"])
         return None
@@ -3166,7 +3164,7 @@ def create_app(gw: Gateway) -> FastAPI:
                 return ended(conn, p, "lapsed", [], now)
             return chasing(conn, p, now)
 
-    def deciding(conn: psycopg.Connection, p: dict, found: dict, now: datetime) -> dict:
+    def deciding(conn: db.Connection, p: dict, found: dict, now: datetime) -> dict:
         """What becomes of a held change once the people who may decide it have: whether it's
         made. An approved one is marked as making, so it's never made twice."""
         rows = found["rows"]
@@ -3186,7 +3184,7 @@ def create_app(gw: Gateway) -> FastAPI:
                                       "decided": "approve", "decisions": [r["id"] for r in rows]}})
         return {"make": (p, proposals.values(conn, p), rows)}
 
-    def allowed_now(conn: psycopg.Connection, p: dict) -> str | None:
+    def allowed_now(conn: db.Connection, p: dict) -> str | None:
         """Why an approved change can't be made now, if it can't: the instance may no longer
         act, the tool has changed since, or policy would deny the call."""
         row = conn.execute(
@@ -3237,7 +3235,7 @@ def create_app(gw: Gateway) -> FastAPI:
                 going = ended(conn, p, "failed", rows, gw.clock(), outcome["error"])
         return going["sends"]
 
-    def ended(conn: psycopg.Connection, p: dict, became: str, rows: list[dict],
+    def ended(conn: db.Connection, p: dict, became: str, rows: list[dict],
               now: datetime, extra: str = "", reason: str | None = None) -> dict:
         """End a held change, let go of the values it kept, and tell whoever it was for, in the
         conversation with its agent, so its next run knows too, and, in their digest, everyone
@@ -3291,7 +3289,7 @@ def create_app(gw: Gateway) -> FastAPI:
                              now)
         return {"sends": sends}
 
-    def chasing(conn: psycopg.Connection, p: dict, now: datetime) -> dict:
+    def chasing(conn: db.Connection, p: dict, now: datetime) -> dict:
         """Remind each of a held change's deciders once, in their own working hours, after
         two working days. After five, and only once they've been reminded, tell their
         managers, each in their own hours, or the instance's owner if nobody is above them:
@@ -3388,7 +3386,7 @@ def create_app(gw: Gateway) -> FastAPI:
                     capped(conn, found, now)
         return {"changed": changed, "lapsed": lapsed}
 
-    def capped(conn: psycopg.Connection, found: dict, now: datetime) -> None:
+    def capped(conn: db.Connection, found: dict, now: datetime) -> None:
         """Tell the owners and deputies of the instances a cap governs that it changed, in
         their digest."""
         rows = conn.execute(

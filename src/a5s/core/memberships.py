@@ -80,14 +80,14 @@ def owner_of(role: str) -> str:
     return f"{PART_OWNER}:{part}" if part else INSTANCE_APPROVER
 
 
-def stored(conn: psycopg.Connection, person: str | None = None) -> dict[str, tuple[str, ...]]:
+def stored(conn: db.Connection, person: str | None = None) -> dict[str, tuple[str, ...]]:
     """The groups each person's latest sign-in showed, of those the settings name."""
     rows = conn.execute("select person, groups from sign_in_groups "
                         "where %(p)s::text is null or person = %(p)s", {"p": person}).fetchall()
     return {r["person"]: tuple(r["groups"]) for r in rows}
 
 
-def keep(conn: psycopg.Connection, person: str, groups: tuple[str, ...], at: datetime) -> None:
+def keep(conn: db.Connection, person: str, groups: tuple[str, ...], at: datetime) -> None:
     """Keep the groups a sign-in made at `at` showed, unless a later sign-in's are kept."""
     conn.execute(
         "insert into sign_in_groups (person, groups, seen_at) values (%s, %s, %s) "
@@ -100,7 +100,7 @@ def rooted(scenario: Any) -> Any:
     return Own(scenario) if isinstance(scenario, Grouped) else scenario
 
 
-def under(scenario: Any, conn: psycopg.Connection, mapping: Mapping) -> Callable[[str], Person | None]:
+def under(scenario: Any, conn: db.Connection, mapping: Mapping) -> Callable[[str], Person | None]:
     """Who someone is, with the roles their latest sign-in's groups give them under `mapping`,
     read afresh, for checking a version of the settings: never what a part kept."""
     inner = rooted(scenario)
@@ -116,7 +116,7 @@ def under(scenario: Any, conn: psycopg.Connection, mapping: Mapping) -> Callable
 @dataclass
 class _State:
     url: str
-    mapped: Callable[[psycopg.Connection], Mapping]
+    mapped: Callable[[db.Connection], Mapping]
     every: float = EVERY
     clock: Callable[[], float] = time.monotonic
     mapping: Mapping = field(default_factory=dict)
@@ -132,7 +132,7 @@ class Grouped:
 
     _a5s_roles: _State
 
-    def fresh(self, conn: psycopg.Connection | None = None) -> None:
+    def fresh(self, conn: db.Connection | None = None) -> None:
         """Read the map and everyone's groups again, if they're older than its `every`. Asked
         again while it reads, as reading the settings may, what it read last stands."""
         state = self._a5s_roles
@@ -218,7 +218,7 @@ class Own:
         return super(Grouped, self.scenario).holders(role)  # type: ignore[misc]
 
 
-def grouped(scenario: Any, url: str, mapped: Callable[[psycopg.Connection], Mapping], *,
+def grouped(scenario: Any, url: str, mapped: Callable[[db.Connection], Mapping], *,
             every: float = EVERY, clock: Callable[[], float] = time.monotonic) -> Any:
     """A scenario, with the roles its people's groups give them mixed into its own class: the
     same object, so all it does, and all that's set on it, stays as it was."""

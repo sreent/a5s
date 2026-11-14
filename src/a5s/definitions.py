@@ -48,8 +48,8 @@ def _time(value: Any) -> str:
 class Autonomy(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    start: int = Field(1, ge=0, le=1)  # level 2 only ever comes from the settings
-    max: int = Field(1, ge=0, le=2)
+    start: int = Field(default=1, ge=0, le=1)  # level 2 only ever comes from the settings
+    max: int = Field(default=1, ge=0, le=2)
 
 
 class Schedule(BaseModel):
@@ -102,7 +102,7 @@ class Context(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    budget_tokens: int = Field(24000, ge=1000)  # for the conversation, split by part
+    budget_tokens: int = Field(default=24000, ge=1000)  # for the conversation, split by part
     # whether it may search its conversation with the person it acts for, and correct its
     # summaries at their word
     recall: bool = False
@@ -120,8 +120,8 @@ class Tasks(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    budget_tokens: int = Field(400_000, ge=10_000)
-    days: int = Field(3, ge=1, le=30)
+    budget_tokens: int = Field(default=400_000, ge=10_000)
+    days: int = Field(default=3, ge=1, le=30)
 
 
 # Each model call in a run carries the whole context and, beside it, the instructions, the
@@ -141,8 +141,8 @@ class Budget(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    per_run: int = Field(200_000, ge=1000)
-    per_person_per_day: int = Field(1_000_000, ge=1000)
+    per_run: int = Field(default=200_000, ge=1000)
+    per_person_per_day: int = Field(default=1_000_000, ge=1000)
 
 
 class Definition(BaseModel):

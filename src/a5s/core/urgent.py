@@ -14,8 +14,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-import psycopg
-
+from a5s import db
 from a5s.contract import Scenario
 from a5s.core.budgets import day_of
 
@@ -23,7 +22,7 @@ CAP = 5  # urgent messages a day that go to someone at once [TBC]
 EVERY = timedelta(hours=1)  # how long the rest wait, at most, to go together
 
 
-def counted(conn: psycopg.Connection, scenario: Scenario, person: str, now: datetime) -> bool:
+def counted(conn: db.Connection, scenario: Scenario, person: str, now: datetime) -> bool:
     """Count one more urgent message going to someone at once today. False if they've had
     today's five, so it waits for a batch."""
     return conn.execute(
@@ -33,14 +32,14 @@ def counted(conn: psycopg.Connection, scenario: Scenario, person: str, now: date
         (person, day_of(scenario, person, now), CAP)).fetchone() is not None
 
 
-def hold(conn: psycopg.Connection, person: str, agent: str | None, instance: str | None,
+def hold(conn: db.Connection, person: str, agent: str | None, instance: str | None,
          run: str | None, text: str, now: datetime) -> None:
     """An urgent message that waits for the person's next batch."""
     conn.execute("insert into urgent_held (person, agent, instance_id, run_id, text, at) "
                  "values (%s, %s, %s, %s, %s, %s)", (person, agent, instance, run, text, now))
 
 
-def due(conn: psycopg.Connection, now: datetime) -> dict[str, list[dict]]:
+def due(conn: db.Connection, now: datetime) -> dict[str, list[dict]]:
     """The batches that go now, by person: everything held for someone whose oldest held
     message has waited an hour."""
     batches: dict[str, list[dict]] = {}
@@ -62,6 +61,6 @@ def compose(items: list[dict]) -> str:
     return "\n\n".join(parts)
 
 
-def sent(conn: psycopg.Connection, items: list[dict], now: datetime) -> None:
+def sent(conn: db.Connection, items: list[dict], now: datetime) -> None:
     conn.execute("update urgent_held set sent_at = %s where id = any(%s)",
                  (now, [i["id"] for i in items]))

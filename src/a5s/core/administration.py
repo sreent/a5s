@@ -10,8 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from typing import Any
 
-import psycopg
-
+from a5s import db
 from a5s.contract import (
     ASSURANCE,
     DATA_PROTECTION,
@@ -36,7 +35,7 @@ def administers(person: Person | None, team: str) -> bool:
         for r in person.roles))
 
 
-def held(scenario: Any, conn: psycopg.Connection, roles: list[str]) -> list[dict[str, Any]]:
+def held(scenario: Any, conn: db.Connection, roles: list[str]) -> list[dict[str, Any]]:
     """Who holds each role, and by what: the directory, or a group, as their latest sign-in
     showed it and the settings in force map it."""
     own = memberships.rooted(scenario)
@@ -69,7 +68,7 @@ def mapped(scenario: Any) -> list[dict[str, Any]]:
             for group, roles in sorted(state.mapping.items())]
 
 
-def waiting(conn: psycopg.Connection, gw: Any) -> dict[str, Any]:
+def waiting(conn: db.Connection, gw: Any) -> dict[str, Any]:
     """What waits for whom: versions of the settings, for their approvers; the release, for
     the people its changes need; and held changes, for each part's deciders, by how many."""
     last = approvals.latest(conn, gw.scenario.name)
@@ -93,7 +92,7 @@ def waiting(conn: psycopg.Connection, gw: Any) -> dict[str, Any]:
     return {"settings": versions, "release": gw.release_problems(conn), "held_changes": changes}
 
 
-def page(conn: psycopg.Connection, gw: Any, now: datetime, days: int = DAYS) -> dict[str, Any]:
+def page(conn: db.Connection, gw: Any, now: datetime, days: int = DAYS) -> dict[str, Any]:
     """All the page shows."""
     parts = [r["part"] for r in conn.execute(
         "select distinct jsonb_object_keys(parts) as part from instances")]

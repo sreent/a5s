@@ -22,11 +22,12 @@ import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from importlib.resources import files
+from typing import LiteralString, cast
 from urllib.parse import urlsplit, urlunsplit
 
 import psycopg
 from psycopg import sql
-from psycopg.rows import dict_row
+from psycopg.rows import DictRow, dict_row
 from psycopg_pool import ConnectionPool, PoolTimeout
 
 # The role each part of a5s connects as. Setup runs as the database's administrator.
@@ -39,15 +40,19 @@ POOL_SIZE = int(os.environ.get("A5S_DB_POOL_SIZE", "10"))  # connections each pa
 WAIT = 0.5  # seconds a transaction waits for a pooled connection before connecting afresh
 BUSY = 10.0  # seconds it waits for the pool when as many have connected afresh as it holds
 CONNECT = int(os.environ.get("A5S_DB_CONNECT_TIMEOUT", "2"))  # seconds before failing
-_pools: dict[str, ConnectionPool] = {}
+
+# Every connection a5s makes gives each row as a dict, by its columns' names
+Connection = psycopg.Connection[DictRow]
+
+_pools: dict[str, ConnectionPool[Connection]] = {}
 _spares: dict[str, threading.BoundedSemaphore] = {}  # connections of their own, beyond the pool
 _pooling = threading.Lock()
 
 
-def connect(url: str) -> psycopg.Connection:
+def connect(url: str) -> Connection:
     """A connection of its own, for what outlives a transaction, such as listening, or a
     session's lock, and for migrations."""
-    return psycopg.connect(url, row_factory=dict_row, connect_timeout=CONNECT)
+    return Connection.connect(url, row_factory=dict_row, connect_timeout=CONNECT)
 
 
 def _spare(url: str) -> threading.BoundedSemaphore:
@@ -55,12 +60,13 @@ def _spare(url: str) -> threading.BoundedSemaphore:
         return _spares.setdefault(url, threading.BoundedSemaphore(max(1, POOL_SIZE)))
 
 
-def _pool(url: str) -> ConnectionPool:
+def _pool(url: str) -> ConnectionPool[Connection]:
     with _pooling:
         if (pool := _pools.get(url)) is None:
             pool = _pools[url] = ConnectionPool(
-                url, open=True, min_size=1, max_size=max(1, POOL_SIZE), max_idle=300,
-                max_lifetime=3600, check=ConnectionPool.check_connection,
+                url, connection_class=Connection, open=True, min_size=1,
+                max_size=max(1, POOL_SIZE), max_idle=300, max_lifetime=3600,
+                check=ConnectionPool[Connection].check_connection,
                 kwargs={"row_factory": dict_row, "prepare_threshold": None,
                         "connect_timeout": CONNECT},
                 name=f"a5s-{urlsplit(url).username or 'pool'}")
@@ -80,7 +86,7 @@ atexit.register(close_pools)
 
 
 @contextmanager
-def transaction(url: str) -> Iterator[psycopg.Connection]:
+def transaction(url: str) -> Iterator[Connection]:
     """One transaction: committed if the block succeeds, rolled back if it raises. On a
     pooled connection, or on one of its own if none is free at once."""
     pool = _pool(url)
@@ -160,8 +166,8 @@ def _migrate(url: str) -> list[str]:
         done = {r["version"] for r in conn.execute("select version from schema_migrations")}
         ran = []
         for version, name, statements in migrations():
-            if version not in done:
-                conn.execute(statements)
+            if version not in done:  # a5s's own SQL, from its package: nobody's input
+                conn.execute(cast(LiteralString, statements))
                 conn.execute("insert into schema_migrations (version, name) values (%s, %s)",
                              (version, name))
                 ran.append(name)

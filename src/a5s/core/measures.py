@@ -26,10 +26,9 @@ back, once a5s has archived what it kept for them (core/departures.py).
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any
+from typing import Any, LiteralString
 
-import psycopg
-
+from a5s import db
 from a5s.config import ModelConfig
 from a5s.core import notebook
 
@@ -37,7 +36,7 @@ GRACE = "1 hour"  # a reminder for a particular time is on time within this of i
 APPROVED = ("making", "made", "not made", "stopped")  # a held change its deciders approved
 
 
-def report(conn: psycopg.Connection, scenario: str, models: dict[str, ModelConfig],
+def report(conn: db.Connection, scenario: str, models: dict[str, ModelConfig],
            days: int = 30, now: datetime | None = None,
            served: dict[str, list[str]] | None = None,
            instances: list[str] | None = None) -> dict[str, Any]:
@@ -53,7 +52,8 @@ def report(conn: psycopg.Connection, scenario: str, models: dict[str, ModelConfi
     since = "%(now)s::timestamptz - %(window)s::interval"
     scoped = instances is not None
 
-    def only(column: str = "instance_id") -> str:  # those instances' alone, if scoped
+    def only(column: LiteralString = "instance_id") -> LiteralString:  # those instances'
+        # alone, if scoped
         return f" and {column} = any(%(instances)s)" if scoped else ""
 
     theirs = " and agent = any(%(agents)s) and person = any(%(people)s)" if scoped else ""

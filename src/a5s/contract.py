@@ -9,10 +9,11 @@ governed process and the decision surface follow in later steps.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Annotated, Any, Protocol
+from pathlib import Path
+from typing import Annotated, Any, Protocol, cast
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, StringConstraints, ValidationError
@@ -53,6 +54,15 @@ class Person:
     # When their authenticator was last reset, if the directory says: how a stolen identity
     # usually starts, so their decisions wait a day after it
     reset_at: datetime | None = None
+
+    @classmethod
+    def listed(cls, entry: Mapping[str, Any], folder: Path) -> Person:
+        """Someone as a scenario's directory lists them, its lists as tuples, with the public
+        key its folder keeps for them in keys/<id>.pub, if there is one."""
+        given: dict[str, Any] = {k: tuple(v) if isinstance(v, list) else v
+                                 for k, v in entry.items()}
+        key = folder / "keys" / f"{entry['id']}.pub"
+        return cls(**given, public_key=key.read_text().strip() if key.exists() else None)
 
 
 @dataclass(frozen=True)
@@ -395,6 +405,7 @@ class Scenario(Protocol):
 
     def holders(self, role: str) -> list[Person]:
         """The people the directory assigns a role to."""
+        ...
 
     def part_of(self, record: str) -> str | None:
         """The part a record is in, by its key, or None if it's in none."""
@@ -402,9 +413,11 @@ class Scenario(Protocol):
     def sees(self, person: str, record: str) -> bool:
         """Whether the directory lets someone see a record, by its key. False for a record
         that doesn't exist."""
+        ...
 
     def team(self, name: str) -> list[Person]:
         """The people in a team, such as the one that runs a5s."""
+        ...
 
     def setup(self, conn: Any, tools_role: str) -> None:
         """Set up anything the scenario keeps in a5s's database, such as a fake system's
@@ -416,11 +429,13 @@ class Scenario(Protocol):
         """What people owe now, from the records: one for each record and person.
         Something that's done, such as a closed case, owes nothing. If the records
         can't be read, raise: an empty list means nothing is owed."""
+        ...
 
     def watched(self) -> list[Record]:
         """Each person's records as they stand now, closed ones included, so an agent that
         reports on them can say what changed. If the records can't be read, raise: an
         empty list means nobody has any."""
+        ...
 
     def settings(self) -> Settings: ...
 
@@ -432,5 +447,5 @@ def record_of(scenario: Scenario, key: str) -> Record | None:
     one, else from every record it watches. None if there's no such record."""
     one = getattr(scenario, "record", None)
     if callable(one):
-        return one(key)
+        return cast("Record | None", one(key))
     return next((r for r in scenario.watched() if r.key == key), None)

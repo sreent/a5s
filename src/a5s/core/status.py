@@ -12,10 +12,9 @@ each is in docs/runbooks.md.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
-import psycopg
-
+from a5s import db
 from a5s.core import samples, sealing
 
 # a5s's starting objectives [TBC]: set from the first users' baseline
@@ -33,15 +32,16 @@ def outcome(found: str | None) -> str:
 
 
 
-def second_factor_refused(conn: psycopg.Connection, doing: str) -> None:
+def second_factor_refused(conn: db.Connection, doing: str) -> None:
     """Count a refusal of what counts for want of a second factor, by what it was."""
     conn.execute("insert into second_factor_refusals (day, doing, n) values (current_date, %s, 1) "
                  "on conflict (day, doing) do update set n = second_factor_refusals.n + 1",
                  (doing[:40],))
 
-def report(conn: psycopg.Connection, breakers: list[str], keys: tuple[str, ...] = (),
+def report(conn: db.Connection, breakers: list[str], keys: tuple[str, ...] = (),
            rubber_stamps: bool = False,
-           sign_ins: tuple[str, tuple[str, ...]] | None | bool = False) -> dict[str, Any]:
+           sign_ins: tuple[str, tuple[str, ...]] | Literal[False] | None = False
+           ) -> dict[str, Any]:
     """The last day's status, by the database's clock. `keys` are the core's seal keys, for
     the caps that count; deciders are named for rubber stamps only if `rubber_stamps`.
     `sign_ins` is the second factor the identity provider's sign-ins must show for what

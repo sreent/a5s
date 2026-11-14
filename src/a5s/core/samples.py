@@ -42,11 +42,11 @@ import math
 import random
 from collections.abc import Iterable
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import Any, LiteralString
 
-import psycopg
 from psycopg.types.json import Jsonb
 
+from a5s import db
 from a5s.contract import Person, Scenario, Tool
 from a5s.core import ledger
 from a5s.core.ledger import canonical
@@ -71,7 +71,7 @@ def behaviour(agent: str, model: str, pins: dict[str, str], tool_names: Iterable
                                      "tools": {n: pins.get(n) for n in used}}).encode()).hexdigest()
 
 
-def note_behaviours(conn: psycopg.Connection, definitions: Iterable[Any],
+def note_behaviours(conn: db.Connection, definitions: Iterable[Any],
                     tools: dict[str, Tool]) -> None:
     """Keep each release's behaviour for each type of action its tools take."""
     for d in definitions:
@@ -158,7 +158,7 @@ def _sealed(keys: tuple[str, ...], row: dict, names: tuple[str, ...], seal: str 
         hmac.compare_digest(_mac(k, row, names), seal) for k in keys)
 
 
-def _last_entries(conn: psycopg.Connection) -> dict[tuple[str, str, str], int]:
+def _last_entries(conn: db.Connection) -> dict[tuple[str, str, str], int]:
     """The ledger's last entry for each cap: what a cap's row must carry to count."""
     last = {}
     for row in conn.execute("select seq, entry from ledger where kind = 'cap' order by seq"):
@@ -168,8 +168,8 @@ def _last_entries(conn: psycopg.Connection) -> dict[tuple[str, str, str], int]:
     return last
 
 
-def standing_caps(conn: psycopg.Connection, keys: tuple[str, ...],
-                  where: str = "true", params: tuple = ()) -> list[dict]:
+def standing_caps(conn: db.Connection, keys: tuple[str, ...],
+                  where: LiteralString = "true", params: tuple = ()) -> list[dict]:
     """The caps that count: sealed by the core, each with the ledger's last entry for it."""
     last = _last_entries(conn)
     return [r for r in conn.execute(f"select * from caps where behaviour is not null and {where}",
@@ -178,7 +178,7 @@ def standing_caps(conn: psycopg.Connection, keys: tuple[str, ...],
             and last.get((r["behaviour"], r["part"], r["action"])) == r["seq"]]
 
 
-def caps(conn: psycopg.Connection, keys: tuple[str, ...], release: str) -> dict[tuple[str, str], int]:
+def caps(conn: db.Connection, keys: tuple[str, ...], release: str) -> dict[tuple[str, str], int]:
     """a5s's caps for a release's types of action in each part: 1 where there's none."""
     mine = {r["action"]: r["behaviour"] for r in conn.execute(
         "select action, behaviour from behaviours where release = %s", (release,))}
@@ -189,20 +189,20 @@ def caps(conn: psycopg.Connection, keys: tuple[str, ...], release: str) -> dict[
         if mine.get(r["action"]) == r["behaviour"]}
 
 
-def _cap_row(conn: psycopg.Connection, keys: tuple[str, ...], kind: str, part: str,
+def _cap_row(conn: db.Connection, keys: tuple[str, ...], kind: str, part: str,
              action: str) -> dict | None:
     found = standing_caps(conn, keys, "behaviour = %s and part = %s and action = %s",
                           (kind, part, action))
     return found[0] if found else None
 
 
-def behaviour_of(conn: psycopg.Connection, release: str, action: str) -> str | None:
+def behaviour_of(conn: db.Connection, release: str, action: str) -> str | None:
     row = conn.execute("select behaviour from behaviours where release = %s and action = %s",
                        (release, action)).fetchone()
     return row["behaviour"] if row else None
 
 
-def set_cap(conn: psycopg.Connection, keys: tuple[str, ...], kind: str, part: str, action: str,
+def set_cap(conn: db.Connection, keys: tuple[str, ...], kind: str, part: str, action: str,
             to: int, why: str, now: datetime, evidence: dict | None = None,
             threshold: float | None = None, window_from: datetime | None = None) -> dict:
     """Set a cap, recorded in the ledger and sealed with that entry: what changed."""
@@ -225,7 +225,7 @@ def set_cap(conn: psycopg.Connection, keys: tuple[str, ...], kind: str, part: st
 
 # Drawing samples
 
-def draw(conn: psycopg.Connection, keys: tuple[str, ...], scenario: str, kind: str, release: str,
+def draw(conn: db.Connection, keys: tuple[str, ...], scenario: str, kind: str, release: str,
          definition: str, instance: str, run: str, part: str, action: str, said: str,
          records: dict[str, dict | None], acts_for: list[str], now: datetime,
          proposal: int | None = None, decided: str | None = None,
@@ -286,7 +286,7 @@ def may_grade(scenario: Scenario, sample: dict, person: Person,
     return None
 
 
-def gradeable(conn: psycopg.Connection, scenario: Scenario, person: Person,
+def gradeable(conn: db.Connection, scenario: Scenario, person: Person,
               most: int = 20) -> list[dict]:
     """The samples waiting for a grade that someone may grade, oldest first, up to `most`:
     read in pages, leaving out in the query what it can."""
@@ -321,7 +321,7 @@ def seal(keys: tuple[str, ...], row: dict) -> str:
     return _mac(keys[0], row, _SEALED_GRADE)
 
 
-def seal_pending(conn: psycopg.Connection, keys: tuple[str, ...], verifier: Any,
+def seal_pending(conn: db.Connection, keys: tuple[str, ...], verifier: Any,
                  scenario: Scenario, client_id: str | None) -> list[str]:
     """Check again each grade the channels app recorded, by its sign-in, which covers every
     grade given with it, seal each, and let the sign-in go, in the gateway: or refuse them, so
@@ -363,7 +363,7 @@ def counted(keys: tuple[str, ...], row: dict) -> bool:
 
 # Weighing the grades
 
-def assess(conn: psycopg.Connection, keys: tuple[str, ...], kind: str, part: str, action: str,
+def assess(conn: db.Connection, keys: tuple[str, ...], kind: str, part: str, action: str,
            threshold: float | None, now: datetime) -> dict | None:
     """Raise or lower a cap for a type of action in a part, if the grades given since it last
     changed now show it should: what changed, with the evidence, for the ledger. None if
@@ -404,7 +404,7 @@ def assess(conn: psycopg.Connection, keys: tuple[str, ...], kind: str, part: str
     return None
 
 
-def lower(conn: psycopg.Connection, keys: tuple[str, ...], release: str, part: str, action: str,
+def lower(conn: db.Connection, keys: tuple[str, ...], release: str, part: str, action: str,
           by: str, now: datetime) -> dict | None:
     """Lower a release's cap for a type of action in a part, at someone's word: never raise
     one. What changed, or None if it was 1 already."""
@@ -416,14 +416,14 @@ def lower(conn: psycopg.Connection, keys: tuple[str, ...], release: str, part: s
                    threshold=current["threshold"])
 
 
-def lapse(conn: psycopg.Connection, now: datetime) -> int:
+def lapse(conn: db.Connection, now: datetime) -> int:
     """Samples nobody graded in a quarter lapse: they're no longer offered, and go a year
     after they were drawn. How many lapsed."""
     return conn.execute("update samples set lapsed_at = %s where grade is null and lapsed_at is "
                         "null and drawn_at < %s", (now, now - LAPSE)).rowcount
 
 
-def rubber_stamps(conn: psycopg.Connection) -> list[dict]:
+def rubber_stamps(conn: db.Connection) -> list[dict]:
     """Deciders whose approvals are graded wrong far more often than everyone else's: at least
     three wrong, and over twice the rate of the rest."""
     rows = conn.execute(

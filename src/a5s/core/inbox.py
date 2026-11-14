@@ -211,7 +211,7 @@ class DraftStart(BaseModel):
     name: str | None = None
     template: str | None = None
     agent: str | None = None
-    copy: str | None = None
+    copy_of: str | None = None  # a co-author's draft
 
 
 class HandOver(BaseModel):
@@ -1492,9 +1492,9 @@ def create_app(gw: Any) -> FastAPI:
         person = drafting(authorization)
         tools = gw.scenario.tools()
         copied: dict | None = None
-        if body.copy and not (body.name or body.template or body.agent):
+        if body.copy_of and not (body.name or body.template or body.agent):
             with db.transaction(gw.url) as conn:
-                copied = readable(conn, person, body.copy)
+                copied = readable(conn, person, body.copy_of)
             if copied is None or copied["yours"]:
                 raise HTTPException(404, "there's no such draft of a co-author's for you to copy")
             name, files = copied["agent"], copied["files"]

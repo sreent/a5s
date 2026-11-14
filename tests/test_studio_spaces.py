@@ -45,15 +45,15 @@ def test_a_co_author_copies_a_draft_into_one_of_their_own(stack, approving, prov
     assert priya("PUT", f"/studio/api/drafts/{draft['id']}", {"files": files}).status_code == 200
     coauthor(stack)
     omar = as_(approving, provider, "omar")
-    copied = omar("POST", "/studio/api/drafts", {"copy": draft["id"]})
+    copied = omar("POST", "/studio/api/drafts", {"copy_of": draft["id"]})
     assert copied.status_code == 200, copied.text
     mine = copied.json()
     assert (mine["agent"], mine["yours"], mine["based_on"]) == (
         "assistant", True, f"a co-author's draft, from {draft['based_on']}")
     assert mine["files"]["AGENTS.md"].endswith("Ask before changing anything.\n")
-    again = omar("POST", "/studio/api/drafts", {"copy": draft["id"]})
+    again = omar("POST", "/studio/api/drafts", {"copy_of": draft["id"]})
     assert again.status_code == 409 and "already" in again.json()["detail"]
-    assert priya("POST", "/studio/api/drafts", {"copy": draft["id"]}).status_code == 404  # her own
+    assert priya("POST", "/studio/api/drafts", {"copy_of": draft["id"]}).status_code == 404  # her own
     [entry] = recorded(stack, "copy draft")
     assert (entry["args"]["copied"], entry["args"]["draft"], entry["args"]["by"]) == (
         draft["id"], mine["id"], "omar")

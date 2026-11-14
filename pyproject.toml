@@ -33,6 +33,7 @@ a5s = "a5s.cli:main"
 
 [dependency-groups]
 dev = [
+    "basedpyright==1.40.2",
     "moto[s3]>=5.2.5",
     "playwright==1.63.0",
     "pytest",
@@ -52,6 +53,14 @@ artifacts = ["src/a5s/core/webchat/studio/"]
 testpaths = ["tests"]
 markers = ["live: calls a real model provider; needs its API key"]
 addopts = "-m 'not live'"
+
+[tool.basedpyright]
+# Static type checking: pyright, at its standard strictness, over a5s's own code, in CI beside
+# ruff. What it found when it was added is in .basedpyright/baseline.json, which only shrinks
+# as those are fixed; anything new fails.
+include = ["src/a5s"]
+pythonVersion = "3.13"
+typeCheckingMode = "standard"
 
 [tool.ruff]
 line-length = 100
