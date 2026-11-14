@@ -18,7 +18,7 @@ from a5s import db
 from a5s.core import groups, inbox, teams
 from a5s.core.identity import IdentityConfig, Verifier
 from a5s.core.teams import Bot, Teams, TeamsConfig
-from conftest import CLIENT, free_port, serve
+from conftest import CLIENT, eventually, free_port, serve
 
 APP_ID, TENANT = "a5s-bot-app", "0a5a7e17-0000-4000-8000-000000000001"
 WATCHER_APP = "a5s-watcher-app"  # a second agent's own bot
@@ -161,6 +161,7 @@ def test_someone_the_directory_doesnt_know_is_told_so_and_nothing_runs(stack, bo
     stranger = activity(sender="0a5a0000-0000-4000-8000-0000000000ff")
     assert httpx.post(bot.url, json=stranger, headers=bot.auth()).status_code == 200
     assert not queued(stack)
+    assert eventually(lambda: bot.sent)  # told after the 200, in the background
     assert [m["text"] for m in bot.sent] == [teams.UNKNOWN]
     assert stack.ledger()[-1]["decision"] == "deny"
 
@@ -170,6 +171,7 @@ def test_a_teams_channel_gets_a_pointer_to_a_group_chat(stack, bot):
             "entities": [{"type": "mention", "mentioned": {"id": "28:a5s-bot"}}]}
     assert httpx.post(bot.url, json=said, headers=bot.auth()).status_code == 200
     assert not queued(stack)
+    assert eventually(lambda: bot.sent)  # told after the 200, in the background
     assert [m["text"] for m in bot.sent] == [groups.CHANNELS]  # group chats: see test_groups.py
 
 

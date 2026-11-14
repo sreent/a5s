@@ -57,6 +57,16 @@ def free_port() -> int:
         return s.getsockname()[1]
 
 
+def eventually(check, seconds: float = 10.0) -> bool:
+    """Whether `check` comes true within `seconds`: for what a5s does after it has answered,
+    such as the reply the channels app sends a chat in the background, once Teams or the
+    homeserver has its 200."""
+    deadline = time.monotonic() + seconds
+    while not (found := check()) and time.monotonic() < deadline:
+        time.sleep(0.05)
+    return bool(found)
+
+
 @pytest.fixture(scope="session")
 def database_url() -> Iterator[str]:
     url = os.environ.get("A5S_TEST_DATABASE_URL")
