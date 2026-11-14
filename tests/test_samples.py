@@ -6,7 +6,6 @@ they show it falls short, or at once on a critical error."""
 import base64
 import hashlib
 import secrets
-from dataclasses import replace
 from urllib.parse import parse_qs
 
 import httpx
@@ -201,7 +200,8 @@ def test_a_decider_whose_approvals_are_graded_wrong_far_more_is_flagged(stack):
     """Only once the data protection officer agrees, which the deployment says (O6)."""
     with stack.client() as c:
         assert c.get("/status").json()["samples"]["rubber_stamps"] is None  # off, by default
-    stack.gateway.cfg = replace(stack.gateway.cfg, flag_rubber_stamps=True)
+    assert not stack.settle(data_protection={"flag_rubber_stamps": True},
+                            signers=("ana", "noor")).refused
     with db.transaction(stack.admin) as conn:
         for who, wrong, right in (("ana", 4, 2), ("omar", 1, 30)):
             for i in range(wrong + right):

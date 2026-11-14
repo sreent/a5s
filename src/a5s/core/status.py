@@ -17,7 +17,7 @@ from typing import Any, Literal
 from a5s import db
 from a5s.core import samples, sealing
 
-# a5s's starting objectives [TBC]: set from the first users' baseline
+# a5s's starting objectives [starting value]: set from the first users' baseline
 OBJECTIVES = {"reply_seconds_p90": 120, "chased_on_time": 0.95}
 # How a run ends: a fixed set, so no figure, the status or the studio carries anyone's words
 OUTCOMES = ("done", "done, leaving some out", "failed", "reply denied", "model unavailable",

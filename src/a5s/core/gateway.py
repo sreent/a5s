@@ -39,6 +39,7 @@ from a5s.contract import (
     DATA_PROTECTION,
     INSTANCE_APPROVER,
     PART_OWNER,
+    DataProtection,
     Person,
     Scenario,
     Settings,
@@ -113,7 +114,6 @@ CORE_TOOLS = {**reminders.TOOLS, **digests.TOOLS, **profiles.TOOLS,  # a5s's own
               asking.ASK: asking.TOOL,  # another agent (core/asking.py), and the notebook
               notebook.NOTE: notebook.TOOL,  # of what it learns from records, and long tasks
               **tasking.TOOLS}  # people ask it for (core/tasking.py)
-RUN_MINUTES = 60  # the longest a run may last [TBC]; its token dies with it
 LAPSED = 120  # seconds past its time a scheduler's lease on a run's work is, once it's gone
 CHARS_PER_TOKEN = 4  # roughly, for a run's budget for its conversation
 OWN_RUNS = ("summary",)  # a5s's own work on a conversation: no tools, and it writes to nobody
@@ -258,7 +258,14 @@ class Gateway:
     @property
     def tasks(self) -> Any:
         """The task engine, as the core runs it: each slice a run (core/tasking.py)."""
-        return tasking.service(self.url, self.clock, RUN_MINUTES)
+        return tasking.service(self.url, self.clock, config.RUN_MINUTES.read())
+
+    def data_protection(self, conn: db.Connection) -> DataProtection:
+        """What the data protection officer has chosen, as the signed settings in force say:
+        or, while none can be used, a5s's own choices, each of which keeps people's data
+        closest."""
+        settings, _ = self.settings_in_force(conn, seal=False)
+        return settings.data_protection if settings is not None else DataProtection()
 
     def settings_in_force(self, conn: db.Connection,
                           seal: bool = True) -> tuple[Any, str | None]:
@@ -1243,7 +1250,7 @@ def create_app(gw: Gateway) -> FastAPI:
                     "read_outside) values (%s, %s, %s, %s, %s, now() + make_interval(mins => %s), "
                     "%s)",
                     (run_id, body.instance, token_hash(token), Jsonb(opening.trigger),
-                     opening.acts_for, RUN_MINUTES,
+                     opening.acts_for, config.RUN_MINUTES.read(),
                      opening.marked or gw.reads_outside(
                          conn, inst["definition"], opening.acts_for,
                          opening.trigger.get("topic", topics.GENERAL),
@@ -1873,7 +1880,7 @@ def create_app(gw: Gateway) -> FastAPI:
         """How a5s is doing, for the team that runs it and its dashboards (core/status.py)."""
         with db.transaction(gw.url) as conn:
             found = status.report(conn, gw.breakers.open(), gw.cfg.seal_keys,
-                                  gw.cfg.flag_rubber_stamps,
+                                  gw.data_protection(conn).flag_rubber_stamps,
                                   gw.identity.cfg.mfa if gw.identity else False)
         here = config.set_here()  # what the core runs with, as its environment gives it
         return {**found, "configuration": {"set": here, "defaults": len(config.VARS) - len(here)}}
@@ -2094,7 +2101,8 @@ def create_app(gw: Gateway) -> FastAPI:
         Archive what a5s keeps for anyone who has left (core/departures.py), apart, so neither
         holds up the other, nor the ledger's other writers."""
         with db.transaction(gw.url) as conn:
-            gone = retention.sweep(conn, gw.clock(), gw.scenario.name)
+            gone = retention.sweep(conn, gw.clock(), gw.scenario.name,
+                                   kept=gw.data_protection(conn).kept_for)
             if gone:
                 ledger.append(conn, {"kind": "retention", "action": "delete", "run": None,
                                      "instance": None, "acts_for": [], "decision": "record",

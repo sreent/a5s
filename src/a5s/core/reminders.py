@@ -27,7 +27,7 @@ from a5s.core import parts
 from a5s.core.coretools import Call, CoreTool, Refused, one_to_one
 from a5s.core.obligations import day, local
 
-CONFIRM_WITHIN = timedelta(days=1)  # an offer they don't confirm by then lapses [TBC]
+CONFIRM_WITHIN = timedelta(days=1)  # an offer they don't confirm by then lapses [starting value]
 FURTHEST = timedelta(days=366)
 
 

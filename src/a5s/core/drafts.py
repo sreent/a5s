@@ -32,7 +32,7 @@ from a5s.core.releases import ENGINEER, agent_owner
 MOST_FILES = 64  # in one draft's folder
 MOST_BYTES = 192 * 1024  # of all its files' text together: under what the channels app
 #                          reads of a body, escaped as JSON; the biggest agent a5s ships is 12 KB
-MOST_DRAFTS = 20  # one person keeps at once [TBC]
+MOST_DRAFTS = 20  # one person keeps at once [starting value]
 TEXT = (".md", ".yaml", ".yml", ".txt", ".csv", ".json", ".lock")  # what an agent's folder holds
 SHOWN = "id::text as id, agent, based_on, created_at, updated_at, published"
 

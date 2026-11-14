@@ -33,7 +33,7 @@ from a5s.core.coretools import Call, CoreTool, Refused
 ASK = "ask_agent"
 KIND = "question"  # the trigger of the run that answers one
 QUESTION = "the question it was asked"  # whence what the run asked read of the question
-ASKS = 3  # questions a run may ask [TBC]
+ASKS = 3  # questions a run may ask [starting value]
 LONGEST = 1000  # characters of a question
 KEPT_BACK = "[a value the {agent} can't pass on]"
 

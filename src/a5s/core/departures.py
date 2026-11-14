@@ -28,9 +28,9 @@ from a5s import db
 from a5s.contract import Scenario
 from a5s.core import groups, ledger
 
-GRACE = timedelta(days=1)  # how long someone is missing from the directory before a5s archives [TBC]
+GRACE = timedelta(days=1)  # how long someone is missing from the directory before a5s archives [starting value]
 # Many missing at once, more than this and more than a third of everyone a5s keeps anything
-# for, looks like the directory, not people leaving: they wait a week, should it be mended [TBC]
+# for, looks like the directory, not people leaving: they wait a week, should it be mended [starting value]
 MANY, MANY_GRACE = 3, timedelta(days=7)
 FORMER = "former:"  # what an archive's name starts with: never a person in the directory
 

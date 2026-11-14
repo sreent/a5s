@@ -32,7 +32,7 @@ from a5s.definitions import DAYS, Schedule
 
 WAITS = timedelta(days=1)  # an offer waits this long for its owner's yes, then lapses
 
-MOST = 5  # the most repeats someone may have with an agent at once, offered or going [TBC]
+MOST = 5  # the most repeats someone may have with an agent at once, offered or going [starting value]
 PREFIX = "E-"
 _DAYS = {"mon": "Monday", "tue": "Tuesday", "wed": "Wednesday", "thu": "Thursday",
          "fri": "Friday", "sat": "Saturday", "sun": "Sunday"}

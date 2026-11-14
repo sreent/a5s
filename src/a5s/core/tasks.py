@@ -45,10 +45,10 @@ PLAN_CHARS = 200  # the most characters a step says
 PLANNED = ("pending", "in_progress", "completed")
 ENDED = ("done", "cancelled", "failed")
 OFFERED = "offered"  # asked for, and waiting for its owner's yes
-MAX_FAILURES = 5  # slices in a row that fail or lose their lease, before the task fails [TBC]
-BACKOFF = timedelta(seconds=30)  # how long a task waits after a slice fails, doubling [TBC]
+MAX_FAILURES = 5  # slices in a row that fail or lose their lease, before the task fails [starting value]
+BACKOFF = timedelta(seconds=30)  # how long a task waits after a slice fails, doubling [starting value]
 BACKOFF_MOST = timedelta(hours=1)
-PUT_OFF = timedelta(minutes=30)  # how long a task waits when its slice's run can't open [TBC]
+PUT_OFF = timedelta(minutes=30)  # how long a task waits when its slice's run can't open [starting value]
 
 
 class TaskError(RuntimeError):

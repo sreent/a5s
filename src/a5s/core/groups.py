@@ -21,7 +21,7 @@ from typing import Any
 
 from a5s import db
 
-LIMIT = 20  # people in a group chat an agent works in [TBC]
+LIMIT = 20  # people in a group chat an agent works in [starting value]
 PREFIX = "group:"  # what a group's name starts with: never a person in the directory
 
 # What a5s says in a group chat it won't work in, and why: who or what's in the way, and what

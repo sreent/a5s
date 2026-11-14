@@ -6,8 +6,9 @@ counts, such as an instance, a model, a tool, a trigger or an outcome, and never
 a record, nor with anything anyone said: so whoever reads the monitoring learns how a5s is
 doing, and nothing about anyone. Who suspended an instance, and the deciders a rubber-stamp
 flag would name, stay in the status alone. An instance's own figures go out only once it
-serves at least FEWEST people, since one that serves an executive alone would count their use
-of it: smaller ones go together, once together they serve that many, and otherwise not at all.
+serves at least as many people as the data protection officer chose (fewest_people, in the
+signed settings), since one that serves an executive alone would count their use of it:
+smaller ones go together, once together they serve that many, and otherwise not at all.
 
 The figures go to the OpenTelemetry endpoint the deployment names, as the traces do, each
 minute by default (OTEL_METRIC_EXPORT_INTERVAL), and nowhere if it names none. Only the
@@ -32,10 +33,11 @@ from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import MetricReader, PeriodicExportingMetricReader
 from opentelemetry.sdk.resources import Resource
 
+from a5s.contract import DataProtection
+
 log = logging.getLogger(__name__)
 FRESH = 10.0  # seconds one reading of the status serves, so a collection reads it once
 DEADLINE = 5.0  # seconds a collection waits for its reading, well within the export's 30
-FEWEST = 5  # people an instance serves before its own figures go out [TBC: the officer]
 SMALLER = "smaller instances"  # what instances serving fewer go out as, together
 
 # Each figure: its unit and what it says. Its values come from figures(), below.
@@ -79,13 +81,15 @@ FIGURES: dict[str, tuple[str, str]] = {
 _provider: MeterProvider | None = None
 
 
-def by_instance(rows: list[dict], serving: dict[str, set[str]], *fields: str) -> list[dict]:
+def by_instance(rows: list[dict], serving: dict[str, set[str]], *fields: str,
+                fewest: int = DataProtection.fewest_people) -> list[dict]:
     """Rows by instance as the monitoring may have them: each instance's own, if it serves at
-    least FEWEST people, and the rest's together, as SMALLER, if together they serve as many."""
-    kept = [r for r in rows if len(serving.get(r["instance"], ())) >= FEWEST]
-    rest = [r for r in rows if len(serving.get(r["instance"], ())) < FEWEST]
+    least `fewest` people, as the data protection officer chose, and the rest's together, as
+    SMALLER, if together they serve as many."""
+    kept = [r for r in rows if len(serving.get(r["instance"], ())) >= fewest]
+    rest = [r for r in rows if len(serving.get(r["instance"], ())) < fewest]
     people = set().union(*(serving.get(r["instance"], set()) for r in rest))
-    if rest and len(people) >= FEWEST:
+    if rest and len(people) >= fewest:
         kept.append({"instance": SMALLER, **{f: sum(r[f] for r in rest) for f in fields}})
     return kept
 
@@ -101,7 +105,8 @@ def figures(status: dict[str, Any]) -> dict[str, list[tuple[float, dict[str, str
         return [] if value is None else [(float(value), {})]
 
     not_active = Counter(r["status"] for r in status["not_active"])  # never who suspended it
-    tokens = by_instance(status["tokens"], status.get("serving", {}), "tokens", "budget_warnings")
+    tokens = by_instance(status["tokens"], status.get("serving", {}), "tokens", "budget_warnings",
+                         fewest=status.get("fewest_people", DataProtection.fewest_people))
     return {
         "a5s.queue.waiting": one(queue["waiting"]),
         "a5s.queue.oldest": one(queue["oldest_seconds"] or 0),

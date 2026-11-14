@@ -23,7 +23,7 @@ from a5s import db
 from a5s.contract import Person, Record
 from a5s.core.obligations import WITHHELD, day, local
 
-MOST = 20  # facts in one report; the rest are counted [TBC]
+MOST = 20  # facts in one report; the rest are counted [starting value]
 
 
 def fired(conn: db.Connection, instance: str, person: str, source: str,

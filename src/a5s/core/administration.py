@@ -99,7 +99,7 @@ def page(conn: db.Connection, gw: Any, now: datetime, days: int = DAYS) -> dict[
     roles = [row["role"] for row in audit.roles_of(gw.scenario, parts, gw.definitions.keys())]
     report = audit.report(conn, gw.scenario, gw.definitions.keys(),
                           since=now - timedelta(days=days))
-    shown = audit.Shown(gw.scenario, audit.key(conn), names=gw.cfg.audit_names)
+    shown = audit.Shown(gw.scenario, audit.key(conn), names=gw.data_protection(conn).audit_names)
     return {"roles": held(gw.scenario, conn, roles), "groups": mapped(gw.scenario),
             "claim": gw.identity.cfg.groups_claim if gw.identity else None,
             "waiting": waiting(conn, gw), "days": days,

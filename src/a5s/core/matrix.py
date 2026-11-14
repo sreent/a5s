@@ -26,7 +26,7 @@ from a5s import config
 from a5s.contract import Person, Scenario
 from a5s.core import groups
 
-MEMBERS_KEPT = 60.0  # seconds a room's members, as last read, stand for who's in it [TBC]
+MEMBERS_KEPT = 60.0  # seconds a room's members, as last read, stand for who's in it
 UNKNOWN = "a5s doesn't know who you are. Ask an instance approver to add your Matrix id to the directory."
 ENCRYPTED = ("I can't read encrypted messages yet. Start a direct chat with me with encryption "
              "turned off.")

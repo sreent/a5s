@@ -17,10 +17,6 @@
 - name: A5S_PROVIDER_TIMEOUT
   value: {{ .Values.timeouts.provider | quote }}
 {{ include "a5s.dbConnectEnv" . }}
-{{- if .Values.officerAgrees.rubberStampFlag }}
-- name: A5S_FLAG_RUBBER_STAMPS
-  value: "true"
-{{- end }}
 {{- end }}
 
 {{- define "a5s.env.channels" -}}
@@ -41,14 +37,6 @@
 - name: A5S_SANDBOX_URL  # where the studio tries people's drafts, by the token it shares
   value: {{ . | quote }}
 {{ include "a5s.secretEnv" (dict "root" $ "name" "A5S_SANDBOX_TOKEN" "key" "sandbox-token") }}
-{{- end }}
-{{- if .Values.officerAgrees.studioNames }}
-- name: A5S_STUDIO_NAMES
-  value: "true"
-{{- end }}
-{{- if .Values.officerAgrees.auditNames }}
-- name: A5S_AUDIT_NAMES
-  value: "true"
 {{- end }}
 {{- end }}
 

@@ -57,6 +57,7 @@ The tests check that neither compose nor the chart sets a setting to its default
 | `A5S_CHANNELS_URL` | `http://127.0.0.1:8703` | an http(s):// address | Where people's messages reach the core's channels |
 | `A5S_PUBLIC_URL` | none | an http(s):// address | Where people reach the channels, for links, if not A5S_CHANNELS_URL |
 | `A5S_TEAM` | `platform` | text | The directory's team that runs a5s: its approvals of a release count as an engineer's, never as the release approver's |
+| `A5S_RUN_MINUTES` | `60` | a whole number of minutes from 5 to 240 | The longest a run may last, in minutes: its token dies with it |
 | `A5S_PROVIDER_TIMEOUT` | `180` | seconds, from 5 to 900 | Seconds the core waits for a model provider's answer |
 
 ### The database
@@ -118,7 +119,7 @@ The tests check that neither compose nor the chart sets a setting to its default
 | Variable | Default | Takes | What it sets |
 | --- | --- | --- | --- |
 | `A5S_ANCHOR_STORE` | none | s3://, azure://, gs:// or file://, such as s3://bucket/a5s | Where the ledger's locked copies go |
-| `A5S_ANCHOR_RETAIN_DAYS` | `365` | a whole number of days from 1 to 36,500 | Days each copy stays locked |
+| `A5S_ANCHOR_RETAIN_DAYS` | `365` | a whole number of days from 365 to 36,500 | Days each copy stays locked: longer here, and shorter only by a release, which assurance signs |
 
 ### The studio, its sandbox and publishing
 
@@ -133,14 +134,6 @@ The tests check that neither compose nor the chart sets a setting to its default
 | `A5S_GITHUB_BASE` | `main` | text | The branch pull requests go to |
 | `A5S_GITHUB_URL` | `https://github.com` | an http(s):// address | GitHub, or a GitHub Enterprise server |
 | `A5S_GITHUB_API_URL` | `https://api.github.com` | an http(s):// address | Its API, such as https://<it>/api/v3 |
-
-### What the data protection officer has agreed to
-
-| Variable | Default | Takes | What it sets |
-| --- | --- | --- | --- |
-| `A5S_STUDIO_NAMES` | `False` | true or false | The studio's pages name whom each run acted for |
-| `A5S_AUDIT_NAMES` | `False` | true or false | The auditors' page names whom agents acted for, and exports the ledger there |
-| `A5S_FLAG_RUBBER_STAMPS` | `False` | true or false | The status names deciders whose approvals are graded wrong far more often than others' |
 
 ### The scenario
 

@@ -23,7 +23,7 @@ from a5s.contract import Person
 from a5s.core import digests
 from a5s.core.coretools import Call, CoreTool, Refused, one_to_one
 
-CONFIRM_WITHIN = timedelta(days=1)  # an offer they don't confirm by then lapses [TBC]
+CONFIRM_WITHIN = timedelta(days=1)  # an offer they don't confirm by then lapses [starting value]
 LONGEST = 600  # characters: it's a short note
 _DAYS = ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday")
 

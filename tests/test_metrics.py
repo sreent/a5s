@@ -29,8 +29,11 @@ def figures(stack):
     metrics.shutdown()
 
 
-def test_the_status_goes_out_as_figures_counted_by_what_they_count(stack, figures, monkeypatch):
-    monkeypatch.setattr(metrics, "FEWEST", 2)  # assistant-finance serves Ana and Ben
+def test_the_status_goes_out_as_figures_counted_by_what_they_count(stack, figures):
+    # The officer lets an instance's own figures go out once it serves three, as
+    # assistant-finance does with Dana beside Ana and Ben
+    assert not stack.settle(data_protection={"fewest_people": 3}, signers=("ana", "noor"),
+                            serves=["ana", "ben", "dana"]).refused
     stack.model.reply(None, ("search_records", {"query": "invoice"}))
     stack.model.reply("Q-1001 is open.")
     stack.say("What's open?", person="ana")

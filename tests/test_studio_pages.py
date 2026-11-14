@@ -73,10 +73,9 @@ def test_a_run_shows_only_to_those_who_may_see_its_records(stack, approving, pro
 
 
 def test_watchers_see_whom_a_run_acted_for_once_the_officer_agrees(stack, provider):
-    from dataclasses import replace
-
     from conftest import deciding
-    stack.cfg = replace(stack.cfg, studio_names=True)  # A5S_STUDIO_NAMES, in the channels app
+    assert not stack.settle(data_protection={"studio_names": True},
+                            signers=("ana", "noor")).refused  # the officer chooses it
     stack.model.reply("Nothing's open for you.")
     stack.say("What's open?", person="ana")
     with deciding(stack, provider) as url:

@@ -50,7 +50,7 @@ MOST_CHARS = 2000  # the most a task's words may be
 MOST_PARTIAL = 4000  # the most of what its earlier slices found that a run is shown, in characters
 SAID = ("done", "blocked", "waiting")  # what a slice may say it came to
 KEPT = {"status": "kept"}  # what a run said that kept its work as it went, and no more
-LEAST_PART = 5_000  # the fewest tokens a part of a task may have to spend [TBC]
+LEAST_PART = 5_000  # the fewest tokens a part of a task may have to spend [starting value]
 
 
 def name(row: dict) -> str:

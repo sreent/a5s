@@ -32,7 +32,7 @@ from a5s import db
 from a5s.config import ModelConfig
 from a5s.core import notebook
 
-GRACE = "1 hour"  # a reminder for a particular time is on time within this of it [TBC]
+GRACE = "1 hour"  # a reminder for a particular time is on time within this of it [starting value]
 APPROVED = ("making", "made", "not made", "stopped")  # a held change its deciders approved
 
 

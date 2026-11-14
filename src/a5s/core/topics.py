@@ -26,7 +26,7 @@ from a5s.core.reminders import say
 
 log = logging.getLogger(__name__)
 GENERAL = "general"
-CURRENT = timedelta(hours=4)  # how long a conversation stays on its topic without a word [TBC]
+CURRENT = timedelta(hours=4)  # how long a conversation stays on its topic without a word [starting value]
 # What a summary run is told: a5s's own words, not a release's. It has no tools, writes to
 # nobody, and what it says is checked by code before it's kept (services/summaries.py).
 SUMMARY = (

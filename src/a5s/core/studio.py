@@ -9,10 +9,10 @@ instances. Of its runs, they see those whose every record they may see, by the r
 run handled, which a5s keeps as long as the run: those its tools gave it or it named, and those
 a5s gave it, such as a report's or a case's brief. Of the rest, they see how many there are.
 They never see the ledger's entries, whose digests of short texts can be guessed, and whom a
-run acted for is named to them only once the data protection officer agrees
-(A5S_STUDIO_NAMES): until then, a run says how many people it acted for. The figures count
-people and never name them, nor carry anyone's words: outcomes from a fixed set, and the
-reasons for denials by the policy's own ids.
+run acted for is named to them only once the data protection officer chooses it in the signed
+settings (data_protection.studio_names): until then, a run says how many people it acted
+for. The figures count people and never name them, nor carry anyone's words: outcomes from a
+fixed set, and the reasons for denials by the policy's own ids.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ from a5s.core.releases import agent_owner
 from a5s.core.status import outcome
 from a5s.definitions import Definition
 
-RUNS = 50  # runs to a page, newest first [TBC]
+RUNS = 50  # runs to a page, newest first
 MOST_RUNS = 200  # the most to a page
 DENIALS = 10_000  # each set of instances' newest denials looked through, by their own index
 COLUMNS = ("id, definition, release, status, level, model, serves, owner, deputy, parts, "

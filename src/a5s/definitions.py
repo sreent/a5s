@@ -56,7 +56,7 @@ class Schedule(BaseModel):
     """When the agent works on its own, and what it's asked to do each time.
 
     Times are in the time zone of the instance's owner. A schedule run acts for
-    nobody, so it writes to nobody [TBC: whose digest a schedule's findings go in].
+    nobody, so it writes to nobody, and whose digest its findings might go in is still an open question.
     """
 
     model_config = ConfigDict(extra="forbid")

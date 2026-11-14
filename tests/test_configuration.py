@@ -287,3 +287,12 @@ def test_the_copier_copies_every_hour_unless_its_told_otherwise(monkeypatch, tmp
     for args in (["anchor", "--every"], ["anchor", "--every", "60"], ["anchor"]):
         cli.main(args)
     assert every == [cli.ANCHOR_EVERY, 60, None] and cli.ANCHOR_EVERY == 3600  # once, alone
+
+
+def test_no_value_in_the_code_waits_on_where_it_lives():
+    """Each value the code holds is a starting value, with its row in docs/starting-values.md
+    saying where it's set and who owns it, or the code's alone, such as a page's length: none
+    is marked as waiting for a decision about where it lives."""
+    waiting = [f"{path.relative_to(ROOT)}:{n}" for path in sorted(SRC.rglob("*.py"))
+               for n, line in enumerate(path.read_text().splitlines(), 1) if "[TBC" in line]
+    assert waiting == [], f"say where each lives (docs/configuration.md): {waiting}"

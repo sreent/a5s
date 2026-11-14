@@ -64,7 +64,7 @@ from a5s.core.identity import (
 from a5s.core.ledger import canonical
 from a5s.core.obligations import a_working_day_after
 
-REMIND, ESCALATE, LAPSE = 2, 5, 10  # working days: remind its deciders, tell their managers, lapse [TBC]
+REMIND, ESCALATE, LAPSE = 2, 5, 10  # working days: remind its deciders, tell their managers, lapse [starting value]
 AFTER_RESET = timedelta(days=1)  # how long a decision waits after its decider's authenticator was reset
 DECISIONS = ("approve", "reject")
 _SEALED = ("scenario", "digest", "decision", "person", "nonce", "salt", "issuer", "subject",

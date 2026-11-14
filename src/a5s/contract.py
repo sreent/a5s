@@ -16,7 +16,15 @@ from pathlib import Path
 from typing import Annotated, Any, Protocol, cast
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, StringConstraints, ValidationError
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StrictInt,
+    StringConstraints,
+    ValidationError,
+)
 
 from a5s.core.ledger import canonical
 
@@ -225,6 +233,28 @@ class Signature:
 
 
 @dataclass(frozen=True)
+class DataProtection:
+    """What the data protection officer decides about people's data, in the signed settings:
+    a version that changes any of it needs their approval (core/registry.py). Each starts
+    private, as here, until they choose otherwise."""
+
+    # How long a5s keeps what's said, after a conversation's last message, and what goes with
+    # it: summaries, notes, reminders, what people owed, held changes and their decisions,
+    # samples, questions agents asked each other, and tasks (core/retention.py)
+    kept_for: str = "12 months"
+    # The fewest people an instance serves before its own figures go out to the team's
+    # dashboards: fewer, and its figures could say what one person did (core/metrics.py)
+    fewest_people: int = 5
+    # Whether the studio's pages name whom each run acted for, rather than how many
+    studio_names: bool = False
+    # Whether the auditors' page names whom agents acted for, and exports the ledger there
+    audit_names: bool = False
+    # Whether the status names deciders whose approvals are graded wrong far more often than
+    # others': profiling people
+    flag_rubber_stamps: bool = False
+
+
+@dataclass(frozen=True)
 class Settings:
     version: str
     instances: tuple[InstanceSettings, ...] = field(default_factory=tuple)
@@ -248,6 +278,7 @@ class Settings:
     # it, and the roles its members hold, such as {"<group id>": ("part-owner:billing",)}.
     # A version's own map gives nothing towards its approval: the one in force before it does.
     groups: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    data_protection: DataProtection = field(default_factory=DataProtection)
 
 
 class SettingsError(ValueError):
@@ -300,6 +331,30 @@ class _Limit(BaseModel):
     per_person_30_days: _COUNT | None = None
 
 
+def _ten_years_at_most(given: str) -> str:
+    n, unit = given.split()
+    if int(n) > (3650 if unit.startswith("day") else 120):
+        raise ValueError("a5s keeps things ten years at most: 3650 days, or 120 months")
+    return given
+
+
+# How long a5s keeps what's said: a number of days or months, from a day to ten years
+_KEPT = Annotated[str, StringConstraints(strict=True, pattern=r"^[1-9][0-9]{0,3} (?:day|month)s?$"),
+                  AfterValidator(_ten_years_at_most)]
+
+
+class _DataProtection(BaseModel):
+    """The data protection officer's choices: what a5s keeps, and whom it names."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    kept_for: _KEPT = DataProtection.kept_for
+    fewest_people: Annotated[StrictInt, Field(ge=3, le=1000)] = DataProtection.fewest_people
+    studio_names: bool = DataProtection.studio_names
+    audit_names: bool = DataProtection.audit_names
+    flag_rubber_stamps: bool = DataProtection.flag_rubber_stamps
+
+
 class _Version(BaseModel):
     """a5s's own settings format, checked strictly: names are plain words, levels are whole
     numbers from 0 to 2, and nothing else may be there."""
@@ -313,6 +368,7 @@ class _Version(BaseModel):
     thresholds: dict[_ID, _THRESHOLD] = Field(default_factory=dict)
     instances: dict[_ID, _Instance] = Field(default_factory=dict)
     groups: dict[_GROUP, list[_GROUP_ROLE]] = Field(default_factory=dict)
+    data_protection: _DataProtection = Field(default_factory=_DataProtection)
 
 
 def _plain_yaml(raw: bytes) -> Any:
@@ -364,6 +420,7 @@ def parse_settings(raw: bytes, signatures: tuple[Signature, ...] = ()) -> Settin
                 for a, limit in version.limits.items()},
         thresholds=dict(version.thresholds),
         groups={g: tuple(sorted(set(roles))) for g, roles in version.groups.items() if roles},
+        data_protection=DataProtection(**version.data_protection.model_dump()),
         instances=tuple(
             InstanceSettings(id=iid, definition=i.definition, serves=tuple(i.serves),
                              level=i.level, owner=i.owner, deputy=i.deputy,

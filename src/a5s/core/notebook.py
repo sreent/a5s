@@ -39,7 +39,7 @@ log = logging.getLogger(__name__)
 NOTE = "note_learned"
 LONGEST = 300  # characters of an entry
 SOURCES = 10  # records an entry may name
-MOST = 50  # entries an instance keeps: the newest [TBC]
+MOST = 50  # entries an instance keeps: the newest [starting value]
 CHECK_EVERY = timedelta(days=1)  # how often a note's records are read again
 CHECKED = 200  # notes checked in one sweep, oldest checked first
 SHOWN = 2000  # characters of entries a run is given

@@ -419,14 +419,17 @@ class Stack:
         return Scheduler(self.as_role("scheduler"), self.gateway.scenario, **kwargs)
 
     def settle(self, instances: dict | None = None, signers: tuple[str, ...] = ("ana",),
-               **changes: Any) -> registry.Applied:
+               data_protection: dict | None = None, **changes: Any) -> registry.Applied:
         """Sign a new version of the settings as Ana, an instance approver who owns billing,
         or as `signers`, and apply it.
 
         `changes`, such as level=0, apply to assistant-finance; `instances` replaces them all.
+        `data_protection` is the data protection officer's choices, which Noor signs for.
         """
         folder = self.cfg.scenario_dir
         settings = yaml.safe_load((folder / "settings.yaml").read_text())
+        if data_protection is not None:
+            settings["data_protection"] = data_protection
         if instances is not None:
             settings["instances"] = instances
         else:

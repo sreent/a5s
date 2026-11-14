@@ -186,13 +186,6 @@ timeouts:
   run: ""  # for the core, in a worker (A5S_WORKER_TIMEOUT)
   dbConnect: ""  # to connect to the database (A5S_DB_CONNECT_TIMEOUT)
 
-# What the data protection officer has agreed to (docs/data-protection.md): each is off until
-# they do.
-officerAgrees:
-  studioNames: false  # people's studio pages name whom each run acted for (A5S_STUDIO_NAMES)
-  auditNames: false  # the auditors' page names whom agents acted for, and exports (A5S_AUDIT_NAMES)
-  rubberStampFlag: false  # the status flags rubber-stamping deciders (A5S_FLAG_RUBBER_STAMPS)
-
 # Where the gateway sends its traces and operators' figures, by OpenTelemetry over HTTP, such
 # as a collector that passes them on to Prometheus or Azure Monitor. Empty sends nothing.
 # Neither carries what anyone said, nor names a person or a record (core/traces.py and

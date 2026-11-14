@@ -19,6 +19,7 @@ release changes is in the code (docs/starting-values.md).
 from __future__ import annotations
 
 import difflib
+import itertools
 import json
 import os
 import re
@@ -253,6 +254,9 @@ TEAM = Var("A5S_TEAM", "the directory's team that runs a5s: its approvals of a r
 DEVELOPMENT = Var("A5S_DEVELOPMENT", "without an identity provider, take people's word for "
                   "who they are: for development alone", False, _flag, "true or false",
                   area=SIGN_IN)
+RUN_MINUTES = Var("A5S_RUN_MINUTES", "the longest a run may last, in minutes: its token dies "
+                  "with it", 60, _whole(5, 240), "a whole number of minutes from 5 to 240",
+                  area=CORE)
 PROVIDER_TIMEOUT = Var("A5S_PROVIDER_TIMEOUT", "seconds the core waits for a model provider's "
                        "answer", 180.0, _seconds(5, 900), "seconds, from 5 to 900", area=CORE)
 
@@ -324,8 +328,9 @@ MATRIX_HS_TOKEN = Var("A5S_MATRIX_HS_TOKEN", "the homeserver's, which comes with
 ANCHOR_STORE = Var("A5S_ANCHOR_STORE", "where the ledger's locked copies go", None,
                    _matching(r"(s3|azure|gs|file)://\S+"),  # as core/stores.py keeps them
                    "s3://, azure://, gs:// or file://, such as s3://bucket/a5s", area=LEDGER)
-ANCHOR_RETAIN_DAYS = Var("A5S_ANCHOR_RETAIN_DAYS", "days each copy stays locked", 365,
-                         _whole(1, 36500), "a whole number of days from 1 to 36,500",
+ANCHOR_RETAIN_DAYS = Var("A5S_ANCHOR_RETAIN_DAYS", "days each copy stays locked: longer here, "
+                         "and shorter only by a release, which assurance signs", 365,
+                         _whole(365, 36500), "a whole number of days from 365 to 36,500",
                          area=LEDGER)
 
 SANDBOX_URL = Var("A5S_SANDBOX_URL", "the sandbox, where the studio tries the agents people are "
@@ -357,20 +362,10 @@ SCENARIO_DIR = Var("A5S_SCENARIO_DIR", "the scenario's folder, if not scenarios/
 AGENTS_DIR = Var("A5S_AGENTS_DIR", "the agents' folders, if not agents", None, _path, "a folder",
                  area=SCENARIO)
 
-OFFICER = "What the data protection officer has agreed to"
-STUDIO_NAMES = Var("A5S_STUDIO_NAMES", "the studio's pages name whom each run acted for",
-                   False, _flag, "true or false", area=OFFICER)
-AUDIT_NAMES = Var("A5S_AUDIT_NAMES", "the auditors' page names whom agents acted for, and "
-                  "exports the ledger there", False, _flag, "true or false", area=OFFICER)
-FLAG_RUBBER_STAMPS = Var("A5S_FLAG_RUBBER_STAMPS", "the status names deciders whose approvals "
-                         "are graded wrong far more often than others'", False, _flag,
-                         "true or false", area=OFFICER)
-
 TOKEN = Var("A5S_TOKEN", "the token the identity provider gave the person using the command "
             "line, where a5s uses one", None, secret=True, area=COMMAND, takes="a token")
 
-AREAS = (CORE, DATABASE, WORKERS, SIGN_IN, TEAMS, MATRIX, LEDGER, STUDIO, OFFICER, SCENARIO,
-         COMMAND)
+AREAS = (CORE, DATABASE, WORKERS, SIGN_IN, TEAMS, MATRIX, LEDGER, STUDIO, SCENARIO, COMMAND)
 # Every setting above, by its area
 VARS: tuple[Var, ...] = tuple(sorted((v for v in globals().values() if isinstance(v, Var)),
                                      key=lambda v: AREAS.index(v.area)))
@@ -381,7 +376,11 @@ FAMILIES = (
            area=TEAMS),
 )
 # Settings that moved, and where to: a part refuses one, rather than seem to obey it
-MOVED: dict[str, str] = {}
+MOVED = {name: f"the signed settings' data_protection.{choice}, which the data protection "
+                "officer approves (docs/data-protection.md)"
+         for name, choice in (("A5S_STUDIO_NAMES", "studio_names"),
+                              ("A5S_AUDIT_NAMES", "audit_names"),
+                              ("A5S_FLAG_RUBBER_STAMPS", "flag_rubber_stamps"))}
 # A5S_ names a5s itself never reads: its tests' (all A5S_TEST_ ones too), and those compose
 # and the deployment scripts read
 NOT_SETTINGS = frozenset({
@@ -399,6 +398,11 @@ NEEDS: tuple[tuple[Var, tuple[Var, ...], str], ...] = (
     (SANDBOX_URL, (SANDBOX_TOKEN,), "the sandbox"),
 )
 BY_NAME = {v.name: v for v in VARS}
+# The waits that nest, each in seconds, shortest first: a model's answer comes within the
+# worker's call for it, which ends within the scheduler's wait for the run, which ends while
+# the run's token lives, so each says why it stopped before the one outside it gives up
+NESTED: tuple[tuple[Var, int], ...] = ((PROVIDER_TIMEOUT, 1), (WORKER_TIMEOUT, 1), (WORKER_WAIT, 1),
+                                       (RUN_MINUTES, 60))
 
 
 def _and(names: list[str]) -> str:
@@ -435,6 +439,15 @@ def check(env: Mapping[str, str] | None = None, serving: bool = True) -> tuple[l
     for given, needed, what in NEEDS:
         if given.is_set(env) and (missing := [n.name for n in needed if not n.is_set(env)]):
             problems.append(f"{what} needs {_and(missing)} as well as {given.name}")
+    try:
+        waits = [(var, var.read(env) * per) for var, per in NESTED]
+    except ConfigError:  # said above
+        waits = []
+    for (inner, shorter), (outer, longer) in itertools.pairwise(waits):
+        if shorter >= longer:
+            problems.append(f"{inner.name} must be shorter than {outer.name}, so it stops, and "
+                            f"says why, before the wait around it gives up: they're {shorter:g} "
+                            f"and {longer:g} seconds")
     try:
         bots = TEAMS_BOTS.read(env) or []
     except ConfigError:
@@ -547,7 +560,7 @@ class ModelConfig:
     base_url: str
     model: str  # the provider's model id, dated where the provider offers one
     key_env: str | None = None  # where its key is; a server on the organisation's network may need none
-    region: str = "[TBC]"
+    region: str = "not stated"  # where the provider serves it, if models.yaml says
     data_classes: tuple[str, ...] = ("synthetic",)
     reported_model: str | None = None  # what every response must report, if not `model`
     # What a million tokens cost, as the provider charges, in the deployment's currency, for
@@ -575,7 +588,7 @@ def load_models(path: Path) -> dict[str, ModelConfig]:
             base_url=m["base_url"].rstrip("/"),
             model=m["model"],
             key_env=m.get("key_env"),
-            region=m.get("region", "[TBC]"),
+            region=m.get("region", "not stated"),
             data_classes=tuple(m.get("data_classes", ["synthetic"])),
             reported_model=m.get("reported_model"),
             prices=Prices(float(p["input"]), float(p["output"]),
@@ -623,15 +636,6 @@ class Config:
     # the core holds them. The first seals; any others are ones it's moving away from.
     seal_keys: tuple[str, ...] = ()
     public_url: str | None = None  # where people reach the channels, for links: else channels_url
-    # Whether the status names deciders whose approvals are graded wrong far more often than
-    # others': profiling people, so only once the data protection officer agrees [TBC: O6].
-    flag_rubber_stamps: bool = False
-    # Whether the studio's pages name whom each run acted for: off until the data protection
-    # officer agrees (docs/data-protection.md); until then a run says how many people
-    studio_names: bool = False
-    # Whether the auditors' page names whom agents acted for, once the data protection officer
-    # agrees, and exports the ledger there; until then, stand-ins
-    audit_names: bool = False
     # The sandbox, where the studio tries the agents people are making: a deployment of its own,
     # at this address, by a token they share (a5s/sandbox.py). None if there isn't one
     sandbox_url: str | None = None
@@ -674,9 +678,7 @@ class Config:
             anchor_retain_days=ANCHOR_RETAIN_DAYS.read(env), team=TEAM.read(env),
             scenario=SCENARIO_CLASS.read(env), scenario_folder=SCENARIO_DIR.read(env),
             agents_folder=AGENTS_DIR.read(env), seal_keys=SEAL_KEYS.read(env),
-            public_url=PUBLIC_URL.read(env), flag_rubber_stamps=FLAG_RUBBER_STAMPS.read(env),
-            studio_names=STUDIO_NAMES.read(env), audit_names=AUDIT_NAMES.read(env),
-            sandbox_url=SANDBOX_URL.read(env), sandbox_token=SANDBOX_TOKEN.read(env),
+            public_url=PUBLIC_URL.read(env), sandbox_url=SANDBOX_URL.read(env), sandbox_token=SANDBOX_TOKEN.read(env),
             github_client_id=GITHUB_CLIENT_ID.read(env), github_repo=GITHUB_REPO.read(env),
             github_base=GITHUB_BASE.read(env), github_url=GITHUB_URL.read(env),
             github_api_url=GITHUB_API_URL.read(env))

@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 from a5s.contract import Scenario
 from a5s.definitions import DAYS, Schedule
 
-GRACE = timedelta(hours=1)  # how late a schedule may still fire, such as after a restart [TBC]
+GRACE = timedelta(hours=1)  # how late a schedule may still fire, such as after a restart [starting value]
 
 
 def zone(scenario: Scenario, owner: str | None) -> ZoneInfo:

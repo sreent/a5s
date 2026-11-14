@@ -18,7 +18,7 @@ from a5s import db
 from a5s.contract import Scenario
 from a5s.core.budgets import day_of
 
-CAP = 5  # urgent messages a day that go to someone at once [TBC]
+CAP = 5  # urgent messages a day that go to someone at once [starting value]
 EVERY = timedelta(hours=1)  # how long the rest wait, at most, to go together
 
 

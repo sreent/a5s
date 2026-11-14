@@ -90,7 +90,7 @@ AWAY_RETRY = 5  # seconds a chat or a person is asked to wait before trying agai
 log = logging.getLogger(__name__)
 MAX_BYTES = 256 * 1024  # far more than one message needs
 TRIES = 3  # deliveries of a Matrix event a5s can't act on before it's skipped, and recorded
-REQUESTS_A_DAY = 5  # versions one person may ask for in the settings app [TBC]
+REQUESTS_A_DAY = 5  # versions one person may ask for in the settings app [starting value]
 MAX_SETTINGS = 64 * 1024  # characters of settings, as written
 WEBCHAT = Path(__file__).parent / "webchat"
 STUDIO = WEBCHAT / "studio"  # as `npm run build` in studio/ builds it, which the image does
@@ -1383,7 +1383,7 @@ def create_app(gw: Any) -> FastAPI:
         with db.transaction(gw.url) as conn:
             try:
                 return studio.runs(conn, gw.scenario, watched(conn, person, instance), person,
-                                   before, limit, names=gw.cfg.studio_names)
+                                   before, limit, names=gw.data_protection(conn).studio_names)
             except ValueError:
                 raise HTTPException(400, "before is where the page before ended, as it said")
 
@@ -1392,7 +1392,8 @@ def create_app(gw: Any) -> FastAPI:
         """What a run did, if someone may watch its instance and see every record it named."""
         person = studying(authorization)
         with db.transaction(gw.url) as conn:
-            found = studio.run(conn, gw.scenario, run_id, person, names=gw.cfg.studio_names)
+            found = studio.run(conn, gw.scenario, run_id, person,
+                               names=gw.data_protection(conn).studio_names)
         if found is None:
             raise HTTPException(404, "there's no such run that you may see")
         return found
@@ -1819,7 +1820,8 @@ def create_app(gw: Any) -> FastAPI:
         return person
 
     def shown(conn: Any) -> audit.Shown:
-        return audit.Shown(gw.scenario, audit.key(conn), names=gw.cfg.audit_names)
+        return audit.Shown(gw.scenario, audit.key(conn),
+                           names=gw.data_protection(conn).audit_names)
 
     def period(since: datetime | None, until: datetime | None) -> dict:
         return {"since": since.isoformat() if since else None,
@@ -1839,8 +1841,10 @@ def create_app(gw: Any) -> FastAPI:
     def audit_now(authorization: str | None = Header(default=None)) -> dict:
         """Who's reading, and how the page shows people: by name, or by stand-in."""
         person = auditing(authorization)
-        return {"you": person.name, "names": gw.cfg.audit_names,
-                "exports": gw.cfg.audit_names, "kinds": list(audit.KINDS)}
+        with db.transaction(gw.url) as conn:
+            names = gw.data_protection(conn).audit_names
+        return {"you": person.name, "names": names, "exports": names,
+                "kinds": list(audit.KINDS)}
 
     @app.get("/audit/api/entries")
     def audit_entries(since: datetime | None = None, until: datetime | None = None,
@@ -1883,7 +1887,9 @@ def create_app(gw: Any) -> FastAPI:
         """A page of a period's entries exactly as the ledger holds them, to check and keep:
         only once the officer agrees to names, since they hold whom agents acted for."""
         person = auditing(authorization)
-        if not gw.cfg.audit_names:
+        with db.transaction(gw.url) as conn:
+            names = gw.data_protection(conn).audit_names
+        if not names:
             raise HTTPException(403, "exports hold whom agents acted for, so they're on this "
                                      "page only once the data protection officer agrees; until "
                                      "then, the team that runs a5s exports a period for you "
