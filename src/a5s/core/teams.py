@@ -10,7 +10,6 @@ which alone holds the bot's credentials.
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import threading
@@ -21,6 +20,7 @@ from urllib.parse import quote, urlparse
 
 import httpx
 
+from a5s import config
 from a5s.contract import Scenario
 from a5s.core.identity import IdentityConfig, IdentityError, Verifier
 
@@ -57,17 +57,22 @@ class TeamsConfig:
     def from_env(cls) -> TeamsConfig | None:
         """One bot from A5S_TEAMS_APP_ID, or several from A5S_TEAMS_BOTS, a JSON list of
         {"agent", "app_id", "secret_env"}, each secret in the variable it names."""
-        if listed := os.environ.get("A5S_TEAMS_BOTS"):
+        if listed := config.TEAMS_BOTS.read():
             bots = tuple(Bot(b["agent"], b["app_id"], os.environ[b["secret_env"]])
-                         for b in json.loads(listed))
-        elif app_id := os.environ.get("A5S_TEAMS_APP_ID"):
-            bots = (Bot(os.environ.get("A5S_TEAMS_AGENT", "assistant"), app_id,
-                        os.environ["A5S_TEAMS_APP_SECRET"]),)
+                         for b in listed)
+        elif app_id := config.TEAMS_APP_ID.read():
+            bots = (Bot(config.TEAMS_AGENT.read(), app_id, _needed(config.TEAMS_APP_SECRET)),)
         else:
             return None
-        hosts = os.environ.get("A5S_TEAMS_SERVICE_HOSTS", "smba.trafficmanager.net")
-        return cls(bots=bots, tenant_id=os.environ["A5S_TEAMS_TENANT_ID"],
-                   service_hosts=tuple(h.strip() for h in hosts.split(",") if h.strip()))
+        return cls(bots=bots, tenant_id=_needed(config.TEAMS_TENANT_ID),
+                   service_hosts=config.TEAMS_SERVICE_HOSTS.read())
+
+
+def _needed(setting: config.Var) -> str:
+    """A setting Teams can't do without, which a part checked was set as it started."""
+    if not (given := setting.read()):
+        raise config.ConfigError(f"Teams needs {setting.name}")
+    return given
 
 
 @dataclass(frozen=True)

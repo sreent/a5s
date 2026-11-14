@@ -177,6 +177,7 @@ The smoke test runs this way: Keycloak for sign-in, Synapse for Matrix, a model 
 | [Critique](docs/critique.md) | What each adversarial review found, how the design answers it, and what each round removed |
 | [Starting values](docs/starting-values.md) | The numbers a5s starts from, by phase |
 | [Runbooks](docs/runbooks.md) | For the team that runs a5s: what to do when each part of `a5s status` goes wrong |
+| [Configuration](docs/configuration.md) | Every setting a deployment gives a5s, with its default and what it takes; where each kind of value lives and who decides it; how each part checks its settings as it starts, and how to see what a part runs with |
 | [Research](docs/research/platform-lessons.md) | What Deep Agents, Microsoft, AWS, Google and Hermes Agent offer, with the [notes](docs/research/notes/) behind it |
 
 Every change to the design gets an adversarial review before it settles, from six angles: an outside attacker, insiders, failure, colleagues, the builder and funder, and a second scenario. Each round reports what it removed as well as what it added.

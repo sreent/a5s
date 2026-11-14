@@ -14,8 +14,7 @@ from dataclasses import replace
 import httpx
 import pytest
 
-from a5s import cli, worker
-from a5s.config import names, pools
+from a5s import cli, config, worker
 from a5s.services.scheduler import Slots, remote_worker
 from conftest import free_port, serve
 from test_asking import ASKED, may_ask
@@ -124,11 +123,16 @@ def test_slots_hold_when_many_take_at_once():
 
 
 def test_each_agents_pool_comes_from_the_environment():
-    assert pools("assistant=http://a5s-worker-assistant:8702/, watcher=http://w:8702") == {
+    def read(setting: config.Var, given: str):
+        return setting.read({setting.name: given})
+
+    assert read(config.WORKER_URLS, "assistant=http://a5s-worker-assistant:8702/, "
+                                    "watcher=http://w:8702") == {
         "assistant": "http://a5s-worker-assistant:8702", "watcher": "http://w:8702"}
-    assert pools("") == {} and names(" assistant, ,watcher ") == {"assistant", "watcher"}
-    with pytest.raises(ValueError, match="isn't an agent and its pool's"):
-        pools("assistant")
+    assert read(config.WORKER_URLS, "") == {}
+    assert read(config.WORKER_AGENTS, " assistant, ,watcher ") == {"assistant", "watcher"}
+    with pytest.raises(config.ConfigError, match="'assistant' isn't an agent and its value"):
+        read(config.WORKER_URLS, "assistant")
 
 
 def test_an_agent_whose_runs_hang_never_holds_up_another_agents(stack):

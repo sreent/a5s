@@ -21,7 +21,7 @@ from urllib.parse import quote
 import httpx
 import yaml
 
-from a5s import authoring, build, db, definitions, devdb, worker
+from a5s import authoring, build, config, db, definitions, devdb, worker
 from a5s.client import Client, Refused
 from a5s.config import DEFAULT_DATABASE_URL, Config, load_models
 from a5s.contract import Signature
@@ -78,8 +78,7 @@ def _migrate(cfg: Config, url: str | None = None) -> None:
     ran = db.migrate(url)
     with db.transaction(url) as conn:
         build.scenario(cfg).setup(conn, db.ROLES["gateway"])
-    passwords = {part: os.environ[f"A5S_DB_{part.upper()}_PASSWORD"] for part in db.ROLES
-                 if os.environ.get(f"A5S_DB_{part.upper()}_PASSWORD")}
+    passwords = config.db_passwords(list(db.ROLES))
     db.set_passwords(url, passwords)
     print(f"Migrated: {', '.join(ran) or 'nothing new'}. "
           f"Passwords set for {', '.join(passwords) or 'no roles'}.")
@@ -189,13 +188,13 @@ def _sandbox(cfg: Config, host: str, port: int) -> None:
 
     from a5s import sandbox
 
-    admin, token = os.environ.get("A5S_SANDBOX_DATABASE_URL"), os.environ.get("A5S_SANDBOX_TOKEN")
+    admin, token = config.SANDBOX_DATABASE_URL.read(), config.SANDBOX_TOKEN.read()
     if not admin or not token:
         sys.exit("Set A5S_SANDBOX_DATABASE_URL, the address of the sandbox's own database, as its "
                  "administrator, and A5S_SANDBOX_TOKEN, which the studio it answers shares.")
-    if admin == os.environ.get("A5S_DATABASE_URL"):
+    if admin == config.DATABASE_URL.read():
         sys.exit("The sandbox needs a database of its own, not the deployment's.")
-    work = Path(os.environ.get("A5S_SANDBOX_DIR") or tempfile.mkdtemp(prefix="a5s-sandbox-"))
+    work = config.SANDBOX_DIR.read() or Path(tempfile.mkdtemp(prefix="a5s-sandbox-"))
     try:
         with sandbox.opened(cfg, admin, work) as box:
             uvicorn.run(sandbox.create_app(box, token), host=host, port=port,
@@ -206,7 +205,7 @@ def _sandbox(cfg: Config, host: str, port: int) -> None:
 
 def _say(cfg: Config, person: str, agent: str, text: str, wait: float = 600) -> None:
     """Send a message through the core's local channel, and print what a5s says back."""
-    token = os.environ.get("A5S_TOKEN")  # the person's, from the identity provider, if a5s uses one
+    token = config.TOKEN.read()  # the person's, from the identity provider, if a5s uses one
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     with httpx.Client(base_url=cfg.channels_url, headers=headers, timeout=90) as channel:
         sent = channel.post("/channels/local/messages",
@@ -227,7 +226,7 @@ def _say(cfg: Config, person: str, agent: str, text: str, wait: float = 600) -> 
 
 def _inbox(cfg: Config, person: str, wait: float) -> None:
     """Print what's been written to a person without answering them, such as reminders."""
-    token = os.environ.get("A5S_TOKEN")
+    token = config.TOKEN.read()
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     with httpx.Client(base_url=cfg.channels_url, headers=headers, timeout=wait + 30) as channel:
         found = channel.get("/channels/local/inbox", params={"person": person, "wait": wait})
@@ -242,7 +241,7 @@ def _inbox(cfg: Config, person: str, wait: float) -> None:
 def _summaries(cfg: Config, person: str, agent: str) -> None:
     """Print what a5s keeps of a person's conversation with an agent beyond what each run is
     given: a summary of each topic, which they can have the agent correct."""
-    token = os.environ.get("A5S_TOKEN")
+    token = config.TOKEN.read()
     headers = {"Authorization": f"Bearer {token}"} if token else {}
     with httpx.Client(base_url=cfg.channels_url, headers=headers, timeout=30) as channel:
         found = channel.get("/channels/local/summaries", params={"person": person, "agent": agent})
@@ -368,7 +367,7 @@ def _audit(cfg: Config, args: argparse.Namespace) -> None:
         sys.exit("say who's reading it, with --by: an auditor, or assurance")
     # their own sign-in, from the identity provider, if they have one: the ledger records
     # the read as theirs; without it, as the service token's, naming them
-    period = {"since": args.since, "until": args.until, "identity": os.environ.get("A5S_TOKEN")}
+    period = {"since": args.since, "until": args.until, "identity": config.TOKEN.read()}
     if args.what == "entries":
         found = _core(cfg, lambda core: core.audit_entries(
             args.by, **period, after=args.after, limit=args.n, kind=args.kind,
@@ -467,9 +466,55 @@ def _admin(cfg: Config, path: str, body: dict | None = None, timeout: float = 30
                  timeout)
 
 
+# The commands that run one of a5s's parts, or set it up: each stops at once on a setting it
+# can't use, or an A5S_ name that isn't a setting, which elsewhere it's only told of
+PARTS = frozenset({"setup", "gateway", "worker", "channels", "scheduler", "anchor", "sandbox",
+                   "dev"})
+
+
+def _config(args: argparse.Namespace) -> None:
+    """Every setting, what this environment sets it to, and what a part would refuse."""
+    problems, _ = config.check(serving=True)
+    if args.markdown:
+        print(config.markdown(), end="")
+        return
+    if args.json:
+        print(json.dumps({"settings": [
+            {"name": v.name, "area": v.area, "value": config.shown(v)[0],
+             "source": config.shown(v)[1], "takes": v.takes, "means": v.means}
+            for v in config.VARS], "problems": problems}, indent=2))
+    else:
+        print(config.described(only_set=args.set))
+        if problems:
+            print("\nWhat a part would refuse to start with:\n  " + "\n  ".join(problems))
+    if problems:
+        sys.exit(1)
+
+
+def _checked(command: str) -> None:
+    """Stop before anything starts if a setting can't be used, saying which and why."""
+    problems, warnings = config.check(serving=command in PARTS)
+    for warning in warnings:
+        log.warning(warning)
+    if problems:
+        sys.exit(f"a5s {command} can't start, as its settings need changing:\n  "
+                 + "\n  ".join(problems)
+                 + "\n`a5s config` shows every setting and what it takes (docs/configuration.md).")
+    if command in PARTS:
+        here = config.set_here()
+        log.info("a5s %s starts with %s: every other setting is a5s's default", command,
+                 ", ".join(f"{k}={v}" for k, v in here.items()) or "nothing set")
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="a5s", description="An agent OS on Deep Agents.")
     sub = parser.add_subparsers(dest="command", required=True)
+    shown = sub.add_parser("config", help="every setting a5s reads, what this environment sets "
+                                          "it to, and what a part would refuse to start with")
+    shown.add_argument("--set", action="store_true", help="only those set here")
+    shown.add_argument("--json", action="store_true", help="as JSON")
+    shown.add_argument("--markdown", action="store_true",
+                       help="the table docs/configuration.md shows")
     sub.add_parser("up", help="start a local Postgres and set up the schema")
     sub.add_parser("down", help="stop the local Postgres")
     sub.add_parser("migrate", help="bring the schema up to date, as the administrator")
@@ -617,6 +662,9 @@ def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=logging.WARNING,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     logging.getLogger("a5s").setLevel(logging.INFO)
+    if args.command == "config":
+        return _config(args)
+    _checked(args.command)
     root = Path.cwd()
     if args.command == "up":
         return _dev_up(root)
@@ -662,7 +710,7 @@ def main(argv: list[str] | None = None) -> None:
         _summaries(cfg, args.person, args.agent)
     elif args.command in ("suspend", "resume"):
         print(_admin(cfg, f"/instances/{args.instance}/{args.command}",
-                     {"by": args.by, "identity": os.environ.get("A5S_TOKEN")}))
+                     {"by": args.by, "identity": config.TOKEN.read()}))
     elif args.command == "export":
         found = _admin(cfg, f"/people/{quote(args.person, safe='')}/export",  # as the officer
                        {"by": args.by}, timeout=300)  # asked: it counts across the whole ledger
@@ -723,7 +771,7 @@ def main(argv: list[str] | None = None) -> None:
         if not args.key:
             sys.exit("name the change to end, such as P-12")
         print(_admin(cfg, f"/proposals/{args.key}/end",
-                     {"by": args.by, "identity": os.environ.get("A5S_TOKEN")}))
+                     {"by": args.by, "identity": config.TOKEN.read()}))
     elif args.command == "proposals":
         for p in _admin(cfg, "/proposals")["proposals"]:
             print(f"{p['key']} {p['status']} since {p['decided_at'] or p['proposed_at']}, "
@@ -731,7 +779,7 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "caps":
         print(_admin(cfg, "/caps/lower", {"agent": args.agent, "part": args.part,
                                           "action": args.action, "by": args.by,
-                                          "identity": os.environ.get("A5S_TOKEN")}))
+                                          "identity": config.TOKEN.read()}))
     elif args.command == "release":
         _release(cfg, args)
     elif args.command == "ledger" and args.what == "verify":

@@ -14,7 +14,6 @@ answered here, as part of the run that asked, so no question waits on another po
 from __future__ import annotations
 
 import json
-import os
 from datetime import UTC, datetime
 from functools import cache, cached_property
 from typing import Any
@@ -32,9 +31,7 @@ from langchain_core.tools import StructuredTool
 from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
 
-from a5s import reach
-
-TIMEOUT = float(os.environ.get("A5S_WORKER_TIMEOUT", "240"))
+from a5s import config, reach
 
 
 def denial(verdict: dict[str, Any]) -> str:
@@ -75,7 +72,7 @@ def _to_models() -> httpx2.Client:
     """How a run's model calls reach the core: waiting for it a moment, as while it restarts,
     and shared by every run, as each call carries its run's own token. Of httpx2, which the
     providers' SDKs are written for."""
-    return reach.client(http=httpx2, timeout=TIMEOUT)
+    return reach.client(http=httpx2, timeout=config.WORKER_TIMEOUT.read())
 
 
 class _Anthropic(ChatAnthropic):
@@ -91,13 +88,13 @@ def chat_model(gateway_url: str, token: str, model: dict[str, str]) -> BaseChatM
     if api == "openai":
         chat: BaseChatModel = ChatOpenAI(
             model=alias, base_url=f"{gateway_url}/v1", api_key=token,
-            use_responses_api=False, disable_streaming=True, max_retries=0, timeout=TIMEOUT,
+            use_responses_api=False, disable_streaming=True, max_retries=0, timeout=config.WORKER_TIMEOUT.read(),
             http_client=_to_models(), http_socket_options=(),  # runs call models in turn only
         )
     else:
         chat = _Anthropic(
             model=alias, base_url=gateway_url, api_key=token,
-            disable_streaming=True, max_retries=0, max_tokens=4096, timeout=TIMEOUT,
+            disable_streaming=True, max_retries=0, max_tokens=4096, timeout=config.WORKER_TIMEOUT.read(),
         )
     key = f"{api}:{alias}"
     if key not in _profiles:
@@ -228,7 +225,8 @@ def run_agent(gateway_url: str, token: str, history: list[dict], *,
     only if the run's agent is one of `agents`, its pool's own, or, in the shared pool, not
     one of `pooled`, which have pools of their own."""
     headers = {"Authorization": f"Bearer {token}"}
-    with reach.client(base_url=gateway_url, headers=headers, timeout=TIMEOUT) as gw:
+    with reach.client(base_url=gateway_url, headers=headers,
+                      timeout=config.WORKER_TIMEOUT.read()) as gw:
         info = gw.get("/run")
         info.raise_for_status()
         info = info.json()

@@ -16,7 +16,6 @@ spending every connection the database allows.
 from __future__ import annotations
 
 import atexit
-import os
 import threading
 import time
 from collections.abc import Iterator
@@ -30,16 +29,16 @@ from psycopg import sql
 from psycopg.rows import DictRow, dict_row
 from psycopg_pool import ConnectionPool, PoolTimeout
 
+from a5s import config
+
 # The role each part of a5s connects as. Setup runs as the database's administrator.
 ROLES = {"gateway": "a5s_gateway", "channels": "a5s_channels", "scheduler": "a5s_scheduler",
          "anchor": "a5s_anchor"}
 _LOCK = 0x0A5_5C4E  # one migrator at a time
 
 
-POOL_SIZE = int(os.environ.get("A5S_DB_POOL_SIZE", "10"))  # connections each part keeps [TBC]
 WAIT = 0.5  # seconds a transaction waits for a pooled connection before connecting afresh
 BUSY = 10.0  # seconds it waits for the pool when as many have connected afresh as it holds
-CONNECT = int(os.environ.get("A5S_DB_CONNECT_TIMEOUT", "2"))  # seconds before failing
 
 # Every connection a5s makes gives each row as a dict, by its columns' names
 Connection = psycopg.Connection[DictRow]
@@ -52,12 +51,13 @@ _pooling = threading.Lock()
 def connect(url: str) -> Connection:
     """A connection of its own, for what outlives a transaction, such as listening, or a
     session's lock, and for migrations."""
-    return Connection.connect(url, row_factory=dict_row, connect_timeout=CONNECT)
+    return Connection.connect(url, row_factory=dict_row,
+                              connect_timeout=config.DB_CONNECT_TIMEOUT.read())
 
 
 def _spare(url: str) -> threading.BoundedSemaphore:
     with _pooling:
-        return _spares.setdefault(url, threading.BoundedSemaphore(max(1, POOL_SIZE)))
+        return _spares.setdefault(url, threading.BoundedSemaphore(config.DB_POOL_SIZE.read()))
 
 
 def _pool(url: str) -> ConnectionPool[Connection]:
@@ -65,10 +65,10 @@ def _pool(url: str) -> ConnectionPool[Connection]:
         if (pool := _pools.get(url)) is None:
             pool = _pools[url] = ConnectionPool(
                 url, connection_class=Connection, open=True, min_size=1,
-                max_size=max(1, POOL_SIZE), max_idle=300, max_lifetime=3600,
+                max_size=config.DB_POOL_SIZE.read(), max_idle=300, max_lifetime=3600,
                 check=ConnectionPool[Connection].check_connection,
                 kwargs={"row_factory": dict_row, "prepare_threshold": None,
-                        "connect_timeout": CONNECT},
+                        "connect_timeout": config.DB_CONNECT_TIMEOUT.read()},
                 name=f"a5s-{urlsplit(url).username or 'pool'}")
         return pool
 

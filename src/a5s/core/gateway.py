@@ -32,7 +32,7 @@ from fastapi.responses import JSONResponse
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel
 
-from a5s import db
+from a5s import config, db
 from a5s.config import Config, ModelConfig
 from a5s.contract import (
     ASSURANCE,
@@ -1872,9 +1872,11 @@ def create_app(gw: Gateway) -> FastAPI:
     def status_now() -> dict:
         """How a5s is doing, for the team that runs it and its dashboards (core/status.py)."""
         with db.transaction(gw.url) as conn:
-            return status.report(conn, gw.breakers.open(), gw.cfg.seal_keys,
-                                 gw.cfg.flag_rubber_stamps,
-                                 gw.identity.cfg.mfa if gw.identity else False)
+            found = status.report(conn, gw.breakers.open(), gw.cfg.seal_keys,
+                                  gw.cfg.flag_rubber_stamps,
+                                  gw.identity.cfg.mfa if gw.identity else False)
+        here = config.set_here()  # what the core runs with, as its environment gives it
+        return {**found, "configuration": {"set": here, "defaults": len(config.VARS) - len(here)}}
 
     # The audit trail, for auditors and assurance (core/audit.py), behind the service token
 

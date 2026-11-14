@@ -290,8 +290,16 @@ def told(status: dict[str, Any]) -> str:
                                       + (f" by {i['suspended_by']}" if i["suspended_by"] else "")
                                       for i in status["not_active"]) or "none") + ".",
         "  Breakers open: " + (", ".join(status["breakers_open"]) or "none") + ".",
+        *([_configuration_told(status["configuration"])] if status.get("configuration") else []),
     ]
     return "\n".join(lines)
+
+
+def _configuration_told(found: dict[str, Any]) -> str:
+    """What the core runs with, as its environment sets it: the rest are a5s's defaults."""
+    here = ", ".join(f"{k}={v}" for k, v in found["set"].items()) or "nothing"
+    return (f"  The core's configuration: {here} set here, and {found['defaults']} settings at "
+            "a5s's defaults (`a5s config` in its container lists every one).")
 
 
 def _verdict(met: bool | None) -> str:

@@ -13,7 +13,6 @@ lets it speak as the bots.
 
 from __future__ import annotations
 
-import os
 import secrets
 import time
 import uuid
@@ -23,6 +22,7 @@ from urllib.parse import quote
 
 import httpx
 
+from a5s import config
 from a5s.contract import Person, Scenario
 from a5s.core import groups
 
@@ -48,12 +48,13 @@ class MatrixConfig:
     @classmethod
     def from_env(cls) -> MatrixConfig | None:
         """Matrix is on where A5S_MATRIX_HOMESERVER is set, and then needs the rest."""
-        if not (homeserver := os.environ.get("A5S_MATRIX_HOMESERVER")):
+        if not (homeserver := config.MATRIX_HOMESERVER.read()):
             return None
-        rest = ("A5S_MATRIX_SERVER_NAME", "A5S_MATRIX_AS_TOKEN", "A5S_MATRIX_HS_TOKEN")
-        if missing := [name for name in rest if not os.environ.get(name)]:
-            raise RuntimeError(f"Matrix needs {', '.join(missing)} as well as A5S_MATRIX_HOMESERVER")
-        return cls(homeserver.rstrip("/"), *(os.environ[name] for name in rest))
+        rest = (config.MATRIX_SERVER_NAME, config.MATRIX_AS_TOKEN, config.MATRIX_HS_TOKEN)
+        if missing := [v.name for v in rest if not v.read()]:
+            raise RuntimeError(f"Matrix needs {', '.join(missing)} as well as "
+                               f"{config.MATRIX_HOMESERVER.name}")
+        return cls(homeserver, *(v.read() for v in rest))
 
 
 @dataclass(frozen=True)

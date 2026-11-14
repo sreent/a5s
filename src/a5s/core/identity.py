@@ -11,7 +11,6 @@ sender itself, so no service can claim that a message came from someone else.
 
 from __future__ import annotations
 
-import os
 import threading
 import time
 from dataclasses import dataclass
@@ -20,6 +19,8 @@ from typing import Any
 import httpx
 import jwt
 from jwt import PyJWK, PyJWKSet
+
+from a5s import config
 
 # Asymmetric algorithms only: a token signed with a shared secret, or with none, is refused.
 _ALGORITHMS = ["RS256", "RS384", "RS512", "PS256", "PS384", "PS512", "ES256", "ES384", "ES512",
@@ -56,20 +57,19 @@ class IdentityConfig:
 
     @classmethod
     def from_env(cls) -> IdentityConfig | None:
-        issuer = os.environ.get("A5S_OIDC_ISSUER")
-        if not issuer:
+        if not (issuer := config.OIDC_ISSUER.read()):  # exactly as the provider writes it
             return None
-        audiences = [a.strip() for a in os.environ.get("A5S_OIDC_AUDIENCE", "a5s").split(",")]
-        if web := os.environ.get("A5S_WEBCHAT_CLIENT_ID"):  # its sign-ins come to the core too
+        audiences = list(config.OIDC_AUDIENCE.read())
+        if web := config.WEBCHAT_CLIENT_ID.read():  # its sign-ins come to the core too
             audiences.append(web)
         return cls(
-            issuer=issuer,  # exactly as the provider writes it: Entra ID's v1 issuer ends in a slash
+            issuer=issuer,
             audience=tuple(dict.fromkeys(a for a in audiences if a)),
-            person_claim=os.environ.get("A5S_OIDC_PERSON_CLAIM", "preferred_username"),
-            metadata_url=os.environ.get("A5S_OIDC_METADATA_URL") or None,
-            directory_prefix=os.environ.get("A5S_OIDC_DIRECTORY_PREFIX") or None,
-            mfa=second_factor_of(os.environ.get("A5S_OIDC_MFA")),
-            groups_claim=os.environ.get("A5S_OIDC_GROUPS_CLAIM", "groups").strip() or None,
+            person_claim=config.OIDC_PERSON_CLAIM.read(),
+            metadata_url=config.OIDC_METADATA_URL.read(),
+            directory_prefix=config.OIDC_DIRECTORY_PREFIX.read(),
+            mfa=config.OIDC_MFA.read(),
+            groups_claim=config.OIDC_GROUPS_CLAIM.read(),
         )
 
 
@@ -78,12 +78,11 @@ def second_factor_of(given: str | None) -> tuple[str, tuple[str, ...]] | None:
     provider's step-up level: None for none. ValueError if it names no claim or no value."""
     if not given or not given.strip():
         return None
-    claim, _, values = given.partition(":")
-    accepted = tuple(v.strip() for v in values.split(",") if v.strip())
-    if not claim.strip() or not accepted:
+    try:
+        return config.second_factor(given)
+    except ValueError:
         raise ValueError("A5S_OIDC_MFA names the claim a sign-in shows a second factor by, and "
-                         "the values that do, such as amr:mfa")
-    return claim.strip(), accepted
+                         "the values that do, such as amr:mfa") from None
 
 
 def second_factor(cfg: IdentityConfig, claims: dict[str, Any]) -> bool:

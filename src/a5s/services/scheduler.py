@@ -23,7 +23,6 @@ no port of its own, so nothing can send it work but the core.
 from __future__ import annotations
 
 import logging
-import os
 import re
 import threading
 import time
@@ -35,7 +34,7 @@ from datetime import UTC, datetime
 import httpx
 import psycopg
 
-from a5s import db, reach
+from a5s import config, db, reach
 from a5s.config import Config
 from a5s.contract import INSTANCE_APPROVER, PART_OWNER, Scenario
 from a5s.core import groups, registry, tasking
@@ -43,9 +42,6 @@ from a5s.services import context, summaries
 from a5s.worker import BudgetSpent, ModelDown, TaskStopped, run_agent
 
 log = logging.getLogger(__name__)
-# Seconds the scheduler waits for a worker's run: longer than the run may take on the worker
-# (A5S_WORKER_TIMEOUT), so the worker says why it stopped first
-WORKER_WAIT = float(os.environ.get("A5S_WORKER_WAIT", "600"))
 Worker = Callable[[str, str, list[dict]], str]
 LEASE = 120  # seconds a conversation stays leased without being renewed
 
@@ -109,7 +105,9 @@ def remote_worker(url: str, within: float = reach.WITHIN) -> Worker:
     """Hand each run to a worker service, which holds nothing but the run's token. A pool
     that can't be reached, such as one restarting, never got the run, so it's tried again for
     up to `within` seconds before the run fails: a restart holds its runs up, and loses none."""
-    pool = reach.client(within, base_url=url, timeout=httpx.Timeout(WORKER_WAIT, connect=10))
+    # longer than the run may take on the worker, so the worker says why it stopped first
+    pool = reach.client(within, base_url=url,
+                        timeout=httpx.Timeout(config.WORKER_WAIT.read(), connect=10))
 
     def work(_gateway_url: str, token: str, history: list[dict]) -> str:
         response = pool.post("/work", json={"token": token, "history": history})
