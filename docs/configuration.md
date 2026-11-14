@@ -29,7 +29,7 @@ Each part checks all of them as it starts. It won't start with any of these, and
 - An `A5S_` name that isn't a setting, such as a misspelling of `A5S_OIDC_MFA`. Ignored, it would do nothing, so a second factor nobody is asked for would go unnoticed. Where it looks like a setting, the message says which.
 - A setting that has moved, such as to the signed settings. The message says where it went.
 
-The command line, which serves nothing, warns of a name that isn't a setting rather than stopping. Names a5s uses for its tests (`A5S_TEST_`), and those compose and the deployment scripts read, are listed as not being settings.
+The command line, which serves nothing, warns of a name that isn't a setting rather than stopping. Names a5s uses for its tests (`A5S_TEST_`), and those compose and the deployment scripts read, are listed as not being settings. So are the variables Kubernetes gives a pod for each service in its namespace, such as `A5S_GATEWAY_SERVICE_HOST` for one named `a5s-gateway`, which a part knows by their names and values and leaves alone: a5s finds its services by name, and the chart turns them off (`enableServiceLinks: false`). No setting has a name of their shape, so a service can never set one.
 
 ## Seeing what a part runs with
 

@@ -19,6 +19,7 @@ release changes is in the code (docs/starting-values.md).
 from __future__ import annotations
 
 import difflib
+import ipaddress
 import itertools
 import json
 import os
@@ -26,7 +27,7 @@ import re
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any, Final, NamedTuple
 from urllib.parse import urlsplit, urlunsplit
 
 import yaml
@@ -421,6 +422,55 @@ def known(name: str) -> bool:
             or any(f.matches(name) for f in FAMILIES))
 
 
+# What Kubernetes gives a pod for each service in its namespace, unless its spec turns them off
+# (enableServiceLinks: false, as the chart does): for a service named a5s-gateway, such as
+# A5S_GATEWAY_SERVICE_HOST=10.43.0.12, A5S_GATEWAY_SERVICE_PORT_HTTP=8700 and
+# A5S_GATEWAY_PORT_8700_TCP=tcp://10.43.0.12:8700. Each name's shape, by what its value is
+_SERVICE: Final = r"^A5S_(?:[A-Z0-9_]+?_)?"  # a5s-gateway's, or a service named a5s
+_PORT_OF: Final = r"PORT_[0-9]+_(?:TCP|UDP|SCTP)"
+SERVICE_LINKS: Final = {
+    "address": re.compile(rf"{_SERVICE}(?:SERVICE_HOST|{_PORT_OF}_ADDR)$"),
+    "port": re.compile(rf"{_SERVICE}(?:SERVICE_PORT(?:_[A-Z0-9_]+)?|{_PORT_OF}_PORT)$"),
+    "protocol": re.compile(rf"{_SERVICE}{_PORT_OF}_PROTO$"),
+    "url": re.compile(rf"{_SERVICE}(?:PORT|{_PORT_OF})$"),
+}
+
+
+def _address(text: str) -> bool:
+    try:
+        ipaddress.ip_address(text)
+    except ValueError:
+        return False
+    return True
+
+
+def _service_value(value: str) -> str | None:
+    """Which of a service's variables a value could be: an address, a port, a protocol, or
+    an address with its port, such as tcp://10.43.0.12:8700 or tcp://[fd00::12]:8700."""
+    if value in ("tcp", "udp", "sctp"):
+        return "protocol"
+    if value.isascii() and value.isdigit():
+        return "port" if 0 < int(value) < 65536 else None
+    if _address(value):
+        return "address"
+    url = urlsplit(value)
+    try:
+        port = url.port
+    except ValueError:
+        return None
+    if url.scheme in ("tcp", "udp", "sctp") and port and not url.path and _address(
+            url.hostname or ""):
+        return "url"
+    return None
+
+
+def service_link(name: str, value: str) -> bool:
+    """Whether a variable is one Kubernetes made for a service, by its name and its value, so
+    a part leaves it alone. No setting has a name of that shape (tests/test_configuration.py)."""
+    kind = _service_value(value)
+    return kind is not None and SERVICE_LINKS[kind].match(name) is not None
+
+
 def check(env: Mapping[str, str] | None = None, serving: bool = True) -> tuple[list[str], list[str]]:
     """What a part can't start with, and what it should be told of, as the environment
     stands: every setting it can't use, each one moved elsewhere, each one missing beside
@@ -457,7 +507,8 @@ def check(env: Mapping[str, str] | None = None, serving: bool = True) -> tuple[l
             problems.append(f"A5S_TEAMS_BOTS gives the {bot.get('agent')} agent's bot its secret "
                             f"in {bot.get('secret_env')}, which isn't set")
     strangers = []
-    for name in sorted(n for n in env if n.startswith("A5S_") and not known(n) and n not in MOVED):
+    for name in sorted(n for n in env if n.startswith("A5S_") and not known(n) and n not in MOVED
+                       and not service_link(n, env[n])):
         like = difflib.get_close_matches(name, BY_NAME, n=1, cutoff=0.8)
         strangers.append(f"{name} isn't one of a5s's settings"
                          + (f": did you mean {like[0]}?" if like else ""))

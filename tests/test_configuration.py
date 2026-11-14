@@ -91,7 +91,8 @@ def test_every_A5S_name_anywhere_is_a_setting_a_family_or_said_not_to_be_one():
         for name in set(re.findall(r"\bA5S_[A-Z0-9_]*[A-Z0-9]\b", text)):
             if not (config.known(name) or name in config.MOVED
                     or any(f.pattern.partition("<")[0].rstrip("_") == name
-                           for f in config.FAMILIES)):
+                           for f in config.FAMILIES)
+                    or any(shape.match(name) for shape in config.SERVICE_LINKS.values())):
                 unknown.setdefault(name, str(path.relative_to(ROOT)))
     assert unknown == {}, f"list these in a5s/config.py, or say they aren't settings: {unknown}"
 
@@ -248,11 +249,15 @@ def rendered(*values: str, sandbox: bool = False) -> list[dict]:
     return [d for d in yaml.safe_load_all(run.stdout) if d]
 
 
-def containers(doc: dict) -> list[dict]:
+def pod(doc: dict) -> dict:
     spec = doc.get("spec") or {}
     spec = (spec.get("jobTemplate") or {}).get("spec", spec)
-    pod = (spec.get("template") or {}).get("spec") or {}
-    return [*(pod.get("initContainers") or []), *(pod.get("containers") or [])]
+    return (spec.get("template") or {}).get("spec") or {}
+
+
+def containers(doc: dict) -> list[dict]:
+    found = pod(doc)
+    return [*(found.get("initContainers") or []), *(found.get("containers") or [])]
 
 
 # What the chart states though they're a5s's defaults, as it sizes its pods' shutdown by them:
@@ -278,6 +283,39 @@ def test_the_chart_sets_no_setting_to_its_default_and_none_a5s_doesnt_know():
     assert found == [], f"leave these unset, so a5s's own default holds: {found}"
     assert set(stated) == STATED and all(repeated(n, v) for n, vs in stated.items() for v in vs), (
         f"the chart's timeouts aren't a5s's defaults: {stated}")
+
+
+# What Kubernetes gives a pod for services named a5s-gateway and a5s-worker-assistant, as on a
+# cluster, unless the pod turns service links off
+LINKS = {"A5S_GATEWAY_SERVICE_HOST": "10.43.0.12", "A5S_GATEWAY_SERVICE_PORT": "8700",
+         "A5S_GATEWAY_SERVICE_PORT_HTTP": "8700", "A5S_GATEWAY_PORT": "tcp://10.43.0.12:8700",
+         "A5S_GATEWAY_PORT_8700_TCP": "tcp://10.43.0.12:8700",
+         "A5S_GATEWAY_PORT_8700_TCP_PROTO": "tcp", "A5S_GATEWAY_PORT_8700_TCP_PORT": "8700",
+         "A5S_GATEWAY_PORT_8700_TCP_ADDR": "10.43.0.12",
+         "A5S_WORKER_ASSISTANT_PORT": "tcp://[fd00:10:43::12]:8702",
+         "A5S_WORKER_SERVICE_PORT": "tcp://10.43.0.13:8702",  # a service named a5s-worker-service
+         "A5S_SERVICE_HOST": "10.43.0.10", "A5S_PORT": "tcp://10.43.0.10:80"}  # one named a5s
+
+
+def test_a_part_leaves_alone_what_kubernetes_says_of_its_services():
+    assert config.check(LINKS) == ([], [])
+    # a name of the same shape whose value isn't what Kubernetes gives is someone's, and stops it
+    problems, _ = config.check({"A5S_GATEWAY_PORT": "8700", "A5S_WORKER_SERVICE_HOST": "worker",
+                                "A5S_GATEWAY_PORT_8700_TCP": "tcp://10.43.0.12:8700/x"})
+    assert [p.split(" isn't")[0] for p in problems] == [
+        "A5S_GATEWAY_PORT", "A5S_GATEWAY_PORT_8700_TCP", "A5S_WORKER_SERVICE_HOST"], problems
+
+
+def test_no_setting_has_a_name_a_service_could_give_it():
+    """Else a service named for it would set it, as a5s-gateway would set A5S_GATEWAY_PORT."""
+    assert [v.name for v in config.VARS
+            if any(shape.match(v.name) for shape in config.SERVICE_LINKS.values())] == []
+
+
+def test_the_charts_pods_are_given_no_service_links():
+    pods = [pod(d) for d in [*rendered("ci-values.yaml"), *rendered("ci-values.yaml", sandbox=True)]
+            if containers(d)]
+    assert pods and all(p.get("enableServiceLinks") is False for p in pods)
 
 
 def test_the_copier_copies_every_hour_unless_its_told_otherwise(monkeypatch, tmp_path):

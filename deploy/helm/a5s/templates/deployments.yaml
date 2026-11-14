@@ -55,6 +55,7 @@ spec:
       terminationGracePeriodSeconds: {{ add $.Values.timeouts.provider 15 }}  # a model call in flight
       {{- end }}
       automountServiceAccountToken: false
+      enableServiceLinks: false  # a5s finds services by name: no A5S_GATEWAY_SERVICE_HOST and such
       {{- with $.Values.imagePullSecrets }}
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}

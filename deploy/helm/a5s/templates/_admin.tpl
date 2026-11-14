@@ -9,6 +9,7 @@ spec:
   restartPolicy: Never
   serviceAccountName: {{ printf "%s-admin" $root.Release.Name }}
   automountServiceAccountToken: false
+  enableServiceLinks: false  # a5s finds services by name: no A5S_GATEWAY_SERVICE_HOST and such
   {{- with $root.Values.imagePullSecrets }}
   imagePullSecrets:
     {{- toYaml . | nindent 4 }}
