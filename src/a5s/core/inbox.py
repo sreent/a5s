@@ -21,11 +21,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import logging
-import re
 import time
 import uuid
 from collections.abc import Callable
-from datetime import timedelta
 from typing import Any
 
 import httpx
@@ -42,23 +40,21 @@ from a5s.contract import (
     INSTANCE_APPROVER,
     PART_DELEGATE,
     PART_OWNER,
-    Person,
-    parse_settings,
 )
 from a5s.core import (
     admin_api,
     administration,
-    approvals,
+    approve_api,
     audit,
     audit_api,
     chats,
+    decide_api,
+    grade_api,
     groups,
     ledger,
     matrix,
-    memberships,
     notebook_api,
-    officer,
-    proposals,
+    officer_api,
     registry,
     samples,
     settings_api,
@@ -67,8 +63,6 @@ from a5s.core import (
     topics,
     web,
 )
-from a5s.core.gateway import sanitize
-from a5s.core.identity import asked_level
 from a5s.core.teams import UNKNOWN, Refused
 
 AWAY = "a5s can't reach its records just now, so it couldn't take that. Try again in a moment."
@@ -83,58 +77,6 @@ class LocalMessage(BaseModel):
     agent: str
     text: str
     person: str | None = None  # in development, without an identity provider, who it's from
-
-
-class Approval(BaseModel):
-    """What the approval page sends with its sign-in: the salt its nonce was made with."""
-
-    salt: str
-
-
-class Asking(BaseModel):
-    """What the officer's page sends with its sign-in: what it's to do, for whom, and the salt
-    its nonce was made with."""
-
-    action: str
-    person: str
-    salt: str
-
-
-class Deciding(BaseModel):
-    """What the decision page sends with a sign-in made to decide: the changes it decides, by
-    their digests, the decision, the salt its nonce was made with, and, for a rejection, why,
-    if the decider says."""
-
-    proposals: list[str]
-    decision: str
-    salt: str
-    reason: str | None = None
-
-
-class Grade(BaseModel):
-    """A grader's grade of one sample of an agent's work, with the salt of the sign-in made
-    to give it."""
-
-    grade: str
-    salt: str = ""
-
-
-class Grading(BaseModel):
-    """What the grading page sends with a sign-in made to grade: the grades, by sample, and the
-    salt its nonce was made with."""
-
-    grades: dict[int, str]
-    salt: str
-
-
-class TokenRequest(BaseModel):
-    """The web chat's sign-in, passed on to the identity provider."""
-
-    grant_type: str
-    code: str | None = None
-    code_verifier: str | None = None
-    redirect_uri: str | None = None
-    refresh_token: str | None = None
 
 
 def record(conn: Any, *, channel: str, source_id: str, person: str, agent: str, text: str,
@@ -227,12 +169,6 @@ def create_app(gw: Any) -> FastAPI:
                     str(exc).splitlines()[0][:200] if str(exc) else type(exc).__name__)
         return JSONResponse(status_code=503, headers={"Retry-After": str(AWAY_RETRY)},
                             content={"detail": AWAY})
-
-    def refusal(exc: approvals.Refused | proposals.Refused) -> HTTPException:
-        """A sign-in's refusal as the page gets it: one for want of a second factor counted."""
-        if exc.second_factor:
-            web.counted(gw, exc.second_factor)
-        return HTTPException(exc.status, exc.reason)
 
     # Teams
 
@@ -520,7 +456,7 @@ def create_app(gw: Any) -> FastAPI:
                 "agents": sorted(gw.definitions)}
 
     @app.post("/chat/token")
-    def chat_token(body: TokenRequest) -> JSONResponse:
+    def chat_token(body: web.TokenRequest) -> JSONResponse:
         """The web chat's sign-in, passed on to the identity provider, which checks the code
         and its PKCE verifier. It needs no secret, and the page never calls the provider
         itself, so the provider needn't allow it to."""
@@ -534,20 +470,7 @@ def create_app(gw: Any) -> FastAPI:
             form |= {"refresh_token": body.refresh_token, "scope": "openid profile"}
         else:
             raise HTTPException(400, "send a code and its verifier, or a refresh token")
-        return exchange(form, ("id_token", "refresh_token", "expires_in"))
-
-    def exchange(form: dict, kept: tuple[str, ...]) -> JSONResponse:
-        """A code or refresh token, passed on to the identity provider, and what it gives back
-        that the page may keep: never the provider's access token."""
-        try:
-            answer = gw.identity.http.post(gw.identity.endpoints()["token_endpoint"], data=form,
-                                           timeout=15)
-            tokens = answer.json()
-        except (httpx.HTTPError, ValueError, KeyError) as exc:
-            raise HTTPException(502, "the identity provider didn't answer") from exc
-        return JSONResponse(status_code=answer.status_code if answer.status_code < 500 else 502,
-                            content={k: tokens[k] for k in (*kept, "error", "error_description")
-                                     if k in tokens})
+        return web.exchange(gw, form, ("id_token", "refresh_token", "expires_in"))
 
     @app.get("/chat/{name}", include_in_schema=False)
     def chat_file(name: str) -> Response:
@@ -555,412 +478,11 @@ def create_app(gw: Any) -> FastAPI:
             raise HTTPException(404, "no such file")
         return page(name)
 
-    # Approving settings: the page an approver's card opens, where they decide
-
-    def approving() -> None:
-        web.approving(gw)
-
-    @app.get("/approve/", include_in_schema=False)
-    def approve_page() -> Response:
-        approving()
-        return page("approve.html")
-
-    @app.get("/approve/approve.js", include_in_schema=False)
-    def approve_script() -> Response:
-        approving()
-        return page("approve.js")
-
-    @app.post("/approve/token")
-    def approve_token(body: TokenRequest) -> JSONResponse:
-        """The approval page's sign-in, passed on to the identity provider. The page gets the
-        signed sign-in alone, with no refresh token to make more like it."""
-        approving()
-        if body.grant_type != "authorization_code" or not (body.code and body.code_verifier
-                                                            and body.redirect_uri):
-            raise HTTPException(400, "send a code and its verifier")
-        return exchange({"grant_type": "authorization_code", "client_id": gw.cfg.webchat_client_id,
-                         "code": body.code, "code_verifier": body.code_verifier,
-                         "redirect_uri": body.redirect_uri}, ("id_token",))
-
-    @app.get("/approve/config")
-    def approve_config() -> dict:
-        """Where the page signs the approver in."""
-        approving()
-        try:
-            where = gw.identity.endpoints()
-        except Exception as exc:  # the provider's down: the page says so, and nothing else
-            raise HTTPException(503, "the identity provider can't be reached") from exc
-        level = asked_level(gw.identity.cfg)  # what counts asks the provider for its level
-        return {"signin": {"authorization_endpoint": where["authorization_endpoint"],
-                           "client_id": gw.cfg.webchat_client_id, "scope": "openid profile",
-                           **({"acr_values": level} if level else {})}}
-
-    def approver(version: str, body: Approval, authorization: str | None) -> tuple:
-        """Who signed in to approve this version, what the provider signed, and the token."""
-        approving()
-        if not re.fullmatch(r"[0-9a-f]{64}", version):
-            raise HTTPException(404, "a5s has no such version of the settings")
-        token = (authorization or "").removeprefix("Bearer ").strip()
-        if not token:
-            raise HTTPException(401, "sign in to approve: send your sign-in as a bearer token")
-        try:
-            person, claims = approvals.check(gw.identity, gw.scenario, gw.cfg.webchat_client_id,
-                                             token, version, body.salt, time.time())
-        except approvals.Refused as exc:
-            raise refusal(exc) from None
-        return person, claims, token
-
-    def proposal(conn: Any, version: str) -> tuple[dict, dict | None, str]:
-        """A version proposed for approval, the version in force, and where it stands."""
-        row = conn.execute("select * from settings_proposals where scenario = %s and digest = %s",
-                           (gw.scenario.name, version)).fetchone()
-        if row is None:
-            raise HTTPException(404, "a5s has no such version of the settings to approve")
-        last = approvals.latest(conn, gw.scenario.name)
-        if row["outcome"]:
-            status = row["outcome"]
-        elif last and row["serial"] <= last["serial"]:
-            status = "superseded"
-        else:
-            status = "waiting"
-        return row, last, status
-
-    @app.post("/approve/settings/{version}/review")
-    def review(version: str, body: Approval, authorization: str | None = Header(default=None)) -> dict:
-        """What a version changes from the one in force, as code works it out, for an instance
-        approver who signed in to approve it."""
-        person, _, _ = approver(version, body, authorization)
-        with db.transaction(gw.url) as conn:
-            row, last, status = proposal(conn, version)
-            approved = approvals.recorded(conn, gw.scenario.name, version)
-        before = parse_settings(bytes(last["raw"])) if last else None
-        settings = parse_settings(bytes(row["raw"]))
-        found = approvals.changes(before, settings, gw.definitions, gw.scenario.person)
-        valid, _ = registry.signers(settings, gw.scenario.person, approved)
-        return {"serial": row["serial"], "proposed_at": row["proposed_at"].isoformat(),
-                "in_force": last["serial"] if last else None, "changes": found,
-                "whole": approvals.described(settings, gw.definitions, gw.scenario.person),
-                "needs": registry.missing(settings, gw.scenario.person, valid, before,
-                                          memberships.rooted(gw.scenario).person)
-                if status == "waiting" else [],
-                "approved_by": [p.name if (p := gw.scenario.person(a)) else a for a in approved],
-                "you": person.name, "you_approved": person.id in approved, "status": status}
-
-    @app.post("/approve/settings/{version}")
-    def approve(version: str, body: Approval, authorization: str | None = Header(default=None)) -> dict:
-        """An instance approver's approval of a version, signed through the identity provider
-        for this version alone. It's recorded once, and sealed. The gateway applies the version."""
-        person, claims, token = approver(version, body, authorization)
-        with db.transaction(gw.url) as conn:
-            row, _, status = proposal(conn, version)
-            if status != "waiting":
-                raise HTTPException(409, f"this version isn't waiting for approval: it's {status}")
-            try:
-                approvals.record(conn, gw.scenario.name, version, person.id, token, body.salt,
-                                 claims)
-            except approvals.Refused as exc:
-                raise refusal(exc) from None
-            ledger.append(conn, {
-                "kind": "admin", "action": "approve", "run": None, "instance": None, "acts_for": [],
-                "decision": "record",
-                "args": {"settings": row["version"], "serial": row["serial"], "digest": version,
-                         "by": person.id, "identity": "verified: a sign-in to approve this version alone",
-                         "issuer": claims["iss"],
-                         "token_sha256": hashlib.sha256(token.encode()).hexdigest()}})
-            approved = approvals.recorded(conn, gw.scenario.name, version)
-            last = approvals.latest(conn, gw.scenario.name)
-        settings = parse_settings(bytes(row["raw"]))
-        valid, _ = registry.signers(settings, gw.scenario.person, approved)
-        before = parse_settings(bytes(last["raw"])) if last else None
-        return {"approved": True, "serial": row["serial"], "by": person.name,
-                "needs": registry.missing(settings, gw.scenario.person, valid, before,
-                                          memberships.rooted(gw.scenario).person)}
-
-    # The data protection officer's requests: the page where they ask to export, or erase,
-    # what a5s keeps about someone, signed in afresh for that request alone, which someone from
-    # the team that runs a5s then carries out, once, within ten minutes (core/officer.py).
-
-    @app.get("/officer/", include_in_schema=False)
-    def officer_page() -> Response:
-        approving()
-        return page("officer.html")
-
-    @app.get("/officer/officer.js", include_in_schema=False)
-    def officer_script() -> Response:
-        approving()
-        return page("officer.js")
-
-    @app.get("/officer/config")
-    def officer_config() -> dict:
-        """Where the page signs the officer in."""
-        return approve_config()
-
-    @app.post("/officer/token")
-    def officer_token(body: TokenRequest) -> JSONResponse:
-        """The officer's sign-in, passed on to the identity provider: the signed sign-in alone."""
-        return approve_token(body)
-
-    @app.post("/officer/requests")
-    def officer_request(body: Asking, authorization: str | None = Header(default=None)) -> dict:
-        """The officer's request, signed through the identity provider for it alone, and
-        recorded for the gateway to check again and carry out, once."""
-        approving()
-        token = (authorization or "").removeprefix("Bearer ").strip()
-        if not token:
-            raise HTTPException(401, "sign in to ask: send your sign-in as a bearer token")
-        person = body.person.strip()
-        try:
-            who, claims = officer.check(gw.identity, gw.scenario, gw.cfg.webchat_client_id,
-                                        token, body.action, person, body.salt, time.time())
-            with db.transaction(gw.url) as conn:
-                officer.record(conn, body.action, person, who.id, token, body.salt, claims)
-                ledger.append(conn, {
-                    "kind": "admin", "action": "ask", "run": None, "instance": None,
-                    "acts_for": [person], "decision": "record",
-                    "args": {"to": body.action, "person": person, "by": who.id,
-                             "identity": "verified: a sign-in to ask for this alone",
-                             "issuer": claims["iss"],
-                             "token_sha256": hashlib.sha256(token.encode()).hexdigest()}})
-        except approvals.Refused as exc:
-            raise refusal(exc) from None
-        named = gw.scenario.person(person)
-        return {"asked": body.action, "person": person, "name": named.name if named else None,
-                "by": who.name, "lasts": "ten minutes",
-                "command": f"a5s export --person {person} --out <file>" if body.action == "export"
-                else f"a5s erase --person {person} --confirm {person}"}
-
-    # Deciding held changes: the page a decider's card opens. They sign in to see what waits
-    # for them, and again, afresh, to decide: that sign-in's nonce commits to their decision on
-    # exactly the changes they chose, so the provider signs the decision. The gateway makes
-    # what's approved.
-
-    @app.get("/decide/", include_in_schema=False)
-    def decide_page() -> Response:
-        approving()
-        return page("decide.html")
-
-    @app.get("/decide/decide.js", include_in_schema=False)
-    def decide_script() -> Response:
-        approving()
-        return page("decide.js")
-
-    @app.post("/decide/token")
-    def decide_token(body: TokenRequest) -> JSONResponse:
-        """The decision page's sign-ins, passed on to the identity provider, as for approving."""
-        return approve_token(body)
-
-    @app.get("/decide/config")
-    def decide_config() -> dict:
-        return approve_config()
-
-    @app.post("/decide/review")
-    def review_proposals(authorization: str | None = Header(default=None)) -> dict:
-        """The held changes whoever signed in may decide now, oldest first, since those lapse
-        first, as the directory stands now; those they were told of as a decider's manager,
-        which they may see but not decide; and those they decided lately. Each in the words
-        code worked out when it was asked for, with a link to each record, and whether it has
-        changed since."""
-        approving()
-        who, _ = sender(authorization, None)
-        person = gw.scenario.person(who)
-        roles = person.roles if person else ()
-        mine = sorted({r.split(":", 1)[1] for r in roles
-                       if r.startswith((f"{PART_OWNER}:", f"{PART_DELEGATE}:"))})
-        with db.transaction(gw.url) as conn:
-            rows = conn.execute(
-                "select p.*, d.decision as yours from proposals p left join proposal_decisions d "
-                "on d.digest = p.digest and d.person = %(who)s where p.scenario = %(scenario)s "
-                "and ((p.status = 'waiting' and (p.parts && %(parts)s or %(who)s = any(p.escalated) "
-                "or (%(approver)s and cardinality(p.parts) = 0))) or (d.id is not null and "
-                "(p.ended_at is null or p.ended_at > %(week)s))) "
-                "order by (p.status = 'waiting') desc, p.id limit 500",
-                {"who": who, "scenario": gw.scenario.name, "parts": mine,
-                 "approver": INSTANCE_APPROVER in roles,
-                 "week": gw.clock() - timedelta(days=7)}).fetchall()
-        shown = []
-        for row in rows:
-            waits = row["status"] == "waiting"
-            decides = waits and proposals.may_decide(gw.scenario, row, who)
-            if waits and not decides and who not in (row["escalated"] or []):
-                continue  # they no longer own what it touches, or may no longer see it
-            if len(shown) >= 50:
-                break
-            try:
-                changed = proposals.changed(gw.scenario, row) if waits else []
-            except Exception:  # the records system didn't answer: say so, rather than nothing
-                log.exception("couldn't read the records of %s", proposals.key(row))
-                changed = list(row["records"])
-            standing = row["standing"] or {}
-            shown.append({"key": proposals.key(row), "digest": row["digest"], "said": row["said"],
-                          "flags": row["flags"], "sensitive": row["sensitive"],
-                          "status": row["status"], "yours": row["yours"], "may_decide": decides,
-                          "outcome": row["outcome"], "proposed_at": row["proposed_at"].isoformat(),
-                          "lapses_at": row["lapses_at"].isoformat(),
-                          "links": [r["link"] for r in standing.values() if r and r.get("link")],
-                          "changed": [f"{k} has changed since it was asked for" for k in changed]})
-        return {"you": person.name if person else who, "proposals": shown}
-
-    @app.post("/decide/proposals")
-    def decide_proposals(body: Deciding, authorization: str | None = Header(default=None)) -> dict:
-        """A decision on held changes, signed through the identity provider for that decision on
-        exactly those changes. It's recorded once, and sealed. The gateway makes what's approved."""
-        approving()
-        digests = sorted(set(body.proposals))
-        if not 1 <= len(digests) <= 20 or not all(re.fullmatch(r"[0-9a-f]{64}", d) for d in digests):
-            raise HTTPException(400, "name from one to 20 changes to decide, by their digests")
-        reason = None
-        if body.reason and body.reason.strip() and body.decision == "reject":
-            if len(body.reason) > proposals.REASON:
-                raise HTTPException(400, f"say why in at most {proposals.REASON} characters")
-            reason, _ = sanitize(" ".join(body.reason.split()), gw.scenario.record_links)
-        token = (authorization or "").removeprefix("Bearer ").strip()
-        if not token:
-            raise HTTPException(401, "sign in to decide: send your sign-in as a bearer token")
-        try:
-            person, claims = proposals.check(gw.identity, gw.scenario, gw.cfg.webchat_client_id,
-                                             token, digests, body.decision, body.salt, time.time())
-        except proposals.Refused as exc:
-            raise refusal(exc) from None
-        with db.transaction(gw.url) as conn:
-            rows = conn.execute("select * from proposals where scenario = %s and digest = any(%s) "
-                                "order by id", (gw.scenario.name, digests)).fetchall()
-            if len(rows) != len(digests):
-                raise HTTPException(404, "a5s has no such change to decide")
-            for row in rows:
-                if row["status"] != "waiting":
-                    raise HTTPException(409, f"{proposals.key(row)} isn't waiting for a decision: "
-                                             f"it's {row['status']}")
-                if not proposals.may_decide(gw.scenario, row, person.id):
-                    raise HTTPException(403, f"{person.name} may not decide {proposals.key(row)}")
-            if len(rows) > 1 and any(r["sensitive"] for r in rows):
-                raise HTTPException(409, "a sensitive change is decided on its own, with a sign-in "
-                                         "of its own")
-            try:
-                proposals.record(conn, gw.scenario.name, rows, body.decision, person.id, token,
-                                 body.salt, claims, gw.clock(), reason)
-            except proposals.Refused as exc:
-                raise refusal(exc) from None
-            ledger.append(conn, {
-                "kind": "admin", "action": "decide", "run": None, "instance": None, "acts_for": [],
-                "decision": "record",
-                "args": {"proposals": [proposals.key(r) for r in rows], "decided": body.decision,
-                         "by": person.id,
-                         "identity": "verified: a sign-in to make this decision on these alone",
-                         "issuer": claims["iss"],
-                         "token_sha256": hashlib.sha256(token.encode()).hexdigest()}})
-        return {"decided": [proposals.key(r) for r in rows], "decision": body.decision,
-                "by": person.name}
-
-    # Grading: where people outside the team that built an agent grade samples of its changes,
-    # whose grades raise or lower a5s's cap on its level (core/samples.py).
-
-    @app.get("/grade/", include_in_schema=False)
-    def grade_page() -> Response:
-        approving()
-        return page("grade.html")
-
-    @app.get("/grade/grade.js", include_in_schema=False)
-    def grade_script() -> Response:
-        approving()
-        return page("grade.js")
-
-    @app.post("/grade/token")
-    def grade_token(body: TokenRequest) -> JSONResponse:
-        return approve_token(body)
-
-    @app.get("/grade/config")
-    def grade_config() -> dict:
-        return approve_config()
-
-    def grader(authorization: str | None) -> Person:
-        approving()
-        who, _ = sender(authorization, None)
-        person = gw.scenario.person(who)
-        if person is None or samples.GRADER not in person.roles:
-            raise HTTPException(403, "grading is for the people who grade agents' work")
-        return person
-
-    @app.post("/grade/review")
-    def review_samples(authorization: str | None = Header(default=None)) -> dict:
-        """The samples waiting for a grade that whoever signed in may grade, oldest first: read
-        in pages, leaving out in the query what it can, until 20 are found."""
-        person = grader(authorization)
-        with db.transaction(gw.url) as conn:
-            rows = samples.gradeable(conn, gw.scenario, person)
-        return {"you": person.name, "samples": [
-            {"id": r["id"], "kind": r["kind"], "agent": r["definition"], "part": r["part"],
-             "action": r["action"], "said": r["said"], "records": r["records"],
-             "flags": r["flags"], "decided": r["decided"], "drawn_at": r["drawn_at"].isoformat()}
-            for r in rows]}
-
-    @app.post("/grade/samples")
-    def grade_samples(body: Grading, authorization: str | None = Header(default=None)) -> dict:
-        """Grades of samples, signed through the identity provider for exactly those grades of
-        exactly those samples, by someone who may grade each, once. The core seals each."""
-        return grading(body.grades, body.salt, authorization)
-
-    @app.post("/grade/samples/{sample}")
-    def grade_sample(sample: int, body: Grade, authorization: str | None = Header(default=None)
-                     ) -> dict:
-        """One sample's grade, as above."""
-        return grading({sample: body.grade}, body.salt, authorization)
-
-    def grading(grades: dict[int, str], salt: str, authorization: str | None) -> dict:
-        approving()
-        if not 1 <= len(grades) <= 20 or any(g not in samples.GRADES for g in grades.values()):
-            raise HTTPException(400, "grade from one to 20 samples, each right, wrong or critical")
-        token = (authorization or "").removeprefix("Bearer ").strip()
-        if not token:
-            raise HTTPException(401, "sign in to grade: send your sign-in as a bearer token")
-        try:
-            person, claims = proposals.fresh(gw.identity, gw.scenario, gw.cfg.webchat_client_id,
-                                             token, samples.nonce(grades, salt), salt, time.time(),
-                                             "grade these samples")
-        except proposals.Refused as exc:
-            raise refusal(exc) from None
-        if samples.GRADER not in person.roles:
-            raise HTTPException(403, "grading is for the people who grade agents' work")
-        hashed = approvals.HASHED + hashlib.sha256(token.encode()).hexdigest()
-        with db.transaction(gw.url) as conn:
-            if conn.execute("select 1 from samples where grade_token = %s limit 1",
-                            (hashed,)).fetchone():
-                raise HTTPException(409, "that sign-in has graded already: sign in again")
-            rows = {r["id"]: r for r in conn.execute(
-                "select * from samples where scenario = %s and id = any(%s) order by id for update",
-                (gw.scenario.name, sorted(grades)))}
-            minders = {r["id"]: (r["owner"], r["deputy"]) for r in conn.execute(
-                "select id, owner, deputy from instances")}
-            for sample in sorted(grades):
-                row = rows.get(sample)
-                if row is None:
-                    raise HTTPException(404, f"a5s has no sample {sample}")
-                if (why := samples.may_grade(gw.scenario, row, person,
-                                             minders.get(row["instance_id"], ()))) is not None:
-                    raise HTTPException(403, why)
-                if row["grade"] is not None or row["lapsed_at"] is not None:
-                    raise HTTPException(409, f"sample {sample} has been graded already, or lapsed")
-            now = gw.clock()
-            for sample, grade in sorted(grades.items()):
-                entry = {**rows[sample], "grade": grade, "graded_by": person.id, "graded_at": now,
-                         "grade_token": hashed, "grade_nonce": claims["nonce"], "grade_salt": salt,
-                         "grade_issuer": claims["iss"],
-                         "grade_subject": str(claims.get("sub") or ""), "grade_proof": token}
-                conn.execute(  # with the sign-in, which the gateway checks again and seals
-                    "update samples set grade = %(grade)s, graded_by = %(graded_by)s, "
-                    "graded_at = %(graded_at)s, grade_token = %(grade_token)s, grade_nonce = "
-                    "%(grade_nonce)s, grade_salt = %(grade_salt)s, grade_issuer = %(grade_issuer)s, "
-                    "grade_subject = %(grade_subject)s, grade_proof = %(grade_proof)s "
-                    "where id = %(id)s", entry)
-                ledger.append(conn, {
-                    "kind": "admin", "action": "grade", "run": str(rows[sample]["run_id"]),
-                    "instance": rows[sample]["instance_id"], "acts_for": [], "decision": "record",
-                    "args": {"sample": sample, "grade": grade, "by": person.id,
-                             "release": rows[sample]["release"], "part": rows[sample]["part"],
-                             "action": rows[sample]["action"],
-                             "identity": "verified: a sign-in to give these grades alone",
-                             "token_sha256": hashed.removeprefix(approvals.HASHED)}})
-        return {"graded": sorted(grades), "grades": {str(k): v for k, v in grades.items()},
-                "by": person.name}
+    # The pages where people sign in afresh for one act, each a router of its own whose act's
+    # route checks its sign-in: approving a version of the settings (core/approve_api.py), the
+    # officer's requests, deciding held changes, and grading samples
+    for acts in (approve_api, officer_api, decide_api, grade_api):
+        app.include_router(acts.router(gw))
 
     # The pages people sign in to for one thing, each a router whose API checks who's signed in:
     # the studio's (core/studio_api.py), the settings app's, the notebook's, people's own tasks',

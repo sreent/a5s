@@ -4,6 +4,10 @@ the studio's, the settings app's, the notebook's, people's own tasks', the audit
 administrators'. So a route added to one of them can't be reached by someone who isn't signed
 in, and a route outside them must be one of those that check for themselves.
 
+The pages where someone signs in afresh for one act are routers too, whose acts each check a
+sign-in made for that act alone (core/approve_api.py and the others): each act is listed here,
+with a body of the shape it takes, and none is open to someone not signed in.
+
 The sidebar every page shows lists a page by the check its router makes, so it lists exactly the
 pages whose API lets each person in."""
 
@@ -14,9 +18,22 @@ import pytest
 
 SIGNED_IN = ("/studio/api", "/settings/api", "/notebook/api", "/tasks/api", "/audit/api",
              "/admin/api")
-# The routes that check for themselves: the chats', each with its own token; the web chat's;
-# each act's page, whose sign-in is for that act alone, and its sign-in; and the sidebar
-OWN = ("/channels/", "/chat/", "/approve/", "/decide/", "/grade/", "/officer/", "/shell/api")
+ACTING = ("/approve/", "/officer/", "/decide/", "/grade/")
+# The routes that check for themselves: the chats', each with its own sign-in or token; the web
+# chat's; each act's page; and the sidebar
+OWN = ("/channels/", "/chat/", *ACTING, "/shell/api")
+SIGNS_IN = ("config", "token")  # where an act's page signs someone in, which holds nothing
+DIGEST = "0" * 64
+ACTS = {  # each act, with a body of the shape it takes, so it's refused for want of a sign-in
+    ("post", "/approve/settings/{version}/review"): {"salt": "s"},
+    ("post", "/approve/settings/{version}"): {"salt": "s"},
+    ("post", "/officer/requests"): {"action": "export", "person": "ben", "salt": "s"},
+    ("post", "/decide/review"): None,
+    ("post", "/decide/proposals"): {"proposals": [DIGEST], "decision": "approve", "salt": "s"},
+    ("post", "/grade/review"): None,
+    ("post", "/grade/samples"): {"grades": {"1": "right"}, "salt": "s"},
+    ("post", "/grade/samples/{sample}"): {"grade": "right", "salt": "s"},
+}
 PEOPLE = ("ana", "ben", "chen", "omar", "dana", "priya", "tomas", "lena", "rosa", "kofi", "noor")
 PAGES = {"studio": "/studio/api/home", "settings": "/settings/api", "notebook": "/notebook/api",
          "tasks": "/tasks/api", "audit": "/audit/api", "admin": "/admin/api"}
@@ -42,6 +59,17 @@ def test_every_route_of_a_signed_in_api_refuses_someone_not_signed_in(approving,
         for method in methods:
             answer = httpx.request(method.upper(), f"{approving}{address}", timeout=30)
             assert answer.status_code == 401, (method, path, answer.status_code, answer.text)
+
+
+def test_every_act_refuses_someone_not_signed_in(approving):
+    acts = {(method, path) for path, methods in described(approving).items()
+            if path.startswith(ACTING) and path.rsplit("/", 1)[-1] not in SIGNS_IN
+            for method in methods}
+    assert acts == set(ACTS)  # an act added says what it takes, and is refused unsigned
+    for (method, path), body in ACTS.items():
+        address = path.replace("{version}", DIGEST).replace("{sample}", "1")
+        answer = httpx.request(method.upper(), f"{approving}{address}", json=body, timeout=30)
+        assert answer.status_code == 401, (method, path, answer.status_code, answer.text)
 
 
 def test_the_sidebar_lists_exactly_the_pages_whose_api_lets_each_person_in(approving, provider):
