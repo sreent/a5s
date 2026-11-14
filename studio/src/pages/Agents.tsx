@@ -57,7 +57,8 @@ function Drafts() {
       <h3>Your drafts</h3>
       <ul className="plain">{data.drafts.map((d) => (
         <li key={d.id}><Link to={{ page: "draft", draft: d.id }} className="mono">{d.agent}</Link>
-          <span className="faint"> · from {d.based_on} · kept {when(d.updated_at)}</span></li>
+          <span className="faint"> · from {d.based_on} · kept {when(d.updated_at)}</span>
+          {d.published && <> <a href={d.published} target="_blank" rel="noopener noreferrer" className="badge good">published</a></>}</li>
       ))}</ul>
     </section>
   );

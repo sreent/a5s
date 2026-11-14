@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from "react";
 import { AgentMap } from "../AgentMap";
 import { type Draft, get, type Offered, send } from "../api";
 import { CASES, read, Unreadable, withCase, withTool, withValue } from "../definition";
+import { Publish } from "../Publish";
 import { go } from "../router";
 import { TryIt } from "../TryIt";
 import { PageHead, type Risk, risk, RISK_NAMES, ToolBadges, useLoad, Waiting, when } from "../ui";
@@ -181,7 +182,7 @@ export function DraftPage({ id }: { id: string }) {
                 <li key={s.role}><strong>{s.who}</strong><span className="faint">, because {s.why}</span></li>
               ))}</ul>
             )}
-            <p className="note">As <span className="mono">a5s release</span> works it out, from what it changes of the agents released here. Publishing it opens nothing yet: that's next.</p>
+            <p className="note">As <span className="mono">a5s release</span> works it out, from what it changes of the agents released here. The pull request it's published as names them.</p>
           </section>
           <section className="card map-card">
             <h3>How it's wired</h3>
@@ -208,6 +209,11 @@ export function DraftPage({ id }: { id: string }) {
             <h3>Try it in the sandbox</h3>
             <TryIt draft={id} name={draft.agent} ready={said.problems.length === 0 && kept === "kept"}
                    keep={(testCase) => change({ ...files, [CASES]: withCase(files[CASES] ?? "", testCase) })} />
+          </section>
+          <section className="card" id="publishing">
+            <h3>Publish it</h3>
+            <Publish draft={id} name={draft.agent} ready={said.problems.length === 0 && kept === "kept"}
+                     published={draft.published} />
           </section>
         </>
       )}

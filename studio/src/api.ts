@@ -34,6 +34,20 @@ export async function send<T>(method: string, path: string, body?: unknown): Pro
   return found as T;
 }
 
+/** A file from the people's API, as the person signed in, saved where their browser saves files. */
+export async function download(path: string, name: string): Promise<void> {
+  const answer = await fetch(path, { headers: { Authorization: `Bearer ${token}` } });
+  if (!answer.ok) {
+    const found = await answer.json().catch(() => ({}));
+    throw new ApiError(typeof found.detail === "string" ? found.detail : `a5s said ${answer.status}.`, answer.status);
+  }
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(await answer.blob());
+  link.download = name;
+  link.click();
+  window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
+}
+
 // What the API gives, as core/studio.py works it out
 
 export type Tool = {
@@ -104,7 +118,10 @@ export type Catalogue = {
 
 export type Template = { name: string; works_for: string; does: string; model: string; tools: string[]; lacks: string[] };
 
-export type DraftLine = { id: string; agent: string; based_on: string; created_at: string; updated_at: string };
+export type DraftLine = {
+  id: string; agent: string; based_on: string; created_at: string; updated_at: string;
+  published: string | null;  // the pull request it was last published as, if it has been
+};
 
 export type Draft = DraftLine & {
   files: Record<string, string>;  // the agent's folder, each file's text by its path in it

@@ -60,6 +60,7 @@ from a5s.core import (
     notebook,
     officer,
     proposals,
+    publishing,
     registry,
     repeats,
     samples,
@@ -1547,6 +1548,72 @@ def create_app(gw: Any) -> FastAPI:
                                           "as": body.person, "model": body.model,
                                           "by": person.id}})
         return said
+
+    # Publishing a draft (core/publishing.py): a pull request to the agents' repository, opened
+    # as its author, once they let a5s's GitHub App act as them at GitHub's own sign-in. The
+    # token GitHub gives is used for that publish alone, in this app's memory, and kept nowhere.
+    # Where publishing isn't set up, its author downloads its folder instead
+
+    publishes = publishing.Publishing(gw.cfg)
+
+    @app.post("/studio/api/drafts/{draft}/publish")
+    def studio_draft_publish(draft: str, authorization: str | None = Header(default=None)) -> dict:
+        """Start publishing one of someone's drafts: the code they enter at GitHub's sign-in,
+        to let a5s publish it as them, and where to enter it."""
+        person = drafting(authorization)
+        with db.transaction(gw.url) as conn:
+            found = drafts.get(conn, person, draft)
+        if found is None:
+            raise HTTPException(404, "you have no such draft")
+        if not publishing.configured(gw.cfg):
+            raise HTTPException(503, "publishing isn't set up here: download its folder, and open "
+                                     "a pull request with it yourself. The team that runs a5s sets "
+                                     "up a5s's GitHub App for it (A5S_GITHUB_CLIENT_ID and "
+                                     "A5S_GITHUB_REPO)")
+        new = found["agent"] not in gw.definitions
+        if not drafts.may_author(person, None if new else found["agent"]):
+            raise HTTPException(403, f"publishing {found['agent']} is for its owners and the "
+                                     "people the organisation names its authors")
+        shown = checked(found)
+        if shown["problems"]:
+            raise HTTPException(409, "put right what would stop its release first: "
+                                     + "; ".join(shown["problems"]))
+        title, body, message = publishing.described(found, person, shown["signers"] or [], new)
+        try:
+            return publishes.start(person.id, found, title, body, message).shown()
+        except publishing.Refused as e:
+            raise HTTPException(502, str(e)) from None
+
+    @app.get("/studio/api/publishes/{publish}")
+    def studio_publish(publish: str, authorization: str | None = Header(default=None)) -> dict:
+        """How a publish of someone's stands: waiting for them at GitHub's sign-in, its pull
+        request once it's open, or why it isn't."""
+        person = drafting(authorization)
+        try:
+            found, opened = publishes.poll(person.id, publish)
+        except KeyError:
+            raise HTTPException(404, "you have no such publish under way") from None
+        if opened:
+            with db.transaction(gw.url) as conn:
+                drafts.published(conn, person, found.draft, found.pull)
+                ledger.append(conn, {"kind": "admin", "action": "publish draft", "run": None,
+                                     "instance": None, "acts_for": [], "decision": "record",
+                                     "args": {"agent": found.agent, "draft": found.draft,
+                                              "based_on": found.based_on, "pull": found.pull,
+                                              "by": person.id}})
+        return found.shown()
+
+    @app.get("/studio/api/drafts/{draft}/folder")
+    def studio_draft_folder(draft: str, authorization: str | None = Header(default=None)) -> Response:
+        """One of someone's drafts, as its agent's folder in a zip, to open a pull request with
+        themselves."""
+        person = drafting(authorization)
+        with db.transaction(gw.url) as conn:
+            found = drafts.get(conn, person, draft)
+        if found is None:
+            raise HTTPException(404, "you have no such draft")
+        return Response(drafts.zipped(found), media_type="application/zip", headers={
+            "Content-Disposition": f'attachment; filename="{found["agent"]}.zip"'})
 
     # The auditors' page: the ledger as an auditor reads it, read only, from the same module as
     # the core's API (core/audit.py). Whoever acted in one of a5s's roles shows as themselves;

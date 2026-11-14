@@ -256,6 +256,10 @@ button.quiet { background: transparent; border-color: var(--line); color: var(--
 .try-keep { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: end; padding-top: 0.9rem; border-top: 1px solid var(--line); }
 .try-keep .field { flex: 1; min-width: 18rem; margin: 0; }
 .try-keep .note, .try-keep .problem { flex-basis: 100%; margin: 0; }
+.publish { display: grid; gap: 0.75rem; }
+.publish p { margin: 0; }
+.sign-in-code { padding: 0.9rem 1rem; border: 1px solid var(--line); border-radius: 10px; background: var(--sunken); display: grid; gap: 0.5rem; max-width: 34rem; }
+.user-code { font-size: 1.6rem; letter-spacing: 0.12em; font-weight: 600; }
 .try-say input { flex: 1; font: inherit; }
 details.sent { margin-top: 0.75rem; }
 .model-call { margin-top: 0.75rem; display: grid; gap: 0.4rem; }

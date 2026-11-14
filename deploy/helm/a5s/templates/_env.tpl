@@ -29,6 +29,13 @@
 {{ include "a5s.peopleEnv" . }}
 {{ include "a5s.scenarioEnv" . }}
 {{ include "a5s.dbConnectEnv" . }}
+{{- if and .Values.publishing.repo .Values.publishing.githubClientId }}
+{{- $p := .Values.publishing }}
+{{- range $name, $value := dict "A5S_GITHUB_CLIENT_ID" $p.githubClientId "A5S_GITHUB_REPO" $p.repo "A5S_GITHUB_BASE" $p.base "A5S_GITHUB_AGENTS_PATH" $p.agentsPath "A5S_GITHUB_URL" $p.githubUrl "A5S_GITHUB_API_URL" $p.githubApiUrl }}
+- name: {{ $name }}  # publishing drafts as pull requests, as whoever publishes
+  value: {{ $value | quote }}
+{{- end }}
+{{- end }}
 {{- with .Values.sandbox.url }}
 - name: A5S_SANDBOX_URL  # where the studio tries people's drafts, by the token it shares
   value: {{ . | quote }}

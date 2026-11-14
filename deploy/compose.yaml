@@ -24,6 +24,17 @@ x-scenario: &scenario
   A5S_SCENARIO_DIR:
   A5S_AGENTS_DIR:
 
+# Publishing drafts from the studio as pull requests, opened as whoever publishes, through
+# GitHub's own sign-in (docs/studio.md): a5s's GitHub App's client id, a public thing, and the
+# agents' repository, as owner/name. Without them, the studio offers a draft's folder instead.
+x-publishing: &publishing
+  A5S_GITHUB_CLIENT_ID:
+  A5S_GITHUB_REPO:
+  A5S_GITHUB_BASE:  # its branch, main if not set
+  A5S_GITHUB_AGENTS_PATH:  # where the agents' folders are in it, agents if not set
+  A5S_GITHUB_URL:  # a GitHub Enterprise server's, if not github.com's
+  A5S_GITHUB_API_URL:  # and its API, such as https://github.example.com/api/v3
+
 x-people: &people
   A5S_OIDC_ISSUER:  # the identity provider people sign in with
   A5S_OIDC_AUDIENCE:
@@ -88,7 +99,7 @@ services:
     <<: *a5s
     command: ["channels", "--host", "0.0.0.0"]
     environment:
-      <<: [*people, *scenario]
+      <<: [*people, *scenario, *publishing]
       A5S_DATABASE_URL: postgresql://a5s_channels:${A5S_DB_CHANNELS_PASSWORD}@postgres:5432/postgres
     networks: [data, egress, edge]
     ports: ["127.0.0.1:${A5S_CHANNELS_PORT:-8703}:8703"]  # behind your ingress, for people and Teams

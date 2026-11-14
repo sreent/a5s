@@ -115,6 +115,20 @@ sandbox:
   # the stand-in alone, and reaches nothing but its own database.
   realModels: false
 
+# Publishing drafts from the studio as pull requests, opened as whoever publishes, through
+# GitHub's own sign-in (docs/studio.md#publishing): the client id of a5s's GitHub App, a public
+# thing, which needs no secret, since its device flow is on; and the agents' repository, as
+# owner/name, its branch, and where the agents' folders are in it. The App needs Contents and
+# Pull requests to read and write, on that repository alone. Without a repository, the studio
+# offers a draft's folder to download instead.
+publishing:
+  githubClientId: ""
+  repo: ""
+  base: main
+  agentsPath: agents
+  githubUrl: https://github.com  # or a GitHub Enterprise server's
+  githubApiUrl: https://api.github.com  # and its API, such as https://github.example.com/api/v3
+
 release:
   # A ConfigMap with release.yaml and release.sig, the release's manifest and the signatures of
   # the people its changes need. A job records them once the chart is installed or upgraded:

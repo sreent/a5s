@@ -12,7 +12,9 @@ pin` pins them, and the checks `a5s agent check` makes say what would stop its r
 
 from __future__ import annotations
 
+import io
 import tempfile
+import zipfile
 from collections.abc import Iterable
 from pathlib import Path, PurePosixPath
 from typing import Any
@@ -32,7 +34,7 @@ MOST_BYTES = 192 * 1024  # of all its files' text together: under what the chann
 #                          reads of a body, escaped as JSON; the biggest agent a5s ships is 12 KB
 MOST_DRAFTS = 20  # one person keeps at once [TBC]
 TEXT = (".md", ".yaml", ".yml", ".txt", ".csv", ".json", ".lock")  # what an agent's folder holds
-SHOWN = "id::text as id, agent, based_on, created_at, updated_at"
+SHOWN = "id::text as id, agent, based_on, created_at, updated_at, published"
 
 
 class Refused(ValueError):
@@ -195,6 +197,21 @@ def save(conn: psycopg.Connection, person: Person, draft: str, files: dict[str, 
     except psycopg.errors.InvalidTextRepresentation:
         return None
     return dict(found) if found else None
+
+
+def zipped(draft: dict) -> bytes:
+    """A draft's agent's folder, as a zip of it, to open a pull request with by hand."""
+    packed = io.BytesIO()
+    with zipfile.ZipFile(packed, "w", zipfile.ZIP_DEFLATED) as folder:
+        for path, text in sorted(draft["files"].items()):
+            folder.writestr(f"{draft['agent']}/{path}", text)
+    return packed.getvalue()
+
+
+def published(conn: psycopg.Connection, person: Person, draft: str, pull: str) -> None:
+    """Note the pull request someone published one of their drafts as."""
+    conn.execute("update agent_drafts set published = %s where id = %s::uuid and person = %s",
+                 (pull, draft, person.id))
 
 
 def drop(conn: psycopg.Connection, person: Person, draft: str) -> dict | None:
