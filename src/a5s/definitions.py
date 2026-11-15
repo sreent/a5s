@@ -224,8 +224,35 @@ def _folder_digest(folder: Path) -> str:
     return sha.hexdigest()
 
 
+class _Once(yaml.SafeLoader):
+    """YAML that names each key of a mapping once. A reviewer reads the first of two, and YAML
+    takes the last, so an agent.yaml naming its model twice would run on the one nobody read."""
+
+
+def _named_once(loader: yaml.SafeLoader, node: yaml.MappingNode) -> Any:
+    seen: set[Any] = set()
+    for key_node, _ in node.value:
+        key = loader.construct_object(key_node, deep=True)
+        try:
+            if key in seen:
+                raise yaml.constructor.ConstructorError(
+                    None, None, f"it names {key} twice", key_node.start_mark)
+            seen.add(key)
+        except TypeError:  # a key that can't be one, which the mapping refuses itself
+            pass
+    return loader.construct_mapping(node, deep=True)
+
+
+_Once.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _named_once)
+
+
+def spec_of(text: str) -> Any:
+    """An agent.yaml, as a5s reads it: each key once."""
+    return yaml.load(text, Loader=_Once)  # a SafeLoader, with each key once
+
+
 def load(folder: Path) -> Definition:
-    spec = yaml.safe_load((folder / "agent.yaml").read_text())
+    spec = spec_of((folder / "agent.yaml").read_text())
     lock = folder / "tools.lock"
     return Definition(
         **spec,
@@ -278,8 +305,17 @@ def skills_of(folder: Path) -> dict[str, str]:
 
 
 def load_all(agents_dir: Path) -> dict[str, Definition]:
-    found = [load(f) for f in sorted(agents_dir.iterdir()) if (f / "agent.yaml").exists()]
-    return {d.id: d for d in found}
+    """Every agent in a folder of agents, each by its folder's name, which is its id: one that
+    names itself otherwise would load as another agent, in its place, so it's refused."""
+    found = {}
+    for folder in sorted(agents_dir.iterdir()):
+        if (folder / "agent.yaml").exists():
+            definition = load(folder)
+            if definition.id != folder.name:
+                raise ValueError(f"the agent in {folder.name} names itself {definition.id}: an "
+                                 "agent's id is its folder's name")
+            found[definition.id] = definition
+    return found
 
 
 def pin(folder: Path, schema_hashes: dict[str, str]) -> Path:
