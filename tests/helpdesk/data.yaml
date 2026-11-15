@@ -4,5 +4,9 @@ people:
   - {id: ida, name: Ida Holm, team: service, roles: [instance-approver], timezone: Europe/London}
   - {id: olu, name: Olu Ade, team: payroll-team, roles: [part-owner:payroll], timezone: Europe/London}
   - {id: tim, name: Tim Berg, team: sales, timezone: Europe/London}
+  # Enough in sales for help-payroll to serve five, so its runs show one by one with names off
+  - {id: pia, name: Pia Lund, team: sales, timezone: Europe/London}
+  - {id: kai, name: Kai Moe, team: sales, timezone: Europe/London}
+  - {id: noa, name: Noa Falk, team: sales, timezone: Europe/London}
 tickets:
   - {key: "104233", part: payroll, title: Payslip shows the wrong tax code, status: open, requester: tim}

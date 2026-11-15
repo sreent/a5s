@@ -384,9 +384,9 @@ MOVED = {name: f"the signed settings' data_protection.{choice}, which the data p
                               ("A5S_AUDIT_NAMES", "audit_names"),
                               ("A5S_FLAG_RUBBER_STAMPS", "flag_rubber_stamps"))}
 # A5S_ names a5s itself never reads: its tests' (all A5S_TEST_ ones too), and those compose
-# and the deployment scripts read
+# and the deployment scripts read, such as whose attestation the GitOps check asks GitHub for
 NOT_SETTINGS = frozenset({
-    "A5S_AGENT", "A5S_ASKER", "A5S_CHANNELS_PORT", "A5S_DB_PASSWORD", "A5S_DOC_IMAGES", "A5S_EVAL_MODEL",
+    "A5S_AGENT", "A5S_ASKER", "A5S_ATTESTED_BY", "A5S_CHANNELS_PORT", "A5S_DB_PASSWORD", "A5S_DOC_IMAGES", "A5S_EVAL_MODEL",
     "A5S_EXPECTED", "A5S_IDP_PASSWORD", "A5S_IDP_PORT", "A5S_IMAGE", "A5S_MATRIX_CONFIG",
     "A5S_MATRIX_PORT", "A5S_PASSWORD", "A5S_POOL_ASSISTANT", "A5S_POOL_WATCHER", "A5S_QUESTION",
     "A5S_REGRESSION", "A5S_SANDBOX_DB_PASSWORD", "A5S_SCREENSHOTS", "A5S_SMOKE_ENV",
