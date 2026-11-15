@@ -66,6 +66,7 @@ from a5s.core import (
     extractor,
     groups,
     handles,
+    judging,
     ledger,
     measures,
     memberships,
@@ -3451,6 +3452,65 @@ def create_app(gw: Gateway) -> FastAPI:
                     changed.append(found)
                     capped(conn, found, now)
         return {"changed": changed, "lapsed": lapsed}
+
+    @services.post("/samples/judge")
+    def judge_samples() -> dict:
+        """Ask each agent's judge about the samples of its work a5s drew for people to grade, a
+        few a sweep, beside people's grades and never instead of them (core/judging.py). A judge
+        not approved for the class of data the settings say, and for every one its agent's own
+        model is, judges nothing; nor does any while the settings in force don't check out."""
+        with db.transaction(gw.url) as conn:
+            locked = conn.execute("select pg_try_advisory_xact_lock(hashtext('a5s judging')) "
+                                  "as got").fetchone()
+            if not (locked and locked["got"]):
+                return {"judged": []}  # another sweep is at work
+            settings, problem = gw.settings_in_force(conn, seal=False)
+            if settings is None:
+                return {"judged": [], "judging": f"nothing, since {problem}"}
+            judged_by = {}
+            for name, release in gw.definitions.items():
+                judge = gw.models.get(release.evaluation.judge) if release.evaluation else None
+                own = gw.models.get(release.model)
+                if (judge is not None and own is not None
+                        and settings.data_class in judge.data_classes
+                        and set(own.data_classes) <= set(judge.data_classes)):
+                    judged_by[name] = judge.alias  # it may see all its agent may
+            due = judging.pending(conn, judged_by)
+        judged = []
+        for sample in due:
+            release = gw.definitions[sample["definition"]]
+            judge = gw.models[judged_by[sample["definition"]]]
+            body = judging.asked(judge.api, judge.alias, release.evaluation.rubric
+                                 if release.evaluation else "", sample)
+            if not gw.breakers.allow(judge.alias):
+                continue  # it failed lately: asked again at a later sweep
+            try:
+                status, data = models.forward(judge, models.screen(judge.api, body)[0], gw.http)
+            except models.ModelUnavailable:
+                status, data = 503, {}
+            reported = data.get("model") if isinstance(data, dict) else None
+            if status < 400 and reported != (judge.reported_model or judge.model):
+                status = 502  # another model answered than the one approved
+            if status >= 500 or status == 429:
+                gw.breakers.failed(judge.alias)
+            elif status < 400:
+                gw.breakers.worked(judge.alias)
+            usage = data.get("usage") if isinstance(data, dict) else None
+            found = (judging.verdict(extractor.reply_text(judge.api, data)) if status < 400
+                     else None)
+            with db.transaction(gw.url) as conn:
+                ledger.append(conn, {
+                    "kind": "model", "action": judge.alias, "run": None,
+                    "instance": sample["instance_id"], "acts_for": [], "decision": "record",
+                    "args": {"judging": sample["id"], "prompt_sha256": ledger.digest(body)},
+                    "outcome": {"status": status, "reported_model": reported, "usage": usage,
+                                "verdict": found[0] if found else None}})
+                if status < 400:  # else it's asked again at a later sweep
+                    grade, why = found or (None, "its answer couldn't be read as a grade")
+                    if judging.keep(conn, sample["id"], judge.alias, grade, why,
+                                    budgets.tokens_of(usage) if usage else 0) and found:
+                        judged.append({"sample": sample["id"], "verdict": grade})
+        return {"judged": judged}
 
     def capped(conn: db.Connection, found: dict, now: datetime) -> None:
         """Tell the owners and deputies of the instances a cap governs that it changed, in

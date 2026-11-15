@@ -150,6 +150,16 @@ class Budget(BaseModel):
     per_person_per_day: int = Field(default=1_000_000, ge=1000)
 
 
+class Evaluation(BaseModel):
+    """The judge of an agent's work: an approved model that grades each sample of it beside
+    people, never instead of them, and what a right change is for this agent (core/judging.py)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    judge: str  # an approved model's alias, best another than the agent's own
+    rubric: str = Field(default="", max_length=2000)  # what's right, in its owners' words
+
+
 class Definition(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -173,6 +183,7 @@ class Definition(BaseModel):
     context: Context = Context()
     budget: Budget = Budget()
     tasks: Tasks | None = None  # if it takes on long tasks for people
+    evaluation: Evaluation | None = None  # a judge of its work, beside people's grades
     # Whether the studio's catalogue shows everyone signed in that it exists: its name, what it
     # does, its owner, and how to ask for it. Unlisted, only those with a role on it, and the
     # people it serves, know of it, as a name such as redundancy planning says too much alone

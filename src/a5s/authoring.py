@@ -108,6 +108,9 @@ def check(folder: Path, tools: dict[str, Tool], models: dict[str, ModelConfig]) 
                         f"tools again, with `a5s pin {folder.name}`")
     if found.model not in models:
         problems.append(f"its model, {found.model}, isn't one config/models.yaml approves")
+    if found.evaluation and found.evaluation.judge not in models:
+        problems.append(f"its judge, {found.evaluation.judge}, isn't one config/models.yaml "
+                        "approves")
     return problems
 
 

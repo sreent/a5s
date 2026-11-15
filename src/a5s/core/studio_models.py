@@ -301,6 +301,17 @@ class Samples(Shape):
     right_share: float | None
 
 
+class Judge(Shape):
+    """How far an agent's judge agrees with people, on the samples both graded (core/judging.py)."""
+
+    both: int
+    agreed: int
+    missed: int  # it passed what people found wrong or critical
+    false_alarms: int  # it failed what people found right
+    agreed_share: float | None
+    kappa: float | None  # agreement beyond chance, once it can be told
+
+
 class Questions(Shape):
     instance: str
     asked: int
@@ -358,6 +369,7 @@ class Figures(Shape):
     runs: list[ModelRuns]
     held: Held
     samples: Samples
+    judge: Judge
     questions: list[Questions]
     notebook: list[Notebook]
     ended: list[Ended]

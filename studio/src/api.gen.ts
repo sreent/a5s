@@ -263,6 +263,7 @@ export type Figures = {
   runs: ModelRuns[];
   held: Held;
   samples: Samples;
+  judge: Judge;
   questions: Questions[];
   notebook: Notebook[];
   ended: Ended[];
@@ -329,6 +330,16 @@ export type Instance = {
   owner: string | null;
   deputy: string | null;
   asks: string[];
+};
+
+// How far an agent's judge agrees with people, on the samples both graded (core/judging.py).
+export type Judge = {
+  both: number;
+  agreed: number;
+  missed: number;
+  false_alarms: number;
+  agreed_share: number | null;
+  kappa: number | null;
 };
 
 // One call to the model a try made: what it was sent, what came back, and how.

@@ -33,6 +33,10 @@ function Tiles({ figures }: { figures: Figures }) {
       <Tile label="Denied" value={denied.toLocaleString()} detail={figures.denied_partial ? "the latest only" : "calls a5s refused"} />
       <Tile label="Held changes" value={figures.held.held.toLocaleString()} detail={`${figures.held.waiting} waiting`} />
       <Tile label="Graded" value={figures.samples.graded.toLocaleString()} detail={figures.samples.graded ? `${figures.samples.right} right, ${figures.samples.critical} critical` : "no samples yet"} />
+      {figures.judge.both > 0 && (
+        <Tile label="Its judge agrees" value={share(figures.judge.agreed_share)}
+              detail={`with people, on ${plural(figures.judge.both, "sample", "samples")}; it missed ${figures.judge.missed}`} />
+      )}
     </div>
   );
 }

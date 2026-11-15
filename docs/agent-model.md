@@ -132,6 +132,9 @@ context:
 budget:                          # in tokens, as the providers count them [TBC: from current volumes]
   per_run: 200000
   per_person_per_day: 1000000    # a fifth kept for chases and reminders, and tasks stop at three fifths
+evaluation:                      # a judge of its work, beside people's grades ([below](#the-judge))
+  judge: deepseek-v4-pro         # an approved model, best another than its own
+  rubric: A due date moves only to a date the customer asked for, and never into the past.
 ```
 
 Each model call carries the whole context and, beside it, the instructions, the tools and what the run has read so far, so the budgets are checked against the context when a release is loaded: a run's budget must fit six calls of the context and about 6,000 tokens beside it, and a person's day, beside the fifth kept for chases and reminders, twelve answers of two calls each. A release that doesn't fit is refused.
@@ -147,3 +150,14 @@ A report names a kind of record, such as `{source: records}`, as the [watcher's]
 The preferences a release lists are those people may set through the agent, such as `digest-time`, the time their daily digest comes, which a5s's own tool sets when they ask.
 
 The register adds what changes without a release: each instance, its identity and its status. Each deployment's signed settings name who an instance serves, by name or as a team or a role's holders, such as `team:sales`, which the directory resolves when each run opens, its level, and its owner and deputy, who are people in that deployment's directory, so the same definition serves any scenario.
+
+## The judge
+
+An agent's definition may name a judge, an approved model, with its rubric: what a right change is for this agent, in its owners' words. a5s asks the judge about each sample of the agent's work it draws for people to grade, as their page shows it: the change, in code's words, what code flagged to its decider, the records it named as they stood, and what its decider did. The judge says right, wrong or critical, and why, in a sentence ([`core/judging.py`](../src/a5s/core/judging.py)).
+
+- **People's grades stay the evidence.** The test that raises and lowers a5s's caps reads people's grades alone, so a judge's verdict never moves a cap, however sure it is ([autonomy](#autonomy)).
+- **People grade blind.** The channels app, which serves the grading page, can read a verdict only once people have graded its sample, so graders grade as they would without it.
+- **a5s measures the judge.** On the samples both graded, `a5s measures` and the studio's figures say how often the judge agreed with people, how often it passed what they found wrong or critical, and so missed it, how often it failed what they found right, and Cohen's kappa, their agreement beyond chance. Its owners learn, as the evidence grows, how far to trust it.
+- **It sees only what the agent may.** A judge not approved for the class of data the settings name, and for every one its agent's own model is, judges nothing. Each call is in the ledger, by the hash of what it was asked, and a verdict goes with its sample, a year after it's graded, and is in an export of the people it's about.
+
+A judge reads what a sample's records say, which may hold instructions, so it's told never to follow them, and a5s keeps only its grade and a sentence of why: an answer it can't read as a grade it keeps as none, and doesn't ask again.

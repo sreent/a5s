@@ -126,6 +126,7 @@ def agent_part(folder: Path) -> dict:
             "obligations": sorted(d.obligations), "autonomy": d.autonomy.model_dump(),
             "channels": sorted(d.channels), "budget": d.budget.model_dump(), "context": d.context.model_dump(),
             "scope": d.scope, "reminders": d.reminders, "preferences": sorted(d.preferences),
+            "judge": d.evaluation.judge if d.evaluation else None,  # whom its samples go to
         },
     }
 
@@ -305,6 +306,8 @@ def _widens_agent(old: dict, new: dict) -> list[str]:
     if set(new.get("preferences", [])) - set(old.get("preferences", [])):
         found.append("lets people set more preferences")
     found += [f"has a new {key}" for key in ("budget", "context", "scope") if new[key] != old[key]]
+    if new.get("judge") and new.get("judge") != old.get("judge"):  # its samples go to it
+        found.append("has its work judged by another model")
     return found
 
 
