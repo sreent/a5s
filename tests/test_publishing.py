@@ -200,6 +200,7 @@ def test_its_author_publishes_a_draft_from_its_page(stack, github, approving, pr
     page.click(".template:has-text('assistant') >> nth=0")
     page.click("#make")
     page.wait_for_selector("#problems >> text=Nothing would stop its release", timeout=30000)
+    page.click("#to-publish")  # the workbench's one thing to do
     page.click("#publish")
     page.wait_for_selector("#user-code", timeout=30000)
     assert page.get_attribute(".sign-in-code a", "href") == "https://github.test/login/device"

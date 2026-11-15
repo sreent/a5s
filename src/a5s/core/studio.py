@@ -45,6 +45,7 @@ from a5s.contract import (
     RELEASE_APPROVER,
     Person,
     Scenario,
+    Settings,
     Tool,
 )
 from a5s.core import audit, ledger, measures, registry, values
@@ -135,6 +136,30 @@ def offered(tools: dict[str, Tool]) -> list[dict]:
     return [{"name": name, "description": tool.description, **tool.risk, "changes": tool.action,
              "handles": list(tool.handles), "outside": list(tool.outside)}
             for name, tool in sorted(tools.items())]
+
+
+def rules(scenario: Scenario, settings: Settings | None) -> dict:
+    """What follows, here, from what an agent may do, for its designer to show as it's built:
+    the parts the settings in force know, by their thresholds and the instances that work in
+    them, each with who decides a change to one of its records below level 2, its owners and
+    their delegates, as the directory says now, by name, and how right graded samples must
+    show an agent's changes there before a5s raises its cap to level 2; who decides a change
+    to a record in no part, the instance approvers; and the scenario's limits for each type of
+    change. With no settings in force, none of it."""
+    if settings is None:
+        return {"parts": [], "no_part": [], "limits": {}}
+
+    def deciding(part: str | None) -> list[str]:
+        roles = [f"{PART_OWNER}:{part}", f"{PART_DELEGATE}:{part}"] if part else [INSTANCE_APPROVER]
+        return list(dict.fromkeys(p.name for role in roles for p in scenario.holders(role)))
+
+    named = sorted({*settings.thresholds, *(p for i in settings.instances for p in i.parts)})
+    return {"parts": [{"name": part, "deciders": deciding(part),
+                       "threshold": settings.thresholds.get(part)} for part in named],
+            "no_part": deciding(None),
+            "limits": {action: {"per_run": limit.get("per_run"),
+                                "per_person_30_days": limit.get("per_person_30_days")}
+                       for action, limit in sorted(settings.limits.items())}}
 
 
 def _instance(scenario: Scenario, definition: Definition | None, inst: dict) -> dict:

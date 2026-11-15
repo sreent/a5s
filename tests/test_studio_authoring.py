@@ -1,7 +1,8 @@
 """Making an agent in the studio, in a browser (docs/studio.md, step 2): an agent's owner starts
-one from a template, picks its tools, edits what it's for, and sees what would stop its release
-and its map as they go; the definition keeps its comments; the draft is kept as it's edited,
-and is there again after a reload; and they draft a change to an agent they own, then drop it."""
+one from a template, and shapes it on the workbench: its tools on its canvas, what it's for in its
+inspector, and its files as text, seeing what would stop its release and how it's wired as they
+go; the definition keeps its comments; the draft is kept as it's edited, and is there again after
+a reload; and they draft a change to an agent they own, then drop it."""
 
 from __future__ import annotations
 
@@ -42,31 +43,36 @@ def test_an_agents_owner_makes_an_agent_in_the_studio(stack, approving, provider
     assert "a5s deploys it once they have" in page.inner_text("#journey")
     page.click("#journey button:has-text('Publish it')")
     expect(page.locator("#publishing")).to_be_focused()
-    page.wait_for_selector(".agent-map .map-node >> text=close_question", timeout=30000)
-    assert "no sandbox here" in page.inner_text("#try")  # where there's none, it says so
-    page.click("[role=tab]:has-text('Tools')")  # one tool fewer, and its map shows it
-    page.uncheck("input[aria-label=close_question]")
+    page.click(".modes button:has-text('Try it')")  # where there's no sandbox, it says so
+    assert "no sandbox here" in page.inner_text("#try")
+    page.click(".modes button:has-text('Design')")
+    page.wait_for_selector(".flow-canvas .flow-step >> text=close_question", timeout=30000)
+    page.click("[data-step='tool:close_question']")  # one tool fewer, and its canvas shows it
+    page.click("#take-away")
     kept(page)
-    page.wait_for_selector(".agent-map .map-node >> text=close_question", state="detached", timeout=30000)
-    page.click("[role=tab]:has-text('Basics')")
+    page.wait_for_selector(".flow-canvas .flow-step >> text=close_question", state="detached", timeout=30000)
+    assert "Took close_question away" in page.inner_text("#what-changed")
+    page.click("[data-step=agent]")
     page.fill("#works-for", "The finance team")
     kept(page)
-    page.click("[role=tab]:has-text('Files')")
+    page.click(".modes button:has-text('Files')")
     definition = page.input_value("#file-text")
     assert "works_for: The finance team" in definition and "close_question" not in definition
     assert "scope: none # it changes no part's data" in definition  # its comments kept
     page.fill("#file-text", definition.replace("documents: [create_draft]",
                                                "documents: [create_draft, shred_it]"))
     page.wait_for_selector("#problems >> text=the scenario hasn't got shred_it", timeout=30000)
-    page.wait_for_selector(".agent-map .map-node.denied >> text=shred_it", timeout=30000)
+    page.click(".modes button:has-text('Design')")
+    page.wait_for_selector(".flow-canvas .flow-step.denied >> text=shred_it", timeout=30000)
+    assert page.inner_text("#problem-count") == "1 problem"
     shot(page, "studio-draft")
 
     page.reload()  # it was kept, as it was left
     page.wait_for_selector("#problems >> text=shred_it", timeout=30000)
-    page.click("[role=tab]:has-text('Basics')")
+    page.click("[data-step=agent]")
     assert page.input_value("#works-for") == "The finance team"
 
-    page.click("nav.crumbs a:has-text('Agents')")  # their drafts, among the agents
+    page.click(".wb-bar a.crumb")  # their drafts, among the agents
     page.wait_for_selector("#drafts >> text=finance-helper", timeout=30000)
     page.click(".agent-card a.agent-name:text-is('assistant')")
     page.click("#draft-change")  # a change to the assistant, from its folder as released
@@ -108,12 +114,13 @@ def test_an_agents_owner_tries_their_draft_in_the_sandbox(stack, with_sandbox, a
     page.click(".template:has-text('assistant') >> nth=0")
     page.click("#make")
     page.wait_for_selector("#problems >> text=Nothing would stop its release", timeout=30000)
-    page.wait_for_selector("#try-as", timeout=30000)
+    page.wait_for_selector("#journey >> text=Try it in the sandbox", timeout=30000)
     # With a sandbox, trying it is next, and publishing without trying stays open
     assert page.inner_text("#journey [aria-current=step] strong") == "Shape and try it"
     assert page.locator("#journey button:has-text('Publish it without trying it')").count() == 1
     page.click("#journey button:has-text('Try it in the sandbox')")
     expect(page.locator("#try")).to_be_focused()
+    page.wait_for_selector("#try-as", timeout=30000)
     page.select_option("#try-as", "ben")  # one of the sandbox's made-up people
     page.fill("#try-text", "Which questions mention an invoice?")
     page.click("#try button:has-text('Say it')")
@@ -134,8 +141,12 @@ def test_an_agents_owner_tries_their_draft_in_the_sandbox(stack, with_sandbox, a
     page.click("#keep-case")
     page.wait_for_selector("#case-kept >> text=Kept as finds questions by what they mention", timeout=30000)
     page.wait_for_selector("#kept >> text=kept", timeout=30000)
+    page.click(".modes button:has-text('Design')")  # where it stands, and what's next
     page.wait_for_selector("#journey >> text=1 test case kept from the sandbox", timeout=30000)
     assert page.inner_text("#journey [aria-current=step] strong") == "Publish it"
+    assert "1 test case kept" in page.inner_text(".flow-run")
+    page.click("#try-it")  # back to the sandbox, as it was left
+    page.wait_for_selector(".try-turns > li:nth-child(2) .try-answer", timeout=30000)
     draft = page.evaluate("location.pathname").rsplit("/", 1)[-1]
     with db.transaction(stack.admin) as conn:
         files = conn.execute("select files from agent_drafts where id = %s", (draft,)).fetchone()["files"]
@@ -158,6 +169,8 @@ def test_an_agents_owner_tries_their_draft_in_the_sandbox(stack, with_sandbox, a
     shot(page, "studio-cases")
     # Nothing set up to publish with here: its author opens the pull request, on whichever git
     # host, with its folder and the words a5s gives for it, which say who must sign
+    page.click("#to-publish")
+    expect(page.locator("#publishing")).to_be_focused()
     assert page.locator("#publish").count() == 0
     assert page.inner_text("#pull-folder") == "agents/finance-helper/"
     assert page.input_value("#pull-title") == "Add finance-helper"

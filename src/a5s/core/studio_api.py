@@ -397,8 +397,14 @@ def router(gw: Any) -> APIRouter:
     @api.get("/studio/api/tools", **shapes.answers(shapes.Offer))
     def studio_tools(_: Annotated[Person, Depends(drafting)]) -> dict:
         """The scenario's tools an agent may be given, each with what it reads, writes or
-        changes, and the models the deployment approves."""
-        return {"tools": studio.offered(gw.scenario.tools()), "models": sorted(gw.models)}
+        changes, the models the deployment approves, and what follows from what it may do, as
+        the settings in force say: who decides its changes in each part, and the limits."""
+        with db.transaction(gw.url) as conn:  # as the data protection officer's choices are read
+            settings, _ = gw.settings_in_force(conn, seal=False)
+            if settings is None and not gw.cfg.seal_keys:
+                settings = gw.sealed_in_force(conn)
+        return {"tools": studio.offered(gw.scenario.tools()), "models": sorted(gw.models),
+                **studio.rules(gw.scenario, settings)}
 
     def in_ledger(conn: Any, person: Person, action: str, draft: dict, **more: str) -> None:
         ledger.append(conn, {"kind": "admin", "action": action, "run": None, "instance": None,

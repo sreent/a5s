@@ -30,6 +30,10 @@ const LINES: Record<string, string[]> = {
   people: ["M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z", "M3 20a6 6 0 0 1 12 0"],
   trace: ["M6 15.8a2.2 2.2 0 1 0 0 4.4 2.2 2.2 0 0 0 0-4.4z", "M18 3.8a2.2 2.2 0 1 0 0 4.4 2.2 2.2 0 0 0 0-4.4z",
           "M7.6 16.4l8.8-8.8"],
+  plus: ["M12 5.5v13", "M5.5 12h13"],
+  cross: ["M7 7l10 10", "M17 7L7 17"],  // as Ocean's icons/ draw it
+  pause: ["M9 6.5v11", "M15 6.5v11"],
+  list: ["M9 6.5h11", "M9 12h11", "M9 17.5h11", "M4.5 6.5h.01", "M4.5 12h.01", "M4.5 17.5h.01"],
 };
 
 export function Icon({ name, className = "icon" }: { name: string; className?: string }) {

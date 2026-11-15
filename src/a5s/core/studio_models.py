@@ -453,9 +453,31 @@ class Offered(Shape):
     outside: list[str]
 
 
+class PartRule(Shape):
+    """A part of the business, as the settings in force know it: who decides a change to one
+    of its records below level 2, by name, and how right graded samples must show an agent's
+    changes there before a5s raises its cap to level 2, if it ever may."""
+
+    name: str
+    deciders: list[str]
+    threshold: float | None
+
+
+class Limit(Shape):
+    """The scenario's limits for a type of change: past either, a change waits for a person,
+    whatever the level."""
+
+    per_run: int | None
+    per_person_30_days: int | None
+
+
 class Offer(Shape):
     tools: list[Offered]
     models: list[str]  # the models the deployment approves
+    # What follows here from what an agent may do, as the settings in force say it
+    parts: list[PartRule]
+    no_part: list[str]  # who decides a change to a record in no part: the instance approvers
+    limits: dict[str, Limit]  # by type of change
 
 
 class Template(Shape):

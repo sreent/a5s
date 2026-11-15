@@ -30,12 +30,28 @@ export function shellOf(): Promise<Shell> {
 const initials = (name: string) =>
   name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("");
 
-export function Sidebar({ signedIn }: { signedIn: boolean }) {
+export function Sidebar({ signedIn, rail = false }: { signedIn: boolean; rail?: boolean }) {
   const [found, setFound] = useState<Shell | null>(null);
   useEffect(() => {
     if (!signedIn) return;
     shellOf().then(setFound).catch(() => setFound(null));
   }, [signedIn]);
+  if (rail) {  // on the workbench, the sidebar shrunk to its icons, each still named
+    const pages = found ? PAGES.flatMap(([, items]) => items.filter(([key]) => found.pages.includes(key))) : [];
+    return (
+      <aside className="wb-rail">
+        <a className="brand" href="/chat/" aria-label="a5s"><span className="mark">a5</span></a>
+        <nav aria-label="a5s's pages">
+          {pages.map(([key, name, glyph]) => (
+            <a key={key} href={`/${key}/`} aria-label={name} title={name} aria-current={key === "studio" ? "page" : undefined}>
+              <Icon name={glyph} />
+            </a>
+          ))}
+        </nav>
+        {found && <span className="avatar" role="img" aria-label={found.you} title={found.you}>{initials(found.you)}</span>}
+      </aside>
+    );
+  }
   return (
     <aside className="sidebar">
       <a className="brand" href="/chat/"><span className="mark">a5</span><span>a5s</span></a>

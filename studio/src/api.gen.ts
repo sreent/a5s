@@ -342,6 +342,13 @@ export type Judge = {
   kappa: number | null;
 };
 
+// The scenario's limits for a type of change: past either, a change waits for a person,
+// whatever the level.
+export type Limit = {
+  per_run: number | null;
+  per_person_30_days: number | null;
+};
+
 // One call to the model a try made: what it was sent, what came back, and how.
 export type ModelCall = {
   sent: Sent;
@@ -390,6 +397,9 @@ export type Obligations = {
 export type Offer = {
   tools: Offered[];
   models: string[];
+  parts: PartRule[];
+  no_part: string[];
+  limits: Record<string, Limit>;
 };
 
 // One of the scenario's tools an agent may be given, with what it reads, writes or
@@ -404,6 +414,15 @@ export type Offered = {
   changes: string | null;
   handles: string[];
   outside: string[];
+};
+
+// A part of the business, as the settings in force know it: who decides a change to one
+// of its records below level 2, by name, and how right graded samples must show an agent's
+// changes there before a5s raises its cap to level 2, if it ever may.
+export type PartRule = {
+  name: string;
+  deciders: string[];
+  threshold: number | null;
 };
 
 // A publish under way: the code to enter at GitHub's sign-in, and how it stands.
