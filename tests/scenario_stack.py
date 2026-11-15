@@ -35,20 +35,22 @@ from conftest import (
 @contextmanager
 def running_scenario(database: str, root: Path, model: FakeModel, scenario: str, folder: str,
                      http: httpx.Client | None = None, alias: str = "fake",
-                     worker_image: str | None = None) -> Iterator[Stack]:
+                     worker_image: str | None = None, scenario_folder: Path | None = None) -> Iterator[Stack]:
     """The core, the channels and the scenario's agents, each agent on the model `alias`, with
     the core's clock where the sample's is, until a test sets it. With `worker_image`, each
-    run goes to a worker from it, in a container of its own (conftest.py's `worker_for`)."""
+    run goes to a worker from it, in a container of its own (conftest.py's `worker_for`). With
+    `scenario_folder`, the scenario's folder is that copy, such as one a walk-through changes."""
     port = free_port()
     agents = root / "scenario-agents"
-    shutil.copytree(ROOT / "scenarios" / folder / "agents", agents)
+    if not agents.exists():  # else it's deployed again, with what was merged since
+        shutil.copytree(ROOT / "scenarios" / folder / "agents", agents)
     for spec in agents.glob("*/agent.yaml"):
         spec.write_text("\n".join(f"model: {alias}" if line.startswith("model:") else line
                                   for line in spec.read_text().splitlines()) + "\n")
     cfg = Config(database_url=db.as_role(database, "gateway"),
                  gateway_url=f"http://127.0.0.1:{port}", service_token=SERVICE_TOKEN,
                  root=root, development=True, seal_keys=(SEAL_KEY,), scenario=scenario,
-                 scenario_folder=ROOT / "scenarios" / folder, agents_folder=agents)
+                 scenario_folder=scenario_folder or ROOT / "scenarios" / folder, agents_folder=agents)
     module, name = scenario.split(":")
     scenario_systems(folder)  # the systems its mcp.yaml declares tools of, if it has any
     found = mcp.served(getattr(importlib.import_module(module), name)(cfg.scenario_dir, cfg.database_url),

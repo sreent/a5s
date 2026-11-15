@@ -501,6 +501,7 @@ class Offer(Shape):
     # could ask, of those the person may see already
     servable: list[Servable]
     askable: list[Askable]
+    owed: list[str] = []  # the kinds of what people owe that the scenario's records make, such as records
 
 
 class Template(Shape):

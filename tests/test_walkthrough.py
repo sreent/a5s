@@ -15,20 +15,10 @@ needs. Its guide, with a picture of each step:
 
 from __future__ import annotations
 
-import re
-import threading
-from collections.abc import Iterator
-from contextlib import contextmanager
-from dataclasses import replace
-from pathlib import Path
-
 import httpx
-import yaml
 
-from a5s import cli
 from a5s.contract import record_of
 from a5s.core import drafts
-from a5s.core.releases import Releases
 from conftest import (
     FAKE_MODELS,
     PROVIDER_KEY,
@@ -39,12 +29,10 @@ from conftest import (
     running,
     serve,
 )
-from fake_github import CLIENT as GITHUB
 from fake_github import FakeGitHub
 from test_proposals import invented
-from test_release import this
 from test_studio_authoring import kept
-from walkthrough import Walk
+from walkthrough import Walk, answering, deployed, merged, owned, released, signed_and_recorded
 
 AGENT = "due-dates"
 INSTANCE = f"{AGENT}-billing"
@@ -54,76 +42,6 @@ You keep the due dates of customers' questions in billing right. When someone as
 one, find the question, say what its due date is now, and ask for the change: its decider in
 billing decides it. Never move a date you weren't asked to move.
 """
-
-
-def deployed(stack, forge: FakeGitHub) -> None:
-    """The stack as an organisation runs it: not in development, so its release must be
-    approved, and publishing to the team's repository on the forge."""
-    stack.gateway.cfg = replace(stack.gateway.cfg, development=False)
-    stack.gateway.releases = Releases(this(stack))
-    stack.cfg = replace(stack.cfg, github_client_id=GITHUB, github_repo=forge.repo,
-                        github_url=forge.url, github_api_url=forge.url)
-
-
-def released(stack, folder: Path, monkeypatch, capsys) -> str:
-    """What `a5s release status` says of the release here, before anyone has signed it: who it
-    needs, and the release it follows, as its approvers read it."""
-    monkeypatch.setenv("A5S_ROOT", str(stack.cfg.root))
-    monkeypatch.setenv("A5S_DATABASE_URL", stack.admin)
-    folder.mkdir(exist_ok=True)
-    monkeypatch.chdir(folder)
-    cli.main(["release", "show"])
-    Path("release.yaml").write_bytes(capsys.readouterr().out.encode())
-    try:
-        cli.main(["release", "status"])
-    except SystemExit as stopped:  # not approved here yet, as it says
-        return capsys.readouterr().out + str(stopped.code)
-    return capsys.readouterr().out
-
-
-def signed_and_recorded(said: str, capsys, *people: str) -> str:
-    """The release, signed by `people` with `a5s release sign`, each as on their own machine, as
-    following the release `said` names, and recorded with `a5s release approve`: what
-    `a5s release status` says of it then."""
-    follows = re.search(r"--follows (\w+)", said)
-    for person in people:
-        cli.main(["release", "sign", "--as", person, *(["--follows", follows[1]] if follows else [])])
-    cli.main(["release", "approve"])
-    capsys.readouterr()
-    cli.main(["release", "status"])
-    return capsys.readouterr().out
-
-
-def merged(root: Path, files: dict[str, str]) -> None:
-    """The agent's folder as its pull request has it, merged into the release's agents."""
-    for path, text in files.items():
-        if path.startswith(f"agents/{AGENT}/"):
-            (root / path).parent.mkdir(parents=True, exist_ok=True)
-            (root / path).write_text(text)
-
-
-def owned(root: Path, person: str) -> None:
-    """`person` owns the new agent, as the sample's directory says: in a deployment, its
-    identity provider, whose administrator names them."""
-    path = root / "scenarios" / "sample" / "data.yaml"
-    data = yaml.safe_load(path.read_text())
-    [them] = [p for p in data["people"] if p["id"] == person]
-    them["roles"] = [*them.get("roles", []), f"agent-owner:{AGENT}"]
-    path.write_text(yaml.safe_dump(data, sort_keys=False))
-
-
-@contextmanager
-def answering(stack) -> Iterator[None]:
-    """a5s's scheduler, answering messages as they arrive, as it does deployed."""
-    stop = threading.Event()
-    listener = threading.Thread(target=stack.scheduler().listen, args=(stop,),
-                                kwargs={"sweep_every": 3600}, daemon=True)
-    listener.start()
-    try:
-        yield
-    finally:
-        stop.set()
-        listener.join(10)
 
 
 def built(walk: Walk, url: str, forge: FakeGitHub) -> tuple[str, dict]:
@@ -291,8 +209,8 @@ def test_an_agent_goes_from_an_idea_to_work_through_a5s_alone(database, tmp_path
         with walk.step("The team reviews its pull request, and it's merged. Nobody holds the "
                        "due-dates's owner role yet, so the directory names Priya, as the identity "
                        "provider's administrator would."):
-            merged(root, forge.files(pull["head"]))
-            owned(root, "priya")
+            merged(stack, forge.files(pull["head"]), AGENT)
+            owned(stack.cfg.scenario_dir, "priya", AGENT)
         with running(database, root, http, model) as stack:  # deployed again, from main
             deployed(stack, forge)
             with walk.step("Deployed again, a5s runs nothing of the new release yet. "

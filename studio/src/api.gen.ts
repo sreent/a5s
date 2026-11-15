@@ -413,6 +413,7 @@ export type Offer = {
   limits: Record<string, Limit>;
   servable: Servable[];
   askable: Askable[];
+  owed?: string[];
 };
 
 // One of the scenario's tools an agent may be given, with what it reads, writes or

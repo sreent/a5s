@@ -33,6 +33,18 @@ def test_templates_are_the_reference_agents_and_each_scenarios_own():
     assert "check_quality" in authoring.lacks(found["master-data/mdg-watcher"], TOOLS)
 
 
+def test_a_blank_start_fits_every_scenario_and_runs_on_the_deployments_own_model(tmp_path):
+    found = authoring.templates(ROOT)
+    assert next(iter(found)) == authoring.BLANK  # offered first
+    assert authoring.lacks(found[authoring.BLANK], {}) == []  # it needs no tool of anyone's
+    model = next(iter(MODELS))
+    folder = authoring.new(found[authoring.BLANK], "desk-helper", tmp_path, TOOLS, model=model)
+    blank = definitions.load(folder)
+    assert (blank.id, blank.model, blank.tool_names) == ("desk-helper", model, [])
+    assert (blank.autonomy.start, blank.autonomy.max) == (0, 0)  # it only observes, till changed
+    assert authoring.check(folder, TOOLS, MODELS) == []
+
+
 def test_a_new_agent_is_its_templates_copy_with_its_own_id_release_and_pins(tmp_path):
     folder = made(tmp_path)
     assert folder == tmp_path / "finance-helper"

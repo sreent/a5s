@@ -134,12 +134,20 @@ export function limitLines(spec: Spec, offer: Offer): string[] {
   return lines;
 }
 
-/** What its abilities, a5s's own tools, are for, each in a line, by its key in agent.yaml. */
-export const ABILITIES: [key: "reminders" | "recall" | "documents" | "agents" | "notebook" | "tasks", name: string, does: string][] = [
+/** What its abilities, a5s's own tools, are for, each in a line, by its key in agent.yaml: the two
+ * last are preferences, which people set through it. */
+export const ABILITIES: [key: "reminders" | "recall" | "documents" | "agents" | "notebook" | "tasks" | Preference,
+  name: string, does: string][] = [
   ["reminders", "Reminders", "offers reminders, and keeps those people confirm"],
   ["recall", "Its conversation", "searches its conversation with the person it acts for, and corrects its summaries at their word"],
   ["documents", "Documents from outside", "asks a5s's reader about documents from outside its run has read"],
   ["agents", "Other agents", "asks other agents questions: the settings name which, and their owners approve it"],
   ["notebook", "Its notebook", "notes what it learns from records, on its schedules, for its later runs"],
   ["tasks", "Long tasks", "takes on work people ask for over more than one run, once they say yes"],
+  ["digest-time", "Their digest's time", "lets people set when their daily digest comes"],
+  ["how-i-work", "How they like to work", "keeps what people tell it of how they like to work, at their word"],
 ];
+
+/** The preferences people may set through an agent, as agent.yaml lists them. */
+export type Preference = "digest-time" | "how-i-work";
+export const PREFERENCES: readonly string[] = ["digest-time", "how-i-work"];

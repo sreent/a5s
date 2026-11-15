@@ -2,8 +2,8 @@
 a definition must pass before it's released, which the command line runs, as the studio will
 as people type.
 
-A template is an agent a5s ships: the reference agents, in agents/, and each scenario's own, in
-its agents/. A new agent starts as a copy of one: its definition, with its own id and a first
+A template is an agent a5s ships: a blank one, which does nothing yet and so fits every scenario,
+the reference agents, in agents/, and each scenario's own, in its agents/. A new agent starts as a copy of one: its definition, with its own id and a first
 release of its own, its instructions, its skills and its test cases, and its tools pinned
 against the scenario's, as `a5s pin` pins them. It's then a folder like any agent's, which its
 owner edits, checks and releases as any agent is: nothing about it is the studio's.
@@ -28,10 +28,14 @@ FIRST = "0.1.0"  # a new agent's first release
 LEFT_OUT = ("tools.lock", "__pycache__", "*.pyc")  # pinned again for the new agent; a build's leftovers
 
 
+BLANK = "blank"  # a5s's own start for a new agent, which does nothing yet: in a5s's code
+
+
 def templates(root: Path) -> dict[str, Path]:
-    """Each agent a new one may start from, by name: the reference agents, such as assistant,
-    and each scenario's own, such as master-data/mdg-assistant."""
-    found = {f.name: f for f in _agents(root / "agents")}
+    """Each agent a new one may start from, by name: a blank one, the reference agents, such as
+    assistant, and each scenario's own, such as master-data/mdg-assistant."""
+    found = {BLANK: Path(__file__).parent / "templates" / BLANK}
+    found |= {f.name: f for f in _agents(root / "agents")}
     scenarios = root / "scenarios"
     for scenario in sorted(p for p in scenarios.iterdir() if p.is_dir()) if scenarios.is_dir() else []:
         found |= {f"{scenario.name}/{f.name}": f for f in _agents(scenario / "agents")}
@@ -47,9 +51,10 @@ def lacks(template: Path, tools: dict[str, Tool]) -> list[str]:
     return [t for t in definitions.load(template).tool_names if t not in tools]
 
 
-def new(template: Path, name: str, into: Path, tools: dict[str, Tool]) -> Path:
+def new(template: Path, name: str, into: Path, tools: dict[str, Tool], model: str | None = None) -> Path:
     """A new agent's folder, `into`/`name`, from a template's, with its tools pinned against the
-    scenario's `tools`. Nothing is left behind if it can't be made."""
+    scenario's `tools`, and on `model`, if given, such as the deployment's own for the blank one,
+    which names none. Nothing is left behind if it can't be made."""
     if name in definitions.RESERVED:
         raise ValueError(f"an agent can't be called {name}: in a conversation, that's who the "
                          "other words are by")
@@ -67,7 +72,7 @@ def new(template: Path, name: str, into: Path, tools: dict[str, Tool]) -> Path:
     try:
         spec = target / "agent.yaml"
         text = spec.read_text()
-        for field, value in (("id", name), ("release", FIRST)):
+        for field, value in (("id", name), ("release", FIRST), *((("model", model),) if model else ())):
             text, found = re.subn(rf"(?m)^{field}:[ \t]*\S+", f"{field}: {value}", text, count=1)
             if not found:
                 raise ValueError(f"{template.name}'s agent.yaml has no {field} to set")

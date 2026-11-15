@@ -406,7 +406,8 @@ def router(gw: Any) -> APIRouter:
         return {"tools": studio.offered(gw.scenario.tools()), "models": sorted(gw.models),
                 **studio.rules(gw.scenario, settings),
                 "servable": studio.servable(gw.scenario, settings, person),
-                "askable": studio.askable(watched)}
+                "askable": studio.askable(watched),
+                "owed": sorted({o.source for o in gw.scenario.obligations()})}  # an agent may chase
 
     @api.get("/studio/api/tools", **shapes.answers(shapes.Offer))
     def studio_tools(person: Annotated[Person, Depends(drafting)]) -> dict:
@@ -509,7 +510,8 @@ def router(gw: Any) -> APIRouter:
                 raise HTTPException(404, f"there's no template {body.template}")
             with tempfile.TemporaryDirectory() as there:
                 try:
-                    made = authoring.new(template, body.name, Path(there), tools)
+                    made = authoring.new(template, body.name, Path(there), tools, model=(  # its own
+                        next(iter(gw.models), None) if body.template == authoring.BLANK else None))
                 except ValueError as e:
                     raise HTTPException(400, str(e)) from None
                 name, files = body.name, drafts.folder_files(made)

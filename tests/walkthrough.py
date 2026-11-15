@@ -17,11 +17,19 @@ from __future__ import annotations
 
 import os
 import re
+import threading
 from collections.abc import Iterator
 from contextlib import contextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
+
+import yaml
+
+from a5s import cli
+from a5s.core import publishing
+from a5s.core.releases import Releases, running
+from fake_github import CLIENT as GITHUB
 
 # Where the guides go, from where the tests were started, whatever folder a walk-through is
 # in when it writes, such as one it signs a release in
@@ -88,3 +96,81 @@ class Walk:
                 lines += [f"   ![{words}]({picture})", ""]
         (Path(GUIDE) / self.name).mkdir(parents=True, exist_ok=True)
         (Path(GUIDE) / self.name / "guide.md").write_text("\n".join(lines))
+
+
+# What every walk-through does outside a5s's pages, as the people and systems there do it
+
+def deployed(stack: Any, forge: Any) -> None:
+    """The stack as an organisation runs it: not in development, so its release must be
+    approved, and publishing to the team's repository on the forge."""
+    stack.gateway.cfg = replace(stack.gateway.cfg, development=False)
+    stack.gateway.releases = Releases(running(stack.cfg.root, stack.cfg.scenario_dir, stack.cfg.agents_dir))
+    stack.cfg = replace(stack.cfg, github_client_id=GITHUB, github_repo=forge.repo,
+                        github_url=forge.url, github_api_url=forge.url)
+
+
+def released(stack: Any, folder: Path, monkeypatch: Any, capsys: Any) -> str:
+    """What `a5s release status` says of the release here, before anyone has signed it: who it
+    needs, and the release it follows, as its approvers read it, from the deployment's own
+    configuration."""
+    for name, value in (("A5S_ROOT", stack.cfg.root), ("A5S_DATABASE_URL", stack.admin),
+                        ("A5S_SCENARIO", stack.cfg.scenario), ("A5S_SCENARIO_DIR", stack.cfg.scenario_dir),
+                        ("A5S_AGENTS_DIR", stack.cfg.agents_dir)):
+        monkeypatch.setenv(name, str(value))
+    folder.mkdir(exist_ok=True)
+    monkeypatch.chdir(folder)
+    cli.main(["release", "show"])
+    Path("release.yaml").write_bytes(capsys.readouterr().out.encode())
+    try:
+        cli.main(["release", "status"])
+    except SystemExit as stopped:  # not approved here yet, as it says
+        return capsys.readouterr().out + str(stopped.code)
+    return capsys.readouterr().out
+
+
+def signed_and_recorded(said: str, capsys: Any, *people: str) -> str:
+    """The release, signed by `people` with `a5s release sign`, each as on their own machine, as
+    following the release `said` names, and recorded with `a5s release approve`: what
+    `a5s release status` says of it then."""
+    follows = re.search(r"--follows (\w+)", said)
+    for person in people:
+        cli.main(["release", "sign", "--as", person, *(["--follows", follows[1]] if follows else [])])
+    cli.main(["release", "approve"])
+    capsys.readouterr()
+    cli.main(["release", "status"])
+    return capsys.readouterr().out
+
+
+def merged(stack: Any, files: dict[str, str], agent: str) -> None:
+    """The agent's folder as its pull request has it, merged where the deployment keeps its
+    agents, as its reviewers' approval and the forge's merge would."""
+    where = publishing.folder(stack.cfg, agent) + "/"
+    for path, text in files.items():
+        if path.startswith(where):
+            target = stack.cfg.root / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(text)
+
+
+def owned(scenario_dir: Path, person: str, agent: str) -> None:
+    """`person` owns the new agent, as the scenario's directory says: in a deployment, its
+    identity provider, whose administrator names them."""
+    path = scenario_dir / "data.yaml"
+    data = yaml.safe_load(path.read_text())
+    [them] = [p for p in data["people"] if p["id"] == person]
+    them["roles"] = [*them.get("roles", []), f"agent-owner:{agent}"]
+    path.write_text(yaml.safe_dump(data, sort_keys=False))
+
+
+@contextmanager
+def answering(stack: Any) -> Iterator[None]:
+    """a5s's scheduler, answering messages as they arrive, as it does deployed."""
+    stop = threading.Event()
+    listener = threading.Thread(target=stack.scheduler().listen, args=(stop,),
+                                kwargs={"sweep_every": 3600}, daemon=True)
+    listener.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        listener.join(10)

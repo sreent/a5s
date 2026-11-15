@@ -379,6 +379,13 @@ const ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
 // whom an instance serves, as the settings write it: someone's id, or a team or a role
 const WHO = /^(?:(?:team|role):[A-Za-z0-9][A-Za-z0-9._@:-]{0,127}|[A-Za-z0-9][A-Za-z0-9._@-]{0,127})$/;
 
+function servable() {
+  // Whom a new instance may serve: each person the directory names, and each team or role the
+  // settings in force serve already, as they write it
+  const groups = Object.values(working?.instances || {}).flatMap((i) => i.serves || []).filter((w) => w.includes(":"));
+  return [...new Set([...Object.keys(names), ...groups])];
+}
+
 function suggested() {
   // A name for the new instance, the agent's and then its part's, unused
   const base = `${adding.agent}-${adding.part || "new"}`.slice(0, 60);
@@ -449,7 +456,7 @@ function addForm(parts) {
   }
   set.append(element("p", "It serves", "lead"));
   const serves = element("div", null, "choices");
-  for (const who of Object.keys(names)) {
+  for (const who of new Set([...servable(), ...adding.serves])) {
     serves.append(choice("checkbox", "add-serves", adding.serves.has(who), whom(who), (input) => {
       if (input.checked) adding.serves.add(who);
       else adding.serves.delete(who);
@@ -521,7 +528,7 @@ function offerAdding() {
                              ...Object.values(working.instances || {}).flatMap(partsOf)])];
   const known = (list, among) => list.filter((one) => typeof one === "string" && among.includes(one));
   const [part, ...more] = known(plan.parts, parts);
-  const serves = known(plan.serves, Object.keys(names));
+  const serves = known(plan.serves, servable());  // a team or a role as the settings write it, too
   adding = freshAdding(agent, { part: part ?? "", more, asks: known(plan.asks, Object.keys(working.instances || {})),
                                 ...(serves.length ? { serves: new Set(serves) } : {}) });
   render();

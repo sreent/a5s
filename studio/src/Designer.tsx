@@ -14,7 +14,7 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { Offer, Offered, Plan, Signer, Tool } from "./api";
 import { ABILITIES, and, CHANNEL_WORDS, changers, dayWords, deciders, levelLines, limitLines, messageLines,
-  scheduleLines, toolLines } from "./consequences";
+  PREFERENCES, scheduleLines, toolLines } from "./consequences";
 import { DAYS, read, type Schedule, type Spec, Unreadable, withMap, withMessages, without, withoutSchedule,
   withSchedule, withTool, withValue, withWords } from "./definition";
 import { type Flow, FlowMap, type Step } from "./FlowMap";
@@ -38,11 +38,13 @@ const ON: Record<Ability, [does: string, more: string]> = {
   agents: ["asks other agents questions", ", those the settings name"],
   notebook: ["notes what it learns from records", ", on its schedules, for its later runs"],
   tasks: ["takes on long tasks", " people ask for, over more than one run, once they say yes"],
+  "digest-time": ["lets people set when their daily digest comes", ""],
+  "how-i-work": ["keeps what people tell it of how they like to work", ", at their word"],
 };
 
 const asTool = (t: Offered): Tool => ({ ...t, group: "", pinned: null, missing: false });
 const has = (spec: Spec, key: Ability) => (key === "tasks" ? Boolean(spec.tasks) : key === "reminders" ? spec.reminders
-  : spec.context[key]);
+  : PREFERENCES.includes(key) ? spec.preferences.includes(key) : spec.context[key as keyof Spec["context"]] === true);
 
 /** Canvas or list, as someone chose last, or the list on a narrow screen. */
 function useShown(): [Shown, (v: Shown) => void] {
@@ -109,8 +111,9 @@ function flowOf(spec: Spec, name: string, offer: Offer, problems: number, plan: 
 
 // The parts to add, on the left
 
-function Picker({ spec, offer, add, ability, start }: { spec: Spec; offer: Offer; add: (tool: Offered) => void;
-  ability: (key: Ability, on: boolean) => void; start: (what: "schedule" | "messages") => void }) {
+function Picker({ spec, offer, add, ability, start, owe }: { spec: Spec; offer: Offer; add: (tool: Offered) => void;
+  ability: (key: Ability, on: boolean) => void; start: (what: "schedule" | "messages") => void;
+  owe: (kind: string) => void }) {
   const [find, setFind] = useState("");
   const given = new Set(Object.values(spec.tools).flat());
   const words = find.trim().toLowerCase();
@@ -166,6 +169,12 @@ function Picker({ spec, offer, add, ability, start }: { spec: Spec; offer: Offer
                 <span className="fd-about">People write to it.</span></span>
             </button>
           )}
+          {(offer.owed ?? []).filter((kind) => !spec.obligations.includes(kind)).map((kind) => (
+            <button key={kind} type="button" className="fd-part" data-owed={kind} onClick={() => owe(kind)}>
+              <span className="fd-type"><Icon name="bell" /></span><span className="fd-text"><span><span className="hidden">Add </span>What people owe, in the {kind}</span>
+                <span className="fd-about">It reminds its people of what falls due.</span></span>
+            </button>
+          ))}
         </div>
       )}
       <p className="wb-hint">Drag a tool onto the canvas, or press Enter on one to add it.</p>
@@ -479,7 +488,7 @@ function ReplyPanel({ spec }: { spec: Spec }) {
   );
 }
 
-function OtherPanel({ chosen, spec }: { chosen: string; spec: Spec }) {
+function OtherPanel({ chosen, spec, away }: { chosen: string; spec: Spec; away: () => void }) {
   const [kind, at] = chosen.split(":");
   const [title, said] = kind === "obligations" ? ["What people owe", `It reminds its people of what falls due in the ${and(spec.obligations)}, `
     + "each run acting for the person it's for."]
@@ -490,7 +499,9 @@ function OtherPanel({ chosen, spec }: { chosen: string; spec: Spec }) {
     <>
       <Head icon={kind === "report" ? "report" : kind === "obligations" ? "bell" : "run"} title={title} kind="what starts its runs" />
       <p>{said}</p>
-      <p className="note">Change it under Files, in agent.yaml.</p>
+      {kind === "obligations"
+        ? <div className="wb-actions"><button type="button" className="danger" id="take-away" onClick={away}>Take it away</button></div>
+        : <p className="note">Change it under Files, in agent.yaml.</p>}
     </>
   );
 }
@@ -670,7 +681,10 @@ export function Designer({ name, files, offer, signers, problems, change, plan, 
   };
   const ability = (key: Ability, on: boolean) => {
     const next = key === "tasks" ? (on ? withMap(text, ["tasks"], { budget_tokens: 400000, days: 3 }) : without(text, ["tasks"]))
-      : key === "reminders" ? withValue(text, ["reminders"], on) : withValue(text, ["context", key], on);
+      : key === "reminders" ? withValue(text, ["reminders"], on)
+      : PREFERENCES.includes(key) ? withWords(text, ["preferences"], on ? [...new Set([...spec.preferences, key])]
+        : spec.preferences.filter((p) => p !== key))
+      : withValue(text, ["context", key], on);
     const [does, more] = ON[key];
     edit(next, on ? `Now it ${does}${more}.` : `It no longer ${does}.`);
     if (on) choose("own", true);
@@ -688,6 +702,11 @@ export function Designer({ name, files, offer, signers, problems, change, plan, 
     edit(withSchedule(text, schedule, null), `Added a schedule, ${schedule.name}. ${scheduleLines(schedule, spec)[0]}`);
     choose(`schedule:${spec.schedules.length}`, true);
   };
+  const owe = (kind: string) => {
+    edit(withWords(text, ["obligations"], [...new Set([...spec.obligations, kind])]),
+         `Now it reminds its people of what falls due in the ${kind}, each run acting for the person it's for.`);
+    choose("obligations", true);
+  };
   const remove = (key: string) => {  // from the keyboard, as n8n takes a step away
     const [kind, rest] = [key.split(":")[0], key.slice(key.indexOf(":") + 1)];
     if (kind === "tool") {
@@ -695,6 +714,9 @@ export function Designer({ name, files, offer, signers, problems, change, plan, 
       choose(null, true);
     } else if (kind === "schedule") {
       edit(withoutSchedule(text, Number(rest)), `Took the schedule ${spec.schedules[Number(rest)]?.name ?? ""} away.`);
+      choose(null, true);
+    } else if (kind === "obligations") {
+      edit(withWords(text, ["obligations"], []), "It no longer reminds its people of what falls due.");
       choose(null, true);
     }
   };
@@ -747,12 +769,12 @@ export function Designer({ name, files, offer, signers, problems, change, plan, 
     if (kind === "model") return <ModelPanel text={text} spec={spec} offer={offer} edit={edit} />;
     if (kind === "checks") return <ChecksPanel text={text} spec={spec} offer={offer} edit={edit} />;
     if (kind === "reply") return <ReplyPanel spec={spec} />;
-    return <OtherPanel chosen={key} spec={spec} />;
+    return <OtherPanel chosen={key} spec={spec} away={() => remove(key)} />;
   };
   const known = chosen !== null && chosen !== "add"
     && [...flow.starts, flow.agent, ...(flow.end ? [flow.end] : []), ...flow.hanging].some((s) => s.key === chosen);
   const said = notice && <p className="wb-well notice" id="what-changed" role="status"><Icon name="check" /><span>{notice}</span></p>;
-  const picker = <Picker spec={spec} offer={offer} add={add} ability={ability} start={start} />;
+  const picker = <Picker spec={spec} offer={offer} add={add} ability={ability} start={start} owe={owe} />;
   const drop = (dragged: DataTransfer) => {
     const tool = offer.tools.find((t) => t.name === dragged.getData(DRAG));
     if (tool) add(tool);
