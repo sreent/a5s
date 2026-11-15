@@ -1757,7 +1757,12 @@ def create_app(gw: Gateway) -> FastAPI:
                                  "reasons": refused, "args": {"settings": settings.version,
                                                               "serial": settings.serial, **asker}})
             return {"refused": refused}
-        row, new = approvals.propose(conn, gw.scenario.name, settings)
+        row, new = approvals.propose(conn, gw.scenario.name, settings,
+                                     last["serial"] if last else None)
+        if approvals.stale(row, last):  # proposed before, against a version since replaced
+            return {"refused": [(f"version {settings.serial} was proposed against another "
+                                 "version than the one in force: ask for it again, written "
+                                 "against that")]}
         before = parse_settings(bytes(last["raw"])) if last else None
         found = approvals.changes(before, settings, gw.definitions, gw.scenario.person)
         link = f"{gw.public_url}/approve/?settings={row['digest']}"
@@ -1873,6 +1878,15 @@ def create_app(gw: Gateway) -> FastAPI:
                                     (gw.scenario.name,)).fetchall():
                 if last and row["serial"] <= last["serial"]:
                     outcome = "superseded"
+                elif approvals.stale(row, last):  # reviewed as changing another version
+                    outcome = "superseded"
+                    ledger.append(conn, {"kind": "admin", "action": "apply", "decision": "deny",
+                                         "reasons": [(f"it was written against version "
+                                                      f"{row['base']}, and version "
+                                                      f"{last['serial'] if last else 'none'} is "
+                                                      "in force: ask for it again, from that")],
+                                         "args": {"settings": row["version"],
+                                                  "serial": row["serial"]}})
                 else:
                     try:
                         with conn.transaction():  # a savepoint

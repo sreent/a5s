@@ -51,8 +51,8 @@ def router(gw: Any) -> APIRouter:
         last = approvals.latest(conn, gw.scenario.name)
         if row["outcome"]:
             status = row["outcome"]
-        elif last and row["serial"] <= last["serial"]:
-            status = "superseded"
+        elif (last and row["serial"] <= last["serial"]) or approvals.stale(row, last):
+            status = "superseded"  # or written against a version that's no longer in force
         else:
             status = "waiting"
         return row, last, status

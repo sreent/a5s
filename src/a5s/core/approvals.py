@@ -114,17 +114,25 @@ def _vouching(key: str, scenario: str, serial: int, raw: bytes) -> str:
 
 # Proposing a version, and saying what it changes
 
-def propose(conn: db.Connection, scenario: str, settings: Settings) -> tuple[dict, bool]:
-    """Record a version for the instance approvers to approve: its record, and whether it's new."""
+def propose(conn: db.Connection, scenario: str, settings: Settings,
+            base: int | None = None) -> tuple[dict, bool]:
+    """Record a version for the instance approvers to approve, written against the version in
+    force, `base`, by its serial: its record, and whether it's new."""
     version = digest(settings.raw)
     row = conn.execute(
-        "insert into settings_proposals (scenario, digest, version, serial, raw) "
-        "values (%s, %s, %s, %s, %s) on conflict do nothing returning *",
-        (scenario, version, settings.version, settings.serial, settings.raw)).fetchone()
+        "insert into settings_proposals (scenario, digest, version, serial, raw, base) "
+        "values (%s, %s, %s, %s, %s, %s) on conflict do nothing returning *",
+        (scenario, version, settings.version, settings.serial, settings.raw, base)).fetchone()
     if row is not None:
         return row, True
     return conn.execute("select * from settings_proposals where scenario = %s and digest = %s",
                         (scenario, version)).fetchone(), False
+
+
+def stale(row: dict, last: dict | None) -> bool:
+    """Whether a proposed version was written against another version than the one in force:
+    its approvers reviewed what it changes from that, so it never comes into force on this."""
+    return (last["serial"] if last else None) != row.get("base")
 
 
 def latest(conn: db.Connection, scenario: str) -> dict | None:

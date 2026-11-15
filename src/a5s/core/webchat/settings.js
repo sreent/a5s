@@ -24,6 +24,7 @@ let actions = [];  // the types of change this deployment's tools make
 let releases = {};  // the levels each release starts at and allows
 let mode = "forms";
 let reviewed = null;  // the version as written that was reviewed, which is what Send asks for
+let reviewedAgainst = null;  // the version in force it was reviewed against, which Send names
 let me = null;  // whoever signed in, by their id
 let adding = null;  // a new instance, as its form has it so far
 const ADDING = "a5s.settings.add";  // an agent to put to work, chosen before signing in
@@ -630,13 +631,14 @@ async function review() {
   list("reviewed-whole", found.whole);
   $("send").hidden = found.problems.length > 0;
   reviewed = text;
+  reviewedAgainst = found.in_force;
   $("reviewed").hidden = false;
 }
 
 async function send() {
   $("send").disabled = true;
   try {
-    const asked = await call("/settings/api/requests", { text: reviewed });
+    const asked = await call("/settings/api/requests", { text: reviewed, base: reviewedAgainst });
     $("reviewed").hidden = true;
     working = null;  // the forms start again from what's in force
     status(`You asked for version ${asked.serial}. a5s asks its approvers within a minute, and puts it in force once they've all approved it.`);

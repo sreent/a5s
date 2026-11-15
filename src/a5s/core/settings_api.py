@@ -20,9 +20,11 @@ from a5s.core import approvals, memberships, registry, settings_app, web
 
 
 class Draft(BaseModel):
-    """A version of the settings as someone wrote it in the settings app."""
+    """A version of the settings as someone wrote it in the settings app, and the version in
+    force they reviewed it against, by its serial, once they have."""
 
     text: str
+    base: int | None = None
 
 
 SETTLES = ("the settings app is for the people who approve versions of the settings: each "
@@ -131,6 +133,7 @@ def router(gw: Any) -> APIRouter:
         before = parse_settings(bytes(last["raw"])) if last else None
         words = (gw.definitions, gw.scenario.person)
         return {"serial": settings.serial, "problems": problems,
+                "in_force": last["serial"] if last else None,  # what it's reviewed against
                 "changes": approvals.changes(before, settings, *words),
                 "whole": approvals.described(settings, *words),
                 "approvers": [p.name for p in registry.approvers(
@@ -142,6 +145,8 @@ def router(gw: Any) -> APIRouter:
         """Ask for a version: the gateway proposes it to everyone it needs within a minute."""
         with db.transaction(gw.url) as conn:
             try:
+                if "base" in body.model_fields_set:  # reviewed against that version in force
+                    return settings_app.request(conn, gw, person, body.text, base=body.base)
                 return settings_app.request(conn, gw, person, body.text)
             except settings_app.Refused as e:
                 raise HTTPException(e.status, {"problems": e.problems}) from None
