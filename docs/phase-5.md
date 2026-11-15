@@ -20,7 +20,7 @@ An instance that serves fewer people than the settings' threshold shows its runs
 
 ## Done means
 
-For each scenario, its walk-through runs on the container stack in CI, and the same walk-through, run by hand, is its guide:
+For each scenario, its walk-through runs in CI, on a5s as an organisation deploys it rather than in development, and the same walk-through, run by hand, is its guide:
 
 1. **Its builders** make each of its agents in the studio, from a template or by describing it: the designer for its tools, abilities, schedules and plan; its instructions; and its test cases, among them what it must never do. They try it in the sandbox until its cases pass, and publish it as a pull request.
 2. **Its release approvers** sign the release, and a5s deploys it.
@@ -47,7 +47,7 @@ Each scenario's systems move behind MCP servers before its agents are rebuilt, b
 
 ## Build in this order
 
-0. **The walk-through harness.** A walk-through signs in as each role in turn, through the stand-in identity provider, and drives the studio, the settings app, the approve and grade pages and the chat on the container stack, as people do. In CI its model is the stand-in, scripted for each walk-through, so it gives the same answers every time; at night, DeepSeek, on synthetic data. It writes a picture of each step, which is the scenario's guide, "built in the studio". Each step it can't take through a5s fails with what was missing, and goes on the gap list.
+0. **The walk-through harness.** A walk-through signs in as each role in turn, through the stand-in identity provider, and drives the studio, the settings app, the approve and grade pages and the chat, as people do, on a5s as deployed: not in development, so nothing runs until its release is signed. In CI its model is the stand-in, scripted for each walk-through, so it gives the same answers every time; at night, DeepSeek, on synthetic data. It writes a picture of each step, which is the scenario's guide, "built in the studio". Each step it can't take through a5s fails with what was missing, and goes on the gap list.
 1. **The service desk's systems behind MCP.** The ITSM's tickets, comments and request catalogue, the knowledge base, the identity provider's self-service flows and device management, as made-up servers on the desk's synthetic data, declared in `scenarios/service-desk/mcp.yaml`. The hand-written desk assistant keeps passing its suite on them before anything is rebuilt.
 2. **The desk assistant, rebuilt.** Its walk-through makes it in the studio and compares the folder it publishes with the hand-written one. What differs, and isn't the studio doing better, is a gap.
 3. **The desk's agents never built.** The resolver assistant, which briefs a resolver's tickets in one service area and drafts their replies, and the joiner coordinator, described in plain words and drafted least-privilege, then refined by hand. Ticket writes come in, each held for the service area's decider. Self-service runs at level 2 for the catalogue items the service owner approves, once the identity provider verifies the person in its own flow, as the desk's pack says. Authenticators always go to a person.
@@ -59,7 +59,7 @@ Each scenario's systems move behind MCP servers before its agents are rebuilt, b
 
 ## Tests
 
-- Each scenario's walk-through takes every step above on the container stack, as its roles, and nothing in it edits a file.
+- Each scenario's walk-through takes every step above as its roles, on a5s as deployed, and nothing in it edits an agent's file.
 - Each studio-built agent passes its scenario's suite, and its must-never cases, against the stand-in model in CI and against DeepSeek at night.
 - A change an agent asks for is held for its part's decider below level 2, and an auditor finds who asked, who decided and what changed.
 - A server that changes a tool from what `mcp.yaml` declares is refused until a release declares it again, in each scenario.
