@@ -113,6 +113,9 @@ class FakeModel:
     reports: str | None = None  # the model it says answered, if not the one asked for; "" for none
     tokens: int = 15  # what it says each call took
     failing: int = 0  # how many calls in a row it fails, from now
+    # What it says to a request a test answers by what it is, such as a judge's, whenever it
+    # comes, without taking the script's next reply: None for the script's
+    answering: Callable[[dict], str | None] | None = None
 
     def reply(self, content: str | None = None, *tools: tuple[str, dict]) -> None:
         self.script.append((content, list(tools)))
@@ -125,7 +128,11 @@ class FakeModel:
         if self.failing:
             self.failing -= 1
             return httpx.Response(503, json={"error": {"message": "overloaded"}})
-        content, tools = self.script.pop(0) if self.script else ("(the script ran out)", [])
+        answered = self.answering(body) if self.answering else None
+        if answered is not None:
+            content, tools = answered, []
+        else:
+            content, tools = self.script.pop(0) if self.script else ("(the script ran out)", [])
         message: dict[str, Any] = {"role": "assistant", "content": content}
         if tools:
             message["tool_calls"] = [

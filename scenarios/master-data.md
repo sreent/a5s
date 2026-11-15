@@ -50,7 +50,11 @@ The model never validates. Code does, the same way each time, and the agent tell
 
 | Agent | Works for | Starts at | Does |
 | --- | --- | --- | --- |
-| Master data assistant (`mdg-assistant`) | Requesters, data stewards and each data object's owner | Level 1 | Checks requests and quality by code, answers from SAP and the handbook, proposes corrections for the owner to decide, drafts notes and quality reports, takes on confirmed, resumable review tasks, and chases each request's next step and each owner's quality fix |
+| Master data assistant (`mdg-assistant`) | Requesters, data stewards and each data object's owner | Level 1, and level 2 for a type of correction in a part, only as the settings and graded samples give it | Checks requests and quality by code, answers from SAP and the handbook, proposes corrections for the owner to decide, drafts notes and quality reports, takes on confirmed, resumable review tasks, and chases each request's next step and each owner's quality fix |
 | Data quality watcher (`mdg-watcher`) | Each data object's owner, and the data stewards | Level 0 | Tells each owner every working morning how their data object stands against its target and what changed, and each person what changed in the requests that wait on them |
 
 Neither approves, rejects or posts anything in SAP, and neither ever sees a bank account's number.
+
+### Corrections at level 2
+
+Its release allows level 2, and nothing gives it but the owners' settings, a type of change in a part at a time, once graded samples show the accuracy the part needs. Mel Tran, the global process data owner for materials, grades the agents' corrections there, from outside the team that built them: never one they asked for or decided, nor one of someone they report to. [The walk-through](../docs/guides/master-data/guide.md) takes corrections in material data there: its owners ask for 95% accuracy, a quarter's corrections Mo decided are graded right, a5s raises its cap, they give it level 2 for corrections in material as a version of the settings, and a correction a requester gives is made alone, through SAP, and Mo hears of it in his digest. A sensitive field still can't be proposed at all, and a run that read what a supplier sent never acts at level 2.
