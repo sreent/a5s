@@ -602,11 +602,17 @@ class Gateway:
                                                    "sealing them needs"))
             return
         args = (self.cfg.seal_keys, self.identity, self.scenario, self.cfg.webchat_client_id)
-        for refused in (*approvals.seal_pending(conn, *args), *proposals.seal_pending(conn, *args),
+        for refused in (*approvals.seal_pending(conn, *args),
+                        *proposals.seal_pending(conn, *args, clean=self.reason_told),
                         *samples.seal_pending(conn, *args)):
             ledger.append(conn, {"kind": "admin", "action": "refuse-sign-in", "run": None,
                                  "instance": None, "acts_for": [], "decision": "record",
                                  "args": {"what": refused}})
+
+    def reason_told(self, said: str) -> str:
+        """A rejection's reason as whoever asked is told it: on one line, with no link but to
+        the scenario's records, as the decider's sign-in covers it as they wrote it."""
+        return sanitize(" ".join(said.split()), self.scenario.record_links)[0]
 
     def unusable(self, settings: Settings, last: dict | None) -> list[str]:
         """Why a version of the settings couldn't be applied, before anyone's asked to approve
