@@ -219,13 +219,35 @@ _TYPES = {"string": str, "integer": int, "number": int | float, "boolean": bool,
 
 def misfit(schema: dict[str, Any], value: Any, where: str = "") -> str | None:
     """Why a tool's arguments don't fit its pinned schema, if they don't: the types, required
-    properties and items it names. A model can send anything, so a call must fit its schema
-    before policy looks at it."""
+    properties and items it names, the values it lists, and the lengths, patterns and bounds it
+    sets. A model can send anything, so a call must fit its schema before policy looks at it."""
     kind = schema.get("type")
     kinds = kind if isinstance(kind, list) else [kind] if kind else []
+    named = where or "the arguments"
     if kinds and not any(isinstance(value, _TYPES.get(k, object)) and not (
             k in ("integer", "number") and isinstance(value, bool)) for k in kinds):
-        return f"{where or 'the arguments'} should be {' or '.join(kinds)}"
+        return f"{named} should be {' or '.join(kinds)}"
+    if "enum" in schema and value not in schema["enum"]:
+        return f"{named} should be one of {', '.join(map(str, schema['enum']))}"
+    if "const" in schema and value != schema["const"]:
+        return f"{named} should be {schema['const']}"
+    if isinstance(value, str):
+        if len(value) < schema.get("minLength", 0):
+            return f"{named} is too short"
+        if "maxLength" in schema and len(value) > schema["maxLength"]:
+            return f"{named} is longer than {schema['maxLength']} characters"
+        if "pattern" in schema and not re.search(str(schema["pattern"]), value):
+            return f"{named} isn't in the form it takes"
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if "minimum" in schema and value < schema["minimum"]:
+            return f"{named} is less than {schema['minimum']}"
+        if "maximum" in schema and value > schema["maximum"]:
+            return f"{named} is more than {schema['maximum']}"
+    if isinstance(value, list):
+        if len(value) < schema.get("minItems", 0):
+            return f"{named} has too few"
+        if "maxItems" in schema and len(value) > schema["maxItems"]:
+            return f"{named} has more than {schema['maxItems']}"
     if isinstance(value, dict):
         for name in schema.get("required") or []:
             if name not in value:

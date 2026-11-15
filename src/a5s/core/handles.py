@@ -26,13 +26,25 @@ def issue(conn: db.Connection, run: str, source: str, result: Any,
     any depth, and any value the run already holds a handle for hidden behind it wherever
     else it appears, such as in an error that repeats an argument."""
 
+    def hidden(key: str, found: Any) -> Any:
+        """A value in a field the agent mustn't read: each value in it a handle, whatever its
+        shape, such as a list of addresses or a number."""
+        if found is None or found == "" or isinstance(found, bool):
+            return found
+        if isinstance(found, (str, int, float)):
+            return f"[h:{_handle(conn, run, source, key, str(found))}]"
+        if isinstance(found, list):
+            return [hidden(key, item) for item in found]
+        if isinstance(found, dict):
+            return {k: hidden(key, v) for k, v in found.items()}
+        return f"[h:{_handle(conn, run, source, key, str(found))}]"
+
     def given(value: Any) -> Any:
         if isinstance(value, list):
             return [given(item) for item in value]
         if not isinstance(value, dict):
             return value
-        return {key: f"[h:{_handle(conn, run, source, key, found)}]"
-                if key in fields and isinstance(found, str) and found else given(found)
+        return {key: hidden(key, found) if key in fields else given(found)
                 for key, found in value.items()}
 
     return masked(conn, run, given(result) if fields else result)
