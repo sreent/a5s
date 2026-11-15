@@ -10,6 +10,7 @@ import re
 import secrets
 import shutil
 import socket
+import sys
 import tempfile
 import threading
 import time
@@ -460,20 +461,31 @@ class Stack:
 # A scenario's made-up systems, behind the MCP servers its mcp.yaml points a5s at, on this
 # machine: the service desk's ITSM (deploy/desk/itsm.py), on the desk's synthetic data. Each is
 # started once, the first time a test needs it, and left up, as a deployment's systems are.
-SYSTEMS: dict[str, Any] = {}
+SYSTEMS: dict[str, Any] = {}  # what's been written to each, by its scenario's folder
+RUNNING: list[Any] = []  # the systems themselves
 
 
-def scenario_systems(folder: str) -> None:
-    if folder != "service-desk" or folder in SYSTEMS:
-        return
-    import importlib.util
-    spec = importlib.util.spec_from_file_location("desk_itsm", ROOT / "deploy" / "desk" / "itsm.py")
-    assert spec and spec.loader
-    itsm = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(itsm)
-    up = serve(itsm.make(ROOT / "scenarios" / "service-desk" / "data.yaml"), itsm.PORT)
-    up.__enter__()  # for the rest of the tests
-    SYSTEMS[folder] = up
+def scenario_systems(folder: str) -> Any:
+    """The made-up systems a scenario's mcp.yaml declares tools of, started once for the rest
+    of the tests, at the address it declares: for each stack, with nothing written to them yet,
+    so a stack starts from the scenario's data as data.yaml has it. What's been written to
+    them, for a test to look at: the desk's ITSM's, or None for a scenario with none."""
+    if folder != "service-desk":
+        return None
+    if folder not in SYSTEMS:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("desk_itsm", ROOT / "deploy" / "desk" / "itsm.py")
+        assert spec and spec.loader
+        itsm = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = itsm  # as an import would, for its dataclasses
+        spec.loader.exec_module(itsm)
+        app = itsm.make(ROOT / "scenarios" / "service-desk" / "data.yaml")
+        up = serve(app, itsm.PORT)
+        up.__enter__()  # for the rest of the tests, so long as something holds it
+        RUNNING.append(up)
+        SYSTEMS[folder] = app.state.written
+    SYSTEMS[folder].reset()
+    return SYSTEMS[folder]
 
 
 def signed(folder: Path, settings: dict, signers: tuple[str, ...] = ("ana",)) -> None:

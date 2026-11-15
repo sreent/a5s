@@ -35,14 +35,20 @@ from conftest import (
 @contextmanager
 def running_desk(database: str, root: Path, model: FakeModel,
                  http: httpx.Client | None = None, alias: str = "fake",
-                 worker_image: str | None = None) -> Iterator[Stack]:
+                 worker_image: str | None = None, more: str = "") -> Iterator[Stack]:
+    """The desk on its hand-written agent, on the model `alias`, with `more` of agent.yaml's
+    lines, such as tools it doesn't use, added to its definition."""
     import shutil
     port = free_port()
     agents = root / "scenario-agents"
     shutil.copytree(ROOT / "scenarios" / "service-desk" / "agents", agents)
     for spec in agents.glob("*/agent.yaml"):
-        spec.write_text("\n".join(f"model: {alias}" if line.startswith("model:") else line
-                                  for line in spec.read_text().splitlines()) + "\n")
+        lines = [f"model: {alias}" if line.startswith("model:") else line
+                 for line in spec.read_text().splitlines()]
+        if more:
+            at = lines.index("tools:") + 1
+            lines[at:at] = more.splitlines()
+        spec.write_text("\n".join(lines) + "\n")
     cfg = Config(database_url=db.as_role(database, "gateway"),
                  gateway_url=f"http://127.0.0.1:{port}", service_token=SERVICE_TOKEN,
                  root=root, development=True, seal_keys=(SEAL_KEY,),

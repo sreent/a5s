@@ -35,3 +35,17 @@ tools:
     handles: [from]
     outside: [body]
     extract: {asks_for: "choice:a reset|access|equipment|something else"}
+  # A change: a5s holds each for the decider of the ticket's service area, below level 2, and
+  # makes it once they approve it, once for a5s's key, which the server honours
+  reply_on_ticket:
+    server: itsm
+    calls: add_reply
+    description: Post a reply on an ITSM ticket, which its requester reads.
+    arguments: {type: object, required: [key, body], properties: {key: {type: string}, body: {type: string, maxLength: 4000}}}
+    returns: [key, replied, at, link]
+    writes: true
+    idempotent: true
+    record_arg: key
+    record_field: key
+    action: reply
+    text_fields: [body]

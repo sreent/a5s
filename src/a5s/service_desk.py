@@ -1,8 +1,9 @@
-"""A read-only IT service-desk scenario with a synthetic ITSM and knowledge base.
+"""An IT service-desk scenario with a synthetic ITSM and knowledge base.
 
 Its ITSM's tools come through the ITSM's MCP server, which the scenario's mcp.yaml declares
-(deploy/desk/itsm.py, in this made-up desk): searching tickets, reading one, and what requesters
-wrote on one. What stays here is the desk's own: the directory, who may see each ticket, the
+(deploy/desk/itsm.py, in this made-up desk): searching tickets, reading one, what requesters
+wrote on one, and posting a reply on one, a change a5s holds for the ticket's service area's
+decider. What stays here is the desk's own: the directory, who may see each ticket, the
 obligations its tickets make, a draft reply for a person to send, and its knowledge base."""
 
 from __future__ import annotations
