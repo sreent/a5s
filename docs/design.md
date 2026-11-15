@@ -77,6 +77,7 @@ The browser tests open the showcase signed in, and check that:
 
 Each page's title is its first-level heading, its sections' are the second level and theirs the third, the studio's pages and the server's alike; the sidebar names a5s. The pages are moving onto the pieces:
 
+- **The chat** marks what an agent says with its mark, and what a5s says with its own, so who said what reads at a glance, in lines short enough to read, with today's times alone. A conversation with nothing in it yet starts with the agent and what it does, to someone it serves, and what to do: write to it.
 - **Decisions** are approval cards, made for a phone: who asks and for whom, what the change does in the words code worked out when it was asked for, never the agent's own, what to know, and Approve or Reject. The cards make a column on a phone and sit side by side where there's room.
 - **The catalogue** leads each agent's card with what it does, and the agent's map draws it in the agent colour.
 - **An agent no instance runs** offers its owners and authors to put it to work, as the page's one thing to do: a first instance in the settings, for a few people, at level 0 or 1. Those who approve versions of the settings go straight to the settings app's form for it, the agent chosen, through signing in; others are told who can.

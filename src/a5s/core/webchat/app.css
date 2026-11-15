@@ -358,7 +358,7 @@ pre.entries { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.75rem
 #conversation { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.75rem; }
 
 #conversation > li {
-  max-width: 85%;
+  max-width: min(46rem, 85%);  /* lines short enough to read */
   padding: 0.6rem 0.85rem;
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -371,6 +371,14 @@ pre.entries { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.75rem
 #conversation > li strong:first-child { font-weight: 600; }
 #conversation > li time { color: var(--muted); font-size: 0.8rem; }
 #conversation > li div { white-space: pre-wrap; overflow-wrap: anywhere; margin-top: 0.2rem; }
+#conversation > li > .avatar { display: inline-grid; width: 1.35rem; height: 1.35rem; margin-right: 0.4rem;
+                               vertical-align: -0.35rem; }
+#conversation > li > .avatar .icon { width: 0.9rem; height: 0.9rem; }
+.avatar.own { border-radius: var(--radius-sm); background: var(--own); color: var(--surface); }
+.welcome { max-width: 36rem; margin: 3rem auto 1rem; text-align: center; color: var(--muted); }
+.welcome .avatar { width: 2.6rem; height: 2.6rem; margin: 0 auto var(--space-3); }
+.welcome .avatar .icon { width: 1.5rem; height: 1.5rem; }
+.welcome-name { margin: 0 0 var(--space-1); color: var(--text); font-size: var(--text-lg); font-weight: 600; }
 body.app header label { color: var(--muted); }
 #compose { display: flex; gap: 0.5rem; align-items: flex-end; width: 100%; max-width: 50rem; margin: 0 auto; }
 #compose textarea { flex: 1; min-height: 2.6rem; max-height: 12rem; }
