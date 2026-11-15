@@ -432,6 +432,21 @@ dl .pair { display: contents; }  /* a term and what it says, in a list that lays
 .approval-signed { display: flex; align-items: center; gap: 0.35rem; margin: 0; color: var(--faint); font-size: var(--text-sm); }
 .approval-signed .icon { width: 0.95rem; height: 0.95rem; }
 .approval-done { margin: 0; font-weight: 600; }
+.approval-body > p { margin: 0; }
+.approval .said { color: var(--muted); font-size: var(--text-sm); }
+.approval-know { padding: var(--space-2) var(--space-3); border-radius: var(--radius-md);
+                 background: var(--warn-bg); color: var(--warn); }
+.approval-know .label { margin: 0 0 var(--space-1); color: var(--warn); }
+.approval-know ul { margin: 0; padding-left: 1.1rem; }
+.approval input[type="text"] { width: 100%; }
+.tick-label { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--muted);
+              font-size: var(--text-sm); }
+.tick-label .tick { margin: 0; }
+/* Held changes, one card each: a column on a phone, side by side where there's room, on the
+   page itself rather than in a card of its own */
+main > section.bare { padding: 0; border: 0; background: none; box-shadow: none; }
+#list { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 24rem), 1fr));
+        gap: var(--space-4); align-items: start; margin: var(--space-4) 0; }
 
 /* An agent's facts, as food carries a label: the same for every agent */
 .agent-facts { max-width: 24rem; margin: 0; padding: var(--space-3) var(--space-4) var(--space-4);

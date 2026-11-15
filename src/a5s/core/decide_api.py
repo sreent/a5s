@@ -76,11 +76,16 @@ def router(gw: Any) -> APIRouter:
                 changed = list(row["records"])
             standing = row["standing"] or {}
             shown.append({"key": proposals.key(row), "digest": row["digest"], "said": row["said"],
+                          "agent": row["definition"],  # who asked, and for whom, as recorded
+                          "for": [p.name if (p := gw.scenario.person(i)) else i
+                                  for i in row["acts_for"]],
                           "flags": row["flags"], "sensitive": row["sensitive"],
                           "status": row["status"], "yours": row["yours"], "may_decide": decides,
                           "outcome": row["outcome"], "proposed_at": row["proposed_at"].isoformat(),
                           "lapses_at": row["lapses_at"].isoformat(),
                           "links": [r["link"] for r in standing.values() if r and r.get("link")],
+                          "records": [{"key": k, "link": r["link"]} for k, r in standing.items()
+                                      if r and r.get("link")],
                           "changed": [f"{k} has changed since it was asked for" for k in changed]})
         return {"you": person.name if person else who, "proposals": shown}
 

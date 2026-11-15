@@ -101,6 +101,18 @@ PIECES = ("colours", "type", "buttons", "people", "traced", "approval", "facts",
           "timeline", "confirm")
 
 
+def accessible(page) -> None:
+    """Axe finds nothing amiss on a page, light or dark, by WCAG's rules and its best practices,
+    but one: a first-level heading on each page, which the pages' step of the design system
+    gives them, as the studio's and the server's pages title themselves with a second-level
+    heading beside the sidebar, which names a5s."""
+    for scheme in ("light", "dark"):
+        page.emulate_media(color_scheme=scheme)
+        found = Axe().run(page, options={"resultTypes": ["violations"],
+                                         "rules": {"page-has-heading-one": {"enabled": False}}})
+        assert found.violations_count == 0, f"{scheme}: {found.generate_report()}"
+
+
 def showcase(browser, url: str, errors: list[str]):
     page = browser.new_page(viewport={"width": 1440, "height": 900})
     page.on("console", lambda message: message.type == "error" and errors.append(message.text))
@@ -114,14 +126,7 @@ def test_the_showcase_draws_each_piece_and_axe_finds_nothing_amiss_light_or_dark
     errors: list[str] = []
     page = showcase(browser, approving, errors)
     assert [p for p in PIECES if page.locator(f"[data-piece={p}]").count() != 1] == []
-    for scheme in ("light", "dark"):
-        page.emulate_media(color_scheme=scheme)
-        # Every rule of axe's, WCAG's and its best practices', but one: the studio's pages title
-        # themselves in a second-level heading beside the sidebar, which names a5s, and the pages'
-        # step of the design system gives each its first-level heading
-        found = Axe().run(page, options={"resultTypes": ["violations"],
-                                         "rules": {"page-has-heading-one": {"enabled": False}}})
-        assert found.violations_count == 0, found.generate_report()
+    accessible(page)
     shot(page, "design")
     assert errors == []  # nothing the pages' policy refused, nor anything else
 
