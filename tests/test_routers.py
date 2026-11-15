@@ -40,7 +40,6 @@ ACTS = {  # each act, with a body of the shape it takes, so it's refused for wan
     ("post", "/decide/proposals"): {"proposals": [DIGEST], "decision": "approve", "salt": "s"},
     ("post", "/grade/review"): None,
     ("post", "/grade/samples"): {"grades": {"1": "right"}, "salt": "s"},
-    ("post", "/grade/samples/{sample}"): {"grade": "right", "salt": "s"},
 }
 PEOPLE = ("ana", "ben", "chen", "omar", "dana", "priya", "tomas", "lena", "rosa", "kofi", "noor")
 PAGES = {"studio": "/studio/api/home", "settings": "/settings/api", "notebook": "/notebook/api",

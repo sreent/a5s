@@ -508,7 +508,7 @@ def _deploying(cfg: Config, sc: Scenario, args: argparse.Namespace) -> None:
             was: Path | None = args.before  # the environment's folder, as it runs now
             if was is not None and folder is None:
                 sys.exit("--before is an environment's folder as it was: give --environment too")
-            previous = (was / gitops.MANIFEST if gitops.ran(was) else None) if was else args.previous
+            previous = was / gitops.MANIFEST if was and gitops.ran(was) else None
             before = previous.read_bytes() if previous and previous.is_file() else None
             problems = gitops.consistent(folder) if folder is not None else []
             if folder is not None and was is not None:
@@ -773,13 +773,10 @@ def main(argv: list[str] | None = None) -> None:
                         help="an environment's folder: its release, signatures and values")
     verify.add_argument("--manifest", type=Path, default=Path("release.yaml"))
     verify.add_argument("--signatures", type=Path, default=Path("release.sig"))
-    replaces = verify.add_mutually_exclusive_group()
-    replaces.add_argument("--previous", type=Path,
-                          help="the manifest of the release it replaces, if any")
-    replaces.add_argument("--before", type=Path,
-                          help="the environment's folder as the branch it merges into has it: "
-                               "the release it replaces, judging it as it ran that, and what "
-                               "else the change makes different")
+    verify.add_argument("--before", type=Path,
+                        help="the environment's folder as the branch it merges into has it: "
+                             "the release it replaces, judging it as it ran that, and what "
+                             "else the change makes different")
     verify.add_argument("--roots", type=Path,
                         help="the approvers kept outside every release, who judge an "
                              "environment's first: deploy/gitops/approvers.yaml, as the branch "

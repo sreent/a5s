@@ -104,7 +104,8 @@ def test_a_sign_in_the_browser_kept_doesnt_grade(stack, approving, provider):
     with db.transaction(stack.admin) as conn:
         sample = conn.execute("select id from samples").fetchone()["id"]
     kept = provider.id_token(person="dana", signed_in_at=int(time.time()) - 3 * 3600)
-    r = httpx.post(f"{approving}/grade/samples/{sample}", json={"grade": "right"},
+    r = httpx.post(f"{approving}/grade/samples", json={"grades": {str(sample): "right"},
+                                                        "salt": "s" * 20},
                    headers={"Authorization": f"Bearer {kept}"})
     assert r.status_code == 401, r.text
 

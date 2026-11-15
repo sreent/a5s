@@ -30,7 +30,7 @@ log = logging.getLogger(__name__)
 WEBCHAT = Path(__file__).parent / "webchat"
 PAGE_HEADERS = {  # the page runs only its own script, shows only text, and goes in no frame
     "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; "
-                               "font-src 'self'; connect-src 'self'; img-src 'self' data:; "
+                               "font-src 'self'; connect-src 'self'; img-src 'self'; "
                                "base-uri 'none'; "
                                "form-action 'none'; frame-ancestors 'none'",
     "Referrer-Policy": "no-referrer",

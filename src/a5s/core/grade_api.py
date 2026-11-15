@@ -17,14 +17,6 @@ from a5s.contract import Person
 from a5s.core import approvals, ledger, proposals, samples, web
 
 
-class Grade(BaseModel):
-    """A grader's grade of one sample of an agent's work, with the salt of the sign-in made
-    to give it."""
-
-    grade: str
-    salt: str = ""
-
-
 class Grading(BaseModel):
     """What the grading page sends with a sign-in made to grade: the grades, by sample, and the
     salt its nonce was made with."""
@@ -65,12 +57,6 @@ def router(gw: Any) -> APIRouter:
         """Grades of samples, signed through the identity provider for exactly those grades of
         exactly those samples, by someone who may grade each, once. The core seals each."""
         return grading(body.grades, body.salt, authorization)
-
-    @pages.post("/grade/samples/{sample}")
-    def grade_sample(sample: int, body: Grade, authorization: str | None = Header(default=None)
-                     ) -> dict:
-        """One sample's grade, as above."""
-        return grading({sample: body.grade}, body.salt, authorization)
 
     def grading(grades: dict[int, str], salt: str, authorization: str | None) -> dict:
         if not 1 <= len(grades) <= 20 or any(g not in samples.GRADES for g in grades.values()):
