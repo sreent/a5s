@@ -5,7 +5,9 @@ proposes it to everyone it needs, and they approve it on its own page."""
 import httpx
 import yaml
 
+from conftest import accessible
 from test_approvals import in_force_serial
+from test_ui_pages import shot
 
 ASSISTANT = ("assistant-finance: the assistant, working in billing at level 1, serving Ana Ortiz "
              "and Ben Okafor, run by Ana Ortiz with Ben Okafor as deputy.")
@@ -39,6 +41,14 @@ def test_an_approver_sees_the_whole_version_in_force(stack, approving, provider)
     written = yaml.safe_load(body["in_force"]["text"])
     assert written["instances"]["assistant-finance"]["parts"] == ["billing"]
     assert body["waiting"] == [] and body["requests"] == []
+    # What the page's forms change, and what they offer: the people the settings name, the
+    # types of change the tools make, and what each release starts at and allows
+    assert body["in_force"]["data"] == written
+    assert body["names"] == {"ana": "Ana Ortiz", "ben": "Ben Okafor"}
+    assert body["actions"] == ["change-due-date", "close-question"]
+    assert body["releases"]["assistant"] == {"starts": 1, "most": 2,
+                                             "actions": ["change-due-date", "close-question"]}
+    assert body["releases"]["watcher"] == {"starts": 0, "most": 0, "actions": []}
 
 
 def test_only_people_who_approve_instances_use_it(stack, approving, provider):
@@ -90,6 +100,7 @@ def test_an_approver_asks_for_a_change_in_the_browser(stack, approving, provider
     assert page.inner_text("#who") == "Ana Ortiz"
     assert page.locator("#whole li").all_inner_texts()[1] == ASSISTANT
     assert page.evaluate("window.location.search") == ""  # the code doesn't linger
+    page.click("#by-text")  # the whole version, as written
     edited = yaml.safe_load(page.input_value("#text"))
     edited["instances"]["assistant-finance"]["serves"].append("chen")
     page.fill("#text", yaml.safe_dump(edited))
@@ -100,3 +111,46 @@ def test_an_approver_asks_for_a_change_in_the_browser(stack, approving, provider
     page.wait_for_selector("#status >> text=You asked for serial", timeout=30000)
     page.wait_for_selector("#requests li", timeout=30000)
     assert "waiting for a5s to ask its approvers" in page.inner_text("#requests")
+
+
+FORMS_CHANGES = [
+    ("The limit for change-due-date becomes 3 in one run and 20 for one person in 30 days, "
+     "instead of 5 in one run and 20 for one person in 30 days."),
+    "assistant-finance serves Chen Wei as well. This widens what agents do.",
+    ("assistant-finance's level for change-due-date in billing goes from 1 to 2, where it acts "
+     "and reports, once samples show it's accurate enough. This widens what agents do.")]
+
+
+def test_an_approver_changes_the_settings_in_forms_in_the_browser(stack, approving, provider,
+                                                                  browser):
+    page = browser.new_page()
+    page.goto(f"{approving}/settings/")
+    page.wait_for_selector("#forms fieldset", timeout=30000)
+    assert page.get_attribute("#by-forms", "aria-pressed") == "true" and page.is_hidden("#as-text")
+    assistant = page.locator("fieldset", has_text="assistant-finance, the assistant")
+    assert assistant.get_by_label("level 1, asks").is_checked()
+    # Chen, by their id; due dates in billing on its own, at level 2; three in one run at most
+    assistant.get_by_label("Someone else assistant-finance serves").fill("chen")
+    page.keyboard.press("Enter")
+    assert assistant.get_by_label("chen", exact=True).is_checked()
+    assistant.get_by_label("change-due-date in billing").check()
+    page.get_by_label("change-due-date, in one run").fill("3")
+    accessible(page)
+    shot(page, "settings-forms")
+    page.click("#review")
+    page.wait_for_selector("#reviewed-changes >> text=Chen Wei", timeout=30000)
+    assert page.locator("#reviewed-changes li").all_inner_texts() == FORMS_CHANGES
+    assert page.inner_text("#reviewed-approvers") == "It needs the approval of Ana Ortiz."
+    # A change after the review needs a review of its own: what's asked for is what was reviewed
+    page.get_by_label("change-due-date, in one run").fill("4")
+    assert page.is_hidden("#reviewed")
+    page.get_by_label("change-due-date, in one run").fill("3")
+    page.click("#review")
+    page.wait_for_selector("#send", state="visible", timeout=30000)
+    page.click("#send")
+    page.wait_for_selector("#status >> text=You asked for serial", timeout=30000)
+    # What it asked for is the version in force with those changes and nothing else
+    stack.scheduler().apply_approved()
+    [waiting] = api(approving, provider, "/settings/api").json()["waiting"]
+    widens = " This widens what agents do."  # as the page says what the API marks
+    assert [c["text"] + (widens if c["widens"] else "") for c in waiting["changes"]] == FORMS_CHANGES

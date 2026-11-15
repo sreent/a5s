@@ -238,7 +238,10 @@ main { flex: 1; width: 100%; max-width: 76rem; margin: 0 auto; padding: 1.75rem 
              overflow-x: auto; }
   .brand { padding: 0.2rem 0.4rem; }
   .sidebar nav { flex-direction: row; gap: 0.15rem; }
-  .sidebar .group, .me, .sidebar nav a span { display: none; }
+  .sidebar .group, .me { display: none; }
+  .sidebar nav a span {  /* a phone shows each page's icon, and screen readers still say its name */
+    position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%);
+    white-space: nowrap; }
   main { padding: 1.25rem 1rem 2.5rem; }
 }
 
@@ -372,7 +375,30 @@ body.app header label { color: var(--muted); }
 #compose textarea { flex: 1; min-height: 2.6rem; max-height: 12rem; }
 #name { display: flex; gap: 0.5rem; align-items: end; margin-bottom: 1rem; }
 
-/* The settings, as written */
+/* The settings: forms for what people change most, or the whole version as written */
+
+.modes { display: inline-flex; margin: 0.25rem 0 1rem; border: 1px solid var(--line-strong);
+         border-radius: var(--radius-sm); overflow: hidden; }
+.modes button { border: 0; border-radius: 0; }
+.modes button + button { border-left: 1px solid var(--line-strong); }
+.modes button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.modes[hidden] { display: none; }
+fieldset.form-card { min-width: 0; margin: 0 0 1rem; padding: 0.5rem 1.25rem 1.1rem;
+                     border: 1px solid var(--line); border-radius: var(--radius); }
+.form-card legend { padding: 0 0.4rem; font-weight: 600; }
+.form-card .lead { margin: 0.9rem 0 0.4rem; font-size: 0.82rem; font-weight: 600; color: var(--muted); }
+.choices { display: flex; flex-direction: column; align-items: flex-start; gap: 0.4rem; }
+.choice, .setting { color: var(--text); font-size: 0.92rem; }
+.choice { display: flex; align-items: flex-start; gap: 0.5rem; }  /* its words wrap beside it */
+.choice input { flex: none; margin: 0.25rem 0 0; accent-color: var(--accent); }
+.setting { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.setting input[type="number"] { width: 6rem; }
+.limit { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1.5rem; padding: 0.65rem 0;
+         border-top: 1px solid var(--line); }
+.limit-name { flex: 1 1 12rem; margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.add-someone { display: flex; gap: 0.5rem; max-width: 32rem; margin-top: 0.6rem; }
+.add-someone input { flex: 1; min-width: 0; }
+.faint { color: var(--faint); }
 
 #edit #text { display: block; width: 100%; min-height: 22rem; font-size: 0.85rem; background: var(--sunken);
               font-family: var(--font-mono); }

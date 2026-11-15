@@ -9,20 +9,27 @@ from pathlib import Path
 
 import pytest
 
-from conftest import accessible
+from conftest import PHONE, accessible
 
 PAGES = ("chat", "tasks", "notebook", "studio", "settings", "decide", "grade", "audit", "admin",
          "officer")
 
 
 def shot(page, name: str) -> None:
-    """The page as it looks, light and dark, into A5S_SCREENSHOTS, if it names a folder."""
+    """The page as it looks, light and dark, and on a phone, into A5S_SCREENSHOTS, if it names
+    a folder."""
     if folder := os.environ.get("A5S_SCREENSHOTS"):
         Path(folder).mkdir(parents=True, exist_ok=True)
-        page.evaluate("window.scrollTo(0, 0)")  # from its top, where its sidebar sits
-        for scheme in ("light", "dark"):
-            page.emulate_media(color_scheme=scheme)
-            page.screenshot(path=f"{folder}/{name}-{scheme}.png", full_page=True)
+        size = page.viewport_size
+        for width, suffix in ((None, ""), (PHONE, "-phone")):
+            if width:
+                page.set_viewport_size(width)
+            page.evaluate("window.scrollTo(0, 0)")  # from its top, where its sidebar sits
+            for scheme in ("light", "dark"):
+                page.emulate_media(color_scheme=scheme)
+                page.screenshot(path=f"{folder}/{name}{suffix}-{scheme}.png", full_page=True)
+        if size:
+            page.set_viewport_size(size)
 
 
 @pytest.fixture

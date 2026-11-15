@@ -5,7 +5,6 @@
 .page.studio main { max-width: 80rem; }
 
 .mono { font-family: var(--font-mono); font-size: 0.85em; }
-.faint { color: var(--faint); }
 .problem { color: var(--bad); }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 

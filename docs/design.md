@@ -68,7 +68,7 @@ The popover a traced value opens and the hint are Radix's, which keyboards and s
 The browser tests open the showcase signed in, and check that:
 
 - each piece is there;
-- [axe](https://github.com/dequelabs/axe-core) finds nothing amiss in light or dark, by WCAG's rules and its best practices, as on every page people use (`tests/test_ui_pages.py`);
+- [axe](https://github.com/dequelabs/axe-core) finds nothing amiss in light or dark, as wide as a desktop and as a phone, by WCAG's rules and its best practices, as on every page people use (`tests/test_ui_pages.py`);
 - each piece works from the keyboard: a traced value opens and closes with focus back on it, a hint shows to whoever tabs to it, and the dialog starts on "Keep it" and closes with Escape even when a hint was open;
 - nothing on the page writes an error to the console, such as a style the pages' policy refused.
 
@@ -80,5 +80,8 @@ Each page's title is its first-level heading, its sections' are the second level
 - **The catalogue** leads each agent's card with what it does, and the agent's map draws it in the agent colour.
 - **Each agent's page** leads its side with the agent's facts, from its release alone: its model and autonomy, its tools by what they do, and what it may spend. Where all its instances work at one level, its ladder follows, which stacks its steps wherever it's narrow.
 - **A run's page** shows what it did as time: what started it and for whom, each call in the colour of what its tool does, or of a5s's refusing or holding it, with what a5s decided and why, and how the run ended.
+- **The settings app** changes a version in forms, for what people change most: each instance's level, the types of change it makes on its own at level 2, whom it serves and who runs it, each type of change's limits, and the accuracy each part needs for level 2. Each form offers only what can be: the types of change an agent's own tools make, and the levels its release allows, with why the rest can't be chosen. The whole text is a click away, for anything else. Either way, the review says in words what the version would change, and whose approval it needs, before anyone asks for it. A choice keeps its words beside it, and each type of change's limits wrap onto their own lines, so the forms work on a phone.
+
+On a phone, the sidebar shows each page's icon in a row, and screen readers still say each page's name.
 
 The studio's pages for agents and runs are checked with axe too, in their own browser test.

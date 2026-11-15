@@ -668,10 +668,19 @@ def with_sandbox(stack: Stack, box: Any) -> Iterator[str]:
         yield url
 
 
+PHONE = {"width": 390, "height": 844}
+
+
 def accessible(page) -> None:
-    """Axe finds nothing amiss on a page, light or dark, by WCAG's rules and its best
-    practices."""
-    for scheme in ("light", "dark"):
-        page.emulate_media(color_scheme=scheme)
-        found = Axe().run(page, options={"resultTypes": ["violations"]})
-        assert found.violations_count == 0, f"{scheme}: {found.generate_report()}"
+    """Axe finds nothing amiss on a page, light or dark, as wide as it is and as wide as a
+    phone, by WCAG's rules and its best practices."""
+    size = page.viewport_size
+    for viewport in [size, PHONE] if size and size != PHONE else [PHONE]:
+        page.set_viewport_size(viewport)
+        for scheme in ("light", "dark"):
+            page.emulate_media(color_scheme=scheme)
+            found = Axe().run(page, options={"resultTypes": ["violations"]})
+            assert found.violations_count == 0, (f"{scheme}, {viewport['width']} wide: "
+                                                 f"{found.generate_report()}")
+    if size:
+        page.set_viewport_size(size)
