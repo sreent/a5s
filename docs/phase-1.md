@@ -83,7 +83,7 @@ Step 2, the release pipeline, has started:
 Still to do in step 2:
 
 - deploying each release to the three clouds, which waits for step 1's infrastructure code;
-- applying the rules to the repository, which needs the repository's administrator: `gh api --method POST repos/<owner>/a5s/rulesets --input .github/rulesets/main.json`, and the same for `releases.json`, or each file's JSON imported under the repository's settings, Rules, Rulesets. With one maintainer they ask for no review, since nobody can approve their own pull request, and keep the rest: the suite and the containers' smoke test must pass, `main` can't be force-pushed or deleted, and release tags can't be moved or deleted. Once a second maintainer joins, `required_approving_review_count` goes to 1, with `require_last_push_approval`. On a private repository, rulesets need GitHub Pro or Team.
+- applying the rules to the repository, which needs the repository's administrator: `gh api --method POST repos/<owner>/a5s/rulesets --input .github/rulesets/main.json`, and the same for `releases.json`, or each file's JSON imported under the repository's settings, Rules, Rulesets. With one maintainer they ask for no review, since nobody can approve their own pull request, and keep the rest: the suite and the containers' smoke test must pass, `main` can't be force-pushed or deleted, and release tags can't be made, moved or deleted, except by the bypass list, which names the release approvers' team alone, so a tag the release workflow builds and attests an image from is theirs. Once a second maintainer joins, `required_approving_review_count` goes to 1, with `require_last_push_approval`. On a private repository, rulesets need GitHub Pro or Team.
 
 Step 3, context, is built:
 

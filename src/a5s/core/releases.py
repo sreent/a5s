@@ -21,8 +21,8 @@ they last approved ([independence](../../../docs/architecture.md#independence)):
   that narrows it: the agent's owner and a second engineer;
 - the services alone, the client the team's jobs use among them: an engineer from
   the team;
-- a fix for a security advisory that changes only what the image is built from:
-  an engineer, at once.
+- a fix for a security advisory that changes only the locked versions of what a5s
+  depends on: an engineer, at once. Its approvers sign that it fixes the advisory.
 
 Each release also records who may sign the one after it: everyone its directory
 gives a key, with their team, their roles and the teams below them. A signature
@@ -31,8 +31,11 @@ was approved and as this release has it, checked with the key of record. So a
 release can't approve itself with people it adds, nor count those it removes,
 and nobody can add an approver by editing the database, since each record is
 signed. A new agent's owner may be someone the release adds, since its release
-approver signs for them. A release with nothing recorded before it, such as the
-first a deployment approves, or a baseline, is judged by its own directory.
+approver signs for them. What people sign is an approval of the release (`Approval`):
+its manifest, the image it runs as, the release it follows, the advisory it fixes,
+and whether it's a baseline, so editing the record approves nothing. Only the first
+release a deployment approves follows none, and it's judged by its own directory:
+a deployment from git judges it by the approvers kept outside every release instead.
 
 The core opens no run until the release it is has what it needs, except in
 development.
@@ -43,8 +46,9 @@ from __future__ import annotations
 import hashlib
 import importlib.metadata
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
+from typing import Any
 
 import yaml
 from psycopg.types.json import Jsonb
@@ -53,6 +57,7 @@ import a5s
 from a5s import db, definitions
 from a5s.contract import AGENT_OWNER, ASSURANCE, RELEASE_APPROVER, Person, Scenario, Signature
 from a5s.core import ledger, signing
+from a5s.core.ledger import canonical
 
 ENGINEER = "engineer"  # anyone in the team that runs a5s
 PARTS = ("core", "services", "build", "models", "scenario")
@@ -229,6 +234,47 @@ def running(root: Path, scenario_dir: Path, agents_dir: Path | None = None) -> R
     return Running(raw)
 
 
+# What people's signatures approve
+
+APPROVES = b"a5s release approval\n"
+
+
+@dataclass(frozen=True)
+class Approval:
+    """What a signature over a release approves, as `a5s release sign` signs it: the release,
+    by its manifest's digest; the image it runs as, by digest, where one's named; the release
+    it follows in its deployment, or none for the first; the security advisory it's approved as
+    fixing, if any; and whether it's a baseline. Each is signed, so none can be changed after,
+    nor added: a pull request that swaps the image, or an administrator who edits the record,
+    approves nothing."""
+
+    release: str
+    image: str | None = None
+    follows: str | None = None
+    advisory: str | None = None
+    baseline: bool = False
+
+    @classmethod
+    def of(cls, raw: bytes, **parts: Any) -> Approval:
+        return cls(hashlib.sha256(raw).hexdigest(), **parts)
+
+    def signed(self) -> bytes:
+        """Exactly the bytes a signature over it is made over."""
+        return APPROVES + canonical({"release": self.release, "image": self.image,
+                                     "follows": self.follows, "advisory": self.advisory,
+                                     "baseline": self.baseline}).encode()
+
+    def shown(self) -> dict:
+        """As release.sig holds it, beside the signatures."""
+        return {"release": self.release, "image": self.image, "follows": self.follows,
+                "advisory": self.advisory, "baseline": self.baseline}
+
+
+def sign(private: str, approval: Approval) -> str:
+    """Someone's signature over an approval of a release, with their private key."""
+    return signing.sign(private, approval.signed(), signing.RELEASE)
+
+
 # What a release needs
 
 @dataclass(frozen=True)
@@ -275,12 +321,20 @@ def _widens_models(old: dict, new: dict) -> list[str]:
     return found
 
 
+# What a security fix that goes in at once may change: the locked versions of a5s's dependencies,
+# and nothing else it's built from, such as the Dockerfile, which could add any code at all
+LOCKS = ("uv.lock", "studio/package-lock.json")
+
+
 def needs(new: dict, old: dict | None, advisory: str | None = None) -> list[Need]:
     """Whose approval a release needs, given the release approved before it, if any."""
     old = old or {"parts": {}, "models": {}, "agents": {}}
     changed = [part for part in PARTS if new["parts"].get(part) != old["parts"].get(part)]
-    if advisory and changed == ["build"] and new["agents"] == old["agents"]:
-        return [Need(ENGINEER, f"it fixes {advisory}, and changes only what the image is built from")]
+    built, was = new["parts"].get("build") or {}, old["parts"].get("build") or {}
+    locks_alone = all(f in LOCKS for f in set(built) | set(was) if built.get(f) != was.get(f))
+    if advisory and changed == ["build"] and locks_alone and new["agents"] == old["agents"]:
+        return [Need(ENGINEER, f"it fixes {advisory}, and changes only the locked versions of "
+                               "what a5s depends on")]
     found = []
     if "core" in changed or "build" in changed:
         why = "the trusted core changed" if "core" in changed else "what the image is built from changed"
@@ -378,10 +432,14 @@ class _Judging:
     record: dict[str, Signer] | None  # as the release before it recorded them, if it did
     team: str
     named: frozenset[str]  # its new agents' owners, whom this release names
+    # Roles anyone this release gives them may sign for, whatever the record says: an
+    # engineer's, for a first release judged by those kept outside it, and, for a baseline,
+    # each role nobody of record who remains could hold
+    loose: frozenset[str] = frozenset()
 
     @classmethod
     def of(cls, raw: bytes, previous: dict | None, scenario: Scenario, team: str,
-           ids: list[str]) -> _Judging:
+           ids: list[str], roots: dict[str, Signer] | None = None) -> _Judging:
         new = yaml.safe_load(raw)
         new = new if isinstance(new, dict) else {}
         own = _recorded(new)
@@ -389,7 +447,24 @@ class _Judging:
             own = _directory(scenario, team, ids)
         record = _recorded(previous) if previous else None
         agents = set(new.get("agents") or ()) - set((previous or {}).get("agents") or ())
-        return cls(own, record, team, frozenset(agent_owner(a) for a in agents))
+        named = frozenset(agent_owner(a) for a in agents)
+        if record is None and roots is not None:  # a first release, by those kept outside it
+            return cls(own, roots, team, named, frozenset({ENGINEER}))
+        return cls(own, record, team, named)
+
+    def orphans(self, need: list[Need]) -> _Judging:
+        """For a baseline: each role it needs that nobody of record, whom it still has, could
+        hold, such as when the only release approver left before handing over, may be signed
+        for by someone it brings in, as long as assurance of record remains to sign it too."""
+        if self.record is None:
+            return self
+        stay = [i for i in self.record if i in self.own]
+        orphaned = {n.role for n in need
+                    if not any(self.record[i].can(n.role, self.team)
+                               and self.own[i].can(n.role, self.team) for i in stay)}
+        if ASSURANCE in orphaned:  # nobody of record is left to vouch for whom it brings in
+            return self
+        return replace(self, loose=self.loose | frozenset(orphaned))
 
     def key(self, signer: str) -> str | None:
         """Theirs as the release before recorded it, if it did: a key a release brings in
@@ -408,7 +483,7 @@ class _Judging:
         mine = self.own.get(signer)
         if mine is None or not mine.can(role, self.team):
             return False
-        if self.record is None or role in self.named:
+        if self.record is None or role in self.named or role in self.loose:
             return True
         theirs = self.record.get(signer)
         return theirs is not None and theirs.can(role, self.team)
@@ -420,20 +495,23 @@ def awaiting(conn: db.Connection, running: Running | None, scenario: Scenario, t
     each of its needs they could meet, unless they've signed it already."""
     if running is None or running.problems:
         return []
-    row = conn.execute("select previous, signatures, advisory, approved_at from releases "
-                       "where digest = %s", (running.digest,)).fetchone()
+    row = conn.execute("select previous, signatures, advisory, baseline, approved_at "
+                       "from releases where digest = %s", (running.digest,)).fetchone()
     if row and row["approved_at"]:
         return []
     if row and any(s["signer"] == person.id for s in row["signatures"] or []):
         return []
-    old, advisory = last_approved(conn), None
+    old, advisory, baseline = last_approved(conn), None, False
     if row:
         before = row["previous"] and conn.execute(
             "select manifest from releases where digest = %s", (row["previous"],)).fetchone()
         old, advisory = (yaml.safe_load(bytes(before["manifest"])) if before else None), row["advisory"]
+        baseline = bool(row["baseline"])
     judging = _Judging.of(running.raw, old, scenario, team, [person.id])
-    return [n for n in needs(yaml.safe_load(running.raw), old, advisory)
-            if judging.can(person.id, n.role)]
+    need = needs(yaml.safe_load(running.raw), None if baseline else old, advisory)
+    if baseline:
+        judging = judging.orphans(need)
+    return [n for n in need if judging.can(person.id, n.role)]
 
 
 def _line(scenario: Scenario, person: Person) -> list[str]:
@@ -447,17 +525,25 @@ def _line(scenario: Scenario, person: Person) -> list[str]:
 
 
 def judge(need: list[Need], raw: bytes, signatures: list[Signature], scenario: Scenario,
-          team: str, previous: dict | None = None) -> Verdict:
-    """Whether different people, each holding what's needed, signed exactly these bytes, as
-    the release before it, if any, records who may sign it, and as it records them itself."""
-    judging = _Judging.of(raw, previous, scenario, team, [s.signer for s in signatures])
+          team: str, previous: dict | None = None, approval: Approval | None = None, *,
+          roots: dict[str, Signer] | None = None) -> Verdict:
+    """Whether different people, each holding what's needed, signed exactly this approval of
+    these bytes, as the release before it, if any, records who may sign it, or, for a first
+    release, as those kept outside it do (`roots`), and as it records them itself."""
+    approval = approval or Approval.of(raw)
+    judging = _Judging.of(raw, previous, scenario, team, [s.signer for s in signatures], roots)
+    if approval.baseline:
+        judging = judging.orphans(need)
     people: list[str] = []
     problems = []
+    if approval.release != hashlib.sha256(raw).hexdigest():
+        problems.append("its approval is of another release")
     for sig in signatures:
         key = judging.key(sig.signer)
         if key is None:
             problems.append(f"{sig.signer} isn't in the directory")
-        elif not signing.verify(key, raw, sig.value, signing.RELEASE):
+        elif problems[:1] == ["its approval is of another release"] or not signing.verify(
+                key, approval.signed(), sig.value, signing.RELEASE):
             problems.append(f"{sig.signer}'s signature isn't for this release")
         elif sig.signer not in people:
             people.append(sig.signer)
@@ -498,36 +584,98 @@ def signatures_in(raw: bytes, text: str) -> list[Signature]:
     return [Signature(s["signer"], s["value"]) for s in signed.get("signatures") or []]
 
 
+def approval_in(raw: bytes, text: str) -> Approval:
+    """What a release.sig's signatures approve of exactly this release; ValueError if it's
+    another release's."""
+    signed = yaml.safe_load(text) or {}
+    if signed.get("release") != hashlib.sha256(raw).hexdigest():
+        raise ValueError("its signatures are over another release")
+    return Approval(signed["release"], signed.get("image"), signed.get("follows"),
+                    signed.get("advisory"), bool(signed.get("baseline")))
+
+
+def roots_in(text: str) -> dict[str, Signer]:
+    """The people kept outside every release who judge an environment's first one, as its
+    approvers.yaml names them, as a manifest records its signers (deploy/gitops)."""
+    found = _recorded(yaml.safe_load(text) or {})
+    if not found:
+        raise ValueError("it names nobody")
+    return found
+
+
 def verify(raw: bytes, signatures: list[Signature], scenario: Scenario, team: str,
-           previous: bytes | None = None, advisory: str | None = None) -> Verdict:
+           previous: bytes | None = None, approval: Approval | None = None,
+           roots: dict[str, Signer] | None = None, ran: Approval | None = None) -> Verdict:
     """Whether a release's signatures meet what it needs, weighed against the release before
     it, as a deployment's core weighs them when its approval job records them, but with no
-    database: for the pull request that deploys it (deploy/gitops), before it's merged. The
-    core still checks them again, against what it approved before."""
+    database: for the pull request that deploys it (deploy/gitops), before it's merged. Its
+    approval must follow exactly that release, and a first one is judged by those kept outside
+    it, its `roots`, where they're given. The release the environment runs, `previous`, as it
+    was approved there, `ran`, needs nothing more; approved again as something else, such as
+    another image of it, it needs the release approver and assurance, as the release it is
+    records them. The core still checks them again, against what it approved before."""
+    approval = approval or Approval.of(raw)
     old = yaml.safe_load(previous) if previous else None
-    return judge(needs(yaml.safe_load(raw), old, advisory), raw, signatures, scenario, team, old)
+    if previous is not None and previous == raw:  # the release the environment runs
+        if ran is not None and approval == ran:
+            return Verdict(True)
+        if ran is not None and approval.follows != ran.follows:
+            return Verdict(False, missing=(
+                (f"its approval follows {_short(approval.follows)}, and the release it is "
+                 f"followed {_short(ran.follows)} where it was approved"),))
+        why = "it's approved again, as something else, such as to run as another image"
+        need = [Need(RELEASE_APPROVER, why), Need(ASSURANCE, why)]
+        return judge(need, raw, signatures, scenario, team, old, approval)
+    follows = hashlib.sha256(previous).hexdigest() if previous else None
+    if approval.follows != follows:
+        return Verdict(False, missing=(
+            (f"its approval follows {_short(approval.follows)}, and the environment runs "
+             f"{_short(follows)}: promote it again, and have it signed again"),))
+    need = needs(yaml.safe_load(raw), None if approval.baseline else old, approval.advisory)
+    return judge(need, raw, signatures, scenario, team, old, approval, roots=roots)
+
+
+def _short(digest: str | None) -> str:
+    return f"release {digest[:12]}" if digest else "no release"
+
+
+def _approved_others(conn: db.Connection, digest: str) -> bool:
+    """Whether the ledger records this deployment approving another release before it first
+    approved this one, or at all, if it hasn't yet: its history, which nobody rewrites without
+    breaking the ledger's chain and its locked copies."""
+    return conn.execute(
+        "with approved as (select seq, (entry::jsonb) -> 'args' ->> 'release' as release "
+        "from ledger where kind = 'admin' and action = 'approve-release' and decision = 'record') "
+        "select 1 from approved where release <> %(d)s and seq < coalesce("
+        "(select min(seq) from approved where release = %(d)s), 9223372036854775807) limit 1",
+        {"d": digest}).fetchone() is not None
 
 
 def check(conn: db.Connection, digest: str, scenario: Scenario, team: str,
           _seen: frozenset[str] = frozenset()) -> Verdict:
-    """Whether this deployment approved a release, checked again from what was signed,
-    back to the first release it approved, or the last baseline. Editing the record
-    approves nothing.
+    """Whether this deployment approved a release, checked again from what was signed, back to
+    the first release it approved. Editing the record approves nothing: what each release
+    follows, the image it runs as, the advisory it fixes and whether it's a baseline are signed
+    with it.
 
     Each release is judged by who the release before it records may sign it, and by who it
     records itself, so the history holds when people leave: their leaving is a release of
     its own, which those who stay approve. One recorded before releases recorded their
-    signers is judged by the directory as it is now. Approving the release in use again as
-    a baseline, which needs everyone and is judged by its own directory, starts the history
-    afresh, such as when the only release approver left before handing over.
+    signers is judged by the directory as it is now. A baseline needs everyone, as if weighed
+    against nothing, and is judged by the release before it all the same, except that a role
+    nobody of record who remains could hold may be signed for by someone it brings in, while
+    assurance of record signs it too: such as when the only release approver left before
+    handing over. Only the first release a deployment approves follows none.
     """
-    row = conn.execute("select manifest, previous, signatures, advisory from releases "
-                       "where digest = %s", (digest,)).fetchone()
+    row = conn.execute("select manifest, previous, signatures, advisory, image, baseline "
+                       "from releases where digest = %s", (digest,)).fetchone()
     if row is None:
         return Verdict(False, missing=("nobody here has approved it yet",))
     raw = bytes(row["manifest"])
     if hashlib.sha256(raw).hexdigest() != digest:
         return Verdict(False, missing=("its record isn't what was signed",))
+    approval = Approval(digest, row["image"], row["previous"], row["advisory"],
+                        bool(row["baseline"]))
     old = None
     if row["previous"]:
         before = (Verdict(False, missing=("its history goes round in a circle",)) if
@@ -542,34 +690,42 @@ def check(conn: db.Connection, digest: str, scenario: Scenario, team: str,
         if hashlib.sha256(earlier).hexdigest() != row["previous"]:  # whose signers judge this one
             return Verdict(False, missing=("the release before it isn't what was signed",))
         old = yaml.safe_load(earlier)
+    elif _approved_others(conn, digest):
+        return Verdict(False, missing=(
+            ("it follows no release, as only a deployment's first may, and this deployment "
+             "has approved others: its approvers sign it as following the last"),))
     signatures = [Signature(s["signer"], s["value"]) for s in row["signatures"] or []]
-    return judge(needs(yaml.safe_load(raw), old, row["advisory"]), raw, signatures, scenario, team,
-                 old)
+    need = needs(yaml.safe_load(raw), None if approval.baseline else old, approval.advisory)
+    return judge(need, raw, signatures, scenario, team, old, approval)
 
 
 def record(conn: db.Connection, raw: bytes, signatures: list[Signature], scenario: Scenario,
-           team: str, advisory: str | None = None, *, baseline: bool = False) -> Verdict:
-    """Record people's signatures over a release, as the database's administrator.
-
-    It's weighed against the release approved here last, when it's first recorded,
-    or, as a baseline, against nothing, so it needs everyone. Signatures add up, so
-    approvers can sign at different times.
-    """
+           team: str, approval: Approval | None = None) -> Verdict:
+    """Record people's signatures over a release, as the database's administrator, with what
+    they approve of it: the release it follows, its image, the advisory it fixes and whether
+    it's a baseline, which are theirs, signed, and never the administrator's to set: a record
+    that says otherwise has no signature over what it says. Signatures add up, so approvers can
+    sign at different times, while what they approve stays the same; approving it as something
+    else starts its signatures afresh."""
+    approval = approval or Approval.of(raw)
     digest = hashlib.sha256(raw).hexdigest()
     data = yaml.safe_load(raw)
-    row = conn.execute("select signatures from releases where digest = %s for update",
-                       (digest,)).fetchone()
-    if row is None:
-        last = None if baseline else conn.execute(
-            "select digest from releases where approved_at is not null "
-            "order by approved_at desc limit 1").fetchone()
-        conn.execute("insert into releases (digest, version, manifest, previous, advisory) "
-                     "values (%s, %s, %s, %s, %s)",
-                     (digest, data["version"], raw, last["digest"] if last else None, advisory))
-    else:
-        conn.execute("update releases set advisory = coalesce(%s, advisory), previous = case "
-                     "when %s then null else previous end where digest = %s",
-                     (advisory, baseline, digest))
+    row = conn.execute("select signatures, previous, image, advisory, baseline from releases "
+                       "where digest = %s for update", (digest,)).fetchone()
+    if row is not None and (row["previous"], row["image"], row["advisory"], row["baseline"]) != (
+            approval.follows, approval.image, approval.advisory, approval.baseline):
+        # Approved now as something else, such as a baseline: the signatures it held were over
+        # what it was approved as before, so they're let go, and it's approved afresh
+        conn.execute("update releases set previous = %s, image = %s, advisory = %s, "
+                     "baseline = %s, signatures = '[]', approved_at = null where digest = %s",
+                     (approval.follows, approval.image, approval.advisory, approval.baseline,
+                      digest))
+        row = None
+    elif row is None:
+        conn.execute("insert into releases (digest, version, manifest, previous, advisory, "
+                     "image, baseline) values (%s, %s, %s, %s, %s, %s, %s)",
+                     (digest, data["version"], raw, approval.follows, approval.advisory,
+                      approval.image, approval.baseline))
     merged = {s["signer"]: s for s in (row["signatures"] if row else None) or []}
     merged.update({s.signer: {"signer": s.signer, "value": s.value} for s in signatures})
     conn.execute("update releases set signatures = %s where digest = %s",
@@ -582,10 +738,18 @@ def record(conn: db.Connection, raw: bytes, signatures: list[Signature], scenari
         "kind": "admin", "action": "approve-release", "decision": "record" if verdict.ok else "deny",
         "reasons": list(verdict.missing),
         "args": {"version": data["version"], "release": digest, "signed_by": list(verdict.signed_by),
-                 "needs": [n.role for n in verdict.needs], "advisory": advisory,
-                 "baseline": baseline},
+                 "needs": [n.role for n in verdict.needs], "follows": approval.follows,
+                 "image": approval.image, "advisory": approval.advisory,
+                 "baseline": approval.baseline},
     })
     return verdict
+
+
+def following(conn: db.Connection) -> str | None:
+    """The release the next one a deployment approves follows: the last it approved."""
+    row = conn.execute("select digest from releases where approved_at is not null "
+                       "order by approved_at desc limit 1").fetchone()
+    return row["digest"] if row else None
 
 
 def last_approved(conn: db.Connection) -> dict | None:

@@ -71,8 +71,11 @@ models:
   keys:
     DEEPSEEK_API_KEY: deepseek-api-key
     QWEN_API_KEY: qwen-api-key
-  # A ConfigMap with a models.yaml to use in place of the image's. It's part of the release,
-  # so its people sign it with the rest.
+  # A ConfigMap with a models.yaml to use in place of the image's. The release the core works
+  # out holds its models, so its people sign the release as the gateway shows it, with the
+  # ConfigMap mounted (`a5s release show` there). Deploying from git (deploy/gitops), leave it
+  # empty and build the approved models into the image: the release an environment's approvers
+  # sign is the image's own, and the check on its pull request refuses a ConfigMap.
   configMap: ""
 
 # Teams: the Microsoft 365 tenant the agents' bots are registered in, and each bot, such as

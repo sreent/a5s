@@ -29,16 +29,31 @@ def this(stack) -> releases.Running:
     return releases.running(stack.cfg.root, stack.cfg.scenario_dir)
 
 
-def signed(stack, raw: bytes, *people: str, domain: bytes = signing.RELEASE) -> list[Signature]:
+def approval(stack, raw: bytes, **parts) -> releases.Approval:
+    """What its approvers approve of a release here: following the release approved here last,
+    as `a5s release status` tells them, or as it was first recorded, if it was."""
+    with db.transaction(stack.admin) as conn:
+        row = conn.execute("select previous, advisory, image, baseline from releases where "
+                           "digest = %s", (hashlib.sha256(raw).hexdigest(),)).fetchone()
+        if row is not None:
+            return releases.Approval.of(raw, follows=row["previous"], image=row["image"],
+                                        advisory=row["advisory"], baseline=row["baseline"])
+        return releases.Approval.of(raw, follows=releases.following(conn), **parts)
+
+
+def signed(stack, raw: bytes, *people: str, domain: bytes = signing.RELEASE,
+           approved: releases.Approval | None = None) -> list[Signature]:
     keys = stack.cfg.scenario_dir / "keys"
-    return [Signature(p, signing.sign((keys / f"{p}.key").read_text().strip(), raw, domain))
+    signs = (approved or releases.Approval.of(raw)).signed()
+    return [Signature(p, signing.sign((keys / f"{p}.key").read_text().strip(), signs, domain))
             for p in people]
 
 
-def record(stack, raw: bytes, *people: str, advisory: str | None = None) -> releases.Verdict:
+def record(stack, raw: bytes, *people: str, **parts) -> releases.Verdict:
+    approved = approval(stack, raw, **parts)
     with db.transaction(stack.admin) as conn:
-        return releases.record(conn, raw, signed(stack, raw, *people), stack.gateway.scenario,
-                               "platform", advisory)
+        return releases.record(conn, raw, signed(stack, raw, *people, approved=approved),
+                               stack.gateway.scenario, "platform", approved)
 
 
 def open_run(stack):
@@ -322,13 +337,16 @@ def leaves(stack, person: str) -> None:
     data.write_text(re.sub(rf"  - \{{id: {person},.*\n", "", data.read_text()))
 
 
-def by(raw: bytes, person: str, private: str) -> list[Signature]:
-    return [Signature(person, signing.sign(private, raw, signing.RELEASE))]
+def by(raw: bytes, person: str, private: str,
+       approved: releases.Approval | None = None) -> list[Signature]:
+    return [Signature(person, releases.sign(private, approved or releases.Approval.of(raw)))]
 
 
-def recorded(stack, raw: bytes, signatures: list[Signature], **kwargs) -> releases.Verdict:
+def recorded(stack, raw: bytes, signatures: list[Signature],
+             approved: releases.Approval | None = None) -> releases.Verdict:
     with db.transaction(stack.admin) as conn:
-        return releases.record(conn, raw, signatures, stack.gateway.scenario, "platform", **kwargs)
+        return releases.record(conn, raw, signatures, stack.gateway.scenario, "platform",
+                               approved or approval(stack, raw))
 
 
 def test_a_release_cant_approve_itself_with_an_approver_it_adds(deployed):
@@ -339,7 +357,8 @@ def test_a_release_cant_approve_itself_with_an_approver_it_adds(deployed):
     mallory = joins(deployed, "mallory", "- {id: mallory, name: Mallory, team: risk, "
                                          "roles: [release-approver]}")
     second = this(deployed).raw
-    verdict = recorded(deployed, second, by(second, "mallory", mallory))
+    approved = approval(deployed, second)
+    verdict = recorded(deployed, second, by(second, "mallory", mallory, approved), approved)
     assert not verdict.ok and verdict.missing == (
         ("it needs the release approver, from outside the team that runs a5s, because the "
          "scenario's directory or tools changed"),
@@ -361,7 +380,8 @@ def test_an_approver_hands_over_in_two_releases_and_the_history_holds(deployed):
     leaves(deployed, "rosa")
     third = this(deployed).raw
     assert "rosa isn't in the directory" in record(deployed, third, "rosa").missing
-    assert recorded(deployed, third, by(third, "ines", ines)).ok
+    approved = approval(deployed, third)
+    assert recorded(deployed, third, by(third, "ines", ines, approved), approved).ok
     deployed.gateway.releases = Releases(this(deployed))
     assert open_run(deployed).status_code == 200
 
@@ -375,9 +395,12 @@ def test_when_the_only_release_approver_left_before_handing_over_a_baseline_star
                                    "roles: [release-approver]}")
     leaves(deployed, "rosa")
     second = this(deployed).raw
-    assert not recorded(deployed, second, by(second, "ines", ines)).ok
-    verdict = recorded(deployed, second, signed(deployed, second, "priya", "tomas", "kofi")
-                       + by(second, "ines", ines), baseline=True)
+    approved = approval(deployed, second)
+    assert not recorded(deployed, second, by(second, "ines", ines, approved), approved).ok
+    baseline = replace(approved, baseline=True)  # following the release before, all the same
+    verdict = recorded(deployed, second, signed(deployed, second, "priya", "tomas", "kofi",
+                                                approved=baseline)
+                       + by(second, "ines", ines, baseline), baseline)
     assert verdict.ok and {n.role for n in verdict.needs} == {
         RELEASE_APPROVER, ASSURANCE, ENGINEER, OWNER, releases.agent_owner("watcher")}
 
@@ -398,7 +421,7 @@ def test_a_signature_counts_as_the_release_before_records_its_signer_and_as_this
                agents=("assistant",)) -> releases.Verdict:
         raw = yaml.safe_dump({"version": "2", "agents": {a: {} for a in agents},
                               "signers": signers}).encode()
-        signatures = [Signature(p, signing.sign(keys[k][0], raw, signing.RELEASE))
+        signatures = [Signature(p, releases.sign(keys[k][0], releases.Approval.of(raw)))
                       for p, k in signing_as]
         return releases.judge([releases.Need(r, "it changed") for r in need], raw, signatures,
                               stack.gateway.scenario, "platform", before)

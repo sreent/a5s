@@ -130,7 +130,7 @@ def test_a_release_is_weighed_against_the_one_the_environment_ran(env, capsys, t
     sign(env, "priya", "tomas")
     capsys.readouterr()
     assert "Ready to deploy" in verify(env, capsys, before)
-    assert "it needs" in refused(env, capsys)  # weighed against nothing, it needs everyone
+    assert "its approval follows release" in refused(env, capsys)  # and not nothing
 
 
 def test_a_pull_request_that_deploys_a_release_changes_nothing_else_in_its_environment(
@@ -206,13 +206,15 @@ def test_an_environment_shows_and_judges_its_release_as_it_deploys_a5s(env, caps
     assert "it needs the release approver" in refused(env, capsys)
 
 
-def test_promoting_the_same_release_again_keeps_its_signatures(env, capsys):
+def test_promoting_the_same_release_again_keeps_its_signatures_for_the_same_image(env, capsys):
     manifest = released(capsys)
     promote(env, manifest, capsys)
     sign(env, "rosa")
-    promote(env, manifest, capsys, image="ghcr.io/owner/a5s@sha256:" + "b" * 64)  # rebuilt
+    promote(env, manifest, capsys)
     assert [s["signer"] for s in yaml.safe_load((env / "release.sig").read_text())["signatures"]
             ] == ["rosa"]
+    promote(env, manifest, capsys, image="ghcr.io/owner/a5s@sha256:" + "b" * 64)  # rebuilt
+    assert yaml.safe_load((env / "release.sig").read_text())["signatures"] == []  # not over it
 
 
 @pytest.mark.parametrize("image", ["ghcr.io/owner/a5s:1.2.3", "ghcr.io/owner/a5s@sha256:abc"])

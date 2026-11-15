@@ -412,16 +412,25 @@ def _release(cfg: Config, args: argparse.Namespace) -> None:
         raw = args.manifest.read_bytes()
         digest = hashlib.sha256(raw).hexdigest()
         key = args.key or cfg.scenario_dir / "keys" / f"{args.person}.key"
-        value = signing.sign(key.read_text().strip(), raw, signing.RELEASE)
-        signed = yaml.safe_load(args.out.read_text()) if args.out.exists() else None
+        text = args.out.read_text() if args.out.exists() else ""
+        signed = yaml.safe_load(text) if text else None
         if signed and signed.get("release") != digest:
             sys.exit(f"{args.out} holds signatures for another release.")
+        asked = releases.Approval.of(raw, image=args.image, follows=args.follows,
+                                     advisory=args.advisory, baseline=args.baseline)
+        approval = releases.approval_in(raw, text) if signed else asked
+        given = {k for k in ("image", "follows", "advisory", "baseline") if getattr(args, k)}
+        if signed and any(getattr(approval, k) != getattr(asked, k) for k in given):
+            sys.exit(f"{args.out} approves it as {_approves(approval)}: sign that, or start "
+                     "its signatures afresh")
+        value = releases.sign(key.read_text().strip(), approval)
         others = [s for s in (signed or {}).get("signatures", []) if s["signer"] != args.person]
         args.out.write_text(
             "# Signatures over a release of a5s, made with `a5s release sign`.\n"
-            + yaml.safe_dump({"release": digest, "signatures": [
+            + yaml.safe_dump({**approval.shown(), "signatures": [
                 *others, {"signer": args.person, "value": value}]}, sort_keys=False))
-        print(f"{args.person} signed release {yaml.safe_load(raw)['version']} ({digest[:12]}).")
+        print(f"{args.person} signed release {yaml.safe_load(raw)['version']} ({digest[:12]}), "
+              f"approving it as {_approves(approval)}.")
         if args.environment is not None:
             gitops.resigned(args.environment)
         return
@@ -431,15 +440,16 @@ def _release(cfg: Config, args: argparse.Namespace) -> None:
     if args.what in ("promote", "verify"):  # no database: a pull request's, before it merges
         _deploying(cfg, sc, args)
         return
-    if args.what == "approve":  # as the database's administrator
+    if args.what == "approve":  # as the database's administrator, with what they approved
         raw = args.manifest.read_bytes()
         try:
-            signatures = releases.signatures_in(raw, args.signatures.read_text())
+            text = args.signatures.read_text()
+            signatures = releases.signatures_in(raw, text)
+            approval = releases.approval_in(raw, text)
         except ValueError:
             sys.exit(f"{args.signatures} holds signatures for another release.")
         with db.transaction(cfg.database_url) as conn:
-            verdict = releases.record(conn, raw, signatures, sc, cfg.team, args.advisory,
-                                      baseline=args.baseline)
+            verdict = releases.record(conn, raw, signatures, sc, cfg.team, approval)
     else:
         current = releases.running(cfg.root, cfg.scenario_dir, cfg.agents_dir)
         if args.what == "show":
@@ -453,6 +463,9 @@ def _release(cfg: Config, args: argparse.Namespace) -> None:
             if not verdict.needs:  # nobody has signed it here yet: say what it needs
                 need = releases.needs(yaml.safe_load(current.raw), releases.last_approved(conn))
                 verdict = releases.Verdict(False, tuple(need), verdict.missing)
+                if (last := releases.following(conn)) is not None:
+                    print(f"Its approvers sign it as following the release approved here last: "
+                          f"`a5s release sign --follows {last}`.")
     for need in verdict.needs:
         print(f"- It needs {releases.who(need.role)}, because {need.why}.")
     if verdict.signed_by:
@@ -487,8 +500,10 @@ def _deploying(cfg: Config, sc: Scenario, args: argparse.Namespace) -> None:
             ran = folder / gitops.MANIFEST
             before = ran.read_bytes() if ran.is_file() else None
             signed = args.signatures.read_text() if args.signatures else None
-            gitops.promote(folder, args.manifest.read_bytes(), args.image, signed)
+            gitops.promote(folder, args.manifest.read_bytes(), args.image, signed,
+                           advisory=args.advisory, baseline=args.baseline)
             problems: list[str] = []
+            roots, ran = None, None
         else:
             was: Path | None = args.before  # the environment's folder, as it runs now
             if was is not None and folder is None:
@@ -498,13 +513,23 @@ def _deploying(cfg: Config, sc: Scenario, args: argparse.Namespace) -> None:
             problems = gitops.consistent(folder) if folder is not None else []
             if folder is not None and was is not None:
                 problems += gitops.alongside(folder, was)
+            roots = releases.roots_in(args.roots.read_text()) if args.roots else None
+            ran_sig = was / gitops.SIGNATURES if was is not None and gitops.ran(was) else None
+            ran = (releases.approval_in(before, ran_sig.read_text())
+                   if before is not None and ran_sig is not None and ran_sig.is_file() else None)
+            if was is not None and before is None and roots is None:  # its first, by whom?
+                problems.append("an environment's first release is judged by the approvers "
+                                "kept outside it, in deploy/gitops/approvers.yaml on the branch "
+                                "it merges into, and there are none: the release approvers "
+                                "add theirs there first")
         manifest = folder / gitops.MANIFEST if folder is not None else args.manifest
         sigs = folder / gitops.SIGNATURES if folder is not None else args.signatures
         raw = manifest.read_bytes()
         signatures = releases.signatures_in(raw, sigs.read_text())
-    except (gitops.NotAnEnvironment, ValueError, OSError) as e:
+        approval = releases.approval_in(raw, sigs.read_text())
+    except (gitops.NotAnEnvironment, ValueError, OSError, KeyError) as e:
         sys.exit(str(e))
-    verdict = releases.verify(raw, signatures, sc, cfg.team, before, getattr(args, "advisory", None))
+    verdict = releases.verify(raw, signatures, sc, cfg.team, before, approval, roots, ran)
     print(f"Release {yaml.safe_load(raw)['version']} of a5s, {hashlib.sha256(raw).hexdigest()}.")
     for need in verdict.needs:
         print(f"- It needs {releases.who(need.role)}, because {need.why}.")
@@ -518,6 +543,18 @@ def _deploying(cfg: Config, sc: Scenario, args: argparse.Namespace) -> None:
     if problems or not verdict.ok:
         sys.exit("Not ready to deploy: " + "; ".join([*problems, *verdict.missing]))
     print("Ready to deploy: its signatures meet what it needs.")
+
+
+def _approves(approval: releases.Approval) -> str:
+    """What an approval of a release approves, in words, for whoever signs it."""
+    said = [f"following release {approval.follows[:12]}" if approval.follows
+            else "following no release, as a deployment's first",
+            f"running as {approval.image}" if approval.image else "with no image named"]
+    if approval.advisory:
+        said.append(f"fixing {approval.advisory}")
+    if approval.baseline:
+        said.append("a baseline")
+    return ", ".join(said)
 
 
 def _core(cfg: Config, call, timeout: float = 30):
@@ -710,6 +747,15 @@ def main(argv: list[str] | None = None) -> None:
     rel_sign.add_argument("--environment", type=Path,
                           help="an environment's folder (deploy/gitops): sign the release it's "
                                "to run, there")
+    for flag, said in (("--follows", ("the release it follows, by its digest: the last this "
+                                      "deployment approved, which `a5s release status` names")),
+                       ("--image", "the image it runs as, by digest: REPOSITORY@sha256:..."),
+                       ("--advisory", "the security advisory it fixes, such as GHSA-...")):
+        rel_sign.add_argument(flag, help=f"{said}; for its first signature, when there's no "
+                                         "release.sig yet, which signs it with the rest")
+    rel_sign.add_argument("--baseline", action="store_true",
+                          help="approve it as a baseline, which needs everyone: for when the "
+                               "only one who could sign for a role has left")
     promote = rel_sub.add_parser("promote", help="make an environment's folder (deploy/gitops) "
                                                  "run a release, for a pull request to deploy it")
     promote.add_argument("--environment", type=Path, required=True)
@@ -717,6 +763,9 @@ def main(argv: list[str] | None = None) -> None:
     promote.add_argument("--signatures", type=Path, help="signatures over it so far, if any")
     promote.add_argument("--image", required=True,
                          help="the release's image, by its digest: REPOSITORY@sha256:...")
+    promote.add_argument("--advisory", help="the security advisory it fixes, such as GHSA-...")
+    promote.add_argument("--baseline", action="store_true",
+                         help="approve it as a baseline, which needs everyone")
     verify = rel_sub.add_parser("verify", help="whether a release's signatures meet what it "
                                                "needs, against the release before it, with no "
                                                "database: the check on a deploying pull request")
@@ -731,15 +780,14 @@ def main(argv: list[str] | None = None) -> None:
                           help="the environment's folder as the branch it merges into has it: "
                                "the release it replaces, judging it as it ran that, and what "
                                "else the change makes different")
-    verify.add_argument("--advisory", help="the security advisory it fixes, such as GHSA-...")
+    verify.add_argument("--roots", type=Path,
+                        help="the approvers kept outside every release, who judge an "
+                             "environment's first: deploy/gitops/approvers.yaml, as the branch "
+                             "it merges into has it")
     approve = rel_sub.add_parser("approve", help="record signatures over a release, as the "
-                                                 "administrator")
+                                                 "administrator, with what they approve of it")
     approve.add_argument("--manifest", type=Path, default=Path("release.yaml"))
     approve.add_argument("--signatures", type=Path, default=Path("release.sig"))
-    approve.add_argument("--advisory", help="the security advisory it fixes, such as GHSA-...")
-    approve.add_argument("--baseline", action="store_true",
-                         help="weigh it against nothing, so it needs everyone: for when someone "
-                              "who approved an earlier release has left")
     rel_sub.add_parser("status", help="whether this deployment approved the release a5s is")
     led = sub.add_parser("ledger", help="read or verify the ledger, against its copies too")
     led.add_argument("what", choices=["tail", "verify"])

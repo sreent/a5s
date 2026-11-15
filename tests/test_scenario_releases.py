@@ -13,7 +13,7 @@ import pytest
 import yaml
 
 from a5s.contract import Signature
-from a5s.core import releases, signing
+from a5s.core import releases
 from conftest import ROOT
 
 # Each scenario, its adapter, and who signs its first release: the release approver,
@@ -41,8 +41,8 @@ def first_release(folder: str) -> tuple[bytes, list[releases.Need]]:
 
 def signed(folder: str, raw: bytes, *people: str) -> list[Signature]:
     keys = ROOT / "scenarios" / folder / "keys"
-    return [Signature(p, signing.sign((keys / f"{p}.key").read_text().strip(), raw,
-                                      signing.RELEASE)) for p in people]
+    return [Signature(p, releases.sign((keys / f"{p}.key").read_text().strip(),
+                                       releases.Approval.of(raw))) for p in people]
 
 
 def test_every_scenario_a5s_ships_is_here():
