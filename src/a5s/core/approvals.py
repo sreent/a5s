@@ -31,7 +31,7 @@ from typing import Any
 
 from a5s import db
 from a5s.contract import DataProtection, InstanceSettings, Person, Settings
-from a5s.core import registry, sealing
+from a5s.core import memberships, registry, sealing
 from a5s.core.identity import (
     IdentityError,
     UnknownPerson,
@@ -91,6 +91,8 @@ def _mac(key: str, approval: dict) -> str:
     token = approval["token"]  # the sign-in, kept by its hash only once it's recorded
     fields["token"] = (token.removeprefix(HASHED) if token.startswith(HASHED)
                        else hashlib.sha256(token.encode()).hexdigest())
+    if approval.get("groups") is not None:  # the groups its sign-in showed, once kept
+        fields["groups"] = sorted(approval["groups"])
     return hmac.new(key.encode(), canonical(fields).encode(), hashlib.sha256).hexdigest()
 
 
@@ -511,9 +513,22 @@ def seal_pending(conn: db.Connection, keys: tuple[str, ...], verifier: Verifier 
                          (why, row["id"]))
             refused.append(f"{row['person']}'s approval: {why}")
             continue
-        conn.execute("update settings_approvals set seal = %s, proof = null where id = %s",
-                     (seal(keys, row), row["id"]))
+        claim = verifier.cfg.groups_claim if verifier else None  # checked, so it's there
+        groups = list(memberships.shown(verifier.claims(row["proof"], expired=True), claim)
+                      if verifier else ())
+        kept = {**row, "groups": groups}
+        conn.execute("update settings_approvals set seal = %s, groups = %s, proof = null "
+                     "where id = %s", (seal(keys, kept), groups, row["id"]))
     return refused
+
+
+def groups_shown(conn: db.Connection, scenario: str, version: str) -> dict[str, tuple[str, ...]]:
+    """The groups each approval of a version showed, in the sign-in it was made with, as the
+    core kept them under its seal once it had checked it: what it counts for, with the groups
+    the approver's latest sign-in shows (core/memberships.py's as_signed)."""
+    return {r["person"]: tuple(r["groups"] or ()) for r in conn.execute(
+        "select person, groups from settings_approvals where scenario = %s and digest = %s "
+        "and refused is null and seal is not null", (scenario, version))}
 
 
 def approvers(conn: db.Connection, keys: tuple[str, ...], scenario: str,

@@ -300,7 +300,8 @@ class Gateway:
         given = before.groups if before and approvals.vouched(
             self.cfg.seal_keys, self.scenario.name, before.serial, before.raw,
             prior["sealed"]) else {}
-        directory = memberships.under(self.scenario, conn, given)
+        directory = memberships.as_signed(self.scenario, conn, given, approvals.groups_shown(
+            conn, self.scenario.name, approvals.digest(settings.raw)))
         valid, _ = registry.signers(settings, directory, approved)
         if needs := registry.missing(settings, directory, valid, before,
                                      memberships.under(self.scenario, conn, {})):
@@ -1846,9 +1847,14 @@ def create_app(gw: Gateway) -> FastAPI:
         or None while it waits, and who approved it."""
         approved, _ = approvals.approvers(conn, gw.cfg.seal_keys, gw.scenario.name, row["digest"])
         settings = parse_settings(bytes(row["raw"]))
-        valid, _ = registry.signers(settings, gw.scenario.person, approved)
+        # Each approval counts for the roles groups give that both its own sign-in and the
+        # approver's latest show: never a group they've joined, or left, since
+        directory = memberships.as_signed(gw.scenario, conn, gw.groups_in_force(conn),
+                                          approvals.groups_shown(conn, gw.scenario.name,
+                                                                 row["digest"]))
+        valid, _ = registry.signers(settings, directory, approved)
         before = parse_settings(bytes(last["raw"])) if last and last.get("raw") else None
-        if registry.missing(settings, gw.scenario.person, valid, before,
+        if registry.missing(settings, directory, valid, before,
                             memberships.rooted(gw.scenario).person):
             return None, approved  # it waits for the rest of the approvers it needs
         if refused := gw.unusable(settings, last):  # such as a release gone since

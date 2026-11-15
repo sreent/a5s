@@ -315,11 +315,13 @@ def test_a_tool_that_answers_with_an_object_leaves_out_what_the_run_may_not_see(
         f"which isn't approved for personal data, got the contacts: {contacts}")
 
 
-def test_someone_no_instance_serves_is_told_who_can_add_them(desk):
+def test_someone_no_instance_serves_is_told_nothing_of_whom_it_works_for(desk):
+    """Round 5 named the part's owner who could add them; round 11 (D-1) names nobody: someone
+    who may know of the agent asks for it on its page in the studio, where the ask waits on
+    access's owner, and anyone else hears what a5s says of an agent there isn't."""
     told = desk.say("Hello", person="hal")
-    assert "Ola Nowak" in told and "Ivy Ingram" not in told, (
-        f"only access's owner can add Hal to desk-access, which works in access, but a5s tells "
-        f"Hal: {told!r}")
+    assert "Ola Nowak" not in told and "Ivy Ingram" not in told, told
+    assert told.startswith("There's no assistant for you"), told
 
 
 def test_a_key_pattern_with_a_group_still_finds_the_key(grouped):
