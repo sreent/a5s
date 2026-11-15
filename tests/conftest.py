@@ -472,9 +472,12 @@ def policy_of(scenario: Any) -> PolicyEngine:
 MADE_UP: dict[str, tuple[tuple[str, str], ...]] = {
     "service-desk": (("itsm", "written"), ("idp", "done")),
     "software-delivery": (("forge", "written"),),
+    "master-data": (("sap", "written"),),
 }
 SYSTEMS: dict[str, Any] = {}  # what's been written to each, by its scenario's folder
 RUNNING: list[Any] = []  # the systems themselves
+# Where a made-up system whose changes its scenario's code reads, such as SAP's, keeps them
+os.environ["A5S_SYSTEMS_STATE"] = tempfile.mkdtemp(prefix="a5s-systems-")
 
 
 def scenario_systems(folder: str) -> dict[str, Any]:

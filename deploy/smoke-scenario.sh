@@ -61,6 +61,7 @@ python3 deploy/matrix/configure.py "$work/matrix" >> "$env_file"
 systems=""
 if [ "$folder" = service-desk ]; then systems="-f deploy/compose.desk.yaml"; fi
 if [ "$folder" = software-delivery ]; then systems="-f deploy/compose.delivery.yaml"; fi
+if [ "$folder" = master-data ]; then systems="-f deploy/compose.master.yaml"; fi
 # shellcheck disable=SC2086 # $systems is one or no compose file, split on purpose
 compose() { docker compose -p "a5s-$folder" --env-file "$env_file" -f deploy/compose.yaml \
               -f deploy/compose.stub.yaml -f deploy/compose.storage.yaml \

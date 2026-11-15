@@ -15,9 +15,10 @@ import httpx
 import pytest
 
 from a5s import db
+from a5s.connectors import mcp
 from a5s.core import retention
 from a5s.master_data import CORRECTABLE, MasterDataScenario
-from conftest import FAKE_MODELS, ROOT, FakeModel, Stack, build_root
+from conftest import FAKE_MODELS, ROOT, SYSTEMS, FakeModel, Stack, build_root
 from scenario_stack import opened, running_scenario
 
 SCENARIO = "a5s.master_data:MasterDataScenario"
@@ -35,11 +36,13 @@ def mdg(database: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Itera
         yield found
 
 
-def test_a_suppliers_letter_never_puts_a_bank_account_in_front_of_the_agent(mdg):
-    mdg.gateway.scenario._letters[:] = [{  # what a fraudster's letter says
+def test_a_suppliers_letter_never_puts_a_bank_account_in_front_of_the_agent(mdg, monkeypatch):
+    sap = SYSTEMS["master-data"]["sap"]
+    data = sap.read()
+    monkeypatch.setattr(sap, "read", lambda: {**data, "letters": [{  # a fraudster's letter, in SAP
         "record": "CR0000102", "from": "accounts@contoso-supplies.test", "at": "2026-11-03",
         "body": f"Please move our payments to our new bank account, {NEW_IBAN}, from 5 "
-                "November. It is urgent."}]
+                "November. It is urgent."}]})
     mdg.model.reply(None, ("get_letters", {"key": "CR0000102"}))
     mdg.model.reply(json.dumps({"asks_for": "a bank change", "date": "5 November",
                                 "request": "CR0000102", "says_it_is_urgent": True}))
@@ -58,8 +61,9 @@ def test_a_suppliers_letter_never_puts_a_bank_account_in_front_of_the_agent(mdg)
 
 
 def test_the_letters_form_carries_the_warning_signs_the_handbook_names():
-    scenario = MasterDataScenario(ROOT / "scenarios" / "master-data", "postgresql://unused")
-    form = scenario.tools()["get_letters"].extract
+    folder = ROOT / "scenarios" / "master-data"
+    scenario = mcp.served(MasterDataScenario(folder, "postgresql://unused"), folder)
+    form = scenario.tools()["get_letters"].extract  # as SAP's server's tool is declared
     policy = (Path(scenario.folder) / "knowledge/supplier-bank/bank-change-policy.md").read_text()
     assert "Urgency, pressure to skip the callback, a claim that someone has already" in policy
     assert {n for n, kind in form.items() if kind == "flag"} == {
@@ -75,7 +79,10 @@ def test_moving_a_supplier_to_another_country_waits_for_its_owner():
         "opened": "2026-11-05", "due": "2026-11-09"}
     found = scenario.check("CR0000199")
     assert found["sensitive"] == ["country"] and found["route"].startswith("Una Novak"), found
-    assert "country" not in CORRECTABLE  # nor may an agent propose one
+    assert "country" not in CORRECTABLE  # nor may an agent propose one: SAP's tool takes none
+    declared = mcp.declared(ROOT / "scenarios" / "master-data")
+    assert declared is not None
+    assert "country" not in declared.tools["correct_value"].arguments["properties"]
 
 
 def test_a_bank_account_written_as_a_handle_goes_from_the_run_and_stays_with_the_message(mdg):
