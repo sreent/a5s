@@ -368,7 +368,8 @@ def router(gw: Any) -> APIRouter:
         """A draft, what would stop its release, and, if it loads, how it would look in the
         catalogue, for its map."""
         tools = gw.scenario.tools()
-        return {"yours": True, "author": None, **draft,
+        shown = {k: v for k, v in draft.items() if k != "base"}  # what it began from: a5s's
+        return {"yours": True, "author": None, **shown,
                 "problems": drafts.check(draft["agent"], draft["files"], tools, gw.models),
                 "preview": drafts.preview(gw.scenario, draft["agent"], draft["files"], tools),
                 "signers": drafts.signers(draft["agent"], draft["files"], gw.cfg.agents_dir,
@@ -455,7 +456,7 @@ def router(gw: Any) -> APIRouter:
                 copied = readable(conn, person, body.copy_of)
             if copied is None or copied["yours"]:
                 raise HTTPException(404, "there's no such draft of a co-author's for you to copy")
-            name, files = copied["agent"], copied["files"]
+            name, files, base = copied["agent"], copied["files"], copied.get("base")
             based_on = f"a co-author's draft, from {copied['based_on']}"
         elif body.agent and not (body.name or body.template):
             if body.agent not in gw.definitions:
@@ -464,6 +465,7 @@ def router(gw: Any) -> APIRouter:
                 raise HTTPException(403, f"changing {body.agent} is for its owners and the people "
                                          "the organisation names its authors")
             name, files = body.agent, drafts.folder_files(gw.cfg.agents_dir / body.agent)
+            base = dict(files)  # as released: what a publish merges against what's merged since
             based_on = f"{body.agent} {gw.definitions[body.agent].release_id}"
         elif body.name and body.template and not body.agent:
             if not drafts.may_author(person, None):
@@ -480,13 +482,14 @@ def router(gw: Any) -> APIRouter:
                 except ValueError as e:
                     raise HTTPException(400, str(e)) from None
                 name, files = body.name, drafts.folder_files(made)
+            base = {}  # a new agent's: nothing of it anywhere yet
             based_on = f"template {body.template}"
         else:
             raise HTTPException(400, "name a new agent and the template it starts from, an agent "
                                      "of the release to change, or a co-author's draft to copy")
         with db.transaction(gw.url) as conn:
             try:
-                draft = drafts.start(conn, person, name, based_on, files)
+                draft = drafts.start(conn, person, name, based_on, files, base)
             except drafts.Refused as e:
                 raise HTTPException(409, str(e)) from None
             if copied is not None:

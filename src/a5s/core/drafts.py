@@ -176,9 +176,10 @@ def mine(conn: db.Connection, person: Person) -> list[dict]:
 
 
 def get(conn: db.Connection, person: Person, draft: str) -> dict | None:
-    """One of someone's drafts, with its files; None if it isn't theirs, or isn't there."""
+    """One of someone's drafts, with its files, and the folder it began from; None if it isn't
+    theirs, or isn't there."""
     try:
-        found = conn.execute(f"select {SHOWN}, files from agent_drafts where id = %s::uuid "
+        found = conn.execute(f"select {SHOWN}, files, base from agent_drafts where id = %s::uuid "
                              "and person = %s", (draft, person.id)).fetchone()
     except psycopg.errors.InvalidTextRepresentation:
         return None
@@ -186,17 +187,22 @@ def get(conn: db.Connection, person: Person, draft: str) -> dict | None:
 
 
 def start(conn: db.Connection, person: Person, agent: str, based_on: str,
-          files: dict[str, str]) -> dict:
-    """A new draft of someone's: their first of `agent`, among no more than MOST_DRAFTS."""
+          files: dict[str, str], base: dict[str, str] | None = None) -> dict:
+    """A new draft of someone's: their first of `agent`, among no more than MOST_DRAFTS, and
+    the folder it began from, `base`: the agent's as released, or none for a new agent's."""
     held = conn.execute("select count(*) as n, bool_or(agent = %s) as already from agent_drafts "
                         "where person = %s", (agent, person.id)).fetchone()
     if held["already"]:
         raise Refused(f"you have a draft of {agent} already: carry on with it, or drop it first")
     if held["n"] >= MOST_DRAFTS:
         raise Refused(f"you keep {MOST_DRAFTS} drafts at most: publish or drop one first")
-    return dict(conn.execute(
-        "insert into agent_drafts (person, agent, based_on, files) values (%s, %s, %s, %s) "
-        f"returning {SHOWN}, files", (person.id, agent, based_on, Jsonb(files))).fetchone())
+    made = conn.execute(
+        "insert into agent_drafts (person, agent, based_on, files, base) values (%s, %s, %s, %s, "
+        f"%s) returning {SHOWN}, files, base",
+        (person.id, agent, based_on, Jsonb(files), Jsonb(base or {}))).fetchone()
+    if made is None:  # an insert returns the row it made
+        raise Refused("a5s couldn't keep the draft: try again")
+    return dict(made)
 
 
 def save(conn: db.Connection, person: Person, draft: str, files: dict[str, str]) -> dict | None:
@@ -222,7 +228,7 @@ def zipped(draft: dict) -> bytes:
 def by_id(conn: db.Connection, draft: str) -> dict | None:
     """A draft, whoever's, with its files and its author's id; None if it isn't there."""
     try:
-        found = conn.execute(f"select {SHOWN}, files, person from agent_drafts "
+        found = conn.execute(f"select {SHOWN}, files, base, person from agent_drafts "
                              "where id = %s::uuid", (draft,)).fetchone()
     except psycopg.errors.InvalidTextRepresentation:
         return None

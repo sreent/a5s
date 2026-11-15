@@ -21,6 +21,7 @@ class FakeGitHub:
         self.repo, self.base = repo, base
         self.url = ""  # once it's served
         self.trees: dict[str, dict[str, str]] = {}  # each commit's whole tree: path -> text
+        self.blobs: dict[str, str] = {}  # each file's text, by its blob
         self.subtrees: dict[str, tuple[str, str]] = {}  # a folder's tree: its root's, and where
         self.commits: dict[str, dict] = {}
         self.refs: dict[str, str] = {}
@@ -41,7 +42,14 @@ class FakeGitHub:
     def _tree(self, files: dict[str, str]) -> str:
         sha = self._sha("tree", files)
         self.trees[sha] = dict(files)
+        for text in files.values():  # each file's blob, by the name git gives it, as GitHub has
+            self.blobs[self.blob(text)] = text
         return sha
+
+    @staticmethod
+    def blob(text: str) -> str:
+        data = text.encode()
+        return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
 
     def _commit(self, tree: str, parents: list[str], message: str, author: str) -> str:
         sha = self._sha("commit", tree, parents, message, secrets.token_hex(4))
@@ -134,7 +142,8 @@ class FakeGitHub:
             under = {path[len(at):]: text for path, text in self.trees[root].items() if path.startswith(at)}
             if recursive:
                 return {"sha": sha, "truncated": False,
-                        "tree": [{"path": p, "type": "blob", "mode": "100644"} for p in sorted(under)]}
+                        "tree": [{"path": p, "type": "blob", "mode": "100644",
+                                  "sha": self.blob(under[p])} for p in sorted(under)]}
             entries, folders = [], sorted({p.split("/", 1)[0] for p in under if "/" in p})
             for name in folders:
                 sub = self._sha("subtree", root, at + name + "/")
@@ -152,6 +161,8 @@ class FakeGitHub:
                 assert entry["mode"] == "100644" and entry["type"] == "blob"
                 if entry.get("sha", "") is None:
                     files.pop(entry["path"], None)
+                elif "sha" in entry:  # a blob the repository has, by its name
+                    files[entry["path"]] = self.blobs[entry["sha"]]
                 else:
                     files[entry["path"]] = entry["content"]
             return {"sha": self._tree(files)}
