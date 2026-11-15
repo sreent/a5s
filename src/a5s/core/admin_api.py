@@ -46,7 +46,7 @@ def router(gw: Any) -> APIRouter:
         """Who holds each role and by what, what waits for whom, and the latest acts, read
         from the trail, with whom each was about as a stand-in until the officer agrees."""
         with db.transaction(gw.url) as conn:
-            found = administration.page(conn, gw, gw.clock())
+            found = administration.page(conn, gw, gw.clock(), viewer=person)
             audit.noted(conn, person.id, "administration", "their sign-in", page=True,
                         acts=len(found["latest"]))
         return {"you": person.name, **found}

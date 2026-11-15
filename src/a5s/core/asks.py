@@ -79,7 +79,7 @@ def ask(conn: db.Connection, scenario: Scenario, insts: list[dict], person: Pers
         raise Refused("you asked for it from elsewhere at the same moment: try again")
     ledger.append(conn, {"kind": "admin", "action": "ask for agent", "run": None,
                          "instance": None, "acts_for": [], "decision": "record",
-                         "args": {"agent": agent, "ask": str(made["id"]), "by": person.id}})
+                         "args": {"agent": agent, "ask": str(made["id"]), "asker": person.id}})
     return made
 
 
@@ -93,11 +93,11 @@ def end(conn: db.Connection, scenario: str, ask_id: str, outcome: str,
     ended = conn.execute(f"update agent_asks set ended_at = now(), outcome = %s, ended_by = %s "
                          f"where id = %s::uuid and scenario = %s and ended_at is null "
                          f"returning {COLUMNS}", (outcome, by, ask_id, scenario)).fetchone()
-    if ended:
+    if ended:  # whoever answered it acted in a role; the asker, withdrawing it, didn't
+        acted = ({"asker": by} if by == ended["person"] else {"by": by}) if by else {}
         ledger.append(conn, {"kind": "admin", "action": f"ask for agent {outcome}", "run": None,
                              "instance": None, "acts_for": [], "decision": "record",
-                             "args": {"agent": ended["agent"], "ask": ask_id,
-                                      **({"by": by} if by else {})}})
+                             "args": {"agent": ended["agent"], "ask": ask_id, **acted}})
     return ended
 
 
