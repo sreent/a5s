@@ -115,6 +115,9 @@ table.runs-table tbody tr:hover { background: var(--sunken); }
 .agent-map .react-flow__edge.edge-reads path { stroke: var(--reads); }
 .agent-map .react-flow__edge.edge-own path { stroke: var(--own); }
 .agent-map .react-flow__handle { opacity: 0; }
+/* React Flow's credit, kept, in colours that read (WCAG's 4.5 to 1) */
+.agent-map .react-flow__attribution { background: var(--sunken); }
+.agent-map .react-flow__attribution a { color: var(--muted); }
 /* A run's path on its agent's map: what it used, bolder; what it didn't, faded; refusals red */
 .agent-map .react-flow__edge.used path { stroke-width: 2.6; }
 .agent-map .react-flow__edge.unused path { opacity: 0.22; }

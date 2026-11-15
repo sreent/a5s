@@ -119,8 +119,8 @@ export function DesignPage() {
             facts={[["Works for", "billing, 2 people"], ["Autonomy", "level 1: changes wait for a yes"],
               ["Reads", "records, messages"], ["Writes", "drafts"], ["Changes", "due dates, with a yes"],
               ["Outside content", "none"], ["Data", "personal"]]}
-            perRun={[["Model calls", "3"], ["Tokens", "4.2k, 61% cached"], ["Cost", "$0.002"],
-              ["Graded samples", "48, 96% right"]]}
+            more={{ title: "Per run, last 30 days", aside: "median", rows: [["Model calls", "3"],
+              ["Tokens", "4.2k, 61% cached"], ["Cost", "$0.002"], ["Graded samples", "48, 96% right"]] }}
             foot="Owned by Priya Nair. Sample figures." />
         </section>
       </div>

@@ -73,9 +73,14 @@ export function ApprovalCard({ agent, asks, about, changes, why, tone = "changes
   );
 }
 
-/** An agent's facts, as food carries a label: what it may do, and how it does, per run. */
-export function AgentFacts({ name, version, facts, perRun, foot }: {
-  name: string; version: string; facts: [string, ReactNode][]; perRun: [string, ReactNode][]; foot?: ReactNode;
+/** A part of an agent's label below its facts, such as how it does per run, or what it may
+ * spend: a title, a word beside it, and its lines. */
+export type FactsPart = { title: string; aside?: string; rows: [string, ReactNode][] };
+
+/** An agent's facts, as food carries a label, the same for every agent: what it may do, then
+ * a part such as how it does per run. */
+export function AgentFacts({ name, version, facts, more, foot }: {
+  name: string; version: string; facts: [string, ReactNode][]; more?: FactsPart; foot?: ReactNode;
 }) {
   return (
     <section className="agent-facts" aria-label={`${name}'s facts`}>
@@ -83,9 +88,13 @@ export function AgentFacts({ name, version, facts, perRun, foot }: {
       <div className="per"><span>{name}</span><span className="mono">{version}</span></div>
       <div className="rule" />
       <dl>{facts.map(([what, value]) => <Fact key={what} what={what} value={value} />)}</dl>
-      <div className="thin" />
-      <div className="per"><span>Per run, last 30 days</span><span>median</span></div>
-      <dl>{perRun.map(([what, value]) => <Fact key={what} what={what} value={value} />)}</dl>
+      {more && (
+        <>
+          <div className="thin" />
+          <div className="per"><span>{more.title}</span><span>{more.aside}</span></div>
+          <dl>{more.rows.map(([what, value]) => <Fact key={what} what={what} value={value} />)}</dl>
+        </>
+      )}
       {foot && <><div className="thin" /><p className="foot">{foot}</p></>}
     </section>
   );
@@ -107,7 +116,7 @@ export function AutonomyLadder({ level, max, toward }: {
   level: number; max: number; toward?: { what: string; graded: number; needed: number };
 }) {
   return (
-    <div>
+    <div className="ladder-box">
       <ol className="ladder" aria-label="Autonomy">
         {STEPS.map((step, i) => (
           <li key={step.name} aria-current={i === level ? "step" : undefined}

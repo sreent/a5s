@@ -2,7 +2,7 @@
 // classes, which every page shares; these are the pieces pages are made of.
 
 export { AgentFacts, ApprovalCard, AutonomyLadder, RunTimeline, Traced } from "./agentic";
-export type { Change, Step } from "./agentic";
+export type { Change, FactsPart, Step } from "./agentic";
 export { Badge, Confirm, Hint } from "./controls";
 export type { Tone } from "./controls";
 export { Avatar, initials, Who } from "./people";

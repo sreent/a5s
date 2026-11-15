@@ -476,7 +476,9 @@ main > section.bare { padding: 0; border: 0; background: none; box-shadow: none;
 .ladder li.barred { opacity: 0.7; }
 .meter { height: 6px; margin-top: var(--space-2); overflow: hidden; border-radius: var(--radius-pill); background: var(--sunken); }
 .meter > span { display: block; height: 100%; background: var(--agent-tone); }
-@media (max-width: 40rem) { .ladder { grid-template-columns: minmax(0, 1fr); } }
+/* a step beside the next where there's room for them, else one above the next, wherever it is */
+.ladder-box { container-type: inline-size; }
+@container (max-width: 34rem) { .ladder { grid-template-columns: minmax(0, 1fr); } }
 
 /* A run as time: what happened, in order, each step in the colour of what it did */
 .timeline { margin: 0; padding: 0; list-style: none; }

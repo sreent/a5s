@@ -78,4 +78,5 @@ Each page's title is its first-level heading, its sections' are the second level
 
 - **Decisions** are approval cards, made for a phone: who asks and for whom, what the change does in the words code worked out when it was asked for, never the agent's own, what to know, and Approve or Reject. The cards make a column on a phone and sit side by side where there's room.
 - **The catalogue** leads each agent's card with what it does, and the agent's map draws it in the agent colour.
-- Next: each agent's facts and ladder on its page, and a run as a timeline.
+- **Each agent's page** leads its side with the agent's facts, from its release alone: its model and autonomy, its tools by what they do, and what it may spend. Where all its instances work at one level, its ladder follows, which stacks its steps wherever it's narrow.
+- Next: a run as a timeline.

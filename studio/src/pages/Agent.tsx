@@ -1,15 +1,50 @@
-// One agent, as its release defines it: its map, what it's for, its tools by what they do, when
-// it works, what it knows, its budget, and where it runs.
+// One agent, as its release defines it: its map, what it's for, its facts and its ladder of
+// autonomy, its tools by what they do, when it works, what it knows, its budget, and where it runs.
 
 import { useState } from "react";
 import { type AgentKnown, type AgentUses, ApiError, builtOf, type Catalogue, type Draft,
          type Drafts, get, send, usesOf } from "../api";
 import { AgentMap } from "../AgentMap";
+import { AgentFacts, AutonomyLadder } from "../design";
 import { go, Link } from "../router";
 import { aboutInstance, levels, PageHead, people, type Risk, risk, RISK_NAMES, runners, StatusBadge,
          ToolBadges, triggers, useLoad, Waiting, when } from "../ui";
 
 const ORDER: Risk[] = ["changes", "outside", "writes", "reads"];
+
+/** Its label: what it may do, from its release alone, and what it may spend. */
+function Facts({ agent, uses }: { agent: AgentKnown; uses: AgentUses }) {
+  const named = (keep: (tool: AgentUses["tools"][number]) => boolean) =>
+    uses.tools.filter(keep).map((tool) => tool.name).join(", ") || "none";
+  return (
+    <section className="card" aria-label="Agent facts">
+      <AgentFacts name={agent.id} version={agent.release}
+        facts={[["Model", uses.model], ["Autonomy", levels(uses.autonomy)],
+          ["Only reads", named((t) => !!t.reads && !t.writes && !t.changes && !t.destructive)],
+          ["Writes", named((t) => !!t.writes && !t.changes)],
+          ["Changes", named((t) => !!t.changes || !!t.destructive)],
+          ["Sends outside", named((t) => !!t.sends_outside)],
+          ["Reads outside content", named((t) => t.outside.length > 0)]]}
+        more={{ title: "It may spend", aside: "tokens", rows: [
+          ["In a run", uses.budget.per_run.toLocaleString()],
+          ["For each person, each day", uses.budget.per_person_per_day.toLocaleString()]] }}
+        foot={`Owned by ${agent.owners.join(" and ") || "nobody yet"}.`} />
+    </section>
+  );
+}
+
+/** Its ladder of autonomy, where every instance of it works at one level: which that is, and
+ * how far its release lets it go. */
+function Ladder({ agent, uses }: { agent: AgentKnown; uses: AgentUses }) {
+  const at = [...new Set(agent.instances.map((instance) => instance.level))];
+  if (at.length !== 1) return null;  // none, or at different levels: each is in Where it runs
+  return (
+    <section className="card">
+      <h2>Autonomy</h2>
+      <AutonomyLadder level={at[0]} max={uses.autonomy.max} />
+    </section>
+  );
+}
 
 function Tools({ agent }: { agent: AgentUses }) {
   return (
@@ -281,6 +316,8 @@ export function AgentPage({ id }: { id: string }) {
               {uses && <Tools agent={uses} />}
             </div>
             <div className="side">
+              {uses && <Facts agent={agent} uses={uses} />}
+              {uses && <Ladder agent={agent} uses={uses} />}
               <Seen agent={agent} />
               {agent.ask !== undefined && <AskFor agent={agent} reload={reload} />}
               <AsksWaiting agent={agent} reload={reload} />
