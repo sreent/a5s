@@ -376,7 +376,7 @@ def router(gw: Any) -> APIRouter:
                 "problems": drafts.check(draft["agent"], draft["files"], tools, gw.models),
                 "preview": drafts.preview(gw.scenario, draft["agent"], draft["files"], tools),
                 "signers": drafts.signers(draft["agent"], draft["files"], gw.cfg.agents_dir,
-                                          gw.definitions),
+                                          gw.definitions, memberships.rooted(gw.scenario).holders),
                 "publishing": publishing.configured(gw.cfg),  # or its author opens it
                 **journey(draft)}
 

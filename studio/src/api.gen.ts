@@ -614,11 +614,14 @@ export type Serve = {
   instance: string;
 };
 
-// Whose signature a draft's release would need, and why.
+// Whose signature a draft's release would need, and why: and who holds that role in the
+// directory, by name, where a person holds it; for a new agent's owner, nobody, till the
+// directory names someone.
 export type Signer = {
   role: string;
   who: string;
   why: string;
+  held_by?: string[] | null;
 };
 
 // An agent a new one may start from, and the tools it needs that the scenario hasn't.

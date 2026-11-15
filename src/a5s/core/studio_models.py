@@ -551,11 +551,14 @@ class Defined(Shape):
 
 
 class Signer(Shape):
-    """Whose signature a draft's release would need, and why."""
+    """Whose signature a draft's release would need, and why: and who holds that role in the
+    directory, by name, where a person holds it; for a new agent's owner, nobody, till the
+    directory names someone."""
 
     role: str
     who: str
     why: str
+    held_by: list[str] | None = None
 
 
 class Drafter(Shape):

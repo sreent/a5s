@@ -15,7 +15,7 @@ from __future__ import annotations
 import io
 import tempfile
 import zipfile
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -146,11 +146,15 @@ def preview(scenario: Scenario, agent: str, files: dict[str, str],
     return studio.agent(scenario, found, tools, [], whole=True)
 
 
-def signers(agent: str, files: dict[str, str], agents_dir: Path,
-            released: Iterable[str]) -> list[dict] | None:
+def signers(agent: str, files: dict[str, str], agents_dir: Path, released: Iterable[str],
+            holders: Callable[[str], list[Any]] | None = None) -> list[dict] | None:
     """Who would have to sign the release this draft makes, and why, as `a5s release` works it
     out: from what it changes of the agents released here, with everything else as it is.
-    None if its definition doesn't load as it is."""
+    None if its definition doesn't load as it is.
+
+    With the directory's `holders`, each role a person holds also says who holds it, by name:
+    for a new agent's owner, nobody, until the directory names someone, and its release can't
+    be approved till then. An engineer is anyone in the team that runs a5s, not a role."""
     if shape(files):
         return None
     with tempfile.TemporaryDirectory() as there:
@@ -163,7 +167,9 @@ def signers(agent: str, files: dict[str, str], agents_dir: Path,
     before = {name: releases.agent_part(agents_dir / name) for name in released}
     old = {"parts": {}, "models": {}, "agents": before}
     new = {"parts": {}, "models": {}, "agents": {**before, agent: after}}
-    return [{"role": n.role, "who": releases.who(n.role), "why": n.why}
+    return [{"role": n.role, "who": releases.who(n.role), "why": n.why,
+             "held_by": None if holders is None or n.role == ENGINEER
+             else sorted(p.name for p in holders(n.role))}
             for n in releases.needs(new, old)]
 
 

@@ -110,6 +110,10 @@ def planned(plan: dict) -> list[str]:
              "its release is signed; nothing here puts it to work.")]
 
 
+NOBODY = (". Nobody holds that role in the directory yet: the release can't be approved until the "
+          "directory names someone")
+
+
 def described(draft: dict, person: Any, signers: list[dict], new: bool,
               problems: list[str] | None = None,
               drafted: list[dict] | None = None) -> tuple[str, str, str]:
@@ -123,7 +127,8 @@ def described(draft: dict, person: Any, signers: list[dict], new: bool,
                 for d in drafted]
         by += f" Before them, {'; then '.join(went)}."
     lines = [by, "", "## Who must sign its release", ""]
-    lines += [f"- **{s['who']}**, because {s['why']}" for s in signers] or [
+    lines += [f"- **{s['who']}**, because {s['why']}" + (NOBODY if s.get("held_by") == [] else "")
+              for s in signers] or [
         "- Nobody more than for any release: it changes nothing a person must sign for."]
     lines += planned(draft.get("plan") or {})
     checks = ("As `a5s release` works it out, from what it changes of the agents released where "

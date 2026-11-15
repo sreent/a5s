@@ -1,8 +1,22 @@
 # Phase 5: the three scenarios, built and run in the studio
 
-**Status:** Planned · **Under:** [Architecture](architecture.md)
+**Status:** Step 0 is built: the walk-through harness, and a first walk-through on the sample, which found two gaps, both closed ([progress](#progress)). The service desk is next · **Under:** [Architecture](architecture.md)
 
 The service desk, software delivery and master data scenarios were written by hand: each agent's `agent.yaml`, its instructions, its pins and its tests are files someone typed. That proved a5s runs them. It didn't prove that a team can make them with a5s. This phase builds each scenario's agents again, and the ones they planned but never built, the way an organisation would: in the studio, published, signed and put to work through a5s's own pages, run in the chat, and watched, graded and audited there. Nobody edits an agent's file by hand. Where a step can't be done in a5s, that's a gap, and the gap is the work.
+
+## Progress
+
+- [`tests/walkthrough.py`](../tests/walkthrough.py) is the harness: each step in the words its guide tells it in, a browser of each person's own, signed in through the stand-in identity provider, and a picture of where each step ended. A step a5s can't take fails as a gap, naming the step.
+- [`tests/test_walkthrough.py`](../tests/test_walkthrough.py) is the first walk-through, on the sample, on a deployment that isn't in development. Priya builds a new agent, due-dates, in the studio, plans its first instance and publishes it; the team merges its pull request; `a5s release status` says who must sign the release that adds it, Rosa and Priya sign it with `a5s release sign`, and it's recorded with `a5s release approve`; Priya puts it to work from its plan; Ana approves that from her studio home; Ben asks it to move a due date in the chat; Ana decides the change it asks for on its card; Priya watches it on its instance's page; and Kofi reads it in the audit trail. Its guide is [guides/sample](guides/sample/guide.md).
+
+### Gaps the walk-throughs found
+
+| | Gap | Found by | Now |
+| --- | --- | --- | --- |
+| G-1 | A new agent's release needs its owner's signature, but nobody holds that role until the directory names someone, and nothing said so: the studio named "the due-dates's owner" as if someone were. | The sample, step 5 | The draft's "Who signs its release", and its pull request, name who holds each role a person holds, and say when nobody does yet, so its release can't be approved until the directory names someone. Naming them stays the directory's, as an identity provider's administrator would. |
+| G-2 | Wherever a5s isn't in development, the studio's home failed for everyone: it shows a release that waits for someone's signature, and the channels app, which serves it, couldn't read the releases this deployment recorded. Every test ran in development, where it doesn't ask. | The sample, step 12 | Migration `0070_releases_shown.sql` lets the channels app read them: their manifests and signatures, which are open. |
+
+An instance that serves fewer people than the settings' threshold shows its runs only in its daily figures, as round 11 made it, so one by one they don't say what one person did: the walk-through watches its figures, as its owner would.
 
 ## Done means
 

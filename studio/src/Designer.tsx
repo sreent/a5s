@@ -539,7 +539,12 @@ export function Consequences({ spec, offer, signers, plan }: { spec: Spec; offer
         {signers?.length === 0 && <p className="note">Nobody more than for any release: it changes nothing of what's released here.</p>}
         {signers && signers.length > 0 && (
           <ul className="plain">{signers.map((s) => (
-            <li key={s.role}><strong>{s.who}</strong><span className="faint">, because {s.why}</span></li>
+            <li key={s.role} data-role={s.role}><strong>{s.who}</strong>{s.held_by?.length ? `: ${and(s.held_by, "or")}` : ""}
+              <span className="faint">, because {s.why}{s.held_by?.length === 0 ? "." : ""}</span>
+              {s.held_by?.length === 0 && (  // a new agent's owner, before the directory names one
+                <span className="problem"> Nobody holds that role in the directory yet: its release can't be approved
+                  until the directory names someone.</span>
+              )}</li>
           ))}</ul>
         )}
         <p className="wb-hint">As <span className="mono">a5s release</span> works it out, from what it changes of the agents released
