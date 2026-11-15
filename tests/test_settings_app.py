@@ -190,3 +190,20 @@ def test_an_agent_is_put_to_work_from_its_page_in_the_studio(stack, approving, p
     assert page.inner_text("#reviewed-approvers") == "It needs the approval of Ana Ortiz."
     page.click("#send")
     page.wait_for_selector("#status >> text=You asked for serial", timeout=30000)
+    # a5s proposes it to billing's owner, who approves it on its own page, seeing who asked
+    stack.scheduler().apply_approved()
+    [waiting] = api(approving, provider, "/settings/api", person="ana").json()["waiting"]
+    provider.person = "ana"
+    page = browser.new_page()
+    page.goto(f"{approving}{waiting['link']}")  # signing in afresh, for this version alone
+    page.wait_for_selector("#asker >> text=Priya Nair asked for it", timeout=30000)
+    page.click("#approve")
+    page.wait_for_selector("#status >> text=You approved serial", timeout=30000)
+    stack.scheduler().apply_approved()  # in force
+    # And it's at work: its page shows where it runs, and no longer offers to put it to work
+    provider.person = "priya"
+    page = browser.new_page()
+    page.goto(f"{approving}/studio/agents/watcher")
+    page.wait_for_selector("table >> text=watcher-billing", timeout=30000)
+    assert page.locator("#put-to-work").count() == 0
+    assert page.get_attribute("#draft-change", "class") == "primary"  # its one thing to do again
