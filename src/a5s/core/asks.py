@@ -41,8 +41,9 @@ def serving(scenario: Scenario, insts: list[dict], agent: str, person: str) -> l
 
 def waits_on(insts: list[dict], agent: str, person: Person) -> list[str]:
     """Why an ask for an agent waits on someone: they own it, own a part one of its instances
-    works in, or approve instances, where one is in no part or it has none yet. None if it
-    doesn't wait on them."""
+    works in, or approve instances, where one is in no part. None if it doesn't wait on them.
+    Each of these may know of the agent (studio.layers): an agent with no instance waits on its
+    owners alone, since nobody is served through an instance that isn't there (round 11, D-4)."""
     roles, why = set(person.roles), []
     if agent_owner(agent) in roles:
         why.append(f"you own the {agent}")
@@ -50,7 +51,7 @@ def waits_on(insts: list[dict], agent: str, person: Person) -> list[str]:
     for inst in mine:
         why += [f"you own {part}, where {inst['id']} works" for part in sorted(inst["parts"] or {})
                 if f"{PART_OWNER}:{part}" in roles]
-    if INSTANCE_APPROVER in roles and (not mine or any(not i["parts"] for i in mine)):
+    if INSTANCE_APPROVER in roles and any(not i["parts"] for i in mine):
         why.append("you approve instances")
     return list(dict.fromkeys(why))
 

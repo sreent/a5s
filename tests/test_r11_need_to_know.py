@@ -149,3 +149,17 @@ def test_an_agents_figures_on_peoples_pages_keep_its_retired_instances_runs(  # 
         core = c.get("/studio/agents/assistant/measures").json()
     assert "assistant-finance" in people["instances"] and people["instances"] == core["instances"]
     assert sum(r["runs"] for r in people["runs"]) == sum(r["runs"] for r in core["runs"]) >= 1
+
+
+def test_an_ask_for_an_agent_with_no_instance_waits_on_its_owners_alone(  # D-4
+        stack, approving, provider):
+    from test_agent_asks import send, waiting
+    from test_studio_pages import signed_in
+    api = signed_in(approving, provider)
+    assert api("/studio/api/agents/watcher", "ana").status_code == 404  # unlisted, no instance
+    asked = send(approving, provider, "rosa", "POST", "/studio/api/agents/watcher/ask")
+    assert asked.status_code == 200, asked.text  # a release approver sees how it's built
+    assert waiting(approving, provider, "ana") == []  # who approves instances, and may not know it
+    [theirs] = waiting(approving, provider, "priya")  # its owner
+    assert theirs["what"] == "Rosa Mendes asks for the watcher"
+    assert api(theirs["go"].replace("/studio/", "/studio/api/"), "priya").status_code == 200
