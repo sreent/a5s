@@ -14,9 +14,10 @@ import httpx
 
 from a5s import db
 from a5s.core import officer
-from conftest import CLIENT
+from conftest import CLIENT, accessible
 from test_erase import erase
 from test_export import SAID, export
+from test_ui_pages import shot
 
 
 def sign_in(url: str, provider, action: str, person: str, by: str = "noor") -> tuple[str, str]:
@@ -121,6 +122,8 @@ def test_the_officer_asks_in_the_browser(stack, approving, provider, browser):
     page = browser.new_page()
     page.goto(f"{approving}/officer/")
     page.wait_for_selector("#ask", state="visible", timeout=30000)
+    accessible(page)
+    shot(page, "officer")
     page.select_option("#action", "erase")
     page.fill("#person", "ben")
     page.fill("#confirm", "ben")

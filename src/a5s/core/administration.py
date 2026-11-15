@@ -29,6 +29,21 @@ DAYS = 30  # over how many days
 _ADMINISTERS = (INSTANCE_APPROVER, RELEASE_APPROVER, ASSURANCE, DATA_PROTECTION, audit.AUDITOR)
 
 
+# Each role's name, as people say it; {scope} is its part or agent, and a role with neither is
+# named by its words, such as "Data protection officer" for data-protection-officer
+SCOPED = {PART_OWNER: "Owner of {scope}", PART_DELEGATE: "Delegate in {scope}",
+          "agent-owner": "Owner of the {scope}", "agent-author": "Author of the {scope}",
+          "agent-viewer": "Viewer of the {scope}"}
+
+
+def named(role: str) -> str:
+    """A role's name, in words: its id stays beside it where groups are given it."""
+    kind, _, scope = role.partition(":")
+    if scope and kind in SCOPED:
+        return SCOPED[kind].format(scope=scope)
+    return role.replace("-", " ").capitalize()
+
+
 def administers(person: Person | None, team: str) -> bool:
     """Whether someone may see the page: they hold one of a5s's roles, or run a5s."""
     return person is not None and (person.team == team or any(
@@ -137,7 +152,8 @@ def page(conn: db.Connection, gw: Any, now: datetime, days: int = DAYS) -> dict[
     report = audit.report(conn, gw.scenario, gw.definitions.keys(),
                           since=now - timedelta(days=days))
     shown = audit.Shown(gw.scenario, audit.key(conn), names=gw.data_protection(conn).audit_names)
-    return {"roles": held(gw.scenario, conn, roles), "groups": mapped(gw.scenario),
+    return {"roles": [{**row, "name": named(row["role"])} for row in held(gw.scenario, conn, roles)],
+            "groups": mapped(gw.scenario),
             "claim": gw.identity.cfg.groups_claim if gw.identity else None,
             "waiting": waiting(conn, gw), "ownerless": ownerless(conn, gw), "days": days,
             "latest": shown.report({"acts": report["acts"][-LATEST:][::-1]})["acts"]}

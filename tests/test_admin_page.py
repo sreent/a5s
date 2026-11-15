@@ -5,8 +5,10 @@ was about as a stand-in. It changes nothing, and nobody else sees it."""
 
 import httpx
 
+from conftest import accessible
 from test_group_roles import OWNERS, approve, mapped, version
 from test_proposals import asked, held
+from test_ui_pages import shot
 
 
 def admin(url: str, provider, person: str, *groups: str) -> httpx.Response:
@@ -64,6 +66,12 @@ def test_an_administrator_reads_it_in_the_browser(stack, approving, provider, br
     page.goto(f"{approving}/admin/")
     page.wait_for_selector("#shown:not([hidden])", timeout=30000)
     assert page.inner_text("#who") == "Ana Ortiz"
-    assert "instance-approver: Ana Ortiz (the directory)" in page.inner_text("#roles")
+    # Each role by its name, its id beside it for giving it to a group, and who holds it; one
+    # nobody holds stands out
+    approver = page.inner_text("#roles tr:has-text('Instance approver')")
+    assert "instance-approver" in approver and "Ana Ortiz (the directory)" in approver
+    assert page.inner_text("#roles tr:has-text('Delegate in billing') .badge") == "nobody"
     assert "None: the settings in force give no group a role." in page.inner_text("#groups")
+    accessible(page)
+    shot(page, "admin")
     assert page.evaluate("window.location.search") == ""

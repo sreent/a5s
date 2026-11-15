@@ -89,6 +89,9 @@ Each page's title is its first-level heading, its sections' are the second level
 - **Approving a version of the settings** is one card: who asked for it in the settings app, if someone did, and when it was proposed; where it stands; what it changes, with any change that widens what agents do marked so, as the settings app marks it; who has approved it and what's still missing; and the whole version as it would be, before the one thing to do, Approve, which a fresh sign-in signs for that version alone.
 - **Grading** puts each sample on the card decisions are made on: the agent that asked or acted, what it did in the words code worked out, how it went, what code flagged, the record, and the grade. The grade chosen shows in its colour, green for right, amber for wrong and red for critical, and choosing it again takes it back. The grades go together, signed in afresh.
 
+- **The administrators' page** names each role in words, such as "Owner of billing", with its id beside it for giving it to a group in the settings, marks a role nobody holds, and gives times as people read them; "What you may do" in the studio names roles the same way. The audit trail gives its times to the second, in UTC, as its searches are, and each long entry is a box keyboards reach as well as a mouse.
+- A status line a page shows, such as why someone may not use it, starts with a capital, whatever the server's words.
+
 On a phone, the sidebar shows each page's icon in a row, and screen readers still say each page's name.
 
 The studio's pages for agents and runs are checked with axe too, in their own browser test.

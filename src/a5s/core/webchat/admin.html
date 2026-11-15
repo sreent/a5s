@@ -15,14 +15,17 @@
 </header>
 <main>
   <h1>Administration</h1>
-  <p class="note">Who holds each of a5s's roles, and by what: the directory, which a5s's release
-    covers, or a group in your identity provider, as the settings map it. What waits for whom,
-    and the latest administrative acts. It only shows: settings change in the settings app, and
-    releases with <code>a5s release</code>.</p>
+  <p class="note">Who holds each role in a5s, and what gave it them: the directory, or a group in
+    your identity provider. Then what waits for whom, what nobody answers for, and what was done
+    lately. This page only shows: to change anything, use the settings app, or
+    <code>a5s release</code> for a release.</p>
   <p id="status" role="status"></p>
   <section id="shown" hidden>
     <h2>Who holds each role</h2>
-    <ul id="roles" class="plain"></ul>
+    <table class="figures">
+      <thead><tr><th>Role</th><th>Held by</th></tr></thead>
+      <tbody id="roles"></tbody>
+    </table>
     <h2>Groups that give roles</h2>
     <p id="claim" class="note"></p>
     <ul id="groups" class="plain"></ul>

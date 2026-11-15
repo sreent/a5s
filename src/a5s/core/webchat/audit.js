@@ -72,12 +72,26 @@ async function call(path) {
   return found;
 }
 
-function line(text, className) {
-  const p = document.createElement("p");
+function line(text, className, tag = "p") {
+  const p = document.createElement(tag);
   p.textContent = text;
   if (className) p.className = className;
   return p;
 }
+
+// What an entry or an act holds, as the ledger has it: a box that scrolls when it's long, which
+// keyboards reach as well as a mouse's wheel
+function held(value) {
+  const pre = document.createElement("pre");
+  pre.className = "entries";
+  pre.tabIndex = 0;
+  pre.textContent = JSON.stringify(value, null, 1);
+  return pre;
+}
+
+// When, to the second, in UTC as the search's period is: the ledger's exact time stays in what's
+// exported
+const when = (at) => `${new Date(at).toLocaleString([], { dateStyle: "medium", timeStyle: "medium", timeZone: "UTC" })} UTC`;
 
 function utc(id) {  // the page's times are UTC's, as the ledger's are
   const value = $(id).value;
@@ -130,19 +144,14 @@ const ACTORS = ["admin", "audit", "proposal"];  // entries whose `by` acted in o
 function shown(entry) {
   const item = document.createElement("li");
   const where = entry.instance ? `, ${entry.instance}` : "";
-  item.append(line(`#${entry.seq}, ${entry.at}: ${entry.kind} ${entry.action}, ${entry.decision}${where}`));
+  item.append(line(`#${entry.seq}, ${when(entry.at)}: ${entry.kind} ${entry.action}, ${entry.decision}${where}`));
   if ((entry.acts_for || []).length) item.append(people("For", "for", entry.acts_for));
   const args = entry.args || {};
   if (ACTORS.includes(entry.kind) && args.by) {
     item.append(people("By", "by", Array.isArray(args.by) ? args.by : [args.by]));
   }
   if ((entry.reasons || []).length) item.append(line(`Why: ${entry.reasons.join(", ")}`, "note"));
-  if (Object.keys(args).length) {
-    const pre = document.createElement("pre");
-    pre.className = "entries";
-    pre.textContent = JSON.stringify(args, null, 1);
-    item.append(pre);
-  }
+  if (Object.keys(args).length) item.append(held(args));
   return item;
 }
 
@@ -167,23 +176,18 @@ async function report() {
   const holders = $("holders");
   holders.replaceChildren();
   for (const row of found.roles) {
-    holders.append(line(`${row.role}: ${row.held_by.join(", ") || "nobody"}`));
+    holders.append(line(`${row.role}: ${row.held_by.join(", ") || "nobody"}`, null, "li"));
   }
   const acts = $("acts");
   acts.replaceChildren();
   for (const act of found.acts) {
     const item = document.createElement("li");
     const where = act.instance ? `, ${act.instance}` : "";
-    item.append(line(`${act.at}: ${act.by || "a5s"} ${act.what}${where}`));
-    if (Object.keys(act.about || {}).length) {
-      const pre = document.createElement("pre");
-      pre.className = "entries";
-      pre.textContent = JSON.stringify(act.about, null, 1);
-      item.append(pre);
-    }
+    item.append(line(`${when(act.at)}: ${act.by || "a5s"} ${act.what}${where}`));
+    if (Object.keys(act.about || {}).length) item.append(held(act.about));
     acts.append(item);
   }
-  if (!found.acts.length) acts.append(line("Nothing was done in the period.", "note"));
+  if (!found.acts.length) acts.append(line("Nothing was done in the period.", "note", "li"));
   $("roles").hidden = false;
   status("");
 }

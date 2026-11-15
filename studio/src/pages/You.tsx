@@ -22,7 +22,10 @@ export function YouPage() {
                 <table className="grid-table">
                   <thead><tr><th>Role</th><th>Lets you</th><th>Given by</th></tr></thead>
                   <tbody>{data.roles.map((r) => (
-                    <tr key={r.role}><td className="mono">{r.role}</td><td>{r.may}</td><td>{r.by.join(", ")}</td></tr>
+                    <tr key={r.role}>
+                      <td><strong>{r.name}</strong>{r.name !== r.role && <span className="role-id mono">{r.role}</span>}</td>
+                      <td>{r.may}</td><td>{r.by.join(", ")}</td>
+                    </tr>
                   ))}</tbody>
                 </table>
               )}

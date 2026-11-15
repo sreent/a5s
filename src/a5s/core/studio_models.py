@@ -67,6 +67,7 @@ class Role(Shape):
     """A role someone holds, what gave it them, and what it lets them do."""
 
     role: str
+    name: str  # in words, such as "Owner of billing" for part-owner:billing
     by: list[str]
     may: str
 
