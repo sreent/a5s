@@ -365,7 +365,18 @@ def router(gw: Any) -> APIRouter:
                 "preview": drafts.preview(gw.scenario, draft["agent"], draft["files"], tools),
                 "signers": drafts.signers(draft["agent"], draft["files"], gw.cfg.agents_dir,
                                           gw.definitions),
-                "publishing": publishing.configured(gw.cfg)}  # or its author opens it
+                "publishing": publishing.configured(gw.cfg),  # or its author opens it
+                **journey(draft)}
+
+    def journey(draft: dict) -> dict:
+        """Where a draft is on its way to work, past publishing it: released here as it is, and
+        its agent at work through an instance, running or paused."""
+        with db.transaction(gw.url) as conn:
+            at_work = conn.execute("select 1 from instances where definition = %s and status in "
+                                   "('active', 'suspended') limit 1", (draft["agent"],)).fetchone()
+        return {"released": drafts.released(draft["agent"], draft["files"], draft.get("based_on"),
+                                            gw.cfg.agents_dir, gw.definitions),
+                "at_work": at_work is not None}
 
     @api.get("/studio/api/tools", **shapes.answers(shapes.Offer))
     def studio_tools(_: Annotated[Person, Depends(drafting)]) -> dict:

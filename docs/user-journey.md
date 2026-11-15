@@ -85,7 +85,7 @@ The studio now keeps drafts: an agent's owner starts a new agent from a template
 
 Once it's released and no instance runs it, its page offers its owners to put it to work: the settings app opens with a form for its first instance, the agent chosen, for a few people at level 0 or 1, which its part's owner approves as any version of the settings.
 
-A draft's page leads with that way as a path, from shaping and trying it to publishing it, its release signed, putting it to work and watching it, each stage marked done, to do now, or later, with the one thing to do next.
+A draft's page leads with that way as a path, from shaping and trying it to publishing it, its release signed, putting it to work and watching it, each stage marked done, to do now, or later, with the one thing to do next. It follows the draft past publishing: once the release here holds it as it is, the path says it's released and deployed, and leads to the agent's page, to put it to work, then to watch it.
 
 The present journey is therefore:
 

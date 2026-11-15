@@ -15,7 +15,7 @@ from __future__ import annotations
 import io
 import tempfile
 import zipfile
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -61,6 +61,17 @@ def folder_files(folder: Path) -> dict[str, str]:
     """An agent's folder as a draft keeps it: each of its files' text, by its path in it."""
     return {p.relative_to(folder).as_posix(): p.read_text() for p in sorted(folder.rglob("*"))
             if p.is_file() and "__pycache__" not in p.parts and p.suffix != ".pyc"}
+
+
+def released(agent: str, files: dict[str, str], based_on: str | None, agents_dir: Path,
+             definitions: Mapping[str, Any]) -> bool:
+    """Whether the release here holds a draft as it is: its agent released with exactly its
+    files, in a release other than the one it was drafted from, so a change nobody's made yet
+    doesn't count, nor a release since that holds something else."""
+    definition = definitions.get(agent)
+    if definition is None or (based_on or "").endswith(f" {definition.release_id}"):
+        return False
+    return folder_files(agents_dir / agent) == files
 
 
 def shape(files: Any) -> list[str]:

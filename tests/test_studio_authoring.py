@@ -32,7 +32,8 @@ def test_an_agents_owner_makes_an_agent_in_the_studio(stack, approving, provider
     page.click("#make")
 
     page.wait_for_selector("#problems >> text=Nothing would stop its release", timeout=30000)
-    assert page.evaluate("location.pathname").startswith("/studio/drafts/")
+    made = page.evaluate("location.pathname")
+    assert made.startswith("/studio/drafts/")
     assert "the finance-helper is new" in page.inner_text("#signers")  # who'd sign, before anything
     # Where it stands on its way to work: shaped, with no sandbox here to try it in, so
     # publishing is what's next, and its release's signers and a5s's deploying it follow
@@ -73,6 +74,23 @@ def test_an_agents_owner_makes_an_agent_in_the_studio(stack, approving, provider
     page.click("button:has-text('Drop the draft')")
     page.wait_for_selector("#drafts >> text=finance-helper", timeout=30000)
     assert page.locator("#drafts li").count() == 1  # the change dropped, the new one kept
+
+    # Once the release here holds it as it is, its path follows its agent: put it to work, then
+    # watch it, each from its page. A fresh stack releases nothing new, so its answer says so.
+    def released(at_work: bool):
+        def answer(route) -> None:
+            route.fulfill(json={**route.fetch().json(), "released": True, "at_work": at_work})
+        return answer
+
+    for at_work, now, then in ((False, "Put it to work", "Put it to work, from its page"),
+                               (True, "Watch it", "Watch it on its page")):
+        page.unroute("**/studio/api/drafts/*")
+        page.route("**/studio/api/drafts/*", released(at_work))
+        page.goto(f"{approving}{made}")
+        page.wait_for_selector("#journey >> text=released here as it is", timeout=30000)
+        assert page.inner_text("#journey [aria-current=step] strong") == now
+        link = page.locator(f"#journey a:has-text('{then}')")
+        assert link.get_attribute("href") == "/studio/agents/finance-helper"
     assert refused == []
 
 

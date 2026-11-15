@@ -515,6 +515,10 @@ class Draft(Shape):
     preview: Defined | None
     signers: list[Signer] | None  # whom its release would need, if that can be worked out
     publishing: bool  # whether the studio opens its pull request, or its author does
+    # Where it is on its way to work: whether the release here holds it as it is, and whether
+    # an instance of its agent is at work, or paused
+    released: bool
+    at_work: bool
 
 
 class Named(Shape):

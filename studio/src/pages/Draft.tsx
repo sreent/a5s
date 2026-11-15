@@ -9,7 +9,7 @@ import { type CoAuthors, type Draft, get, type Offer, type Offered, type Sandbox
 import { CASES, keptCases, read, Unreadable, withCase, withTool, withValue } from "../definition";
 import { JourneyPath, type Stage } from "../design";
 import { Publish } from "../Publish";
-import { go } from "../router";
+import { go, Link } from "../router";
 import { TryIt } from "../TryIt";
 import { PageHead, type Risk, risk, RISK_NAMES, ToolBadges, useLoad, Waiting, when } from "../ui";
 
@@ -176,39 +176,45 @@ function HandOver({ id }: { id: string }) {
 
 const named = (them: string[]) => them.length > 1 ? `${them.slice(0, -1).join(", ")} and ${them[them.length - 1]}` : them[0];
 
+type Said = Pick<Draft, "problems" | "preview" | "signers" | "released" | "at_work">;
+
 /** Where a draft stands on its way to work, and the one thing to do next: shape it and try it,
- * publish it, have its release signed, which a5s then deploys, put it to work, and watch it. */
-function Journey({ draft, said, files }: {
-  draft: Draft; said: Pick<Draft, "problems" | "signers">; files: Files;
-}) {
+ * publish it, have its release signed, which a5s then deploys, put it to work, and watch it.
+ * Once the release here holds it as it is, the rest follows its agent: at work or not yet. */
+function Journey({ draft, said, files }: { draft: Draft; said: Said; files: Files }) {
   const sandbox = useLoad(() => get<Sandbox>("/studio/api/sandbox"), []);
   const shaped = said.problems.length === 0;
   const cases = keptCases(files[CASES]);
-  const published = Boolean(draft.published);
+  const { released, at_work: atWork } = said;
+  const published = Boolean(draft.published) || released;
   const untried = !cases && !sandbox.error && !published;  // a sandbox to try it in, before it's out
   const signers = [...new Set((said.signers ?? []).map((s) => s.who))];
   const stages: Stage[] = [
-    { name: "Shape and try it", state: shaped && !untried ? "done" : "now",
+    { name: "Shape and try it", state: released || (shaped && !untried) ? "done" : "now",
       about: !shaped ? `${said.problems.length === 1 ? "One thing stops" : `${said.problems.length} things stop`} its release.`
         : cases ? `Nothing stops its release, and ${cases} test case${cases === 1 ? "" : "s"} kept from the sandbox.`
         : untried ? "Nothing stops its release. Try it in the sandbox, and keep what it should do as test cases."
         : sandbox.error ? "Nothing stops its release. There's no sandbox here to try it in." : "Nothing stops its release." },
     { name: "Publish it", state: published ? "done" : shaped && !untried ? "now" : "later",
       about: draft.publishing ? "As a pull request, which a5s opens as you." : "As a pull request, which you open with the words a5s gives." },
-    { name: "Have its release signed", state: published ? "now" : "later",
-      about: `By ${signers.length ? named(signers) : "whoever its release needs"}. a5s deploys it once they have.` },
-    { name: "Put it to work", state: "later",
-      about: "An instance in the settings, for a few people first, at level 0 or 1." },
-    { name: "Watch it", state: "later", about: "Its runs and how they end, on its page." },
+    { name: "Have its release signed", state: released ? "done" : published ? "now" : "later",
+      about: released ? "It's released here as it is, and a5s deployed it."
+        : `By ${signers.length ? named(signers) : "whoever its release needs"}. a5s deploys it once they have.` },
+    { name: "Put it to work", state: released && atWork ? "done" : released ? "now" : "later",
+      about: released && atWork ? "An instance runs it." : "An instance in the settings, for a few people first, at level 0 or 1." },
+    { name: "Watch it", state: released && atWork ? "now" : "later", about: "Its runs and how they end, on its page." },
   ];
   const to = (section: string) => () => {
     const at = document.getElementById(section);
     at?.scrollIntoView({ behavior: "smooth", block: "start" });
     at?.focus({ preventScroll: true });
   };
-  const next = !shaped
+  const page = { page: "agent" as const, agent: draft.agent };
+  const next = released
+    ? <Link to={page} className="button primary">{atWork ? "Watch it on its page" : "Put it to work, from its page"}</Link>
+    : !shaped
     ? <button type="button" className="primary" onClick={to("problems")}>See what stops its release</button>
-    : published
+    : draft.published
       ? <a className="button primary" href={draft.published ?? "#"} target="_blank" rel="noopener noreferrer">Open its pull request</a>
       : untried
         ? <><button type="button" className="primary" onClick={to("try")}>Try it in the sandbox</button>
@@ -226,7 +232,7 @@ export function DraftPage({ id }: { id: string }) {
   const loaded = useLoad(() => get<Draft>(`/studio/api/drafts/${encodeURIComponent(id)}`), [id]);
   const tools = useLoad(() => get<Offer>("/studio/api/tools"), []);
   const [files, setFiles] = useState<Files | null>(null);
-  const [said, setSaid] = useState<Pick<Draft, "problems" | "preview" | "signers"> | null>(null);
+  const [said, setSaid] = useState<Said | null>(null);
   const [kept, setKept] = useState<Kept>("kept");
   const [revision, setRevision] = useState(0);  // each time a change is kept
   const [tab, setTab] = useState<Tab>("basics");
@@ -235,7 +241,8 @@ export function DraftPage({ id }: { id: string }) {
   useEffect(() => {
     if (loaded.data && files === null) {
       setFiles(loaded.data.files);
-      setSaid({ problems: loaded.data.problems, preview: loaded.data.preview, signers: loaded.data.signers });
+      const { problems, preview, signers, released, at_work } = loaded.data;
+      setSaid({ problems, preview, signers, released, at_work });
     }
   }, [loaded.data, files]);
   useEffect(() => () => window.clearTimeout(timer.current), []);
@@ -244,7 +251,8 @@ export function DraftPage({ id }: { id: string }) {
     try {
       const saved = await send<Draft>("PUT", `/studio/api/drafts/${encodeURIComponent(id)}`, { files: next });
       if (mine !== latest.current) return;  // a later change is on its way
-      setSaid({ problems: saved.problems, preview: saved.preview, signers: saved.signers });
+      const { problems, preview, signers, released, at_work } = saved;
+      setSaid({ problems, preview, signers, released, at_work });
       setFiles((now) => {  // a5s's pins, beside what they've typed since
         if (!now) return now;
         const { ["tools.lock"]: _old, ...rest } = now;

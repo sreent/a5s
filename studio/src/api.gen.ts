@@ -192,6 +192,8 @@ export type Draft = {
   preview: Defined | null;
   signers: Signer[] | null;
   publishing: boolean;
+  released: boolean;
+  at_work: boolean;
 };
 
 // A draft's agent's folder: each file's text, by its path in it.
