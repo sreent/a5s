@@ -47,6 +47,31 @@ A brand that reads less well fails the first test before anyone sees it.
 2. Run `uv run pytest tests/test_design.py`, and adjust any colour it names until each reads.
 3. Build the studio (`npm run build` in `studio/`), so it carries the change too.
 
+## Components
+
+The pieces pages are made of live in [`studio/src/design`](../studio/src/design), with their look in `app.css`, so a page outside the studio can draw them too. The showcase, at `/studio/design`, shows each one as pages use it, in light or dark as the device is.
+
+| Piece | What it's for |
+| --- | --- |
+| `Who`, `Avatar` | Who did something: people round, with their initials; agents as rounded squares in `--agent-tone` |
+| `Badge` | What a tool does, or how something stands, in the colour that means it |
+| `Traced` | A value an agent used, which opens to show its record, when it was read, by which run and for whom, and whether it still holds |
+| `ApprovalCard` | What an agent asks someone to decide, at a phone's width at most: what it changes, why, and their yes or no, signed and kept in the ledger |
+| `AgentFacts` | An agent's facts, as food carries a label, the same for every agent: what it may do, and how it does per run |
+| `AutonomyLadder` | The level an agent works at, the levels its release allows beyond it, and how far it has come toward the next |
+| `RunTimeline` | A run as time: each step in order, in the colour of what it did |
+| `Confirm` | Asking first, for what can't be undone, in the browser's own dialog |
+| `Hint` | A word on what something means, for whoever points at it or tabs to it |
+
+The popover a traced value opens and the hint are Radix's, which keyboards and screen readers reach as they do the mouse. The dialog is the browser's own: it keeps focus in it and the page behind it out of reach without injecting styles of its own, which the pages' policy wouldn't allow.
+
+The browser tests open the showcase signed in, and check that:
+
+- each piece is there;
+- [axe](https://github.com/dequelabs/axe-core) finds nothing amiss in light or dark, by WCAG's rules and its best practices. One rule waits for the pages' step: each page's own first-level heading, where the studio's pages title themselves with a second-level one beside the sidebar;
+- each piece works from the keyboard: a traced value opens and closes with focus back on it, a hint shows to whoever tabs to it, and the dialog starts on "Keep it" and closes with Escape even when a hint was open;
+- nothing on the page writes an error to the console, such as a style the pages' policy refused.
+
 ## Next
 
-Components on Radix, for menus, dialogs and tooltips, which handle keyboard and screen readers, with a5s's own pieces for agentic work: the approval card, agent facts, a value traced to its record, the ladder of autonomy, and the run as a timeline. They'll live on a showcase page in the studio, tested for accessibility in every mode.
+The pages, on these pieces: decisions on the approval card, made for a phone; each agent's facts and ladder on its page; a run as a timeline; and each page's first-level heading.

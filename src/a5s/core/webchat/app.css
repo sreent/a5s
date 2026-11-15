@@ -77,6 +77,7 @@
   --bad: var(--coral-700);       --bad-bg: var(--coral-100);
   --idle: var(--mist-600);       --idle-bg: var(--mist-100);
   --shadow: 0 1px 2px rgba(10, 35, 60, 0.06);
+  --shadow-raised: 0 6px 24px -8px rgba(10, 35, 60, 0.18), 0 1px 2px rgba(10, 35, 60, 0.06);
   --radius: var(--radius-md);
   color-scheme: light dark;
   font: var(--text-base)/1.5 var(--font-sans);
@@ -112,6 +113,7 @@
     --bad: var(--coral-300);       --bad-bg: var(--coral-900);
     --idle: var(--deep-200);       --idle-bg: var(--deep-700);
     --shadow: none;
+    --shadow-raised: 0 8px 28px -10px rgba(0, 0, 0, 0.6);
   }
 }
 
@@ -381,3 +383,119 @@ article { background: var(--surface); border: 1px solid var(--line); border-radi
 .said { white-space: pre-wrap; margin: 0.25rem 0; }
 .flags { padding-left: 1.25rem; font-weight: 600; }
 .tick { margin-left: 0.75rem; }
+
+/* a5s's own pieces for agentic work, which the studio draws (studio/src/design) and any page
+   may: who did something, a value traced to its record, a decision, an agent's facts, its
+   ladder of autonomy, and a run as time. docs/design.md says what each is for. */
+
+/* People are round; agents are rounded squares, in the agent colour, wherever they appear */
+.avatar.agent { border-radius: var(--radius-sm); background: var(--agent-tone); color: var(--surface); }
+.avatar.agent .icon { width: 1.1rem; height: 1.1rem; }
+.who { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; }
+.who-name { display: block; font-weight: 600; }
+.who-about { display: block; color: var(--muted); font-size: var(--text-sm); }
+
+/* A value traced to its record: open it to see where it comes from */
+.traced { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.05rem 0.45rem;
+          border: 1px dashed var(--accent); border-radius: var(--radius-sm); background: var(--accent-soft);
+          color: var(--text); font: inherit; font-weight: 600; cursor: pointer; }
+.traced:hover { background: var(--accent-soft); border-style: solid; }
+.traced .icon { width: 0.9rem; height: 0.9rem; color: var(--accent); }
+.popover { z-index: 20; max-width: min(26rem, calc(100vw - 2rem)); padding: var(--space-3) var(--space-4);
+           border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface);
+           box-shadow: var(--shadow-raised); font-size: var(--text-md); }
+.trail { margin: var(--space-2) 0 0; padding: 0; list-style: none; display: grid; gap: var(--space-1); }
+.trail li { display: grid; grid-template-columns: 0.9rem 1fr; gap: var(--space-2); color: var(--muted); }
+.trail li::before { content: ""; width: 0.55rem; height: 0.55rem; margin-top: 0.45rem; border-radius: 50%;
+                    border: 2px solid var(--accent); }
+.trail strong { color: var(--text); font-weight: 600; }
+
+/* A decision someone makes, a phone's width at most: what changes, why, and their yes or no */
+.approval { max-width: 28rem; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-lg);
+            background: var(--surface); box-shadow: var(--shadow-raised); }
+.approval-stripe { height: 4px; background: var(--changes); }
+.approval-stripe.writes { background: var(--writes); }
+.approval-stripe.outside { background: var(--outside); }
+.approval-body { display: grid; gap: var(--space-3); padding: var(--space-4) var(--space-5) var(--space-5); }
+.approval-title { margin: 0; font-size: var(--text-lg); font-weight: 600; }
+.approval-changes { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-3);
+                    margin: 0; padding: var(--space-3); border-radius: var(--radius-md); background: var(--sunken); }
+dl .pair { display: contents; }  /* a term and what it says, in a list that lays out as a grid */
+.approval-changes dt { color: var(--muted); }
+.approval-changes dd { margin: 0; overflow-wrap: anywhere; }
+.approval-changes del { color: var(--muted); }
+.approval-changes ins { color: var(--changes); font-weight: 650; text-decoration: none; }
+.approval-why { margin: 0; color: var(--muted); }
+.approval-why strong { color: var(--text); }
+.approval-actions { display: flex; gap: var(--space-2); }
+.approval-actions button { flex: 1; justify-content: center; padding: 0.7rem 1rem; font-size: 1rem; }
+.approval-signed { display: flex; align-items: center; gap: 0.35rem; margin: 0; color: var(--faint); font-size: var(--text-sm); }
+.approval-signed .icon { width: 0.95rem; height: 0.95rem; }
+.approval-done { margin: 0; font-weight: 600; }
+
+/* An agent's facts, as food carries a label: the same for every agent */
+.agent-facts { max-width: 24rem; margin: 0; padding: var(--space-3) var(--space-4) var(--space-4);
+               border: 2px solid var(--text); border-radius: var(--radius-sm); background: var(--surface);
+               font-size: var(--text-md); }
+.agent-facts h3 { margin: 0; font-size: 1.4rem; font-weight: 700; line-height: 1.2; }
+.agent-facts .rule { border-top: 7px solid var(--text); margin: var(--space-2) 0 var(--space-1); }
+.agent-facts .thin { border-top: 1px solid var(--text); margin: var(--space-1) 0; }
+.agent-facts dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.15rem var(--space-3); margin: 0; }
+.agent-facts dt { font-weight: 700; }
+.agent-facts dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+.agent-facts .per { display: flex; justify-content: space-between; gap: var(--space-3); font-weight: 700; }
+.agent-facts .foot { margin: var(--space-2) 0 0; color: var(--muted); font-size: var(--text-sm); }
+
+/* Autonomy is earned: a ladder, with how far the agent has come toward the next step */
+.ladder { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-2); margin: 0;
+          padding: 0; list-style: none; }
+.ladder li { padding: var(--space-2) var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-md); }
+.ladder .lvl { display: block; color: var(--faint); font-family: var(--font-mono); font-size: var(--text-xs); }
+.ladder strong { display: block; }
+.ladder p { margin: 0.15rem 0 0; color: var(--muted); font-size: var(--text-sm); }
+.ladder li[aria-current="step"] { border-color: var(--agent-tone); background: var(--agent-tone-soft);
+                                  box-shadow: inset 0 0 0 1px var(--agent-tone); }
+.ladder li[aria-current="step"] .lvl { color: var(--agent-tone); }
+.ladder li.beyond { border-style: dashed; }
+.ladder li.barred { opacity: 0.7; }
+.meter { height: 6px; margin-top: var(--space-2); overflow: hidden; border-radius: var(--radius-pill); background: var(--sunken); }
+.meter > span { display: block; height: 100%; background: var(--agent-tone); }
+@media (max-width: 40rem) { .ladder { grid-template-columns: minmax(0, 1fr); } }
+
+/* A run as time: what happened, in order, each step in the colour of what it did */
+.timeline { margin: 0; padding: 0; list-style: none; }
+.timeline li { display: grid; grid-template-columns: 4.6rem 1.5rem 1fr; gap: var(--space-2); padding: var(--space-1) 0; }
+.timeline time { padding-top: 0.15rem; color: var(--faint); font-family: var(--font-mono); font-size: var(--text-xs); }
+.timeline .node { position: relative; width: 0.8rem; height: 0.8rem; margin: 0.3rem auto 0;
+                  border: 2px solid currentColor; border-radius: 50%; background: var(--surface); }
+.timeline li:not(:last-child) .node::after { content: ""; position: absolute; top: 0.75rem; left: 50%;
+                  width: 2px; height: 2.3rem; transform: translateX(-50%); background: var(--line-strong); }
+.timeline .tone-reads { color: var(--reads); }
+.timeline .tone-writes { color: var(--writes); }
+.timeline .tone-changes { color: var(--changes); }
+.timeline .tone-outside { color: var(--outside); }
+.timeline .tone-own { color: var(--own); }
+.timeline .tone-good { color: var(--good); }
+.timeline .tone-warn { color: var(--warn); }
+.timeline .tone-bad { color: var(--bad); }
+.timeline .tone-idle { color: var(--idle); }
+.timeline .step-detail { display: block; color: var(--muted); font-size: var(--text-sm); }
+
+/* Asking before what can't be undone, in the browser's own dialog, which keeps focus in it and
+   the page behind it out of reach; and hints, Radix's, in a5s's look */
+dialog.dialog { position: fixed; inset: 0; width: min(28rem, calc(100vw - 2rem)); height: fit-content;
+                margin: auto; padding: var(--space-5); border: 1px solid var(--line); border-radius: var(--radius-lg);
+                background: var(--surface); color: var(--text); box-shadow: var(--shadow-raised); }
+dialog.dialog::backdrop { background: rgba(10, 23, 36, 0.45); }
+body:has(dialog.dialog[open]) { overflow: hidden; }
+.dialog h2 { margin: 0 0 var(--space-2); font-size: var(--text-lg); }
+.dialog p { margin: 0 0 var(--space-4); color: var(--muted); }
+.dialog-actions { display: flex; justify-content: flex-end; gap: var(--space-2); }
+button.danger { color: var(--bad); border-color: var(--bad); }
+button.danger.primary { background: var(--bad); border-color: var(--bad); color: var(--surface); }
+.hint { z-index: 40; max-width: 18rem; padding: var(--space-1) var(--space-2); border-radius: var(--radius-sm);
+        background: var(--text); color: var(--surface); font-size: var(--text-sm); }
+@media (prefers-reduced-motion: no-preference) {
+  .popover, .dialog, .hint { animation: rise 120ms ease-out; }
+}
+@keyframes rise { from { opacity: 0; translate: 0 4px; } to { opacity: 1; translate: 0 0; } }

@@ -27,6 +27,8 @@ const LINES: Record<string, string[]> = {
   back: ["M14.5 6l-6 6 6 6"],
   run: ["M8 5.5l10 6.5-10 6.5z"],
   people: ["M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z", "M3 20a6 6 0 0 1 12 0"],
+  trace: ["M6 15.8a2.2 2.2 0 1 0 0 4.4 2.2 2.2 0 0 0 0-4.4z", "M18 3.8a2.2 2.2 0 1 0 0 4.4 2.2 2.2 0 0 0 0-4.4z",
+          "M7.6 16.4l8.8-8.8"],
 };
 
 export function Icon({ name, className = "icon" }: { name: string; className?: string }) {

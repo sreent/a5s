@@ -161,9 +161,10 @@ def router(gw: Any) -> APIRouter:
     @pages.get("/studio/new", include_in_schema=False)
     @pages.get("/studio/agents", include_in_schema=False)
     @pages.get("/studio/you", include_in_schema=False)
+    @pages.get("/studio/design", include_in_schema=False)
     def studio_new() -> Response:
-        """The studio, where someone starts a new agent, sees all the agents they may, or what
-        they may do."""
+        """The studio, where someone starts a new agent, sees all the agents they may, what they
+        may do, or the design system's showcase."""
         return built("index.html")
 
     @pages.get("/studio/assets/{name}", include_in_schema=False)

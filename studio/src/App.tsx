@@ -6,6 +6,7 @@ import { signedIn } from "./api";
 import { signIn } from "./auth";
 import { AgentPage } from "./pages/Agent";
 import { AgentsPage } from "./pages/Agents";
+import { DesignPage } from "./pages/Design";
 import { DraftPage } from "./pages/Draft";
 import { HomePage } from "./pages/Home";
 import { InstancePage } from "./pages/Instance";
@@ -41,6 +42,7 @@ export function App() {
   else if (route.page === "draft") content = <DraftPage key={route.draft} id={route.draft} />;
   else if (route.page === "agents") content = <AgentsPage />;
   else if (route.page === "you") content = <YouPage />;
+  else if (route.page === "design") content = <DesignPage />;
   else content = <HomePage />;
   return (
     <>

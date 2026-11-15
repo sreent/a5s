@@ -6,9 +6,12 @@ if it reads less well."""
 import re
 
 import httpx
+from axe_playwright_python.sync_playwright import Axe
+from playwright.sync_api import expect
 
 from a5s.core import web
 from conftest import ROOT
+from test_ui_pages import shot
 from test_webchat import channels
 
 CSS = (ROOT / "src" / "a5s" / "core" / "webchat" / "app.css").read_text()
@@ -51,6 +54,9 @@ TEXT = [  # text, and what it's on: 4.5 to 1
     ("faint", "page"), ("faint", "surface"),
     ("accent", "page"), ("accent", "surface"), ("accent", "accent-soft"),
     ("accent-text", "accent"), ("accent-text", "accent-strong"),
+    ("text", "accent-soft"), ("changes", "sunken"),  # a traced value; a change, on a decision
+    ("muted", "agent-tone-soft"), ("agent-tone", "agent-tone-soft"),  # the step an agent is on
+    ("surface", "bad"), ("surface", "text"),  # the danger button; a hint
     *((tone, f"{tone}-bg") for tone in ("reads", "writes", "changes", "outside", "own",
                                          "good", "warn", "bad", "idle")),
 ]
@@ -87,3 +93,66 @@ def test_the_pages_load_their_type_from_a5s_and_nowhere_else(stack):
     assert font.content[:4] == b"wOF2"
     assert "font-src 'self'" in page.headers["content-security-policy"]
     assert "default-src 'none'" in page.headers["content-security-policy"]
+
+
+# The showcase: each piece pages are made of, as pages use it
+
+PIECES = ("colours", "type", "buttons", "people", "traced", "approval", "facts", "ladder",
+          "timeline", "confirm")
+
+
+def showcase(browser, url: str, errors: list[str]):
+    page = browser.new_page(viewport={"width": 1440, "height": 900})
+    page.on("console", lambda message: message.type == "error" and errors.append(message.text))
+    page.goto(f"{url}/studio/design")
+    page.wait_for_selector("[data-piece=confirm]", timeout=30000)
+    return page
+
+
+def test_the_showcase_draws_each_piece_and_axe_finds_nothing_amiss_light_or_dark(approving,
+                                                                                browser):
+    errors: list[str] = []
+    page = showcase(browser, approving, errors)
+    assert [p for p in PIECES if page.locator(f"[data-piece={p}]").count() != 1] == []
+    for scheme in ("light", "dark"):
+        page.emulate_media(color_scheme=scheme)
+        # Every rule of axe's, WCAG's and its best practices', but one: the studio's pages title
+        # themselves in a second-level heading beside the sidebar, which names a5s, and the pages'
+        # step of the design system gives each its first-level heading
+        found = Axe().run(page, options={"resultTypes": ["violations"],
+                                         "rules": {"page-has-heading-one": {"enabled": False}}})
+        assert found.violations_count == 0, found.generate_report()
+    shot(page, "design")
+    assert errors == []  # nothing the pages' policy refused, nor anything else
+
+
+def test_each_piece_works_from_the_keyboard(approving, browser):
+    errors: list[str] = []
+    page = showcase(browser, approving, errors)
+    # A traced value opens to say where it comes from, and Escape puts focus back on it
+    page.locator("button.traced").focus()
+    page.keyboard.press("Enter")
+    trail = page.get_by_role("dialog", name="Where it comes from")
+    trail.wait_for()
+    assert "Q-1001" in trail.inner_text()
+    page.keyboard.press("Escape")
+    trail.wait_for(state="detached")
+    expect(page.locator("button.traced")).to_be_focused()
+    # A hint shows to whoever tabs to what it's about
+    page.get_by_role("button", name="What do these mean?").focus()
+    assert "Coral" in page.get_by_role("tooltip").inner_text()
+    page.keyboard.press("Escape")
+    # Deleting asks first, with focus on keeping it: Escape keeps it, and saying so deletes it
+    page.get_by_role("button", name="Delete this draft").click()
+    asking = page.get_by_role("dialog", name="Delete the draft of scout?")
+    expect(asking).to_be_visible()
+    expect(asking.get_by_role("button", name="Keep it")).to_be_focused()
+    page.keyboard.press("Escape")
+    asking.wait_for(state="hidden")
+    page.get_by_role("button", name="Delete this draft").click()
+    page.get_by_role("button", name="Delete it").click()
+    page.get_by_text("The draft is gone.").wait_for()
+    # A decision says how it went
+    page.locator("[data-piece=approval]").get_by_role("button", name="Approve").click()
+    page.get_by_text("You approved it.").wait_for()
+    assert errors == []
