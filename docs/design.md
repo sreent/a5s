@@ -79,4 +79,6 @@ Each page's title is its first-level heading, its sections' are the second level
 - **Decisions** are approval cards, made for a phone: who asks and for whom, what the change does in the words code worked out when it was asked for, never the agent's own, what to know, and Approve or Reject. The cards make a column on a phone and sit side by side where there's room.
 - **The catalogue** leads each agent's card with what it does, and the agent's map draws it in the agent colour.
 - **Each agent's page** leads its side with the agent's facts, from its release alone: its model and autonomy, its tools by what they do, and what it may spend. Where all its instances work at one level, its ladder follows, which stacks its steps wherever it's narrow.
-- Next: a run as a timeline.
+- **A run's page** shows what it did as time: what started it and for whom, each call in the colour of what its tool does, or of a5s's refusing or holding it, with what a5s decided and why, and how the run ended.
+
+The studio's pages for agents and runs are checked with axe too, in their own browser test.
