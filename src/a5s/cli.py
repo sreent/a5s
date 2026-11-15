@@ -21,10 +21,10 @@ from urllib.parse import quote
 import httpx
 import yaml
 
-from a5s import authoring, build, config, db, definitions, devdb, worker
+from a5s import authoring, build, config, db, definitions, devdb, gitops, worker
 from a5s.client import Client, Refused
 from a5s.config import DEFAULT_DATABASE_URL, Config, load_models
-from a5s.contract import Signature
+from a5s.contract import Scenario
 from a5s.core import (
     anchor,
     audit,
@@ -405,6 +405,9 @@ def _release(cfg: Config, args: argparse.Namespace) -> None:
         root = args.root or Path.cwd()
         sys.stdout.buffer.write(releases.manifest(root, root / "scenarios" / "sample"))
         return
+    if args.what == "sign" and args.environment is not None:  # where a pull request deploys it
+        args.manifest = args.environment / gitops.MANIFEST
+        args.out = args.environment / gitops.SIGNATURES
     if args.what == "sign":
         raw = args.manifest.read_bytes()
         digest = hashlib.sha256(raw).hexdigest()
@@ -419,17 +422,24 @@ def _release(cfg: Config, args: argparse.Namespace) -> None:
             + yaml.safe_dump({"release": digest, "signatures": [
                 *others, {"signer": args.person, "value": value}]}, sort_keys=False))
         print(f"{args.person} signed release {yaml.safe_load(raw)['version']} ({digest[:12]}).")
+        if args.environment is not None:
+            gitops.resigned(args.environment)
         return
+    if (environment := getattr(args, "environment", None)) is not None:  # as it deploys a5s
+        cfg = _as_deployed(cfg, environment, getattr(args, "before", None))
     sc = build.scenario(cfg)
+    if args.what in ("promote", "verify"):  # no database: a pull request's, before it merges
+        _deploying(cfg, sc, args)
+        return
     if args.what == "approve":  # as the database's administrator
         raw = args.manifest.read_bytes()
-        signed = yaml.safe_load(args.signatures.read_text()) or {}
-        if signed.get("release") != hashlib.sha256(raw).hexdigest():
+        try:
+            signatures = releases.signatures_in(raw, args.signatures.read_text())
+        except ValueError:
             sys.exit(f"{args.signatures} holds signatures for another release.")
         with db.transaction(cfg.database_url) as conn:
-            verdict = releases.record(conn, raw, [Signature(s["signer"], s["value"])
-                                                  for s in signed.get("signatures", [])],
-                                      sc, cfg.team, args.advisory, baseline=args.baseline)
+            verdict = releases.record(conn, raw, signatures, sc, cfg.team, args.advisory,
+                                      baseline=args.baseline)
     else:
         current = releases.running(cfg.root, cfg.scenario_dir, cfg.agents_dir)
         if args.what == "show":
@@ -450,6 +460,64 @@ def _release(cfg: Config, args: argparse.Namespace) -> None:
     if not verdict.ok:
         sys.exit("Not approved here: " + "; ".join(verdict.missing))
     print("Approved here.")
+
+
+def _as_deployed(cfg: Config, folder: Path, before: Path | None = None) -> Config:
+    """The configuration as an environment's folder deploys a5s (a5s/gitops.py): the scenario,
+    its folder and agents', and the team, where its values set them, as the chart gives them to
+    its parts. So the release it shows is the one its parts run, and its directory judges it:
+    as it was, where `before` has the folder as it ran a release before."""
+    try:
+        overrides = gitops.deployment(folder, before)
+    except (gitops.NotAnEnvironment, OSError) as e:
+        sys.exit(str(e))
+    return replace(cfg, **{k: Path(v) if k.endswith("_folder") else v
+                           for k, v in overrides.items()})
+
+
+def _deploying(cfg: Config, sc: Scenario, args: argparse.Namespace) -> None:
+    """Promoting a release to an environment's folder, and the check on the pull request that
+    deploys it: whether its signatures meet what it needs, weighed against the release the
+    environment ran before, as its core weighs them once its job records them (a5s/gitops.py).
+    The same release signed again needs nothing more: it met what it needed when it came."""
+    folder: Path | None = args.environment
+    try:
+        if args.what == "promote":
+            assert folder is not None  # argparse requires it
+            ran = folder / gitops.MANIFEST
+            before = ran.read_bytes() if ran.is_file() else None
+            signed = args.signatures.read_text() if args.signatures else None
+            gitops.promote(folder, args.manifest.read_bytes(), args.image, signed)
+            problems: list[str] = []
+        else:
+            was: Path | None = args.before  # the environment's folder, as it runs now
+            if was is not None and folder is None:
+                sys.exit("--before is an environment's folder as it was: give --environment too")
+            previous = (was / gitops.MANIFEST if gitops.ran(was) else None) if was else args.previous
+            before = previous.read_bytes() if previous and previous.is_file() else None
+            problems = gitops.consistent(folder) if folder is not None else []
+            if folder is not None and was is not None:
+                problems += gitops.alongside(folder, was)
+        manifest = folder / gitops.MANIFEST if folder is not None else args.manifest
+        sigs = folder / gitops.SIGNATURES if folder is not None else args.signatures
+        raw = manifest.read_bytes()
+        signatures = releases.signatures_in(raw, sigs.read_text())
+    except (gitops.NotAnEnvironment, ValueError, OSError) as e:
+        sys.exit(str(e))
+    verdict = releases.verify(raw, signatures, sc, cfg.team, before, getattr(args, "advisory", None))
+    print(f"Release {yaml.safe_load(raw)['version']} of a5s, {hashlib.sha256(raw).hexdigest()}.")
+    for need in verdict.needs:
+        print(f"- It needs {releases.who(need.role)}, because {need.why}.")
+    if verdict.signed_by:
+        print(f"Signed by {', '.join(verdict.signed_by)}.")
+    if args.what == "promote":
+        print(f"{folder} runs it once that's merged" + (
+            "." if verdict.ok else ": each person it still needs signs it there, with "
+            f"`a5s release sign --as <them> --environment {folder}`."))
+        return
+    if problems or not verdict.ok:
+        sys.exit("Not ready to deploy: " + "; ".join([*problems, *verdict.missing]))
+    print("Ready to deploy: its signatures meet what it needs.")
 
 
 def _core(cfg: Config, call, timeout: float = 30):
@@ -630,12 +698,40 @@ def main(argv: list[str] | None = None) -> None:
     manifest = rel_sub.add_parser("manifest", help="print the manifest of a source tree, as an "
                                                    "image is built with")
     manifest.add_argument("--root", type=Path)
-    rel_sub.add_parser("show", help="print the release a5s is here, for its approvers to sign")
+    show = rel_sub.add_parser("show", help="print the release a5s is here, for its approvers "
+                                           "to sign")
+    show.add_argument("--environment", type=Path,
+                      help="an environment's folder (deploy/gitops): the release as it deploys a5s")
     rel_sign = rel_sub.add_parser("sign", help="sign a release's manifest, as a person")
     rel_sign.add_argument("--as", dest="person", required=True)
     rel_sign.add_argument("--manifest", type=Path, default=Path("release.yaml"))
     rel_sign.add_argument("--key", type=Path, help="their private key (default: the sample's)")
     rel_sign.add_argument("--out", type=Path, default=Path("release.sig"))
+    rel_sign.add_argument("--environment", type=Path,
+                          help="an environment's folder (deploy/gitops): sign the release it's "
+                               "to run, there")
+    promote = rel_sub.add_parser("promote", help="make an environment's folder (deploy/gitops) "
+                                                 "run a release, for a pull request to deploy it")
+    promote.add_argument("--environment", type=Path, required=True)
+    promote.add_argument("--manifest", type=Path, default=Path("release.yaml"))
+    promote.add_argument("--signatures", type=Path, help="signatures over it so far, if any")
+    promote.add_argument("--image", required=True,
+                         help="the release's image, by its digest: REPOSITORY@sha256:...")
+    verify = rel_sub.add_parser("verify", help="whether a release's signatures meet what it "
+                                               "needs, against the release before it, with no "
+                                               "database: the check on a deploying pull request")
+    verify.add_argument("--environment", type=Path,
+                        help="an environment's folder: its release, signatures and values")
+    verify.add_argument("--manifest", type=Path, default=Path("release.yaml"))
+    verify.add_argument("--signatures", type=Path, default=Path("release.sig"))
+    replaces = verify.add_mutually_exclusive_group()
+    replaces.add_argument("--previous", type=Path,
+                          help="the manifest of the release it replaces, if any")
+    replaces.add_argument("--before", type=Path,
+                          help="the environment's folder as the branch it merges into has it: "
+                               "the release it replaces, judging it as it ran that, and what "
+                               "else the change makes different")
+    verify.add_argument("--advisory", help="the security advisory it fixes, such as GHSA-...")
     approve = rel_sub.add_parser("approve", help="record signatures over a release, as the "
                                                  "administrator")
     approve.add_argument("--manifest", type=Path, default=Path("release.yaml"))

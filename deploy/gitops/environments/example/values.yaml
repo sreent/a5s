@@ -1,0 +1,17 @@
+# The environment's own values for a5s's chart (deploy/helm/a5s/values.yaml says what each
+# is): everything but the release, which `a5s release promote` writes to release-values.yaml.
+# The scenario and the team here are also what its releases are judged by, as deployed.
+scenario:
+  class: ""  # such as a5s.master_data:MasterDataScenario
+  folder: ""  # such as /app/scenarios/master-data
+  agents: ""
+team: ""
+people:
+  oidcIssuer: ""  # the identity provider, such as https://login.microsoftonline.com/<tenant>/v2.0
+  oidcMfa: ""  # with an issuer, how its sign-ins show a second factor, such as amr:mfa
+anchor:
+  store: s3://BUCKET/a5s  # the ledger's locked copies: s3://, azure:// or gs://, with object lock
+networkPolicies:
+  database:
+    cidrs:
+      - 10.20.0.0/24  # where its Postgres is, such as a managed server's private subnet

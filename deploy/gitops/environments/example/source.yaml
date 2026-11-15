@@ -1,0 +1,13 @@
+# Where the chart of the release this environment runs comes from: the repository a5s is
+# released from. The release's own tag, at which it gives the chart, is release-source.yaml's,
+# which `a5s release promote` writes, so this names no ref of its own.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: a5s-release
+spec:
+  interval: 30m
+  url: https://github.com/OWNER/a5s  # or your Forgejo's, as for the environments
+  ignore: |
+    /*
+    !/deploy/helm/

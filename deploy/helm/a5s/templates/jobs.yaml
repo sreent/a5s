@@ -63,6 +63,9 @@ metadata:
     helm.sh/hook: post-install,post-upgrade
     helm.sh/hook-weight: "0"
     helm.sh/hook-delete-policy: before-hook-creation
+    {{- with .Values.release.signatures }}
+    a5s.dev/signatures: {{ . | quote }}  # the signatures it records, by their hash
+    {{- end }}
 spec:
   backoffLimit: 0
   activeDeadlineSeconds: 600

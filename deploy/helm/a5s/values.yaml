@@ -135,6 +135,10 @@ release:
   # the people its changes need. A job records them once the chart is installed or upgraded:
   # until then, the core opens no run.
   approval: ""
+  # The signatures' hash, which `a5s release promote` and `a5s release sign --environment` write
+  # where Flux deploys a5s (deploy/gitops): a signature added changes it, so it's an upgrade,
+  # whose job records it.
+  signatures: ""
 
 ingress:
   enabled: false

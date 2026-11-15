@@ -1,0 +1,31 @@
+# a5s, from the chart of the release this environment runs (source.yaml, at the release's
+# tag), with the environment's own values and then the release's: its image, by digest, and
+# the approval its job records. Until that job records signatures meeting what the release
+# needs, the core opens no run.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: a5s
+spec:
+  interval: 30m
+  timeout: 30m
+  chart:
+    spec:
+      chart: ./deploy/helm/a5s
+      sourceRef:
+        kind: GitRepository
+        name: a5s-release
+      reconcileStrategy: Revision  # the release's tag is the chart's version
+  install:
+    remediation:
+      retries: 0  # a release that fails stays as it is, for someone to see why
+  upgrade:
+    remediation:
+      retries: 0
+  valuesFrom:
+    - kind: ConfigMap
+      name: a5s-values
+      valuesKey: values.yaml
+    - kind: ConfigMap
+      name: a5s-release-values
+      valuesKey: values.yaml
