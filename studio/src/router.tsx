@@ -1,6 +1,6 @@
 // Where in the studio someone is, in its address, so links and the browser's back button work:
 // their home, what they may do, all the agents, one agent, an instance's dashboard, a run, a
-// new agent, or a draft of one.
+// new agent, a draft of one, or the design system's showcase.
 
 import { type MouseEvent, type ReactNode, useEffect, useState } from "react";
 
@@ -12,7 +12,8 @@ export type Route =
   | { page: "instance"; instance: string }
   | { page: "run"; run: string }
   | { page: "new" }
-  | { page: "draft"; draft: string };
+  | { page: "draft"; draft: string }
+  | { page: "design" };
 
 export function parse(path: string): Route {
   const [, , kind, id] = path.split("/").map((part) => decodeURIComponent(part));
@@ -23,6 +24,7 @@ export function parse(path: string): Route {
   if (kind === "new") return { page: "new" };
   if (kind === "agents") return { page: "agents" };
   if (kind === "you") return { page: "you" };
+  if (kind === "design") return { page: "design" };
   return { page: "home" };
 }
 
@@ -35,6 +37,7 @@ export function href(route: Route): string {
     case "new": return "/studio/new";
     case "agents": return "/studio/agents";
     case "you": return "/studio/you";
+    case "design": return "/studio/design";
     default: return "/studio/";
   }
 }

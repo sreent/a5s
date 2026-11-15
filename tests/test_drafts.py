@@ -51,11 +51,30 @@ def test_who_may_author_what():
     assert drafts.authors(author) and not drafts.authors(who("part-owner:billing"))
 
 
+def test_a_draft_is_released_once_a_later_release_here_holds_it_as_it_is(tmp_path):
+    folder = tmp_path / "helper"
+    (folder / "tests").mkdir(parents=True)
+    (folder / "agent.yaml").write_text("id: helper\n")
+    (folder / "tests" / "cases.yaml").write_text("[]\n")
+    files = drafts.folder_files(folder)
+    here = {"helper": type("Released", (), {"release_id": "0.1.0+bbb"})()}
+
+    def released(changed: dict | None = None, based_on: str = "helper 0.1.0+aaa", agents=here):
+        return drafts.released("helper", {**files, **(changed or {})}, based_on, tmp_path, agents)
+
+    assert released()  # a later release, with exactly its files
+    assert released(based_on="template assistant")  # a new agent, released as drafted
+    assert not released(based_on="helper 0.1.0+bbb")  # the release it was drafted from
+    assert not released({"agent.yaml": "id: helper\nworks_for: us\n"})  # not what's released
+    assert not released(agents={})  # its agent isn't released here at all
+
+
 def test_an_agents_owner_starts_a_new_one_from_a_template(stack, approving, provider):
     priya = as_(approving, provider, "priya")
     draft = started(priya)
     assert (draft["agent"], draft["based_on"], draft["problems"]) == (
         "finance-helper", "template assistant", [])
+    assert (draft["released"], draft["at_work"]) == (False, False)  # nothing here has it yet
     spec = yaml.safe_load(draft["files"]["agent.yaml"])
     assert (spec["id"], spec["release"]) == ("finance-helper", "0.1.0")
     assert draft["files"]["AGENTS.md"] == (ROOT / "agents" / "assistant" / "AGENTS.md").read_text()
@@ -74,6 +93,9 @@ def test_a_change_to_an_agent_starts_from_its_folder_as_released(stack, approvin
     folder = stack.cfg.agents_dir / "assistant"  # as this deployment released it
     assert r.json()["files"]["agent.yaml"] == (folder / "agent.yaml").read_text()
     assert r.json()["based_on"].startswith("assistant 0.1.0+") and r.json()["problems"] == []
+    # The release it was drafted from holds it as it is, but a change nobody's made yet isn't
+    # released; its agent is at work, through assistant-finance
+    assert (r.json()["released"], r.json()["at_work"]) == (False, True)
     ben = as_(approving, provider, "ben")  # its instance's deputy, who doesn't author it
     assert ben("POST", "/studio/api/drafts", {"agent": "assistant"}).status_code == 403
     assert ben("GET", "/studio/api/drafts").status_code == 403

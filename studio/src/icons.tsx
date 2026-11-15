@@ -25,8 +25,11 @@ const LINES: Record<string, string[]> = {
   report: ["M6 3.5h9l3 3v14H6z", "M9 12.5h6", "M9 16h6", "M9 9h3"],
   shield: ["M12 3l7.5 3v6c0 4.5-3.2 7.8-7.5 9-4.3-1.2-7.5-4.5-7.5-9V6z"],
   back: ["M14.5 6l-6 6 6 6"],
+  check: ["M5.5 12.5l4 4 9-9"],
   run: ["M8 5.5l10 6.5-10 6.5z"],
   people: ["M9 11a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7z", "M3 20a6 6 0 0 1 12 0"],
+  trace: ["M6 15.8a2.2 2.2 0 1 0 0 4.4 2.2 2.2 0 0 0 0-4.4z", "M18 3.8a2.2 2.2 0 1 0 0 4.4 2.2 2.2 0 0 0 0-4.4z",
+          "M7.6 16.4l8.8-8.8"],
 };
 
 export function Icon({ name, className = "icon" }: { name: string; className?: string }) {

@@ -5,10 +5,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AgentMap } from "../AgentMap";
-import { type CoAuthors, type Draft, get, type Offer, type Offered, send } from "../api";
-import { CASES, read, Unreadable, withCase, withTool, withValue } from "../definition";
+import { type CoAuthors, type Draft, get, type Offer, type Offered, type Sandbox, send } from "../api";
+import { CASES, keptCases, read, Unreadable, withCase, withTool, withValue } from "../definition";
+import { JourneyPath, type Stage } from "../design";
 import { Publish } from "../Publish";
-import { go } from "../router";
+import { go, Link } from "../router";
 import { TryIt } from "../TryIt";
 import { PageHead, type Risk, risk, RISK_NAMES, ToolBadges, useLoad, Waiting, when } from "../ui";
 
@@ -125,14 +126,14 @@ function TheirDraft({ draft }: { draft: Draft }) {
       <section className={`card ${draft.problems.length ? "" : "ready"}`} id="problems">
         {draft.problems.length === 0
           ? <p><span className="badge good">ready</span> Nothing would stop its release here, by the checks <span className="mono">a5s agent check</span> makes.</p>
-          : <><h3>What would stop its release</h3><ul className="plain">{draft.problems.map((p) => <li key={p}>{p}</li>)}</ul></>}
+          : <><h2>What would stop its release</h2><ul className="plain">{draft.problems.map((p) => <li key={p}>{p}</li>)}</ul></>}
       </section>
       <section className="card map-card">
-        <h3>How it's wired</h3>
+        <h2>How it's wired</h2>
         {draft.preview ? <AgentMap agent={draft.preview} /> : <p className="note">Its map shows once its definition loads.</p>}
       </section>
       <section className="card editor" id="their-files">
-        <h3>Its files</h3>
+        <h2>Its files</h2>
         <Raw files={draft.files} change={() => undefined} readOnly />
       </section>
     </>
@@ -173,11 +174,65 @@ function HandOver({ id }: { id: string }) {
   );
 }
 
+const named = (them: string[]) => them.length > 1 ? `${them.slice(0, -1).join(", ")} and ${them[them.length - 1]}` : them[0];
+
+type Said = Pick<Draft, "problems" | "preview" | "signers" | "released" | "at_work">;
+
+/** Where a draft stands on its way to work, and the one thing to do next: shape it and try it,
+ * publish it, have its release signed, which a5s then deploys, put it to work, and watch it.
+ * Once the release here holds it as it is, the rest follows its agent: at work or not yet. */
+function Journey({ draft, said, files }: { draft: Draft; said: Said; files: Files }) {
+  const sandbox = useLoad(() => get<Sandbox>("/studio/api/sandbox"), []);
+  const shaped = said.problems.length === 0;
+  const cases = keptCases(files[CASES]);
+  const { released, at_work: atWork } = said;
+  const published = Boolean(draft.published) || released;
+  const untried = !cases && !sandbox.error && !published;  // a sandbox to try it in, before it's out
+  const signers = [...new Set((said.signers ?? []).map((s) => s.who))];
+  const stages: Stage[] = [
+    { name: "Shape and try it", state: released || (shaped && !untried) ? "done" : "now",
+      about: !shaped ? `${said.problems.length === 1 ? "One thing stops" : `${said.problems.length} things stop`} its release.`
+        : cases ? `Nothing stops its release, and ${cases} test case${cases === 1 ? "" : "s"} kept from the sandbox.`
+        : untried ? "Nothing stops its release. Try it in the sandbox, and keep what it should do as test cases."
+        : sandbox.error ? "Nothing stops its release. There's no sandbox here to try it in." : "Nothing stops its release." },
+    { name: "Publish it", state: published ? "done" : shaped && !untried ? "now" : "later",
+      about: draft.publishing ? "As a pull request, which a5s opens as you." : "As a pull request, which you open with the words a5s gives." },
+    { name: "Have its release signed", state: released ? "done" : published ? "now" : "later",
+      about: released ? "It's released here as it is, and a5s deployed it."
+        : `By ${signers.length ? named(signers) : "whoever its release needs"}. a5s deploys it once they have.` },
+    { name: "Put it to work", state: released && atWork ? "done" : released ? "now" : "later",
+      about: released && atWork ? "An instance runs it." : "An instance in the settings, for a few people first, at level 0 or 1." },
+    { name: "Watch it", state: released && atWork ? "now" : "later", about: "Its runs and how they end, on its page." },
+  ];
+  const to = (section: string) => () => {
+    const at = document.getElementById(section);
+    at?.scrollIntoView({ behavior: "smooth", block: "start" });
+    at?.focus({ preventScroll: true });
+  };
+  const page = { page: "agent" as const, agent: draft.agent };
+  const next = released
+    ? <Link to={page} className="button primary">{atWork ? "Watch it on its page" : "Put it to work, from its page"}</Link>
+    : !shaped
+    ? <button type="button" className="primary" onClick={to("problems")}>See what stops its release</button>
+    : draft.published
+      ? <a className="button primary" href={draft.published ?? "#"} target="_blank" rel="noopener noreferrer">Open its pull request</a>
+      : untried
+        ? <><button type="button" className="primary" onClick={to("try")}>Try it in the sandbox</button>
+            <button type="button" className="quiet" onClick={to("publishing")}>Publish it without trying it</button></>
+        : <button type="button" className="primary" onClick={to("publishing")}>Publish it</button>;
+  return (
+    <section className="card" id="journey" aria-labelledby="journey-title">
+      <h2 id="journey-title" className="hidden">Where it stands</h2>
+      <JourneyPath stages={stages} next={next} />
+    </section>
+  );
+}
+
 export function DraftPage({ id }: { id: string }) {
   const loaded = useLoad(() => get<Draft>(`/studio/api/drafts/${encodeURIComponent(id)}`), [id]);
   const tools = useLoad(() => get<Offer>("/studio/api/tools"), []);
   const [files, setFiles] = useState<Files | null>(null);
-  const [said, setSaid] = useState<Pick<Draft, "problems" | "preview" | "signers"> | null>(null);
+  const [said, setSaid] = useState<Said | null>(null);
   const [kept, setKept] = useState<Kept>("kept");
   const [revision, setRevision] = useState(0);  // each time a change is kept
   const [tab, setTab] = useState<Tab>("basics");
@@ -186,7 +241,8 @@ export function DraftPage({ id }: { id: string }) {
   useEffect(() => {
     if (loaded.data && files === null) {
       setFiles(loaded.data.files);
-      setSaid({ problems: loaded.data.problems, preview: loaded.data.preview, signers: loaded.data.signers });
+      const { problems, preview, signers, released, at_work } = loaded.data;
+      setSaid({ problems, preview, signers, released, at_work });
     }
   }, [loaded.data, files]);
   useEffect(() => () => window.clearTimeout(timer.current), []);
@@ -195,7 +251,8 @@ export function DraftPage({ id }: { id: string }) {
     try {
       const saved = await send<Draft>("PUT", `/studio/api/drafts/${encodeURIComponent(id)}`, { files: next });
       if (mine !== latest.current) return;  // a later change is on its way
-      setSaid({ problems: saved.problems, preview: saved.preview, signers: saved.signers });
+      const { problems, preview, signers, released, at_work } = saved;
+      setSaid({ problems, preview, signers, released, at_work });
       setFiles((now) => {  // a5s's pins, beside what they've typed since
         if (!now) return now;
         const { ["tools.lock"]: _old, ...rest } = now;
@@ -243,13 +300,14 @@ export function DraftPage({ id }: { id: string }) {
       {(!draft || !files || !said) && <Waiting error={loaded.error} />}
       {draft && files && said && (
         <>
-          <section className={`card ${said.problems.length ? "" : "ready"}`} id="problems" aria-live="polite">
+          <Journey draft={draft} said={said} files={files} />
+          <section className={`card ${said.problems.length ? "" : "ready"}`} id="problems" aria-live="polite" tabIndex={-1}>
             {said.problems.length === 0
               ? <p><span className="badge good">ready</span> Nothing would stop its release here, by the checks <span className="mono">a5s agent check</span> makes.</p>
-              : <><h3>What would stop its release</h3><ul className="plain">{said.problems.map((p) => <li key={p}>{p}</li>)}</ul></>}
+              : <><h2>What would stop its release</h2><ul className="plain">{said.problems.map((p) => <li key={p}>{p}</li>)}</ul></>}
           </section>
           <section className="card" id="signers">
-            <h3>Who would sign its release</h3>
+            <h2>Who would sign its release</h2>
             {said.signers === null && <p className="note">Once its definition loads.</p>}
             {said.signers?.length === 0 && <p className="note">Nobody yet: it changes nothing of what's released here.</p>}
             {said.signers && said.signers.length > 0 && (
@@ -260,7 +318,7 @@ export function DraftPage({ id }: { id: string }) {
             <p className="note">As <span className="mono">a5s release</span> works it out, from what it changes of the agents released here. The pull request it's published as names them.</p>
           </section>
           <section className="card map-card">
-            <h3>How it's wired</h3>
+            <h2>How it's wired</h2>
             {said.preview ? <AgentMap agent={said.preview} /> : <p className="note">Its map shows once its definition loads.</p>}
           </section>
           <section className="card editor">
@@ -280,14 +338,14 @@ export function DraftPage({ id }: { id: string }) {
             )}
             {tab === "files" && <Raw files={files} change={change} />}
           </section>
-          <section className="card" id="try">
-            <h3>Try it in the sandbox</h3>
+          <section className="card" id="try" tabIndex={-1}>
+            <h2>Try it in the sandbox</h2>
             <TryIt draft={id} name={draft.agent} ready={said.problems.length === 0 && kept === "kept"}
                    keep={(testCase) => change({ ...files, [CASES]: withCase(files[CASES] ?? "", testCase) })}
                    revision={revision} />
           </section>
-          <section className="card" id="publishing">
-            <h3>Publish it</h3>
+          <section className="card" id="publishing" tabIndex={-1}>
+            <h2>Publish it</h2>
             <Publish draft={id} name={draft.agent} ready={said.problems.length === 0 && kept === "kept"}
                      published={draft.published} publishing={draft.publishing} revision={revision} />
           </section>

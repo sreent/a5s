@@ -147,7 +147,24 @@ function render(element, text) {
   }
 }
 
+// Who said it, as every page marks them (docs/design.md): an agent's rounded square, in the
+// agent colour, and a5s's own shield; what people say needs no mark beside "You"
+function mark(from) {
+  const found = document.createElement("span");
+  found.className = from === "a5s" ? "avatar own" : "avatar agent";
+  found.setAttribute("aria-hidden", "true");
+  if (window.a5s) found.append(window.a5s.icon(from === "a5s" ? "audit" : "agent"));
+  return found;
+}
+
+// When, as the time alone for today, and with the day before that
+function stamp(at) {
+  const today = at.toDateString() === new Date().toDateString();
+  return at.toLocaleString([], today ? { timeStyle: "short" } : { dateStyle: "medium", timeStyle: "short" });
+}
+
 function say(message) {
+  $("welcome").hidden = true;
   const item = document.createElement("li");
   item.className = message.from === "you" ? "you" : message.from === "a5s" ? "a5s" : "agent";
   const who = document.createElement("strong");
@@ -156,13 +173,28 @@ function say(message) {
   if (message.at) {
     const at = new Date(message.at);
     when.dateTime = at.toISOString();
-    when.textContent = at.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+    when.textContent = stamp(at);
   }
   const body = document.createElement("div");
   render(body, message.text);
+  if (message.from !== "you") item.append(mark(message.from));
   item.append(who, " ", when, body);
   $("conversation").append(item);
   item.scrollIntoView({ block: "end" });
+}
+
+// A conversation's first words: the agent, what it does, if it serves them, and what to do
+function welcome(agent, does) {
+  const name = document.createElement("p");
+  name.className = "welcome-name";
+  name.textContent = `The ${agent}`;
+  const about = document.createElement("p");
+  about.textContent = does || "";
+  const next = document.createElement("p");
+  next.className = "note";
+  next.textContent = "Write to it below.";
+  $("welcome").replaceChildren(mark(agent), name, ...(does ? [about] : []), next);
+  $("welcome").hidden = false;
 }
 
 // Talking to an agent
@@ -170,8 +202,12 @@ function say(message) {
 async function open(agent) {
   state.agent = agent;
   $("conversation").replaceChildren();
+  $("welcome").hidden = true;
   const answer = await api(`/channels/local/conversation?agent=${encodeURIComponent(agent)}`);
-  if (answer.ok) (await answer.json()).messages.forEach(say);
+  if (!answer.ok) return;
+  const found = await answer.json();
+  if (found.messages.length) found.messages.forEach(say);
+  else welcome(agent, found.does);
 }
 
 async function send(text) {

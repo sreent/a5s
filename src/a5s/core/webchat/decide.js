@@ -96,6 +96,92 @@ function list(items, className) {
   return shown;
 }
 
+function element(tag, text, className) {
+  const found = document.createElement(tag);
+  if (text !== undefined && text !== null) found.textContent = String(text);
+  if (className) found.className = className;
+  return found;
+}
+
+const day = (at) => new Date(at).toLocaleDateString([], { day: "numeric", month: "short" });
+
+function card(proposal) {
+  // A held change on the approval card (docs/design.md), made for a phone: who asks and for
+  // whom, what it does in the words code worked out when it was asked for, never the agent's
+  // own, what to know, and the decider's yes or no.
+  const [what, ...rest] = proposal.said.split("\n");
+  const block = element("section", null, "approval");
+  block.dataset.proposal = proposal.key;
+  block.setAttribute("aria-labelledby", `title-${proposal.key}`);
+  const body = element("div", null, "approval-body");
+  block.append(element("div", null, "approval-stripe"), body);
+
+  const who = element("div", null, "who");
+  const mark = element("span", null, "avatar agent");
+  mark.setAttribute("aria-hidden", "true");
+  if (window.a5s) mark.append(window.a5s.icon("agent"));
+  const about = [proposal.key, proposal.for.length ? `for ${proposal.for.join(" and ")}` : "",
+                 `asked ${day(proposal.proposed_at)}`].filter(Boolean).join(" · ");
+  const names = element("span");
+  names.append(element("span", `The ${proposal.agent} asks`, "who-name"), element("span", about, "who-about"));
+  who.append(mark, names);
+  const title = element("h2", what, "approval-title");
+  title.id = `title-${proposal.key}`;
+  body.append(who, title);
+  if (rest.length) body.append(element("p", rest.join("\n"), "said"));
+
+  if (proposal.sensitive || proposal.changed.length || proposal.flags.length) {
+    const box = element("div", null, "approval-know");
+    box.append(element("p", "What to know", "label"));
+    if (proposal.sensitive) box.append(list(["It's decided on its own, never with others."], "flags sensitive"));
+    if (proposal.changed.length) box.append(list(proposal.changed, "flags changed"));
+    if (proposal.flags.length) box.append(list(proposal.flags, "flags"));
+    body.append(box);
+  }
+  for (const record of proposal.records) {
+    const open = element("a", `Open ${record.key}`);
+    open.href = record.link;  // a record's link, which the core kept from the scenario
+    open.rel = "noopener noreferrer";
+    open.target = "_blank";
+    const line = element("p");
+    line.append(open);
+    body.append(line);
+  }
+  body.append(element("p", `It lapses on ${new Date(proposal.lapses_at).toLocaleDateString([], { dateStyle: "medium" })} unless someone decides it.`, "note"));
+  if (!proposal.may_decide) {
+    body.append(element("p", "You can see it, as you were told it waits, but only its deciders decide it.", "note"));
+    return block;
+  }
+  const why = element("input");
+  why.type = "text";
+  why.maxLength = 300;
+  why.placeholder = "Why, if you reject it (optional)";
+  why.setAttribute("aria-label", `Why you reject ${proposal.key}, if you do`);
+  const actions = element("div", null, "approval-actions");
+  for (const decision of ["approve", "reject"]) {
+    const button = element("button", decision === "approve" ? "Approve" : "Reject",
+                           decision === "approve" ? "primary" : undefined);
+    button.type = "button";
+    button.addEventListener("click", () => decide([proposal.digest], decision, why.value.trim())
+      .catch((e) => status(e.message)));
+    actions.append(button);
+  }
+  body.append(why, actions);
+  if (!proposal.sensitive) {
+    const tick = element("input", null, "tick");
+    tick.type = "checkbox";
+    tick.value = proposal.digest;
+    const together = element("label", null, "tick-label");
+    together.append(tick, element("span", "Decide it with the others ticked"));
+    body.append(together);
+  }
+  const signed = element("p", null, "approval-signed");
+  if (window.a5s) signed.append(window.a5s.icon("audit"));
+  signed.append(element("span", "Deciding signs you in again, for this decision alone, and the ledger keeps it."));
+  body.append(signed);
+  return block;
+}
+
 function show(found, named) {
   $("who").textContent = found.you;
   $("list").replaceChildren();
@@ -103,63 +189,7 @@ function show(found, named) {
   const waiting = found.proposals.filter((p) => p.status === "waiting" && !p.yours);
   const decided = found.proposals.filter((p) => p.status !== "waiting" || p.yours);
   waiting.sort((a, b) => (b.digest === named) - (a.digest === named));
-  for (const proposal of waiting) {
-    const block = document.createElement("article");
-    const title = document.createElement("h3");
-    title.textContent = proposal.key + (proposal.sensitive ? ": decided on its own" : "");
-    const said = document.createElement("p");
-    said.className = "said";
-    said.textContent = proposal.said;
-    block.append(title, said);
-    if (proposal.changed.length) block.append(list(proposal.changed, "flags changed"));
-    if (proposal.flags.length) block.append(list(proposal.flags, "flags"));
-    for (const link of proposal.links) {
-      const open = document.createElement("a");
-      open.href = link;  // a record's link, which the core kept from the scenario
-      open.rel = "noopener noreferrer";
-      open.target = "_blank";
-      open.textContent = `Open ${link}`;
-      const line = document.createElement("p");
-      line.append(open);
-      block.append(line);
-    }
-    const when = document.createElement("p");
-    when.className = "note";
-    when.textContent = `It lapses on ${new Date(proposal.lapses_at).toLocaleDateString([], { dateStyle: "medium" })} unless someone decides it.`;
-    block.append(when);
-    if (!proposal.may_decide) {
-      const only = document.createElement("p");
-      only.className = "note";
-      only.textContent = "You can see it, as you were told it waits, but only its deciders decide it.";
-      block.append(only);
-      $("list").append(block);
-      continue;
-    }
-    const why = document.createElement("input");
-    why.type = "text";
-    why.maxLength = 300;
-    why.placeholder = "Why, if you reject it (optional)";
-    why.setAttribute("aria-label", `Why you reject ${proposal.key}, if you do`);
-    const buttons = document.createElement("p");
-    for (const decision of ["approve", "reject"]) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.textContent = decision === "approve" ? "Approve" : "Reject";
-      button.addEventListener("click", () => decide([proposal.digest], decision, why.value.trim())
-        .catch((e) => status(e.message)));
-      buttons.append(button);
-    }
-    if (!proposal.sensitive) {
-      const tick = document.createElement("input");
-      tick.type = "checkbox";
-      tick.className = "tick";
-      tick.value = proposal.digest;
-      tick.setAttribute("aria-label", `Decide ${proposal.key} with the others ticked`);
-      buttons.append(tick);
-    }
-    block.append(why, buttons);
-    $("list").append(block);
-  }
+  for (const proposal of waiting) $("list").append(card(proposal));
   $("waiting").hidden = waiting.length === 0;
   $("together").hidden = waiting.filter((p) => p.may_decide && !p.sensitive).length < 2;
   for (const proposal of decided) {

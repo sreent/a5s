@@ -17,7 +17,7 @@ import pytest
 from a5s import db
 from a5s.contract import record_of
 from a5s.core import proposals
-from conftest import CLIENT
+from conftest import CLIENT, accessible
 
 MOVE = ("change_due_date", {"key": "Q-1002", "due": "2026-11-13"})
 
@@ -318,15 +318,21 @@ def test_a_decider_reviews_and_approves_in_the_browser(stack, approving, provide
     [p] = held(stack)
     page = browser.new_page()
     page.goto(f"{approving}/decide/?proposal={p['digest']}")  # signed in, to see what waits
-    page.wait_for_selector("article >> text=Q-1002", timeout=30000)
+    page.wait_for_selector(".approval >> text=Q-1002", timeout=30000)
     assert page.inner_text("#who") == "Ana Ortiz"
     assert "max_age" not in provider.asked[-1]  # seeing what waits needs no fresh sign-in
-    assert page.inner_text("article h3") == "P-1"
+    # On its card: who asks and for whom, what it does in code's words, and what to know
+    assert page.inner_text(".approval .who-name") == "The assistant asks"
+    assert page.inner_text(".approval .who-about").startswith("P-1 · for Ben Okafor · asked ")
+    assert page.inner_text(".approval h2").startswith(
+        f"Change a customer question's due date: Q-1002, with due {day}.")
     assert "as it stood when it was asked for: status waiting on finance" in page.inner_text(
-        "article .said")
-    assert page.locator("article .flags li").all_inner_texts() == [
+        ".approval .said")
+    assert page.locator(".approval .flags li").all_inner_texts() == [
         f"{day} came from the assistant itself, not from the records or from Ben Okafor"]
-    page.click("article button >> text=Approve")  # afresh, for this decision alone
+    assert page.get_by_role("link", name="Open Q-1002").get_attribute("href").endswith("/Q-1002")
+    accessible(page)
+    page.click(".approval button >> text=Approve")  # afresh, for this decision alone
     page.wait_for_selector("#status >> text=You approved P-1", timeout=30000)
     assert provider.asked[-1]["max_age"] == "0"
     assert page.evaluate("window.location.search") == ""  # the code doesn't linger

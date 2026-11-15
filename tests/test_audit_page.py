@@ -12,13 +12,14 @@ import httpx
 
 from a5s import db
 from a5s.core import audit, inbox
-from conftest import CLIENT, free_port, serve
+from conftest import CLIENT, accessible, free_port, serve
 from test_approvals import decide as approve
 from test_approvals import proposed
 from test_approvals import sign_in as sign_in_to_approve
 from test_mfa import PASSWORD, WITH_MFA
 from test_officer import ask
 from test_officer import sign_in as sign_in_as_officer
+from test_ui_pages import shot
 
 AUDITOR = "kofi"  # the sample's assurance
 
@@ -181,10 +182,14 @@ def test_an_auditor_reads_the_trail_in_the_browser(stack, approving, provider, b
     page.wait_for_selector("#entries li", timeout=30000)
     shown = page.inner_text("#entries")
     assert "run open" in shown and audit.STAND_IN in shown and "ana" not in shown.split()
+    accessible(page)
+    shot(page, "audit")
     page.click("#entries button")  # a stand-in finds its other entries
     page.wait_for_selector("#entries li", timeout=30000)
     assert page.input_value("#for").startswith(audit.STAND_IN)
     page.click("#report")
     page.wait_for_selector("#roles:not([hidden])", timeout=30000)
     assert "assurance: kofi" in page.inner_text("#holders")
+    accessible(page)
+    shot(page, "audit-report")
     assert page.evaluate("window.location.search") == ""  # the code doesn't linger

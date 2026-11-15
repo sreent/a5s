@@ -11,7 +11,7 @@ import yaml
 
 from a5s import db
 from a5s.core import studio_api
-from conftest import QUIET
+from conftest import QUIET, accessible
 
 OPS = {"definition": "assistant", "serves": ["chen"], "parts": ["orders"], "level": 1,
        "owner": "omar"}
@@ -127,11 +127,16 @@ def test_someone_watches_an_instance_in_the_browser(stack, approving, provider, 
     page.wait_for_selector(".agent-map .map-node >> text=change_due_date", timeout=30000)
     assert page.evaluate("location.pathname") == "/studio/agents/assistant"
     assert "Changes records" in page.locator(".tool-group").first.text_content()
+    # its facts, from its release, and its ladder: its one instance works at level 1
+    facts = page.locator("section[aria-label='Agent facts']")
+    assert "change_due_date, close_question" in facts.inner_text()
+    assert page.locator(".ladder li[aria-current='step']").inner_text().startswith("level 1 · now")
+    accessible(page)
     shot(page, "studio-agent")
 
     page.click("table.grid-table a:has-text('assistant-finance')")  # its instance
     page.wait_for_selector(".tile >> text=Runs", timeout=30000)
-    assert "done" in page.inner_text("section.card:has(h3:text-is('How runs ended')) table")
+    assert "done" in page.inner_text("section.card:has(h2:text-is('How runs ended')) table")
     # Its runs by day, on his own days: today's, as it says on hover and on focus
     today = page.locator(".runs-chart .day[tabindex='0']")
     assert today.get_attribute("aria-label").endswith(": 1 run, 1 done")
@@ -142,14 +147,21 @@ def test_someone_watches_an_instance_in_the_browser(stack, approving, provider, 
     today.blur()
 
     page.click("table.runs-table a:has-text('Open')")  # a run, and what it did
-    page.wait_for_selector(".step >> text=search_records", timeout=30000)
+    page.wait_for_selector(".timeline >> text=search_records", timeout=30000)
     # its path on its agent's map: what started it, and the tool it called, once; the rest faded
     page.wait_for_selector(".agent-map .map-node >> text=search_records", timeout=30000)
     called = page.locator(".agent-map .map-node", has_text="search_records")
     assert called.locator(".map-count").inner_text() == "×1"
     assert "dim" not in page.locator(".agent-map .map-node", has_text="A message").get_attribute("class")
     assert "dim" in page.locator(".agent-map .map-node", has_text="change_due_date").get_attribute("class")
-    assert "allow" in page.inner_text(".steps") and "Q-1001" in page.inner_text(".chips")
+    # as time: what started it, the call in the colour of what its tool does, and how it ended
+    timeline = page.locator(".timeline li")
+    assert timeline.first.inner_text().split("\n")[1] == "A message started it"
+    called = timeline.filter(has_text="search_records")
+    assert "allowed" in called.inner_text() and called.locator(".node.tone-reads").count() == 1
+    assert "Ended: done" in timeline.last.inner_text()
+    assert "Q-1001" in page.inner_text(".chips")
+    accessible(page)
     assert "1 person" in page.inner_text(".tiles")  # named once the officer agrees
     assert page.locator("#entries").count() == 0  # what was said isn't shown at all
     shot(page, "studio-run")

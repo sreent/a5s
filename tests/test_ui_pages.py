@@ -1,5 +1,6 @@
-"""Every page people use, in a browser, signed in: each opens, and with A5S_SCREENSHOTS naming a
-folder, is saved there as a screenshot, light and dark, for people to review how a5s looks."""
+"""Every page people use, in a browser, signed in: each opens, axe finds nothing amiss on it,
+light or dark, and with A5S_SCREENSHOTS naming a folder, it's saved there as a screenshot, light
+and dark, for people to review how a5s looks."""
 
 from __future__ import annotations
 
@@ -8,18 +9,27 @@ from pathlib import Path
 
 import pytest
 
+from conftest import PHONE, accessible
+
 PAGES = ("chat", "tasks", "notebook", "studio", "settings", "decide", "grade", "audit", "admin",
          "officer")
 
 
 def shot(page, name: str) -> None:
-    """The page as it looks, light and dark, into A5S_SCREENSHOTS, if it names a folder."""
+    """The page as it looks, light and dark, and on a phone, into A5S_SCREENSHOTS, if it names
+    a folder."""
     if folder := os.environ.get("A5S_SCREENSHOTS"):
         Path(folder).mkdir(parents=True, exist_ok=True)
-        page.evaluate("window.scrollTo(0, 0)")  # from its top, where its sidebar sits
-        for scheme in ("light", "dark"):
-            page.emulate_media(color_scheme=scheme)
-            page.screenshot(path=f"{folder}/{name}-{scheme}.png", full_page=True)
+        size = page.viewport_size
+        for width, suffix in ((None, ""), (PHONE, "-phone")):
+            if width:
+                page.set_viewport_size(width)
+            page.evaluate("window.scrollTo(0, 0)")  # from its top, where its sidebar sits
+            for scheme in ("light", "dark"):
+                page.emulate_media(color_scheme=scheme)
+                page.screenshot(path=f"{folder}/{name}{suffix}-{scheme}.png", full_page=True)
+        if size:
+            page.set_viewport_size(size)
 
 
 @pytest.fixture
@@ -52,6 +62,7 @@ def test_each_page_opens_signed_in_beside_a_sidebar(seen, approving, browser, na
         page.wait_for_selector("#pages a[aria-current=page]", timeout=30000)
         assert page.locator("#pages a[aria-current=page]").get_attribute("href") == f"/{name}/"
         assert page.locator("#me").inner_text().endswith("Ana Ortiz")
+    accessible(page)
     shot(page, name)
 
 

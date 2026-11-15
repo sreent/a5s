@@ -33,6 +33,7 @@ a5s = "a5s.cli:main"
 
 [dependency-groups]
 dev = [
+    "axe-playwright-python==0.1.8",
     "basedpyright==1.40.2",
     "moto[s3]>=5.2.5",
     "playwright==1.63.0",

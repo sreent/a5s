@@ -73,12 +73,13 @@ def may(role: str) -> str:
 def roles(conn: db.Connection, gw: Any, person: Person) -> list[dict]:
     """Each role someone holds, what gave it them, and what it lets them do: the team that
     runs a5s first, if they're in it."""
-    found = [{"role": h["role"], "by": by, "may": may(h["role"])}
+    found = [{"role": h["role"], "name": administration.named(h["role"]), "by": by, "may": may(h["role"])}
              for h in administration.held(gw.scenario, conn, list(person.roles))
              for by in [next((x["by"] for x in h["held_by"] if x["id"] == person.id), None)]
              if by]
     if person.team == gw.cfg.team:
-        found.insert(0, {"role": TEAM, "by": ["the directory"], "may": TEAM_MAY})
+        found.insert(0, {"role": TEAM, "name": "The team that runs a5s", "by": ["the directory"],
+                         "may": TEAM_MAY})
     return found
 
 
@@ -106,7 +107,7 @@ def waiting(conn: db.Connection, gw: Any, person: Person) -> list[dict]:
         if why:
             found.append({"kind": "settings", "what": f"Version {row['serial']} of the settings "
                           "waits for your approval", "why": list(dict.fromkeys(why)),
-                          "go": "/settings/"})
+                          "go": f"/approve/?settings={row['digest']}"})  # its own page
     held = conn.execute("select count(*) as n from proposals where status = 'waiting' "
                         "and %s = any(deciders)", (person.id,)).fetchone()["n"]
     if held:

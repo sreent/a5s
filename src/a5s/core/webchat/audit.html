@@ -10,18 +10,18 @@
 </head>
 <body>
 <header>
-  <h1>a5s</h1>
+  <p class="site-name">a5s</p>
   <span id="who"></span>
 </header>
 <main>
-  <h2>Audit trail</h2>
+  <h1>Audit trail</h1>
   <p class="note">The ledger, as an auditor reads it: everything a5s did and decided, in the
     order it happened, and never what anyone said, which it keeps by hash alone. Whoever
     approved, decided, signed or read the trail shows as themselves.
     <span id="naming"></span> Each search here is itself in the ledger.</p>
   <p id="status" role="status"></p>
   <section id="find" hidden>
-    <h3>Find entries</h3>
+    <h2>Find entries</h2>
     <p>
       <label for="since">From</label> <input id="since" type="datetime-local">
       <label for="until">to before</label> <input id="until" type="datetime-local">
@@ -43,16 +43,16 @@
       <label for="for">acting for</label> <input id="for" size="20">
       <label for="by">by</label> <input id="by" size="12">
     </p>
-    <button type="button" id="search">Find</button>
+    <button type="button" id="search" class="primary">Find</button>
     <button type="button" id="report">Who holds each role, and who did what</button>
     <button type="button" id="export" hidden>Export the period</button>
     <ul id="entries" class="plain"></ul>
     <button type="button" id="more" hidden>Later entries</button>
   </section>
   <section id="roles" hidden>
-    <h3>Who holds each role now</h3>
+    <h2>Who holds each role now</h2>
     <ul id="holders" class="plain"></ul>
-    <h3>What was done in the period</h3>
+    <h2>What was done in the period</h2>
     <ul id="acts" class="plain"></ul>
   </section>
 </main>

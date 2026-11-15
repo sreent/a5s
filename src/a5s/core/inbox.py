@@ -58,6 +58,7 @@ from a5s.core import (
     matrix,
     notebook_api,
     officer_api,
+    registry,
     settings_api,
     shell_api,
     studio_api,
@@ -389,8 +390,15 @@ def create_app(gw: Any) -> FastAPI:
                   from outbox o where o.person = %(who)s and o.channel = 'local' and o.agent = %(agent)s
                 ) said order by at desc, n desc limit %(limit)s
                 """, {"who": who, "agent": agent, "limit": min(max(limit, 1), 200)}).fetchall()
+            # What the agent does, for the first words of a conversation with it, to someone
+            # it serves alone: an agent nobody's told them of stays as unknown as before
+            served = any(registry.serving(gw.scenario, i["serves"], who) for i in conn.execute(
+                "select serves from instances where definition = %s and status in "
+                "('active', 'suspended')", (agent,)))
+        definition = gw.definitions.get(agent)
         return {"messages": [{"from": "you" if r["kind"] == "person" else agent if r["run_id"] else "a5s",
-                              "text": r["text"], "at": r["at"].isoformat()} for r in reversed(rows)]}
+                              "text": r["text"], "at": r["at"].isoformat()} for r in reversed(rows)],
+                "does": definition.does if definition and served else None}
 
     @app.get("/channels/local/summaries")
     def summaries_kept(agent: str, person: str | None = None,

@@ -26,7 +26,7 @@ function AgentCard({ agent }: { agent: AgentKnown }) {
           <div className="mono faint">{agent.release}</div>
         </div>
       </div>
-      <p className="clamp">{agent.works_for}</p>
+      <p className="clamp">{agent.does}</p>
       {agent.why && agent.why.length > 0 && <p className="why faint">{agent.why.join(" · ")}</p>}
       {uses && (
         <div className="chips">
@@ -71,10 +71,10 @@ function Drafts() {
   if (!data || data.drafts.length + data.theirs.length === 0) return null;
   return (
     <section className="card" id="drafts">
-      {data.drafts.length > 0 && <><h3>Your drafts</h3><DraftList drafts={data.drafts} /></>}
+      {data.drafts.length > 0 && <><h2>Your drafts</h2><DraftList drafts={data.drafts} /></>}
       {data.theirs.length > 0 && (
         <div id="co-drafts">
-          <h3>Your co-authors' drafts</h3>
+          <h2>Your co-authors' drafts</h2>
           <p className="note">Of the agents you may author too: read them, or copy one into a draft of your own.</p>
           <DraftList drafts={data.theirs} />
         </div>

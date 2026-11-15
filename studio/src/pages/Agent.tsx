@@ -1,20 +1,56 @@
-// One agent, as its release defines it: its map, what it's for, its tools by what they do, when
-// it works, what it knows, its budget, and where it runs.
+// One agent, as its release defines it: its map, what it's for, its facts and its ladder of
+// autonomy, its tools by what they do, when it works, what it knows, its budget, and where it runs.
 
 import { useState } from "react";
 import { type AgentKnown, type AgentUses, ApiError, builtOf, type Catalogue, type Draft,
          type Drafts, get, send, usesOf } from "../api";
 import { AgentMap } from "../AgentMap";
+import { AgentFacts, AutonomyLadder } from "../design";
 import { go, Link } from "../router";
+import { shellOf } from "../Sidebar";
 import { aboutInstance, levels, PageHead, people, type Risk, risk, RISK_NAMES, runners, StatusBadge,
          ToolBadges, triggers, useLoad, Waiting, when } from "../ui";
 
 const ORDER: Risk[] = ["changes", "outside", "writes", "reads"];
 
+/** Its label: what it may do, from its release alone, and what it may spend. */
+function Facts({ agent, uses }: { agent: AgentKnown; uses: AgentUses }) {
+  const named = (keep: (tool: AgentUses["tools"][number]) => boolean) =>
+    uses.tools.filter(keep).map((tool) => tool.name).join(", ") || "none";
+  return (
+    <section className="card" aria-label="Agent facts">
+      <AgentFacts name={agent.id} version={agent.release}
+        facts={[["Model", uses.model], ["Autonomy", levels(uses.autonomy)],
+          ["Only reads", named((t) => !!t.reads && !t.writes && !t.changes && !t.destructive)],
+          ["Writes", named((t) => !!t.writes && !t.changes)],
+          ["Changes", named((t) => !!t.changes || !!t.destructive)],
+          ["Sends outside", named((t) => !!t.sends_outside)],
+          ["Reads outside content", named((t) => t.outside.length > 0)]]}
+        more={{ title: "It may spend", aside: "tokens", rows: [
+          ["In a run", uses.budget.per_run.toLocaleString()],
+          ["For each person, each day", uses.budget.per_person_per_day.toLocaleString()]] }}
+        foot={`Owned by ${agent.owners.join(" and ") || "nobody yet"}.`} />
+    </section>
+  );
+}
+
+/** Its ladder of autonomy, where every instance of it works at one level: which that is, and
+ * how far its release lets it go. */
+function Ladder({ agent, uses }: { agent: AgentKnown; uses: AgentUses }) {
+  const at = [...new Set(agent.instances.map((instance) => instance.level))];
+  if (at.length !== 1) return null;  // none, or at different levels: each is in Where it runs
+  return (
+    <section className="card">
+      <h2>Autonomy</h2>
+      <AutonomyLadder level={at[0]} max={uses.autonomy.max} />
+    </section>
+  );
+}
+
 function Tools({ agent }: { agent: AgentUses }) {
   return (
     <section className="card">
-      <h3>Tools</h3>
+      <h2>Tools</h2>
       {ORDER.map((kind) => {
         const these = agent.tools.filter((t) => risk(t) === kind);
         if (!these.length) return null;
@@ -45,7 +81,7 @@ function Tools({ agent }: { agent: AgentUses }) {
 function When({ agent }: { agent: AgentUses }) {
   return (
     <section className="card">
-      <h3>When it works</h3>
+      <h2>When it works</h2>
       <dl className="facts">
         <dt>Starts on</dt><dd>{triggers(agent).map((t) => `${t.kind}, ${t.about}`).join("; ") || "nothing"}</dd>
         <dt>Channels</dt><dd>{agent.channels.join(", ") || "none"}</dd>
@@ -80,7 +116,7 @@ function Knows({ agent }: { agent: AgentUses }) {
   const other = Object.entries(rest).filter(([key]) => !(key in ABILITIES));
   return (
     <section className="card">
-      <h3>What it knows, and may spend</h3>
+      <h2>What it knows, and may spend</h2>
       <dl className="facts">
         {builtOf(agent) && <div className="fact-pair"><dt>Skills</dt><dd>{agent.skills.join(", ") || "none"}</dd></div>}
         {typeof conversation === "number" && (
@@ -104,7 +140,7 @@ function Knows({ agent }: { agent: AgentUses }) {
 function Where({ agent }: { agent: AgentKnown }) {
   return (
     <section className="card wide">
-      <h3>Where it runs</h3>
+      <h2>Where it runs</h2>
       {agent.instances.length === 0 && <p className="note">No instance you may watch runs it.</p>}
       {agent.instances.length > 0 && (
         <table className="grid-table">
@@ -128,7 +164,8 @@ function Where({ agent }: { agent: AgentKnown }) {
   );
 }
 
-function DraftAChange({ id }: { id: string }) {
+/** Drafting a change to it: the page's one thing to do, unless putting it to work comes first. */
+function DraftAChange({ id, second = false }: { id: string; second?: boolean }) {
   const [problem, setProblem] = useState<string>();
   const start = async () => {
     try {
@@ -143,7 +180,7 @@ function DraftAChange({ id }: { id: string }) {
   };
   return (
     <div className="actions">
-      <button type="button" className="primary" id="draft-change" onClick={start}>Draft a change</button>
+      <button type="button" className={second ? undefined : "primary"} id="draft-change" onClick={start}>Draft a change</button>
       {problem && <span className="problem">{problem}</span>}
     </div>
   );
@@ -159,7 +196,7 @@ function Seen({ agent }: { agent: AgentKnown }) {
     ["You may change it", layers.changing]];
   return (
     <section className="card" id="seen">
-      <h3>What you see of it, and why</h3>
+      <h2>What you see of it, and why</h2>
       <dl className="facts">
         {lines.filter(([, why]) => why).map(([what, why]) => (
           <div key={what} className="fact-pair"><dt>{what}</dt><dd>{why!.join("; ")}</dd></div>
@@ -169,6 +206,30 @@ function Seen({ agent }: { agent: AgentKnown }) {
         <p className="note">{layers.uses ? "Its instructions are for those who make it, own it, approve its releases or audit it."
           : "What it may do is for the people it serves and those who run it: to have it serve you, ask for it."}</p>
       )}
+    </section>
+  );
+}
+
+// Putting an agent to work, for its owners and authors, once it's released and no instance runs
+// it: a first instance in the settings, for a few people, at level 0 or 1. Those who approve
+// versions of the settings go there with the agent chosen; others are told who can.
+
+// Released, and no instance runs it, to its owners and authors, who see every one that does
+const idle = (agent: AgentKnown) => Boolean(agent.layers?.changing) && agent.instances.length === 0;
+
+function PutToWork({ agent }: { agent: AgentKnown }) {
+  const shell = useLoad(shellOf, []);
+  const may = shell.data?.pages.includes("settings");
+  return (
+    <section className="card" id="put-to-work">
+      <h2>Put it to work</h2>
+      <p>No instance runs it yet. Its first is an instance in the settings, for a few people first, at level 0 or
+        1, so it suggests, or asks before each change. Its part's owner approves it, as any change there.</p>
+      {may
+        ? <div className="actions"><a className="button primary" id="put-it-to-work"
+            href={`/settings/?add=${encodeURIComponent(agent.id)}`}>Put it to work in the settings</a></div>
+        : shell.data && <p className="note">Those who approve versions of the settings put it to work there: a part's
+            owner, or someone who approves instances. To have it serve you, ask for it.</p>}
     </section>
   );
 }
@@ -189,7 +250,7 @@ function AskFor({ agent, reload }: { agent: AgentKnown; reload: () => void }) {
   };
   return (
     <section className="card" id="ask">
-      <h3>Asking for it</h3>
+      <h2>Asking for it</h2>
       {agent.ask
         ? <p>You asked for it {when(agent.ask.asked_at)}. It waits on its owners and those who approve its instances, who answer it with a version of the settings that serves you.</p>
         : <p>To have it serve you, ask for it: its owners and those who approve its instances see what you asked.</p>}
@@ -219,7 +280,7 @@ function AsksWaiting({ agent, reload }: { agent: AgentKnown; reload: () => void 
   if (!agent.asks?.length) return null;
   return (
     <section className="card" id="asks">
-      <h3>Asked for</h3>
+      <h2>Asked for</h2>
       <ul className="plain">{agent.asks.map((a) => (
         <li key={a.id}>{a.person} asked for it {when(a.asked_at)} <span className="faint">· {a.why.join("; ")}</span>
           <div className="actions">
@@ -254,14 +315,15 @@ export function AgentPage({ id }: { id: string }) {
             {agent.instances.map((i) => <span key={i.id}>{i.id}: {aboutInstance(i)}</span>)}
           </div>
         )}
-        {agent && changes && <DraftAChange id={id} />}
+        {agent && changes && <DraftAChange id={id} second={idle(agent)} />}
       </PageHead>
       {!agent && <Waiting error={error} />}
       {agent && (
         <>
+          {idle(agent) && <PutToWork agent={agent} />}
           {uses && (
             <section className="card map-card">
-              <h3>How it's wired</h3>
+              <h2>How it's wired</h2>
               <p className="note">What starts its runs, and the tools it may call, each through a5s's checks. Changes to records wait for a person to decide at level 1.</p>
               <AgentMap agent={uses} />
             </section>
@@ -269,7 +331,7 @@ export function AgentPage({ id }: { id: string }) {
           <div className="agent-body">
             <div>
               <section className="card">
-                <h3>What it does</h3>
+                <h2>What it does</h2>
                 <p>{agent.does}</p>
                 {builtOf(agent) && agent.instructions && (
                   <details>
@@ -281,6 +343,8 @@ export function AgentPage({ id }: { id: string }) {
               {uses && <Tools agent={uses} />}
             </div>
             <div className="side">
+              {uses && <Facts agent={agent} uses={uses} />}
+              {uses && <Ladder agent={agent} uses={uses} />}
               <Seen agent={agent} />
               {agent.ask !== undefined && <AskFor agent={agent} reload={reload} />}
               <AsksWaiting agent={agent} reload={reload} />

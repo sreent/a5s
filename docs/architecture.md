@@ -214,7 +214,7 @@ The same events go out as OpenTelemetry spans, using the GenAI conventions at a 
   | Fixes a security advisory | Nothing more: it goes in at once, at level 1 at most |
   | Changes the trusted core | The release approver, an attested build, and assurance's tests |
 
-  Each organisation's people approve each release for their own deployment, by signing what it is there. The core works out what changed since the release they approved before, checks the signatures against the directory, and opens no run until the release has what it needs ([lifecycle](agent-model.md#lifecycle)).
+  Each organisation's people approve each release for their own deployment, by signing what it is there. The core works out what changed since the release they approved before, checks the signatures against who that release records may sign the next and who this one records, so a release can't approve itself with an approver it adds, and opens no run until the release has what it needs ([lifecycle](agent-model.md#lifecycle)).
 
 - **Evidence and grading** sit outside the team. The ledger's anchor is with assurance, and nobody from the team that built an agent grades its work.
 

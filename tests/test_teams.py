@@ -416,7 +416,7 @@ def test_an_instance_approver_gets_a_card_that_opens_the_cores_page(stack, bot, 
 
     card = bot.sent[-1]
     assert card["as"] == APP_ID and "replyToId" not in card and "text" not in card
-    assert card["summary"] == (f"Serial {asked['serial']} of a5s's settings waits for its "
+    assert card["summary"] == (f"Version {asked['serial']} of a5s's settings waits for its "
                                "instance approvers to approve it.")
     [attachment] = card["attachments"]
     assert attachment["contentType"] == "application/vnd.microsoft.card.adaptive"

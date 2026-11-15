@@ -15,6 +15,7 @@ import pytest
 from a5s.core import inbox
 from a5s.core.identity import IdentityConfig, Verifier
 from conftest import CLIENT, free_port, serve
+from test_ui_pages import shot
 
 
 def channels(stack, **gateway) -> serve:
@@ -113,6 +114,17 @@ def test_a_person_sees_only_their_own_conversation(stack):
         ("you", "Which questions mention an invoice?"), ("assistant", "Q-1001 mentions an invoice.")]
 
 
+def test_a_conversation_starts_with_what_the_agent_does_for_whoever_it_serves(stack):
+    with channels(stack) as url:
+        def does(person: str, agent: str = "assistant") -> str | None:
+            return httpx.get(f"{url}/channels/local/conversation",
+                             params={"agent": agent, "person": person}).json()["does"]
+
+        assert does("ana").startswith("Keeps one conversation with each person")
+        assert does("chen") is None  # it serves neither them, nor anyone with the watcher
+        assert does("ana", "watcher") is None  # no instance runs it here
+
+
 def test_a_wait_the_person_left_takes_nothing_they_wont_see(stack):
     from a5s import db
 
@@ -166,10 +178,17 @@ def test_a_person_signs_in_chats_and_hears_reminders_in_the_browser(stack, brows
     page.goto(f"{signing_in}/chat/")  # to the provider, and straight back, signed in
     page.wait_for_selector("#who >> text=Ana Ortiz", timeout=30000)
     assert not page.is_visible("#name")  # nobody's asked who they are, once signed in
+    # With nothing said yet, it starts with the agent, what it does, and what to do
+    page.wait_for_selector("#welcome >> text=The assistant", timeout=30000)
+    assert "Keeps one conversation with each person" in page.inner_text("#welcome")
+    assert page.locator("#welcome .avatar.agent").count() == 1
+    shot(page, "chat-welcome")
     page.fill("#text", "Hello")
     page.keyboard.press("Enter")
     page.wait_for_selector("li.agent >> text=Ana", timeout=30000)
     reply = page.locator("li.agent").last
+    assert not page.is_visible("#welcome")  # once something's said
+    assert reply.locator(".avatar.agent").count() == 1  # an agent said it, as its mark says
     assert reply.locator("strong").nth(1).inner_text() == "Ana"  # bold, as text
     assert reply.locator("a").get_attribute("href") == "https://sample.a5s.dev/records/Q-1001"
     assert page.evaluate("window.location.search") == ""  # the code doesn't linger

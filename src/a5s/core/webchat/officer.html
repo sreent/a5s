@@ -10,10 +10,10 @@
 </head>
 <body>
 <header>
-  <h1>a5s</h1>
+  <p class="site-name">a5s</p>
 </header>
 <main>
-  <h2>A request for someone's data</h2>
+  <h1>A request for someone's data</h1>
   <p id="status" role="status"></p>
   <form id="ask" hidden>
     <p>
@@ -24,7 +24,7 @@
       </select>
       <label for="person">all a5s keeps about</label>
       <input id="person" autocomplete="off" spellcheck="false"
-             placeholder="their id in the directory, or an archive's name">
+             placeholder="an id, or an archive's name">
     </p>
     <p id="again" hidden>
       <label for="confirm">Their id again, since an erasure can't be undone:</label>
@@ -32,7 +32,7 @@
     </p>
     <p class="note">You sign in afresh, for this request alone. Someone from the team that runs
       a5s then carries it out, once, within ten minutes: your sign-in does nothing else.</p>
-    <button type="submit">Sign in and ask</button>
+    <button class="primary" type="submit">Sign in and ask</button>
   </form>
 </main>
 </body>

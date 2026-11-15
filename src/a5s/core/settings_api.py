@@ -10,6 +10,7 @@ approves versions of the settings.
 
 from typing import Annotated, Any
 
+import yaml
 from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from pydantic import BaseModel
 
@@ -27,6 +28,22 @@ class Draft(BaseModel):
 SETTLES = ("the settings app is for the people who approve versions of the settings: each "
            "part's owner, the instance approvers, agents' owners, the data protection officer "
            "and assurance, each for what's theirs")
+
+
+def named(data: dict | None, person: Person, directory: Any = None) -> dict[str, str]:
+    """The people the settings name, as owners, deputies and whom instances serve, and whoever
+    is signed in, by their names, for the page's forms to offer: a team or a role an instance
+    serves keeps its name as written."""
+    ids = {person.id}
+    for instance in ((data or {}).get("instances") or {}).values():
+        if isinstance(instance, dict):
+            ids |= {i for i in (instance.get("owner"), instance.get("deputy")) if isinstance(i, str)}
+            ids |= {i for i in instance.get("serves") or [] if isinstance(i, str)}
+    found = {}
+    for i in sorted(ids):
+        known = directory(i) if directory and ":" not in i else None
+        found[i] = known.name if known else (person.name if i == person.id else i)
+    return found
 
 
 def router(gw: Any) -> APIRouter:
@@ -77,11 +94,23 @@ def router(gw: Any) -> APIRouter:
             asked = conn.execute("select * from settings_requests where scenario = %s and "
                                  "person = %s order by id desc limit 5",
                                  (gw.scenario.name, person.id)).fetchall()
+        data = (yaml.safe_load(bytes(last["raw"])) or {}) if last and in_force else None
+        tools = gw.scenario.tools()
         return {
-            "you": person.name,
+            "you": person.name, "me": person.id,
             "in_force": {"serial": last["serial"], "text": bytes(last["raw"]).decode(),
-                         "whole": approvals.described(in_force, *words)}
+                         "whole": approvals.described(in_force, *words),
+                         "data": data}  # as the page's forms change it
             if last and in_force else None,
+            # What the forms offer: the people the settings name, the types of change this
+            # deployment's tools make, and for each release, the level it starts at, the most
+            # it allows, and the types of change its own tools make
+            "names": named(data, person, gw.scenario.person),
+            "actions": sorted({t.action for t in tools.values() if t.action}),
+            "releases": {name: {"starts": d.autonomy.start, "most": d.autonomy.max,
+                                "actions": sorted({tools[t].action for t in d.tool_names
+                                                   if t in tools and tools[t].action})}
+                         for name, d in sorted(gw.definitions.items())},
             "waiting": waiting,
             "requests": [{"asked_at": r["asked_at"].isoformat(),
                           "serial": parse_settings(bytes(r["raw"])).serial,

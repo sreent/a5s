@@ -4,8 +4,7 @@
 .nav-group { display: contents; }
 .page.studio main { max-width: 80rem; }
 
-.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.85em; }
-.faint { color: var(--faint); }
+.mono { font-family: var(--font-mono); font-size: 0.85em; }
 .problem { color: var(--bad); }
 .num { text-align: right; font-variant-numeric: tabular-nums; }
 
@@ -17,7 +16,7 @@
 .crumbs a:hover { color: var(--accent); }
 .crumbs .sep { color: var(--faint); margin: 0 0.35rem; }
 .title-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
-.title-row h2 { margin: 0; }
+.title-row h1 { margin: 0; }
 .about { color: var(--muted); margin: 0.45rem 0 0; max-width: 56rem; }
 .meta { display: flex; flex-wrap: wrap; gap: 0.35rem 1.1rem; margin-top: 0.6rem; color: var(--muted); font-size: 0.88rem; }
 .period { display: inline-flex; align-items: center; gap: 0.4rem; margin-top: 0.85rem; }
@@ -30,8 +29,6 @@
         white-space: nowrap; }
 .badges { display: inline-flex; flex-wrap: wrap; gap: 0.3rem; }
 .badge .dot { width: 0.45rem; height: 0.45rem; border-radius: 50%; background: currentColor; }
-.label { font-size: 0.74rem; font-weight: 650; text-transform: uppercase; letter-spacing: 0.05em; color: var(--faint);
-         margin: 0 0 0.45rem; }
 .tone-changes { color: var(--changes); }
 .tone-outside { color: var(--outside); }
 .tone-writes { color: var(--writes); }
@@ -44,7 +41,7 @@
 .agent-card { display: flex; flex-direction: column; gap: 0.75rem; margin: 0; padding: 1.15rem 1.25rem; }
 .agent-card-head { display: flex; align-items: center; gap: 0.75rem; }
 .agent-glyph { display: grid; place-items: center; width: 2.4rem; height: 2.4rem; border-radius: 10px;
-               background: var(--accent-soft); color: var(--accent); flex: none; }
+               background: var(--agent-tone); color: var(--surface); flex: none; }  /* agents, not people */
 .agent-glyph .icon { width: 1.35rem; height: 1.35rem; }
 .agent-name { font-weight: 650; font-size: 1.05rem; color: var(--text); text-decoration: none; }
 .agent-name:hover { color: var(--accent); }
@@ -115,6 +112,9 @@ table.runs-table tbody tr:hover { background: var(--sunken); }
 .agent-map .react-flow__edge.edge-reads path { stroke: var(--reads); }
 .agent-map .react-flow__edge.edge-own path { stroke: var(--own); }
 .agent-map .react-flow__handle { opacity: 0; }
+/* React Flow's credit, kept, in colours that read (WCAG's 4.5 to 1) */
+.agent-map .react-flow__attribution { background: var(--sunken); }
+.agent-map .react-flow__attribution a { color: var(--muted); }
 /* A run's path on its agent's map: what it used, bolder; what it didn't, faded; refusals red */
 .agent-map .react-flow__edge.used path { stroke-width: 2.6; }
 .agent-map .react-flow__edge.unused path { opacity: 0.22; }
@@ -127,8 +127,8 @@ table.runs-table tbody tr:hover { background: var(--sunken); }
 .map-text { min-width: 0; }
 .map-title { font-weight: 600; font-size: 0.86rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .map-detail { font-size: 0.74rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.map-node.agent { border-color: var(--accent); background: var(--accent-soft); }
-.map-node.agent .map-icon { color: var(--accent); }
+.map-node.agent { border-color: var(--agent-tone); background: var(--agent-tone-soft); }  /* agents, as everywhere */
+.map-node.agent .map-icon { color: var(--agent-tone); }
 .map-node.checks { border-color: var(--own); }
 .map-node.checks .map-icon { color: var(--own); }
 .map-node.changes { border-left-color: var(--changes); }
@@ -205,7 +205,6 @@ table.runs-table tbody tr:hover { background: var(--sunken); }
 
 /* Making agents: a new one from a template, and a draft's editor */
 .page-head .actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.85rem; }
-a.button { display: inline-flex; align-items: center; text-decoration: none; }
 button.quiet { background: transparent; border-color: var(--line); color: var(--muted); }
 .field { display: grid; gap: 0.35rem; font-size: 0.9rem; }
 .field > span { color: var(--muted); font-size: 0.84rem; }
@@ -236,10 +235,10 @@ button.quiet { background: transparent; border-color: var(--line); color: var(--
 .raw { display: grid; grid-template-columns: 14rem minmax(0, 1fr); gap: 1rem; }
 .file-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.15rem; align-content: start; }
 .file-list button { width: 100%; text-align: left; background: transparent; border: 0; border-radius: 6px;
-                    padding: 0.35rem 0.55rem; font-family: var(--mono, ui-monospace, monospace); font-size: 0.82rem;
+                    padding: 0.35rem 0.55rem; font-family: var(--font-mono); font-size: 0.82rem;
                     color: var(--text); overflow-wrap: anywhere; }
 .file-list button.on { background: var(--accent-soft); color: var(--accent); }
-.raw-file textarea { width: 100%; min-height: 26rem; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+.raw-file textarea { width: 100%; min-height: 26rem; font-family: var(--font-mono);
                      font-size: 0.82rem; line-height: 1.5; resize: vertical; }
 @media (max-width: 50rem) { .raw { grid-template-columns: minmax(0, 1fr); } .field-pair { grid-template-columns: minmax(0, 1fr); } }
 
@@ -258,7 +257,7 @@ button.quiet { background: transparent; border-color: var(--line); color: var(--
 .try-keep .note, .try-keep .problem { flex-basis: 100%; margin: 0; }
 .cases { display: grid; gap: 0.6rem; padding-top: 0.9rem; border-top: 1px solid var(--line); }
 .cases-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
-.cases-head h4 { margin: 0; }
+.cases-head h3 { margin: 0; }
 .cases p { margin: 0; }
 .case-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
 .case { padding: 0.5rem 0.7rem; border: 1px solid var(--line); border-radius: 8px; display: grid; gap: 0.3rem; }
@@ -282,3 +281,12 @@ details.sent { margin-top: 0.75rem; }
 .said-to { display: grid; grid-template-columns: 6rem minmax(0, 1fr); gap: 0.5rem; align-items: start; }
 .said-to pre { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 0.8rem; line-height: 1.5;
                max-height: 16rem; overflow: auto; background: var(--sunken); border-radius: 6px; padding: 0.4rem 0.6rem; }
+
+/* The design system's showcase (pages/Design.tsx) */
+.swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.5rem 1rem;
+            margin: 0.75rem 0 0; padding: 0; list-style: none; font-size: 0.88rem; }
+.swatches li { display: flex; align-items: center; gap: 0.6rem; }
+.swatch { width: 2.2rem; height: 2.2rem; flex: none; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); }
+.type-sample { margin: 0.35rem 0; }
+.type-sample.big { font-size: var(--text-2xl); font-weight: 600; letter-spacing: -0.015em; line-height: 1.2; }
+[data-piece] .chips { margin: 0.5rem 0 0.75rem; align-items: center; }

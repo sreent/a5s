@@ -30,14 +30,16 @@ log = logging.getLogger(__name__)
 WEBCHAT = Path(__file__).parent / "webchat"
 PAGE_HEADERS = {  # the page runs only its own script, shows only text, and goes in no frame
     "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; "
-                               "connect-src 'self'; img-src 'self' data:; base-uri 'none'; "
+                               "font-src 'self'; connect-src 'self'; img-src 'self' data:; "
+                               "base-uri 'none'; "
                                "form-action 'none'; frame-ancestors 'none'",
     "Referrer-Policy": "no-referrer",
     "X-Content-Type-Options": "nosniff",
     "Cache-Control": "no-cache",
 }
 TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
-         ".css": "text/css; charset=utf-8"}
+         ".css": "text/css; charset=utf-8", ".woff2": "font/woff2"}
+FONTS = tuple(sorted(f.name for f in (WEBCHAT / "fonts").glob("*.woff2")))  # IBM Plex, bundled
 
 
 def webchat(gw: Any) -> bool:

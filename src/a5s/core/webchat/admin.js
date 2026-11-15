@@ -82,11 +82,35 @@ function list(id, items, none) {
   if (!items.length) into.append(item(none, "note"));
 }
 
+function element(tag, text, className) {
+  const found = document.createElement(tag);
+  if (text !== undefined && text !== null) found.textContent = String(text);
+  if (className) found.className = className;
+  return found;
+}
+
+// Each role, by its name, with its id beside it for giving it to a group, and who holds it and
+// what gave it them; a role nobody holds stands out
+function roleRow(row) {
+  const tr = element("tr");
+  const role = element("td");
+  role.append(element("strong", row.name), element("span", row.role, "role-id mono"));
+  const holders = element("td");
+  if (!row.held_by.length) holders.append(element("span", "nobody", "badge warn"));
+  row.held_by.forEach((h, i) => {
+    if (i) holders.append(element("br"));
+    holders.append(h.name, " ", element("span", `(${h.by.join(", ")})`, "faint"));
+  });
+  tr.append(role, holders);
+  return tr;
+}
+
+const when = (at) => new Date(at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+
 async function load() {
   const now = await call("/admin/api");
   $("who").textContent = now.you;
-  list("roles", now.roles.map((row) => item(`${row.role}: ${row.held_by.map(
-    (h) => `${h.name} (${h.by.join(", ")})`).join("; ") || "nobody"}`)), "No roles.");
+  $("roles").replaceChildren(...now.roles.map(roleRow));
   $("claim").textContent = now.claim
     ? `Sign-ins show their groups in the ${now.claim} claim. A role a group gives counts from someone's latest sign-in.`
     : "This deployment reads no groups from sign-ins, so the directory alone gives roles.";
@@ -95,7 +119,7 @@ async function load() {
     "None: the settings in force give no group a role.");
   const waits = [];
   for (const v of now.waiting.settings) {
-    waits.push(item(`Settings, serial ${v.serial}: ${v.needs.length ? v.needs.join("; ") : "approved, for a5s to apply"}`));
+    waits.push(item(`Settings, version ${v.serial}: ${v.needs.length ? v.needs.join("; ") : "approved, for a5s to apply"}`));
   }
   for (const problem of now.waiting.release) waits.push(item(`The release: ${problem}`));
   for (const held of now.waiting.held_changes) {
@@ -110,7 +134,7 @@ async function load() {
   list("ownerless", none, "Everything has someone who answers for it.");
   $("latest-title").textContent = `The latest acts, over the last ${now.days} days`;
   list("latest", now.latest.map((act) => item(
-    `${act.at}: ${act.by || "a5s"} ${act.what}${act.instance ? `, ${act.instance}` : ""}`)),
+    `${when(act.at)}: ${act.by || "a5s"} ${act.what}${act.instance ? `, ${act.instance}` : ""}`)),
     "Nothing was done.");
   $("shown").hidden = false;
   status("");

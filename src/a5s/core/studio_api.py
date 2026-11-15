@@ -41,7 +41,7 @@ from a5s.core.releases import ENGINEER, agent_owner
 STUDIO = web.WEBCHAT / "studio"  # as `npm run build` in studio/ builds it, which the image does
 STUDIO_UNBUILT = ("The studio isn't built here. Build it from the repository with "
                   "`npm ci --prefix studio && npm run build --prefix studio`, as the image does.")
-_ASSET = re.compile(r"[\w-]+\.(js|css)")  # its own files, by name alone: nothing else
+_ASSET = re.compile(r"[\w-]+\.(js|css|woff2)")  # its own files, by name alone: nothing else
 
 
 class DraftStart(BaseModel):
@@ -161,9 +161,10 @@ def router(gw: Any) -> APIRouter:
     @pages.get("/studio/new", include_in_schema=False)
     @pages.get("/studio/agents", include_in_schema=False)
     @pages.get("/studio/you", include_in_schema=False)
+    @pages.get("/studio/design", include_in_schema=False)
     def studio_new() -> Response:
-        """The studio, where someone starts a new agent, sees all the agents they may, or what
-        they may do."""
+        """The studio, where someone starts a new agent, sees all the agents they may, what they
+        may do, or the design system's showcase."""
         return built("index.html")
 
     @pages.get("/studio/assets/{name}", include_in_schema=False)
@@ -364,7 +365,18 @@ def router(gw: Any) -> APIRouter:
                 "preview": drafts.preview(gw.scenario, draft["agent"], draft["files"], tools),
                 "signers": drafts.signers(draft["agent"], draft["files"], gw.cfg.agents_dir,
                                           gw.definitions),
-                "publishing": publishing.configured(gw.cfg)}  # or its author opens it
+                "publishing": publishing.configured(gw.cfg),  # or its author opens it
+                **journey(draft)}
+
+    def journey(draft: dict) -> dict:
+        """Where a draft is on its way to work, past publishing it: released here as it is, and
+        its agent at work through an instance, running or paused."""
+        with db.transaction(gw.url) as conn:
+            at_work = conn.execute("select 1 from instances where definition = %s and status in "
+                                   "('active', 'suspended') limit 1", (draft["agent"],)).fetchone()
+        return {"released": drafts.released(draft["agent"], draft["files"], draft.get("based_on"),
+                                            gw.cfg.agents_dir, gw.definitions),
+                "at_work": at_work is not None}
 
     @api.get("/studio/api/tools", **shapes.answers(shapes.Offer))
     def studio_tools(_: Annotated[Person, Depends(drafting)]) -> dict:

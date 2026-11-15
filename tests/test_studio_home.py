@@ -40,7 +40,7 @@ def test_it_says_what_waits_for_whom_and_where_they_do_it(stack, approving, prov
     assert held(stack)
     ana = {w["kind"]: w for w in api(approving, provider, "ana", "home").json()["waiting"]}
     assert ana["settings"] == {
-        "kind": "settings", "go": "/settings/",
+        "kind": "settings", "go": f"/approve/?settings={waiting['digest']}",
         "what": f"Version {waiting['serial']} of the settings waits for your approval",
         "why": ["the owner of billing hasn't approved it"]}
     assert ana["decide"]["what"] == "1 change an agent asked for waits for your decision"
@@ -76,6 +76,7 @@ def test_it_says_which_roles_someone_holds_what_gave_them_and_what_they_let_them
     [owner] = [r for r in ben["roles"] if r["role"] == "part-owner:billing"]
     assert owner["by"] == [f"group {OWNERS}"] and owner["may"].startswith(
         "approve the instances that work in billing")
+    assert owner["name"] == "Owner of billing"  # in words, with its id beside it
     assert ben["groups"] == [OWNERS]
     ana = {r["role"]: r for r in api(approving, provider, "ana", "you").json()["roles"]}
     assert ana["instance-approver"]["by"] == ["the directory"]
@@ -118,4 +119,5 @@ def test_someone_finds_what_waits_and_what_they_may_do_in_the_studio(stack, appr
     assert page.evaluate("location.pathname") == "/studio/you"
     row = page.inner_text("#roles tr:has-text('part-owner:billing')")
     assert "approve the instances that work in billing" in row and "the directory" in row
+    assert row.startswith("Owner of billing")
     assert refused == []

@@ -1528,14 +1528,6 @@
                     "endColumn": 48,
                     "lineCount": 1
                 }
-            },
-            {
-                "code": "reportOptionalSubscript",
-                "range": {
-                    "startColumn": 35,
-                    "endColumn": 78,
-                    "lineCount": 2
-                }
             }
         ],
         "./src/a5s/core/reminders.py": [

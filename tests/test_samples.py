@@ -14,9 +14,10 @@ import pytest
 from a5s import db
 from a5s.contract import record_of
 from a5s.core import samples
-from conftest import CLIENT, seal_grades
+from conftest import CLIENT, accessible, seal_grades
 from test_levels import asked, levelled
 from test_proposals import decide, held, sweep
+from test_ui_pages import shot
 
 
 def drawn(stack) -> list[dict]:
@@ -234,10 +235,24 @@ def test_a_grader_grades_in_the_browser(stack, approving, provider, browser):
     provider.person = "dana"
     page = browser.new_page()
     page.goto(f"{approving}/grade/")
-    page.wait_for_selector("article >> text=Q-1002", timeout=30000)
+    page.wait_for_selector("[data-sample] >> text=Q-1002", timeout=30000)
     assert page.inner_text("#who") == "Dana Price"
-    assert page.inner_text("article h3") == "assistant, change-due-date in billing: asked for, and approved"
-    page.click("article button >> text=Right")
+    # On the card decisions are made on: who did it, what it did in code's words, and how it went
+    sample = page.locator("[data-sample]")
+    assert sample.locator(".who-name").inner_text() == "The assistant asked"
+    assert sample.locator(".who-about").inner_text().startswith("change-due-date in billing · sampled ")
+    assert sample.locator("h2").inner_text().startswith("Change a customer question's due date: Q-1002")
+    assert sample.locator(".badge").inner_text() == "approved"
+    assert sample.get_by_role("link", name="Open Q-1002").get_attribute("href").endswith("/Q-1002")
+    # The grade chosen shows, and choosing it again takes it back
+    right = sample.get_by_role("button", name="Right")
+    right.click()
+    assert right.get_attribute("aria-pressed") == "true"
+    accessible(page)
+    shot(page, "grade")
+    right.click()
+    assert right.get_attribute("aria-pressed") == "false"
+    right.click()
     page.click("#send")
     page.wait_for_selector("#status >> text=Graded right", timeout=30000)
     assert drawn(stack)[0]["grade"] == "right"
