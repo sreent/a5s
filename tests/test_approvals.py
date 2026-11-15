@@ -14,6 +14,7 @@ import httpx
 import yaml
 
 from a5s import db
+from a5s.contract import DataProtection
 from a5s.core import approvals
 from a5s.core.identity import IdentityConfig, Verifier
 from conftest import CLIENT, SEAL_KEY, accessible
@@ -175,7 +176,7 @@ def test_editing_the_database_approves_nothing(stack, approving, provider):
         refused = c.post("/runs", json={"instance": "assistant-finance", "trigger": {
             "kind": "message", "inbound": stack.send("Hello", "chen")}})
     assert refused.status_code == 409
-    assert "the settings in force aren't approved: nobody who approves instances has approved it" in refused.json()["detail"]["reasons"]
+    assert "the settings in force aren't approved: the owner of billing hasn't approved it" in refused.json()["detail"]["reasons"]
 
 
 def test_an_approval_outlasts_the_providers_keys_but_not_the_cores(stack, approving, provider):
@@ -194,7 +195,7 @@ def test_an_approval_outlasts_the_providers_keys_but_not_the_cores(stack, approv
     approved = asked["serial"]
     assert in_force(SEAL_KEY) == (approved, None)
     assert in_force("a new seal key", SEAL_KEY) == (approved, None)  # the core moving to a new key
-    assert in_force("a new seal key") == (None, "the settings in force aren't approved: nobody who approves instances has approved it")
+    assert in_force("a new seal key") == (None, "the settings in force aren't approved: the owner of billing hasn't approved it")
 
 
 def test_a_version_waiting_for_approval_is_let_go_once_a_newer_one_is_in_force(stack, approving,
@@ -268,7 +269,7 @@ def test_an_approver_reviews_and_approves_in_the_browser(stack, approving, provi
         "assistant-finance serves Chen Wei as well. widens what agents do",
         "assistant-finance's level in billing goes from 1 to 0."]
     assert page.inner_text("#approvals") == "nobody yet"
-    assert page.inner_text("#needs") == "nobody who approves instances has approved it"
+    assert page.inner_text("#needs") == "the owner of billing hasn't approved it"
     assert page.locator("#whole li").all_inner_texts() == [  # and all of it, before deciding
         "The scenario's data is synthetic.",
         ("assistant-finance: the assistant, working in billing at level 0, serving Ana Ortiz, "
@@ -276,7 +277,8 @@ def test_an_approver_reviews_and_approves_in_the_browser(stack, approving, provi
         "Limit for change-due-date: 5 in one run and 20 for one person in 30 days.",
         "Limit for close-question: 5 in one run and 20 for one person in 30 days.",
         "An agent earns level 2 in billing once graded samples show it's 98% accurate.",
-        "An agent earns level 2 in orders once graded samples show it's 95% accurate."]
+        "An agent earns level 2 in orders once graded samples show it's 95% accurate.",
+        *approvals.protection(DataProtection())]  # the officer's choices, as a5s starts them
     assert page.evaluate("window.location.search") == ""  # the code doesn't linger
     accessible(page)
     shot(page, "approve")

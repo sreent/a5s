@@ -65,7 +65,8 @@ def test_an_unsigned_version_doesnt_count(sample):
     folder, _, database = sample
     write(folder, 1)
     result = apply(folder, database)
-    assert result.refused == ["nobody who approves instances has approved it"]
+    assert result.refused == ["no instance-approver has approved it, for the instances in no part",
+                              "no instance-approver has approved its classes of data"]
     assert instances(database) == []
     with db.transaction(database) as conn:
         assert ledger.entries(conn)[-1]["decision"] == "deny"
