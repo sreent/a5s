@@ -6,6 +6,7 @@ and is there again after a reload; and they draft a change to an agent they own,
 from __future__ import annotations
 
 import yaml
+from playwright.sync_api import expect
 
 from a5s import db
 
@@ -33,6 +34,13 @@ def test_an_agents_owner_makes_an_agent_in_the_studio(stack, approving, provider
     page.wait_for_selector("#problems >> text=Nothing would stop its release", timeout=30000)
     assert page.evaluate("location.pathname").startswith("/studio/drafts/")
     assert "the finance-helper is new" in page.inner_text("#signers")  # who'd sign, before anything
+    # Where it stands on its way to work: shaped, with no sandbox here to try it in, so
+    # publishing is what's next, and its release's signers and a5s's deploying it follow
+    page.wait_for_selector("#journey >> text=no sandbox here", timeout=30000)
+    assert page.inner_text("#journey [aria-current=step] strong") == "Publish it"
+    assert "a5s deploys it once they have" in page.inner_text("#journey")
+    page.click("#journey button:has-text('Publish it')")
+    expect(page.locator("#publishing")).to_be_focused()
     page.wait_for_selector(".agent-map .map-node >> text=close_question", timeout=30000)
     assert "no sandbox here" in page.inner_text("#try")  # where there's none, it says so
     page.click("[role=tab]:has-text('Tools')")  # one tool fewer, and its map shows it
@@ -83,6 +91,11 @@ def test_an_agents_owner_tries_their_draft_in_the_sandbox(stack, with_sandbox, a
     page.click("#make")
     page.wait_for_selector("#problems >> text=Nothing would stop its release", timeout=30000)
     page.wait_for_selector("#try-as", timeout=30000)
+    # With a sandbox, trying it is next, and publishing without trying stays open
+    assert page.inner_text("#journey [aria-current=step] strong") == "Shape and try it"
+    assert page.locator("#journey button:has-text('Publish it without trying it')").count() == 1
+    page.click("#journey button:has-text('Try it in the sandbox')")
+    expect(page.locator("#try")).to_be_focused()
     page.select_option("#try-as", "ben")  # one of the sandbox's made-up people
     page.fill("#try-text", "Which questions mention an invoice?")
     page.click("#try button:has-text('Say it')")
@@ -103,6 +116,8 @@ def test_an_agents_owner_tries_their_draft_in_the_sandbox(stack, with_sandbox, a
     page.click("#keep-case")
     page.wait_for_selector("#case-kept >> text=Kept as finds questions by what they mention", timeout=30000)
     page.wait_for_selector("#kept >> text=kept", timeout=30000)
+    page.wait_for_selector("#journey >> text=1 test case kept from the sandbox", timeout=30000)
+    assert page.inner_text("#journey [aria-current=step] strong") == "Publish it"
     draft = page.evaluate("location.pathname").rsplit("/", 1)[-1]
     with db.transaction(stack.admin) as conn:
         files = conn.execute("select files from agent_drafts where id = %s", (draft,)).fetchone()["files"]

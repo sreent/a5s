@@ -96,6 +96,13 @@ export const CASES = "tests/tried.yaml";  // where the test pane keeps the cases
 const ABOUT = " Test cases kept from the sandbox's test pane: what was said to the agent, as whom, and\n"
   + " what it must use. Add what it must say, or never say, as the agent's other cases do.";
 
+/** How many test cases a file of them holds: none, if it doesn't read as a list of them. */
+export function keptCases(text: string | undefined): number {
+  if (!text?.trim()) return 0;
+  const doc = parseDocument(text);
+  return !doc.errors.length && isSeq(doc.contents) ? doc.contents.items.length : 0;
+}
+
 /** Test cases, as a file of them, with one more. One with the same name is refused. */
 export function withCase(text: string, testCase: Case): string {
   const doc = text.trim() ? parseDocument(text) : new Document([]);

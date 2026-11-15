@@ -1,7 +1,7 @@
 // a5s's own pieces for agentic work (docs/design.md): a value an agent used, traced to its
 // record; a decision someone makes on what an agent asks; an agent's facts, the same for every
-// agent; its ladder of autonomy; and a run as time. Their look is the pages' shared one
-// (app.css), so a page outside the studio can draw them too.
+// agent; its ladder of autonomy; a run as time; and the way from a draft to an agent at work.
+// Their look is the pages' shared one (app.css), so a page outside the studio can draw them too.
 
 import * as Popover from "@radix-ui/react-popover";
 import type { ReactNode } from "react";
@@ -155,5 +155,35 @@ export function RunTimeline({ steps }: { steps: Step[] }) {
         </li>
       ))}
     </ol>
+  );
+}
+
+/** A stage on the way from a draft to an agent at work: done, the one to do now, or later. */
+export type Stage = { name: string; about: ReactNode; state: "done" | "now" | "later" };
+
+const STATES = { done: ", done", now: ", to do now", later: "" };
+
+/** The way from a draft to an agent at work, as a path: what's done, the one thing to do now,
+ * and what follows it, with who does each. */
+export function JourneyPath({ stages, next, label = "From a draft to an agent at work" }: {
+  stages: Stage[]; next?: ReactNode; label?: string;
+}) {
+  return (
+    <div className="journey-box">
+      <ol className="journey" aria-label={label}>
+        {stages.map((stage, i) => (
+          <li key={stage.name} className={stage.state} aria-current={stage.state === "now" ? "step" : undefined}>
+            <span className="journey-mark" aria-hidden="true">
+              {stage.state === "done" ? <Icon name="check" /> : i + 1}
+            </span>
+            <span>
+              <strong>{stage.name}</strong><span className="hidden">{STATES[stage.state]}</span>
+              <span className="journey-about">{stage.about}</span>
+            </span>
+          </li>
+        ))}
+      </ol>
+      {next && <div className="journey-next">{next}</div>}
+    </div>
   );
 }

@@ -60,6 +60,7 @@ The pieces pages are made of live in [`studio/src/design`](../studio/src/design)
 | `AgentFacts` | An agent's facts, as food carries a label, the same for every agent: what it may do, and how it does per run |
 | `AutonomyLadder` | The level an agent works at, the levels its release allows beyond it, and how far it has come toward the next |
 | `RunTimeline` | A run as time: each step in order, in the colour of what it did |
+| `JourneyPath` | The way from a draft to an agent at work: each stage done, to do now, or later, with who does it, and the one thing to do next |
 | `Confirm` | Asking first, for what can't be undone, in the browser's own dialog |
 | `Hint` | A word on what something means, for whoever points at it or tabs to it |
 
@@ -82,6 +83,7 @@ Each page's title is its first-level heading, its sections' are the second level
 - **A run's page** shows what it did as time: what started it and for whom, each call in the colour of what its tool does, or of a5s's refusing or holding it, with what a5s decided and why, and how the run ended.
 - **The settings app** changes a version in forms, for what people change most: each instance's level, the types of change it makes on its own at level 2, whom it serves and who runs it, each type of change's limits, and the accuracy each part needs for level 2. Each form offers only what can be: the types of change an agent's own tools make, and the levels its release allows, with why the rest can't be chosen. The whole text is a click away, for anything else. Either way, the review says in words what the version would change, and whose approval it needs, before anyone asks for it. A choice keeps its words beside it, and each type of change's limits wrap onto their own lines, so the forms work on a phone.
 
+- **A draft** leads with where it stands on its way to work: shape and try it, publish it, have its release signed, which a5s then deploys, put it to work, and watch it. It says what each stage needs and who does it, and offers the one thing to do next, which takes you to it: what stops its release, the sandbox, or publishing it. Where there's a sandbox, trying it comes before publishing, though publishing without trying stays open.
 - **Approving a version of the settings** is one card: who asked for it in the settings app, if someone did, and when it was proposed; where it stands; what it changes, with any change that widens what agents do marked so, as the settings app marks it; who has approved it and what's still missing; and the whole version as it would be, before the one thing to do, Approve, which a fresh sign-in signs for that version alone.
 - **Grading** puts each sample on the card decisions are made on: the agent that asked or acted, what it did in the words code worked out, how it went, what code flagged, the record, and the grade. The grade chosen shows in its colour, green for right, amber for wrong and red for critical, and choosing it again takes it back. The grades go together, signed in afresh.
 

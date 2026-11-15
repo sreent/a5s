@@ -3,8 +3,8 @@
 // browser tests open it in light and dark and check it with axe.
 
 import { useEffect, useState } from "react";
-import { AgentFacts, ApprovalCard, AutonomyLadder, Badge, Confirm, Hint, RunTimeline, Traced, Who }
-  from "../design";
+import { AgentFacts, ApprovalCard, AutonomyLadder, Badge, Confirm, Hint, JourneyPath, RunTimeline, Traced,
+  Who } from "../design";
 import { PageHead } from "../ui";
 
 const MEANINGS = [
@@ -143,6 +143,20 @@ export function DesignPage() {
           ]} />
         </section>
       </div>
+
+      <section className="card wide" data-piece="journey">
+        <h2>From a draft to an agent at work</h2>
+        <JourneyPath stages={[
+          { name: "Shape and try it", state: "done",
+            about: "Nothing stops its release, and 2 test cases kept from the sandbox." },
+          { name: "Publish it", state: "now", about: "As a pull request, which a5s opens as you." },
+          { name: "Have its release signed", state: "later",
+            about: "By the scout's owner and assurance. a5s deploys it once they have." },
+          { name: "Put it to work", state: "later",
+            about: "An instance in the settings, for a few people first, at level 0 or 1." },
+          { name: "Watch it", state: "later", about: "Its runs and how they end, on its page." },
+        ]} next={<button type="button" className="primary">Publish it</button>} />
+      </section>
 
       <section className="card wide" data-piece="confirm">
         <h2>Asking first</h2>
