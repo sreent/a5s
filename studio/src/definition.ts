@@ -121,6 +121,18 @@ export function withMap(text: string, path: string[], value: Record<string, stri
   });
 }
 
+/** With its daily reports, on these kinds of record, as agent.yaml holds them, each a source:
+ * none, and the key goes. */
+export function withReports(text: string, sources: string[]): string {
+  return edited(text, (doc) => {
+    if (!sources.length) {
+      if (doc.has("reports")) doc.delete("reports");
+      return;
+    }
+    doc.set("reports", doc.createNode(sources.map((source) => ({ source }))));
+  });
+}
+
 /** With a list of words, such as its channels, set in place: its comment, and its style, such
  * as [a, b], stay. */
 export function withWords(text: string, path: string[], words: string[]): string {

@@ -2613,7 +2613,9 @@ def create_app(gw: Gateway) -> FastAPI:
         """Who may decide a call policy holds, if it holds it: or why nobody may, in words."""
         if not decision.held:
             return []
-        if (problem := gw.approving()) is not None:
+        # In the sandbox, whose people are made up and sign nobody in, a change waits for its
+        # made-up deciders, who never decide it: as it would wait where people work
+        if (problem := gw.approving()) is not None and not gw.cfg.sandboxed:
             return f"a change can't wait for a decision here, since {problem}"
         asked = groups.requesters(row)  # in a group, whoever asked and whoever spoke of it
         by_part = proposals.deciders(gw.scenario, records, asked)

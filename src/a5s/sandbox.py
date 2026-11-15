@@ -122,24 +122,24 @@ class StandIn:
                 "arguments": json.dumps({text: words[-1] if words else ""} if text else {})}}]})
 
 
-class Recording(httpx.BaseTransport):
-    """What a try's model calls were sent, and what came back, as they went."""
+class Recording:
+    """What a try's model calls were sent, and what came back, as they went: heard as each
+    answer comes, by whichever way it went, to a real provider, through any proxy the
+    environment names, or to the stand-in."""
 
-    def __init__(self, inner: httpx.BaseTransport) -> None:
-        self.inner = inner
+    def __init__(self) -> None:
         self.calls: list[dict] | None = None  # while a try is under way
 
-    def handle_request(self, request: httpx.Request) -> httpx.Response:
-        response = self.inner.handle_request(request)
-        if self.calls is not None:
-            response.read()
-            try:
-                sent, came = json.loads(request.content), json.loads(response.content)
-            except ValueError:
-                sent, came = None, None
-            if isinstance(sent, dict) and "messages" in sent:
-                self.calls.append({"sent": sent, "came": came, "status": response.status_code})
-        return response
+    def heard(self, response: httpx.Response) -> None:
+        if self.calls is None:
+            return
+        response.read()
+        try:
+            sent, came = json.loads(response.request.content), json.loads(response.content)
+        except ValueError:
+            sent, came = None, None
+        if isinstance(sent, dict) and "messages" in sent:
+            self.calls.append({"sent": sent, "came": came, "status": response.status_code})
 
 
 # The sandbox itself
@@ -179,7 +179,7 @@ class Sandbox:
     channels_url: str
     keys: dict[str, str]  # its made-up people's private keys, which it made
     standing: dict  # its settings, as it signs them, with an instance for each draft tried
-    recording: Any  # its model calls' recorders, to a real provider and to the stand-in
+    recording: Recording  # its model calls, to a real provider or to the stand-in
     lock: threading.Lock = field(default_factory=threading.Lock)
 
     @property
@@ -455,9 +455,11 @@ def _own(admin: str) -> None:
 
 
 @contextmanager
-def opened(deployment: Config, admin: str, work: Path) -> Iterator[Sandbox]:
+def opened(deployment: Config, admin: str, work: Path,
+           transport: httpx.BaseTransport | None = None) -> Iterator[Sandbox]:
     """A sandbox for a deployment's scenario and agents, on its own database, whose
-    administrator's address is `admin`, with its working copies in `work`."""
+    administrator's address is `admin`, with its working copies in `work`: its calls to real
+    models' providers go by `transport`, the internet's unless a test gives its own."""
     root = work / "root"
     shutil.rmtree(root, ignore_errors=True)
     scenario_dir = root / "scenarios" / deployment.scenario_dir.name
@@ -489,16 +491,19 @@ def opened(deployment: Config, admin: str, work: Path) -> Iterator[Sandbox]:
         last = conn.execute("select max(serial) as serial from settings_versions where scenario = %s",
                             (build.scenario(cfg).name,)).fetchone()["serial"]
     standing["serial"] = max(int(standing.get("serial") or 0), int(last or 0))  # on from its last
-    recording = Recording(httpx.HTTPTransport())
-    stand_in = Recording(httpx.MockTransport(StandIn().handler))
-    http = httpx.Client(mounts={STAND_IN_URL.rsplit("/", 1)[0]: stand_in, "all://": recording})
+    recording = Recording()
+    mounts: dict[str, httpx.BaseTransport] = {
+        STAND_IN_URL.rsplit("/", 1)[0]: httpx.MockTransport(StandIn().handler)}
+    if transport is not None:  # a test's own, for every provider, whatever the environment says
+        mounts |= dict.fromkeys(("all://", "http://", "https://"), transport)
+    http = httpx.Client(mounts=mounts, event_hooks={"response": [recording.heard]})
     gw = build.gateway(cfg, http=http)
     gw.identity = None  # it signs nobody in: its people are made up, and say who they are
     core, core_url = _serve(core_app(gw))
     cfg = replace(cfg, gateway_url=core_url)
     gw.cfg = cfg
     channels, channels_url = _serve(inbox.create_app(replace(gw, cfg=cfg)))
-    sandbox = Sandbox(cfg, admin, gw, channels_url, keys, standing, _Both(recording, stand_in))
+    sandbox = Sandbox(cfg, admin, gw, channels_url, keys, standing, recording)
     stop = threading.Event()
 
     def sweeping() -> None:
@@ -516,23 +521,6 @@ def opened(deployment: Config, admin: str, work: Path) -> Iterator[Sandbox]:
     finally:
         stop.set()
         core.should_exit = channels.should_exit = True
-
-
-class _Both:
-    """The two ways a try's model calls go, to a real provider or the stand-in, recorded alike."""
-
-    def __init__(self, *ways: Recording) -> None:
-        self.ways = ways
-
-    @property
-    def calls(self) -> list[dict] | None:
-        found = [way.calls for way in self.ways if way.calls is not None]
-        return [call for calls in found for call in calls] if found else None
-
-    @calls.setter
-    def calls(self, value: list[dict] | None) -> None:
-        for way in self.ways:
-            way.calls = None if value is None else []
 
 
 # Its API, for the studio of the deployment people work in, by the token they share

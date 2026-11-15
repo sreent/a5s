@@ -9,6 +9,7 @@ import shutil
 import tempfile
 from pathlib import Path
 
+import httpx
 import psycopg
 import pytest
 import yaml
@@ -17,7 +18,7 @@ from fastapi.testclient import TestClient
 from a5s import authoring, cases, sandbox
 from a5s.core import drafts, retention, signing
 from a5s.sample import SampleScenario
-from conftest import ROOT, deployment
+from conftest import FAKE_MODELS, PROVIDER_KEY, ROOT, FakeModel, build_root, deployment
 
 TOOLS = SampleScenario(ROOT / "scenarios" / "sample", "postgresql://nobody@127.0.0.1:1/none").tools()
 
@@ -228,3 +229,21 @@ def test_someone_runs_their_drafts_cases_from_the_studio(stack, with_sandbox, ap
     assert priya("PUT", f"/studio/api/drafts/{draft['id']}", {"files": broken}).status_code == 200
     said = priya("GET", f"/studio/api/drafts/{draft['id']}/cases").json()
     assert said == {"cases": [], "problem": "tests/tried.yaml doesn't read as YAML"}
+
+
+def test_a_change_a_draft_asks_for_waits_there_for_its_made_up_decider(sandbox_database, tmp_path,
+                                                                       monkeypatch):
+    """As it would where people work: so a case that says the draft asks for it passes there."""
+    monkeypatch.setenv("A5S_TEST_PROVIDER_KEY", PROVIDER_KEY)
+    model = FakeModel()  # an approved model, which the sandbox reaches by the test's transport
+    root = build_root(tmp_path, "fake", FAKE_MODELS)
+    with sandbox.opened(deployment(root), sandbox_database, tmp_path / "sandbox",
+                        transport=httpx.MockTransport(model.handler)) as box:
+        model.reply(None, ("change_due_date", {"key": "Q-1001", "due": "2026-12-01"}))
+        model.reply("I've asked for Q-1001 to be due on 1 December: Ana Ortiz decides it.")
+        said = box.turn("3f2a9c1d", drafted(), "ben", "Please move Q-1001 to 1 December.", "fake")
+        [call] = said["run"]["calls"]
+        assert (call["tool"], call["decision"]) == ("change_due_date", "hold"), call
+        assert sandbox.used(said["run"]) == ["change_due_date"]
+        sent = model.requests[-1]["body"]["messages"][-1]["content"]
+        assert '"held": "P-1"' in sent and "Ana Ortiz" in sent  # what the agent heard

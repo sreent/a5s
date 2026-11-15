@@ -16,7 +16,7 @@ import type { Offer, Offered, Plan, Signer, Tool } from "./api";
 import { ABILITIES, and, CHANNEL_WORDS, changers, dayWords, deciders, levelLines, limitLines, messageLines,
   PREFERENCES, scheduleLines, toolLines } from "./consequences";
 import { DAYS, read, type Schedule, type Spec, Unreadable, withMap, withMessages, without, withoutSchedule,
-  withSchedule, withTool, withValue, withWords } from "./definition";
+  withReports, withSchedule, withTool, withValue, withWords } from "./definition";
 import { type Flow, FlowMap, type Step } from "./FlowMap";
 import { Icon } from "./icons";
 import { levels, type Risk, risk, RISK_NAMES, ToolBadges } from "./ui";
@@ -111,9 +111,9 @@ function flowOf(spec: Spec, name: string, offer: Offer, problems: number, plan: 
 
 // The parts to add, on the left
 
-function Picker({ spec, offer, add, ability, start, owe }: { spec: Spec; offer: Offer; add: (tool: Offered) => void;
+function Picker({ spec, offer, add, ability, start, owe, report }: { spec: Spec; offer: Offer; add: (tool: Offered) => void;
   ability: (key: Ability, on: boolean) => void; start: (what: "schedule" | "messages") => void;
-  owe: (kind: string) => void }) {
+  owe: (kind: string) => void; report: (kind: string) => void }) {
   const [find, setFind] = useState("");
   const given = new Set(Object.values(spec.tools).flat());
   const words = find.trim().toLowerCase();
@@ -173,6 +173,12 @@ function Picker({ spec, offer, add, ability, start, owe }: { spec: Spec; offer: 
             <button key={kind} type="button" className="fd-part" data-owed={kind} onClick={() => owe(kind)}>
               <span className="fd-type"><Icon name="bell" /></span><span className="fd-text"><span><span className="hidden">Add </span>What people owe, in the {kind}</span>
                 <span className="fd-about">It reminds its people of what falls due.</span></span>
+            </button>
+          ))}
+          {(offer.owed ?? []).filter((kind) => !spec.reports.includes(kind)).map((kind) => (
+            <button key={`report-${kind}`} type="button" className="fd-part" data-report={kind} onClick={() => report(kind)}>
+              <span className="fd-type"><Icon name="report" /></span><span className="fd-text"><span><span className="hidden">Add </span>A daily report on the {kind}</span>
+                <span className="fd-about">Each working day, it tells each person it serves what changed in their own.</span></span>
             </button>
           ))}
         </div>
@@ -499,7 +505,7 @@ function OtherPanel({ chosen, spec, away }: { chosen: string; spec: Spec; away: 
     <>
       <Head icon={kind === "report" ? "report" : kind === "obligations" ? "bell" : "run"} title={title} kind="what starts its runs" />
       <p>{said}</p>
-      {kind === "obligations"
+      {kind === "obligations" || kind === "report"
         ? <div className="wb-actions"><button type="button" className="danger" id="take-away" onClick={away}>Take it away</button></div>
         : <p className="note">Change it under Files, in agent.yaml.</p>}
     </>
@@ -707,6 +713,11 @@ export function Designer({ name, files, offer, signers, problems, change, plan, 
          `Now it reminds its people of what falls due in the ${kind}, each run acting for the person it's for.`);
     choose("obligations", true);
   };
+  const report = (kind: string) => {
+    edit(withReports(text, [...spec.reports, kind]),
+         `Each working day, it tells each person it serves what changed in their own ${kind}, in their digest.`);
+    choose(`report:${spec.reports.length}`, true);
+  };
   const remove = (key: string) => {  // from the keyboard, as n8n takes a step away
     const [kind, rest] = [key.split(":")[0], key.slice(key.indexOf(":") + 1)];
     if (kind === "tool") {
@@ -717,6 +728,11 @@ export function Designer({ name, files, offer, signers, problems, change, plan, 
       choose(null, true);
     } else if (kind === "obligations") {
       edit(withWords(text, ["obligations"], []), "It no longer reminds its people of what falls due.");
+      choose(null, true);
+    } else if (kind === "report") {
+      const gone = spec.reports[Number(rest)];
+      edit(withReports(text, spec.reports.filter((_, i) => i !== Number(rest))),
+           `It no longer reports on the ${gone} each day.`);
       choose(null, true);
     }
   };
@@ -774,7 +790,7 @@ export function Designer({ name, files, offer, signers, problems, change, plan, 
   const known = chosen !== null && chosen !== "add"
     && [...flow.starts, flow.agent, ...(flow.end ? [flow.end] : []), ...flow.hanging].some((s) => s.key === chosen);
   const said = notice && <p className="wb-well notice" id="what-changed" role="status"><Icon name="check" /><span>{notice}</span></p>;
-  const picker = <Picker spec={spec} offer={offer} add={add} ability={ability} start={start} owe={owe} />;
+  const picker = <Picker spec={spec} offer={offer} add={add} ability={ability} start={start} owe={owe} report={report} />;
   const drop = (dragged: DataTransfer) => {
     const tool = offer.tools.find((t) => t.name === dragged.getData(DRAG));
     if (tool) add(tool);
