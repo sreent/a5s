@@ -501,6 +501,14 @@ class Signer(Shape):
     why: str
 
 
+class Drafter(Shape):
+    """Someone who drafted a draft before whoever holds it now, and how it went on from them."""
+
+    name: str
+    at: datetime
+    how: Literal["handed", "copied"]  # handed over to its holder, or copied into their draft
+
+
 class Draft(Shape):
     """A draft: its agent's folder, file by file, what would stop its release, and how the
     catalogue would show it, if it loads."""
@@ -514,6 +522,7 @@ class Draft(Shape):
     files: dict[str, str]  # each file's text, by its path in the agent's folder
     yours: bool  # or a co-author's, read only
     author: str | None
+    drafted_before: list[Drafter]  # who drafted it before its author, oldest first
     problems: list[str]  # what would stop its release, as `a5s agent check` says it
     preview: Defined | None
     signers: list[Signer] | None  # whom its release would need, if that can be worked out

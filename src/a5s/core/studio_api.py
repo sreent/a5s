@@ -369,14 +369,20 @@ def router(gw: Any) -> APIRouter:
         """A draft, what would stop its release, and, if it loads, how it would look in the
         catalogue, for its map."""
         tools = gw.scenario.tools()
-        shown = {k: v for k, v in draft.items() if k != "base"}  # what it began from: a5s's
-        return {"yours": True, "author": None, **shown,
+        shown = {k: v for k, v in draft.items() if k not in ("base", "before")}  # a5s's own
+        return {"yours": True, "author": None, **shown, "drafted_before": drafted_before(draft),
                 "problems": drafts.check(draft["agent"], draft["files"], tools, gw.models),
                 "preview": drafts.preview(gw.scenario, draft["agent"], draft["files"], tools),
                 "signers": drafts.signers(draft["agent"], draft["files"], gw.cfg.agents_dir,
                                           gw.definitions),
                 "publishing": publishing.configured(gw.cfg),  # or its author opens it
                 **journey(draft)}
+
+    def drafted_before(draft: dict) -> list[dict]:
+        """Who drafted a draft before whoever holds it, oldest first, by name, and how it went
+        on: handed over to its holder, or copied into a draft of theirs."""
+        return [{"name": named(b["person"]) if b.get("person") else "someone a5s no longer names",
+                 "at": b["at"], "how": b["how"]} for b in draft.get("before") or []]
 
     def journey(draft: dict) -> dict:
         """Where a draft is on its way to work, past publishing it: released here as it is, and
@@ -452,6 +458,7 @@ def router(gw: Any) -> APIRouter:
         release, from its folder as released."""
         tools = gw.scenario.tools()
         copied: dict | None = None
+        before: list[dict] = []  # who drafted it before them: for a copy of someone else's
         if body.copy_of and not (body.name or body.template or body.agent):
             with db.transaction(gw.url) as conn:
                 copied = readable(conn, person, body.copy_of)
@@ -459,6 +466,10 @@ def router(gw: Any) -> APIRouter:
                 raise HTTPException(404, "there's no such draft of a co-author's for you to copy")
             name, files, base = copied["agent"], copied["files"], copied.get("base")
             based_on = f"a co-author's draft, from {copied['based_on']}"
+            with db.transaction(gw.url) as conn:  # who drafted it, theirs before them included
+                source = drafts.by_id(conn, body.copy_of) or {}
+            before = [*(source.get("before") or []),
+                      {"person": source.get("person"), "at": gw.clock().isoformat(), "how": "copied"}]
         elif body.agent and not (body.name or body.template):
             if body.agent not in gw.definitions:
                 raise HTTPException(404, f"there's no agent {body.agent} here")
@@ -490,7 +501,7 @@ def router(gw: Any) -> APIRouter:
                                      "of the release to change, or a co-author's draft to copy")
         with db.transaction(gw.url) as conn:
             try:
-                draft = drafts.start(conn, person, name, based_on, files, base)
+                draft = drafts.start(conn, person, name, based_on, files, base, before)
             except drafts.Refused as e:
                 raise HTTPException(409, str(e)) from None
             if copied is not None:
@@ -691,7 +702,8 @@ def router(gw: Any) -> APIRouter:
         if shown["problems"]:
             raise HTTPException(409, "put right what would stop its release first: "
                                      + "; ".join(shown["problems"]))
-        title, body, message = publishing.described(found, person, shown["signers"] or [], new)
+        title, body, message = publishing.described(found, person, shown["signers"] or [], new,
+                                                     drafted=shown["drafted_before"])
         try:
             return publishes.start(person.id, found, title, body, message).shown()
         except publishing.Refused as e:
@@ -727,7 +739,7 @@ def router(gw: Any) -> APIRouter:
         new = found["agent"] not in gw.definitions
         shown = checked(found)
         title, body, _ = publishing.described(found, person, shown["signers"] or [], new,
-                                              shown["problems"])
+                                              shown["problems"], drafted=shown["drafted_before"])
         return {"folder": publishing.folder(gw.cfg, found["agent"]), "title": title, "body": body,
                 "ready": not shown["problems"]}
 

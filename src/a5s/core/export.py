@@ -146,6 +146,10 @@ def gather(conn: db.Connection, person: str) -> dict[str, Any]:
         "drafts": rows(  # the agents they're making in the studio, file by file
             "select agent, based_on, files, published, created_at, updated_at from agent_drafts "
             "where person = any(%(names)s) order by created_at, agent"),
+        "drafted_first": rows(  # others' drafts now, which they drafted first, and how each went on
+            "select d.agent, e.b->>'how' as how, e.b->>'at' as at from agent_drafts d, "
+            "jsonb_array_elements(d.before) as e(b) where e.b->>'person' = any(%(names)s) "
+            "order by d.agent"),
         "reminders": rows(
             "select agent, about, record, due_at, offered_at, confirmed_at, reminded_at, "
             "cancelled_at from reminders where person = any(%(names)s) order by due_at, id"),

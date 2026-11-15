@@ -188,6 +188,7 @@ export type Draft = {
   files: Record<string, string>;
   yours: boolean;
   author: string | null;
+  drafted_before: Drafter[];
   problems: string[];
   preview: Defined | null;
   signers: Signer[] | null;
@@ -227,6 +228,13 @@ export type DraftTry = {
   person: string;
   text: string;
   model?: string;
+};
+
+// Someone who drafted a draft before whoever holds it now, and how it went on from them.
+export type Drafter = {
+  name: string;
+  at: string;
+  how: "handed" | "copied";
 };
 
 export type Drafts = {

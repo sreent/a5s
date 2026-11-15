@@ -109,6 +109,10 @@ def erase(conn: db.Connection, person: str, now: datetime,
     else:  # their holder's, since the id's last archive: a name only this links to them
         for table in departures.LET_GO:
             delete(table, f"delete from {table} where person = %s", (person,))
+        delete("drafted_first", "update agent_drafts set before = (select jsonb_agg(case when "
+               "e.b->>'person' = %(p)s then e.b - 'person' else e.b end order by e.n) from "
+               "jsonb_array_elements(before) with ordinality as e(b, n)) where before @> "
+               "jsonb_build_array(jsonb_build_object('person', %(p)s::text))", {"p": person})
         last = conn.execute(  # where each agent last heard from them, in their own chat
             "select distinct on (agent) agent, channel, reply_to, received_at from inbound "
             "where person = %s and conversation is null and agent is not null "

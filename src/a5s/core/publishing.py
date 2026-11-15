@@ -93,11 +93,17 @@ def branch(agent: str, draft: str) -> str:
 
 
 def described(draft: dict, person: Any, signers: list[dict], new: bool,
-              problems: list[str] | None = None) -> tuple[str, str, str]:
+              problems: list[str] | None = None,
+              drafted: list[dict] | None = None) -> tuple[str, str, str]:
     """A publish's pull request, its title and body, and its commit's message: who drafted it,
-    from what, who must sign the release it makes, and why, and what a5s's checks found."""
+    everyone who did before its publisher among them, from what, who must sign the release it
+    makes, and why, and what a5s's checks found."""
     title = f"{'Add' if new else 'Change'} {draft['agent']}"
     by = f"Drafted in the a5s studio by {person.name} ({person.id}), from {draft['based_on']}."
+    if drafted:  # handed over, or copied: never as though its publisher wrote it all
+        went = [f"{d['name']} {'handed it over' if d['how'] == 'handed' else 'drafted what it copies'}"
+                for d in drafted]
+        by += f" Before them, {'; then '.join(went)}."
     lines = [by, "", "## Who must sign its release", ""]
     lines += [f"- **{s['who']}**, because {s['why']}" for s in signers] or [
         "- Nobody more than for any release: it changes nothing a person must sign for."]
