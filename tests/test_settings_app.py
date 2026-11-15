@@ -116,9 +116,9 @@ def test_an_approver_asks_for_a_change_in_the_browser(stack, approving, provider
 FORMS_CHANGES = [
     ("The limit for change-due-date becomes 3 in one run and 20 for one person in 30 days, "
      "instead of 5 in one run and 20 for one person in 30 days."),
-    "assistant-finance serves Chen Wei as well. This widens what agents do.",
+    "assistant-finance serves Chen Wei as well. widens what agents do",
     ("assistant-finance's level for change-due-date in billing goes from 1 to 2, where it acts "
-     "and reports, once samples show it's accurate enough. This widens what agents do.")]
+     "and reports, once samples show it's accurate enough. widens what agents do")]
 
 
 def test_an_approver_changes_the_settings_in_forms_in_the_browser(stack, approving, provider,
@@ -152,5 +152,9 @@ def test_an_approver_changes_the_settings_in_forms_in_the_browser(stack, approvi
     # What it asked for is the version in force with those changes and nothing else
     stack.scheduler().apply_approved()
     [waiting] = api(approving, provider, "/settings/api").json()["waiting"]
-    widens = " This widens what agents do."  # as the page says what the API marks
+    widens = " widens what agents do"  # as the page marks what the API marks
     assert [c["text"] + (widens if c["widens"] else "") for c in waiting["changes"]] == FORMS_CHANGES
+    # Its approvers' page says who asked for it, and what it changes in the same words
+    page.goto(f"{approving}{waiting['link']}")  # to the provider, afresh, and straight back
+    page.wait_for_selector("#asker >> text=Ana Ortiz asked for it", timeout=30000)
+    assert page.locator("#changes li").all_inner_texts() == FORMS_CHANGES

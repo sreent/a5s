@@ -16,7 +16,8 @@ import yaml
 from a5s import db
 from a5s.core import approvals
 from a5s.core.identity import IdentityConfig, Verifier
-from conftest import CLIENT, SEAL_KEY
+from conftest import CLIENT, SEAL_KEY, accessible
+from test_ui_pages import shot
 
 CHEN_TOO = ["ana", "ben", "chen"]
 
@@ -258,9 +259,16 @@ def test_an_approver_reviews_and_approves_in_the_browser(stack, approving, provi
     page.goto(asked["link"])  # to the provider, afresh, and straight back
     page.wait_for_selector("#changes >> text=Chen Wei", timeout=30000)
     assert page.inner_text("#who") == "Ana Ortiz"
+    # On a card: when it was proposed, nobody having asked for it in the settings app, where it
+    # stands, what it changes, the one marked as widening what agents do, and what's missing
+    assert page.inner_text("#asker").startswith("Proposed ")
+    assert page.inner_text("#title") == f"Serial {asked['serial']} of the settings"
+    assert page.inner_text("#standing") == "waiting for you"
     assert page.locator("#changes li").all_inner_texts() == [
-        "assistant-finance serves Chen Wei as well. This widens what agents do.",
+        "assistant-finance serves Chen Wei as well. widens what agents do",
         "assistant-finance's level in billing goes from 1 to 0."]
+    assert page.inner_text("#approvals") == "nobody yet"
+    assert page.inner_text("#needs") == "nobody who approves instances has approved it"
     assert page.locator("#whole li").all_inner_texts() == [  # and all of it, before deciding
         "The scenario's data is synthetic.",
         ("assistant-finance: the assistant, working in billing at level 0, serving Ana Ortiz, "
@@ -270,9 +278,11 @@ def test_an_approver_reviews_and_approves_in_the_browser(stack, approving, provi
         "An agent earns level 2 in billing once graded samples show it's 98% accurate.",
         "An agent earns level 2 in orders once graded samples show it's 95% accurate."]
     assert page.evaluate("window.location.search") == ""  # the code doesn't linger
+    accessible(page)
+    shot(page, "approve")
     page.click("#approve")
     page.wait_for_selector(f"#status >> text=You approved serial {asked['serial']}", timeout=30000)
-    assert not page.is_visible("#approve")
+    assert not page.is_visible("#approve") and page.inner_text("#standing") == "you approved it"
     stack.scheduler().apply_approved()
     assert serves(stack) == CHEN_TOO
     assert provider.asked[-1]["max_age"] == "0"

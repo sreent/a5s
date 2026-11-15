@@ -29,8 +29,6 @@
         white-space: nowrap; }
 .badges { display: inline-flex; flex-wrap: wrap; gap: 0.3rem; }
 .badge .dot { width: 0.45rem; height: 0.45rem; border-radius: 50%; background: currentColor; }
-.label { font-size: 0.74rem; font-weight: 650; text-transform: uppercase; letter-spacing: 0.05em; color: var(--faint);
-         margin: 0 0 0.45rem; }
 .tone-changes { color: var(--changes); }
 .tone-outside { color: var(--outside); }
 .tone-writes { color: var(--writes); }

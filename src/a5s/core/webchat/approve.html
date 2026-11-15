@@ -16,16 +16,34 @@
 <main>
   <h1>Settings to approve</h1>
   <p id="status" role="status"></p>
-  <section id="version" hidden>
-    <p id="summary"></p>
-    <ul id="changes"></ul>
-    <p id="approvals"></p>
-    <p id="needs" class="note" hidden></p>
-    <h2>The whole version</h2>
-    <ul id="whole" class="plain"></ul>
-    <p class="note">Approve only if you mean these changes. Your sign-in approves this version
-      alone, and only once.</p>
-    <button id="approve" class="primary" type="button" hidden>Approve</button>
+  <section id="version" class="approval version" aria-labelledby="title" hidden>
+    <div class="approval-stripe own"></div>
+    <div class="approval-body">
+      <div id="asker" class="who"></div>
+      <div class="title-row">
+        <h2 id="title" class="approval-title"></h2>
+        <span id="standing" class="badge"></span>
+      </div>
+      <div>
+        <p id="summary" class="label"></p>
+        <ul id="changes" class="changes"></ul>
+      </div>
+      <dl class="approval-changes">
+        <div class="pair"><dt>Approved so far by</dt><dd id="approvals"></dd></div>
+        <div id="needs-row" class="pair" hidden><dt>What's missing</dt><dd id="needs"></dd></div>
+      </dl>
+      <div>
+        <p class="label">The whole version, as it would be</p>
+        <ul id="whole" class="plain well"></ul>
+      </div>
+      <div id="decision" class="decision" hidden>
+        <div class="approval-actions">
+          <button id="approve" class="primary" type="button">Approve</button>
+        </div>
+        <p class="approval-signed">Approve only if you mean these changes. Your sign-in approves
+          this version alone, and only once.</p>
+      </div>
+    </div>
   </section>
 </main>
 </body>

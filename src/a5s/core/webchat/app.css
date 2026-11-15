@@ -276,7 +276,7 @@ ul, ol { margin: 0.25rem 0 0.75rem; }
 .plain { list-style: none; padding: 0; }
 .plain > li { padding: 0.55rem 0; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; }
 .plain > li:last-child { border-bottom: 0; }
-.plain > li.widens, #changes li.widens { font-weight: 600; }
+.plain > li.problem { font-weight: 600; }
 #changes { padding-left: 1.25rem; }
 #changes li { padding: 0.2rem 0; }
 
@@ -382,7 +382,6 @@ body.app header label { color: var(--muted); }
 .modes button { border: 0; border-radius: 0; }
 .modes button + button { border-left: 1px solid var(--line-strong); }
 .modes button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
-.modes[hidden] { display: none; }
 fieldset.form-card { min-width: 0; margin: 0 0 1rem; padding: 0.5rem 1.25rem 1.1rem;
                      border: 1px solid var(--line); border-radius: var(--radius); }
 .form-card legend { padding: 0 0.4rem; font-weight: 600; }
@@ -399,6 +398,8 @@ fieldset.form-card { min-width: 0; margin: 0 0 1rem; padding: 0.5rem 1.25rem 1.1
 .add-someone { display: flex; gap: 0.5rem; max-width: 32rem; margin-top: 0.6rem; }
 .add-someone input { flex: 1; min-width: 0; }
 .faint { color: var(--faint); }
+.label { font-size: 0.74rem; font-weight: 650; text-transform: uppercase; letter-spacing: 0.05em; color: var(--faint);
+         margin: 0 0 0.45rem; }
 
 #edit #text { display: block; width: 100%; min-height: 22rem; font-size: 0.85rem; background: var(--sunken);
               font-family: var(--font-mono); }
@@ -443,6 +444,7 @@ article { background: var(--surface); border: 1px solid var(--line); border-radi
 .approval-stripe { height: 4px; background: var(--changes); }
 .approval-stripe.writes { background: var(--writes); }
 .approval-stripe.outside { background: var(--outside); }
+.approval-stripe.own { background: var(--own); }  /* a version of a5s's own settings */
 .approval-body { display: grid; gap: var(--space-3); padding: var(--space-4) var(--space-5) var(--space-5); }
 .approval-title { margin: 0; color: var(--text); font-size: var(--text-lg); font-weight: 600; }
 .approval-changes { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-3);
@@ -469,6 +471,25 @@ dl .pair { display: contents; }  /* a term and what it says, in a list that lays
 .tick-label { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--muted);
               font-size: var(--text-sm); }
 .tick-label .tick { margin: 0; }
+/* A version of the settings to approve: what it changes, who has approved it, what's missing,
+   and the whole of it, before the one thing to do */
+.approval.version { max-width: 48rem; }
+main > section.approval { padding: 0; }  /* its stripe runs to its edges, as on every card */
+.title-row { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-3); }
+ul.changes { margin: 0; padding-left: 1.1rem; }
+ul.changes li { padding: 0.15rem 0; overflow-wrap: anywhere; }
+ul.well { margin: 0; padding: 0 var(--space-3); border-radius: var(--radius-md); background: var(--sunken); }
+.decision { display: grid; gap: var(--space-2); }
+
+/* A grade: right, wrong or critical, the one chosen in the colour that means it */
+.grades { display: flex; gap: var(--space-2); }
+.grades button { flex: 1; justify-content: center; }
+.grades .right[aria-pressed="true"] { background: var(--good-bg); color: var(--good); border-color: var(--good); }
+.grades .wrong[aria-pressed="true"] { background: var(--warn-bg); color: var(--warn); border-color: var(--warn); }
+.grades .critical[aria-pressed="true"] { background: var(--bad-bg); color: var(--bad); border-color: var(--bad); }
+.send-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2) var(--space-4); }
+.send-bar .note { margin: 0; }
+
 /* Held changes, one card each: a column on a phone, side by side where there's room, on the
    page itself rather than in a card of its own */
 main > section.bare { padding: 0; border: 0; background: none; box-shadow: none; }

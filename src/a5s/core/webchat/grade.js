@@ -89,48 +89,94 @@ async function send() {
   await signIn(signinConfig, pending, true);
 }
 
+function element(tag, text, className) {
+  const found = document.createElement(tag);
+  if (text !== undefined && text !== null) found.textContent = String(text);
+  if (className) found.className = className;
+  return found;
+}
+
+const day = (at) => new Date(at).toLocaleDateString([], { day: "numeric", month: "short" });
+
+// How it went, in the colour that means it: a person's yes or no, or the agent's own change
+const OUTCOMES = { approve: ["approved", "good"], reject: ["rejected", "bad"] };
+
+function grades(sample, what) {
+  // Right, wrong or critical: the one chosen shows in its colour, and choosing it again
+  // takes it back
+  const group = element("div", null, "grades");
+  group.setAttribute("role", "group");
+  group.setAttribute("aria-label", `Your grade for: ${what}`);
+  for (const grade of ["right", "wrong", "critical"]) {
+    const button = element("button", grade[0].toUpperCase() + grade.slice(1), grade);
+    button.type = "button";
+    button.setAttribute("aria-pressed", "false");
+    button.addEventListener("click", () => {
+      const again = chosen.get(sample.id) === grade;
+      if (again) chosen.delete(sample.id);
+      else chosen.set(sample.id, grade);
+      for (const other of group.querySelectorAll("button")) other.setAttribute("aria-pressed", "false");
+      button.setAttribute("aria-pressed", again ? "false" : "true");
+      status(chosen.size ? `${chosen.size} chosen: send them when you're ready.` : "");
+    });
+    group.append(button);
+  }
+  return group;
+}
+
+function card(sample) {
+  // A sample on the card decisions are made on (docs/design.md): who did it, what it did in
+  // the words code worked out, never the agent's own, how it went, what code flagged, and
+  // the grader's grade
+  const [what, ...rest] = sample.said.split("\n");
+  const asked = sample.kind === "proposal";
+  const block = element("section", null, "approval sample");
+  block.dataset.sample = sample.id;
+  block.setAttribute("aria-labelledby", `title-${sample.id}`);
+  const body = element("div", null, "approval-body");
+  block.append(element("div", null, "approval-stripe"), body);
+
+  const who = element("div", null, "who");
+  const mark = element("span", null, "avatar agent");
+  mark.setAttribute("aria-hidden", "true");
+  if (window.a5s) mark.append(window.a5s.icon("agent"));
+  const names = element("span");
+  names.append(element("span", asked ? `The ${sample.agent} asked` : `The ${sample.agent} acted on its own`, "who-name"),
+               element("span", `${sample.action} in ${sample.part} · sampled ${day(sample.drawn_at)}`, "who-about"));
+  who.append(mark, names);
+  const title = element("h2", what, "approval-title");
+  title.id = `title-${sample.id}`;
+  body.append(who, title);
+  if (rest.length) body.append(element("p", rest.join("\n"), "said"));
+  const [outcome, tone] = asked ? (OUTCOMES[sample.decided] || [sample.decided, "idle"]) : ["made at level 2", "changes"];
+  const how = element("p");
+  how.append(element("span", outcome, `badge ${tone}`));
+  body.append(how);
+  if (sample.flags.length) {
+    const box = element("div", null, "approval-know");
+    const flags = element("ul");
+    flags.append(...sample.flags.map((flag) => element("li", flag)));
+    box.append(element("p", "What code flagged", "label"), flags);
+    body.append(box);
+  }
+  for (const [key, record] of Object.entries(sample.records || {})) {
+    if (!record || !/^https?:\/\//i.test(record.link || "")) continue;  // a web page, and nothing else
+    const open = element("a", `Open ${key}`);
+    open.href = record.link;
+    open.rel = "noopener noreferrer";
+    open.target = "_blank";
+    const line = element("p");
+    line.append(open);
+    body.append(line);
+  }
+  body.append(grades(sample, what));
+  return block;
+}
+
 function show(found) {
   $("who").textContent = found.you;
-  $("list").replaceChildren();
   chosen.clear();
-  for (const sample of found.samples) {
-    const block = document.createElement("article");
-    const title = document.createElement("h2");
-    title.textContent = `${sample.agent}, ${sample.action} in ${sample.part}: ${sample.kind === "proposal"
-      ? `asked for, and ${sample.decided === "approve" ? "approved" : "rejected"}` : "made at level 2"}`;
-    const said = document.createElement("p");
-    said.className = "said";
-    said.textContent = sample.said;
-    block.append(title, said);
-    if (sample.flags.length) {
-      const flags = document.createElement("ul");
-      flags.className = "flags";
-      for (const flag of sample.flags) {
-        const item = document.createElement("li");
-        item.textContent = flag;
-        flags.append(item);
-      }
-      block.append(flags);
-    }
-    const buttons = document.createElement("p");
-    for (const grade of ["right", "wrong", "critical"]) {
-      const button = document.createElement("button");
-      button.type = "button";
-      button.textContent = grade[0].toUpperCase() + grade.slice(1);
-      button.setAttribute("aria-pressed", "false");
-      button.addEventListener("click", () => {
-        const again = chosen.get(sample.id) === grade;
-        if (again) chosen.delete(sample.id);
-        else chosen.set(sample.id, grade);
-        for (const other of buttons.querySelectorAll("button")) other.setAttribute("aria-pressed", "false");
-        button.setAttribute("aria-pressed", again ? "false" : "true");
-        status(`${chosen.size} chosen: send them when you're ready.`);
-      });
-      buttons.append(button);
-    }
-    block.append(buttons);
-    $("list").append(block);
-  }
+  $("list").replaceChildren(...found.samples.map(card));
   $("waiting").hidden = found.samples.length === 0;
 }
 

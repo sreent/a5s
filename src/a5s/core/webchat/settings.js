@@ -90,14 +90,25 @@ async function call(path, body) {
   return found;
 }
 
+// A change in the words code worked out, marked where it widens what agents do, as the page
+// that approves it marks it
+function changed(change) {
+  const line = document.createElement("li");
+  line.textContent = typeof change === "string" ? change : change.text;
+  if (change.widens) {
+    const badge = document.createElement("span");
+    badge.className = "badge changes";
+    badge.textContent = "widens what agents do";
+    line.append(" ", badge);
+  }
+  return line;
+}
+
 function list(id, items, mark) {
   const into = $(id);
   into.replaceChildren();
   for (const item of items) {
-    const line = document.createElement("li");
-    const text = typeof item === "string" ? item : item.text;
-    line.textContent = item.widens ? `${text} This widens what agents do.` : text;
-    if (item.widens) line.className = "widens";
+    const line = changed(item);
     if (mark) line.classList.add(mark);
     into.append(line);
   }
@@ -116,12 +127,7 @@ function showWaiting(waiting) {
     const changes = document.createElement("ul");
     changes.className = "plain";
     into.append(title, changes);
-    for (const change of version.changes) {
-      const line = document.createElement("li");
-      line.textContent = change.widens ? `${change.text} This widens what agents do.` : change.text;
-      if (change.widens) line.className = "widens";
-      changes.append(line);
-    }
+    changes.append(...version.changes.map(changed));
     if (version.needs.length) {
       const needs = document.createElement("p");
       needs.className = "note";
@@ -467,7 +473,7 @@ async function review() {
   stale();
   const text = draft();
   const found = await call("/settings/api/review", { text });
-  list("problems", found.problems || [], "widens");
+  list("problems", found.problems || [], "problem");
   if (found.serial === undefined) {
     $("reviewed-summary").textContent = "a5s can't propose this:";
     $("reviewed").hidden = false;

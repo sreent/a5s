@@ -80,43 +80,73 @@ const STANDING = {
   superseded: "A newer version is in force, so this one can't be approved any more.",
 };
 
+function element(tag, text, className) {
+  const found = document.createElement(tag);
+  if (text !== undefined && text !== null) found.textContent = String(text);
+  if (className) found.className = className;
+  return found;
+}
+
+// A change in the words code worked out, marked where it widens what agents do
+function changed(change) {
+  const item = element("li", change.text);
+  if (change.widens) item.append(" ", element("span", "widens what agents do", "badge changes"));
+  return item;
+}
+
+// Where the version stands, on its card: a word, in the colour that means it
+function standing(text, tone) {
+  $("standing").textContent = text;
+  $("standing").className = `badge ${tone}`;
+}
+
+const initials = (name) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("");
+
 function show(version, signed) {
   $("who").textContent = version.you;
   const when = new Date(version.proposed_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
-  const against = version.in_force === null ? "With nothing in force yet, it:"
-    : `Compared with serial ${version.in_force}, the version in force, it:`;
-  $("summary").textContent = `Serial ${version.serial}, proposed ${when}. ${against}`;
-  for (const change of version.changes) {
-    const item = document.createElement("li");
-    item.textContent = change.widens ? `${change.text} This widens what agents do.` : change.text;
-    if (change.widens) item.className = "widens";
-    $("changes").append(item);
+  // Who asked for it, a person, round with their initials, as on every page; or when a5s
+  // proposed it, if it came from elsewhere, such as signed files
+  const words = element("span");
+  if (version.asked_by) {
+    const mark = element("span", initials(version.asked_by), "avatar");
+    mark.setAttribute("aria-hidden", "true");
+    words.append(element("span", `${version.asked_by} asked for it`, "who-name"),
+                 element("span", `proposed ${when}`, "who-about"));
+    $("asker").replaceChildren(mark, words);
+  } else {
+    words.append(element("span", `Proposed ${when}`, "who-about"));
+    $("asker").replaceChildren(words);
   }
-  $("approvals").textContent = version.approved_by.length
-    ? `Approved so far by ${version.approved_by.join(", ")}.` : "Nobody has approved it yet.";
-  if (version.needs.length) {
-    $("needs").textContent = `It goes in force once nothing more is missing: ${version.needs.join("; ")}.`;
-    $("needs").hidden = false;
-  }
-  for (const line of version.whole) {
-    const item = document.createElement("li");
-    item.textContent = line;
-    $("whole").append(item);
-  }
+  $("title").textContent = `Serial ${version.serial} of the settings`;
+  $("summary").textContent = version.in_force === null ? "What it sets, with nothing in force yet"
+    : `What it changes from serial ${version.in_force}, the version in force`;
+  $("changes").replaceChildren(...version.changes.map(changed));
+  $("approvals").textContent = version.approved_by.length ? version.approved_by.join(", ") : "nobody yet";
+  $("needs").textContent = version.needs.join("; ");
+  $("needs-row").hidden = !version.needs.length;
+  $("whole").replaceChildren(...version.whole.map((line) => element("li", line)));
   $("version").hidden = false;
   if (version.status !== "waiting") {
+    standing(version.status === "applied" ? "in force" : version.status === "superseded" ? "superseded" : "refused",
+             version.status === "applied" ? "good" : version.status === "superseded" ? "idle" : "bad");
     status(STANDING[version.status] || `a5s couldn't apply it: ${version.status.replace(/^refused: /, "")}`);
   } else if (version.you_approved) {
+    standing("you approved it", "good");
     status(version.needs.length ? `You've approved it. It goes in force once nothing more is missing: ${version.needs.join("; ")}.` : "You've approved it. a5s puts it in force within a minute, as it needs nothing more.");
   } else {
-    $("approve").hidden = false;
+    standing("waiting for you", "warn");
+    $("approve").textContent = `Approve serial ${version.serial}`;
+    $("decision").hidden = false;
     $("approve").addEventListener("click", async () => {
       if (!signed.token) return;
       $("approve").disabled = true;
       try {
         const done = await ask(`/approve/settings/${signed.version}`, signed);
         signed.token = null;  // it's done its one job
-        $("approve").hidden = true;
+        $("decision").hidden = true;
+        standing("you approved it", "good");
+        if (done.needs.length) $("approvals").textContent = [...version.approved_by, version.you].join(", ");
         status(done.needs.length ? `You approved serial ${done.serial}. It goes in force once nothing more is missing: ${done.needs.join("; ")}.` : `You approved serial ${done.serial}. a5s puts it in force within a minute, as it needs nothing more.`);
       } catch (error) {
         status(error.message);

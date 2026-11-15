@@ -66,9 +66,14 @@ def router(gw: Any) -> APIRouter:
         with db.transaction(gw.url) as conn:
             row, last, status = proposal(conn, version)
             approved = approvals.recorded(conn, gw.scenario.name, version)
+            asked = conn.execute("select person from settings_requests where scenario = %s and "
+                                 "digest = %s order by id limit 1",
+                                 (gw.scenario.name, version)).fetchone()
         before = parse_settings(bytes(last["raw"])) if last else None
         settings = parse_settings(bytes(row["raw"]))
         found = approvals.changes(before, settings, gw.definitions, gw.scenario.person)
+        asker = (p.name if (p := gw.scenario.person(asked["person"])) else asked["person"]
+                 ) if asked else None  # who asked for it in the settings app, if anyone did
         valid, _ = registry.signers(settings, gw.scenario.person, approved)
         return {"serial": row["serial"], "proposed_at": row["proposed_at"].isoformat(),
                 "in_force": last["serial"] if last else None, "changes": found,
@@ -77,7 +82,8 @@ def router(gw: Any) -> APIRouter:
                                           memberships.rooted(gw.scenario).person)
                 if status == "waiting" else [],
                 "approved_by": [p.name if (p := gw.scenario.person(a)) else a for a in approved],
-                "you": person.name, "you_approved": person.id in approved, "status": status}
+                "asked_by": asker, "you": person.name, "you_approved": person.id in approved,
+                "status": status}
 
     @pages.post("/approve/settings/{version}")
     def approve(version: str, body: Approval, authorization: str | None = Header(default=None)
