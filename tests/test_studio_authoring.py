@@ -63,7 +63,7 @@ def test_an_agents_owner_makes_an_agent_in_the_studio(stack, approving, provider
                                                "documents: [create_draft, shred_it]"))
     page.wait_for_selector("#problems >> text=the scenario hasn't got shred_it", timeout=30000)
     page.click(".modes button:has-text('Design')")
-    page.wait_for_selector(".flow-canvas .flow-step.denied >> text=shred_it", timeout=30000)
+    page.wait_for_selector(".flow-canvas .flow-step.refused >> text=shred_it", timeout=30000)
     assert page.inner_text("#problem-count") == "1 problem"
     shot(page, "studio-draft")
 

@@ -43,7 +43,7 @@ It doesn't add a second way to change a5s. Everything the studio does is a chang
 
 ## The designer
 
-A draft opens on a workbench, as Ocean draws one ([sreent/ocean](https://github.com/sreent/ocean)'s Workbench and FlowNode): the whole window given to the work, the sidebar shrunk to its icons, and a toolbar that says which agent this is, whether what's been done is kept, how many things would stop its release, its views, Design, Instructions, Try it and Files, and its one thing to do, **Publish it**. Its first view is the designer ([`studio/src/Designer.tsx`](../studio/src/Designer.tsx)), where people build the agent by hand.
+A draft opens on a workbench, as Ocean draws one ([sreent/ocean](https://github.com/sreent/ocean)'s Workbench, FlowNode, FlowList, Picker and GateList, with nothing of the studio's own in their look): the whole window given to the work, the sidebar shrunk to its icons, and a toolbar that says which agent this is, whether what's been done is kept, how many things would stop its release, its views, Design, Instructions, Try it and Files, and its one thing to do, **Publish it**. Its first view is the designer ([`studio/src/Designer.tsx`](../studio/src/Designer.tsx)), where people build the agent by hand.
 
 **It adopts n8n's canvas, and extends it where an agent and a5s's governance need more.** What it adopts, as n8n has worked them out:
 
@@ -59,7 +59,7 @@ What it extends:
 - **Risk before anything runs.** Each tool's icon is in the colour of what it does: coral where it changes a record, violet where it crosses the organisation's edge, amber where it writes, blue where it reads. The picker groups the scenario's tools the same way, most consequential first.
 - **a5s's checks are on the canvas**, since every call to a tool passes them.
 - **What follows, for whatever is chosen**, by the settings in force and the directory as they stand: who decides its changes below level 2, part by part, by name; the scenario's limits for each type of change; how right graded samples must show its changes in a part before a5s raises its cap there; what its levels allow, such as that at level 0 a5s refuses every change; and, once each change is kept, who must sign its release and why. With nothing chosen, the draft as a whole: where it stands on its way to work, what stops its release, and the same, for all of it. After each change, a line says what it made follow, such as "Added change_due_date. Below level 2, each change it asks for waits for a yes from a decider of its record's part: Ana Ortiz in billing; Omar Haddad in orders."
-- **The keyboard, and the phone.** The arrow keys move from step to step, Enter opens one, with the keyboard's focus on what it shows, and Delete takes it away. The same comes as a list, each row opening in place, which a narrow screen starts with.
+- **The keyboard, and the phone.** The arrow keys move from step to step, Enter opens one, with the keyboard's focus on what it shows, and Delete takes it away. The same comes as a list, as Ocean's FlowList draws it, a choice of views away at the canvas's foot: each row opens in place, Escape closes it again with the keyboard back on its row, and a narrow screen starts with the list.
 
 Each change is made to `agent.yaml` in place, keeping its comments, as the forms in the inspector and its files as text make theirs, and kept and checked as theirs are: one definition, and three ways to change it. A schedule's times are written in quotes, as a5s reads them.
 

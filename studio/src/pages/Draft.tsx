@@ -47,15 +47,25 @@ function Raw({ files, change, readOnly = false }: { files: Files; change: (f: Fi
   );
 }
 
-/** What would stop its release, as a5s's checks say it now. */
+/** What would stop its release, as a5s's checks say it now: a gate, as Ocean's GateList draws one,
+ * which names each thing that stops it. */
 function Problems({ problems }: { problems: string[] }) {
+  const passed = problems.length === 0;
   return (
-    <section className={`gates ${problems.length ? "" : "ready"}`} id="problems" aria-live="polite" tabIndex={-1}
-             aria-labelledby="problems-title">
+    <section id="problems" aria-live="polite" tabIndex={-1} aria-labelledby="problems-title">
       <h2 id="problems-title">What stops its release</h2>
-      {problems.length === 0
-        ? <p><span className="badge good"><Icon name="check" />ready</span> Nothing would stop its release here, by the checks <span className="mono">a5s agent check</span> makes.</p>
-        : <ul className="plain">{problems.map((p) => <li key={p}><span className="badge bad"><Icon name="cross" />stops it</span> {p}</li>)}</ul>}
+      <ul className="gates">
+        <li>
+          {passed ? <span className="badge good"><Icon name="check" />passed</span>
+            : <span className="badge bad"><Icon name="cross" />failed</span>}
+          <span>
+            <span className="gate-name">a5s's checks</span>
+            {passed
+              ? <span className="gate-about">Nothing would stop its release here, by the checks <span className="mono">a5s agent check</span> makes.</span>
+              : problems.map((p) => <span key={p} className="gate-about">{p}</span>)}
+          </span>
+        </li>
+      </ul>
     </section>
   );
 }
@@ -112,7 +122,7 @@ function HandOver({ id }: { id: string }) {
   const [problem, setProblem] = useState<string | null>(null);
   const people = useLoad(() => (open ? get<CoAuthors>(
     `/studio/api/drafts/${encodeURIComponent(id)}/co-authors`) : Promise.resolve({ people: [] })), [open, id]);
-  if (!open) return <button type="button" className="quiet" id="hand-over" onClick={() => setOpen(true)}>Hand it over</button>;
+  if (!open) return <button type="button" id="hand-over" onClick={() => setOpen(true)}>Hand it over</button>;
   const found = people.data?.people ?? [];
   const hand = async () => {
     try {
@@ -133,7 +143,7 @@ function HandOver({ id }: { id: string }) {
           <button type="button" id="hand-over-to" onClick={hand}>Hand it over to them</button>
         </>
       )}
-      <button type="button" className="quiet" onClick={() => setOpen(false)}>Keep it</button>
+      <button type="button" onClick={() => setOpen(false)}>Keep it</button>
       {problem && <span className="problem"> {problem}</span>}
     </span>
   );
@@ -189,7 +199,7 @@ function Journey({ draft, said, files, plan, open }: { draft: Draft; said: Said;
       ? <a className="button primary" href={draft.published ?? "#"} target="_blank" rel="noopener noreferrer">Open its pull request</a>
       : untried
         ? <><button type="button" className="primary" onClick={() => open("try")}>Try it in the sandbox</button>
-            <button type="button" className="quiet" onClick={() => open("publish")}>Publish it without trying it</button></>
+            <button type="button" onClick={() => open("publish")}>Publish it without trying it</button></>
         : <button type="button" className="primary" onClick={() => open("publish")}>Publish it</button>;
   return (
     <section id="journey" aria-labelledby="journey-title">
@@ -304,7 +314,7 @@ export function DraftPage({ id }: { id: string }) {
             ))}
           </div>
           <HandOver id={id} />
-          <button type="button" className="quiet" onClick={drop}>Drop the draft</button>
+          <button type="button" onClick={drop}>Drop the draft</button>
           <button type="button" className="primary" id="to-publish" aria-pressed={view === "publish"} onClick={() => setView("publish")}>Publish it</button>
         </>
       )}

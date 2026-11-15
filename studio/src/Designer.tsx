@@ -81,7 +81,7 @@ function flowOf(spec: Spec, name: string, offer: Offer, problems: number, plan: 
   spec.reports.forEach((source, i) => starts.push({ key: `report:${i}`, icon: "report", name: "A report", about: `on ${source}` }));
   const tools: Step[] = [...new Set(Object.values(spec.tools).flat())].map((n): Step => {
     const tool = offered.get(n);
-    if (!tool) return { key: `tool:${n}`, icon: "tool", name: n, tone: "denied" as const, slot: "tools" as const, about: "not one of the scenario's tools" };
+    if (!tool) return { key: `tool:${n}`, icon: "tool", name: n, tone: "refused" as const, slot: "tools" as const, about: "not one of the scenario's tools" };
     const kind = risk(asTool(tool));
     return { key: `tool:${n}`, icon: "tool", name: n, tone: kind, slot: "tools" as const,
              about: tool.changes ? `changes ${tool.changes}` : RISK_NAMES[kind].toLowerCase() };
@@ -93,14 +93,14 @@ function flowOf(spec: Spec, name: string, offer: Offer, problems: number, plan: 
              about: `${spec.model || "no model"}, ${levels(spec.autonomy)}${plan.parts.length ? `, in ${and(plan.parts)}` : ""}` },
     end: { key: "reply", icon: "message", name: "Reply", about: "to whoever it acts for", tone: "own" },
     hanging: [
-      { key: "model", icon: "studio", name: "Model", about: spec.model || "none yet", slot: "model" },
+      { key: "model", icon: "model", name: "Model", about: spec.model || "none yet", slot: "model" },
       { key: "checks", icon: "shield", name: "a5s's checks", about: "policy, need-to-know, limits", tone: "own", slot: "checks" },
       ...tools,
       ...(own.length ? [{ key: "own", icon: "agent", name: "a5s's own", tone: "own" as const, slot: "tools" as const,
                           about: own.length > 1 ? `${own[0][1].toLowerCase()} and ${own.length - 1} more` : own[0][1].toLowerCase() }] : []),
       ...plan.asks.map((id): Step => {  // the instances its first instance may ask, as planned
         const asked = offer.askable.find((a) => a.id === id);
-        return { key: `ask:${id}`, icon: "agent", name: id, tone: "asked", slot: "tools",
+        return { key: `ask:${id}`, icon: "agent", name: id, tone: "agent", slot: "tools",
                  about: asked ? `asks it: the ${asked.agent}${asked.parts.length ? `, in ${and(asked.parts)}` : ""}` : "asks it" };
       }),
     ],
@@ -118,7 +118,7 @@ function Picker({ spec, offer, add, ability, start }: { spec: Spec; offer: Offer
     && (!words || `${t.name} ${t.description ?? ""}`.toLowerCase().includes(words)));
   const abilities = ABILITIES.filter(([key, label]) => !has(spec, key) && (!words || label.toLowerCase().includes(words)));
   return (
-    <section className="fd-palette picker" aria-label="What to add">
+    <section className="fd-palette" aria-label="What to add">
       <input type="search" id="pick-find" placeholder="Find a tool" aria-label="Find a tool" value={find}
              onChange={(e) => setFind(e.target.value)} />
       {ORDER.map((kind) => {
@@ -195,7 +195,7 @@ function Follows({ lines, title = "What follows" }: { lines: string[]; title?: s
   return (
     <div className="wb-well follows">
       <Icon name="shield" />
-      <div><strong>{title}</strong><ul className="plain">{lines.map((l) => <li key={l}>{l}</li>)}</ul></div>
+      <div><strong>{title}</strong><ul>{lines.map((l) => <li key={l}>{l}</li>)}</ul></div>
     </div>
   );
 }
@@ -211,7 +211,7 @@ function ToolPanel({ name, text, spec, offer, edit, kindOf, done }: { name: stri
   };
   return (
     <>
-      <Head icon="tool" tone={tool ? risk(asTool(tool)) : "denied"} title={name} kind={tool ? "the scenario's tool" : "not the scenario's"}>
+      <Head icon="tool" tone={tool ? risk(asTool(tool)) : "refused"} title={name} kind={tool ? "the scenario's tool" : "not the scenario's"}>
         {tool && <ToolBadges tool={asTool(tool)} />}
       </Head>
       {!tool ? <p className="problem">The scenario hasn't got a tool called {name}, so nothing would release it: take it away, or
@@ -246,10 +246,10 @@ function SchedulePanel({ index, text, spec, edit, done }: { index: number; text:
           set({ at: e.target.value.split(/[\s,]+/).filter(Boolean) });
         }} />
         <span className="wb-hint">Such as 09:00, 13:30, in its instance owner's time zone.</span></label>
-      <fieldset className="wb-field days">
+      <fieldset className="wb-field">
         <legend className="wb-label">On</legend>
-        <div className="day-row">{DAYS.map((d) => (
-          <label key={d} className="day"><input type="checkbox" checked={schedule.days.includes(d)}
+        <div className="choices inline">{DAYS.map((d) => (
+          <label key={d} className="choice"><input type="checkbox" checked={schedule.days.includes(d)}
                                                 onChange={(e) => day(d, e.target.checked)} /> {d}</label>
         ))}</div>
       </fieldset>
@@ -274,10 +274,10 @@ function MessagesPanel({ text, spec, edit, done }: { text: string; spec: Spec; e
   return (
     <>
       <Head icon="message" title="A message" kind={about ?? "people write to it"} />
-      <fieldset className="wb-field days">
+      <fieldset className="wb-field">
         <legend className="wb-label">On</legend>
-        <div className="day-row">{known.map((c) => (
-          <label key={c} className="day"><input type="checkbox" checked={spec.channels.includes(c)}
+        <div className="choices inline">{known.map((c) => (
+          <label key={c} className="choice"><input type="checkbox" checked={spec.channels.includes(c)}
                                                 onChange={(e) => channel(c, e.target.checked)} /> {CHANNEL_WORDS[c] ?? c}</label>
         ))}</div>
       </fieldset>
@@ -334,30 +334,30 @@ type Planning = { plan: Plan; offer: Offer; part: (part: string, on: boolean) =>
  * approve them; the plan is what putting it to work starts from. */
 function PlanFields({ plan, offer, part, serve, ask }: Planning) {
   return (
-    <section className="plan" aria-labelledby="plan-title">
+    <section className="wb-section" aria-labelledby="plan-title">
       <h2 id="plan-title">Its first instance, as you plan it</h2>
       <p className="wb-hint">Kept with the draft, and never in force: where it works, and for whom, are the settings', which
         its parts' owners approve once its release is signed. Putting it to work starts from this.</p>
-      <fieldset className="wb-field days">
+      <fieldset className="wb-field">
         <legend className="wb-label">Works in</legend>
-        {offer.parts.length ? <div className="day-row">{offer.parts.map((p) => (
-          <label key={p.name} className="day"><input type="checkbox" checked={plan.parts.includes(p.name)}
+        {offer.parts.length ? <div className="choices inline">{offer.parts.map((p) => (
+          <label key={p.name} className="choice"><input type="checkbox" checked={plan.parts.includes(p.name)}
                                                      onChange={(e) => part(p.name, e.target.checked)} /> {p.name}</label>
         ))}</div> : <span className="wb-hint">No parts the settings know, so none, and an instance approver approves it.</span>}
       </fieldset>
-      <fieldset className="wb-field abilities">
+      <fieldset className="wb-field">
         <legend className="wb-label">Serves, a few people first</legend>
         {offer.servable.map((s) => (
-          <label key={s.id} className="day"><input type="checkbox" checked={plan.serves.includes(s.id)}
+          <label key={s.id} className="choice"><input type="checkbox" checked={plan.serves.includes(s.id)}
                                                    onChange={(e) => serve(s.id, e.target.checked)} /> {s.name}</label>
         ))}
         <span className="wb-hint">Those the settings name already, and you.</span>
       </fieldset>
       {offer.askable.length > 0 && (
-        <fieldset className="wb-field abilities">
+        <fieldset className="wb-field">
           <legend className="wb-label">May ask</legend>
           {offer.askable.map((a) => (
-            <label key={a.id} className="day"><input type="checkbox" checked={plan.asks.includes(a.id)}
+            <label key={a.id} className="choice"><input type="checkbox" checked={plan.asks.includes(a.id)}
                                                      onChange={(e) => ask(a.id, e.target.checked)} /> {a.id}</label>
           ))}
           <span className="wb-hint">Instances you may see at work.</span>
@@ -371,7 +371,7 @@ function AskPanel({ id, offer, ask }: { id: string; offer: Offer; ask: (instance
   const asked = offer.askable.find((a) => a.id === id);
   return (
     <>
-      <Head icon="agent" tone="asked" title={id} kind={asked ? `an instance of the ${asked.agent}` : "an instance"} />
+      <Head icon="agent" tone="agent-tone" title={id} kind={asked ? `an instance of the ${asked.agent}` : "an instance"} />
       <Follows lines={[
         `Its first instance may ask ${id} questions, for the people it acts for, once the settings name it: the owners of `
           + "its parts approve that with the rest of it.",
@@ -385,10 +385,10 @@ function AskPanel({ id, offer, ask }: { id: string; offer: Offer; ask: (instance
 
 function OwnAbilities({ spec, ability }: { spec: Spec; ability: (key: Ability, on: boolean) => void }) {
   return (
-    <fieldset className="wb-field abilities">
+    <fieldset className="wb-field">
       <legend className="wb-label">a5s's own abilities</legend>
       {ABILITIES.map(([key, label, does]) => (
-        <label key={key} className="ability">
+        <label key={key} className="choice">
           <input type="checkbox" checked={has(spec, key)} onChange={(e) => ability(key, e.target.checked)} />
           <span><strong>{label}</strong> <span className="faint">It {does}.</span></span>
         </label>
@@ -425,7 +425,7 @@ function ModelPanel({ text, spec, offer, edit }: { text: string; spec: Spec; off
   const models = [...new Set([spec.model, ...offer.models].filter(Boolean))];
   return (
     <>
-      <Head icon="studio" title="Model" kind="through a5s's gateway" />
+      <Head icon="model" title="Model" kind="through a5s's gateway" />
       <label className="wb-field"><span className="wb-label">Its model</span>
         <select id="design-model" value={spec.model} onChange={(e) => edit(withValue(text, ["model"], e.target.value), `Its model is ${e.target.value} now.`)}>
           {models.map((m) => <option key={m} value={m}>{m}</option>)}
@@ -514,7 +514,7 @@ export function Consequences({ spec, offer, signers, plan }: { spec: Spec; offer
               {plan.parts.length ? ", in the parts you plan its first instance in" : ""}
               {spec.autonomy.max < 2 ? ", and its release keeps it below level 2" : ""}:</p>
             {planned.length
-              ? <ul className="plain decides">{planned.map((p) => <li key={p.name}><strong>{p.name}</strong>: {deciders(p)}</li>)}</ul>
+              ? <ul className="plain">{planned.map((p) => <li key={p.name}><strong>{p.name}</strong>: {deciders(p)}</li>)}</ul>
               : <p className="note">its owners and their delegates, as the settings and the directory name them.</p>}
           </>
         )}
@@ -555,32 +555,50 @@ export function Consequences({ spec, offer, signers, plan }: { spec: Spec; offer
 
 // The list: the same steps, row by row, each opening in place
 
-function DesignList({ flow, chosen, pick, panel, adding, picker }: { flow: Flow; chosen: string | null;
-  pick: (key: string, keyboard: boolean) => void; panel: (key: string) => ReactNode; adding: boolean; picker: ReactNode }) {
+/** Canvas or list, a choice of views, as Ocean's FlowList has it. */
+function Views({ shown, show }: { shown: Shown; show: (v: Shown) => void }) {
+  return (
+    <div className="modes" role="group" aria-label="Show it">
+      <button type="button" aria-pressed={shown === "canvas"} onClick={() => show("canvas")}>Canvas</button>
+      <button type="button" aria-pressed={shown === "list"} onClick={() => show("list")}>List</button>
+    </div>
+  );
+}
+
+function DesignList({ flow, chosen, pick, close, panel, adding, picker, views, after }: { flow: Flow; chosen: string | null;
+  pick: (key: string, keyboard: boolean) => void; close: (key: string) => void; panel: (key: string) => ReactNode;
+  adding: boolean; picker: ReactNode; views: ReactNode; after: ReactNode }) {
   const row = (step: Step) => (
-    <li key={step.key} className={`design-row ${step.tone ?? ""}`}>
-      <button type="button" className="design-row-button" aria-expanded={chosen === step.key}
+    <li key={step.key}>
+      <button type="button" className={`flow-row ${step.tone ?? ""}`} aria-expanded={chosen === step.key} data-row={step.key}
               onClick={(e) => pick(step.key, e.detail === 0)}>
-        <span className={`fd-type ${step.tone ?? ""}`}><Icon name={step.icon} /></span>
-        <span className="fd-text"><span className="design-row-name">{step.name}</span>
-          {step.about && <span className="fd-about">{step.about}</span>}</span>
+        <Icon name={step.icon} />
+        <span className="flow-row-text"><span className="flow-row-name">{step.name}</span>
+          {step.about && <span className="flow-row-about">{step.about}</span>}</span>
         {!!step.problems && <span className="badge bad">{step.problems} problem{step.problems === 1 ? "" : "s"}</span>}
       </button>
-      {chosen === step.key && <div className="design-inline">{panel(step.key)}</div>}
+      {chosen === step.key && (  // its settings, in place; Escape closes them
+        <div className="flow-inline" onKeyDown={(e) => { if (e.key === "Escape") close(step.key); }}>{panel(step.key)}</div>
+      )}
     </li>
   );
   return (
-    <div className="design-list">
-      <section aria-labelledby="list-starts"><h2 id="list-starts">What starts its runs</h2><ul className="plain">{flow.starts.map(row)}</ul></section>
+    <div className="flow-listing" onKeyDown={(e) => {
+      const at = (e.target as HTMLElement).closest("[data-row]")?.getAttribute("data-row");
+      if (e.key === "Escape" && at && chosen === at) close(at);
+    }}>
+      {views}
+      <section aria-labelledby="list-starts"><h2 id="list-starts">What starts its runs</h2><ul>{flow.starts.map(row)}</ul></section>
       <section aria-labelledby="list-agent"><h2 id="list-agent">The agent</h2>
-        <ul className="plain">{[flow.agent, ...(flow.end ? [flow.end] : [])].map(row)}</ul></section>
-      <section aria-labelledby="list-hangs"><h2 id="list-hangs">What it works with</h2><ul className="plain">{flow.hanging.map(row)}</ul></section>
+        <ul>{[flow.agent, ...(flow.end ? [flow.end] : [])].map(row)}</ul></section>
+      <section aria-labelledby="list-hangs"><h2 id="list-hangs">What it works with</h2><ul>{flow.hanging.map(row)}</ul></section>
       <section aria-labelledby="list-add">
         <h2 id="list-add">Add to it</h2>
         <button type="button" aria-expanded={adding} id="list-adding" onClick={(e) => pick("add", e.detail === 0)}>
           <Icon name="plus" /> Add a tool, an ability or a start</button>
-        {adding && <div className="design-inline">{picker}</div>}
+        {adding && <div className="flow-inline">{picker}</div>}
       </section>
+      {after}
     </div>
   );
 }
@@ -736,30 +754,31 @@ export function Designer({ name, files, offer, signers, problems, change, plan, 
     return Boolean(tool);
   };
   const listing = shown === "list";
+  const close = (key: string) => {  // a row's settings closed, the keyboard back on its row
+    setChosen(null);
+    window.setTimeout(() => document.querySelector<HTMLElement>(`[data-row="${CSS.escape(key)}"]`)?.focus());
+  };
+  const views = <Views shown={shown} show={setShown} />;
   return (
-    <div className={`wb-body designer${listing ? " listing" : ""}`} id="designer">
+    <div className={`wb-body ${listing ? "whole" : "designer"}`} id="designer">
       {!listing && picker}
       {listing ? (
-        <div className="wb-view design-listed">
-          <div className="design-shown"><button type="button" onClick={() => setShown("canvas")}><Icon name="studio" /> Show it on the canvas</button></div>
-          {said}
-          <DesignList flow={flow} chosen={chosen} pick={pick} panel={panel} adding={chosen === "add"} picker={picker} />
-          <div className="design-overview">{overview}<Consequences spec={spec} offer={offer} signers={signers} plan={plan} /></div>
-        </div>
+        <DesignList flow={flow} chosen={chosen} pick={pick} close={close} panel={panel} adding={chosen === "add"} picker={picker}
+                    views={views} after={<>{said}{overview}<Consequences spec={spec} offer={offer} signers={signers} plan={plan} /></>} />
       ) : (
         <FlowMap flow={flow} label="How it's wired" chosen={known ? chosen : null} pick={pick} remove={remove} drop={drop}
                  stubs={[{ key: "add-tool", icon: "plus", name: "Add a tool", slot: "tools" },
                          { key: "add-start", icon: "plus", name: "Add what starts it" }]}>
           <button type="button" className="flow-add" onClick={() => pick("add", true)}>+ Add</button>
           <div className="flow-run">{tryIt}</div>
-          <button type="button" className="flow-list" onClick={() => setShown("list")}><Icon name="list" /> As a list</button>
+          <div className="flow-views">{views}</div>
         </FlowMap>
       )}
       {!listing && (
         <section className="wb-inspector" aria-label={known ? "What's chosen" : "The draft"}>
           {said}
-          {known ? <>{panel(chosen as string)}<p className="back"><button type="button" className="link" onClick={() => choose(null, true)}>
-            The draft as a whole</button></p></>
+          {known ? <>{panel(chosen as string)}<div className="wb-actions"><button type="button" className="link" onClick={() => choose(null, true)}>
+            The draft as a whole</button></div></>
             : <>{overview}<Consequences spec={spec} offer={offer} signers={signers} plan={plan} /></>}
         </section>
       )}

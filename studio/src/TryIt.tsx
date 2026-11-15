@@ -48,7 +48,7 @@ function Cases({ draft, model, ready, revision }: { draft: string; model: string
     <div className="cases" id="cases">
       <div className="cases-head">
         <h3>Its test cases</h3>
-        <button type="button" className="quiet" id="run-cases" disabled={!ready || running || runnable.length === 0} onClick={run}>
+        <button type="button" id="run-cases" disabled={!ready || running || runnable.length === 0} onClick={run}>
           {running ? "Running them…" : `Run the ${runnable.length} the sandbox can`}</button>
       </div>
       {all.length === 0 && <p className="note">It has none yet: keep what you said to it as one, above.</p>}
@@ -235,7 +235,7 @@ export function TryIt({ draft, name, ready, keep, revision }: {
           <label className="field"><span>Keep what {named(as)} said to it as a test case, which its suite runs on its model{theirs.some((t) => t.model === STAND_IN) ? ": on the stand-in, what they said alone, since what the stand-in used isn't the agent's choice" : ", with the tools it used"}</span>
             <input id="case-name" value={caseName} placeholder={theirs[0].said.slice(0, 60)}
                    onChange={(e) => setCaseName(e.target.value)} autoComplete="off" /></label>
-          <button type="submit" className="quiet" id="keep-case">Keep as a test case</button>
+          <button type="submit" id="keep-case">Keep as a test case</button>
           {keptCase && ("said" in keptCase ? <p className="note" id="case-kept">{keptCase.said}</p>
                                            : <p className="problem">{keptCase.problem}</p>)}
         </form>

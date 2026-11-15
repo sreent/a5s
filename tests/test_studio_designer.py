@@ -79,7 +79,7 @@ def test_a_tool_dragged_onto_the_canvas_says_what_follows_and_who_must_sign(stac
     page, refused = drafted(browser, approving, provider, agent="watcher")  # it reads, at level 0
     assert "Nobody: it changes no records" in page.inner_text("#decides")
     # a tool dragged from the picker, as people do, onto the canvas
-    page.locator(".picker [data-tool=change_due_date]").drag_to(page.locator(".flow-canvas .react-flow__pane"))
+    page.locator(".fd-palette [data-tool=change_due_date]").drag_to(page.locator(".flow-canvas .react-flow__pane"))
     page.wait_for_selector("#what-changed >> text=Added change_due_date", timeout=30000)
     kept(page)
     assert "Its release keeps it at level 0, which only observes, so a5s refuses every change" in page.inner_text(
@@ -122,7 +122,7 @@ def test_a_schedule_added_and_set_by_hand_is_kept_as_a5s_reads_it(stack, approvi
     expect(page.locator("#inspector-title")).to_be_focused()
     assert "a5s starts a run at 09:00, on weekdays" in page.inner_text("#what-changed")
     page.fill("#schedule-at", "08:30, 13:30")
-    page.uncheck("label.day:has-text('fri') input")
+    page.uncheck(".wb-inspector label.choice:has-text('fri') input")
     kept(page)
     page.wait_for_selector("#problem-count >> text=No problems", timeout=30000)  # a5s reads it
     [schedule] = yaml.safe_load(definition(stack, page))["schedules"]
@@ -145,12 +145,19 @@ def test_axe_finds_nothing_amiss_on_the_workbench_nor_its_list_on_a_phone(stack,
     accessible(page)  # as wide as a desktop, and as a phone, light and dark
     shot(page, "studio-designer")
     phone, _ = drafted(browser, approving, provider, agent="watcher", width=390, height=844)
-    phone.wait_for_selector(".design-list", timeout=30000)  # a phone starts with the list
-    phone.click(".design-row-button:has-text('search_records')")
-    assert "It reads" in phone.inner_text(".design-inline")
+    phone.wait_for_selector(".flow-listing", timeout=30000)  # a phone starts with the list
+    row = phone.locator("button.flow-row:has-text('search_records')")
+    row.click()
+    assert "It reads" in phone.inner_text(".flow-inline")
+    phone.locator(".flow-inline").first.press("Escape")  # its settings close, the keyboard on its row
+    expect(phone.locator(".flow-inline")).to_have_count(0)
+    expect(row).to_be_focused()
+    expect(row).to_have_attribute("aria-expanded", "false")
     phone.click("#list-adding")
-    phone.click(".design-inline [data-tool=change_due_date]")
-    phone.wait_for_selector(".design-row-button:has-text('change_due_date')", timeout=30000)
+    phone.click(".flow-inline [data-tool=change_due_date]")
+    phone.wait_for_selector("button.flow-row:has-text('change_due_date')", timeout=30000)
+    phone.click(".flow-listing .modes button:has-text('Canvas')")  # its canvas, a choice of views away
+    phone.wait_for_selector(".flow-canvas [data-step='tool:change_due_date']", timeout=30000)
     accessible(phone)
     assert refused == []
 
@@ -208,7 +215,7 @@ def test_its_first_instance_is_planned_on_the_canvas_and_goes_to_work_with_it(st
     kept(page)
     expect(page.locator("[data-step=agent]")).to_have_attribute("aria-label", re.compile(r"in billing$"))
     assert "from Ben Okafor" in page.get_attribute("[data-step=messages]", "aria-label")
-    asked = page.locator(".flow-step.asked[data-key='ask:assistant-finance']")
+    asked = page.locator(".flow-step.agent-tone[data-key='ask:assistant-finance']")
     expect(asked).to_have_count(1)
     assert yaml.safe_load(definition(stack, page))["context"]["agents"] is True
     page.wait_for_selector("#what-changed >> text=must sign its release", timeout=30000)

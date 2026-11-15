@@ -42,7 +42,7 @@ function ByHand({ draft, name, revision }: { draft: string; name: string; revisi
       {said && <p className="note">{said}</p>}
       <div className="meta">
         <button type="button" className="primary" id="download" onClick={save}>Download its folder</button>
-        <button type="button" className="quiet" id="copy-body" onClick={copy}>Copy the description</button>
+        <button type="button" id="copy-body" onClick={copy}>Copy the description</button>
       </div>
     </div>
   );
@@ -111,7 +111,7 @@ function OnGitHub({ draft, name, ready, published }: {
       <div className="meta">
         <button type="button" className="primary" id="publish" disabled={!ready || waiting} onClick={start}>
           {waiting ? "Waiting for GitHub…" : pull ? "Publish again" : "Publish as a pull request"}</button>
-        <button type="button" className="quiet" id="download" onClick={save}>Download its folder</button>
+        <button type="button" id="download" onClick={save}>Download its folder</button>
       </div>
     </div>
   );

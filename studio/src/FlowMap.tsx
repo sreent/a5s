@@ -11,11 +11,11 @@
 
 import { type Edge, Handle, type Node, type NodeProps, Position, ReactFlow, ReactFlowProvider,
   useReactFlow } from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
+import "@xyflow/react/dist/base.css";  // React Flow's own, never its style.css: Ocean draws the rest
 import { type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import { Icon } from "./icons";
 
-export type Tone = "reads" | "writes" | "changes" | "outside" | "own" | "denied" | "asked";  // asked: another agent
+export type Tone = "reads" | "writes" | "changes" | "outside" | "own" | "refused" | "agent";  // agent: another agent
 export type Slot = "model" | "checks" | "tools";
 
 /** A step on the canvas: what it is, in its words, and how it stands. */
@@ -47,8 +47,8 @@ const PER_ROW = 5, ROW_Y = 150, STARTS_FOOT = 130;
 
 function FlowStep({ data }: NodeProps<Node<Data>>) {
   const { step, kind, chosen, pick } = data;
-  const classes = ["flow-step", step.tone ?? "", kind === "end" ? "last" : kind, chosen ? "chosen" : "",
-                   step.dim ? "dim" : ""].filter(Boolean).join(" ");
+  const classes = ["flow-step", step.tone === "agent" ? "agent-tone" : step.tone ?? "", kind === "end" ? "last" : kind,
+                   chosen ? "chosen" : "", step.dim ? "dim" : ""].filter(Boolean).join(" ");
   const inside: ReactNode = (
     <>
       <Icon name={step.icon} />

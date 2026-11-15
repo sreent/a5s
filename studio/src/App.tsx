@@ -50,7 +50,7 @@ export function App() {
   }, [workbench]);
   if (workbench) {
     return (
-      <div className="wb studio-wb">
+      <div className="wb window">
         <Sidebar signedIn rail />
         <main className="wb-main">{content}</main>
       </div>

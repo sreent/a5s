@@ -33,7 +33,9 @@ const LINES: Record<string, string[]> = {
   plus: ["M12 5.5v13", "M5.5 12h13"],
   cross: ["M7 7l10 10", "M17 7L7 17"],  // as Ocean's icons/ draw it
   pause: ["M9 6.5v11", "M15 6.5v11"],
-  list: ["M9 6.5h11", "M9 12h11", "M9 17.5h11", "M4.5 6.5h.01", "M4.5 12h.01", "M4.5 17.5h.01"],
+  list: ["M9.5 6.5h10", "M9.5 12h10", "M9.5 17.5h10", "M4.5 6.5h.5", "M4.5 12h.5", "M4.5 17.5h.5"],  // as Ocean's icons/
+  model: ["M7 7h10v10H7z", "M10 10h4v4h-4z", "M9.5 3.5V7", "M14.5 3.5V7", "M9.5 17v3.5", "M14.5 17v3.5",
+          "M3.5 9.5H7", "M3.5 14.5H7", "M17 9.5h3.5", "M17 14.5h3.5"],
 };
 
 export function Icon({ name, className = "icon" }: { name: string; className?: string }) {

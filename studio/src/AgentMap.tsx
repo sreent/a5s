@@ -61,7 +61,7 @@ export function flowOf(agent: Mapped, run?: Run): Flow {
   const hanging: Step[] = tools.map((tool): Step => {
     const these = calls.filter((c) => c.tool === tool.name);
     if (tool.missing) {  // as a draft may name it: a tool the scenario hasn't got
-      return marked({ key: `tool:${tool.name}`, icon: "tool", name: tool.name, tone: "denied", slot: "tools",
+      return marked({ key: `tool:${tool.name}`, icon: "tool", name: tool.name, tone: "refused", slot: "tools",
                       about: "not one of the scenario's tools" }, these, run);
     }
     return marked({ key: `tool:${tool.name}`, icon: "tool", name: tool.name, tone: risk(tool), slot: "tools",
@@ -74,7 +74,7 @@ export function flowOf(agent: Mapped, run?: Run): Flow {
   }
   const known = new Set([...agent.tools.map((t) => t.name), ...agent.a5s_tools]);
   for (const name of [...new Set(calls.map((c) => c.tool))].filter((n) => !known.has(n))) {
-    hanging.push(marked({ key: `tool:${name}`, icon: "tool", name, tone: "denied", slot: "tools", about: "not among its tools" },
+    hanging.push(marked({ key: `tool:${name}`, icon: "tool", name, tone: "refused", slot: "tools", about: "not among its tools" },
                         calls.filter((c) => c.tool === name), run));
   }
   const refused = calls.filter((c) => c.decision === "deny").length;
@@ -84,7 +84,7 @@ export function flowOf(agent: Mapped, run?: Run): Flow {
              about: run ? `${run.model ?? agent.model}, ${plural(run.tokens, "token")}` : `${agent.model}, ${levels(agent.autonomy)}` },
     end: { key: "reply", icon: "message", name: "Reply", about: "to whoever it acts for", tone: "own" },
     hanging: [
-      { key: "model", icon: "studio", name: "Model", about: run?.model ?? agent.model, slot: "model", path: run ? "ran" : undefined },
+      { key: "model", icon: "model", name: "Model", about: run?.model ?? agent.model, slot: "model", path: run ? "ran" : undefined },
       { key: "checks", icon: "shield", name: "a5s's checks", tone: "own", slot: "checks",
         about: run ? `${plural(calls.length, "call")}, ${refused} refused` : "policy, need-to-know, limits",
         path: run && calls.length ? "ran" : undefined },

@@ -6,7 +6,7 @@ Every page of a5s, the studio and the server's own pages alike, shares one look,
 
 The look is called Ocean. It takes a hint of the sea: deep blues for what you can do, lagoon teal for agents, coral for any change to a record, and kelp green for what's going well. The palette isn't anyone's brand. An organisation's own colours replace the primitives, in one place.
 
-Ocean began here, and is now the look a5s shares with a7c and a3t, kept in its one source, [sreent/ocean](https://github.com/sreent/ocean), with its brand book, its pieces and its checks. a5s's pages load only a5s's own files, so a5s serves a copy: Ocean's tokens, its pieces, its chart colours and IBM Plex, in [`webchat/ocean`](../src/a5s/core/webchat/ocean), at the commit [`ocean.json`](../src/a5s/core/webchat/ocean/ocean.json) names, with each file's digest. Every page loads Ocean's tokens and pieces first, then [`app.css`](../src/a5s/core/webchat/app.css), which holds a5s's own alone, the chat; the studio imports the same files, so nothing is defined twice. A change to Ocean is made in sreent/ocean, and taken here at its commit:
+Ocean began here, and is now the look a5s shares with a7c and a3t, kept in its one source, [sreent/ocean](https://github.com/sreent/ocean), with its brand book, its pieces and its checks. a5s's pages load only a5s's own files, so a5s serves a copy: Ocean's tokens, its pieces, its chart colours and IBM Plex, in [`webchat/ocean`](../src/a5s/core/webchat/ocean), at the commit [`ocean.json`](../src/a5s/core/webchat/ocean/ocean.json) names, with each file's digest. Every page loads Ocean's tokens and pieces first, then [`app.css`](../src/a5s/core/webchat/app.css), which holds a5s's own alone, the chat; the studio imports the same files, and its own [`studio.css`](../studio/src/studio.css) holds only how its pages lay Ocean's pieces out: an agent's card, an instance's figures, the runs chart, the sandbox's turns and test cases. Neither restyles a piece of Ocean's. A piece a5s needs, or a change to one, is drawn in sreent/ocean first, for a7c and a3t too, and taken here at its commit:
 
 ```bash
 sh deploy/ocean.sh <commit>
@@ -45,6 +45,7 @@ IBM Plex Sans for text, and IBM Plex Mono for ids and digests. Ocean bundles bot
 - the meanings name only primitives, so a brand is one change in one place;
 - the pages load their type and their styles from a5s and from nowhere else;
 - the copy of Ocean is Ocean's as its pinned commit has it, file by file, so nothing of it is changed here.
+- neither `app.css` nor `studio.css` styles a selector Ocean's pieces or charts style, so Ocean stays the one source of how a piece looks.
 
 A brand that reads less well fails the first test before anyone sees it. Ocean's own checks (`scripts/check.mjs` in sreent/ocean) hold the same and more, before a commit is taken.
 

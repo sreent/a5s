@@ -1,33 +1,16 @@
-/* The studio, on the look every page of a5s shares (webchat/app.css). */
+/* The studio's own compositions of Ocean's pieces: an agent's card, an instance's figures, the runs
+   chart, the sandbox's turns and test cases, the templates and the raw editor. Ocean (ocean/css, taken
+   at a commit) holds every piece and the workbench; nothing here restyles one of them. Each of these
+   moves to Ocean as a piece when another product needs it, and anything new is drawn there first
+   (Ocean's docs/products.md). */
 
 #root { display: contents; }  /* its sidebar and page sit in the body's frame, as every page's do */
 .nav-group { display: contents; }
 .page.studio main { max-width: 80rem; }
 
-.mono { font-family: var(--font-mono); font-size: 0.85em; }
 .problem { color: var(--bad); }
-.num { text-align: right; font-variant-numeric: tabular-nums; }
 
-/* A page's heading: the way back, its title, and what it is */
-
-.page-head { margin-bottom: 1.25rem; }
-.crumbs { display: flex; flex-wrap: wrap; gap: 0.15rem; font-size: 0.85rem; margin-bottom: 0.35rem; }
-.crumbs a { color: var(--muted); text-decoration: none; }
-.crumbs a:hover { color: var(--accent); }
-.crumbs .sep { color: var(--faint); margin: 0 0.35rem; }
-.title-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
-.title-row h1 { margin: 0; }
-.about { color: var(--muted); margin: 0.45rem 0 0; max-width: 56rem; }
-.meta { display: flex; flex-wrap: wrap; gap: 0.35rem 1.1rem; margin-top: 0.6rem; color: var(--muted); font-size: 0.88rem; }
-.period { display: inline-flex; align-items: center; gap: 0.4rem; margin-top: 0.85rem; }
-
-/* Chips: plain facts, beside the badges that mean something */
-
-.chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
-.chip { display: inline-flex; align-items: center; padding: 0.08rem 0.55rem; border-radius: 999px;
-        border: 1px solid var(--line); background: var(--sunken); color: var(--muted); font-size: 0.78rem;
-        white-space: nowrap; }
-.badges { display: inline-flex; flex-wrap: wrap; gap: 0.3rem; }
+/* A badge's dot, and the colour of what a tool does on its label */
 .badge .dot { width: 0.45rem; height: 0.45rem; border-radius: 50%; background: currentColor; }
 .tone-changes { color: var(--changes); }
 .tone-outside { color: var(--outside); }
@@ -126,7 +109,6 @@ table.runs-table tbody tr:hover { background: var(--sunken); }
                 border-radius: 50%; background: var(--surface); border: 2px solid var(--good); }
 .step.deny::before { border-color: var(--bad); }
 .step.hold::before, .step.held::before { border-color: var(--warn); }
-.step-time { color: var(--faint); font-size: 0.8rem; font-variant-numeric: tabular-nums; min-width: 5.5rem; }
 .step-tool { font-weight: 600; }
 .step-why { flex-basis: 100%; padding-left: 6rem; font-size: 0.82rem; }
 
@@ -168,12 +150,10 @@ table.runs-table tbody tr:hover { background: var(--sunken); }
 
 /* Making agents: a new one from a template, and a draft's editor */
 .page-head .actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.85rem; }
-button.quiet { background: transparent; border-color: var(--line); color: var(--muted); }
 .field { display: grid; gap: 0.35rem; font-size: 0.9rem; }
 .field > span { color: var(--muted); font-size: 0.84rem; }
 .field input, .field select, .field textarea { width: 100%; font: inherit; }
 .field textarea { resize: vertical; line-height: 1.5; }
-.form-grid { display: grid; gap: 1rem; max-width: 46rem; }
 .field-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .new-agent { display: grid; gap: 1rem; max-width: 60rem; }
 .new-agent .card { margin: 0; }
@@ -242,139 +222,7 @@ details.sent { margin-top: 0.75rem; }
 .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.5rem 1rem;
             margin: 0.75rem 0 0; padding: 0; list-style: none; font-size: 0.88rem; }
 .swatches li { display: flex; align-items: center; gap: 0.6rem; }
-.swatch { width: 2.2rem; height: 2.2rem; flex: none; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); }
+.swatches .swatch { width: 2.2rem; height: 2.2rem; flex: none; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); }
 .type-sample { margin: 0.35rem 0; }
 .type-sample.big { font-size: var(--text-2xl); font-weight: 600; letter-spacing: -0.015em; line-height: 1.2; }
 [data-piece] .chips { margin: 0.5rem 0 0.75rem; align-items: center; }
-
-/* A draft, on the workbench (Ocean's Workbench): the whole window given to the work, in panes. The
-   frame's sidebar shrinks to Ocean's rail; a toolbar says where the draft stands and holds its one
-   thing to do; and below it, the picker of parts, the canvas and the inspector, or another view */
-body.app.workbench { display: block; height: 100vh; overflow: hidden; background: var(--page); }
-.wb.studio-wb { height: 100vh; grid-template-rows: minmax(0, 1fr); }
-.wb-main { grid-column: 2; display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; min-height: 0;
-           max-width: none; margin: 0; padding: 0; }
-.wb-main > .wb-body { min-height: 0; }
-.wb-body.whole { overflow: auto; }
-.wb-view { display: grid; align-content: start; gap: var(--space-4); padding: var(--space-5) var(--space-6);
-           max-width: 76rem; width: 100%; }
-.wb-view > h2 { margin: 0; }
-.wb-bar .hand-over { display: inline-flex; }
-.wb-bar #problem-count { cursor: pointer; border: 0; }
-.wb-body.designer { grid-template-columns: 16rem minmax(0, 1fr) 24rem; }
-.wb-body.designer.listing { grid-template-columns: minmax(0, 1fr); overflow: auto; }
-
-/* The picker: the scenario's tools by what they do, a5s's own abilities, and what starts a run */
-.picker { min-height: 0; }
-.picker .fd-part { width: 100%; align-items: start; border: 0; background: transparent; text-align: start; cursor: pointer; }
-.picker .fd-part:hover { background: var(--sunken); }
-.picker .fd-part[draggable] { cursor: grab; }
-.fd-type.changes { color: var(--changes); }
-.fd-type.outside { color: var(--outside); }
-.fd-type.writes { color: var(--writes); }
-.fd-type.reads { color: var(--reads); }
-.fd-type.own, .fd-type.agent { color: var(--own); }
-.fd-type.denied { color: var(--bad); }
-.fd-text { display: grid; gap: 0.1rem; min-width: 0; }
-.fd-text .mono { overflow-wrap: anywhere; }
-.fd-about { color: var(--muted); font-size: var(--text-xs); line-height: 1.35; }
-
-/* Ocean's steps on React Flow's canvas: React Flow places each, where Ocean's previews place them by
-   hand, and its handles sit where Ocean draws the dots steps join at */
-.flow-canvas { position: relative; min-width: 0; min-height: 0; }
-.flow-canvas .react-flow { background: transparent; }
-.flow-canvas .react-flow__node { cursor: default; }
-.flow-canvas .flow-step { position: relative; }
-.flow-canvas .flow-step.dim, .flow-canvas .react-flow__edge.dim { opacity: 0.42; }
-.flow-canvas button.flow-box { padding: 0; font: inherit; cursor: pointer; }
-/* the workbench's compact buttons shrink their icons; a step's keeps Ocean's size */
-.flow-canvas .flow-box > .icon { width: 2.4rem; height: 2.4rem; }
-.flow-canvas .flow-step.agent .flow-box > .icon { width: 2rem; height: 2rem; }
-.flow-canvas .flow-step.hanging .flow-box > .icon { width: 1.5rem; height: 1.5rem; }
-.flow-canvas .flow-state .icon { width: 0.85rem; height: 0.85rem; }
-.flow-canvas button.flow-box:hover { background: var(--sunken); }
-.flow-step.denied .flow-box { color: var(--bad); border-color: var(--bad); }
-.flow-step.asked .flow-box { color: var(--agent-tone); }  /* another agent it may ask: agents, as everywhere */
-.fd-type.asked { color: var(--agent-tone); }
-.flow-step.agent .flow-box > .flow-problems { right: -0.55rem; }
-.flow-canvas .react-flow__handle { width: 1px; height: 1px; min-width: 0; min-height: 0; border: 0; background: transparent; }
-.flow-canvas .react-flow__handle.at-right { left: 6.8rem; right: auto; top: 2.8rem; }
-.flow-canvas .react-flow__handle.at-left { left: 1.2rem; top: 2.8rem; }
-.flow-canvas .flow-step.agent .react-flow__handle.at-left { left: 0; }
-.flow-canvas .flow-step.agent .react-flow__handle.at-right { left: 14rem; }
-.flow-canvas .react-flow__handle.at-top { left: 4rem; top: 0; }
-.flow-canvas .react-flow__handle.at-model { left: 2.75rem; top: 5.5rem; bottom: auto; }
-.flow-canvas .react-flow__handle.at-checks { left: 7rem; top: 5.5rem; bottom: auto; }
-.flow-canvas .react-flow__handle.at-tools { left: 11.25rem; top: 5.5rem; bottom: auto; }
-.flow-canvas .react-flow__edge-path { stroke: var(--faint); stroke-width: 2; }
-.flow-canvas .react-flow__edge.hangs .react-flow__edge-path { stroke-width: 1.5; stroke-dasharray: 5 4; }
-.flow-canvas .react-flow__edge.ran .react-flow__edge-path { stroke: var(--good); }
-.flow-canvas .react-flow__edge.refused .react-flow__edge-path { stroke: var(--bad); }
-.flow-canvas .flow-stub { position: static; translate: none; }
-.flow-canvas .react-flow__attribution { background: transparent; }
-.flow-canvas .react-flow__attribution a { color: var(--muted); }
-.flow-list { position: absolute; inset-inline-end: var(--space-4); bottom: var(--space-4); }
-.flow-run { z-index: 5; }
-.flow-add, .flow-tools, .flow-list { z-index: 5; }
-
-/* The inspector: what's chosen, or the draft as a whole */
-.wb-inspector h2 { font-size: var(--text-md); margin: var(--space-2) 0 var(--space-1); }
-.wb-inspector .wb-head h2 { font-size: var(--text-lg); margin: 0; }
-.wb-inspector > section { display: grid; gap: var(--space-2); }
-.wb-inspector p { margin: 0; }
-.wb-head .flow-step.agent .flow-box { width: 2.6rem; padding: 0; justify-content: center; }
-.wb-field textarea { width: 100%; font: inherit; resize: vertical; }
-.wb-field.days, .wb-field.abilities { border: 0; padding: 0; margin: 0; min-width: 0; }
-.day-row { display: flex; flex-wrap: wrap; gap: 0.35rem 0.85rem; }
-.day { display: inline-flex; align-items: center; gap: 0.3rem; }
-.ability { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.5rem; align-items: start; padding: 0.3rem 0; }
-.ability input { margin-top: 0.2rem; }
-.wb-well.follows ul { margin: var(--space-1) 0 0; display: grid; gap: var(--space-1); }
-.plan { display: grid; gap: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--line); }
-.plan h2 { margin: 0; }
-.plan .wb-field.abilities { display: grid; gap: 0.15rem; }
-.wb-well.notice { color: var(--text); background: var(--accent-soft); }
-.wb-well.notice .icon { color: var(--accent); }
-.gates ul { display: grid; gap: var(--space-2); }
-.gates .badge { margin-inline-end: 0.3rem; }
-ul.decides { display: grid; gap: 0.15rem; }
-.back { margin-top: var(--space-2); }
-button.link { padding: 0; border: 0; background: transparent; color: var(--accent); text-decoration: underline;
-              text-underline-offset: 2px; cursor: pointer; }
-button.danger { color: var(--bad); border-color: var(--bad); }
-
-/* The same, as a list: for a keyboard, and a phone */
-.design-listed { gap: var(--space-5); }
-.design-shown { display: flex; justify-content: flex-end; }
-.design-list { display: grid; gap: var(--space-5); }
-.design-list section { display: grid; gap: var(--space-2); }
-.design-list h2 { margin: 0; }
-.design-list ul { display: grid; gap: var(--space-1); }
-.design-row-button { display: flex; align-items: center; gap: var(--space-3); width: 100%; padding: 0.5rem 0.6rem;
-                     background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius-md);
-                     text-align: start; cursor: pointer; }
-.design-row-button[aria-expanded="true"] { border-color: var(--focus); }
-.design-row-button .badge { margin-inline-start: auto; }
-.design-row-name { font-weight: 600; overflow-wrap: anywhere; }
-.design-inline { display: grid; gap: var(--space-3); margin: var(--space-2) 0 var(--space-3); padding: var(--space-4);
-                 border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); }
-.design-inline .wb-head h2 { margin: 0; font-size: var(--text-lg); }
-.design-overview { display: grid; gap: var(--space-4); }
-.design-overview > section { display: grid; gap: var(--space-2); }
-.design-overview h2 { margin: 0; }
-
-@media (max-width: 56rem) {
-  .wb-body.designer { grid-template-columns: minmax(0, 1fr); overflow: auto; }
-  .wb-body.designer > .picker { max-height: 14rem; border-inline-end: 0; border-bottom: 1px solid var(--line); }
-  .wb-body.designer > .flow-canvas { min-height: 26rem; }
-  .wb-body.designer > .wb-inspector { border-inline-start: 0; border-top: 1px solid var(--line); overflow: visible; }
-}
-@media (max-width: 760px) {
-  body.app.workbench { height: auto; overflow: auto; }
-  .wb.studio-wb { display: flex; flex-direction: column; height: auto; }
-  .studio-wb .wb-rail { flex-direction: row; padding: 0.4rem 0.6rem; border-inline-end: 0; border-bottom: 1px solid var(--line);
-                        overflow-x: auto; }
-  .studio-wb .wb-rail .brand { padding: 0 var(--space-2) 0 0; }
-  .studio-wb .wb-rail nav { flex-direction: row; flex: none; }
-  .wb-view { padding: var(--space-4); }
-}
