@@ -376,6 +376,8 @@ FAMILIES = (
            area=DATABASE),
     Family("A5S_TEAMS_SECRET_<AGENT>", "a bot's secret, where A5S_TEAMS_BOTS names it",
            area=TEAMS),
+    Family("A5S_MCP_<SERVER>_TOKEN", "an MCP server's bearer token, where the scenario's "
+           "mcp.yaml names it as the server's token_env", area=SCENARIO),
 )
 # Settings that moved, and where to: a part refuses one, rather than seem to obey it
 MOVED = {name: f"the signed settings' data_protection.{choice}, which the data protection "
@@ -712,6 +714,9 @@ class Config:
     # at this address, by a token they share (a5s/sandbox.py). None if there isn't one
     sandbox_url: str | None = None
     sandbox_token: str = ""
+    # Whether this is the sandbox itself, which sets it, never a variable: its tools from MCP
+    # servers call each server's declared stand-in, with no token (connectors/mcp.py)
+    sandboxed: bool = False
     # Publishing drafts from the studio as pull requests on GitHub, opened as whoever publishes,
     # through GitHub's own sign-in (core/publishing.py): a5s's GitHub App's client id, a public
     # thing, and the agents' repository, as owner/name, and its branch. Without them, the studio

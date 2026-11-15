@@ -155,6 +155,7 @@ The tests check that neither compose nor the chart sets a setting to its default
 | --- | --- |
 | `A5S_DB_<PART>_PASSWORD` | Each part's database password, which setup gives its role |
 | `A5S_TEAMS_SECRET_<AGENT>` | A bot's secret, where A5S_TEAMS_BOTS names it |
+| `A5S_MCP_<SERVER>_TOKEN` | An MCP server's bearer token, where the scenario's mcp.yaml names it as the server's token_env |
 <!-- end of a5s config --markdown -->
 
 The libraries a5s uses read some variables of their own: OpenTelemetry's `OTEL_EXPORTER_OTLP_ENDPOINT`, for where traces and figures go, and each cloud's own sign-in for the ledger's store, such as `AWS_REGION` or `AZURE_STORAGE_CONNECTION_STRING`. A model's key is in the variable `config/models.yaml` names for it, such as `DEEPSEEK_API_KEY`.

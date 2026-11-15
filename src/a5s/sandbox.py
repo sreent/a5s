@@ -409,7 +409,7 @@ def opened(deployment: Config, admin: str, work: Path) -> Iterator[Sandbox]:
     cfg = Config(database_url=admin, gateway_url="http://127.0.0.1:1",
                  service_token=secrets.token_urlsafe(32), root=root, development=True,
                  seal_keys=(secrets.token_urlsafe(32),), scenario=deployment.scenario,
-                 scenario_folder=scenario_dir, agents_folder=root / "agents")
+                 scenario_folder=scenario_dir, agents_folder=root / "agents", sandboxed=True)
     db.migrate(admin)
     with db.transaction(admin) as conn:
         build.scenario(cfg).setup(conn, db.ROLES["gateway"])

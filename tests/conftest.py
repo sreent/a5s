@@ -35,8 +35,9 @@ from jwt.algorithms import RSAAlgorithm
 
 from a5s import db, definitions, devdb
 from a5s.config import Config, load_models
+from a5s.connectors import mcp
 from a5s.core import inbox, ledger, memberships, registry, signing
-from a5s.core.gateway import Gateway, create_app
+from a5s.core.gateway import CORE_TOOLS, Gateway, create_app
 from a5s.core.identity import IdentityConfig, Verifier
 from a5s.core.policy import PolicyEngine
 from a5s.sample import SampleScenario
@@ -569,7 +570,8 @@ def running(database: str, root: Path, http: httpx.Client, model: FakeModel,
     cfg = Config(database_url=db.as_role(database, "gateway"),
                  gateway_url=f"http://127.0.0.1:{port}", service_token=SERVICE_TOKEN, root=root,
                  development=True, seal_keys=(SEAL_KEY,))
-    scenario = SampleScenario(cfg.scenario_dir, cfg.database_url)  # its tools run in the gateway
+    scenario = mcp.served(SampleScenario(cfg.scenario_dir, cfg.database_url),  # its tools run
+                          cfg.scenario_dir, reserved=frozenset(CORE_TOOLS))  # in the gateway
     for agent in ("assistant", "watcher"):
         definitions.pin(root / "agents" / agent, {n: t.schema_hash for n, t in scenario.tools().items()})
     # Its directory, with the roles groups give, as a5s builds it (core/memberships.py)
