@@ -279,7 +279,7 @@ def test_each_agent_talks_to_people_as_its_own_bot(stack, bot):
     assert [row["agent"] for row in queued(stack)] == ["watcher"]
     stack.scheduler().answer_waiting()
     [answer] = bot.sent
-    assert answer["text"].startswith("There's no watcher for you yet.")
+    assert answer["text"] == "There's no watcher for you."  # unlisted, and nothing of hers
     assert answer["as"] == WATCHER_APP  # not the assistant's bot
 
 

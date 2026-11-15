@@ -133,8 +133,10 @@ _STATUS_AFTER = {"suspend": "suspended", "retire": "retired"}  # resume and rest
 # whatever their case, slashes or scheme.
 _IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 _TAG = re.compile(r"</?[A-Za-z][^>]*>")  # HTML, and autolinks such as <https://...>
-_MARKDOWN_LINK = re.compile(r"\[([^\]]*)\]\(\s*([^)\s]*)[^)]*\)")
-_URL = re.compile(r"(?i)(?:\b[a-z][a-z0-9+.-]*:[/\\]+|(?<![\w:/\\])//|\bwww\.)[^\s)>\]]*")
+# A link's target, and an address, end where a page's would end one: at a quote, a backtick or a
+# <, as well as at a space or a bracket, so what a5s checks is all a page links (round 11, E-2)
+_MARKDOWN_LINK = re.compile(r"\[([^\]]*)\]\(\s*([^)\s'\"`<]*)[^)]*\)")
+_URL = re.compile(r"(?i)(?:\b[a-z][a-z0-9+.-]*:[/\\]+|(?<![\w:/\\])//|\bwww\.)[^\s)>\]'\"`<]*")
 # a5s's own note on values, which only a5s writes: an agent's copy of one is dropped
 _FORGED_NOTE = re.compile(r"(?is)\(\s*a5s\s*:.*?\)")
 
@@ -163,10 +165,11 @@ def sanitize(text: str, allowed: tuple[str, ...], notes: bool = True) -> tuple[s
 
     def link(match: re.Match) -> str:
         nonlocal removed
-        if kept(match.group(2)):
-            return match.group(0)
+        label = _URL.sub(url, match.group(1))  # whose words may hold an address too
+        if kept(match.group(2)):  # the link alone: nothing else it carries past its target
+            return f"[{label}]({match.group(2)})"
         removed += 1
-        return f"{match.group(1)} [link removed]"
+        return f"{label} [link removed]"
 
     def url(match: re.Match) -> str:
         nonlocal removed

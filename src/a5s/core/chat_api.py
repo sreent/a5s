@@ -30,7 +30,8 @@ def router(gw: Any) -> APIRouter:
 
     @pages.get("/chat/config")
     def chat_config() -> dict:
-        """How the page signs people in, and which agents they can talk to."""
+        """How the page signs people in: nothing of the agents, which the page asks for once
+        someone's signed in, and then only those that serve them (`/channels/local/agents`)."""
         if not web.webchat(gw):
             raise HTTPException(404, "the web chat isn't set up here")
         signin = None
@@ -43,7 +44,8 @@ def router(gw: Any) -> APIRouter:
                       "end_session_endpoint": where.get("end_session_endpoint"),
                       "client_id": gw.cfg.webchat_client_id, "scope": "openid profile"}
         return {"signin": signin, "development": gw.identity is None and gw.cfg.development,
-                "agents": sorted(gw.definitions)}
+                # the only links the page makes: the scenario's records, and a5s's own pages
+                "links": [*gw.scenario.record_links, f"{gw.public_url}/"]}
 
     @pages.post("/chat/token")
     def chat_token(body: web.TokenRequest) -> JSONResponse:

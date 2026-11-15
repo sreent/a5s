@@ -50,6 +50,9 @@ def lacks(template: Path, tools: dict[str, Tool]) -> list[str]:
 def new(template: Path, name: str, into: Path, tools: dict[str, Tool]) -> Path:
     """A new agent's folder, `into`/`name`, from a template's, with its tools pinned against the
     scenario's `tools`. Nothing is left behind if it can't be made."""
+    if name in definitions.RESERVED:
+        raise ValueError(f"an agent can't be called {name}: in a conversation, that's who the "
+                         "other words are by")
     if len(name) > LONGEST or not NAME.fullmatch(name):
         raise ValueError(f"name it in lower case letters and digits, with single hyphens between, "
                          f"starting with a letter, in {LONGEST} characters or fewer, such as "

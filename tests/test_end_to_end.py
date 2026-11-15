@@ -78,8 +78,7 @@ def test_a_suspended_agent_answers_from_code_not_the_model(stack):
 
 def test_people_outside_the_directory_or_the_instance_get_no_agent(stack):
     assert "doesn't know who you are" in stack.say("hi", person="mallory")
-    assert stack.say("hi", person="chen") == (
-        "There's no assistant for you yet. Ask Ana Ortiz to add you.")
+    assert stack.say("hi", person="chen") == "There's no assistant for you."  # as for none
     assert not stack.model.requests
 
 

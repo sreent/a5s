@@ -209,8 +209,8 @@ def test_a_group_the_agent_doesnt_serve_everyone_in_hears_so(stack, homeserver):
     homeserver.rooms[ROOM] = {ANA, CHEN, BOT}  # the assistant serves Ana and Ben, not Chen
     deliver(homeserver, mention(ASKED))
     stack.scheduler().answer_waiting()
-    assert homeserver.sent[-1]["body"] == groups.UNSERVED.format(  # whom, and who adds them
-        who="Chen Wei", add="As the owner of the parts it works in, you can add them.")
+    assert homeserver.sent[-1]["body"] == groups.UNSERVED.format(  # whom, naming nobody else
+        who="Chen Wei", add="Whoever approves the agents here can add them.")
     assert stack.model.requests == []
 
 

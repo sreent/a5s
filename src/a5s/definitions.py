@@ -135,6 +135,11 @@ KEPT = 0.2  # of each person's day, for chases and reminders
 ASKED = 0.2  # and beside it, for what they ask themselves, which their tasks never spend
 
 
+# Names no agent may have: in a conversation, the person's own words are by "you", and a5s's by
+# "a5s" (core/inbox.py)
+RESERVED = frozenset({"you", "a5s"})
+
+
 class Budget(BaseModel):
     """How much model work an instance may do, in tokens as the providers count them: in one
     run, and for each person it acts for, each day (core/budgets.py)."""
@@ -184,6 +189,14 @@ class Definition(BaseModel):
     @property
     def tool_names(self) -> list[str]:
         return [name for names in self.tools.values() for name in names]
+
+    @field_validator("id")
+    @classmethod
+    def _not_reserved(cls, given: str) -> str:
+        if given in RESERVED:
+            raise ValueError(f"an agent can't be called {given}: in a conversation, that's who "
+                             "the other words are by")
+        return given
 
     @model_validator(mode="after")
     def _budgets_fit_the_context(self) -> Definition:
