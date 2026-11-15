@@ -125,7 +125,7 @@ function card(proposal) {
   const names = element("span");
   names.append(element("span", `The ${proposal.agent} asks`, "who-name"), element("span", about, "who-about"));
   who.append(mark, names);
-  const title = element("h3", what, "approval-title");
+  const title = element("h2", what, "approval-title");
   title.id = `title-${proposal.key}`;
   body.append(who, title);
   if (rest.length) body.append(element("p", rest.join("\n"), "said"));

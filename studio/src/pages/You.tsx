@@ -15,7 +15,7 @@ export function YouPage() {
       {data && (
         <>
           <section className="card" id="roles">
-            <h3>{data.you}</h3>
+            <h2>{data.you}</h2>
             {data.roles.length === 0
               ? <p className="note">You hold none of a5s's roles: you use the agents that serve you, and see your own tasks and notebook. Whoever approves the agent you'd use can add you.</p>
               : (
@@ -28,7 +28,7 @@ export function YouPage() {
               )}
           </section>
           <section className="card" id="groups">
-            <h3>Your groups</h3>
+            <h2>Your groups</h2>
             {data.groups.length === 0
               ? <p className="note">Your latest sign-in showed none of the groups a5s's settings give roles.</p>
               : <p>Your latest sign-in showed {data.groups.map((g, i) => <span key={g}>{i > 0 && ", "}<span className="mono">{g}</span></span>)}.</p>}

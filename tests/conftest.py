@@ -27,6 +27,7 @@ import psycopg
 import pytest
 import uvicorn
 import yaml
+from axe_playwright_python.sync_playwright import Axe
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
@@ -665,3 +666,12 @@ def with_sandbox(stack: Stack, box: Any) -> Iterator[str]:
     with serve(sandbox.create_app(box, "shared-token"), free_port()) as url:
         stack.cfg = replace(stack.cfg, sandbox_url=url, sandbox_token="shared-token")
         yield url
+
+
+def accessible(page) -> None:
+    """Axe finds nothing amiss on a page, light or dark, by WCAG's rules and its best
+    practices."""
+    for scheme in ("light", "dark"):
+        page.emulate_media(color_scheme=scheme)
+        found = Axe().run(page, options={"resultTypes": ["violations"]})
+        assert found.violations_count == 0, f"{scheme}: {found.generate_report()}"

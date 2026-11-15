@@ -17,7 +17,7 @@
 .crumbs a:hover { color: var(--accent); }
 .crumbs .sep { color: var(--faint); margin: 0 0.35rem; }
 .title-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
-.title-row h2 { margin: 0; }
+.title-row h1 { margin: 0; }
 .about { color: var(--muted); margin: 0.45rem 0 0; max-width: 56rem; }
 .meta { display: flex; flex-wrap: wrap; gap: 0.35rem 1.1rem; margin-top: 0.6rem; color: var(--muted); font-size: 0.88rem; }
 .period { display: inline-flex; align-items: center; gap: 0.4rem; margin-top: 0.85rem; }
@@ -127,8 +127,8 @@ table.runs-table tbody tr:hover { background: var(--sunken); }
 .map-text { min-width: 0; }
 .map-title { font-weight: 600; font-size: 0.86rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .map-detail { font-size: 0.74rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.map-node.agent { border-color: var(--accent); background: var(--accent-soft); }
-.map-node.agent .map-icon { color: var(--accent); }
+.map-node.agent { border-color: var(--agent-tone); background: var(--agent-tone-soft); }  /* agents, as everywhere */
+.map-node.agent .map-icon { color: var(--agent-tone); }
 .map-node.checks { border-color: var(--own); }
 .map-node.checks .map-icon { color: var(--own); }
 .map-node.changes { border-left-color: var(--changes); }
@@ -258,7 +258,7 @@ button.quiet { background: transparent; border-color: var(--line); color: var(--
 .try-keep .note, .try-keep .problem { flex-basis: 100%; margin: 0; }
 .cases { display: grid; gap: 0.6rem; padding-top: 0.9rem; border-top: 1px solid var(--line); }
 .cases-head { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; }
-.cases-head h4 { margin: 0; }
+.cases-head h3 { margin: 0; }
 .cases p { margin: 0; }
 .case-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.5rem; }
 .case { padding: 0.5rem 0.7rem; border: 1px solid var(--line); border-radius: 8px; display: grid; gap: 0.3rem; }

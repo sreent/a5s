@@ -36,7 +36,7 @@ export function NewPage() {
       {data && (
         <form className="new-agent" onSubmit={make}>
           <section className="card">
-            <h3>Its name</h3>
+            <h2>Its name</h2>
             <label className="field">
               <span>Lower case letters and digits, with single hyphens between</span>
               <input id="agent-name" value={name} placeholder="finance-helper" autoComplete="off"
@@ -44,7 +44,7 @@ export function NewPage() {
             </label>
           </section>
           <section className="card">
-            <h3>Start from</h3>
+            <h2>Start from</h2>
             <div className="template-grid" role="radiogroup" aria-label="Start from">
               {data.templates.map((t) => (
                 <label key={t.name} className={`template${t.lacks.length ? " lacking" : ""}${chosen === t.name ? " chosen" : ""}`}>

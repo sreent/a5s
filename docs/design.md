@@ -68,10 +68,14 @@ The popover a traced value opens and the hint are Radix's, which keyboards and s
 The browser tests open the showcase signed in, and check that:
 
 - each piece is there;
-- [axe](https://github.com/dequelabs/axe-core) finds nothing amiss in light or dark, by WCAG's rules and its best practices. One rule waits for the pages' step: each page's own first-level heading, where the studio's pages title themselves with a second-level one beside the sidebar;
+- [axe](https://github.com/dequelabs/axe-core) finds nothing amiss in light or dark, by WCAG's rules and its best practices, as on every page people use (`tests/test_ui_pages.py`);
 - each piece works from the keyboard: a traced value opens and closes with focus back on it, a hint shows to whoever tabs to it, and the dialog starts on "Keep it" and closes with Escape even when a hint was open;
 - nothing on the page writes an error to the console, such as a style the pages' policy refused.
 
-## Next
+## Pages
 
-The pages, on these pieces: decisions on the approval card, made for a phone; each agent's facts and ladder on its page; a run as a timeline; and each page's first-level heading.
+Each page's title is its first-level heading, its sections' are the second level and theirs the third, the studio's pages and the server's alike; the sidebar names a5s. The pages are moving onto the pieces:
+
+- **Decisions** are approval cards, made for a phone: who asks and for whom, what the change does in the words code worked out when it was asked for, never the agent's own, what to know, and Approve or Reject. The cards make a column on a phone and sit side by side where there's room.
+- **The catalogue** leads each agent's card with what it does, and the agent's map draws it in the agent colour.
+- Next: each agent's facts and ladder on its page, and a run as a timeline.

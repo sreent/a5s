@@ -125,14 +125,14 @@ function TheirDraft({ draft }: { draft: Draft }) {
       <section className={`card ${draft.problems.length ? "" : "ready"}`} id="problems">
         {draft.problems.length === 0
           ? <p><span className="badge good">ready</span> Nothing would stop its release here, by the checks <span className="mono">a5s agent check</span> makes.</p>
-          : <><h3>What would stop its release</h3><ul className="plain">{draft.problems.map((p) => <li key={p}>{p}</li>)}</ul></>}
+          : <><h2>What would stop its release</h2><ul className="plain">{draft.problems.map((p) => <li key={p}>{p}</li>)}</ul></>}
       </section>
       <section className="card map-card">
-        <h3>How it's wired</h3>
+        <h2>How it's wired</h2>
         {draft.preview ? <AgentMap agent={draft.preview} /> : <p className="note">Its map shows once its definition loads.</p>}
       </section>
       <section className="card editor" id="their-files">
-        <h3>Its files</h3>
+        <h2>Its files</h2>
         <Raw files={draft.files} change={() => undefined} readOnly />
       </section>
     </>
@@ -246,10 +246,10 @@ export function DraftPage({ id }: { id: string }) {
           <section className={`card ${said.problems.length ? "" : "ready"}`} id="problems" aria-live="polite">
             {said.problems.length === 0
               ? <p><span className="badge good">ready</span> Nothing would stop its release here, by the checks <span className="mono">a5s agent check</span> makes.</p>
-              : <><h3>What would stop its release</h3><ul className="plain">{said.problems.map((p) => <li key={p}>{p}</li>)}</ul></>}
+              : <><h2>What would stop its release</h2><ul className="plain">{said.problems.map((p) => <li key={p}>{p}</li>)}</ul></>}
           </section>
           <section className="card" id="signers">
-            <h3>Who would sign its release</h3>
+            <h2>Who would sign its release</h2>
             {said.signers === null && <p className="note">Once its definition loads.</p>}
             {said.signers?.length === 0 && <p className="note">Nobody yet: it changes nothing of what's released here.</p>}
             {said.signers && said.signers.length > 0 && (
@@ -260,7 +260,7 @@ export function DraftPage({ id }: { id: string }) {
             <p className="note">As <span className="mono">a5s release</span> works it out, from what it changes of the agents released here. The pull request it's published as names them.</p>
           </section>
           <section className="card map-card">
-            <h3>How it's wired</h3>
+            <h2>How it's wired</h2>
             {said.preview ? <AgentMap agent={said.preview} /> : <p className="note">Its map shows once its definition loads.</p>}
           </section>
           <section className="card editor">
@@ -281,13 +281,13 @@ export function DraftPage({ id }: { id: string }) {
             {tab === "files" && <Raw files={files} change={change} />}
           </section>
           <section className="card" id="try">
-            <h3>Try it in the sandbox</h3>
+            <h2>Try it in the sandbox</h2>
             <TryIt draft={id} name={draft.agent} ready={said.problems.length === 0 && kept === "kept"}
                    keep={(testCase) => change({ ...files, [CASES]: withCase(files[CASES] ?? "", testCase) })}
                    revision={revision} />
           </section>
           <section className="card" id="publishing">
-            <h3>Publish it</h3>
+            <h2>Publish it</h2>
             <Publish draft={id} name={draft.agent} ready={said.problems.length === 0 && kept === "kept"}
                      published={draft.published} publishing={draft.publishing} revision={revision} />
           </section>

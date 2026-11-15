@@ -222,11 +222,11 @@ header, footer {
   border-bottom: 1px solid var(--line);
 }
 
-body.app header h1 { display: none; }  /* the sidebar names a5s */
+body.app header .site-name { display: none; }  /* the sidebar names a5s */
 body.app header { min-height: 3.25rem; }
 footer { border-top: 1px solid var(--line); border-bottom: 0; position: sticky; bottom: 0; }
 
-h1 { font-size: 1.1rem; margin: 0 auto 0 0; }
+.site-name { margin: 0 auto 0 0; font-size: 1.1rem; font-weight: 700; }
 #who { color: var(--muted); margin-left: auto; }
 
 main { flex: 1; width: 100%; max-width: 76rem; margin: 0 auto; padding: 1.75rem 2rem 3rem; }
@@ -244,12 +244,13 @@ main { flex: 1; width: 100%; max-width: 76rem; margin: 0 auto; padding: 1.75rem 
 
 /* Type */
 
-h2 { font-size: 1.45rem; font-weight: 650; letter-spacing: -0.01em; margin: 0 0 0.35rem; }
-h3 { font-size: 1.02rem; font-weight: 600; margin: 1.5rem 0 0.6rem; }
-h4 { font-size: 0.92rem; font-weight: 600; margin: 1.1rem 0 0.4rem; color: var(--muted); }
-section > h3:first-child, .card > h3:first-child { margin-top: 0; }
+/* Each page's title is its first-level heading, its sections' the second, and theirs the third */
+h1 { font-size: 1.45rem; font-weight: 650; letter-spacing: -0.01em; margin: 0 0 0.35rem; }
+h2 { font-size: 1.02rem; font-weight: 600; margin: 1.5rem 0 0.6rem; }
+h3 { font-size: 0.92rem; font-weight: 600; margin: 1.1rem 0 0.4rem; color: var(--muted); }
+section > h2:first-child, .card > h2:first-child { margin-top: 0; }
 .note { color: var(--muted); font-size: 0.9rem; }
-main > h2 + .note { margin: 0 0 1.5rem; max-width: 52rem; }
+main > h1 + .note { margin: 0 0 1.5rem; max-width: 52rem; }
 #status:empty { display: none; }
 #status { color: var(--muted); }
 
@@ -417,7 +418,7 @@ article { background: var(--surface); border: 1px solid var(--line); border-radi
 .approval-stripe.writes { background: var(--writes); }
 .approval-stripe.outside { background: var(--outside); }
 .approval-body { display: grid; gap: var(--space-3); padding: var(--space-4) var(--space-5) var(--space-5); }
-.approval-title { margin: 0; font-size: var(--text-lg); font-weight: 600; }
+.approval-title { margin: 0; color: var(--text); font-size: var(--text-lg); font-weight: 600; }
 .approval-changes { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-3);
                     margin: 0; padding: var(--space-3); border-radius: var(--radius-md); background: var(--sunken); }
 dl .pair { display: contents; }  /* a term and what it says, in a list that lays out as a grid */
@@ -452,7 +453,7 @@ main > section.bare { padding: 0; border: 0; background: none; box-shadow: none;
 .agent-facts { max-width: 24rem; margin: 0; padding: var(--space-3) var(--space-4) var(--space-4);
                border: 2px solid var(--text); border-radius: var(--radius-sm); background: var(--surface);
                font-size: var(--text-md); }
-.agent-facts h3 { margin: 0; font-size: 1.4rem; font-weight: 700; line-height: 1.2; }
+.agent-facts h3 { margin: 0; color: var(--text); font-size: 1.4rem; font-weight: 700; line-height: 1.2; }
 .agent-facts .rule { border-top: 7px solid var(--text); margin: var(--space-2) 0 var(--space-1); }
 .agent-facts .thin { border-top: 1px solid var(--text); margin: var(--space-1) 0; }
 .agent-facts dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.15rem var(--space-3); margin: 0; }

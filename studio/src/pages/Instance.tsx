@@ -43,7 +43,7 @@ function Breakdown({ figures }: { figures: Figures }) {
   return (
     <div className="two-up pairs">
       <section className="card">
-        <h3>How runs ended</h3>
+        <h2>How runs ended</h2>
         {figures.ended.length === 0 ? <p className="note">No runs in this period.</p> : (
           <table className="grid-table compact">
             <thead><tr><th>Started by</th><th>Ended</th><th className="num">Runs</th></tr></thead>
@@ -54,7 +54,7 @@ function Breakdown({ figures }: { figures: Figures }) {
         )}
       </section>
       <section className="card">
-        <h3>What a5s refused</h3>
+        <h2>What a5s refused</h2>
         {figures.denied.length === 0 ? <p className="note">Nothing was denied.</p> : (
           <ul className="plain">{figures.denied.map((d) => (
             <li key={`${d.kind}-${d.action}-${d.reasons.join()}`}>
@@ -65,7 +65,7 @@ function Breakdown({ figures }: { figures: Figures }) {
         )}
       </section>
       <section className="card">
-        <h3>What fell due</h3>
+        <h2>What fell due</h2>
         <dl className="facts">
           <dt>What people owed</dt><dd>{o.due ? `${o.due} due: ${o.on_time} on time, ${o.late} late, ${o.open} open; ${o.chased} chased, ${o.escalated} taken up the line` : "nothing"}</dd>
           <dt>Reminders</dt><dd>{r.due ? `${r.due} due: ${r.on_time} on time, ${r.missed} missed` : "none fell due"}</dd>
@@ -73,7 +73,7 @@ function Breakdown({ figures }: { figures: Figures }) {
         </dl>
       </section>
       <section className="card">
-        <h3>Who came back</h3>
+        <h2>Who came back</h2>
         {figures.returning.length === 0 ? <p className="note">Nobody wrote before this period.</p> : (
           <ul className="plain">{figures.returning.map((x) => (
             <li key={x.agent}>{x.came_back} of the {people(x.wrote_before)} who wrote to the {x.agent} before</li>
@@ -106,7 +106,7 @@ function Runs({ instance }: { instance: string }) {
   const hidden = all.reduce((n, p) => n + p.hidden, 0);
   return (
     <section className="card wide">
-      <h3>Runs</h3>
+      <h2>Runs</h2>
       {!first.data && <Waiting error={first.error} />}
       {first.data && runs.length === 0 && <p className="note">No runs you may see.</p>}
       {runs.length > 0 && (
@@ -157,7 +157,7 @@ export function InstancePage({ id }: { id: string }) {
         <div className={figures.stale ? "stale" : undefined}>
           <Tiles figures={figures.data} />
           <section className="card">
-            <h3>Runs by day</h3>
+            <h2>Runs by day</h2>
             <RunsByDay days={figures.data.daily} zone={figures.data.zone} />
           </section>
           <Breakdown figures={figures.data} />

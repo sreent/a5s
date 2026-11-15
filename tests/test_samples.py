@@ -236,7 +236,7 @@ def test_a_grader_grades_in_the_browser(stack, approving, provider, browser):
     page.goto(f"{approving}/grade/")
     page.wait_for_selector("article >> text=Q-1002", timeout=30000)
     assert page.inner_text("#who") == "Dana Price"
-    assert page.inner_text("article h3") == "assistant, change-due-date in billing: asked for, and approved"
+    assert page.inner_text("article h2") == "assistant, change-due-date in billing: asked for, and approved"
     page.click("article button >> text=Right")
     page.click("#send")
     page.wait_for_selector("#status >> text=Graded right", timeout=30000)

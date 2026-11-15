@@ -1,5 +1,6 @@
-"""Every page people use, in a browser, signed in: each opens, and with A5S_SCREENSHOTS naming a
-folder, is saved there as a screenshot, light and dark, for people to review how a5s looks."""
+"""Every page people use, in a browser, signed in: each opens, axe finds nothing amiss on it,
+light or dark, and with A5S_SCREENSHOTS naming a folder, it's saved there as a screenshot, light
+and dark, for people to review how a5s looks."""
 
 from __future__ import annotations
 
@@ -7,6 +8,8 @@ import os
 from pathlib import Path
 
 import pytest
+
+from conftest import accessible
 
 PAGES = ("chat", "tasks", "notebook", "studio", "settings", "decide", "grade", "audit", "admin",
          "officer")
@@ -52,6 +55,7 @@ def test_each_page_opens_signed_in_beside_a_sidebar(seen, approving, browser, na
         page.wait_for_selector("#pages a[aria-current=page]", timeout=30000)
         assert page.locator("#pages a[aria-current=page]").get_attribute("href") == f"/{name}/"
         assert page.locator("#me").inner_text().endswith("Ana Ortiz")
+    accessible(page)
     shot(page, name)
 
 

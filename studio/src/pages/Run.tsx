@@ -43,7 +43,7 @@ export function RunPage({ id }: { id: string }) {
           </div>
           <div className="two-up">
             <section className="card">
-              <h3>What started it</h3>
+              <h2>What started it</h2>
               <dl className="facts">
                 <dt>Kind</dt><dd>{run.trigger ?? "other"}</dd>
                 {started.map(([key, value]) => (
@@ -55,7 +55,7 @@ export function RunPage({ id }: { id: string }) {
               </dl>
             </section>
             <section className="card">
-              <h3>Records it read</h3>
+              <h2>Records it read</h2>
               {run.records.length === 0 ? <p className="note">None.</p> :
                 <div className="chips">{run.records.map((r) => <span key={r} className="chip mono">{r}</span>)}</div>}
               {run.read_outside && <p><span className="badge outside">read content from outside the organisation</span></p>}
@@ -63,13 +63,13 @@ export function RunPage({ id }: { id: string }) {
           </div>
           {agent.data && usesOf(agent.data) && (
             <section className="card map-card">
-              <h3>Its path</h3>
+              <h2>Its path</h2>
               <p className="note">What started it, and the tools it called through a5s's checks, with how many times and how many a5s refused, on its agent's map. What it didn't use is faded.</p>
               <AgentMap agent={agent.data} run={run} />
             </section>
           )}
           <section className="card wide">
-            <h3>What it did, in order</h3>
+            <h2>What it did, in order</h2>
             {run.calls.length === 0 && <p className="note">It called no tools.</p>}
             {run.calls.length > 0 && (
               <ol className="steps">

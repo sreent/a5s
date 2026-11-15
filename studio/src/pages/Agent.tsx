@@ -14,7 +14,7 @@ const ORDER: Risk[] = ["changes", "outside", "writes", "reads"];
 function Tools({ agent }: { agent: AgentUses }) {
   return (
     <section className="card">
-      <h3>Tools</h3>
+      <h2>Tools</h2>
       {ORDER.map((kind) => {
         const these = agent.tools.filter((t) => risk(t) === kind);
         if (!these.length) return null;
@@ -45,7 +45,7 @@ function Tools({ agent }: { agent: AgentUses }) {
 function When({ agent }: { agent: AgentUses }) {
   return (
     <section className="card">
-      <h3>When it works</h3>
+      <h2>When it works</h2>
       <dl className="facts">
         <dt>Starts on</dt><dd>{triggers(agent).map((t) => `${t.kind}, ${t.about}`).join("; ") || "nothing"}</dd>
         <dt>Channels</dt><dd>{agent.channels.join(", ") || "none"}</dd>
@@ -80,7 +80,7 @@ function Knows({ agent }: { agent: AgentUses }) {
   const other = Object.entries(rest).filter(([key]) => !(key in ABILITIES));
   return (
     <section className="card">
-      <h3>What it knows, and may spend</h3>
+      <h2>What it knows, and may spend</h2>
       <dl className="facts">
         {builtOf(agent) && <div className="fact-pair"><dt>Skills</dt><dd>{agent.skills.join(", ") || "none"}</dd></div>}
         {typeof conversation === "number" && (
@@ -104,7 +104,7 @@ function Knows({ agent }: { agent: AgentUses }) {
 function Where({ agent }: { agent: AgentKnown }) {
   return (
     <section className="card wide">
-      <h3>Where it runs</h3>
+      <h2>Where it runs</h2>
       {agent.instances.length === 0 && <p className="note">No instance you may watch runs it.</p>}
       {agent.instances.length > 0 && (
         <table className="grid-table">
@@ -159,7 +159,7 @@ function Seen({ agent }: { agent: AgentKnown }) {
     ["You may change it", layers.changing]];
   return (
     <section className="card" id="seen">
-      <h3>What you see of it, and why</h3>
+      <h2>What you see of it, and why</h2>
       <dl className="facts">
         {lines.filter(([, why]) => why).map(([what, why]) => (
           <div key={what} className="fact-pair"><dt>{what}</dt><dd>{why!.join("; ")}</dd></div>
@@ -189,7 +189,7 @@ function AskFor({ agent, reload }: { agent: AgentKnown; reload: () => void }) {
   };
   return (
     <section className="card" id="ask">
-      <h3>Asking for it</h3>
+      <h2>Asking for it</h2>
       {agent.ask
         ? <p>You asked for it {when(agent.ask.asked_at)}. It waits on its owners and those who approve its instances, who answer it with a version of the settings that serves you.</p>
         : <p>To have it serve you, ask for it: its owners and those who approve its instances see what you asked.</p>}
@@ -219,7 +219,7 @@ function AsksWaiting({ agent, reload }: { agent: AgentKnown; reload: () => void 
   if (!agent.asks?.length) return null;
   return (
     <section className="card" id="asks">
-      <h3>Asked for</h3>
+      <h2>Asked for</h2>
       <ul className="plain">{agent.asks.map((a) => (
         <li key={a.id}>{a.person} asked for it {when(a.asked_at)} <span className="faint">· {a.why.join("; ")}</span>
           <div className="actions">
@@ -261,7 +261,7 @@ export function AgentPage({ id }: { id: string }) {
         <>
           {uses && (
             <section className="card map-card">
-              <h3>How it's wired</h3>
+              <h2>How it's wired</h2>
               <p className="note">What starts its runs, and the tools it may call, each through a5s's checks. Changes to records wait for a person to decide at level 1.</p>
               <AgentMap agent={uses} />
             </section>
@@ -269,7 +269,7 @@ export function AgentPage({ id }: { id: string }) {
           <div className="agent-body">
             <div>
               <section className="card">
-                <h3>What it does</h3>
+                <h2>What it does</h2>
                 <p>{agent.does}</p>
                 {builtOf(agent) && agent.instructions && (
                   <details>

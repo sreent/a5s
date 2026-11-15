@@ -17,8 +17,7 @@ import pytest
 from a5s import db
 from a5s.contract import record_of
 from a5s.core import proposals
-from conftest import CLIENT
-from test_design import accessible
+from conftest import CLIENT, accessible
 
 MOVE = ("change_due_date", {"key": "Q-1002", "due": "2026-11-13"})
 
@@ -325,7 +324,7 @@ def test_a_decider_reviews_and_approves_in_the_browser(stack, approving, provide
     # On its card: who asks and for whom, what it does in code's words, and what to know
     assert page.inner_text(".approval .who-name") == "The assistant asks"
     assert page.inner_text(".approval .who-about").startswith("P-1 · for Ben Okafor · asked ")
-    assert page.inner_text(".approval h3").startswith(
+    assert page.inner_text(".approval h2").startswith(
         f"Change a customer question's due date: Q-1002, with due {day}.")
     assert "as it stood when it was asked for: status waiting on finance" in page.inner_text(
         ".approval .said")

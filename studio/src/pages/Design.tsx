@@ -49,14 +49,14 @@ export function DesignPage() {
         whether a person or an agent did it." />
 
       <section className="card wide" data-piece="colours">
-        <h3>Colours</h3>
+        <h2>Colours</h2>
         <p className="note">What each colour is for, in light or dark as your device is. Pages name these, never a
           colour of their own.</p>
         <Swatches />
       </section>
 
       <section className="card wide" data-piece="type">
-        <h3>Type</h3>
+        <h2>Type</h2>
         <p className="type-sample big">Waiting on you</p>
         <p className="type-sample">Changes to records wait for a person to decide at level 1.</p>
         <p className="type-sample mono">0.1.0+f0a5fd78a056 · run r-8f3a2c</p>
@@ -64,7 +64,7 @@ export function DesignPage() {
 
       <div className="two-up">
         <section className="card" data-piece="buttons">
-          <h3>Buttons and badges</h3>
+          <h2>Buttons and badges</h2>
           <div className="chips">
             <button type="button" className="primary">Approve</button>
             <button type="button">Ask why</button>
@@ -87,7 +87,7 @@ export function DesignPage() {
         </section>
 
         <section className="card" data-piece="people">
-          <h3>People and agents</h3>
+          <h2>People and agents</h2>
           <p className="note">People are round and agents are rounded squares in the agent colour, wherever they
             appear, so who did what reads at a glance.</p>
           <div className="chips">
@@ -105,7 +105,7 @@ export function DesignPage() {
 
       <div className="two-up">
         <section className="card" data-piece="approval">
-          <h3>A decision</h3>
+          <h2>A decision</h2>
           <ApprovalCard agent="assistant" asks="asks to change a due date"
             about="for Ben Okafor · billing · 2 minutes ago"
             changes={[{ what: "Question", to: "Q-1001" }, { what: "Due", from: "15 Nov", to: "30 Nov" }]}
@@ -114,7 +114,7 @@ export function DesignPage() {
         </section>
 
         <section className="card" data-piece="facts">
-          <h3>Agent facts</h3>
+          <h2>Agent facts</h2>
           <AgentFacts name="assistant" version="0.1.0"
             facts={[["Works for", "billing, 2 people"], ["Autonomy", "level 1: changes wait for a yes"],
               ["Reads", "records, messages"], ["Writes", "drafts"], ["Changes", "due dates, with a yes"],
@@ -127,12 +127,12 @@ export function DesignPage() {
 
       <div className="two-up">
         <section className="card" data-piece="ladder">
-          <h3>Autonomy, earned</h3>
+          <h2>Autonomy, earned</h2>
           <AutonomyLadder level={1} max={2} toward={{ what: "Due-date changes", graded: 36, needed: 50 }} />
         </section>
 
         <section className="card" data-piece="timeline">
-          <h3>A run, as time</h3>
+          <h2>A run, as time</h2>
           <RunTimeline steps={[
             { at: "14:02:01", tone: "idle", what: <>Ben Okafor: <q>Can we give them until the end of the month?</q></> },
             { at: "14:02:03", tone: "reads", what: <><code>get_record</code> Q-1001</>, detail: "reads · 120 ms" },
@@ -145,7 +145,7 @@ export function DesignPage() {
       </div>
 
       <section className="card wide" data-piece="confirm">
-        <h3>Asking first</h3>
+        <h2>Asking first</h2>
         <p className="note">For what can't be undone, a page asks first, and says what will happen.</p>
         {removed ? <p role="status">The draft is gone.</p> : (
           <Confirm label="Delete this draft" title="Delete the draft of scout?"

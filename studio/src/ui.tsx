@@ -40,7 +40,7 @@ export function PageHead({ crumbs = [], title, about, badges, children }:
         </nav>
       )}
       <div className="title-row">
-        <h2>{title}</h2>
+        <h1>{title}</h1>
         {badges}
       </div>
       {about && <p className="about">{about}</p>}

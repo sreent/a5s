@@ -148,7 +148,11 @@ async function load() {
     }
     again.append(item);
   }
-  if (!now.repeats.length) again.append(line("None. Ask an agent to do a task every week, say, in your chat with it.", "note"));
+  if (!now.repeats.length) {  // a list holds its items alone, so the note is one
+    const none = document.createElement("li");
+    none.append(line("None. Ask an agent to do a task every week, say, in your chat with it.", "note"));
+    again.append(none);
+  }
   status(now.tasks.length ? "" : "No tasks yet. Ask an agent for one in your chat with it.");
 }
 

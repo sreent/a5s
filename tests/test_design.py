@@ -6,11 +6,10 @@ if it reads less well."""
 import re
 
 import httpx
-from axe_playwright_python.sync_playwright import Axe
 from playwright.sync_api import expect
 
 from a5s.core import web
-from conftest import ROOT
+from conftest import ROOT, accessible
 from test_ui_pages import shot
 from test_webchat import channels
 
@@ -99,18 +98,6 @@ def test_the_pages_load_their_type_from_a5s_and_nowhere_else(stack):
 
 PIECES = ("colours", "type", "buttons", "people", "traced", "approval", "facts", "ladder",
           "timeline", "confirm")
-
-
-def accessible(page) -> None:
-    """Axe finds nothing amiss on a page, light or dark, by WCAG's rules and its best practices,
-    but one: a first-level heading on each page, which the pages' step of the design system
-    gives them, as the studio's and the server's pages title themselves with a second-level
-    heading beside the sidebar, which names a5s."""
-    for scheme in ("light", "dark"):
-        page.emulate_media(color_scheme=scheme)
-        found = Axe().run(page, options={"resultTypes": ["violations"],
-                                         "rules": {"page-has-heading-one": {"enabled": False}}})
-        assert found.violations_count == 0, f"{scheme}: {found.generate_report()}"
 
 
 def showcase(browser, url: str, errors: list[str]):

@@ -16,7 +16,7 @@ export function HomePage() {
       {data && (
         <>
           <section className="card" id="waiting">
-            <h3>Waiting on you</h3>
+            <h2>Waiting on you</h2>
             {data.waiting.length === 0
               ? <p className="note">Nothing waits on you now.</p>
               : (
@@ -31,7 +31,7 @@ export function HomePage() {
           </section>
           {data.drafts.length > 0 && (
             <section className="card" id="my-drafts">
-              <h3>Your drafts</h3>
+              <h2>Your drafts</h2>
               <ul className="plain">{data.drafts.map((d) => (
                 <li key={d.id}><Link to={{ page: "draft", draft: d.id }} className="mono">{d.agent}</Link>
                   <span className="faint"> · from {d.based_on} · kept {when(d.updated_at)}</span></li>
@@ -39,7 +39,7 @@ export function HomePage() {
             </section>
           )}
           <section className="card" id="next">
-            <h3>In the studio</h3>
+            <h2>In the studio</h2>
             <ul className="plain">
               {data.catalogue && <li><Link to={{ page: "agents" }}>The agents you may know of</Link>: what each does, and how those you watch are doing</li>}
               {data.authoring && <li><Link to={{ page: "new" }}>A new agent</Link>, from a template</li>}

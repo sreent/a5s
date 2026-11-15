@@ -47,7 +47,7 @@ function Cases({ draft, model, ready, revision }: { draft: string; model: string
   return (
     <div className="cases" id="cases">
       <div className="cases-head">
-        <h4>Its test cases</h4>
+        <h3>Its test cases</h3>
         <button type="button" className="quiet" id="run-cases" disabled={!ready || running || runnable.length === 0} onClick={run}>
           {running ? "Running them…" : `Run the ${runnable.length} the sandbox can`}</button>
       </div>

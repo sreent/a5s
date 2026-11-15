@@ -95,7 +95,7 @@ function show(found) {
   chosen.clear();
   for (const sample of found.samples) {
     const block = document.createElement("article");
-    const title = document.createElement("h3");
+    const title = document.createElement("h2");
     title.textContent = `${sample.agent}, ${sample.action} in ${sample.part}: ${sample.kind === "proposal"
       ? `asked for, and ${sample.decided === "approve" ? "approved" : "rejected"}` : "made at level 2"}`;
     const said = document.createElement("p");

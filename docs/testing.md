@@ -71,6 +71,8 @@ docker build --target studio-built --output src/a5s/core/webchat/studio .
 
 or, with Node 20.19 or later, `npm ci --prefix studio && npm run build --prefix studio`. Unbuilt, the studio answers 503 with how to build it, and its tests fail.
 
+Every page people use, the design system's showcase and the decisions page with a change waiting are checked with [axe](https://github.com/dequelabs/axe-core) in light and dark, by WCAG's rules and its best practices (`accessible` in `tests/conftest.py`), and a page that axe finds anything amiss on fails its test, with axe's report of what and where.
+
 If Chromium is unavailable, browser tests may skip locally. To require them, as CI does:
 
 ```sh
