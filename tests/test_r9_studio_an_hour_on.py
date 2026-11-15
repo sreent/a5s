@@ -8,6 +8,7 @@ from datetime import timedelta
 
 from a5s import db
 from a5s.core import retention
+from conftest import listed_runs
 from test_studio_pages import signed_in, with_ops
 
 
@@ -21,6 +22,7 @@ def _an_hour_later(stack) -> None:
 
 
 def test_a_run_stays_hidden_from_who_may_not_see_its_records(stack, approving, provider):
+    listed_runs(stack)  # enough people served for its runs to show one by one
     with_ops(stack)  # an assistant in orders that Omar runs, serving Chen
     stack.model.reply(None, ("search_records", {"query": "delivery"}))
     stack.model.reply("Q-1003, the delivery date for order 7781, is open.")
@@ -38,6 +40,7 @@ def test_a_run_stays_hidden_from_who_may_not_see_its_records(stack, approving, p
 
 
 def test_a_run_that_got_a_record_by_its_key_stays_off_the_list_too(stack, approving, provider):
+    listed_runs(stack)  # enough people served for its runs to show one by one
     with_ops(stack)
     stack.model.reply(None, ("get_record", {"key": "Q-1003"}))
     stack.model.reply("Q-1003 is open.")

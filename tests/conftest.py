@@ -604,6 +604,15 @@ def stack(database: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Ite
         yield s
 
 
+def listed_runs(stack: Stack) -> None:
+    """The sample's instances, serving enough people for their runs to show one by one without
+    names: the officer's fewest at its least, three, and the assistant serving Dana, who sees
+    billing, besides Ana and Ben. Fewer, and an instance shows its runs only in its daily
+    figures until the officer agrees to names (round 11, D-3)."""
+    assert not stack.settle(data_protection={"fewest_people": 3}, serves=["ana", "ben", "dana"],
+                            signers=("ana", "noor", "omar")).refused  # orders' owner, for any there
+
+
 def raise_cap(stack: Stack, part: str = "billing", action: str = "change-due-date",
               cap: int = 2, instance: str = "assistant-finance") -> None:
     """a5s's cap for an instance's release, as graded samples raise it: sealed by the core,

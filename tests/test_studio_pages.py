@@ -11,9 +11,9 @@ import yaml
 
 from a5s import db
 from a5s.core import studio_api
-from conftest import QUIET, accessible
+from conftest import QUIET, accessible, listed_runs
 
-OPS = {"definition": "assistant", "serves": ["chen"], "parts": ["orders"], "level": 1,
+OPS = {"definition": "assistant", "serves": ["chen", "omar", "dana"], "parts": ["orders"], "level": 1,
        "owner": "omar"}
 
 
@@ -56,6 +56,7 @@ def test_each_person_watches_what_they_run_own_or_decide_for(stack, approving, p
 
 
 def test_a_run_shows_only_to_those_who_may_see_its_records(stack, approving, provider):
+    listed_runs(stack)  # enough people served for its runs to show one by one
     with_ops(stack)
     stack.model.reply(None, ("get_record", {"key": "Q-1003"}))
     stack.model.reply("Q-1003 is waiting on the warehouse.")
@@ -101,6 +102,7 @@ def test_the_channels_app_reads_what_figures_count_never_what_was_said(stack, co
 
 
 def test_someone_watches_an_instance_in_the_browser(stack, approving, provider, browser):
+    listed_runs(stack)  # enough people served for its runs to show one by one
     from test_ui_pages import shot
 
     stack.model.reply(None, ("search_records", {"query": "invoice"}))
@@ -175,6 +177,7 @@ def test_someone_watches_an_instance_in_the_browser(stack, approving, provider, 
 
 
 def test_a_runs_path_shows_what_a5s_refused_it(stack, approving, provider, browser):
+    listed_runs(stack)  # enough people served for its runs to show one by one
     run, token = stack.open_run(sender="ben")
     with stack.client(token) as c:  # a tool it hasn't got, and then one it has
         assert c.post("/run/tools/delete_everything", json={"args": {}}).status_code == 403
@@ -225,6 +228,7 @@ def test_the_channels_apps_openapi_document_describes_the_peoples_api(approving)
 
 
 def test_a_chase_shows_only_to_those_who_may_see_the_record_it_chases(stack, approving, provider):
+    listed_runs(stack)  # enough people served for its runs to show one by one
     with_ops(stack)
     stack.at("2026-10-30T02:00:00+00:00")  # 10:00 in Singapore: half Q-1003's time has passed
     stack.model.reply("Chen, Q-1003 is due on Monday.")

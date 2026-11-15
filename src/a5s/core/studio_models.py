@@ -111,7 +111,6 @@ class Instance(Shape):
     parts: dict[str, Any]
     actions: dict[str, Any]
     model: str | None
-    serves: list[str]
     people: int
     owner: str | None
     deputy: str | None
@@ -396,7 +395,10 @@ class RunsPage(Shape):
     instance: str
     runs: list[RunLine]
     hidden: int  # the runs on the page whose every record the viewer may not see
-    before: str | None  # where the next page starts, if there's one
+    before: str | None  # where the next page starts, if there's one, sealed: it says nothing
+    # The fewest people an instance serves before its runs show one by one, without names, if
+    # this one serves fewer: its daily figures say what it did
+    fewer: int | None
 
 
 class Call(Shape):

@@ -3,7 +3,9 @@ of an agent (core/studio.py). The chat named every agent to anyone, without sign
 message to an agent that didn't serve its sender named the owners of the parts it works in."""
 
 import httpx
+import yaml
 
+from a5s import db
 from a5s.services.scheduler import NO_SUCH
 from test_webchat import channels
 
@@ -55,3 +57,49 @@ def test_each_administrative_act_is_said_as_what_it_was():  # B-6
     from a5s.core import audit
     assert audit.ADMIN["request"] == "asked for a version of the settings"
     assert audit.ADMIN["ask"] == "asked as the data protection officer"
+
+
+def test_an_instance_serving_fewer_than_the_officer_chose_shows_no_run_alone(  # D-3
+        stack, approving, provider):
+    from conftest import listed_runs
+    from test_studio_pages import signed_in
+    ops = {"definition": "assistant", "serves": ["chen"], "parts": ["orders"], "level": 1,
+           "owner": "omar"}  # Chen's own assistant, which Omar runs
+    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text())
+    assert not stack.settle(instances={**settings["instances"], "assistant-ops": ops},
+                            signers=("ana", "omar")).refused
+    stack.model.reply("Q-1003 is due on Monday.")
+    stack.say("When is Q-1003 due?", person="chen")
+    api = signed_in(approving, provider)
+    catalogue = api("/studio/api", "omar").json()
+    [shown] = [i for a in catalogue["agents"] for i in a["instances"] if i["id"] == "assistant-ops"]
+    assert "serves" not in shown and shown["people"] == 1  # how many, never whom
+    page = api("/studio/api/instances/assistant-ops/runs", "omar").json()
+    assert (page["runs"], page["fewer"]) == ([], 5)  # its daily figures say what it did
+    with db.transaction(stack.admin) as conn:
+        run = conn.execute("select id::text as id from runs where instance_id = 'assistant-ops'"
+                           ).fetchone()["id"]
+    assert api(f"/studio/api/runs/{run}", "omar").status_code == 404
+    listed_runs(stack)  # and finance's assistant, serving three, lists its runs, unnamed
+    stack.model.reply("Hello, Dana.")
+    stack.say("Hello", person="dana")
+    page = api("/studio/api/instances/assistant-finance/runs", "ana").json()
+    assert page["fewer"] is None and [r["acts_for"] for r in page["runs"]] == [[]]
+
+
+def test_where_the_next_page_of_runs_starts_says_nothing_of_the_run(stack, approving, provider):  # D-5
+    from conftest import listed_runs
+    from test_studio_pages import signed_in
+    listed_runs(stack)
+    for _ in range(2):
+        stack.model.reply("Noted.")
+        stack.say("Note this", person="ana")
+    api = signed_in(approving, provider)
+    page = api("/studio/api/instances/assistant-finance/runs?limit=1", "ben").json()
+    assert page["before"] and "|" not in page["before"]  # sealed: no moment, no id
+    older = api("/studio/api/instances/assistant-finance/runs?limit=1&before="
+                + page["before"], "ben").json()
+    assert older["runs"] and older["runs"][0]["run"] != page["runs"][0]["run"]
+    forged = api("/studio/api/instances/assistant-finance/runs?before=2026-01-01T00:00:00%2B00:00|"
+                 "00000000-0000-0000-0000-000000000000", "ben")
+    assert forged.status_code == 400

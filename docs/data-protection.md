@@ -94,7 +94,7 @@ Five of the officer's choices take effect in a5s itself, in the signed settings'
 | --- | --- | --- |
 | `kept_for` | 12 months | How long a5s keeps what's said, after a conversation's last message, and what goes with it: summaries, notes, reminders, what people owed, held changes and their decisions, samples, questions agents asked each other, and tasks. From a day to ten years, in days or months |
 | `fewest_people` | 5 | The fewest people an instance serves before its own figures go out to the team's dashboards. Fewer, and they go out with other small instances', once together they serve as many. 3 at least |
-| `studio_names` | false | Whether the studio's pages name whom each run acted for, rather than for how many |
+| `studio_names` | false | Whether the studio's pages name whom each run acted for, rather than for how many. Until they do, an instance serving fewer than `fewest_people` shows no run one by one, only its daily figures, since each run would say what one of a few people did; and the studio never shows whom an instance serves, only how many |
 | `audit_names` | false | Whether the auditors' page names whom agents acted for, and exports the ledger there |
 | `flag_rubber_stamps` | false | Whether the status names deciders whose approvals are graded wrong far more often than others' (O6) |
 

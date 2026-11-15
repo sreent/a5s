@@ -317,7 +317,6 @@ export type Instance = {
   parts: Record<string, unknown>;
   actions: Record<string, unknown>;
   model: string | null;
-  serves: string[];
   people: number;
   owner: string | null;
   deputy: string | null;
@@ -502,6 +501,7 @@ export type RunsPage = {
   runs: RunLine[];
   hidden: number;
   before: string | null;
+  fewer: number | null;
 };
 
 export type Samples = {

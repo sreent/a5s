@@ -108,7 +108,8 @@ function Runs({ instance }: { instance: string }) {
     <section className="card wide">
       <h2>Runs</h2>
       {!first.data && <Waiting error={first.error} />}
-      {first.data && runs.length === 0 && <p className="note">No runs you may see.</p>}
+      {first.data?.fewer && <p className="note">It serves fewer than {first.data.fewer} people, so its runs show only in its daily figures until the data protection officer agrees to name whom runs act for: one by one, each would say what one of them did.</p>}
+      {first.data && !first.data.fewer && runs.length === 0 && <p className="note">No runs you may see.</p>}
       {runs.length > 0 && (
         <table className="grid-table runs-table">
           <thead><tr><th>When</th><th>Started by</th><th>For</th><th>Ended</th><th className="num">Tokens</th><th /></tr></thead>

@@ -4,10 +4,12 @@ entries, so what an agent told someone reaches nobody who watches (docs/critique
 
 from __future__ import annotations
 
+from conftest import listed_runs
 from test_studio_pages import signed_in
 
 
 def test_what_an_agent_said_reaches_no_watcher(stack, approving, provider):
+    listed_runs(stack)  # enough people served for its runs to show one by one
     stack.model.reply("Ana, your advance of £2,750.00 is due back on 19 December.")
     stack.say("When do I repay my salary advance?", person="ana")
     api = signed_in(approving, provider)

@@ -337,8 +337,11 @@ def router(gw: Any) -> APIRouter:
         each acted for named only once the officer agrees."""
         with db.transaction(gw.url) as conn:
             try:
+                choices = gw.data_protection(conn)
                 return studio.runs(conn, gw.scenario, watched(conn, person, instance), person,
-                                   before, limit, names=gw.data_protection(conn).studio_names)
+                                   before, limit, names=choices.studio_names,
+                                   fewest=choices.fewest_people,
+                                   key=studio.cursor_key(gw.cfg.service_token))
             except ValueError:
                 raise HTTPException(400, "before is where the page before ended, as it said")
 
@@ -346,8 +349,13 @@ def router(gw: Any) -> APIRouter:
     def studio_run(run_id: str, person: Annotated[Person, Depends(studying)]) -> dict:
         """What a run did, if someone may watch its instance and see every record it named."""
         with db.transaction(gw.url) as conn:
-            found = studio.run(conn, gw.scenario, run_id, person,
-                               names=gw.data_protection(conn).studio_names)
+            choices = gw.data_protection(conn)
+            found = studio.run(conn, gw.scenario, run_id, person, names=choices.studio_names)
+            if found is not None and not choices.studio_names:  # one of few people's, alone
+                row = conn.execute("select serves from instances where id = %s",
+                                   (found["instance"],)).fetchone()
+                if row and len(registry.served(gw.scenario, row["serves"])) < choices.fewest_people:
+                    found = None
         if found is None:
             raise HTTPException(404, "there's no such run that you may see")
         return found

@@ -1430,16 +1430,6 @@
                 }
             }
         ],
-        "./src/a5s/core/memberships.py": [
-            {
-                "code": "reportReturnType",
-                "range": {
-                    "startColumn": 15,
-                    "endColumn": 60,
-                    "lineCount": 1
-                }
-            }
-        ],
         "./src/a5s/core/notebook.py": [
             {
                 "code": "reportOptionalMemberAccess",
