@@ -14,14 +14,27 @@ const PAGES: [string, [string, string, string][]][] = [
                ["officer", "Data protection", "officer"]]],
 ];
 
+export type Shell = { you: string; pages: string[] };
+let shell: Promise<Shell> | null = null;
+
+/** Who signed in, and the pages they may use, as /shell/api works them out: asked once for
+ * the studio, by the sidebar and any page that offers a way to another. */
+export function shellOf(): Promise<Shell> {
+  shell ??= get<Shell>("/shell/api").catch((e) => {
+    shell = null;  // asked again next time
+    throw e;
+  });
+  return shell;
+}
+
 const initials = (name: string) =>
   name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("");
 
 export function Sidebar({ signedIn }: { signedIn: boolean }) {
-  const [found, setFound] = useState<{ you: string; pages: string[] } | null>(null);
+  const [found, setFound] = useState<Shell | null>(null);
   useEffect(() => {
     if (!signedIn) return;
-    get<{ you: string; pages: string[] }>("/shell/api").then(setFound).catch(() => setFound(null));
+    shellOf().then(setFound).catch(() => setFound(null));
   }, [signedIn]);
   return (
     <aside className="sidebar">

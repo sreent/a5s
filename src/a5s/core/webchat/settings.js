@@ -24,6 +24,9 @@ let actions = [];  // the types of change this deployment's tools make
 let releases = {};  // the levels each release starts at and allows
 let mode = "forms";
 let reviewed = null;  // the version as written that was reviewed, which is what Send asks for
+let me = null;  // whoever signed in, by their id
+let adding = null;  // a new instance, as its form has it so far
+const ADDING = "a5s.settings.add";  // an agent to put to work, chosen before signing in
 
 const status = (text) => { $("status").textContent = text; };
 
@@ -360,9 +363,145 @@ function runsOf(id, instance) {
 
 function instanceForm(id, instance) {
   const set = element("fieldset", null, "form-card");
+  set.dataset.instance = id;
+  set.tabIndex = -1;  // where focus goes once it's added
   set.append(element("legend", `${id}, the ${instance.definition}`), ...levelsOf(id, instance),
              ...ownChanges(id, instance), ...servesOf(id, instance), ...runsOf(id, instance));
   return set;
+}
+
+// Putting an agent to work: a new instance of it, for a few people first, at level 0 or 1
+
+const ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
+
+function suggested() {
+  // A name for the new instance, the agent's and then its part's, unused
+  const base = `${adding.agent}-${adding.part || "new"}`.slice(0, 60);
+  let id = base;
+  for (let n = 2; working.instances?.[id]; n += 1) id = `${base}-${n}`;
+  return id;
+}
+
+function freshAdding(agent, before = null) {
+  // What its form starts with: it starts as low as its release does, at level 1 at most,
+  // serving whoever's adding it, run by them; or, for another agent, what they'd chosen
+  return { agent, id: null, part: before?.part ?? "", level: Math.min(releases[agent]?.starts ?? 1, 1),
+           serves: before?.serves ?? new Set(me ? [me] : []), owner: before?.owner ?? (me || ""),
+           deputy: before?.deputy ?? "" };
+}
+
+function addForm(parts) {
+  const agents = Object.keys(releases);
+  if (!agents.length) return null;
+  adding ||= freshAdding(agents[0]);
+  const release = releases[adding.agent];
+  const set = element("fieldset", null, "form-card adding");
+  set.id = "add-instance";
+  set.append(element("legend", "Put an agent to work"),
+             element("p", "A new instance of an agent, for a few people first, at level 0 or 1, so it suggests, or asks before each change. Its part's owner approves it, as any change there; with no part, someone who approves instances does.", "note"));
+
+  const which = element("div", null, "choices");
+  const agent = element("select");
+  agent.id = "add-agent";
+  for (const name of agents) agent.append(new Option(name, name));
+  agent.value = adding.agent;
+  agent.addEventListener("change", () => {
+    adding = freshAdding(agent.value, adding);
+    render();
+    $("add-agent").focus();
+  });
+  const part = element("select");
+  part.id = "add-part";
+  part.append(new Option("no part's records", ""));
+  for (const each of parts) part.append(new Option(each, each));
+  part.value = adding.part;
+  const name = element("input");
+  name.type = "text";
+  name.id = "add-id";
+  name.value = adding.id ?? suggested();
+  name.addEventListener("input", () => { adding.id = name.value; });
+  part.addEventListener("change", () => {
+    adding.part = part.value;
+    if (adding.id === null) name.value = suggested();  // what it's called follows, unless they named it
+  });
+  which.append(setting("Agent", agent), setting("Works in", part), setting("Its name here", name));
+  set.append(which);
+
+  set.append(element("p", "It starts at", "lead"));
+  const levels = element("div", null, "choices");
+  for (const n of [0, 1]) {
+    const box = choice("radio", "add-level", adding.level === n, LEVELS[n], () => { adding.level = n; });
+    if (release && n > release.most) because(box, `its release allows level ${release.most} at most`);
+    levels.append(box);
+  }
+  set.append(levels);
+
+  set.append(element("p", "It serves", "lead"));
+  const serves = element("div", null, "choices");
+  for (const who of Object.keys(names)) {
+    serves.append(choice("checkbox", "add-serves", adding.serves.has(who), whom(who), (input) => {
+      if (input.checked) adding.serves.add(who);
+      else adding.serves.delete(who);
+    }));
+  }
+  set.append(serves);
+
+  set.append(element("p", "Who runs it here", "lead"));
+  const runs = element("div", null, "choices");
+  for (const [role, label] of [["owner", "Owner"], ["deputy", "Deputy"]]) {
+    const pick = element("select");
+    pick.setAttribute("aria-label", `${label} of the new instance`);
+    pick.append(new Option("nobody", ""));
+    for (const who of Object.keys(names).filter((each) => !each.includes(":"))) pick.append(new Option(names[who], who));
+    pick.value = adding[role];
+    pick.addEventListener("change", () => { adding[role] = pick.value; });
+    runs.append(setting(label, pick));
+  }
+  set.append(runs);
+
+  const problem = element("p", null, "problem-note");
+  problem.setAttribute("role", "alert");
+  const add = element("button", "Add it to the settings");
+  add.type = "button";
+  add.id = "add-it";
+  add.addEventListener("click", () => {
+    const id = (adding.id ?? suggested()).trim();
+    const wrong = !ID.test(id) ? "Its name is lowercase letters, digits and hyphens, starting with a letter or a digit."
+      : working.instances?.[id] ? `There's an instance called ${id} already: give it another name.`
+      : !adding.serves.size ? "Choose whom it serves: a few people first."
+      : null;
+    if (wrong) {
+      problem.textContent = wrong;
+      return;
+    }
+    working.instances ||= {};
+    working.instances[id] = { definition: adding.agent, serves: [...adding.serves], level: adding.level,
+                              ...(adding.owner ? { owner: adding.owner } : {}),
+                              ...(adding.deputy ? { deputy: adding.deputy } : {}),
+                              parts: adding.part ? [adding.part] : [] };
+    adding = null;
+    stale();
+    render();
+    const made = $("forms").querySelector(`fieldset[data-instance="${CSS.escape(id)}"]`);
+    made?.scrollIntoView({ block: "start" });
+    made?.focus();
+    status(`${id} is in the forms: review it, with any other change, and ask its approvers.`);
+  });
+  const doing = element("div", null, "add-someone");
+  doing.append(add);
+  set.append(doing, problem);
+  return set;
+}
+
+// An agent someone chose to put to work, on its page in the studio, kept through signing in
+function offerAdding() {
+  const agent = store.getItem(ADDING);
+  store.removeItem(ADDING);
+  if (!agent || !releases[agent] || !working) return;
+  adding = freshAdding(agent);
+  render();
+  $("add-instance").scrollIntoView({ block: "start" });
+  $("add-agent").focus();
 }
 
 function limitsForm() {
@@ -424,8 +563,10 @@ function render() {
   if (!working) return;
   const parts = [...new Set([...Object.keys(working.thresholds || {}),
                              ...Object.values(working.instances || {}).flatMap(partsOf)])];
+  const add = addForm([...new Set([...parts].sort())]);
   $("forms").replaceChildren(
     ...Object.entries(working.instances || {}).map(([id, instance]) => instanceForm(id, instance)),
+    ...(add ? [add] : []),
     ...(actions.length || Object.keys(working.limits || {}).length ? [limitsForm()] : []),
     ...(parts.length ? [thresholdsForm(parts)] : []));
 }
@@ -455,6 +596,7 @@ async function load() {
     names = { ...names, ...now.names };
     actions = now.actions;
     releases = now.releases;
+    me = now.me;
     render();
   } else {
     status("No settings are in force yet.");
@@ -511,10 +653,13 @@ async function main() {
       return;
     }
     const params = new URLSearchParams(location.search);
+    const put = params.get("add");  // an agent to put to work, from its page in the studio
+    if (put && ID.test(put)) store.setItem(ADDING, put);
     if (params.has("code") || params.has("error")) {
       token = await signedIn(params);
       window.a5s?.signedIn(token);  // the sidebar, of the pages they may use
       await load();
+      offerAdding();
       $("review").addEventListener("click", () => review().catch((e) => status(e.message)));
       $("by-forms").addEventListener("click", () => useMode("forms"));
       $("by-text").addEventListener("click", () => useMode("text"));

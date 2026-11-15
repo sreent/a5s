@@ -4,6 +4,7 @@ proposes it to everyone it needs, and they approve it on its own page."""
 
 import httpx
 import yaml
+from playwright.sync_api import expect
 
 from conftest import accessible
 from test_approvals import in_force_serial
@@ -158,3 +159,34 @@ def test_an_approver_changes_the_settings_in_forms_in_the_browser(stack, approvi
     page.goto(f"{approving}{waiting['link']}")  # to the provider, afresh, and straight back
     page.wait_for_selector("#asker >> text=Ana Ortiz asked for it", timeout=30000)
     assert page.locator("#changes li").all_inner_texts() == FORMS_CHANGES
+
+
+def test_an_agent_is_put_to_work_from_its_page_in_the_studio(stack, approving, provider, browser):
+    # Its owner, on the page of an agent no instance runs, follows the way to put it to work
+    provider.person = "priya"
+    page = browser.new_page()
+    page.goto(f"{approving}/studio/agents/watcher")
+    page.wait_for_selector("#put-to-work >> text=No instance runs it yet", timeout=30000)
+    shot(page, "studio-put-to-work")
+    page.click("#put-it-to-work")  # to the settings app, signing in, with the watcher chosen
+    page.wait_for_selector("#add-instance", timeout=30000)
+    expect(page.locator("#add-agent")).to_be_focused()
+    assert page.input_value("#add-agent") == "watcher"
+    # Its release allows level 0 alone, so it starts there, serving whoever adds it, run by them
+    levels = page.locator("input[name=add-level]")
+    assert levels.nth(0).is_checked() and levels.nth(1).is_disabled()
+    page.select_option("#add-part", "billing")
+    assert page.input_value("#add-id") == "watcher-billing"
+    accessible(page)
+    shot(page, "settings-add")
+    page.click("#add-it")
+    expect(page.locator("fieldset[data-instance=watcher-billing]")).to_be_focused()
+    # Reviewed as any change: billing's owner approves it, and its owner asks them to
+    page.click("#review")
+    page.wait_for_selector("#reviewed-changes li", timeout=30000)
+    assert page.locator("#reviewed-changes li").all_inner_texts() == [(
+        "Adds watcher-billing: the watcher, working in billing at level 0, serving Priya Nair, run by "
+        "Priya Nair. widens what agents do")]
+    assert page.inner_text("#reviewed-approvers") == "It needs the approval of Ana Ortiz."
+    page.click("#send")
+    page.wait_for_selector("#status >> text=You asked for serial", timeout=30000)

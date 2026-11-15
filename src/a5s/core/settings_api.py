@@ -97,7 +97,7 @@ def router(gw: Any) -> APIRouter:
         data = (yaml.safe_load(bytes(last["raw"])) or {}) if last and in_force else None
         tools = gw.scenario.tools()
         return {
-            "you": person.name,
+            "you": person.name, "me": person.id,
             "in_force": {"serial": last["serial"], "text": bytes(last["raw"]).decode(),
                          "whole": approvals.described(in_force, *words),
                          "data": data}  # as the page's forms change it

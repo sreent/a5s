@@ -7,6 +7,7 @@ import { type AgentKnown, type AgentUses, ApiError, builtOf, type Catalogue, typ
 import { AgentMap } from "../AgentMap";
 import { AgentFacts, AutonomyLadder } from "../design";
 import { go, Link } from "../router";
+import { shellOf } from "../Sidebar";
 import { aboutInstance, levels, PageHead, people, type Risk, risk, RISK_NAMES, runners, StatusBadge,
          ToolBadges, triggers, useLoad, Waiting, when } from "../ui";
 
@@ -163,7 +164,8 @@ function Where({ agent }: { agent: AgentKnown }) {
   );
 }
 
-function DraftAChange({ id }: { id: string }) {
+/** Drafting a change to it: the page's one thing to do, unless putting it to work comes first. */
+function DraftAChange({ id, second = false }: { id: string; second?: boolean }) {
   const [problem, setProblem] = useState<string>();
   const start = async () => {
     try {
@@ -178,7 +180,7 @@ function DraftAChange({ id }: { id: string }) {
   };
   return (
     <div className="actions">
-      <button type="button" className="primary" id="draft-change" onClick={start}>Draft a change</button>
+      <button type="button" className={second ? undefined : "primary"} id="draft-change" onClick={start}>Draft a change</button>
       {problem && <span className="problem">{problem}</span>}
     </div>
   );
@@ -204,6 +206,30 @@ function Seen({ agent }: { agent: AgentKnown }) {
         <p className="note">{layers.uses ? "Its instructions are for those who make it, own it, approve its releases or audit it."
           : "What it may do is for the people it serves and those who run it: to have it serve you, ask for it."}</p>
       )}
+    </section>
+  );
+}
+
+// Putting an agent to work, for its owners and authors, once it's released and no instance runs
+// it: a first instance in the settings, for a few people, at level 0 or 1. Those who approve
+// versions of the settings go there with the agent chosen; others are told who can.
+
+// Released, and no instance runs it, to its owners and authors, who see every one that does
+const idle = (agent: AgentKnown) => Boolean(agent.layers?.changing) && agent.instances.length === 0;
+
+function PutToWork({ agent }: { agent: AgentKnown }) {
+  const shell = useLoad(shellOf, []);
+  const may = shell.data?.pages.includes("settings");
+  return (
+    <section className="card" id="put-to-work">
+      <h2>Put it to work</h2>
+      <p>No instance runs it yet. Its first is an instance in the settings, for a few people first, at level 0 or
+        1, so it suggests, or asks before each change. Its part's owner approves it, as any change there.</p>
+      {may
+        ? <div className="actions"><a className="button primary" id="put-it-to-work"
+            href={`/settings/?add=${encodeURIComponent(agent.id)}`}>Put it to work in the settings</a></div>
+        : shell.data && <p className="note">Those who approve versions of the settings put it to work there: a part's
+            owner, or someone who approves instances. To have it serve you, ask for it.</p>}
     </section>
   );
 }
@@ -289,11 +315,12 @@ export function AgentPage({ id }: { id: string }) {
             {agent.instances.map((i) => <span key={i.id}>{i.id}: {aboutInstance(i)}</span>)}
           </div>
         )}
-        {agent && changes && <DraftAChange id={id} />}
+        {agent && changes && <DraftAChange id={id} second={idle(agent)} />}
       </PageHead>
       {!agent && <Waiting error={error} />}
       {agent && (
         <>
+          {idle(agent) && <PutToWork agent={agent} />}
           {uses && (
             <section className="card map-card">
               <h2>How it's wired</h2>

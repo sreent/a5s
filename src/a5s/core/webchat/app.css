@@ -397,6 +397,9 @@ fieldset.form-card { min-width: 0; margin: 0 0 1rem; padding: 0.5rem 1.25rem 1.1
          border-top: 1px solid var(--line); }
 .limit-name { flex: 1 1 12rem; margin: 0; font-weight: 600; overflow-wrap: anywhere; }
 .add-someone { display: flex; gap: 0.5rem; max-width: 32rem; margin-top: 0.6rem; }
+fieldset.adding { border-style: dashed; }  /* what isn't in the settings yet */
+.problem-note:empty { display: none; }
+.problem-note { margin: 0.5rem 0 0; color: var(--text); font-weight: 600; }
 .add-someone input { flex: 1; min-width: 0; }
 .faint { color: var(--faint); }
 .label { font-size: 0.74rem; font-weight: 650; text-transform: uppercase; letter-spacing: 0.05em; color: var(--faint);
