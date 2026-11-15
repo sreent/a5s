@@ -166,18 +166,17 @@ table.runs-table tbody tr:hover { background: var(--sunken); }
 .step-tool { font-weight: 600; }
 .step-why { flex-basis: 100%; padding-left: 6rem; font-size: 0.82rem; }
 
-/* Runs by day. Its marks wear the status colours, the same in both modes, since a status
-   means what it means in either; its text wears the text colours alone. */
-.runs-chart { --chart-good: #0ca30c; --chart-warn: #fab219; --chart-bad: #d03b3b; --chart-open: #898781;
-              position: relative; }
+/* Runs by day. Its marks wear Ocean's colours for how runs end (ocean/css/charts.css), in light
+   and dark, and nothing else; its text wears the text colours alone. */
+.runs-chart { position: relative; }
 .runs-chart svg { display: block; overflow: visible; }
 .runs-chart .grid { stroke: var(--line); stroke-width: 1; shape-rendering: crispEdges; }
 .runs-chart .baseline { stroke: var(--line-strong); stroke-width: 1; shape-rendering: crispEdges; }
 .runs-chart .tick { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
 .runs-chart .figure { fill: var(--text); font-size: 11px; font-weight: 600; }
-.runs-chart .mark.done { fill: var(--chart-good); }
-.runs-chart .mark.short { fill: var(--chart-warn); }
-.runs-chart .mark.failed { fill: var(--chart-bad); }
+.runs-chart .mark.done { fill: var(--chart-done); }
+.runs-chart .mark.short { fill: var(--chart-short); }
+.runs-chart .mark.failed { fill: var(--chart-failed); }
 .runs-chart .mark.open { fill: var(--chart-open); }
 .runs-chart .hit { fill: transparent; }
 .runs-chart .day { cursor: default; outline: none; }
@@ -188,9 +187,9 @@ table.runs-table tbody tr:hover { background: var(--sunken); }
 .legend li { display: inline-flex; align-items: center; gap: 0.45rem; }
 .swatch { display: inline-block; width: 0.7rem; height: 0.7rem; border-radius: 2px; }
 .line-key { display: inline-block; width: 0.85rem; height: 2px; border-radius: 1px; }
-.swatch.done, .line-key.done { background: var(--chart-good); }
-.swatch.short, .line-key.short { background: var(--chart-warn); }
-.swatch.failed, .line-key.failed { background: var(--chart-bad); }
+.swatch.done, .line-key.done { background: var(--chart-done); }
+.swatch.short, .line-key.short { background: var(--chart-short); }
+.swatch.failed, .line-key.failed { background: var(--chart-failed); }
 .swatch.open, .line-key.open { background: var(--chart-open); }
 .tip { position: absolute; top: 2rem; width: 11rem; pointer-events: none; z-index: 2; padding: 0.55rem 0.7rem;
        background: var(--surface); border: 1px solid var(--line-strong); border-radius: 8px;

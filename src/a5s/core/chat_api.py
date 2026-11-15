@@ -71,13 +71,16 @@ def router(gw: Any) -> APIRouter:
             raise HTTPException(404, "no such file")
         return web.page(gw, name)
 
-    @pages.get("/chat/fonts/{name}", include_in_schema=False)
-    def chat_font(name: str) -> Response:
-        """The pages' type, IBM Plex, which a5s bundles: no page loads a font from outside."""
-        if name not in web.FONTS:
-            raise HTTPException(404, "no such font")
-        found = web.page(gw, f"fonts/{name}")
-        found.headers["Cache-Control"] = "public, max-age=604800"
+    @pages.get("/chat/ocean/{kind}/{name}", include_in_schema=False)
+    def chat_ocean(kind: str, name: str) -> Response:
+        """Ocean, the look every page shares, as a5s copies it from its one source: its tokens,
+        its pieces and its type, IBM Plex, so no page loads a style or a font from outside."""
+        path = f"{kind}/{name}"
+        if path not in web.OCEAN_FILES:
+            raise HTTPException(404, "no such file")
+        found = web.page(gw, f"ocean/{path}")
+        if kind == "fonts":
+            found.headers["Cache-Control"] = "public, max-age=604800"
         return found
 
     return pages
