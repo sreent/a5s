@@ -17,8 +17,10 @@ found right, and Cohen's kappa, their agreement beyond what chance would give. A
 owners read it with its figures, and so learn, as the evidence grows, how far its judge can be
 trusted, for when they ask it about drafts and test cases.
 
-The judge sees what the agent saw: a judge not approved for every class of data the agent's own
-model is judges nothing, and each call is in the ledger, by the hash of what it was asked.
+The judge sees what the decider saw: the values the agent's handles stood for, and every field
+of the records the change named. So a judge not approved for the settings' class of data, for
+every class they give a field, and for every class the agent's own model is, judges nothing.
+Each call is in the ledger, by the hash of what it was asked.
 """
 
 from __future__ import annotations

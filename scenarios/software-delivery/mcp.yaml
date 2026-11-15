@@ -1,0 +1,49 @@
+# The team's forge, with its CI, through its MCP server (docs/connectors.md#mcp-servers). In this
+# made-up team it's deploy/systems/forge.py, on the scenario's synthetic data, beside the gateway on
+# its own machine, and the same stand-in answers in the studio's sandbox. a5s offers its agents
+# nothing of the server's but the tools declared here, in a5s's words, and passes on only the
+# fields each names.
+servers:
+  forge:
+    url: http://127.0.0.1:9203/mcp
+    sandbox: http://127.0.0.1:9203/mcp
+tools:
+  search_records:
+    server: forge
+    calls: search_items
+    description: Search issues and pull requests by words in their title or status.
+    arguments: {type: object, required: [query], properties: {query: {type: string}}}
+    returns: [records, key, part, kind, severity, labels, title, status, reporter, assignee, author, reviewers, review_status, fixes, checks, opened, due, review_due, merged, link]
+    record_field: key
+  get_record:
+    server: forge
+    calls: get_item
+    description: "Get one issue or pull request by its key: its status, assignee or author, reviewers, checks, and the issue a pull request fixes."
+    arguments: {type: object, required: [key], properties: {key: {type: string, description: "An issue, such as DEV-101, or a pull request, such as PR-17"}}}
+    returns: [key, part, kind, severity, labels, title, status, reporter, assignee, author, reviewers, review_status, fixes, checks, opened, due, review_due, merged, link]
+    record_arg: key
+    record_field: key
+  get_comments:
+    server: forge
+    calls: item_comments
+    description: "Get what customers wrote on an issue, through a5s's reader: what it asks for, and the dates and keys it names, never its words."
+    arguments: {type: object, required: [key], properties: {key: {type: string, description: "An issue, such as DEV-101, or a pull request, such as PR-17"}}}
+    returns: [key, comments, record, from, at, body]
+    record_arg: key
+    record_field: key
+    handles: [from]
+    outside: [body]
+    extract: {asks_for: "choice:a fix|a workaround|a release date|something else", date: date, issue: key}
+  # A change: a5s holds each for the owners of the pull request's repository, its part, below level
+  # 2, and makes it once they approve it, once for a5s's key, which the server honours
+  request_review:
+    server: forge
+    calls: request_review
+    description: Ask someone to review an open pull request, which its repository's owners decide.
+    arguments: {type: object, required: [key, reviewer], properties: {key: {type: string, description: "A pull request, such as PR-17"}, reviewer: {type: string, description: "Who to ask, by their id in the directory"}}}
+    returns: [key, reviewers, link]
+    writes: true
+    idempotent: true
+    record_arg: key
+    record_field: key
+    action: assign-reviewer

@@ -1,0 +1,48 @@
+name: nightly
+
+# Phase 5's walk-throughs, live: each scenario's people build its agents in the studio, sign their
+# release, put them to work and use them in the chat, as in CI, but with the agents, the sandbox
+# and the judges on DeepSeek rather than the stand-in's script, on the scenarios' synthetic data
+# alone. A step then waits for whatever the agent answers, and the walk-through checks what came
+# of it, a change held or made, rather than its words (tests/walkthrough.py). Each night, and
+# when asked.
+
+on:
+  schedule:
+    - cron: "41 2 * * *"  # each night, 02:41 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  walk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    services:
+      postgres:
+        image: postgres:16@sha256:1beaa3084eee2676f20a9cd9928f0bf2c5bf674f8e49f81017912183d377c61c
+        env:
+          POSTGRES_USER: a5s
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U a5s"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      A5S_TEST_DATABASE_URL: postgresql://a5s@127.0.0.1:5432/postgres
+      A5S_TEST_BROWSER: required
+      A5S_TEST_WALK_MODEL: deepseek-v4-pro
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}  # with the scenarios' made-up data only
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6
+      - run: uv sync --locked
+      - run: docker build --target studio-built --output src/a5s/core/webchat/studio .
+      - run: uv run playwright install chromium
+      - name: Each walk-through, on DeepSeek
+        run: >-
+          uv run pytest tests/test_walkthrough.py tests/test_walkthrough_desk.py
+          tests/test_walkthrough_resolver.py tests/test_walkthrough_joiner.py
+          tests/test_walkthrough_delivery.py tests/test_walkthrough_master_data.py
+          tests/test_walkthrough_quality.py

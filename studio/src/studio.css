@@ -1,33 +1,16 @@
-/* The studio, on the look every page of a5s shares (webchat/app.css). */
+/* The studio's own compositions of Ocean's pieces: an agent's card, an instance's figures, the runs
+   chart, the sandbox's turns and test cases, the templates and the raw editor. Ocean (ocean/css, taken
+   at a commit) holds every piece and the workbench; nothing here restyles one of them. Each of these
+   moves to Ocean as a piece when another product needs it, and anything new is drawn there first
+   (Ocean's docs/products.md). */
 
 #root { display: contents; }  /* its sidebar and page sit in the body's frame, as every page's do */
 .nav-group { display: contents; }
 .page.studio main { max-width: 80rem; }
 
-.mono { font-family: var(--font-mono); font-size: 0.85em; }
 .problem { color: var(--bad); }
-.num { text-align: right; font-variant-numeric: tabular-nums; }
 
-/* A page's heading: the way back, its title, and what it is */
-
-.page-head { margin-bottom: 1.25rem; }
-.crumbs { display: flex; flex-wrap: wrap; gap: 0.15rem; font-size: 0.85rem; margin-bottom: 0.35rem; }
-.crumbs a { color: var(--muted); text-decoration: none; }
-.crumbs a:hover { color: var(--accent); }
-.crumbs .sep { color: var(--faint); margin: 0 0.35rem; }
-.title-row { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
-.title-row h1 { margin: 0; }
-.about { color: var(--muted); margin: 0.45rem 0 0; max-width: 56rem; }
-.meta { display: flex; flex-wrap: wrap; gap: 0.35rem 1.1rem; margin-top: 0.6rem; color: var(--muted); font-size: 0.88rem; }
-.period { display: inline-flex; align-items: center; gap: 0.4rem; margin-top: 0.85rem; }
-
-/* Chips: plain facts, beside the badges that mean something */
-
-.chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
-.chip { display: inline-flex; align-items: center; padding: 0.08rem 0.55rem; border-radius: 999px;
-        border: 1px solid var(--line); background: var(--sunken); color: var(--muted); font-size: 0.78rem;
-        white-space: nowrap; }
-.badges { display: inline-flex; flex-wrap: wrap; gap: 0.3rem; }
+/* A badge's dot, and the colour of what a tool does on its label */
 .badge .dot { width: 0.45rem; height: 0.45rem; border-radius: 50%; background: currentColor; }
 .tone-changes { color: var(--changes); }
 .tone-outside { color: var(--outside); }
@@ -100,47 +83,11 @@ table.grid-table.compact td { padding: 0.35rem 0.6rem; }
 table.runs-table td .badge { margin-left: 0.4rem; }
 table.runs-table tbody tr:hover { background: var(--sunken); }
 
-/* The map of how an agent is wired */
+/* The map of how an agent is wired: Ocean's canvas, read only (AgentMap.tsx, FlowMap.tsx) */
 
 .map-card { padding-bottom: 1.25rem; }
-.agent-map { width: 100%; border: 1px solid var(--line); border-radius: 10px; background: var(--sunken); overflow: hidden; }
-.agent-map .react-flow { --xy-background-color: var(--sunken); --xy-edge-stroke: var(--line-strong);
-                          --xy-edge-stroke-width: 1.6; }
-.agent-map .react-flow__edge.edge-changes path { stroke: var(--changes); }
-.agent-map .react-flow__edge.edge-outside path { stroke: var(--outside); }
-.agent-map .react-flow__edge.edge-writes path { stroke: var(--writes); }
-.agent-map .react-flow__edge.edge-reads path { stroke: var(--reads); }
-.agent-map .react-flow__edge.edge-own path { stroke: var(--own); }
-.agent-map .react-flow__handle { opacity: 0; }
-/* React Flow's credit, kept, in colours that read (WCAG's 4.5 to 1) */
-.agent-map .react-flow__attribution { background: var(--sunken); }
-.agent-map .react-flow__attribution a { color: var(--muted); }
-/* A run's path on its agent's map: what it used, bolder; what it didn't, faded; refusals red */
-.agent-map .react-flow__edge.used path { stroke-width: 2.6; }
-.agent-map .react-flow__edge.unused path { opacity: 0.22; }
-.agent-map .react-flow__edge.refused path, .agent-map .react-flow__edge.edge-denied path { stroke: var(--bad); }
-
-.map-node { display: flex; align-items: center; gap: 0.6rem; width: 15rem; padding: 0.55rem 0.75rem;
-            background: var(--surface); border: 1px solid var(--line-strong); border-left-width: 4px;
-            border-radius: 10px; box-shadow: var(--shadow); color: var(--text); }
-.map-node .map-icon { width: 1.25rem; height: 1.25rem; color: var(--muted); }
-.map-text { min-width: 0; }
-.map-title { font-weight: 600; font-size: 0.86rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.map-detail { font-size: 0.74rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.map-node.agent { border-color: var(--agent-tone); background: var(--agent-tone-soft); }  /* agents, as everywhere */
-.map-node.agent .map-icon { color: var(--agent-tone); }
-.map-node.checks { border-color: var(--own); }
-.map-node.checks .map-icon { color: var(--own); }
-.map-node.changes { border-left-color: var(--changes); }
-.map-node.outside { border-left-color: var(--outside); }
-.map-node.writes { border-left-color: var(--writes); }
-.map-node.reads { border-left-color: var(--reads); }
-.map-node.own { border-left-color: var(--own); }
-.map-node.denied { border-left-color: var(--bad); }
-.map-node.dim { opacity: 0.42; }
-.map-count { flex: none; margin-left: auto; padding: 0.05rem 0.45rem; border-radius: 999px; font-size: 0.72rem;
-             font-weight: 600; font-variant-numeric: tabular-nums; background: var(--accent-soft); color: var(--accent); }
-.map-count.bad { background: var(--bad-bg); color: var(--bad); }
+.agent-map { width: 100%; border: 1px solid var(--line); border-radius: var(--radius-md); overflow: hidden; }
+.agent-map .flow-canvas { height: 100%; }
 
 /* An instance's figures */
 
@@ -162,7 +109,6 @@ table.runs-table tbody tr:hover { background: var(--sunken); }
                 border-radius: 50%; background: var(--surface); border: 2px solid var(--good); }
 .step.deny::before { border-color: var(--bad); }
 .step.hold::before, .step.held::before { border-color: var(--warn); }
-.step-time { color: var(--faint); font-size: 0.8rem; font-variant-numeric: tabular-nums; min-width: 5.5rem; }
 .step-tool { font-weight: 600; }
 .step-why { flex-basis: 100%; padding-left: 6rem; font-size: 0.82rem; }
 
@@ -204,12 +150,10 @@ table.runs-table tbody tr:hover { background: var(--sunken); }
 
 /* Making agents: a new one from a template, and a draft's editor */
 .page-head .actions { display: flex; align-items: center; gap: 0.75rem; margin-top: 0.85rem; }
-button.quiet { background: transparent; border-color: var(--line); color: var(--muted); }
 .field { display: grid; gap: 0.35rem; font-size: 0.9rem; }
 .field > span { color: var(--muted); font-size: 0.84rem; }
 .field input, .field select, .field textarea { width: 100%; font: inherit; }
 .field textarea { resize: vertical; line-height: 1.5; }
-.form-grid { display: grid; gap: 1rem; max-width: 46rem; }
 .field-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 .new-agent { display: grid; gap: 1rem; max-width: 60rem; }
 .new-agent .card { margin: 0; }
@@ -224,13 +168,6 @@ button.quiet { background: transparent; border-color: var(--line); color: var(--
 .template-name { font-weight: 600; }
 .template-for { font-size: 0.88rem; }
 .card.ready { border-color: var(--good); }
-.editor .tabs { display: flex; gap: 0.25rem; border-bottom: 1px solid var(--line); margin: -0.25rem 0 1rem; }
-.editor .tabs button { background: transparent; border: 0; border-bottom: 2px solid transparent; border-radius: 0;
-                       color: var(--muted); padding: 0.5rem 0.85rem; font-weight: 500; }
-.editor .tabs button.on { color: var(--text); border-bottom-color: var(--accent); }
-.tool-row.pick { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.75rem; align-items: start; cursor: pointer; }
-.tool-row.pick input { margin-top: 0.3rem; }
-.tool-row.pick .tool-about { display: block; }
 .raw { display: grid; grid-template-columns: 14rem minmax(0, 1fr); gap: 1rem; }
 .file-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.15rem; align-content: start; }
 .file-list button { width: 100%; text-align: left; background: transparent; border: 0; border-radius: 6px;
@@ -285,7 +222,7 @@ details.sent { margin-top: 0.75rem; }
 .swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 0.5rem 1rem;
             margin: 0.75rem 0 0; padding: 0; list-style: none; font-size: 0.88rem; }
 .swatches li { display: flex; align-items: center; gap: 0.6rem; }
-.swatch { width: 2.2rem; height: 2.2rem; flex: none; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); }
+.swatches .swatch { width: 2.2rem; height: 2.2rem; flex: none; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); }
 .type-sample { margin: 0.35rem 0; }
 .type-sample.big { font-size: var(--text-2xl); font-weight: 600; letter-spacing: -0.015em; line-height: 1.2; }
 [data-piece] .chips { margin: 0.5rem 0 0.75rem; align-items: center; }

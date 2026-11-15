@@ -1,4 +1,4 @@
-"""A read-only software delivery scenario: a synthetic issue tracker and code review.
+"""A software delivery scenario: a synthetic issue tracker and code review.
 
 An engineering team's issues and pull requests, with their reviewers, checks and due dates, and
 an engineering handbook. People ask a dev assistant what's happening with an issue or a pull
@@ -7,6 +7,13 @@ and fixes people owe. It never merges, approves, changes an issue, or runs code:
 tracker and code review keep their own controls. Issues labelled security are for the security
 team and their assignee alone, and what customers wrote reaches the agent only through a5s's
 reader.
+
+Its forge's tools, with its CI's checks, come through the forge's MCP server, which the
+scenario's mcp.yaml declares (deploy/systems/forge.py, in this made-up team): searching issues and
+pull requests, reading one, what customers wrote on an issue, and asking someone to review a pull
+request, a change a5s holds for its repository's owners. What stays here is the team's own: the
+directory, who may see each issue and pull request, the reviews and fixes people owe, a draft for
+a person to post, and its handbook.
 """
 
 from __future__ import annotations
@@ -49,7 +56,6 @@ class SoftwareDeliveryScenario:
         self._people = {p["id"]: Person.listed(p, folder) for p in data["people"]}
         self._issues = {i["key"]: i for i in data["issues"]}
         self._pulls = {p["key"]: p for p in data["pulls"]}
-        self._comments = data.get("comments") or []
         self.drafts: list[dict] = []
         self._draft_lock = threading.Lock()
 
@@ -130,50 +136,17 @@ class SoftwareDeliveryScenario:
     def policy_pack(self) -> None:
         return None
 
-    # Tools, read only but for drafts
+    # Its own tools: a draft for a person to post, and its handbook. The forge's come through
+    # its MCP server, as mcp.yaml declares them
 
     def tools(self) -> dict[str, Tool]:
-        def shown(found: dict) -> dict:
-            return {**found, "link": LINK + found["key"]}
-
-        def search(call: ToolCall) -> dict:
-            words = str(call.args.get("query") or "").casefold().split()
-            return {"records": [shown(r) for r in (*self._issues.values(), *self._pulls.values())
-                                if any(w in f"{r['title']} {r['status']}".casefold()
-                                       for w in words)]}
-
-        def get(call: ToolCall) -> dict:
-            found = self._found(str(call.args.get("key", "")))
-            return shown(found) if found else {"error": "no such issue or pull request"}
-
-        def comments(call: ToolCall) -> dict:
-            return {"key": call.args["key"], "comments": [
-                c for c in self._comments if c["record"] == call.args["key"]]}
-
         def draft(call: ToolCall) -> dict:
             return draft_once(call, self.drafts, LINK, self._draft_lock)
 
-        query = {"type": "object", "properties": {"query": {"type": "string"}},
-                 "required": ["query"]}
-        key = {"type": "object", "required": ["key"], "properties": {"key": {
-            "type": "string", "description": "An issue, such as DEV-101, or a pull request, "
-                                             "such as PR-17"}}}
         body = {"type": "object", "required": ["title", "body"], "properties": {
             "title": {"type": "string"}, "body": {"type": "string"},
             "record": {"type": "string", "description": "The issue or pull request it's for"}}}
         tools = {t.name: t for t in (
-            Tool("search_records", "Search issues and pull requests by words in their title or "
-                 "status.", query, search, record_field="key"),
-            Tool("get_record", "Get one issue or pull request by its key: its status, assignee "
-                 "or author, reviewers, checks, and the issue a pull request fixes.", key, get,
-                 record_arg="key", record_field="key"),
-            Tool("get_comments", "Get what customers wrote on an issue, through a5s's reader: "
-                 "what it asks for, and the dates and keys it names, never its words.", key,
-                 comments, handles=("from",), record_arg="key", record_field="key",
-                 outside=("body",),
-                 extract={"asks_for": "choice:a fix|a workaround|a release date|"
-                                      "something else",
-                          "date": "date", "issue": "key"}),
             Tool("create_draft", "Save a draft, such as a pull request's description, a review "
                  "comment or a release note, for a person to read, change and post.", body,
                  draft, writes=True, text_fields=("title", "body"), record_arg="record",

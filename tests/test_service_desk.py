@@ -11,9 +11,9 @@ import pytest
 
 from a5s import db, definitions
 from a5s.config import Config, load_models
+from a5s.connectors import mcp
 from a5s.core import inbox, registry
 from a5s.core.gateway import Gateway, create_app
-from a5s.core.policy import PolicyEngine
 from a5s.service_desk import ServiceDeskScenario
 from conftest import (
     FAKE_MODELS,
@@ -25,6 +25,8 @@ from conftest import (
     build_root,
     free_port,
     live_image,
+    policy_of,
+    scenario_systems,
     serve,
     worker_for,
 )
@@ -33,23 +35,35 @@ from conftest import (
 @contextmanager
 def running_desk(database: str, root: Path, model: FakeModel,
                  http: httpx.Client | None = None, alias: str = "fake",
-                 worker_image: str | None = None) -> Iterator[Stack]:
+                 worker_image: str | None = None, more: str = "", most: int | None = None,
+                 folder: Path | None = None) -> Iterator[Stack]:
+    """The desk on its hand-written agent, on the model `alias`, with `more` of agent.yaml's
+    lines, such as tools it doesn't use, added to its definition, and its release's highest
+    level `most`, if it's given. With `folder`, the scenario's folder is that copy, such as one
+    a test signs new settings in."""
     import shutil
     port = free_port()
     agents = root / "scenario-agents"
     shutil.copytree(ROOT / "scenarios" / "service-desk" / "agents", agents)
     for spec in agents.glob("*/agent.yaml"):
-        spec.write_text("\n".join(f"model: {alias}" if line.startswith("model:") else line
-                                  for line in spec.read_text().splitlines()) + "\n")
+        lines = [f"model: {alias}" if line.startswith("model:") else line
+                 for line in spec.read_text().splitlines()]
+        if more:
+            at = lines.index("tools:") + 1
+            lines[at:at] = more.splitlines()
+        if most is not None:
+            lines[lines.index("autonomy:") + 2] = f"  max: {most}"
+        spec.write_text("\n".join(lines) + "\n")
     cfg = Config(database_url=db.as_role(database, "gateway"),
                  gateway_url=f"http://127.0.0.1:{port}", service_token=SERVICE_TOKEN,
                  root=root, development=True, seal_keys=(SEAL_KEY,),
                  scenario="a5s.service_desk:ServiceDeskScenario",
-                 scenario_folder=ROOT / "scenarios" / "service-desk", agents_folder=agents)
-    scenario = ServiceDeskScenario(cfg.scenario_dir, cfg.database_url)
+                 scenario_folder=folder or ROOT / "scenarios" / "service-desk", agents_folder=agents)
+    scenario_systems("service-desk")  # its ITSM and identity provider, behind their MCP servers
+    scenario = mcp.served(ServiceDeskScenario(cfg.scenario_dir, cfg.database_url), cfg.scenario_dir)
     definitions.pin(agents / "desk-assistant",
                     {name: tool.schema_hash for name, tool in scenario.tools().items()})
-    gw = Gateway(cfg, scenario, PolicyEngine(), load_models(cfg.models_file),
+    gw = Gateway(cfg, scenario, policy_of(scenario), load_models(cfg.models_file),
                  definitions.load_all(cfg.agents_dir), http or httpx.Client())
     with db.transaction(database) as conn:
         applied = registry.apply(conn, gw.definitions, scenario.settings(), scenario.tools(),

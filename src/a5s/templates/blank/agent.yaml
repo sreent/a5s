@@ -1,0 +1,22 @@
+# A new agent that does nothing yet: a5s's own start for one, which fits every scenario. What it
+# may do, what starts its runs and where it works are added on its canvas in the studio, or here.
+id: blank
+release: 0.1.0
+works_for: The people its first instance serves
+does: >-
+  Nothing yet: its tools, what starts its runs and what it may do are added on its canvas.
+scope: none
+model: default
+autonomy:
+  start: 0
+  max: 0
+tools: {}
+triggers:
+  - message: from the people it works for
+schedules: []
+channels: [teams]
+context:
+  budget_tokens: 24000
+budget:
+  per_run: 200000
+  per_person_per_day: 1000000

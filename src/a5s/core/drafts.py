@@ -15,7 +15,7 @@ from __future__ import annotations
 import io
 import tempfile
 import zipfile
-from collections.abc import Iterable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -146,11 +146,15 @@ def preview(scenario: Scenario, agent: str, files: dict[str, str],
     return studio.agent(scenario, found, tools, [], whole=True)
 
 
-def signers(agent: str, files: dict[str, str], agents_dir: Path,
-            released: Iterable[str]) -> list[dict] | None:
+def signers(agent: str, files: dict[str, str], agents_dir: Path, released: Iterable[str],
+            holders: Callable[[str], list[Any]] | None = None) -> list[dict] | None:
     """Who would have to sign the release this draft makes, and why, as `a5s release` works it
     out: from what it changes of the agents released here, with everything else as it is.
-    None if its definition doesn't load as it is."""
+    None if its definition doesn't load as it is.
+
+    With the directory's `holders`, each role a person holds also says who holds it, by name:
+    for a new agent's owner, nobody, until the directory names someone, and its release can't
+    be approved till then. An engineer is anyone in the team that runs a5s, not a role."""
     if shape(files):
         return None
     with tempfile.TemporaryDirectory() as there:
@@ -163,7 +167,9 @@ def signers(agent: str, files: dict[str, str], agents_dir: Path,
     before = {name: releases.agent_part(agents_dir / name) for name in released}
     old = {"parts": {}, "models": {}, "agents": before}
     new = {"parts": {}, "models": {}, "agents": {**before, agent: after}}
-    return [{"role": n.role, "who": releases.who(n.role), "why": n.why}
+    return [{"role": n.role, "who": releases.who(n.role), "why": n.why,
+             "held_by": None if holders is None or n.role == ENGINEER
+             else sorted(p.name for p in holders(n.role))}
             for n in releases.needs(new, old)]
 
 
@@ -179,7 +185,7 @@ def get(conn: db.Connection, person: Person, draft: str) -> dict | None:
     """One of someone's drafts, with its files, and the folder it began from; None if it isn't
     theirs, or isn't there."""
     try:
-        found = conn.execute(f"select {SHOWN}, files, base, before from agent_drafts "
+        found = conn.execute(f"select {SHOWN}, files, base, before, plan, described from agent_drafts "
                              "where id = %s::uuid and person = %s", (draft, person.id)).fetchone()
     except psycopg.errors.InvalidTextRepresentation:
         return None
@@ -188,10 +194,12 @@ def get(conn: db.Connection, person: Person, draft: str) -> dict | None:
 
 def start(conn: db.Connection, person: Person, agent: str, based_on: str,
           files: dict[str, str], base: dict[str, str] | None = None,
-          before: list[dict] | None = None) -> dict:
+          before: list[dict] | None = None, plan: dict | None = None,
+          described: dict | None = None) -> dict:
     """A new draft of someone's: their first of `agent`, among no more than MOST_DRAFTS, the
-    folder it began from, `base`: the agent's as released, or none for a new agent's, and who
-    drafted it `before` them, for a copy of someone else's."""
+    folder it began from, `base`: the agent's as released, or none for a new agent's, who
+    drafted it `before` them, for a copy of someone else's, its `plan`, a copy's too, and, for
+    one described in words, what it was given and why (describing.py)."""
     held = conn.execute("select count(*) as n, bool_or(agent = %s) as already from agent_drafts "
                         "where person = %s", (agent, person.id)).fetchone()
     if held["already"]:
@@ -199,21 +207,24 @@ def start(conn: db.Connection, person: Person, agent: str, based_on: str,
     if held["n"] >= MOST_DRAFTS:
         raise Refused(f"you keep {MOST_DRAFTS} drafts at most: publish or drop one first")
     made = conn.execute(
-        "insert into agent_drafts (person, agent, based_on, files, base, before) values (%s, %s, "
-        f"%s, %s, %s, %s) returning {SHOWN}, files, base, before",
-        (person.id, agent, based_on, Jsonb(files), Jsonb(base or {}), Jsonb(before or []))
-    ).fetchone()
+        "insert into agent_drafts (person, agent, based_on, files, base, before, plan, described) "
+        f"values (%s, %s, %s, %s, %s, %s, %s, %s) returning {SHOWN}, files, base, before, plan, described",
+        (person.id, agent, based_on, Jsonb(files), Jsonb(base or {}), Jsonb(before or []),
+         Jsonb(plan or {}), None if described is None else Jsonb(described))).fetchone()
     if made is None:  # an insert returns the row it made
         raise Refused("a5s couldn't keep the draft: try again")
     return dict(made)
 
 
-def save(conn: db.Connection, person: Person, draft: str, files: dict[str, str]) -> dict | None:
-    """A draft of someone's, with these files now; None if it isn't theirs, or isn't there."""
+def save(conn: db.Connection, person: Person, draft: str, files: dict[str, str],
+         plan: dict | None = None) -> dict | None:
+    """A draft of someone's, with these files now, and this plan for its first instance, if
+    given; None if it isn't theirs, or isn't there."""
     try:
         found = conn.execute(
-            "update agent_drafts set files = %s, updated_at = now() where id = %s::uuid and "
-            f"person = %s returning {SHOWN}, files", (Jsonb(files), draft, person.id)).fetchone()
+            "update agent_drafts set files = %s, plan = coalesce(%s, plan), updated_at = now() "
+            f"where id = %s::uuid and person = %s returning {SHOWN}, files, plan, described",
+            (Jsonb(files), None if plan is None else Jsonb(plan), draft, person.id)).fetchone()
     except psycopg.errors.InvalidTextRepresentation:
         return None
     return dict(found) if found else None
@@ -231,8 +242,8 @@ def zipped(draft: dict) -> bytes:
 def by_id(conn: db.Connection, draft: str) -> dict | None:
     """A draft, whoever's, with its files and its author's id; None if it isn't there."""
     try:
-        found = conn.execute(f"select {SHOWN}, files, base, before, person from agent_drafts "
-                             "where id = %s::uuid", (draft,)).fetchone()
+        found = conn.execute(f"select {SHOWN}, files, base, before, plan, described, person "
+                             "from agent_drafts where id = %s::uuid", (draft,)).fetchone()
     except psycopg.errors.InvalidTextRepresentation:
         return None
     return dict(found) if found else None

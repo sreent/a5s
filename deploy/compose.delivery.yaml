@@ -1,0 +1,12 @@
+# The software delivery team's made-up forge, with its CI, behind its MCP server
+# (systems/forge.py), on the scenario's synthetic data. It shares the gateway's network, as the
+# scenario's mcp.yaml points a5s at it on the gateway's own machine, and reaches nothing else:
+#   sh deploy/smoke-scenario.sh software-delivery
+
+services:
+  delivery-forge:
+    image: ${A5S_IMAGE:-a5s:dev}
+    entrypoint: ["python", "/systems/forge.py", "/app/scenarios/software-delivery/data.yaml"]
+    volumes: ["./systems:/systems:ro"]
+    network_mode: "service:gateway"
+    depends_on: [gateway]

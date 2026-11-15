@@ -13,7 +13,7 @@ import httpx
 import pytest
 
 from a5s.contract import record_of
-from conftest import FAKE_MODELS, ROOT, FakeModel, Stack, build_root, deciding, live_image
+from conftest import FAKE_MODELS, ROOT, SYSTEMS, FakeModel, Stack, build_root, deciding, live_image
 from scenario_stack import opened, running_scenario
 from test_obligations import escalations
 from test_proposals import decide, held, sweep
@@ -38,6 +38,18 @@ def owners(mdg: Stack, provider) -> Iterator[str]:
     """The page where each data object's owner decides what an agent proposes."""
     with deciding(mdg, provider) as url:
         yield url
+
+
+def sap():
+    """The made-up SAP's MCP server, as it's been changed since the stack started."""
+    return SYSTEMS["master-data"]["sap"]
+
+
+def request(stack: Stack, key: str) -> dict:
+    """A change request as a5s reads it, which is as SAP holds it."""
+    found = stack.gateway.scenario.request(key)
+    assert found is not None
+    return found
 
 
 def say(stack: Stack, text: str, person: str = "tess") -> str:
@@ -112,8 +124,8 @@ def test_a_value_the_requester_gives_waits_for_the_data_objects_owner(mdg, owner
     say(mdg, "CR0000104's base unit is EA: we keep nuts in each.", person="raf")
     answer = json.loads(mdg.model.requests[-1]["body"]["messages"][-1]["content"])
     assert answer["held"] == "P-1" and answer["decides"] == "Mo Hassan", answer
-    request = mdg.gateway.scenario._requests["CR0000104"]
-    assert request["values"]["base_unit"] == "" and request["status"] == "needs info"
+    before = request(mdg, "CR0000104")
+    assert before["values"]["base_unit"] == "" and before["status"] == "needs info"
     [p] = held(mdg)
     assert (p["deciders"], p["acts_for"], p["action"]) == (["mo"], ["raf"], "correct-value")
     assert p["said"].startswith("Propose a correction to what a change request proposes")
@@ -121,8 +133,9 @@ def test_a_value_the_requester_gives_waits_for_the_data_objects_owner(mdg, owner
 
     assert decide(owners, provider, [p["digest"]], person="mo").status_code == 200
     assert sweep(mdg)["made"] == 1
-    assert request["values"]["base_unit"] == "EA"
-    assert request["status"] == "in review"  # what it needed is there: back with its steward
+    after = request(mdg, "CR0000104")  # as SAP holds it, which made it through its server
+    assert after["values"]["base_unit"] == "EA" == sap().request("CR0000104")["values"]["base_unit"]
+    assert after["status"] == "in review"  # what it needed is there: back with its steward
     assert any(m["text"].startswith("Mo Hassan approved P-1") for m in mdg.inbox("raf"))
     checked = tool(mdg, "raf", "check_request", key="CR0000104").json()["result"]
     assert checked["passed"] and checked["route"].startswith("Mo Hassan, who owns material data")
@@ -133,8 +146,7 @@ def test_a_sensitive_field_cant_even_be_proposed(mdg, owners):
     assert refused.status_code == 403  # policy refuses it, before anything is held
     assert "iban isn't one of its arguments" in refused.text
     assert held(mdg) == []
-    assert mdg.gateway.scenario._requests["CR0000102"]["values"]["iban"] == (
-        "GB29NWBK60161331926819")
+    assert request(mdg, "CR0000102")["values"]["iban"] == "GB29NWBK60161331926819"
 
 
 def test_each_data_objects_quality_is_measured_by_code_against_its_target(mdg):
@@ -312,12 +324,12 @@ def test_a_correction_cant_overwrite_a_request_that_changed_before_its_decision(
     mdg.model.reply("Mo Hassan decides the correction.")
     say(mdg, "CR0000104's base unit is EA.", person="raf")
     [proposal] = held(mdg)
-    request = mdg.gateway.scenario._requests["CR0000104"]
-    request["values"].update({"base_unit": "PC", "description": "Hex nut M8 stainless, revised"})
+    # Raf changes the request in SAP before Mo decides
+    sap().amend("CR0000104", {"base_unit": "PC", "description": "Hex nut M8 stainless, revised"})
     assert decide(owners, provider, [proposal["digest"]], person="mo").status_code == 200
     sweep(mdg)
     assert held(mdg)[0]["status"] == "not made"
-    assert request["values"]["base_unit"] == "PC"  # a5s didn't overwrite the newer request
+    assert request(mdg, "CR0000104")["values"]["base_unit"] == "PC"  # nor overwrote the newer
     assert sweep(mdg)["made"] == 0
 
 
@@ -427,8 +439,7 @@ def test_a_long_governance_review_sees_changes_and_makes_no_repeated_correction(
                     ("finish_task", {"status": "waiting"}))
     mdg.model.reply("Still working.")
     work_task()
-    request = mdg.gateway.scenario._requests["CR0000111"]
-    request["values"].update({"base_unit": "EA", "material_type": "ROH"})
+    sap().amend("CR0000111", {"base_unit": "EA", "material_type": "ROH"})  # in SAP, between slices
     mdg.model.reply(None, ("check_request", {"key": "CR0000111"}),
                     ("check_request", {"key": "CR0000112"}),
                     ("finish_task", {"status": "done", "plan": [
@@ -440,6 +451,7 @@ def test_a_long_governance_review_sees_changes_and_makes_no_repeated_correction(
     with db.transaction(mdg.admin) as conn:
         [task] = conn.execute("select * from tasks").fetchall()
     assert task["status"] == "done" and task["attempts"] == 2
-    assert request["values"]["base_unit"] == "EA" and request["values"]["material_type"] == "ROH"
+    now = request(mdg, "CR0000111")["values"]
+    assert now["base_unit"] == "EA" and now["material_type"] == "ROH"
     assert held(mdg) == [] and mdg.gateway.scenario.drafts == []
     assert mdg.verify().ok

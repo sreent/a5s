@@ -1,0 +1,32 @@
+# The master data team's made-up SAP MDG, behind its MCP server (systems/sap.py), on the scenario's
+# synthetic data. It shares the gateway's network, as the scenario's mcp.yaml points a5s at it on
+# the gateway's own machine, and reaches nothing else. What's done through it, such as a
+# correction an owner approved, it keeps in a volume a5s's parts read, as the scenario's own code
+# reads SAP as it stands:
+#   sh deploy/smoke-scenario.sh master-data
+
+x-reads-sap: &reads-sap
+  environment: {A5S_SYSTEMS_STATE: /state}
+  volumes: ["systems-state:/state:ro"]
+
+services:
+  systems-state:  # the made-up system's folder in the volume, its own to write in
+    image: ${A5S_IMAGE:-a5s:dev}
+    user: "0"
+    entrypoint: ["chown", "10001:10001", "/state"]
+    volumes: ["systems-state:/state"]
+  master-sap:
+    image: ${A5S_IMAGE:-a5s:dev}
+    entrypoint: ["python", "/systems/sap.py", "/app/scenarios/master-data/data.yaml"]
+    environment: {A5S_SYSTEMS_STATE: /state}
+    volumes: ["./systems:/systems:ro", "systems-state:/state"]
+    network_mode: "service:gateway"
+    depends_on:
+      gateway: {condition: service_started}
+      systems-state: {condition: service_completed_successfully}
+  gateway: *reads-sap
+  channels: *reads-sap
+  scheduler: *reads-sap
+
+volumes:
+  systems-state: {}

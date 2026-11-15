@@ -35,9 +35,9 @@ import yaml
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
-from a5s import authoring, build, cases, db, definitions
+from a5s import authoring, build, cases, db, definitions, describing
 from a5s.config import Config, load_models
-from a5s.core import inbox, registry, retention, signing, studio
+from a5s.core import extractor, inbox, judging, models, registry, retention, signing, studio
 from a5s.core.gateway import Gateway
 from a5s.core.gateway import create_app as core_app
 from a5s.services.scheduler import Scheduler
@@ -83,10 +83,19 @@ def _answer(body: dict, message: dict) -> httpx.Response:
 class StandIn:
     """The sandbox's stand-in model, an OpenAI-compatible provider that thinks nothing: asked
     something, it looks it up with the first tool it's offered whose name begins with search,
-    then says what it found. A real model, where the sandbox has one, says what the agent would."""
+    then says what it found. Asked to draft an agent from a description, it gives only the tools
+    that only read whose words match it (describing.py); asked to judge a test case's step, it
+    looks only for the words its criterion quotes and the tools it names (cases.py). A real
+    model, where the sandbox has one, says what the agent, or its judge, would."""
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
+        first = body["messages"][0]
+        if first.get("role") == "system" and str(first.get("content") or "").startswith(describing.DESCRIBING):
+            return _answer(body, {"role": "assistant", "content": json.dumps(describing.stand_in(body))})
+        if first.get("role") == "system" and first.get("content") == cases.JUDGING:
+            asked = str(body["messages"][-1].get("content") or "")
+            return _answer(body, {"role": "assistant", "content": json.dumps(cases.stand_in_verdict(asked))})
         last = body["messages"][-1]
         if last.get("role") == "tool":
             content = str(last.get("content") or "")
@@ -113,24 +122,24 @@ class StandIn:
                 "arguments": json.dumps({text: words[-1] if words else ""} if text else {})}}]})
 
 
-class Recording(httpx.BaseTransport):
-    """What a try's model calls were sent, and what came back, as they went."""
+class Recording:
+    """What a try's model calls were sent, and what came back, as they went: heard as each
+    answer comes, by whichever way it went, to a real provider, through any proxy the
+    environment names, or to the stand-in."""
 
-    def __init__(self, inner: httpx.BaseTransport) -> None:
-        self.inner = inner
+    def __init__(self) -> None:
         self.calls: list[dict] | None = None  # while a try is under way
 
-    def handle_request(self, request: httpx.Request) -> httpx.Response:
-        response = self.inner.handle_request(request)
-        if self.calls is not None:
-            response.read()
-            try:
-                sent, came = json.loads(request.content), json.loads(response.content)
-            except ValueError:
-                sent, came = None, None
-            if isinstance(sent, dict) and "messages" in sent:
-                self.calls.append({"sent": sent, "came": came, "status": response.status_code})
-        return response
+    def heard(self, response: httpx.Response) -> None:
+        if self.calls is None:
+            return
+        response.read()
+        try:
+            sent, came = json.loads(response.request.content), json.loads(response.content)
+        except ValueError:
+            sent, came = None, None
+        if isinstance(sent, dict) and "messages" in sent:
+            self.calls.append({"sent": sent, "came": came, "status": response.status_code})
 
 
 # The sandbox itself
@@ -170,7 +179,7 @@ class Sandbox:
     channels_url: str
     keys: dict[str, str]  # its made-up people's private keys, which it made
     standing: dict  # its settings, as it signs them, with an instance for each draft tried
-    recording: Any  # its model calls' recorders, to a real provider and to the stand-in
+    recording: Recording  # its model calls, to a real provider or to the stand-in
     lock: threading.Lock = field(default_factory=threading.Lock)
 
     @property
@@ -301,6 +310,33 @@ class Sandbox:
             reply, run, calls = self._said(agent, person, text)
         return {"agent": agent, "reply": reply, "run": run, "model_calls": calls}
 
+    def describe(self, words: str, model: str) -> dict:
+        """What a model proposes for a new agent described in `words`, of what the sandbox's
+        scenario offers, each with why, and each call to the model, what it was sent and said:
+        a proposal, never a draft, which the studio makes from it (describing.py)."""
+        if model not in self.models():
+            raise Refused(f"the sandbox can't call {model}: it has {', '.join(self.models())}")
+        if not words.strip():
+            raise Refused("say what it's for, in your own words")
+        scenario = self.scenario
+        found = load_models(self.cfg.models_file)[model]
+        offered = describing.offer(scenario.tools(), sorted({o.source for o in scenario.obligations()}))
+        body = describing.asked(found.api, found.alias, words, offered)
+        with self.lock:
+            self.recording.calls = []
+            try:
+                status, data = models.forward(found, models.screen(found.api, body)[0], self.gateway.http)
+            except models.ModelUnavailable as e:
+                raise Refused(f"the sandbox couldn't ask {model}: {e}") from None
+            finally:
+                calls, self.recording.calls = self.recording.calls or [], None
+        if status >= 400:
+            raise Refused(f"{model} said {status}: try again, or another model")
+        proposed = describing.proposal(extractor.reply_text(found.api, data))
+        if proposed is None:
+            raise Refused(f"what {model} answered doesn't read as a proposal: try again, or another model")
+        return {"proposal": proposed, "model": model, "model_calls": calls}
+
     def case(self, key: str, files: dict[str, str], model: str, number: int) -> dict:
         """Run one of a draft's test cases, by its place among them, as the agent's suite runs
         it, in a conversation of its own: what it answered at each step, the tools it used, and
@@ -336,12 +372,49 @@ class Sandbox:
             self._serving(agent, agent, person)
             self._settle()
             for n, step in enumerate(case["steps"], 1):
-                reply, run, _ = self._said(agent, person, cases.dated(str(step["say"])))
+                said = cases.dated(str(step["say"]))
+                reply, run, _ = self._said(agent, person, said)
                 called = used(run)
                 wrong = cases.check(step, reply, called, case.get("own_values") == "allowed")
+                done = {"say": step["say"], "reply": reply, "called": called}
+                if criterion := step.get("judged"):  # where it can be right in more than one way
+                    done["judged"] = verdict = self._judged(agent, model, str(criterion), said,
+                                                            reply, called)
+                    if verdict["grade"] is None:
+                        wrong.append(f"nobody judged it: {verdict['why']}")
+                    elif verdict["grade"] != "right":
+                        wrong.append(f"its judge found it {verdict['grade']}: {verdict['why']}")
                 problems += [f"step {n}: {w}" for w in wrong]
-                steps.append({"say": step["say"], "reply": reply, "called": called, "wrong": wrong})
+                steps.append({**done, "wrong": wrong})
         return {**shown, "ran": True, "passed": not problems, "problems": problems, "steps": steps}
+
+    def _judged(self, agent: str, model: str, criterion: str, said: str, reply: str,
+                called: list[str]) -> dict:
+        """What a judge says of a step a case says what a right answer is for: its grade, right,
+        wrong or critical, and why, and which model judged it, or why none could. A draft tried
+        on the stand-in is judged by it too, by words alone; on a real model, by the judge its
+        definition names, where the sandbox can call it."""
+        judge: str | None = STAND_IN
+        if model != STAND_IN:
+            definition = self.gateway.definitions.get(agent)
+            judge = definition.evaluation.judge if definition and definition.evaluation else None
+            if judge is None:
+                return {"grade": None, "why": "the draft names no judge", "judge": None}
+            if judge not in self.models():
+                return {"grade": None, "why": f"the sandbox can't call its judge, {judge}",
+                        "judge": judge}
+        found = load_models(self.cfg.models_file)[judge]
+        body = extractor.asked(found.api, found.alias, cases.JUDGING,
+                               cases.judging(criterion, said, reply, called))
+        try:
+            status, data = models.forward(found, models.screen(found.api, body)[0], self.gateway.http)
+        except models.ModelUnavailable as e:
+            return {"grade": None, "why": f"the sandbox couldn't ask {judge}: {e}", "judge": judge}
+        verdict = judging.verdict(extractor.reply_text(found.api, data)) if status < 400 else None
+        if verdict is None:
+            return {"grade": None, "why": f"what {judge} answered doesn't read as a grade",
+                    "judge": judge}
+        return {"grade": verdict[0], "why": verdict[1], "judge": judge}
 
     def forget(self) -> dict[str, int]:
         """Sweep what's past its time, as a5s's retention sweep does, but with what's said
@@ -382,9 +455,11 @@ def _own(admin: str) -> None:
 
 
 @contextmanager
-def opened(deployment: Config, admin: str, work: Path) -> Iterator[Sandbox]:
+def opened(deployment: Config, admin: str, work: Path,
+           transport: httpx.BaseTransport | None = None) -> Iterator[Sandbox]:
     """A sandbox for a deployment's scenario and agents, on its own database, whose
-    administrator's address is `admin`, with its working copies in `work`."""
+    administrator's address is `admin`, with its working copies in `work`: its calls to real
+    models' providers go by `transport`, the internet's unless a test gives its own."""
     root = work / "root"
     shutil.rmtree(root, ignore_errors=True)
     scenario_dir = root / "scenarios" / deployment.scenario_dir.name
@@ -416,16 +491,19 @@ def opened(deployment: Config, admin: str, work: Path) -> Iterator[Sandbox]:
         last = conn.execute("select max(serial) as serial from settings_versions where scenario = %s",
                             (build.scenario(cfg).name,)).fetchone()["serial"]
     standing["serial"] = max(int(standing.get("serial") or 0), int(last or 0))  # on from its last
-    recording = Recording(httpx.HTTPTransport())
-    stand_in = Recording(httpx.MockTransport(StandIn().handler))
-    http = httpx.Client(mounts={STAND_IN_URL.rsplit("/", 1)[0]: stand_in, "all://": recording})
+    recording = Recording()
+    mounts: dict[str, httpx.BaseTransport] = {
+        STAND_IN_URL.rsplit("/", 1)[0]: httpx.MockTransport(StandIn().handler)}
+    if transport is not None:  # a test's own, for every provider, whatever the environment says
+        mounts |= dict.fromkeys(("all://", "http://", "https://"), transport)
+    http = httpx.Client(mounts=mounts, event_hooks={"response": [recording.heard]})
     gw = build.gateway(cfg, http=http)
     gw.identity = None  # it signs nobody in: its people are made up, and say who they are
     core, core_url = _serve(core_app(gw))
     cfg = replace(cfg, gateway_url=core_url)
     gw.cfg = cfg
     channels, channels_url = _serve(inbox.create_app(replace(gw, cfg=cfg)))
-    sandbox = Sandbox(cfg, admin, gw, channels_url, keys, standing, _Both(recording, stand_in))
+    sandbox = Sandbox(cfg, admin, gw, channels_url, keys, standing, recording)
     stop = threading.Event()
 
     def sweeping() -> None:
@@ -445,29 +523,17 @@ def opened(deployment: Config, admin: str, work: Path) -> Iterator[Sandbox]:
         core.should_exit = channels.should_exit = True
 
 
-class _Both:
-    """The two ways a try's model calls go, to a real provider or the stand-in, recorded alike."""
-
-    def __init__(self, *ways: Recording) -> None:
-        self.ways = ways
-
-    @property
-    def calls(self) -> list[dict] | None:
-        found = [way.calls for way in self.ways if way.calls is not None]
-        return [call for calls in found for call in calls] if found else None
-
-    @calls.setter
-    def calls(self, value: list[dict] | None) -> None:
-        for way in self.ways:
-            way.calls = None if value is None else []
-
-
 # Its API, for the studio of the deployment people work in, by the token they share
 
 class Case(BaseModel):
     key: str  # the draft's, as the studio names it
     files: dict[str, str]  # its agent's folder, each file's text by its path in it
     number: int  # which of its test cases, by its place among them, from 0
+    model: str = STAND_IN
+
+
+class Describe(BaseModel):
+    words: str  # what a new agent is for, in its author's words
     model: str = STAND_IN
 
 
@@ -501,6 +567,14 @@ def create_app(sandbox: Sandbox, token: str) -> FastAPI:
         allowed(authorization)
         try:
             return sandbox.turn(body.key, body.files, body.person, body.text[:4000], body.model)
+        except Refused as e:
+            raise HTTPException(400, str(e)) from None
+
+    @app.post("/sandbox/descriptions")
+    def described(body: Describe, authorization: str | None = Header(default=None)) -> dict:
+        allowed(authorization)
+        try:
+            return sandbox.describe(body.words[:describing.WORDS], body.model)
         except Refused as e:
             raise HTTPException(400, str(e)) from None
 

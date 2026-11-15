@@ -82,12 +82,13 @@ def gather(conn: db.Connection, person: str) -> dict[str, Any]:
     samples = rows(  # with the judge's verdict, and its reason where the change was for them
         f"select id, action, case when acts_for && %(ids)s then {FIRST_LINE} end as said, "
         "decided, grade, drawn_at, graded_at, acts_for && %(ids)s as for_them, "
-        "coalesce(decided_by = any(%(ids)s), false) as decided_it, "
+        "(coalesce(decided_by = any(%(ids)s), false) or deciders && %(ids)s) as decided_it, "
         "coalesce(graded_by = any(%(ids)s), false) as graded_it, "
         "(select verdict from judgments j where j.sample_id = samples.id) as judged, "
         "case when acts_for && %(ids)s then (select why from judgments j "
         "where j.sample_id = samples.id) end as judged_why from samples "
-        "where (acts_for && %(ids)s or decided_by = any(%(ids)s) or graded_by = any(%(ids)s)) "
+        "where (acts_for && %(ids)s or decided_by = any(%(ids)s) or deciders && %(ids)s "
+        "or graded_by = any(%(ids)s)) "
         f"and {within('drawn_at')} order by id")
     alone = "acts_for && %(names)s and acts_for <@ %(names)s"  # for them, and nobody else
     return {
@@ -147,8 +148,12 @@ def gather(conn: db.Connection, person: str) -> dict[str, Any]:
             "select agent, asked_at, ended_at, outcome from agent_asks "
             "where person = any(%(names)s) order by asked_at"),
         "drafts": rows(  # the agents they're making in the studio, file by file
-            "select agent, based_on, files, published, created_at, updated_at from agent_drafts "
-            "where person = any(%(names)s) order by created_at, agent"),
+            "select agent, based_on, files, plan, published, created_at, updated_at from "
+            "agent_drafts where person = any(%(names)s) order by created_at, agent"),
+        "planned_for": rows(  # others' drafts whose first instance would serve them
+            "select agent, plan->'parts' as parts from agent_drafts where person <> all(%(names)s) "
+            "and exists (select 1 from jsonb_array_elements_text(plan->'serves') as s(who) "
+            "where s.who = any(%(names)s)) order by agent"),
         "drafted_first": rows(  # others' drafts now, which they drafted first, and how each went on
             "select d.agent, e.b->>'how' as how, e.b->>'at' as at from agent_drafts d, "
             "jsonb_array_elements(d.before) as e(b) where e.b->>'person' = any(%(names)s) "

@@ -4,7 +4,8 @@ works_for: Engineers, their leads and product, within their teams' issues and pu
 does: >-
   Answers questions about issues, pull requests, their checks and reviews, and the
   engineering handbook, saves drafts such as pull request descriptions and release
-  notes for people to post, and follows up on the reviews and fixes that fall due.
+  notes for people to post, asks for a review when someone wants one, which the
+  repository's owners decide, and follows up on the reviews and fixes that fall due.
 scope: none
 model: deepseek-v4-pro
 autonomy:
@@ -14,6 +15,7 @@ tools:
   records: [search_records, get_record, get_comments]
   knowledge: [search_knowledge, read_knowledge]
   documents: [create_draft]
+  changes: [request_review]
 triggers:
   - message: from the engineer, lead or product manager it works for
 obligations: [records]

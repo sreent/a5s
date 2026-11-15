@@ -453,9 +453,55 @@ class Offered(Shape):
     outside: list[str]
 
 
+class PartRule(Shape):
+    """A part of the business, as the settings in force know it: who decides a change to one
+    of its records below level 2, by name, who approves an instance that works in it, its
+    owners, and how right graded samples must show an agent's changes there before a5s raises
+    its cap to level 2, if it ever may."""
+
+    name: str
+    deciders: list[str]
+    owners: list[str]
+    threshold: float | None
+
+
+class Servable(Shape):
+    """Someone an instance could serve, as the settings name them, or whoever is signed in: a
+    person by their name, or a team or a role as written."""
+
+    id: str
+    name: str
+
+
+class Askable(Shape):
+    """An instance a new one could ask, of those the person may watch: its agent, and the parts
+    it works in."""
+
+    id: str
+    agent: str
+    parts: list[str]
+
+
+class Limit(Shape):
+    """The scenario's limits for a type of change: past either, a change waits for a person,
+    whatever the level."""
+
+    per_run: int | None
+    per_person_30_days: int | None
+
+
 class Offer(Shape):
     tools: list[Offered]
     models: list[str]  # the models the deployment approves
+    # What follows here from what an agent may do, as the settings in force say it
+    parts: list[PartRule]
+    no_part: list[str]  # who decides a change to a record in no part: the instance approvers
+    limits: dict[str, Limit]  # by type of change
+    # For a draft's plan of its first instance: whom it could serve, and the instances it
+    # could ask, of those the person may see already
+    servable: list[Servable]
+    askable: list[Askable]
+    owed: list[str] = []  # the kinds of what people owe that the scenario's records make, such as records
 
 
 class Template(Shape):
@@ -506,11 +552,14 @@ class Defined(Shape):
 
 
 class Signer(Shape):
-    """Whose signature a draft's release would need, and why."""
+    """Whose signature a draft's release would need, and why: and who holds that role in the
+    directory, by name, where a person holds it; for a new agent's owner, nobody, till the
+    directory names someone."""
 
     role: str
     who: str
     why: str
+    held_by: list[str] | None = None
 
 
 class Drafter(Shape):
@@ -519,6 +568,33 @@ class Drafter(Shape):
     name: str
     at: datetime
     how: Literal["handed", "copied"]  # handed over to its holder, or copied into their draft
+
+
+class Plan(Shape):
+    """Its authors' plan for a draft's first instance: the parts it would work in, whom it
+    would serve, and the instances it could ask. Never in force: the signed settings are, which
+    those parts' owners approve, and putting it to work starts from it."""
+
+    parts: list[str] = []
+    serves: list[str] = []
+    asks: list[str] = []
+
+
+class DescribedNote(Shape):
+    """One thing a draft described in words was given, and why, or wasn't, and why not."""
+
+    what: str
+    given: bool
+    why: str
+
+
+class Described(Shape):
+    """How a draft was described in words: its author's words, the model that proposed what it
+    needs, and a note on each thing it was given or not, for its author to check."""
+
+    words: str
+    model: str
+    notes: list[DescribedNote]
 
 
 class Draft(Shape):
@@ -532,6 +608,8 @@ class Draft(Shape):
     updated_at: datetime
     published: str | None
     files: dict[str, str]  # each file's text, by its path in the agent's folder
+    plan: Plan  # for its first instance, as its authors mean to ask for it
+    described: Described | None = None  # if it began from its author's words
     yours: bool  # or a co-author's, read only
     author: str | None
     drafted_before: list[Drafter]  # who drafted it before its author, oldest first
@@ -622,11 +700,20 @@ class Cases(Shape):
     problem: str | SkipJsonSchema[None] = None  # why its cases can't be read, if they can't
 
 
+class Judged(Shape):
+    """What a judge said of a step a case says what a right answer is for, or why none did."""
+
+    grade: Literal["right", "wrong", "critical"] | None
+    why: str
+    judge: str | None  # the model that judged it: the stand-in, or the draft's own judge
+
+
 class CaseStep(Shape):
     say: str
     reply: str
     called: list[str]
     wrong: list[str]
+    judged: Judged | SkipJsonSchema[None] = None
 
 
 class CaseRan(Shape):

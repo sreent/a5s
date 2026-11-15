@@ -45,6 +45,14 @@ export type Ask = {
   outcome: string | null;
 };
 
+// An instance a new one could ask, of those the person may watch: its agent, and the parts
+// it works in.
+export type Askable = {
+  id: string;
+  agent: string;
+  parts: string[];
+};
+
 // An open ask that waits on someone, with whose it is, and why it's theirs.
 export type Asked = {
   id: string;
@@ -110,6 +118,7 @@ export type CaseStep = {
   reply: string;
   called: string[];
   wrong: string[];
+  judged?: Judged;
 };
 
 export type Cases = {
@@ -176,6 +185,21 @@ export type Denied = {
   times: number;
 };
 
+// How a draft was described in words: its author's words, the model that proposed what it
+// needs, and a note on each thing it was given or not, for its author to check.
+export type Described = {
+  words: string;
+  model: string;
+  notes: DescribedNote[];
+};
+
+// One thing a draft described in words was given, and why, or wasn't, and why not.
+export type DescribedNote = {
+  what: string;
+  given: boolean;
+  why: string;
+};
+
 // A draft: its agent's folder, file by file, what would stop its release, and how the
 // catalogue would show it, if it loads.
 export type Draft = {
@@ -186,6 +210,8 @@ export type Draft = {
   updated_at: string;
   published: string | null;
   files: Record<string, string>;
+  plan: Plan;
+  described?: Described | null;
   yours: boolean;
   author: string | null;
   drafted_before: Drafter[];
@@ -197,9 +223,11 @@ export type Draft = {
   at_work: boolean;
 };
 
-// A draft's agent's folder: each file's text, by its path in it.
+// A draft's agent's folder: each file's text, by its path in it, and, if it changes, its
+// authors' plan for its first instance.
 export type DraftFiles = {
   files: Record<string, string>;
+  plan?: Plan | null;
 };
 
 // One of someone's drafts, or a co-author's, without its files (core/drafts.py).
@@ -213,11 +241,14 @@ export type DraftLine = {
   author?: string;
 };
 
-// A new draft: a new agent's name and the template it starts from, an agent of the
-// release to change, or a co-author's draft to copy.
+// A new draft: a new agent's name and the template it starts from, or what it's for in
+// its author's words, for the sandbox's model to propose what it needs; an agent of the
+// release to change; or a co-author's draft to copy.
 export type DraftStart = {
   name?: string | null;
   template?: string | null;
+  describe?: string | null;
+  model?: string | null;
   agent?: string | null;
   copy_of?: string | null;
 };
@@ -342,6 +373,20 @@ export type Judge = {
   kappa: number | null;
 };
 
+// What a judge said of a step a case says what a right answer is for, or why none did.
+export type Judged = {
+  grade: "right" | "wrong" | "critical" | null;
+  why: string;
+  judge: string | null;
+};
+
+// The scenario's limits for a type of change: past either, a change waits for a person,
+// whatever the level.
+export type Limit = {
+  per_run: number | null;
+  per_person_30_days: number | null;
+};
+
 // One call to the model a try made: what it was sent, what came back, and how.
 export type ModelCall = {
   sent: Sent;
@@ -390,6 +435,12 @@ export type Obligations = {
 export type Offer = {
   tools: Offered[];
   models: string[];
+  parts: PartRule[];
+  no_part: string[];
+  limits: Record<string, Limit>;
+  servable: Servable[];
+  askable: Askable[];
+  owed?: string[];
 };
 
 // One of the scenario's tools an agent may be given, with what it reads, writes or
@@ -404,6 +455,26 @@ export type Offered = {
   changes: string | null;
   handles: string[];
   outside: string[];
+};
+
+// A part of the business, as the settings in force know it: who decides a change to one
+// of its records below level 2, by name, who approves an instance that works in it, its
+// owners, and how right graded samples must show an agent's changes there before a5s raises
+// its cap to level 2, if it ever may.
+export type PartRule = {
+  name: string;
+  deciders: string[];
+  owners: string[];
+  threshold: number | null;
+};
+
+// Its authors' plan for a draft's first instance: the parts it would work in, whom it
+// would serve, and the instances it could ask. Never in force: the signed settings are, which
+// those parts' owners approve, and putting it to work starts from it.
+export type Plan = {
+  parts?: string[];
+  serves?: string[];
+  asks?: string[];
 };
 
 // A publish under way: the code to enter at GitHub's sign-in, and how it stands.
@@ -559,16 +630,26 @@ export type SentMessage = {
   [key: string]: unknown;
 };
 
+// Someone an instance could serve, as the settings name them, or whoever is signed in: a
+// person by their name, or a team or a role as written.
+export type Servable = {
+  id: string;
+  name: string;
+};
+
 // Which of an agent's instances is to serve someone who asked for it.
 export type Serve = {
   instance: string;
 };
 
-// Whose signature a draft's release would need, and why.
+// Whose signature a draft's release would need, and why: and who holds that role in the
+// directory, by name, where a person holds it; for a new agent's owner, nobody, till the
+// directory names someone.
 export type Signer = {
   role: string;
   who: string;
   why: string;
+  held_by?: string[] | null;
 };
 
 // An agent a new one may start from, and the tools it needs that the scenario hasn't.

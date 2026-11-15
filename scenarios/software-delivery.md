@@ -1,6 +1,6 @@
 # Software Delivery Scenario
 
-**Status:** A read-only MVP is implemented for local development and tests: synthetic issues and pull requests, an engineering handbook in a Markdown vault, a dedicated dev assistant, and need-to-know for security issues. Held changes, such as assigning a reviewer, remain future work.
+**Status:** Implemented for local development and tests: synthetic issues and pull requests, behind the forge's MCP server, an engineering handbook in a Markdown vault, a dedicated dev assistant, need-to-know for security issues, and asking someone to review a pull request, held for its repository's owners.
 
 An engineering team works in an issue tracker and code review. Engineers fix bugs by their due dates and review each other's pull requests; leads own their parts of the code; product reports what customers need. It tests a5s where the people it serves are technical and its records change many times a day, and where the riskiest asks, such as merging or handling a secret, must never be the agent's.
 
@@ -10,7 +10,7 @@ An engineering team works in an issue tracker and code review. Engineers fix bug
 | --- | --- |
 | Directory | The identity provider: engineers, their leads, security and product, by team; and the team that runs a5s, who own its agent, with the people from outside it who approve its releases |
 | Settings | a5s's own settings store. The parts are parts of the code, such as backend and frontend, each owned by its tech lead |
-| Tools | The issue tracker's issues and the code review's pull requests, with their checks and reviewers, customers' comments through a5s's reader, and the engineering handbook, read only, and drafts |
+| Tools | The issue tracker's issues and the code review's pull requests, with their checks and reviewers, and customers' comments through a5s's reader, through the forge's MCP server, which the scenario's [`mcp.yaml`](software-delivery/mcp.yaml) declares, with asking someone to review a pull request; and the engineering handbook, read only, and drafts |
 | Records | Issues, with their due dates, and pull requests, with the date each review is due |
 | Governed process | The code review's branch protection and required reviews, and the issue tracker's workflow: a5s merges and approves nothing |
 | Decision surface | The code review and the issue tracker themselves |
@@ -28,6 +28,12 @@ The evaluation also covers release readiness across records and policy, approved
 
 | Agent | Works for | Starts at | Does |
 | --- | --- | --- | --- |
-| Dev assistant (`dev-assistant`) | Engineers, their leads and product | Level 1 | Answers about issues, pull requests, checks and reviews, and how the team works, from the handbook; saves drafts such as pull request descriptions and release notes for people to post; takes on confirmed, resumable review tasks; and chases the fixes and reviews people owe, by when they're due |
+| Dev assistant (`dev-assistant`) | Engineers, their leads and product | Level 1 | Answers about issues, pull requests, checks and reviews, and how the team works, from the handbook; saves drafts such as pull request descriptions and release notes for people to post; asks for a review when someone wants one, which the repository's owners decide; takes on confirmed, resumable review tasks; and chases the fixes and reviews people owe, by when they're due. Built again in the studio, from nothing, as dev-helper ([its guide](../docs/guides/software-delivery/guide.md)) |
 
 It never merges, approves a review, changes an issue, runs code or handles a secret: the code review's own controls decide those, and people make them.
+
+## Through MCP
+
+The forge's tools, with its CI's checks, come through the forge's MCP server, as an organisation's would ([phase 5](../docs/phase-5.md)): searching issues and pull requests, reading one, what customers wrote on an issue, and asking someone to review an open pull request, declared in [`mcp.yaml`](software-delivery/mcp.yaml) in a5s's own words, and nothing else of the server's. In this made-up team the server is [`deploy/systems/forge.py`](../deploy/systems/forge.py), on the scenario's synthetic data, beside the gateway on its own machine: the tests start it once, and the scenario's containers run it in the gateway's network ([`deploy/compose.delivery.yaml`](../deploy/compose.delivery.yaml)). What stays the team's own code is its directory, who may see each issue and pull request, the reviews and fixes people owe, a draft for a person to post, and its handbook.
+
+Asking someone to review a pull request is a change of type `assign-reviewer`: below level 2, a5s holds it for the owners of the pull request's repository, its part, never anyone it's for, and asks the forge once they approve it, once for a5s's key, which the made-up forge honours, keeping what's done through it in its memory, over the scenario's data, until it stops. Someone who may not see a pull request can't ask for its review ([`tests/test_delivery_reviews.py`](../tests/test_delivery_reviews.py)).

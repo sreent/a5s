@@ -1,87 +1,31 @@
-// A draft of an agent, as its author edits it: what it works for and does, its model and levels,
-// its tools from the scenario's, each by what it does, its instructions, and any of its files as
-// text. Each change is kept a moment after it's made, its tools pinned by a5s, and what would
-// stop its release said beside the map of how it's wired, as both stand now.
+// A draft of an agent, on the workbench (Ocean's Workbench): the whole window given to the work,
+// a toolbar that says which agent this is, whether what's been done is kept, what would stop its
+// release, its views and its one thing to do, Publish it. Its first view is the designer, where
+// the agent is built by hand on its canvas (Designer.tsx); the others are its instructions, the
+// sandbox to try it in, and its files as text, which a change in any of them keeps in step. Each
+// change is kept a moment after it's made, its tools pinned by a5s, and what would stop its
+// release said as it stands.
 
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { AgentMap } from "../AgentMap";
-import { type CoAuthors, type Draft, get, type Offer, type Offered, type Sandbox, send } from "../api";
-import { CASES, keptCases, read, Unreadable, withCase, withTool, withValue } from "../definition";
+import { type CoAuthors, type Draft, get, type Offer, type Plan, type Sandbox, send, whole } from "../api";
+import { CASES, keptCases, read, withCase } from "../definition";
 import { JourneyPath, type Stage } from "../design";
+import { Designer } from "../Designer";
+import { Icon } from "../icons";
 import { Publish } from "../Publish";
 import { go, Link } from "../router";
+import { shellOf } from "../Sidebar";
 import { TryIt } from "../TryIt";
-import { PageHead, type Risk, risk, RISK_NAMES, ToolBadges, useLoad, Waiting, when } from "../ui";
+import { useLoad, Waiting, when } from "../ui";
 
 type Files = Record<string, string>;
-type Tab = "basics" | "tools" | "instructions" | "files";
-const TABS: [Tab, string][] = [["basics", "Basics"], ["tools", "Tools"], ["instructions", "Instructions"], ["files", "Files"]];
-const ORDER: Risk[] = ["changes", "outside", "writes", "reads"];
+type View = "design" | "instructions" | "try" | "files" | "publish";
+const VIEWS: [View, string][] = [["design", "Design"], ["instructions", "Instructions"], ["try", "Try it"], ["files", "Files"]];
 const WAIT = 600;  // ms after the last change before it's kept
 
 type Kept = "kept" | "keeping" | { problem: string };
-
-function Basics({ files, models, change }: { files: Files; models: string[]; change: (f: Files) => void }) {
-  const spec = read(files["agent.yaml"] ?? "");
-  if (!spec) return <p className="problem">{new Unreadable().message}</p>;
-  const set = (path: string[], value: string | number) =>
-    change({ ...files, "agent.yaml": withValue(files["agent.yaml"], path, value) });
-  return (
-    <div className="form-grid">
-      <label className="field"><span>Works for</span>
-        <input id="works-for" value={spec.works_for} onChange={(e) => set(["works_for"], e.target.value)} /></label>
-      <label className="field"><span>What it does</span>
-        <textarea id="does" rows={4} value={spec.does} onChange={(e) => set(["does"], e.target.value)} /></label>
-      <label className="field"><span>Model, of those the deployment approves</span>
-        <select id="model" value={spec.model} onChange={(e) => set(["model"], e.target.value)}>
-          {[...new Set([spec.model, ...models])].map((m) => <option key={m} value={m}>{m}</option>)}
-        </select></label>
-      <div className="field-pair">
-        {(["start", "max"] as const).map((end) => (
-          <label key={end} className="field"><span>{end === "start" ? "Level it starts at" : "Highest level"}</span>
-            <select id={`level-${end}`} value={spec.autonomy[end]}
-                    onChange={(e) => set(["autonomy", end], Number(e.target.value))}>
-              {[0, 1, 2].map((n) => <option key={n} value={n}>{n}</option>)}
-            </select></label>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function Tools({ files, offered, change }: { files: Files; offered: Offered[]; change: (f: Files) => void }) {
-  const spec = read(files["agent.yaml"] ?? "");
-  if (!spec) return <p className="problem">{new Unreadable().message}</p>;
-  const has = new Set(Object.values(spec.tools).flat());
-  const kinds = new Map(offered.map((t) => [t.name, risk({ ...t, group: "", pinned: null, missing: false })]));
-  const kindOf = (name: string) => kinds.get(name) ?? "reads";
-  const flip = (tool: Offered, on: boolean) =>
-    change({ ...files, "agent.yaml": withTool(files["agent.yaml"], tool.name, on, kindOf(tool.name), kindOf) });
-  return (
-    <div className="tool-picker">
-      {ORDER.map((kind) => {
-        const these = offered.filter((t) => kindOf(t.name) === kind);
-        if (!these.length) return null;
-        return (
-          <div key={kind} className="tool-group">
-            <div className={`label tone-${kind}`}>{RISK_NAMES[kind]}</div>
-            {these.map((tool) => (
-              <label key={tool.name} className="tool-row pick">
-                <input type="checkbox" checked={has.has(tool.name)} onChange={(e) => flip(tool, e.target.checked)}
-                       aria-label={tool.name} />
-                <span>
-                  <span className="tool-name mono">{tool.name}</span>
-                  {tool.description && <span className="tool-about">{tool.description}</span>}
-                  <ToolBadges tool={{ ...tool, group: "", pinned: null, missing: false }} />
-                </span>
-              </label>
-            ))}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
+type Said = Pick<Draft, "problems" | "preview" | "signers" | "released" | "at_work">;
 
 function Raw({ files, change, readOnly = false }: { files: Files; change: (f: Files) => void; readOnly?: boolean }) {
   const names = Object.keys(files).sort();
@@ -103,8 +47,68 @@ function Raw({ files, change, readOnly = false }: { files: Files; change: (f: Fi
   );
 }
 
-/** A co-author's draft, read only: what would stop its release, who'd sign it, its map and its
- * files, and a copy of it into a draft of one's own, to change it. */
+/** What would stop its release, as a5s's checks say it now: a gate, as Ocean's GateList draws one,
+ * which names each thing that stops it. */
+/** The draft's tools that change, write or send something, in the scenario's order: what a test
+ * case may say it must never use. */
+function acting(files: Files, offer: Offer): string[] {
+  const given = new Set(Object.values(read(files["agent.yaml"] ?? "")?.tools ?? {}).flat());
+  return offer.tools.filter((t) => given.has(t.name) && (t.changes || t.writes || t.destructive || t.sends_outside))
+    .map((t) => t.name);
+}
+
+/** How a draft described in words began: what its author said, and each thing the model asked
+ * for that it was given, and why, or wasn't, and why not, for its author to check. */
+function Described({ described }: { described: NonNullable<Draft["described"]> }) {
+  const given = described.notes.filter((n) => n.given);
+  const left = described.notes.filter((n) => !n.given);
+  return (
+    <section id="described" aria-labelledby="described-title">
+      <h2 id="described-title">Drafted from your words</h2>
+      <p className="note">On {described.model === "stand-in" ? "the sandbox's stand-in, which thinks nothing" : described.model},
+        from: <q>{described.words}</q> It was given the least it needs of what the scenario offers, each for the reason
+        the model gave. Check each: take away what it doesn't need, and add by hand what it does.</p>
+      <ul className="gates">
+        {given.map((n) => (
+          <li key={`given-${n.what}`} data-given={n.what}>
+            <span className="badge good"><Icon name="check" />given</span>
+            <span><span className="gate-name mono">{n.what}</span><span className="gate-about">{n.why}</span></span>
+          </li>
+        ))}
+        {left.map((n) => (
+          <li key={`left-${n.what}`} data-left={n.what}>
+            <span className="badge"><Icon name="cross" />left out</span>
+            <span><span className="gate-name mono">{n.what}</span><span className="gate-about">{n.why}</span></span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function Problems({ problems }: { problems: string[] }) {
+  const passed = problems.length === 0;
+  return (
+    <section id="problems" aria-live="polite" tabIndex={-1} aria-labelledby="problems-title">
+      <h2 id="problems-title">What stops its release</h2>
+      <ul className="gates">
+        <li>
+          {passed ? <span className="badge good"><Icon name="check" />passed</span>
+            : <span className="badge bad"><Icon name="cross" />failed</span>}
+          <span>
+            <span className="gate-name">a5s's checks</span>
+            {passed
+              ? <span className="gate-about">Nothing would stop its release here, by the checks <span className="mono">a5s agent check</span> makes.</span>
+              : problems.map((p) => <span key={p} className="gate-about">{p}</span>)}
+          </span>
+        </li>
+      </ul>
+    </section>
+  );
+}
+
+/** A co-author's draft, read only: what would stop its release, how it's wired, its files, and a
+ * copy of it into a draft of one's own, to change it. */
 function TheirDraft({ draft }: { draft: Draft }) {
   const [problem, setProblem] = useState<string | null>(null);
   const copy = async () => {
@@ -117,25 +121,25 @@ function TheirDraft({ draft }: { draft: Draft }) {
   };
   return (
     <>
-      <PageHead crumbs={[{ label: "Agents", to: { page: "agents" } }]} title={draft.agent}
-                badges={<><span className="chip">draft</span> <span className="chip">read only</span></>}
-                about={`${draft.author}'s draft, from ${draft.based_on}, kept ${when(draft.updated_at)}. You may author the ${draft.agent} too, so you may read it: copy it into a draft of your own to change it.`}>
-        <div className="meta"><button type="button" className="primary" id="copy-draft" onClick={copy}>Make a copy of your own</button></div>
-      </PageHead>
-      {problem && <p className="problem">{problem}</p>}
-      <section className={`card ${draft.problems.length ? "" : "ready"}`} id="problems">
-        {draft.problems.length === 0
-          ? <p><span className="badge good">ready</span> Nothing would stop its release here, by the checks <span className="mono">a5s agent check</span> makes.</p>
-          : <><h2>What would stop its release</h2><ul className="plain">{draft.problems.map((p) => <li key={p}>{p}</li>)}</ul></>}
-      </section>
-      <section className="card map-card">
-        <h2>How it's wired</h2>
-        {draft.preview ? <AgentMap agent={draft.preview} /> : <p className="note">Its map shows once its definition loads.</p>}
-      </section>
-      <section className="card editor" id="their-files">
-        <h2>Its files</h2>
-        <Raw files={draft.files} change={() => undefined} readOnly />
-      </section>
+      <header className="wb-bar">
+        <Link to={{ page: "agents" }} className="crumb"><Icon name="back" />Agents</Link>
+        <h1>{draft.agent}</h1>
+        <span className="chip">draft</span> <span className="chip">read only</span>
+        <span className="wb-spacer" />
+        <button type="button" className="primary" id="copy-draft" onClick={copy}>Make a copy of your own</button>
+      </header>
+      <div className="wb-body whole">
+        <div className="wb-view">
+          <p className="note">{draft.author}'s draft, from {draft.based_on}, kept {when(draft.updated_at)}. You may author
+            the {draft.agent} too, so you may read it: copy it into a draft of your own to change it.</p>
+          {problem && <p className="problem">{problem}</p>}
+          <Problems problems={draft.problems} />
+          <section aria-labelledby="their-map"><h2 id="their-map">How it's wired</h2>
+            {draft.preview ? <AgentMap agent={draft.preview} /> : <p className="note">Its map shows once its definition loads.</p>}</section>
+          <section id="their-files" aria-labelledby="their-files-title"><h2 id="their-files-title">Its files</h2>
+            <Raw files={draft.files} change={() => undefined} readOnly /></section>
+        </div>
+      </div>
     </>
   );
 }
@@ -155,7 +159,7 @@ function HandOver({ id }: { id: string }) {
   const [problem, setProblem] = useState<string | null>(null);
   const people = useLoad(() => (open ? get<CoAuthors>(
     `/studio/api/drafts/${encodeURIComponent(id)}/co-authors`) : Promise.resolve({ people: [] })), [open, id]);
-  if (!open) return <button type="button" className="quiet" id="hand-over" onClick={() => setOpen(true)}>Hand it over</button>;
+  if (!open) return <button type="button" id="hand-over" onClick={() => setOpen(true)}>Hand it over</button>;
   const found = people.data?.people ?? [];
   const hand = async () => {
     try {
@@ -173,10 +177,10 @@ function HandOver({ id }: { id: string }) {
           <select id="hand-to" value={to || found[0].id} onChange={(e) => setTo(e.target.value)} aria-label="Hand it over to">
             {found.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
-          <button type="button" className="primary" id="hand-over-to" onClick={hand}>Hand it over to them</button>
+          <button type="button" id="hand-over-to" onClick={hand}>Hand it over to them</button>
         </>
       )}
-      <button type="button" className="quiet" onClick={() => setOpen(false)}>Keep it</button>
+      <button type="button" onClick={() => setOpen(false)}>Keep it</button>
       {problem && <span className="problem"> {problem}</span>}
     </span>
   );
@@ -184,13 +188,22 @@ function HandOver({ id }: { id: string }) {
 
 const named = (them: string[]) => them.length > 1 ? `${them.slice(0, -1).join(", ")} and ${them[them.length - 1]}` : them[0];
 
-type Said = Pick<Draft, "problems" | "preview" | "signers" | "released" | "at_work">;
-
 /** Where a draft stands on its way to work, and the one thing to do next: shape it and try it,
  * publish it, have its release signed, which a5s then deploys, put it to work, and watch it.
  * Once the release here holds it as it is, the rest follows its agent: at work or not yet. */
-function Journey({ draft, said, files }: { draft: Draft; said: Said; files: Files }) {
+/** Where to put a released agent to work: with a plan for its first instance, the settings app's
+ * form, starting from it, for those who may use it; else its page, which says how, or how to ask
+ * for it. */
+function toWork(agent: string, plan: Plan, settles: boolean): { href: string } | null {
+  if (!settles || !(plan.parts.length || plan.serves.length || plan.asks.length)) return null;
+  const listed = (key: keyof Plan) => (plan[key]?.length ? `&${key}=${plan[key].map(encodeURIComponent).join(",")}` : "");
+  return { href: `/settings/?add=${encodeURIComponent(agent)}${listed("parts")}${listed("serves")}${listed("asks")}` };
+}
+
+function Journey({ draft, said, files, plan, open }: { draft: Draft; said: Said; files: Files; plan: Plan;
+  open: (view: View | "problems") => void }) {
   const sandbox = useLoad(() => get<Sandbox>("/studio/api/sandbox"), []);
+  const shell = useLoad(shellOf, []);
   const shaped = said.problems.length === 0;
   const cases = keptCases(files[CASES]);
   const { released, at_work: atWork } = said;
@@ -212,25 +225,22 @@ function Journey({ draft, said, files }: { draft: Draft; said: Said; files: File
       about: released && atWork ? "An instance runs it." : "An instance in the settings, for a few people first, at level 0 or 1." },
     { name: "Watch it", state: released && atWork ? "now" : "later", about: "Its runs and how they end, on its page." },
   ];
-  const to = (section: string) => () => {
-    const at = document.getElementById(section);
-    at?.scrollIntoView({ behavior: "smooth", block: "start" });
-    at?.focus({ preventScroll: true });
-  };
   const page = { page: "agent" as const, agent: draft.agent };
+  const settings = !atWork && toWork(draft.agent, plan, Boolean(shell.data?.pages.includes("settings")));
   const next = released
-    ? <Link to={page} className="button primary">{atWork ? "Watch it on its page" : "Put it to work, from its page"}</Link>
+    ? settings ? <a className="button primary" id="put-to-work" href={settings.href}>Put it to work in the settings</a>
+      : <Link to={page} className="button primary">{atWork ? "Watch it on its page" : "Put it to work, from its page"}</Link>
     : !shaped
-    ? <button type="button" className="primary" onClick={to("problems")}>See what stops its release</button>
+    ? <button type="button" className="primary" onClick={() => open("problems")}>See what stops its release</button>
     : draft.published
       ? <a className="button primary" href={draft.published ?? "#"} target="_blank" rel="noopener noreferrer">Open its pull request</a>
       : untried
-        ? <><button type="button" className="primary" onClick={to("try")}>Try it in the sandbox</button>
-            <button type="button" className="quiet" onClick={to("publishing")}>Publish it without trying it</button></>
-        : <button type="button" className="primary" onClick={to("publishing")}>Publish it</button>;
+        ? <><button type="button" className="primary" onClick={() => open("try")}>Try it in the sandbox</button>
+            <button type="button" onClick={() => open("publish")}>Publish it without trying it</button></>
+        : <button type="button" className="primary" onClick={() => open("publish")}>Publish it</button>;
   return (
-    <section className="card" id="journey" aria-labelledby="journey-title">
-      <h2 id="journey-title" className="hidden">Where it stands</h2>
+    <section id="journey" aria-labelledby="journey-title">
+      <h2 id="journey-title">Where it stands</h2>
       <JourneyPath stages={stages} next={next} />
     </section>
   );
@@ -240,25 +250,36 @@ export function DraftPage({ id }: { id: string }) {
   const loaded = useLoad(() => get<Draft>(`/studio/api/drafts/${encodeURIComponent(id)}`), [id]);
   const tools = useLoad(() => get<Offer>("/studio/api/tools"), []);
   const [files, setFiles] = useState<Files | null>(null);
+  const [plan, setPlan] = useState<Plan | null>(null);  // for its first instance, beside its files
   const [said, setSaid] = useState<Said | null>(null);
   const [kept, setKept] = useState<Kept>("kept");
   const [revision, setRevision] = useState(0);  // each time a change is kept
-  const [tab, setTab] = useState<Tab>("basics");
+  const [view, setView] = useState<View>("design");
+  const [asked, setAsked] = useState(0);  // each time someone asks to see what stops its release
   const latest = useRef(0);
   const timer = useRef<number | undefined>(undefined);
+  const planned = useRef<{ plan: Plan; changed: boolean }>({ plan: { parts: [], serves: [], asks: [] }, changed: false });
   useEffect(() => {
     if (loaded.data && files === null) {
       setFiles(loaded.data.files);
+      setPlan(whole(loaded.data.plan));
+      planned.current = { plan: whole(loaded.data.plan), changed: false };
       const { problems, preview, signers, released, at_work } = loaded.data;
       setSaid({ problems, preview, signers, released, at_work });
     }
   }, [loaded.data, files]);
   useEffect(() => () => window.clearTimeout(timer.current), []);
+  useEffect(() => {  // the view opened takes the keyboard's focus, as a section scrolled to did
+    if (view === "try" || view === "publish") document.getElementById(view === "try" ? "try" : "publishing")?.focus();
+  }, [view]);
 
   const keep = async (next: Files, mine: number) => {
     try {
-      const saved = await send<Draft>("PUT", `/studio/api/drafts/${encodeURIComponent(id)}`, { files: next });
+      const sending = planned.current.changed ? planned.current.plan : undefined;  // only once it changes
+      const saved = await send<Draft>("PUT", `/studio/api/drafts/${encodeURIComponent(id)}`,
+                                      { files: next, ...(sending ? { plan: sending } : {}) });
       if (mine !== latest.current) return;  // a later change is on its way
+      if (sending === planned.current.plan) planned.current.changed = false;
       const { problems, preview, signers, released, at_work } = saved;
       setSaid({ problems, preview, signers, released, at_work });
       setFiles((now) => {  // a5s's pins, beside what they've typed since
@@ -286,79 +307,112 @@ export function DraftPage({ id }: { id: string }) {
       setKept({ problem: (e as Error).message });
     }
   };
+  const changePlan = (next: Plan, nextFiles?: Files) => {  // kept as its files are, with them
+    setPlan(next);
+    planned.current = { plan: next, changed: true };
+    if (files) change(nextFiles ?? files);
+  };
   const drop = async () => {
     if (!window.confirm("Drop this draft? It can't be had back.")) return;
     await send("DELETE", `/studio/api/drafts/${encodeURIComponent(id)}`);
     go({ page: "agents" });
   };
+  const open = (to: View | "problems") => {
+    if (to === "problems") {
+      setView("design");
+      setAsked((n) => n + 1);
+    } else setView(to);
+  };
 
   const draft = loaded.data;
   if (draft && !draft.yours) return <TheirDraft draft={draft} />;
-  const status = typeof kept === "object" ? <span className="badge bad">{kept.problem}</span>
-    : kept === "keeping" ? <span className="badge">keeping…</span> : <span className="badge good">kept</span>;
-  return (
-    <>
-      <PageHead crumbs={[{ label: "Agents", to: { page: "agents" } }]} title={draft ? draft.agent : "A draft"}
-                badges={draft && <span className="chip">draft</span>}
-                about={draft && `From ${draft.based_on}, started ${when(draft.created_at)}.${handedBy(draft)} Yours to change, and readable by the agent's other owners and authors: nothing runs it until it's published and its release signed.`}>
-        {draft && <div className="meta"><span id="kept">{status}</span>
-          <HandOver id={id} />
-          <button type="button" className="quiet" onClick={drop}>Drop the draft</button></div>}
-      </PageHead>
-      {(!draft || !files || !said) && <Waiting error={loaded.error} />}
-      {draft && files && said && (
+  const status = typeof kept === "object" ? <span className="badge bad"><Icon name="cross" />{kept.problem}</span>
+    : kept === "keeping" ? <>Keeping…</> : <><Icon name="check" />Kept</>;
+  const ready = Boolean(said && said.problems.length === 0 && kept === "kept");
+  const bar = (
+    <header className="wb-bar">
+      <Link to={{ page: "agents" }} className="crumb"><Icon name="back" />Agents</Link>
+      <h1>{draft ? draft.agent : "A draft"}</h1>
+      {draft && <span className="chip">draft</span>}
+      {draft && <span className="chip mono">{draft.based_on}</span>}
+      {draft && <span className="wb-saved" id="kept">{status}</span>}
+      {said && (
+        <button type="button" className={`badge ${said.problems.length ? "bad" : "good"}`} id="problem-count" onClick={() => open("problems")}>
+          <Icon name={said.problems.length ? "cross" : "check"} />
+          {said.problems.length ? `${said.problems.length} problem${said.problems.length === 1 ? "" : "s"}` : "No problems"}
+        </button>
+      )}
+      <span className="wb-spacer" />
+      {draft && (
         <>
-          <Journey draft={draft} said={said} files={files} />
-          <section className={`card ${said.problems.length ? "" : "ready"}`} id="problems" aria-live="polite" tabIndex={-1}>
-            {said.problems.length === 0
-              ? <p><span className="badge good">ready</span> Nothing would stop its release here, by the checks <span className="mono">a5s agent check</span> makes.</p>
-              : <><h2>What would stop its release</h2><ul className="plain">{said.problems.map((p) => <li key={p}>{p}</li>)}</ul></>}
-          </section>
-          <section className="card" id="signers">
-            <h2>Who would sign its release</h2>
-            {said.signers === null && <p className="note">Once its definition loads.</p>}
-            {said.signers?.length === 0 && <p className="note">Nobody yet: it changes nothing of what's released here.</p>}
-            {said.signers && said.signers.length > 0 && (
-              <ul className="plain">{said.signers.map((s) => (
-                <li key={s.role}><strong>{s.who}</strong><span className="faint">, because {s.why}</span></li>
-              ))}</ul>
-            )}
-            <p className="note">As <span className="mono">a5s release</span> works it out, from what it changes of the agents released here. The pull request it's published as names them.</p>
-          </section>
-          <section className="card map-card">
-            <h2>How it's wired</h2>
-            {said.preview ? <AgentMap agent={said.preview} /> : <p className="note">Its map shows once its definition loads.</p>}
-          </section>
-          <section className="card editor">
-            <div className="tabs" role="tablist">
-              {TABS.map(([key, label]) => (
-                <button key={key} type="button" role="tab" aria-selected={tab === key} className={tab === key ? "on" : ""}
-                        onClick={() => setTab(key)}>{label}</button>
-              ))}
-            </div>
-            {tab === "basics" && <Basics files={files} models={tools.data?.models ?? []} change={(f) => edit(() => f)} />}
-            {tab === "tools" && (tools.data ? <Tools files={files} offered={tools.data.tools} change={(f) => edit(() => f)} />
-                                            : <Waiting error={tools.error} />)}
-            {tab === "instructions" && (
-              <label className="field"><span>What it's told at the start of each run, its AGENTS.md</span>
-                <textarea id="instructions" rows={18} value={files["AGENTS.md"] ?? ""}
-                          onChange={(e) => change({ ...files, "AGENTS.md": e.target.value })} /></label>
-            )}
-            {tab === "files" && <Raw files={files} change={change} />}
-          </section>
-          <section className="card" id="try" tabIndex={-1}>
-            <h2>Try it in the sandbox</h2>
-            <TryIt draft={id} name={draft.agent} ready={said.problems.length === 0 && kept === "kept"}
-                   keep={(testCase) => change({ ...files, [CASES]: withCase(files[CASES] ?? "", testCase) })}
-                   revision={revision} />
-          </section>
-          <section className="card" id="publishing" tabIndex={-1}>
-            <h2>Publish it</h2>
-            <Publish draft={id} name={draft.agent} ready={said.problems.length === 0 && kept === "kept"}
-                     published={draft.published} publishing={draft.publishing} revision={revision} />
-          </section>
+          <div className="modes" role="group" aria-label="The draft">
+            {VIEWS.map(([key, label]) => (
+              <button key={key} type="button" aria-pressed={view === key} onClick={() => setView(key)}>{label}</button>
+            ))}
+          </div>
+          <HandOver id={id} />
+          <button type="button" onClick={drop}>Drop the draft</button>
+          <button type="button" className="primary" id="to-publish" aria-pressed={view === "publish"} onClick={() => setView("publish")}>Publish it</button>
         </>
       )}
+    </header>
+  );
+  if (!draft || !files || !said || !tools.data || !plan) {
+    return <>{bar}<div className="wb-body whole"><div className="wb-view"><Waiting error={loaded.error ?? tools.error} /></div></div></>;
+  }
+  const overview: ReactNode = (
+    <>
+      <p className="note" id="about-draft">From {draft.based_on}, started {when(draft.created_at)}.{handedBy(draft)} Yours to change,
+        and readable by the agent's other owners and authors: nothing runs it until it's published and its release signed.</p>
+      {draft.described && <Described described={draft.described} />}
+      <Journey draft={draft} said={said} files={files} plan={plan} open={open} />
+      <Problems problems={said.problems} />
+    </>
+  );
+  const cases = keptCases(files[CASES]);
+  const tryIt = (
+    <>
+      <button type="button" className="primary" id="try-it" onClick={() => setView("try")}><Icon name="run" />Try it</button>
+      <p className="note">{said.problems.length ? `${said.problems.length === 1 ? "One thing stops" : `${said.problems.length} things stop`} its release`
+        : cases ? `${cases} test case${cases === 1 ? "" : "s"} kept` : "Nothing stops its release"}</p>
+    </>
+  );
+  return (
+    <>
+      {bar}
+      {view === "design" && (
+        <Designer name={draft.agent} files={files} offer={tools.data} signers={said.signers} problems={said.problems.length}
+                  change={(f) => edit(() => f)} plan={plan} changePlan={changePlan} overview={overview} tryIt={tryIt}
+                  asked={asked} />
+      )}
+      <div className="wb-body whole" hidden={view === "design"}>
+        {view === "instructions" && (
+          <section className="wb-view" aria-labelledby="instructions-title">
+            <h2 id="instructions-title">Its instructions</h2>
+            <label className="wb-field"><span className="wb-label">What it's told at the start of each run, its AGENTS.md</span>
+              <textarea id="instructions" rows={24} value={files["AGENTS.md"] ?? ""}
+                        onChange={(e) => change({ ...files, "AGENTS.md": e.target.value })} /></label>
+          </section>
+        )}
+        {view === "files" && (
+          <section className="wb-view" aria-labelledby="files-title">
+            <Problems problems={said.problems} />
+            <h2 id="files-title">Its files</h2>
+            <Raw files={files} change={change} />
+          </section>
+        )}
+        <section className="wb-view" id="try" tabIndex={-1} hidden={view !== "try"} aria-labelledby="try-title">
+          <h2 id="try-title">Try it in the sandbox</h2>
+          <TryIt draft={id} name={draft.agent} ready={ready}
+                 keep={(testCase) => change({ ...files, [CASES]: withCase(files[CASES] ?? "", testCase) })}
+                 revision={revision} acts={acting(files, tools.data)} />
+        </section>
+        <section className="wb-view" id="publishing" tabIndex={-1} hidden={view !== "publish"} aria-labelledby="publish-title">
+          <h2 id="publish-title">Publish it</h2>
+          <Publish draft={id} name={draft.agent} ready={ready} published={draft.published} publishing={draft.publishing}
+                   revision={revision} />
+        </section>
+      </div>
     </>
   );
 }

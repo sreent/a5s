@@ -93,6 +93,21 @@ def test_the_copy_of_ocean_is_oceans_as_its_pinned_commit_has_it():
     assert found == pinned["files"]  # changed in sreent/ocean, and taken with deploy/ocean.sh
 
 
+def _selectors(text: str) -> set[str]:
+    """Each selector a stylesheet styles, as it's written, whatever media it's for."""
+    text = re.sub(r"@[^{;]+\{", "", re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL))
+    return {" ".join(s.split()) for found in re.finditer(r"([^{}@;]+)\{", text) for s in found[1].split(",")}
+
+
+def test_a5s_restyles_none_of_oceans_pieces_so_ocean_stays_the_one_source():
+    """The studio's and the chat's own stylesheets compose Ocean's pieces into their pages and
+    style none of them: a piece a5s needs, or a change to one, is made in sreent/ocean first."""
+    ocean = _selectors((OCEAN / "css" / "components.css").read_text() + (OCEAN / "css" / "charts.css").read_text())
+    for own in (ROOT / "studio" / "src" / "studio.css", ROOT / "src" / "a5s" / "core" / "webchat" / "app.css"):
+        both = sorted(_selectors(own.read_text()) & ocean)
+        assert both == [], f"{own.name} restyles Ocean's {both}: change them in sreent/ocean"
+
+
 def test_the_pages_load_their_type_from_a5s_and_nowhere_else(stack):
     assert sorted(p for p in web.OCEAN_FILES if p.startswith("fonts/")) == [
         f"fonts/plex-{face}.woff2" for face in ("mono-400", "mono-500", "sans-400", "sans-500",

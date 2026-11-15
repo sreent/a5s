@@ -197,6 +197,10 @@ button.primary, a.button.primary {  /* the one action a page or form is for */
 button.primary:hover, a.button.primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
 button:disabled { opacity: 0.55; cursor: default; }
 button.link { border: 0; background: none; padding: 0; color: var(--accent); font-weight: 500; }
+/* In a workbench (.wb), buttons are compact, until density is a layer of tokens. It's a default, which
+   a piece's own rule overrides: a step's box, a list's row, a badge or a link keeps its own size */
+.wb :where(button), .wb a:where(.button) { padding: 0.3rem 0.7rem; font-size: var(--text-md); }
+.wb :where(button, a.button) .icon { width: 1rem; height: 1rem; }
 
 input, select, textarea {  /* their edge is --line-control, 3 to 1, so a person sees where to type */
   padding: 0.4rem 0.6rem;
@@ -225,6 +229,7 @@ label { color: var(--muted); font-size: 0.9rem; }
   color: var(--idle);
 }
 
+button.badge { border: 0; cursor: pointer; }  /* a badge that opens what it counts, such as a draft's problems */
 .badge.reads { background: var(--reads-bg); color: var(--reads); }
 .badge.writes { background: var(--writes-bg); color: var(--writes); }
 .badge.changes { background: var(--changes-bg); color: var(--changes); }
@@ -591,6 +596,81 @@ button.danger.primary { background: var(--bad); border-color: var(--bad); color:
 .flow-step.hanging .flow-box > .icon { width: 1.5rem; height: 1.5rem; }
 .flow-step.hanging .flow-box::before { top: -0.4rem; left: 50%; border-radius: 0; rotate: 45deg; translate: -50% 0; }
 .flow-step.hanging .flow-box::after { display: none; }
+/* What a run didn't use, or a step its condition skipped, fades, but its words stay readable, so why
+   it didn't run can be read; a call the checks refused, or a tool that isn't the agent's, is --bad,
+   with its words beside it */
+.flow-step.dim .flow-box, .flow-edges .dim { opacity: 0.42; }
+.flow-step.dim .flow-name { color: var(--muted); }
+.flow-edges .refused { stroke: var(--bad); }
+.flow-step.refused .flow-box { border-color: var(--bad); color: var(--bad); }
+/* Another agent hanging from an agent's tools, such as one its instance may ask: in the agent colour,
+   as agents are everywhere. Its class isn't .agent, which is the wide agent itself */
+.flow-step.agent-tone .flow-box { color: var(--agent-tone); }
+/* A step someone can choose is a button */
+button.flow-box { padding: 0; font: inherit; cursor: pointer; }
+button.flow-box:hover { background: var(--sunken); }
+/* Every canvas has its list: the same steps, in order, for the keyboard and for a phone. The choice
+   of the two sits at the right of the canvas's foot, as a choice of views (.modes) */
+.flow-views { position: absolute; inset-inline-end: var(--space-4); bottom: var(--space-4); }
+.flow-views .modes { margin: 0; }
+
+/* A canvas on React Flow (@xyflow/react), as a7c's builder and a5s's designer draw theirs. React Flow
+   places each step and draws the curves; inside each of its nodes, a step as FlowNode draws it, and
+   the curves in Ocean's colours. Load React Flow's base.css, never its style.css, whose colours are
+   its own. Its handles sit, unseen, where Ocean draws the dots that steps join at: a step is 8rem
+   wide and its box 5.6rem, an agent's box 14rem, with its slots at 2.75, 7 and 11.25rem */
+.flow-canvas .react-flow { background: transparent; }
+.flow-canvas .react-flow__node { cursor: default; }
+.flow-canvas .flow-step { position: relative; }
+.flow-canvas .flow-stub { position: static; translate: none; }
+.flow-canvas .react-flow__handle { width: 1px; height: 1px; min-width: 0; min-height: 0; border: 0; background: transparent; }
+.flow-canvas .react-flow__handle.at-left { left: 1.2rem; top: 2.8rem; }
+.flow-canvas .react-flow__handle.at-right { left: 6.8rem; right: auto; top: 2.8rem; }
+.flow-canvas .react-flow__handle.at-top { left: 4rem; top: 0; }
+.flow-canvas .flow-step.agent .react-flow__handle.at-left { left: 0; }
+.flow-canvas .flow-step.agent .react-flow__handle.at-right { left: 14rem; }
+.flow-canvas .react-flow__handle.at-model { left: 2.75rem; top: 5.5rem; bottom: auto; }
+.flow-canvas .react-flow__handle.at-checks { left: 7rem; top: 5.5rem; bottom: auto; }
+.flow-canvas .react-flow__handle.at-tools { left: 11.25rem; top: 5.5rem; bottom: auto; }
+.flow-canvas .react-flow__edge-path { stroke: var(--faint); stroke-width: 2; }
+.flow-canvas .react-flow__edge.hangs .react-flow__edge-path { stroke-width: 1.5; stroke-dasharray: 5 4; }
+.flow-canvas .react-flow__edge.ran .react-flow__edge-path { stroke: var(--good); }
+.flow-canvas .react-flow__edge.refused .react-flow__edge-path { stroke: var(--bad); }
+.flow-canvas .react-flow__edge.reads-from .react-flow__edge-path { stroke: var(--accent); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.flow-canvas .react-flow__edge.dim { opacity: 0.42; }
+.flow-canvas .react-flow__attribution { background: transparent; }
+.flow-canvas .react-flow__attribution a { color: var(--muted); }
+.flow-canvas .flow-run, .flow-canvas .flow-add, .flow-canvas .flow-tools, .flow-canvas .flow-views { z-index: 5; }
+
+/* A canvas as its list: what starts a run, then each step in order, or the agent and what it works
+   with; each a row someone chooses from the keyboard, with its settings opened in place */
+.flow-listing { display: grid; align-content: start; gap: var(--space-5); padding: var(--space-5) var(--space-6); }
+.flow-listing > .modes { justify-self: end; margin: 0; }
+.flow-listing section { display: grid; gap: var(--space-2); }
+.flow-listing h2 { margin: 0; font-size: var(--text-md); }
+.flow-listing ol, .flow-listing ul { display: grid; gap: var(--space-1); margin: 0; padding: 0; list-style: none; }
+button.flow-row { display: flex; align-items: center; gap: var(--space-3); width: 100%; padding: 0.5rem 0.6rem;
+                  border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); color: var(--text);
+                  font: inherit; text-align: start; }
+button.flow-row:hover { background: var(--sunken); }
+button.flow-row[aria-expanded="true"] { border-color: var(--focus); }
+.flow-row > .icon { width: 1.3rem; height: 1.3rem; flex: none; color: var(--idle); }
+.flow-row.reads > .icon { color: var(--reads); }
+.flow-row.writes > .icon { color: var(--writes); }
+.flow-row.changes > .icon { color: var(--changes); }
+.flow-row.outside > .icon { color: var(--outside); }
+.flow-row.own > .icon { color: var(--own); }
+.flow-row.agent > .icon { color: var(--agent-tone); }
+.flow-row.refused > .icon { color: var(--bad); }
+.flow-row-text { display: grid; min-width: 0; }
+.flow-row-name { font-weight: 600; overflow-wrap: anywhere; }
+.flow-row-about { color: var(--muted); font-size: var(--text-xs); }
+.flow-row-when { color: var(--muted); font-family: var(--font-mono); font-size: var(--text-xs); }
+.flow-row > .badge, .flow-row > .flow-row-end { margin-inline-start: auto; flex: none; }
+.flow-row-end { color: var(--muted); font-size: var(--text-xs); }
+.flow-inline { display: grid; gap: var(--space-3); margin: var(--space-1) 0 var(--space-2); padding: var(--space-4);
+               border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); }
+.flow-inline .wb-head h2 { font-size: var(--text-lg); }
 
 /* The workbench (proposed): where people build, the whole window in panes and compact. A rail of
    the product's pages, a toolbar with where the draft stands and its one thing to do, the canvas,
@@ -614,8 +694,6 @@ button.danger.primary { background: var(--bad); border-color: var(--bad); color:
 .wb-saved { display: inline-flex; align-items: center; gap: 0.3rem; color: var(--muted); font-size: var(--text-sm); }
 .wb-saved .icon { width: 1rem; height: 1rem; color: var(--good); }
 .wb .modes { margin: 0; }
-.wb button, .wb .button { padding: 0.3rem 0.7rem; font-size: var(--text-md); }  /* compact, until density is a layer of tokens */
-.wb button .icon { width: 1rem; height: 1rem; }
 .wb-body { display: grid; grid-template-columns: minmax(0, 1fr) 24rem; min-height: 0; }
 .wb-body > .flow { min-height: 0; }
 .flow-tools { position: absolute; inset-inline-start: var(--space-4); bottom: var(--space-4); display: flex; gap: var(--space-1); }
@@ -630,13 +708,19 @@ button.danger.primary { background: var(--bad); border-color: var(--bad); color:
 .wb-head .flow-step { position: static; width: auto; }
 .wb-head .flow-box { width: 2.6rem; height: 2.6rem; margin: 0; border-width: 1px; box-shadow: none; }
 .wb-head .flow-box > .icon { width: 1.3rem; height: 1.3rem; }
+.wb-head .flow-step.hanging .flow-box { width: 2.6rem; height: 2.6rem; }
+.wb-head .flow-step.agent .flow-box { width: 2.6rem; padding: 0; justify-content: center; }  /* the agent, small, as its head */
 .wb-head .flow-box::before, .wb-head .flow-box::after { display: none; }
 .wb-head h2 { margin: 0; font-size: var(--text-lg); }
 .wb-head p { margin: 0; color: var(--faint); font-family: var(--font-mono); font-size: var(--text-xs); }
 .wb-head .badges { grid-column: 1 / -1; }
 .wb-field { display: grid; align-content: start; gap: 0.3rem; margin: 0; }
 .wb-field > .wb-label { color: var(--muted); font-size: var(--text-sm); font-weight: 500; }
-.wb-field input, .wb-field select { width: 100%; padding: 0.3rem 0.5rem; }
+.wb-field input:where(:not([type="checkbox"], [type="radio"])), .wb-field select, .wb-field textarea { width: 100%;
+  padding: 0.3rem 0.5rem; }  /* a field's box; a choice's box, in a fieldset of them, keeps its own size */
+.wb-field textarea { resize: vertical; line-height: 1.5; }
+fieldset.wb-field { min-width: 0; margin: 0; padding: 0; border: 0; }  /* a field of choices, its legend a label */
+.choices.inline { flex-direction: row; flex-wrap: wrap; gap: 0.35rem 0.85rem; }  /* short ones, such as days, in a row */
 .wb-hint { color: var(--faint); font-size: var(--text-xs); }
 .wb-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
 .wb-input { display: grid; grid-template-columns: 4.6rem minmax(0, 1fr); gap: var(--space-2); align-items: center; }
@@ -651,8 +735,32 @@ button.danger.primary { background: var(--bad); border-color: var(--bad); color:
            border-radius: var(--radius-md); background: var(--sunken); color: var(--muted); font-size: var(--text-sm); }
 .wb-well .icon { width: 1rem; height: 1rem; margin-top: 0.15rem; color: var(--own); }
 .wb-well strong { color: var(--text); }
+.wb-well ul { display: grid; gap: var(--space-1); margin: var(--space-1) 0 0; padding: 0; list-style: none; }
+/* What the last change made follow, at the top of the inspector until the next, which a screen
+   reader hears as it changes */
+.wb-well.notice { background: var(--accent-soft); color: var(--text); }
+.wb-well.notice .icon { color: var(--accent); }
+/* A part of the inspector, set apart by a line above it, its title an h2 */
+.wb-section { display: grid; gap: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--line); }
+.wb-section > h2 { margin: 0; }
 .wb-actions { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-3); align-items: center; }
 .wb-body.whole { grid-template-columns: minmax(0, 1fr); }
+/* A product's page that is a workbench, such as a5s's draft: the whole window, the product's sidebar
+   shrunk to the rail, and beside it the work, its toolbar above its panes. On a phone the rail is a
+   row of icons above the work, and the page scrolls */
+body.app.workbench { display: block; height: 100vh; overflow: hidden; background: var(--page); }
+.wb.window { height: 100vh; grid-template-rows: minmax(0, 1fr); }
+.wb-main { grid-column: 2; display: grid; grid-template-rows: auto minmax(0, 1fr); min-width: 0; min-height: 0;
+           max-width: none; margin: 0; padding: 0; }  /* the page's main, without a page's margins */
+.wb-main > .wb-body { min-height: 0; }
+@media (max-width: 760px) {
+  body.app.workbench { height: auto; overflow: auto; }
+  .wb.window { display: flex; flex-direction: column; height: auto; }
+  .wb.window .wb-rail { flex-direction: row; padding: 0.4rem 0.6rem; overflow-x: auto;
+                        border-inline-end: 0; border-bottom: 1px solid var(--line); }
+  .wb.window .wb-rail .brand { padding: 0 var(--space-2) 0 0; }
+  .wb.window .wb-rail nav { flex-direction: row; flex: none; }
+}
 
 /* A step, opened: what came in, its settings, and what went out, side by side, from the last
    test, so a person sets a step with its data in view (n8n's way) */
@@ -703,6 +811,19 @@ button.danger.primary { background: var(--bad); border-color: var(--bad); color:
 .fd-type { display: grid; place-items: center; width: 1.7rem; height: 1.7rem; flex: none; border: 1px solid var(--line);
            border-radius: var(--radius-sm); background: var(--sunken); color: var(--muted); font-size: var(--text-xs); font-weight: 650; }
 .fd-type .icon { width: 1rem; height: 1rem; }
+button.fd-part { width: 100%; padding: 0.3rem 0.4rem; border: 0; background: transparent; color: var(--text); font: inherit;
+                 text-align: start; cursor: pointer; }
+.fd-part[draggable] { cursor: grab; }
+.fd-type.reads { color: var(--reads); }
+.fd-type.writes { color: var(--writes); }
+.fd-type.changes { color: var(--changes); }
+.fd-type.outside { color: var(--outside); }
+.fd-type.own { color: var(--own); }
+.fd-type.agent { color: var(--agent-tone); }
+.fd-type.refused { color: var(--bad); }
+.fd-text { display: grid; gap: 0.1rem; min-width: 0; }
+.fd-text .mono { overflow-wrap: anywhere; }
+.fd-about { color: var(--muted); font-size: var(--text-xs); line-height: 1.35; }
 .fd-canvas { overflow: auto; padding: var(--space-6); background: var(--sunken); }
 .fd-sheet { display: grid; gap: var(--space-4); max-width: 40rem; margin: 0 auto; padding: var(--space-6);
             border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); box-shadow: var(--shadow); }
@@ -718,6 +839,25 @@ button.danger.primary { background: var(--bad); border-color: var(--bad); color:
 .fd-masked { color: var(--muted); font-family: var(--font-mono); }
 .fd-drop { height: 0; border-top: 2px dashed var(--accent); }  /* where a dragged field would land */
 .fd-sheet table.figures { margin: 0; }
+/* A view of the draft that isn't its canvas, such as its tests or its instructions, and the
+   inspector's own parts */
+.wb-body.whole { overflow: auto; }
+.wb-view { display: grid; align-content: start; gap: var(--space-4); width: 100%; max-width: 76rem; padding: var(--space-5) var(--space-6); }
+.wb-view > h2 { margin: 0; }
+.wb-inspector > section { display: grid; gap: var(--space-2); }
+.wb-inspector h2 { margin: var(--space-2) 0 var(--space-1); font-size: var(--text-md); }
+.wb-inspector .wb-head h2 { margin: 0; font-size: var(--text-lg); }
+.wb-inspector p { margin: 0; }
+/* Where the panes don't fit, they stack, and a narrow screen starts with the canvas's list */
+@media (max-width: 56rem) {
+  .wb-body, .wb-body.designer { grid-template-columns: minmax(0, 1fr); overflow: auto; }
+  .wb-body > .fd-palette { max-height: 14rem; border-inline-end: 0; border-bottom: 1px solid var(--line); }
+  .wb-body > .flow { min-height: 26rem; }
+  .wb-body > .wb-inspector { overflow: visible; border-inline-start: 0; border-top: 1px solid var(--line); }
+}
+@media (max-width: 760px) {
+  .wb-view, .flow-listing { padding: var(--space-4); }  /* a phone's width, given to the work */
+}
 
 /* A change request (proposed), for a3t: what it changes, in words, beside its checks and its decision */
 .cr-body { display: grid; grid-template-columns: minmax(0, 1fr) 24rem; gap: var(--space-4); align-items: start; }
@@ -831,7 +971,7 @@ button.danger.primary { background: var(--bad); border-color: var(--bad); color:
 .sheet-head strong { display: block; }
 .sheet-head span { color: var(--muted); font-size: var(--text-xs); }
 .sheet .wb-label { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); }
-.sheet .wb-field input, .sheet .wb-field select { width: 100%; }
+.sheet .wb-field input:where(:not([type="checkbox"], [type="radio"])), .sheet .wb-field select { width: 100%; }
 .sheet-note { margin: 0; color: var(--muted); font-size: var(--text-xs); text-align: center; }
 .was { display: flex; justify-content: space-between; gap: var(--space-2); color: var(--muted); font-size: var(--text-xs); }
 .attached { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); padding: var(--space-2) var(--space-3);

@@ -16,9 +16,9 @@ import pytest
 
 from a5s import db, definitions
 from a5s.config import Config, load_models
+from a5s.connectors import mcp
 from a5s.core import inbox, registry
 from a5s.core.gateway import Gateway, create_app
-from a5s.core.policy import PolicyEngine
 from conftest import (
     FAKE_MODELS,
     PROVIDER_KEY,
@@ -30,6 +30,8 @@ from conftest import (
     Stack,
     build_root,
     free_port,
+    policy_of,
+    scenario_systems,
     serve,
 )
 
@@ -56,11 +58,13 @@ def desk_with_tasks(database: str, root: Path, model: FakeModel) -> Iterator[Sta
                  scenario="a5s.service_desk:ServiceDeskScenario",
                  scenario_folder=ROOT / "scenarios" / "service-desk", agents_folder=agents)
     module, name = cfg.scenario.split(":")
-    found = getattr(importlib.import_module(module), name)(cfg.scenario_dir, cfg.database_url)
+    scenario_systems("service-desk")  # its ITSM, behind its MCP server
+    found = mcp.served(getattr(importlib.import_module(module), name)(cfg.scenario_dir, cfg.database_url),
+                       cfg.scenario_dir)
     for agent in agents.iterdir():
         definitions.pin(agent, {n: t.schema_hash for n, t in found.tools().items()})
     http = httpx.Client(transport=httpx.MockTransport(model.handler))
-    gw = Gateway(cfg, found, PolicyEngine(), load_models(cfg.models_file),
+    gw = Gateway(cfg, found, policy_of(found), load_models(cfg.models_file),
                  definitions.load_all(cfg.agents_dir), http, clock=lambda: QUIET)
     with db.transaction(database) as conn:
         applied = registry.apply(conn, gw.definitions, found.settings(), found.tools(),

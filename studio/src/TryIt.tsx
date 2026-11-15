@@ -48,7 +48,7 @@ function Cases({ draft, model, ready, revision }: { draft: string; model: string
     <div className="cases" id="cases">
       <div className="cases-head">
         <h3>Its test cases</h3>
-        <button type="button" className="quiet" id="run-cases" disabled={!ready || running || runnable.length === 0} onClick={run}>
+        <button type="button" id="run-cases" disabled={!ready || running || runnable.length === 0} onClick={run}>
           {running ? "Running them…" : `Run the ${runnable.length} the sandbox can`}</button>
       </div>
       {all.length === 0 && <p className="note">It has none yet: keep what you said to it as one, above.</p>}
@@ -84,6 +84,13 @@ function Cases({ draft, model, ready, revision }: { draft: string; model: string
                       <div><span className="faint">Told</span> {step.say}</div>
                       <div><span className="faint">Answered</span> {step.reply || "(nothing)"}</div>
                       {step.called.length > 0 && <div className="faint mono">used {step.called.join(", ")}</div>}
+                      {step.judged && (
+                        <div className="case-judged">
+                          <span className="faint">{step.judged.judge === STAND_IN ? "The stand-in judged it" : step.judged.judge ? `Its judge, ${step.judged.judge}, found it` : "Nobody judged it"}</span>{" "}
+                          {step.judged.grade && <span className={`badge ${step.judged.grade === "right" ? "good" : "bad"}`}>{step.judged.grade}</span>}{" "}
+                          {step.judged.why}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </details>
@@ -156,8 +163,14 @@ function Answer({ tried, name }: { tried: Tried; name: string }) {
   );
 }
 
-export function TryIt({ draft, name, ready, keep, revision }: {
+/** Words apart by commas, as a list, each once. */
+function words(text: string): string[] {
+  return [...new Set(text.split(",").map((w) => w.trim()).filter(Boolean))];
+}
+
+export function TryIt({ draft, name, ready, keep, revision, acts }: {
   draft: string; name: string; ready: boolean; keep: (testCase: Case) => void; revision: number;
+  acts: string[];  // its tools that change, write or send something: what a case may say it must never use
 }) {
   const offered = useLoad(() => get<Sandbox>("/studio/api/sandbox"), []);
   const [person, setPerson] = useState("");
@@ -166,6 +179,9 @@ export function TryIt({ draft, name, ready, keep, revision }: {
   const [turns, setTurns] = useState<Turn[]>([]);
   const [busy, setBusy] = useState(false);
   const [caseName, setCaseName] = useState("");
+  const [neverUses, setNeverUses] = useState<string[]>([]);
+  const [neverSays, setNeverSays] = useState("");
+  const [judged, setJudged] = useState("");
   const [keptCase, setKeptCase] = useState<{ said: string } | { problem: string } | null>(null);
   if (offered.error) return <p className="note" id="no-sandbox">{offered.error}</p>;
   if (!offered.data) return <p className="note">Asking the sandbox…</p>;
@@ -194,12 +210,20 @@ export function TryIt({ draft, name, ready, keep, revision }: {
     event.preventDefault();
     const named = caseName.trim() || theirs[0]?.said.slice(0, 60) || "";
     if (!theirs.length || !named) return;
+    const avoids = acts.filter((t) => neverUses.includes(t));
+    const never = words(neverSays);
     try {
-      keep({ name: named, as, steps: theirs.map((t) => {
+      const right = judged.trim();
+      keep({ name: named, as, steps: theirs.map((t, i) => {
         const uses = t.model === STAND_IN ? [] : used(t.tried as Tried);  // the stand-in's aren't the agent's
-        return uses.length ? { say: t.said, uses } : { say: t.said };
+        return { say: t.said, ...(uses.length ? { uses } : {}), ...(avoids.length ? { avoids } : {}),
+                 ...(never.length ? { never_says: never } : {}),
+                 ...(right && i === theirs.length - 1 ? { judged: right } : {}) };  // what it came to
       }) });
       setCaseName("");
+      setNeverUses([]);
+      setNeverSays("");
+      setJudged("");
       setKeptCase({ said: `Kept as ${named}, in ${CASES}.` });
     } catch (e) {
       setKeptCase({ problem: (e as Error).message });
@@ -235,7 +259,28 @@ export function TryIt({ draft, name, ready, keep, revision }: {
           <label className="field"><span>Keep what {named(as)} said to it as a test case, which its suite runs on its model{theirs.some((t) => t.model === STAND_IN) ? ": on the stand-in, what they said alone, since what the stand-in used isn't the agent's choice" : ", with the tools it used"}</span>
             <input id="case-name" value={caseName} placeholder={theirs[0].said.slice(0, 60)}
                    onChange={(e) => setCaseName(e.target.value)} autoComplete="off" /></label>
-          <button type="submit" className="quiet" id="keep-case">Keep as a test case</button>
+          {acts.length > 0 && (
+            <fieldset className="wb-field" id="never-uses">
+              <legend className="wb-label">Tools it must never use here, whatever it's told</legend>
+              <div className="choices inline">
+                {acts.map((tool) => (
+                  <label key={tool} className="choice">
+                    <input type="checkbox" checked={neverUses.includes(tool)}
+                           onChange={(e) => setNeverUses((all) => (e.target.checked ? [...all, tool] : all.filter((t) => t !== tool)))} />
+                    <span className="mono">{tool}</span></label>
+                ))}
+              </div>
+            </fieldset>
+          )}
+          <label className="field"><span>Words it must never say, apart by commas</span>
+            <input id="never-says" value={neverSays} placeholder="such as: closed, I've reset"
+                   onChange={(e) => setNeverSays(e.target.value)} autoComplete="off" /></label>
+          <label className="field"><span>What a right answer is, in your words, where it can be right in more than one way: its judge grades it, beside the checks above</span>
+            <textarea id="judged" rows={2} value={judged}
+                      placeholder={'such as: it proposes "EA" as the base unit, with correct_value, and says the owner decides it'}
+                      onChange={(e) => setJudged(e.target.value)} />
+            <span className="wb-hint">The stand-in judges by words alone: the words you quote, and the tools you name. The draft's own judge reads what you mean.</span></label>
+          <button type="submit" id="keep-case">Keep as a test case</button>
           {keptCase && ("said" in keptCase ? <p className="note" id="case-kept">{keptCase.said}</p>
                                            : <p className="problem">{keptCase.problem}</p>)}
         </form>

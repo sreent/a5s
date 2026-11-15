@@ -26,7 +26,8 @@ entity Person = { in_audience: Bool };
 
 // A call's level is the lowest level the instance has in the parts of the records it's about.
 // It's in scope if they're all in the instance's parts, and visible if everyone the run acts
-// for may see them all.
+// for may see them all. It's for_self if the run acts for one person, and every record it
+// names is theirs, as the scenario says whose each record is, such as their own account.
 // A change is past a limit when it would take its run, or someone it's for, past the
 // scenario's limit for its type of action.
 type RunContext = {
@@ -35,6 +36,7 @@ type RunContext = {
   acts_for: Set<String>,
   in_scope: Bool,
   visible: Bool,
+  for_self: Bool,
   over_limit: Bool,
 };
 

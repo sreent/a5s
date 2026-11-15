@@ -1,0 +1,18 @@
+# The service desk's made-up ITSM and identity provider, each behind its MCP server (systems/itsm.py
+# and systems/idp.py), on the desk's synthetic data. They share the gateway's network, as the desk's
+# mcp.yaml points a5s at them on the gateway's own machine, and reach nothing else:
+#   sh deploy/smoke-scenario.sh service-desk
+
+services:
+  desk-itsm:
+    image: ${A5S_IMAGE:-a5s:dev}
+    entrypoint: ["python", "/systems/itsm.py", "/app/scenarios/service-desk/data.yaml"]
+    volumes: ["./systems:/systems:ro"]
+    network_mode: "service:gateway"
+    depends_on: [gateway]
+  desk-idp:
+    image: ${A5S_IMAGE:-a5s:dev}
+    entrypoint: ["python", "/systems/idp.py", "/app/scenarios/service-desk/data.yaml"]
+    volumes: ["./systems:/systems:ro"]
+    network_mode: "service:gateway"
+    depends_on: [gateway]

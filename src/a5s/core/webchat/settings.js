@@ -376,6 +376,15 @@ function instanceForm(id, instance) {
 // Putting an agent to work: a new instance of it, for a few people first, at level 0 or 1
 
 const ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
+// whom an instance serves, as the settings write it: someone's id, or a team or a role
+const WHO = /^(?:(?:team|role):[A-Za-z0-9][A-Za-z0-9._@:-]{0,127}|[A-Za-z0-9][A-Za-z0-9._@-]{0,127})$/;
+
+function servable() {
+  // Whom a new instance may serve: each person the directory names, and each team or role the
+  // settings in force serve already, as they write it
+  const groups = Object.values(working?.instances || {}).flatMap((i) => i.serves || []).filter((w) => w.includes(":"));
+  return [...new Set([...Object.keys(names), ...groups])];
+}
 
 function suggested() {
   // A name for the new instance, the agent's and then its part's, unused
@@ -390,7 +399,7 @@ function freshAdding(agent, before = null) {
   // serving whoever's adding it, run by them; or, for another agent, what they'd chosen
   return { agent, id: null, part: before?.part ?? "", level: Math.min(releases[agent]?.starts ?? 1, 1),
            serves: before?.serves ?? new Set(me ? [me] : []), owner: before?.owner ?? (me || ""),
-           deputy: before?.deputy ?? "" };
+           deputy: before?.deputy ?? "", more: before?.more ?? [], asks: before?.asks ?? [] };
 }
 
 function addForm(parts) {
@@ -439,9 +448,15 @@ function addForm(parts) {
   }
   set.append(levels);
 
+  if (adding.more.length || adding.asks.length) {  // as its draft's authors planned it, beyond the form
+    set.append(element("p", [adding.more.length ? `It works in ${adding.more.join(", ")} too.` : "",
+                             adding.asks.length ? `It may ask ${adding.asks.join(", ")}.` : "",
+                             "As its draft's authors planned it: change the version's text for anything else."]
+      .filter(Boolean).join(" "), "note"));
+  }
   set.append(element("p", "It serves", "lead"));
   const serves = element("div", null, "choices");
-  for (const who of Object.keys(names)) {
+  for (const who of new Set([...servable(), ...adding.serves])) {
     serves.append(choice("checkbox", "add-serves", adding.serves.has(who), whom(who), (input) => {
       if (input.checked) adding.serves.add(who);
       else adding.serves.delete(who);
@@ -481,7 +496,8 @@ function addForm(parts) {
     working.instances[id] = { definition: adding.agent, serves: [...adding.serves], level: adding.level,
                               ...(adding.owner ? { owner: adding.owner } : {}),
                               ...(adding.deputy ? { deputy: adding.deputy } : {}),
-                              parts: adding.part ? [adding.part] : [] };
+                              parts: [...new Set([adding.part, ...adding.more].filter(Boolean))],
+                              ...(adding.asks.length ? { asks: [...adding.asks] } : {}) };
     adding = null;
     stale();
     render();
@@ -496,12 +512,25 @@ function addForm(parts) {
   return set;
 }
 
-// An agent someone chose to put to work, on its page in the studio, kept through signing in
+// An agent someone chose to put to work, on its page in the studio, kept through signing in: its
+// name, or what its draft's authors planned for its first instance, the parts it works in, whom
+// it serves and which instances it may ask, each only as the version's forms could offer it
 function offerAdding() {
-  const agent = store.getItem(ADDING);
+  const kept = store.getItem(ADDING);
   store.removeItem(ADDING);
+  let plan = { agent: kept, parts: [], serves: [], asks: [] };
+  try {
+    if (kept?.startsWith("{")) plan = { ...plan, ...JSON.parse(kept) };
+  } catch { return; }
+  const agent = plan.agent;
   if (!agent || !releases[agent] || !working) return;
-  adding = freshAdding(agent);
+  const parts = [...new Set([...Object.keys(working.thresholds || {}),
+                             ...Object.values(working.instances || {}).flatMap(partsOf)])];
+  const known = (list, among) => list.filter((one) => typeof one === "string" && among.includes(one));
+  const [part, ...more] = known(plan.parts, parts);
+  const serves = known(plan.serves, servable());  // a team or a role as the settings write it, too
+  adding = freshAdding(agent, { part: part ?? "", more, asks: known(plan.asks, Object.keys(working.instances || {})),
+                                ...(serves.length ? { serves: new Set(serves) } : {}) });
   render();
   $("add-instance").scrollIntoView({ block: "start" });
   $("add-agent").focus();
@@ -657,8 +686,12 @@ async function main() {
       return;
     }
     const params = new URLSearchParams(location.search);
-    const put = params.get("add");  // an agent to put to work, from its page in the studio
-    if (put && ID.test(put)) store.setItem(ADDING, put);
+    const put = params.get("add");  // an agent to put to work, from the studio, as its draft planned it
+    const listed = (key) => (params.get(key) || "").split(",").filter((one) => WHO.test(one));
+    if (put && ID.test(put)) {
+      store.setItem(ADDING, JSON.stringify({ agent: put, parts: listed("parts"), serves: listed("serves"),
+                                             asks: listed("asks") }));
+    }
     if (params.has("code") || params.has("error")) {
       token = await signedIn(params);
       window.a5s?.signedIn(token);  // the sidebar, of the pages they may use

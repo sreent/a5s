@@ -156,7 +156,8 @@ def _agent(cfg: Config, args: argparse.Namespace) -> None:
         if args.template not in found:
             sys.exit(f"There's no template {args.template}: `a5s agent templates` lists them.")
         try:
-            made = authoring.new(found[args.template], args.name, cfg.agents_dir, tools)
+            model = next(iter(load_models(cfg.models_file)), None) if args.template == authoring.BLANK else None
+            made = authoring.new(found[args.template], args.name, cfg.agents_dir, tools, model=model)
         except ValueError as e:
             sys.exit(f"Can't make {args.name}: {e}.")
         print(f"Made {made} from {args.template}, with its tools pinned. Edit its agent.yaml and "

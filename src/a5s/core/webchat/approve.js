@@ -163,6 +163,7 @@ async function main() {
     const params = new URLSearchParams(location.search);
     if (params.has("code") || params.has("error")) {
       const signed = await signedIn(params);
+      window.a5s?.signedIn(signed.token);  // the sidebar, of the pages they may use
       status("");
       show(await ask(`/approve/settings/${signed.version}/review`, signed), signed);
       return;

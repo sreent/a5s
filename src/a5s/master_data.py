@@ -9,6 +9,12 @@ workflow, and a5s chases them for it as it falls due, and up the line when it's 
 prepares, checks, chases, drafts and proposes: a correction it proposes waits for the data
 object's owner to decide it, and it approves nothing in SAP. Bank details reach it only as
 handles, and what suppliers write reaches it only through a5s's reader.
+
+SAP's own tools, its change requests and master records, what suppliers sent, and updates to
+what a request proposes, are its MCP server's, which the scenario's mcp.yaml declares
+(deploy/systems/sap.py makes one up). This is a5s's side: the directory, who may see what, what
+people owe, code's checks and its measures of quality, drafts and the handbook, over SAP's
+requests as SAP holds them now.
 """
 
 from __future__ import annotations
@@ -32,7 +38,7 @@ from a5s.contract import (
     ToolCall,
     parse_settings,
 )
-from a5s.effects import draft_once
+from a5s.effects import changed_through, draft_once
 from a5s.knowledge import MarkdownKnowledge
 
 LINK = "https://mdg.sap.test/"
@@ -126,10 +132,19 @@ class MasterDataScenario:
         self._people = {p["id"]: Person.listed(p, folder) for p in data["people"]}
         self._objects: dict[str, dict] = data["objects"]
         self._records = {r["key"]: r for r in data["records"]}
-        self._requests = {r["key"]: r for r in data["requests"]}
-        self._letters = data.get("letters") or []
+        self._requests = {r["key"]: r for r in data["requests"]}  # as they were raised
         self.drafts: list[dict] = []
         self._draft_lock = threading.Lock()
+
+    def _now(self) -> dict[str, dict]:
+        """The change requests as SAP holds them now: what's been changed through its server,
+        such as a correction an owner approved, over the requests as they were raised."""
+        changed = changed_through("sap")
+        return {k: {**r, **changed[k]} if k in changed else r for k, r in self._requests.items()}
+
+    def request(self, key: str) -> dict | None:
+        """One change request, as SAP holds it now."""
+        return self._now().get(key)
 
     # The directory
 
@@ -217,7 +232,7 @@ class MasterDataScenario:
         owed = [Obligation("records", r["key"], self._owes(r), r["title"],
                            _at(r["opened"], "09:00:00"), _at(r["due"], "17:00:00"),
                            LINK + r["key"])
-                for r in self._requests.values() if r["status"] not in ("approved", "rejected")]
+                for r in self._now().values() if r["status"] not in ("approved", "rejected")]
         for kind, rule in self._objects.items():
             found, owner = self.quality(kind), self.owner(kind)
             if owner and (title := self._owed_for(found)):
@@ -229,7 +244,7 @@ class MasterDataScenario:
     def watched(self) -> list[Record]:
         """Each request, as whoever owes its next step stands to it, and each data object's
         quality, as its owner does: what the watcher's reports tell each of them changed."""
-        found = [self._record(r) for r in self._requests.values()]
+        found = [self._record(r) for r in self._now().values()]
         for kind in self._objects:
             if (owner := self.owner(kind)) is not None:
                 q = self.quality(kind)
@@ -244,8 +259,8 @@ class MasterDataScenario:
     def record(self, key: str) -> Record | None:
         if key.startswith("DQ-"):
             return next((r for r in self.watched() if r.key == key), None)
-        if key in self._requests:
-            return self._record(self._requests[key])
+        if (request := self._now().get(key)) is not None:
+            return self._record(request)
         found = self._records.get(key)
         if found is None:
             return None
@@ -305,7 +320,7 @@ class MasterDataScenario:
     def check(self, key: str) -> dict[str, Any]:
         """What code finds of a change request: which critical-field rules it fails, which
         sensitive fields it touches, its likely duplicates, and where it goes next."""
-        request = self._requests.get(key)
+        request = self._now().get(key)
         if request is None:
             return {"error": "no such change request"}
         kind, owner = request["object"], self.owner(request["object"])
@@ -341,22 +356,9 @@ class MasterDataScenario:
     # Tools
 
     def tools(self) -> dict[str, Tool]:
-        def shown(found: dict) -> dict:
-            return {**found, "link": LINK + found["key"]}
-
-        def search(call: ToolCall) -> dict:
-            words = str(call.args.get("query") or "").casefold().split()
-            hits = [shown(r) for r in (*self._requests.values(), *self._records.values())
-                    if any(w in " ".join(str(v) for k, v in r.items() if k in (
-                        "title", "status", "name", "description", "kind")).casefold()
-                        for w in words)]
-            return {"found": hits}
-
-        def get(call: ToolCall) -> dict:
-            key = str(call.args.get("key", ""))
-            found = self._requests.get(key) or self._records.get(key)
-            return shown(found) if found else {"error": "no such change request or record"}
-
+        """a5s's side of the scenario's tools: code's checks, drafts and the handbook. SAP's own,
+        to search and read its requests and records, read what suppliers sent, and correct
+        what a request proposes, come from its MCP server, as mcp.yaml declares them."""
         def checked(call: ToolCall) -> dict:
             return self.check(str(call.args.get("key", "")))
 
@@ -366,42 +368,12 @@ class MasterDataScenario:
                 return {"error": f"the data objects are {', '.join(self._objects)}"}
             return {**self.quality(kind), "key": f"DQ-{kind}"}
 
-        def letters(call: ToolCall) -> dict:
-            return {"key": call.args["key"], "letters": [
-                m for m in self._letters if m["record"] == call.args["key"]]}
-
         def draft(call: ToolCall) -> dict:
             return draft_once(call, self.drafts, LINK, self._draft_lock)
 
-        def correct(call: ToolCall) -> dict:
-            request = self._requests.get(str(call.args.get("key", "")))
-            given = {k: str(v) for k, v in call.args.items() if k in CORRECTABLE}
-            if request is None:
-                return {"error": "no such change request"}
-            if request["status"] in ("approved", "rejected"):
-                return {"error": f"the request is {request['status']}"}
-            if not given:
-                return {"error": f"name what to correct: {', '.join(CORRECTABLE)}"}
-            if wrong := [k for k in given if k not in FIELDS[request["object"]]]:
-                return {"error": f"{', '.join(wrong)} isn't a field of "
-                                 f"{self._objects[request['object']]['name'].lower()}"}
-            request["values"].update(given)
-            if request["status"] == "needs info" and not failures(request["object"],
-                                                                  self._merged(request)):
-                request["status"] = "in review"  # what it needed is there: back to its steward
-            return {"corrected": request["key"], "values": given, "status": request["status"]}
-
         key = {"type": "object", "required": ["key"], "properties": {"key": {
-            "type": "string", "description": "A change request, such as CR0000101, or a master "
-                                             "record, such as S-100045"}}}
+            "type": "string", "description": "A change request, such as CR0000101"}}}
         tools = {t.name: t for t in (
-            Tool("search_records", "Search change requests and master records by words in "
-                 "their title, status, name or description.",
-                 {"type": "object", "properties": {"query": {"type": "string"}},
-                  "required": ["query"]}, search, handles=("iban",), record_field="key"),
-            Tool("get_record", "Get one change request, with the values it proposes, or one "
-                 "master record. Bank details come as handles, never their values.", key, get,
-                 handles=("iban",), record_arg="key", record_field="key"),
             Tool("check_request", "Check a change request by code: the critical-field rules it "
                  "fails, the sensitive fields it touches, its likely duplicates, and whether it's "
                  "approved automatically, goes back to its requester, or waits for its data "
@@ -413,15 +385,6 @@ class MasterDataScenario:
                      "type": "string", "enum": list(self._objects),
                      "description": "The data object"}}},
                  measured, record_field="key"),
-            Tool("get_letters", "Get what suppliers and customers sent with a change request, "
-                 "through a5s's reader: what it asks for, and the dates and keys it names, never "
-                 "its words.", key, letters, handles=("from",), record_arg="key",
-                 record_field="key", outside=("body",),
-                 extract={"asks_for": "choice:a bank change|an address change|a new record|"
-                                      "a blocked record|something else",
-                          "date": "date", "request": "key",  # and the handbook's warning signs
-                          "says_it_is_urgent": "flag", "asks_to_skip_the_callback": "flag",
-                          "says_someone_approved_it_already": "flag"}),
             Tool("create_draft", "Save a draft, such as a note to a requester or a data quality "
                  "report, for a person to read, change and send.",
                  {"type": "object", "required": ["title", "body"], "properties": {
@@ -429,19 +392,6 @@ class MasterDataScenario:
                      "record": {"type": "string"}}},
                  draft, writes=True, text_fields=("title", "body"), record_arg="record",
                  idempotent=True),
-            Tool("correct_value", "Propose a correction to what a change request proposes, such "
-                 "as a missing base unit, for its data object's owner to decide. A sensitive "
-                 "field, such as bank details, a VAT number, payment terms or a supplier's name, "
-                 "is never corrected this way: its requester changes it, and the owner confirms "
-                 "it.",
-                 {"type": "object", "required": ["key"], "additionalProperties": False,
-                  "properties": {
-                      "key": {"type": "string", "description": "The change request"},
-                      "country": {"type": "string", "description": "Two letters, such as GB"},
-                      "description": {"type": "string"},
-                      "base_unit": {"type": "string", "description": ", ".join(UNITS)},
-                      "material_type": {"type": "string", "description": ", ".join(TYPES)}}},
-                 correct, record_arg="key", action="correct-value"),
         )}
         tools.update(MarkdownKnowledge(self.folder / "knowledge",
                                        sees_part=self._knowledge_part, person=self.person).tools())

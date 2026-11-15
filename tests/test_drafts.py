@@ -190,11 +190,15 @@ def test_a_draft_says_who_would_sign_its_release(stack, approving, provider):
     assert {(s["who"], s["why"]) for s in new["signers"]} == {
         ("the release approver, from outside the team that runs a5s", "the finance-helper is new"),
         ("the finance-helper's owner", "the finance-helper is new")}
+    # who holds each role, by the directory: nobody owns a new agent until it names someone
+    assert {s["role"]: s["held_by"] for s in new["signers"]} == {
+        "release-approver": ["Rosa Mendes"], "agent-owner:finance-helper": []}
     change = priya("POST", "/studio/api/drafts", {"agent": "assistant"}).json()
     assert change["signers"] == []  # as released: it changes nothing yet
     files = {**change["files"], "AGENTS.md": change["files"]["AGENTS.md"] + "\nBe brief.\n"}
     worded = priya("PUT", f"/studio/api/drafts/{change['id']}", {"files": files}).json()
-    assert [s["role"] for s in worded["signers"]] == ["agent-owner:assistant", "engineer"]
+    assert [(s["role"], s["held_by"]) for s in worded["signers"]] == [
+        ("agent-owner:assistant", ["Priya Nair"]), ("engineer", None)]  # anyone in the team
     files["agent.yaml"] = files["agent.yaml"].replace("documents: [create_draft]",
                                                       "documents: [create_draft, shred_it]")
     widened = priya("PUT", f"/studio/api/drafts/{change['id']}", {"files": files}).json()

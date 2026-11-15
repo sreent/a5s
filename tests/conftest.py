@@ -10,6 +10,7 @@ import re
 import secrets
 import shutil
 import socket
+import sys
 import tempfile
 import threading
 import time
@@ -112,6 +113,9 @@ class FakeModel:
     reports: str | None = None  # the model it says answered, if not the one asked for; "" for none
     tokens: int = 15  # what it says each call took
     failing: int = 0  # how many calls in a row it fails, from now
+    # What it says to a request a test answers by what it is, such as a judge's, whenever it
+    # comes, without taking the script's next reply: None for the script's
+    answering: Callable[[dict], str | None] | None = None
 
     def reply(self, content: str | None = None, *tools: tuple[str, dict]) -> None:
         self.script.append((content, list(tools)))
@@ -124,7 +128,11 @@ class FakeModel:
         if self.failing:
             self.failing -= 1
             return httpx.Response(503, json={"error": {"message": "overloaded"}})
-        content, tools = self.script.pop(0) if self.script else ("(the script ran out)", [])
+        answered = self.answering(body) if self.answering else None
+        if answered is not None:
+            content, tools = answered, []
+        else:
+            content, tools = self.script.pop(0) if self.script else ("(the script ran out)", [])
         message: dict[str, Any] = {"role": "assistant", "content": content}
         if tools:
             message["tool_calls"] = [
@@ -455,6 +463,54 @@ class Stack:
         settings = yaml.safe_load((self.cfg.scenario_dir / "settings.yaml").read_text())
         assert not self.settle(instances={**settings["instances"], "watcher-finance": {
             **WATCHER, "serves": list(serves), **changes}}, signers=signers).refused
+
+
+def policy_of(scenario: Any) -> PolicyEngine:
+    """The policy a deployment has for a scenario, as build.py makes it: a5s's base pack, and the
+    scenario's own beside it, if it has one, such as the service desk's."""
+    pack = scenario.policy_pack()
+    return PolicyEngine(packs=(pack,) if pack else ())
+
+
+# Each scenario's made-up systems (deploy/systems), behind the MCP servers its mcp.yaml points a5s
+# at, on this machine, on its synthetic data: each by its server's name there, which is its file's,
+# with where its app keeps what's written to it. Each is started once, the first time a test needs
+# it, and left up, as a deployment's systems are.
+MADE_UP: dict[str, tuple[tuple[str, str], ...]] = {
+    "service-desk": (("itsm", "written"), ("idp", "done")),
+    "software-delivery": (("forge", "written"),),
+    "master-data": (("sap", "written"),),
+}
+SYSTEMS: dict[str, Any] = {}  # what's been written to each, by its scenario's folder
+RUNNING: list[Any] = []  # the systems themselves
+# Where a made-up system whose changes its scenario's code reads, such as SAP's, keeps them
+os.environ["A5S_SYSTEMS_STATE"] = tempfile.mkdtemp(prefix="a5s-systems-")
+
+
+def scenario_systems(folder: str) -> dict[str, Any]:
+    """The made-up systems a scenario's mcp.yaml declares tools of, started once for the rest
+    of the tests, at the addresses it declares: for each stack, with nothing written to them
+    yet, so a stack starts from the scenario's data as data.yaml has it. What's been written
+    to each, by its server's name in mcp.yaml, for a test to look at, or nothing for a
+    scenario with none."""
+    if folder not in SYSTEMS:
+        import importlib.util
+        found: dict[str, Any] = {}
+        for name, state in MADE_UP.get(folder, ()):
+            spec = importlib.util.spec_from_file_location(f"made_up_{name}", ROOT / "deploy" / "systems" / f"{name}.py")
+            assert spec and spec.loader
+            system = importlib.util.module_from_spec(spec)
+            sys.modules[spec.name] = system  # as an import would, for its dataclasses
+            spec.loader.exec_module(system)
+            app = system.make(ROOT / "scenarios" / folder / "data.yaml")
+            up = serve(app, system.PORT)
+            up.__enter__()  # for the rest of the tests, so long as something holds it
+            RUNNING.append(up)
+            found[name] = getattr(app.state, state)
+        SYSTEMS[folder] = found
+    for state in SYSTEMS[folder].values():
+        state.reset()
+    return SYSTEMS[folder]
 
 
 def signed(folder: Path, settings: dict, signers: tuple[str, ...] = ("ana",)) -> None:

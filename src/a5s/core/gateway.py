@@ -219,13 +219,35 @@ _TYPES = {"string": str, "integer": int, "number": int | float, "boolean": bool,
 
 def misfit(schema: dict[str, Any], value: Any, where: str = "") -> str | None:
     """Why a tool's arguments don't fit its pinned schema, if they don't: the types, required
-    properties and items it names. A model can send anything, so a call must fit its schema
-    before policy looks at it."""
+    properties and items it names, the values it lists, and the lengths, patterns and bounds it
+    sets. A model can send anything, so a call must fit its schema before policy looks at it."""
     kind = schema.get("type")
     kinds = kind if isinstance(kind, list) else [kind] if kind else []
+    named = where or "the arguments"
     if kinds and not any(isinstance(value, _TYPES.get(k, object)) and not (
             k in ("integer", "number") and isinstance(value, bool)) for k in kinds):
-        return f"{where or 'the arguments'} should be {' or '.join(kinds)}"
+        return f"{named} should be {' or '.join(kinds)}"
+    if "enum" in schema and value not in schema["enum"]:
+        return f"{named} should be one of {', '.join(map(str, schema['enum']))}"
+    if "const" in schema and value != schema["const"]:
+        return f"{named} should be {schema['const']}"
+    if isinstance(value, str):
+        if len(value) < schema.get("minLength", 0):
+            return f"{named} is too short"
+        if "maxLength" in schema and len(value) > schema["maxLength"]:
+            return f"{named} is longer than {schema['maxLength']} characters"
+        if "pattern" in schema and not re.search(str(schema["pattern"]), value):
+            return f"{named} isn't in the form it takes"
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        if "minimum" in schema and value < schema["minimum"]:
+            return f"{named} is less than {schema['minimum']}"
+        if "maximum" in schema and value > schema["maximum"]:
+            return f"{named} is more than {schema['maximum']}"
+    if isinstance(value, list):
+        if len(value) < schema.get("minItems", 0):
+            return f"{named} has too few"
+        if "maxItems" in schema and len(value) > schema["maxItems"]:
+            return f"{named} has more than {schema['maxItems']}"
     if isinstance(value, dict):
         for name in schema.get("required") or []:
             if name not in value:
@@ -607,7 +629,7 @@ class Gateway:
         args = (self.cfg.seal_keys, self.identity, self.scenario, self.cfg.webchat_client_id)
         for refused in (*approvals.seal_pending(conn, *args),
                         *proposals.seal_pending(conn, *args, clean=self.reason_told),
-                        *samples.seal_pending(conn, *args)):
+                        *samples.seal_pending(conn, *args, now=self.clock())):
             ledger.append(conn, {"kind": "admin", "action": "refuse-sign-in", "run": None,
                                  "instance": None, "acts_for": [], "decision": "record",
                                  "args": {"what": refused}})
@@ -1015,7 +1037,7 @@ class Gateway:
         given = {"level": row["level"], "read_outside": row["read_outside"],
                  "acts_for": list(row["acts_for"])}
         if action != "call_model":  # about no record, and no change, unless the call says so
-            given |= {"in_scope": True, "visible": True, "over_limit": False}
+            given |= {"in_scope": True, "visible": True, "for_self": False, "over_limit": False}
         return self.policy.decide(
             principal={"type": "Instance", "id": row["id"]},
             action=action,
@@ -2388,8 +2410,14 @@ def create_app(gw: Gateway) -> FastAPI:
         keys = [r for r in records if isinstance(r, str) and r]
         action = tool.action if tool else None  # a change, which levels and limits govern
         # the records as they stand, read before any lock is taken, so a slow system holds
-        # up nobody else: for its deciders, the owner's report and graders
-        standing = proposals.snapshot({k: record_of(gw.scenario, k) for k in keys}) if action else {}
+        # up nobody else: for its deciders, the owner's report and graders. A change to records
+        # that can't be read now is asked for no further: nobody could decide it as they stand
+        unreadable = False
+        try:
+            standing = proposals.snapshot({k: record_of(gw.scenario, k) for k in keys}) if action else {}
+        except Exception:  # the records system's own failure, never the run's
+            log.exception("couldn't read the records %s names", name)
+            standing, unreadable = {}, True
         with db.transaction(gw.url) as conn:
             row = load_run(conn, token)
             # Its changes are counted and held for whoever asked, and in a group chat those who
@@ -2430,6 +2458,10 @@ def create_app(gw: Gateway) -> FastAPI:
                 elif any(not isinstance(r, str) or not r for r in records):
                     decision = Decision(False, ("records-are-named-by-key",), explanations=(
                         "a record is named by its key, in words",))
+                elif unreadable:
+                    decision = Decision(False, ("records-can-be-read",), explanations=(
+                        ("the records it names can't be read just now, so a5s asked for nothing: "
+                         "try again later"),))
                 if row["trigger"].get("kind") in OWN_RUNS:
                     decision = Decision(False, ("a5s-runs-call-no-tools",), explanations=(
                         "a5s's own runs, such as keeping a summary, call no tools",))
@@ -2603,7 +2635,9 @@ def create_app(gw: Gateway) -> FastAPI:
         """Who may decide a call policy holds, if it holds it: or why nobody may, in words."""
         if not decision.held:
             return []
-        if (problem := gw.approving()) is not None:
+        # In the sandbox, whose people are made up and sign nobody in, a change waits for its
+        # made-up deciders, who never decide it: as it would wait where people work
+        if (problem := gw.approving()) is not None and not gw.cfg.sandboxed:
             return f"a change can't wait for a decision here, since {problem}"
         asked = groups.requesters(row)  # in a group, whoever asked and whoever spoke of it
         by_part = proposals.deciders(gw.scenario, records, asked)
@@ -3327,7 +3361,7 @@ def create_app(gw: Gateway) -> FastAPI:
                              p["standing"] or {r: None for r in p["records"]},
                              list(p["acts_for"]), now, proposal=p["id"],
                              decided="reject" if became == "rejected" else "approve",
-                             decided_by=deciders_[0] if deciders_ else None, flags=p["flags"])
+                             decided_by=deciders_, flags=p["flags"])
         ledger.append(conn, {"kind": "proposal", "action": became, "run": str(p["run_id"]),
                              "instance": p["instance_id"], "acts_for": list(p["acts_for"]),
                              "decision": "record", "of": p["seq"],
@@ -3482,8 +3516,10 @@ def create_app(gw: Gateway) -> FastAPI:
     def judge_samples() -> dict:
         """Ask each agent's judge about the samples of its work a5s drew for people to grade, a
         few a sweep, beside people's grades and never instead of them (core/judging.py). A judge
-        not approved for the class of data the settings say, and for every one its agent's own
-        model is, judges nothing; nor does any while the settings in force don't check out."""
+        reads a sample as its decider did: the values its handles stand for, and every field of
+        the records it named. So one not approved for the class of data the settings say, for
+        every class they give a field, and for every one its agent's own model is, judges
+        nothing; nor does any while the settings in force don't check out."""
         with db.transaction(gw.url) as conn:
             locked = conn.execute("select pg_try_advisory_xact_lock(hashtext('a5s judging')) "
                                   "as got").fetchone()
@@ -3498,8 +3534,9 @@ def create_app(gw: Gateway) -> FastAPI:
                 own = gw.models.get(release.model)
                 if (judge is not None and own is not None
                         and settings.data_class in judge.data_classes
-                        and set(own.data_classes) <= set(judge.data_classes)):
-                    judged_by[name] = judge.alias  # it may see all its agent may
+                        and set(own.data_classes) <= set(judge.data_classes)
+                        and set(settings.classified.values()) <= set(judge.data_classes)):
+                    judged_by[name] = judge.alias  # it may see all its agent's decider may
             due = judging.pending(conn, judged_by)
         judged = []
         for sample in due:

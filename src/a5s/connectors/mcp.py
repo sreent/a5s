@@ -49,7 +49,8 @@ from a5s.core.ledger import canonical
 FILE = "mcp.yaml"
 PROTOCOL = "2025-11-25"  # what a5s asks for; a server may answer with another it speaks
 SPOKEN = ("2025-03-26", "2025-06-18", "2025-11-25")
-MAX_BYTES = 1_000_000  # of one answer
+MAX_BYTES = 1_000_000  # of one answer, as it comes, never compressed
+DEADLINE = 120.0  # seconds a call may take in all, however slowly the server answers
 LISTED_FOR = 300.0  # seconds a server's list of its tools serves before a5s asks again
 PAGES = 10  # of a server's list of tools, at most
 NAME = re.compile(r"[a-z][a-z0-9_]{0,63}")
@@ -182,6 +183,12 @@ class Declaration(BaseModel):
 
     @model_validator(mode="after")
     def _known(self) -> Declaration:
+        for name, server in self.servers.items():
+            if not NAME.fullmatch(name):
+                raise ValueError(f"{name}: a server's name is lowercase letters, digits and _")
+            if server.token_env not in (None, f"A5S_MCP_{name.upper()}_TOKEN"):
+                raise ValueError(f"{name}'s token is in A5S_MCP_{name.upper()}_TOKEN, its own, and "
+                                 f"no other's: not {server.token_env}")
         seen: dict[tuple[str, str], str] = {}
         for name, tool in self.tools.items():
             if not NAME.fullmatch(name):
@@ -225,7 +232,8 @@ class Session:
         self.listed: tuple[float, dict[str, dict]] | None = None
 
     def _headers(self, started: tuple[str | None, str] | None) -> dict[str, str]:
-        found = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
+        found = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream",
+                 "Accept-Encoding": "identity"}  # so a5s counts what it holds as it comes
         if started is not None:
             session, version = started
             found["MCP-Protocol-Version"] = version
@@ -241,7 +249,7 @@ class Session:
     def _send(self, message: dict, started: tuple[str | None, str] | None
               ) -> tuple[httpx.Headers, dict | None]:
         """One JSON-RPC message, and the answer to it, if it's a request."""
-        wants = message.get("id")
+        wants, until = message.get("id"), time.monotonic() + DEADLINE
         try:
             with self.http.stream("POST", self.url, json=message, headers=self._headers(started),
                                   follow_redirects=False) as answer:
@@ -256,9 +264,10 @@ class Session:
                 if wants is None:
                     return answer.headers, None
                 kind = answer.headers.get("content-type", "").split(";")[0].strip().lower()
+                chunks = _raw(answer, self.name, until)
                 if kind == "text/event-stream":
-                    return answer.headers, self._from_stream(answer.iter_lines(), wants)
-                body = _bounded(answer.iter_bytes(), self.name)
+                    return answer.headers, self._from_stream(_lines(chunks), wants)
+                body = b"".join(chunks)
         except httpx.HTTPError as exc:
             raise ConnectorError(f"the {self.name} MCP server couldn't be reached: "
                                  f"{type(exc).__name__}") from None
@@ -344,13 +353,33 @@ class Session:
         return found
 
 
-def _bounded(chunks: Iterator[bytes], name: str) -> bytes:
-    body = bytearray()
-    for chunk in chunks:
-        body += chunk
-        if len(body) > MAX_BYTES:
+def _raw(answer: httpx.Response, name: str, until: float) -> Iterator[bytes]:
+    """An answer's bytes as they come, never decompressed, counted as they come, within the
+    call's deadline: a5s holds no more of it than MAX_BYTES, however it's sent."""
+    if answer.headers.get("content-encoding", "identity").strip().lower() not in ("", "identity"):
+        raise ConnectorError(f"the {name} MCP server answered compressed, which a5s asked it not to")
+    total = 0
+    # one built whole, such as by a stand-in transport, is already in memory: counted all the same
+    for chunk in [answer.content] if answer.is_stream_consumed else answer.iter_raw():
+        total += len(chunk)
+        if total > MAX_BYTES:
             raise ConnectorError(f"the {name} MCP server answered more than {MAX_BYTES:,} bytes")
-    return bytes(body)
+        if time.monotonic() > until:
+            raise ConnectorError(f"the {name} MCP server took more than {DEADLINE:g} seconds to "
+                                 "answer")
+        yield chunk
+
+
+def _lines(chunks: Iterator[bytes]) -> Iterator[str]:
+    """The lines of an event stream, from its bytes as they come."""
+    pending = b""
+    for chunk in chunks:
+        pending += chunk
+        *whole, pending = pending.split(b"\n")
+        for line in whole:
+            yield line.removesuffix(b"\r").decode("utf-8", "replace")
+    if pending:
+        yield pending.removesuffix(b"\r").decode("utf-8", "replace")
 
 
 def _answering(message: Any, wants: Any) -> dict | None:
@@ -412,14 +441,29 @@ def kept(value: Any, names: frozenset[str]) -> Any:
 
 
 def unnamed(value: Any, field: str, within: bool = False) -> bool:
-    """Whether a list holds an object that names no record by `field`, outside any record:
-    something a5s's need-to-know can't check."""
+    """Whether what a server answered holds something outside any record that a5s's
+    need-to-know can't check, by the record each names in `field`: in a list, anything but an
+    object naming its record, such as a row or a line of text; and an object naming none that
+    holds values of its own, not only lists and objects. Inside a record, what it holds is its."""
     if isinstance(value, dict):
         inside = within or field in value
+        if not inside and any(not isinstance(v, (dict, list)) and v is not None
+                              for v in value.values()):
+            return True
         return any(unnamed(v, field, inside) for v in value.values())
     if isinstance(value, list):
-        return any((isinstance(v, dict) and not within and field not in v)
+        return any((not within and not (isinstance(v, dict) and field in v))
                    or unnamed(v, field, within) for v in value)
+    return False
+
+
+def loose(value: Any) -> bool:
+    """Whether a list anywhere in what a server answered holds anything but objects, such as
+    lines of text: from a tool that reads outside content, a5s can't tell those apart from it."""
+    if isinstance(value, dict):
+        return any(loose(v) for v in value.values())
+    if isinstance(value, list):
+        return any(not isinstance(v, dict) or loose(v) for v in value)
     return False
 
 
@@ -446,6 +490,15 @@ def answered(result: dict, tool: Served) -> Any:
         raise ConnectorError(f"the {tool.server} MCP server's {tool.calls} returned something that "
                              f"names no record by {tool.record_field}, which a5s can't check, so "
                              "it passes none of it on")
+    if tool.outside and loose(passed):
+        raise ConnectorError(f"the {tool.server} MCP server's {tool.calls} returned lines a5s can't "
+                             "tell apart from outside content, so it passes none of it on")
+    if tool.action and not (isinstance(passed, dict) and passed.get(tool.record_field or "")):
+        # a change is made only as the server says, naming what it changed: anything else, such
+        # as words saying why it didn't, is a refusal, never counted, reported or sampled as made
+        said = " ".join(texts)[:300]
+        return {"error": f"the {tool.server} MCP server didn't say it made the change"
+                         + (f": {said}" if said else "")}
     if left and isinstance(passed, dict):
         passed = {**passed, "a5s_left_out": f"what a5s doesn't pass on: {', '.join(left)}"}
     return passed
@@ -500,10 +553,17 @@ def _tool(name: str, d: Declared, session: Session | None) -> Served:
         if why := contradicts(offered.get("annotations"), tool):
             raise ConnectorError(f"the {d.server} MCP server's {d.calls}: {why}, so a5s doesn't "
                                  "call it until a release declares it again")
-        asked = {"name": d.calls, "arguments": call.args}
+        given = set(d.arguments.get("properties") or {})  # only what it declares it takes
+        asked = {"name": d.calls, "arguments": {k: v for k, v in call.args.items() if k in given}}
         if call.key:  # so it makes a change once for each key: nothing else of a5s's goes
             asked["_meta"] = {"a5s/key": call.key}
-        return answered(session.request("tools/call", asked), tool)
+        try:
+            result = session.request("tools/call", asked)
+        except ConnectorError:
+            if tool.outside:  # its words may be the outside content itself
+                raise ConnectorError(f"the {d.server} MCP server's {d.calls} failed") from None
+            raise
+        return answered(result, tool)
 
     tool = Served(name=name, description=d.description, schema=d.arguments, run=run,
                   reads=d.reads, writes=d.writes, destructive=d.destructive,

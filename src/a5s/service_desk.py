@@ -1,7 +1,18 @@
-"""A read-only IT service-desk scenario with a synthetic ITSM and knowledge base."""
+"""An IT service-desk scenario with a synthetic ITSM, identity provider and knowledge base.
+
+Its ITSM's tools come through the ITSM's MCP server, which the scenario's mcp.yaml declares
+(deploy/systems/itsm.py, in this made-up desk): searching tickets, reading one, what requesters
+wrote on one, and posting a reply on one, a change a5s holds for the ticket's service area's
+decider. Self-service comes through the identity provider's (deploy/systems/idp.py): an account,
+the provider's own password reset, which its holder finishes there, and removing an account's
+authenticators. What stays here is the desk's own: the directory, who may see each ticket and
+account, the obligations its tickets make, a draft reply for a person to send, its knowledge
+base, and its policy pack, pack.cedar in its folder, which lets a reset run alone only for the
+person asking, and never an authenticator change."""
 
 from __future__ import annotations
 
+import re
 import threading
 from datetime import datetime
 from pathlib import Path
@@ -22,12 +33,15 @@ from a5s.effects import draft_once
 from a5s.knowledge import MarkdownKnowledge
 
 LINK = "https://itsm.desk.test/"
+IDP = "https://idp.desk.test/accounts/"
+ACCOUNT = re.compile(r"ACC-([a-z][a-z0-9-]*)")  # a person's account: ACC- and their id
+ACCESS = "access"  # the service area accounts are in
 
 
 class ServiceDeskScenario:
     name = "service-desk"
-    record_links = (LINK,)
-    record_pattern = r"\b(?:INC|REQ)\d{7}\b"
+    record_links = (LINK, IDP)
+    record_pattern = r"\b(?:INC|REQ)\d{7}\b|\bACC-[a-z][a-z0-9-]*\b"
 
     def __init__(self, folder: Path, database_url: str):
         self.folder = folder
@@ -35,7 +49,7 @@ class ServiceDeskScenario:
         data = yaml.safe_load((folder / "data.yaml").read_text())
         self._people = {p["id"]: Person.listed(p, folder) for p in data["people"]}
         self._tickets = {t["key"]: t for t in data["tickets"]}
-        self._messages = data.get("messages") or []
+        self._accounts = {a["key"]: a for a in data.get("accounts") or []}
         self.drafts = []
         self._draft_lock = threading.Lock()
         self.reads = 0
@@ -52,12 +66,24 @@ class ServiceDeskScenario:
     def team(self, name: str) -> list[Person]:
         return [p for p in self._people.values() if p.team == name]
 
+    def _holder(self, record: str) -> Person | None:
+        """Whose account a record is, if it's one."""
+        found = ACCOUNT.fullmatch(record)
+        return self._people.get(found[1]) if found else None
+
     def part_of(self, record: str) -> str | None:
+        if self._holder(record) is not None:
+            return ACCESS
         return (self._tickets.get(record) or {}).get("part")
 
     def sees(self, person: str, record: str) -> bool:
-        ticket, who = self._tickets.get(record), self._people.get(person)
-        if ticket is None or who is None:
+        who = self._people.get(person)
+        if who is None:
+            return False
+        if (holder := self._holder(record)) is not None:  # its holder, and access's resolvers
+            return person == holder.id or who.team == f"{ACCESS}-team"
+        ticket = self._tickets.get(record)
+        if ticket is None:
             return False
         return person in (ticket["requester"], ticket["assignee"]) or who.team == f"{ticket['part']}-team"
 
@@ -79,6 +105,10 @@ class ServiceDeskScenario:
         return [self._record(t) for t in self._tickets.values()]
 
     def record(self, key: str) -> Record | None:
+        if (holder := self._holder(key)) is not None:  # whose next step it is: its holder's
+            state = (self._accounts.get(key) or {}).get("state", "active")
+            return Record("accounts", key, holder.id, f"{holder.name}'s account", {"state": state},
+                          IDP + key)
         found = self._tickets.get(key)
         return self._record(found) if found else None
 
@@ -93,43 +123,19 @@ class ServiceDeskScenario:
         return parse_settings((self.folder / "settings.yaml").read_bytes(),
                               tuple(Signature(s["signer"], s["value"]) for s in signed))
 
-    def policy_pack(self) -> None:
-        return None
+    def policy_pack(self) -> str | None:
+        pack = self.folder / "pack.cedar"
+        return pack.read_text() if pack.exists() else None
 
     def tools(self) -> dict[str, Tool]:
-        def search(call: ToolCall) -> dict:
-            words = str(call.args.get("query") or "").casefold().split()
-            return {"tickets": [{**t, "link": LINK + t["key"]} for t in self._tickets.values()
-                                if any(w in t["title"].casefold() for w in words)]}
-
-        def get(call: ToolCall) -> dict:
-            found = self._tickets.get(call.args["key"])
-            return {**found, "link": LINK + found["key"]} if found else {"error": "no such ticket"}
-
         def draft(call: ToolCall) -> dict:
             return draft_once(call, self.drafts, LINK, self._draft_lock)
 
-        def comments(call: ToolCall) -> dict:
-            return {"key": call.args["key"], "messages": [
-                m for m in self._messages if m["record"] == call.args["key"]]}
-
-        query = {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}
-        key = {"type": "object", "properties": {"key": {"type": "string"}}, "required": ["key"]}
         body = {"type": "object", "required": ["title", "body"], "properties": {
             "title": {"type": "string"}, "body": {"type": "string"}, "record": {"type": "string"}}}
-        tools = {t.name: t for t in (
-            Tool("search_records", "Search ITSM tickets by words in their title.", query, search,
-                 handles=("contact",), record_field="key"),
-            Tool("get_record", "Get one ITSM ticket by its key, such as INC0000001.", key, get,
-                 handles=("contact",), record_arg="key", record_field="key"),
-            Tool("create_draft", "Save a draft ticket reply for a person to review and use.", body,
-                 draft, writes=True, text_fields=("title", "body"), record_arg="record",
-                 idempotent=True),
-            Tool("get_messages", "Get what requesters wrote on a ticket through a5s's reader.", key,
-                 comments, handles=("from",), record_arg="key", record_field="key",
-                 outside=("body",),
-                 extract={"asks_for": "choice:a reset|access|equipment|something else"}),
-        )}
+        tools = {"create_draft": Tool(
+            "create_draft", "Save a draft ticket reply for a person to review and use.", body, draft,
+            writes=True, text_fields=("title", "body"), record_arg="record", idempotent=True)}
         tools.update(MarkdownKnowledge(self.folder / "knowledge",
                                        sees_part=self._knowledge_part, person=self.person).tools())
         return tools

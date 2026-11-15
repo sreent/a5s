@@ -92,6 +92,28 @@ def branch(agent: str, draft: str) -> str:
     return f"a5s/{agent}-{draft.replace('-', '')[:8]}"
 
 
+def planned(plan: dict) -> list[str]:
+    """Its authors' plan for its first instance, in its pull request's words: where it would
+    work, how many people it would serve, and the teams and roles by name, and whom it could ask.
+    Never anyone by name: a pull request goes where the organisation's code does."""
+    if not any(plan.get(k) for k in ("parts", "serves", "asks")):
+        return []
+    serves = plan.get("serves") or []
+    groups = [s for s in serves if ":" in s]
+    people = len(serves) - len(groups)
+    whom = [f"{people} {'person' if people == 1 else 'people'}"] if people else []
+    words = [f"in {', '.join(plan['parts'])}" if plan.get("parts") else "in no part",
+             *([f"serving {' and '.join(whom + groups)}"] if whom or groups else []),
+             *([f"asking {', '.join(plan['asks'])}"] if plan.get("asks") else [])]
+    return ["", "## Its first instance, as planned", "",
+            (f"{', '.join(words)}. Its parts' owners approve it as a version of the settings, once "
+             "its release is signed; nothing here puts it to work.")]
+
+
+NOBODY = (". Nobody holds that role in the directory yet: the release can't be approved until the "
+          "directory names someone")
+
+
 def described(draft: dict, person: Any, signers: list[dict], new: bool,
               problems: list[str] | None = None,
               drafted: list[dict] | None = None) -> tuple[str, str, str]:
@@ -105,8 +127,10 @@ def described(draft: dict, person: Any, signers: list[dict], new: bool,
                 for d in drafted]
         by += f" Before them, {'; then '.join(went)}."
     lines = [by, "", "## Who must sign its release", ""]
-    lines += [f"- **{s['who']}**, because {s['why']}" for s in signers] or [
+    lines += [f"- **{s['who']}**, because {s['why']}" + (NOBODY if s.get("held_by") == [] else "")
+              for s in signers] or [
         "- Nobody more than for any release: it changes nothing a person must sign for."]
+    lines += planned(draft.get("plan") or {})
     checks = ("As `a5s release` works it out, from what it changes of the agents released where "
               "it was drafted. Nothing a5s checks there would stop its release: its definition "
               "loads as the core loads it, its tools are the scenario's, pinned as it has them, "
