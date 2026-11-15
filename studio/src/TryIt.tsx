@@ -84,6 +84,13 @@ function Cases({ draft, model, ready, revision }: { draft: string; model: string
                       <div><span className="faint">Told</span> {step.say}</div>
                       <div><span className="faint">Answered</span> {step.reply || "(nothing)"}</div>
                       {step.called.length > 0 && <div className="faint mono">used {step.called.join(", ")}</div>}
+                      {step.judged && (
+                        <div className="case-judged">
+                          <span className="faint">{step.judged.judge === STAND_IN ? "The stand-in judged it" : step.judged.judge ? `Its judge, ${step.judged.judge}, found it` : "Nobody judged it"}</span>{" "}
+                          {step.judged.grade && <span className={`badge ${step.judged.grade === "right" ? "good" : "bad"}`}>{step.judged.grade}</span>}{" "}
+                          {step.judged.why}
+                        </div>
+                      )}
                     </div>
                   ))}
                 </details>
@@ -174,6 +181,7 @@ export function TryIt({ draft, name, ready, keep, revision, acts }: {
   const [caseName, setCaseName] = useState("");
   const [neverUses, setNeverUses] = useState<string[]>([]);
   const [neverSays, setNeverSays] = useState("");
+  const [judged, setJudged] = useState("");
   const [keptCase, setKeptCase] = useState<{ said: string } | { problem: string } | null>(null);
   if (offered.error) return <p className="note" id="no-sandbox">{offered.error}</p>;
   if (!offered.data) return <p className="note">Asking the sandbox…</p>;
@@ -205,14 +213,17 @@ export function TryIt({ draft, name, ready, keep, revision, acts }: {
     const avoids = acts.filter((t) => neverUses.includes(t));
     const never = words(neverSays);
     try {
-      keep({ name: named, as, steps: theirs.map((t) => {
+      const right = judged.trim();
+      keep({ name: named, as, steps: theirs.map((t, i) => {
         const uses = t.model === STAND_IN ? [] : used(t.tried as Tried);  // the stand-in's aren't the agent's
         return { say: t.said, ...(uses.length ? { uses } : {}), ...(avoids.length ? { avoids } : {}),
-                 ...(never.length ? { never_says: never } : {}) };
+                 ...(never.length ? { never_says: never } : {}),
+                 ...(right && i === theirs.length - 1 ? { judged: right } : {}) };  // what it came to
       }) });
       setCaseName("");
       setNeverUses([]);
       setNeverSays("");
+      setJudged("");
       setKeptCase({ said: `Kept as ${named}, in ${CASES}.` });
     } catch (e) {
       setKeptCase({ problem: (e as Error).message });
@@ -264,6 +275,11 @@ export function TryIt({ draft, name, ready, keep, revision, acts }: {
           <label className="field"><span>Words it must never say, apart by commas</span>
             <input id="never-says" value={neverSays} placeholder="such as: closed, I've reset"
                    onChange={(e) => setNeverSays(e.target.value)} autoComplete="off" /></label>
+          <label className="field"><span>What a right answer is, in your words, where it can be right in more than one way: its judge grades it, beside the checks above</span>
+            <textarea id="judged" rows={2} value={judged}
+                      placeholder={'such as: it proposes "EA" as the base unit, with correct_value, and says the owner decides it'}
+                      onChange={(e) => setJudged(e.target.value)} />
+            <span className="wb-hint">The stand-in judges by words alone: the words you quote, and the tools you name. The draft's own judge reads what you mean.</span></label>
           <button type="submit" id="keep-case">Keep as a test case</button>
           {keptCase && ("said" in keptCase ? <p className="note" id="case-kept">{keptCase.said}</p>
                                            : <p className="problem">{keptCase.problem}</p>)}

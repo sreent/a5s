@@ -118,6 +118,7 @@ export type CaseStep = {
   reply: string;
   called: string[];
   wrong: string[];
+  judged?: Judged;
 };
 
 export type Cases = {
@@ -370,6 +371,13 @@ export type Judge = {
   false_alarms: number;
   agreed_share: number | null;
   kappa: number | null;
+};
+
+// What a judge said of a step a case says what a right answer is for, or why none did.
+export type Judged = {
+  grade: "right" | "wrong" | "critical" | null;
+  why: string;
+  judge: string | null;
 };
 
 // The scenario's limits for a type of change: past either, a change waits for a person,

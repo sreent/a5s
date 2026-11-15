@@ -700,11 +700,20 @@ class Cases(Shape):
     problem: str | SkipJsonSchema[None] = None  # why its cases can't be read, if they can't
 
 
+class Judged(Shape):
+    """What a judge said of a step a case says what a right answer is for, or why none did."""
+
+    grade: Literal["right", "wrong", "critical"] | None
+    why: str
+    judge: str | None  # the model that judged it: the stand-in, or the draft's own judge
+
+
 class CaseStep(Shape):
     say: str
     reply: str
     called: list[str]
     wrong: list[str]
+    judged: Judged | SkipJsonSchema[None] = None
 
 
 class CaseRan(Shape):

@@ -18,7 +18,7 @@ from pathlib import Path
 import yaml
 from pydantic import ValidationError
 
-from a5s import definitions
+from a5s import cases, definitions
 from a5s.config import ModelConfig
 from a5s.contract import Tool
 
@@ -116,7 +116,21 @@ def check(folder: Path, tools: dict[str, Tool], models: dict[str, ModelConfig]) 
     if found.evaluation and found.evaluation.judge not in models:
         problems.append(f"its judge, {found.evaluation.judge}, isn't one config/models.yaml "
                         "approves")
+    if not found.evaluation and _judged(folder):
+        problems.append("its test cases ask its judge whether an answer is right, and it names "
+                        "no judge: give it one, under evaluation")
     return problems
+
+
+def _judged(folder: Path) -> bool:
+    """Whether any of a folder's test cases has a step its judge grades."""
+    try:
+        listed = cases.found({p.relative_to(folder).as_posix(): p.read_text()
+                              for p in sorted((folder / "tests").glob("*.y*ml"))})
+    except cases.Unreadable:  # the studio says so beside its cases
+        return False
+    return any(isinstance(step, dict) and step.get("judged")
+               for case in listed for step in case["steps"])
 
 
 def _said(error: dict) -> str:

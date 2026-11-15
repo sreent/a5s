@@ -37,7 +37,7 @@ from pydantic import BaseModel
 
 from a5s import authoring, build, cases, db, definitions, describing
 from a5s.config import Config, load_models
-from a5s.core import extractor, inbox, models, registry, retention, signing, studio
+from a5s.core import extractor, inbox, judging, models, registry, retention, signing, studio
 from a5s.core.gateway import Gateway
 from a5s.core.gateway import create_app as core_app
 from a5s.services.scheduler import Scheduler
@@ -84,14 +84,18 @@ class StandIn:
     """The sandbox's stand-in model, an OpenAI-compatible provider that thinks nothing: asked
     something, it looks it up with the first tool it's offered whose name begins with search,
     then says what it found. Asked to draft an agent from a description, it gives only the tools
-    that only read whose words match it (describing.py). A real model, where the sandbox has
-    one, says what the agent would."""
+    that only read whose words match it (describing.py); asked to judge a test case's step, it
+    looks only for the words its criterion quotes and the tools it names (cases.py). A real
+    model, where the sandbox has one, says what the agent, or its judge, would."""
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
         first = body["messages"][0]
         if first.get("role") == "system" and str(first.get("content") or "").startswith(describing.DESCRIBING):
             return _answer(body, {"role": "assistant", "content": json.dumps(describing.stand_in(body))})
+        if first.get("role") == "system" and first.get("content") == cases.JUDGING:
+            asked = str(body["messages"][-1].get("content") or "")
+            return _answer(body, {"role": "assistant", "content": json.dumps(cases.stand_in_verdict(asked))})
         last = body["messages"][-1]
         if last.get("role") == "tool":
             content = str(last.get("content") or "")
@@ -368,12 +372,49 @@ class Sandbox:
             self._serving(agent, agent, person)
             self._settle()
             for n, step in enumerate(case["steps"], 1):
-                reply, run, _ = self._said(agent, person, cases.dated(str(step["say"])))
+                said = cases.dated(str(step["say"]))
+                reply, run, _ = self._said(agent, person, said)
                 called = used(run)
                 wrong = cases.check(step, reply, called, case.get("own_values") == "allowed")
+                done = {"say": step["say"], "reply": reply, "called": called}
+                if criterion := step.get("judged"):  # where it can be right in more than one way
+                    done["judged"] = verdict = self._judged(agent, model, str(criterion), said,
+                                                            reply, called)
+                    if verdict["grade"] is None:
+                        wrong.append(f"nobody judged it: {verdict['why']}")
+                    elif verdict["grade"] != "right":
+                        wrong.append(f"its judge found it {verdict['grade']}: {verdict['why']}")
                 problems += [f"step {n}: {w}" for w in wrong]
-                steps.append({"say": step["say"], "reply": reply, "called": called, "wrong": wrong})
+                steps.append({**done, "wrong": wrong})
         return {**shown, "ran": True, "passed": not problems, "problems": problems, "steps": steps}
+
+    def _judged(self, agent: str, model: str, criterion: str, said: str, reply: str,
+                called: list[str]) -> dict:
+        """What a judge says of a step a case says what a right answer is for: its grade, right,
+        wrong or critical, and why, and which model judged it, or why none could. A draft tried
+        on the stand-in is judged by it too, by words alone; on a real model, by the judge its
+        definition names, where the sandbox can call it."""
+        judge: str | None = STAND_IN
+        if model != STAND_IN:
+            definition = self.gateway.definitions.get(agent)
+            judge = definition.evaluation.judge if definition and definition.evaluation else None
+            if judge is None:
+                return {"grade": None, "why": "the draft names no judge", "judge": None}
+            if judge not in self.models():
+                return {"grade": None, "why": f"the sandbox can't call its judge, {judge}",
+                        "judge": judge}
+        found = load_models(self.cfg.models_file)[judge]
+        body = extractor.asked(found.api, found.alias, cases.JUDGING,
+                               cases.judging(criterion, said, reply, called))
+        try:
+            status, data = models.forward(found, models.screen(found.api, body)[0], self.gateway.http)
+        except models.ModelUnavailable as e:
+            return {"grade": None, "why": f"the sandbox couldn't ask {judge}: {e}", "judge": judge}
+        verdict = judging.verdict(extractor.reply_text(found.api, data)) if status < 400 else None
+        if verdict is None:
+            return {"grade": None, "why": f"what {judge} answered doesn't read as a grade",
+                    "judge": judge}
+        return {"grade": verdict[0], "why": verdict[1], "judge": judge}
 
     def forget(self) -> dict[str, int]:
         """Sweep what's past its time, as a5s's retention sweep does, but with what's said

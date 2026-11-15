@@ -239,7 +239,8 @@ export function withTool(text: string, tool: string, on: boolean, kind: string,
 
 /** A test case, as an agent's suite runs it on its model (tests/test_agents.py): what's said to
  * it, as whom, and at each step what it must use, and what it must never use or say. */
-export type Step = { say: string; uses?: string[]; avoids?: string[]; never_says?: string[] };
+export type Step = { say: string; uses?: string[]; avoids?: string[]; never_says?: string[];
+                     judged?: string };  // what a right answer is, in its author's words, for its judge
 export type Case = { name: string; as: string; steps: Step[] };
 
 export const CASES = "tests/tried.yaml";  // where the test pane keeps the cases it's given
