@@ -128,7 +128,7 @@ def test_someone_watches_an_instance_in_the_browser(stack, approving, provider, 
     shot(page, "studio-agents")
 
     page.click(".agent-card a.agent-name")  # the agent: its map, and its tools by what they do
-    page.wait_for_selector(".agent-map .map-node >> text=change_due_date", timeout=30000)
+    page.wait_for_selector(".agent-map .flow-step >> text=change_due_date", timeout=30000)
     assert page.evaluate("location.pathname") == "/studio/agents/assistant"
     assert "Changes records" in page.locator(".tool-group").first.text_content()
     # its facts, from its release, and its ladder: its one instance works at level 1
@@ -153,11 +153,12 @@ def test_someone_watches_an_instance_in_the_browser(stack, approving, provider, 
     page.click("table.runs-table a:has-text('Open')")  # a run, and what it did
     page.wait_for_selector(".timeline >> text=search_records", timeout=30000)
     # its path on its agent's map: what started it, and the tool it called, once; the rest faded
-    page.wait_for_selector(".agent-map .map-node >> text=search_records", timeout=30000)
-    called = page.locator(".agent-map .map-node", has_text="search_records")
-    assert called.locator(".map-count").inner_text() == "×1"
-    assert "dim" not in page.locator(".agent-map .map-node", has_text="A message").get_attribute("class")
-    assert "dim" in page.locator(".agent-map .map-node", has_text="change_due_date").get_attribute("class")
+    page.wait_for_selector(".agent-map .flow-step >> text=search_records", timeout=30000)
+    called = page.locator(".agent-map [data-key='tool:search_records']")
+    assert "called once" in called.locator(".flow-about").inner_text()
+    assert called.locator(".flow-state[aria-label='called once']").count() == 1
+    assert "dim" not in page.locator(".agent-map [data-key=messages]").get_attribute("class")
+    assert "dim" in page.locator(".agent-map [data-key='tool:change_due_date']").get_attribute("class")
     # as time: what started it, the call in the colour of what its tool does, and how it ended
     timeline = page.locator(".timeline li")
     assert timeline.first.inner_text().split("\n")[1] == "A message started it"
@@ -187,11 +188,12 @@ def test_a_runs_path_shows_what_a5s_refused_it(stack, approving, provider, brows
     provider.person = "ben"
     page = browser.new_page(viewport={"width": 1440, "height": 900})
     page.goto(f"{approving}/studio/runs/{run}")
-    page.wait_for_selector(".agent-map .map-node >> text=delete_everything", timeout=30000)
-    refused = page.locator(".agent-map .map-node", has_text="delete_everything").inner_text()
-    assert "not among its tools" in refused and "1 of 1 refused" in refused
-    assert page.locator(".agent-map .map-node", has_text="search_records").locator(".map-count").inner_text() == "×1"
-    assert "2 calls, 1 refused" in page.inner_text(".agent-map .map-node.checks")
+    page.wait_for_selector(".agent-map .flow-step >> text=delete_everything", timeout=30000)
+    refused = page.locator(".agent-map [data-key='tool:delete_everything']")
+    assert "not among its tools, called once" in refused.inner_text()
+    assert refused.locator(".flow-problems").inner_text() == "1"  # in red, its corner: a5s refused it
+    assert "called once" in page.inner_text(".agent-map [data-key='tool:search_records'] .flow-about")
+    assert "2 calls, 1 refused" in page.inner_text(".agent-map [data-key=checks]")
     assert page.locator(".agent-map .react-flow__edge.refused").count() == 1
 
 

@@ -1,143 +1,105 @@
-// An agent as a map: what starts its runs, on the left; the agent; a5s's checks, which every call
-// to a tool passes through; and its tools, coloured by what they do, changes first. Read only:
-// it shows how the agent is wired, and the release, not this page, is where that changes.
+// An agent on its canvas, read only, as the designer draws it (FlowMap.tsx, Ocean's FlowNode):
+// what starts its runs; the agent and its reply; and, hanging below it, its model, a5s's checks,
+// which every call to a tool passes, and its tools, each in the colour of what it does. It shows
+// how the agent is wired; a draft, not this map, is where that changes.
 //
 // Given a run, the map shows that run's path through it: what started it, and each tool it
-// called, how many times, and how many of those a5s refused; what it didn't use fades.
+// called, with a tick and how many times, in green, and a count of those a5s refused, in red;
+// what it didn't use fades.
 
-import { Background, type Edge, Handle, type Node, type NodeProps, Position, ReactFlow } from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
 import type { AgentUses, Call, Run } from "./api";
+import { type Flow, FlowMap, type Step } from "./FlowMap";
+import { levels, plural, type Risk, risk, RISK_NAMES, triggers } from "./ui";
 
 // What the map draws of an agent: what starts its runs, and what it may do. An agent as someone
 // sees it has it, if they may see what it does, and so has a draft's preview.
 type Mapped = Pick<AgentUses, "id" | "model" | "autonomy" | "tools" | "a5s_tools" | "triggers" |
   "schedules" | "reports" | "obligations" | "reminders" | "channels">;
-import { Icon } from "./icons";
-import { levels, plural, type Risk, risk, RISK_NAMES, triggers } from "./ui";
 
-type Card = {
-  icon: string; title: string; detail?: string; tone?: string; left?: boolean; right?: boolean;
-  kind?: string;    // of a start: the kind of trigger it stands for
-  calls?: number;   // of the run's calls, how many went this way
-  refused?: number; // and how many of those a5s refused
-  dim?: boolean;    // not on the run's path
-};
-
-function CardNode({ data }: NodeProps<Node<Card>>) {
-  return (
-    <div className={`map-node ${data.tone ?? ""}${data.dim ? " dim" : ""}`}>
-      {data.left && <Handle type="target" position={Position.Left} isConnectable={false} />}
-      <Icon name={data.icon} className="icon map-icon" />
-      <div className="map-text">
-        <div className="map-title">{data.title}</div>
-        {data.detail && <div className="map-detail">{data.detail}</div>}
-      </div>
-      {!!data.calls && (
-        <span className={`map-count${data.refused ? " bad" : ""}`}>
-          {data.refused ? `${data.refused} of ${data.calls} refused` : `×${data.calls}`}
-        </span>
-      )}
-      {data.right && <Handle type="source" position={Position.Right} isConnectable={false} />}
-    </div>
-  );
-}
-
-const NODE_TYPES = { card: CardNode };
-const ROW = 66;
 const ORDER: Risk[] = ["changes", "outside", "writes", "reads"];
+const times = (n: number) => (n === 1 ? "once" : n === 2 ? "twice" : `${n} times`);
 
-function starts(agent: Mapped): Card[] {
-  const found: Card[] = [];
+/** What starts its runs, each by the kind of trigger it stands for. */
+function starts(agent: Mapped): (Step & { kind: string })[] {
+  const found: (Step & { kind: string })[] = [];
   for (const t of triggers(agent).filter((t) => t.kind === "message")) {
-    found.push({ icon: "message", title: "A message", kind: "message",
-                 detail: `${t.about}, on ${agent.channels.join(", ") || "its channels"}` });
+    found.push({ key: "messages", kind: "message", icon: "message", name: "A message",
+                 about: `${t.about}, on ${agent.channels.join(", ") || "its channels"}` });
   }
-  for (const s of agent.schedules) {
-    found.push({ icon: "clock", title: s.name, kind: "schedule",
-                 detail: `${s.at.join(", ")}, ${s.days.length === 7 ? "every day" : s.days.join(" ")}` });
-  }
+  agent.schedules.forEach((s, i) => found.push({
+    key: `schedule:${i}`, kind: "schedule", icon: "clock", name: s.name,
+    about: `${s.at.join(", ")}, ${s.days.length === 7 ? "every day" : s.days.join(" ")}` }));
   if (agent.obligations.length) {
-    found.push({ icon: "bell", title: "What people owe", detail: agent.obligations.join(", "), kind: "obligation" });
+    found.push({ key: "obligations", kind: "obligation", icon: "bell", name: "What people owe", about: agent.obligations.join(", ") });
   }
-  if (agent.reminders) found.push({ icon: "bell", title: "Reminders", detail: "people asked for", kind: "reminder" });
-  for (const source of agent.reports) found.push({ icon: "report", title: "A report", detail: `on ${source}`, kind: "report" });
-  for (const t of triggers(agent).filter((t) => t.kind !== "message")) {
-    found.push({ icon: "run", title: t.kind, detail: t.about, kind: t.kind });
-  }
-  return found.length ? found : [{ icon: "run", title: "Nothing starts it" }];
+  if (agent.reminders) found.push({ key: "reminders", kind: "reminder", icon: "bell", name: "Reminders", about: "people asked for" });
+  agent.reports.forEach((source, i) => found.push({ key: `report:${i}`, kind: "report", icon: "report", name: "A report", about: `on ${source}` }));
+  triggers(agent).filter((t) => t.kind !== "message").forEach((t, i) => found.push({
+    key: `trigger:${i}`, kind: t.kind, icon: "run", name: t.kind, about: t.about }));
+  return found.length ? found : [{ key: "nothing", kind: "", icon: "run", name: "Nothing starts it" }];
 }
 
-/** Of some calls, how many there were and how many a5s refused. */
-function tally(calls: Call[]): Pick<Card, "calls" | "refused"> {
-  return { calls: calls.length, refused: calls.filter((c) => c.decision === "deny").length };
+/** Of some calls: a tick and how many, and a count of those a5s refused. */
+function marked(step: Step, calls: Call[], run: Run | undefined): Step {
+  if (!run) return step;
+  const refused = calls.filter((c) => c.decision === "deny").length;
+  if (!calls.length) return { ...step, dim: true };
+  return { ...step, about: `${step.about ? `${step.about}, ` : ""}called ${times(calls.length)}`,
+           state: refused < calls.length ? "good" : undefined, stateSays: `called ${times(calls.length)}`,
+           problems: refused || undefined, path: refused ? "refused" : "ran" };
 }
 
-export function AgentMap({ agent, run }: { agent: Mapped; run?: Run }) {
+export function flowOf(agent: Mapped, run?: Run): Flow {
   const kind = run ? String(run.started_by.kind ?? run.trigger ?? "") : undefined;
-  const left = starts(agent).map((card) => ({ ...card, dim: run !== undefined && card.kind !== kind }));
-  if (run && kind && !left.some((card) => card.kind === kind)) {  // started some other way
-    left.push({ icon: "run", title: kind, detail: "how this run started", kind, dim: false });
-  }
   const calls = run?.calls ?? [];
+  const left: Step[] = starts(agent).map(({ kind: of, ...step }) =>
+    (run ? { ...step, dim: of !== kind, path: of === kind ? "ran" as const : undefined } : step));
+  if (run && kind && !left.some((s) => !s.dim)) {  // started some other way
+    left.push({ key: "started", icon: "run", name: kind, about: "how this run started", path: "ran" });
+  }
   const tools = [...agent.tools].sort((a, b) => ORDER.indexOf(risk(a)) - ORDER.indexOf(risk(b)));
-  const right: (Card & { risk?: Risk })[] = tools.map((tool) => {
-    const these = tally(calls.filter((c) => c.tool === tool.name));
+  const hanging: Step[] = tools.map((tool): Step => {
+    const these = calls.filter((c) => c.tool === tool.name);
     if (tool.missing) {  // as a draft may name it: a tool the scenario hasn't got
-      return { icon: "tool", title: tool.name, tone: "denied", detail: "not one of the scenario's tools", ...these };
+      return marked({ key: `tool:${tool.name}`, icon: "tool", name: tool.name, tone: "denied", slot: "tools",
+                      about: "not one of the scenario's tools" }, these, run);
     }
-    return { icon: "tool", title: tool.name, tone: risk(tool), risk: risk(tool), ...these,
-             detail: tool.changes ? `changes ${tool.changes}` : RISK_NAMES[risk(tool)],
-             dim: run !== undefined && !these.calls };
+    return marked({ key: `tool:${tool.name}`, icon: "tool", name: tool.name, tone: risk(tool), slot: "tools",
+                    about: tool.changes ? `changes ${tool.changes}` : RISK_NAMES[risk(tool)].toLowerCase() }, these, run);
   });
   if (agent.a5s_tools.length) {
-    const these = tally(calls.filter((c) => agent.a5s_tools.includes(c.tool)));
-    right.push({ icon: "agent", title: "a5s's own", tone: "own", ...these, dim: run !== undefined && !these.calls,
-                 detail: `${agent.a5s_tools.length} tools: tasks, reminders, notes…` });
+    hanging.push(marked({ key: "own", icon: "agent", name: "a5s's own", tone: "own", slot: "tools",
+                          about: plural(agent.a5s_tools.length, "tool") },
+                        calls.filter((c) => agent.a5s_tools.includes(c.tool)), run));
   }
   const known = new Set([...agent.tools.map((t) => t.name), ...agent.a5s_tools]);
   for (const name of [...new Set(calls.map((c) => c.tool))].filter((n) => !known.has(n))) {
-    right.push({ icon: "tool", title: name, tone: "denied", detail: "not among its tools",
-                 ...tally(calls.filter((c) => c.tool === name)) });
+    hanging.push(marked({ key: `tool:${name}`, icon: "tool", name, tone: "denied", slot: "tools", about: "not among its tools" },
+                        calls.filter((c) => c.tool === name), run));
   }
-  const rows = Math.max(left.length, right.length, 3);
-  const middle = ((rows - 1) * ROW) / 2;
-  const column = (cards: Card[], x: number, id: string, extra: Partial<Card>): Node<Card>[] =>
-    cards.map((card, i) => ({
-      id: `${id}-${i}`, type: "card", position: { x, y: middle - ((cards.length - 1) * ROW) / 2 + i * ROW },
-      data: { ...card, ...extra },
-    }));
   const refused = calls.filter((c) => c.decision === "deny").length;
-  const nodes: Node<Card>[] = [
-    ...column(left, 0, "start", { right: true }),
-    { id: "agent", type: "card", position: { x: 320, y: middle },
-      data: { icon: "agent", title: agent.id, tone: "agent", left: true, right: true,
-              detail: run ? `${run.model ?? agent.model}, ${plural(run.tokens, "token")}`
-                          : `${agent.model}, ${levels(agent.autonomy)}` } },
-    { id: "checks", type: "card", position: { x: 620, y: middle },
-      data: { icon: "shield", title: "a5s's checks", tone: "checks", left: true, right: true,
-              detail: run ? `${plural(calls.length, "call")}, ${refused} refused` : "policy, need-to-know, budget" } },
-    ...column(right, 920, "tool", { left: true }),
-  ];
-  const path = (on: boolean) => (run === undefined ? "" : on ? "used" : "unused");
-  const edges: Edge[] = [
-    ...left.map((card, i) => ({ id: `in-${i}`, source: `start-${i}`, target: "agent", type: "smoothstep",
-                                className: path(!card.dim) })),
-    { id: "to-checks", source: "agent", target: "checks", type: "smoothstep", className: path(calls.length > 0) },
-    ...right.map((card, i) => ({
-      id: `out-${i}`, source: "checks", target: `tool-${i}`, type: "smoothstep",
-      className: [`edge-${card.risk ?? (card.tone === "denied" ? "denied" : "own")}`, path(!!card.calls),
-                  card.refused ? "refused" : ""].filter(Boolean).join(" "),
-    })),
-  ];
+  return {
+    starts: left,
+    agent: { key: "agent", icon: "agent", name: agent.id,
+             about: run ? `${run.model ?? agent.model}, ${plural(run.tokens, "token")}` : `${agent.model}, ${levels(agent.autonomy)}` },
+    end: { key: "reply", icon: "message", name: "Reply", about: "to whoever it acts for", tone: "own" },
+    hanging: [
+      { key: "model", icon: "studio", name: "Model", about: run?.model ?? agent.model, slot: "model", path: run ? "ran" : undefined },
+      { key: "checks", icon: "shield", name: "a5s's checks", tone: "own", slot: "checks",
+        about: run ? `${plural(calls.length, "call")}, ${refused} refused` : "policy, need-to-know, limits",
+        path: run && calls.length ? "ran" : undefined },
+      ...hanging,
+    ],
+  };
+}
+
+export function AgentMap({ agent, run }: { agent: Mapped; run?: Run }) {
+  const flow = flowOf(agent, run);
+  const rows = Math.ceil((flow.hanging.length) / 5);
   return (
-    <div className="agent-map" style={{ height: Math.max(rows * ROW + 60, 260) }}>
-      <ReactFlow nodes={nodes} edges={edges} nodeTypes={NODE_TYPES} colorMode="system" fitView
-                 fitViewOptions={{ padding: 0.12 }} nodesDraggable={false} nodesConnectable={false}
-                 elementsSelectable={false} zoomOnScroll={false} preventScrolling={false}
-                 minZoom={0.4} maxZoom={1.4}>
-        <Background gap={20} size={1} />
-      </ReactFlow>
+    <div className="agent-map">
+      <FlowMap flow={flow} label={run ? "Its path through its agent" : "How it's wired"}
+               height={Math.min(Math.max(320 + rows * 110 + flow.starts.length * 40, 380), 640)} />
     </div>
   );
 }

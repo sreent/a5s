@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 import pytest
 
 from a5s import db
-from conftest import QUIET
+from conftest import QUIET, listed_runs
 
 FOLDER = os.environ.get("A5S_DOC_IMAGES")
 pytestmark = pytest.mark.skipif(not FOLDER, reason="makes the docs' pictures only when asked")
@@ -26,6 +26,7 @@ OTHERWISE = ["failed", "budget spent", "done, leaving some out"]  # how a few en
 
 def test_the_docs_pictures_of_the_studio(stack, approving, provider, browser):
     stack.with_watcher()
+    listed_runs(stack)  # enough people served for its runs to show one by one (round 11, D-3)
     back = []  # how many days back each run goes, in the order they ran
     for days, runs in enumerate(DAYS):
         for i in range(runs):
@@ -56,7 +57,7 @@ def test_the_docs_pictures_of_the_studio(stack, approving, provider, browser):
     page.screenshot(path=f"{FOLDER}/a5s-studio-catalogue.png")
 
     page.click(".agent-card a.agent-name:text-is('assistant')")
-    page.wait_for_selector(".agent-map .map-node >> text=change_due_date", timeout=30000)
+    page.wait_for_selector(".agent-map .flow-step >> text=change_due_date", timeout=30000)
     page.screenshot(path=f"{FOLDER}/a5s-studio-agent.png")
 
     page.click("table.grid-table a:has-text('assistant-finance')")
@@ -64,6 +65,6 @@ def test_the_docs_pictures_of_the_studio(stack, approving, provider, browser):
     page.screenshot(path=f"{FOLDER}/a5s-studio-dashboard.png")
 
     page.click("table.runs-table a:has-text('Open') >> nth=0")  # the latest
-    page.wait_for_selector(".agent-map .map-count", timeout=30000)
-    assert page.locator(".agent-map .map-count").count() == 2  # it looked a question up, then read it
+    page.wait_for_selector(".agent-map .flow-state", timeout=30000)
+    assert page.locator(".agent-map .flow-step:not(.dim) .flow-state").count() == 2  # it looked a question up, then read it
     page.screenshot(path=f"{FOLDER}/a5s-studio-run.png")

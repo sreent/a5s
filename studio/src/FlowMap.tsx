@@ -30,6 +30,7 @@ export type Step = {
   stateSays?: string;  // that state, in words, for whoever can't see it
   problems?: number;  // a count, on --bad, in its top corner
   dim?: boolean;  // what a run didn't use
+  path?: "ran" | "refused";  // where a run went: its curve green, or red where a5s refused it
 };
 
 export type Flow = { starts: Step[]; agent: Step; end: Step | null; hanging: Step[] };
@@ -65,11 +66,11 @@ function FlowStep({ data }: NodeProps<Node<Data>>) {
   );
   const label = step.about ? `${step.name}: ${step.about}` : step.name;
   return (
-    <div className={classes}>
+    <div className={classes} data-key={step.key}>
       {pick ? (
         <button type="button" className="flow-box nodrag" data-step={step.key} aria-pressed={chosen} aria-label={label}
                 onClick={(e) => pick(step.key, e.detail === 0)}>{inside}</button>
-      ) : <div className="flow-box" role="img" aria-label={label}>{inside}</div>}
+      ) : <div className="flow-box">{inside}</div>}
       {kind !== "agent" && <span className="flow-name">{step.name}</span>}
       {kind !== "agent" && step.about && <span className="flow-about">{step.about}</span>}
       {kind === "trigger" && <Handle type="source" position={Position.Right} className="at-right" isConnectable={false} />}
@@ -138,10 +139,11 @@ function placed(flow: Flow, chosen: string | null, pick: Data["pick"], stubs: St
     ...stubs.filter((s) => !s.slot).map((s) => node(s, "stub", 46, foot + 4)),
   ];
   const edges: Edge[] = [
-    ...flow.starts.map((s) => ({ id: `in-${s.key}`, source: s.key, target: flow.agent.key, className: s.dim ? "dim" : "" })),
+    ...flow.starts.map((s) => ({ id: `in-${s.key}`, source: s.key, target: flow.agent.key,
+                                 className: [s.dim ? "dim" : "", s.path ?? ""].filter(Boolean).join(" ") })),
     ...(flow.end ? [{ id: "out", source: flow.agent.key, sourceHandle: "end", target: flow.end.key }] : []),
     ...flow.hanging.map((s) => ({ id: `hangs-${s.key}`, source: flow.agent.key, sourceHandle: s.slot ?? "tools",
-                                  target: s.key, className: `hangs${s.dim ? " dim" : ""}` })),
+                                  target: s.key, className: ["hangs", s.dim ? "dim" : "", s.path ?? ""].filter(Boolean).join(" ") })),
   ];
   return { nodes, edges };
 }
