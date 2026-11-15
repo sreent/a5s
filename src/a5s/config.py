@@ -28,7 +28,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final, NamedTuple
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlsplit
 
 import yaml
 
@@ -180,7 +180,8 @@ class Var:
             return self.parse(given)
         except ValueError as e:
             why = f" ({e})" if str(e) else ""
-            shown = "set to something it can't use" if self.secret else repr(given.strip()[:80])
+            shown = ("set to something it can't use" if self.secret
+                     else repr(masked(given.strip())[:80]))
             raise ConfigError(f"{self.name} is {shown}{why}: it takes {self.takes}") from None
 
     def source(self, env: Mapping[str, str] | None = None) -> str:
@@ -515,31 +516,51 @@ def check(env: Mapping[str, str] | None = None, serving: bool = True) -> tuple[l
     return (problems + strangers, []) if serving else (problems, strangers)
 
 
+_PASSWORD = re.compile(r"(?i)((?:^|[?&\s])(?:ssl)?password=)[^&\s]*")
+
+
+def masked(text: str) -> str:
+    """A setting's text as people may read it: an address's password masked however it's
+    written, in the address before its host, escaped or not, or as a password= parameter, as
+    libpq takes it, whether the address is one a5s can use or not."""
+    scheme, colon, rest = text.partition("://")
+    if colon and "@" in rest:
+        userinfo, _, host = rest.rpartition("@")  # its last @: a password may hold others
+        if ":" in userinfo:
+            text = f"{scheme}://{userinfo.split(':', 1)[0]}:•••@{host}"
+    return _PASSWORD.sub(r"\1•••", text)
+
+
+def _one(item: Any) -> str:
+    """An item of a list as a setting shows it: an object, such as a Teams bot, by the agent
+    it's for, and never what else it holds."""
+    if isinstance(item, Mapping):
+        return str(item.get("agent") or "an entry")
+    return str(item)
+
+
 def shown(var: Var, env: Mapping[str, str] | None = None) -> tuple[str, str]:
     """What a setting is, as the environment stands, for people to read: its value, secrets
-    masked and a database address's password with them, and whether it's a default."""
+    masked and an address's password with them, and whether it's a default."""
     env = os.environ if env is None else env
     try:
         value = var.read(env)
-    except ConfigError:  # shown as given, and `check` says why
-        return ("•••" if var.secret else (env.get(var.name) or "").strip()[:80]), "set, unusable"
+    except ConfigError:  # shown as given, password masked, and `check` says why
+        return ("•••" if var.secret else masked((env.get(var.name) or "").strip())[:80],
+                "set, unusable")
     source = var.source(env)
     if var.secret:
         return ("•••" if value else "not set"), source
     if value is None:
         return ("set empty" if source == "set" else "not set"), source
-    if isinstance(value, str) and "://" in value:
-        parts = urlsplit(value)
-        if parts.password:
-            value = urlunsplit(parts._replace(netloc=parts.netloc.replace(
-                f":{parts.password}@", ":•••@")))
     if isinstance(value, dict):
         value = ",".join(f"{k}={v}" for k, v in value.items())
     elif isinstance(value, (tuple, list, frozenset, set)):
-        value = ",".join(sorted(value) if isinstance(value, (frozenset, set)) else value)
+        items = sorted(value, key=str) if isinstance(value, (frozenset, set)) else list(value)
+        value = ",".join(_one(i) for i in items)
     elif isinstance(value, float):
         value = f"{value:g}"
-    return str(value) or "empty", source
+    return masked(str(value)) or "empty", source
 
 
 def set_here(env: Mapping[str, str] | None = None) -> dict[str, str]:
