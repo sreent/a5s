@@ -457,6 +457,25 @@ class Stack:
             **WATCHER, "serves": list(serves), **changes}}, signers=signers).refused
 
 
+# A scenario's made-up systems, behind the MCP servers its mcp.yaml points a5s at, on this
+# machine: the service desk's ITSM (deploy/desk/itsm.py), on the desk's synthetic data. Each is
+# started once, the first time a test needs it, and left up, as a deployment's systems are.
+SYSTEMS: dict[str, Any] = {}
+
+
+def scenario_systems(folder: str) -> None:
+    if folder != "service-desk" or folder in SYSTEMS:
+        return
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("desk_itsm", ROOT / "deploy" / "desk" / "itsm.py")
+    assert spec and spec.loader
+    itsm = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(itsm)
+    up = serve(itsm.make(ROOT / "scenarios" / "service-desk" / "data.yaml"), itsm.PORT)
+    up.__enter__()  # for the rest of the tests
+    SYSTEMS[folder] = up
+
+
 def signed(folder: Path, settings: dict, signers: tuple[str, ...] = ("ana",)) -> None:
     """A new version of the settings, with its serial raised, signed by Ana, an instance
     approver who owns billing, or by `signers`."""

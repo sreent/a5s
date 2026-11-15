@@ -57,9 +57,13 @@ second=$(ls "scenarios/$folder/agents" | sed -n 2p)  # their own
 printf 'A5S_POOL_ASSISTANT=%s\n' "$first" >> "$env_file"
 if [ -n "$second" ]; then printf 'A5S_POOL_WATCHER=%s\n' "$second" >> "$env_file"; fi
 python3 deploy/matrix/configure.py "$work/matrix" >> "$env_file"
+# A scenario whose mcp.yaml declares its systems' tools has them beside the gateway, made up
+systems=""
+if [ "$folder" = service-desk ]; then systems="-f deploy/compose.desk.yaml"; fi
+# shellcheck disable=SC2086 # $systems is one or no compose file, split on purpose
 compose() { docker compose -p "a5s-$folder" --env-file "$env_file" -f deploy/compose.yaml \
               -f deploy/compose.stub.yaml -f deploy/compose.storage.yaml \
-              -f deploy/compose.matrix.yaml "$@"; }
+              -f deploy/compose.matrix.yaml $systems "$@"; }
 trap 'compose down -v >/dev/null 2>&1; rm -rf "$env_file" "$reply" "$work"' EXIT
 
 compose up -d

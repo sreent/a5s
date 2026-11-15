@@ -57,4 +57,4 @@ In the studio's sandbox, a server's `sandbox` stand-in answers instead, and no t
 - A server's resources and prompts, its requests to the client, such as for sampling or to ask the person something, and servers run as a local process, over standard input and output.
 - `a5s mcp declare <url>`, to write a declaration's first draft from a server's list of tools, for its author to put in a5s's words.
 
-Tested against the MCP SDK's own server, over both of Streamable HTTP's ways of answering, and end to end through the core (`tests/test_mcp.py`).
+Tested against the MCP SDK's own server, over both of Streamable HTTP's ways of answering, and end to end through the core (`tests/test_mcp.py`). The service desk scenario takes its ITSM's tools this way, from a made-up server on its synthetic data ([`scenarios/service-desk/mcp.yaml`](../scenarios/service-desk/mcp.yaml), [`deploy/desk/itsm.py`](../deploy/desk/itsm.py)), so its suite, its containers and its walk-through run on MCP.

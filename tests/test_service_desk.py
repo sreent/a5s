@@ -11,6 +11,7 @@ import pytest
 
 from a5s import db, definitions
 from a5s.config import Config, load_models
+from a5s.connectors import mcp
 from a5s.core import inbox, registry
 from a5s.core.gateway import Gateway, create_app
 from a5s.core.policy import PolicyEngine
@@ -25,6 +26,7 @@ from conftest import (
     build_root,
     free_port,
     live_image,
+    scenario_systems,
     serve,
     worker_for,
 )
@@ -46,7 +48,8 @@ def running_desk(database: str, root: Path, model: FakeModel,
                  root=root, development=True, seal_keys=(SEAL_KEY,),
                  scenario="a5s.service_desk:ServiceDeskScenario",
                  scenario_folder=ROOT / "scenarios" / "service-desk", agents_folder=agents)
-    scenario = ServiceDeskScenario(cfg.scenario_dir, cfg.database_url)
+    scenario_systems("service-desk")  # its ITSM, behind its MCP server
+    scenario = mcp.served(ServiceDeskScenario(cfg.scenario_dir, cfg.database_url), cfg.scenario_dir)
     definitions.pin(agents / "desk-assistant",
                     {name: tool.schema_hash for name, tool in scenario.tools().items()})
     gw = Gateway(cfg, scenario, PolicyEngine(), load_models(cfg.models_file),

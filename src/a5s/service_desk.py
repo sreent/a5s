@@ -1,4 +1,9 @@
-"""A read-only IT service-desk scenario with a synthetic ITSM and knowledge base."""
+"""A read-only IT service-desk scenario with a synthetic ITSM and knowledge base.
+
+Its ITSM's tools come through the ITSM's MCP server, which the scenario's mcp.yaml declares
+(deploy/desk/itsm.py, in this made-up desk): searching tickets, reading one, and what requesters
+wrote on one. What stays here is the desk's own: the directory, who may see each ticket, the
+obligations its tickets make, a draft reply for a person to send, and its knowledge base."""
 
 from __future__ import annotations
 
@@ -35,7 +40,6 @@ class ServiceDeskScenario:
         data = yaml.safe_load((folder / "data.yaml").read_text())
         self._people = {p["id"]: Person.listed(p, folder) for p in data["people"]}
         self._tickets = {t["key"]: t for t in data["tickets"]}
-        self._messages = data.get("messages") or []
         self.drafts = []
         self._draft_lock = threading.Lock()
         self.reads = 0
@@ -97,39 +101,14 @@ class ServiceDeskScenario:
         return None
 
     def tools(self) -> dict[str, Tool]:
-        def search(call: ToolCall) -> dict:
-            words = str(call.args.get("query") or "").casefold().split()
-            return {"tickets": [{**t, "link": LINK + t["key"]} for t in self._tickets.values()
-                                if any(w in t["title"].casefold() for w in words)]}
-
-        def get(call: ToolCall) -> dict:
-            found = self._tickets.get(call.args["key"])
-            return {**found, "link": LINK + found["key"]} if found else {"error": "no such ticket"}
-
         def draft(call: ToolCall) -> dict:
             return draft_once(call, self.drafts, LINK, self._draft_lock)
 
-        def comments(call: ToolCall) -> dict:
-            return {"key": call.args["key"], "messages": [
-                m for m in self._messages if m["record"] == call.args["key"]]}
-
-        query = {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}
-        key = {"type": "object", "properties": {"key": {"type": "string"}}, "required": ["key"]}
         body = {"type": "object", "required": ["title", "body"], "properties": {
             "title": {"type": "string"}, "body": {"type": "string"}, "record": {"type": "string"}}}
-        tools = {t.name: t for t in (
-            Tool("search_records", "Search ITSM tickets by words in their title.", query, search,
-                 handles=("contact",), record_field="key"),
-            Tool("get_record", "Get one ITSM ticket by its key, such as INC0000001.", key, get,
-                 handles=("contact",), record_arg="key", record_field="key"),
-            Tool("create_draft", "Save a draft ticket reply for a person to review and use.", body,
-                 draft, writes=True, text_fields=("title", "body"), record_arg="record",
-                 idempotent=True),
-            Tool("get_messages", "Get what requesters wrote on a ticket through a5s's reader.", key,
-                 comments, handles=("from",), record_arg="key", record_field="key",
-                 outside=("body",),
-                 extract={"asks_for": "choice:a reset|access|equipment|something else"}),
-        )}
+        tools = {"create_draft": Tool(
+            "create_draft", "Save a draft ticket reply for a person to review and use.", body, draft,
+            writes=True, text_fields=("title", "body"), record_arg="record", idempotent=True)}
         tools.update(MarkdownKnowledge(self.folder / "knowledge",
                                        sees_part=self._knowledge_part, person=self.person).tools())
         return tools

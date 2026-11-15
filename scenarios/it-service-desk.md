@@ -10,7 +10,7 @@ An internal IT service desk helps people with accounts, devices, access and the 
 | --- | --- |
 | Directory | The identity provider, including pre-start accounts for new joiners, which the HR system creates; and the team that runs a5s, who own its agent, with the people from outside it who approve its releases. The ITSM says who may see each ticket. |
 | Settings | a5s's own settings store. The parts are service areas, such as accounts and access, devices, and collaboration tools, and the audience includes new joiners, from their pre-start accounts. |
-| Tools | The ITSM's tickets, comments and request catalogue, the knowledge base, the identity provider's self-service flows, and device management, read only |
+| Tools | The ITSM's tickets, comments and request catalogue, through the ITSM's MCP server, which the desk's [`mcp.yaml`](service-desk/mcp.yaml) declares; the knowledge base; the identity provider's self-service flows; and device management, read only |
 | Records | Tickets with their response and resolution targets, and joiners' start dates from the HR system |
 | Governed process | The ITSM's request fulfilment and access approvals, which already keep requester and approver apart, and the identity provider's own self-service flows |
 | Decision surface | The ITSM's approvals |
@@ -54,5 +54,7 @@ The service desk adds these to a5s's base pack:
 ## Tests
 
 The read-only MVP's tests are in [`tests/test_service_desk.py`](../tests/test_service_desk.py), beside the original contract-only checks in `test_r5_c_service_desk.py`. They cover ticket answers, Markdown knowledge with attribution, ticket and article permissions, requester content as data rather than instructions, saved drafts, and service to a new joiner through their team. A test marked `live` exercises ticket and knowledge answers with the real provider. And [`deploy/smoke-scenario.sh service-desk`](../deploy/smoke-scenario.sh) runs it on a5s's containers: the desk's own people approve its release, and a requester asks the desk assistant about their ticket in Matrix.
+
+Its ITSM's tools come through the ITSM's MCP server, as an organisation's would ([phase 5](../docs/phase-5.md)): searching tickets, reading one, and what requesters wrote on one, declared in [`mcp.yaml`](service-desk/mcp.yaml) in a5s's own words, and nothing else of the server's. In this made-up desk the server is [`deploy/desk/itsm.py`](../deploy/desk/itsm.py), on the desk's synthetic data, beside the gateway on its own machine: the tests start it once, and the desk's containers run it in the gateway's network ([`deploy/compose.desk.yaml`](../deploy/compose.desk.yaml)). What stays the desk's own code is its directory, who may see each ticket, the obligations its tickets make, a draft reply for a person to send, and its knowledge base.
 
 Self-service identity flows, authenticator changes, ticket writes, and the joiner coordinator remain outside this read-only release.

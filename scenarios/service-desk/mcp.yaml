@@ -1,0 +1,37 @@
+# The desk's ITSM, through its MCP server (docs/connectors.md#mcp-servers). In this made-up desk it's
+# deploy/desk/itsm.py, on the desk's synthetic data, beside the gateway on its own machine, and the
+# same stand-in answers in the studio's sandbox. a5s offers its agents nothing of the server's but
+# the tools declared here, in a5s's words, and passes on only the fields each names.
+servers:
+  itsm:
+    url: http://127.0.0.1:9201/mcp
+    sandbox: http://127.0.0.1:9201/mcp
+tools:
+  search_records:
+    server: itsm
+    calls: search_tickets
+    description: Search ITSM tickets by words in their title.
+    arguments: {type: object, required: [query], properties: {query: {type: string}}}
+    returns: [tickets, key, part, title, status, requester, assignee, contact, opened, due, link]
+    record_field: key
+    handles: [contact]
+  get_record:
+    server: itsm
+    calls: get_ticket
+    description: Get one ITSM ticket by its key, such as INC0000001.
+    arguments: {type: object, required: [key], properties: {key: {type: string}}}
+    returns: [key, part, title, status, requester, assignee, contact, opened, due, link]
+    record_arg: key
+    record_field: key
+    handles: [contact]
+  get_messages:
+    server: itsm
+    calls: ticket_comments
+    description: Get what requesters wrote on a ticket through a5s's reader.
+    arguments: {type: object, required: [key], properties: {key: {type: string}}}
+    returns: [key, messages, record, from, at, body]
+    record_arg: key
+    record_field: key
+    handles: [from]
+    outside: [body]
+    extract: {asks_for: "choice:a reset|access|equipment|something else"}

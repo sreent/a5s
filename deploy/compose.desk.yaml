@@ -1,0 +1,12 @@
+# The service desk's made-up ITSM, behind its MCP server (desk/itsm.py), on the desk's synthetic
+# data. It shares the gateway's network, as the desk's mcp.yaml points a5s at it on the gateway's
+# own machine, and reaches nothing else:
+#   sh deploy/smoke-scenario.sh service-desk
+
+services:
+  desk-itsm:
+    image: ${A5S_IMAGE:-a5s:dev}
+    entrypoint: ["python", "/desk/itsm.py", "/app/scenarios/service-desk/data.yaml"]
+    volumes: ["./desk:/desk:ro"]
+    network_mode: "service:gateway"
+    depends_on: [gateway]

@@ -1,12 +1,13 @@
 # Phase 5: the three scenarios, built and run in the studio
 
-**Status:** Step 0 is built: the walk-through harness, and a first walk-through on the sample, which found two gaps, both closed ([progress](#progress)). The service desk is next · **Under:** [Architecture](architecture.md)
+**Status:** Step 0 is built: the walk-through harness, and a first walk-through on the sample, which found two gaps, both closed. Step 1 has begun: the service desk's ITSM is behind its MCP server ([progress](#progress)) · **Under:** [Architecture](architecture.md)
 
 The service desk, software delivery and master data scenarios were written by hand: each agent's `agent.yaml`, its instructions, its pins and its tests are files someone typed. That proved a5s runs them. It didn't prove that a team can make them with a5s. This phase builds each scenario's agents again, and the ones they planned but never built, the way an organisation would: in the studio, published, signed and put to work through a5s's own pages, run in the chat, and watched, graded and audited there. Nobody edits an agent's file by hand. Where a step can't be done in a5s, that's a gap, and the gap is the work.
 
 ## Progress
 
 - [`tests/walkthrough.py`](../tests/walkthrough.py) is the harness: each step in the words its guide tells it in, a browser of each person's own, signed in through the stand-in identity provider, and a picture of where each step ended. A step a5s can't take fails as a gap, naming the step.
+- The service desk's ITSM is behind its MCP server: [`scenarios/service-desk/mcp.yaml`](../scenarios/service-desk/mcp.yaml) declares searching tickets, reading one, and what requesters wrote on one, and [`deploy/desk/itsm.py`](../deploy/desk/itsm.py) is the made-up server, on the desk's synthetic data. The hand-written desk assistant passes its suite on it, pinned to the declared tools, and its containers run it beside the gateway. The knowledge base, the identity provider's self-service flows and device management are next.
 - [`tests/test_walkthrough.py`](../tests/test_walkthrough.py) is the first walk-through, on the sample, on a deployment that isn't in development. Priya builds a new agent, due-dates, in the studio, plans its first instance and publishes it; the team merges its pull request; `a5s release status` says who must sign the release that adds it, Rosa and Priya sign it with `a5s release sign`, and it's recorded with `a5s release approve`; Priya puts it to work from its plan; Ana approves that from her studio home; Ben asks it to move a due date in the chat; Ana decides the change it asks for on its card; Priya watches it on its instance's page; and Kofi reads it in the audit trail. Its guide is [guides/sample](guides/sample/guide.md).
 
 ### Gaps the walk-throughs found
