@@ -27,11 +27,12 @@ import uuid
 from collections import Counter, defaultdict
 from collections.abc import Iterable
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import Annotated, Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import psycopg
 from cryptography.fernet import Fernet, InvalidToken
+from fastapi import Query
 
 from a5s import db
 from a5s.config import ModelConfig
@@ -426,6 +427,11 @@ def _shown(scenario: Scenario, run: dict, names: bool) -> dict:
             "closed_at": run["closed_at"].isoformat() if run["closed_at"] else None,
             "outcome": outcome(run["outcome"]), "tokens": run["tokens"], "model": run["model"],
             "read_outside": run["read_outside"]}
+
+
+# The days figures may be asked for over: a year at most, so one ask can't make the database
+# count a row for each of a thousand years (round 11, D-6)
+Days = Annotated[int, Query(ge=1, le=366)]
 
 
 def cursor_key(token: str) -> bytes:

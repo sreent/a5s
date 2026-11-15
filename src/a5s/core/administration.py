@@ -21,7 +21,7 @@ from a5s.contract import (
     Person,
     parse_settings,
 )
-from a5s.core import approvals, audit, memberships, registry, studio
+from a5s.core import approvals, audit, memberships, proposals, registry, studio
 from a5s.core.releases import agent_owner
 
 LATEST = 20  # administrative acts the page shows, newest first
@@ -99,12 +99,17 @@ def waiting(conn: db.Connection, gw: Any) -> dict[str, Any]:
         versions.append({"serial": row["serial"], "approved_by": valid,
                          "needs": registry.missing(settings, gw.scenario.person, valid, before,
                                                    memberships.rooted(gw.scenario).person)})
-    changes = [{"part": r["part"], "waiting": r["n"], "deciders": sorted(r["deciders"])}
-               for r in conn.execute(
-                   "select part, count(*) as n, array(select distinct d from proposals q, "
-                   "unnest(q.deciders) d where q.status = 'waiting' and part = any(q.parts)) "
-                   "as deciders from proposals p, unnest(p.parts) part "
-                   "where p.status = 'waiting' group by part order by part")]
+    by_part: dict[str, dict[str, Any]] = {}  # who may decide each now, as the directory stands
+    for held_change in conn.execute("select parts, records, acts_for from proposals "
+                                    "where status = 'waiting'"):
+        who = {p.id for p in proposals.everyone(proposals.deciders(
+            gw.scenario, list(held_change["records"]), list(held_change["acts_for"])))}
+        for part in held_change["parts"]:
+            found = by_part.setdefault(part, {"n": 0, "deciders": set()})
+            found["n"] += 1
+            found["deciders"] |= who
+    changes = [{"part": part, "waiting": found["n"], "deciders": sorted(found["deciders"])}
+               for part, found in sorted(by_part.items())]
     return {"settings": versions, "release": gw.release_problems(conn), "held_changes": changes}
 
 

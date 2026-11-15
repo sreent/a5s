@@ -305,12 +305,13 @@ def router(gw: Any) -> APIRouter:
                 raise HTTPException(e.status, "; ".join(e.problems)) from None
 
     @api.get("/studio/api/agents/{agent}/measures", **shapes.answers(shapes.Figures))
-    def studio_agent_measures(agent: str, person: Annotated[Person, Depends(studying)], days: int = 30,
+    def studio_agent_measures(agent: str, person: Annotated[Person, Depends(studying)], days: studio.Days = 30,
                               zone: str = "UTC") -> dict:
         """How the instances of an agent that someone may watch are doing, with their runs on
         each day in `zone`, such as their own time zone."""
         with db.transaction(gw.url) as conn:
-            insts = [i for i in studio.instances(conn, person) if i["definition"] == agent]
+            insts = [i for i in studio.instances(conn, person, retired=True)  # as the core counts
+                     if i["definition"] == agent]
             if not insts:
                 raise HTTPException(404, "there's no instance of that agent that you may watch")
             try:
@@ -319,7 +320,7 @@ def router(gw: Any) -> APIRouter:
                 raise HTTPException(400, str(e)) from e
 
     @api.get("/studio/api/instances/{instance}", **shapes.answers(shapes.Figures))
-    def studio_instance(instance: str, person: Annotated[Person, Depends(studying)], days: int = 30,
+    def studio_instance(instance: str, person: Annotated[Person, Depends(studying)], days: studio.Days = 30,
                         zone: str = "UTC") -> dict:
         """How an instance someone may watch is doing, over the last `days` days, with its
         runs on each day in `zone`, such as their own time zone."""

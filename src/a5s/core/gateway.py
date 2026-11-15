@@ -2033,7 +2033,7 @@ def create_app(gw: Gateway) -> FastAPI:
                                 studio.instances(conn), whole=True)
 
     @services.get("/studio/agents/{agent}/measures")
-    def studio_agent_measures(agent: str, days: int = 30, zone: str = "UTC") -> dict:
+    def studio_agent_measures(agent: str, days: studio.Days = 30, zone: str = "UTC") -> dict:
         """How an agent's instances are doing over the last `days` days, with their runs on
         each day in `zone`."""
         with db.transaction(gw.url) as conn:  # with those retired within the window
@@ -2053,7 +2053,7 @@ def create_app(gw: Gateway) -> FastAPI:
         return found
 
     @services.get("/studio/instances/{instance}/measures")
-    def studio_instance_measures(instance: str, days: int = 30, zone: str = "UTC") -> dict:
+    def studio_instance_measures(instance: str, days: studio.Days = 30, zone: str = "UTC") -> dict:
         """How an instance is doing over the last `days` days, with its runs on each day in
         `zone`."""
         with db.transaction(gw.url) as conn:

@@ -26,6 +26,7 @@ from a5s.core import (
     asks,
     audit,
     memberships,
+    proposals,
     registry,
     releases,
     samples,
@@ -108,8 +109,9 @@ def waiting(conn: db.Connection, gw: Any, person: Person) -> list[dict]:
             found.append({"kind": "settings", "what": f"Version {row['serial']} of the settings "
                           "waits for your approval", "why": list(dict.fromkeys(why)),
                           "go": f"/approve/?settings={row['digest']}"})  # its own page
-    held = conn.execute("select count(*) as n from proposals where status = 'waiting' "
-                        "and %s = any(deciders)", (person.id,)).fetchone()["n"]
+    held = sum(1 for p in conn.execute("select records, acts_for from proposals "
+                                       "where status = 'waiting'")
+               if proposals.may_decide(scenario, p, person.id))  # as the directory stands now
     if held:
         found.append({"kind": "decide", "what": f"{held} {'change' if held == 1 else 'changes'} "
                       f"an agent asked for {'waits' if held == 1 else 'wait'} for your decision",

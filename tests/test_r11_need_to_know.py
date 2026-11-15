@@ -103,3 +103,49 @@ def test_where_the_next_page_of_runs_starts_says_nothing_of_the_run(stack, appro
     forged = api("/studio/api/instances/assistant-finance/runs?before=2026-01-01T00:00:00%2B00:00|"
                  "00000000-0000-0000-0000-000000000000", "ben")
     assert forged.status_code == 400
+
+
+def test_figures_are_asked_for_over_a_year_at_most(stack, approving, provider):  # D-6
+    from test_studio_pages import signed_in
+    api = signed_in(approving, provider)
+    assert api("/studio/api/instances/assistant-finance?days=200000", "ben").status_code == 422
+    assert api("/studio/api/agents/assistant/measures?days=0", "priya").status_code == 422
+    assert api("/studio/api/instances/assistant-finance?days=366", "ben").status_code == 200
+    with stack.client() as c:
+        assert c.get("/studio/instances/assistant-finance/measures?days=200000").status_code == 422
+        assert c.get("/studio/agents/assistant/measures?days=367").status_code == 422
+
+
+def test_what_waits_for_a_decision_is_counted_by_who_may_decide_it_now(  # D-7
+        stack, approving, provider, monkeypatch):
+    from dataclasses import replace
+
+    from test_admin_page import admin
+    from test_proposals import asked, held
+    from test_studio_home import api
+    asked(stack)
+    [p] = held(stack)
+    assert p["deciders"] == ["ana"]
+    people = stack.gateway.scenario._people  # Ana hands billing to Dana
+    monkeypatch.setitem(people, "ana", replace(people["ana"], roles=("instance-approver",)))
+    monkeypatch.setitem(people, "dana", replace(people["dana"],
+                                                roles=("grader", "part-owner:billing")))
+    homes = {who: [w["what"] for w in api(approving, provider, who, "home").json()["waiting"]
+                   if w["kind"] == "decide"] for who in ("ana", "dana")}
+    assert homes == {"ana": [], "dana": ["1 change an agent asked for waits for your decision"]}
+    [changes] = admin(approving, provider, "kofi").json()["waiting"]["held_changes"]
+    assert (changes["part"], changes["deciders"]) == ("billing", ["dana"])
+
+
+def test_an_agents_figures_on_peoples_pages_keep_its_retired_instances_runs(  # D-8
+        stack, approving, provider):
+    from test_studio_pages import OPS, signed_in
+    stack.model.reply("Nothing's open for you.")
+    stack.say("What's open?", person="ana")  # a run of assistant-finance
+    assert not stack.settle(instances={"assistant-ops": OPS}, signers=("ana", "omar")).refused
+    api = signed_in(approving, provider)  # assistant-finance has retired
+    people = api("/studio/api/agents/assistant/measures", "priya").json()  # its owner's
+    with stack.client() as c:
+        core = c.get("/studio/agents/assistant/measures").json()
+    assert "assistant-finance" in people["instances"] and people["instances"] == core["instances"]
+    assert sum(r["runs"] for r in people["runs"]) == sum(r["runs"] for r in core["runs"]) >= 1
