@@ -52,11 +52,11 @@ async function signIn() {
     history.replaceState(null, "", "/chat/");
     const pending = JSON.parse(store.getItem("a5s.pending") || "null");
     store.removeItem("a5s.pending");
-    if (params.has("error")) {
-      throw new Error(`Signing in didn't work: ${params.get("error_description") || params.get("error")}`);
-    }
     if (!pending || params.get("state") !== pending.state) {
       throw new Error("Signing in didn't come back the way it went out. Reload to try again.");
+    }
+    if (params.has("error")) {  // the provider's words, only for a sign-in this tab sent
+      throw new Error(`Signing in didn't work: ${params.get("error_description") || params.get("error")}`);
     }
     const tokens = await exchange({
       grant_type: "authorization_code", code: params.get("code"),

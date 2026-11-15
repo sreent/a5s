@@ -42,11 +42,13 @@ async function signedIn(params) {
   history.replaceState(null, "", "/notebook/");
   const pending = JSON.parse(store.getItem(PENDING) || "null");
   store.removeItem(PENDING);
+  const again = "Signing in didn't come back the way it went out. Open the notebook again.";
+  if (!pending || params.get("state") !== pending.state) throw new Error(again);
+  // The provider's words only for a sign-in this tab sent, so a link can't put its own on
+  // the page as if they were (round 11, E-3)
   if (params.has("error")) {
     throw new Error(`Signing in didn't work: ${params.get("error_description") || params.get("error")}`);
   }
-  const again = "Signing in didn't come back the way it went out. Open the notebook again.";
-  if (!pending || params.get("state") !== pending.state) throw new Error(again);
   const answer = await fetch("/approve/token", {  // the core passes it on to the provider
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ grant_type: "authorization_code", code: params.get("code"),

@@ -200,6 +200,7 @@ class Provider:
         self.forms: list[dict] = []
         self.asked: list[dict] = []  # what each sign-in asked for
         self.claims: dict[str, Any] = {}  # more claims for each ID token, such as amr
+        self.refusing: tuple[str, str] | None = None  # an error, and its words, to send back
         self.url = ""
 
     def rotate(self) -> None:
@@ -238,6 +239,10 @@ class Provider:
             if urlparse(redirect_uri).path not in REGISTERED:  # as Entra ID refuses one
                 return JSONResponse(status_code=400, content={  # its app doesn't list
                     "error": "invalid_request", "error_description": "redirect_uri mismatch"})
+            if self.refusing:  # as a provider does, with the sign-in's own state
+                error, words = self.refusing
+                return RedirectResponse(f"{redirect_uri}?{urlencode({'error': error,
+                    'error_description': words, 'state': state})}")
             code = secrets.token_urlsafe(16)
             fresh = int(time.time()) if "max_age" in request.query_params else None
             self.codes[code] = (client_id, redirect_uri, code_challenge, code_challenge_method,
