@@ -57,6 +57,35 @@ function acting(files: Files, offer: Offer): string[] {
     .map((t) => t.name);
 }
 
+/** How a draft described in words began: what its author said, and each thing the model asked
+ * for that it was given, and why, or wasn't, and why not, for its author to check. */
+function Described({ described }: { described: NonNullable<Draft["described"]> }) {
+  const given = described.notes.filter((n) => n.given);
+  const left = described.notes.filter((n) => !n.given);
+  return (
+    <section id="described" aria-labelledby="described-title">
+      <h2 id="described-title">Drafted from your words</h2>
+      <p className="note">On {described.model === "stand-in" ? "the sandbox's stand-in, which thinks nothing" : described.model},
+        from: <q>{described.words}</q> It was given the least it needs of what the scenario offers, each for the reason
+        the model gave. Check each: take away what it doesn't need, and add by hand what it does.</p>
+      <ul className="gates">
+        {given.map((n) => (
+          <li key={`given-${n.what}`} data-given={n.what}>
+            <span className="badge good"><Icon name="check" />given</span>
+            <span><span className="gate-name mono">{n.what}</span><span className="gate-about">{n.why}</span></span>
+          </li>
+        ))}
+        {left.map((n) => (
+          <li key={`left-${n.what}`} data-left={n.what}>
+            <span className="badge"><Icon name="cross" />left out</span>
+            <span><span className="gate-name mono">{n.what}</span><span className="gate-about">{n.why}</span></span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function Problems({ problems }: { problems: string[] }) {
   const passed = problems.length === 0;
   return (
@@ -335,6 +364,7 @@ export function DraftPage({ id }: { id: string }) {
     <>
       <p className="note" id="about-draft">From {draft.based_on}, started {when(draft.created_at)}.{handedBy(draft)} Yours to change,
         and readable by the agent's other owners and authors: nothing runs it until it's published and its release signed.</p>
+      {draft.described && <Described described={draft.described} />}
       <Journey draft={draft} said={said} files={files} plan={plan} open={open} />
       <Problems problems={said.problems} />
     </>

@@ -19,7 +19,7 @@ import httpx
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Response
 from pydantic import BaseModel
 
-from a5s import authoring, cases, db, definitions
+from a5s import authoring, cases, db, definitions, describing
 from a5s.contract import Person
 from a5s.core import (
     administration,
@@ -45,11 +45,14 @@ _ASSET = re.compile(r"[\w-]+\.(js|css|woff2)")  # its own files, by name alone: 
 
 
 class DraftStart(BaseModel):
-    """A new draft: a new agent's name and the template it starts from, an agent of the
-    release to change, or a co-author's draft to copy."""
+    """A new draft: a new agent's name and the template it starts from, or what it's for in
+    its author's words, for the sandbox's model to propose what it needs; an agent of the
+    release to change; or a co-author's draft to copy."""
 
     name: str | None = None
     template: str | None = None
+    describe: str | None = None  # what a new agent is for, in its author's words
+    model: str | None = None  # the sandbox's model that proposes what it needs: its stand-in, unless said
     agent: str | None = None
     copy_of: str | None = None  # a co-author's draft
 
@@ -476,6 +479,7 @@ def router(gw: Any) -> APIRouter:
         release, from its folder as released."""
         tools = gw.scenario.tools()
         copied: dict | None = None
+        described: dict | None = None  # how a new agent's was described in words, if it was
         plan: dict = {}  # its first instance's, as a copy's draft planned it
         before: list[dict] = []  # who drafted it before them: for a copy of someone else's
         if body.copy_of and not (body.name or body.template or body.agent):
@@ -499,6 +503,27 @@ def router(gw: Any) -> APIRouter:
             name, files = body.agent, drafts.folder_files(gw.cfg.agents_dir / body.agent)
             base = dict(files)  # as released: what a publish merges against what's merged since
             based_on = f"{body.agent} {gw.definitions[body.agent].release_id}"
+        elif body.name and body.describe and not (body.template or body.agent):
+            if not drafts.may_author(person, None):
+                raise HTTPException(403, "a new agent is for the people who own one, and engineers")
+            if body.name in gw.definitions:
+                raise HTTPException(409, f"there's an agent {body.name} already: draft a change "
+                                         "to it instead")
+            words = body.describe.strip()[:describing.WORDS]
+            said = sandboxed("/sandbox/descriptions", {"words": words, "model": body.model or "stand-in"})
+            with tempfile.TemporaryDirectory() as there:  # from the blank start, on its own model
+                try:
+                    made = authoring.new(authoring.templates(gw.cfg.root)[authoring.BLANK], body.name,
+                                         Path(there), tools, model=next(iter(gw.models), None))
+                except ValueError as e:
+                    raise HTTPException(400, str(e)) from None
+                blank = drafts.folder_files(made)
+            proposed = found if isinstance(found := said.get("proposal"), dict) else {}
+            owed = sorted({o.source for o in gw.scenario.obligations()})
+            files, notes = describing.drafted(blank, body.name, proposed, tools, owed)
+            files = drafts.pinned(body.name, files, tools)  # what it was given, as the scenario has it
+            name, base, based_on = body.name, {}, f"a description, on {said.get('model')}"
+            described = {"words": words, "model": str(said.get("model")), "notes": notes}
         elif body.name and body.template and not body.agent:
             if not drafts.may_author(person, None):
                 raise HTTPException(403, "a new agent is for the people who own one, and engineers")
@@ -518,15 +543,19 @@ def router(gw: Any) -> APIRouter:
             base = {}  # a new agent's: nothing of it anywhere yet
             based_on = f"template {body.template}"
         else:
-            raise HTTPException(400, "name a new agent and the template it starts from, an agent "
-                                     "of the release to change, or a co-author's draft to copy")
+            raise HTTPException(400, "name a new agent and the template it starts from, or what "
+                                     "it's for in your words; an agent of the release to change; "
+                                     "or a co-author's draft to copy")
         with db.transaction(gw.url) as conn:
             try:
-                draft = drafts.start(conn, person, name, based_on, files, base, before, plan)
+                draft = drafts.start(conn, person, name, based_on, files, base, before, plan, described)
             except drafts.Refused as e:
                 raise HTTPException(409, str(e)) from None
             if copied is not None:
                 in_ledger(conn, person, "copy draft", draft, copied=copied["id"])
+            elif described is not None:  # who described it, on which model, and what it gave it
+                in_ledger(conn, person, "describe draft", draft, model=described["model"],
+                          given=", ".join(n["what"] for n in described["notes"] if n["given"]))
             else:
                 in_ledger(conn, person, "draft", draft)
         return checked(draft)

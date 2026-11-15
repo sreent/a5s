@@ -35,9 +35,9 @@ import yaml
 from fastapi import FastAPI, Header, HTTPException
 from pydantic import BaseModel
 
-from a5s import authoring, build, cases, db, definitions
+from a5s import authoring, build, cases, db, definitions, describing
 from a5s.config import Config, load_models
-from a5s.core import inbox, registry, retention, signing, studio
+from a5s.core import extractor, inbox, models, registry, retention, signing, studio
 from a5s.core.gateway import Gateway
 from a5s.core.gateway import create_app as core_app
 from a5s.services.scheduler import Scheduler
@@ -83,10 +83,15 @@ def _answer(body: dict, message: dict) -> httpx.Response:
 class StandIn:
     """The sandbox's stand-in model, an OpenAI-compatible provider that thinks nothing: asked
     something, it looks it up with the first tool it's offered whose name begins with search,
-    then says what it found. A real model, where the sandbox has one, says what the agent would."""
+    then says what it found. Asked to draft an agent from a description, it gives only the tools
+    that only read whose words match it (describing.py). A real model, where the sandbox has
+    one, says what the agent would."""
 
     def handler(self, request: httpx.Request) -> httpx.Response:
         body = json.loads(request.content)
+        first = body["messages"][0]
+        if first.get("role") == "system" and str(first.get("content") or "").startswith(describing.DESCRIBING):
+            return _answer(body, {"role": "assistant", "content": json.dumps(describing.stand_in(body))})
         last = body["messages"][-1]
         if last.get("role") == "tool":
             content = str(last.get("content") or "")
@@ -301,6 +306,33 @@ class Sandbox:
             reply, run, calls = self._said(agent, person, text)
         return {"agent": agent, "reply": reply, "run": run, "model_calls": calls}
 
+    def describe(self, words: str, model: str) -> dict:
+        """What a model proposes for a new agent described in `words`, of what the sandbox's
+        scenario offers, each with why, and each call to the model, what it was sent and said:
+        a proposal, never a draft, which the studio makes from it (describing.py)."""
+        if model not in self.models():
+            raise Refused(f"the sandbox can't call {model}: it has {', '.join(self.models())}")
+        if not words.strip():
+            raise Refused("say what it's for, in your own words")
+        scenario = self.scenario
+        found = load_models(self.cfg.models_file)[model]
+        offered = describing.offer(scenario.tools(), sorted({o.source for o in scenario.obligations()}))
+        body = describing.asked(found.api, found.alias, words, offered)
+        with self.lock:
+            self.recording.calls = []
+            try:
+                status, data = models.forward(found, models.screen(found.api, body)[0], self.gateway.http)
+            except models.ModelUnavailable as e:
+                raise Refused(f"the sandbox couldn't ask {model}: {e}") from None
+            finally:
+                calls, self.recording.calls = self.recording.calls or [], None
+        if status >= 400:
+            raise Refused(f"{model} said {status}: try again, or another model")
+        proposed = describing.proposal(extractor.reply_text(found.api, data))
+        if proposed is None:
+            raise Refused(f"what {model} answered doesn't read as a proposal: try again, or another model")
+        return {"proposal": proposed, "model": model, "model_calls": calls}
+
     def case(self, key: str, files: dict[str, str], model: str, number: int) -> dict:
         """Run one of a draft's test cases, by its place among them, as the agent's suite runs
         it, in a conversation of its own: what it answered at each step, the tools it used, and
@@ -471,6 +503,11 @@ class Case(BaseModel):
     model: str = STAND_IN
 
 
+class Describe(BaseModel):
+    words: str  # what a new agent is for, in its author's words
+    model: str = STAND_IN
+
+
 class Try(BaseModel):
     key: str  # the draft's, as the studio names it
     files: dict[str, str]  # its agent's folder, each file's text by its path in it
@@ -501,6 +538,14 @@ def create_app(sandbox: Sandbox, token: str) -> FastAPI:
         allowed(authorization)
         try:
             return sandbox.turn(body.key, body.files, body.person, body.text[:4000], body.model)
+        except Refused as e:
+            raise HTTPException(400, str(e)) from None
+
+    @app.post("/sandbox/descriptions")
+    def described(body: Describe, authorization: str | None = Header(default=None)) -> dict:
+        allowed(authorization)
+        try:
+            return sandbox.describe(body.words[:describing.WORDS], body.model)
         except Refused as e:
             raise HTTPException(400, str(e)) from None
 

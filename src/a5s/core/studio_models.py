@@ -580,6 +580,23 @@ class Plan(Shape):
     asks: list[str] = []
 
 
+class DescribedNote(Shape):
+    """One thing a draft described in words was given, and why, or wasn't, and why not."""
+
+    what: str
+    given: bool
+    why: str
+
+
+class Described(Shape):
+    """How a draft was described in words: its author's words, the model that proposed what it
+    needs, and a note on each thing it was given or not, for its author to check."""
+
+    words: str
+    model: str
+    notes: list[DescribedNote]
+
+
 class Draft(Shape):
     """A draft: its agent's folder, file by file, what would stop its release, and how the
     catalogue would show it, if it loads."""
@@ -592,6 +609,7 @@ class Draft(Shape):
     published: str | None
     files: dict[str, str]  # each file's text, by its path in the agent's folder
     plan: Plan  # for its first instance, as its authors mean to ask for it
+    described: Described | None = None  # if it began from its author's words
     yours: bool  # or a co-author's, read only
     author: str | None
     drafted_before: list[Drafter]  # who drafted it before its author, oldest first

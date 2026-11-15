@@ -184,6 +184,21 @@ export type Denied = {
   times: number;
 };
 
+// How a draft was described in words: its author's words, the model that proposed what it
+// needs, and a note on each thing it was given or not, for its author to check.
+export type Described = {
+  words: string;
+  model: string;
+  notes: DescribedNote[];
+};
+
+// One thing a draft described in words was given, and why, or wasn't, and why not.
+export type DescribedNote = {
+  what: string;
+  given: boolean;
+  why: string;
+};
+
 // A draft: its agent's folder, file by file, what would stop its release, and how the
 // catalogue would show it, if it loads.
 export type Draft = {
@@ -195,6 +210,7 @@ export type Draft = {
   published: string | null;
   files: Record<string, string>;
   plan: Plan;
+  described?: Described | null;
   yours: boolean;
   author: string | null;
   drafted_before: Drafter[];
@@ -224,11 +240,14 @@ export type DraftLine = {
   author?: string;
 };
 
-// A new draft: a new agent's name and the template it starts from, an agent of the
-// release to change, or a co-author's draft to copy.
+// A new draft: a new agent's name and the template it starts from, or what it's for in
+// its author's words, for the sandbox's model to propose what it needs; an agent of the
+// release to change; or a co-author's draft to copy.
 export type DraftStart = {
   name?: string | null;
   template?: string | null;
+  describe?: string | null;
+  model?: string | null;
   agent?: string | null;
   copy_of?: string | null;
 };
