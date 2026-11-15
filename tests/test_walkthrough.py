@@ -15,14 +15,10 @@ needs. Its guide, with a picture of each step:
 
 from __future__ import annotations
 
-import httpx
-
 from a5s.contract import record_of
 from a5s.core import drafts
 from conftest import (
-    FAKE_MODELS,
     PROVIDER_KEY,
-    FakeModel,
     build_root,
     deciding,
     free_port,
@@ -32,7 +28,17 @@ from conftest import (
 from fake_github import FakeGitHub
 from test_proposals import invented
 from test_studio_authoring import kept
-from walkthrough import Walk, answering, deployed, merged, owned, released, signed_and_recorded
+from walkthrough import (
+    Walk,
+    answering,
+    deployed,
+    merged,
+    owned,
+    released,
+    says,
+    signed_and_recorded,
+    walking_on,
+)
 
 AGENT = "due-dates"
 INSTANCE = f"{AGENT}-billing"
@@ -144,11 +150,7 @@ def asked_and_decided(walk: Walk, stack, url: str) -> str:
     page = walk.as_("ben", f"{url}/chat/")
     with walk.step("Ben asks due-dates, in the chat, to move a question's due date. It asks for "
                    "the change, which waits for Ana, its decider in billing.", page):
-        page.wait_for_selector(f"#agent option[value='{AGENT}']", state="attached", timeout=30000)
-        page.select_option("#agent", AGENT)
-        page.fill("#text", f"Please move Q-1002 to {day}.")
-        page.keyboard.press("Enter")
-        page.wait_for_selector(f"li.agent >> text=I've asked to move it to {day}", timeout=30000)
+        says(page, AGENT, f"Please move Q-1002 to {day}.", f"I've asked to move it to {day}")
     page = walk.as_("ana", f"{url}/studio/")
     with walk.step("Ana finds the change waiting for her decision, and opens its card: who asks, "
                    "for whom, and what it does, in code's words.", page):
@@ -189,9 +191,9 @@ def watched_and_audited(walk: Walk, url: str, day: str) -> None:
 def test_an_agent_goes_from_an_idea_to_work_through_a5s_alone(database, tmp_path, provider, browser,
                                                               monkeypatch, capsys):
     monkeypatch.setenv("A5S_TEST_PROVIDER_KEY", PROVIDER_KEY)
-    model = FakeModel()
-    root = build_root(tmp_path, "fake", FAKE_MODELS)
-    http = httpx.Client(transport=httpx.MockTransport(model.handler))
+    on = walking_on()
+    model, http = on.model, on.http
+    root = build_root(tmp_path, on.alias, on.models)
     walk = Walk("sample", "An agent, from an idea to work", browser, provider)
     forge = FakeGitHub({f"agents/{name}/{path}": text for name in ("assistant", "watcher")
                         for path, text in drafts.folder_files(root / "agents" / name).items()})

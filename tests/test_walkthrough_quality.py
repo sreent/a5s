@@ -15,27 +15,27 @@ from __future__ import annotations
 
 import shutil
 
-import httpx
 import yaml
 
 from a5s import db
 from a5s.core import drafts
-from conftest import (
-    FAKE_MODELS,
-    PROVIDER_KEY,
-    ROOT,
-    FakeModel,
-    build_root,
-    deciding,
-    free_port,
-    serve,
-)
+from conftest import PROVIDER_KEY, ROOT, build_root, deciding, free_port, serve
 from fake_github import FakeGitHub
 from scenario_stack import running_scenario
 from test_studio_authoring import kept
 from test_walkthrough_desk import able, definition
 from test_walkthrough_master_data import APPROVERS, MASTER, approve
-from walkthrough import Walk, answering, deployed, merged, owned, released, signed_and_recorded
+from walkthrough import (
+    On,
+    Walk,
+    answering,
+    deployed,
+    merged,
+    owned,
+    released,
+    signed_and_recorded,
+    walking_on,
+)
 
 AGENT = "quality-helper"
 TOOLS = ("search_records", "get_record", "check_quality")
@@ -160,7 +160,7 @@ def at_work(walk: Walk, stack, url: str, draft: str) -> str:
     return instance
 
 
-def reported_to_mo(walk: Walk, stack, url: str) -> str:
+def reported_to_mo(walk: Walk, stack, url: str, on: On) -> str:
     """On a working morning, Mo reads its report in the chat: the run's id."""
     stack.at(MORNING)
     stack.scheduler().work_due()
@@ -169,10 +169,10 @@ def reported_to_mo(walk: Walk, stack, url: str) -> str:
                    "material data stands against its target, from what code measured, and that nothing "
                    "waits on him.", page):
         page.wait_for_selector("li >> text=From the quality-helper", timeout=30000)
-        assert TOLD in page.inner_text("li:has-text('From the quality-helper')")
+        assert on.live or TOLD in page.inner_text("li:has-text('From the quality-helper')")
     asked = [r["body"]["messages"][-1]["content"] for r in stack.model.requests
              if "Tell Mo Hassan" in str(r["body"]["messages"][-1].get("content"))]
-    assert any("DQ-material" in a for a in asked), asked  # the facts code worked out
+    assert on.live or any("DQ-material" in a for a in asked), asked  # the facts code worked out
     with db.transaction(stack.admin) as conn:
         [run] = conn.execute("select r.id::text as id from runs r join instances i on i.id = r.instance_id "
                              "where i.definition = %s", (AGENT,)).fetchall()
@@ -192,11 +192,11 @@ def read_run(walk: Walk, url: str, instance: str) -> None:
 def test_the_data_quality_watcher_is_built_again_and_reports_to_its_owner(
         database, tmp_path, provider, browser, monkeypatch, capsys):
     monkeypatch.setenv("A5S_TEST_PROVIDER_KEY", PROVIDER_KEY)
-    model = FakeModel(answering=reported)
-    root = build_root(tmp_path, "fake", FAKE_MODELS)
+    on = walking_on(reported)
+    model, http = on.model, on.http
+    root = build_root(tmp_path, on.alias, on.models)
     team = root / "scenarios" / "master-data"
     shutil.copytree(ROOT / "scenarios" / "master-data", team)
-    http = httpx.Client(transport=httpx.MockTransport(model.handler))
     walk = Walk("data-quality", "The data quality watcher, built again in the studio", browser, provider)
     agents = ROOT / "scenarios" / "master-data" / "agents"
     forge = FakeGitHub({f"scenario-agents/{name}/{path}": text for name in ("mdg-assistant", "mdg-watcher")
@@ -204,7 +204,7 @@ def test_the_data_quality_watcher_is_built_again_and_reports_to_its_owner(
     with serve(forge.app(), free_port()) as forge_url:
         forge.url = forge_url
         with running_scenario(database, root, model, MASTER, "master-data", http=http,
-                              scenario_folder=team) as stack:
+                              alias=on.alias, scenario_folder=team) as stack:
             deployed(stack, forge)
             said = released(stack, tmp_path / "first", monkeypatch, capsys)
             said = signed_and_recorded(said, capsys, "rhea", "ken", "tao", "ines")
@@ -222,7 +222,7 @@ def test_the_data_quality_watcher_is_built_again_and_reports_to_its_owner(
             merged(stack, forge.files(pull["head"]), AGENT)
             owned(stack.cfg.scenario_dir, "ines", AGENT)
         with running_scenario(database, root, model, MASTER, "master-data", http=http,
-                              scenario_folder=team) as stack:
+                              alias=on.alias, scenario_folder=team) as stack:
             deployed(stack, forge)
             with walk.step("Deployed again, Rhea and Ines sign the release that adds it, and the team "
                            "records it: it's approved, and a5s runs it."):
@@ -231,7 +231,7 @@ def test_the_data_quality_watcher_is_built_again_and_reports_to_its_owner(
                 assert said.rstrip().endswith("Approved here."), said
             with deciding(stack, provider) as url, answering(stack):
                 instance = at_work(walk, stack, url, draft)
-                reported_to_mo(walk, stack, url)
+                reported_to_mo(walk, stack, url, on)
                 read_run(walk, url, instance)
     walk.guide("Master data's data quality watcher, built again from nothing in the studio, as "
                "quality-helper, by the data team's own people: it only reads, and each working morning "

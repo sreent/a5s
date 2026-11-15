@@ -16,16 +16,12 @@ from __future__ import annotations
 import shutil
 from dataclasses import replace
 
-import httpx
-
 from a5s import db, sandbox
 from a5s.config import Config
 from a5s.core import drafts
 from conftest import (
-    FAKE_MODELS,
     PROVIDER_KEY,
     ROOT,
-    FakeModel,
     build_root,
     deciding,
     free_port,
@@ -35,7 +31,17 @@ from fake_github import FakeGitHub
 from scenario_stack import running_scenario
 from test_studio_authoring import kept
 from test_walkthrough_desk import DESK, able, definition
-from walkthrough import Walk, answering, deployed, merged, owned, released, signed_and_recorded
+from walkthrough import (
+    Walk,
+    answering,
+    deployed,
+    merged,
+    owned,
+    released,
+    says,
+    signed_and_recorded,
+    walking_on,
+)
 
 AGENT = "joiner-coordinator"
 WORDS = ("Tracks each new joiner's starter requests in the ITSM against their start date, their laptop "
@@ -152,11 +158,7 @@ def asked_and_audited(walk: Walk, stack, url: str) -> None:
     page = walk.as_("jo", f"{url}/chat/")
     with walk.step("Jo, who joins sales on 23 November, asks it in the chat whether their laptop and "
                    "accounts will be ready. It finds their own requests in the ITSM, and no one else's.", page):
-        page.wait_for_selector(f"#agent option[value='{AGENT}']", state="attached", timeout=30000)
-        page.select_option("#agent", AGENT)
-        page.fill("#text", "Will my laptop and accounts be ready for my first day?")
-        page.keyboard.press("Enter")
-        page.wait_for_selector("li.agent >> text=REQ0000101", timeout=30000)
+        says(page, AGENT, "Will my laptop and accounts be ready for my first day?", "REQ0000101")
     with db.transaction(stack.admin) as conn:  # its instance, as the settings named it from its plan
         [instance] = [r["id"] for r in conn.execute("select id from instances where definition = %s", (AGENT,))]
     page = walk.as_("zia", f"{url}/audit/")
@@ -171,18 +173,18 @@ def asked_and_audited(walk: Walk, stack, url: str) -> None:
 def test_the_joiner_coordinator_is_described_drafted_least_privilege_and_refined_by_hand(
         database, sandbox_database, tmp_path, provider, browser, monkeypatch, capsys):
     monkeypatch.setenv("A5S_TEST_PROVIDER_KEY", PROVIDER_KEY)
-    model = FakeModel()
-    root = build_root(tmp_path, "fake", FAKE_MODELS)
+    on = walking_on()
+    model, http = on.model, on.http
+    root = build_root(tmp_path, on.alias, on.models)
     desk = root / "scenarios" / "service-desk"
     shutil.copytree(ROOT / "scenarios" / "service-desk", desk)
-    http = httpx.Client(transport=httpx.MockTransport(model.handler))
     walk = Walk("joiner", "The joiner coordinator, described and refined in the studio", browser, provider)
     agents = ROOT / "scenarios" / "service-desk" / "agents"
     forge = FakeGitHub({f"scenario-agents/{name}/{path}": text for name in ("desk-assistant",)
                         for path, text in drafts.folder_files(agents / name).items()})
     with serve(forge.app(), free_port()) as forge_url:
         forge.url = forge_url
-        with running_scenario(database, root, model, DESK, "service-desk", http=http,
+        with running_scenario(database, root, model, DESK, "service-desk", http=http, alias=on.alias,
                               scenario_folder=desk) as stack:
             deployed(stack, forge)
             said = released(stack, tmp_path / "first", monkeypatch, capsys)
@@ -204,7 +206,7 @@ def test_the_joiner_coordinator_is_described_drafted_least_privilege_and_refined
         with walk.step("The team merges its pull request, and the directory names Dev its owner."):
             merged(stack, forge.files(pull["head"]), AGENT)
             owned(stack.cfg.scenario_dir, "dev", AGENT)
-        with running_scenario(database, root, model, DESK, "service-desk", http=http,
+        with running_scenario(database, root, model, DESK, "service-desk", http=http, alias=on.alias,
                               scenario_folder=desk) as stack:
             deployed(stack, forge)
             with walk.step("Deployed again, Ren and Dev sign the release that adds it, and the team "

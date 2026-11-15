@@ -14,16 +14,13 @@ from __future__ import annotations
 
 import shutil
 
-import httpx
 import yaml
 
 from a5s import db
 from a5s.core import drafts
 from conftest import (
-    FAKE_MODELS,
     PROVIDER_KEY,
     ROOT,
-    FakeModel,
     build_root,
     deciding,
     free_port,
@@ -32,7 +29,17 @@ from conftest import (
 from fake_github import FakeGitHub
 from scenario_stack import running_scenario
 from test_studio_authoring import kept
-from walkthrough import Walk, answering, deployed, merged, owned, released, signed_and_recorded
+from walkthrough import (
+    Walk,
+    answering,
+    deployed,
+    merged,
+    owned,
+    released,
+    says,
+    signed_and_recorded,
+    walking_on,
+)
 
 AGENT = "desk-helper"
 INSTANCE = f"{AGENT}-access"
@@ -191,11 +198,7 @@ def asked_and_audited(walk: Walk, stack, url: str) -> None:
     page = walk.as_("sam", f"{url}/chat/")
     with walk.step("Sam, in sales, asks desk-helper in the chat which tickets are about the VPN. "
                    "It searches the ITSM, through its MCP server, and answers from the ticket.", page):
-        page.wait_for_selector(f"#agent option[value='{AGENT}']", state="attached", timeout=30000)
-        page.select_option("#agent", AGENT)
-        page.fill("#text", "Which tickets are about the VPN?")
-        page.keyboard.press("Enter")
-        page.wait_for_selector("li.agent >> text=INC0000001", timeout=30000)
+        says(page, AGENT, "Which tickets are about the VPN?", "INC0000001")
     page = walk.as_("zia", f"{url}/audit/")
     with walk.step("Zia, of assurance, reads what desk-helper did in the audit trail.", page):
         page.wait_for_selector("#find:not([hidden])", timeout=30000)
@@ -208,17 +211,17 @@ def asked_and_audited(walk: Walk, stack, url: str) -> None:
 def test_the_desk_assistant_is_built_again_in_the_studio_from_nothing(database, tmp_path, provider, browser,
                                                                       monkeypatch, capsys):
     monkeypatch.setenv("A5S_TEST_PROVIDER_KEY", PROVIDER_KEY)
-    model = FakeModel()
-    root = build_root(tmp_path, "fake", FAKE_MODELS)
+    on = walking_on()
+    model, http = on.model, on.http
+    root = build_root(tmp_path, on.alias, on.models)
     shutil.copytree(ROOT / "scenarios" / "service-desk", root / "scenarios" / "service-desk")
-    http = httpx.Client(transport=httpx.MockTransport(model.handler))
     walk = Walk("service-desk", "The desk assistant, built again in the studio", browser, provider)
     agents = ROOT / "scenarios" / "service-desk" / "agents"
     forge = FakeGitHub({f"scenario-agents/{name}/{path}": text for name in ("desk-assistant",)
                         for path, text in drafts.folder_files(agents / name).items()})
     with serve(forge.app(), free_port()) as forge_url:
         forge.url = forge_url
-        with running_scenario(database, root, model, DESK, "service-desk", http=http,
+        with running_scenario(database, root, model, DESK, "service-desk", http=http, alias=on.alias,
                               scenario_folder=root / "scenarios" / "service-desk") as stack:
             deployed(stack, forge)
             said = released(stack, tmp_path / "first", monkeypatch, capsys)
@@ -236,7 +239,7 @@ def test_the_desk_assistant_is_built_again_in_the_studio_from_nothing(database, 
                        "as the identity provider's administrator would."):
             merged(stack, forge.files(pull["head"]), AGENT)
             owned(stack.cfg.scenario_dir, "dev", AGENT)
-        with running_scenario(database, root, model, DESK, "service-desk", http=http,
+        with running_scenario(database, root, model, DESK, "service-desk", http=http, alias=on.alias,
                               scenario_folder=root / "scenarios" / "service-desk") as stack:
             deployed(stack, forge)
             with walk.step("Deployed again, `a5s release status` says who must sign the release that "

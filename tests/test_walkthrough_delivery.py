@@ -15,17 +15,14 @@ from __future__ import annotations
 
 import shutil
 
-import httpx
 import yaml
 
 from a5s import db
 from a5s.core import drafts
 from conftest import (
-    FAKE_MODELS,
     PROVIDER_KEY,
     ROOT,
     SYSTEMS,
-    FakeModel,
     build_root,
     deciding,
     free_port,
@@ -35,7 +32,17 @@ from fake_github import FakeGitHub
 from scenario_stack import running_scenario
 from test_studio_authoring import kept
 from test_walkthrough_desk import able, definition
-from walkthrough import Walk, answering, deployed, merged, owned, released, signed_and_recorded
+from walkthrough import (
+    Walk,
+    answering,
+    deployed,
+    merged,
+    owned,
+    released,
+    says,
+    signed_and_recorded,
+    walking_on,
+)
 
 AGENT = "dev-helper"
 DELIVERY = "a5s.software_delivery:SoftwareDeliveryScenario"
@@ -159,11 +166,7 @@ def reviewed(walk: Walk, stack, url: str) -> None:
     page = walk.as_("raj", f"{url}/chat/")
     with walk.step("Raj asks it to ask Sol, of security, to review his pull request too. The request "
                    "waits for Leo, who owns the backend, where it is.", page):
-        page.wait_for_selector(f"#agent option[value='{AGENT}']", state="attached", timeout=30000)
-        page.select_option("#agent", AGENT)
-        page.fill("#text", "Please ask Sol to review PR-17 too: it touches how sessions are logged.")
-        page.keyboard.press("Enter")
-        page.wait_for_selector("li.agent >> text=it waits for Leo Park", timeout=30000)
+        says(page, AGENT, "Please ask Sol to review PR-17 too: it touches how sessions are logged.", "it waits for Leo Park")
     page = walk.as_("leo", f"{url}/studio/")
     with walk.step("Leo finds it waiting for his decision, reads what it asks in a5s's own words, and "
                    "approves it, signed in afresh for that alone.", page):
@@ -186,16 +189,10 @@ def tasked(walk: Walk, stack, url: str) -> None:
     page = walk.as_("raj", f"{url}/chat/")
     with walk.step("Raj asks it for a review of all his open fixes, which takes more than one sitting. "
                    "It offers it as a task, and starts it once he says yes.", page):
-        page.wait_for_selector(f"#agent option[value='{AGENT}']", state="attached", timeout=30000)
-        page.select_option("#agent", AGENT)
-        page.fill("#text", asked)
-        page.keyboard.press("Enter")
-        page.wait_for_selector("li.agent >> text=shall I start it?", timeout=30000)
+        says(page, AGENT, asked, "shall I start it?")
         stack.model.reply(None, ("confirm_task", {}))
         stack.model.reply("Started: it's T-1, and you can watch or stop it on your tasks page.")
-        page.fill("#text", "Yes, please")
-        page.keyboard.press("Enter")
-        page.wait_for_selector("li.agent >> text=it's T-1", timeout=30000)
+        says(page, AGENT, "Yes, please", "it's T-1")
     page = walk.as_("raj", f"{url}/tasks/")
     with walk.step("On his own page he watches T-1, waiting for its first slice, with what it may spend "
                    "and by when.", page):
@@ -223,18 +220,18 @@ def audited(walk: Walk, url: str, instance: str) -> None:
 def test_the_dev_assistant_is_built_again_in_the_studio_and_its_review_waits_for_its_owner(
         database, tmp_path, provider, browser, monkeypatch, capsys):
     monkeypatch.setenv("A5S_TEST_PROVIDER_KEY", PROVIDER_KEY)
-    model = FakeModel()
-    root = build_root(tmp_path, "fake", FAKE_MODELS)
+    on = walking_on()
+    model, http = on.model, on.http
+    root = build_root(tmp_path, on.alias, on.models)
     team = root / "scenarios" / "software-delivery"
     shutil.copytree(ROOT / "scenarios" / "software-delivery", team)
-    http = httpx.Client(transport=httpx.MockTransport(model.handler))
     walk = Walk("software-delivery", "The dev assistant, built again in the studio", browser, provider)
     agents = ROOT / "scenarios" / "software-delivery" / "agents"
     forge = FakeGitHub({f"scenario-agents/{name}/{path}": text for name in ("dev-assistant",)
                         for path, text in drafts.folder_files(agents / name).items()})
     with serve(forge.app(), free_port()) as forge_url:
         forge.url = forge_url
-        with running_scenario(database, root, model, DELIVERY, "software-delivery", http=http,
+        with running_scenario(database, root, model, DELIVERY, "software-delivery", http=http, alias=on.alias,
                               scenario_folder=team) as stack:
             deployed(stack, forge)
             said = released(stack, tmp_path / "first", monkeypatch, capsys)
@@ -252,7 +249,7 @@ def test_the_dev_assistant_is_built_again_in_the_studio_and_its_review_waits_for
         with walk.step("The team merges its pull request, and the directory names Pam its owner."):
             merged(stack, forge.files(pull["head"]), AGENT)
             owned(stack.cfg.scenario_dir, "pam", AGENT)
-        with running_scenario(database, root, model, DELIVERY, "software-delivery", http=http,
+        with running_scenario(database, root, model, DELIVERY, "software-delivery", http=http, alias=on.alias,
                               scenario_folder=team) as stack:
             deployed(stack, forge)
             with walk.step("Deployed again, Rue and Pam sign the release that adds it, and the team "

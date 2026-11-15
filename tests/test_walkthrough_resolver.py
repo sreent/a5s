@@ -18,18 +18,15 @@ import json
 import shutil
 from dataclasses import replace
 
-import httpx
 import yaml
 
 from a5s import db, sandbox
 from a5s.config import Config
 from a5s.core import drafts
 from conftest import (
-    FAKE_MODELS,
     PROVIDER_KEY,
     ROOT,
     SYSTEMS,
-    FakeModel,
     build_root,
     deciding,
     free_port,
@@ -39,7 +36,18 @@ from fake_github import FakeGitHub
 from scenario_stack import running_scenario
 from test_studio_authoring import kept
 from test_walkthrough_desk import DESK, able, definition
-from walkthrough import Walk, answering, deployed, merged, owned, released, signed_and_recorded
+from walkthrough import (
+    LIVE,
+    Walk,
+    answering,
+    deployed,
+    merged,
+    owned,
+    released,
+    says,
+    signed_and_recorded,
+    walking_on,
+)
 
 AGENT = "resolver-assistant"
 INSTANCE = f"{AGENT}-access"
@@ -210,12 +218,8 @@ def replied_and_audited(walk: Walk, stack, url: str) -> None:
     with walk.step("Rae, a resolver in access, asks it in the chat for a brief of INC0000001, and to "
                    "post her reply to Sam. It reads the ticket and what Sam wrote, through a5s's "
                    "reader, and asks to post the reply, which waits for Ola.", page):
-        page.wait_for_selector(f"#agent option[value='{AGENT}']", state="attached", timeout=30000)
-        page.select_option("#agent", AGENT)
-        page.fill("#text", "Brief me on INC0000001, and post my reply to Sam: reinstall the approved "
-                           "VPN client, then sign in again with MFA.")
-        page.keyboard.press("Enter")
-        page.wait_for_selector("li.agent >> text=it waits for Ola Nowak", timeout=30000)
+        says(page, AGENT, "Brief me on INC0000001, and post my reply to Sam: reinstall the approved "
+                          "VPN client, then sign in again with MFA.", "it waits for Ola Nowak")
     assert SYSTEMS["service-desk"]["itsm"].replies == {}  # nothing posted yet
     page = walk.as_("ola", f"{url}/studio/")
     with walk.step("Ola finds the reply waiting for her decision on her studio home. Its card says what "
@@ -223,8 +227,9 @@ def replied_and_audited(walk: Walk, stack, url: str) -> None:
                    "and the ticket as it stood.", page):
         page.click("#waiting a:has-text('waits for your decision')")
         page.wait_for_selector(".approval >> text=INC0000001", timeout=30000)
-        assert page.inner_text(".approval h2").startswith(
-            "Post a reply on an ITSM ticket, which its requester reads: INC0000001, with body Hi Sam")
+        assert page.inner_text(".approval h2").startswith(  # in its own words, on a real model
+            "Post a reply on an ITSM ticket, which its requester reads: INC0000001, with body "
+            + ("" if LIVE else "Hi Sam"))
         assert page.inner_text(".approval .who-about").startswith("P-1 · for Rae Kim · asked ")
         assert "Can't reach the VPN, as it stood when it was asked for" in page.inner_text(".approval .said")
     with walk.step("She approves it, signed in afresh for that reply alone.", page):
@@ -232,7 +237,7 @@ def replied_and_audited(walk: Walk, stack, url: str) -> None:
         page.wait_for_selector("#status >> text=You approved P-1", timeout=30000)
     stack.scheduler().decided()  # a5s makes what's approved, as it does on its own
     [posted] = SYSTEMS["service-desk"]["itsm"].replies["INC0000001"]
-    assert posted["replied"] == REPLY
+    assert LIVE or posted["replied"] == REPLY
     page = walk.as_("rae", f"{url}/chat/")
     with walk.step("a5s posts it on the ticket, once, and tells Rae in the chat.", page):
         page.wait_for_selector(f"#agent option[value='{AGENT}']", state="attached", timeout=30000)
@@ -252,10 +257,10 @@ def replied_and_audited(walk: Walk, stack, url: str) -> None:
 def test_the_resolver_assistant_is_built_in_the_studio_and_its_replies_wait_for_a_decider(
         database, sandbox_database, tmp_path, provider, browser, monkeypatch, capsys):
     monkeypatch.setenv("A5S_TEST_PROVIDER_KEY", PROVIDER_KEY)
-    model = FakeModel()
-    root = build_root(tmp_path, "fake", FAKE_MODELS)
+    on = walking_on()
+    model, http = on.model, on.http
+    root = build_root(tmp_path, on.alias, on.models)
     shutil.copytree(ROOT / "scenarios" / "service-desk", root / "scenarios" / "service-desk")
-    http = httpx.Client(transport=httpx.MockTransport(model.handler))
     walk = Walk("resolver", "The resolver assistant, built in the studio", browser, provider)
     agents = ROOT / "scenarios" / "service-desk" / "agents"
     forge = FakeGitHub({f"scenario-agents/{name}/{path}": text for name in ("desk-assistant",)
@@ -263,7 +268,7 @@ def test_the_resolver_assistant_is_built_in_the_studio_and_its_replies_wait_for_
     desk = root / "scenarios" / "service-desk"
     with serve(forge.app(), free_port()) as forge_url:
         forge.url = forge_url
-        with running_scenario(database, root, model, DESK, "service-desk", http=http,
+        with running_scenario(database, root, model, DESK, "service-desk", http=http, alias=on.alias,
                               scenario_folder=desk) as stack:
             deployed(stack, forge)
             said = released(stack, tmp_path / "first", monkeypatch, capsys)
@@ -285,7 +290,7 @@ def test_the_resolver_assistant_is_built_in_the_studio_and_its_replies_wait_for_
                        "identity provider's administrator would."):
             merged(stack, forge.files(pull["head"]), AGENT)
             owned(stack.cfg.scenario_dir, "dev", AGENT)
-        with running_scenario(database, root, model, DESK, "service-desk", http=http,
+        with running_scenario(database, root, model, DESK, "service-desk", http=http, alias=on.alias,
                               scenario_folder=desk) as stack:
             deployed(stack, forge)
             with walk.step("Deployed again, `a5s release status` says who must sign the release that adds "

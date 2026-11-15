@@ -11,6 +11,12 @@ walk-through makes it.
 What a walk-through does outside a5s, it does as the people there would, and says so: the forge
 merges a pull request its reviewers approved, and a5s's scheduler, which runs on its own when
 deployed, is run when its turn comes.
+
+In CI, its agents run on the stand-in model, scripted for each walk-through, so it gives the same
+answers every time. At night, with A5S_TEST_WALK_MODEL naming an approved model, such as
+deepseek-v4-pro, they run on it instead, on the scenarios' synthetic data: what the script would
+have it say goes nowhere, a step waits for whatever the agent answers, and the walk-through checks
+what came of it, a change held or made, rather than its words.
 """
 
 from __future__ import annotations
@@ -24,11 +30,13 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
+import httpx
 import yaml
 
 from a5s import cli
 from a5s.core import publishing
 from a5s.core.releases import Releases, running
+from conftest import FAKE_MODELS, ROOT, FakeModel
 from fake_github import CLIENT as GITHUB
 
 # Where the guides go, from where the tests were started, whatever folder a walk-through is
@@ -36,8 +44,74 @@ from fake_github import CLIENT as GITHUB
 GUIDE = str(Path(os.environ["A5S_GUIDE"]).resolve()) if os.environ.get("A5S_GUIDE") else None
 
 
+# The approved model a walk-through's agents run on at night: the stand-in's script if none
+LIVE = os.environ.get("A5S_TEST_WALK_MODEL")
+
+
 class Gap(AssertionError):
     """A step a walk-through couldn't take through a5s."""
+
+
+class Unscripted:
+    """A real model, as a walk-through walks on at night: nothing scripts what it says, and
+    the walk-through sees none of what it's sent."""
+
+    def __init__(self) -> None:
+        self.requests: list[dict] = []
+        self.answering = None
+
+    def reply(self, *_: Any) -> None:
+        """What the stand-in would have said: a real model says its own."""
+
+
+@dataclass
+class On:
+    """What a walk-through's agents run on: the stand-in's script, or, at night, a real model."""
+
+    model: Any  # its script, a FakeModel, or Unscripted
+    alias: str  # the approved model's alias, as the deployment's models.yaml names it
+    models: str  # that models.yaml
+    http: httpx.Client  # how the gateway reaches it
+    transport: httpx.BaseTransport | None  # and the sandbox: the script's, or the internet's
+
+    @property
+    def live(self) -> bool:
+        return isinstance(self.model, Unscripted)
+
+
+def walking_on(answering: Any = None) -> On:
+    """The stand-in, scripted, answering what `answering` answers by what it is, such as a
+    judge's; or, with A5S_TEST_WALK_MODEL set, that approved model, through the internet."""
+    if LIVE:
+        return On(Unscripted(), LIVE, (ROOT / "config" / "models.yaml").read_text(),
+                  httpx.Client(timeout=180), None)
+    model = FakeModel(answering=answering)
+    transport = httpx.MockTransport(model.handler)
+    return On(model, "fake", FAKE_MODELS, httpx.Client(transport=transport), transport)
+
+
+def says(page: Any, agent: str, text: str, words: str) -> None:
+    """Someone says `text` to `agent` in the web chat, and it answers: with `words`, as the script
+    has it, or, on a real model, with whatever it says."""
+    page.wait_for_selector(f"#agent option[value='{agent}']", state="attached", timeout=30000)
+    page.select_option("#agent", agent)
+    page.fill("#text", text)
+    page.keyboard.press("Enter")
+    if LIVE:  # an answer after what they said, however much of the conversation had loaded
+        page.wait_for_function(ANSWERED, arg=text, timeout=180000)
+    else:
+        page.wait_for_selector(f"li.agent >> text={words}", timeout=30000)
+
+
+# Whether the agent has answered since someone last said `text` in the chat
+ANSWERED = """text => {
+  const said = [...document.querySelectorAll('#conversation li.you')]
+    .filter(li => li.textContent.includes(text));
+  for (let next = said.at(-1)?.nextElementSibling; next; next = next.nextElementSibling) {
+    if (next.classList.contains('agent')) return true;
+  }
+  return false;
+}"""
 
 
 def _slug(words: str) -> str:
@@ -52,11 +126,18 @@ class Walk:
     provider: Any  # the identity provider people sign in through, as whoever it's told
     steps: list[tuple[str, str | None]] = field(default_factory=list)
     errors: list[str] = field(default_factory=list)
+    pages: list[Any] = field(default_factory=list)  # those it opened, the newest last
 
     def as_(self, person: str, url: str, width: int = 1440, height: int = 900) -> Any:
-        """A browser of `person`'s own at `url`, signing in as them when the page asks."""
+        """A browser of `person`'s own at `url`, signing in as them when the page asks. The
+        oldest of its pages close as it opens more, as people close tabs, so a long walk-through
+        holds no more than a few."""
         self.signs_in(person)
+        for done in self.pages[:-3]:
+            if not done.is_closed():
+                done.close()
         page = self.browser.new_page(viewport={"width": width, "height": height})
+        self.pages = [*self.pages[-3:], page]
         page.on("console", lambda m: self.errors.append(f"{person}: {m.text}")
                 if "Content Security Policy" in m.text else None)
         page.goto(url)

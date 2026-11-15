@@ -23,28 +23,29 @@ import json
 import shutil
 from dataclasses import replace
 
-import httpx
 import yaml
 
 from a5s import cases, db, sandbox
 from a5s.config import Config
 from a5s.core import drafts, judging
-from conftest import (
-    FAKE_MODELS,
-    PROVIDER_KEY,
-    ROOT,
-    FakeModel,
-    build_root,
-    deciding,
-    free_port,
-    serve,
-)
+from conftest import PROVIDER_KEY, ROOT, build_root, deciding, free_port, serve
 from fake_github import FakeGitHub
 from scenario_stack import running_scenario
 from test_studio_authoring import kept
 from test_walkthrough_desk import able, definition
 from test_walkthrough_resolver import files_of
-from walkthrough import Walk, answering, deployed, merged, owned, released, signed_and_recorded
+from walkthrough import (
+    On,
+    Walk,
+    answering,
+    deployed,
+    merged,
+    owned,
+    released,
+    says,
+    signed_and_recorded,
+    walking_on,
+)
 
 AGENT = "mdg-helper"
 MASTER = "a5s.master_data:MasterDataScenario"
@@ -77,7 +78,7 @@ def judged(body: dict) -> str | None:
     return None
 
 
-def built(walk: Walk, stack, url: str, forge: FakeGitHub) -> tuple[dict, str, dict]:
+def built(walk: Walk, stack, url: str, forge: FakeGitHub, on: On) -> tuple[dict, str, dict]:
     """Ines builds mdg-helper in the studio from nothing, tries it in the sandbox, keeps a test case
     its judge grades, and publishes it: its definition, as a5s keeps it, its draft, and its pull
     request."""
@@ -128,7 +129,7 @@ def built(walk: Walk, stack, url: str, forge: FakeGitHub) -> tuple[dict, str, di
     with walk.step("Its judge, beside people's grades: the team's approved model, with what a right "
                    "correction is, in her words. A judge never moves a level: people's grades do.", page):
         page.click("[data-step=model]")
-        page.select_option("#design-judge", "fake")
+        page.select_option("#design-judge", on.alias)
         kept(page)
         page.fill("#design-rubric", RUBRIC)
         kept(page)
@@ -155,11 +156,11 @@ def built(walk: Walk, stack, url: str, forge: FakeGitHub) -> tuple[dict, str, di
         page.click("#try-it")
         page.wait_for_selector("#try-as option[value=raf]", state="attached", timeout=30000)
         page.select_option("#try-as", "raf")
-        page.select_option("#try-model", "fake")
+        page.select_option("#try-model", on.alias)
         page.fill("#try-text", SAID)
         page.click(".try-say button[type=submit]")
-        page.wait_for_selector(".try-answer .try-reply", timeout=30000)
-        assert "it waits for Mo Hassan" in page.inner_text(".try-answer .try-reply")
+        page.wait_for_selector(".try-answer .try-reply", timeout=180000)
+        assert on.live or "it waits for Mo Hassan" in page.inner_text(".try-answer .try-reply")
         assert "hold" in page.inner_text(".try-answer .steps")
     with walk.step("She keeps what he said as a test case, with what a right answer is, in her words, "
                    "for its judge to grade beside the case's checks, since a correction can be right "
@@ -174,12 +175,13 @@ def built(walk: Walk, stack, url: str, forge: FakeGitHub) -> tuple[dict, str, di
     with walk.step("She runs its cases there: it asks for the correction again, its judge finds the "
                    "answer right, and the case passes.", page):
         page.click("#run-cases")
-        page.wait_for_selector("#cases-summary >> text=1 of 1 passed", timeout=60000)
+        page.wait_for_selector("#cases-summary >> text=1 of 1 passed", timeout=300000)
         page.click("#cases details.sent summary")
-        assert "Its judge, fake, found it right" in page.inner_text("#cases .case-judged")
+        assert f"Its judge, {on.alias}, found it right" in page.inner_text("#cases .case-judged")
     [case] = yaml.safe_load(files_of(stack, page)["tests/tried.yaml"])
     assert (case["name"], case["as"]) == (CASE, "raf"), case
-    assert case["steps"] == [{"say": SAID, "uses": ["correct_value"], "judged": RIGHT}], case
+    [step] = case["steps"]  # a real model may look the request up first
+    assert (step["say"], step["judged"]) == (SAID, RIGHT) and "correct_value" in step["uses"], case
     rebuilt = definition(stack, page)
     page.click(".wb-bar .modes button:has-text('Design')")
     with walk.step("Nothing stops its release. Ines publishes its pull request.", page):
@@ -248,11 +250,7 @@ def corrected(walk: Walk, stack, url: str) -> None:
     page = walk.as_("raf", f"{url}/chat/")
     with walk.step("Raf, at the plant, gives it the base unit his new material lacks. The correction "
                    "waits for Mo, who owns material data.", page):
-        page.wait_for_selector(f"#agent option[value='{AGENT}']", state="attached", timeout=30000)
-        page.select_option("#agent", AGENT)
-        page.fill("#text", SAID)
-        page.keyboard.press("Enter")
-        page.wait_for_selector("li.agent >> text=it waits for Mo Hassan", timeout=30000)
+        says(page, AGENT, SAID, "it waits for Mo Hassan")
     page = walk.as_("mo", f"{url}/studio/")
     with walk.step("Mo finds it waiting for his decision, reads it in a5s's own words, with CR0000104 "
                    "as it stood, and approves it, signed in afresh for that alone. a5s asks SAP to "
@@ -340,14 +338,13 @@ def alone(walk: Walk, stack, url: str) -> None:
     page = walk.as_("raf", f"{url}/chat/")
     with walk.step("Raf gives it what his next request lacks. At level 2, a5s makes the correction "
                    "itself, through SAP, and tells him; Mo hears of it in his daily digest.", page):
-        page.wait_for_selector(f"#agent option[value='{AGENT}']", state="attached", timeout=30000)
-        page.select_option("#agent", AGENT)
-        page.fill("#text", "CR0000111's bolts are counted in each, EA, and it's a raw material, ROH.")
-        page.keyboard.press("Enter")
-        page.wait_for_selector("li.agent >> text=which a5s made at level 2", timeout=30000)
+        says(page, AGENT, "CR0000111's bolts are counted in each, EA, and it's a raw material, ROH.",
+             "which a5s made at level 2")
     now = stack.gateway.scenario.request("CR0000111")
+    asked = [(e["action"], e["decision"], e.get("reasons"), e.get("level"), e.get("outcome"))
+             for e in stack.ledger() if e["kind"] == "tool"][-6:]
     assert (now["values"]["base_unit"], now["values"]["material_type"], now["status"]) == (
-        "EA", "ROH", "in review"), now
+        "EA", "ROH", "in review"), (now, page.locator("li.agent").last.inner_text(), asked)
     made = [e for e in stack.ledger() if e["kind"] == "tool" and e["action"] == "correct_value"
             and e["decision"] == "record" and e.get("level") == 2]  # what came of it, at its level
     assert [e["outcome"]["status"] for e in made] == ["ok"], made
@@ -371,11 +368,11 @@ def audited(walk: Walk, url: str, instance: str) -> None:
 def test_the_master_data_assistant_is_built_again_and_takes_one_correction_to_level_2(
         database, sandbox_database, tmp_path, provider, browser, monkeypatch, capsys):
     monkeypatch.setenv("A5S_TEST_PROVIDER_KEY", PROVIDER_KEY)
-    model = FakeModel(answering=judged)
-    root = build_root(tmp_path, "fake", FAKE_MODELS)
+    on = walking_on(judged)
+    model, http = on.model, on.http
+    root = build_root(tmp_path, on.alias, on.models)
     team = root / "scenarios" / "master-data"
     shutil.copytree(ROOT / "scenarios" / "master-data", team)
-    http = httpx.Client(transport=httpx.MockTransport(model.handler))
     walk = Walk("master-data", "The master data assistant, built again in the studio", browser, provider)
     agents = ROOT / "scenarios" / "master-data" / "agents"
     forge = FakeGitHub({f"scenario-agents/{name}/{path}": text for name in ("mdg-assistant", "mdg-watcher")
@@ -383,7 +380,7 @@ def test_the_master_data_assistant_is_built_again_and_takes_one_correction_to_le
     with serve(forge.app(), free_port()) as forge_url:
         forge.url = forge_url
         with running_scenario(database, root, model, MASTER, "master-data", http=http,
-                              scenario_folder=team) as stack:
+                              alias=on.alias, scenario_folder=team) as stack:
             deployed(stack, forge)
             said = released(stack, tmp_path / "first", monkeypatch, capsys)
             said = signed_and_recorded(said, capsys, "rhea", "ken", "tao", "ines")
@@ -392,23 +389,23 @@ def test_the_master_data_assistant_is_built_again_and_takes_one_correction_to_le
                            service_token="", root=root, scenario=MASTER, scenario_folder=team,
                            agents_folder=root / "scenario-agents")
             with (sandbox.opened(boxed, sandbox_database, tmp_path / "sandbox",
-                                 transport=httpx.MockTransport(model.handler)) as box,
+                                 transport=on.transport) as box,
                   serve(sandbox.create_app(box, "shared-token"), free_port()) as box_url):
                 stack.cfg = replace(stack.cfg, sandbox_url=box_url, sandbox_token="shared-token")
                 with deciding(stack, provider) as url:
-                    rebuilt, draft, pull = built(walk, stack, url, forge)
+                    rebuilt, draft, pull = built(walk, stack, url, forge, on)
         hand_written = yaml.safe_load((agents / "mdg-assistant" / "agent.yaml").read_text())
         with walk.step("What mdg-helper may do, and what starts it, is what the hand-written master data "
                        "assistant's definition gives it, in the studio's words: nothing more, and "
                        "nothing missing."):
             assert able(rebuilt) == {**able(hand_written), "starts": able(rebuilt)["starts"]}, (
                 able(rebuilt), able(hand_written))
-            assert rebuilt["evaluation"] == {"judge": "fake", "rubric": RUBRIC}
+            assert rebuilt["evaluation"] == {"judge": on.alias, "rubric": RUBRIC}
         with walk.step("The team merges its pull request, and the directory names Ines its owner."):
             merged(stack, forge.files(pull["head"]), AGENT)
             owned(stack.cfg.scenario_dir, "ines", AGENT)
         with running_scenario(database, root, model, MASTER, "master-data", http=http,
-                              scenario_folder=team) as stack:
+                              alias=on.alias, scenario_folder=team) as stack:
             deployed(stack, forge)
             with walk.step("Deployed again, Rhea and Ines sign the release that adds it, and the team "
                            "records it: it's approved, and a5s runs it."):
