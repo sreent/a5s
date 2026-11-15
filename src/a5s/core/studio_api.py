@@ -41,7 +41,7 @@ from a5s.core.releases import ENGINEER, agent_owner
 STUDIO = web.WEBCHAT / "studio"  # as `npm run build` in studio/ builds it, which the image does
 STUDIO_UNBUILT = ("The studio isn't built here. Build it from the repository with "
                   "`npm ci --prefix studio && npm run build --prefix studio`, as the image does.")
-_ASSET = re.compile(r"[\w-]+\.(js|css)")  # its own files, by name alone: nothing else
+_ASSET = re.compile(r"[\w-]+\.(js|css|woff2)")  # its own files, by name alone: nothing else
 
 
 class DraftStart(BaseModel):

@@ -1,65 +1,116 @@
 /* a5s's pages: one look for all of them. Calm surfaces, a sidebar of the pages someone may
    use (shell.js), cards for what belongs together, and colour only where it means something:
-   what a tool does, how an instance or a run stands. Light and dark. */
+   what a tool does, how an instance or a run stands. Light and dark.
 
+   Tokens in two layers (docs/design.md). The primitives are Ocean's palette, type, spacing
+   and radii: a brand changes these alone. The meanings say what each colour is for, in light
+   and dark, and are all the rest of a5s's styles name. */
+
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 400; font-display: swap;
+             src: url(fonts/plex-sans-400.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 500; font-display: swap;
+             src: url(fonts/plex-sans-500.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 600; font-display: swap;
+             src: url(fonts/plex-sans-600.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 700; font-display: swap;
+             src: url(fonts/plex-sans-700.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: swap;
+             src: url(fonts/plex-mono-400.woff2) format("woff2"); }
+@font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 500; font-display: swap;
+             src: url(fonts/plex-mono-500.woff2) format("woff2"); }
+
+/* Primitives: Ocean */
 :root {
-  --text: #1d2026;
-  --muted: #646b75;
-  --faint: #8a919b;
-  --line: #e2e5ea;
-  --line-strong: #cfd4db;
-  --page: #f5f6f8;
-  --surface: #ffffff;
-  --sunken: #f0f2f5;
-  --accent: #3858d6;
-  --accent-text: #ffffff;
-  --accent-soft: #e8edfd;
-  --focus: #6f8ef0;
-  --you: #e6edfd;
-  --agent: #ffffff;
-  --a5s: #fff6df;
+  --ocean-50: #f3f7fd;  --ocean-100: #e4eefb; --ocean-200: #c6dbf7; --ocean-300: #a6cbf7;
+  --ocean-400: #7cb2f2; --ocean-500: #3b82d6; --ocean-600: #1d5fb0; --ocean-700: #154a8c;
+  --ocean-800: #15314f; --ocean-900: #0b2a4f;
+  --lagoon-100: #ddf3f1; --lagoon-300: #5fd3c9; --lagoon-700: #0b716d; --lagoon-900: #10363a;
+  --coral-100: #fde7e3;  --coral-300: #ff9b8c;  --coral-700: #b83a2e;  --coral-900: #3d1d1a;
+  --kelp-100: #e0f2e7;   --kelp-300: #79d8a0;   --kelp-700: #1c7547;   --kelp-900: #12301f;
+  --amber-100: #fdf0d5;  --amber-300: #f0c36a;  --amber-700: #8f5a00;  --amber-900: #33290f;
+  --violet-100: #efe9fb; --violet-300: #c3aaff; --violet-700: #6741b8; --violet-900: #2a2147;
+  --sand-100: #fdf5e2;   --sand-900: #3a3220;
+  /* the mist and the deep: Ocean's neutrals, from page to ink */
+  --mist-0: #ffffff;   --mist-50: #f3f6f9;  --mist-100: #ecf1f5; --mist-200: #dbe3ea;
+  --mist-300: #c3cfda; --mist-500: #5f7387; --mist-600: #4a5d72; --mist-900: #0f2236;
+  --deep-50: #e4edf6;  --deep-200: #a9bdd2; --deep-300: #8aa0b6; --deep-500: #2a4560;
+  --deep-600: #1e3449; --deep-700: #1a2d40; --deep-800: #0f2133; --deep-850: #0c1b2a;
+  --deep-900: #0a1724;
+
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --text-xs: 0.75rem; --text-sm: 0.85rem; --text-md: 0.94rem; --text-base: 15px;
+  --text-lg: 1.05rem; --text-xl: 1.45rem; --text-2xl: 1.9rem;
+  --space-1: 0.25rem; --space-2: 0.5rem; --space-3: 0.75rem; --space-4: 1rem;
+  --space-5: 1.25rem; --space-6: 1.5rem; --space-8: 2rem;
+  --radius-sm: 6px; --radius-md: 10px; --radius-lg: 14px; --radius-pill: 999px;
+}
+
+/* Meanings: what each colour is for */
+:root {
+  --text: var(--mist-900);
+  --muted: var(--mist-600);
+  --faint: var(--mist-500);
+  --line: var(--mist-200);
+  --line-strong: var(--mist-300);
+  --page: var(--mist-50);
+  --surface: var(--mist-0);
+  --sunken: var(--mist-100);
+  --accent: var(--ocean-600);
+  --accent-strong: var(--ocean-700);
+  --accent-text: var(--mist-0);
+  --accent-soft: var(--ocean-100);
+  --focus: var(--ocean-500);
+  --you: var(--ocean-100);   /* your own messages */
+  --agent: var(--mist-0);    /* an agent's messages */
+  --a5s: var(--sand-100);    /* a5s's own messages */
+  --agent-tone: var(--lagoon-700);       /* what marks an agent apart from a person */
+  --agent-tone-soft: var(--lagoon-100);
   /* what a tool does, and how something stands */
-  --reads: #4b5563;      --reads-bg: #eef0f3;
-  --writes: #9a5b00;     --writes-bg: #fff2d6;
-  --changes: #b4233a;    --changes-bg: #fde6ea;
-  --outside: #6d3fc9;    --outside-bg: #efe8fd;
-  --own: #0f7468;        --own-bg: #daf5ef;
-  --good: #1d7a3e;       --good-bg: #e0f4e6;
-  --warn: #9a5b00;       --warn-bg: #fff2d6;
-  --bad: #b4233a;        --bad-bg: #fde6ea;
-  --idle: #5b6470;       --idle-bg: #eceef1;
-  --shadow: 0 1px 2px rgba(16, 24, 40, 0.05);
-  --radius: 10px;
+  --reads: var(--mist-600);      --reads-bg: var(--mist-100);
+  --writes: var(--amber-700);    --writes-bg: var(--amber-100);
+  --changes: var(--coral-700);   --changes-bg: var(--coral-100);
+  --outside: var(--violet-700);  --outside-bg: var(--violet-100);
+  --own: var(--lagoon-700);      --own-bg: var(--lagoon-100);
+  --good: var(--kelp-700);       --good-bg: var(--kelp-100);
+  --warn: var(--amber-700);      --warn-bg: var(--amber-100);
+  --bad: var(--coral-700);       --bad-bg: var(--coral-100);
+  --idle: var(--mist-600);       --idle-bg: var(--mist-100);
+  --shadow: 0 1px 2px rgba(10, 35, 60, 0.06);
+  --radius: var(--radius-md);
   color-scheme: light dark;
-  font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font: var(--text-base)/1.5 var(--font-sans);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --text: #e7e9ec;
-    --muted: #a0a7b1;
-    --faint: #7c838d;
-    --line: #2d3138;
-    --line-strong: #3b4048;
-    --page: #16181c;
-    --surface: #1e2126;
-    --sunken: #191c20;
-    --accent: #8ea6ff;
-    --accent-text: #10172e;
-    --accent-soft: #232c4a;
-    --focus: #8ea6ff;
-    --you: #22304f;
-    --agent: #1e2126;
-    --a5s: #3a3220;
-    --reads: #c3c8cf;      --reads-bg: #2a2e35;
-    --writes: #f3c46b;     --writes-bg: #3a2f17;
-    --changes: #ff8a9b;    --changes-bg: #45202a;
-    --outside: #c4a8ff;    --outside-bg: #2f2547;
-    --own: #6fdcc9;        --own-bg: #17352f;
-    --good: #7ad79a;       --good-bg: #183323;
-    --warn: #f3c46b;       --warn-bg: #3a2f17;
-    --bad: #ff8a9b;        --bad-bg: #45202a;
-    --idle: #b3b9c2;       --idle-bg: #2a2e35;
+    --text: var(--deep-50);
+    --muted: var(--deep-200);
+    --faint: var(--deep-300);
+    --line: var(--deep-600);
+    --line-strong: var(--deep-500);
+    --page: var(--deep-900);
+    --surface: var(--deep-800);
+    --sunken: var(--deep-850);
+    --accent: var(--ocean-400);
+    --accent-strong: var(--ocean-300);
+    --accent-text: var(--deep-900);
+    --accent-soft: var(--ocean-800);
+    --focus: var(--ocean-400);
+    --you: var(--ocean-800);
+    --agent: var(--deep-800);
+    --a5s: var(--sand-900);
+    --agent-tone: var(--lagoon-300);
+    --agent-tone-soft: var(--lagoon-900);
+    --reads: var(--deep-200);      --reads-bg: var(--deep-700);
+    --writes: var(--amber-300);    --writes-bg: var(--amber-900);
+    --changes: var(--coral-300);   --changes-bg: var(--coral-900);
+    --outside: var(--violet-300);  --outside-bg: var(--violet-900);
+    --own: var(--lagoon-300);      --own-bg: var(--lagoon-900);
+    --good: var(--kelp-300);       --good-bg: var(--kelp-900);
+    --warn: var(--amber-300);      --warn-bg: var(--amber-900);
+    --bad: var(--coral-300);       --bad-bg: var(--coral-900);
+    --idle: var(--deep-200);       --idle-bg: var(--deep-700);
     --shadow: none;
   }
 }
@@ -77,7 +128,7 @@ body {
 }
 
 a { color: var(--accent); text-underline-offset: 2px; }
-code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.88em; }
+code, pre { font-family: var(--font-mono); font-size: 0.88em; }
 button, select, input, textarea { font: inherit; color: inherit; }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 
@@ -231,7 +282,7 @@ button {
   gap: 0.4rem;
   padding: 0.42rem 0.85rem;
   border: 1px solid var(--line-strong);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
   color: var(--text);
   cursor: pointer;
@@ -239,21 +290,19 @@ button {
 }
 
 button:hover { background: var(--sunken); }
-button.primary, #approve, #send, #search, #compose button, #name button, #ask button[type="submit"] {
+button.primary {  /* the one action a page or form is for */
   background: var(--accent);
   border-color: var(--accent);
   color: var(--accent-text);
 }
-button.primary:hover, #approve:hover, #send:hover, #search:hover, #compose button:hover {
-  filter: brightness(1.06);
-}
+button.primary:hover { background: var(--accent-strong); border-color: var(--accent-strong); }
 button:disabled { opacity: 0.55; cursor: default; }
 button.link { border: 0; background: none; padding: 0; color: var(--accent); font-weight: 500; }
 
 input, select, textarea {
   padding: 0.4rem 0.6rem;
   border: 1px solid var(--line-strong);
-  border-radius: 8px;
+  border-radius: var(--radius-sm);
   background: var(--surface);
 }
 
@@ -323,7 +372,7 @@ body.app header label { color: var(--muted); }
 /* The settings, as written */
 
 #edit #text { display: block; width: 100%; min-height: 22rem; font-size: 0.85rem; background: var(--sunken);
-              font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+              font-family: var(--font-mono); }
 
 /* Decisions and grades: each change or sample a card of its own */
 

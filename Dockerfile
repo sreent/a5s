@@ -15,6 +15,7 @@ RUN --mount=type=cache,target=/root/.npm --mount=type=secret,id=ca,required=fals
     npm ci
 COPY studio ./
 COPY src/a5s/core/webchat/app.css /build/src/a5s/core/webchat/app.css
+COPY src/a5s/core/webchat/fonts /build/src/a5s/core/webchat/fonts
 RUN npm run build
 
 # The built studio alone, which the tests take without Node:
