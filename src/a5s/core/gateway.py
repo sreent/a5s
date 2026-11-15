@@ -2388,8 +2388,14 @@ def create_app(gw: Gateway) -> FastAPI:
         keys = [r for r in records if isinstance(r, str) and r]
         action = tool.action if tool else None  # a change, which levels and limits govern
         # the records as they stand, read before any lock is taken, so a slow system holds
-        # up nobody else: for its deciders, the owner's report and graders
-        standing = proposals.snapshot({k: record_of(gw.scenario, k) for k in keys}) if action else {}
+        # up nobody else: for its deciders, the owner's report and graders. A change to records
+        # that can't be read now is asked for no further: nobody could decide it as they stand
+        unreadable = False
+        try:
+            standing = proposals.snapshot({k: record_of(gw.scenario, k) for k in keys}) if action else {}
+        except Exception:  # the records system's own failure, never the run's
+            log.exception("couldn't read the records %s names", name)
+            standing, unreadable = {}, True
         with db.transaction(gw.url) as conn:
             row = load_run(conn, token)
             # Its changes are counted and held for whoever asked, and in a group chat those who
@@ -2430,6 +2436,10 @@ def create_app(gw: Gateway) -> FastAPI:
                 elif any(not isinstance(r, str) or not r for r in records):
                     decision = Decision(False, ("records-are-named-by-key",), explanations=(
                         "a record is named by its key, in words",))
+                elif unreadable:
+                    decision = Decision(False, ("records-can-be-read",), explanations=(
+                        ("the records it names can't be read just now, so a5s asked for nothing: "
+                         "try again later"),))
                 if row["trigger"].get("kind") in OWN_RUNS:
                     decision = Decision(False, ("a5s-runs-call-no-tools",), explanations=(
                         "a5s's own runs, such as keeping a summary, call no tools",))

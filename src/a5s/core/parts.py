@@ -42,16 +42,21 @@ def about(scenario: Scenario, run: dict, records: list[str], action: str | None 
     return {"level": level,
             "in_scope": all(p is None or p in parts for p in touched),
             "visible": all(scenario.sees(who, r) for r in records for who in run["acts_for"]),
-            "for_self": for_self(scenario, list(run["acts_for"]), records)}
+            "for_self": bool(action) and for_self(scenario, list(run["acts_for"]), records)}
 
 
 def for_self(scenario: Scenario, acts_for: list[str], records: list[str]) -> bool:
-    """Whether a call is about the one person its run acts for alone: it acts for one person,
-    and names records, each of them theirs, as the scenario says whose each record is."""
+    """Whether a change is about the one person its run acts for alone: it acts for one person,
+    and names records, each of them theirs, as the scenario says whose each record is. If the
+    records can't be read, it isn't, so a pack's restriction holds: it fails closed, and nothing
+    else of the call's facts waits on reading them."""
     if len(acts_for) != 1 or not records:
         return False
-    return all((found := record_of(scenario, r)) is not None and found.person == acts_for[0]
-               for r in records)
+    try:
+        return all((found := record_of(scenario, r)) is not None and found.person == acts_for[0]
+                   for r in records)
+    except Exception:  # noqa: BLE001 - the records system's own failure, never the run's
+        return False
 
 
 def _level(scenario: Scenario, run: dict, part: str, action: str | None, approved: set[str],

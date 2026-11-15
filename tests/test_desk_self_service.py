@@ -143,3 +143,24 @@ def test_after_a_requesters_words_a_reset_waits_for_a_person_even_at_level_2(des
     [p] = held(desk)
     assert (p["action"], p["deciders"], p["read_outside"]) == ("reset-password", ["ola"], True)
     assert idp().resets == {}
+
+
+def accounts_down(desk: Stack, monkeypatch: pytest.MonkeyPatch) -> None:
+    def down(*_):
+        raise ConnectionError("the directory of accounts is down")
+    monkeypatch.setattr(desk.gateway.scenario, "record", down)
+
+
+def test_a_reset_fails_closed_when_whose_account_it_is_cant_be_read(desk, approving, monkeypatch):
+    at_level_2(desk, "reset-password")
+    accounts_down(desk, monkeypatch)
+    asked(desk, ("reset_password", {"key": "ACC-sam"}))
+    assert decisions(desk, "reset_password") == [("deny", ["records-can-be-read"])]
+    assert idp().resets == {}
+
+
+def test_nor_is_one_held_for_a_decider_who_couldnt_see_it(desk, approving, monkeypatch):
+    accounts_down(desk, monkeypatch)
+    asked(desk, ("reset_password", {"key": "ACC-sam"}))
+    assert decisions(desk, "reset_password") == [("deny", ["records-can-be-read"])]
+    assert held(desk) == []
