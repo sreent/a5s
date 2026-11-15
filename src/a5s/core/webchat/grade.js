@@ -199,6 +199,7 @@ async function main() {
     const params = new URLSearchParams(location.search);
     if (params.has("code") || params.has("error")) {
       const { pending, token } = await signedIn(params);
+      window.a5s?.signedIn(token);  // the sidebar, of the pages they may use
       let done = "";
       if (pending.kind === "grade") {
         const graded = await ask("/grade/samples", token, { grades: pending.grades, salt: pending.salt });

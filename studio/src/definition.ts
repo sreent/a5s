@@ -238,13 +238,13 @@ export function withTool(text: string, tool: string, on: boolean, kind: string,
 }
 
 /** A test case, as an agent's suite runs it on its model (tests/test_agents.py): what's said to
- * it, as whom, and at each step what it must use. */
-export type Step = { say: string; uses?: string[] };
+ * it, as whom, and at each step what it must use, and what it must never use or say. */
+export type Step = { say: string; uses?: string[]; avoids?: string[]; never_says?: string[] };
 export type Case = { name: string; as: string; steps: Step[] };
 
 export const CASES = "tests/tried.yaml";  // where the test pane keeps the cases it's given
-const ABOUT = " Test cases kept from the sandbox's test pane: what was said to the agent, as whom, and\n"
-  + " what it must use. Add what it must say, or never say, as the agent's other cases do.";
+const ABOUT = " Test cases kept from the sandbox's test pane: what was said to the agent, as whom, what\n"
+  + " it must use, and what it must never use or say. Add what it must say as its other cases do.";
 
 /** How many test cases a file of them holds: none, if it doesn't read as a list of them. */
 export function keptCases(text: string | undefined): number {
@@ -266,8 +266,10 @@ export function withCase(text: string, testCase: Case): string {
   const node = doc.createNode(testCase) as YAMLMap;
   const steps = node.get("steps", true);
   for (const step of isSeq(steps) ? steps.items : []) {
-    const uses = isMap(step) ? step.get("uses", true) : null;
-    if (isSeq(uses)) uses.flow = true;  // [a, b], as people write them
+    for (const key of ["uses", "avoids", "never_says"]) {
+      const listed = isMap(step) ? step.get(key, true) : null;
+      if (isSeq(listed)) listed.flow = true;  // [a, b], as people write them
+    }
   }
   cases.flow = false;
   cases.add(node);

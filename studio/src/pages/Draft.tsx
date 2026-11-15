@@ -9,7 +9,7 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { AgentMap } from "../AgentMap";
 import { type CoAuthors, type Draft, get, type Offer, type Plan, type Sandbox, send, whole } from "../api";
-import { CASES, keptCases, withCase } from "../definition";
+import { CASES, keptCases, read, withCase } from "../definition";
 import { JourneyPath, type Stage } from "../design";
 import { Designer } from "../Designer";
 import { Icon } from "../icons";
@@ -49,6 +49,14 @@ function Raw({ files, change, readOnly = false }: { files: Files; change: (f: Fi
 
 /** What would stop its release, as a5s's checks say it now: a gate, as Ocean's GateList draws one,
  * which names each thing that stops it. */
+/** The draft's tools that change, write or send something, in the scenario's order: what a test
+ * case may say it must never use. */
+function acting(files: Files, offer: Offer): string[] {
+  const given = new Set(Object.values(read(files["agent.yaml"] ?? "")?.tools ?? {}).flat());
+  return offer.tools.filter((t) => given.has(t.name) && (t.changes || t.writes || t.destructive || t.sends_outside))
+    .map((t) => t.name);
+}
+
 function Problems({ problems }: { problems: string[] }) {
   const passed = problems.length === 0;
   return (
@@ -367,7 +375,7 @@ export function DraftPage({ id }: { id: string }) {
           <h2 id="try-title">Try it in the sandbox</h2>
           <TryIt draft={id} name={draft.agent} ready={ready}
                  keep={(testCase) => change({ ...files, [CASES]: withCase(files[CASES] ?? "", testCase) })}
-                 revision={revision} />
+                 revision={revision} acts={acting(files, tools.data)} />
         </section>
         <section className="wb-view" id="publishing" tabIndex={-1} hidden={view !== "publish"} aria-labelledby="publish-title">
           <h2 id="publish-title">Publish it</h2>

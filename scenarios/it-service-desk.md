@@ -39,7 +39,7 @@ The service desk adds these to a5s's base pack:
 | Agent | Works for | Starts at | Does |
 | --- | --- | --- | --- |
 | Desk assistant | Everyone in the organisation, and new joiners | Level 1, and level 2 for verified self-service | Answers from the knowledge base, starts self-service flows, and drafts tickets for people to submit, with what it already tried |
-| Resolver assistant | Resolvers, in one service area each | Level 1 | Briefs each ticket from records, finds similar tickets and articles, drafts replies, and chases tickets nearing their targets |
+| Resolver assistant | Resolvers, in one service area each | Level 1 | Briefs each ticket from records, finds similar tickets and articles, drafts replies, posts one once its service area's decider approves it, and chases tickets nearing their targets. Built in the studio, from nothing ([its guide](../docs/guides/resolver/guide.md)) |
 | Joiner coordinator | Hiring managers and new joiners | Level 1, with no parts | Tracks each joiner's accounts, equipment and access against the start date, chases whoever owes something, and answers the joiner's questions before day one |
 
 ## What it shows about a5s

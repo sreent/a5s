@@ -229,6 +229,7 @@ async function main() {
     }
     if (params.has("code") || params.has("error")) {
       const { pending, token } = await signedIn(params);
+      window.a5s?.signedIn(token);  // the sidebar, of the pages they may use
       let done = "";
       if (pending.kind === "decide") {
         const made = await ask("/decide/proposals", token, {
