@@ -266,10 +266,13 @@ class Gateway:
         return tasking.service(self.url, self.clock, config.RUN_MINUTES.read())
 
     def data_protection(self, conn: db.Connection) -> DataProtection:
-        """What the data protection officer has chosen, as the signed settings in force say:
-        or, while none can be used, a5s's own choices, each of which keeps people's data
-        closest."""
+        """What the data protection officer has chosen, as the signed settings in force say,
+        and in the channels app, which can't count what was approved on the page, as the
+        version the core sealed in force says (round 11, B-5): or, while none can be used,
+        a5s's own choices, each of which keeps people's data closest."""
         settings, _ = self.settings_in_force(conn, seal=False)
+        if settings is None and not self.cfg.seal_keys:
+            settings = self.sealed_in_force(conn)
         return settings.data_protection if settings is not None else DataProtection()
 
     def settings_in_force(self, conn: db.Connection,
@@ -321,14 +324,20 @@ class Gateway:
         if self.cfg.seal_keys:  # read alone: it never waits on what its caller holds
             settings, _ = self.settings_in_force(conn, seal=False)
             return settings.groups if settings else {}
+        sealed = self.sealed_in_force(conn)
+        return sealed.groups if sealed else {}
+
+    def sealed_in_force(self, conn: db.Connection) -> Settings | None:
+        """In the channels app, which holds no seal key: the latest version of the settings,
+        once the core sealed it in force, or None."""
         row = conn.execute("select raw, sealed from settings_versions where scenario = %s "
                            "order by serial desc limit 1", (self.scenario.name,)).fetchone()
         if not row or not row["sealed"]:
-            return {}
+            return None
         try:
-            return parse_settings(bytes(row["raw"])).groups
+            return parse_settings(bytes(row["raw"]))
         except ValueError:
-            return {}
+            return None
 
     def check_instance(self, conn: db.Connection, inst: dict) -> list[str]:
         """Whether an instance's record is exactly what its signed settings, its release and

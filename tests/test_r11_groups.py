@@ -90,3 +90,27 @@ def test_an_approval_counts_in_no_role_its_sign_in_didnt_show(stack, approving, 
         outcome = conn.execute("select outcome from settings_proposals where digest = %s",
                                (asked["digest"],)).fetchone()["outcome"]
     assert outcome is None, outcome  # his approval was made with a sign-in that showed no group
+
+
+def test_the_officers_yes_on_the_page_reaches_the_pages_once_in_force(  # B-5
+        stack, approving, provider):
+    """The channels app holds no seal key, so it counted no approval made on the page: the
+    officer's yes there, in force in the core, read as a5s's own choices on the pages it
+    governs. Now they read the version the core sealed in force."""
+    import base64
+
+    import yaml
+
+    from test_group_roles import approve, reading
+    with db.transaction(stack.admin) as conn:
+        now = yaml.safe_load(bytes(conn.execute(
+            "select raw from settings_versions order by serial desc limit 1").fetchone()["raw"]))
+    now = {**now, "serial": now["serial"] + 1, "data_protection": {"audit_names": True}}
+    with stack.client() as c:
+        asked = c.post("/settings/proposals", json={"raw": base64.b64encode(
+            yaml.safe_dump(now).encode()).decode()}).json()
+    approve(stack, approving, provider, asked["digest"], "noor")  # the officer
+    assert reading(approving, provider, "kofi").json()["names"] is False  # not yet in force
+    approve(stack, approving, provider, asked["digest"], "ana")  # billing's owner
+    assert in_force(stack) == (asked["serial"], None)  # the core checks it, and seals it
+    assert reading(approving, provider, "kofi").json()["names"] is True
