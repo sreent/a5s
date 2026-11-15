@@ -109,6 +109,8 @@ def erase(conn: db.Connection, person: str, now: datetime,
     else:  # their holder's, since the id's last archive: a name only this links to them
         for table in departures.LET_GO:
             delete(table, f"delete from {table} where person = %s", (person,))
+        delete("planned_for", "update agent_drafts set plan = jsonb_set(plan, '{serves}', "
+               "(plan->'serves') - %(p)s) where plan->'serves' ? %(p)s", {"p": person})
         delete("drafted_first", "update agent_drafts set before = (select jsonb_agg(case when "
                "e.b->>'person' = %(p)s then e.b - 'person' else e.b end order by e.n) from "
                "jsonb_array_elements(before) with ordinality as e(b, n)) where before @> "

@@ -294,6 +294,8 @@ body.app.workbench { display: block; height: 100vh; overflow: hidden; background
 .flow-canvas .flow-state .icon { width: 0.85rem; height: 0.85rem; }
 .flow-canvas button.flow-box:hover { background: var(--sunken); }
 .flow-step.denied .flow-box { color: var(--bad); border-color: var(--bad); }
+.flow-step.asked .flow-box { color: var(--agent-tone); }  /* another agent it may ask: agents, as everywhere */
+.fd-type.asked { color: var(--agent-tone); }
 .flow-step.agent .flow-box > .flow-problems { right: -0.55rem; }
 .flow-canvas .react-flow__handle { width: 1px; height: 1px; min-width: 0; min-height: 0; border: 0; background: transparent; }
 .flow-canvas .react-flow__handle.at-right { left: 6.8rem; right: auto; top: 2.8rem; }
@@ -328,6 +330,9 @@ body.app.workbench { display: block; height: 100vh; overflow: hidden; background
 .ability { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.5rem; align-items: start; padding: 0.3rem 0; }
 .ability input { margin-top: 0.2rem; }
 .wb-well.follows ul { margin: var(--space-1) 0 0; display: grid; gap: var(--space-1); }
+.plan { display: grid; gap: var(--space-3); padding-top: var(--space-3); border-top: 1px solid var(--line); }
+.plan h2 { margin: 0; }
+.plan .wb-field.abilities { display: grid; gap: 0.15rem; }
 .wb-well.notice { color: var(--text); background: var(--accent-soft); }
 .wb-well.notice .icon { color: var(--accent); }
 .gates ul { display: grid; gap: var(--space-2); }

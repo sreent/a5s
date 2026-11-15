@@ -8,13 +8,14 @@
 
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { AgentMap } from "../AgentMap";
-import { type CoAuthors, type Draft, get, type Offer, type Sandbox, send } from "../api";
+import { type CoAuthors, type Draft, get, type Offer, type Plan, type Sandbox, send, whole } from "../api";
 import { CASES, keptCases, withCase } from "../definition";
 import { JourneyPath, type Stage } from "../design";
 import { Designer } from "../Designer";
 import { Icon } from "../icons";
 import { Publish } from "../Publish";
 import { go, Link } from "../router";
+import { shellOf } from "../Sidebar";
 import { TryIt } from "../TryIt";
 import { useLoad, Waiting, when } from "../ui";
 
@@ -143,8 +144,19 @@ const named = (them: string[]) => them.length > 1 ? `${them.slice(0, -1).join(",
 /** Where a draft stands on its way to work, and the one thing to do next: shape it and try it,
  * publish it, have its release signed, which a5s then deploys, put it to work, and watch it.
  * Once the release here holds it as it is, the rest follows its agent: at work or not yet. */
-function Journey({ draft, said, files, open }: { draft: Draft; said: Said; files: Files; open: (view: View | "problems") => void }) {
+/** Where to put a released agent to work: with a plan for its first instance, the settings app's
+ * form, starting from it, for those who may use it; else its page, which says how, or how to ask
+ * for it. */
+function toWork(agent: string, plan: Plan, settles: boolean): { href: string } | null {
+  if (!settles || !(plan.parts.length || plan.serves.length || plan.asks.length)) return null;
+  const listed = (key: keyof Plan) => (plan[key]?.length ? `&${key}=${plan[key].map(encodeURIComponent).join(",")}` : "");
+  return { href: `/settings/?add=${encodeURIComponent(agent)}${listed("parts")}${listed("serves")}${listed("asks")}` };
+}
+
+function Journey({ draft, said, files, plan, open }: { draft: Draft; said: Said; files: Files; plan: Plan;
+  open: (view: View | "problems") => void }) {
   const sandbox = useLoad(() => get<Sandbox>("/studio/api/sandbox"), []);
+  const shell = useLoad(shellOf, []);
   const shaped = said.problems.length === 0;
   const cases = keptCases(files[CASES]);
   const { released, at_work: atWork } = said;
@@ -167,8 +179,10 @@ function Journey({ draft, said, files, open }: { draft: Draft; said: Said; files
     { name: "Watch it", state: released && atWork ? "now" : "later", about: "Its runs and how they end, on its page." },
   ];
   const page = { page: "agent" as const, agent: draft.agent };
+  const settings = !atWork && toWork(draft.agent, plan, Boolean(shell.data?.pages.includes("settings")));
   const next = released
-    ? <Link to={page} className="button primary">{atWork ? "Watch it on its page" : "Put it to work, from its page"}</Link>
+    ? settings ? <a className="button primary" id="put-to-work" href={settings.href}>Put it to work in the settings</a>
+      : <Link to={page} className="button primary">{atWork ? "Watch it on its page" : "Put it to work, from its page"}</Link>
     : !shaped
     ? <button type="button" className="primary" onClick={() => open("problems")}>See what stops its release</button>
     : draft.published
@@ -189,6 +203,7 @@ export function DraftPage({ id }: { id: string }) {
   const loaded = useLoad(() => get<Draft>(`/studio/api/drafts/${encodeURIComponent(id)}`), [id]);
   const tools = useLoad(() => get<Offer>("/studio/api/tools"), []);
   const [files, setFiles] = useState<Files | null>(null);
+  const [plan, setPlan] = useState<Plan | null>(null);  // for its first instance, beside its files
   const [said, setSaid] = useState<Said | null>(null);
   const [kept, setKept] = useState<Kept>("kept");
   const [revision, setRevision] = useState(0);  // each time a change is kept
@@ -196,9 +211,12 @@ export function DraftPage({ id }: { id: string }) {
   const [asked, setAsked] = useState(0);  // each time someone asks to see what stops its release
   const latest = useRef(0);
   const timer = useRef<number | undefined>(undefined);
+  const planned = useRef<{ plan: Plan; changed: boolean }>({ plan: { parts: [], serves: [], asks: [] }, changed: false });
   useEffect(() => {
     if (loaded.data && files === null) {
       setFiles(loaded.data.files);
+      setPlan(whole(loaded.data.plan));
+      planned.current = { plan: whole(loaded.data.plan), changed: false };
       const { problems, preview, signers, released, at_work } = loaded.data;
       setSaid({ problems, preview, signers, released, at_work });
     }
@@ -210,8 +228,11 @@ export function DraftPage({ id }: { id: string }) {
 
   const keep = async (next: Files, mine: number) => {
     try {
-      const saved = await send<Draft>("PUT", `/studio/api/drafts/${encodeURIComponent(id)}`, { files: next });
+      const sending = planned.current.changed ? planned.current.plan : undefined;  // only once it changes
+      const saved = await send<Draft>("PUT", `/studio/api/drafts/${encodeURIComponent(id)}`,
+                                      { files: next, ...(sending ? { plan: sending } : {}) });
       if (mine !== latest.current) return;  // a later change is on its way
+      if (sending === planned.current.plan) planned.current.changed = false;
       const { problems, preview, signers, released, at_work } = saved;
       setSaid({ problems, preview, signers, released, at_work });
       setFiles((now) => {  // a5s's pins, beside what they've typed since
@@ -238,6 +259,11 @@ export function DraftPage({ id }: { id: string }) {
     } catch (e) {
       setKept({ problem: (e as Error).message });
     }
+  };
+  const changePlan = (next: Plan, nextFiles?: Files) => {  // kept as its files are, with them
+    setPlan(next);
+    planned.current = { plan: next, changed: true };
+    if (files) change(nextFiles ?? files);
   };
   const drop = async () => {
     if (!window.confirm("Drop this draft? It can't be had back.")) return;
@@ -284,14 +310,14 @@ export function DraftPage({ id }: { id: string }) {
       )}
     </header>
   );
-  if (!draft || !files || !said || !tools.data) {
+  if (!draft || !files || !said || !tools.data || !plan) {
     return <>{bar}<div className="wb-body whole"><div className="wb-view"><Waiting error={loaded.error ?? tools.error} /></div></div></>;
   }
   const overview: ReactNode = (
     <>
       <p className="note" id="about-draft">From {draft.based_on}, started {when(draft.created_at)}.{handedBy(draft)} Yours to change,
         and readable by the agent's other owners and authors: nothing runs it until it's published and its release signed.</p>
-      <Journey draft={draft} said={said} files={files} open={open} />
+      <Journey draft={draft} said={said} files={files} plan={plan} open={open} />
       <Problems problems={said.problems} />
     </>
   );
@@ -308,7 +334,8 @@ export function DraftPage({ id }: { id: string }) {
       {bar}
       {view === "design" && (
         <Designer name={draft.agent} files={files} offer={tools.data} signers={said.signers} problems={said.problems.length}
-                  change={(f) => edit(() => f)} overview={overview} tryIt={tryIt} asked={asked} />
+                  change={(f) => edit(() => f)} plan={plan} changePlan={changePlan} overview={overview} tryIt={tryIt}
+                  asked={asked} />
       )}
       <div className="wb-body whole" hidden={view === "design"}>
         {view === "instructions" && (

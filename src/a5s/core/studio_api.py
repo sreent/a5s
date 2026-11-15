@@ -61,9 +61,11 @@ class HandOver(BaseModel):
 
 
 class DraftFiles(BaseModel):
-    """A draft's agent's folder: each file's text, by its path in it."""
+    """A draft's agent's folder: each file's text, by its path in it, and, if it changes, its
+    authors' plan for its first instance."""
 
     files: dict[str, str]
+    plan: shapes.Plan | None = None
 
 
 class DraftTry(BaseModel):
@@ -394,17 +396,26 @@ def router(gw: Any) -> APIRouter:
                                             gw.cfg.agents_dir, gw.definitions),
                 "at_work": at_work is not None}
 
-    @api.get("/studio/api/tools", **shapes.answers(shapes.Offer))
-    def studio_tools(_: Annotated[Person, Depends(drafting)]) -> dict:
-        """The scenario's tools an agent may be given, each with what it reads, writes or
-        changes, the models the deployment approves, and what follows from what it may do, as
-        the settings in force say: who decides its changes in each part, and the limits."""
+    def offer(person: Person) -> dict:
+        """What a draft may be given, and what follows from it, for this person."""
         with db.transaction(gw.url) as conn:  # as the data protection officer's choices are read
             settings, _ = gw.settings_in_force(conn, seal=False)
             if settings is None and not gw.cfg.seal_keys:
                 settings = gw.sealed_in_force(conn)
+            watched = studio.instances(conn, person)
         return {"tools": studio.offered(gw.scenario.tools()), "models": sorted(gw.models),
-                **studio.rules(gw.scenario, settings)}
+                **studio.rules(gw.scenario, settings),
+                "servable": studio.servable(gw.scenario, settings, person),
+                "askable": studio.askable(watched)}
+
+    @api.get("/studio/api/tools", **shapes.answers(shapes.Offer))
+    def studio_tools(person: Annotated[Person, Depends(drafting)]) -> dict:
+        """The scenario's tools an agent may be given, each with what it reads, writes or
+        changes, the models the deployment approves, and what follows from what it may do, as
+        the settings in force say: who decides its changes in each part, who approves an
+        instance there, and the limits; and, for a draft's plan of its first instance, whom it
+        could serve and the instances it could ask, of those the person may see already."""
+        return offer(person)
 
     def in_ledger(conn: Any, person: Person, action: str, draft: dict, **more: str) -> None:
         ledger.append(conn, {"kind": "admin", "action": action, "run": None, "instance": None,
@@ -464,6 +475,7 @@ def router(gw: Any) -> APIRouter:
         release, from its folder as released."""
         tools = gw.scenario.tools()
         copied: dict | None = None
+        plan: dict = {}  # its first instance's, as a copy's draft planned it
         before: list[dict] = []  # who drafted it before them: for a copy of someone else's
         if body.copy_of and not (body.name or body.template or body.agent):
             with db.transaction(gw.url) as conn:
@@ -471,6 +483,7 @@ def router(gw: Any) -> APIRouter:
             if copied is None or copied["yours"]:
                 raise HTTPException(404, "there's no such draft of a co-author's for you to copy")
             name, files, base = copied["agent"], copied["files"], copied.get("base")
+            plan = copied.get("plan") or {}
             based_on = f"a co-author's draft, from {copied['based_on']}"
             with db.transaction(gw.url) as conn:  # who drafted it, theirs before them included
                 source = drafts.by_id(conn, body.copy_of) or {}
@@ -507,7 +520,7 @@ def router(gw: Any) -> APIRouter:
                                      "of the release to change, or a co-author's draft to copy")
         with db.transaction(gw.url) as conn:
             try:
-                draft = drafts.start(conn, person, name, based_on, files, base, before)
+                draft = drafts.start(conn, person, name, based_on, files, base, before, plan)
             except drafts.Refused as e:
                 raise HTTPException(409, str(e)) from None
             if copied is not None:
@@ -574,13 +587,16 @@ def router(gw: Any) -> APIRouter:
         `a5s pin` pins them, and say what would stop its release."""
         if problems := drafts.shape(body.files):
             raise HTTPException(400, "; ".join(problems))
+        plan = body.plan.model_dump() if body.plan is not None else None
+        if plan is not None and (wrong := studio.plan_problems(plan, offer(person))):
+            raise HTTPException(400, "its plan: " + "; ".join(wrong))
         with db.transaction(gw.url) as conn:
             found = drafts.get(conn, person, draft)
             if found is None:
                 raise HTTPException(404, "you have no such draft")
             files = drafts.pinned(found["agent"], {path: text for path, text in body.files.items()
                                                    if path != "tools.lock"}, gw.scenario.tools())
-            saved = drafts.save(conn, person, draft, files)
+            saved = drafts.save(conn, person, draft, files, plan)
         if saved is None:  # let go meanwhile, as from another tab
             raise HTTPException(404, "you have no such draft")
         return checked(saved)

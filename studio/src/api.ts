@@ -94,6 +94,11 @@ export type Offered = gen.Offered;
 export type Offer = gen.Offer;
 export type PartRule = gen.PartRule;  // who decides a part's changes, and its threshold for level 2
 export type Limit = gen.Limit;
+export type Plan = Required<gen.Plan>;  // its authors' plan for a draft's first instance, never in force
+/** A plan as the API gives it, which leaves out what's empty, whole. */
+export const whole = (plan: gen.Plan | undefined): Plan => ({ parts: [], serves: [], asks: [], ...plan });
+export type Servable = gen.Servable;
+export type Askable = gen.Askable;
 export type Templates = gen.Templates;
 export type Drafts = gen.Drafts;
 export type CoAuthors = gen.CoAuthors;

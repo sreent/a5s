@@ -12,7 +12,7 @@
 // which a narrow screen starts with.
 
 import { type ReactNode, useEffect, useRef, useState } from "react";
-import type { Offer, Offered, Signer, Tool } from "./api";
+import type { Offer, Offered, Plan, Signer, Tool } from "./api";
 import { ABILITIES, and, CHANNEL_WORDS, changers, dayWords, deciders, levelLines, limitLines, messageLines,
   scheduleLines, toolLines } from "./consequences";
 import { DAYS, read, type Schedule, type Spec, Unreadable, withMap, withMessages, without, withoutSchedule,
@@ -61,13 +61,18 @@ function useShown(): [Shown, (v: Shown) => void] {
 
 // The agent as steps: what the canvas and the list both show
 
-function flowOf(spec: Spec, name: string, offer: Offer, problems: number): Flow {
+/** Whom a plan would serve, by the names the settings give them. */
+const servedBy = (plan: Plan, offer: Offer) =>
+  plan.serves.map((id) => offer.servable.find((s) => s.id === id)?.name ?? id);
+
+function flowOf(spec: Spec, name: string, offer: Offer, problems: number, plan: Plan): Flow {
   const offered = new Map(offer.tools.map((t) => [t.name, t]));
   const starts: Step[] = [];
   spec.triggers.forEach((t, i) => {
     if (t.kind === "message") {
       starts.push({ key: "messages", icon: "message", name: "A message",
-                    about: `${t.about}, on ${and(spec.channels.map((c) => CHANNEL_WORDS[c] ?? c)) || "no channel"}` });
+                    about: `${plan.serves.length ? `from ${and(servedBy(plan, offer))}` : t.about}, on ${
+                      and(spec.channels.map((c) => CHANNEL_WORDS[c] ?? c)) || "no channel"}` });
     } else starts.push({ key: `trigger:${i}`, icon: "run", name: t.kind, about: t.about });
   });
   spec.schedules.forEach((s, i) => starts.push({ key: `schedule:${i}`, icon: "clock", name: s.name || "a schedule",
@@ -84,7 +89,8 @@ function flowOf(spec: Spec, name: string, offer: Offer, problems: number): Flow 
   const own = ABILITIES.filter(([key]) => has(spec, key));
   return {
     starts,
-    agent: { key: "agent", icon: "agent", name, about: `${spec.model || "no model"}, ${levels(spec.autonomy)}`, problems: problems || undefined },
+    agent: { key: "agent", icon: "agent", name, problems: problems || undefined,
+             about: `${spec.model || "no model"}, ${levels(spec.autonomy)}${plan.parts.length ? `, in ${and(plan.parts)}` : ""}` },
     end: { key: "reply", icon: "message", name: "Reply", about: "to whoever it acts for", tone: "own" },
     hanging: [
       { key: "model", icon: "studio", name: "Model", about: spec.model || "none yet", slot: "model" },
@@ -92,6 +98,11 @@ function flowOf(spec: Spec, name: string, offer: Offer, problems: number): Flow 
       ...tools,
       ...(own.length ? [{ key: "own", icon: "agent", name: "a5s's own", tone: "own" as const, slot: "tools" as const,
                           about: own.length > 1 ? `${own[0][1].toLowerCase()} and ${own.length - 1} more` : own[0][1].toLowerCase() }] : []),
+      ...plan.asks.map((id): Step => {  // the instances its first instance may ask, as planned
+        const asked = offer.askable.find((a) => a.id === id);
+        return { key: `ask:${id}`, icon: "agent", name: id, tone: "asked", slot: "tools",
+                 about: asked ? `asks it: the ${asked.agent}${asked.parts.length ? `, in ${and(asked.parts)}` : ""}` : "asks it" };
+      }),
     ],
   };
 }
@@ -279,8 +290,8 @@ function MessagesPanel({ text, spec, edit, done }: { text: string; spec: Spec; e
   );
 }
 
-function AgentPanel({ name, text, spec, offer, edit, ability }: { name: string; text: string; spec: Spec; offer: Offer; edit: Edit;
-  ability: (key: Ability, on: boolean) => void }) {
+function AgentPanel({ name, text, spec, offer, edit, ability, planning }: { name: string; text: string; spec: Spec; offer: Offer;
+  edit: Edit; ability: (key: Ability, on: boolean) => void; planning: Planning }) {
   const level = (end: "start" | "max", n: number) => {
     const next = { ...spec, autonomy: { ...spec.autonomy, [end]: n } };
     edit(withValue(text, ["autonomy", end], n), levelLines(next).join(" "));
@@ -309,7 +320,65 @@ function AgentPanel({ name, text, spec, offer, edit, ability }: { name: string; 
           </select></label>
       </div>
       <Follows lines={levelLines(spec)} />
+      <PlanFields {...planning} />
       <OwnAbilities spec={spec} ability={ability} />
+    </>
+  );
+}
+
+type Planning = { plan: Plan; offer: Offer; part: (part: string, on: boolean) => void;
+                 serve: (who: string, on: boolean) => void; ask: (instance: string, on: boolean) => void };
+
+/** Its first instance, as its authors mean to ask for it: where it would work, whom it would
+ * serve, and which instances it could ask. The settings decide each, once its parts' owners
+ * approve them; the plan is what putting it to work starts from. */
+function PlanFields({ plan, offer, part, serve, ask }: Planning) {
+  return (
+    <section className="plan" aria-labelledby="plan-title">
+      <h2 id="plan-title">Its first instance, as you plan it</h2>
+      <p className="wb-hint">Kept with the draft, and never in force: where it works, and for whom, are the settings', which
+        its parts' owners approve once its release is signed. Putting it to work starts from this.</p>
+      <fieldset className="wb-field days">
+        <legend className="wb-label">Works in</legend>
+        {offer.parts.length ? <div className="day-row">{offer.parts.map((p) => (
+          <label key={p.name} className="day"><input type="checkbox" checked={plan.parts.includes(p.name)}
+                                                     onChange={(e) => part(p.name, e.target.checked)} /> {p.name}</label>
+        ))}</div> : <span className="wb-hint">No parts the settings know, so none, and an instance approver approves it.</span>}
+      </fieldset>
+      <fieldset className="wb-field abilities">
+        <legend className="wb-label">Serves, a few people first</legend>
+        {offer.servable.map((s) => (
+          <label key={s.id} className="day"><input type="checkbox" checked={plan.serves.includes(s.id)}
+                                                   onChange={(e) => serve(s.id, e.target.checked)} /> {s.name}</label>
+        ))}
+        <span className="wb-hint">Those the settings name already, and you.</span>
+      </fieldset>
+      {offer.askable.length > 0 && (
+        <fieldset className="wb-field abilities">
+          <legend className="wb-label">May ask</legend>
+          {offer.askable.map((a) => (
+            <label key={a.id} className="day"><input type="checkbox" checked={plan.asks.includes(a.id)}
+                                                     onChange={(e) => ask(a.id, e.target.checked)} /> {a.id}</label>
+          ))}
+          <span className="wb-hint">Instances you may see at work.</span>
+        </fieldset>
+      )}
+    </section>
+  );
+}
+
+function AskPanel({ id, offer, ask }: { id: string; offer: Offer; ask: (instance: string, on: boolean) => void }) {
+  const asked = offer.askable.find((a) => a.id === id);
+  return (
+    <>
+      <Head icon="agent" tone="asked" title={id} kind={asked ? `an instance of the ${asked.agent}` : "an instance"} />
+      <Follows lines={[
+        `Its first instance may ask ${id} questions, for the people it acts for, once the settings name it: the owners of `
+          + "its parts approve that with the rest of it.",
+        `${id} answers only with what those people may see, and its answers come back as what ${id} said, never as records.`,
+      ]} />
+      <div className="wb-actions"><button type="button" className="danger" id="take-away" onClick={() => ask(id, false)}>
+        Stop it asking {id}</button></div>
     </>
   );
 }
@@ -427,8 +496,9 @@ function OtherPanel({ chosen, spec }: { chosen: string; spec: Spec }) {
 }
 
 /** What follows from it all, as it stands: who decides its changes, who signs, its limits. */
-export function Consequences({ spec, offer, signers }: { spec: Spec; offer: Offer; signers: Signer[] | null }) {
+export function Consequences({ spec, offer, signers, plan }: { spec: Spec; offer: Offer; signers: Signer[] | null; plan: Plan }) {
   const changing = changers(spec, offer);
+  const planned = plan.parts.length ? offer.parts.filter((p) => plan.parts.includes(p.name)) : offer.parts;
   const given = new Set(Object.values(spec.tools).flat());
   const alone = offer.tools.filter((t) => given.has(t.name) && !t.changes && (t.destructive || t.sends_outside));
   const actions = [...new Set(changing.map((t) => t.changes ?? ""))];
@@ -441,13 +511,27 @@ export function Consequences({ spec, offer, signers }: { spec: Spec; offer: Offe
               change it asks for, {and(actions)}.</p> : (
           <>
             <p>Below level 2, each change it asks for, {and(actions)}, waits for a yes from a decider of its record's part
+              {plan.parts.length ? ", in the parts you plan its first instance in" : ""}
               {spec.autonomy.max < 2 ? ", and its release keeps it below level 2" : ""}:</p>
-            {offer.parts.length
-              ? <ul className="plain decides">{offer.parts.map((p) => <li key={p.name}><strong>{p.name}</strong>: {deciders(p)}</li>)}</ul>
+            {planned.length
+              ? <ul className="plain decides">{planned.map((p) => <li key={p.name}><strong>{p.name}</strong>: {deciders(p)}</li>)}</ul>
               : <p className="note">its owners and their delegates, as the settings and the directory name them.</p>}
           </>
         )}
         {alone.length > 0 && <p>{and(alone.map((t) => t.name))} run only at level 2, which only the settings give.</p>}
+      </section>
+      <section id="to-work" aria-labelledby="to-work-title">
+        <h2 id="to-work-title">Who puts it to work</h2>
+        <p>{plan.parts.length
+          ? `Its parts' owners approve it, as a version of the settings, once its release is signed: ${planned.map((p) =>
+              `${p.owners.length ? and(p.owners) : "nobody yet"}, for ${p.name}`).join("; ")}.`
+          : offer.no_part.length
+            ? `With no part, an instance approver approves it, as a version of the settings, once its release is signed: ${and(offer.no_part)}.`
+            : "Its parts' owners approve it, as a version of the settings, once its release is signed."}</p>
+        {(plan.serves.length > 0 || plan.asks.length > 0) && (
+          <p className="note">As planned, {[plan.serves.length ? `serving ${and(servedBy(plan, offer))}` : "",
+                                            plan.asks.length ? `asking ${and(plan.asks)}` : ""].filter(Boolean).join(", and ")}.</p>
+        )}
       </section>
       <section id="signers" aria-labelledby="signers-title">
         <h2 id="signers-title">Who signs its release</h2>
@@ -501,13 +585,15 @@ function DesignList({ flow, chosen, pick, panel, adding, picker }: { flow: Flow;
   );
 }
 
-export function Designer({ name, files, offer, signers, problems, change, overview, tryIt, asked }: {
+export function Designer({ name, files, offer, signers, problems, change, plan, changePlan, overview, tryIt, asked }: {
   name: string;
   files: Files;
   offer: Offer;
   signers: Signer[] | null;
   problems: number;
   change: (files: Files) => void;
+  plan: Plan;  // its first instance, as its authors mean to ask for it
+  changePlan: (plan: Plan, files?: Files) => void;
   overview: ReactNode;  // the draft's own, with nothing chosen: where it stands, and what stops its release
   tryIt: ReactNode;  // the canvas's one thing to do, at its foot
   asked: number;  // each time someone asks to see what stops its release
@@ -601,13 +687,39 @@ export function Designer({ name, files, offer, signers, problems, change, overvi
     choose(shown === "list" && chosen === key ? null : key, keyboard);
   };
   const done = () => choose(null, true);
-  const flow = flowOf(spec, name, offer, problems);
+  const toggled = (list: string[], one: string, on: boolean) => (on ? [...new Set([...list, one])] : list.filter((x) => x !== one));
+  const planning: Planning = {
+    plan, offer,
+    part: (part, on) => {
+      const parts = toggled(plan.parts, part, on);
+      changePlan({ ...plan, parts });
+      const rule = offer.parts.find((p) => p.name === part);
+      setNotice(on ? `It would work first in ${and(parts)}${rule ? `: ${deciders(rule)} would decide its changes there` : ""}.`
+                   : parts.length ? `It would work first in ${and(parts)}.` : "It would work in no part's records first.");
+    },
+    serve: (who, on) => {
+      const serves = toggled(plan.serves, who, on);
+      changePlan({ ...plan, serves });
+      setNotice(serves.length ? `It would serve ${and(servedBy({ ...plan, serves }, offer))} first.` : "It would serve nobody yet.");
+    },
+    ask: (instance, on) => {
+      const asks = toggled(plan.asks, instance, on);
+      const enabling = on && !spec.context.agents;  // asking another agent is its release's to allow
+      changePlan({ ...plan, asks }, enabling ? { ...files, "agent.yaml": withValue(text, ["context", "agents"], true) } : undefined);
+      setNotice(on ? `Its first instance may ask ${instance}, once the settings name it.${
+        enabling ? " Its release now lets it ask other agents, those the settings name, so its release approver signs that." : ""}`
+        : `It won't ask ${instance}.`);
+      if (!on && chosen === `ask:${instance}`) choose(null, true);  // its own panel, gone with it
+    },
+  };
+  const flow = flowOf(spec, name, offer, problems, plan);
   const panel = (key: string): ReactNode => {
     const [kind, rest] = [key.split(":")[0], key.slice(key.indexOf(":") + 1)];
     if (kind === "tool") return <ToolPanel key={key} name={rest} text={text} spec={spec} offer={offer} edit={edit} kindOf={kindOf} done={done} />;
     if (kind === "schedule") return <SchedulePanel key={key} index={Number(rest)} text={text} spec={spec} edit={edit} done={done} />;
     if (kind === "messages") return <MessagesPanel text={text} spec={spec} edit={edit} done={done} />;
-    if (kind === "agent") return <AgentPanel name={name} text={text} spec={spec} offer={offer} edit={edit} ability={ability} />;
+    if (kind === "agent") return <AgentPanel name={name} text={text} spec={spec} offer={offer} edit={edit} ability={ability} planning={planning} />;
+    if (kind === "ask") return <AskPanel key={key} id={rest} offer={offer} ask={planning.ask} />;
     if (kind === "own") return <OwnPanel text={text} spec={spec} edit={edit} ability={ability} />;
     if (kind === "model") return <ModelPanel text={text} spec={spec} offer={offer} edit={edit} />;
     if (kind === "checks") return <ChecksPanel text={text} spec={spec} offer={offer} edit={edit} />;
@@ -632,7 +744,7 @@ export function Designer({ name, files, offer, signers, problems, change, overvi
           <div className="design-shown"><button type="button" onClick={() => setShown("canvas")}><Icon name="studio" /> Show it on the canvas</button></div>
           {said}
           <DesignList flow={flow} chosen={chosen} pick={pick} panel={panel} adding={chosen === "add"} picker={picker} />
-          <div className="design-overview">{overview}<Consequences spec={spec} offer={offer} signers={signers} /></div>
+          <div className="design-overview">{overview}<Consequences spec={spec} offer={offer} signers={signers} plan={plan} /></div>
         </div>
       ) : (
         <FlowMap flow={flow} label="How it's wired" chosen={known ? chosen : null} pick={pick} remove={remove} drop={drop}
@@ -648,7 +760,7 @@ export function Designer({ name, files, offer, signers, problems, change, overvi
           {said}
           {known ? <>{panel(chosen as string)}<p className="back"><button type="button" className="link" onClick={() => choose(null, true)}>
             The draft as a whole</button></p></>
-            : <>{overview}<Consequences spec={spec} offer={offer} signers={signers} /></>}
+            : <>{overview}<Consequences spec={spec} offer={offer} signers={signers} plan={plan} /></>}
         </section>
       )}
     </div>

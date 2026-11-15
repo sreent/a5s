@@ -15,7 +15,7 @@ import "@xyflow/react/dist/style.css";
 import { type DragEvent, type KeyboardEvent, type ReactNode } from "react";
 import { Icon } from "./icons";
 
-export type Tone = "reads" | "writes" | "changes" | "outside" | "own" | "denied";
+export type Tone = "reads" | "writes" | "changes" | "outside" | "own" | "denied" | "asked";  // asked: another agent
 export type Slot = "model" | "checks" | "tools";
 
 /** A step on the canvas: what it is, in its words, and how it stands. */

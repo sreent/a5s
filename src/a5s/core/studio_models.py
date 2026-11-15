@@ -455,12 +455,31 @@ class Offered(Shape):
 
 class PartRule(Shape):
     """A part of the business, as the settings in force know it: who decides a change to one
-    of its records below level 2, by name, and how right graded samples must show an agent's
-    changes there before a5s raises its cap to level 2, if it ever may."""
+    of its records below level 2, by name, who approves an instance that works in it, its
+    owners, and how right graded samples must show an agent's changes there before a5s raises
+    its cap to level 2, if it ever may."""
 
     name: str
     deciders: list[str]
+    owners: list[str]
     threshold: float | None
+
+
+class Servable(Shape):
+    """Someone an instance could serve, as the settings name them, or whoever is signed in: a
+    person by their name, or a team or a role as written."""
+
+    id: str
+    name: str
+
+
+class Askable(Shape):
+    """An instance a new one could ask, of those the person may watch: its agent, and the parts
+    it works in."""
+
+    id: str
+    agent: str
+    parts: list[str]
 
 
 class Limit(Shape):
@@ -478,6 +497,10 @@ class Offer(Shape):
     parts: list[PartRule]
     no_part: list[str]  # who decides a change to a record in no part: the instance approvers
     limits: dict[str, Limit]  # by type of change
+    # For a draft's plan of its first instance: whom it could serve, and the instances it
+    # could ask, of those the person may see already
+    servable: list[Servable]
+    askable: list[Askable]
 
 
 class Template(Shape):
@@ -543,6 +566,16 @@ class Drafter(Shape):
     how: Literal["handed", "copied"]  # handed over to its holder, or copied into their draft
 
 
+class Plan(Shape):
+    """Its authors' plan for a draft's first instance: the parts it would work in, whom it
+    would serve, and the instances it could ask. Never in force: the signed settings are, which
+    those parts' owners approve, and putting it to work starts from it."""
+
+    parts: list[str] = []
+    serves: list[str] = []
+    asks: list[str] = []
+
+
 class Draft(Shape):
     """A draft: its agent's folder, file by file, what would stop its release, and how the
     catalogue would show it, if it loads."""
@@ -554,6 +587,7 @@ class Draft(Shape):
     updated_at: datetime
     published: str | None
     files: dict[str, str]  # each file's text, by its path in the agent's folder
+    plan: Plan  # for its first instance, as its authors mean to ask for it
     yours: bool  # or a co-author's, read only
     author: str | None
     drafted_before: list[Drafter]  # who drafted it before its author, oldest first

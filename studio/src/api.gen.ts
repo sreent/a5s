@@ -45,6 +45,14 @@ export type Ask = {
   outcome: string | null;
 };
 
+// An instance a new one could ask, of those the person may watch: its agent, and the parts
+// it works in.
+export type Askable = {
+  id: string;
+  agent: string;
+  parts: string[];
+};
+
 // An open ask that waits on someone, with whose it is, and why it's theirs.
 export type Asked = {
   id: string;
@@ -186,6 +194,7 @@ export type Draft = {
   updated_at: string;
   published: string | null;
   files: Record<string, string>;
+  plan: Plan;
   yours: boolean;
   author: string | null;
   drafted_before: Drafter[];
@@ -197,9 +206,11 @@ export type Draft = {
   at_work: boolean;
 };
 
-// A draft's agent's folder: each file's text, by its path in it.
+// A draft's agent's folder: each file's text, by its path in it, and, if it changes, its
+// authors' plan for its first instance.
 export type DraftFiles = {
   files: Record<string, string>;
+  plan?: Plan | null;
 };
 
 // One of someone's drafts, or a co-author's, without its files (core/drafts.py).
@@ -400,6 +411,8 @@ export type Offer = {
   parts: PartRule[];
   no_part: string[];
   limits: Record<string, Limit>;
+  servable: Servable[];
+  askable: Askable[];
 };
 
 // One of the scenario's tools an agent may be given, with what it reads, writes or
@@ -417,12 +430,23 @@ export type Offered = {
 };
 
 // A part of the business, as the settings in force know it: who decides a change to one
-// of its records below level 2, by name, and how right graded samples must show an agent's
-// changes there before a5s raises its cap to level 2, if it ever may.
+// of its records below level 2, by name, who approves an instance that works in it, its
+// owners, and how right graded samples must show an agent's changes there before a5s raises
+// its cap to level 2, if it ever may.
 export type PartRule = {
   name: string;
   deciders: string[];
+  owners: string[];
   threshold: number | null;
+};
+
+// Its authors' plan for a draft's first instance: the parts it would work in, whom it
+// would serve, and the instances it could ask. Never in force: the signed settings are, which
+// those parts' owners approve, and putting it to work starts from it.
+export type Plan = {
+  parts?: string[];
+  serves?: string[];
+  asks?: string[];
 };
 
 // A publish under way: the code to enter at GitHub's sign-in, and how it stands.
@@ -576,6 +600,13 @@ export type SentMessage = {
   content?: unknown;
   tool_calls?: Record<string, unknown>[];
   [key: string]: unknown;
+};
+
+// Someone an instance could serve, as the settings name them, or whoever is signed in: a
+// person by their name, or a team or a role as written.
+export type Servable = {
+  id: string;
+  name: string;
 };
 
 // Which of an agent's instances is to serve someone who asked for it.

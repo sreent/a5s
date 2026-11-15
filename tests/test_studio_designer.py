@@ -8,6 +8,8 @@ from the keyboard, and the same comes as a list, which a phone starts with."""
 
 from __future__ import annotations
 
+import re
+
 import yaml
 from playwright.sync_api import expect
 
@@ -151,3 +153,96 @@ def test_axe_finds_nothing_amiss_on_the_workbench_nor_its_list_on_a_phone(stack,
     phone.wait_for_selector(".design-row-button:has-text('change_due_date')", timeout=30000)
     accessible(phone)
     assert refused == []
+
+
+# Its first instance, as its authors plan it: never in force, and only what they may name
+
+def test_a_drafts_plan_is_kept_checked_and_said_in_its_pull_request_without_names(stack, approving,
+                                                                                  provider):
+    from a5s.core import erasure, export
+    from test_studio_spaces import coauthor
+
+    stack.with_watcher()  # two instances at work, which priya may see, owning both agents
+    priya = as_(approving, provider, "priya")
+    offer = priya("GET", "/studio/api/tools").json()  # those the settings name, and her
+    assert {s["id"] for s in offer["servable"]} == {"ana", "ben", "priya"}
+    assert {a["id"] for a in offer["askable"]} == {"assistant-finance", "watcher-finance"}
+    draft = priya("POST", "/studio/api/drafts", {"agent": "assistant"}).json()
+    plan = {"parts": ["billing"], "serves": ["ana", "ben"], "asks": ["watcher-finance"]}
+    kept = priya("PUT", f"/studio/api/drafts/{draft['id']}", {"files": draft["files"], "plan": plan})
+    assert kept.status_code == 200, kept.text
+    assert kept.json()["plan"] == plan
+    for wrong, said in (({"parts": ["nowhere"]}, "nowhere isn't a part the settings know"),
+                        ({"serves": ["kofi"]}, "kofi isn't one the settings name, nor you"),
+                        ({"asks": ["helper-elsewhere"]}, "helper-elsewhere isn't an instance you may see at work")):
+        refused = priya("PUT", f"/studio/api/drafts/{draft['id']}", {"files": draft["files"], "plan": {**plan, **wrong}})
+        assert refused.status_code == 400 and said in refused.json()["detail"]
+    files_alone = priya("PUT", f"/studio/api/drafts/{draft['id']}", {"files": draft["files"]})
+    assert files_alone.json()["plan"] == plan  # kept, as the files change
+    body = priya("GET", f"/studio/api/drafts/{draft['id']}/pull-request").json()["body"]
+    planned = body.split("## Its first instance, as planned")[1]
+    assert "in billing, serving 2 people, asking watcher-finance" in planned
+    assert "Ana" not in planned and "Ben" not in planned  # a pull request names nobody served
+
+    coauthor(stack)  # a co-author's copy keeps it
+    copy = as_(approving, provider, "omar")("POST", "/studio/api/drafts", {"copy_of": draft["id"]}).json()
+    assert copy["plan"] == plan
+    with db.transaction(stack.cfg.database_url) as conn:  # the core's export of Ben
+        found = export.gather(conn, "ben")
+    assert [d["agent"] for d in found["planned_for"]] == ["assistant", "assistant"]
+    with db.transaction(stack.cfg.database_url) as conn:  # the core erases Ben, as asked
+        gone, _ = erasure.erase(conn, "ben", stack.gateway.clock(), here=True)
+    assert gone.get("planned_for") == 2  # and goes from them
+    assert priya("GET", f"/studio/api/drafts/{draft['id']}").json()["plan"]["serves"] == ["ana"]
+
+
+def test_its_first_instance_is_planned_on_the_canvas_and_goes_to_work_with_it(stack, approving,
+                                                                             provider, browser):
+    page, refused = drafted(browser, approving, provider, agent="watcher")
+    page.click("[data-step=agent]")
+    page.check("#plan-title ~ fieldset label:has-text('billing') input")
+    page.wait_for_selector("#what-changed >> text=Ana Ortiz would decide its changes there", timeout=30000)
+    page.check("#plan-title ~ fieldset label:has-text('Ben Okafor') input")
+    page.check("#plan-title ~ fieldset label:has-text('assistant-finance') input")  # its release must let it
+    page.wait_for_selector("#what-changed >> text=Its release now lets it ask other agents", timeout=30000)
+    kept(page)
+    expect(page.locator("[data-step=agent]")).to_have_attribute("aria-label", re.compile(r"in billing$"))
+    assert "from Ben Okafor" in page.get_attribute("[data-step=messages]", "aria-label")
+    asked = page.locator(".flow-step.asked[data-key='ask:assistant-finance']")
+    expect(asked).to_have_count(1)
+    assert yaml.safe_load(definition(stack, page))["context"]["agents"] is True
+    page.wait_for_selector("#what-changed >> text=must sign its release", timeout=30000)
+    page.click("text=The draft as a whole")
+    assert "Ana Ortiz, for billing" in page.inner_text("#to-work")
+    assert "serving Ben Okafor, and asking assistant-finance" in page.inner_text("#to-work")
+    assert "billing: Ana Ortiz" in page.inner_text("#decides") or "Nobody" in page.inner_text("#decides")
+
+    page.reload()  # kept, and once released, it's what putting it to work starts from
+    page.wait_for_selector("[data-step=agent]", timeout=30000)
+    expect(page.locator("[data-step=agent]")).to_have_attribute("aria-label", re.compile(r"in billing$"))
+
+    def released(route) -> None:
+        route.fulfill(json={**route.fetch().json(), "released": True, "at_work": False})
+
+    page.route("**/studio/api/drafts/*", released)
+    page.reload()
+    page.wait_for_selector("#put-to-work", timeout=30000)
+    assert page.get_attribute("#put-to-work", "href") == (
+        "/settings/?add=watcher&parts=billing&serves=ben&asks=assistant-finance")
+    assert refused == []
+
+
+def test_the_settings_app_starts_from_a_drafts_plan(stack, approving, provider, browser):
+    provider.person = "ana"  # billing's owner, who approves versions of the settings
+    page = browser.new_page()
+    page.goto(f"{approving}/settings/?add=watcher&parts=billing&serves=ben,nobody%3Cb%3E&asks=assistant-finance")
+    page.wait_for_selector("#add-instance", timeout=30000)
+    assert page.input_value("#add-agent") == "watcher" and page.input_value("#add-part") == "billing"
+    served = page.locator("input[name=add-serves]")
+    assert [served.nth(i).is_checked() for i in range(served.count())].count(True) == 1  # Ben alone
+    assert "It may ask assistant-finance" in page.inner_text("#add-instance")
+    page.click("#add-it")
+    page.click("#review")
+    page.wait_for_selector("#reviewed-changes li", timeout=30000)
+    added = page.locator("#reviewed-changes li").first.inner_text()
+    assert "watcher-billing" in added and "serving Ben Okafor" in added
