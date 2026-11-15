@@ -21,9 +21,16 @@ def kept(gw: Any, person: Person) -> list[dict]:
     run, as its owner or deputy."""
     owns = {r.removeprefix("agent-owner:") for r in person.roles if r.startswith("agent-owner:")}
     with db.transaction(gw.url) as conn:
-        return [i for i in conn.execute("select id, definition, owner, deputy from instances "
+        return [i for i in conn.execute("select id, definition, owner, deputy, parts from instances "
                                         "where status <> 'retired' order by id")
                 if i["definition"] in owns or person.id in (i["owner"], i["deputy"])]
+
+
+def named(instance: dict) -> str:
+    """An instance as people say it: its agent, and where it works, such as "the assistant in
+    billing"."""
+    parts = sorted(instance["parts"] or {})
+    return f"the {instance['definition']}" + (f" in {' and '.join(parts)}" if parts else "")
 
 
 def router(gw: Any) -> APIRouter:
@@ -70,6 +77,7 @@ def router(gw: Any) -> APIRouter:
                          for k in (i["owner"], i["deputy"])
                          if k and k != person.id and (p := gw.scenario.person(k))})
         return {"you": person.name, "instances": [i["id"] for i in instances],
+                "names": {i["id"]: named(i) for i in instances},
                 "entries": [{"entry": f"N-{r['id']}", "instance": r["instance_id"],
                              "text": r["text"],
                              "sources": [{"key": k, "link": (r["links"] or {}).get(k)}

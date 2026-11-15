@@ -161,6 +161,7 @@ def test_whoever_runs_the_instance_reads_and_removes_notes(stack, approving, pro
     assert (shown["text"], [s["key"] for s in shown["sources"]], seen["hidden"]) == (
         NOTED, ["Q-1001"], 0)
     assert shown["sources"][0]["link"].endswith("/Q-1001") and shown["noted"]  # linked, dated
+    assert seen["names"][shown["instance"]] == "the assistant in billing"  # as people say it
     assert api("/notebook/api", person="chen").status_code == 403  # nobody's notebook of hers
     assert api(f"/notebook/api/{shown['entry']}/remove", person="ben", method="POST").json() == {
         "removed": shown["entry"]}  # Ben, its deputy

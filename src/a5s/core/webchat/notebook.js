@@ -80,7 +80,7 @@ async function load() {
     words.textContent = entry.text;
     const about = document.createElement("p");
     about.className = "note";
-    about.append(`${entry.entry}, ${entry.instance}, from `);
+    about.append(`${entry.entry}, by ${now.names[entry.instance] || entry.instance}, from `);
     entry.sources.forEach((source, n) => {  // each record it comes from, linked where it has one
       if (n) about.append(", ");
       const safe = source.link && /^https:\/\//.test(source.link);
@@ -105,7 +105,8 @@ async function load() {
     line.append(words, about, remove);
     into.append(line);
   }
-  status(now.entries.length ? "" : `Nothing noted yet for ${now.instances.join(", ")}.`);
+  const kept = now.instances.map((id) => now.names[id] || id);
+  status(now.entries.length ? "" : `Nothing noted yet by ${kept.length > 1 ? `${kept.slice(0, -1).join(", ")} or ${kept[kept.length - 1]}` : kept[0]}.`);
   const who = now.others.length ? `: ${now.others.join(" or ")}, who run its instances, may be able to` : "";
   $("hidden").textContent = now.hidden
     ? `And ${now.hidden} more from records you may not see, which someone who may see them can remove${who}.` : "";
