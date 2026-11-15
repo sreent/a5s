@@ -1,9 +1,9 @@
 """An IT service-desk scenario with a synthetic ITSM, identity provider and knowledge base.
 
 Its ITSM's tools come through the ITSM's MCP server, which the scenario's mcp.yaml declares
-(deploy/desk/itsm.py, in this made-up desk): searching tickets, reading one, what requesters
+(deploy/systems/itsm.py, in this made-up desk): searching tickets, reading one, what requesters
 wrote on one, and posting a reply on one, a change a5s holds for the ticket's service area's
-decider. Self-service comes through the identity provider's (deploy/desk/idp.py): an account,
+decider. Self-service comes through the identity provider's (deploy/systems/idp.py): an account,
 the provider's own password reset, which its holder finishes there, and removing an account's
 authenticators. What stays here is the desk's own: the directory, who may see each ticket and
 account, the obligations its tickets make, a draft reply for a person to send, its knowledge

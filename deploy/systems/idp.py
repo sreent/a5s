@@ -9,7 +9,7 @@ Like the desk's ITSM, it reads the data afresh for each call, keeps what's done 
 memory until it stops, makes each change once for a5s's key, and runs beside the gateway, sharing
 its network:
 
-    python deploy/desk/idp.py scenarios/service-desk/data.yaml      # on 127.0.0.1:9202
+    python deploy/systems/idp.py scenarios/service-desk/data.yaml      # on 127.0.0.1:9202
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ import uvicorn
 import yaml
 from fastapi import FastAPI
 
-sys.path.insert(0, str(Path(__file__).parent))  # beside the desk's other made-up systems
+sys.path.insert(0, str(Path(__file__).parent))  # beside the other made-up systems
 from standin import KEY, Tools, once, serving
 
 PORT = 9202

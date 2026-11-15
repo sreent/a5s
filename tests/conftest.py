@@ -458,9 +458,6 @@ class Stack:
             **WATCHER, "serves": list(serves), **changes}}, signers=signers).refused
 
 
-# A scenario's made-up systems, behind the MCP servers its mcp.yaml points a5s at, on this
-# machine: the service desk's ITSM (deploy/desk/itsm.py), on the desk's synthetic data. Each is
-# started once, the first time a test needs it, and left up, as a deployment's systems are.
 def policy_of(scenario: Any) -> PolicyEngine:
     """The policy a deployment has for a scenario, as build.py makes it: a5s's base pack, and the
     scenario's own beside it, if it has one, such as the service desk's."""
@@ -468,6 +465,14 @@ def policy_of(scenario: Any) -> PolicyEngine:
     return PolicyEngine(packs=(pack,) if pack else ())
 
 
+# Each scenario's made-up systems (deploy/systems), behind the MCP servers its mcp.yaml points a5s
+# at, on this machine, on its synthetic data: each by its server's name there, which is its file's,
+# with where its app keeps what's written to it. Each is started once, the first time a test needs
+# it, and left up, as a deployment's systems are.
+MADE_UP: dict[str, tuple[tuple[str, str], ...]] = {
+    "service-desk": (("itsm", "written"), ("idp", "done")),
+    "software-delivery": (("forge", "written"),),
+}
 SYSTEMS: dict[str, Any] = {}  # what's been written to each, by its scenario's folder
 RUNNING: list[Any] = []  # the systems themselves
 
@@ -476,20 +481,18 @@ def scenario_systems(folder: str) -> dict[str, Any]:
     """The made-up systems a scenario's mcp.yaml declares tools of, started once for the rest
     of the tests, at the addresses it declares: for each stack, with nothing written to them
     yet, so a stack starts from the scenario's data as data.yaml has it. What's been written
-    to each, by its server's name in mcp.yaml, for a test to look at: the desk's ITSM's and
-    identity provider's, or nothing for a scenario with none."""
-    if folder != "service-desk":
-        return {}
+    to each, by its server's name in mcp.yaml, for a test to look at, or nothing for a
+    scenario with none."""
     if folder not in SYSTEMS:
         import importlib.util
         found: dict[str, Any] = {}
-        for name, state in (("itsm", "written"), ("idp", "done")):
-            spec = importlib.util.spec_from_file_location(f"desk_{name}", ROOT / "deploy" / "desk" / f"{name}.py")
+        for name, state in MADE_UP.get(folder, ()):
+            spec = importlib.util.spec_from_file_location(f"made_up_{name}", ROOT / "deploy" / "systems" / f"{name}.py")
             assert spec and spec.loader
             system = importlib.util.module_from_spec(spec)
             sys.modules[spec.name] = system  # as an import would, for its dataclasses
             spec.loader.exec_module(system)
-            app = system.make(ROOT / "scenarios" / "service-desk" / "data.yaml")
+            app = system.make(ROOT / "scenarios" / folder / "data.yaml")
             up = serve(app, system.PORT)
             up.__enter__()  # for the rest of the tests, so long as something holds it
             RUNNING.append(up)

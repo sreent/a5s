@@ -8,7 +8,7 @@ and it makes each once for a5s's key, as an organisation's ITSM makes a change o
 request. The scenario's mcp.yaml points a5s at it on the gateway's own machine, so it runs beside
 the gateway, sharing its network, as the stand-in model does beside the stack:
 
-    python deploy/desk/itsm.py scenarios/service-desk/data.yaml      # on 127.0.0.1:9201
+    python deploy/systems/itsm.py scenarios/service-desk/data.yaml      # on 127.0.0.1:9201
 
 a5s offers its agents nothing of it but what mcp.yaml declares, and checks each tool is still as
 declared before each call.
@@ -25,7 +25,7 @@ import uvicorn
 import yaml
 from fastapi import FastAPI
 
-sys.path.insert(0, str(Path(__file__).parent))  # beside the desk's other made-up systems
+sys.path.insert(0, str(Path(__file__).parent))  # beside the other made-up systems
 from standin import KEY, Tools, once, serving
 
 PORT = 9201

@@ -11,7 +11,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from conftest import FAKE_MODELS, ROOT, FakeModel, Stack, build_root, live_image
+from conftest import FAKE_MODELS, ROOT, SYSTEMS, FakeModel, Stack, build_root, live_image
 from scenario_stack import opened, running_scenario
 
 SCENARIO = "a5s.software_delivery:SoftwareDeliveryScenario"
@@ -201,6 +201,8 @@ def test_a_long_review_resumes_against_current_records_and_drafts_once(dev):
                     ("finish_task", {"status": "waiting"}))
     dev.model.reply("Still working.")
     assert dev.scheduler().work_due() == 1
+    # PR-21's checks fail meanwhile, in the forge and so in the team's own view of it
+    SYSTEMS["software-delivery"]["forge"].changed["PR-21"] = {"checks": "failing (integration)"}
     dev.gateway.scenario._pulls["PR-21"]["checks"] = "failing (integration)"
     dev.model.reply(None, ("get_record", {"key": "PR-21"}),
                     ("create_draft", {"title": "DEV-106 readiness",

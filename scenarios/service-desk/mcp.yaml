@@ -1,5 +1,5 @@
 # The desk's ITSM and its identity provider's self-service, each through its MCP server
-# (docs/connectors.md#mcp-servers). In this made-up desk they're deploy/desk/itsm.py and idp.py, on
+# (docs/connectors.md#mcp-servers). In this made-up desk they're deploy/systems/itsm.py and idp.py, on
 # the desk's synthetic data, beside the gateway on its own machine, and the same stand-ins answer in
 # the studio's sandbox. a5s offers its agents nothing of the servers' but the tools declared here,
 # in a5s's words, and passes on only the fields each names.
