@@ -74,6 +74,12 @@ def test_a_release_lists_every_file_it_runs_and_what_its_agents_may_do():
         "change_due_date", "close_question", "create_draft", "get_messages", "get_record",
         "search_records"]
     assert "deepseek-v4-pro" in data["models"]
+    # who may sign the next: everyone the directory gives a key, and what they may sign for
+    signers = data["signers"]
+    assert signers["rosa"] == {"key": (ROOT / "scenarios/sample/keys/rosa.pub").read_text().strip(),
+                               "team": "risk", "roles": [RELEASE_APPROVER], "above": []}
+    assert signers["lena"]["above"] == ["platform"]  # above the team that runs a5s
+    assert "dana" not in signers  # she has no key, so nothing she signed would count
 
 
 def test_an_image_whose_code_changed_after_it_was_built_wont_run(stack):
@@ -296,29 +302,117 @@ def test_everything_a5s_is_built_and_tested_with_is_pinned():
     assert unpinned == []
 
 
-def test_when_an_approver_leaves_the_release_in_use_is_approved_again_as_a_baseline(deployed,
-                                                                                    monkeypatch):
-    first = this(deployed).raw
-    assert record(deployed, first, "priya", "tomas", "rosa", "kofi").ok
-    instructions = deployed.cfg.agents_dir / "assistant" / "AGENTS.md"
-    instructions.write_text(instructions.read_text() + "- Be brief.\n")
-    second = this(deployed).raw
-    assert record(deployed, second, "priya", "tomas").ok
+# Who may sign a release is who could sign the one before it
 
-    people = deployed.gateway.scenario._people
+def joins(stack, person: str, line: str) -> str:
+    """Someone joins the deployment's directory, as a release brings them in: their entry,
+    and their key. Their private key, which stays with them."""
+    folder = stack.cfg.scenario_dir
     private, public = signing.keypair()
-    monkeypatch.setitem(people, "rosa", replace(people["rosa"], roles=()))  # she has moved on
-    monkeypatch.setitem(people, "ines", replace(people["rosa"], id="ines", name="Ines Silva",
-                                                roles=(RELEASE_APPROVER,), public_key=public))
-    with db.transaction(deployed.admin) as conn:
-        history = releases.check(conn, hashlib.sha256(second).hexdigest(),
-                                 deployed.gateway.scenario, "platform")
-    assert not history.ok and history.missing[0].startswith("the release before it isn't approved")
+    (folder / "keys" / f"{person}.pub").write_text(public + "\n")
+    data = folder / "data.yaml"
+    data.write_text(data.read_text().replace("  - {id: rosa,", f"  {line}\n  - {{id: rosa,"))
+    return private
 
-    with db.transaction(deployed.admin) as conn:  # Ines approves in Rosa's place, with everyone
-        signatures = signed(deployed, second, "priya", "tomas", "kofi") + [
-            Signature("ines", signing.sign(private, second, signing.RELEASE))]
-        verdict = releases.record(conn, second, signatures, deployed.gateway.scenario, "platform",
-                                  baseline=True)
+
+def leaves(stack, person: str) -> None:
+    folder = stack.cfg.scenario_dir
+    (folder / "keys" / f"{person}.pub").unlink()
+    data = folder / "data.yaml"
+    data.write_text(re.sub(rf"  - \{{id: {person},.*\n", "", data.read_text()))
+
+
+def by(raw: bytes, person: str, private: str) -> list[Signature]:
+    return [Signature(person, signing.sign(private, raw, signing.RELEASE))]
+
+
+def recorded(stack, raw: bytes, signatures: list[Signature], **kwargs) -> releases.Verdict:
+    with db.transaction(stack.admin) as conn:
+        return releases.record(conn, raw, signatures, stack.gateway.scenario, "platform", **kwargs)
+
+
+def test_a_release_cant_approve_itself_with_an_approver_it_adds(deployed):
+    """The team that runs a5s builds its releases, the directory in them too: one that adds
+    a release approver of its own, and has them sign it, isn't approved. A release is judged
+    by who the release before it records may sign it, and that record is signed too."""
+    assert record(deployed, this(deployed).raw, "priya", "tomas", "rosa", "kofi").ok
+    mallory = joins(deployed, "mallory", "- {id: mallory, name: Mallory, team: risk, "
+                                         "roles: [release-approver]}")
+    second = this(deployed).raw
+    verdict = recorded(deployed, second, by(second, "mallory", mallory))
+    assert not verdict.ok and verdict.missing == (
+        ("it needs the release approver, from outside the team that runs a5s, because the "
+         "scenario's directory or tools changed"),
+        ("mallory is new to the directory with this release, so signs it only as a new "
+         "agent's owner"))
+    deployed.gateway.releases = Releases(this(deployed))  # restarted as the second release
+    assert open_run(deployed).status_code == 409
+    assert record(deployed, second, "rosa").ok  # whom the release before it records
+    assert open_run(deployed).status_code == 200
+
+
+def test_an_approver_hands_over_in_two_releases_and_the_history_holds(deployed):
+    """Rosa brings Ines in, and Ines approves the release Rosa leaves with. Rosa, gone,
+    signs nothing more, and the releases she approved still check out."""
+    assert record(deployed, this(deployed).raw, "priya", "tomas", "rosa", "kofi").ok
+    ines = joins(deployed, "ines", "- {id: ines, name: Ines Silva, team: risk, "
+                                   "roles: [release-approver]}")
+    assert record(deployed, this(deployed).raw, "rosa").ok
+    leaves(deployed, "rosa")
+    third = this(deployed).raw
+    assert "rosa isn't in the directory" in record(deployed, third, "rosa").missing
+    assert recorded(deployed, third, by(third, "ines", ines)).ok
+    deployed.gateway.releases = Releases(this(deployed))
+    assert open_run(deployed).status_code == 200
+
+
+def test_when_the_only_release_approver_left_before_handing_over_a_baseline_starts_afresh(deployed):
+    """Rosa left, and Ines comes in with the same release: nobody the release before it
+    records may sign it, so the release in use is approved again as a baseline, by
+    everyone, as its own directory has them."""
+    assert record(deployed, this(deployed).raw, "priya", "tomas", "rosa", "kofi").ok
+    ines = joins(deployed, "ines", "- {id: ines, name: Ines Silva, team: risk, "
+                                   "roles: [release-approver]}")
+    leaves(deployed, "rosa")
+    second = this(deployed).raw
+    assert not recorded(deployed, second, by(second, "ines", ines)).ok
+    verdict = recorded(deployed, second, signed(deployed, second, "priya", "tomas", "kofi")
+                       + by(second, "ines", ines), baseline=True)
     assert verdict.ok and {n.role for n in verdict.needs} == {
         RELEASE_APPROVER, ASSURANCE, ENGINEER, OWNER, releases.agent_owner("watcher")}
+
+
+def test_a_signature_counts_as_the_release_before_records_its_signer_and_as_this_one_does(stack):
+    """With the key of record: a key a release brings in counts from the release after it,
+    as does a role it gives someone. A new agent's owner may be someone the release adds,
+    since its release approver signs for them."""
+    keys = {p: signing.keypair() for p in ("rosa", "rosa-new", "omar", "sam")}
+
+    def who(key: str, team: str, *roles: str) -> dict:
+        return {"key": keys[key][1], "team": team, "roles": list(roles), "above": []}
+
+    rosa, omar = who("rosa", "risk", RELEASE_APPROVER), who("omar", "operations")
+    before = {"version": "1", "agents": {"assistant": {}}, "signers": {"rosa": rosa, "omar": omar}}
+
+    def judged(signers: dict, need: list[str], *signing_as: tuple[str, str],
+               agents=("assistant",)) -> releases.Verdict:
+        raw = yaml.safe_dump({"version": "2", "agents": {a: {} for a in agents},
+                              "signers": signers}).encode()
+        signatures = [Signature(p, signing.sign(keys[k][0], raw, signing.RELEASE))
+                      for p, k in signing_as]
+        return releases.judge([releases.Need(r, "it changed") for r in need], raw, signatures,
+                              stack.gateway.scenario, "platform", before)
+
+    assert judged({"rosa": rosa, "omar": omar}, [RELEASE_APPROVER], ("rosa", "rosa")).ok
+    rekeyed = {"rosa": who("rosa-new", "risk", RELEASE_APPROVER), "omar": omar}
+    assert "rosa's signature isn't for this release" in judged(
+        rekeyed, [RELEASE_APPROVER], ("rosa", "rosa-new")).missing
+    assert judged(rekeyed, [RELEASE_APPROVER], ("rosa", "rosa")).ok  # the key of record
+    promoted = {"rosa": rosa, "omar": who("omar", "operations", RELEASE_APPROVER)}
+    assert not judged(promoted, [RELEASE_APPROVER], ("omar", "omar")).ok
+    scout = releases.agent_owner("scout")
+    newcomer = {"rosa": rosa, "omar": omar, "sam": who("sam", "operations", scout)}
+    assert judged(newcomer, [RELEASE_APPROVER, scout], ("rosa", "rosa"), ("sam", "sam"),
+                  agents=("assistant", "scout")).ok
+    assert not judged(newcomer, [RELEASE_APPROVER, scout], ("sam", "sam"),
+                      agents=("assistant", "scout")).ok

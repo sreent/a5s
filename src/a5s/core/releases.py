@@ -24,6 +24,16 @@ they last approved ([independence](../../../docs/architecture.md#independence)):
 - a fix for a security advisory that changes only what the image is built from:
   an engineer, at once.
 
+Each release also records who may sign the one after it: everyone its directory
+gives a key, with their team, their roles and the teams below them. A signature
+over a release counts for a role only if it counts both as the release before it
+was approved and as this release has it, checked with the key of record. So a
+release can't approve itself with people it adds, nor count those it removes,
+and nobody can add an approver by editing the database, since each record is
+signed. A new agent's owner may be someone the release adds, since its release
+approver signs for them. A release with nothing recorded before it, such as the
+first a deployment approves, or a baseline, is judged by its own directory.
+
 The core opens no run until the release it is has what it needs, except in
 development.
 """
@@ -48,8 +58,9 @@ ENGINEER = "engineer"  # anyone in the team that runs a5s
 PARTS = ("core", "services", "build", "models", "scenario")
 BUILT_FROM = ("pyproject.toml", "uv.lock", "Dockerfile", ".dockerignore",
               "studio/package.json", "studio/package-lock.json", "studio/.npmrc")
-_HEADER = ("# A release of a5s: every file it runs, by part, and what each agent and model may\n"
-           "# do. An organisation approves it for its deployment by signing exactly these bytes.\n")
+_HEADER = ("# A release of a5s: every file it runs, by part, what each agent and model may do, and\n"
+           "# who may sign the next. An organisation approves it for its deployment by signing\n"
+           "# exactly these bytes.\n")
 _PEOPLE = {RELEASE_APPROVER: "the release approver, from outside the team that runs a5s",
            ASSURANCE: "assurance, after their tests", ENGINEER: "an engineer from the team that runs a5s"}
 
@@ -114,6 +125,32 @@ def agent_part(folder: Path) -> dict:
     }
 
 
+def _signers(scenario_dir: Path) -> dict:
+    """Who may sign the next release, as this one records them: everyone the scenario's
+    directory gives a key, with their team, their roles, and the teams of everyone below
+    them in their reporting lines, which keep them from approving that team's releases."""
+    path = scenario_dir / "data.yaml"
+    people = ((yaml.safe_load(path.read_text()) or {}).get("people") or []) if path.exists() else []
+    teams = {p["id"]: p.get("team") for p in people}
+    managers = {p["id"]: p.get("manager") for p in people}
+    above: dict[str, set[str]] = {}
+    for person, team in teams.items():
+        seen, boss = {person}, managers[person]
+        while boss and boss not in seen:
+            seen.add(boss)
+            if team:
+                above.setdefault(boss, set()).add(team)
+            boss = managers.get(boss)
+    found = {}
+    for p in people:
+        key = scenario_dir / "keys" / f"{p['id']}.pub"
+        if key.exists():
+            found[p["id"]] = {"key": key.read_text().strip(), "team": p.get("team"),
+                              "roles": sorted(p.get("roles") or []),
+                              "above": sorted(above.get(p["id"], ()))}
+    return found
+
+
 def _models(config: Path) -> dict:
     path = config / "models.yaml"
     listed = (yaml.safe_load(path.read_text()) or {}).get("models") or {} if path.exists() else {}
@@ -156,6 +193,7 @@ def manifest(root: Path, scenario_dir: Path, *, built: dict | None = None,
         "models": _models(root / "config"),
         "agents": {f.name: agent_part(f) for f in sorted(agents.iterdir())
                    if (f / "agent.yaml").exists()} if agents.is_dir() else {},
+        "signers": _signers(scenario_dir),
     }
     return (_HEADER + yaml.safe_dump(data, sort_keys=True, width=1000)).encode()
 
@@ -291,13 +329,89 @@ def _inside(scenario: Scenario, team: str) -> set[str]:
         boss for member in scenario.team(team) for boss in _line(scenario, member)}
 
 
-def _can(person: Person, role: str, team: str, inside: set[str]) -> bool:
-    """Whether someone's signature meets what a release needs of a role."""
-    if role == RELEASE_APPROVER:
-        return role in person.roles and person.id not in inside
-    if role == ENGINEER:
-        return person.team == team
-    return role in person.roles
+@dataclass(frozen=True)
+class Signer:
+    """Someone the directory gives a key, as a release records them."""
+
+    id: str
+    key: str
+    team: str | None
+    roles: tuple[str, ...] = ()
+    above: tuple[str, ...] = ()  # the teams of everyone below them in their reporting lines
+
+    def can(self, role: str, team: str) -> bool:
+        """Whether their signature meets what a release needs of a role: the release
+        approver's only from outside the team that runs a5s and everyone above it."""
+        if role == RELEASE_APPROVER:
+            return role in self.roles and self.team != team and team not in self.above
+        if role == ENGINEER:
+            return self.team == team
+        return role in self.roles
+
+
+def _recorded(manifest: object) -> dict[str, Signer] | None:
+    """The signers a release's manifest records, or None if it records none, as those from
+    before releases recorded them don't."""
+    found = manifest.get("signers") if isinstance(manifest, dict) else None
+    if found is None:
+        return None
+    return {i: Signer(i, s["key"], s.get("team"), tuple(s.get("roles") or ()),
+                      tuple(s.get("above") or ())) for i, s in found.items()}
+
+
+def _directory(scenario: Scenario, team: str, ids: list[str]) -> dict[str, Signer]:
+    """Some people as the directory now has them, for a release that records no signers."""
+    inside, found = _inside(scenario, team), {}
+    for i in ids:
+        person = scenario.person(i)
+        if person is not None and person.public_key:
+            found[i] = Signer(i, person.public_key, person.team, person.roles,
+                              (team,) if i in inside and person.team != team else ())
+    return found
+
+
+@dataclass(frozen=True)
+class _Judging:
+    """Whose signatures over a release count, for what, and with which key."""
+
+    own: dict[str, Signer]  # as this release records them
+    record: dict[str, Signer] | None  # as the release before it recorded them, if it did
+    team: str
+    named: frozenset[str]  # its new agents' owners, whom this release names
+
+    @classmethod
+    def of(cls, raw: bytes, previous: dict | None, scenario: Scenario, team: str,
+           ids: list[str]) -> _Judging:
+        new = yaml.safe_load(raw)
+        new = new if isinstance(new, dict) else {}
+        own = _recorded(new)
+        if own is None:  # from before releases recorded their signers
+            own = _directory(scenario, team, ids)
+        record = _recorded(previous) if previous else None
+        agents = set(new.get("agents") or ()) - set((previous or {}).get("agents") or ())
+        return cls(own, record, team, frozenset(agent_owner(a) for a in agents))
+
+    def key(self, signer: str) -> str | None:
+        """Theirs as the release before recorded it, if it did: a key a release brings in
+        counts from the release after it."""
+        mine = self.own.get(signer)
+        if mine is None:
+            return None
+        theirs = self.record.get(signer) if self.record is not None else None
+        return (theirs or mine).key
+
+    def new(self, signer: str) -> bool:
+        """Whether this release adds them to the directory."""
+        return self.record is not None and signer in self.own and signer not in self.record
+
+    def can(self, signer: str, role: str) -> bool:
+        mine = self.own.get(signer)
+        if mine is None or not mine.can(role, self.team):
+            return False
+        if self.record is None or role in self.named:
+            return True
+        theirs = self.record.get(signer)
+        return theirs is not None and theirs.can(role, self.team)
 
 
 def awaiting(conn: db.Connection, running: Running | None, scenario: Scenario, team: str,
@@ -317,9 +431,9 @@ def awaiting(conn: db.Connection, running: Running | None, scenario: Scenario, t
         before = row["previous"] and conn.execute(
             "select manifest from releases where digest = %s", (row["previous"],)).fetchone()
         old, advisory = (yaml.safe_load(bytes(before["manifest"])) if before else None), row["advisory"]
-    inside = _inside(scenario, team)
+    judging = _Judging.of(running.raw, old, scenario, team, [person.id])
     return [n for n in needs(yaml.safe_load(running.raw), old, advisory)
-            if _can(person, n.role, team, inside)]
+            if judging.can(person.id, n.role)]
 
 
 def _line(scenario: Scenario, person: Person) -> list[str]:
@@ -333,39 +447,43 @@ def _line(scenario: Scenario, person: Person) -> list[str]:
 
 
 def judge(need: list[Need], raw: bytes, signatures: list[Signature], scenario: Scenario,
-          team: str) -> Verdict:
-    """Whether different people, each holding what's needed, signed exactly these bytes."""
-    people, problems = {}, []
-    inside = _inside(scenario, team)
+          team: str, previous: dict | None = None) -> Verdict:
+    """Whether different people, each holding what's needed, signed exactly these bytes, as
+    the release before it, if any, records who may sign it, and as it records them itself."""
+    judging = _Judging.of(raw, previous, scenario, team, [s.signer for s in signatures])
+    people: list[str] = []
+    problems = []
     for sig in signatures:
-        person = scenario.person(sig.signer)
-        if person is None:
+        key = judging.key(sig.signer)
+        if key is None:
             problems.append(f"{sig.signer} isn't in the directory")
-        elif not person.public_key or not signing.verify(person.public_key, raw, sig.value,
-                                                          signing.RELEASE):
+        elif not signing.verify(key, raw, sig.value, signing.RELEASE):
             problems.append(f"{sig.signer}'s signature isn't for this release")
-        else:
-            people[person.id] = person
+        elif sig.signer not in people:
+            people.append(sig.signer)
+            if judging.new(sig.signer):
+                problems.append(f"{sig.signer} is new to the directory with this release, so "
+                                "signs it only as a new agent's owner")
 
-    def can(person: Person, role: str) -> bool:
-        return _can(person, role, team, inside)
+    def can(person: str, role: str) -> bool:
+        return judging.can(person, role)
 
     def match(i: int, taken: dict[str, str]) -> bool:
         """Each need met by someone different, though one owner may own several agents."""
         if i == len(need):
             return True
         role = need[i].role
-        for person in people.values():
-            held = taken.get(person.id)
+        for person in people:
+            held = taken.get(person)
             shares = role.startswith("agent-owner:") and (held or "").startswith("agent-owner:")
-            if can(person, role) and (held is None or shares) and match(i + 1, {**taken, person.id: role}):
+            if can(person, role) and (held is None or shares) and match(i + 1, {**taken, person: role}):
                 return True
         return False
 
     signed = tuple(sorted(people))
     if match(0, {}):
         return Verdict(True, tuple(need), (), signed)
-    unmet = [n for n in need if not any(can(p, n.role) for p in people.values())]
+    unmet = [n for n in need if not any(can(p, n.role) for p in people)]
     missing = [f"it needs {who(n.role)}, because {n.why}" for n in unmet] or [
         f"it needs {len(need)} different people: " + "; ".join(who(n.role) for n in need)]
     return Verdict(False, tuple(need), tuple(missing + problems), signed)
@@ -387,7 +505,7 @@ def verify(raw: bytes, signatures: list[Signature], scenario: Scenario, team: st
     database: for the pull request that deploys it (deploy/gitops), before it's merged. The
     core still checks them again, against what it approved before."""
     old = yaml.safe_load(previous) if previous else None
-    return judge(needs(yaml.safe_load(raw), old, advisory), raw, signatures, scenario, team)
+    return judge(needs(yaml.safe_load(raw), old, advisory), raw, signatures, scenario, team, old)
 
 
 def check(conn: db.Connection, digest: str, scenario: Scenario, team: str,
@@ -396,10 +514,12 @@ def check(conn: db.Connection, digest: str, scenario: Scenario, team: str,
     back to the first release it approved, or the last baseline. Editing the record
     approves nothing.
 
-    Every signature is checked against the directory as it is now, so if someone who
-    approved one of those releases leaves, or their key changes, the history no longer
-    checks out. Approving the release in use again as a baseline, which needs everyone,
-    starts it afresh.
+    Each release is judged by who the release before it records may sign it, and by who it
+    records itself, so the history holds when people leave: their leaving is a release of
+    its own, which those who stay approve. One recorded before releases recorded their
+    signers is judged by the directory as it is now. Approving the release in use again as
+    a baseline, which needs everyone and is judged by its own directory, starts the history
+    afresh, such as when the only release approver left before handing over.
     """
     row = conn.execute("select manifest, previous, signatures, advisory from releases "
                        "where digest = %s", (digest,)).fetchone()
@@ -416,10 +536,15 @@ def check(conn: db.Connection, digest: str, scenario: Scenario, team: str,
         if not before.ok:
             return Verdict(False, missing=("the release before it isn't approved: "
                                            + "; ".join(before.missing),))
-        old = yaml.safe_load(bytes(conn.execute("select manifest from releases where digest = %s",
-                                                (row["previous"],)).fetchone()["manifest"]))
+        found = conn.execute("select manifest from releases where digest = %s",
+                             (row["previous"],)).fetchone()
+        earlier = bytes(found["manifest"]) if found else b""
+        if hashlib.sha256(earlier).hexdigest() != row["previous"]:  # whose signers judge this one
+            return Verdict(False, missing=("the release before it isn't what was signed",))
+        old = yaml.safe_load(earlier)
     signatures = [Signature(s["signer"], s["value"]) for s in row["signatures"] or []]
-    return judge(needs(yaml.safe_load(raw), old, row["advisory"]), raw, signatures, scenario, team)
+    return judge(needs(yaml.safe_load(raw), old, row["advisory"]), raw, signatures, scenario, team,
+                 old)
 
 
 def record(conn: db.Connection, raw: bytes, signatures: list[Signature], scenario: Scenario,
