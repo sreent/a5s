@@ -371,6 +371,25 @@ def judge(need: list[Need], raw: bytes, signatures: list[Signature], scenario: S
     return Verdict(False, tuple(need), tuple(missing + problems), signed)
 
 
+def signatures_in(raw: bytes, text: str) -> list[Signature]:
+    """The signatures a release.sig holds over exactly this release, as `a5s release sign`
+    writes them; ValueError if they're over another one."""
+    signed = yaml.safe_load(text) or {}
+    if signed.get("release") != hashlib.sha256(raw).hexdigest():
+        raise ValueError("its signatures are over another release")
+    return [Signature(s["signer"], s["value"]) for s in signed.get("signatures") or []]
+
+
+def verify(raw: bytes, signatures: list[Signature], scenario: Scenario, team: str,
+           previous: bytes | None = None, advisory: str | None = None) -> Verdict:
+    """Whether a release's signatures meet what it needs, weighed against the release before
+    it, as a deployment's core weighs them when its approval job records them, but with no
+    database: for the pull request that deploys it (deploy/gitops), before it's merged. The
+    core still checks them again, against what it approved before."""
+    old = yaml.safe_load(previous) if previous else None
+    return judge(needs(yaml.safe_load(raw), old, advisory), raw, signatures, scenario, team)
+
+
 def check(conn: db.Connection, digest: str, scenario: Scenario, team: str,
           _seen: frozenset[str] = frozenset()) -> Verdict:
     """Whether this deployment approved a release, checked again from what was signed,

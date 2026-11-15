@@ -5,7 +5,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { AgentMap } from "../AgentMap";
-import { type Draft, get, type Offered, send } from "../api";
+import { type CoAuthors, type Draft, get, type Offer, type Offered, send } from "../api";
 import { CASES, read, Unreadable, withCase, withTool, withValue } from "../definition";
 import { Publish } from "../Publish";
 import { go } from "../router";
@@ -144,7 +144,7 @@ function HandOver({ id }: { id: string }) {
   const [open, setOpen] = useState(false);
   const [to, setTo] = useState("");
   const [problem, setProblem] = useState<string | null>(null);
-  const people = useLoad(() => (open ? get<{ people: { id: string; name: string }[] }>(
+  const people = useLoad(() => (open ? get<CoAuthors>(
     `/studio/api/drafts/${encodeURIComponent(id)}/co-authors`) : Promise.resolve({ people: [] })), [open, id]);
   if (!open) return <button type="button" className="quiet" id="hand-over" onClick={() => setOpen(true)}>Hand it over</button>;
   const found = people.data?.people ?? [];
@@ -175,7 +175,7 @@ function HandOver({ id }: { id: string }) {
 
 export function DraftPage({ id }: { id: string }) {
   const loaded = useLoad(() => get<Draft>(`/studio/api/drafts/${encodeURIComponent(id)}`), [id]);
-  const tools = useLoad(() => get<{ tools: Offered[]; models: string[] }>("/studio/api/tools"), []);
+  const tools = useLoad(() => get<Offer>("/studio/api/tools"), []);
   const [files, setFiles] = useState<Files | null>(null);
   const [said, setSaid] = useState<Pick<Draft, "problems" | "preview" | "signers"> | null>(null);
   const [kept, setKept] = useState<Kept>("kept");

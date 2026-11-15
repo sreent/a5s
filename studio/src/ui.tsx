@@ -104,7 +104,7 @@ export function DecisionBadge({ decision }: { decision: string }) {
 }
 
 /** What starts an agent's runs, as its release says: each kind, and what it says of it. */
-export function triggers(agent: AgentUses): { kind: string; about: string }[] {
+export function triggers(agent: Pick<AgentUses, "triggers">): { kind: string; about: string }[] {
   return agent.triggers.flatMap((t) => Object.entries(t).map(([kind, about]) =>
     ({ kind, about: typeof about === "string" ? about : JSON.stringify(about) })));
 }

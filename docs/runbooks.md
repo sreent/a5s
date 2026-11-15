@@ -178,7 +178,8 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 
 1. Settings: the reason names whose approval is missing, such as the owner of a part. They sign the version again, with their key, or approve it on a card. If an approver left, whoever holds the role now does.
 2. If the core's seal key changed, approvals made on cards need making again.
-3. The release: `a5s release status` says what it still needs, and who must sign.
+3. The release: `a5s release status` says what it still needs, and who must sign. Where Flux deploys a5s ([deploy/gitops](../deploy/gitops/README.md)), the check on the pull request that deploys it says the same, and nothing deploys until it passes; each person it still needs signs it in the environment's folder, `a5s release sign --environment`.
+4. To roll a release back where Flux deploys a5s, revert the pull request that deployed it: Flux deploys the release before, whose approval the core has recorded already.
 
 ## The ledger's copies stop
 

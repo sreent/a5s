@@ -2,8 +2,8 @@
 // it works, what it knows, its budget, and where it runs.
 
 import { useState } from "react";
-import { type AgentKnown, type AgentUses, ApiError, builtOf, type Catalogue, type Draft, type DraftLine, get,
-         send, usesOf } from "../api";
+import { type AgentKnown, type AgentUses, ApiError, builtOf, type Catalogue, type Draft,
+         type Drafts, get, send, usesOf } from "../api";
 import { AgentMap } from "../AgentMap";
 import { go, Link } from "../router";
 import { aboutInstance, levels, PageHead, people, type Risk, risk, RISK_NAMES, runners, StatusBadge,
@@ -64,7 +64,8 @@ function When({ agent }: { agent: AgentUses }) {
 }
 
 // What each run may do beside its tools, as the release's context says (definitions.Context)
-const ABILITIES: Record<string, string> = {
+type Ability = Exclude<keyof AgentUses["context"], "budget_tokens">;
+const ABILITIES: Record<Ability, string> = {
   recall: "search its conversations",
   documents: "ask about documents from outside",
   agents: "ask other agents",
@@ -73,8 +74,9 @@ const ABILITIES: Record<string, string> = {
 
 function Knows({ agent }: { agent: AgentUses }) {
   const { budget_tokens: conversation, ...rest } = agent.context;
-  const may = Object.keys(ABILITIES).filter((key) => rest[key] === true).map((key) => ABILITIES[key]);
-  const not = Object.keys(ABILITIES).filter((key) => rest[key] === false).map((key) => ABILITIES[key]);
+  const abilities = Object.keys(ABILITIES) as Ability[];
+  const may = abilities.filter((key) => rest[key] === true).map((key) => ABILITIES[key]);
+  const not = abilities.filter((key) => rest[key] === false).map((key) => ABILITIES[key]);
   const other = Object.entries(rest).filter(([key]) => !(key in ABILITIES));
   return (
     <section className="card">
@@ -134,7 +136,7 @@ function DraftAChange({ id }: { id: string }) {
       go({ page: "draft", draft: draft.id });
     } catch (e) {
       const mine = e instanceof ApiError && e.status === 409  // theirs already: carry on with it
-        && (await get<{ drafts: DraftLine[] }>("/studio/api/drafts")).drafts.find((d) => d.agent === id);
+        && (await get<Drafts>("/studio/api/drafts")).drafts.find((d) => d.agent === id);
       if (mine) go({ page: "draft", draft: mine.id });
       else setProblem((e as Error).message);
     }

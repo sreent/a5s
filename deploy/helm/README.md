@@ -74,6 +74,8 @@ Its database server must be its own, not a5s's, even another database on the sam
 
 ## Install
 
+An environment of a5s's deploys from git, with Flux: a signed release deploys itself once its pull request's check passes ([deploy/gitops](../gitops/README.md)). To try the chart by hand:
+
 ```sh
 helm install a5s deploy/helm/a5s -n a5s -f my-values.yaml
 ```

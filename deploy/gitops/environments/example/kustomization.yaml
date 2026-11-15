@@ -1,0 +1,30 @@
+# An environment of a5s's, which Flux deploys (deploy/gitops/README.md). Copy this folder to
+# make one, set its values and where its chart comes from, then `a5s release promote` it.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - source.yaml
+  - helmrelease.yaml
+# The release's own tag, for its chart, as `a5s release promote` writes it
+patches:
+  - path: release-source.yaml
+configMapGenerator:
+  # The release's manifest and the signatures over it, which the chart's job records: its
+  # name stays, as the chart names it (release.approval)
+  - name: a5s-release
+    files:
+      - release.yaml
+      - release.sig
+    options:
+      disableNameSuffixHash: true
+  # The release this environment runs, by its image's digest, and its signatures' hash, as
+  # `a5s release promote` writes them; and the environment's own values. Each is named by its
+  # contents' hash, so a change to either is a new name, and so an upgrade
+  - name: a5s-release-values
+    files:
+      - values.yaml=release-values.yaml
+  - name: a5s-values
+    files:
+      - values.yaml
+configurations:
+  - kustomizeconfig.yaml

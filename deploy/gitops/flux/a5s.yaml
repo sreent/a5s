@@ -1,0 +1,32 @@
+# What a cluster's Flux reads, applied once with `kubectl apply -f`, or kept with the cluster's
+# own Flux bootstrap: the repository that holds the environments, read with a deploy key that
+# only reads, and the one environment this cluster runs. Any git host serves it: GitHub,
+# Forgejo, GitLab or another, over SSH or HTTPS.
+apiVersion: source.toolkit.fluxcd.io/v1
+kind: GitRepository
+metadata:
+  name: a5s-environments
+  namespace: flux-system
+spec:
+  interval: 1m
+  url: ssh://git@github.com/OWNER/a5s  # or your Forgejo's, such as ssh://git@git.example.com/OWNER/a5s
+  ref:
+    branch: main  # what's merged there, once its signatures check out, is what runs
+  secretRef:
+    name: a5s-environments  # its deploy key: flux create secret git a5s-environments ...
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  name: a5s
+  namespace: flux-system
+spec:
+  interval: 10m
+  sourceRef:
+    kind: GitRepository
+    name: a5s-environments
+  path: ./deploy/gitops/environments/production  # this cluster's environment
+  targetNamespace: a5s
+  prune: true
+  wait: true
+  timeout: 30m  # the setup job, the parts starting, and the job that records the approval

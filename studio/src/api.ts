@@ -48,179 +48,70 @@ export async function download(path: string, name: string): Promise<void> {
   window.setTimeout(() => URL.revokeObjectURL(link.href), 1000);
 }
 
-// What the API gives, as core/studio.py works it out
+// What the API gives: its types, made from its own description (api.gen.ts, which
+// `uv run python -m a5s.core.studio_api` makes from core/studio_models.py), so they're always
+// what the code answers. Names the pages use stand for them here.
+import type * as gen from "./api.gen";
 
-export type Tool = {
-  name: string;
-  group: string;
-  description: string | null;
-  reads?: boolean;
-  writes?: boolean;
-  destructive?: boolean;
-  sends_outside?: boolean;
-  changes: string | null;  // the type of change it makes, which people decide at level 1
-  handles: string[];
-  outside: string[];
-  pinned: string | null;
-  missing: boolean;
-};
-
-export type Instance = {
-  id: string;
-  agent: string;
-  status: string;
-  release: string;
-  current: boolean;
-  level: number;
-  parts: Record<string, unknown>;
-  actions: Record<string, unknown>;
-  model: string | null;
-  serves: string[];
-  people: number;
-  owner: string | null;
-  deputy: string | null;
-  asks: string[];
-};
-
-export type Schedule = { name: string; at: string[]; days: string[]; task: string };
+export type Tool = gen.Tool;
+export type Instance = gen.Instance;
+export type Schedule = gen.Schedule;
 
 // What someone sees of an agent comes in layers, each from the roles they hold (core/studio.py):
 // that it exists; what it may do; how it's built; how it's doing; what it did; changing it
 export type Layer = "exists" | "uses" | "built" | "doing" | "did" | "changing";
 
-// That it exists: for anyone who may know of it
-export type AgentKnown = {
-  layers?: Partial<Record<Layer, string[]>>;  // each they see, with why: the team's own API gives it all
-  listed?: boolean;  // whether its owner lists it for everyone
-  why?: string[];  // why the viewer's roles bring it into their view
-  id: string;
-  release: string;
-  works_for: string;
-  does: string;
-  owners: string[];
-  instances: Instance[];  // those they may watch, if they see how it's doing
-  ask?: Ask | null;  // their own open ask for it, if they asked for it and it serves them not
-  asks?: Asked[];  // the open asks for it that wait on them
-};
-
-// Asking for an agent (core/asks.py)
-export type Ask = { id: string; agent: string; asked_at: string; ended_at: string | null; outcome: string | null };
-export type Asked = { id: string; agent: string; person: string; asked_at: string; why: string[] };
-
+// That it exists: for anyone who may know of it. A layer they don't see is left out.
+export type AgentKnown = gen.Agent;
 // What it may do: for the people it serves, those who watch its instances, and its makers
-export type AgentUses = AgentKnown & {
-  model: string;
-  autonomy: { start: number; max: number };
-  tools: Tool[];
-  a5s_tools: string[];
-  triggers: Record<string, unknown>[];  // each one kind and what it says, such as {message: "from ..."}
-  schedules: Schedule[];
-  reports: string[];
-  obligations: string[];
-  reminders: boolean;
-  preferences: string[];
-  channels: string[];
-  context: Record<string, unknown>;
-  budget: { per_run: number; per_person_per_day: number };
-};
-
+export type AgentUses = AgentKnown & Required<Pick<AgentKnown,
+  "tools" | "a5s_tools" | "model" | "autonomy" | "triggers" | "schedules" | "reports" |
+  "obligations" | "reminders" | "preferences" | "channels" | "context" | "budget">>;
 // How it's built: for its owners, authors, engineers, release approvers, auditors and viewers
-export type Agent = AgentUses & {
-  skills: string[];
-  instructions?: string;
-};
+export type Agent = AgentUses & Required<Pick<AgentKnown, "skills">>;
 
 export const usesOf = (agent: AgentKnown): agent is AgentUses => "tools" in agent;
 export const builtOf = (agent: AgentKnown): agent is Agent => "skills" in agent;
 
-export type Catalogue = {
-  you: string;
-  agents: AgentKnown[];
-  authoring: { new: boolean; agents: string[] };  // whether they may start an agent, and which they may change
-};
+// Asking for an agent (core/asks.py)
+export type Ask = gen.Ask;
+export type Asked = gen.Asked;
+export type Catalogue = gen.Catalogue;
 
-// Making agents (core/drafts.py)
+// Someone's home and roles (core/home.py)
+export type Home = gen.Home;
+export type Waiting = gen.Waiting;
+export type You = gen.You;
+export type Role = gen.Role;
 
-export type Template = { name: string; works_for: string; does: string; model: string; tools: string[]; lacks: string[] };
+// Making agents: drafts, trying them in the sandbox, and publishing them (core/drafts.py)
+export type Template = gen.Template;
+export type DraftLine = gen.DraftLine;
+export type Draft = gen.Draft;
+export type Defined = gen.Defined;  // an agent as its folder defines it: a draft's preview
+export type Offered = gen.Offered;
+export type Offer = gen.Offer;
+export type Templates = gen.Templates;
+export type Drafts = gen.Drafts;
+export type CoAuthors = gen.CoAuthors;
+export type Named = gen.Named;
+export type Sandbox = gen.Sandbox;
+export type Tried = gen.Tried;
+export type ModelCall = gen.ModelCall;
+export type SentMessage = gen.SentMessage;  // a provider's own, as it went
+export type Cases = gen.Cases;
+export type CaseLine = gen.CaseLine;
+export type CaseStep = gen.CaseStep;
+export type CaseRan = gen.CaseRan;
+export type Publish = gen.Publish;
+export type PullRequest = gen.PullRequest;
 
-export type DraftLine = {
-  id: string; agent: string; based_on: string; created_at: string; updated_at: string;
-  published: string | null;  // the pull request it was last published as, if it has been
-  author?: string;  // a co-author's, whose draft of an agent they may author too
-};
-
-export type Draft = DraftLine & {
-  files: Record<string, string>;  // the agent's folder, each file's text by its path in it
-  problems: string[];  // what would stop its release, as `a5s agent check` says it
-  preview: Agent | null;  // as the catalogue would show it, if it loads
-  signers: { role: string; who: string; why: string }[] | null;  // whom its release would need
-  publishing: boolean;  // whether the studio opens its pull request, or its author does
-  yours: boolean;  // or a co-author's, read only
-  author: string;
-};
-
-export type Offered = Omit<Tool, "group" | "pinned" | "missing">;
-
-export type ModelRuns = {
-  model: string;
-  runs: number;
-  tokens_per_run: number;
-  cached_share: number | null;
-  cost_per_run: number | null;
-};
-
-export type Figures = {
-  runs: ModelRuns[];
-  ended: { kind: string | null; outcome: string; runs: number }[];
-  obligations: { due: number; on_time: number; late: number; open: number; chased: number; escalated: number };
-  reminders: { due: number; on_time: number; missed: number };
-  held: { held: number; approved: number; rejected: number; lapsed: number; waiting: number };
-  samples: { graded: number; right: number; wrong: number; critical: number };
-  denied: { kind: string; action: string; reasons: string[]; times: number }[];
-  denied_partial: boolean;
-  reports: { source: string; outcome: string; reports: number }[];
-  returning: { agent: string; wrote_before: number; came_back: number }[];
-  daily: Day[];  // each day of the period, in `zone`, the viewer's own
-  zone: string;
-  instances: string[];
-};
-
+export type ModelRuns = gen.ModelRuns;
+export type Figures = gen.Figures;
 /** One day's runs, by how each ended, as core/status.py's outcome() says it. */
-export type Day = { day: string; runs: number; ended: Record<string, number> };
-
-export type Person = { id: string; name: string | null };
-
-export type RunLine = {
-  run: string;
-  instance: string;
-  trigger: string | null;
-  acts_for: Person[];
-  people: number;
-  opened_at: string;
-  closed_at: string | null;
-  outcome: string;
-  tokens: number;
-  model: string | null;
-  read_outside: boolean;
-};
-
-export type RunsPage = { instance: string; runs: RunLine[]; hidden: number; before: string | null };
-
-export type Call = {
-  seq: number;
-  at: string;
-  tool: string;
-  decision: string;
-  reasons: string[];
-  outcome: string | null;
-};
-
-export type Run = RunLine & {
-  agent: string | null;
-  started_by: Record<string, unknown>;
-  tokens_in: number;
-  tokens_out: number;
-  tokens_cached: number;
-  records: string[];
-  calls: Call[];
-};
+export type Day = gen.Day;
+export type Person = gen.ActedFor;
+export type RunLine = gen.RunLine;
+export type RunsPage = gen.RunsPage;
+export type Call = gen.Call;
+export type Run = gen.Run;

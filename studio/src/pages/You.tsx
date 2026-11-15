@@ -2,11 +2,8 @@
 // of the identity provider's, and what it lets them do. Roles change where people are managed,
 // in the identity provider, and in the signed settings that give its groups roles: not here.
 
-import { get } from "../api";
+import { get, type You } from "../api";
 import { PageHead, useLoad, Waiting } from "../ui";
-
-type Role = { role: string; by: string[]; may: string };
-type You = { you: string; id: string; roles: Role[]; groups: string[] };
 
 export function YouPage() {
   const { data, error } = useLoad(() => get<You>("/studio/api/you"), []);

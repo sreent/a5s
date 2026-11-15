@@ -1,0 +1,29 @@
+# The check on a pull request that changes what an environment runs (deploy/gitops/README.md):
+# each environment it changes is ready to deploy, its release's signatures meeting what the
+# release needs, judged as the environment runs the release before, and its image holding
+# exactly that release. Make it required, and let such pull requests merge themselves once it
+# passes: Flux deploys what's merged. It runs on every pull request, since a required check that
+# a path filter skipped would never report, and passes at once for one that changes no
+# environment. Forgejo Actions runs it signing in to its own registry in place of ghcr.io.
+name: promote
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  packages: read  # to pull the releases' images
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4
+        with:
+          fetch-depth: 0  # to compare with what the environments run now
+      - name: Sign in to the images' registry
+        env:
+          TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "$TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+      - name: Each environment it changes is ready to deploy
+        run: sh deploy/gitops/verify.sh "origin/$GITHUB_BASE_REF"

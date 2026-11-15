@@ -17,28 +17,31 @@ import pytest
 from a5s import db
 from a5s.core import status
 
+POOL_UNDER_TEST = "a5s-pool-under-test"  # the name its connections give the database
+
 
 def test_a_busy_pool_opens_no_more_connections_than_twice_its_size(database, monkeypatch):
     """Thirty transactions waiting at once, on a pool of two: four connections, not thirty
-    (B7)."""
+    (B7). Only the pool's own count, by the name its connections give: another test's
+    connection still open on the same database isn't the pool's."""
     monkeypatch.setenv("A5S_DB_POOL_SIZE", "2")  # as a deployment sets it
     db.close_pools()
     db._spares.clear()
-    with db.transaction(database) as conn:
+    pooled = f"{database}{'&' if '?' in database else '?'}application_name={POOL_UNDER_TEST}"
+    with db.transaction(pooled) as conn:
         conn.execute("select 1")
     peak, stop = [0], threading.Event()
 
     def watch() -> None:
         with psycopg.connect(database, autocommit=True) as admin:
             while not stop.is_set():
-                n = admin.execute("select count(*) from pg_stat_activity where datname = "
-                                  "current_database() and backend_type = 'client backend'"
-                                  ).fetchone()[0] - 1
+                n = admin.execute("select count(*) from pg_stat_activity where "
+                                  "application_name = %s", (POOL_UNDER_TEST,)).fetchone()[0]
                 peak[0] = max(peak[0], n)
                 time.sleep(0.05)
 
     def work() -> None:
-        with db.transaction(database) as conn:
+        with db.transaction(pooled) as conn:
             conn.execute("select pg_sleep(0.3)")
 
     watcher = threading.Thread(target=watch)
@@ -52,7 +55,7 @@ def test_a_busy_pool_opens_no_more_connections_than_twice_its_size(database, mon
     watcher.join()
     db.close_pools()
     db._spares.clear()
-    assert peak[0] <= 4
+    assert 2 <= peak[0] <= 4, peak  # it sees the pool at work, and the pool keeps to its bound
 
 
 def test_a_release_never_serves_a_database_a_later_one_migrated(stack):

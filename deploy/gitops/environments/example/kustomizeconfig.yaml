@@ -1,0 +1,8 @@
+# So the HelmRelease names its values' ConfigMaps as kustomize names them, by their contents'
+# hash: a change to the release, its signatures or the environment's values is an upgrade.
+nameReference:
+  - kind: ConfigMap
+    version: v1
+    fieldSpecs:
+      - path: spec/valuesFrom/name
+        kind: HelmRelease
