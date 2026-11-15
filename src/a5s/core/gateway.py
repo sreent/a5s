@@ -1015,7 +1015,7 @@ class Gateway:
         given = {"level": row["level"], "read_outside": row["read_outside"],
                  "acts_for": list(row["acts_for"])}
         if action != "call_model":  # about no record, and no change, unless the call says so
-            given |= {"in_scope": True, "visible": True, "over_limit": False}
+            given |= {"in_scope": True, "visible": True, "for_self": False, "over_limit": False}
         return self.policy.decide(
             principal={"type": "Instance", "id": row["id"]},
             action=action,

@@ -1,11 +1,15 @@
-# The desk's ITSM, through its MCP server (docs/connectors.md#mcp-servers). In this made-up desk it's
-# deploy/desk/itsm.py, on the desk's synthetic data, beside the gateway on its own machine, and the
-# same stand-in answers in the studio's sandbox. a5s offers its agents nothing of the server's but
-# the tools declared here, in a5s's words, and passes on only the fields each names.
+# The desk's ITSM and its identity provider's self-service, each through its MCP server
+# (docs/connectors.md#mcp-servers). In this made-up desk they're deploy/desk/itsm.py and idp.py, on
+# the desk's synthetic data, beside the gateway on its own machine, and the same stand-ins answer in
+# the studio's sandbox. a5s offers its agents nothing of the servers' but the tools declared here,
+# in a5s's words, and passes on only the fields each names.
 servers:
   itsm:
     url: http://127.0.0.1:9201/mcp
     sandbox: http://127.0.0.1:9201/mcp
+  idp:
+    url: http://127.0.0.1:9202/mcp
+    sandbox: http://127.0.0.1:9202/mcp
 tools:
   search_records:
     server: itsm
@@ -49,3 +53,38 @@ tools:
     record_field: key
     action: reply
     text_fields: [body]
+  # Self-service, through the identity provider: each account is ACC- and its holder's id. A reset
+  # is the provider's own flow, which its holder finishes there, verifying themselves, so the
+  # agent never sees a secret. The desk's pack lets a reset run alone, at level 2, only for the
+  # person asking, and never an authenticator change (service_desk.py's PACK)
+  get_account:
+    server: idp
+    calls: get_account
+    description: Get an account in the identity provider by its key, such as ACC-sam, the holder's id after ACC-.
+    arguments: {type: object, required: [key], properties: {key: {type: string}}}
+    returns: [key, holder, state, authenticators, link]
+    record_arg: key
+    record_field: key
+  reset_password:
+    server: idp
+    calls: start_password_reset
+    description: Start the identity provider's own password reset for an account, which its holder finishes there, verifying themselves.
+    arguments: {type: object, required: [key], properties: {key: {type: string}}}
+    returns: [key, flow, link]
+    writes: true
+    idempotent: true
+    record_arg: key
+    record_field: key
+    action: reset-password
+  reset_authenticators:
+    server: idp
+    calls: reset_authenticators
+    description: Remove an account's authenticators in the identity provider, so its holder registers new ones when they next sign in.
+    arguments: {type: object, required: [key], properties: {key: {type: string}}}
+    returns: [key, removed, link]
+    writes: true
+    destructive: true
+    idempotent: true
+    record_arg: key
+    record_field: key
+    action: reset-authenticators

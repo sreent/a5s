@@ -16,25 +16,21 @@ declared before each call.
 
 from __future__ import annotations
 
-import json
 import sys
-import uuid
-from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
 
 import uvicorn
 import yaml
-from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, Response
+from fastapi import FastAPI
+
+sys.path.insert(0, str(Path(__file__).parent))  # beside the desk's other made-up systems
+from standin import KEY, Tools, once, serving
 
 PORT = 9201
-SPOKEN = ("2025-03-26", "2025-06-18", "2025-11-25")  # MCP's versions it speaks, as a5s does
 LINK = "https://itsm.desk.test/"
 QUERY = {"type": "object", "required": ["query"], "properties": {"query": {"type": "string"}}}
-KEY = {"type": "object", "required": ["key"], "properties": {"key": {"type": "string"}}}
 REPLY = {"type": "object", "required": ["key", "body"],
          "properties": {"key": {"type": "string"}, "body": {"type": "string", "maxLength": 4000}}}
 
@@ -55,8 +51,7 @@ class Written:
 def make(data: Path) -> FastAPI:
     """The server, on the scenario's data.yaml at `data`: what's written to it is in
     `app.state.written`."""
-    app = FastAPI(title="the desk's ITSM, made up")
-    written = app.state.written = Written()
+    written = Written()
 
     def read() -> dict:
         return yaml.safe_load(data.read_text()) or {}
@@ -79,20 +74,19 @@ def make(data: Path) -> FastAPI:
     def reply(args: dict, meta: dict) -> dict | None:
         """A reply on a ticket, which its requester reads: once for a5s's key, and once for
         the same words on the same ticket, so asking again does nothing more."""
-        key, body = args.get("key"), str(args.get("body") or "").strip()
+        key, body = str(args.get("key")), str(args.get("body") or "").strip()
         if not body or not any(t["key"] == key for t in read().get("tickets") or []):
             return None
-        once = str(meta.get("a5s/key") or f"{key}\n{body}")
-        if once in written.made:
-            return written.made[once]
-        posted = {"key": key, "replied": body, "at": datetime.now(UTC).isoformat(timespec="seconds"),
-                  "link": LINK + str(key)}
-        written.replies.setdefault(str(key), []).append({**posted, "a5s_key": meta.get("a5s/key")})
-        written.made[once] = posted
-        return posted
 
-    # Each tool: what it says it does, what it takes, its hints, and what it does
-    tools: dict[str, tuple[str, dict, dict, Callable[[dict, dict], dict | None]]] = {
+        def post() -> dict:
+            posted = {"key": key, "replied": body, "at": datetime.now(UTC).isoformat(timespec="seconds"),
+                      "link": LINK + key}
+            written.replies.setdefault(key, []).append({**posted, "a5s_key": meta.get("a5s/key")})
+            return posted
+
+        return once(written.made, meta, f"{key}\n{body}", post)
+
+    tools: Tools = {
         "search_tickets": ("Search the tickets by words in their titles.", QUERY,
                            {"readOnlyHint": True}, search),
         "get_ticket": ("Get one ticket by its key.", KEY, {"readOnlyHint": True}, ticket),
@@ -102,44 +96,8 @@ def make(data: Path) -> FastAPI:
                       {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True,
                        "openWorldHint": False}, reply),
     }
-
-    def answer(ident: Any, result: dict) -> JSONResponse:
-        return JSONResponse({"jsonrpc": "2.0", "id": ident, "result": result})
-
-    def failed(ident: Any, code: int, words: str) -> JSONResponse:
-        return JSONResponse({"jsonrpc": "2.0", "id": ident, "error": {"code": code, "message": words}})
-
-    @app.post("/mcp")
-    async def mcp(request: Request) -> Response:
-        message = await request.json()
-        method, ident = message.get("method"), message.get("id")
-        params = message.get("params") or {}
-        if ident is None:  # a notification, such as that a5s has initialized
-            return Response(status_code=202)
-        if method == "initialize":
-            asked = params.get("protocolVersion")
-            return JSONResponse({"jsonrpc": "2.0", "id": ident, "result": {
-                "protocolVersion": asked if asked in SPOKEN else SPOKEN[-1],
-                "capabilities": {"tools": {"listChanged": False}},
-                "serverInfo": {"name": "desk-itsm", "version": "1.0.0"}}},
-                headers={"Mcp-Session-Id": uuid.uuid4().hex})
-        if method == "tools/list":
-            return answer(ident, {"tools": [
-                {"name": name, "description": said, "inputSchema": takes, "annotations": hints}
-                for name, (said, takes, hints, _) in tools.items()]})
-        if method == "tools/call":
-            found = tools.get(params.get("name"))
-            if found is None:
-                return failed(ident, -32602, f"{params.get('name')!s:.40} isn't a tool of this server's")
-            meta = params.get("_meta") if isinstance(params.get("_meta"), dict) else {}
-            result = found[3](params.get("arguments") or {}, meta)
-            if result is None:
-                return answer(ident, {"content": [{"type": "text", "text": "No such ticket, or "
-                                                   "nothing to post on it."}], "isError": True})
-            return answer(ident, {"content": [{"type": "text", "text": json.dumps(result)}],
-                                  "structuredContent": result, "isError": False})
-        return failed(ident, -32601, f"{method!s:.40} isn't a method this server has")
-
+    app = serving("desk-itsm", tools, "No such ticket, or nothing to post on it.")
+    app.state.written = written
     return app
 
 

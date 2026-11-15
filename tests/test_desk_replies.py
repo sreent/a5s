@@ -50,7 +50,7 @@ def asked(desk: Stack, call=REPLY, person: str = "rae", said: str = "Reply to Sa
 
 def replies(key: str = "INC0000001") -> list[dict]:
     """What the ITSM has posted on a ticket."""
-    return SYSTEMS["service-desk"].replies.get(key, [])
+    return SYSTEMS["service-desk"]["itsm"].replies.get(key, [])
 
 
 def test_a_reply_waits_for_the_decider_of_its_tickets_service_area(desk, approving):

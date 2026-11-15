@@ -13,7 +13,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-from a5s.contract import PART_OWNER, Scenario
+from a5s.contract import PART_OWNER, Scenario, record_of
 
 UNSEEN = "there's no such record, or the people this run is for may not see it"
 
@@ -22,7 +22,10 @@ def about(scenario: Scenario, run: dict, records: list[str], action: str | None 
           approved: Iterable[str] = (), caps: dict[tuple[str, str], int] | None = None
           ) -> dict[str, Any]:
     """What policy weighs of the records a call is about: the level it works at, whether
-    they're all in the instance's parts, and whether everyone the run acts for may see them.
+    they're all in the instance's parts, whether everyone the run acts for may see them, and
+    whether they're all the own of the one person it acts for, as the scenario says whose each
+    record is, such as their own account: what a scenario's pack may hold a change to, such as
+    self-service only for the person asking.
 
     A change, a call with a type of action, works at the level the settings set for that type
     in each record's part, or else at most at level 1. Level 2 counts only while someone who
@@ -38,7 +41,17 @@ def about(scenario: Scenario, run: dict, records: list[str], action: str | None 
         level = min(level, 1)  # level 2 is for a type set in a record's part, and nothing else
     return {"level": level,
             "in_scope": all(p is None or p in parts for p in touched),
-            "visible": all(scenario.sees(who, r) for r in records for who in run["acts_for"])}
+            "visible": all(scenario.sees(who, r) for r in records for who in run["acts_for"]),
+            "for_self": for_self(scenario, list(run["acts_for"]), records)}
+
+
+def for_self(scenario: Scenario, acts_for: list[str], records: list[str]) -> bool:
+    """Whether a call is about the one person its run acts for alone: it acts for one person,
+    and names records, each of them theirs, as the scenario says whose each record is."""
+    if len(acts_for) != 1 or not records:
+        return False
+    return all((found := record_of(scenario, r)) is not None and found.person == acts_for[0]
+               for r in records)
 
 
 def _level(scenario: Scenario, run: dict, part: str, action: str | None, approved: set[str],

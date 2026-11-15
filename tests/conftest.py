@@ -461,30 +461,42 @@ class Stack:
 # A scenario's made-up systems, behind the MCP servers its mcp.yaml points a5s at, on this
 # machine: the service desk's ITSM (deploy/desk/itsm.py), on the desk's synthetic data. Each is
 # started once, the first time a test needs it, and left up, as a deployment's systems are.
+def policy_of(scenario: Any) -> PolicyEngine:
+    """The policy a deployment has for a scenario, as build.py makes it: a5s's base pack, and the
+    scenario's own beside it, if it has one, such as the service desk's."""
+    pack = scenario.policy_pack()
+    return PolicyEngine(packs=(pack,) if pack else ())
+
+
 SYSTEMS: dict[str, Any] = {}  # what's been written to each, by its scenario's folder
 RUNNING: list[Any] = []  # the systems themselves
 
 
-def scenario_systems(folder: str) -> Any:
+def scenario_systems(folder: str) -> dict[str, Any]:
     """The made-up systems a scenario's mcp.yaml declares tools of, started once for the rest
-    of the tests, at the address it declares: for each stack, with nothing written to them yet,
-    so a stack starts from the scenario's data as data.yaml has it. What's been written to
-    them, for a test to look at: the desk's ITSM's, or None for a scenario with none."""
+    of the tests, at the addresses it declares: for each stack, with nothing written to them
+    yet, so a stack starts from the scenario's data as data.yaml has it. What's been written
+    to each, by its server's name in mcp.yaml, for a test to look at: the desk's ITSM's and
+    identity provider's, or nothing for a scenario with none."""
     if folder != "service-desk":
-        return None
+        return {}
     if folder not in SYSTEMS:
         import importlib.util
-        spec = importlib.util.spec_from_file_location("desk_itsm", ROOT / "deploy" / "desk" / "itsm.py")
-        assert spec and spec.loader
-        itsm = importlib.util.module_from_spec(spec)
-        sys.modules[spec.name] = itsm  # as an import would, for its dataclasses
-        spec.loader.exec_module(itsm)
-        app = itsm.make(ROOT / "scenarios" / "service-desk" / "data.yaml")
-        up = serve(app, itsm.PORT)
-        up.__enter__()  # for the rest of the tests, so long as something holds it
-        RUNNING.append(up)
-        SYSTEMS[folder] = app.state.written
-    SYSTEMS[folder].reset()
+        found: dict[str, Any] = {}
+        for name, state in (("itsm", "written"), ("idp", "done")):
+            spec = importlib.util.spec_from_file_location(f"desk_{name}", ROOT / "deploy" / "desk" / f"{name}.py")
+            assert spec and spec.loader
+            system = importlib.util.module_from_spec(spec)
+            sys.modules[spec.name] = system  # as an import would, for its dataclasses
+            spec.loader.exec_module(system)
+            app = system.make(ROOT / "scenarios" / "service-desk" / "data.yaml")
+            up = serve(app, system.PORT)
+            up.__enter__()  # for the rest of the tests, so long as something holds it
+            RUNNING.append(up)
+            found[name] = getattr(app.state, state)
+        SYSTEMS[folder] = found
+    for state in SYSTEMS[folder].values():
+        state.reset()
     return SYSTEMS[folder]
 
 

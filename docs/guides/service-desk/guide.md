@@ -6,9 +6,9 @@ The desk's assistant, built again from nothing in the studio, as desk-helper, by
 
    ![Dev, who owns the desk's agents, starts a new one, desk-helper, from nothing: the blank start, which needs no tool of anyone's, so it fits the desk.](01-dev-who-owns-the-desk-s-agents-starts-a-new-one.png)
 
-2. From the palette, he gives it the desk's tools that read tickets, what requesters wrote and the knowledge base, and the one that saves a draft reply. The ITSM's come through its MCP server, as the desk declares them.
+2. From the palette, he gives it the desk's tools that read tickets, what requesters wrote and the knowledge base, the one that saves a draft reply, and the identity provider's self-service: an account, its own password reset, and removing authenticators. Both systems' come through their MCP servers.
 
-   ![From the palette, he gives it the desk's tools that read tickets, what requesters wrote and the knowledge base, and the one that saves a draft reply. The ITSM's come through its MCP server, as the desk declares them.](02-from-the-palette-he-gives-it-the-desk-s-tools-th.png)
+   ![From the palette, he gives it the desk's tools that read tickets, what requesters wrote and the knowledge base, the one that saves a draft reply, and the identity provider's self-service: an account, its own password reset, and removing authenticators. Both systems' come through their MCP servers.](02-from-the-palette-he-gives-it-the-desk-s-tools-th.png)
 
 3. He gives it a5s's own abilities the desk needs: reminders, its conversation, documents from outside, and the two preferences people set through it.
 
@@ -18,9 +18,9 @@ The desk's assistant, built again from nothing in the studio, as desk-helper, by
 
    ![What starts its runs: messages from its people, on Teams and Matrix, and what its people owe in the ITSM's tickets, which it reminds them of.](04-what-starts-its-runs-messages-from-its-people-on.png)
 
-5. On the agent itself: whom it works for, what it does, and its levels. It may ask for changes, but goes no further, as the desk's own assistant.
+5. On the agent itself: whom it works for, what it does, and its levels. It asks for changes, and may make a reset alone, at level 2, only where the settings and graded samples give it, as the desk's own assistant.
 
-   ![On the agent itself: whom it works for, what it does, and its levels. It may ask for changes, but goes no further, as the desk's own assistant.](05-on-the-agent-itself-whom-it-works-for-what-it-do.png)
+   ![On the agent itself: whom it works for, what it does, and its levels. It asks for changes, and may make a reset alone, at level 2, only where the settings and graded samples give it, as the desk's own assistant.](05-on-the-agent-itself-whom-it-works-for-what-it-do.png)
 
 6. He plans its first instance: in access, serving the sales team, as the desk's own assistant serves them. It's in force nowhere until access's owner approves it.
 

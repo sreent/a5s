@@ -1,6 +1,6 @@
 # IT Service Desk Scenario
 
-**Status:** Implemented for local development and tests: synthetic tickets, a Markdown knowledge vault, a dedicated desk assistant, ticket and article permissions, and replies on tickets, each held for its service area's decider. Self-service actions and the joiner coordinator remain future work, in [phase 5](../docs/phase-5.md).
+**Status:** Implemented for local development and tests: synthetic tickets, accounts and a Markdown knowledge vault, a dedicated desk assistant, ticket, account and article permissions, replies on tickets, each held for its service area's decider, and self-service through the identity provider, as the desk's pack allows it. The joiner coordinator remains future work, in [phase 5](../docs/phase-5.md).
 
 An internal IT service desk helps people with accounts, devices, access and the organisation's tools. People raise tickets, resolvers work them in the IT service management tool (ITSM), and new joiners need accounts and equipment ready before their first day. It tests a5s where scenarios differ most: much of its work is self-service, which a person asks for and the identity provider verifies, and some of the people it serves haven't joined yet.
 
@@ -10,7 +10,7 @@ An internal IT service desk helps people with accounts, devices, access and the 
 | --- | --- |
 | Directory | The identity provider, including pre-start accounts for new joiners, which the HR system creates; and the team that runs a5s, who own its agent, with the people from outside it who approve its releases. The ITSM says who may see each ticket. |
 | Settings | a5s's own settings store. The parts are service areas, such as accounts and access, devices, and collaboration tools, and the audience includes new joiners, from their pre-start accounts. |
-| Tools | The ITSM's tickets, comments and request catalogue, through the ITSM's MCP server, which the desk's [`mcp.yaml`](service-desk/mcp.yaml) declares; the knowledge base; the identity provider's self-service flows; and device management, read only |
+| Tools | The ITSM's tickets, comments and request catalogue, through the ITSM's MCP server, and the identity provider's self-service, through its own, which the desk's [`mcp.yaml`](service-desk/mcp.yaml) declares; the knowledge base; and device management, read only |
 | Records | Tickets with their response and resolution targets, and joiners' start dates from the HR system |
 | Governed process | The ITSM's request fulfilment and access approvals, which already keep requester and approver apart, and the identity provider's own self-service flows |
 | Decision surface | The ITSM's approvals |
@@ -26,7 +26,7 @@ An internal IT service desk helps people with accounts, devices, access and the 
 
 ## The service desk pack
 
-The service desk adds these to a5s's base pack:
+The service desk adds these to a5s's base pack. Its [`pack.cedar`](service-desk/pack.cedar) holds two of them as forbids, only for the person asking and authenticators going to a person; a5s's levels hold the first, and the desk's tools and directory the rest:
 
 - **Self-service can run at level 2,** for catalogue items the service owner approves, when the person it's for asked for it and the identity provider verifies them in its own flow. The agent starts the flow and never sees the secret.
 - **Only for the person asking.** A request for anyone else goes to the ITSM's approvals.
@@ -57,4 +57,6 @@ The read-only MVP's tests are in [`tests/test_service_desk.py`](../tests/test_se
 
 Its ITSM's tools come through the ITSM's MCP server, as an organisation's would ([phase 5](../docs/phase-5.md)): searching tickets, reading one, what requesters wrote on one, and posting a reply on one, declared in [`mcp.yaml`](service-desk/mcp.yaml) in a5s's own words, and nothing else of the server's. In this made-up desk the server is [`deploy/desk/itsm.py`](../deploy/desk/itsm.py), on the desk's synthetic data, beside the gateway on its own machine: the tests start it once, and the desk's containers run it in the gateway's network ([`deploy/compose.desk.yaml`](../deploy/compose.desk.yaml)). What stays the desk's own code is its directory, who may see each ticket, the obligations its tickets make, a draft reply for a person to send, and its knowledge base.
 
-A reply on a ticket is a change of type `reply`: below level 2, a5s holds it for the decider of the ticket's service area, its service owner or whoever they name beside them, never anyone it's for, and posts it once they approve it, once for a5s's key, which the made-up ITSM honours, keeping what's written to it in its memory, over the desk's data, until it stops ([`tests/test_desk_replies.py`](../tests/test_desk_replies.py)). Self-service identity flows, authenticator changes and the joiner coordinator are still to come.
+Self-service comes through the identity provider's MCP server, in this desk [`deploy/desk/idp.py`](../deploy/desk/idp.py): each person's account, ACC- and their id, which they and access's resolvers may see; the provider's own password reset, `reset-password`, which the account's holder finishes there, verifying themselves, so the agent never sees a secret; and removing an account's authenticators, `reset-authenticators`. Below level 2 both wait for access's decider, as every change does. A reset runs alone only where the service owner's settings give it level 2, graded samples have raised a5s's cap for it, the run hasn't read what a requester wrote, and it's the asker's own account: a5s refuses anyone else's, even for a resolver, as the pack says. No settings let an authenticator change run alone ([`tests/test_desk_self_service.py`](../tests/test_desk_self_service.py)).
+
+A reply on a ticket is a change of type `reply`: below level 2, a5s holds it for the decider of the ticket's service area, its service owner or whoever they name beside them, never anyone it's for, and posts it once they approve it, once for a5s's key, which the made-up ITSM honours, keeping what's written to it in its memory, over the desk's data, until it stops ([`tests/test_desk_replies.py`](../tests/test_desk_replies.py)). The joiner coordinator is still to come.

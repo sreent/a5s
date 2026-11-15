@@ -27,7 +27,7 @@ def call(engine, inst, resource, context=None, **about):
     return engine.decide(
         principal=inst["uid"], action="call_tool", resource=resource["uid"],
         context={"level": inst["attrs"]["level"], "read_outside": False, "acts_for": ["ana"],
-                 "in_scope": True, "visible": True, "over_limit": False, **about}
+                 "in_scope": True, "visible": True, "for_self": False, "over_limit": False, **about}
         if context is None else context,
         entities=[inst, resource],
     )

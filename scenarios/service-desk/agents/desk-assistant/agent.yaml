@@ -3,16 +3,18 @@ release: 0.1.0
 works_for: Employees and service-desk resolvers, within their ticket and knowledge permissions
 does: >-
   Answers questions about ITSM tickets and approved knowledge articles, saves
-  draft replies for people to review, and follows up on work that falls due.
+  draft replies for people to review, starts the identity provider's own password
+  reset for the person asking, and follows up on work that falls due.
 scope: none
 model: deepseek-v4-pro
 autonomy:
   start: 1
-  max: 1
+  max: 2  # level 2 only for self-service, where the settings and graded samples give it
 tools:
   records: [search_records, get_record, get_messages]
   knowledge: [search_knowledge, read_knowledge]
   documents: [create_draft]
+  self_service: [get_account, reset_password, reset_authenticators]
 triggers:
   - message: from the employee or resolver it works for
 obligations: [records]

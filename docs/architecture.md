@@ -101,7 +101,7 @@ Policy answers **allow**, **hold** or **deny**, and denies by default.
 - **Counts** stop a piece of work going past a limit the scenario sets, such as a mass-change size, and send the rest to whoever approves it. Code, not the model, decides what a piece of work is: a run. The settings give each type of action a limit for a run, and one for each person acted for in 30 days, across every agent. The gateway counts in the transaction that decides the call, under a lock, and the same change made again in a run counts once.
 - **Failing closed.** If policy, the settings, the counts or the ledger can't be reached, calls are denied, the run ends and its trigger waits.
 - **A schema.** A Cedar schema lists the facts every call carries. A call missing any of them is denied, and a pack that refers to anything else fails to load.
-- **Packs.** a5s's base pack holds what's always enforced: deny by default, the people a run acts for never decide what it raises, a marked run never acts at level 2 or writes a profile, and [what a5s won't do](#what-a5s-wont-do). A scenario's pack can only add restrictions.
+- **Packs.** a5s's base pack holds what's always enforced: deny by default, the people a run acts for never decide what it raises, a marked run never acts at level 2 or writes a profile, and [what a5s won't do](#what-a5s-wont-do). A scenario's pack can only add restrictions. Among the facts it may weigh is whether a call is the asker's own: the run acts for one person, and every record it names is theirs, as the scenario says whose each record is. The service desk's pack lets a password reset run alone only then, and an authenticator change never ([`pack.cedar`](../scenarios/service-desk/pack.cedar)).
 
 ## Provenance: who said what
 

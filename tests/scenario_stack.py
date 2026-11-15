@@ -17,7 +17,6 @@ from a5s.config import Config, load_models
 from a5s.connectors import mcp
 from a5s.core import inbox, memberships, registry
 from a5s.core.gateway import Gateway, create_app
-from a5s.core.policy import PolicyEngine
 from conftest import (
     QUIET,
     ROOT,
@@ -26,6 +25,7 @@ from conftest import (
     FakeModel,
     Stack,
     free_port,
+    policy_of,
     scenario_systems,
     serve,
     worker_for,
@@ -59,7 +59,7 @@ def running_scenario(database: str, root: Path, model: FakeModel, scenario: str,
     for agent in agents.iterdir():
         definitions.pin(agent, hashes)
     directory = memberships.grouped(found, cfg.database_url, lambda conn: gw.groups_in_force(conn))
-    gw = Gateway(cfg, directory, PolicyEngine(), load_models(cfg.models_file),
+    gw = Gateway(cfg, directory, policy_of(found), load_models(cfg.models_file),
                  definitions.load_all(cfg.agents_dir), http or httpx.Client(),
                  clock=lambda: QUIET)
     with db.transaction(database) as conn:

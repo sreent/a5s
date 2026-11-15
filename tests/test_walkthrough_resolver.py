@@ -216,7 +216,7 @@ def replied_and_audited(walk: Walk, stack, url: str) -> None:
                            "VPN client, then sign in again with MFA.")
         page.keyboard.press("Enter")
         page.wait_for_selector("li.agent >> text=it waits for Ola Nowak", timeout=30000)
-    assert SYSTEMS["service-desk"].replies == {}  # nothing posted yet
+    assert SYSTEMS["service-desk"]["itsm"].replies == {}  # nothing posted yet
     page = walk.as_("ola", f"{url}/studio/")
     with walk.step("Ola finds the reply waiting for her decision on her studio home. Its card says what "
                    "it posts, in words a5s works out from the call, never the agent's, who asked for it, "
@@ -231,7 +231,7 @@ def replied_and_audited(walk: Walk, stack, url: str) -> None:
         page.click(".approval button >> text=Approve")
         page.wait_for_selector("#status >> text=You approved P-1", timeout=30000)
     stack.scheduler().decided()  # a5s makes what's approved, as it does on its own
-    [posted] = SYSTEMS["service-desk"].replies["INC0000001"]
+    [posted] = SYSTEMS["service-desk"]["itsm"].replies["INC0000001"]
     assert posted["replied"] == REPLY
     page = walk.as_("rae", f"{url}/chat/")
     with walk.step("a5s posts it on the ticket, once, and tells Rae in the chat.", page):
