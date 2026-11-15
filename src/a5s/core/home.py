@@ -104,7 +104,7 @@ def waiting(conn: db.Connection, gw: Any, person: Person) -> list[dict]:
                if role in (own.roles if directory_alone and own else
                            () if directory_alone else person.roles)]
         if why:
-            found.append({"kind": "settings", "what": f"Serial {row['serial']} of the settings "
+            found.append({"kind": "settings", "what": f"Version {row['serial']} of the settings "
                           "waits for your approval", "why": list(dict.fromkeys(why)),
                           "go": f"/approve/?settings={row['digest']}"})  # its own page
     held = conn.execute("select count(*) as n from proposals where status = 'waiting' "

@@ -95,7 +95,7 @@ async function load() {
     "None: the settings in force give no group a role.");
   const waits = [];
   for (const v of now.waiting.settings) {
-    waits.push(item(`Settings, serial ${v.serial}: ${v.needs.length ? v.needs.join("; ") : "approved, for a5s to apply"}`));
+    waits.push(item(`Settings, version ${v.serial}: ${v.needs.length ? v.needs.join("; ") : "approved, for a5s to apply"}`));
   }
   for (const problem of now.waiting.release) waits.push(item(`The release: ${problem}`));
   for (const held of now.waiting.held_changes) {

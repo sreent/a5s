@@ -285,7 +285,7 @@ def changes(before: Settings | None, after: Settings, definitions: dict[str, Def
         if fewer := sorted(a - b):
             found.append({"text": f"The group {group} no longer gives {names_of(fewer)}.",
                           "widens": False})
-    return found or [{"text": "It changes nothing the agents do: only its serial or notes.",
+    return found or [{"text": "It changes nothing the agents do: only its number or its notes.",
                       "widens": False}]
 
 
@@ -366,7 +366,7 @@ def text(serial: int, found: list[dict], link: str) -> str:
 
 
 def _waits(serial: int) -> str:
-    return f"Serial {serial} of a5s's settings waits for its instance approvers to approve it."
+    return f"Version {serial} of a5s's settings waits for its instance approvers to approve it."
 
 
 # Approving

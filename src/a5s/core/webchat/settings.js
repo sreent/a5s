@@ -124,7 +124,7 @@ function showWaiting(waiting) {
     const title = document.createElement("p");
     const link = document.createElement("a");
     link.href = version.link;
-    link.textContent = `Serial ${version.serial}`;
+    link.textContent = `Version ${version.serial}`;
     title.append(link, version.approved_by.length
       ? `, approved so far by ${version.approved_by.join(", ")}.` : ", which nobody has approved yet.");
     const changes = document.createElement("ul");
@@ -144,7 +144,7 @@ function showWaiting(waiting) {
 function showRequests(requests) {
   list("requests", requests.map((r) => {
     const when = new Date(r.asked_at).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
-    return `Serial ${r.serial}, asked for ${when}: ${r.outcome}.`;
+    return `Version ${r.serial}, asked for ${when}: ${r.outcome}.`;
   }));
   $("requests-section").hidden = requests.length === 0;
 }
@@ -587,7 +587,7 @@ async function load() {
   const now = await call("/settings/api");
   $("who").textContent = now.you;
   if (now.in_force) {
-    $("in-force-title").textContent = `In force: serial ${now.in_force.serial}`;
+    $("in-force-title").textContent = `In force: version ${now.in_force.serial}`;
     list("whole", now.in_force.whole);
     $("in-force").hidden = false;
     if (!$("text").value) $("text").value = now.in_force.text;
@@ -623,7 +623,7 @@ async function review() {
     return;
   }
   $("reviewed-summary").textContent = found.problems.length
-    ? `As serial ${found.serial}, a5s can't propose this:` : `As serial ${found.serial}, it:`;
+    ? `As version ${found.serial}, a5s can't propose this:` : `As version ${found.serial}, it:`;
   list("reviewed-changes", found.changes);
   $("reviewed-approvers").textContent = found.approvers.length
     ? `It needs the approval of ${found.approvers.join(", ")}.` : "Nobody in the directory can approve it.";
@@ -639,7 +639,7 @@ async function send() {
     const asked = await call("/settings/api/requests", { text: reviewed });
     $("reviewed").hidden = true;
     working = null;  // the forms start again from what's in force
-    status(`You asked for serial ${asked.serial}. a5s asks its approvers within a minute, and puts it in force once they've all approved it.`);
+    status(`You asked for version ${asked.serial}. a5s asks its approvers within a minute, and puts it in force once they've all approved it.`);
     await load();
   } finally {
     $("send").disabled = false;

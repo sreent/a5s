@@ -1,7 +1,7 @@
 """Round 5, reviewer c: what the approval page tells an approver once they've approved.
 
 A version that has an instance work in two parts needs both parts' owners. After the first
-approves, the page says "You approved serial N. a5s puts it in force within a minute."
+approves, the page says "You approved version N. a5s puts it in force within a minute."
 (core/webchat/approve.js), and on a later visit "You've approved it. a5s puts it in force
 within a minute.", beside the line that says it still waits for the other owner. Nothing
 goes in force until the other owner approves, and the answer the page gets from the core

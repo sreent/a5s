@@ -41,7 +41,7 @@ def test_it_says_what_waits_for_whom_and_where_they_do_it(stack, approving, prov
     ana = {w["kind"]: w for w in api(approving, provider, "ana", "home").json()["waiting"]}
     assert ana["settings"] == {
         "kind": "settings", "go": f"/approve/?settings={waiting['digest']}",
-        "what": f"Serial {waiting['serial']} of the settings waits for your approval",
+        "what": f"Version {waiting['serial']} of the settings waits for your approval",
         "why": ["the owner of billing hasn't approved it"]}
     assert ana["decide"]["what"] == "1 change an agent asked for waits for your decision"
     assert ana["decide"]["go"] == "/decide/"

@@ -125,7 +125,7 @@ def _propose(cfg: Config, path: Path | None) -> None:
     """Ask the instance approvers to approve the settings where they work, with a card."""
     raw = path.read_bytes() if path else build.scenario(cfg).settings().raw
     asked = _admin(cfg, "/settings/proposals", {"raw": base64.b64encode(raw).decode()})
-    print(f"Serial {asked['serial']} of the settings:")
+    print(f"Version {asked['serial']} of the settings:")
     for change in asked["changes"]:
         print(f"- {change['text']}")
     if asked["new"]:

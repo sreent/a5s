@@ -80,7 +80,7 @@ def test_asking_for_a_version_has_the_gateway_propose_it_to_everyone_it_needs(st
     assert stack.inbox("omar") == []  # not yet: the gateway proposes it, on its next sweep
     stack.scheduler().apply_approved()
     [told] = stack.inbox("omar")  # he owns orders, and has never written to a5s
-    assert told["text"].startswith(f"Serial {serial} of a5s's settings waits for its instance "
+    assert told["text"].startswith(f"Version {serial} of a5s's settings waits for its instance "
                                    "approvers")
     assert len(stack.inbox("ana")) == 1
     now = api(approving, provider, "/settings/api").json()
@@ -109,7 +109,7 @@ def test_an_approver_asks_for_a_change_in_the_browser(stack, approving, provider
     page.wait_for_selector("#reviewed-changes >> text=Chen Wei", timeout=30000)
     assert page.inner_text("#reviewed-approvers") == "It needs the approval of Ana Ortiz."
     page.click("#send")
-    page.wait_for_selector("#status >> text=You asked for serial", timeout=30000)
+    page.wait_for_selector("#status >> text=You asked for version", timeout=30000)
     page.wait_for_selector("#requests li", timeout=30000)
     assert "waiting for a5s to ask its approvers" in page.inner_text("#requests")
 
@@ -149,7 +149,7 @@ def test_an_approver_changes_the_settings_in_forms_in_the_browser(stack, approvi
     page.click("#review")
     page.wait_for_selector("#send", state="visible", timeout=30000)
     page.click("#send")
-    page.wait_for_selector("#status >> text=You asked for serial", timeout=30000)
+    page.wait_for_selector("#status >> text=You asked for version", timeout=30000)
     # What it asked for is the version in force with those changes and nothing else
     stack.scheduler().apply_approved()
     [waiting] = api(approving, provider, "/settings/api").json()["waiting"]
@@ -189,7 +189,7 @@ def test_an_agent_is_put_to_work_from_its_page_in_the_studio(stack, approving, p
         "Priya Nair. widens what agents do")]
     assert page.inner_text("#reviewed-approvers") == "It needs the approval of Ana Ortiz."
     page.click("#send")
-    page.wait_for_selector("#status >> text=You asked for serial", timeout=30000)
+    page.wait_for_selector("#status >> text=You asked for version", timeout=30000)
     # a5s proposes it to billing's owner, who approves it on its own page, seeing who asked
     stack.scheduler().apply_approved()
     [waiting] = api(approving, provider, "/settings/api", person="ana").json()["waiting"]
@@ -198,7 +198,7 @@ def test_an_agent_is_put_to_work_from_its_page_in_the_studio(stack, approving, p
     page.goto(f"{approving}{waiting['link']}")  # signing in afresh, for this version alone
     page.wait_for_selector("#asker >> text=Priya Nair asked for it", timeout=30000)
     page.click("#approve")
-    page.wait_for_selector("#status >> text=You approved serial", timeout=30000)
+    page.wait_for_selector("#status >> text=You approved version", timeout=30000)
     stack.scheduler().apply_approved()  # in force
     # And it's at work: its page shows where it runs, and no longer offers to put it to work
     provider.person = "priya"

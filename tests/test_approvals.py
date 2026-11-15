@@ -76,7 +76,7 @@ def test_an_approver_is_asked_where_they_work_and_what_they_approve_is_applied(s
     assert asked["link"] == f"{approving}/approve/?settings={asked['digest']}"
     [told] = stack.inbox("ana")  # she's not written to a5s anywhere, so it waits in her inbox
     assert told["from"] == "a5s" and told["text"] == (
-        f"Serial {now + 1} of a5s's settings waits for its instance approvers to approve it.\n"
+        f"Version {now + 1} of a5s's settings waits for its instance approvers to approve it.\n"
         "What it changes:\n- assistant-finance serves Chen Wei as well.\n"
         f"Review it, and approve it only if you mean it, at {asked['link']}")
 
@@ -223,7 +223,7 @@ def test_the_core_asks_nobody_about_a_version_it_couldnt_apply(stack, approving)
             "raw": base64.b64encode(yaml.safe_dump(unknown).encode()).decode()})
     assert garbled.status_code == 400
     assert older.status_code == 409
-    assert f"isn't above {settings['serial']}" in older.json()["detail"]["reasons"][0]
+    assert f"isn't above version {settings['serial']}" in older.json()["detail"]["reasons"][0]
     assert nobody.status_code == 409
     assert "helper names helper, which no release here has" in nobody.json()["detail"]["reasons"]
     assert stack.inbox("ana") == []
@@ -262,7 +262,7 @@ def test_an_approver_reviews_and_approves_in_the_browser(stack, approving, provi
     # On a card: when it was proposed, nobody having asked for it in the settings app, where it
     # stands, what it changes, the one marked as widening what agents do, and what's missing
     assert page.inner_text("#asker").startswith("Proposed ")
-    assert page.inner_text("#title") == f"Serial {asked['serial']} of the settings"
+    assert page.inner_text("#title") == f"Version {asked['serial']} of the settings"
     assert page.inner_text("#standing") == "waiting for you"
     assert page.locator("#changes li").all_inner_texts() == [
         "assistant-finance serves Chen Wei as well. widens what agents do",
@@ -281,7 +281,7 @@ def test_an_approver_reviews_and_approves_in_the_browser(stack, approving, provi
     accessible(page)
     shot(page, "approve")
     page.click("#approve")
-    page.wait_for_selector(f"#status >> text=You approved serial {asked['serial']}", timeout=30000)
+    page.wait_for_selector(f"#status >> text=You approved version {asked['serial']}", timeout=30000)
     assert not page.is_visible("#approve") and page.inner_text("#standing") == "you approved it"
     stack.scheduler().apply_approved()
     assert serves(stack) == CHEN_TOO

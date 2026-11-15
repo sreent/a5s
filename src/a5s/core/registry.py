@@ -250,9 +250,9 @@ def apply(
             refused.append(f"{s.definition} names tools the scenario doesn't have: "
                            f"{', '.join(absent)}")
     if last and settings.serial < last["serial"]:
-        refused.append(f"serial {settings.serial} is older than {last['serial']}, the version in force")
+        refused.append(f"version {settings.serial} is older than version {last['serial']}, the one in force")
     if last and settings.serial == last["serial"] and settings.version != last["version"]:
-        refused.append(f"serial {settings.serial} already belongs to another version")
+        refused.append(f"version {settings.serial}'s number already belongs to another version")
     version = {"settings": settings.version, "serial": settings.serial}
     if refused:
         ledger.append(conn, {"kind": "admin", "action": "apply", "decision": "deny",

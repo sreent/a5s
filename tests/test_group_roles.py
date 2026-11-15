@@ -136,7 +136,7 @@ def test_only_assurance_the_directory_names_gives_a_group_the_auditor_role(
     home = httpx.get(f"{approving}/studio/api/home", timeout=30,
                      headers={"Authorization": f"Bearer {token}"}).json()
     assert [(w["kind"], w["what"]) for w in home["waiting"] if w["kind"] == "settings"] == [
-        ("settings", f"Serial {asked['serial']} of the settings waits for your approval")]
+        ("settings", f"Version {asked['serial']} of the settings waits for your approval")]
     approve(stack, approving, provider, asked["digest"], "kofi")  # who's assurance
     assert in_force(stack) == (asked["serial"], None)
 

@@ -601,8 +601,8 @@ class Gateway:
         directory doesn't know."""
         problems = []
         if last and settings.serial <= last["serial"]:
-            problems.append(f"serial {settings.serial} isn't above {last['serial']}, the version "
-                            "in force's: raise it")
+            problems.append(f"version {settings.serial} isn't above version {last['serial']}, "
+                            "the one in force: raise its serial")
         tools = self.scenario.tools()
         taken = sorted({t.action for t in tools.values() if t.action})  # the types of action
         if unknown := sorted(set(settings.limits) - set(taken)):

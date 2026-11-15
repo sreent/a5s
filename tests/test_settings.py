@@ -101,7 +101,7 @@ def test_an_older_version_cant_be_replayed(sample):
     assert not apply(folder, database).refused
     (folder / "settings.yaml").write_text(old_settings)  # the old, looser version, still signed
     (folder / "settings.sig").write_text(old_signature)
-    assert "serial 1 is older than 2, the version in force" in apply(folder, database).refused
+    assert "version 1 is older than version 2, the one in force" in apply(folder, database).refused
     assert instances(database)[0]["level"] == 0
 
 
@@ -112,7 +112,7 @@ def test_a_serial_belongs_to_one_version(sample):
     assert not apply(folder, database).refused
     write(folder, 1, level=1)
     sign(folder, "ana", keys["ana"])
-    assert "serial 1 already belongs to another version" in apply(folder, database).refused
+    assert "version 1's number already belongs to another version" in apply(folder, database).refused
 
 
 def test_the_same_version_can_be_applied_again(sample):

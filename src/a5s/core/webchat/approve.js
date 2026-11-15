@@ -118,9 +118,9 @@ function show(version, signed) {
     words.append(element("span", `Proposed ${when}`, "who-about"));
     $("asker").replaceChildren(words);
   }
-  $("title").textContent = `Serial ${version.serial} of the settings`;
+  $("title").textContent = `Version ${version.serial} of the settings`;
   $("summary").textContent = version.in_force === null ? "What it sets, with nothing in force yet"
-    : `What it changes from serial ${version.in_force}, the version in force`;
+    : `What it changes from version ${version.in_force}, the one in force`;
   $("changes").replaceChildren(...version.changes.map(changed));
   $("approvals").textContent = version.approved_by.length ? version.approved_by.join(", ") : "nobody yet";
   $("needs").textContent = version.needs.join("; ");
@@ -136,7 +136,7 @@ function show(version, signed) {
     status(version.needs.length ? `You've approved it. It goes in force once nothing more is missing: ${version.needs.join("; ")}.` : "You've approved it. a5s puts it in force within a minute, as it needs nothing more.");
   } else {
     standing("waiting for you", "warn");
-    $("approve").textContent = `Approve serial ${version.serial}`;
+    $("approve").textContent = `Approve version ${version.serial}`;
     $("decision").hidden = false;
     $("approve").addEventListener("click", async () => {
       if (!signed.token) return;
@@ -147,7 +147,7 @@ function show(version, signed) {
         $("decision").hidden = true;
         standing("you approved it", "good");
         if (done.needs.length) $("approvals").textContent = [...version.approved_by, version.you].join(", ");
-        status(done.needs.length ? `You approved serial ${done.serial}. It goes in force once nothing more is missing: ${done.needs.join("; ")}.` : `You approved serial ${done.serial}. a5s puts it in force within a minute, as it needs nothing more.`);
+        status(done.needs.length ? `You approved version ${done.serial}. It goes in force once nothing more is missing: ${done.needs.join("; ")}.` : `You approved version ${done.serial}. a5s puts it in force within a minute, as it needs nothing more.`);
       } catch (error) {
         status(error.message);
         $("approve").disabled = false;
