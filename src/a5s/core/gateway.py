@@ -79,6 +79,7 @@ from a5s.core import (
     proposals,
     provenance,
     recall,
+    registration,
     registry,
     releases,
     reminders,
@@ -256,6 +257,7 @@ class Gateway:
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)  # when obligations and schedules are due
     releases: releases.Releases | None = None  # the release a5s is, which must be approved here
     breakers: Breakers = field(default_factory=Breakers)  # models not called for now (core/breakers.py)
+    registry: Any = None  # the Microsoft tenant its instances are listed in, if any (core/registration.py)
 
     @property
     def url(self) -> str:
@@ -3452,6 +3454,29 @@ def create_app(gw: Gateway) -> FastAPI:
                     changed.append(found)
                     capped(conn, found, now)
         return {"changed": changed, "lapsed": lapsed}
+
+    @services.post("/registry/sweep")
+    def sweep_registry() -> dict:
+        """Bring the Microsoft tenant's agent registry into line with the instances a5s runs,
+        and their Entra agent identities, where the deployment asks for them
+        (core/registration.py): nothing, if it names no tenant, while another sweep is at it,
+        or while the settings in force don't check out."""
+        if gw.registry is None:
+            return {"changed": [], "registering": "nothing, since the deployment names no tenant"}
+        with psycopg.connect(gw.url, autocommit=True) as held:  # one sweep at a time, throughout
+            got = held.execute("select pg_try_advisory_lock(hashtext('a5s registry')) as got"
+                               ).fetchone()
+            if not (got and got[0]):
+                return {"changed": []}
+            try:
+                with db.transaction(gw.url) as conn:
+                    settings, problem = gw.settings_in_force(conn, seal=False)
+                if settings is None:
+                    return {"changed": [], "registering": f"nothing, since {problem}"}
+                return {"changed": registration.sweep(gw.url, gw.registry, gw.scenario,
+                                                      gw.definitions, gw.cfg.public_url)}
+            finally:
+                held.execute("select pg_advisory_unlock(hashtext('a5s registry'))")
 
     @services.post("/samples/judge")
     def judge_samples() -> dict:

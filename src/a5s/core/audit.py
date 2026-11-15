@@ -49,7 +49,7 @@ ACTORS = ("admin", "audit", "proposal")  # entries whose `by` acted in one of a5
 ACTING = ("by", "signed_by")  # where those entries name who acted
 # The kinds of entry a5s writes, for the auditors' page to offer
 KINDS = ("admin", "audit", "breaker", "budget", "cap", "inbound", "message", "model", "notice",
-         "proposal", "repeat", "retention", "run", "task", "tool")
+         "proposal", "registry", "repeat", "retention", "run", "task", "tool")
 
 
 def reads(person: Any) -> bool:

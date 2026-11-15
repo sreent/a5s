@@ -11,7 +11,7 @@ from a5s import db, definitions
 from a5s.config import Config, load_models
 from a5s.connectors import mcp
 from a5s.contract import Scenario
-from a5s.core import memberships, metrics, registry, status, traces
+from a5s.core import memberships, metrics, registration, registry, status, traces
 from a5s.core.gateway import CORE_TOOLS, Gateway, create_app
 from a5s.core.identity import verifier_from_env
 from a5s.core.matrix import Matrix, MatrixConfig
@@ -47,6 +47,7 @@ def gateway(cfg: Config, http: httpx.Client | None = None) -> Gateway:
         teams=Teams(teams) if (teams := TeamsConfig.from_env()) else None,
         matrix=Matrix(matrix) if (matrix := MatrixConfig.from_env()) else None,
         releases=Releases(running(cfg.root, cfg.scenario_dir, cfg.agents_dir)),
+        registry=registration.Registry.from_env(),  # IT's inventory, if the deployment asks
     )
     return gw
 

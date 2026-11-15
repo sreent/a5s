@@ -648,10 +648,12 @@ class Scheduler:
     def decided(self) -> None:
         """Ask the core to make the held changes their deciders approved, and to remind,
         escalate or let go of those still waiting; to weigh the grades of agents' work; and to
-        have each agent's judge, if it names one, grade the samples of its work beside people."""
+        have each agent's judge, if it names one, grade the samples of its work beside people;
+        and to list its instances in IT's inventory, where the deployment names a tenant."""
         for path, what in (("/proposals/sweep", "the held changes"),
                            ("/samples/sweep", "the graded samples"),
-                           ("/samples/judge", "the judge's verdicts on samples")):
+                           ("/samples/judge", "the judge's verdicts on samples"),
+                           ("/registry/sweep", "IT's inventory in Microsoft 365")):
             try:
                 self.gw.post(path, headers=self.service).raise_for_status()
             except httpx.HTTPError:

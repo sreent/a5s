@@ -226,6 +226,7 @@ MATRIX = "Matrix"
 LEDGER = "The ledger's locked copies"
 STUDIO = "The studio, its sandbox and publishing"
 SCENARIO = "The scenario"
+INVENTORY = "IT's inventory in Microsoft 365"
 COMMAND = "The command line"
 
 _DB = ("postgresql", "postgres")
@@ -367,7 +368,28 @@ AGENTS_DIR = Var("A5S_AGENTS_DIR", "the agents' folders, if not agents", None, _
 TOKEN = Var("A5S_TOKEN", "the token the identity provider gave the person using the command "
             "line, where a5s uses one", None, secret=True, area=COMMAND, takes="a token")
 
-AREAS = (CORE, DATABASE, WORKERS, SIGN_IN, TEAMS, MATRIX, LEDGER, STUDIO, SCENARIO, COMMAND)
+# IT's one inventory: each instance mirrored into Agent 365's agent registry, from the core alone
+# (core/registration.py)
+REGISTRY_TENANT = Var("A5S_REGISTRY_TENANT", "the Microsoft tenant whose agent registry lists "
+                      "a5s's instances, by its id: none, and a5s registers nothing", None,
+                      area=INVENTORY)
+REGISTRY_CLIENT_ID = Var("A5S_REGISTRY_CLIENT_ID", "the app the core signs in to the tenant as, "
+                         "granted AgentRegistration.ReadWrite.All: the deployment's agent "
+                         "identity blueprint, where it gives instances identities", None,
+                         area=INVENTORY)
+REGISTRY_SECRET = Var("A5S_REGISTRY_SECRET", "that app's client secret", None, secret=True,
+                      area=INVENTORY, takes="its secret")
+REGISTRY_IDENTITIES = Var("A5S_REGISTRY_IDENTITIES", "whether each instance gets an Entra agent "
+                          "identity of its own too, under that blueprint, its owner and deputy "
+                          "its sponsors", False, _flag, "true or false", area=INVENTORY)
+REGISTRY_GRAPH = Var("A5S_REGISTRY_GRAPH", "Microsoft Graph, as the tenant's cloud has it",
+                     "https://graph.microsoft.com", _url("https"), "an https:// address",
+                     area=INVENTORY)
+REGISTRY_LOGIN = Var("A5S_REGISTRY_LOGIN", "where the core signs in to the tenant",
+                     "https://login.microsoftonline.com", _url("https"), "an https:// address",
+                     area=INVENTORY)
+AREAS = (CORE, DATABASE, WORKERS, SIGN_IN, TEAMS, MATRIX, LEDGER, STUDIO, SCENARIO, INVENTORY,
+         COMMAND)
 # Every setting above, by its area
 VARS: tuple[Var, ...] = tuple(sorted((v for v in globals().values() if isinstance(v, Var)),
                                      key=lambda v: AREAS.index(v.area)))
@@ -400,6 +422,7 @@ NEEDS: tuple[tuple[Var, tuple[Var, ...], str], ...] = (
     (MATRIX_HOMESERVER, (MATRIX_SERVER_NAME, MATRIX_AS_TOKEN, MATRIX_HS_TOKEN), "Matrix"),
     (GITHUB_CLIENT_ID, (GITHUB_REPO,), "publishing on GitHub"),
     (SANDBOX_URL, (SANDBOX_TOKEN,), "the sandbox"),
+    (REGISTRY_TENANT, (REGISTRY_CLIENT_ID, REGISTRY_SECRET), "IT's inventory in Microsoft 365"),
 )
 BY_NAME = {v.name: v for v in VARS}
 # The waits that nest, each in seconds, shortest first: a model's answer comes within the
