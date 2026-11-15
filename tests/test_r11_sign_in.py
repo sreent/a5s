@@ -29,8 +29,8 @@ def test_a_link_puts_no_words_of_its_own_on_a5s_pages(approving, browser, path):
 
 def test_the_providers_own_words_are_shown_for_a_sign_in_this_tab_sent(approving, provider,
                                                                      browser):
-    provider.refusing = ("access_denied", "Your organisation needs you to sign in from a "
-                                          "managed device.")
+    provider.refusing = ("access_denied",
+                         "Your organisation needs you to sign in from a managed device.")
     page = browser.new_page()
     page.goto(f"{approving}/tasks/")  # which signs in at once
     said = status_of(page, "tasks", "managed device")
