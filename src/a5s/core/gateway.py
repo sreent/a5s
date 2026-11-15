@@ -629,7 +629,7 @@ class Gateway:
         args = (self.cfg.seal_keys, self.identity, self.scenario, self.cfg.webchat_client_id)
         for refused in (*approvals.seal_pending(conn, *args),
                         *proposals.seal_pending(conn, *args, clean=self.reason_told),
-                        *samples.seal_pending(conn, *args)):
+                        *samples.seal_pending(conn, *args, now=self.clock())):
             ledger.append(conn, {"kind": "admin", "action": "refuse-sign-in", "run": None,
                                  "instance": None, "acts_for": [], "decision": "record",
                                  "args": {"what": refused}})
@@ -3361,7 +3361,7 @@ def create_app(gw: Gateway) -> FastAPI:
                              p["standing"] or {r: None for r in p["records"]},
                              list(p["acts_for"]), now, proposal=p["id"],
                              decided="reject" if became == "rejected" else "approve",
-                             decided_by=deciders_[0] if deciders_ else None, flags=p["flags"])
+                             decided_by=deciders_, flags=p["flags"])
         ledger.append(conn, {"kind": "proposal", "action": became, "run": str(p["run_id"]),
                              "instance": p["instance_id"], "acts_for": list(p["acts_for"]),
                              "decision": "record", "of": p["seq"],
@@ -3516,8 +3516,10 @@ def create_app(gw: Gateway) -> FastAPI:
     def judge_samples() -> dict:
         """Ask each agent's judge about the samples of its work a5s drew for people to grade, a
         few a sweep, beside people's grades and never instead of them (core/judging.py). A judge
-        not approved for the class of data the settings say, and for every one its agent's own
-        model is, judges nothing; nor does any while the settings in force don't check out."""
+        reads a sample as its decider did: the values its handles stand for, and every field of
+        the records it named. So one not approved for the class of data the settings say, for
+        every class they give a field, and for every one its agent's own model is, judges
+        nothing; nor does any while the settings in force don't check out."""
         with db.transaction(gw.url) as conn:
             locked = conn.execute("select pg_try_advisory_xact_lock(hashtext('a5s judging')) "
                                   "as got").fetchone()
@@ -3532,8 +3534,9 @@ def create_app(gw: Gateway) -> FastAPI:
                 own = gw.models.get(release.model)
                 if (judge is not None and own is not None
                         and settings.data_class in judge.data_classes
-                        and set(own.data_classes) <= set(judge.data_classes)):
-                    judged_by[name] = judge.alias  # it may see all its agent may
+                        and set(own.data_classes) <= set(judge.data_classes)
+                        and set(settings.classified.values()) <= set(judge.data_classes)):
+                    judged_by[name] = judge.alias  # it may see all its agent's decider may
             due = judging.pending(conn, judged_by)
         judged = []
         for sample in due:

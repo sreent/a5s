@@ -59,8 +59,10 @@ def router(gw: Any) -> APIRouter:
         return grading(body.grades, body.salt, authorization)
 
     def grading(grades: dict[int, str], salt: str, authorization: str | None) -> dict:
-        if not 1 <= len(grades) <= 20 or any(g not in samples.GRADES for g in grades.values()):
-            raise HTTPException(400, "grade from one to 20 samples, each right, wrong or critical")
+        if not 1 <= len(grades) <= samples.MOST_GRADED or any(g not in samples.GRADES
+                                                              for g in grades.values()):
+            raise HTTPException(400, f"grade from one to {samples.MOST_GRADED} samples, each "
+                                     "right, wrong or critical")
         token = (authorization or "").removeprefix("Bearer ").strip()
         if not token:
             raise HTTPException(401, "sign in to grade: send your sign-in as a bearer token")
@@ -87,7 +89,8 @@ def router(gw: Any) -> APIRouter:
                 if row is None:
                     raise HTTPException(404, f"a5s has no sample {sample}")
                 if (why := samples.may_grade(gw.scenario, row, person,
-                                             minders.get(row["instance_id"], ()))) is not None:
+                                             minders.get(row["instance_id"], ()),
+                                             samples.drafted(conn, row["definition"]))) is not None:
                     raise HTTPException(403, why)
                 if row["grade"] is not None or row["lapsed_at"] is not None:
                     raise HTTPException(409, f"sample {sample} has been graded already, or lapsed")

@@ -13,13 +13,16 @@ Code draws samples of each behaviour's changes: every held change someone decide
 cap is still 1, and at level 2 changes made, at random, about 100 a quarter, spread through
 it. A sample keeps what code flagged to the decider and the records as they stood when the
 change was asked for. People who hold the grader role grade them on the core's page, as
-right, wrong or critical, signing in afresh to give exactly those grades, which the core
-seals. Never anyone from the team that built the agent, or of the instance's owner or
-deputy, nor anyone the change was for or who decided it, nor anyone who reports to whoever
-decided it, and only for records they may see. A sample nobody grades in a quarter lapses.
+right, wrong or critical, signing in afresh to give exactly those grades, at most 20 a
+sign-in, which the core seals once it has checked, itself, that they may give each. Never
+anyone who owns, authors or drafted the agent, nor anyone from their teams or those of the
+instance's owner or deputy, nor anyone the change was for or who decided it, nor anyone who
+reports to whoever decided it, and only for records they may see. A sample nobody grades in a
+quarter lapses.
 
-A sequential test weighs the sealed grades for each behaviour, part and type of action given
-since its cap last changed, so each change starts a fresh test. It raises the cap to 2 once
+A sequential test weighs the grades for each behaviour, part and type of action the core sealed
+since its cap last changed, so each change starts a fresh test, and a grade given before a change
+but sealed after it is weighed in the next. It raises the cap to 2 once
 the evidence shows, with 95% confidence, that accuracy meets the part's threshold in the
 settings, and lowers it to 1 once the evidence shows accuracy below it, at once on a critical
 error, or when the part's threshold rises past what the grades that earned it show. A part
@@ -47,7 +50,7 @@ from typing import Any, LiteralString
 from psycopg.types.json import Jsonb
 
 from a5s import db
-from a5s.contract import Person, Scenario, Tool
+from a5s.contract import AGENT_AUTHOR, AGENT_OWNER, Person, Scenario, Tool
 from a5s.core import ledger
 from a5s.core.ledger import canonical
 
@@ -56,6 +59,7 @@ GRADES = ("right", "wrong", "critical")
 ALPHA = 0.05  # the test's error: 95% confidence
 PER_QUARTER = 100  # changes made at level 2 sampled, for each behaviour, part and type
 LAPSE = timedelta(days=91)  # a sample nobody grades in a quarter lapses
+MOST_GRADED = 20  # grades one sign-in gives, at most
 _SEALED_GRADE = ("scenario", "id", "grade", "graded_by", "graded_at", "grade_token",
                  "grade_nonce", "grade_salt", "grade_issuer", "grade_subject")
 _SEALED_CAP = ("behaviour", "part", "action", "cap", "since", "why", "threshold", "window_from",
@@ -229,11 +233,12 @@ def draw(conn: db.Connection, keys: tuple[str, ...], scenario: str, kind: str, r
          definition: str, instance: str, run: str, part: str, action: str, said: str,
          records: dict[str, dict | None], acts_for: list[str], now: datetime,
          proposal: int | None = None, decided: str | None = None,
-         decided_by: str | None = None, flags: list[str] | None = None) -> bool:
+         decided_by: list[str] | None = None, flags: list[str] | None = None) -> bool:
     """Draw a change as a sample for grading, if it's one a5s samples now: a decided held
     change while the cap is still 1, or, at level 2, a change made, at random, at a rate that
     spreads about 100 through the quarter, by how many the last 30 days made. Whether it drew
-    one."""
+    one. `decided_by` is everyone who decided it, for each part it touched, so none of them
+    grades it."""
     behaves = behaviour_of(conn, release, action)
     current = _cap_row(conn, keys, behaves, part, action) if behaves else None
     if kind == "proposal" and current is not None and current["cap"] >= 2:
@@ -253,31 +258,54 @@ def draw(conn: db.Connection, keys: tuple[str, ...], scenario: str, kind: str, r
             return False
     conn.execute(
         "insert into samples (scenario, kind, proposal_id, run_id, instance_id, release, "
-        "definition, part, action, said, records, acts_for, decided, decided_by, drawn_at, flags) "
-        "values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)",
+        "definition, part, action, said, records, acts_for, decided, decided_by, deciders, "
+        "drawn_at, flags) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
+        "%s)",
         (scenario, kind, proposal, run, instance, release, definition, part, action, said,
-         Jsonb(records), acts_for, decided, decided_by, now, Jsonb(list(flags or []))))
+         Jsonb(records), acts_for, decided, decided_by[0] if decided_by else None,
+         list(dict.fromkeys(decided_by or [])), now, Jsonb(list(flags or []))))
     return True
 
 
 # Grading
 
+def deciders_of(sample: dict) -> set[str]:
+    """Everyone who decided a sample's change: for each part it touched, its decider."""
+    return {*(sample.get("deciders") or []), *([sample["decided_by"]] if sample.get("decided_by")
+                                               else [])}
+
+
+def drafted(conn: db.Connection, agent: str) -> frozenset[str]:
+    """Who has drafted an agent in the studio: each draft's holder, and whoever held it before."""
+    found: set[str] = set()
+    for row in conn.execute("select person, before from agent_drafts where agent = %s", (agent,)):
+        found.add(row["person"])
+        found |= {str(b["person"]) for b in row["before"] or []
+                  if isinstance(b, dict) and b.get("person")}
+    return frozenset(found)
+
+
 def may_grade(scenario: Scenario, sample: dict, person: Person,
-              minders: Iterable[str] = ()) -> str | None:
+              minders: Iterable[str] = (), drafters: Iterable[str] = ()) -> str | None:
     """Why someone may not grade a sample, if they may not. `minders` are the owner and the
-    deputy of the sample's instance."""
+    deputy of the sample's instance, and `drafters` whoever drafted its agent in the studio:
+    with its owners and authors, they built it."""
     if GRADER not in person.roles:
         return f"{person.name} doesn't grade agents' work"
-    builders = {p.team for p in scenario.holders(f"agent-owner:{sample['definition']}")}
-    if person.team in builders:
-        return f"graders come from outside the team that built the {sample['definition']}"
+    agent = sample["definition"]
+    roles = (f"{AGENT_OWNER}:{agent}", f"{AGENT_AUTHOR}:{agent}")
+    built = {p.id: p.team for role in roles for p in scenario.holders(role)}
+    built |= {d: who.team if (who := scenario.person(d)) else None for d in drafters}
+    if set(roles) & set(person.roles) or person.id in built or person.team in set(built.values()):
+        return f"graders come from outside the team that built the {agent}"
     if person.team in {who.team for m in minders if m and (who := scenario.person(m))}:
         return "graders come from outside the teams of the instance's owner and deputy"
-    if person.id in sample["acts_for"] or person.id == sample["decided_by"]:
+    decided = deciders_of(sample)
+    if person.id in sample["acts_for"] or person.id in decided:
         return "nobody grades a change they asked for or decided"
     above, seen = scenario.person(person.manager) if person.manager else None, set()
     while above is not None and above.id not in seen:
-        if above.id == sample["decided_by"]:
+        if above.id in decided:
             return "nobody grades the decisions of someone they report to"
         seen.add(above.id)
         above = scenario.person(above.manager) if above.manager else None
@@ -292,19 +320,24 @@ def gradeable(conn: db.Connection, scenario: Scenario, person: Person,
     read in pages, leaving out in the query what it can."""
     minders = {r["id"]: (r["owner"], r["deputy"]) for r in conn.execute(
         "select id, owner, deputy from instances")}
+    drafters: dict[str, frozenset[str]] = {}
     found: list[dict] = []
     after = 0
     while len(found) < most:
         rows = conn.execute(
             "select * from samples where scenario = %s and grade is null and lapsed_at "
             "is null and id > %s and not (%s = any(acts_for)) and decided_by is distinct "
-            "from %s order by id limit 200",
-            (scenario.name, after, person.id, person.id)).fetchall()
+            "from %s and not (%s = any(deciders)) order by id limit 200",
+            (scenario.name, after, person.id, person.id, person.id)).fetchall()
         if not rows:
             break
         after = rows[-1]["id"]
-        found += [r for r in rows
-                  if may_grade(scenario, r, person, minders.get(r["instance_id"], ())) is None]
+        for r in rows:
+            if r["definition"] not in drafters:
+                drafters[r["definition"]] = drafted(conn, r["definition"])
+            if may_grade(scenario, r, person, minders.get(r["instance_id"], ()),
+                         drafters[r["definition"]]) is None:
+                found.append(r)
     return found[:most]
 
 
@@ -321,11 +354,36 @@ def seal(keys: tuple[str, ...], row: dict) -> str:
     return _mac(keys[0], row, _SEALED_GRADE)
 
 
+def refusing(conn: db.Connection, scenario: Scenario, given: list[dict]) -> str | None:
+    """Why the grades given with one sign-in can't count, by what the gateway checks itself,
+    whatever the channels app checked: at most MOST_GRADED, all by one person, who may give
+    each, now. One that can't makes them all wait to be graded again, since the sign-in covers
+    them together."""
+    if not 1 <= len(given) <= MOST_GRADED:
+        return f"one sign-in gives from one to {MOST_GRADED} grades, not {len(given)}"
+    by = {r["graded_by"] for r in given}
+    person = scenario.person(next(iter(by))) if len(by) == 1 and None not in by else None
+    if person is None:
+        return "its grades aren't all by one person the directory knows"
+    if GRADER not in person.roles:
+        return f"{person.name} doesn't grade agents' work"
+    minders = {r["id"]: (r["owner"], r["deputy"]) for r in conn.execute(
+        "select id, owner, deputy from instances where id = any(%s)",
+        (sorted({r["instance_id"] for r in given}),))}
+    drafters = {agent: drafted(conn, agent) for agent in {r["definition"] for r in given}}
+    for row in given:
+        if why := may_grade(scenario, row, person, minders.get(row["instance_id"], ()),
+                            drafters[row["definition"]]):
+            return f"sample {row['id']}: {why}"
+    return None
+
+
 def seal_pending(conn: db.Connection, keys: tuple[str, ...], verifier: Any,
-                 scenario: Scenario, client_id: str | None) -> list[str]:
+                 scenario: Scenario, client_id: str | None, now: datetime) -> list[str]:
     """Check again each grade the channels app recorded, by its sign-in, which covers every
-    grade given with it, seal each, and let the sign-in go, in the gateway: or refuse them, so
-    the samples wait to be graded again. Why each refused one was."""
+    grade given with it, and that its grader may give each, seal each, when the core sealed it
+    among what it seals, and let the sign-in go, in the gateway: or refuse them, so the samples
+    wait to be graded again. Why each refused one was."""
     from a5s.core import sealing  # the check people's sign-ins share
 
     if not keys:
@@ -339,10 +397,11 @@ def seal_pending(conn: db.Connection, keys: tuple[str, ...], verifier: Any,
     refused = []
     for together in signed.values():
         first = together[0]
-        given = {r["id"]: r["grade"] for r in conn.execute(
-            "select id, grade from samples where grade_token = %s", (first["grade_token"],))}
-        why = sealing.check(verifier, scenario, client_id, first["grade_proof"],
-                            nonce(given, first["grade_salt"]), first["graded_by"])
+        given = conn.execute("select * from samples where grade_token = %s order by id",
+                             (first["grade_token"],)).fetchall()
+        why = refusing(conn, scenario, given) or sealing.check(
+            verifier, scenario, client_id, first["grade_proof"],
+            nonce({r["id"]: r["grade"] for r in given}, first["grade_salt"]), first["graded_by"])
         for row in together:
             if why is not None:
                 conn.execute(
@@ -351,8 +410,8 @@ def seal_pending(conn: db.Connection, keys: tuple[str, ...], verifier: Any,
                     "null, grade_subject = null, grade_proof = null where id = %s", (row["id"],))
                 refused.append(f"{row['graded_by']}'s grade of sample {row['id']}: {why}")
             else:
-                conn.execute("update samples set grade_seal = %s, grade_proof = null where id = %s",
-                             (seal(keys, row), row["id"]))
+                conn.execute("update samples set grade_seal = %s, grade_proof = null, "
+                             "sealed_at = %s where id = %s", (seal(keys, row), now, row["id"]))
     return refused
 
 
@@ -361,24 +420,31 @@ def counted(keys: tuple[str, ...], row: dict) -> bool:
     return _sealed(keys, row, _SEALED_GRADE, row.get("grade_seal"))
 
 
+def _sealed_at(row: dict) -> datetime:
+    """When the core sealed a grade: when it was given, for one sealed before a5s kept that."""
+    return row.get("sealed_at") or row["graded_at"]
+
+
 # Weighing the grades
 
 def assess(conn: db.Connection, keys: tuple[str, ...], kind: str, part: str, action: str,
            threshold: float | None, now: datetime) -> dict | None:
-    """Raise or lower a cap for a type of action in a part, if the grades given since it last
-    changed now show it should: what changed, with the evidence, for the ledger. None if
-    nothing did."""
+    """Raise or lower a cap for a type of action in a part, if the grades the core sealed since
+    it last changed now show it should: what changed, with the evidence, for the ledger. None if
+    nothing did. A grade counts from when the core sealed it, by its own clock, not when the
+    channels app recorded it, so one given before a cap changed but sealed after is weighed."""
     current = _cap_row(conn, keys, kind, part, action)
     now_cap, since = (current["cap"], current["since"]) if current else (1, None)
     rows = conn.execute(
         "select s.* from samples s join behaviours b on b.release = s.release "
         "and b.action = s.action where b.behaviour = %s and s.part = %s and s.action = %s "
-        "and s.grade is not null order by s.graded_at", (kind, part, action)).fetchall()
+        "and s.grade is not null order by coalesce(s.sealed_at, s.graded_at), s.id",
+        (kind, part, action)).fetchall()
     grades = [r for r in rows if counted(keys, r)]
-    fresh = [g for g in grades if since is None or g["graded_at"] > since]
+    fresh = [g for g in grades if since is None or _sealed_at(g) > since]
     graded, errors = len(fresh), sum(g["grade"] != "right" for g in fresh)
     evidence = {"graded": graded, "errors": errors, "threshold": threshold}
-    if now_cap >= 2:
+    if current is not None and now_cap >= 2:
         if any(g["grade"] == "critical" for g in fresh):
             return set_cap(conn, keys, kind, part, action, 1, "a critical error", now, evidence,
                            threshold)
@@ -386,8 +452,8 @@ def assess(conn: db.Connection, keys: tuple[str, ...], kind: str, part: str, act
             return set_cap(conn, keys, kind, part, action, 1, "the part has no threshold", now,
                            evidence)
         if (current["threshold"] or 0) < threshold:  # it rose: do the grades that earned it show it?
-            earned = [g for g in grades if current["window_from"] is None
-                      or g["graded_at"] > current["window_from"]]
+            window = current["window_from"]
+            earned = [g for g in grades if window is None or _sealed_at(g) > window]
             wrong = sum(g["grade"] != "right" for g in earned)
             if not shows(len(earned), wrong, threshold, "up"):
                 return set_cap(conn, keys, kind, part, action, 1, "the part's threshold rose past "
@@ -426,11 +492,12 @@ def lapse(conn: db.Connection, now: datetime) -> int:
 def rubber_stamps(conn: db.Connection) -> list[dict]:
     """Deciders whose approvals are graded wrong far more often than everyone else's: at least
     three wrong, and over twice the rate of the rest."""
-    rows = conn.execute(
-        "select decided_by as person, count(*) as approved, "
-        "count(*) filter (where grade <> 'right') as wrong from samples "
-        "where kind = 'proposal' and decided = 'approve' and grade is not null "
-        "and decided_by is not null group by decided_by").fetchall()
+    rows = conn.execute(  # each who decided it, for each part it touched
+        "select d.person, count(*) as approved, count(*) filter (where s.grade <> 'right') as wrong "
+        "from samples s cross join lateral unnest(case when cardinality(s.deciders) > 0 then "
+        "s.deciders else array[s.decided_by] end) as d(person) where s.kind = 'proposal' and "
+        "s.decided = 'approve' and s.grade is not null and d.person is not null "
+        "group by d.person").fetchall()
     flagged = []
     for row in rows:
         rest = [r for r in rows if r["person"] != row["person"]]

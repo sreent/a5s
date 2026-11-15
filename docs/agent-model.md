@@ -38,7 +38,7 @@ Roles are held by people, never by job titles. An organisation assigns people to
 | Part owner, and delegates | The part owner, who holds `part-owner:<part>` in the directory, approves an instance for the part, sets how far it may act there, and moves it up or down. They or their delegates decide its proposals, as the scenario allows. Decisions about the agent itself are never a delegate's. |
 | Instance approver | For each part in an instance's scope, its owner. For an instance with no parts, whoever the scenario names, who also sets its level. |
 | Release approver | Approves what loosens a5s: releases that change a tool or widen what an agent may do, changes to the trusted core, and anything else the scenario names nobody else for. Never from the team that runs a5s, or its manager's reporting line. |
-| Graders | Grade samples of an agent's work. Never from the team that built it, nor anyone a change was for or who decided it. |
+| Graders | Grade samples of an agent's work. Never anyone who owns, authors or drafted it, nor anyone from their teams, nor anyone a change was for or who decided it. |
 | Assurance | Holds the ledger's anchor, reads the ledger, and is told of everything that loosens a5s |
 | Data protection officer | Answers requests for someone's data, asking on the core's page for all a5s keeps about them to be exported (`a5s export`), or erased (`a5s erase`), which the team that runs a5s carries out, keeps the record of whose archive is which, and agrees the measures before they start ([data protection](data-protection.md)) |
 
@@ -158,7 +158,7 @@ An agent's definition may name a judge, an approved model, with its rubric: what
 - **People's grades stay the evidence.** The test that raises and lowers a5s's caps reads people's grades alone, so a judge's verdict never moves a cap, however sure it is ([autonomy](#autonomy)).
 - **People grade blind.** The channels app, which serves the grading page, can read a verdict only once people have graded its sample, so graders grade as they would without it.
 - **a5s measures the judge.** On the samples both graded, `a5s measures` and the studio's figures say how often the judge agreed with people, how often it passed what they found wrong or critical, and so missed it, how often it failed what they found right, and Cohen's kappa, their agreement beyond chance. Its owners learn, as the evidence grows, how far to trust it.
-- **It sees only what the agent may.** A judge not approved for the class of data the settings name, and for every one its agent's own model is, judges nothing. Each call is in the ledger, by the hash of what it was asked, and a verdict goes with its sample, a year after it's graded, and is in an export of the people it's about.
+- **It sees only what it's approved for.** A judge reads a sample as its decider did: the values the agent's handles stood for, and every field of the records it named. So a judge not approved for the class of data the settings name, for every class they give a field, and for every one its agent's own model is, judges nothing. Each call is in the ledger, by the hash of what it was asked, and a verdict goes with its sample, a year after it's graded, and is in an export of the people it's about.
 
 A judge reads what a sample's records say, which may hold instructions, so it's told never to follow them, and a5s keeps only its grade and a sentence of why: an answer it can't read as a grade it keeps as none, and doesn't ask again.
 
