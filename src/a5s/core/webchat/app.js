@@ -52,11 +52,11 @@ async function signIn() {
     history.replaceState(null, "", "/chat/");
     const pending = JSON.parse(store.getItem("a5s.pending") || "null");
     store.removeItem("a5s.pending");
-    if (params.has("error")) {
-      throw new Error(`Signing in didn't work: ${params.get("error_description") || params.get("error")}`);
-    }
     if (!pending || params.get("state") !== pending.state) {
       throw new Error("Signing in didn't come back the way it went out. Reload to try again.");
+    }
+    if (params.has("error")) {  // the provider's words, only for a sign-in this tab sent
+      throw new Error(`Signing in didn't work: ${params.get("error_description") || params.get("error")}`);
     }
     const tokens = await exchange({
       grant_type: "authorization_code", code: params.get("code"),
@@ -121,14 +121,15 @@ async function api(path, options = {}) {
   return answer;
 }
 
-// Showing the conversation: text only, with https links, **bold** and `code`
+// Showing the conversation: text only, with https links to the scenario's records and a5s's own
+// pages alone, **bold** and `code`
 
 function render(element, text) {
   const pattern = /(https:\/\/[^\s<>"'`)\]]+|\*\*[^*\n]+\*\*|`[^`\n]+`)/g;
   for (const part of text.split(pattern)) {
     if (!part) continue;
     let node;
-    if (part.startsWith("https://")) {
+    if (part.startsWith("https://") && (state.config.links || []).some((p) => part.startsWith(p))) {
       node = document.createElement("a");
       node.href = part;
       node.rel = "noopener noreferrer";
@@ -149,11 +150,11 @@ function render(element, text) {
 
 // Who said it, as every page marks them (docs/design.md): an agent's rounded square, in the
 // agent colour, and a5s's own shield; what people say needs no mark beside "You"
-function mark(from) {
+function mark(by) {
   const found = document.createElement("span");
-  found.className = from === "a5s" ? "avatar own" : "avatar agent";
+  found.className = by === "a5s" ? "avatar own" : "avatar agent";
   found.setAttribute("aria-hidden", "true");
-  if (window.a5s) found.append(window.a5s.icon(from === "a5s" ? "audit" : "agent"));
+  if (window.a5s) found.append(window.a5s.icon(by === "a5s" ? "audit" : "agent"));
   return found;
 }
 
@@ -166,9 +167,11 @@ function stamp(at) {
 function say(message) {
   $("welcome").hidden = true;
   const item = document.createElement("li");
-  item.className = message.from === "you" ? "you" : message.from === "a5s" ? "a5s" : "agent";
+  // Who it's by, as the server says, never by the name alone, which an agent's could match
+  const by = message.by === "person" ? "you" : message.by === "a5s" ? "a5s" : "agent";
+  item.className = by;
   const who = document.createElement("strong");
-  who.textContent = message.from === "you" ? "You" : message.from;
+  who.textContent = by === "you" ? "You" : by === "a5s" ? "a5s" : message.from;
   const when = document.createElement("time");
   if (message.at) {
     const at = new Date(message.at);
@@ -177,7 +180,7 @@ function say(message) {
   }
   const body = document.createElement("div");
   render(body, message.text);
-  if (message.from !== "you") item.append(mark(message.from));
+  if (by !== "you") item.append(mark(message.by));
   item.append(who, " ", when, body);
   $("conversation").append(item);
   item.scrollIntoView({ block: "end" });
@@ -193,7 +196,7 @@ function welcome(agent, does) {
   const next = document.createElement("p");
   next.className = "note";
   next.textContent = "Write to it below.";
-  $("welcome").replaceChildren(mark(agent), name, ...(does ? [about] : []), next);
+  $("welcome").replaceChildren(mark("agent"), name, ...(does ? [about] : []), next);
   $("welcome").hidden = false;
 }
 
@@ -212,13 +215,13 @@ async function open(agent) {
 
 async function send(text) {
   const agent = state.agent;
-  say({ from: "you", text, at: new Date().toISOString() });
+  say({ from: "you", by: "person", text, at: new Date().toISOString() });
   const sent = await api("/channels/local/messages", {
     method: "POST", body: JSON.stringify({ agent, text, person: state.person }),
   });
   const body = await sent.json();
   if (sent.status !== 202) {
-    say({ from: "a5s", text: typeof body.detail === "string" ? body.detail : "That didn't send. Try again." });
+    say({ from: "a5s", by: "a5s", text: typeof body.detail === "string" ? body.detail : "That didn't send. Try again." });
     return;
   }
   for (let tries = 0; tries < 24; tries += 1) {  // ten minutes
@@ -239,7 +242,7 @@ async function listen() {
       const answer = await api("/channels/local/inbox?wait=25");
       if (!answer.ok) { await pause(5000); continue; }
       for (const message of (await answer.json()).messages) {
-        if (message.from === state.agent || message.about === state.agent) say(message);
+        if ((message.by === "agent" && message.from === state.agent) || message.about === state.agent) say(message);
         else say({ ...message, text: `(about the ${message.about || "agents"}) ${message.text}` });
       }
     } catch (error) {
@@ -296,7 +299,13 @@ async function main() {
       status("The web chat needs sign-in, which isn't set up here yet: see A5S_WEBCHAT_CLIENT_ID.");
       return;
     }
-    for (const agent of state.config.agents) {
+    const serving = await api("/channels/local/agents");
+    const { agents } = serving.ok ? await serving.json() : { agents: [] };
+    if (!agents.length) {  // the studio lists those they may know of, and ask for
+      status("No agent serves you here yet. The studio lists the agents you may ask for, at /studio/.");
+      return;
+    }
+    for (const agent of agents) {
       const option = document.createElement("option");
       option.value = agent;
       option.textContent = agent;
@@ -317,7 +326,7 @@ async function main() {
         $("compose").requestSubmit();
       }
     });
-    await open(state.config.agents[0]);
+    await open(agents[0]);
     listen();
   } catch (error) {
     if (error.message !== SIGNING_IN) status(error.message);

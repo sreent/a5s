@@ -1,6 +1,9 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
-import "../../src/a5s/core/webchat/app.css";  // the look every page of a5s shares
+// Ocean, the look every page of a5s shares, as a5s copies it from sreent/ocean (deploy/ocean.sh)
+import "../../src/a5s/core/webchat/ocean/css/tokens.css";
+import "../../src/a5s/core/webchat/ocean/css/components.css";
+import "../../src/a5s/core/webchat/ocean/css/charts.css";
 import "./studio.css";
 import { App } from "./App";
 

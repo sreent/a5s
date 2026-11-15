@@ -1,8 +1,11 @@
-"""The look every page of a5s shares (docs/design.md): Ocean's tokens, in two layers, and its
-type, IBM Plex, which a5s bundles. Each colour that carries text reads against what it sits
-on, as WCAG's AA asks, in light and in dark, so a brand that changes the palette finds out here
-if it reads less well."""
+"""The look every page of a5s shares (docs/design.md): Ocean, from its one source, sreent/ocean,
+copied into a5s at the commit ocean.json pins, with its tokens in two layers and its type, IBM
+Plex. Each colour that carries text reads against what it sits on, as WCAG's AA asks, in light and
+in dark, so a brand that changes the palette finds out here if it reads less well; and the copy
+is Ocean's as that commit has it, never changed here."""
 
+import hashlib
+import json
 import re
 
 import httpx
@@ -13,7 +16,9 @@ from conftest import ROOT, accessible
 from test_ui_pages import shot
 from test_webchat import channels
 
-CSS = (ROOT / "src" / "a5s" / "core" / "webchat" / "app.css").read_text()
+OCEAN = ROOT / "src" / "a5s" / "core" / "webchat" / "ocean"
+CSS = (OCEAN / "css" / "tokens.css").read_text()
+OWN = (ROOT / "src" / "a5s" / "core" / "webchat" / "app.css").read_text()  # a5s's own, beside it
 DECLARED = re.compile(r"--([\w-]+):\s*([^;]+);")
 DARK = "@media (prefers-color-scheme: dark)"
 
@@ -48,7 +53,7 @@ def contrast(a: str, b: str) -> float:
 
 
 TEXT = [  # text, and what it's on: 4.5 to 1
-    *(("text", on) for on in ("page", "surface", "sunken", "you", "agent", "a5s")),
+    *(("text", on) for on in ("page", "surface", "sunken", "you", "agent", "own-message")),
     *(("muted", on) for on in ("page", "surface", "sunken")),
     ("faint", "page"), ("faint", "surface"),
     ("accent", "page"), ("accent", "surface"), ("accent", "accent-soft"),
@@ -79,19 +84,34 @@ def test_the_meanings_name_only_primitives_so_a_brand_changes_the_primitives_alo
     assert colours == []  # every hex value is a primitive's
 
 
+def test_the_copy_of_ocean_is_oceans_as_its_pinned_commit_has_it():
+    pinned = json.loads((OCEAN / "ocean.json").read_text())
+    assert pinned["repository"] == "https://github.com/sreent/ocean"
+    assert re.fullmatch(r"[0-9a-f]{40}", pinned["commit"])
+    found = {str(p.relative_to(OCEAN)): hashlib.sha256(p.read_bytes()).hexdigest()
+             for p in OCEAN.rglob("*") if p.is_file() and p.name != "ocean.json"}
+    assert found == pinned["files"]  # changed in sreent/ocean, and taken with deploy/ocean.sh
+
+
 def test_the_pages_load_their_type_from_a5s_and_nowhere_else(stack):
-    assert web.FONTS == ("plex-mono-400.woff2", "plex-mono-500.woff2", "plex-sans-400.woff2",
-                         "plex-sans-500.woff2", "plex-sans-600.woff2", "plex-sans-700.woff2")
-    assert "https:" not in CSS and "//" not in re.sub(r"/\*.*?\*/", "", CSS, flags=re.DOTALL)
+    assert sorted(p for p in web.OCEAN_FILES if p.startswith("fonts/")) == [
+        f"fonts/plex-{face}.woff2" for face in ("mono-400", "mono-500", "sans-400", "sans-500",
+                                                "sans-600", "sans-700")]
+    for css in (CSS, (OCEAN / "css" / "components.css").read_text(), OWN):
+        assert "https:" not in css and "//" not in re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
     with channels(stack) as url:
-        font = httpx.get(f"{url}/chat/fonts/plex-sans-400.woff2")
-        assert httpx.get(f"{url}/chat/fonts/OFL-plex-sans.txt").status_code == 404
-        assert httpx.get(f"{url}/chat/fonts/..%2Fapp.js").status_code == 404
+        font = httpx.get(f"{url}/chat/ocean/fonts/plex-sans-400.woff2")
+        tokens = httpx.get(f"{url}/chat/ocean/css/tokens.css")
+        assert httpx.get(f"{url}/chat/ocean/fonts/OFL-plex-sans.txt").status_code == 404
+        assert httpx.get(f"{url}/chat/ocean/fonts/..%2F..%2Fapp.js").status_code == 404
+        assert httpx.get(f"{url}/chat/ocean/css/ocean.json").status_code == 404
         page = httpx.get(f"{url}/chat/")
     assert font.status_code == 200 and font.headers["content-type"] == "font/woff2"
     assert font.content[:4] == b"wOF2"
+    assert tokens.status_code == 200 and tokens.text == CSS
     assert "font-src 'self'" in page.headers["content-security-policy"]
     assert "default-src 'none'" in page.headers["content-security-policy"]
+    assert page.text.index("/chat/ocean/css/tokens.css") < page.text.index("/chat/app.css")
 
 
 # The showcase: each piece pages are made of, as pages use it

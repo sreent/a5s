@@ -111,7 +111,6 @@ class Instance(Shape):
     parts: dict[str, Any]
     actions: dict[str, Any]
     model: str | None
-    serves: list[str]
     people: int
     owner: str | None
     deputy: str | None
@@ -302,6 +301,17 @@ class Samples(Shape):
     right_share: float | None
 
 
+class Judge(Shape):
+    """How far an agent's judge agrees with people, on the samples both graded (core/judging.py)."""
+
+    both: int
+    agreed: int
+    missed: int  # it passed what people found wrong or critical
+    false_alarms: int  # it failed what people found right
+    agreed_share: float | None
+    kappa: float | None  # agreement beyond chance, once it can be told
+
+
 class Questions(Shape):
     instance: str
     asked: int
@@ -359,6 +369,7 @@ class Figures(Shape):
     runs: list[ModelRuns]
     held: Held
     samples: Samples
+    judge: Judge
     questions: list[Questions]
     notebook: list[Notebook]
     ended: list[Ended]
@@ -396,7 +407,10 @@ class RunsPage(Shape):
     instance: str
     runs: list[RunLine]
     hidden: int  # the runs on the page whose every record the viewer may not see
-    before: str | None  # where the next page starts, if there's one
+    before: str | None  # where the next page starts, if there's one, sealed: it says nothing
+    # The fewest people an instance serves before its runs show one by one, without names, if
+    # this one serves fewer: its daily figures say what it did
+    fewer: int | None
 
 
 class Call(Shape):
@@ -499,6 +513,14 @@ class Signer(Shape):
     why: str
 
 
+class Drafter(Shape):
+    """Someone who drafted a draft before whoever holds it now, and how it went on from them."""
+
+    name: str
+    at: datetime
+    how: Literal["handed", "copied"]  # handed over to its holder, or copied into their draft
+
+
 class Draft(Shape):
     """A draft: its agent's folder, file by file, what would stop its release, and how the
     catalogue would show it, if it loads."""
@@ -512,6 +534,7 @@ class Draft(Shape):
     files: dict[str, str]  # each file's text, by its path in the agent's folder
     yours: bool  # or a co-author's, read only
     author: str | None
+    drafted_before: list[Drafter]  # who drafted it before its author, oldest first
     problems: list[str]  # what would stop its release, as `a5s agent check` says it
     preview: Defined | None
     signers: list[Signer] | None  # whom its release would need, if that can be worked out

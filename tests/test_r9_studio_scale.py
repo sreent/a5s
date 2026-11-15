@@ -10,7 +10,7 @@ import uuid
 
 from a5s import db
 from a5s.client import Client
-from conftest import SERVICE_TOKEN
+from conftest import SERVICE_TOKEN, listed_runs
 
 OTHER_RUNS = 200_000  # entries of other runs: a busy pilot's year is more
 
@@ -116,6 +116,7 @@ def test_paging_doesnt_skip_runs_opened_at_the_same_moment(stack):
 
 
 def test_paging_from_where_no_page_ended_is_refused(stack, approving, provider):
+    listed_runs(stack)  # enough people served for its runs to show one by one
     from test_studio_pages import signed_in
     api = signed_in(approving, provider)
     with stack.client() as c:

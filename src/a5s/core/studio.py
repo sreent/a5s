@@ -19,16 +19,20 @@ fixed set, and the reasons for denials by the policy's own ids.
 
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import re
 import uuid
 from collections import Counter, defaultdict
 from collections.abc import Iterable
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import Annotated, Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import psycopg
+from cryptography.fernet import Fernet, InvalidToken
+from fastapi import Query
 
 from a5s import db
 from a5s.config import ModelConfig
@@ -139,7 +143,6 @@ def _instance(scenario: Scenario, definition: Definition | None, inst: dict) -> 
             "current": definition is not None and inst["release"] == definition.release_id,
             "level": inst["level"], "parts": inst["parts"] or {},
             "actions": inst["actions"] or {}, "model": inst["model"],
-            "serves": list(inst["serves"]),
             "people": len(registry.served(scenario, inst["serves"])),
             "owner": _name(scenario, inst["owner"]), "deputy": _name(scenario, inst["deputy"]),
             "asks": list(inst["asks"] or [])}
@@ -426,22 +429,43 @@ def _shown(scenario: Scenario, run: dict, names: bool) -> dict:
             "read_outside": run["read_outside"]}
 
 
-def _cursor(before: str | None) -> tuple[datetime, str] | None:
-    """Where a page of runs starts: after the run the page before ended at."""
+# The days figures may be asked for over: a year at most, so one ask can't make the database
+# count a row for each of a thousand years (round 11, D-6)
+Days = Annotated[int, Query(ge=1, le=366)]
+
+
+def cursor_key(token: str) -> bytes:
+    """The key a page of runs seals where the next one starts with, from the token a5s's parts
+    share, so any of them reads what another wrote, and nobody else reads it."""
+    return base64.urlsafe_b64encode(hashlib.sha256(b"a5s runs cursor\n" + token.encode()).digest())
+
+
+def _cursor(before: str | None, key: bytes | None = None) -> tuple[datetime, str] | None:
+    """Where a page of runs starts: after the run the page before ended at, which, sealed with
+    `key`, says nothing of that run, which may be one the viewer may not see."""
     if not before:
         return None
+    if key is not None:
+        try:
+            before = Fernet(key).decrypt(before.encode()).decode()
+        except (InvalidToken, ValueError):
+            raise ValueError("not where a page ended") from None
     at, _, run = before.partition("|")  # a bad time or id is a ValueError, for a 400
     return datetime.fromisoformat(at), str(uuid.UUID(run)) if run else LAST
 
 
 def runs(conn: db.Connection, scenario: Scenario, inst: dict,
          viewer: Person | None = None, before: str | None = None, limit: int = RUNS,
-         names: bool = True) -> dict:
+         names: bool = True, fewest: int = 0, key: bytes | None = None) -> dict:
     """An instance's runs, newest first, a page at a time, each page after the run the one
     before ended at: for a viewer, those whose every record they may see, and how many others
-    there are, with whom each acted for named only if `names`."""
+    there are, with whom each acted for named only if `names`. Without names, an instance that
+    serves fewer than `fewest` people shows no run, since each would say what one of them did:
+    its daily figures do. Where the next page starts is sealed with `key`, where it's given."""
+    if viewer is not None and not names and len(registry.served(scenario, inst["serves"])) < fewest:
+        return {"instance": inst["id"], "runs": [], "hidden": 0, "before": None, "fewer": fewest}
     page = max(1, min(int(limit), MOST_RUNS))
-    after = _cursor(before)
+    after = _cursor(before, key)
     rows = conn.execute(
         "select id::text as run, instance_id, trigger, acts_for, read_outside, opened_at, "
         "closed_at, outcome, tokens, model, records_kept from runs where instance_id = %s "
@@ -451,10 +475,12 @@ def runs(conn: db.Connection, scenario: Scenario, inst: dict,
     keys = _handled(conn, [r["run"] for r in rows])
     shown = [r for r in rows if viewer is None or _sees(scenario, viewer, r, keys[r["run"]])]
     last = rows[-1] if len(rows) == page else None
+    where = f"{last['opened_at'].isoformat()}|{last['run']}" if last else None
+    if where is not None and key is not None:
+        where = Fernet(key).encrypt(where.encode()).decode()
     return {"instance": inst["id"],
             "runs": [_shown(scenario, r, viewer is None or names) for r in shown],
-            "hidden": len(rows) - len(shown),
-            "before": f"{last['opened_at'].isoformat()}|{last['run']}" if last else None}
+            "hidden": len(rows) - len(shown), "before": where, "fewer": None}
 
 
 def _calls(entries: list[dict]) -> list[dict]:

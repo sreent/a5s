@@ -28,7 +28,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Final, NamedTuple
-from urllib.parse import urlsplit, urlunsplit
+from urllib.parse import urlsplit
 
 import yaml
 
@@ -180,7 +180,8 @@ class Var:
             return self.parse(given)
         except ValueError as e:
             why = f" ({e})" if str(e) else ""
-            shown = "set to something it can't use" if self.secret else repr(given.strip()[:80])
+            shown = ("set to something it can't use" if self.secret
+                     else repr(masked(given.strip())[:80]))
             raise ConfigError(f"{self.name} is {shown}{why}: it takes {self.takes}") from None
 
     def source(self, env: Mapping[str, str] | None = None) -> str:
@@ -225,6 +226,7 @@ MATRIX = "Matrix"
 LEDGER = "The ledger's locked copies"
 STUDIO = "The studio, its sandbox and publishing"
 SCENARIO = "The scenario"
+INVENTORY = "IT's inventory in Microsoft 365"
 COMMAND = "The command line"
 
 _DB = ("postgresql", "postgres")
@@ -366,7 +368,28 @@ AGENTS_DIR = Var("A5S_AGENTS_DIR", "the agents' folders, if not agents", None, _
 TOKEN = Var("A5S_TOKEN", "the token the identity provider gave the person using the command "
             "line, where a5s uses one", None, secret=True, area=COMMAND, takes="a token")
 
-AREAS = (CORE, DATABASE, WORKERS, SIGN_IN, TEAMS, MATRIX, LEDGER, STUDIO, SCENARIO, COMMAND)
+# IT's one inventory: each instance mirrored into Agent 365's agent registry, from the core alone
+# (core/registration.py)
+REGISTRY_TENANT = Var("A5S_REGISTRY_TENANT", "the Microsoft tenant whose agent registry lists "
+                      "a5s's instances, by its id: none, and a5s registers nothing", None,
+                      area=INVENTORY)
+REGISTRY_CLIENT_ID = Var("A5S_REGISTRY_CLIENT_ID", "the app the core signs in to the tenant as, "
+                         "granted AgentRegistration.ReadWrite.All: the deployment's agent "
+                         "identity blueprint, where it gives instances identities", None,
+                         area=INVENTORY)
+REGISTRY_SECRET = Var("A5S_REGISTRY_SECRET", "that app's client secret", None, secret=True,
+                      area=INVENTORY, takes="its secret")
+REGISTRY_IDENTITIES = Var("A5S_REGISTRY_IDENTITIES", "whether each instance gets an Entra agent "
+                          "identity of its own too, under that blueprint, its owner and deputy "
+                          "its sponsors", False, _flag, "true or false", area=INVENTORY)
+REGISTRY_GRAPH = Var("A5S_REGISTRY_GRAPH", "Microsoft Graph, as the tenant's cloud has it",
+                     "https://graph.microsoft.com", _url("https"), "an https:// address",
+                     area=INVENTORY)
+REGISTRY_LOGIN = Var("A5S_REGISTRY_LOGIN", "where the core signs in to the tenant",
+                     "https://login.microsoftonline.com", _url("https"), "an https:// address",
+                     area=INVENTORY)
+AREAS = (CORE, DATABASE, WORKERS, SIGN_IN, TEAMS, MATRIX, LEDGER, STUDIO, SCENARIO, INVENTORY,
+         COMMAND)
 # Every setting above, by its area
 VARS: tuple[Var, ...] = tuple(sorted((v for v in globals().values() if isinstance(v, Var)),
                                      key=lambda v: AREAS.index(v.area)))
@@ -375,6 +398,8 @@ FAMILIES = (
            area=DATABASE),
     Family("A5S_TEAMS_SECRET_<AGENT>", "a bot's secret, where A5S_TEAMS_BOTS names it",
            area=TEAMS),
+    Family("A5S_MCP_<SERVER>_TOKEN", "an MCP server's bearer token, where the scenario's "
+           "mcp.yaml names it as the server's token_env", area=SCENARIO),
 )
 # Settings that moved, and where to: a part refuses one, rather than seem to obey it
 MOVED = {name: f"the signed settings' data_protection.{choice}, which the data protection "
@@ -383,9 +408,9 @@ MOVED = {name: f"the signed settings' data_protection.{choice}, which the data p
                               ("A5S_AUDIT_NAMES", "audit_names"),
                               ("A5S_FLAG_RUBBER_STAMPS", "flag_rubber_stamps"))}
 # A5S_ names a5s itself never reads: its tests' (all A5S_TEST_ ones too), and those compose
-# and the deployment scripts read
+# and the deployment scripts read, such as whose attestation the GitOps check asks GitHub for
 NOT_SETTINGS = frozenset({
-    "A5S_AGENT", "A5S_ASKER", "A5S_CHANNELS_PORT", "A5S_DB_PASSWORD", "A5S_DOC_IMAGES", "A5S_EVAL_MODEL",
+    "A5S_AGENT", "A5S_ASKER", "A5S_ATTESTED_BY", "A5S_CHANNELS_PORT", "A5S_DB_PASSWORD", "A5S_DOC_IMAGES", "A5S_EVAL_MODEL",
     "A5S_EXPECTED", "A5S_IDP_PASSWORD", "A5S_IDP_PORT", "A5S_IMAGE", "A5S_MATRIX_CONFIG",
     "A5S_MATRIX_PORT", "A5S_PASSWORD", "A5S_POOL_ASSISTANT", "A5S_POOL_WATCHER", "A5S_QUESTION",
     "A5S_REGRESSION", "A5S_SANDBOX_DB_PASSWORD", "A5S_SCREENSHOTS", "A5S_SMOKE_ENV",
@@ -397,6 +422,7 @@ NEEDS: tuple[tuple[Var, tuple[Var, ...], str], ...] = (
     (MATRIX_HOMESERVER, (MATRIX_SERVER_NAME, MATRIX_AS_TOKEN, MATRIX_HS_TOKEN), "Matrix"),
     (GITHUB_CLIENT_ID, (GITHUB_REPO,), "publishing on GitHub"),
     (SANDBOX_URL, (SANDBOX_TOKEN,), "the sandbox"),
+    (REGISTRY_TENANT, (REGISTRY_CLIENT_ID, REGISTRY_SECRET), "IT's inventory in Microsoft 365"),
 )
 BY_NAME = {v.name: v for v in VARS}
 # The waits that nest, each in seconds, shortest first: a model's answer comes within the
@@ -515,31 +541,51 @@ def check(env: Mapping[str, str] | None = None, serving: bool = True) -> tuple[l
     return (problems + strangers, []) if serving else (problems, strangers)
 
 
+_PASSWORD = re.compile(r"(?i)((?:^|[?&\s])(?:ssl)?password=)[^&\s]*")
+
+
+def masked(text: str) -> str:
+    """A setting's text as people may read it: an address's password masked however it's
+    written, in the address before its host, escaped or not, or as a password= parameter, as
+    libpq takes it, whether the address is one a5s can use or not."""
+    scheme, colon, rest = text.partition("://")
+    if colon and "@" in rest:
+        userinfo, _, host = rest.rpartition("@")  # its last @: a password may hold others
+        if ":" in userinfo:
+            text = f"{scheme}://{userinfo.split(':', 1)[0]}:•••@{host}"
+    return _PASSWORD.sub(r"\1•••", text)
+
+
+def _one(item: Any) -> str:
+    """An item of a list as a setting shows it: an object, such as a Teams bot, by the agent
+    it's for, and never what else it holds."""
+    if isinstance(item, Mapping):
+        return str(item.get("agent") or "an entry")
+    return str(item)
+
+
 def shown(var: Var, env: Mapping[str, str] | None = None) -> tuple[str, str]:
     """What a setting is, as the environment stands, for people to read: its value, secrets
-    masked and a database address's password with them, and whether it's a default."""
+    masked and an address's password with them, and whether it's a default."""
     env = os.environ if env is None else env
     try:
         value = var.read(env)
-    except ConfigError:  # shown as given, and `check` says why
-        return ("•••" if var.secret else (env.get(var.name) or "").strip()[:80]), "set, unusable"
+    except ConfigError:  # shown as given, password masked, and `check` says why
+        return ("•••" if var.secret else masked((env.get(var.name) or "").strip())[:80],
+                "set, unusable")
     source = var.source(env)
     if var.secret:
         return ("•••" if value else "not set"), source
     if value is None:
         return ("set empty" if source == "set" else "not set"), source
-    if isinstance(value, str) and "://" in value:
-        parts = urlsplit(value)
-        if parts.password:
-            value = urlunsplit(parts._replace(netloc=parts.netloc.replace(
-                f":{parts.password}@", ":•••@")))
     if isinstance(value, dict):
         value = ",".join(f"{k}={v}" for k, v in value.items())
     elif isinstance(value, (tuple, list, frozenset, set)):
-        value = ",".join(sorted(value) if isinstance(value, (frozenset, set)) else value)
+        items = sorted(value, key=str) if isinstance(value, (frozenset, set)) else list(value)
+        value = ",".join(_one(i) for i in items)
     elif isinstance(value, float):
         value = f"{value:g}"
-    return str(value) or "empty", source
+    return masked(str(value)) or "empty", source
 
 
 def set_here(env: Mapping[str, str] | None = None) -> dict[str, str]:
@@ -691,6 +737,9 @@ class Config:
     # at this address, by a token they share (a5s/sandbox.py). None if there isn't one
     sandbox_url: str | None = None
     sandbox_token: str = ""
+    # Whether this is the sandbox itself, which sets it, never a variable: its tools from MCP
+    # servers call each server's declared stand-in, with no token (connectors/mcp.py)
+    sandboxed: bool = False
     # Publishing drafts from the studio as pull requests on GitHub, opened as whoever publishes,
     # through GitHub's own sign-in (core/publishing.py): a5s's GitHub App's client id, a public
     # thing, and the agents' repository, as owner/name, and its branch. Without them, the studio

@@ -10,6 +10,7 @@ its acts checks a sign-in made for that act alone (core/approve_api.py).
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 from typing import Any
@@ -30,7 +31,7 @@ log = logging.getLogger(__name__)
 WEBCHAT = Path(__file__).parent / "webchat"
 PAGE_HEADERS = {  # the page runs only its own script, shows only text, and goes in no frame
     "Content-Security-Policy": "default-src 'none'; script-src 'self'; style-src 'self'; "
-                               "font-src 'self'; connect-src 'self'; img-src 'self' data:; "
+                               "font-src 'self'; connect-src 'self'; img-src 'self'; "
                                "base-uri 'none'; "
                                "form-action 'none'; frame-ancestors 'none'",
     "Referrer-Policy": "no-referrer",
@@ -39,7 +40,11 @@ PAGE_HEADERS = {  # the page runs only its own script, shows only text, and goes
 }
 TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8",
          ".css": "text/css; charset=utf-8", ".woff2": "font/woff2"}
-FONTS = tuple(sorted(f.name for f in (WEBCHAT / "fonts").glob("*.woff2")))  # IBM Plex, bundled
+# Ocean, the look a5s shares, as a5s copies it from sreent/ocean (deploy/ocean.sh): its tokens,
+# its pieces, its chart colours and IBM Plex, each by its path there, as ocean.json pins them
+OCEAN = WEBCHAT / "ocean"
+OCEAN_FILES = tuple(path for path in json.loads((OCEAN / "ocean.json").read_text())["files"]
+                    if Path(path).suffix in (".css", ".woff2"))
 
 
 def webchat(gw: Any) -> bool:

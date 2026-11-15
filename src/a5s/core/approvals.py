@@ -30,8 +30,8 @@ from collections.abc import Callable
 from typing import Any
 
 from a5s import db
-from a5s.contract import InstanceSettings, Person, Settings
-from a5s.core import registry, sealing
+from a5s.contract import DataProtection, InstanceSettings, Person, Settings
+from a5s.core import memberships, registry, sealing
 from a5s.core.identity import (
     IdentityError,
     UnknownPerson,
@@ -91,6 +91,8 @@ def _mac(key: str, approval: dict) -> str:
     token = approval["token"]  # the sign-in, kept by its hash only once it's recorded
     fields["token"] = (token.removeprefix(HASHED) if token.startswith(HASHED)
                        else hashlib.sha256(token.encode()).hexdigest())
+    if approval.get("groups") is not None:  # the groups its sign-in showed, once kept
+        fields["groups"] = sorted(approval["groups"])
     return hmac.new(key.encode(), canonical(fields).encode(), hashlib.sha256).hexdigest()
 
 
@@ -114,17 +116,25 @@ def _vouching(key: str, scenario: str, serial: int, raw: bytes) -> str:
 
 # Proposing a version, and saying what it changes
 
-def propose(conn: db.Connection, scenario: str, settings: Settings) -> tuple[dict, bool]:
-    """Record a version for the instance approvers to approve: its record, and whether it's new."""
+def propose(conn: db.Connection, scenario: str, settings: Settings,
+            base: int | None = None) -> tuple[dict, bool]:
+    """Record a version for the instance approvers to approve, written against the version in
+    force, `base`, by its serial: its record, and whether it's new."""
     version = digest(settings.raw)
     row = conn.execute(
-        "insert into settings_proposals (scenario, digest, version, serial, raw) "
-        "values (%s, %s, %s, %s, %s) on conflict do nothing returning *",
-        (scenario, version, settings.version, settings.serial, settings.raw)).fetchone()
+        "insert into settings_proposals (scenario, digest, version, serial, raw, base) "
+        "values (%s, %s, %s, %s, %s, %s) on conflict do nothing returning *",
+        (scenario, version, settings.version, settings.serial, settings.raw, base)).fetchone()
     if row is not None:
         return row, True
     return conn.execute("select * from settings_proposals where scenario = %s and digest = %s",
                         (scenario, version)).fetchone(), False
+
+
+def stale(row: dict, last: dict | None) -> bool:
+    """Whether a proposed version was written against another version than the one in force:
+    its approvers reviewed what it changes from that, so it never comes into force on this."""
+    return (last["serial"] if last else None) != row.get("base")
 
 
 def latest(conn: db.Connection, scenario: str) -> dict | None:
@@ -285,8 +295,59 @@ def changes(before: Settings | None, after: Settings, definitions: dict[str, Def
         if fewer := sorted(a - b):
             found.append({"text": f"The group {group} no longer gives {names_of(fewer)}.",
                           "widens": False})
+    found += _protection(before.data_protection if before else DataProtection(),
+                         after.data_protection)
     return found or [{"text": "It changes nothing the agents do: only its number or its notes.",
                       "widens": False}]
+
+
+# The data protection officer's choices that name people, in words: as each stands on, and off
+# (contract.DataProtection), as a version that changes one says it, and a whole version does
+NAMING = {
+    "studio_names": ("The studio's pages name whom each run acted for.",
+                     "The studio's pages say how many people each run acted for, never who."),
+    "audit_names": ("The auditors' page names whom agents acted for, and exports the ledger.",
+                    ("The auditors' page shows stand-ins for whom agents acted for, and exports "
+                     "nothing.")),
+    "flag_rubber_stamps": (("The status names the deciders whose approvals are graded wrong far "
+                            "more often than others'."),
+                           ("The status names no decider for how often their approvals are "
+                            "graded wrong.")),
+}
+
+
+def _days(kept: str) -> float:
+    """How long a kept_for is, in days, a month being a twelfth of a year."""
+    n, unit = kept.split()
+    return int(n) * (1 if unit.startswith("day") else 365.25 / 12)
+
+
+def _protection(was: DataProtection, now: DataProtection) -> list[dict]:
+    """What a version changes of the data protection officer's choices, in words: each widens
+    what a5s does with people's data if it keeps it longer, names people, or lets an instance's
+    figures out when it serves fewer of them."""
+    found = []
+    if was.kept_for != now.kept_for:
+        found.append({"text": f"a5s keeps what's said for {now.kept_for} after a conversation's "
+                              f"last message, and what goes with it, instead of {was.kept_for}.",
+                      "widens": _days(now.kept_for) > _days(was.kept_for)})
+    if was.fewest_people != now.fewest_people:
+        found.append({"text": "An instance's own figures go out to the team's dashboards once it "
+                              f"serves {now.fewest_people} people, instead of {was.fewest_people}.",
+                      "widens": now.fewest_people < was.fewest_people})
+    for name, (on, off) in NAMING.items():
+        if (turned := getattr(now, name)) != getattr(was, name):
+            found.append({"text": on if turned else off, "widens": turned})
+    return found
+
+
+def protection(choices: DataProtection) -> list[str]:
+    """The data protection officer's choices, each in words, as a whole version says them."""
+    return [(f"a5s keeps what's said for {choices.kept_for} after a conversation's last "
+             "message, and what goes with it."),
+            ("An instance's own figures go out to the team's dashboards once it serves "
+             f"{choices.fewest_people} people or more."),
+            *(on if getattr(choices, name) else off for name, (on, off) in NAMING.items())]
 
 
 def _asked(ids: list[str] | tuple[str, ...], definitions: dict[str, str]) -> str:
@@ -328,7 +389,7 @@ def described(settings: Settings, definitions: dict[str, Definition],
              "accurate." for part, share in sorted(settings.thresholds.items())]
     told += [f"Everyone in the group {group} holds {names_of(list(roles))}, as their sign-ins "
              "show they're in it." for group, roles in sorted(settings.groups.items())]
-    return told
+    return told + protection(settings.data_protection)
 
 
 def names_of(found: list[str]) -> str:
@@ -452,9 +513,22 @@ def seal_pending(conn: db.Connection, keys: tuple[str, ...], verifier: Verifier 
                          (why, row["id"]))
             refused.append(f"{row['person']}'s approval: {why}")
             continue
-        conn.execute("update settings_approvals set seal = %s, proof = null where id = %s",
-                     (seal(keys, row), row["id"]))
+        claim = verifier.cfg.groups_claim if verifier else None  # checked, so it's there
+        groups = list(memberships.shown(verifier.claims(row["proof"], expired=True), claim)
+                      if verifier else ())
+        kept = {**row, "groups": groups}
+        conn.execute("update settings_approvals set seal = %s, groups = %s, proof = null "
+                     "where id = %s", (seal(keys, kept), groups, row["id"]))
     return refused
+
+
+def groups_shown(conn: db.Connection, scenario: str, version: str) -> dict[str, tuple[str, ...]]:
+    """The groups each approval of a version showed, in the sign-in it was made with, as the
+    core kept them under its seal once it had checked it: what it counts for, with the groups
+    the approver's latest sign-in shows (core/memberships.py's as_signed)."""
+    return {r["person"]: tuple(r["groups"] or ()) for r in conn.execute(
+        "select person, groups from settings_approvals where scenario = %s and digest = %s "
+        "and refused is null and seal is not null", (scenario, version))}
 
 
 def approvers(conn: db.Connection, keys: tuple[str, ...], scenario: str,

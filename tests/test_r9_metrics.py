@@ -143,7 +143,7 @@ def figures(stack):
 
 
 def test_no_figure_is_one_persons_use(stack, figures):
-    with_ops(stack)  # assistant-ops, in orders, serving Chen alone
+    with_ops(stack, serves=["chen"])  # assistant-ops, in orders, serving Chen alone
     stack.model.reply("Nothing's open for you.")
     stack.say("What's open?", person="chen")
     stack.model.reply("Nothing's open for you.")
@@ -163,7 +163,7 @@ def test_no_figure_is_one_persons_use(stack, figures):
 def test_smaller_instances_go_out_together_once_together_they_serve_enough(stack, figures):
     assert not stack.settle(data_protection={"fewest_people": 3},  # the officer's choice
                             signers=("ana", "noor")).refused
-    with_ops(stack)
+    with_ops(stack, serves=["chen"])
     for person in ("chen", "ana"):
         stack.model.reply("Nothing's open for you.")
         stack.say("What's open?", person=person)

@@ -47,13 +47,15 @@ def due_of(stack, key: str = "Q-1002") -> str:
 
 
 def signed(url: str, provider, digests: list[str], decision: str, person: str = "ana",
-           fresh: bool = True) -> tuple[str, str]:
-    """A sign-in to decide, made as the page makes one: the token, and its salt."""
+           fresh: bool = True, reason: str | None = None) -> tuple[str, str]:
+    """A sign-in to decide, made as the page makes one, with a rejection's reason: the token,
+    and its salt."""
     salt, verifier = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=")
     provider.person = person
     query = {"client_id": CLIENT, "redirect_uri": f"{url}/decide/", "state": "s",
-             "nonce": proposals.nonce(digests, decision, salt), "code_challenge": challenge.decode(),
+             "nonce": proposals.nonce(digests, decision, salt, reason),
+             "code_challenge": challenge.decode(),
              "code_challenge_method": "S256"}
     went = httpx.get(f"{provider.url}/auth", params={**query, **({"max_age": "0"} if fresh else {})})
     code = parse_qs(went.headers["location"].split("?", 1)[1])["code"][0]
@@ -301,6 +303,9 @@ def test_the_nonce_commits_to_the_decision_and_every_change(decision):
     assert one != proposals.nonce(["a" * 64], decision, "salt" * 4)
     other = "reject" if decision == "approve" else "approve"
     assert one != proposals.nonce(["a" * 64, "b" * 64], other, "salt" * 4)
+    said = proposals.nonce(["a" * 64, "b" * 64], decision, "salt" * 4, "Not the 13th.")
+    assert said not in (one, proposals.nonce(["a" * 64, "b" * 64], decision, "salt" * 4,
+                                             "Not the 14th."))  # and the words a reason says
 
 
 def test_the_decision_page_runs_only_its_own_script_and_shows_only_text(approving):

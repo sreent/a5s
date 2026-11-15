@@ -17,7 +17,7 @@ import yaml
 
 from a5s import db
 from a5s.core import drafts, ledger, publishing
-from conftest import ROOT, free_port, serve
+from conftest import free_port, serve
 from fake_github import CLIENT, FakeGitHub
 from test_drafts import as_, started
 
@@ -27,7 +27,7 @@ def github(stack) -> Iterator[FakeGitHub]:
     """GitHub, with the agents as released on its main branch. Ask for it before the channels
     app, as `approving`, so the app knows where to publish."""
     fake = FakeGitHub({f"agents/{name}/{path}": text for name in ("assistant", "watcher")
-                       for path, text in drafts.folder_files(ROOT / "agents" / name).items()})
+                       for path, text in drafts.folder_files(stack.cfg.agents_dir / name).items()})
     with serve(fake.app(), free_port()) as url:
         fake.url = url
         stack.cfg = replace(stack.cfg, github_client_id=CLIENT, github_repo=fake.repo,

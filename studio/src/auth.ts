@@ -61,11 +61,13 @@ async function finish(params: URLSearchParams): Promise<string> {
   // the code doesn't linger in the address, and they're back where they were going
   const where = pending?.path && /^\/studio\/[\w./-]*$/.test(pending.path) ? pending.path : "/studio/";
   history.replaceState(null, "", where);
+  const again = "Signing in didn't come back the way it went out. Open the studio again.";
+  if (!pending || params.get("state") !== pending.state) throw new SignInError(again);
+  // The provider's words only for a sign-in this tab sent, so a link can't put its own on
+  // the page as if they were (round 11, E-3)
   if (params.has("error")) {
     throw new SignInError(`Signing in didn't work: ${params.get("error_description") || params.get("error")}`);
   }
-  const again = "Signing in didn't come back the way it went out. Open the studio again.";
-  if (!pending || params.get("state") !== pending.state) throw new SignInError(again);
   const answer = await fetch("/approve/token", {  // the core passes it on to the provider
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ grant_type: "authorization_code", code: params.get("code"),

@@ -105,10 +105,10 @@ def test_a_decider_can_say_why_they_reject_a_change(stack, approving, provider):
     can say why, or what to ask for instead."""
     asked(stack)
     [p] = held(stack)
-    token, salt = signed(approving, provider, [p["digest"]], "reject")
+    reason = "Contoso asked for the 20th, not the 13th."
+    token, salt = signed(approving, provider, [p["digest"]], "reject", reason=reason)
     r = httpx.post(f"{approving}/decide/proposals", json={
-        "proposals": [p["digest"]], "decision": "reject", "salt": salt,
-        "reason": "Contoso asked for the 20th, not the 13th."},
+        "proposals": [p["digest"]], "decision": "reject", "salt": salt, "reason": reason},
         headers={"Authorization": f"Bearer {token}"})
     assert r.status_code == 200, r.text
     sweep(stack)

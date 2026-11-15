@@ -21,7 +21,7 @@ from a5s.contract import (
     Person,
     parse_settings,
 )
-from a5s.core import approvals, audit, memberships, registry
+from a5s.core import approvals, audit, memberships, proposals, registry, studio
 from a5s.core.releases import agent_owner
 
 LATEST = 20  # administrative acts the page shows, newest first
@@ -99,12 +99,17 @@ def waiting(conn: db.Connection, gw: Any) -> dict[str, Any]:
         versions.append({"serial": row["serial"], "approved_by": valid,
                          "needs": registry.missing(settings, gw.scenario.person, valid, before,
                                                    memberships.rooted(gw.scenario).person)})
-    changes = [{"part": r["part"], "waiting": r["n"], "deciders": sorted(r["deciders"])}
-               for r in conn.execute(
-                   "select part, count(*) as n, array(select distinct d from proposals q, "
-                   "unnest(q.deciders) d where q.status = 'waiting' and part = any(q.parts)) "
-                   "as deciders from proposals p, unnest(p.parts) part "
-                   "where p.status = 'waiting' group by part order by part")]
+    by_part: dict[str, dict[str, Any]] = {}  # who may decide each now, as the directory stands
+    for held_change in conn.execute("select parts, records, acts_for from proposals "
+                                    "where status = 'waiting'"):
+        who = {p.id for p in proposals.everyone(proposals.deciders(
+            gw.scenario, list(held_change["records"]), list(held_change["acts_for"])))}
+        for part in held_change["parts"]:
+            found = by_part.setdefault(part, {"n": 0, "deciders": set()})
+            found["n"] += 1
+            found["deciders"] |= who
+    changes = [{"part": part, "waiting": found["n"], "deciders": sorted(found["deciders"])}
+               for part, found in sorted(by_part.items())]
     return {"settings": versions, "release": gw.release_problems(conn), "held_changes": changes}
 
 
@@ -144,16 +149,27 @@ def ownerless(conn: db.Connection, gw: Any) -> dict[str, list[dict[str, Any]]]:
     return {"agents": agents, "instances": instances, "parts": parts}
 
 
-def page(conn: db.Connection, gw: Any, now: datetime, days: int = DAYS) -> dict[str, Any]:
-    """All the page shows."""
+def page(conn: db.Connection, gw: Any, now: datetime, days: int = DAYS,
+         viewer: Person | None = None) -> dict[str, Any]:
+    """All the page shows: to a viewer, only of the agents they may know of (core/studio.py's
+    layers), so an unlisted agent's role, a new agent's draft and who asked for which agent stay
+    with those who may know of them."""
+    known = set(gw.definitions)
+    if viewer is not None:
+        every = studio.instances(conn)
+        known = {name for name, d in gw.definitions.items()
+                 if studio.layers(name, d, every, viewer, gw.scenario)}
     parts = [r["part"] for r in conn.execute(
         "select distinct jsonb_object_keys(parts) as part from instances")]
-    roles = [row["role"] for row in audit.roles_of(gw.scenario, parts, gw.definitions.keys())]
-    report = audit.report(conn, gw.scenario, gw.definitions.keys(),
-                          since=now - timedelta(days=days))
+    roles = [row["role"] for row in audit.roles_of(gw.scenario, parts, sorted(known))]
+    report = audit.report(conn, gw.scenario, sorted(known), since=now - timedelta(days=days))
+    acts = [a for a in report["acts"] if (a["about"] or {}).get("agent") in (None, *known)]
     shown = audit.Shown(gw.scenario, audit.key(conn), names=gw.data_protection(conn).audit_names)
+    gone = ownerless(conn, gw)
+    gone = {**gone, "agents": [a for a in gone["agents"] if a["agent"] in known],
+            "instances": [i for i in gone["instances"] if i["agent"] in known]}
     return {"roles": [{**row, "name": named(row["role"])} for row in held(gw.scenario, conn, roles)],
             "groups": mapped(gw.scenario),
             "claim": gw.identity.cfg.groups_claim if gw.identity else None,
-            "waiting": waiting(conn, gw), "ownerless": ownerless(conn, gw), "days": days,
-            "latest": shown.report({"acts": report["acts"][-LATEST:][::-1]})["acts"]}
+            "waiting": waiting(conn, gw), "ownerless": gone, "days": days,
+            "latest": shown.report({"acts": acts[-LATEST:][::-1]})["acts"]}

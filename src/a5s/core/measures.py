@@ -30,7 +30,7 @@ from typing import Any, LiteralString
 
 from a5s import db
 from a5s.config import ModelConfig
-from a5s.core import notebook
+from a5s.core import judging, notebook
 
 GRACE = "1 hour"  # a reminder for a particular time is on time within this of it [starting value]
 APPROVED = ("making", "made", "not made", "stopped")  # a held change its deciders approved
@@ -127,6 +127,9 @@ def report(conn: db.Connection, scenario: str, models: dict[str, ModelConfig],
         f"count(*) filter (where graded_at > {since} and grade = 'critical') as critical, "
         f"count(*) filter (where lapsed_at > {since}) as lapsed "
         f"from samples where scenario = %(scenario)s{only()}", at).fetchone()
+    judged = judging.agreement({(r["verdict"], r["grade"]): r["n"] for r in conn.execute(
+        "select verdict, grade, count(*) as n from judged_samples where scenario = %(scenario)s "
+        f"and graded_at > {since}{only()} group by verdict, grade", at)})  # graded, so blind
     asked = conn.execute(  # by the instance asked
         "select asked as instance, count(*) as questions, "
         "count(*) filter (where answered_at is not null) as answered, "
@@ -188,6 +191,7 @@ def report(conn: db.Connection, scenario: str, models: dict[str, ModelConfig],
                     "wrong": graded["wrong"], "critical": graded["critical"],
                     "lapsed": graded["lapsed"],
                     "right_share": _share(graded["right"], graded["graded"])},
+        "judge": judged,
         "questions": [{"instance": r["instance"], "asked": r["questions"],
                        "answered": r["answered"], "unanswered": r["unanswered"],
                        "answered_seconds_p90": None if r["p90"] is None else float(r["p90"])}
@@ -205,6 +209,7 @@ def report(conn: db.Connection, scenario: str, models: dict[str, ModelConfig],
 def told(m: dict[str, Any]) -> str:
     """The measures in words, for the command line."""
     o, r, h, s = m["obligations"], m["reminders"], m["held"], m["samples"]
+    j = m.get("judge") or judging.agreement({})
     lines = [
         f"a5s over the last {m['days']} days:",
         "  What people owed that fell due, that an agent acts on: " + (
@@ -246,6 +251,11 @@ def told(m: dict[str, Any]) -> str:
             f"{s['graded']}, {_percent(s['right_share'])} right, {s['wrong']} wrong and "
             f"{s['critical']} critical" if s["graded"] else "none")
         + (f"; {s['lapsed']} lapsed ungraded" if s["lapsed"] else "") + ".",
+        "  The judge, beside people: " + (
+            f"agreed with them on {j['agreed']} of the {j['both']} samples both graded, "
+            f"passed {j['missed']} they found wrong or critical, and failed {j['false_alarms']} "
+            "they found right" + (f"; kappa {j['kappa']:.2f}" if j["kappa"] is not None else "")
+            if j["both"] else "no sample both it and people graded") + ".",
         "  Questions agents asked each other: " + ("; ".join(
             f"{x['instance']} was asked {x['asked']} and answered {x['answered']}"
             + (f", nine in ten within {x['answered_seconds_p90']:.0f}s"

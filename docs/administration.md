@@ -79,6 +79,17 @@ People are found by their identity provider's id, such as Entra ID's object id o
 - The report names who approved each settings version, release and held change in a period, as the ledger records them.
 - With roles from groups, someone taken out of a group loses the role's powers at their next sign-in, and a group the signed settings don't name gives none. Giving a group a role waits for the role's owner in the directory; a version's own map gives nothing towards it; and the map before it counts only once the core sealed it.
 
+## IT's inventory in Microsoft 365
+
+An organisation that runs Microsoft 365 keeps its agents in one inventory, Agent 365's agent registry, so IT sees every agent, whoever built it. a5s lists its own there, from the core alone, once a deployment names its tenant (`A5S_REGISTRY_TENANT`, with the app the core signs in as, `A5S_REGISTRY_CLIENT_ID`, and its secret; in the chart, `registry`) ([`core/registration.py`](../src/a5s/core/registration.py)).
+
+- **a5s stays the authority.** What's listed is what a5s's signed settings and release say, and nothing in the tenant gives an agent anything in a5s: a change there is never read back. While the settings in force don't check out, a5s changes nothing there.
+- **Each instance at work or suspended is listed:** by its id, with what its agent does and whom it works for, its release, level and parts, its skills, its owner and deputy as its owners, by their Entra object ids from the directory, and a link to its agent's page in the studio, where people see as much as their roles let them. a5s lists again only what changed, and takes an instance away once it retires. Unlisted agents' instances are listed too: the tenant's administrators answer for every agent in it, and a deployment that won't have that names no tenant.
+- **Entra agent identities, where a deployment asks** (`A5S_REGISTRY_IDENTITIES`). Each instance then gets an agent identity of its own, under the deployment's agent identity blueprint, which is the app the core signs in as, with its owner and deputy as sponsors, and its listing names it, so IT can hold it to its policies for agents. a5s's agents don't sign in as them today: every call they make goes through the core.
+- **Each change is in the ledger,** as a registry entry, and what the tenant last refused is kept beside the instance, and tried again at the next sweep.
+
+The app needs Microsoft Graph's `AgentRegistration.ReadWrite.All`, as an application permission, and, for identities, to be the deployment's agent identity blueprint, able to make agent identities. Both APIs are in preview, which Microsoft doesn't yet support in production, so this is a deployment's own choice, tried first against a test tenant. [TBC: IT, before the pilot's stage 2.]
+
 ## What this doesn't change
 
 Nobody gets a power through a page that they wouldn't have at the command line, and no administrator can loosen a5s alone. The ledger stays the one record: audit reads it, and changes nothing in it.

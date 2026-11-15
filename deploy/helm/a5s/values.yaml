@@ -71,8 +71,11 @@ models:
   keys:
     DEEPSEEK_API_KEY: deepseek-api-key
     QWEN_API_KEY: qwen-api-key
-  # A ConfigMap with a models.yaml to use in place of the image's. It's part of the release,
-  # so its people sign it with the rest.
+  # A ConfigMap with a models.yaml to use in place of the image's. The release the core works
+  # out holds its models, so its people sign the release as the gateway shows it, with the
+  # ConfigMap mounted (`a5s release show` there). Deploying from git (deploy/gitops), leave it
+  # empty and build the approved models into the image: the release an environment's approvers
+  # sign is the image's own, and the check on its pull request refuses a ConfigMap.
   configMap: ""
 
 # Teams: the Microsoft 365 tenant the agents' bots are registered in, and each bot, such as
@@ -123,6 +126,14 @@ sandbox:
 # as owner/name, and its branch. The App needs Contents and Pull requests to read and write, on
 # that repository alone. Without them, the studio offers a draft's folder, and the pull
 # request's words, for its author to open it on any git host.
+# IT's one inventory: each instance listed in the Microsoft tenant's agent registry, by the
+# core alone, with the app's secret in the Secret's registry-secret (docs/administration.md).
+# Microsoft's APIs for it are in preview. Empty, a5s lists nothing there.
+registry:
+  tenant: ""
+  clientId: ""  # the app the core signs in as, granted AgentRegistration.ReadWrite.All
+  identities: false  # true: each instance gets an Entra agent identity too, under that app
+
 publishing:
   githubClientId: ""
   repo: ""

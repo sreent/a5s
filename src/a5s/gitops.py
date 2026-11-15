@@ -23,11 +23,14 @@ from pathlib import Path
 
 import yaml
 
+from a5s.core import releases
+
 APPROVAL = "a5s-release"  # the ConfigMap the environment's kustomization makes of the two files
 MANIFEST, SIGNATURES = "release.yaml", "release.sig"
 VALUES, SOURCE = "release-values.yaml", "release-source.yaml"
 RELEASE = (MANIFEST, SIGNATURES, VALUES, SOURCE)  # what promote and sign write: the release's own
 REPOSITORY = "source.yaml"  # where its chart comes from, which release-source.yaml gives a tag
+HELMRELEASE = "helmrelease.yaml"  # how Flux installs the chart, with its values and the release's
 CHART = "a5s-release"  # that GitRepository's name, as helmrelease.yaml names it
 IMAGE = re.compile(r"(?P<repository>[a-z0-9][a-z0-9._/:-]*)@(?P<digest>sha256:[0-9a-f]{64})")
 SIGNED = "# Signatures over a release of a5s, made with `a5s release sign`.\n"
@@ -47,16 +50,21 @@ def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
-def signatures(raw: bytes, *signed: str | None) -> str:
-    """A release.sig over exactly this release, with every signature over it of those given,
-    one for each signer, in signers' order: none if none are given."""
-    digest, kept = _sha256(raw), {}
+def signatures(approval: releases.Approval, *signed: str | None) -> str:
+    """A release.sig for exactly this approval of a release, with every signature over it of
+    those given, one for each signer, in signers' order: none if none are given. A signature
+    over another approval, such as of the release with another image, or following another
+    release, doesn't carry over: it isn't over this one."""
+    kept: dict = {}
     for text in signed:
         found = yaml.safe_load(text or "") or {}
-        if found and found.get("release") != digest:
+        if not found or found.get("release") != approval.release:
             continue  # over another release, such as the one the environment ran before
-        kept.update({s["signer"]: s for s in found.get("signatures") or []})
-    return SIGNED + yaml.safe_dump({"release": digest, "signatures": [
+        same = releases.Approval(found["release"], found.get("image"), found.get("follows"),
+                                 found.get("advisory"), bool(found.get("baseline")))
+        if same == approval:
+            kept.update({s["signer"]: s for s in found.get("signatures") or []})
+    return SIGNED + yaml.safe_dump({**approval.shown(), "signatures": [
         {"signer": s["signer"], "value": s["value"]} for _, s in sorted(kept.items())]},
         sort_keys=False)
 
@@ -115,20 +123,30 @@ def image_of(folder: Path) -> str:
     return f"{found['repository']}@{found['digest']}"
 
 
-def promote(folder: Path, raw: bytes, image: str, signed: str | None = None) -> None:
-    """Make an environment's folder run a release: its manifest; the signatures over it so
-    far, those given and any already there for it; its image, by digest; and its chart, from
-    the release's tag. The release it ran before stays in git, which is what the next is
-    weighed against."""
+def promote(folder: Path, raw: bytes, image: str, signed: str | None = None, *,
+            advisory: str | None = None, baseline: bool = False) -> releases.Approval:
+    """Make an environment's folder run a release: its manifest; what its approvers sign of it,
+    the release, its image, by digest, and the release the environment runs now, which it
+    follows; the signatures over that so far, those given and any already there for it; its
+    image, by digest, for the chart; and its chart, from the release's tag. The release it ran
+    before stays in git, which is what the next is weighed against."""
     _environment(folder)
     version = yaml.safe_load(raw)["version"]
     sig = folder / SIGNATURES
-    kept = signatures(raw, sig.read_text() if sig.is_file() else None, signed)
+    ran_before = (folder / MANIFEST).read_bytes() if ran(folder) else None
+    if ran_before == raw and sig.is_file():  # promoted again: it follows what it followed
+        follows = (yaml.safe_load(sig.read_text()) or {}).get("follows")
+    else:
+        follows = _sha256(ran_before) if ran_before is not None else None
+    approval = releases.Approval.of(raw, image=image, follows=follows, advisory=advisory,
+                                    baseline=baseline)
+    kept = signatures(approval, sig.read_text() if sig.is_file() else None, signed)
     written = values(image, kept)  # before anything changes, so a bad image changes nothing
     (folder / MANIFEST).write_bytes(raw)
     sig.write_text(kept)
     (folder / VALUES).write_text(written)
     (folder / SOURCE).write_text(source(version))  # the release's own chart, as tagged
+    return approval
 
 
 def resigned(folder: Path) -> None:
@@ -149,6 +167,25 @@ def consistent(folder: Path) -> list[str]:
     if (folder / VALUES).read_text() != values(image_of(folder), signed):
         problems.append(f"{VALUES} isn't what its signatures make: run `a5s release sign "
                         f"--environment {folder}`, or promote it again")
+    try:
+        approved = releases.approval_in(raw, signed)
+    except (ValueError, KeyError):
+        approved = None
+    if approved is None or approved.image != image_of(folder):  # the image it runs, signed
+        problems.append(f"its signatures approve it as another image than {VALUES} runs: "
+                        "promote it again, and have it signed again")
+    helm = (yaml.safe_load((folder / HELMRELEASE).read_text()) or {}).get("spec") or {} if (
+        folder / HELMRELEASE).is_file() else {}
+    if helm.get("values") or helm.get("postRenderers"):  # which Flux merges over the release's
+        problems.append(f"{HELMRELEASE} sets values or post-renderers of its own, which could "
+                        f"run another image than its release: give the chart its values in "
+                        "values.yaml, and its release's in release-values.yaml alone")
+    own = yaml.safe_load((folder / "values.yaml").read_text()) or {} if (
+        folder / "values.yaml").is_file() else {}
+    if ((own.get("models") or {}).get("configMap")):  # which the manifest people sign hasn't
+        problems.append("values.yaml approves models with a ConfigMap of its own, which the "
+                        "release its approvers sign doesn't hold: build the approved models "
+                        "into the image, in config/models.yaml, to deploy it from git")
     version = yaml.safe_load(raw)["version"]
     tagged = folder / SOURCE
     if not tagged.is_file() or tagged.read_text() != source(version):

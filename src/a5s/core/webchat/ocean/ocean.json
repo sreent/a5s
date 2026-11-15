@@ -1,0 +1,17 @@
+{
+  "repository": "https://github.com/sreent/ocean",
+  "commit": "01d0bfa694f4fd5ffcae559c69a0d12c8108a83f",
+  "files": {
+    "css/charts.css": "fd037a22b9df4de1f7c81aab9a452b78bb3783c350ebb4469cd96c5a0c126d84",
+    "css/components.css": "2145016396a89f481f03f7b22eb418fc694f704c6eed84a698d74eb522cc10ae",
+    "css/tokens.css": "43465d77471d42b301efd3b966c61ef218dd48bee6a3c620948bcad04235f834",
+    "fonts/OFL-plex-mono.txt": "23b0a9d0c6d3f140a0b77e483c5cfa6bba574325ef5cb189ed9f2fec4884533f",
+    "fonts/OFL-plex-sans.txt": "d0283623ef57e722fd0eb688a8041589670c608ab780cd3612d06ba6f153d3fd",
+    "fonts/plex-mono-400.woff2": "08949f728dc52d528e69b1667d15c89a5686a4ee9a296ff90983985f99c380f7",
+    "fonts/plex-mono-500.woff2": "01d285447409c8a588692162439a038b8cbd7871309ee20267b0d2d91c6e8e22",
+    "fonts/plex-sans-400.woff2": "3b646991d30055a93a4ecc499713d4347953a74a947ecab435ab72070cbdab0e",
+    "fonts/plex-sans-500.woff2": "0717336fb31fcdcde4b8deb3675bb4a0f7f6d484864afcd6751ac29975962203",
+    "fonts/plex-sans-600.woff2": "8960851d691c054ed38e259bdcf1a6190d157b4203ed5bb32c632a863fb8ec2f",
+    "fonts/plex-sans-700.woff2": "42e7b0c143c19df9d99fd896e76b48f846edf0902d200bc29796b34d12c33aa7"
+  }
+}

@@ -131,10 +131,11 @@ def missing(settings: Settings, directory: Directory, valid: Iterable[str],
     as the directory alone names them (`rooted`), so no role a group gives grows itself; and
     changing the data protection officer's choices needs the officer, named the same way."""
     valid = list(valid)
-    if not any(p.roles for who in valid if (p := directory(who))):
-        return ["nobody who approves instances has approved it"]
-    return list(dict.fromkeys(why for _, why, _ in needed(settings, directory, valid, before,
-                                                           rooted)))
+    needs = list(dict.fromkeys(why for _, why, _ in needed(settings, directory, valid, before,
+                                                            rooted)))
+    if not any(p.roles for who in valid if (p := directory(who))):  # whoever it is for
+        return needs or ["nobody who approves instances has approved it"]
+    return needs
 
 
 def needed(settings: Settings, directory: Directory, valid: Iterable[str],

@@ -30,7 +30,8 @@ def router(gw: Any) -> APIRouter:
 
     @pages.get("/chat/config")
     def chat_config() -> dict:
-        """How the page signs people in, and which agents they can talk to."""
+        """How the page signs people in: nothing of the agents, which the page asks for once
+        someone's signed in, and then only those that serve them (`/channels/local/agents`)."""
         if not web.webchat(gw):
             raise HTTPException(404, "the web chat isn't set up here")
         signin = None
@@ -43,7 +44,8 @@ def router(gw: Any) -> APIRouter:
                       "end_session_endpoint": where.get("end_session_endpoint"),
                       "client_id": gw.cfg.webchat_client_id, "scope": "openid profile"}
         return {"signin": signin, "development": gw.identity is None and gw.cfg.development,
-                "agents": sorted(gw.definitions)}
+                # the only links the page makes: the scenario's records, and a5s's own pages
+                "links": [*gw.scenario.record_links, f"{gw.public_url}/"]}
 
     @pages.post("/chat/token")
     def chat_token(body: web.TokenRequest) -> JSONResponse:
@@ -69,13 +71,16 @@ def router(gw: Any) -> APIRouter:
             raise HTTPException(404, "no such file")
         return web.page(gw, name)
 
-    @pages.get("/chat/fonts/{name}", include_in_schema=False)
-    def chat_font(name: str) -> Response:
-        """The pages' type, IBM Plex, which a5s bundles: no page loads a font from outside."""
-        if name not in web.FONTS:
-            raise HTTPException(404, "no such font")
-        found = web.page(gw, f"fonts/{name}")
-        found.headers["Cache-Control"] = "public, max-age=604800"
+    @pages.get("/chat/ocean/{kind}/{name}", include_in_schema=False)
+    def chat_ocean(kind: str, name: str) -> Response:
+        """Ocean, the look every page shares, as a5s copies it from its one source: its tokens,
+        its pieces and its type, IBM Plex, so no page loads a style or a font from outside."""
+        path = f"{kind}/{name}"
+        if path not in web.OCEAN_FILES:
+            raise HTTPException(404, "no such file")
+        found = web.page(gw, f"ocean/{path}")
+        if kind == "fonts":
+            found.headers["Cache-Control"] = "public, max-age=604800"
         return found
 
     return pages

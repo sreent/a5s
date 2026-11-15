@@ -6,9 +6,15 @@ Every page of a5s, the studio and the server's own pages alike, shares one look,
 
 The look is called Ocean. It takes a hint of the sea: deep blues for what you can do, lagoon teal for agents, coral for any change to a record, and kelp green for what's going well. The palette isn't anyone's brand. An organisation's own colours replace the primitives, in one place.
 
+Ocean began here, and is now the look a5s shares with a7c and a3t, kept in its one source, [sreent/ocean](https://github.com/sreent/ocean), with its brand book, its pieces and its checks. a5s's pages load only a5s's own files, so a5s serves a copy: Ocean's tokens, its pieces, its chart colours and IBM Plex, in [`webchat/ocean`](../src/a5s/core/webchat/ocean), at the commit [`ocean.json`](../src/a5s/core/webchat/ocean/ocean.json) names, with each file's digest. Every page loads Ocean's tokens and pieces first, then [`app.css`](../src/a5s/core/webchat/app.css), which holds a5s's own alone, the chat; the studio imports the same files, so nothing is defined twice. A change to Ocean is made in sreent/ocean, and taken here at its commit:
+
+```bash
+sh deploy/ocean.sh <commit>
+```
+
 ## Tokens, in two layers
 
-The tokens live at the top of [`app.css`](../src/a5s/core/webchat/app.css). The studio imports the same file, so nothing is defined twice.
+The tokens live in Ocean's [`css/tokens.css`](../src/a5s/core/webchat/ocean/css/tokens.css).
 
 | Layer | What it holds | Example |
 | --- | --- | --- |
@@ -29,7 +35,7 @@ Agents are drawn in `--agent-tone`, and people never are, so a page shows at a g
 
 ## Type
 
-IBM Plex Sans for text, and IBM Plex Mono for ids and digests. a5s bundles both, under the SIL Open Font License ([`fonts/`](../src/a5s/core/webchat/fonts)), and the pages' policy loads fonts only from a5s itself, so a page loads nothing from outside, which matters on premises. Plex also has a Thai family designed to match, for when a5s needs one.
+IBM Plex Sans for text, and IBM Plex Mono for ids and digests. Ocean bundles both, under the SIL Open Font License, and a5s serves its copy ([`ocean/fonts`](../src/a5s/core/webchat/ocean/fonts)): the pages' policy loads fonts only from a5s itself, so a page loads nothing from outside, which matters on premises. Plex also has a Thai family designed to match, for when a5s needs one.
 
 ## What the tests hold it to
 
@@ -37,19 +43,20 @@ IBM Plex Sans for text, and IBM Plex Mono for ids and digests. a5s bundles both,
 
 - every colour that carries text reads against what it sits on at 4.5 to 1, as WCAG's AA asks, and focus rings and agents' marks at 3 to 1, in light and dark;
 - the meanings name only primitives, so a brand is one change in one place;
-- the pages load their type from a5s and from nowhere else.
+- the pages load their type and their styles from a5s and from nowhere else;
+- the copy of Ocean is Ocean's as its pinned commit has it, file by file, so nothing of it is changed here.
 
-A brand that reads less well fails the first test before anyone sees it.
+A brand that reads less well fails the first test before anyone sees it. Ocean's own checks (`scripts/check.mjs` in sreent/ocean) hold the same and more, before a commit is taken.
 
 ## To change the brand
 
-1. Change the primitives in `app.css`: the palette, and the fonts if the brand has its own, in `fonts/`.
-2. Run `uv run pytest tests/test_design.py`, and adjust any colour it names until each reads.
+1. Change the primitives in Ocean's `css/tokens.css`, in sreent/ocean, or a fork of it for the organisation: the palette, and the fonts if the brand has its own, in `fonts/`. Its `node scripts/check.mjs` names any colour that reads less well.
+2. Take that commit here with `sh deploy/ocean.sh <commit>`, and run `uv run pytest tests/test_design.py`.
 3. Build the studio (`npm run build` in `studio/`), so it carries the change too.
 
 ## Components
 
-The pieces pages are made of live in [`studio/src/design`](../studio/src/design), with their look in `app.css`, so a page outside the studio can draw them too. The showcase, at `/studio/design`, shows each one as pages use it, in light or dark as the device is.
+The pieces pages are made of live in [`studio/src/design`](../studio/src/design), with their look in Ocean's `css/components.css`, so a page outside the studio can draw them too. The showcase, at `/studio/design`, shows each one as pages use it, in light or dark as the device is.
 
 | Piece | What it's for |
 | --- | --- |

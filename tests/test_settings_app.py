@@ -6,6 +6,8 @@ import httpx
 import yaml
 from playwright.sync_api import expect
 
+from a5s.contract import DataProtection
+from a5s.core import approvals
 from conftest import accessible
 from test_approvals import in_force_serial
 from test_ui_pages import shot
@@ -38,7 +40,8 @@ def test_an_approver_sees_the_whole_version_in_force(stack, approving, provider)
         "Limit for change-due-date: 5 in one run and 20 for one person in 30 days.",
         "Limit for close-question: 5 in one run and 20 for one person in 30 days.",
         "An agent earns level 2 in billing once graded samples show it's 98% accurate.",
-        "An agent earns level 2 in orders once graded samples show it's 95% accurate."]
+        "An agent earns level 2 in orders once graded samples show it's 95% accurate.",
+        *approvals.protection(DataProtection())]  # the officer's choices, as a5s starts them
     written = yaml.safe_load(body["in_force"]["text"])
     assert written["instances"]["assistant-finance"]["parts"] == ["billing"]
     assert body["waiting"] == [] and body["requests"] == []
@@ -86,7 +89,8 @@ def test_asking_for_a_version_has_the_gateway_propose_it_to_everyone_it_needs(st
     now = api(approving, provider, "/settings/api").json()
     [waiting] = now["waiting"]
     assert waiting["serial"] == serial and waiting["approved_by"] == []
-    assert waiting["needs"] == ["nobody who approves instances has approved it"]
+    assert waiting["needs"] == ["the owner of billing hasn't approved it",
+                                "the owner of orders hasn't approved it"]
     assert now["requests"][0]["outcome"] == "proposed"
     by = {e["action"]: e["args"].get("by") for e in stack.ledger() if e["kind"] == "admin"}
     assert by["request"] == "ana" and by["propose"] == "ana"

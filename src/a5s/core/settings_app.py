@@ -44,7 +44,11 @@ def drafted(gw: Any, text: str, last: dict | None) -> tuple[Settings | None, byt
     return settings, raw, gw.unusable(settings, last)
 
 
-def request(conn: db.Connection, gw: Any, person: Person, text: str, **why: str) -> dict:
+_UNSEEN = object()  # a version asked for without a review of what it changes, such as an ask's
+
+
+def request(conn: db.Connection, gw: Any, person: Person, text: str, base: Any = _UNSEEN,
+            **why: str) -> dict:
     """Record a request for the version someone wrote, in the caller's transaction, for the
     core to propose within a minute: refused if they asked for one it's still proposing, have
     asked for as many as a day allows, or it can't be proposed. `why` goes in the ledger, such
@@ -61,6 +65,10 @@ def request(conn: db.Connection, gw: Any, person: Person, text: str, **why: str)
         raise Refused(429, [(f"you've asked for {REQUESTS_A_DAY} versions today, which is as many "
                              "as a day allows: try again tomorrow")])
     last = approvals.latest(conn, gw.scenario.name)
+    if base is not _UNSEEN and base != (last["serial"] if last else None):
+        raise Refused(409, [(f"version {last['serial'] if last else 'none'} came into force since "
+                             "you reviewed what you're asking for: review it again, against "
+                             "that, before you ask for it")])
     settings, raw, problems = drafted(gw, text, last)
     if settings is None or problems:
         raise Refused(409, problems)

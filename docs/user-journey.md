@@ -12,7 +12,7 @@ The web chat uses the organisation's identity provider through OpenID Connect. a
 
 ### 2. Have a conversation
 
-The person chooses an agent and writes to it. Here Ana asks about `Q-1001`, and the assistant answers from the synthetic record. Each person has a conversation with the agent, not one shared with every other user. Tools and records stay within the run's permissions.
+The person chooses an agent and writes to it: the chat lists only the agents that serve them, once they've signed in, and names none before. A message to any other gets an answer that names nobody: to ask for it on its page in the studio, if they may know of it there, and otherwise what a5s says of an agent there isn't. Here Ana asks about `Q-1001`, and the assistant answers from the synthetic record. Each person has a conversation with the agent, not one shared with every other user. Tools and records stay within the run's permissions.
 
 ![Ana asking the assistant about a record](images/a5s-chat.png)
 

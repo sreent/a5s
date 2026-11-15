@@ -49,7 +49,7 @@ ACTORS = ("admin", "audit", "proposal")  # entries whose `by` acted in one of a5
 ACTING = ("by", "signed_by")  # where those entries name who acted
 # The kinds of entry a5s writes, for the auditors' page to offer
 KINDS = ("admin", "audit", "breaker", "budget", "cap", "inbound", "message", "model", "notice",
-         "proposal", "repeat", "retention", "run", "task", "tool")
+         "proposal", "registry", "repeat", "retention", "run", "task", "tool")
 
 
 def reads(person: Any) -> bool:
@@ -391,8 +391,8 @@ ADMIN = {"approve": "approved settings", "propose": "proposed settings",
          "suspend": "suspended or resumed an instance", "retire": "retired an instance",
          "restore": "restored an instance", "end-change": "ended a held change",
          "export": "exported someone's data", "erase": "erased someone's data",
-         "archive": "archived a leaver", "request": "asked as the data protection officer",
-         "ask": "asked for approval", "refuse-sign-in": "a sign-in refused"}
+         "archive": "archived a leaver", "request": "asked for a version of the settings",
+         "ask": "asked as the data protection officer", "refuse-sign-in": "a sign-in refused"}
 
 
 def roles_of(scenario: Any, parts: Iterable[str], agents: Iterable[str]) -> list[dict]:

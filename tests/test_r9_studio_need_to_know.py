@@ -9,9 +9,9 @@ import httpx
 import yaml
 
 from a5s import db
-from conftest import SERVICE_TOKEN
+from conftest import SERVICE_TOKEN, listed_runs
 
-OPS = {"definition": "assistant", "serves": ["chen"], "parts": ["orders"], "level": 1,
+OPS = {"definition": "assistant", "serves": ["chen", "omar", "dana"], "parts": ["orders"], "level": 1,
        "owner": "omar"}
 
 
@@ -52,6 +52,7 @@ def chen_searches(stack) -> None:
 
 def test_a_run_that_read_a_record_shows_to_someone_who_may_not_see_it_an_hour_later(
         stack, approving, provider):
+    listed_runs(stack)  # enough people served for its runs to show one by one
     with_ops(stack)
     chen_searches(stack)
     api = signed_in(approving, provider)
@@ -69,6 +70,8 @@ def test_a_report_about_a_record_shows_at_once_to_someone_who_may_not_see_it(
         stack, approving, provider):
     """The watcher's report run learns its records from a5s's brief, not a tool, so the studio
     never counts them: Ana sees Chen's report about Q-1003 at once."""
+    assert not stack.settle(data_protection={"studio_names": True}, signers=("ana", "noor")
+                            ).refused  # the watcher serves Chen alone: its runs show, named
     stack.with_watcher(serves=("chen",), parts=["orders"], signers=("ana", "omar"),
                        owner="omar", deputy="chen")
     stack.at("2026-10-29T01:30:00+00:00")  # 09:30 in Singapore
@@ -85,6 +88,7 @@ def test_a_report_about_a_record_shows_at_once_to_someone_who_may_not_see_it(
 def test_the_runs_list_ignores_the_records_its_ledger_entries_name(stack, approving, provider):
     """The page hides a run whose ledger entries name a record the viewer may not see; the list
     still shows it, with whom it acted for."""
+    listed_runs(stack)  # enough people served for its runs to show one by one
     stack.model.reply(None, ("get_record", {"key": "Q-1003"}))  # Ana's run asks for an orders
     stack.model.reply("I can't see that one.")  # record, which policy keeps from her
     stack.say("Where's the Fabrikam delivery?", person="ana")
@@ -103,6 +107,7 @@ def test_a_watcher_gets_no_digest_to_guess_what_was_said_from(stack, approving, 
     """The ledger keeps what was said by an unsalted digest and its length, which a short text
     can be read back from by guessing: the team that runs a5s has the ledger, but a watcher's
     page carries no digest at all."""
+    listed_runs(stack)  # enough people served for its runs to show one by one
     stack.model.reply(None, ("search_records", {"query": "refund"}),
                       ("change_due_date", {"key": "Q-1002", "due": "2026-12-18"}))
     stack.model.reply("I've asked for Q-1002's due date to move.")
@@ -117,6 +122,7 @@ def test_a_watcher_gets_no_digest_to_guess_what_was_said_from(stack, approving, 
 def test_once_someone_is_erased_no_watcher_reads_their_runs_by_name(stack, approving, provider):
     """R9 accepted that runs kept as evidence name whom they acted for, for the team and the
     officer: a watcher sees only how many people a run was for, until the officer agrees."""
+    listed_runs(stack)  # enough people served for its runs to show one by one
     from a5s.core import erasure
     stack.model.reply(None, ("search_records", {"query": "refund"}))
     stack.model.reply("Q-1002 is waiting on finance.")

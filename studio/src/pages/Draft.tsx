@@ -140,6 +140,14 @@ function TheirDraft({ draft }: { draft: Draft }) {
   );
 }
 
+/** Who drafted it before its author, as its pull request names them: never as if it were all
+ * theirs (round 11, E-4). */
+function handedBy(draft: Draft): string {
+  const went = draft.drafted_before.map((d) => d.how === "handed"
+    ? `${d.name} handed it over ${when(d.at)}` : `it copies a draft ${d.name} wrote`);
+  return went.length ? ` Before you, ${went.join("; then ")}.` : "";
+}
+
 /** Hand one's own draft over to a co-author, who may author its agent too: it's theirs then. */
 function HandOver({ id }: { id: string }) {
   const [open, setOpen] = useState(false);
@@ -292,7 +300,7 @@ export function DraftPage({ id }: { id: string }) {
     <>
       <PageHead crumbs={[{ label: "Agents", to: { page: "agents" } }]} title={draft ? draft.agent : "A draft"}
                 badges={draft && <span className="chip">draft</span>}
-                about={draft && `From ${draft.based_on}, started ${when(draft.created_at)}. Yours to change, and readable by the agent's other owners and authors: nothing runs it until it's published and its release signed.`}>
+                about={draft && `From ${draft.based_on}, started ${when(draft.created_at)}.${handedBy(draft)} Yours to change, and readable by the agent's other owners and authors: nothing runs it until it's published and its release signed.`}>
         {draft && <div className="meta"><span id="kept">{status}</span>
           <HandOver id={id} />
           <button type="button" className="quiet" onClick={drop}>Drop the draft</button></div>}

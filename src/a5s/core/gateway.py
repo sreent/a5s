@@ -66,6 +66,7 @@ from a5s.core import (
     extractor,
     groups,
     handles,
+    judging,
     ledger,
     measures,
     memberships,
@@ -78,6 +79,7 @@ from a5s.core import (
     proposals,
     provenance,
     recall,
+    registration,
     registry,
     releases,
     reminders,
@@ -133,8 +135,10 @@ _STATUS_AFTER = {"suspend": "suspended", "retire": "retired"}  # resume and rest
 # whatever their case, slashes or scheme.
 _IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
 _TAG = re.compile(r"</?[A-Za-z][^>]*>")  # HTML, and autolinks such as <https://...>
-_MARKDOWN_LINK = re.compile(r"\[([^\]]*)\]\(\s*([^)\s]*)[^)]*\)")
-_URL = re.compile(r"(?i)(?:\b[a-z][a-z0-9+.-]*:[/\\]+|(?<![\w:/\\])//|\bwww\.)[^\s)>\]]*")
+# A link's target, and an address, end where a page's would end one: at a quote, a backtick or a
+# <, as well as at a space or a bracket, so what a5s checks is all a page links (round 11, E-2)
+_MARKDOWN_LINK = re.compile(r"\[([^\]]*)\]\(\s*([^)\s'\"`<]*)[^)]*\)")
+_URL = re.compile(r"(?i)(?:\b[a-z][a-z0-9+.-]*:[/\\]+|(?<![\w:/\\])//|\bwww\.)[^\s)>\]'\"`<]*")
 # a5s's own note on values, which only a5s writes: an agent's copy of one is dropped
 _FORGED_NOTE = re.compile(r"(?is)\(\s*a5s\s*:.*?\)")
 
@@ -163,10 +167,11 @@ def sanitize(text: str, allowed: tuple[str, ...], notes: bool = True) -> tuple[s
 
     def link(match: re.Match) -> str:
         nonlocal removed
-        if kept(match.group(2)):
-            return match.group(0)
+        label = _URL.sub(url, match.group(1))  # whose words may hold an address too
+        if kept(match.group(2)):  # the link alone: nothing else it carries past its target
+            return f"[{label}]({match.group(2)})"
         removed += 1
-        return f"{match.group(1)} [link removed]"
+        return f"{label} [link removed]"
 
     def url(match: re.Match) -> str:
         nonlocal removed
@@ -252,6 +257,7 @@ class Gateway:
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)  # when obligations and schedules are due
     releases: releases.Releases | None = None  # the release a5s is, which must be approved here
     breakers: Breakers = field(default_factory=Breakers)  # models not called for now (core/breakers.py)
+    registry: Any = None  # the Microsoft tenant its instances are listed in, if any (core/registration.py)
 
     @property
     def url(self) -> str:
@@ -263,10 +269,13 @@ class Gateway:
         return tasking.service(self.url, self.clock, config.RUN_MINUTES.read())
 
     def data_protection(self, conn: db.Connection) -> DataProtection:
-        """What the data protection officer has chosen, as the signed settings in force say:
-        or, while none can be used, a5s's own choices, each of which keeps people's data
-        closest."""
+        """What the data protection officer has chosen, as the signed settings in force say,
+        and in the channels app, which can't count what was approved on the page, as the
+        version the core sealed in force says (round 11, B-5): or, while none can be used,
+        a5s's own choices, each of which keeps people's data closest."""
         settings, _ = self.settings_in_force(conn, seal=False)
+        if settings is None and not self.cfg.seal_keys:
+            settings = self.sealed_in_force(conn)
         return settings.data_protection if settings is not None else DataProtection()
 
     def settings_in_force(self, conn: db.Connection,
@@ -297,7 +306,8 @@ class Gateway:
         given = before.groups if before and approvals.vouched(
             self.cfg.seal_keys, self.scenario.name, before.serial, before.raw,
             prior["sealed"]) else {}
-        directory = memberships.under(self.scenario, conn, given)
+        directory = memberships.as_signed(self.scenario, conn, given, approvals.groups_shown(
+            conn, self.scenario.name, approvals.digest(settings.raw)))
         valid, _ = registry.signers(settings, directory, approved)
         if needs := registry.missing(settings, directory, valid, before,
                                      memberships.under(self.scenario, conn, {})):
@@ -317,14 +327,20 @@ class Gateway:
         if self.cfg.seal_keys:  # read alone: it never waits on what its caller holds
             settings, _ = self.settings_in_force(conn, seal=False)
             return settings.groups if settings else {}
+        sealed = self.sealed_in_force(conn)
+        return sealed.groups if sealed else {}
+
+    def sealed_in_force(self, conn: db.Connection) -> Settings | None:
+        """In the channels app, which holds no seal key: the latest version of the settings,
+        once the core sealed it in force, or None."""
         row = conn.execute("select raw, sealed from settings_versions where scenario = %s "
                            "order by serial desc limit 1", (self.scenario.name,)).fetchone()
         if not row or not row["sealed"]:
-            return {}
+            return None
         try:
-            return parse_settings(bytes(row["raw"])).groups
+            return parse_settings(bytes(row["raw"]))
         except ValueError:
-            return {}
+            return None
 
     def check_instance(self, conn: db.Connection, inst: dict) -> list[str]:
         """Whether an instance's record is exactly what its signed settings, its release and
@@ -589,11 +605,17 @@ class Gateway:
                                                    "sealing them needs"))
             return
         args = (self.cfg.seal_keys, self.identity, self.scenario, self.cfg.webchat_client_id)
-        for refused in (*approvals.seal_pending(conn, *args), *proposals.seal_pending(conn, *args),
+        for refused in (*approvals.seal_pending(conn, *args),
+                        *proposals.seal_pending(conn, *args, clean=self.reason_told),
                         *samples.seal_pending(conn, *args)):
             ledger.append(conn, {"kind": "admin", "action": "refuse-sign-in", "run": None,
                                  "instance": None, "acts_for": [], "decision": "record",
                                  "args": {"what": refused}})
+
+    def reason_told(self, said: str) -> str:
+        """A rejection's reason as whoever asked is told it: on one line, with no link but to
+        the scenario's records, as the decider's sign-in covers it as they wrote it."""
+        return sanitize(" ".join(said.split()), self.scenario.record_links)[0]
 
     def unusable(self, settings: Settings, last: dict | None) -> list[str]:
         """Why a version of the settings couldn't be applied, before anyone's asked to approve
@@ -1754,7 +1776,12 @@ def create_app(gw: Gateway) -> FastAPI:
                                  "reasons": refused, "args": {"settings": settings.version,
                                                               "serial": settings.serial, **asker}})
             return {"refused": refused}
-        row, new = approvals.propose(conn, gw.scenario.name, settings)
+        row, new = approvals.propose(conn, gw.scenario.name, settings,
+                                     last["serial"] if last else None)
+        if approvals.stale(row, last):  # proposed before, against a version since replaced
+            return {"refused": [(f"version {settings.serial} was proposed against another "
+                                 "version than the one in force: ask for it again, written "
+                                 "against that")]}
         before = parse_settings(bytes(last["raw"])) if last else None
         found = approvals.changes(before, settings, gw.definitions, gw.scenario.person)
         link = f"{gw.public_url}/approve/?settings={row['digest']}"
@@ -1838,9 +1865,14 @@ def create_app(gw: Gateway) -> FastAPI:
         or None while it waits, and who approved it."""
         approved, _ = approvals.approvers(conn, gw.cfg.seal_keys, gw.scenario.name, row["digest"])
         settings = parse_settings(bytes(row["raw"]))
-        valid, _ = registry.signers(settings, gw.scenario.person, approved)
+        # Each approval counts for the roles groups give that both its own sign-in and the
+        # approver's latest show: never a group they've joined, or left, since
+        directory = memberships.as_signed(gw.scenario, conn, gw.groups_in_force(conn),
+                                          approvals.groups_shown(conn, gw.scenario.name,
+                                                                 row["digest"]))
+        valid, _ = registry.signers(settings, directory, approved)
         before = parse_settings(bytes(last["raw"])) if last and last.get("raw") else None
-        if registry.missing(settings, gw.scenario.person, valid, before,
+        if registry.missing(settings, directory, valid, before,
                             memberships.rooted(gw.scenario).person):
             return None, approved  # it waits for the rest of the approvers it needs
         if refused := gw.unusable(settings, last):  # such as a release gone since
@@ -1870,6 +1902,15 @@ def create_app(gw: Gateway) -> FastAPI:
                                     (gw.scenario.name,)).fetchall():
                 if last and row["serial"] <= last["serial"]:
                     outcome = "superseded"
+                elif approvals.stale(row, last):  # reviewed as changing another version
+                    outcome = "superseded"
+                    ledger.append(conn, {"kind": "admin", "action": "apply", "decision": "deny",
+                                         "reasons": [(f"it was written against version "
+                                                      f"{row['base']}, and version "
+                                                      f"{last['serial'] if last else 'none'} is "
+                                                      "in force: ask for it again, from that")],
+                                         "args": {"settings": row["version"],
+                                                  "serial": row["serial"]}})
                 else:
                     try:
                         with conn.transaction():  # a savepoint
@@ -2010,7 +2051,7 @@ def create_app(gw: Gateway) -> FastAPI:
                                 studio.instances(conn), whole=True)
 
     @services.get("/studio/agents/{agent}/measures")
-    def studio_agent_measures(agent: str, days: int = 30, zone: str = "UTC") -> dict:
+    def studio_agent_measures(agent: str, days: studio.Days = 30, zone: str = "UTC") -> dict:
         """How an agent's instances are doing over the last `days` days, with their runs on
         each day in `zone`."""
         with db.transaction(gw.url) as conn:  # with those retired within the window
@@ -2030,7 +2071,7 @@ def create_app(gw: Gateway) -> FastAPI:
         return found
 
     @services.get("/studio/instances/{instance}/measures")
-    def studio_instance_measures(instance: str, days: int = 30, zone: str = "UTC") -> dict:
+    def studio_instance_measures(instance: str, days: studio.Days = 30, zone: str = "UTC") -> dict:
         """How an instance is doing over the last `days` days, with its runs on each day in
         `zone`."""
         with db.transaction(gw.url) as conn:
@@ -3413,6 +3454,88 @@ def create_app(gw: Gateway) -> FastAPI:
                     changed.append(found)
                     capped(conn, found, now)
         return {"changed": changed, "lapsed": lapsed}
+
+    @services.post("/registry/sweep")
+    def sweep_registry() -> dict:
+        """Bring the Microsoft tenant's agent registry into line with the instances a5s runs,
+        and their Entra agent identities, where the deployment asks for them
+        (core/registration.py): nothing, if it names no tenant, while another sweep is at it,
+        or while the settings in force don't check out."""
+        if gw.registry is None:
+            return {"changed": [], "registering": "nothing, since the deployment names no tenant"}
+        with psycopg.connect(gw.url, autocommit=True) as held:  # one sweep at a time, throughout
+            got = held.execute("select pg_try_advisory_lock(hashtext('a5s registry')) as got"
+                               ).fetchone()
+            if not (got and got[0]):
+                return {"changed": []}
+            try:
+                with db.transaction(gw.url) as conn:
+                    settings, problem = gw.settings_in_force(conn, seal=False)
+                if settings is None:
+                    return {"changed": [], "registering": f"nothing, since {problem}"}
+                return {"changed": registration.sweep(gw.url, gw.registry, gw.scenario,
+                                                      gw.definitions, gw.cfg.public_url)}
+            finally:
+                held.execute("select pg_advisory_unlock(hashtext('a5s registry'))")
+
+    @services.post("/samples/judge")
+    def judge_samples() -> dict:
+        """Ask each agent's judge about the samples of its work a5s drew for people to grade, a
+        few a sweep, beside people's grades and never instead of them (core/judging.py). A judge
+        not approved for the class of data the settings say, and for every one its agent's own
+        model is, judges nothing; nor does any while the settings in force don't check out."""
+        with db.transaction(gw.url) as conn:
+            locked = conn.execute("select pg_try_advisory_xact_lock(hashtext('a5s judging')) "
+                                  "as got").fetchone()
+            if not (locked and locked["got"]):
+                return {"judged": []}  # another sweep is at work
+            settings, problem = gw.settings_in_force(conn, seal=False)
+            if settings is None:
+                return {"judged": [], "judging": f"nothing, since {problem}"}
+            judged_by = {}
+            for name, release in gw.definitions.items():
+                judge = gw.models.get(release.evaluation.judge) if release.evaluation else None
+                own = gw.models.get(release.model)
+                if (judge is not None and own is not None
+                        and settings.data_class in judge.data_classes
+                        and set(own.data_classes) <= set(judge.data_classes)):
+                    judged_by[name] = judge.alias  # it may see all its agent may
+            due = judging.pending(conn, judged_by)
+        judged = []
+        for sample in due:
+            release = gw.definitions[sample["definition"]]
+            judge = gw.models[judged_by[sample["definition"]]]
+            body = judging.asked(judge.api, judge.alias, release.evaluation.rubric
+                                 if release.evaluation else "", sample)
+            if not gw.breakers.allow(judge.alias):
+                continue  # it failed lately: asked again at a later sweep
+            try:
+                status, data = models.forward(judge, models.screen(judge.api, body)[0], gw.http)
+            except models.ModelUnavailable:
+                status, data = 503, {}
+            reported = data.get("model") if isinstance(data, dict) else None
+            if status < 400 and reported != (judge.reported_model or judge.model):
+                status = 502  # another model answered than the one approved
+            if status >= 500 or status == 429:
+                gw.breakers.failed(judge.alias)
+            elif status < 400:
+                gw.breakers.worked(judge.alias)
+            usage = data.get("usage") if isinstance(data, dict) else None
+            found = (judging.verdict(extractor.reply_text(judge.api, data)) if status < 400
+                     else None)
+            with db.transaction(gw.url) as conn:
+                ledger.append(conn, {
+                    "kind": "model", "action": judge.alias, "run": None,
+                    "instance": sample["instance_id"], "acts_for": [], "decision": "record",
+                    "args": {"judging": sample["id"], "prompt_sha256": ledger.digest(body)},
+                    "outcome": {"status": status, "reported_model": reported, "usage": usage,
+                                "verdict": found[0] if found else None}})
+                if status < 400:  # else it's asked again at a later sweep
+                    grade, why = found or (None, "its answer couldn't be read as a grade")
+                    if judging.keep(conn, sample["id"], judge.alias, grade, why,
+                                    budgets.tokens_of(usage) if usage else 0) and found:
+                        judged.append({"sample": sample["id"], "verdict": grade})
+        return {"judged": judged}
 
     def capped(conn: db.Connection, found: dict, now: datetime) -> None:
         """Tell the owners and deputies of the instances a cap governs that it changed, in

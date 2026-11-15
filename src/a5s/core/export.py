@@ -79,11 +79,14 @@ def gather(conn: db.Connection, person: str) -> dict[str, Any]:
         return (f"(%(since)s::timestamptz is null or {column} >= %(since)s) "
                 f"and (%(until)s::timestamptz is null or {column} < %(until)s)")
 
-    samples = rows(
+    samples = rows(  # with the judge's verdict, and its reason where the change was for them
         f"select id, action, case when acts_for && %(ids)s then {FIRST_LINE} end as said, "
         "decided, grade, drawn_at, graded_at, acts_for && %(ids)s as for_them, "
         "coalesce(decided_by = any(%(ids)s), false) as decided_it, "
-        "coalesce(graded_by = any(%(ids)s), false) as graded_it from samples "
+        "coalesce(graded_by = any(%(ids)s), false) as graded_it, "
+        "(select verdict from judgments j where j.sample_id = samples.id) as judged, "
+        "case when acts_for && %(ids)s then (select why from judgments j "
+        "where j.sample_id = samples.id) end as judged_why from samples "
         "where (acts_for && %(ids)s or decided_by = any(%(ids)s) or graded_by = any(%(ids)s)) "
         f"and {within('drawn_at')} order by id")
     alone = "acts_for && %(names)s and acts_for <@ %(names)s"  # for them, and nobody else
@@ -146,6 +149,10 @@ def gather(conn: db.Connection, person: str) -> dict[str, Any]:
         "drafts": rows(  # the agents they're making in the studio, file by file
             "select agent, based_on, files, published, created_at, updated_at from agent_drafts "
             "where person = any(%(names)s) order by created_at, agent"),
+        "drafted_first": rows(  # others' drafts now, which they drafted first, and how each went on
+            "select d.agent, e.b->>'how' as how, e.b->>'at' as at from agent_drafts d, "
+            "jsonb_array_elements(d.before) as e(b) where e.b->>'person' = any(%(names)s) "
+            "order by d.agent"),
         "reminders": rows(
             "select agent, about, record, due_at, offered_at, confirmed_at, reminded_at, "
             "cancelled_at from reminders where person = any(%(names)s) order by due_at, id"),
@@ -173,7 +180,8 @@ def gather(conn: db.Connection, person: str) -> dict[str, Any]:
         "samples": [{"sample": r["id"], "as": [role for role, held in (
             ("for", r["for_them"]), ("decider", r["decided_it"]), ("grader", r["graded_it"]))
             if held], **{k: r[k] for k in ("action", "said", "decided", "grade", "drawn_at",
-                                           "graded_at")}} for r in samples],
+                                           "graded_at", "judged", "judged_why")}}
+            for r in samples],
         "questions": rows(  # which an archive takes, as it does their conversations
             "select asker, asked, text, answer, asked_at, answered_at, problem from questions "
             f"where {alone} order by asked_at"),

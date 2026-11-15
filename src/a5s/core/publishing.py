@@ -15,6 +15,7 @@ branch, and its pull request shows it.
 
 from __future__ import annotations
 
+import hashlib
 import secrets
 import threading
 import time
@@ -46,6 +47,7 @@ class Publish:
     agent: str
     based_on: str  # the template, or the agent's release, it began as
     files: dict[str, str]  # the draft's folder, as it was when they asked
+    base: dict[str, str] | None  # the folder it began from, if a5s kept it
     title: str
     body: str
     message: str
@@ -91,11 +93,17 @@ def branch(agent: str, draft: str) -> str:
 
 
 def described(draft: dict, person: Any, signers: list[dict], new: bool,
-              problems: list[str] | None = None) -> tuple[str, str, str]:
+              problems: list[str] | None = None,
+              drafted: list[dict] | None = None) -> tuple[str, str, str]:
     """A publish's pull request, its title and body, and its commit's message: who drafted it,
-    from what, who must sign the release it makes, and why, and what a5s's checks found."""
+    everyone who did before its publisher among them, from what, who must sign the release it
+    makes, and why, and what a5s's checks found."""
     title = f"{'Add' if new else 'Change'} {draft['agent']}"
     by = f"Drafted in the a5s studio by {person.name} ({person.id}), from {draft['based_on']}."
+    if drafted:  # handed over, or copied: never as though its publisher wrote it all
+        went = [f"{d['name']} {'handed it over' if d['how'] == 'handed' else 'drafted what it copies'}"
+                for d in drafted]
+        by += f" Before them, {'; then '.join(went)}."
     lines = [by, "", "## Who must sign its release", ""]
     lines += [f"- **{s['who']}**, because {s['why']}" for s in signers] or [
         "- Nobody more than for any release: it changes nothing a person must sign for."]
@@ -145,7 +153,9 @@ class Publishing:
         interval = float(asked["interval"]) if asked.get("interval") is not None else 5.0
         publish = Publish(
             id=secrets.token_urlsafe(16), person=person, draft=draft["id"], agent=draft["agent"],
-            based_on=draft["based_on"], files=dict(draft["files"]), title=title, body=body,
+            based_on=draft["based_on"], files=dict(draft["files"]),
+            base=dict(draft["base"]) if draft.get("base") is not None else None,
+            title=title, body=body,
             message=message,
             branch=branch(draft["agent"], draft["id"]), device_code=asked["device_code"],
             user_code=asked["user_code"], verify_at=asked["verification_uri"], interval=interval,
@@ -237,11 +247,22 @@ class Publishing:
         tree = call("GET", f"/git/commits/{parent}").json()["tree"]["sha"]
         path = folder(self.cfg, publish.agent).split("/")
         there = self._files(call, tree, path)
+        merged = (there if parent == start else self._files(
+            call, call("GET", f"/git/commits/{start}").json()["tree"]["sha"], path))
+        result, conflicts = merge(publish.base, merged, publish.files)
+        if conflicts:
+            raise Refused(f"since your draft began, {', '.join(conflicts)} changed on "
+                          f"{self.cfg.github_base}, and your draft changes "
+                          f"{'it' if len(conflicts) == 1 else 'them'} too: start a new draft "
+                          "from the agent as it's merged now, or make yours agree with it")
         prefix = "/".join(path) + "/"
-        entries = [{"path": prefix + path, "mode": MODE, "type": "blob", "content": text}
-                   for path, text in sorted(publish.files.items())]
-        entries += [{"path": prefix + path, "mode": MODE, "type": "blob", "sha": None}
-                    for path in sorted(there - set(publish.files))]  # what the draft let go
+        entries = [{"path": prefix + name, "mode": MODE, "type": "blob", "content": got}
+                   for name, got in sorted(result.items()) if isinstance(got, str)]
+        entries += [{"path": prefix + name, "mode": MODE, "type": "blob", "sha": got.sha}
+                    for name, got in sorted(result.items())
+                    if isinstance(got, Kept) and there.get(name) != got.sha]
+        entries += [{"path": prefix + name, "mode": MODE, "type": "blob", "sha": None}
+                    for name in sorted(set(there) - set(result))]  # what the draft let go
         made = call("POST", "/git/trees", json={"base_tree": tree, "tree": entries}).json()["sha"]
         commit = call("POST", "/git/commits", json={"message": publish.message, "tree": made,
                                                      "parents": [parent]}).json()["sha"]
@@ -258,19 +279,59 @@ class Publishing:
         return opened.json()["html_url"]
 
     @staticmethod
-    def _files(call: Any, tree: str, folder: list[str]) -> set[str]:
-        """The files of an agent's folder in a tree, by their paths in the folder, read down
-        to it a folder at a time, so a large repository's whole tree is never asked for."""
+    def _files(call: Any, tree: str, folder: list[str]) -> dict[str, str]:
+        """The files of an agent's folder in a tree, by their paths in the folder, with each
+        one's blob, read down to it a folder at a time, so a large repository's whole tree is
+        never asked for."""
         for name in folder:
             entries = call("GET", f"/git/trees/{tree}").json()["tree"]
             found = next((e for e in entries if e["path"] == name and e["type"] == "tree"), None)
             if found is None:
-                return set()  # a new agent's
+                return {}  # a new agent's
             tree = found["sha"]
         listing = call("GET", f"/git/trees/{tree}", params={"recursive": "1"}).json()
         if listing.get("truncated"):
             raise Refused("its folder on GitHub is too big to read whole")
-        return {e["path"] for e in listing["tree"] if e["type"] == "blob"}
+        return {e["path"]: e["sha"] for e in listing["tree"] if e["type"] == "blob"}
+
+
+@dataclass(frozen=True)
+class Kept:
+    """A file as the branch has it now, by its blob, which a publish keeps."""
+
+    sha: str
+
+
+def blob(text: str) -> str:
+    """The blob git names a file's text by."""
+    data = text.encode()
+    return hashlib.sha1(b"blob %d\0" % len(data) + data).hexdigest()
+
+
+def merge(base: dict[str, str] | None, merged: dict[str, str],
+          draft: dict[str, str]) -> tuple[dict[str, str | Kept], list[str]]:
+    """An agent's folder as a publish leaves it: each file as the draft has it, where what's
+    merged on the branch since the draft began left it alone; as the branch has it, where the
+    draft left it alone; and the files both changed, otherwise, which it can't publish, since
+    either way it would take back someone's work. `base` is the folder the draft began from,
+    file by file, and `merged` the branch's now, each file by its blob. A draft a5s kept no
+    beginning for is taken as begun from what's merged."""
+    if base is None:
+        return dict(draft), []
+    result: dict[str, str | Kept] = {}
+    conflicts = []
+    for name in sorted(set(base) | set(merged) | set(draft)):
+        was = blob(base[name]) if name in base else None
+        now, mine = merged.get(name), (blob(draft[name]) if name in draft else None)
+        if now == was:  # nobody changed it there: the draft's, or gone as the draft has it
+            if name in draft:
+                result[name] = draft[name]
+        elif mine == was or mine == now:  # changed there alone, or the same way
+            if now is not None:
+                result[name] = Kept(now)
+        else:
+            conflicts.append(name)
+    return result, conflicts
 
 
 def _said(found: dict) -> str:

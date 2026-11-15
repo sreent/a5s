@@ -17,6 +17,15 @@
 - name: A5S_PROVIDER_TIMEOUT
   value: {{ .Values.timeouts.provider | quote }}
 {{ include "a5s.dbConnectEnv" . }}
+{{- with .Values.registry.tenant }}
+- name: A5S_REGISTRY_TENANT  # IT's inventory: the core alone lists instances there
+  value: {{ . | quote }}
+- name: A5S_REGISTRY_CLIENT_ID
+  value: {{ required "registry.clientId names the app the core signs in to the tenant as" $.Values.registry.clientId | quote }}
+{{ include "a5s.secretEnv" (dict "root" $ "name" "A5S_REGISTRY_SECRET" "key" "registry-secret") }}
+- name: A5S_REGISTRY_IDENTITIES
+  value: {{ $.Values.registry.identities | quote }}
+{{- end }}
 {{- end }}
 
 {{- define "a5s.env.channels" -}}

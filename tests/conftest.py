@@ -35,8 +35,9 @@ from jwt.algorithms import RSAAlgorithm
 
 from a5s import db, definitions, devdb
 from a5s.config import Config, load_models
+from a5s.connectors import mcp
 from a5s.core import inbox, ledger, memberships, registry, signing
-from a5s.core.gateway import Gateway, create_app
+from a5s.core.gateway import CORE_TOOLS, Gateway, create_app
 from a5s.core.identity import IdentityConfig, Verifier
 from a5s.core.policy import PolicyEngine
 from a5s.sample import SampleScenario
@@ -200,6 +201,7 @@ class Provider:
         self.forms: list[dict] = []
         self.asked: list[dict] = []  # what each sign-in asked for
         self.claims: dict[str, Any] = {}  # more claims for each ID token, such as amr
+        self.refusing: tuple[str, str] | None = None  # an error, and its words, to send back
         self.url = ""
 
     def rotate(self) -> None:
@@ -238,6 +240,10 @@ class Provider:
             if urlparse(redirect_uri).path not in REGISTERED:  # as Entra ID refuses one
                 return JSONResponse(status_code=400, content={  # its app doesn't list
                     "error": "invalid_request", "error_description": "redirect_uri mismatch"})
+            if self.refusing:  # as a provider does, with the sign-in's own state
+                error, words = self.refusing
+                return RedirectResponse(f"{redirect_uri}?{urlencode({'error': error,
+                    'error_description': words, 'state': state})}")
             code = secrets.token_urlsafe(16)
             fresh = int(time.time()) if "max_age" in request.query_params else None
             self.codes[code] = (client_id, redirect_uri, code_challenge, code_challenge_method,
@@ -564,7 +570,8 @@ def running(database: str, root: Path, http: httpx.Client, model: FakeModel,
     cfg = Config(database_url=db.as_role(database, "gateway"),
                  gateway_url=f"http://127.0.0.1:{port}", service_token=SERVICE_TOKEN, root=root,
                  development=True, seal_keys=(SEAL_KEY,))
-    scenario = SampleScenario(cfg.scenario_dir, cfg.database_url)  # its tools run in the gateway
+    scenario = mcp.served(SampleScenario(cfg.scenario_dir, cfg.database_url),  # its tools run
+                          cfg.scenario_dir, reserved=frozenset(CORE_TOOLS))  # in the gateway
     for agent in ("assistant", "watcher"):
         definitions.pin(root / "agents" / agent, {n: t.schema_hash for n, t in scenario.tools().items()})
     # Its directory, with the roles groups give, as a5s builds it (core/memberships.py)
@@ -602,6 +609,15 @@ def stack(database: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Ite
     with running(database, root, httpx.Client(transport=httpx.MockTransport(model.handler)),
                  model) as s:
         yield s
+
+
+def listed_runs(stack: Stack) -> None:
+    """The sample's instances, serving enough people for their runs to show one by one without
+    names: the officer's fewest at its least, three, and the assistant serving Dana, who sees
+    billing, besides Ana and Ben. Fewer, and an instance shows its runs only in its daily
+    figures until the officer agrees to names (round 11, D-3)."""
+    assert not stack.settle(data_protection={"fewest_people": 3}, serves=["ana", "ben", "dana"],
+                            signers=("ana", "noor", "omar")).refused  # orders' owner, for any there
 
 
 def raise_cap(stack: Stack, part: str = "billing", action: str = "change-due-date",

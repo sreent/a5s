@@ -15,11 +15,19 @@ A release's own files, which `a5s release promote` and `a5s release sign` write 
 | File | What it holds |
 | --- | --- |
 | `release.yaml` | The release's manifest, as its image prints it for the environment (`a5s release show --environment`) |
-| `release.sig` | The signatures over it so far, each person's, made with their own key |
+| `release.sig` | What its approvers approve of it, each part signed: the release, the image it runs as, by digest, the release the environment runs now, which it follows, the security advisory it fixes, if any, and whether it's a baseline; and the signatures over that so far, each person's, made with their own key. A signature over the release with another image, or following another release, isn't over this one |
 | `release-values.yaml` | Its image by digest, the approval the chart's job records, and the signatures' hash, so a signature added is an upgrade, whose job records it |
 | `release-source.yaml` | The release's tag, at which `source.yaml`'s repository gives its chart |
 
-The folder's other files say how the environment runs, and change by their own pull requests, which the team's leads review as code owners. A release needs no such review: its signatures are its review.
+The folder's other files say how the environment runs, and change by their own pull requests, which their code owners review. Those that decide what runs or whom the core trusts, the environment's `values.yaml`, `helmrelease.yaml` and `source.yaml`, are the release approvers' as well as the team's leads', since a lead is in the team the release approvers are independent of. A release needs no such review: its signatures are its review.
+
+`approvers.yaml`, beside the environments, names the people kept outside every release who judge an environment's first: the release approvers and assurance, each with their key and roles, as a release records its signers. The release approvers own it, as code owners, alone. Without it, an environment's first release would be judged by the directory it brings, which its builders write, so the check refuses one. They write it themselves, with their own public keys, never a sample's:
+
+```yaml
+signers:
+  rosa: {key: "<her public key, as a5s keygen prints it>", team: risk, roles: [release-approver], above: []}
+  kofi: {key: "<his public key>", team: audit, roles: [assurance], above: []}
+```
 
 ## Set up an environment, once
 
@@ -29,12 +37,19 @@ The folder's other files say how the environment runs, and change by their own p
 
    ```
    /deploy/gitops/ @OWNER/a5s-leads
-   /.github/workflows/promote.yml @OWNER/a5s-leads
+   /.github/workflows/promote.yml @OWNER/a5s-leads @OWNER/release-approvers
+   /deploy/gitops/verify.sh @OWNER/a5s-leads @OWNER/release-approvers
+   /deploy/gitops/approvers.yaml @OWNER/release-approvers
+   /deploy/gitops/environments/*/values.yaml @OWNER/a5s-leads @OWNER/release-approvers
+   /deploy/gitops/environments/*/helmrelease.yaml @OWNER/a5s-leads @OWNER/release-approvers
+   /deploy/gitops/environments/*/source.yaml @OWNER/a5s-leads @OWNER/release-approvers
    /deploy/gitops/environments/*/release.yaml
    /deploy/gitops/environments/*/release.sig
    /deploy/gitops/environments/*/release-values.yaml
    /deploy/gitops/environments/*/release-source.yaml
    ```
+
+   With two teams on a line, GitHub asks one code owner's review: require the release approvers' too with a ruleset's required reviewers for those paths, where your plan has it, or keep those lines to `@OWNER/release-approvers` alone. Name each environment's folder in lower case letters, digits and hyphens, such as `production`: the check refuses any other. And add a ruleset that lets nobody but the release approvers' team make a `v*` tag ([`releases.json`](../../.github/rulesets/releases.json), with that team as its only bypass actor), since the release workflow builds and attests an image from each.
 
    On Forgejo, it's branch protection with the leads' approval for those files, and "merge when checks succeed" [TBC: how Forgejo requires approval for some files alone, at the first deployment].
 
@@ -56,7 +71,7 @@ The folder's other files say how the environment runs, and change by their own p
    a5s release sign --as <them> --key <their key> --environment deploy/gitops/environments/production
    ```
 
-4. The check on the pull request passes once the signatures meet what the release needs, weighed against the release the environment runs now. They're judged as the environment runs that release: by its image, with its directory, and with the environment's values as they are now. So a release that changes the directory can't approve itself with people it adds, and the pull request can't choose who judges it. The core judges it the same way when its job records the signatures, from who each release records may sign the next, so going around git with `helm upgrade` approves nothing more. The check also refuses a pull request that deploys a release and changes anything else in the environment, and an image that doesn't hold exactly the release's manifest.
+4. The check on the pull request passes once the signatures meet what the release needs, weighed against the release the environment runs now. They're judged as the environment runs that release: by its image, with its directory, and with the environment's values as they are now. So a release that changes the directory can't approve itself with people it adds, and the pull request can't choose who judges it. The core judges it the same way when its job records the signatures, from who each release records may sign the next, so going around git with `helm upgrade` approves nothing more. The check also refuses a pull request that deploys a release and changes anything else in the environment; one whose signatures approve the release as another image than the environment would run, or as following another release than it runs; one that approves the release it runs again as another image, until the release approver and assurance sign that; one that takes an environment's release away; an environment file that sets values or post-renderers of its own in `helmrelease.yaml`, which Flux would merge over the release's image, or approves models with a ConfigMap of its own, which the release its approvers sign doesn't hold; and an image that doesn't hold exactly the release's manifest. On GitHub, it checks too that the release workflow built and attested the image, with `gh attestation verify`. An environment's first release is judged by `approvers.yaml` as the branch it merges into has it.
 5. The pull request merges itself. Flux deploys it, the chart's job records the signatures, and the core opens runs again once they check out.
 
 To roll back, revert the merge: Flux deploys the release before, whose approval the core has already recorded.

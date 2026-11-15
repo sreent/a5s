@@ -41,8 +41,9 @@ def serving(scenario: Scenario, insts: list[dict], agent: str, person: str) -> l
 
 def waits_on(insts: list[dict], agent: str, person: Person) -> list[str]:
     """Why an ask for an agent waits on someone: they own it, own a part one of its instances
-    works in, or approve instances, where one is in no part or it has none yet. None if it
-    doesn't wait on them."""
+    works in, or approve instances, where one is in no part. None if it doesn't wait on them.
+    Each of these may know of the agent (studio.layers): an agent with no instance waits on its
+    owners alone, since nobody is served through an instance that isn't there (round 11, D-4)."""
     roles, why = set(person.roles), []
     if agent_owner(agent) in roles:
         why.append(f"you own the {agent}")
@@ -50,7 +51,7 @@ def waits_on(insts: list[dict], agent: str, person: Person) -> list[str]:
     for inst in mine:
         why += [f"you own {part}, where {inst['id']} works" for part in sorted(inst["parts"] or {})
                 if f"{PART_OWNER}:{part}" in roles]
-    if INSTANCE_APPROVER in roles and (not mine or any(not i["parts"] for i in mine)):
+    if INSTANCE_APPROVER in roles and any(not i["parts"] for i in mine):
         why.append("you approve instances")
     return list(dict.fromkeys(why))
 
@@ -79,7 +80,7 @@ def ask(conn: db.Connection, scenario: Scenario, insts: list[dict], person: Pers
         raise Refused("you asked for it from elsewhere at the same moment: try again")
     ledger.append(conn, {"kind": "admin", "action": "ask for agent", "run": None,
                          "instance": None, "acts_for": [], "decision": "record",
-                         "args": {"agent": agent, "ask": str(made["id"]), "by": person.id}})
+                         "args": {"agent": agent, "ask": str(made["id"]), "asker": person.id}})
     return made
 
 
@@ -93,11 +94,11 @@ def end(conn: db.Connection, scenario: str, ask_id: str, outcome: str,
     ended = conn.execute(f"update agent_asks set ended_at = now(), outcome = %s, ended_by = %s "
                          f"where id = %s::uuid and scenario = %s and ended_at is null "
                          f"returning {COLUMNS}", (outcome, by, ask_id, scenario)).fetchone()
-    if ended:
+    if ended:  # whoever answered it acted in a role; the asker, withdrawing it, didn't
+        acted = ({"asker": by} if by == ended["person"] else {"by": by}) if by else {}
         ledger.append(conn, {"kind": "admin", "action": f"ask for agent {outcome}", "run": None,
                              "instance": None, "acts_for": [], "decision": "record",
-                             "args": {"agent": ended["agent"], "ask": ask_id,
-                                      **({"by": by} if by else {})}})
+                             "args": {"agent": ended["agent"], "ask": ask_id, **acted}})
     return ended
 
 

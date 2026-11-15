@@ -337,6 +337,11 @@ def create_app(gw: Any) -> FastAPI:
 
     # The local channel, for the command line and the web chat
 
+    def spoke(agent: str, run: Any) -> dict:
+        """Who a message a5s sent is by: a run's is its agent's, and any other is a5s's own.
+        `by` says which, whatever the agent is called, so no name passes for another's."""
+        return {"from": agent, "by": "agent"} if run else {"from": "a5s", "by": "a5s"}
+
     def sender(authorization: str | None, claimed: str | None) -> tuple[str, str]:
         """Who's writing, and how a5s knows (core/web.py)."""
         return web.sender(gw, authorization, claimed)
@@ -371,8 +376,20 @@ def create_app(gw: Any) -> FastAPI:
 
         said = sorted(await waiting(request, wait, take), key=lambda r: r["id"])
         return {"replies": [r["text"] for r in said],
-                "messages": [{"from": r["agent"] if r["run_id"] else "a5s", "text": r["text"],
+                "messages": [{**spoke(r["agent"], r["run_id"]), "text": r["text"],
                               "at": r["at"].isoformat()} for r in said]}
+
+    @app.get("/channels/local/agents")
+    def local_agents(person: str | None = None,
+                     authorization: str | None = Header(default=None)) -> dict:
+        """The agents someone may talk to here: those an instance of serves them. Any other,
+        they find in the studio, as far as they may know of it, and ask for there."""
+        who, _ = sender(authorization, person)
+        with db.transaction(gw.url) as conn:
+            rows = conn.execute("select definition, serves from instances "
+                                "where status in ('active', 'suspended')").fetchall()
+        return {"agents": sorted({r["definition"] for r in rows if r["definition"] in gw.definitions
+                                  and registry.serving(gw.scenario, r["serves"], who)})}
 
     @app.get("/channels/local/conversation")
     def conversation(agent: str, limit: int = 50, person: str | None = None,
@@ -396,7 +413,8 @@ def create_app(gw: Any) -> FastAPI:
                 "select serves from instances where definition = %s and status in "
                 "('active', 'suspended')", (agent,)))
         definition = gw.definitions.get(agent)
-        return {"messages": [{"from": "you" if r["kind"] == "person" else agent if r["run_id"] else "a5s",
+        return {"messages": [{**({"from": "you", "by": "person"} if r["kind"] == "person"
+                                 else spoke(agent, r["run_id"])),
                               "text": r["text"], "at": r["at"].isoformat()} for r in reversed(rows)],
                 "does": definition.does if definition and served else None}
 
@@ -428,7 +446,7 @@ def create_app(gw: Any) -> FastAPI:
                     "returning id, run_id, instance_id, agent, text, at", (who,)).fetchall()
 
         return {"messages": [  # a run's message is its agent's; any other is a5s's own
-            {"from": r["agent"] if r["run_id"] else "a5s", "about": r["agent"],
+            {**spoke(r["agent"], r["run_id"]), "about": r["agent"],
              "instance": r["instance_id"], "text": r["text"], "at": r["at"].isoformat()}
             for r in sorted(await waiting(request, wait, take), key=lambda r: r["id"])]}
 

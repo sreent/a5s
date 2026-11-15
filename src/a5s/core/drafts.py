@@ -176,27 +176,36 @@ def mine(conn: db.Connection, person: Person) -> list[dict]:
 
 
 def get(conn: db.Connection, person: Person, draft: str) -> dict | None:
-    """One of someone's drafts, with its files; None if it isn't theirs, or isn't there."""
+    """One of someone's drafts, with its files, and the folder it began from; None if it isn't
+    theirs, or isn't there."""
     try:
-        found = conn.execute(f"select {SHOWN}, files from agent_drafts where id = %s::uuid "
-                             "and person = %s", (draft, person.id)).fetchone()
+        found = conn.execute(f"select {SHOWN}, files, base, before from agent_drafts "
+                             "where id = %s::uuid and person = %s", (draft, person.id)).fetchone()
     except psycopg.errors.InvalidTextRepresentation:
         return None
     return dict(found) if found else None
 
 
 def start(conn: db.Connection, person: Person, agent: str, based_on: str,
-          files: dict[str, str]) -> dict:
-    """A new draft of someone's: their first of `agent`, among no more than MOST_DRAFTS."""
+          files: dict[str, str], base: dict[str, str] | None = None,
+          before: list[dict] | None = None) -> dict:
+    """A new draft of someone's: their first of `agent`, among no more than MOST_DRAFTS, the
+    folder it began from, `base`: the agent's as released, or none for a new agent's, and who
+    drafted it `before` them, for a copy of someone else's."""
     held = conn.execute("select count(*) as n, bool_or(agent = %s) as already from agent_drafts "
                         "where person = %s", (agent, person.id)).fetchone()
     if held["already"]:
         raise Refused(f"you have a draft of {agent} already: carry on with it, or drop it first")
     if held["n"] >= MOST_DRAFTS:
         raise Refused(f"you keep {MOST_DRAFTS} drafts at most: publish or drop one first")
-    return dict(conn.execute(
-        "insert into agent_drafts (person, agent, based_on, files) values (%s, %s, %s, %s) "
-        f"returning {SHOWN}, files", (person.id, agent, based_on, Jsonb(files))).fetchone())
+    made = conn.execute(
+        "insert into agent_drafts (person, agent, based_on, files, base, before) values (%s, %s, "
+        f"%s, %s, %s, %s) returning {SHOWN}, files, base, before",
+        (person.id, agent, based_on, Jsonb(files), Jsonb(base or {}), Jsonb(before or []))
+    ).fetchone()
+    if made is None:  # an insert returns the row it made
+        raise Refused("a5s couldn't keep the draft: try again")
+    return dict(made)
 
 
 def save(conn: db.Connection, person: Person, draft: str, files: dict[str, str]) -> dict | None:
@@ -222,7 +231,7 @@ def zipped(draft: dict) -> bytes:
 def by_id(conn: db.Connection, draft: str) -> dict | None:
     """A draft, whoever's, with its files and its author's id; None if it isn't there."""
     try:
-        found = conn.execute(f"select {SHOWN}, files, person from agent_drafts "
+        found = conn.execute(f"select {SHOWN}, files, base, before, person from agent_drafts "
                              "where id = %s::uuid", (draft,)).fetchone()
     except psycopg.errors.InvalidTextRepresentation:
         return None
@@ -239,10 +248,13 @@ def theirs(conn: db.Connection, person: Person, agents: Iterable[str]) -> list[d
 
 def hand_over(conn: db.Connection, person: Person, draft: str, to: str) -> dict | None:
     """Give one of someone's drafts to someone who has none of its agent: theirs to change,
-    then. None if it isn't the giver's, or the taker has one of its agent already."""
+    then, the draft keeping that the giver drafted it before them, and when they handed it over.
+    None if it isn't the giver's, or the taker has one of its agent already."""
     try:
         found = conn.execute(
-            f"update agent_drafts set person = %s, updated_at = now() where id = %s::uuid "
+            "update agent_drafts set person = %s, updated_at = now(), before = before || "
+            "jsonb_build_array(jsonb_build_object('person', person, 'at', now(), 'how', 'handed')) "
+            "where id = %s::uuid "
             "and person = %s and not exists (select 1 from agent_drafts o where o.person = %s "
             f"and o.agent = agent_drafts.agent) returning {SHOWN}",
             (to, draft, person.id, to)).fetchone()

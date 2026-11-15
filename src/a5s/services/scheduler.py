@@ -34,10 +34,10 @@ from datetime import UTC, datetime
 import httpx
 import psycopg
 
-from a5s import config, db, reach
+from a5s import config, db, definitions, reach
 from a5s.config import Config
-from a5s.contract import INSTANCE_APPROVER, PART_OWNER, Scenario
-from a5s.core import groups, registry, tasking
+from a5s.contract import Scenario
+from a5s.core import groups, registry, studio, tasking
 from a5s.services import context, summaries
 from a5s.worker import BudgetSpent, ModelDown, TaskStopped, run_agent
 
@@ -125,6 +125,10 @@ def remote_worker(url: str, within: float = reach.WITHIN) -> Worker:
     return work
 
 
+# What a5s says to a message to an agent there isn't, or that its sender may not know of
+NO_SUCH = "There's no {agent} for you."
+
+
 class Scheduler:
     def __init__(self, cfg: Config, scenario: Scenario, worker: Worker = run_agent,
                  http: httpx.Client | None = None, pools: dict[str, Worker] | None = None):
@@ -172,28 +176,22 @@ class Scheduler:
         return theirs[0] if theirs else None
 
     def _nobody_serves(self, agent: str, asker: str, others: list[str] | None = None) -> str:
-        """Who can add someone to an agent: the owners of the parts its instances work in, or
-        the instance approvers, for one in no part. With `others`, the people in a group chat
-        with the asker whom it doesn't serve."""
-        with db.transaction(self.cfg.database_url) as conn:
-            scopes = [i["parts"] or {} for i in conn.execute(
-                "select parts from instances where definition = %s and status <> 'retired'",
-                (agent,))]
-        roles = [f"{PART_OWNER}:{p}" for scope in scopes for p in scope] or [INSTANCE_APPROVER]
-        holders = {p.id: p for role in dict.fromkeys(roles) for p in self.scenario.holders(role)}
-        approvers = [p.name for p in holders.values() if p.id != asker]
-        them = "them" if others else "you"
-        if approvers:
-            add = f"Ask {' or '.join(approvers)} to add {them}."
-        elif holders:  # only the person asking approves it
-            add = ("As an instance approver, you can add " if roles == [INSTANCE_APPROVER]
-                   else "As the owner of the parts it works in, you can add ") + (
-                "them." if others else "one.")
-        else:
-            add = f"Ask whoever runs a5s to add {them}."
-        if others:
-            return groups.UNSERVED.format(who=groups.names(self.scenario, others), add=add)
-        return f"There's no {agent} for you yet. {add}"
+        """What a5s tells someone an agent doesn't serve, or, with `others`, the people in a
+        group chat with them it doesn't: to ask for it on its page in the studio, where those
+        it waits on answer (core/asks.py). It names nobody, and says nothing of where the agent
+        works. To someone who may not know of the agent, it says what it says of one there
+        isn't (core/studio.py's layers)."""
+        if others:  # its page may be one they may not see: nobody named, nothing more said
+            return groups.UNSERVED.format(who=groups.names(self.scenario, others),
+                                          add="Whoever approves the agents here can add them.")
+        definition = definitions.load_all(self.cfg.agents_dir).get(agent)
+        person = self.scenario.person(asker)
+        if definition is not None and person is not None:
+            with db.transaction(self.cfg.database_url) as conn:
+                every = studio.instances(conn)
+            if studio.layers(agent, definition, every, person, self.scenario):
+                return f"There's no {agent} for you yet. Ask for it on its page in the studio."
+        return NO_SUCH.format(agent=agent)
 
     def _turn(self, claim: dict, text: str, run: str, topic: str) -> None:
         """Note in the conversation what a5s told someone, so a later run knows."""
@@ -649,9 +647,13 @@ class Scheduler:
 
     def decided(self) -> None:
         """Ask the core to make the held changes their deciders approved, and to remind,
-        escalate or let go of those still waiting; and to weigh the grades of agents' work."""
+        escalate or let go of those still waiting; to weigh the grades of agents' work; and to
+        have each agent's judge, if it names one, grade the samples of its work beside people;
+        and to list its instances in IT's inventory, where the deployment names a tenant."""
         for path, what in (("/proposals/sweep", "the held changes"),
-                           ("/samples/sweep", "the graded samples")):
+                           ("/samples/sweep", "the graded samples"),
+                           ("/samples/judge", "the judge's verdicts on samples"),
+                           ("/registry/sweep", "IT's inventory in Microsoft 365")):
             try:
                 self.gw.post(path, headers=self.service).raise_for_status()
             except httpx.HTTPError:

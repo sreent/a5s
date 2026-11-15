@@ -135,6 +135,11 @@ KEPT = 0.2  # of each person's day, for chases and reminders
 ASKED = 0.2  # and beside it, for what they ask themselves, which their tasks never spend
 
 
+# Names no agent may have: in a conversation, the person's own words are by "you", and a5s's by
+# "a5s" (core/inbox.py)
+RESERVED = frozenset({"you", "a5s"})
+
+
 class Budget(BaseModel):
     """How much model work an instance may do, in tokens as the providers count them: in one
     run, and for each person it acts for, each day (core/budgets.py)."""
@@ -143,6 +148,16 @@ class Budget(BaseModel):
 
     per_run: int = Field(default=200_000, ge=1000)
     per_person_per_day: int = Field(default=1_000_000, ge=1000)
+
+
+class Evaluation(BaseModel):
+    """The judge of an agent's work: an approved model that grades each sample of it beside
+    people, never instead of them, and what a right change is for this agent (core/judging.py)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    judge: str  # an approved model's alias, best another than the agent's own
+    rubric: str = Field(default="", max_length=2000)  # what's right, in its owners' words
 
 
 class Definition(BaseModel):
@@ -168,6 +183,7 @@ class Definition(BaseModel):
     context: Context = Context()
     budget: Budget = Budget()
     tasks: Tasks | None = None  # if it takes on long tasks for people
+    evaluation: Evaluation | None = None  # a judge of its work, beside people's grades
     # Whether the studio's catalogue shows everyone signed in that it exists: its name, what it
     # does, its owner, and how to ask for it. Unlisted, only those with a role on it, and the
     # people it serves, know of it, as a name such as redundancy planning says too much alone
@@ -184,6 +200,14 @@ class Definition(BaseModel):
     @property
     def tool_names(self) -> list[str]:
         return [name for names in self.tools.values() for name in names]
+
+    @field_validator("id")
+    @classmethod
+    def _not_reserved(cls, given: str) -> str:
+        if given in RESERVED:
+            raise ValueError(f"an agent can't be called {given}: in a conversation, that's who "
+                             "the other words are by")
+        return given
 
     @model_validator(mode="after")
     def _budgets_fit_the_context(self) -> Definition:
@@ -224,8 +248,35 @@ def _folder_digest(folder: Path) -> str:
     return sha.hexdigest()
 
 
+class _Once(yaml.SafeLoader):
+    """YAML that names each key of a mapping once. A reviewer reads the first of two, and YAML
+    takes the last, so an agent.yaml naming its model twice would run on the one nobody read."""
+
+
+def _named_once(loader: yaml.SafeLoader, node: yaml.MappingNode) -> Any:
+    seen: set[Any] = set()
+    for key_node, _ in node.value:
+        key = loader.construct_object(key_node, deep=True)
+        try:
+            if key in seen:
+                raise yaml.constructor.ConstructorError(
+                    None, None, f"it names {key} twice", key_node.start_mark)
+            seen.add(key)
+        except TypeError:  # a key that can't be one, which the mapping refuses itself
+            pass
+    return loader.construct_mapping(node, deep=True)
+
+
+_Once.add_constructor(yaml.resolver.BaseResolver.DEFAULT_MAPPING_TAG, _named_once)
+
+
+def spec_of(text: str) -> Any:
+    """An agent.yaml, as a5s reads it: each key once."""
+    return yaml.load(text, Loader=_Once)  # a SafeLoader, with each key once
+
+
 def load(folder: Path) -> Definition:
-    spec = yaml.safe_load((folder / "agent.yaml").read_text())
+    spec = spec_of((folder / "agent.yaml").read_text())
     lock = folder / "tools.lock"
     return Definition(
         **spec,
@@ -278,8 +329,17 @@ def skills_of(folder: Path) -> dict[str, str]:
 
 
 def load_all(agents_dir: Path) -> dict[str, Definition]:
-    found = [load(f) for f in sorted(agents_dir.iterdir()) if (f / "agent.yaml").exists()]
-    return {d.id: d for d in found}
+    """Every agent in a folder of agents, each by its folder's name, which is its id: one that
+    names itself otherwise would load as another agent, in its place, so it's refused."""
+    found = {}
+    for folder in sorted(agents_dir.iterdir()):
+        if (folder / "agent.yaml").exists():
+            definition = load(folder)
+            if definition.id != folder.name:
+                raise ValueError(f"the agent in {folder.name} names itself {definition.id}: an "
+                                 "agent's id is its folder's name")
+            found[definition.id] = definition
+    return found
 
 
 def pin(folder: Path, schema_hashes: dict[str, str]) -> Path:

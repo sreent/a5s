@@ -46,6 +46,9 @@ log = logging.getLogger(__name__)
 
 STAND_IN = "stand-in"  # the model a draft tries with, unless a real one is asked for
 STAND_IN_URL = "https://stand-in.sandbox.a5s/v1"  # never leaves the sandbox: it answers itself
+# The most a draft tried here may spend, whatever its own budgets say: those of an agent
+# that names none, as the reference assistant has them
+BUDGET: Final = definitions.Budget()
 SIGNERS = ("instance-approver", "part-owner:")  # whose signatures its own settings carry
 KEY = re.compile(r"[a-z0-9]{6,32}")  # a draft's, as the studio names it to the sandbox
 QUIET: Final = "1 hour"  # how long it keeps what's said in it, after it's quiet: a try's alone
@@ -205,11 +208,31 @@ class Sandbox:
 
     def _install(self, agent: str, files: dict[str, str], model: str) -> None:
         """A draft as an agent of the sandbox's own: its files, named for the sandbox, on the
-        model asked for, with its tools pinned as the scenario has them."""
+        model asked for, with its tools pinned as the scenario has them, and its budgets no
+        more than the sandbox's own. A draft it refuses leaves nothing behind, so no later try
+        loads it, in its own place or another's."""
         if model not in self.models():
             raise Refused(f"the sandbox can't call {model}: it has {', '.join(self.models())}")
         folder = self.cfg.agents_dir / agent
         shutil.rmtree(folder, ignore_errors=True)
+        try:
+            self._written(folder, agent, files, model)
+            found = definitions.load_all(self.cfg.agents_dir)
+        except BaseException:
+            shutil.rmtree(folder, ignore_errors=True)
+            raise
+        for definition in found.values():  # whatever a draft gives itself to spend
+            definition.budget = definitions.Budget(
+                per_run=min(definition.budget.per_run, BUDGET.per_run),
+                per_person_per_day=min(definition.budget.per_person_per_day,
+                                       BUDGET.per_person_per_day))
+        self.gateway.definitions.clear()  # the same mapping the channels app reads
+        self.gateway.definitions.update(found)
+
+    def _written(self, folder: Path, agent: str, files: dict[str, str], model: str) -> None:
+        """A draft's files in its folder, named and on its model as the sandbox has them, and
+        checked: Refused if they aren't, or if they run as another agent, or on another model,
+        than the sandbox set."""
         for path, text in files.items():
             if path == "tools.lock":
                 continue
@@ -230,9 +253,10 @@ class Sandbox:
             pass  # its checks say why
         if problems := authoring.check(folder, tools, load_models(self.cfg.models_file)):
             raise Refused("; ".join(problems))
-        found = definitions.load_all(self.cfg.agents_dir)
-        self.gateway.definitions.clear()  # the same mapping the channels app reads
-        self.gateway.definitions.update(found)
+        loaded = definitions.load(folder)
+        if (loaded.id, loaded.model) != (agent, model):  # whatever else its YAML says
+            raise Refused("its agent.yaml names its id and its model each once, on a line of "
+                          "its own, as id: and model:")
 
     def _serving(self, instance: str, agent: str, person: str) -> None:
         """An instance of a draft's agent, which serves `person` too, in its settings."""
@@ -385,7 +409,7 @@ def opened(deployment: Config, admin: str, work: Path) -> Iterator[Sandbox]:
     cfg = Config(database_url=admin, gateway_url="http://127.0.0.1:1",
                  service_token=secrets.token_urlsafe(32), root=root, development=True,
                  seal_keys=(secrets.token_urlsafe(32),), scenario=deployment.scenario,
-                 scenario_folder=scenario_dir, agents_folder=root / "agents")
+                 scenario_folder=scenario_dir, agents_folder=root / "agents", sandboxed=True)
     db.migrate(admin)
     with db.transaction(admin) as conn:
         build.scenario(cfg).setup(conn, db.ROLES["gateway"])

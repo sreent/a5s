@@ -135,6 +135,23 @@ def under(scenario: Any, conn: db.Connection, mapping: Mapping) -> Callable[[str
     return person
 
 
+def as_signed(scenario: Any, conn: db.Connection, mapping: Mapping,
+              shown_then: dict[str, tuple[str, ...]]) -> Callable[[str], Person | None]:
+    """Who someone is, for counting what they did with a sign-in, such as approving a version:
+    the directory's roles, and those the groups give that both that sign-in showed, in
+    `shown_then`, and their latest sign-in shows, read afresh. A group they joined since, or
+    have left since, gives nothing to what they did."""
+    inner, latest = rooted(scenario), stored(conn)
+
+    def person(pid: str) -> Person | None:
+        found = inner.person(pid)
+        if found is None or not mapping:
+            return found
+        then = set(shown_then.get(pid, ()))
+        return holding(found, granted(mapping, tuple(g for g in latest.get(pid, ()) if g in then)))
+    return person
+
+
 @dataclass
 class _State:
     url: str
@@ -205,9 +222,11 @@ class Grouped:
         return list(found.values())
 
     def signed_in(self, person: Person, claims: dict[str, Any], claim: str | None) -> Person:
-        """Someone who just signed in, with the roles this sign-in's groups give them, and
-        those groups kept, of the ones the settings name, for when they aren't signed in.
-        `claim` is the one their groups are in."""
+        """Someone who signed in, with the roles this sign-in's groups give them that their
+        latest sign-in's give them too, so a sign-in from before they left a group, such as
+        one checked again to seal what they did with it, gives nothing of it; and those groups
+        kept, of the ones the settings name, for when they aren't signed in, unless a later
+        sign-in's are. `claim` is the one their groups are in."""
         self.fresh()
         state = self._a5s_roles
         groups = tuple(g for g in shown(claims, claim) if g in state.mapping)
@@ -215,9 +234,11 @@ class Grouped:
             at = datetime.fromtimestamp(claims.get("iat") or time.time(), UTC)
             with db.transaction(state.url) as conn:
                 keep(conn, person.id, groups, at)
-            state.groups[person.id] = groups
+                state.groups[person.id] = stored(conn, person.id).get(person.id, ())  # latest
+        latest = state.groups.get(person.id, ())
         base = Own(self).person(person.id) or person
-        return holding(base, granted(state.mapping, groups))
+        return holding(base, granted(state.mapping,
+                                     tuple(g for g in groups if g in latest))) or base
 
 
 class Own:

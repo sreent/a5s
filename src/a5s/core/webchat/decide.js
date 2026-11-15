@@ -45,11 +45,13 @@ async function signedIn(params) {
   history.replaceState(null, "", "/decide/");
   const pending = JSON.parse(store.getItem(PENDING) || "null");
   store.removeItem(PENDING);
+  const again = "Signing in didn't come back the way it went out. Open the link on your card again.";
+  if (!pending || params.get("state") !== pending.state) throw new Error(again);
+  // The provider's words only for a sign-in this tab sent, so a link can't put its own on
+  // the page as if they were (round 11, E-3)
   if (params.has("error")) {
     throw new Error(`Signing in didn't work: ${params.get("error_description") || params.get("error")}`);
   }
-  const again = "Signing in didn't come back the way it went out. Open the link on your card again.";
-  if (!pending || params.get("state") !== pending.state) throw new Error(again);
   const answer = await fetch("/decide/token", {  // the core passes it on to the provider
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ grant_type: "authorization_code", code: params.get("code"),
@@ -77,10 +79,13 @@ async function ask(path, token, body) {
 let signinConfig = null;
 
 async function decide(digests, decision, reason) {
-  // Sign in afresh, with a nonce that commits to this decision on exactly these changes.
+  // Sign in afresh, with a nonce that commits to this decision on exactly these changes, and
+  // to a rejection's reason as it's written here, so nothing on its way can change the words
+  const said = decision === "reject" && reason && reason.trim() ? reason : null;
   const pending = { kind: "decide", proposals: [...digests].sort(), decision, salt: random(),
-                    reason: decision === "reject" && reason ? reason : null };
-  pending.nonce = await sha256(`a5s ${decision}s proposals ${pending.proposals.join(",")} ${pending.salt}`);
+                    reason: said };
+  const words = said ? ` said ${await sha256(said)}` : "";
+  pending.nonce = await sha256(`a5s ${decision}s proposals ${pending.proposals.join(",")} ${pending.salt}${words}`);
   status(`Signing you in again, to ${decision} ${digests.length === 1 ? "this change" : "these changes"} alone…`);
   await signIn(signinConfig, pending, true);
 }
@@ -139,6 +144,7 @@ function card(proposal) {
     body.append(box);
   }
   for (const record of proposal.records) {
+    if (!/^https?:\/\//i.test(record.link || "")) continue;  // a web page, and nothing else
     const open = element("a", `Open ${record.key}`);
     open.href = record.link;  // a record's link, which the core kept from the scenario
     open.rel = "noopener noreferrer";

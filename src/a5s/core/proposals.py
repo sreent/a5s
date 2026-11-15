@@ -35,6 +35,7 @@ import base64
 import hashlib
 import hmac
 import secrets
+from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -256,22 +257,29 @@ def values(conn: db.Connection, proposal: dict) -> dict[str, str]:
 
 # Deciding: signed through the identity provider for that one decision, and sealed by the core
 
-def nonce(digests: list[str], decision: str, salt: str) -> str:
+def _hashed(text: str) -> str:
+    return base64.urlsafe_b64encode(hashlib.sha256(
+        text.encode(errors="replace")).digest()).rstrip(b"=").decode()
+
+
+def nonce(digests: list[str], decision: str, salt: str, reason: str | None = None) -> str:
     """What a sign-in to decide carries, so the provider's signature covers the decision on
-    exactly these changes. The page picks the salt, so each sign-in is different."""
-    bound = hashlib.sha256(
-        f"a5s {decision}s proposals {','.join(sorted(digests))} {salt}".encode()).digest()
-    return base64.urlsafe_b64encode(bound).rstrip(b"=").decode()
+    exactly these changes, and a rejection's reason, as the decider wrote it, by its hash: so
+    nothing between the page and the core can put words in their mouth (round 11, E-6). The
+    page picks the salt, so each sign-in is different."""
+    said = f" said {_hashed(reason)}" if reason else ""
+    return _hashed(f"a5s {decision}s proposals {','.join(sorted(digests))} {salt}{said}")
 
 
 def check(verifier: Verifier, scenario: Scenario, client_id: str, token: str, digests: list[str],
-          decision: str, salt: str, now: float) -> tuple[Person, dict]:
-    """Who signed in to make this decision on these changes, and what the provider signed, if
-    the sign-in checks out for it. Otherwise, Refused."""
+          decision: str, salt: str, now: float,
+          reason: str | None = None) -> tuple[Person, dict]:
+    """Who signed in to make this decision on these changes, with this reason, and what the
+    provider signed, if the sign-in checks out for it. Otherwise, Refused."""
     if decision not in DECISIONS:
         raise Refused(400, "a change is approved or rejected")
-    return fresh(verifier, scenario, client_id, token, nonce(digests, decision, salt), salt, now,
-                 f"{decision} these changes")
+    return fresh(verifier, scenario, client_id, token, nonce(digests, decision, salt, reason),
+                 salt, now, f"{decision} these changes")
 
 
 def fresh(verifier: Verifier, scenario: Scenario, client_id: str, token: str, bound: str,
@@ -316,8 +324,9 @@ def record(conn: db.Connection, scenario: str, found: list[dict], decision: str,
            person: str, token: str, salt: str, claims: dict, now: datetime,
            reason: str | None = None) -> list[dict]:
     """Record a decision on each of these changes, with the sign-in that made it, and why, for
-    a rejection that says, for the gateway to seal (seal_pending). Refused if the sign-in was
-    used, or the person has decided one of them already."""
+    a rejection that says, as the decider wrote it, for the gateway to check against the
+    sign-in, clean and seal (seal_pending). Refused if the sign-in was used, or the person has
+    decided one of them already."""
     made = []
     for proposal in found:
         entry = {"scenario": scenario, "digest": proposal["digest"], "decision": decision,
@@ -340,10 +349,12 @@ def record(conn: db.Connection, scenario: str, found: list[dict], decision: str,
 
 
 def seal_pending(conn: db.Connection, keys: tuple[str, ...], verifier: Verifier | None,
-                 scenario: Scenario, client_id: str | None) -> list[str]:
+                 scenario: Scenario, client_id: str | None,
+                 clean: Callable[[str], str] = lambda said: said) -> list[str]:
     """Check again each decision the channels app recorded, by its sign-in, which covers every
-    change decided with it, seal each, and let the sign-in go, in the gateway: or refuse them.
-    Why each refused one was."""
+    change decided with it and a rejection's reason, seal each, with its reason made fit to
+    tell whoever asked (`clean`), and let the sign-in go, in the gateway: or refuse them. Why
+    each refused one was."""
     if not keys:
         return []  # they wait for a gateway that can seal them
     rows = conn.execute("select * from proposal_decisions where scenario = %s and seal is null "
@@ -358,15 +369,18 @@ def seal_pending(conn: db.Connection, keys: tuple[str, ...], verifier: Verifier 
         decided = sorted(r["digest"] for r in conn.execute(
             "select digest from proposal_decisions where token = %s", (first["token"],)))
         why = sealing.check(verifier, scenario, client_id, first["proof"],
-                            nonce(decided, first["decision"], first["salt"]), first["person"])
+                            nonce(decided, first["decision"], first["salt"], first["reason"]),
+                            first["person"])
         for row in together:
             if why is not None:
                 conn.execute("update proposal_decisions set refused = %s, proof = null "
                              "where id = %s", (why, row["id"]))
                 refused.append(f"{row['person']}'s decision: {why}")
             else:
-                conn.execute("update proposal_decisions set seal = %s, proof = null "
-                             "where id = %s", (_mac(keys[0], row), row["id"]))
+                said = clean(row["reason"]) if row["reason"] else None
+                conn.execute("update proposal_decisions set seal = %s, reason = %s, proof = null "
+                             "where id = %s", (_mac(keys[0], {**row, "reason": said}), said,
+                                               row["id"]))
     return refused
 
 

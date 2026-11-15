@@ -18,7 +18,6 @@ from pydantic import BaseModel
 from a5s import db
 from a5s.contract import INSTANCE_APPROVER, PART_DELEGATE, PART_OWNER
 from a5s.core import ledger, proposals, web
-from a5s.core.gateway import sanitize
 
 log = logging.getLogger(__name__)
 
@@ -98,17 +97,18 @@ def router(gw: Any) -> APIRouter:
         if not 1 <= len(digests) <= 20 or not all(re.fullmatch(r"[0-9a-f]{64}", d)
                                                   for d in digests):
             raise HTTPException(400, "name from one to 20 changes to decide, by their digests")
-        reason = None
+        reason = None  # as the decider wrote it, which their sign-in covers: the core cleans it
         if body.reason and body.reason.strip() and body.decision == "reject":
             if len(body.reason) > proposals.REASON:
                 raise HTTPException(400, f"say why in at most {proposals.REASON} characters")
-            reason, _ = sanitize(" ".join(body.reason.split()), gw.scenario.record_links)
+            reason = body.reason
         token = (authorization or "").removeprefix("Bearer ").strip()
         if not token:
             raise HTTPException(401, "sign in to decide: send your sign-in as a bearer token")
         try:
             person, claims = proposals.check(gw.identity, gw.scenario, gw.cfg.webchat_client_id,
-                                             token, digests, body.decision, body.salt, time.time())
+                                             token, digests, body.decision, body.salt, time.time(),
+                                             reason)
         except proposals.Refused as exc:
             raise web.refusal(gw, exc) from None
         with db.transaction(gw.url) as conn:

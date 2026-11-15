@@ -9,9 +9,10 @@ import httpx
 
 from a5s import db, definitions
 from a5s.config import Config, load_models
+from a5s.connectors import mcp
 from a5s.contract import Scenario
-from a5s.core import memberships, metrics, registry, status, traces
-from a5s.core.gateway import Gateway, create_app
+from a5s.core import memberships, metrics, registration, registry, status, traces
+from a5s.core.gateway import CORE_TOOLS, Gateway, create_app
 from a5s.core.identity import verifier_from_env
 from a5s.core.matrix import Matrix, MatrixConfig
 from a5s.core.policy import PolicyEngine
@@ -21,9 +22,12 @@ from a5s.core.teams import Teams, TeamsConfig
 
 
 def scenario(cfg: Config) -> Scenario:
-    """The scenario a5s serves, such as its own sample: any class that meets the contract."""
+    """The scenario a5s serves, such as its own sample: any class that meets the contract, with
+    the tools of MCP servers' its folder's mcp.yaml declares beside its own (connectors/mcp.py)."""
     module, _, name = cfg.scenario.partition(":")
-    return getattr(importlib.import_module(module), name)(cfg.scenario_dir, cfg.database_url)
+    found = getattr(importlib.import_module(module), name)(cfg.scenario_dir, cfg.database_url)
+    return mcp.served(found, cfg.scenario_dir, sandboxed=cfg.sandboxed,
+                      reserved=frozenset(CORE_TOOLS))
 
 
 def gateway(cfg: Config, http: httpx.Client | None = None) -> Gateway:
@@ -43,6 +47,7 @@ def gateway(cfg: Config, http: httpx.Client | None = None) -> Gateway:
         teams=Teams(teams) if (teams := TeamsConfig.from_env()) else None,
         matrix=Matrix(matrix) if (matrix := MatrixConfig.from_env()) else None,
         releases=Releases(running(cfg.root, cfg.scenario_dir, cfg.agents_dir)),
+        registry=registration.Registry.from_env(),  # IT's inventory, if the deployment asks
     )
     return gw
 

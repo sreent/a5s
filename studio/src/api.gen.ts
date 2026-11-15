@@ -188,6 +188,7 @@ export type Draft = {
   files: Record<string, string>;
   yours: boolean;
   author: string | null;
+  drafted_before: Drafter[];
   problems: string[];
   preview: Defined | null;
   signers: Signer[] | null;
@@ -229,6 +230,13 @@ export type DraftTry = {
   model?: string;
 };
 
+// Someone who drafted a draft before whoever holds it now, and how it went on from them.
+export type Drafter = {
+  name: string;
+  at: string;
+  how: "handed" | "copied";
+};
+
 export type Drafts = {
   drafts: DraftLine[];
   theirs: DraftLine[];
@@ -255,6 +263,7 @@ export type Figures = {
   runs: ModelRuns[];
   held: Held;
   samples: Samples;
+  judge: Judge;
   questions: Questions[];
   notebook: Notebook[];
   ended: Ended[];
@@ -317,11 +326,20 @@ export type Instance = {
   parts: Record<string, unknown>;
   actions: Record<string, unknown>;
   model: string | null;
-  serves: string[];
   people: number;
   owner: string | null;
   deputy: string | null;
   asks: string[];
+};
+
+// How far an agent's judge agrees with people, on the samples both graded (core/judging.py).
+export type Judge = {
+  both: number;
+  agreed: number;
+  missed: number;
+  false_alarms: number;
+  agreed_share: number | null;
+  kappa: number | null;
 };
 
 // One call to the model a try made: what it was sent, what came back, and how.
@@ -502,6 +520,7 @@ export type RunsPage = {
   runs: RunLine[];
   hidden: number;
   before: string | null;
+  fewer: number | null;
 };
 
 export type Samples = {

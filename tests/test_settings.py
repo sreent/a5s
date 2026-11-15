@@ -65,7 +65,8 @@ def test_an_unsigned_version_doesnt_count(sample):
     folder, _, database = sample
     write(folder, 1)
     result = apply(folder, database)
-    assert result.refused == ["nobody who approves instances has approved it"]
+    assert result.refused == ["no instance-approver has approved it, for the instances in no part",
+                              "no instance-approver has approved its classes of data"]
     assert instances(database) == []
     with db.transaction(database) as conn:
         assert ledger.entries(conn)[-1]["decision"] == "deny"
@@ -141,8 +142,7 @@ def test_an_instance_the_signed_settings_leave_out_is_retired_and_stops(stack):
     original = {"assistant-finance": {"definition": "assistant", "serves": ["ana", "ben"], "level": 1}}
     assert stack.settle(instances={}).instances == []
     assert reasons(stack) == ["assistant-finance is retired", "assistant-finance isn't in the settings in force"]
-    assert stack.say("Hi") == (
-        "There's no assistant for you yet. As an instance approver, you can add one.")
+    assert stack.say("Hi") == "There's no assistant for you."
     stack.settle(instances=original)  # brought back by a later signed version
     stack.model.reply("I'm back.")
     assert stack.say("Hi") == "I'm back."
