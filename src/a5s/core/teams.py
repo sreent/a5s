@@ -270,11 +270,13 @@ class Teams:
                                         time.monotonic() + int(body.get("expires_in", 3600)) - 300)
             return body["access_token"]
 
-    def send(self, reply_to: dict[str, str], text: str, card: dict | None = None) -> None:
+    def send(self, reply_to: dict[str, str], text: str, card: dict | None = None,
+             feedback: bool = False) -> str | None:
         """Send text into the conversation a message came from, as the bot it was sent to:
         in reply to the message, if `reply_to` names one, or else as a new message. With an
         Adaptive Card, the card goes instead, and the text's first line sums it up in
-        notifications."""
+        notifications. An agent's answer, `feedback`, has Teams' buttons for saying it's
+        wrong (core/feedback.py). Teams' own id for it, by which that's known."""
         if not self.allowed(reply_to["service_url"]):  # the bot's token goes nowhere else
             raise ValueError("a5s sends only to the service URLs Teams uses")
         bot = self.bots.get(reply_to.get("app_id", ""))
@@ -289,7 +291,14 @@ class Teams:
             headers={"Authorization": f"Bearer {self._bot_token(bot)}"},
             json={"type": "message", **said,
                   "from": {"id": reply_to["bot"]}, "conversation": {"id": reply_to["conversation"]},
-                  **({"replyToId": reply_to["activity"]} if reply_to.get("activity") else {})},
+                  **({"replyToId": reply_to["activity"]} if reply_to.get("activity") else {}),
+                  **({"channelData": {"feedbackLoop": {"type": "default"}}}
+                     if feedback and card is None else {})},
         )
         r.raise_for_status()
+        try:
+            found = r.json()
+        except ValueError:
+            return None
+        return str(found.get("id") or "") or None if isinstance(found, dict) else None
 

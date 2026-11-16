@@ -32,6 +32,7 @@ from a5s.core import (
     decide_api,
     dependencies,
     drafts,
+    feedback,
     grade_api,
     ledger,
     memberships,
@@ -121,6 +122,12 @@ def may_study(gw: Any, person: Person) -> bool:
         theirs = studio.instances(conn, person)
     return (bool(theirs) or any(r.startswith("agent-owner:") for r in person.roles)
             or drafts.authors(person))
+
+
+class AnswerGrade(BaseModel):
+    """An owner's grade of an answer someone said was wrong: right, wrong or critical."""
+
+    grade: str
 
 
 def router(gw: Any) -> APIRouter:
@@ -243,6 +250,26 @@ def router(gw: Any) -> APIRouter:
                     "authoring": {"new": drafts.may_author(person, None),  # what they may make
                                   "agents": sorted(a for a in gw.definitions
                                                    if drafts.may_author(person, a))}}
+
+    @api.get("/studio/api/agents/{agent}/feedback", **shapes.answers(shapes.AnswersSaidWrong))
+    def studio_said_wrong(agent: str, person: Annotated[Person, Depends(someone)]) -> dict:
+        """The agent's answers people said were wrong, for its owners to check (core/feedback.py):
+        those whose runs they may see, and who said each only once the officer agrees to names."""
+        if agent not in gw.definitions or not feedback.owns(person, agent):
+            raise HTTPException(404, "there's no such agent of yours")
+        with db.transaction(gw.url) as conn:
+            return feedback.shown(conn, gw.scenario, person, agent,
+                                  names=gw.data_protection(conn).studio_names)
+
+    @api.post("/studio/api/feedback/{answer}/grade", **shapes.answers(shapes.AnswerGraded))
+    def studio_grade_answer(answer: int, body: AnswerGrade,
+                            person: Annotated[Person, Depends(someone)]) -> dict:
+        """An owner's grade of an answer someone said was wrong: right, wrong or critical."""
+        with db.transaction(gw.url) as conn:
+            try:
+                return feedback.grade(conn, gw.scenario, person, answer, body.grade)
+            except feedback.Refused as exc:
+                raise HTTPException(404 if "no such" in str(exc) else 400, str(exc)) from None
 
     @api.get("/studio/api/map", **shapes.answers(shapes.DependsOn))
     def studio_map(person: Annotated[Person, Depends(someone)]) -> dict:

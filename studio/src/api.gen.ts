@@ -69,6 +69,26 @@ export type Agent = {
   asks?: Asked[];
 };
 
+// An owner's grade of an answer someone said was wrong: right, wrong or critical.
+export type AnswerGrade = {
+  grade: string;
+};
+
+export type AnswerGraded = {
+  id: number;
+  grade: "right" | "wrong" | "critical";
+};
+
+// An agent's answers people said were wrong, as an owner of it may check them: newest
+// first, how many others there are, how many wait, and how many have each grade.
+export type AnswersSaidWrong = {
+  agent: string;
+  answers: SaidWrong[];
+  hidden: number;
+  waiting: number;
+  graded: Record<string, number>;
+};
+
 // What the approval page sends with its sign-in: the salt its nonce was made with.
 export type Approval = {
   salt: string;
@@ -935,6 +955,23 @@ export type RunsPage = {
   hidden: number;
   before: string | null;
   fewer: number | null;
+};
+
+// An agent's answer someone said was wrong (core/feedback.py): when, the instance and run
+// behind it, the chat it was in, the answer, why, in their words, if they said, and its grade,
+// if an owner has given one; who said it only once the officer agrees to names.
+export type SaidWrong = {
+  id: number;
+  at: string;
+  instance: string | null;
+  run: string;
+  channel: string;
+  answer: string;
+  said: string | null;
+  grade: "right" | "wrong" | "critical" | null;
+  graded_at: string | null;
+  graded_by: string | null;
+  by: string | null;
 };
 
 // A sample of an agent's change, waiting for a grade: in the words code worked out when it was

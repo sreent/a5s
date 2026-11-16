@@ -25,6 +25,7 @@ from a5s.core import (
     approvals,
     asks,
     audit,
+    feedback,
     memberships,
     notebook,
     proposals,
@@ -132,6 +133,11 @@ def waiting(conn: db.Connection, gw: Any, person: Person) -> list[dict]:
     for ask in asks.waiting(conn, scenario, studio.instances(conn), person):
         found.append({"kind": "ask", "what": f"{ask['person']} asks for the {ask['agent']}",
                       "why": ask["why"], "go": f"/studio/agents/{ask['agent']}"})
+    for agent, n in feedback.waiting(conn, scenario, person, sorted(gw.definitions)).items():
+        found.append({"kind": "feedback", "what": f"{n} of the {agent}'s answers "
+                      f"{'someone' if n == 1 else 'people'} said {'was' if n == 1 else 'were'} "
+                      "wrong wait for you to check", "why": ["you own it"],
+                      "go": f"/studio/agents/{agent}#feedback"})
     tasks = conn.execute("select count(*) as n from tasks where owner = %s and parent is null "
                          "and status in ('blocked', %s)", (person.id, OFFERED)).fetchone()["n"]
     if tasks:

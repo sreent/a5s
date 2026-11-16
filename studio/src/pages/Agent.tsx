@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { type AgentKnown, type AgentUses, ApiError, builtOf, type Catalogue, type Draft,
          type Drafts, get, send, usesOf } from "../api";
 import { AgentMap } from "../AgentMap";
+import { SaidWrong } from "../SaidWrong";
 import { AgentFacts, AutonomyLadder, useToast } from "../design";
 import { go, Link } from "../router";
 import { mayUse, shellOf } from "../Sidebar";
@@ -364,6 +365,7 @@ export function AgentPage({ id }: { id: string }) {
             </div>
           </div>
           {(!agent.layers || agent.layers.doing) && <Where agent={agent} />}
+          <SaidWrong agent={agent.id} />
         </>
       )}
     </>

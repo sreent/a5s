@@ -24,7 +24,7 @@ import httpx
 
 from a5s import config
 from a5s.contract import Person, Scenario
-from a5s.core import files, groups
+from a5s.core import feedback, files, groups
 
 MEMBERS_KEPT = 60.0  # seconds a room's members, as last read, stand for who's in it
 SENT = ("m.file", "m.image")  # what someone sends a5s's reader reads
@@ -244,21 +244,30 @@ class Matrix:
         self._rooms.setdefault(made.json()["room_id"], set()).add(bot)
         return {"room": made.json()["room_id"], "bot": bot}
 
-    def send(self, reply_to: dict[str, str], text: str, card: dict | None = None) -> None:
+    def send(self, reply_to: dict[str, str], text: str, card: dict | None = None,
+             feedback: bool = False) -> str | None:
         """Send text into a room, as the bot that's in it. A card is Teams's alone: Matrix
-        sends the text, which says what the card would."""
+        sends the text, which says what the card would. The event's id, by which a reaction
+        to it is known (`feedback` is Teams' alone: a 👎 reaction says it in Matrix)."""
         if self.agent_of(reply_to.get("bot", "")) is None:
             raise ValueError("a5s speaks only as its own bots")
-        self._call("PUT", f"/rooms/{quote(reply_to['room'], safe='')}/send/m.room.message/"
-                          f"{uuid.uuid4().hex}", reply_to["bot"],
-                   json={"msgtype": "m.text", "body": text}).raise_for_status()
+        sent = self._call("PUT", f"/rooms/{quote(reply_to['room'], safe='')}/send/m.room.message/"
+                                 f"{uuid.uuid4().hex}", reply_to["bot"],
+                          json={"msgtype": "m.text", "body": text})
+        sent.raise_for_status()
+        try:
+            found = sent.json()
+        except ValueError:
+            return None
+        return str(found.get("event_id") or "") or None if isinstance(found, dict) else None
 
     # What the homeserver sends
 
     def event(self, event: dict[str, Any], scenario: Scenario, agents: list[str]) -> tuple[str, Any]:
         """What to do about one event: ("join", (room, bot)), ("message", Message),
         ("turn away", (reason, people, reply, reply_to)), ("left", (person, agent, reply_to)),
-        ("shared", (person, agent, reply_to)), or ("ignore", None)."""
+        ("shared", (person, agent, reply_to)), ("wrong", (person, event, room)), a 👎 on what
+        a bot said, or ("ignore", None)."""
         sender, room, kind = event.get("sender", ""), event.get("room_id", ""), event.get("type")
         content = event.get("content") or {}
         if event.get("state_key") is not None:  # who's in it, or its rules, changed: read
@@ -286,6 +295,15 @@ class Matrix:
                               and (p := self.person_of(u, scenario))), None)  # a5s writes to
                 if owner is not None:  # them first in a new one
                     return "shared", (owner.id, self.agent_of(bot), {"room": room, "bot": bot})
+            return "ignore", None
+        if kind == "m.reaction":  # a 👎 on what a bot said: an answer someone says is wrong
+            relates = content.get("m.relates_to")
+            relates = relates if isinstance(relates, dict) else {}
+            person = self.person_of(sender, scenario)
+            if (relates.get("rel_type") == "m.annotation" and relates.get("event_id")
+                    and person is not None
+                    and feedback.wrong("matrix", str(relates.get("key") or ""))):
+                return "wrong", (person.id, str(relates["event_id"]), room)
             return "ignore", None
         if kind not in ("m.room.message", "m.room.encrypted"):
             return "ignore", None

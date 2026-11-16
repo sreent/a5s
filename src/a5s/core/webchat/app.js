@@ -164,6 +164,55 @@ function stamp(at) {
   return at.toLocaleString([], today ? { timeStyle: "short" } : { dateStyle: "medium", timeStyle: "short" });
 }
 
+// Saying an agent's answer was wrong (core/feedback.py), for its owners to check: with why, in
+// their words, if they say, and what its owners will see, said before they send it
+
+function wrongOf(item, message) {
+  const ask = document.createElement("button");
+  ask.type = "button";
+  ask.className = "link said-wrong";
+  ask.textContent = "That's wrong";
+  ask.addEventListener("click", () => {
+    const form = document.createElement("form");
+    form.className = "said-wrong";
+    const label = document.createElement("label");
+    label.textContent = "What was wrong? Its owners will see this answer, the run behind it, and what you write here.";
+    const why = document.createElement("textarea");
+    why.rows = 2;
+    why.maxLength = 1000;
+    label.append(why);
+    const send = document.createElement("button");
+    send.className = "primary";
+    send.textContent = "Tell its owners";
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.textContent = "Cancel";
+    cancel.addEventListener("click", () => form.replaceWith(ask));
+    form.append(label, send, " ", cancel);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      send.disabled = true;
+      try {
+        const answer = await api("/channels/local/feedback", {
+          method: "POST", body: JSON.stringify({ message: message.id, said: why.value.trim() || null, person: state.person }),
+        });
+        const body = await answer.json();
+        const done = document.createElement("p");
+        done.className = "note said-wrong";
+        done.setAttribute("role", "status");
+        done.textContent = answer.ok ? body.said : (typeof body.detail === "string" ? body.detail : "That didn't send. Try again.");
+        form.replaceWith(done);
+      } catch (error) {
+        if (error.message !== SIGNING_IN) status(error.message);
+        send.disabled = false;
+      }
+    });
+    ask.replaceWith(form);
+    why.focus();
+  });
+  item.append(ask);
+}
+
 function say(message) {
   $("welcome").hidden = true;
   const item = document.createElement("li");
@@ -182,6 +231,7 @@ function say(message) {
   render(body, message.text);
   if (by !== "you") item.append(mark(message.by));
   item.append(who, " ", when, body);
+  if (by === "agent" && message.id) wrongOf(item, message);  // an agent's answer, never a5s's
   $("conversation").append(item);
   item.scrollIntoView({ block: "end" });
 }

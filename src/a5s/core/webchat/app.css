@@ -39,4 +39,8 @@ footer { flex-wrap: wrap; }
 #attached { width: 100%; max-width: 50rem; margin: 0 auto; }
 #attached button { border: 0; background: none; margin-inline-start: 0.2rem; padding: 0 0.15rem; color: var(--muted); }
 #compose textarea { flex: 1; min-height: 2.6rem; max-height: 12rem; }
+/* Saying an agent's answer was wrong: a quiet link under it, and its short form */
+#conversation > li .said-wrong { display: block; margin-top: 0.35rem; font-size: 0.85rem; }
+#conversation > li form.said-wrong label { display: grid; gap: 0.3rem; margin-bottom: 0.4rem; color: var(--muted); }
+#conversation > li form.said-wrong textarea { width: 100%; }
 #name { display: flex; gap: 0.5rem; align-items: end; margin-bottom: 1rem; }

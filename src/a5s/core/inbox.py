@@ -23,6 +23,7 @@ import asyncio
 import base64
 import binascii
 import hashlib
+import json
 import logging
 import time
 import uuid
@@ -55,6 +56,7 @@ from a5s.core import (
     chats,
     decide_api,
     events,
+    feedback,
     files,
     grade_api,
     groups,
@@ -90,6 +92,14 @@ class Sent(BaseModel):
     name: str
     type: str
     data: str
+
+
+class Said(BaseModel):
+    """That an agent's answer in the web chat was wrong: the answer, and why, if they say."""
+
+    message: int
+    said: str | None = None
+    person: str | None = None  # in development, without an identity provider, who it's from
 
 
 class LocalMessage(BaseModel):
@@ -205,6 +215,35 @@ def create_app(gw: Any) -> FastAPI:
         except Exception:
             log.exception("couldn't answer in Teams")
 
+    def wrong_in_teams(activity: dict[str, Any]) -> Response:
+        """Teams' 👎 on an agent's answer, with what they wrote in its form, if anything, for
+        the agent's owners (core/feedback.py). Teams asks for an answer to show them."""
+        raw = activity.get("value")
+        value: dict[str, Any] = raw if isinstance(raw, dict) else {}
+        raw = value.get("actionValue")
+        acted: dict[str, Any] = raw if isinstance(raw, dict) else {}
+        said = acted.get("feedback")
+        try:
+            said = json.loads(said).get("feedbackText") if isinstance(said, str) else None
+        except (ValueError, AttributeError):
+            said = None
+        entra = (activity.get("from") or {}).get("aadObjectId")
+        person = gw.scenario.find(f"entra:{entra}") if entra else None
+        told = "Thanks."
+        if (value.get("actionName") == "feedback" and acted.get("reaction") == "dislike"
+                and person is not None and activity.get("replyToId")):
+            with db.transaction(gw.url) as conn:
+                found = feedback.sent(conn, "teams", str(activity["replyToId"]))
+                try:
+                    if found is not None and feedback.record(
+                            conn, found["id"], person.id, said if isinstance(said, str) else None,
+                            "teams") is not None:
+                        told = feedback.NOTED
+                except feedback.Refused:
+                    pass
+        return JSONResponse({"statusCode": 200, "type": "application/vnd.microsoft.activity.message",
+                             "value": told})
+
     @app.post("/channels/teams/messages")
     def teams_message(activity: dict[str, Any], background: BackgroundTasks,
                       authorization: str | None = Header(default=None)) -> Response:
@@ -215,6 +254,8 @@ def create_app(gw: Any) -> FastAPI:
         except Refused as exc:  # not recorded: anyone on the internet can send these
             log.warning("refused a message for Teams: %s", exc.reason)
             raise HTTPException(exc.status, exc.reason) from None
+        if activity.get("type") == "invoke" and activity.get("name") == "message/submitAction":
+            return wrong_in_teams(activity)  # Teams' buttons on an agent's answer
         if (installed := gw.teams.installed(activity, gw.scenario, bot)) is not None:
             person, reply_to, added = installed  # its bot may write to them first, or no more
             with db.transaction(gw.url) as conn:
@@ -274,6 +315,31 @@ def create_app(gw: Any) -> FastAPI:
         except Exception:
             log.exception("couldn't answer in Slack")
 
+    def wrong_in_slack(payload: dict[str, Any], bot: Any, background: BackgroundTasks) -> None:
+        """A 👎 on an agent's answer in Slack, from whom it answered or someone in the group DM
+        it was said in (core/feedback.py): kept, and they're told privately what that means."""
+        raw = payload.get("event")
+        event: dict[str, Any] = raw if isinstance(raw, dict) else {}
+        raw = event.get("item")
+        item: dict[str, Any] = raw if isinstance(raw, dict) else {}
+        if item.get("type") != "message" or not feedback.wrong("slack", str(event.get("reaction") or "")):
+            return
+        assert gw.slack is not None
+        person = gw.scenario.find(f"slack:{gw.slack.cfg.team_id}/{event.get('user')}")
+        if person is None:
+            return
+        with db.transaction(gw.url) as conn:
+            found = feedback.sent(conn, "slack", f"{item.get('channel')}/{item.get('ts')}")
+            try:
+                made = found is not None and feedback.record(conn, found["id"], person.id, None,
+                                                             "slack") is not None
+            except feedback.Refused:
+                made = False
+        if made:
+            background.add_task(tell_in_slack, {"channel": str(item.get("channel")),
+                                                "app_id": bot.app_id},
+                                feedback.NOTED, str(event.get("user")))
+
     def slack_events(body: bytes, timestamp: str | None, signature: str | None,
                      background: BackgroundTasks) -> Response:
         slack = gw.slack
@@ -286,6 +352,9 @@ def create_app(gw: Any) -> FastAPI:
         if payload.get("type") == "url_verification":  # as an app's events are set up
             return JSONResponse({"challenge": str(payload.get("challenge") or "")})
         if payload.get("type") != "event_callback":
+            return Response(status_code=200)
+        if (payload.get("event") or {}).get("type") == "reaction_added":
+            wrong_in_slack(payload, bot, background)  # a 👎 on an agent's answer
             return Response(status_code=200)
         message = slack.message(payload, gw.scenario, bot)
         if message is None or not message.mentioned:  # in a group DM, only what mentions it
@@ -465,6 +534,23 @@ def create_app(gw: Any) -> FastAPI:
             elif what == "shared":  # someone joined their own chat: a5s writes first elsewhere
                 with db.transaction(gw.url) as conn:
                     chats.shared(conn, "matrix", *detail)
+            elif what == "wrong":  # a 👎 on an agent's answer (core/feedback.py)
+                person, said_to, room = detail
+                with db.transaction(gw.url) as conn:
+                    found = feedback.sent(conn, "matrix", said_to)
+                    row = conn.execute("select o.route, i.conversation from outbox o left join "
+                                       "inbound i on i.id = o.inbound_id where o.id = %s",
+                                       (found["id"],)).fetchone() if found else None
+                    reply_to = (row["route"] or {}).get("reply_to") or {} if row else {}
+                    try:
+                        made = (found is not None and reply_to.get("room") == room
+                                and feedback.record(conn, found["id"], person, None,
+                                                    "matrix") is not None)
+                    except feedback.Refused:
+                        made = False
+                if made and reply_to.get("bot") and row and row["conversation"] is None:
+                    background.add_task(tell_in_matrix, {"room": room, "bot": reply_to["bot"]},
+                                        feedback.NOTED)  # in their own chat: a group's isn't told
         return {}
 
     @matrix_api.get("/channels/matrix/_matrix/app/v1/users/{user}")
@@ -511,6 +597,21 @@ def create_app(gw: Any) -> FastAPI:
                              sent=sent)
         return {"message": inbound}
 
+    @app.post("/channels/local/feedback")
+    def local_feedback(body: Said, authorization: str | None = Header(default=None)) -> dict:
+        """That an agent's answer in the web chat was wrong, with why, in their words, for its
+        owners (core/feedback.py): whether it's newly kept."""
+        person, _ = sender(authorization, body.person)
+        with db.transaction(gw.url) as conn:
+            row = conn.execute("select channel from outbox where id = %s", (body.message,)).fetchone()
+            try:
+                if row is None or row["channel"] != "local":
+                    raise feedback.Refused("that isn't an agent's answer")
+                made = feedback.record(conn, body.message, person, body.said, "local")
+            except feedback.Refused as exc:
+                raise HTTPException(404, str(exc)) from None
+        return {"noted": made is not None, "said": feedback.NOTED}
+
     @app.get("/channels/local/messages/{message}")
     async def answers(request: Request, message: str, wait: float = 0, person: str | None = None,
                       authorization: str | None = Header(default=None)) -> dict:
@@ -533,7 +634,7 @@ def create_app(gw: Any) -> FastAPI:
 
         said = sorted(await waiting(request, wait, take), key=lambda r: r["id"])
         return {"replies": [r["text"] for r in said],
-                "messages": [{**spoke(r["agent"], r["run_id"]), "text": r["text"],
+                "messages": [{**spoke(r["agent"], r["run_id"]), "id": r["id"], "text": r["text"],
                               "at": r["at"].isoformat()} for r in said]}
 
     @app.get("/channels/local/agents")
@@ -571,7 +672,7 @@ def create_app(gw: Any) -> FastAPI:
                 "('active', 'suspended')", (agent,)))
         definition = gw.definitions.get(agent)
         return {"messages": [{**({"from": "you", "by": "person"} if r["kind"] == "person"
-                                 else spoke(agent, r["run_id"])),
+                                 else {**spoke(agent, r["run_id"]), "id": r["n"]}),
                               "text": r["text"], "at": r["at"].isoformat()} for r in reversed(rows)],
                 "does": definition.does if definition and served else None}
 
@@ -603,7 +704,7 @@ def create_app(gw: Any) -> FastAPI:
                     "returning id, run_id, instance_id, agent, text, at", (who,)).fetchall()
 
         return {"messages": [  # a run's message is its agent's; any other is a5s's own
-            {**spoke(r["agent"], r["run_id"]), "about": r["agent"],
+            {**spoke(r["agent"], r["run_id"]), "id": r["id"], "about": r["agent"],
              "instance": r["instance_id"], "text": r["text"], "at": r["at"].isoformat()}
             for r in sorted(await waiting(request, wait, take), key=lambda r: r["id"])]}
 

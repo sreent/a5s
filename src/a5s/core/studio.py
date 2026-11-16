@@ -480,6 +480,22 @@ def _sees(scenario: Scenario, viewer: Person, run: dict, keys: set[str]) -> bool
         scenario.sees(viewer.id, k) for k in keys | _trigger_records(run["trigger"]))
 
 
+def seeable(conn: db.Connection, scenario: Scenario, viewer: Person, runs: list[str]) -> set[str]:
+    """Of these runs, those someone may see: a5s kept their records, and they may see every
+    one, as an instance's runs show them."""
+    if not runs:
+        return set()
+    rows = conn.execute("select id::text as run, trigger, records_kept from runs "
+                        "where id = any(%s::uuid[])", (runs,)).fetchall()
+    keys = _handled(conn, [r["run"] for r in rows])
+    return {r["run"] for r in rows if _sees(scenario, viewer, r, keys[r["run"]])}
+
+
+def name_of(scenario: Scenario, who: str | None) -> str | None:
+    """Someone's name, as the directory knows them, or as they were given."""
+    return _name(scenario, who)
+
+
 def _shown(scenario: Scenario, run: dict, names: bool) -> dict:
     return {"run": run["run"], "instance": run["instance_id"],
             "trigger": (run["trigger"] or {}).get("kind"),

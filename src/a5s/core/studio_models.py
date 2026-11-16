@@ -297,6 +297,40 @@ class DependsOn(Shape):
     edges: list[MapEdge]
 
 
+class SaidWrong(Shape):
+    """An agent's answer someone said was wrong (core/feedback.py): when, the instance and run
+    behind it, the chat it was in, the answer, why, in their words, if they said, and its grade,
+    if an owner has given one; who said it only once the officer agrees to names."""
+
+    id: int
+    at: str
+    instance: str | None
+    run: str
+    channel: str
+    answer: str
+    said: str | None
+    grade: Literal["right", "wrong", "critical"] | None
+    graded_at: str | None
+    graded_by: str | None
+    by: str | None
+
+
+class AnswersSaidWrong(Shape):
+    """An agent's answers people said were wrong, as an owner of it may check them: newest
+    first, how many others there are, how many wait, and how many have each grade."""
+
+    agent: str
+    answers: list[SaidWrong]
+    hidden: int
+    waiting: int
+    graded: dict[str, int]
+
+
+class AnswerGraded(Shape):
+    id: int
+    grade: Literal["right", "wrong", "critical"]
+
+
 class Requested(Shape):
     """A version of the settings asked for, which the core proposes to everyone it needs."""
 

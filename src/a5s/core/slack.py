@@ -332,10 +332,12 @@ class Slack:
             raise ValueError("Slack opened no conversation")
         return {"channel": str(channel), "app_id": bot.app_id}
 
-    def send(self, reply_to: dict[str, str], text: str, card: dict | None = None) -> None:
+    def send(self, reply_to: dict[str, str], text: str, card: dict | None = None,
+             feedback: bool = False) -> str | None:
         """Send text into the conversation a message came from, as the app it was sent to, in
         its thread if it was in one; with a card, its blocks go too, and the text is what
-        notifications show."""
+        notifications show. Slack's own id for it, its channel and time, by which a reaction
+        to it is known (`feedback` is Teams' alone: a 👎 reaction says it in Slack)."""
         bot = self._bot(reply_to)
         sent: dict[str, Any] = {"channel": reply_to["channel"], "text": mrkdwn(text),
                                 "unfurl_links": False, "unfurl_media": False}
@@ -344,7 +346,9 @@ class Slack:
         if card is not None and (drawn := blocks(card)):
             sent["text"] = mrkdwn(text.split("\n", 1)[0])
             sent["blocks"] = drawn
-        self._call(bot, "chat.postMessage", sent)
+        answer = self._call(bot, "chat.postMessage", sent)
+        return f"{answer.get('channel') or reply_to['channel']}/{answer['ts']}" if answer.get(
+            "ts") else None
 
     def whisper(self, reply_to: dict[str, str], user: str, text: str) -> None:
         """Say something to one person in a conversation, seen by them alone, such as that a5s

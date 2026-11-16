@@ -65,6 +65,7 @@ from a5s.core import (
     events,
     export,
     extractor,
+    feedback,
     files,
     groups,
     handles,
@@ -3203,12 +3204,13 @@ def create_app(gw: Gateway) -> FastAPI:
                    if row["trigger"].get("kind") == tasking.KIND else {})}
 
     def deliver(route: dict, text: str, run: str | None, instance: str | None,
-                card: dict | None = None) -> str | None:
+                card: dict | None = None, answer: bool = False) -> tuple[str | None, str | None]:
         """Send text through a chat a5s writes to itself, such as Teams or Matrix, starting the
         conversation first if the route says to, and record whether it got there. The problem,
-        if not. In Teams and Slack, a card goes with or instead of the text, if there is one:
-        elsewhere, the text."""
-        channel, problem, started = route["channel"], None, False
+        if not, and the chat's own id for it, by which someone saying an agent's `answer` was
+        wrong is known (core/feedback.py). In Teams and Slack, a card goes with or instead of
+        the text, if there is one: elsewhere, the text."""
+        channel, problem, started, sent_as = route["channel"], None, False, None
         chat = gw.chat(channel)
         if chat is None:
             problem = f"{channel} isn't set up in this gateway"
@@ -3217,13 +3219,13 @@ def create_app(gw: Gateway) -> FastAPI:
                 reply_to = route["reply_to"]
                 if "start" in route:
                     reply_to, started = start(channel, chat, **route["start"])
-                chat.send(reply_to, text, card=card)
+                sent_as = chat.send(reply_to, text, card=card, feedback=answer)
             except (httpx.HTTPError, ValueError) as exc:
                 problem = f"{channel} didn't take it: {type(exc).__name__}: {exc}"[:200]
         record({"kind": "message", "action": "deliver", "run": run, "instance": instance,
                 "decision": "record", "outcome": {"status": "error", "error": problem} if problem
                 else {"status": "ok", "channel": channel, **({"started": True} if started else {})}})
-        return problem
+        return problem, sent_as
 
     def outbound(conn: db.Connection, route: dict, person: str, text: str, *,
                  run: str | None = None, instance: str | None = None, agent: str | None = None,
@@ -3274,13 +3276,15 @@ def create_app(gw: Gateway) -> FastAPI:
             if now_in is not None and not set(now_in) <= set(expected):
                 later += kept_back(row, run, now_in)
                 continue
-            problem = ("a5s couldn't read who's in the chat" if expected is not None
-                       and now_in is None else deliver(row["route"], row["text"], run,
-                                                       row["instance_id"], card=row["card"]))
+            problem, sent_as = (("a5s couldn't read who's in the chat", None)
+                                if expected is not None and now_in is None else
+                                deliver(row["route"], row["text"], run, row["instance_id"],
+                                        card=row["card"], answer=feedback.answer(row)))
             with db.transaction(gw.url) as conn:
                 if problem is None:
                     conn.execute("update outbox set delivered_at = now(), retry_at = null, "
-                                 "problem = null where id = %s", (row["id"],))
+                                 "problem = null, sent_as = %s where id = %s",
+                                 (sent_as, row["id"]))
                 elif row["attempts"] >= TRIES:  # the chat won't take it: the inbox will
                     conn.execute("update outbox set channel = 'local', inbound_id = null, "
                                  "retry_at = null, problem = %s where id = %s",

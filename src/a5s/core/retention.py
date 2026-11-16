@@ -23,7 +23,8 @@ wrote only by hash and length (core/ledger.py), so retention needn't touch it. T
 was handed as handles, what it read, and the documents from outside it read, go once the run
 has been over for an hour: a handle works only in its run, and nothing reads them after. The
 files someone sent with a message (core/files.py) go a day after it was answered, or a week
-after it came, should nothing answer it.
+after it came, should nothing answer it. What someone said of an agent's answer that was wrong
+(core/feedback.py) goes that long after they said it, or with the answer.
 
 The core sweeps every hour, by the database's clock, and the ledger records what each sweep
 deleted, in counts, never what was said. The period goes to Postgres as a value, never as part
@@ -109,6 +110,7 @@ def sweep(conn: db.Connection, now: datetime, scenario: str, kept: str = KEPT) -
                       f"and waiting_noted_at < {AGO}")  # in their words
     delete("reports", f"delete from report_fires where fired_at < {AGO}")
     delete("events", f"delete from events where received_at < {AGO}")  # what systems said
+    delete("feedback", f"delete from answer_feedback where at < {AGO}")  # answers said wrong
     delete("reminders", "delete from reminders where greatest(reminded_at, cancelled_at, "
                         f"case when confirmed_at is null then offered_at end) < {AGO}")
     delete("counts", "delete from urgent_sent where day < (now() - interval '2 days')::date")
