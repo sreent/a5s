@@ -26,6 +26,7 @@ from a5s.contract import (
     Signature,
     Tool,
     ToolCall,
+    Undo,
     parse_settings,
 )
 from a5s.graphify import Graphify
@@ -251,6 +252,8 @@ class SampleScenario:
                 run=self._change_due_date,
                 record_arg="key",
                 action="change-due-date",  # it changes the records: below level 2, a person decides
+                # undone by setting the due date it had before, for a day after it's made
+                undo=Undo(tool="change_due_date", args=(("key", "args.key"), ("due", "before.due date"))),
             ),
             Tool(
                 name="close_question",

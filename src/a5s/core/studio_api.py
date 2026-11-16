@@ -51,6 +51,7 @@ from a5s.core import (
     suspension,
     tasks_api,
     typescript,
+    undoing,
     web,
 )
 from a5s.core import home as homes  # the studio's home: `home` is the site's
@@ -143,6 +144,12 @@ class LanguageChoice(BaseModel):
     """The language someone chooses a5s's pages speak to them in, by its code, such as th."""
 
     language: str
+
+
+class UndoAct(BaseModel):
+    """Undoing a change, signed in afresh for that act alone: the salt its nonce was made with."""
+
+    salt: str
 
 
 class ConnectionReturn(BaseModel):
@@ -238,6 +245,7 @@ def router(gw: Any) -> APIRouter:
     @pages.get("/studio/map", include_in_schema=False)
     @pages.get("/studio/spending", include_in_schema=False)
     @pages.get("/studio/connections", include_in_schema=False)
+    @pages.get("/studio/undo", include_in_schema=False)
     def studio_new() -> Response:
         """The studio, where someone starts a new agent, sees all the agents they may, what they
         may do, or the design system's showcase."""
@@ -285,6 +293,38 @@ def router(gw: Any) -> APIRouter:
                 return {"language": languages.choose(conn, person, body.language, gw.clock())}
             except languages.Refused as e:
                 raise HTTPException(400, str(e)) from None
+
+    @api.get("/studio/api/changes/{change}", **shapes.answers(shapes.ChangeMade))
+    def studio_change(change: int, person: Annotated[Person, Depends(someone)]) -> dict:
+        """A change an agent made, which its tool says how to undo (core/undoing.py), for
+        whoever it was for, and whoever decides changes like it in its record's part: what it
+        did, until when it can be undone, whether they may, and how it stands."""
+        with db.transaction(gw.url) as conn:
+            found = undoing.shown(conn, gw.scenario, person, change)
+        if found is None:
+            raise HTTPException(404, "there's no such change of yours to undo")
+        return found
+
+    @api.post("/studio/api/changes/{change}/undo", **shapes.answers(shapes.UndoAsked))
+    def studio_undo(change: int, body: UndoAct, person: Annotated[Person, Depends(someone)],
+                    authorization: str | None = Header(default=None)) -> dict:
+        """Undo a change, signed in afresh for that act alone, which the core checks again and
+        carries out within a minute, while its record is as the change left it: whoever it was
+        for, or decides changes like it in its record's part."""
+        token = (authorization or "").removeprefix("Bearer ").strip()
+        try:
+            who, claims = undoing.check(gw.identity, gw.scenario, gw.cfg.webchat_client_id,
+                                        token, change, body.salt, time.time())
+            with db.transaction(gw.url) as conn:
+                row = undoing.found(conn, change)
+                if row is None or undoing.shown(conn, gw.scenario, who, change) is None:
+                    raise HTTPException(404, "there's no such change of yours to undo")
+                if why := undoing.may(gw.scenario, who, row, bool(row["open"])):
+                    raise HTTPException(409, why)
+                asked = undoing.record(conn, change, who.id, token, body.salt, claims)
+        except approvals.Refused as exc:
+            raise web.refusal(gw, exc) from None
+        return {"change": change, "at": asked["asked_at"].isoformat()}
 
     @api.get("/studio/api/you/connections", **shapes.answers(shapes.Connections))
     def studio_connections(person: Annotated[Person, Depends(someone)]) -> dict:

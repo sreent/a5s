@@ -154,6 +154,10 @@ def gather(conn: db.Connection, person: str) -> dict[str, Any]:
         "preferences": rows(
             "select name, value, set_at from preferences where person = any(%(names)s) "
             "order by name"),
+        "changes_to_undo": rows(  # changes made for them, or they undid, while kept to undo
+            "select definition as agent, record, said, made_at, until, state, undone_at, "
+            "asked_by = any(%(names)s) as asked_by_them from changes_made where "
+            "acts_for && %(names)s::text[] or asked_by = any(%(names)s) order by made_at"),
         "connections": rows(  # the accounts they connected, so agents acted as them there
             "select system, scopes, connected_at, used_at from delegations "  # never a token
             "where person = any(%(names)s) order by system"),

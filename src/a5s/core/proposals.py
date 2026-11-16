@@ -496,7 +496,8 @@ def told(proposal: dict, became: str, by: str | None = None, extra: str = "",
     change = first(proposal)
     why = f" They said: {reason}" if reason else ""
     return {
-        "made": f"{by} approved {key(proposal)}, and a5s has made it: {change}",
+        "made": f"{by} approved {key(proposal)}, and a5s has made it: {change}"
+                + (f" {extra}" if extra else ""),
         "rejected": f"{by} didn't approve {key(proposal)}, so a5s didn't make it: {change}{why}",
         "lapsed": (f"Nobody decided {key(proposal)} within {LAPSE} working days, so a5s let it "
                    f"go: {change} Ask again if it's still needed."),

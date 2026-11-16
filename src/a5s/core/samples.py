@@ -451,6 +451,48 @@ def seal_pending(conn: db.Connection, keys: tuple[str, ...], verifier: Any,
     return refused
 
 
+def undone(conn: db.Connection, keys: tuple[str, ...], scenario: str, change: dict,
+           now: datetime) -> list[int]:
+    """Count a change someone undid against its agent's accuracy (core/undoing.py): as a wrong
+    grade of it, for each part it touched, which the core seals at once, by the sign-in that
+    undid it, whether or not it was drawn as a sample. A critical grade stays critical. The
+    samples so graded."""
+    if not keys:
+        return []
+    graded = []
+    kind = "proposal" if change["proposal_id"] else "action"
+    for part in change["parts"]:
+        row = conn.execute(
+            "select * from samples where scenario = %s and run_id = %s and part = %s and "
+            "action = %s and kind = %s and proposal_id is not distinct from %s "
+            "order by id limit 1 for update",
+            (scenario, change["run_id"], part, change["action"], kind,
+             change["proposal_id"])).fetchone()
+        if row is None:  # never drawn: it counts all the same
+            row = conn.execute(
+                "insert into samples (scenario, kind, proposal_id, run_id, instance_id, release, "
+                "definition, part, action, said, records, acts_for, drawn_at) values (%s, %s, %s, "
+                "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) returning *",
+                (scenario, kind, change["proposal_id"], change["run_id"], change["instance_id"],
+                 change["release"], change["definition"], part, change["action"], change["said"],
+                 Jsonb({change["record"]: None}), list(change["acts_for"]), now)).fetchone()
+        assert row is not None
+        if row["grade"] == "critical":
+            continue
+        conn.execute(
+            "update samples set grade = 'wrong', graded_by = %s, graded_at = %s, grade_token = %s, "
+            "grade_nonce = %s, grade_salt = %s, grade_issuer = %s, grade_subject = %s, "
+            "grade_proof = null, sealed_at = %s, lapsed_at = null, undone_at = %s where id = %s",
+            (change["asked_by"], now, change["token"], change["nonce"], change["salt"],
+             change["issuer"], change["subject"], now, now, row["id"]))
+        sealed = conn.execute("select * from samples where id = %s", (row["id"],)).fetchone()
+        assert sealed is not None
+        conn.execute("update samples set grade_seal = %s where id = %s", (seal(keys, sealed),
+                                                                           sealed["id"]))
+        graded.append(sealed["id"])
+    return graded
+
+
 def counted(keys: tuple[str, ...], row: dict) -> bool:
     """Whether a grade counts: one the core sealed."""
     return _sealed(keys, row, _SEALED_GRADE, row.get("grade_seal"))

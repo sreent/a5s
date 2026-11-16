@@ -11,7 +11,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Protocol, cast
 
@@ -130,6 +130,36 @@ class ToolCall:
     key: str | None = None
 
 
+UNDO_WITHIN = timedelta(days=7)  # the longest a change may be undone after it's made [starting value]
+
+
+@dataclass(frozen=True)
+class Undo:
+    """How a change a tool makes is reversed (core/undoing.py): by calling `tool`, one of the
+    scenario's own, such as the same one, with each of its arguments from the change's own
+    (`args.<name>`) or from its record as it stood before it (`before.<field>`, a field of the
+    record, as the scenario gives it), within `within` of its being made."""
+
+    tool: str
+    args: tuple[tuple[str, str], ...]
+    within: timedelta = timedelta(hours=24)
+
+    def __post_init__(self) -> None:
+        if not self.args:
+            raise ValueError(f"undoing with {self.tool} takes the arguments that reverse it")
+        for name, source in self.args:
+            kind, _, of = source.partition(".")
+            if kind not in ("args", "before") or not of:
+                raise ValueError(f"undoing with {self.tool}: {name} comes from args.<name> or "
+                                 f"before.<field>, not {source}")
+        if not timedelta(minutes=1) <= self.within <= UNDO_WITHIN:
+            raise ValueError(f"undoing with {self.tool}: a change may be undone for a minute to "
+                             f"{UNDO_WITHIN.days} days after it's made")
+
+    def described(self) -> dict[str, Any]:
+        return {"tool": self.tool, "args": dict(self.args), "within": self.within.total_seconds()}
+
+
 @dataclass(frozen=True)
 class Tool:
     name: str
@@ -162,8 +192,13 @@ class Tool:
     # gets the form, never the content, and its run is marked as having read outside content.
     outside: tuple[str, ...] = ()
     extract: dict[str, str] = field(default_factory=dict)
+    # How a change it makes is reversed, if it says: someone it was for, or who decides its
+    # changes in the record's part, may undo it for a while after it's made (core/undoing.py)
+    undo: Undo | None = None
 
     def __post_init__(self) -> None:
+        if self.undo is not None and not (self.action and self.record_arg):
+            raise ValueError(f"{self.name}: only a tool that changes a record says how to undo it")
         if bool(self.outside) != bool(self.extract):
             raise ValueError(f"{self.name}: a tool that returns outside content names the form "
                              "a5s's extractor fills from it, and only such a tool names one")
@@ -198,6 +233,8 @@ class Tool:
             payload["idempotent"] = True
         if self.outside:  # or reads outside content another way
             payload["outside"] = [list(self.outside), self.extract]
+        if self.undo:  # or is undone another way, or for longer
+            payload["undo"] = self.undo.described()
         return hashlib.sha256(canonical(payload).encode()).hexdigest()
 
     def definition(self) -> dict[str, Any]:

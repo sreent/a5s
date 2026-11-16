@@ -47,7 +47,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from a5s import definitions, reach
 from a5s.connectors.rest import ConnectorError
-from a5s.contract import Tool, ToolCall
+from a5s.contract import Tool, ToolCall, Undo
 from a5s.core.ledger import canonical
 
 FILE = "mcp.yaml"
@@ -157,6 +157,22 @@ class Server(BaseModel):
         return self
 
 
+class Undone(BaseModel):
+    """How a change a tool makes is undone (core/undoing.py): with which of the scenario's
+    tools, each argument from the change's own (args.<name>) or from its record as it stood
+    before (before.<field>), for how many hours after it's made."""
+
+    model_config = ConfigDict(extra="forbid")
+    tool: str
+    args: dict[str, str]
+    hours: float = 24
+
+    def contract(self) -> Undo:
+        from datetime import timedelta
+        return Undo(tool=self.tool, args=tuple(sorted(self.args.items())),
+                    within=timedelta(hours=self.hours))
+
+
 class Declared(BaseModel):
     """One of a server's tools, as a scenario's agents may use it, in a5s's own words."""
 
@@ -182,6 +198,7 @@ class Declared(BaseModel):
     # answer naming its record but saying otherwise is the change taken in hand, not made, as a
     # device management queues a lock until the device next connects (round 13, D2)
     made: dict[str, str | int | float | bool] = {}
+    undo: Undone | None = None  # how a change it makes is undone, if it can be
 
     @model_validator(mode="after")
     def _consistent(self) -> Declared:
@@ -202,6 +219,10 @@ class Declared(BaseModel):
             raise ValueError(f"{', '.join(missing)} aren't among the fields it returns")
         if self.made and not self.action:
             raise ValueError("only a tool that changes a record says what its answer says once made")
+        if self.undo is not None:
+            if not self.action:
+                raise ValueError("only a tool that changes a record says how to undo it")
+            self.undo.contract()  # its arguments' sources, and how long, as a5s takes them
         return self
 
 
@@ -667,7 +688,7 @@ def _tool(name: str, d: Declared, serving: Session | People | None, as_person: s
                   action=d.action, idempotent=d.idempotent, outside=tuple(d.outside),
                   extract=dict(d.extract), server=d.server, calls=d.calls,
                   returns=tuple(d.returns), made=tuple(sorted(d.made.items())),
-                  as_person=as_person)
+                  as_person=as_person, undo=d.undo.contract() if d.undo else None)
     holder.append(tool)
     return tool
 

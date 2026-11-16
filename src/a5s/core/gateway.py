@@ -100,6 +100,7 @@ from a5s.core import (
     tasking,
     topics,
     traces,
+    undoing,
     urgent,
     values,
 )
@@ -1266,6 +1267,8 @@ class Proposal(BaseModel):
 
 
 def create_app(gw: Gateway) -> FastAPI:
+    if wrong := undoing.problems(gw.scenario.tools()):  # how its tools say they're undone
+        raise RuntimeError("; ".join(wrong))
     explorer = gw.cfg.development  # FastAPI's explorer pages load scripts from a CDN
     app = FastAPI(title="a5s gateway", docs_url="/docs" if explorer else None,
                   redoc_url="/redoc" if explorer else None)
@@ -2639,6 +2642,7 @@ def create_app(gw: Gateway) -> FastAPI:
             return asking_agent(args, row, seq)
         if core is not None:
             return call_core_tool(core, args, row, seq)
+        given = dict(args)
         try:
             with db.transaction(gw.url) as conn:  # a system gets the values handles stand for
                 given = handles.resolved_args(conn, row["run"], args)
@@ -2690,9 +2694,11 @@ def create_app(gw: Gateway) -> FastAPI:
                         conn, row["run"], change)
             except psycopg.Error:
                 log.exception("couldn't settle the count of %s's change", row["run"])
-        if action and outcome["status"] == "ok":  # a change made at level 2: someone's told
+        if action and tool is not None and outcome["status"] == "ok":  # made at level 2: told
             try:
-                acted(row, tool, args, keys, standing)
+                offer = acted(row, tool, args, keys, standing, given)
+                if offer and isinstance(result, dict):  # so the agent can say how
+                    result = {**result, "a5s_undo": offer}
             except Exception:  # it's made: the agent hears so, whatever else fails
                 log.exception("couldn't report the change %s made", row["run"])
         traces.note(current, **{"error.type": "tool_error" if outcome["status"] != "ok" else None})
@@ -2700,15 +2706,19 @@ def create_app(gw: Gateway) -> FastAPI:
             return JSONResponse(status_code=502, content={"error": outcome["error"]})
         return {"result": result, "recorded": recorded}
 
-    def acted(row: dict, tool: Tool, args: dict, keys: list[str], standing: dict) -> None:
+    def acted(row: dict, tool: Tool, args: dict, keys: list[str], standing: dict,
+              given: dict) -> str | None:
         """Report a change an agent made at level 2, in words code works out, with each record
         as it stood before, and a link to it, so it can be reversed through the scenario's own
         process if it needs to be: in the digest of the instance's owner and deputy who may see
         its records, or, with neither, of the owners of its parts. Tell whoever it was for, in
-        their conversation with the agent. And draw it as a sample, for grading."""
+        their conversation with the agent. And draw it as a sample, for grading. Where its tool
+        says how it's undone, keep how (core/undoing.py): what whoever it was for can do, and
+        until when, for the agent to tell them."""
         asked = groups.requesters(row)  # whose words asked for it: in a group, not everyone
         whom = approvals.names_of([p.name if (p := gw.scenario.person(w)) else w
                                    for w in asked]) if asked else "nobody"
+        undo, as_left = undone_by(tool, keys, given, standing)
         with db.transaction(gw.url) as conn:
             values = {r["handle"]: r["value"] for r in conn.execute(
                 "select handle, value from run_handles where run_id = %s", (row["run"],))}
@@ -2717,8 +2727,12 @@ def create_app(gw: Gateway) -> FastAPI:
             change = said.split("\n", 1)[0]
             before = " ".join(proposals.stood(standing)).replace(
                 "as it stood when it was asked for", "as it stood before")
+            parts_of = sorted({p for k in keys if (p := gw.scenario.part_of(k))})
+            kept = undoing.keep(conn, row, tool, keys[0], parts_of, said, undo, as_left, asked) \
+                if undo is not None and as_left is not None else None
+            offer = undoing.offered(kept["until"], gw.public_url, kept["id"]) if kept else None
             text = (f"The {row['definition']} made a change itself, at level 2, for {whom}: "
-                    f"{change}" + (f" {before}" if before else ""))
+                    f"{change}" + (f" {before}" if before else "") + (f" {offer}" if offer else ""))
             inst = conn.execute("select owner, deputy from instances where id = %s",
                                 (row["id"],)).fetchone()
             told = [p for p in (inst["owner"], inst["deputy"])
@@ -2744,7 +2758,26 @@ def create_app(gw: Gateway) -> FastAPI:
                                  "instance": row["id"], "acts_for": asked,
                                  "decision": "record", "args": {"to": sorted(set(told)),
                                                                 "tool": tool.name,
-                                                                "records": keys}})
+                                                                "records": keys,
+                                                                **({"undo": kept["id"]} if kept else {})}})
+        return offer
+
+    def undone_by(tool: Tool, keys: list[str], given: dict,
+                  standing: dict) -> tuple[dict | None, dict | None]:
+        """How a change just made is undone, if its tool says and it names one record a5s read
+        before: the call that reverses it, and the fields it restores as the change left them,
+        from the record read again now. Nothing, if it can't be read."""
+        if tool.undo is None or len(keys) != 1:
+            return None, None
+        undo = undoing.planned(tool, given, standing.get(keys[0]))
+        if undo is None:
+            return None, None
+        try:  # outside any transaction, as every read of the records is
+            after = proposals.snapshot({keys[0]: record_of(gw.scenario, keys[0])})[keys[0]]
+        except Exception:  # the records system's own failure: it can't be undone here
+            log.exception("couldn't read %s again, to undo it", keys[0])
+            return None, None
+        return undo, undoing.left(tool, after)
 
     def holding(decision: Decision, records: list[str], row: dict) -> list[Person] | str:
         """Who may decide a call policy holds, if it holds it: or why nobody may, in words."""
@@ -3486,6 +3519,10 @@ def create_app(gw: Gateway) -> FastAPI:
                        else {"status": "ok", "result_sha256": ledger.digest(result)})
         except Exception as exc:  # noqa: BLE001 - the system's own failure, recorded and told
             outcome = {"status": "error", "error": f"{type(exc).__name__}"}
+        keys = list(p["records"])
+        undo, as_left = undone_by(tool, keys, proposals.resolved(p["args"], values),
+                                  p["standing"] or {}) if outcome["status"] == "ok" else (None, None)
+        offer = None
         with db.transaction(gw.url) as conn:  # what happened, first, whatever comes after
             ledger.append(conn, {"kind": "tool", "action": p["tool"], "run": str(p["run_id"]),
                                  "instance": p["instance_id"], "acts_for": list(p["acts_for"]),
@@ -3493,9 +3530,15 @@ def create_app(gw: Gateway) -> FastAPI:
                                  "args": {"proposal": proposals.key(p)}})
             conn.execute("update proposals set status = %s, ended_at = %s where id = %s",
                          ("made" if outcome["status"] == "ok" else "not made", gw.clock(), p["id"]))
+            if undo is not None and as_left is not None:  # and how to undo it, as its tool says
+                kept = undoing.keep(conn, {"run": str(p["run_id"]), "id": p["instance_id"],
+                                           "definition": p["definition"], "release": p["release"]},
+                                    tool, keys[0], list(p["parts"]), p["said"], undo, as_left,
+                                    list(p["acts_for"]), proposal=p["id"])
+                offer = undoing.offered(kept["until"], gw.public_url, kept["id"])
         with db.transaction(gw.url) as conn:
             if outcome["status"] == "ok":
-                going = ended(conn, p, "made", rows, gw.clock())
+                going = ended(conn, p, "made", rows, gw.clock(), offer or "")
             else:
                 going = ended(conn, p, "failed", rows, gw.clock(), outcome["error"])
         return going["sends"]
@@ -3663,6 +3706,118 @@ def create_app(gw: Gateway) -> FastAPI:
         with db.transaction(gw.url) as conn:
             return delegation.sweep(conn, gw.delegation, gw.cfg.seal_keys,
                                     f"{gw.public_url}{delegation.BACK}", delegation.client())
+
+    @services.post("/undo/sweep")
+    def sweep_undo() -> dict:
+        """Check again each undo people asked for on a change's page, signed in afresh for that
+        alone (core/undoing.py), and whether they may now, then make the call that reverses
+        the change, while its record is as the change left it. An undone change counts as a
+        wrong grade of it, which the core seals. Whoever asked hears in their digest of one it
+        couldn't undo."""
+        done = {"undone": 0, "refused": 0, "failed": 0}
+        if gw.approving() is not None:  # it checks sign-ins, and seals the grade
+            return done
+        doing = []
+        with db.transaction(gw.url) as conn:
+            for row in undoing.asked(conn):
+                try:
+                    why = sealing.check(gw.identity, gw.scenario, gw.cfg.webchat_client_id,
+                                        row["proof"], undoing.nonce(row["id"], row["salt"]),
+                                        row["asked_by"], recorded=(row["token"], row["nonce"]),
+                                        salt=row["salt"])
+                except sealing.Unchecked:
+                    continue  # checked again at the next sweep
+                person = gw.scenario.person(row["asked_by"])
+                tools = gw.scenario.tools()
+                made, by = tools.get(row["tool"]), tools.get(row["undo"]["tool"])
+                if why is None:
+                    why = ("who asked isn't in the directory now" if person is None else
+                           undoing.may(gw.scenario, person, {**row, "state": None},
+                                       bool(row["open"])))
+                if why is None and (made is None or made.schema_hash != row["schema_hash"]
+                                    or by is None):
+                    why = "the tool that made it has changed since, so a5s can't undo it as it was made"
+                if why:
+                    refused_undo(conn, row, why)
+                    done["refused"] += 1
+                else:
+                    conn.execute("update changes_made set state = 'undoing' where id = %s",
+                                 (row["id"],))
+                    doing.append(row)
+        for row in doing:
+            done[undo_one(row)] += 1
+        return done
+
+    def refused_undo(conn: db.Connection, row: dict, why: str) -> None:
+        undoing.end(conn, row["id"], "refused", why)
+        ledger.append(conn, {"kind": "admin", "action": "refuse-undo", "run": str(row["run_id"]),
+                             "instance": row["instance_id"], "acts_for": [row["asked_by"]],
+                             "decision": "record", "args": {"change": row["id"], "why": why}})
+        digests.keep(conn, row["asked_by"], row["definition"], row["instance_id"],
+                     str(row["run_id"]), f"a5s didn't undo the change the {row['definition']} "
+                     f"made, as you asked on its page: {why}. {row['said']}", gw.clock())
+
+    def undo_one(row: dict) -> str:
+        """Undo one change, while its record is as the change left it, and count it, as a wrong
+        grade of it, against its agent's accuracy; tell whoever it was for, and the instance's
+        owner and deputy, and the ledger. Whether it was undone, refused or failed."""
+        tools = gw.scenario.tools()
+        made, by = tools[row["tool"]], tools[row["undo"]["tool"]]
+        try:  # the record as it stands, outside any transaction
+            now = undoing.left(made, proposals.snapshot(
+                {row["record"]: record_of(gw.scenario, row["record"])})[row["record"]])
+        except Exception:  # the records system's own failure
+            log.exception("couldn't read %s, to undo a change", row["record"])
+            now = None
+        if now != row["as_left"]:
+            with db.transaction(gw.url) as conn:
+                refused_undo(conn, row, "its record has changed since the change was made, so "
+                             "putting it right is for whoever changed it, in the records system"
+                             if now is not None else "its record can't be read just now")
+            return "refused"
+        try:
+            result = by.run(ToolCall(args=dict(row["undo"]["args"]), instance=row["instance_id"],
+                                     run=str(row["run_id"]), acts_for=(row["asked_by"],),
+                                     key=f"undo-{row['id']}" if by.idempotent else None))
+            failed = result.get("error") if isinstance(result, dict) else None
+        except Exception as exc:  # noqa: BLE001 - the system's own failure, recorded and told
+            failed = type(exc).__name__
+        who = gw.scenario.person(row["asked_by"])
+        name = who.name if who else row["asked_by"]
+        with db.transaction(gw.url) as conn:
+            ledger.append(conn, {"kind": "tool", "action": by.name, "run": str(row["run_id"]),
+                                 "instance": row["instance_id"], "acts_for": [row["asked_by"]],
+                                 "decision": "record",
+                                 "args": {"undo": row["id"], "record": row["record"],
+                                          "by": row["asked_by"]},
+                                 "outcome": {"status": "error", "error": str(failed)[:200]}
+                                 if failed else {"status": "ok"}})
+            if failed:
+                undoing.end(conn, row["id"], "failed",
+                            f"the records system didn't take it: {str(failed)[:200]}")
+                digests.keep(conn, row["asked_by"], row["definition"], row["instance_id"],
+                             str(row["run_id"]), f"a5s couldn't undo the change the "
+                             f"{row['definition']} made, as you asked: the records system didn't "
+                             f"take it. {row['said']}", gw.clock())
+                return "failed"
+            undoing.end(conn, row["id"], "undone", "undone", by=row["asked_by"])
+            graded = samples.undone(conn, gw.cfg.seal_keys, gw.scenario.name, row, gw.clock())
+            text = f"{name} undid a change the {row['definition']} made: {row['said']}"
+            for person in row["acts_for"]:  # their conversation: the agent's next run knows
+                noted(conn, person, row["definition"], f"{name} undid the change a5s made: "
+                      f"{row['said']}", row["record"])
+            inst = conn.execute("select owner, deputy from instances where id = %s",
+                                (row["instance_id"],)).fetchone()
+            told = [p for p in (*row["acts_for"], *((inst["owner"], inst["deputy"]) if inst else ()))
+                    if p and p != row["asked_by"] and gw.scenario.sees(p, row["record"])]
+            for person in dict.fromkeys(told):
+                digests.keep(conn, person, row["definition"], row["instance_id"],
+                             str(row["run_id"]), text, gw.clock())
+            ledger.append(conn, {"kind": "admin", "action": "undone", "run": str(row["run_id"]),
+                                 "instance": row["instance_id"], "acts_for": [row["asked_by"]],
+                                 "decision": "record",
+                                 "args": {"change": row["id"], "samples": graded}})
+        return "undone"
 
     @services.post("/registry/sweep")
     def sweep_registry() -> dict:

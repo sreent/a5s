@@ -162,6 +162,16 @@ def waiting(conn: db.Connection, gw: Any, person: Person,
                       "go": f"/studio/agents/{agent}#feedback"})
     found += spending.over(conn, scenario, gw.models, gw.spending_in_force(conn), person,
                            currency=gw.currency, language=language)
+    for made in conn.execute(  # changes made for them they can still undo (core/undoing.py)
+            "select id, definition, record, said, until from changes_made where %s = any(acts_for) "
+            "and until > now() and state is distinct from 'undone' and undone_at is null "
+            "order by made_at desc limit 5", (person.id,)):
+        if scenario.sees(person.id, made["record"]):
+            found.append({"kind": "undo", "what": words.say(
+                              language, "The {agent} made a change for you, which you can undo "
+                              "until {until}: {said}", agent=made["definition"],
+                              until=made["until"].strftime("%d %b %Y, %H:%M UTC"), said=made["said"]),
+                          "why": [], "go": f"/studio/undo?change={made['id']}"})
     tasks = conn.execute("select count(*) as n from tasks where owner = %s and parent is null "
                          "and status in ('blocked', %s)", (person.id, OFFERED)).fetchone()["n"]
     if tasks:

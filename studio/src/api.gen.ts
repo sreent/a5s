@@ -246,6 +246,24 @@ export type Change = {
   widens: boolean;
 };
 
+// A change a5s made for someone, as its page shows whoever it was for, and whoever may undo
+// it: what it did, until when it can be undone, and how it stands.
+export type ChangeMade = {
+  id: number;
+  agent: string;
+  instance: string;
+  record: string;
+  said: string;
+  made_at: string;
+  until: string;
+  whom: string[];
+  may: boolean;
+  why_not?: string;
+  state: string;
+  by?: string;
+  outcome?: string;
+};
+
 export type CoAuthors = {
   people: Named[];
 };
@@ -1357,6 +1375,16 @@ export type TriedRun = {
   records: string[];
   calls: Call[];
   entries: Record<string, unknown>[];
+};
+
+// Undoing a change, signed in afresh for that act alone: the salt its nonce was made with.
+export type UndoAct = {
+  salt: string;
+};
+
+export type UndoAsked = {
+  change: number;
+  at: string;
 };
 
 export type ValidationError = {

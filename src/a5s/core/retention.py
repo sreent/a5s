@@ -26,7 +26,8 @@ files someone sent with a message (core/files.py) go a day after it was answered
 after it came, should nothing answer it. What someone said of an agent's answer that was wrong
 (core/feedback.py) goes that long after they said it, or with the answer. The tokens of an
 account someone connected, so agents act as them (core/delegation.py), go once a5s hasn't used
-them for 90 days, and a start nobody came back to after a day.
+them for 90 days, and a start nobody came back to after a day. How to undo a change an agent
+made (core/undoing.py) goes a day after it can no longer be undone.
 
 The core sweeps every hour, by the database's clock, and the ledger records what each sweep
 deleted, in counts, never what was said. The period goes to Postgres as a value, never as part
@@ -138,6 +139,8 @@ def sweep(conn: db.Connection, now: datetime, scenario: str, kept: str = KEPT) -
                           "now() - %(unused)s", unused=delegation.UNUSED)  # tokens unused that long
     delete("connections", "delete from delegation_starts where started_at < now() - "
                           "interval '1 day'")  # nobody came back to, should no core sweep them
+    delete("undo", "delete from changes_made where until < now() - interval '1 day' and "
+                   "state is distinct from 'undoing'")  # how to undo a change, once it can't be
     done = (f"(status in ('done', 'cancelled', 'failed') and updated_at < {AGO}) "
             f"or deadline < {AGO}")  # it can't run past its deadline
     delete("tasks", "delete from tasks where root in (select root from tasks group by root "

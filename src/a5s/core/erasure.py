@@ -59,6 +59,7 @@ WORDS = {
     "answer_feedback": "what they said of agents' answers that were wrong",
     "preferences": "preferences",
     "delegations": "the accounts they connected, so agents acted as them there",
+    "changes_to_undo": "how to undo changes made for them, which they can then no longer undo",
     "delegation_starts": "accounts they had begun to connect",
     "report_seen": "what reports told them",
     "digest_waits": "digests that wait for them",
@@ -114,6 +115,10 @@ def erase(conn: db.Connection, person: str, now: datetime,
     else:  # their holder's, since the id's last archive: a name only this links to them
         for table in departures.LET_GO:
             delete(table, f"delete from {table} where person = %s", (person,))
+        delete("changes_to_undo", "delete from changes_made where %(p)s = any(acts_for) "
+               "and state is distinct from 'undoing'", {"p": person})  # theirs to undo no more
+        delete("changes_to_undo", "update changes_made set asked_by = null, undone_by = null, "
+               "subject = null where %(p)s in (asked_by, undone_by)", {"p": person})
         delete("planned_for", "update agent_drafts set plan = jsonb_set(plan, '{serves}', "
                "(plan->'serves') - %(p)s) where plan->'serves' ? %(p)s", {"p": person})
         delete("drafted_first", "update agent_drafts set before = (select jsonb_agg(case when "

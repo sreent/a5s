@@ -115,6 +115,33 @@ class LanguageChosen(Shape):
     language: str
 
 
+# A change an agent made, which its tool says how to undo (core/undoing.py)
+
+
+class ChangeMade(Shape):
+    """A change a5s made for someone, as its page shows whoever it was for, and whoever may undo
+    it: what it did, until when it can be undone, and how it stands."""
+
+    id: int
+    agent: str
+    instance: str
+    record: str
+    said: str
+    made_at: str
+    until: str
+    whom: list[str]  # whom it was for
+    may: bool  # whether whoever's looking may undo it now
+    why_not: str | SkipJsonSchema[None] = None
+    state: str  # kept, asked, undoing, undone, refused or failed
+    by: str | SkipJsonSchema[None] = None  # who asked to undo it, or did
+    outcome: str | SkipJsonSchema[None] = None
+
+
+class UndoAsked(Shape):
+    change: int
+    at: str
+
+
 # The accounts someone connects, so agents act as them there (core/delegation.py)
 
 

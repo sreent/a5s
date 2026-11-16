@@ -26,6 +26,7 @@ import { RunPage } from "./pages/Run";
 import { SettingsPage } from "./pages/Settings";
 import { SpendingPage } from "./pages/Spending";
 import { TasksPage } from "./pages/Tasks";
+import { UndoPage } from "./pages/Undo";
 import { ConnectedPage, YouPage } from "./pages/You";
 import { reread, useRoute } from "./router";
 import { Sidebar } from "./Sidebar";
@@ -104,6 +105,7 @@ export function App() {
   else if (route.page === "agents") content = <AgentsPage />;
   else if (route.page === "you") content = <YouPage />;
   else if (route.page === "connections") content = <ConnectedPage />;
+  else if (route.page === "undo") content = <UndoPage key={route.change} change={route.change} />;
   else if (route.page === "design") content = <DesignPage />;
   else if (route.page === "settings") content = <SettingsPage />;
   else if (route.page === "notebook") content = <NotebookPage />;
