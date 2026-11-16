@@ -3,7 +3,7 @@
 
 import { type DependencyList, type ReactNode, useEffect, useRef, useState } from "react";
 import type { AgentUses, Instance, Tool, Waiting as Wait } from "./api";
-import { Skeleton } from "./design/feedback";
+import { Loading, Skeleton } from "./design/feedback";
 import { inside, justMoved, Link, type Route } from "./router";
 
 /** What a page shows, once loaded; while it loads again, as for another period, what it
@@ -37,10 +37,12 @@ export function an(word: string): string {
   return `${/^[aeiou]/i.test(word) ? "An" : "A"} ${word}`;
 }
 
-/** While a page loads what it shows, its shape, still (Ocean's Skeleton); or what went wrong. */
-export function Waiting({ error, lines, title, rows, block }:
-  { error?: string; lines?: number; title?: boolean; rows?: number; block?: boolean }) {
+/** While a page loads what it shows, its shape, still (Ocean's Skeleton): a card's, or, as
+ * `children`, the page's own layout of Shapes, such as a grid of cards; or what went wrong. */
+export function Waiting({ error, lines, title, rows, block, children }:
+  { error?: string; lines?: number; title?: boolean; rows?: number; block?: boolean; children?: ReactNode }) {
   return error ? <p className="problem" role="status">{sentence(error)}</p>
+    : children ? <Loading>{children}</Loading>
     : <Skeleton lines={lines} title={title} rows={rows} block={block} />;
 }
 

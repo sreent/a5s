@@ -3,6 +3,7 @@
 
 import { type AgentKnown, type AgentUses, type Catalogue, type DraftLine, type Drafts, get,
          usesOf } from "../api";
+import { Shapes } from "../design";
 import { Icon } from "../icons";
 import { Link } from "../router";
 import { aboutInstance, levels, PageHead, plural, risk, StatusBadge, useLoad, Waiting, when } from "../ui";
@@ -92,7 +93,13 @@ export function AgentsPage() {
                 about="The agents you may know of: those you have a role on, those that serve you, and those their owners list for everyone. Each shows as much as your roles let you see: what it does and who owns it, what it may do, and where it runs. Changes to an instance go through the settings; the changes agents ask for are decided on the decisions page.">
         {data?.authoring.new && <div className="actions"><Link to={{ page: "new" }} className="button primary">New agent</Link></div>}
       </PageHead>
-      {!data && <Waiting error={error} />}
+      {!data && (
+        <Waiting error={error}>
+          <div className="agent-grid">  {/* the grid it will be, still (round 13, C11) */}
+            {[0, 1, 2, 3, 4, 5].map((n) => <section key={n} className="card"><Shapes lines={3} /></section>)}
+          </div>
+        </Waiting>
+      )}
       {authors && <Drafts />}
       {data && data.agents.length === 0 && <p className="note">There are no agents you may know of yet.</p>}
       {data && <div className="agent-grid">{data.agents.map((a) => <AgentCard key={a.id} agent={a} />)}</div>}

@@ -4,7 +4,7 @@
 
 import { AgentMap } from "../AgentMap";
 import { type AgentKnown, type Call, get, type Run, usesOf } from "../api";
-import { RunTimeline, type Step, type Tone } from "../design";
+import { RunTimeline, Shapes, type Step, type Tone } from "../design";
 import { an, OutcomeBadge, outcomeTone, PageHead, people, plural, risk, time, useLoad, Waiting, when } from "../ui";
 
 const DECIDED: Record<string, string> = { allow: "allowed", deny: "refused", hold: "held for a decision" };
@@ -57,7 +57,16 @@ export function RunPage({ id }: { id: string }) {
     <>
       <PageHead crumbs={crumbs} title={run ? `${an(run.trigger ?? "run")}, ${when(run.opened_at)}` : "A run"}
                 badges={run && <OutcomeBadge outcome={run.outcome} />} />
-      {!run && <Waiting error={error} />}
+      {!run && (
+        <Waiting error={error}>  {/* its figures, two cards and its map, as they will be (round 13, C11) */}
+          <div className="tiles">{[0, 1, 2, 3].map((n) => <div key={n} className="tile"><Shapes lines={1} /></div>)}</div>
+          <div className="two-up">
+            <section className="card"><Shapes lines={4} /></section>
+            <section className="card"><Shapes lines={2} /></section>
+          </div>
+          <section className="card map-card"><Shapes block /></section>
+        </Waiting>
+      )}
       {run && (
         <>
           <div className="tiles">
