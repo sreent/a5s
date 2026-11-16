@@ -63,7 +63,7 @@ def test_a_grader_and_a_tasks_owner_see_theirs(stack, approving, provider):
                      "now() + interval '1 day', %s, now())", (task, task))
     [graded] = api(approving, provider, "dana", "home").json()["waiting"]
     assert (graded["what"], graded["go"]) == ("1 sample of agents' work waits for your grade",
-                                              "/grade/")
+                                              "/studio/grade")
     [tasks] = api(approving, provider, "ben", "home").json()["waiting"]
     assert (tasks["what"], tasks["go"]) == (
         "1 of your tasks waits for you, blocked or asked for", "/studio/tasks")

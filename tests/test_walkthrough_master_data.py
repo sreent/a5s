@@ -287,7 +287,7 @@ def graded(walk: Walk, stack, url: str) -> None:
     quarter(stack)
     rounds = 0
     while True:
-        page = walk.as_("mel", f"{url}/grade/")
+        page = walk.as_("mel", f"{url}/studio/grade")
         page.wait_for_selector("#status:not(:empty), [data-sample]", timeout=30000)
         cards = page.locator("[data-sample]").all()
         if not cards:

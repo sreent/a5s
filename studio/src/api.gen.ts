@@ -398,6 +398,26 @@ export type Figures = {
   instances: string[];
 };
 
+// The samples someone may grade now, oldest first.
+export type GradeNow = {
+  you: string;
+  samples: SampleLine[];
+};
+
+// Grades recorded, for the core to check again and seal.
+export type Graded = {
+  graded: number[];
+  grades: Record<string, string>;
+  by: string;
+};
+
+// What the grading page sends with a sign-in made to grade: the grades, by sample, and the
+// salt its nonce was made with.
+export type Grading = {
+  grades: Record<string, string>;
+  salt: string;
+};
+
 export type GroupChats = {
   agent: string;
   messages: number;
@@ -829,6 +849,21 @@ export type RunsPage = {
   hidden: number;
   before: string | null;
   fewer: number | null;
+};
+
+// A sample of an agent's change, waiting for a grade: in the words code worked out when it was
+// asked for or made, how it went, what code flagged, and its records as they stood then.
+export type SampleLine = {
+  id: number;
+  kind: string;
+  agent: string;
+  part: string;
+  action: string;
+  said: string;
+  records: Record<string, Record<string, unknown> | null>;
+  flags: string[];
+  decided: string | null;
+  drawn_at: string;
 };
 
 export type Samples = {

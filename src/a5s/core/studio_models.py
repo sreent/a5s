@@ -1153,3 +1153,37 @@ class Decided(Shape):
     decided: list[str]
     decision: str
     by: str
+
+
+# Grading samples of agents' changes, folded into the studio (core/grade_api.py)
+
+
+class SampleLine(Shape):
+    """A sample of an agent's change, waiting for a grade: in the words code worked out when it was
+    asked for or made, how it went, what code flagged, and its records as they stood then."""
+
+    id: int
+    kind: str  # "proposal", a held change someone decided, or "action", made at level 2
+    agent: str
+    part: str
+    action: str
+    said: str
+    records: dict[str, dict[str, Any] | None]
+    flags: list[str]
+    decided: str | None  # a decider's approve or reject, for a held change
+    drawn_at: str
+
+
+class GradeNow(Shape):
+    """The samples someone may grade now, oldest first."""
+
+    you: str
+    samples: list[SampleLine]
+
+
+class Graded(Shape):
+    """Grades recorded, for the core to check again and seal."""
+
+    graded: list[int]
+    grades: dict[str, str]
+    by: str

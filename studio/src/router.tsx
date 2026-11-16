@@ -1,7 +1,8 @@
 // Where in the studio someone is, in its address, so links and the browser's back button work:
 // their home, what they may do, all the agents, one agent, an instance's dashboard, a run, a
 // new agent, a draft of one, the settings, the notebook, someone's tasks, the administrators'
-// page, the audit trail, the changes to decide, or the design system's showcase.
+// page, the audit trail, the changes to decide, the work to grade, or the design system's
+// showcase.
 
 import { type MouseEvent, type ReactNode, useEffect, useState } from "react";
 
@@ -20,6 +21,7 @@ export type Route =
   | { page: "admin" }
   | { page: "audit" }
   | { page: "decide" }
+  | { page: "grade" }
   | { page: "design" };
 
 export function parse(path: string): Route {
@@ -38,6 +40,7 @@ export function parse(path: string): Route {
   if (kind === "admin") return { page: "admin" };
   if (kind === "audit") return { page: "audit" };
   if (kind === "decide") return { page: "decide" };
+  if (kind === "grade") return { page: "grade" };
   return { page: "home" };
 }
 
@@ -57,6 +60,7 @@ export function href(route: Route): string {
     case "admin": return "/studio/admin";
     case "audit": return "/studio/audit";
     case "decide": return "/studio/decide";
+    case "grade": return "/studio/grade";
     default: return "/studio/";
   }
 }

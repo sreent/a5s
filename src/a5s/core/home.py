@@ -122,7 +122,7 @@ def waiting(conn: db.Connection, gw: Any, person: Person) -> list[dict]:
         count = f"{MOST} or more" if graded > MOST else str(graded)
         found.append({"kind": "grade", "what": f"{count} {'sample' if graded == 1 else 'samples'} "
                       f"of agents' work {'waits' if graded == 1 else 'wait'} for your grade",
-                      "why": [], "go": "/grade/"})
+                      "why": [], "go": "/studio/grade"})
     running = (gw.releases.current if gw.releases is not None and not gw.cfg.development
                else None)
     for need in releases.awaiting(conn, running, scenario, gw.cfg.team, person):
@@ -170,7 +170,7 @@ def of_instance(conn: db.Connection, gw: Any, person: Person, inst: dict) -> lis
         count = f"{MOST} or more" if len(graded) > MOST else str(len(graded))
         found.append({"kind": "grade", "what": f"{count} {'sample' if len(graded) == 1 else 'samples'} "
                       f"of its work {'waits' if len(graded) == 1 else 'wait'} for your grade",
-                      "why": [], "go": "/grade/", "since": graded[0]["drawn_at"]})
+                      "why": [], "go": "/studio/grade", "since": graded[0]["drawn_at"]})
     theirs = {g["id"] for g in graded}
     rest = [r for r in conn.execute("select id, drawn_at from samples where scenario = %s and "
                                     "instance_id = %s and grade is null and lapsed_at is null "

@@ -1,8 +1,9 @@
-"""The grading page in the channels app (docs/phase-2.md): where people outside the team that
-built an agent grade samples of its changes, whose grades raise or lower a5s's cap on its level
-(core/samples.py). They sign in to see what they may grade, and again, afresh, to grade: that
-sign-in's nonce commits to exactly those grades of exactly those samples, so the identity
-provider signs them. The core checks each again and seals it.
+"""The grading page's API in the channels app (docs/phase-2.md): where people outside the team
+that built an agent grade samples of its changes, whose grades raise or lower a5s's cap on its
+level (core/samples.py). The page is the studio's, /studio/grade. They sign in to see what they
+may grade, and again, afresh, to grade: that sign-in's nonce commits to exactly those grades of
+exactly those samples, so the identity provider signs them. The core checks each again and
+seals it.
 """
 
 import hashlib
@@ -15,6 +16,7 @@ from pydantic import BaseModel
 from a5s import db
 from a5s.contract import Person
 from a5s.core import approvals, ledger, proposals, samples, web
+from a5s.core import studio_models as shapes  # what each route answers, as the studio's types say
 
 
 class Grading(BaseModel):
@@ -29,8 +31,8 @@ GRADERS = "grading is for the people who grade agents' work"
 
 
 def router(gw: Any) -> APIRouter:
-    """The grading page, its sign-in and its API, for the channels app to include."""
-    pages = web.acting(gw, "grade")
+    """The grading page's API, and its old address, for the channels app to include."""
+    pages = web.acting(gw, "grade", moved="/studio/grade")
 
     def grader(authorization: str | None) -> Person:
         who, _ = web.sender(gw, authorization, None)
@@ -39,7 +41,7 @@ def router(gw: Any) -> APIRouter:
             raise HTTPException(403, GRADERS)
         return person
 
-    @pages.post("/grade/review")
+    @pages.post("/grade/review", **shapes.answers(shapes.GradeNow))
     def review_samples(authorization: str | None = Header(default=None)) -> dict:
         """The samples waiting for a grade that whoever signed in may grade, oldest first: read
         in pages, leaving out in the query what it can, until 20 are found."""
@@ -52,7 +54,7 @@ def router(gw: Any) -> APIRouter:
              "flags": r["flags"], "decided": r["decided"], "drawn_at": r["drawn_at"].isoformat()}
             for r in rows]}
 
-    @pages.post("/grade/samples")
+    @pages.post("/grade/samples", **shapes.answers(shapes.Graded))
     def grade_samples(body: Grading, authorization: str | None = Header(default=None)) -> dict:
         """Grades of samples, signed through the identity provider for exactly those grades of
         exactly those samples, by someone who may grade each, once. The core seals each."""

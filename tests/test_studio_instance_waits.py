@@ -75,7 +75,7 @@ def test_a_grader_who_watches_it_is_sent_to_grade_its_samples(stack, approving, 
     # Dana grades, outside the team that built it, and, by her group, owns billing beside Ana
     dana = waits(approving, provider, "dana", OWNERS)
     assert (dana["grade"]["what"], dana["grade"]["go"]) == (
-        "1 sample of its work waits for your grade", "/grade/")
+        "1 sample of its work waits for your grade", "/studio/grade")
     assert "graded" not in dana  # none waits for anyone else
     assert set(waits(approving, provider, "ana")) == {"graded"}  # Ana runs it: never hers
 

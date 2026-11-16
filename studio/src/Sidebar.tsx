@@ -32,7 +32,7 @@ export function shellOf(): Promise<Shell> {
 const INSIDE: Record<string, Route> = { studio: { page: "home" }, settings: { page: "settings" },
                                          notebook: { page: "notebook" }, tasks: { page: "tasks" },
                                          admin: { page: "admin" }, audit: { page: "audit" },
-                                         decide: { page: "decide" } };
+                                         decide: { page: "decide" }, grade: { page: "grade" } };
 
 /** A way to one of a5s's pages: within the studio, without leaving it; marked if it's here. */
 function To({ page, here, label, title, children }: {

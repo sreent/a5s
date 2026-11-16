@@ -69,7 +69,7 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 
 **Shows as:** samples waiting to be graded, samples that lapsed ungraded, or caps lowered in the last day.
 
-1. Samples are graded on the core's page, `/grade/`, by people who hold the grader role, from outside the teams that build and run the agent. A backlog only slows level 2: ask the scenario's owners for graders. A sample nobody grades in a quarter lapses, and goes after a year.
+1. Samples are graded in the studio, `/studio/grade`, by people who hold the grader role, from outside the teams that build and run the agent. A backlog only slows level 2: ask the scenario's owners for graders. A sample nobody grades in a quarter lapses, and goes after a year.
 2. A cap falls on a critical error, on grades that show accuracy below the part's threshold, when the threshold rises past what the grades show, or when someone lowers it. The ledger's `cap` entries give the evidence, and the instance's owner and deputy hear in their digest. It rises again only on new grades.
 3. To lower a cap at once, such as while a fault is looked into: `a5s caps lower <agent> <part> <type of action>`, as one of the part's owners, an instance approver, the agent's owner or assurance. Nobody raises a cap by hand.
 4. While the settings in force don't check out, nothing is weighed, and caps stand.

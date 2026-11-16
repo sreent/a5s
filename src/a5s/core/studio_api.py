@@ -30,6 +30,7 @@ from a5s.core import (
     audit_api,
     decide_api,
     drafts,
+    grade_api,
     ledger,
     memberships,
     notebook_api,
@@ -189,6 +190,7 @@ def router(gw: Any) -> APIRouter:
     @pages.get("/studio/admin", include_in_schema=False)
     @pages.get("/studio/audit", include_in_schema=False)
     @pages.get("/studio/decide", include_in_schema=False)
+    @pages.get("/studio/grade", include_in_schema=False)
     @pages.get("/studio/design", include_in_schema=False)
     def studio_new() -> Response:
         """The studio, where someone starts a new agent, sees all the agents they may, what they
@@ -917,6 +919,7 @@ def described() -> dict:
     app.include_router(admin_api.router(SimpleNamespace(cfg=None)))  # and the administrators' page
     app.include_router(audit_api.router(SimpleNamespace(cfg=None)))  # and the audit trail
     app.include_router(decide_api.router(SimpleNamespace(cfg=None)))  # and deciding held changes
+    app.include_router(grade_api.router(SimpleNamespace(cfg=None)))  # and grading samples
     return app.openapi()
 
 

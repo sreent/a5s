@@ -11,6 +11,7 @@ import { AuditPage } from "./pages/Audit";
 import { DecidePage } from "./pages/Decide";
 import { DesignPage } from "./pages/Design";
 import { DraftPage } from "./pages/Draft";
+import { GradePage } from "./pages/Grade";
 import { HomePage } from "./pages/Home";
 import { InstancePage } from "./pages/Instance";
 import { NewPage } from "./pages/New";
@@ -55,6 +56,7 @@ export function App() {
   else if (route.page === "admin") content = <AdminPage />;
   else if (route.page === "audit") content = <AuditPage />;
   else if (route.page === "decide") content = <DecidePage />;
+  else if (route.page === "grade") content = <GradePage />;
   else content = <HomePage />;
   const workbench = route.page === "draft" && state === "ready";  // a draft fills the window, as Ocean's workbench
   useEffect(() => {

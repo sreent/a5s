@@ -48,7 +48,7 @@ def seen(stack):
 LISTED = ("chat", "tasks", "notebook", "studio", "settings", "admin")
 AT = {"settings": "/studio/settings", "notebook": "/studio/notebook",  # in the studio, where their
       "tasks": "/studio/tasks", "admin": "/studio/admin", "audit": "/studio/audit",
-      "decide": "/studio/decide"}  # old addresses go
+      "decide": "/studio/decide", "grade": "/studio/grade"}  # old addresses go
 
 
 @pytest.mark.parametrize("name", PAGES)
