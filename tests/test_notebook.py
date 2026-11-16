@@ -168,7 +168,32 @@ def test_whoever_runs_the_instance_reads_and_removes_notes(stack, approving, pro
     assert entries(stack) == []
     [removed] = [e for e in stack.ledger() if e["kind"] == "notebook"]
     assert (removed["action"], removed["args"]["by"]) == ("remove", "ben")
-    assert httpx.get(f"{approving}/notebook/", timeout=30).status_code == 200
+    went = httpx.get(f"{approving}/notebook/", timeout=30)  # in the studio, now
+    assert (went.status_code, went.headers["location"]) == (303, "/studio/notebook")
+
+
+def test_its_keeper_reads_and_removes_notes_in_the_studio(stack, approving, provider, browser):
+    """Ana runs the assistant in billing: she finds its note on her instance's page, opens the
+    notebook in the studio, and removes it, asked first, since it can't be undone."""
+    with_notebook(stack)
+    learn(stack, ("get_record", {"key": "Q-1001"}),
+          ("note_learned", {"note": NOTED, "sources": ["Q-1001"]}))
+    from conftest import accessible
+
+    page = browser.new_page(viewport={"width": 1440, "height": 900})
+    page.goto(f"{approving}/studio/instances/assistant-finance")
+    page.click("#instance-waiting a:has-text('note it keeps')")  # within the studio
+    page.wait_for_selector("#entries li", timeout=30000)
+    assert page.evaluate("location.pathname") == "/studio/notebook"
+    assert page.inner_text("#entries h2") == "Kept by the assistant in billing"
+    note = page.locator("#entries li").first
+    assert NOTED in note.inner_text() and note.locator("a:has-text('Q-1001')").count() == 1
+    assert page.locator("#pages a[aria-current=page]").get_attribute("href") == "/studio/notebook"
+    accessible(page)
+    note.locator("button:text-is('Remove')").click()
+    page.locator("dialog[open] button:has-text('Remove it')").click()
+    page.wait_for_selector("#status >> text=Removed N-", timeout=30000)
+    assert entries(stack) == [] and page.locator("#entries li").count() == 0
 
 
 @pytest.mark.live

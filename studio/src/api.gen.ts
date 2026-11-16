@@ -425,6 +425,28 @@ export type Named = {
   name: string;
 };
 
+// A note an agent kept, with the records it comes from, when it was noted, and when its
+// records were last checked.
+export type Note = {
+  entry: string;
+  instance: string;
+  text: string;
+  sources: NoteSource[];
+  noted: string;
+  checked: string;
+};
+
+// A note removed, by its keeper.
+export type NoteRemoved = {
+  removed: string;
+};
+
+// A record a note comes from, by its key, and its link in its system, if it has one.
+export type NoteSource = {
+  key: string;
+  link: string | null;
+};
+
 export type Notebook = {
   instance: string;
   notes: number;
@@ -433,6 +455,17 @@ export type Notebook = {
   let_go: number;
   given: number;
   runs_given: number;
+};
+
+// The notes of the instances someone keeps, those whose every record they may see, how many
+// more there are that they may not, and who else keeps those.
+export type NotebookNow = {
+  you: string;
+  instances: string[];
+  names: Record<string, string>;
+  entries: Note[];
+  hidden: number;
+  others: string[];
 };
 
 export type Obligations = {

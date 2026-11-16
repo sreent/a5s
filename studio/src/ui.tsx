@@ -3,7 +3,7 @@
 
 import { type DependencyList, type ReactNode, useEffect, useState } from "react";
 import type { AgentUses, Instance, Tool, Waiting as Wait } from "./api";
-import { Link, type Route } from "./router";
+import { inside, Link, type Route } from "./router";
 
 /** What a page shows, once loaded; while it loads again, as for another period, what it
  * showed before stays, `stale`, so nothing jumps. */
@@ -134,6 +134,12 @@ export function runners(inst: Instance): string {
   return [inst.owner, inst.deputy].filter(Boolean).join(" and ") || "nobody";
 }
 
+/** A way to where something's done: within the studio, without leaving it, or a page of its own. */
+function To({ go, children }: { go: string; children: ReactNode }) {
+  const route = inside(go);
+  return route ? <Link to={route}>{children}</Link> : <a href={go}>{children}</a>;
+}
+
 /** What waits for someone, each where they do it, on its own page or at the command line,
  * with why it's theirs and since when, as the home and an instance's page list it. */
 export function WaitList({ waiting, none }: { waiting: Wait[]; none: string }) {
@@ -141,7 +147,7 @@ export function WaitList({ waiting, none }: { waiting: Wait[]; none: string }) {
   return (
     <ul className="waits">{waiting.map((w) => (
       <li key={`${w.kind}:${w.what}`} className={`wait wait-${w.kind}`}>
-        {w.go ? <a href={w.go}>{w.what}</a> : <span>{w.what}</span>}
+        {w.go ? <To go={w.go}>{w.what}</To> : <span>{w.what}</span>}
         {w.since && <span className="faint"> · since {when(w.since)}</span>}
         {w.how && <span className="faint"> · <span className="mono">{w.how}</span></span>}
         {w.why.length > 0 && <ul className="plain faint">{w.why.map((why) => <li key={why}>{why}</li>)}</ul>}

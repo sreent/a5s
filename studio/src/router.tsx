@@ -1,6 +1,6 @@
 // Where in the studio someone is, in its address, so links and the browser's back button work:
 // their home, what they may do, all the agents, one agent, an instance's dashboard, a run, a
-// new agent, a draft of one, the settings, or the design system's showcase.
+// new agent, a draft of one, the settings, the notebook, or the design system's showcase.
 
 import { type MouseEvent, type ReactNode, useEffect, useState } from "react";
 
@@ -14,6 +14,7 @@ export type Route =
   | { page: "new" }
   | { page: "draft"; draft: string }
   | { page: "settings"; search?: string }  // such as ?add=<agent>, an agent to put to work
+  | { page: "notebook" }
   | { page: "design" };
 
 export function parse(path: string): Route {
@@ -27,6 +28,7 @@ export function parse(path: string): Route {
   if (kind === "you") return { page: "you" };
   if (kind === "design") return { page: "design" };
   if (kind === "settings") return { page: "settings" };
+  if (kind === "notebook") return { page: "notebook" };
   return { page: "home" };
 }
 
@@ -41,6 +43,7 @@ export function href(route: Route): string {
     case "you": return "/studio/you";
     case "design": return "/studio/design";
     case "settings": return `/studio/settings${route.search ?? ""}`;
+    case "notebook": return "/studio/notebook";
     default: return "/studio/";
   }
 }
@@ -84,4 +87,9 @@ export function Link({ to, className, children, label, id, title, current }:
     <a href={href(to)} className={className} onClick={open} aria-label={label} id={id} title={title}
        aria-current={current ? "page" : undefined}>{children}</a>
   );
+}
+
+/** A page of the studio's, from an address such as a wait's: null for anywhere else. */
+export function inside(path: string): Route | null {
+  return /^\/studio\/[\w./-]*$/.test(path) ? parse(path) : null;
 }

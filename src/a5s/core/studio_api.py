@@ -29,6 +29,7 @@ from a5s.core import (
     drafts,
     ledger,
     memberships,
+    notebook_api,
     publishing,
     registry,
     settings_api,
@@ -179,6 +180,7 @@ def router(gw: Any) -> APIRouter:
     @pages.get("/studio/agents", include_in_schema=False)
     @pages.get("/studio/you", include_in_schema=False)
     @pages.get("/studio/settings", include_in_schema=False)
+    @pages.get("/studio/notebook", include_in_schema=False)
     @pages.get("/studio/design", include_in_schema=False)
     def studio_new() -> Response:
         """The studio, where someone starts a new agent, sees all the agents they may, what they
@@ -902,6 +904,7 @@ def described() -> dict:
     app = FastAPI(title="a5s studio")
     app.include_router(router(SimpleNamespace(cfg=None)))  # nothing it serves is asked
     app.include_router(settings_api.router(SimpleNamespace(cfg=None)))  # the settings, folded in
+    app.include_router(notebook_api.router(SimpleNamespace(cfg=None)))  # and the notebook
     return app.openapi()
 
 

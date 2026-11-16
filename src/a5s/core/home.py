@@ -188,5 +188,5 @@ def of_instance(conn: db.Connection, gw: Any, person: Person, inst: dict) -> lis
         if notes:
             found.append({"kind": "notebook", "what": f"{len(notes)} "
                           f"{'note' if len(notes) == 1 else 'notes'} it keeps from what it "
-                          "learned, which you may read and remove", "why": [], "go": "/notebook/"})
+                          "learned, which you may read and remove", "why": [], "go": "/studio/notebook"})
     return found

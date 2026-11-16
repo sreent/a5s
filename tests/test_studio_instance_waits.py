@@ -53,7 +53,7 @@ def test_it_says_what_of_an_instance_waits_and_for_whom(stack, approving, provid
         "what": "1 sample of its work waits for a grade, from graders outside the team that "
                 "built it"}
     assert (ana["notebook"]["what"], ana["notebook"]["go"]) == (
-        "1 note it keeps from what it learned, which you may read and remove", "/notebook/")
+        "1 note it keeps from what it learned, which you may read and remove", "/studio/notebook")
     # Ben asked for it, so it's never his to decide; he runs it, as its deputy, so he keeps
     # its notebook
     ben = waits(approving, provider, "ben")

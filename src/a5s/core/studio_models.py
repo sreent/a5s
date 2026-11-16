@@ -856,3 +856,44 @@ class SettingsAsked(Shape):
 
     request: int
     serial: int
+
+
+# The notebook, folded into the studio (core/notebook_api.py): what agents noted from records,
+# for those who keep each instance's notebook
+
+
+class NoteSource(Shape):
+    """A record a note comes from, by its key, and its link in its system, if it has one."""
+
+    key: str
+    link: str | None
+
+
+class Note(Shape):
+    """A note an agent kept, with the records it comes from, when it was noted, and when its
+    records were last checked."""
+
+    entry: str  # N-<number>
+    instance: str
+    text: str
+    sources: list[NoteSource]
+    noted: str  # a date
+    checked: str  # a date
+
+
+class NotebookNow(Shape):
+    """The notes of the instances someone keeps, those whose every record they may see, how many
+    more there are that they may not, and who else keeps those."""
+
+    you: str
+    instances: list[str]
+    names: dict[str, str]  # each instance as people say it, such as "the assistant in billing"
+    entries: list[Note]
+    hidden: int
+    others: list[str]
+
+
+class NoteRemoved(Shape):
+    """A note removed, by its keeper."""
+
+    removed: str

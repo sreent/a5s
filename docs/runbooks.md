@@ -127,7 +127,7 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 
 **Shows as:** an agent relying on a note its owner thinks wrong. The status counts notes, and those let go in the last day.
 
-1. The agent's owner, or whoever runs the instance, removes the note on the core's page, `/notebook/`, which shows when each was noted and last checked, with a link to each of its records. The ledger records who removed it.
+1. The agent's owner, or whoever runs the instance, removes the note in the studio's notebook, `/studio/notebook`, which shows when each was noted and last checked, with a link to each of its records. The ledger records who removed it.
 2. A note goes by itself once its records change, checked each day apart from the retention sweep, so a records system that's down holds up no other sweep: its notes wait to be checked. The notebook keeps its newest 50.
 3. A note can't carry anyone's words, nor anything from outside: only a run on a schedule writes one, from records it read, and it reaches only people who may see every record that run read. If one seems to, tell assurance, with the note's number.
 
