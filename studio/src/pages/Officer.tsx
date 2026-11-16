@@ -7,11 +7,13 @@
 import { type FormEvent, useEffect, useState } from "react";
 import { type OfficerAsked, send } from "../api";
 import { hashed, salted, signInFor, takeAct } from "../auth";
+import { useToast } from "../design";
 import { PageHead } from "../ui";
 
 type Action = "export" | "erase";
 
 export function OfficerPage() {
+  const toast = useToast();
   const [action, setAction] = useState<Action>("export");
   const [person, setPerson] = useState("");
   const [again, setAgain] = useState("");
@@ -25,6 +27,7 @@ export function OfficerPage() {
       .then((made) => {
         const whom = made.name ? `${made.name} (${made.person})` : made.person;
         setStatus(`You asked to ${made.asked} all a5s keeps about ${whom}. Someone from the team that runs a5s carries it out, once, within ${made.lasts}: ${made.command}`);
+        toast(`You asked to ${made.asked} all a5s keeps about ${whom}.`);
       })
       .catch((e: Error) => setStatus(e.message));
   }, []);

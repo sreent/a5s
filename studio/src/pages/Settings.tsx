@@ -13,6 +13,7 @@
 
 import { type ReactNode, useEffect, useReducer, useRef, useState } from "react";
 import { type Change, get, send, type SettingsAsked, type SettingsNow, type SettingsReview } from "../api";
+import { useToast } from "../design";
 import { PageHead, To, Waiting, when } from "../ui";
 
 type PartEntry = number | null | { level?: number; actions?: Record<string, number> };
@@ -112,6 +113,7 @@ function planned(): Plan | null {
 }
 
 export function SettingsPage() {
+  const toast = useToast();
   const [now, setNow] = useState<SettingsNow>();
   const [error, setError] = useState<string>();
   const [status, setStatus] = useState<string>();
@@ -542,6 +544,7 @@ export function SettingsPage() {
                                               { text: asking.text, base: asking.found.in_force ?? null });
       setReviewed(undefined);
       setStatus(`You asked for version ${asked.serial}. a5s asks its approvers within a minute, and puts it in force once they've all approved it.`);
+      toast(`You asked for version ${asked.serial}.`);
       await load(true);
       setGeneration((n) => n + 1);  // the forms start again from what's in force
     } catch (e) {

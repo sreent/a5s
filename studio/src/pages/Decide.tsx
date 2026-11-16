@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { type DecideNow, type Decided, type HeldChange, send } from "../api";
 import { hashed, salted, signInFor, takeAct } from "../auth";
 import { Icon } from "../icons";
+import { useToast } from "../design";
 import { PageHead, useLoad, Waiting } from "../ui";
 
 type Decision = "approve" | "reject";
@@ -73,6 +74,7 @@ function Card({ change, decide, ticked, tick }: {
 }
 
 export function DecidePage() {
+  const toast = useToast();
   const [named] = useState(() => new URLSearchParams(location.search).get("proposal") || "");
   const [again, setAgain] = useState(0);
   const [status, setStatus] = useState<string>();
@@ -87,9 +89,13 @@ export function DecidePage() {
     }
     send<Decided>("POST", "/decide/proposals", { proposals: act.proposals, decision: act.decision, salt: act.salt,
                                                 ...(act.reason ? { reason: act.reason } : {}) })
-      .then((made) => setStatus(made.decision === "approve"
-        ? `You approved ${made.decided.join(", ")}. a5s makes each change within a minute, once every part it touches has approved it, if its records haven't changed.`
-        : `You rejected ${made.decided.join(", ")}. a5s tells whoever asked for it.`))
+      .then((made) => {
+        const which = made.decided.join(", ");
+        setStatus(made.decision === "approve"
+          ? `You approved ${which}. a5s makes each change within a minute, once every part it touches has approved it, if its records haven't changed.`
+          : `You rejected ${which}. a5s tells whoever asked for it.`);
+        toast(`You ${made.decision === "approve" ? "approved" : "rejected"} ${which}.`);
+      })
       .catch((e: Error) => setStatus(e.message))
       .finally(() => setActed(true));
   }, []);

@@ -138,6 +138,10 @@ main { flex: 1; width: 100%; max-width: 76rem; margin: 0 auto; padding: 1.75rem 
   .sidebar nav a span {  /* a phone shows each page's icon, and screen readers still say its name */
     position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%);
     white-space: nowrap; }
+  .sidebar .palette-open { width: auto; padding: 0.45rem; }  /* the palette's button, its icon alone in the bar */
+  .sidebar .palette-open > :not(.icon) {
+    position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%);
+    white-space: nowrap; }
   main { padding: 1.25rem 1rem 2.5rem; }
 }
 
@@ -1906,3 +1910,69 @@ body.lone { display: grid; place-items: center; min-height: 100vh; margin: 0; pa
 .editable { border-radius: var(--radius-sm); cursor: text; }
 .editable:hover { background: var(--sunken); }
 .editable:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* Finding, loading and afterwards: the palette, skeletons and toasts */
+
+/* The palette: going anywhere a person may, and doing the common things, by name. The browser's own
+   dialog, opened with Ctrl-K, or ⌘K on a Mac, or the button that says so: it finds as they type,
+   lists what they may open grouped by what each is, moves with the arrows and opens with Enter */
+dialog.dialog.palette { width: min(36rem, calc(100vw - 2rem)); margin-top: 12vh; padding: 0; overflow: hidden; }
+.palette-find { display: flex; align-items: center; gap: var(--space-2); padding: var(--space-3) var(--space-4);
+                border-bottom: 1px solid var(--line); color: var(--muted); }
+.palette-find:focus-within { box-shadow: inset 0 -2px 0 var(--focus); }  /* the focus, on the line the words go on */
+.palette-find > input { flex: 1; min-width: 0; padding: var(--space-1) 0; border: 0; background: transparent;
+                        color: var(--text); font-size: var(--text-lg); }
+.palette-find > input:focus-visible { outline: none; }
+.palette-list { max-height: min(24rem, 56vh); margin: 0; padding: var(--space-2); overflow: auto; list-style: none; }
+.palette-list .label { margin: 0; padding: var(--space-3) var(--space-3) var(--space-1); }  /* each group's heading */
+.palette-option { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: var(--space-3);
+                  padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); cursor: pointer; }
+.palette-option > .icon { width: 1.05rem; height: 1.05rem; color: var(--muted); }
+.palette-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.palette-where { color: var(--muted); font-size: var(--text-sm); white-space: nowrap; }
+.palette-option:hover { background: var(--sunken); }
+.palette-option[aria-selected="true"] { background: var(--accent-soft); }
+.palette-option[aria-selected="true"] > :is(.palette-name, .icon) { color: var(--accent); font-weight: 600; }
+.palette .palette-none { margin: 0; padding: var(--space-4); color: var(--muted); }  /* over .dialog p's margin */
+.palette .palette-keys { display: flex; flex-wrap: wrap; gap: var(--space-1) var(--space-4); margin: 0; padding: var(--space-2) var(--space-4);
+                border-top: 1px solid var(--line); background: var(--sunken); color: var(--muted); font-size: var(--text-xs); }
+kbd { padding: 0 0.35em; border: 1px solid var(--line-control); border-radius: var(--radius-sm); background: var(--surface);
+      color: var(--text); font-family: var(--font-mono); font-size: 0.85em; }
+/* The button that opens it, where a page keeps its way about: it reads as a place to type, and says
+   the keys */
+button.palette-open { display: flex; align-items: center; gap: var(--space-2); width: 100%; background: var(--sunken);
+                      color: var(--muted); font-weight: 400; text-align: start; }
+button.palette-open > span { flex: 1; }
+
+/* Skeletons: what's loading, in the shape it will have, so nothing jumps when it comes. Still, since
+   Ocean moves only what opens over the page and an agent's work under way. The region it stands in
+   says it's busy (aria-busy), and the page says "Loading…" in words for whoever can't see it */
+.skeleton { display: grid; gap: var(--space-2); }
+.skeleton > * { border-radius: var(--radius-pill); background: var(--sunken); }
+.skeleton-title { width: 40%; height: 1.25rem; margin-bottom: var(--space-1); }
+.skeleton-line { height: 0.8rem; }
+.skeleton-line:nth-child(odd) { width: 92%; }
+.skeleton-line:last-child { width: 58%; }  /* a paragraph ends short */
+.skeleton-block { height: 6rem; border-radius: var(--radius-md); }
+.skeleton-row { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: var(--space-3); background: none; }
+.skeleton-row > * { height: 0.8rem; border-radius: var(--radius-pill); background: var(--sunken); }
+.skeleton-words { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip-path: inset(50%);
+                  white-space: nowrap; }  /* "Loading…", for screen readers, where the skeleton stands */
+
+/* Toasts: what was just done, said once, at the foot of the window, where it doesn't cover the work.
+   Each names the thing in the past tense ("Cancelled T-1."), and offers Undo while it can still be
+   undone. The page's own status line says it too: a toast is never the only place it's said, and
+   never for what needs the person, which stays on the page */
+.toasts { position: fixed; inset-inline: var(--space-4); bottom: var(--space-4); z-index: 50; display: grid;
+          justify-items: center; gap: var(--space-2); margin: 0; padding: 0; list-style: none; pointer-events: none; }
+.toast { display: flex; align-items: center; gap: var(--space-3); max-width: min(32rem, 100%);
+         padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4); border: 1px solid var(--line);
+         border-radius: var(--radius-md); background: var(--surface); color: var(--text); box-shadow: var(--shadow-raised);
+         pointer-events: auto; }
+.toast > .toast-words { flex: 1; min-width: 0; margin: 0; }
+.toast > .icon { width: 1.05rem; height: 1.05rem; flex: none; color: var(--good); }
+.toast > button:last-child { padding: var(--space-1); border-color: transparent; background: none; color: var(--muted); }
+.toast > button:last-child > .icon { width: 1rem; height: 1rem; }
+@media (prefers-reduced-motion: no-preference) {
+  .toast { animation: rise 120ms ease-out; }
+}

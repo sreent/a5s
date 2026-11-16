@@ -3,6 +3,7 @@
 
 import { type DependencyList, type ReactNode, useEffect, useState } from "react";
 import type { AgentUses, Instance, Tool, Waiting as Wait } from "./api";
+import { Skeleton } from "./design/feedback";
 import { inside, Link, type Route } from "./router";
 
 /** What a page shows, once loaded; while it loads again, as for another period, what it
@@ -25,8 +26,9 @@ export function useLoad<T>(load: () => Promise<T>, deps: DependencyList): Loaded
   return { ...state, reload };
 }
 
+/** While a page loads what it shows, its shape, still (Ocean's Skeleton); or what went wrong. */
 export function Waiting({ error }: { error?: string }) {
-  return <p className={error ? "problem" : "note"} role="status">{error ?? "Loading…"}</p>;
+  return error ? <p className="problem" role="status">{error}</p> : <Skeleton />;
 }
 
 export type Crumb = { label: string; to: Route };

@@ -6,7 +6,7 @@
 
 import { useState } from "react";
 import { get, type RepeatLine, send, type TaskLine, type TasksNow } from "../api";
-import { Confirm } from "../design";
+import { Confirm, useToast } from "../design";
 import { PageHead, useLoad, Waiting } from "../ui";
 
 const shown = (value: unknown) => (typeof value === "string" ? value : JSON.stringify(value));
@@ -57,6 +57,7 @@ function Repeat({ repeat, stop }: { repeat: RepeatLine; stop: (repeat: RepeatLin
 }
 
 export function TasksPage() {
+  const toast = useToast();
   const [status, setStatus] = useState<string>();
   const { data, error, reload } = useLoad(() => get<TasksNow>("/tasks/api"), []);
   const end = async (name: string, said: string) => {
@@ -64,6 +65,7 @@ export function TasksPage() {
       await send("POST", `/tasks/api/${encodeURIComponent(name)}/cancel`);
       await reload();  // it says so with what it did in sight
       setStatus(`${said} ${name}.`);
+      toast(`${said} ${name}.`);
     } catch (e) {
       setStatus((e as Error).message);
     }

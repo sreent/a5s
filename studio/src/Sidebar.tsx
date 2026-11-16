@@ -3,6 +3,7 @@
 
 import { type ReactNode, useEffect, useState } from "react";
 import { get } from "./api";
+import { FindButton } from "./Find";
 import { Icon } from "./icons";
 import { Link, type Route, useRoute } from "./router";
 
@@ -61,6 +62,7 @@ export function Sidebar({ signedIn, rail = false }: { signedIn: boolean; rail?: 
     return (
       <aside className="wb-rail">
         <a className="brand" href="/chat/" aria-label="a5s"><span className="mark">a5</span></a>
+        <FindButton rail />
         <nav aria-label="a5s's pages">
           {pages.map(([key, name, glyph]) => (
             <To key={key} page={key} here={here} label={name} title={name}><Icon name={glyph} /></To>
@@ -73,6 +75,7 @@ export function Sidebar({ signedIn, rail = false }: { signedIn: boolean; rail?: 
   return (
     <aside className="sidebar">
       <a className="brand" href="/chat/"><span className="mark">a5</span><span>a5s</span></a>
+      {signedIn && <div className="find-slot"><FindButton id="find-anything" /></div>}
       <nav id="pages" aria-label="a5s's pages">
         {found && PAGES.map(([heading, items]) => {
           const shown = items.filter(([key]) => found.pages.includes(key));

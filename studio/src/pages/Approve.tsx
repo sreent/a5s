@@ -8,6 +8,7 @@
 import { useEffect, useState } from "react";
 import { type Approved, get, send, type VersionReview } from "../api";
 import { hashed, salted, signInFor, takeAct } from "../auth";
+import { useToast } from "../design";
 import { PageHead, useLoad, Waiting } from "../ui";
 
 const VERSION = /^[0-9a-f]{64}$/;
@@ -33,6 +34,7 @@ function standing(seen: VersionReview): [string, string, string] {
 }
 
 export function ApprovePage({ version }: { version: string }) {
+  const toast = useToast();
   const named = VERSION.test(version);
   const [status, setStatus] = useState<string>();
   const [acted, setActed] = useState(false);  // back from signing in to approve: approved first
@@ -43,7 +45,10 @@ export function ApprovePage({ version }: { version: string }) {
       return;
     }
     send<Approved>("POST", `/approve/settings/${version}`, { salt: act.salt })
-      .then((done) => setStatus(`You approved version ${done.serial}. ${missing(done.needs)}`))
+      .then((done) => {
+        setStatus(`You approved version ${done.serial}. ${missing(done.needs)}`);
+        toast(`You approved version ${done.serial}.`);
+      })
       .catch((e: Error) => setStatus(e.message))
       .finally(() => setActed(true));
   }, [version]);

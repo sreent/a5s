@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import { type GradeNow, type Graded, type SampleLine, send } from "../api";
 import { hashed, salted, signInFor, takeAct } from "../auth";
 import { Icon } from "../icons";
+import { useToast } from "../design";
 import { PageHead, useLoad, Waiting } from "../ui";
 
 type Grade = "right" | "wrong" | "critical";
@@ -76,6 +77,7 @@ function Card({ sample, chosen, choose }: {
 }
 
 export function GradePage() {
+  const toast = useToast();
   const [status, setStatus] = useState<string>();
   const [chosen, setChosen] = useState<Map<number, Grade>>(new Map());
   const [acted, setActed] = useState(false);  // back from signing in to grade: sent first
@@ -88,7 +90,9 @@ export function GradePage() {
     send<Graded>("POST", "/grade/samples", { grades: act.grades, salt: act.salt })
       .then((made) => {
         const given = Object.values(made.grades);
-        setStatus(given.length === 1 ? `Graded ${given[0]}.` : `Graded ${given.length} samples.`);
+        const said = given.length === 1 ? `Graded ${given[0]}.` : `Graded ${given.length} samples.`;
+        setStatus(said);
+        toast(said);
       })
       .catch((e: Error) => setStatus(e.message))
       .finally(() => setActed(true));

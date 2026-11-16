@@ -4,6 +4,8 @@
 import { useEffect, useState } from "react";
 import { signedIn } from "./api";
 import { signIn } from "./auth";
+import { Toasts } from "./design/feedback";
+import { Find } from "./Find";
 import { AdminPage } from "./pages/Admin";
 import { AgentPage } from "./pages/Agent";
 import { AgentsPage } from "./pages/Agents";
@@ -66,20 +68,27 @@ export function App() {
   useEffect(() => {
     document.body.classList.toggle("workbench", workbench);
   }, [workbench]);
+  const ready = state === "ready";
   if (workbench) {
     return (
-      <div className="wb window">
-        <Sidebar signedIn rail />
-        <main className="wb-main">{content}</main>
-      </div>
+      <Toasts>
+        <Find ready={ready}>
+          <div className="wb window">
+            <Sidebar signedIn rail />
+            <main className="wb-main">{content}</main>
+          </div>
+        </Find>
+      </Toasts>
     );
   }
   return (
-    <>
-      <Sidebar signedIn={state === "ready"} />
-      <div className="page studio">
-        <main>{content}</main>
-      </div>
-    </>
+    <Toasts>
+      <Find ready={ready}>
+        <Sidebar signedIn={ready} />
+        <div className="page studio">
+          <main>{content}</main>
+        </div>
+      </Find>
+    </Toasts>
   );
 }

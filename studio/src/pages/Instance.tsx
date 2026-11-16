@@ -7,7 +7,7 @@ import { useEffect, useState } from "react";
 import { type Catalogue, type Figures, get, type Instance, type RunLine, type RunsPage, send,
          type Standing, type StatusAsked } from "../api";
 import { hashed, salted, signInFor, takeAct } from "../auth";
-import { Confirm, rung } from "../design";
+import { Confirm, rung, useToast } from "../design";
 import { Link } from "../router";
 import { shellOf } from "../Sidebar";
 import { RunsByDay } from "../RunsByDay";
@@ -223,6 +223,7 @@ function Runs({ instance }: { instance: string }) {
 const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
 export function InstancePage({ id }: { id: string }) {
+  const toast = useToast();
   const [days, setDays] = useState(30);
   const [again, setAgain] = useState(0);  // to read how it stands again, once something's asked
   const [problem, setProblem] = useState<string>();
@@ -233,9 +234,12 @@ export function InstancePage({ id }: { id: string }) {
     if (act?.kind !== "status" || act.instance !== id) return;
     send<StatusAsked>("POST", `/studio/api/instances/${encodeURIComponent(id)}/status`,
                       { action: act.action, salt: act.salt })
-      .then(() => setAgain((n) => n + 1))
+      .then(() => {
+        setAgain((n) => n + 1);
+        toast(`You asked to ${act.action} ${id}: a5s does it within a minute.`);
+      })
       .catch((e: Error) => setProblem(e.message));
-  }, [id]);
+  }, [id, toast]);
   const catalogue = useLoad(() => get<Catalogue>("/studio/api"), [again]);
   const figures = useLoad(() => get<Figures>(
     `/studio/api/instances/${encodeURIComponent(id)}?days=${days}&zone=${encodeURIComponent(ZONE)}`), [id, days]);

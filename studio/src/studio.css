@@ -226,3 +226,8 @@ details.sent { margin-top: 0.75rem; }
 .type-sample { margin: 0.35rem 0; }
 .type-sample.big { font-size: var(--text-2xl); font-weight: 600; letter-spacing: -0.015em; line-height: 1.2; }
 [data-piece] .chips { margin: 0.5rem 0 0.75rem; align-items: center; }
+
+/* Where the sidebar keeps the way to find anything (Find.tsx): Ocean's palette button, under the
+   name, as wide as the pages beside it */
+.find-slot { padding: 0 0.6rem 0.6rem; }
+@media (max-width: 760px) { .find-slot { padding: 0; } }  /* in a phone's bar, beside the pages */

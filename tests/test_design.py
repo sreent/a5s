@@ -132,7 +132,7 @@ def test_the_pages_load_their_type_from_a5s_and_nowhere_else(stack):
 # The showcase: each piece pages are made of, as pages use it
 
 PIECES = ("colours", "type", "buttons", "people", "traced", "approval", "facts", "ladder",
-          "timeline", "journey", "confirm")
+          "timeline", "journey", "confirm", "find", "loading", "toast")
 
 
 def showcase(browser, url: str, errors: list[str]):
@@ -182,4 +182,29 @@ def test_each_piece_works_from_the_keyboard(approving, browser):
     # A decision says how it went
     page.locator("[data-piece=approval]").get_by_role("button", name="Approve").click()
     page.get_by_text("You approved it.").wait_for()
+    # What was just done is said in the status line, and once in a toast, which Dismiss closes
+    page.locator("[data-piece=toast]").get_by_role("button", name="Cancel T-1").click()
+    assert page.inner_text("#afterwards") == "Cancelled T-1."
+    toast = page.locator("#toasts .toast")
+    expect(toast).to_have_count(1)
+    assert toast.inner_text().startswith("Cancelled T-1.")
+    toast.get_by_role("button", name="Dismiss").click()
+    expect(toast).to_have_count(0)
+    # Ctrl-K finds anything by name: the arrows choose, Escape closes it with the focus back
+    found = page.locator("#find-anything")
+    found.focus()
+    page.keyboard.press("Control+k")
+    palette = page.get_by_role("dialog", name="Find anything")
+    expect(palette).to_be_visible()
+    field = palette.get_by_role("combobox")
+    expect(field).to_be_focused()
+    palette.locator("[role=option]").first.wait_for()
+    field.type("what you may")  # a page everyone has
+    chosen = palette.locator('[role=option][aria-selected="true"]')
+    expect(chosen).to_have_count(1)
+    assert chosen.inner_text().startswith("What you may do")
+    assert field.get_attribute("aria-activedescendant") == chosen.get_attribute("id")
+    page.keyboard.press("Escape")
+    expect(palette).to_be_hidden()
+    expect(found).to_be_focused()
     assert errors == []

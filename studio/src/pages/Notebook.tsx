@@ -7,7 +7,7 @@
 
 import { useState } from "react";
 import { get, type Note, type NotebookNow, send } from "../api";
-import { Confirm } from "../design";
+import { Confirm, useToast } from "../design";
 import { PageHead, useLoad, Waiting } from "../ui";
 
 const listed = (them: string[], last: string) =>
@@ -21,6 +21,7 @@ function Source({ found }: { found: Note["sources"][number] }) {
 }
 
 export function NotebookPage() {
+  const toast = useToast();
   const [status, setStatus] = useState<string>();
   const { data, error, reload } = useLoad(() => get<NotebookNow>("/notebook/api"), []);
   const remove = async (note: Note) => {
@@ -28,6 +29,7 @@ export function NotebookPage() {
       await send("POST", `/notebook/api/${encodeURIComponent(note.entry)}/remove`);
       await reload();  // it says so with the note gone from sight
       setStatus(`Removed ${note.entry}.`);
+      toast(`Removed ${note.entry} from the notebook.`);
     } catch (e) {
       setStatus((e as Error).message);
     }
