@@ -5,6 +5,7 @@
 
 import * as Tooltip from "@radix-ui/react-tooltip";
 import { type ReactNode, useId, useRef } from "react";
+import { t } from "../i18n";
 
 /** What a tool does, and how something stands: the colours a5s gives meaning to. */
 export type Tone = "reads" | "writes" | "changes" | "outside" | "own" | "good" | "warn" | "bad" | "idle";
@@ -31,7 +32,7 @@ export function Confirm({ label, title, about, confirm, danger = false, onConfir
         <h2 id={titleId}>{title}</h2>
         <p id={aboutId}>{about}</p>
         <div className="dialog-actions">
-          <button type="button" autoFocus onClick={() => dialog.current?.close()}>Keep it</button>
+          <button type="button" autoFocus onClick={() => dialog.current?.close()}>{t("Keep it")}</button>
           <button type="button" className={danger ? "danger primary" : "primary"}
                   onClick={() => { onConfirm(); dialog.current?.close(); }}>
             {confirm}

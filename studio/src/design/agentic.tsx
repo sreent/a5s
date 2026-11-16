@@ -5,6 +5,7 @@
 
 import * as Popover from "@radix-ui/react-popover";
 import type { ReactNode } from "react";
+import { t } from "../i18n";
 import { Icon } from "../icons";
 import type { Tone } from "./controls";
 import { Avatar } from "./people";
@@ -15,11 +16,11 @@ export function Traced({ value, trail }: { value: ReactNode; trail: ReactNode[] 
   return (
     <Popover.Root>
       <Popover.Trigger className="traced">
-        <Icon name="trace" />{value}<span className="hidden"> (where it comes from)</span>
+        <Icon name="trace" />{value}<span className="hidden"> {t("(where it comes from)")}</span>
       </Popover.Trigger>
       <Popover.Portal>
-        <Popover.Content className="popover" sideOffset={6} align="start" aria-label="Where it comes from">
-          <span className="label">Where it comes from</span>
+        <Popover.Content className="popover" sideOffset={6} align="start" aria-label={t("Where it comes from")}>
+          <span className="label">{t("Where it comes from")}</span>
           <ol className="trail">{trail.map((step, i) => <li key={i}><span>{step}</span></li>)}</ol>
         </Popover.Content>
       </Popover.Portal>
@@ -58,16 +59,16 @@ export function ApprovalCard({ agent, asks, about, changes, why, tone = "changes
             </div>
           ))}
         </dl>
-        <p className="approval-why"><strong>Why: </strong>{why}</p>
+        <p className="approval-why"><strong>{t("Why:")} </strong>{why}</p>
         {decided ? (
-          <p className="approval-done" role="status">You {decided} it.</p>
+          <p className="approval-done" role="status">{decided === "approved" ? t("You approved it.") : t("You declined it.")}</p>
         ) : (
           <div className="approval-actions">
-            <button type="button" className="primary" disabled={busy} onClick={onApprove}>Approve</button>
-            <button type="button" disabled={busy} onClick={onDecline}>Decline</button>
+            <button type="button" className="primary" disabled={busy} onClick={onApprove}>{t("Approve")}</button>
+            <button type="button" disabled={busy} onClick={onDecline}>{t("Decline")}</button>
           </div>
         )}
-        <p className="approval-signed"><Icon name="audit" />Your decision is signed and kept in the ledger.</p>
+        <p className="approval-signed"><Icon name="audit" />{t("Your decision is signed and kept in the ledger.")}</p>
       </div>
     </section>
   );
@@ -83,8 +84,8 @@ export function AgentFacts({ name, version, facts, more, foot }: {
   name: string; version: string; facts: [string, ReactNode][]; more?: FactsPart; foot?: ReactNode;
 }) {
   return (
-    <section className="agent-facts" aria-label={`${name}'s facts`}>
-      <h3>Agent facts</h3>
+    <section className="agent-facts" aria-label={t("{name}'s facts", { name })}>
+      <h3>{t("Agent facts")}</h3>
       <div className="per"><span>{name}</span><span className="mono">{version}</span></div>
       <div className="rule" />
       <dl>{facts.map(([what, value]) => <Fact key={what} what={what} value={value} />)}</dl>
@@ -104,15 +105,17 @@ function Fact({ what, value }: { what: string; value: ReactNode }) {
   return <div className="pair"><dt>{what}</dt><dd>{value}</dd></div>;
 }
 
-const STEPS = [
-  { name: "Suggests", about: "Reads and drafts. A person does the rest." },
-  { name: "Asks", about: "Changes wait for a person's yes." },
-  { name: "Acts", about: "One type of change on its own, within limits, sampled and graded." },
+// The ladder's rungs, in the language spoken when they're drawn
+const steps = () => [
+  { name: t("Suggests"), about: t("Reads and drafts. A person does the rest.") },
+  { name: t("Asks"), about: t("Changes wait for a person's yes.") },
+  { name: t("Acts"), about: t("One type of change on its own, within limits, sampled and graded.") },
 ];
 
 /** A level's rung in words: Suggests, Asks or Acts. */
 export function rung(level: number): string {
-  return STEPS[Math.max(0, Math.min(level, STEPS.length - 1))].name;
+  const rungs = steps();
+  return rungs[Math.max(0, Math.min(level, rungs.length - 1))].name;
 }
 
 /** Autonomy is earned: the level an agent works at, those its release allows beyond it, and
@@ -122,11 +125,12 @@ export function AutonomyLadder({ level, max, toward }: {
 }) {
   return (
     <div className="ladder-box">
-      <ol className="ladder" aria-label="Autonomy">
-        {STEPS.map((step, i) => (
+      <ol className="ladder" aria-label={t("Autonomy")}>
+        {steps().map((step, i) => (
           <li key={step.name} aria-current={i === level ? "step" : undefined}
               className={i > max ? "barred" : i > level ? "beyond" : undefined}>
-            <span className="lvl">level {i}{i === level ? " · now" : i > max ? " · not in its release" : ""}</span>
+            <span className="lvl">{i === level ? t("level {n} · now", { n: i })
+              : i > max ? t("level {n} · not in its release", { n: i }) : t("level {n}", { n: i })}</span>
             <strong>{step.name}</strong>
             <p>{step.about}</p>
           </li>
@@ -134,9 +138,9 @@ export function AutonomyLadder({ level, max, toward }: {
       </ol>
       {toward && (
         <>
-          <p className="note">{toward.what} toward level {level + 1}: {toward.graded} of {toward.needed} graded
-            samples. The part's owner decides.</p>
-          <div className="meter" role="meter" aria-label={`${toward.what} toward level ${level + 1}`}
+          <p className="note">{t("{what} toward level {level}: {graded} of {needed} graded samples. The part's owner decides.",
+            { what: toward.what, level: level + 1, graded: toward.graded, needed: toward.needed })}</p>
+          <div className="meter" role="meter" aria-label={t("{what} toward level {level}", { what: toward.what, level: level + 1 })}
                aria-valuemin={0} aria-valuemax={toward.needed} aria-valuenow={toward.graded}>
             <span style={{ width: `${Math.min(100, (100 * toward.graded) / toward.needed)}%` }} />
           </div>
@@ -166,13 +170,15 @@ export function RunTimeline({ steps }: { steps: Step[] }) {
 /** A stage on the way from a draft to an agent at work: done, the one to do now, or later. */
 export type Stage = { name: string; about: ReactNode; state: "done" | "now" | "later" };
 
-const STATES = { done: ", done", now: ", to do now", later: "" };
+// What a screen reader hears after a stage's name, in the language spoken when it's drawn
+const states = (): Record<Stage["state"], string> => ({ done: t(", done"), now: t(", to do now"), later: "" });
 
 /** The way from a draft to an agent at work, as a path: what's done, the one thing to do now,
  * and what follows it, with who does each. */
-export function JourneyPath({ stages, next, label = "From a draft to an agent at work" }: {
+export function JourneyPath({ stages, next, label = t("From a draft to an agent at work") }: {
   stages: Stage[]; next?: ReactNode; label?: string;
 }) {
+  const said = states();
   return (
     <div className="journey-box">
       <ol className="journey" aria-label={label}>
@@ -182,7 +188,7 @@ export function JourneyPath({ stages, next, label = "From a draft to an agent at
               {stage.state === "done" ? <Icon name="check" /> : i + 1}
             </span>
             <span>
-              <strong>{stage.name}</strong><span className="hidden">{STATES[stage.state]}</span>
+              <strong>{stage.name}</strong><span className="hidden">{said[stage.state]}</span>
               <span className="journey-about">{stage.about}</span>
             </span>
           </li>

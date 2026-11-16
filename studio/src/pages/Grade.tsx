@@ -8,9 +8,10 @@
 import { useEffect, useState } from "react";
 import { type GradeNow, type Graded, type SampleLine, send } from "../api";
 import { hashed, salted, signInFor, takeAct } from "../auth";
+import { locale, t } from "../i18n";
 import { Icon } from "../icons";
 import { useToast } from "../design";
-import { PageHead, useLoad, Waiting } from "../ui";
+import { PageHead, plural, useLoad, Waiting } from "../ui";
 import { keepUnkept, keptNow, unkept } from "../unkept";
 
 const CHOSEN = "grades";
@@ -18,10 +19,17 @@ const CHOSEN = "grades";
 type Grade = "right" | "wrong" | "critical";
 
 const GRADES: Grade[] = ["right", "wrong", "critical"];
-const day = (at: string) => new Date(at).toLocaleDateString([], { day: "numeric", month: "short" });
+const day = (at: string) => new Date(at).toLocaleDateString(locale(), { day: "numeric", month: "short" });
+
+/** A grade's name on its button, in the language spoken: what's sent is the grade itself. */
+const named = (grade: Grade) => (grade === "right" ? t("Right") : grade === "wrong" ? t("Wrong") : t("Critical"));
+
+/** That a grade was given, in words. */
+const graded = (grade: string) => (grade === "right" ? t("Graded right.") : grade === "wrong" ? t("Graded wrong.")
+  : grade === "critical" ? t("Graded critical.") : t("Graded {grade}.", { grade }));
 
 // How it went, in the colour that means it: a person's yes or no, or the agent's own change
-const OUTCOMES: Record<string, [string, string]> = { approve: ["approved", "good"], reject: ["rejected", "bad"] };
+const outcomes = (): Record<string, [string, string]> => ({ approve: [t("approved"), "good"], reject: [t("rejected"), "bad"] });
 
 /** A record's link, where its system gives it an address on the web, and nothing else. */
 function linkOf(record: unknown): string | null {
@@ -37,8 +45,8 @@ function Card({ sample, chosen, choose }: {
 }) {
   const [what, ...rest] = sample.said.split("\n");
   const asked = sample.kind === "proposal";
-  const [outcome, tone] = asked ? (OUTCOMES[sample.decided ?? ""] ?? [sample.decided ?? "", "idle"])
-    : ["made at level 2", "changes"];
+  const [outcome, tone] = asked ? (outcomes()[sample.decided ?? ""] ?? [sample.decided ?? "", "idle"])
+    : [t("made at level 2"), "changes"];
   const links = Object.entries(sample.records).flatMap(([key, record]) => {
     const link = linkOf(record);
     return link ? [{ key, link }] : [];
@@ -50,8 +58,10 @@ function Card({ sample, chosen, choose }: {
         <div className="who">
           <span className="avatar agent" aria-hidden="true"><Icon name="agent" /></span>
           <span>
-            <span className="who-name">{asked ? `The ${sample.agent} asked` : `The ${sample.agent} acted on its own`}</span>
-            <span className="who-about">{`${sample.action} in ${sample.part} · sampled ${day(sample.drawn_at)}`}</span>
+            <span className="who-name">{asked ? t("The {agent} asked", { agent: sample.agent })
+              : t("The {agent} acted on its own", { agent: sample.agent })}</span>
+            <span className="who-about">{t("{action} in {part} · sampled {day}",
+              { action: sample.action, part: sample.part, day: day(sample.drawn_at) })}</span>
           </span>
         </div>
         <h2 className="approval-title" id={`title-${sample.id}`}>{what}</h2>
@@ -59,18 +69,18 @@ function Card({ sample, chosen, choose }: {
         <p><span className={`badge ${tone}`}>{outcome}</span></p>
         {sample.flags.length > 0 && (
           <div className="approval-know">
-            <p className="label">What code flagged</p>
+            <p className="label">{t("What code flagged")}</p>
             <ul>{sample.flags.map((flag) => <li key={flag}>{flag}</li>)}</ul>
           </div>
         )}
         {links.map(({ key, link }) => (
-          <p key={key}><a href={link} rel="noopener noreferrer" target="_blank">Open {key}</a></p>
+          <p key={key}><a href={link} rel="noopener noreferrer" target="_blank">{t("Open {record}", { record: key })}</a></p>
         ))}
-        <div className="grades" role="group" aria-label={`Your grade for: ${what}`}>
+        <div className="grades" role="group" aria-label={t("Your grade for: {what}", { what })}>
           {GRADES.map((grade) => (
             <button key={grade} type="button" className={grade} aria-pressed={chosen === grade}
                     onClick={() => choose(chosen === grade ? undefined : grade)}>
-              {grade[0].toUpperCase() + grade.slice(1)}
+              {named(grade)}
             </button>
           ))}
         </div>
@@ -96,7 +106,7 @@ export function GradePage() {
         keptNow(CHOSEN);
         setChosen(new Map());
         const given = Object.values(made.grades);
-        const said = given.length === 1 ? `Graded ${given[0]}.` : `Graded ${given.length} samples.`;
+        const said = given.length === 1 ? graded(given[0]) : t("Graded {samples}.", { samples: plural(given.length, "sample") });
         setStatus(said);
         toast(said);
       })
@@ -113,7 +123,7 @@ export function GradePage() {
     setChosen(next);
     if (next.size) keepUnkept(CHOSEN, [...next.entries()]);
     else keptNow(CHOSEN);
-    setStatus(next.size ? `${next.size} chosen: send them when you're ready.` : "");
+    setStatus(next.size ? t("{n} chosen: send them when you're ready.", { n: next.size }) : "");
   };
 
   const sendThem = async () => {
@@ -122,12 +132,13 @@ export function GradePage() {
       // core/samples.py's `nonce` makes it
       const grades = [...chosen.entries()].sort((a, b) => a[0] - b[0]);
       if (!grades.length) {
-        setStatus("Choose a grade for a sample first.");
+        setStatus(t("Choose a grade for a sample first."));
         return;
       }
       const salt = salted();
       const nonce = await hashed(`a5s grades samples ${grades.map(([s, g]) => `${s}:${g}`).join(",")} ${salt}`);
-      setStatus(`Signing you in again, to give ${grades.length === 1 ? "this grade" : "these grades"} alone…`);
+      setStatus(grades.length === 1 ? t("Signing you in again, to give this grade alone…")
+        : t("Signing you in again, to give these grades alone…"));
       await signInFor({ kind: "grade", grades: Object.fromEntries(grades.map(([s, g]) => [String(s), g])), salt }, nonce);
     } catch (e) {
       setStatus((e as Error).message);
@@ -136,11 +147,12 @@ export function GradePage() {
 
   const found = now.data;
   const samples = found?.samples ?? [];
-  const none = found && samples.length === 0 ? `Nothing ${status ? "else " : ""}waits for you to grade.` : "";
+  const none = found && samples.length === 0
+    ? (status ? t("Nothing else waits for you to grade.") : t("Nothing waits for you to grade.")) : "";
   return (
     <>
-      <PageHead title="Agents' work to grade"
-                about="Each is a change an agent asked for or made. Grade it right if it's what a careful colleague would have done with what they knew, wrong if not, and critical if it could have done real harm. Your grades decide whether agents may act on their own." />
+      <PageHead title={t("Agents' work to grade")}
+                about={t("Each is a change an agent asked for or made. Grade it right if it's what a careful colleague would have done with what they knew, wrong if not, and critical if it could have done real harm. Your grades decide whether agents may act on their own.")} />
       <p id="status" role="status" className="note">{[status, none].filter(Boolean).join(" ")}</p>
       {!found && <Waiting error={now.error} />}
       {samples.length > 0 && (
@@ -150,8 +162,8 @@ export function GradePage() {
                   choose={(grade) => choose(sample.id, grade)} />
           ))}</div>
           <div className="send-bar">
-            <button id="send" className="primary" type="button" onClick={sendThem}>Send the grades you chose</button>
-            <p className="note">You sign in again to send them, so your sign-in covers exactly these grades.</p>
+            <button id="send" className="primary" type="button" onClick={sendThem}>{t("Send the grades you chose")}</button>
+            <p className="note">{t("You sign in again to send them, so your sign-in covers exactly these grades.")}</p>
           </div>
         </section>
       )}

@@ -7,33 +7,42 @@
 import { useState } from "react";
 import { get, type RepeatLine, send, type TaskLine, type TasksNow } from "../api";
 import { Confirm, useToast } from "../design";
+import { t } from "../i18n";
 import { PageHead, useLoad, Waiting } from "../ui";
 
 const shown = (value: unknown) => (typeof value === "string" ? value : JSON.stringify(value));
 
 function Task({ task, cancel }: { task: TaskLine; cancel: (task: TaskLine) => void }) {
+  const stands = { task: task.task, agent: task.agent, status: task.status, progress: task.progress };
   return (
     <li data-task={task.task}>
-      <p>{task.task}, with the {task.agent}: {task.status}, {task.progress}% done{task.parts ? `, ${task.parts}` : ""}</p>
+      <p>{task.parts ? t("{task}, with the {agent}: {status}, {progress}% done, {parts}", { ...stands, parts: task.parts })
+        : t("{task}, with the {agent}: {status}, {progress}% done", stands)}</p>
       {task.withheld
-        ? <p className="note">What it's for names records you may no longer see, so it isn't shown here.</p>
+        ? <p className="note">{t("What it's for names records you may no longer see, so it isn't shown here.")}</p>
         : (
           <>
             <p>{task.what}</p>
             {task.plan && task.plan.length > 0 && (
               <ol>{task.plan.map((step, i) => <li key={i}>{step.content} ({step.status.replace("_", " ")})</li>)}</ol>
             )}
-            {task.found !== undefined && task.found !== null && <p>What it found: {shown(task.found)}</p>}
-            {task["so far"] && task["so far"].length > 0 && <p className="note">So far: {task["so far"].map(shown).join("; ")}</p>}
-            {task.why && <p className="note">Why: {task.why}</p>}
-            {task.said && <p className="note">It needed: {task.needed || "you"}. You said: {task.said}</p>}
+            {task.found !== undefined && task.found !== null && <p>{t("What it found: {found}", { found: shown(task.found) })}</p>}
+            {task["so far"] && task["so far"].length > 0 && (
+              <p className="note">{t("So far: {found}", { found: task["so far"].map(shown).join("; ") })}</p>
+            )}
+            {task.why && <p className="note">{t("Why: {why}", { why: task.why })}</p>}
+            {task.said && (
+              <p className="note">{task.needed ? t("It needed: {needed}. You said: {said}", { needed: task.needed, said: task.said })
+                : t("It needed: you. You said: {said}", { said: task.said })}</p>
+            )}
           </>
         )}
-      <p className="note">It has until {task["has until"]}, and has spent {task.spent}. Last changed on {task.updated}.</p>
+      <p className="note">{t("It has until {until}, and has spent {spent}. Last changed on {updated}.",
+        { until: task["has until"], spent: task.spent, updated: task.updated })}</p>
       {!task.ended && (
-        <Confirm label="Cancel" title={`Cancel ${task.task}?`}
-                 about="It stops at its next step, with the parts of it still open, and keeps what it found so far. To change what it's for instead, write to the agent in your chat with it."
-                 confirm="Cancel it" danger onConfirm={() => cancel(task)} />
+        <Confirm label={t("Cancel")} title={t("Cancel {task}?", { task: task.task })}
+                 about={t("It stops at its next step, with the parts of it still open, and keeps what it found so far. To change what it's for instead, write to the agent in your chat with it.")}
+                 confirm={t("Cancel it")} danger onConfirm={() => cancel(task)} />
       )}
     </li>
   );
@@ -42,15 +51,16 @@ function Task({ task, cancel }: { task: TaskLine; cancel: (task: TaskLine) => vo
 function Repeat({ repeat, stop }: { repeat: RepeatLine; stop: (repeat: RepeatLine) => void }) {
   return (
     <li data-repeat={repeat.repeat}>
-      <p>{repeat.repeat}, with the {repeat.agent}: {repeat.when}, {repeat.status}</p>
+      <p>{t("{repeat}, with the {agent}: {when}, {status}",
+        { repeat: repeat.repeat, agent: repeat.agent, when: repeat.when, status: repeat.status })}</p>
       {repeat.withheld
-        ? <p className="note">What it's for names records you may no longer see, so it isn't shown here.</p>
+        ? <p className="note">{t("What it's for names records you may no longer see, so it isn't shown here.")}</p>
         : <p>{repeat.what}</p>}
-      {repeat["last task"] && <p className="note">Its last task: {repeat["last task"]}.</p>}
+      {repeat["last task"] && <p className="note">{t("Its last task: {task}.", { task: repeat["last task"] })}</p>}
       {repeat.status !== "stopped" && (
-        <Confirm label="Stop" title={`Stop ${repeat.repeat}?`}
-                 about="It makes no more tasks. Its last task, if one's going, goes on."
-                 confirm="Stop it" danger onConfirm={() => stop(repeat)} />
+        <Confirm label={t("Stop")} title={t("Stop {repeat}?", { repeat: repeat.repeat })}
+                 about={t("It makes no more tasks. Its last task, if one's going, goes on.")}
+                 confirm={t("Stop it")} danger onConfirm={() => stop(repeat)} />
       )}
     </li>
   );
@@ -64,33 +74,37 @@ export function TasksPage() {
     try {
       await send("POST", `/tasks/api/${encodeURIComponent(name)}/cancel`);
       await reload();  // it says so with what it did in sight
-      setStatus(`${said} ${name}.`);
-      toast(`${said} ${name}.`);
+      setStatus(said);
+      toast(said);
     } catch (e) {
       setStatus((e as Error).message);
     }
   };
   return (
     <>
-      <PageHead title="Your tasks"
-                about="The long tasks you asked your agents for: how each stands, what it's waiting on, and what it has spent. To answer one that needs you, or to change what it's for, write to the agent in your chat with it. Stop any here." />
+      <PageHead title={t("Your tasks")}
+                about={t("The long tasks you asked your agents for: how each stands, what it's waiting on, and what it has spent. To answer one that needs you, or to change what it's for, write to the agent in your chat with it. Stop any here.")} />
       <p id="status" role="status" className="note">
-        {status ?? (data && data.tasks.length === 0 ? "No tasks yet. Ask an agent for one in your chat with it." : "")}
+        {status ?? (data && data.tasks.length === 0 ? t("No tasks yet. Ask an agent for one in your chat with it.") : "")}
       </p>
       {!data && <Waiting error={error} />}
       {data && (
         <>
           <section className="card">
             <ul id="tasks" className="plain">
-              {data.tasks.map((task) => <Task key={task.task} task={task} cancel={(t) => end(t.task, "Cancelled")} />)}
+              {data.tasks.map((task) => (
+                <Task key={task.task} task={task} cancel={(one) => end(one.task, t("Cancelled {task}.", { task: one.task }))} />
+              ))}
             </ul>
           </section>
           <section className="card">
-            <h2>Again and again</h2>
-            <p className="note">The tasks you asked to be done again and again: each time one comes round, it's a task of its own, above. Stopping one leaves its last task to go on.</p>
+            <h2>{t("Again and again")}</h2>
+            <p className="note">{t("The tasks you asked to be done again and again: each time one comes round, it's a task of its own, above. Stopping one leaves its last task to go on.")}</p>
             <ul id="repeats" className="plain">
-              {data.repeats.map((repeat) => <Repeat key={repeat.repeat} repeat={repeat} stop={(r) => end(r.repeat, "Stopped")} />)}
-              {data.repeats.length === 0 && <li><p className="note">None. Ask an agent to do a task every week, say, in your chat with it.</p></li>}
+              {data.repeats.map((repeat) => (
+                <Repeat key={repeat.repeat} repeat={repeat} stop={(one) => end(one.repeat, t("Stopped {repeat}.", { repeat: one.repeat }))} />
+              ))}
+              {data.repeats.length === 0 && <li><p className="note">{t("None. Ask an agent to do a task every week, say, in your chat with it.")}</p></li>}
             </ul>
           </section>
         </>

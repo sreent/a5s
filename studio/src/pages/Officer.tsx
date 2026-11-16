@@ -8,9 +8,13 @@ import { type FormEvent, useEffect, useState } from "react";
 import { type OfficerAsked, send } from "../api";
 import { hashed, salted, signInFor, takeAct } from "../auth";
 import { useToast } from "../design";
+import { t } from "../i18n";
 import { PageHead } from "../ui";
 
 type Action = "export" | "erase";
+
+/** What the officer asks to do, in the language spoken: what's sent is the action itself. */
+const verb = (action: string) => (action === "export" ? t("export") : action === "erase" ? t("erase") : action);
 
 export function OfficerPage() {
   const toast = useToast();
@@ -26,15 +30,17 @@ export function OfficerPage() {
     send<OfficerAsked>("POST", "/officer/requests", { action: act.action, person: act.person, salt: act.salt })
       .then((made) => {
         const whom = made.name ? `${made.name} (${made.person})` : made.person;
-        setStatus(`You asked to ${made.asked} all a5s keeps about ${whom}. Someone from the team that runs a5s carries it out, once, within ${made.lasts}: ${made.command}`);
-        toast(`You asked to ${made.asked} all a5s keeps about ${whom}.`);
+        const done = t("You asked to {action} all a5s keeps about {whom}.", { action: verb(made.asked), whom });
+        setStatus(`${done} ${t("Someone from the team that runs a5s carries it out, once, within {lasts}: {command}",
+          { lasts: made.lasts, command: made.command })}`);
+        toast(done);
       })
       .catch((e: Error) => {  // refused: the form again, as they filled it, to ask again (round 13, C4)
         setAction(act.action);
         setPerson(act.person);
         if (act.action === "erase") setAgain(act.person);
         setAsked(false);
-        setStatus(`a5s didn't take your request: ${e.message}`);
+        setStatus(t("a5s didn't take your request: {why}", { why: e.message }));
       });
   }, []);
   const another = () => {
@@ -48,11 +54,11 @@ export function OfficerPage() {
     event.preventDefault();
     const whom = person.trim();
     if (!whom) {
-      setStatus("Name the person, by their id in the directory, or an archive's name.");
+      setStatus(t("Name the person, by their id in the directory, or an archive's name."));
       return;
     }
     if (action === "erase" && again.trim() !== whom) {
-      setStatus("Type their id again, the same, to confirm it: an erasure can't be undone.");
+      setStatus(t("Type their id again, the same, to confirm it: an erasure can't be undone."));
       return;
     }
     try {
@@ -67,31 +73,31 @@ export function OfficerPage() {
 
   return (
     <>
-      <PageHead title="A request for someone's data"
-                about="Ask to export, or erase, all a5s keeps about someone, at their request. You sign in afresh for that request alone, and someone from the team that runs a5s carries it out." />
+      <PageHead title={t("A request for someone's data")}
+                about={t("Ask to export, or erase, all a5s keeps about someone, at their request. You sign in afresh for that request alone, and someone from the team that runs a5s carries it out.")} />
       <p id="status" role="status" className="note">{status}</p>
-      {asked && <p><button type="button" id="another" onClick={another}>Ask about someone else</button></p>}
+      {asked && <p><button type="button" id="another" onClick={another}>{t("Ask about someone else")}</button></p>}
       {!asked && (
         <form id="ask" className="card" onSubmit={ask}>
           <p>
-            <label htmlFor="action">Ask to</label>{" "}
+            <label htmlFor="action">{t("Ask to")}</label>{" "}
             <select id="action" value={action} onChange={(e) => setAction(e.target.value as Action)}>
-              <option value="export">export</option>
-              <option value="erase">erase</option>
+              <option value="export">{t("export")}</option>
+              <option value="erase">{t("erase")}</option>
             </select>{" "}
-            <label htmlFor="person">all a5s keeps about</label>{" "}
-            <input id="person" autoComplete="off" spellCheck={false} placeholder="an id, or an archive's name"
+            <label htmlFor="person">{t("all a5s keeps about")}</label>{" "}
+            <input id="person" autoComplete="off" spellCheck={false} placeholder={t("an id, or an archive's name")}
                    value={person} onChange={(e) => setPerson(e.target.value)} />
           </p>
           {action === "erase" && (
             <p id="again">
-              <label htmlFor="confirm">Their id again, since an erasure can't be undone:</label>{" "}
+              <label htmlFor="confirm">{t("Their id again, since an erasure can't be undone:")}</label>{" "}
               <input id="confirm" autoComplete="off" spellCheck={false} value={again}
                      onChange={(e) => setAgain(e.target.value)} />
             </p>
           )}
-          <p className="note">You sign in afresh, for this request alone. Someone from the team that runs a5s then carries it out, once, within ten minutes: your sign-in does nothing else.</p>
-          <button className="primary" type="submit">Sign in and ask</button>
+          <p className="note">{t("You sign in afresh, for this request alone. Someone from the team that runs a5s then carries it out, once, within ten minutes: your sign-in does nothing else.")}</p>
+          <button className="primary" type="submit">{t("Sign in and ask")}</button>
         </form>
       )}
     </>
