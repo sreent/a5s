@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import re
 import threading
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -43,6 +44,16 @@ DEVICE = re.compile(r"(?:LT|PH)-\d{4}")  # a device's asset tag: LT- for a lapto
 HARDWARE = "hardware"  # the service area devices are in
 
 
+@dataclass(frozen=True)
+class _Held:
+    """The desk's people, tickets, accounts and devices, as its data holds them."""
+
+    people: dict[str, Person]
+    tickets: dict[str, dict]
+    accounts: dict[str, dict]
+    devices: dict[str, dict]
+
+
 class ServiceDeskScenario:
     name = "service-desk"
     record_links = (LINK, IDP, MDM)
@@ -51,14 +62,46 @@ class ServiceDeskScenario:
     def __init__(self, folder: Path, database_url: str):
         self.folder = folder
         self.database_url = database_url
-        data = yaml.safe_load((folder / "data.yaml").read_text())
-        self._people = {p["id"]: Person.listed(p, folder) for p in data["people"]}
-        self._tickets = {t["key"]: t for t in data["tickets"]}
-        self._accounts = {a["key"]: a for a in data.get("accounts") or []}
-        self._devices = {d["key"]: d for d in data.get("devices") or []}
+        self._held: _Held | None = None
+        self._seen: tuple[int, int] | None = None
+        self._reading = threading.Lock()
         self.drafts = []
         self._draft_lock = threading.Lock()
         self.reads = 0
+
+    def _now(self) -> _Held:
+        """The desk's data as its systems hold it now: read again whenever the file changes, as
+        the made-up systems read it for each call, so a phone handed to someone else in device
+        management, or a ticket given to another resolver, is theirs here as it is there, not
+        whoever held it when the gateway started (round 13, D1)."""
+        path = self.folder / "data.yaml"
+        with self._reading:
+            seen = path.stat()
+            if self._held is None or (seen.st_mtime_ns, seen.st_size) != self._seen:
+                data = yaml.safe_load(path.read_text())
+                self._held = _Held(
+                    people={p["id"]: Person.listed(p, self.folder) for p in data["people"]},
+                    tickets={t["key"]: t for t in data["tickets"]},
+                    accounts={a["key"]: a for a in data.get("accounts") or []},
+                    devices={d["key"]: d for d in data.get("devices") or []})
+                self._seen = (seen.st_mtime_ns, seen.st_size)
+            return self._held
+
+    @property
+    def _people(self) -> dict[str, Person]:
+        return self._now().people
+
+    @property
+    def _tickets(self) -> dict[str, dict]:
+        return self._now().tickets
+
+    @property
+    def _accounts(self) -> dict[str, dict]:
+        return self._now().accounts
+
+    @property
+    def _devices(self) -> dict[str, dict]:
+        return self._now().devices
 
     def person(self, person_id: str) -> Person | None:
         return self._people.get(person_id)

@@ -114,9 +114,10 @@ tools:
   lock_device:
     server: mdm
     calls: lock_device
-    description: Lock a device remotely, such as one that's lost, so nobody can use it until its holder signs in to it again.
+    description: Lock a device remotely, such as one that's lost, so nobody can use it, at once if it's connected, else once it next connects.
     arguments: {type: object, required: [key], properties: {key: {type: string}}}
-    returns: [key, locked, link]
+    returns: [key, locked, state, link]
+    made: {locked: true}  # else device management has it in hand, until the device connects
     writes: true
     idempotent: true
     record_arg: key
