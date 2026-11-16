@@ -520,6 +520,17 @@ export type Home = {
   authoring: boolean;
 };
 
+// What a version would have done differently in the last weeks, decided again from the
+// ledger's tool calls, and what it can't know.
+export type Impact = {
+  days: number;
+  calls: number;
+  limited: boolean;
+  shifts: Shift[];
+  capped: string[];
+  about: string;
+};
+
 // The version of the settings in force: as written, all of it in words, and as data, which
 // the forms change.
 export type InForce = {
@@ -990,12 +1001,25 @@ export type SettingsReview = {
   changes?: Change[];
   whole?: string[];
   approvers?: string[];
+  impact?: Impact;
 };
 
 // Who signed in, and the pages they may use, in the sidebar's order.
 export type Shell = {
   you: string;
   pages: Place[];
+};
+
+// Calls a version would decide differently from the one in force (core/impact.py): of one
+// tool, by one instance, about records in these parts.
+export type Shift = {
+  instance: string;
+  tool: string;
+  parts: string[];
+  was: string;
+  would: string;
+  calls: number;
+  why: string;
 };
 
 // Whose signature a draft's release would need, and why: and who holds that role in the
@@ -1159,6 +1183,7 @@ export type VersionReview = {
   you: string;
   you_approved: boolean;
   status: string;
+  impact?: Impact;
 };
 
 // A version waiting for approval: what it changes, who approved it so far, and why it still

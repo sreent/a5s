@@ -9,6 +9,7 @@ import { useEffect, useState } from "react";
 import { type Approved, get, send, type VersionReview } from "../api";
 import { hashed, salted, signInFor, takeAct } from "../auth";
 import { useToast } from "../design";
+import { ImpactPreview } from "../Impact";
 import { PageHead, useLoad, Waiting } from "../ui";
 
 const VERSION = /^[0-9a-f]{64}$/;
@@ -112,6 +113,7 @@ export function ApprovePage({ version }: { version: string }) {
               <p className="label">The whole version, as it would be</p>
               <ul id="whole" className="plain well">{found.whole.map((line) => <li key={line}>{line}</li>)}</ul>
             </div>
+            {found.impact && <ImpactPreview impact={found.impact} />}
             {found.status === "waiting" && !found.you_approved && (
               <div id="decision" className="decision">
                 <div className="approval-actions">

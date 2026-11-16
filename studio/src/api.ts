@@ -105,6 +105,7 @@ export type Catalogue = gen.Catalogue;
 
 // Every sidebar's pages, and who signed in (core/shell_api.py)
 export type Shell = gen.Shell;
+export type Impact = gen.Impact;  // what a version of the settings would have done differently
 export type Place = gen.Place;
 
 // Someone's home and roles (core/home.py)

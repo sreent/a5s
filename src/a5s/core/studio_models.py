@@ -858,6 +858,31 @@ class SettingsNow(Shape):
     requests: list[SettingsRequest]
 
 
+class Shift(Shape):
+    """Calls a version would decide differently from the one in force (core/impact.py): of one
+    tool, by one instance, about records in these parts."""
+
+    instance: str
+    tool: str
+    parts: list[str]
+    was: str  # allow, hold or deny, as the version in force decides them
+    would: str  # as this version would
+    calls: int
+    why: str  # policy's words for how this version would decide them
+
+
+class Impact(Shape):
+    """What a version would have done differently in the last weeks, decided again from the
+    ledger's tool calls, and what it can't know."""
+
+    days: int
+    calls: int  # the calls it decided again
+    limited: bool  # whether it read only the latest of the period's calls
+    shifts: list[Shift]
+    capped: list[str]  # levels it sets that a5s's caps hold back, in words
+    about: str  # what it can't know, in words
+
+
 class SettingsReview(Shape):
     """A version someone wrote, reviewed before they ask for it: why a5s couldn't propose it, or
     what it would change, all of it in words, and whose approval it needs."""
@@ -868,6 +893,7 @@ class SettingsReview(Shape):
     changes: list[Change] | SkipJsonSchema[None] = None
     whole: list[str] | SkipJsonSchema[None] = None
     approvers: list[str] | SkipJsonSchema[None] = None
+    impact: Impact | SkipJsonSchema[None] = None  # what it would have done differently
 
 
 class SettingsAsked(Shape):
@@ -1227,6 +1253,7 @@ class VersionReview(Shape):
     you: str
     you_approved: bool
     status: str  # waiting, applied, superseded, or why a5s couldn't apply it
+    impact: Impact | SkipJsonSchema[None] = None  # while it waits: what it would do differently
 
 
 class Approved(Shape):

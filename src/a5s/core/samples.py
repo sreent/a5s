@@ -196,6 +196,26 @@ def caps(conn: db.Connection, keys: tuple[str, ...], release: str) -> dict[tuple
         if mine.get(r["action"]) == r["behaviour"]}
 
 
+def shown_caps(conn: db.Connection, keys: tuple[str, ...],
+               release: str) -> dict[tuple[str, str], int]:
+    """a5s's caps for a release, as a page shows them: checked against the seal keys where the
+    part reading them holds them, as the core checks them; in the channels app, which holds
+    none, as the core sealed them, each with the ledger's last word on it. What a page shows,
+    never what decides a call: the gateway checks each seal itself (core/impact.py)."""
+    if keys:
+        return caps(conn, keys, release)
+    mine = {r["action"]: r["behaviour"] for r in conn.execute(
+        "select action, behaviour from behaviours where release = %s", (release,))}
+    if not mine:
+        return {}
+    last = _last_entries(conn)
+    return {(r["part"], r["action"]): r["cap"] for r in conn.execute(
+        "select * from caps where behaviour = any(%s) and seal is not null",
+        (list(mine.values()),)).fetchall()
+        if mine.get(r["action"]) == r["behaviour"]
+        and last.get((r["behaviour"], r["part"], r["action"])) == r["seq"]}
+
+
 def _cap_row(conn: db.Connection, keys: tuple[str, ...], kind: str, part: str,
              action: str) -> dict | None:
     found = standing_caps(conn, keys, "behaviour = %s and part = %s and action = %s",

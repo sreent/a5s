@@ -15,6 +15,7 @@ import { type ReactNode, useEffect, useReducer, useRef, useState } from "react";
 import { type Change, get, send, type SettingsAsked, type SettingsNow, type SettingsReview } from "../api";
 import { useToast } from "../design";
 import { Icon } from "../icons";
+import { ImpactPreview } from "../Impact";
 import { PageHead, sentence, To, Waiting, when } from "../ui";
 import { keepUnkept, keptNow, unkept } from "../unkept";
 
@@ -655,6 +656,7 @@ export function SettingsPage() {
                   ? `It needs the approval of ${found.approvers.join(", ")}.` : "Nobody in the directory can approve it."}</p>
                 <h3>The whole version</h3>
                 <ul id="reviewed-whole" className="plain">{(found.whole ?? []).map((line, i) => <li key={i}>{line}</li>)}</ul>
+                {found.impact && <ImpactPreview impact={found.impact} id="reviewed-impact" />}
                 {found.problems.length === 0 && (
                   <button id="send" className="primary" type="button" disabled={busy} onClick={() => ask(reviewed)}>Ask its approvers</button>
                 )}
