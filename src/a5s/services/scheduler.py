@@ -97,6 +97,8 @@ class Retry(Exception):
 def what(claim: dict) -> str:
     if claim["kind"] == "schedule":
         return f"schedule {claim['schedule']} of {claim['instance']}"
+    if claim["kind"] == "event":
+        return f"event {claim['event']} for {claim['instance']}"
     return f"{claim['kind']} {claim.get(claim['kind']) or claim.get('id')}"
 
 
@@ -257,6 +259,8 @@ class Scheduler:
             key = f"{item['person']}/{item['agent']}/{context.GENERAL}"
         elif item["kind"] == tasking.KIND:
             key = f"task/{item['task']}"
+        elif item["kind"] == "event":  # one run for each
+            key = f"event/{item['event']}"
         else:
             key = f"schedule/{item['instance']}/{item['schedule']}"
         holder = str(uuid.uuid4())
@@ -524,7 +528,8 @@ class Scheduler:
             return
         run, token, task = (opened.json()[k] for k in ("run", "token", "task"))
         topic = opened.json().get("topic") or context.GENERAL  # the core decides it
-        person, agent = claim.get("person"), claim["agent"]  # a schedule acts for nobody
+        person, agent = claim.get("person"), claim["agent"]  # a schedule acts for nobody,
+        # and an event for the person it names, where the instance serves them
         outcome = "failed"
         try:
             history = []
@@ -608,7 +613,7 @@ class Scheduler:
         overdue obligations as it works this out."""
         found: list[dict] = []
         for path in ("/obligations/sweep", "/schedules/sweep", "/reports/sweep",
-                     "/reminders/sweep", "/tasks/sweep"):
+                     "/reminders/sweep", "/tasks/sweep", "/events/sweep"):
             try:
                 response = self.gw.post(path, headers=self.service)
                 response.raise_for_status()

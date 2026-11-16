@@ -103,6 +103,7 @@ def sweep(conn: db.Connection, now: datetime, scenario: str, kept: str = KEPT) -
     delete("waiting", "update obligations set waiting_on = null where waiting_on is not null "
                       f"and waiting_noted_at < {AGO}")  # in their words
     delete("reports", f"delete from report_fires where fired_at < {AGO}")
+    delete("events", f"delete from events where received_at < {AGO}")  # what systems said
     delete("reminders", "delete from reminders where greatest(reminded_at, cancelled_at, "
                         f"case when confirmed_at is null then offered_at end) < {AGO}")
     delete("counts", "delete from urgent_sent where day < (now() - interval '2 days')::date")

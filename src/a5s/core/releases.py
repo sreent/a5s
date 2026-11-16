@@ -130,6 +130,9 @@ def agent_part(folder: Path) -> dict:
             "tasks": d.tasks.model_dump() if d.tasks else None,  # long work, over days
             "owner": d.owner, "deputy": d.deputy,  # who answers for it where the settings name none
             "listed": d.listed,  # whether everyone signed in may know of it
+            # what other systems may start its runs with: only where it takes any, so a
+            # release made before events keeps its manifest
+            **({"events": [e.model_dump() for e in d.events]} if d.events else {}),
         },
     }
 

@@ -223,6 +223,7 @@ WORKERS = "Workers"
 SIGN_IN = "Signing in"
 TEAMS = "Teams"
 SLACK = "Slack"
+EVENTS = "Events from other systems"
 MATRIX = "Matrix"
 LEDGER = "The ledger's locked copies"
 STUDIO = "The studio, its sandbox and publishing"
@@ -316,6 +317,11 @@ TEAMS_SERVICE_HOSTS = Var("A5S_TEAMS_SERVICE_HOSTS", "the hosts a5s sends Teams 
                           "no other", ("smba.trafficmanager.net",), _items, "hosts, by commas",
                           area=TEAMS)
 
+EVENT_SOURCES = Var("A5S_EVENT_SOURCES", "the systems that may tell a5s something happened, "
+                    "which turns events on: a JSON list of {source, secret_env}, each source's "
+                    "signing secret in the variable it names", None, _json_list, "a JSON list",
+                    area=EVENTS)
+
 SLACK_BOTS = Var("A5S_SLACK_BOTS", "an app for each agent, which turns Slack on: a JSON list of "
                  "{agent, app_id, secret_env, token_env}, its signing secret and bot token each in "
                  "the variable it names", None, _json_list, "a JSON list", area=SLACK)
@@ -394,7 +400,7 @@ REGISTRY_GRAPH = Var("A5S_REGISTRY_GRAPH", "Microsoft Graph, as the tenant's clo
 REGISTRY_LOGIN = Var("A5S_REGISTRY_LOGIN", "where the core signs in to the tenant",
                      "https://login.microsoftonline.com", _url("https"), "an https:// address",
                      area=INVENTORY)
-AREAS = (CORE, DATABASE, WORKERS, SIGN_IN, TEAMS, SLACK, MATRIX, LEDGER, STUDIO, SCENARIO,
+AREAS = (CORE, DATABASE, WORKERS, SIGN_IN, TEAMS, SLACK, MATRIX, EVENTS, LEDGER, STUDIO, SCENARIO,
          INVENTORY, COMMAND)
 # Every setting above, by its area
 VARS: tuple[Var, ...] = tuple(sorted((v for v in globals().values() if isinstance(v, Var)),
@@ -404,6 +410,8 @@ FAMILIES = (
            area=DATABASE),
     Family("A5S_TEAMS_SECRET_<AGENT>", "a bot's secret, where A5S_TEAMS_BOTS names it",
            area=TEAMS),
+    Family("A5S_EVENT_SECRET_<SOURCE>", "a system's signing secret for its events, where "
+           "A5S_EVENT_SOURCES names it", area=EVENTS),
     Family("A5S_SLACK_SECRET_<AGENT>", "an app's signing secret, where A5S_SLACK_BOTS names it",
            area=SLACK),
     Family("A5S_SLACK_TOKEN_<AGENT>", "an app's bot token, where A5S_SLACK_BOTS names it",
@@ -554,6 +562,14 @@ def check(env: Mapping[str, str] | None = None, serving: bool = True) -> tuple[l
             if not (env.get(str(app.get(key))) or "").strip():
                 problems.append(f"A5S_SLACK_BOTS gives the {app.get('agent')} agent's app its "
                                 f"{what} in {app.get(key)}, which isn't set")
+    try:
+        sources = EVENT_SOURCES.read(env) or []
+    except ConfigError:
+        sources = []
+    for source in sources:
+        if not (env.get(str(source.get("secret_env"))) or "").strip():
+            problems.append(f"A5S_EVENT_SOURCES gives {source.get('source')} its signing secret "
+                            f"in {source.get('secret_env')}, which isn't set")
     strangers = []
     for name in sorted(n for n in env if n.startswith("A5S_") and not known(n) and n not in MOVED
                        and not service_link(n, env[n])):

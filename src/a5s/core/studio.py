@@ -224,6 +224,7 @@ def agent(scenario: Scenario, definition: Definition, tools: dict[str, Tool],
         "skills": sorted(definition.skills),
         "triggers": definition.triggers,
         "schedules": [s.model_dump() for s in definition.schedules],
+        "events": [e.model_dump() for e in definition.events],
         "reports": [r.source for r in definition.reports],
         "obligations": list(definition.obligations),
         "reminders": definition.reminders, "preferences": list(definition.preferences),
@@ -281,7 +282,8 @@ def seen_by(name: str, insts: list[dict], viewer: Person) -> list[str]:
 LAYERS = ("exists", "uses", "built", "doing", "did", "changing")
 # What each layer adds to an agent as someone sees it
 SHOWN = {"exists": ("id", "release", "works_for", "does", "owners"),
-         "uses": ("tools", "a5s_tools", "model", "autonomy", "triggers", "schedules", "reports",
+         "uses": ("tools", "a5s_tools", "model", "autonomy", "triggers", "schedules", "events",
+                  "reports",
                   "obligations", "reminders", "preferences", "channels", "context", "budget"),
          "built": ("skills", "instructions"),
          "doing": ("instances",)}

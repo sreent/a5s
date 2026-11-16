@@ -83,6 +83,25 @@ class Schedule(BaseModel):
         return days
 
 
+class Event(BaseModel):
+    """What the agent does when another system says something happened, such as a ticket
+    opened (core/events.py): the kind of event, the system that sends it, as the deployment
+    names it, and what the agent's asked to do each time.
+
+    An event names its records, and the person it's about, if any: nothing else, so nothing a
+    system was told can reach a run as words. The run reads the records itself, through its
+    tools, as any run does. It acts for the person the event names, where the directory knows
+    them and the instance serves them, and writes to them; else for nobody, as a schedule run
+    does, and works through its tools alone.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")  # such as ticket-opened
+    source: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,30}$")  # such as itsm
+    task: str = Field(min_length=1, max_length=2000)
+
+
 class Report(BaseModel):
     """What the agent tells each person it serves about their own records of a kind, once a
     day, in their digest: what changed since it last told them, and what fell due.
@@ -175,6 +194,7 @@ class Definition(BaseModel):
     tools: dict[str, list[str]] = {}
     triggers: list[dict[str, Any]] = []
     schedules: list[Schedule] = []
+    events: list[Event] = []  # what it does when another system says something happened
     obligations: list[str] = []  # the kinds of obligation it chases, such as records
     reports: list[Report] = []  # what it tells each person about their own records, daily
     reminders: bool = False

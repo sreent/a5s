@@ -173,6 +173,14 @@ class Schedule(Shape):
     task: str
 
 
+class EventTaken(Shape):
+    """What another system may tell an agent happened, and what it's asked to do each time."""
+
+    type: str
+    source: str
+    task: str
+
+
 class Context(Shape):
     """What an agent's runs are given beyond the conversation."""
 
@@ -232,6 +240,7 @@ class Agent(Shape):
     autonomy: Autonomy | SkipJsonSchema[None] = None
     triggers: list[dict[str, Any]] | SkipJsonSchema[None] = None
     schedules: list[Schedule] | SkipJsonSchema[None] = None
+    events: list[EventTaken] | SkipJsonSchema[None] = None
     reports: list[str] | SkipJsonSchema[None] = None
     obligations: list[str] | SkipJsonSchema[None] = None
     reminders: bool | SkipJsonSchema[None] = None
@@ -580,6 +589,7 @@ class Defined(Shape):
     skills: list[str]
     triggers: list[dict[str, Any]]
     schedules: list[Schedule]
+    events: list[EventTaken]
     reports: list[str]
     obligations: list[str]
     reminders: bool

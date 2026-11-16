@@ -55,6 +55,7 @@ export type Agent = {
   autonomy?: Autonomy;
   triggers?: Record<string, unknown>[];
   schedules?: Schedule[];
+  events?: EventTaken[];
   reports?: string[];
   obligations?: string[];
   reminders?: boolean;
@@ -280,6 +281,7 @@ export type Defined = {
   skills: string[];
   triggers: Record<string, unknown>[];
   schedules: Schedule[];
+  events: EventTaken[];
   reports: string[];
   obligations: string[];
   reminders: boolean;
@@ -394,6 +396,13 @@ export type Ended = {
   kind: string | null;
   outcome: string;
   runs: number;
+};
+
+// What another system may tell an agent happened, and what it's asked to do each time.
+export type EventTaken = {
+  type: string;
+  source: string;
+  task: string;
 };
 
 // How some instances are doing over the last `days` days.

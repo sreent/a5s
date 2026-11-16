@@ -90,7 +90,7 @@ export type Layer = "exists" | "uses" | "built" | "doing" | "did" | "changing";
 export type AgentKnown = gen.Agent;
 // What it may do: for the people it serves, those who watch its instances, and its makers
 export type AgentUses = AgentKnown & Required<Pick<AgentKnown,
-  "tools" | "a5s_tools" | "model" | "autonomy" | "triggers" | "schedules" | "reports" |
+  "tools" | "a5s_tools" | "model" | "autonomy" | "triggers" | "schedules" | "events" | "reports" |
   "obligations" | "reminders" | "preferences" | "channels" | "context" | "budget">>;
 // How it's built: for its owners, authors, engineers, release approvers, auditors and viewers
 export type Agent = AgentUses & Required<Pick<AgentKnown, "skills">>;

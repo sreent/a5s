@@ -54,6 +54,7 @@ WORDS = {
     "reminders": "reminders",
     "chats": "chats a5s wrote to them in",
     "report_fires": "reports sent them",
+    "events": "what other systems told a5s happened about them",
     "preferences": "preferences",
     "report_seen": "what reports told them",
     "digest_waits": "digests that wait for them",

@@ -26,7 +26,7 @@ imagePullSecrets: []
 #   database-<part>-url and database-<part>-password, for gateway, channels, scheduler and anchor;
 #   service-token and seal-keys;
 #   and as the deployment needs them: deepseek-api-key, qwen-api-key, teams-secret-<agent>,
-#   slack-secret-<agent>, slack-token-<agent>,
+#   slack-secret-<agent>, slack-token-<agent>, event-secret-<source>,
 #   matrix-as-token and matrix-hs-token, and sandbox-token, which it shares with its sandbox.
 # The sandbox's release has its own, in its own namespace, with sandbox-database-url, its own
 # database server's administrator, and sandbox-token, and the models' keys if it has them.
@@ -91,6 +91,12 @@ teams:
 slack:
   teamId: ""
   apps: []
+
+# Events: the systems that may tell a5s something happened, such as {source: itsm}, each with
+# its signing secret in the Secret as event-secret-<source>. They post to
+# /channels/events/<source> on the channels' address (README.md).
+events:
+  sources: []
 
 # Matrix: a5s's registration on the organisation's homeserver, with its tokens in the Secret.
 matrix:

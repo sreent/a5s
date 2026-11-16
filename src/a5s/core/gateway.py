@@ -62,6 +62,7 @@ from a5s.core import (
     departures,
     digests,
     erasure,
+    events,
     export,
     extractor,
     groups,
@@ -99,6 +100,7 @@ from a5s.core import (
     values,
 )
 from a5s.core.breakers import FAILURES, Breakers
+from a5s.core.events import EventsConfig
 from a5s.core.identity import (
     IdentityError,
     UnknownPerson,
@@ -280,6 +282,7 @@ class Gateway:
     teams: Teams | None = None
     matrix: Matrix | None = None
     slack: Slack | None = None
+    events: EventsConfig | None = None  # other systems that tell a5s what happened
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)  # when obligations and schedules are due
     releases: releases.Releases | None = None  # the release a5s is, which must be approved here
     breakers: Breakers = field(default_factory=Breakers)  # models not called for now (core/breakers.py)
@@ -787,6 +790,40 @@ class Gateway:
             opening.used = True
         return opening
 
+    def evented(self, conn: db.Connection, inst: dict, trigger: dict,
+                now: datetime) -> Opening:
+        """A run for an event another system sent (core/events.py): acting for the person it
+        names, where the directory knows them and the instance serves them, else for nobody,
+        with what its release says to do, and the event as a5s received it. Once for each."""
+        try:
+            event = str(uuid.UUID(str(trigger.get("event"))))
+        except ValueError:
+            raise HTTPException(400, "name the event the run works on") from None
+        row = conn.execute("select * from events where id = %s for update", (event,)).fetchone()
+        if row is None:
+            raise HTTPException(404, "a5s has no such event")
+        definition = self.definitions.get(inst["definition"])
+        said = events.taken(definition, row["source"], row["type"]) if (
+            definition and definition.release_id == inst["release"]) else None
+        person = row["person"]
+        acts_for = [person] if person and registry.serving(self.scenario, inst["serves"],
+                                                           person) else []
+        about = {"event": event, "source": row["source"], "type": row["type"],
+                 "records": list(row["records"])}
+        opening = Opening(trigger={"kind": events.KIND, **about,
+                                   **({"person": person} if acts_for else {})},
+                          acts_for=acts_for, args=about, reasons=[],
+                          task=events.task(said, row) if said else None,
+                          used=row["taken_at"] is not None)
+        if opening.used:
+            opening.reasons.append("the event has been worked on already")
+        elif said is None:
+            opening.reasons.append(f"{inst['id']}'s release takes no {row['type']} events from "
+                                   f"{row['source']}")
+        elif not all(self.scenario.part_of(k) in (inst["parts"] or {}) for k in row["records"]):
+            opening.reasons.append(f"a record it names is in a part {inst['id']} doesn't work in")
+        return opening
+
     def questioned(self, conn: db.Connection, inst: dict, trigger: dict,
                    now: datetime) -> Opening:
         """A run that answers another agent's question, acting for the same people as the run
@@ -1255,12 +1292,13 @@ def create_app(gw: Gateway) -> FastAPI:
         kind = body.trigger.get("kind")
         opens = {"message": gw.answering, "obligation": gw.reminding, "schedule": gw.scheduled,
                  "report": gw.reporting, "reminder": gw.following_up, "summary": gw.summarising,
-                 asking.KIND: gw.questioned, tasking.KIND: gw.slicing}
+                 asking.KIND: gw.questioned, tasking.KIND: gw.slicing, events.KIND: gw.evented}
         if kind not in opens:
             raise HTTPException(400, "a run answers a message, reminds someone of an obligation "
                                      "or of what they asked, works on a schedule, tells someone "
                                      "about their records, keeps a topic's summary, answers "
-                                     "another agent's question, or works on someone's task")
+                                     "another agent's question, works on someone's task, or "
+                                     "works on what another system says happened")
         token = secrets.token_urlsafe(32)
         run_id = str(uuid.uuid4())
         now = gw.clock()
@@ -1302,6 +1340,11 @@ def create_app(gw: Gateway) -> FastAPI:
                 if fired is None:
                     reasons.append(f"{opening.trigger['schedule']} has fired already")
                     opening.used = True
+            if kind == events.KIND and not opening.used:  # once for each, run or not
+                conn.execute("update events set taken_at = %s, instance_id = %s, run_id = %s, "
+                             "outcome = %s where id = %s and taken_at is null",
+                             (now, body.instance, None if reasons else run_id,
+                              "; ".join(reasons) or "run", opening.trigger["event"]))
             if kind == "reminder" and not reasons:
                 conn.execute("update reminders set reminded_at = %s where id = %s",
                              (now, opening.trigger["reminder"]))
@@ -1628,6 +1671,13 @@ def create_app(gw: Gateway) -> FastAPI:
                             "args": {"trigger": "schedule", "schedule": schedule.name,
                                      "due": at.isoformat()}})
         return due
+
+    @services.post("/events/sweep")
+    def sweep_events() -> list[dict]:
+        """The events other systems sent that wait for a run, for the scheduler to run, each
+        with the instance at work that takes it (core/events.py)."""
+        with db.transaction(gw.url) as conn:
+            return events.due(conn, gw, gw.clock())
 
     @services.post("/reports/sweep")
     def sweep_reports() -> list[dict]:

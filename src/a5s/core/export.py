@@ -38,7 +38,7 @@ LEDGER = {"admin": "what the team that runs a5s and the officer did",
           "obligation": "chases and escalations", "reminder": "reminders",
           "schedule": "schedules", "report": "reports", "notebook": "notes kept",
           "budget": "budget warnings", "cap": "caps", "breaker": "models turned off and on",
-          "retention": "deletions"}
+          "retention": "deletions", "event": "what other systems said happened"}
 LEDGER_AT = "(entry::jsonb ->> 'at')::timestamptz"  # when an entry was written
 
 
@@ -133,6 +133,9 @@ def gather(conn: db.Connection, person: str) -> dict[str, Any]:
         "digest_items": rows(
             "select agent, text, at, digest_due from digest_items where person = any(%(names)s) "
             "order by at, id"),
+        "events": rows(  # what other systems said happened about them (core/events.py)
+            "select source, type, records, received_at, outcome from events "
+            "where person = any(%(names)s) order by received_at"),
         "held_urgent": rows(
             "select agent, text, at, sent_at from urgent_held where person = any(%(names)s) "
             "order by at, id"),

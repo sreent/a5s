@@ -137,6 +137,13 @@ seccompProfile:
 {{ include "a5s.secretEnv" (dict "root" $ "name" (printf "A5S_TEAMS_SECRET_%s" (upper .agent)) "key" (printf "teams-secret-%s" .agent)) }}
 {{- end }}
 {{- end }}
+{{- if .Values.events.sources }}
+- name: A5S_EVENT_SOURCES
+  value: {{ include "a5s.eventSources" . | quote }}
+{{- range .Values.events.sources }}
+{{ include "a5s.secretEnv" (dict "root" $ "name" (printf "A5S_EVENT_SECRET_%s" (upper (replace "-" "_" .source))) "key" (printf "event-secret-%s" .source)) }}
+{{- end }}
+{{- end }}
 {{- if .Values.slack.teamId }}
 - name: A5S_SLACK_TEAM
   value: {{ .Values.slack.teamId | quote }}
@@ -147,6 +154,16 @@ seccompProfile:
 {{ include "a5s.secretEnv" (dict "root" $ "name" (printf "A5S_SLACK_TOKEN_%s" (upper .agent)) "key" (printf "slack-token-%s" .agent)) }}
 {{- end }}
 {{- end }}
+{{- end }}
+
+{{/* Each system that may send events, as a5s reads them: its name, and the variable its
+signing secret is in. */}}
+{{- define "a5s.eventSources" -}}
+{{- $sources := list -}}
+{{- range .Values.events.sources -}}
+{{- $sources = append $sources (dict "source" .source "secret_env" (printf "A5S_EVENT_SECRET_%s" (upper (replace "-" "_" .source)))) -}}
+{{- end -}}
+{{- toJson $sources -}}
 {{- end }}
 
 {{/* Each agent's Slack app, as a5s reads them: its app id, and the variables its signing

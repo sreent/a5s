@@ -52,6 +52,7 @@ from a5s.core import (
     chat_api,
     chats,
     decide_api,
+    events,
     grade_api,
     groups,
     ledger,
@@ -338,6 +339,40 @@ def create_app(gw: Any) -> FastAPI:
         except SlackRefused as exc:
             raise HTTPException(exc.status, exc.reason) from None
         return Response(status_code=200)
+
+    # Events: other systems tell a5s something happened, signed with their own secret
+
+    def receiving_event(source: str, body: bytes, timestamp: str | None,
+                        signature: str | None) -> Response:
+        cfg = gw.events
+        assert cfg is not None
+        try:
+            event = events.check(cfg, source, body, timestamp, signature)
+        except events.Refused as exc:  # not recorded: anyone on the internet can send these
+            log.warning("refused an event from %s: %s", source, exc.reason)
+            raise HTTPException(exc.status, exc.reason) from None
+        if not events.takers(gw.definitions, source, event["type"]):
+            raise HTTPException(404, f"no agent here takes {event['type']} events from {source}")
+        with db.transaction(gw.url) as conn:
+            if events.waiting(conn, source) >= events.MOST_WAITING:
+                raise HTTPException(429, f"{events.MOST_WAITING} of {source}'s events wait "
+                                         "already: send this one again later")
+            kept = events.record(conn, gw.scenario, source, event)
+        return JSONResponse({"event": event["id"], "kept": kept}, status_code=202 if kept else 200)
+
+    @app.post("/channels/events/{source}")
+    async def event_received(source: str, request: Request,
+                             x_a5s_timestamp: str | None = Header(default=None),
+                             x_a5s_signature: str | None = Header(default=None)) -> Response:
+        """An event another system sent, such as a ticket opened: checked against that
+        system's signing secret before a word of it is read, kept once by its own id, for the
+        core to open the run of the agent whose release takes it (core/events.py). The same
+        event sent again is answered as kept already."""
+        if gw.events is None:
+            raise HTTPException(404, "a5s takes no events here")
+        body = await request.body()
+        return await run_in_threadpool(receiving_event, source, body, x_a5s_timestamp,
+                                       x_a5s_signature)
 
     # Matrix: the homeserver sends what happens in the rooms the agents' bots are in
 

@@ -48,6 +48,7 @@ x-people: &people
   A5S_TEAMS_SECRET_ASSISTANT:  # each bot's secret, in the variable A5S_TEAMS_BOTS names
   A5S_TEAMS_SECRET_WATCHER:
   A5S_TEAMS_TENANT_ID:
+  A5S_EVENT_SOURCES:  # the systems that may tell a5s something happened, as JSON (README.md)
   A5S_SLACK_BOTS:  # each agent's app in the workspace, for Slack, as JSON (README.md)
   A5S_SLACK_TEAM:
   A5S_SLACK_SECRET_ASSISTANT:  # each app's signing secret and bot token, as A5S_SLACK_BOTS names

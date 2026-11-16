@@ -138,9 +138,12 @@ export function DecisionBadge({ decision }: { decision: string }) {
 }
 
 /** What starts an agent's runs, as its release says: each kind, and what it says of it. */
-export function triggers(agent: Pick<AgentUses, "triggers">): { kind: string; about: string }[] {
-  return agent.triggers.flatMap((t) => Object.entries(t).map(([kind, about]) =>
-    ({ kind, about: typeof about === "string" ? about : JSON.stringify(about) })));
+export function triggers(agent: Pick<AgentUses, "triggers"> & Partial<Pick<AgentUses, "events">>):
+  { kind: string; about: string }[] {
+  return [...agent.triggers.flatMap((t) => Object.entries(t).map(([kind, about]) =>
+    ({ kind, about: typeof about === "string" ? about : JSON.stringify(about) }))),
+    // what other systems may tell it happened (core/events.py)
+    ...(agent.events ?? []).map((e) => ({ kind: "event", about: `${e.type} from ${e.source}: ${e.task}` }))];
 }
 
 // Words and numbers
