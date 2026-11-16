@@ -40,9 +40,9 @@ The desk's assistant, built again from nothing in the studio, as desk-helper, by
 
 11. Deployed again, `a5s release status` says who must sign the release that adds it: Ren, and its owner, Dev. They sign it with `a5s release sign`, and the team records it: it's approved, and a5s runs it.
 
-12. Back in the studio, its draft says its release is signed and deployed, and Dev puts it to work from its plan, in the settings app.
+12. Back in the studio, its draft says its release is signed and deployed, and Dev puts it to work from its plan, in the studio's settings.
 
-   ![Back in the studio, its draft says its release is signed and deployed, and Dev puts it to work from its plan, in the settings app.](12-back-in-the-studio-its-draft-says-its-release-is.png)
+   ![Back in the studio, its draft says its release is signed and deployed, and Dev puts it to work from its plan, in the studio's settings.](12-back-in-the-studio-its-draft-says-its-release-is.png)
 
 13. Ola, who owns access, where it's to work, finds it waiting for their approval on their studio home, and approves it, signed in afresh for that version alone.
 

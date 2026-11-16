@@ -313,10 +313,12 @@ def graded(walk: Walk, stack, url: str) -> None:
 
 def raised(walk: Walk, stack, url: str, instance: str) -> None:
     """Ines asks for level 2 for corrections in material data, and the owners approve it."""
-    page = walk.as_("ines", f"{url}/settings/")
+    page = walk.as_("ines", f"{url}/studio/instances/{instance}")
     with walk.step("The evidence holds: a5s has raised its cap on corrections in material data to "
-                   "level 2. Ines asks for it there, as a version of the settings: mdg-helper makes "
-                   "them on its own, within their limits.", page):
+                   "level 2. From its instance's page, Ines changes its settings to ask for it "
+                   "there, as a version of the settings: mdg-helper makes them on its own, within "
+                   "their limits.", page):
+        page.click("#its-settings")
         page.wait_for_selector(f"fieldset[data-instance='{instance}']", timeout=30000)
         own = page.locator(f"fieldset[data-instance='{instance}'] "
                            "label:has-text('correct-value in material') input")

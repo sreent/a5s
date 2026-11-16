@@ -235,7 +235,7 @@ def test_its_first_instance_is_planned_on_the_canvas_and_goes_to_work_with_it(st
     page.reload()
     page.wait_for_selector("#put-to-work", timeout=30000)
     assert page.get_attribute("#put-to-work", "href") == (
-        "/settings/?add=watcher&parts=billing&serves=ben&asks=assistant-finance")
+        "/studio/settings?add=watcher&parts=billing&serves=ben&asks=assistant-finance")
     assert refused == []
 
 

@@ -32,9 +32,9 @@ A new agent, due-dates, taken from an idea to work in the sample scenario throug
 
 9. Rosa and Priya sign it with `a5s release sign`, each on their own machine, and the team records it with `a5s release approve`: it's approved here, and a5s runs it.
 
-10. Back in the studio, its draft says its release is signed and deployed. Priya follows its one next step: putting it to work, from its plan, in the settings app.
+10. Back in the studio, its draft says its release is signed and deployed. Priya follows its one next step: putting it to work, from its plan, in the studio's settings.
 
-   ![Back in the studio, its draft says its release is signed and deployed. Priya follows its one next step: putting it to work, from its plan, in the settings app.](10-back-in-the-studio-its-draft-says-its-release-is.png)
+   ![Back in the studio, its draft says its release is signed and deployed. Priya follows its one next step: putting it to work, from its plan, in the studio's settings.](10-back-in-the-studio-its-draft-says-its-release-is.png)
 
 11. The form is filled in from its plan: due-dates, in billing, serving Ben. She reviews what it changes, in words, and asks for it.
 

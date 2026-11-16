@@ -113,8 +113,8 @@ def at_work(walk: Walk, stack, url: str, draft: str) -> None:
     """Priya puts it to work from its plan, and Ana, billing's owner, approves it."""
     page = walk.as_("priya", f"{url}{draft}")
     with walk.step("Back in the studio, its draft says its release is signed and deployed. Priya "
-                   "follows its one next step: putting it to work, from its plan, in the settings "
-                   "app.", page):
+                   "follows its one next step: putting it to work, from its plan, in the studio's "
+                   "settings.", page):
         page.wait_for_selector("#put-to-work", timeout=30000)
         page.click("#put-to-work")
         page.wait_for_selector("#add-instance", timeout=30000)

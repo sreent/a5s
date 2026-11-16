@@ -169,7 +169,7 @@ def at_work(walk: Walk, stack, url: str, draft: str) -> None:
     """Dev puts it to work from its plan, and the owners of the desk's parts approve it."""
     page = walk.as_("dev", f"{url}{draft}")
     with walk.step("Back in the studio, its draft says its release is signed and deployed, and Dev "
-                   "puts it to work from its plan, in the settings app.", page):
+                   "puts it to work from its plan, in the studio's settings.", page):
         page.click("#put-to-work")
         page.wait_for_selector("#add-instance", timeout=30000)
         assert page.input_value("#add-agent") == AGENT and page.input_value("#add-part") == "access"

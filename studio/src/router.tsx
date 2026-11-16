@@ -1,6 +1,6 @@
 // Where in the studio someone is, in its address, so links and the browser's back button work:
 // their home, what they may do, all the agents, one agent, an instance's dashboard, a run, a
-// new agent, a draft of one, or the design system's showcase.
+// new agent, a draft of one, the settings, or the design system's showcase.
 
 import { type MouseEvent, type ReactNode, useEffect, useState } from "react";
 
@@ -13,6 +13,7 @@ export type Route =
   | { page: "run"; run: string }
   | { page: "new" }
   | { page: "draft"; draft: string }
+  | { page: "settings"; search?: string }  // such as ?add=<agent>, an agent to put to work
   | { page: "design" };
 
 export function parse(path: string): Route {
@@ -25,6 +26,7 @@ export function parse(path: string): Route {
   if (kind === "agents") return { page: "agents" };
   if (kind === "you") return { page: "you" };
   if (kind === "design") return { page: "design" };
+  if (kind === "settings") return { page: "settings" };
   return { page: "home" };
 }
 
@@ -38,6 +40,7 @@ export function href(route: Route): string {
     case "agents": return "/studio/agents";
     case "you": return "/studio/you";
     case "design": return "/studio/design";
+    case "settings": return `/studio/settings${route.search ?? ""}`;
     default: return "/studio/";
   }
 }
@@ -69,12 +72,16 @@ export function useRoute(): Route {
   return route;
 }
 
-export function Link({ to, className, children, label }:
-  { to: Route; className?: string; children: ReactNode; label?: string }) {
+export function Link({ to, className, children, label, id, title, current }:
+  { to: Route; className?: string; children: ReactNode; label?: string; id?: string; title?: string;
+    current?: boolean }) {
   const open = (event: MouseEvent<HTMLAnchorElement>) => {
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
     event.preventDefault();
     go(to);
   };
-  return <a href={href(to)} className={className} onClick={open} aria-label={label}>{children}</a>;
+  return (
+    <a href={href(to)} className={className} onClick={open} aria-label={label} id={id} title={title}
+       aria-current={current ? "page" : undefined}>{children}</a>
+  );
 }

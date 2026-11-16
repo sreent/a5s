@@ -11,7 +11,7 @@ const BACK = `${location.origin}/studio/`;
 type SignInConfig = { authorization_endpoint: string; client_id: string; scope: string; acr_values?: string };
 /** An act signed in for: what, to which instance, and the salt its nonce was made with. */
 export type Act = { action: "suspend" | "resume"; instance: string; salt: string };
-type Pending = { verifier: string; state: string; nonce: string; path: string; act?: Act };
+type Pending = { verifier: string; state: string; nonce: string; path: string; search?: string; act?: Act };
 
 let signedFor: Act | null = null;  // the act the sign-in just made was for, until it's carried out
 
@@ -68,7 +68,7 @@ export async function signInFor(action: Act["action"], instance: string): Promis
 
 async function start(signin: SignInConfig, act?: Act, nonce?: string): Promise<void> {
   const pending: Pending = { verifier: random(), state: random(), nonce: nonce ?? random(),
-                             path: location.pathname, act };
+                             path: location.pathname, search: location.search, act };
   sessionStorage.setItem(PENDING, JSON.stringify(pending));
   const url = new URL(signin.authorization_endpoint);
   const query: Record<string, string> = {
@@ -89,7 +89,9 @@ async function finish(params: URLSearchParams): Promise<string> {
   sessionStorage.removeItem(PENDING);
   // the code doesn't linger in the address, and they're back where they were going
   const where = pending?.path && /^\/studio\/[\w./-]*$/.test(pending.path) ? pending.path : "/studio/";
-  history.replaceState(null, "", where);
+  // and what it asked for, such as an agent to put to work: in plain words and commas alone
+  const asked = pending?.search && /^\?[\w=&,.:@%+-]*$/.test(pending.search) ? pending.search : "";
+  history.replaceState(null, "", where + asked);
   const again = "Signing in didn't come back the way it went out. Open the studio again.";
   if (!pending || params.get("state") !== pending.state) throw new SignInError(again);
   // The provider's words only for a sign-in this tab sent, so a link can't put its own on

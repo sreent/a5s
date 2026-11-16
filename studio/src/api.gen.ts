@@ -132,6 +132,13 @@ export type Catalogue = {
   authoring: Authoring;
 };
 
+// A change a version of the settings makes, in words code worked out, and whether it widens
+// what agents do, as the page that approves it marks it.
+export type Change = {
+  text: string;
+  widens: boolean;
+};
+
 export type CoAuthors = {
   people: Named[];
 };
@@ -346,6 +353,15 @@ export type Home = {
   authoring: boolean;
 };
 
+// The version of the settings in force: as written, all of it in words, and as data, which
+// the forms change.
+export type InForce = {
+  serial: number;
+  text: string;
+  whole: string[];
+  data: Record<string, unknown> | null;
+};
+
 // One of an agent's instances, which someone may watch.
 export type Instance = {
   id: string;
@@ -508,6 +524,14 @@ export type Questions = {
   answered_seconds_p90: number | null;
 };
 
+// What an agent's release lets its instances be set to: the level it starts at, the most it
+// allows, and the types of change its own tools make.
+export type ReleaseLevels = {
+  starts: number;
+  most: number;
+  actions: string[];
+};
+
 export type Reminders = {
   due: number;
   on_time: number;
@@ -642,6 +666,44 @@ export type Serve = {
   instance: string;
 };
 
+// A version asked for, which a5s proposes to everyone it needs within a minute.
+export type SettingsAsked = {
+  request: number;
+  serial: number;
+};
+
+// The settings, for someone who approves versions of them: the version in force, what the
+// forms offer, the versions waiting for approval, and what they asked for lately.
+export type SettingsNow = {
+  you: string;
+  me: string;
+  in_force: InForce | null;
+  names: Record<string, string>;
+  actions: string[];
+  releases: Record<string, ReleaseLevels>;
+  waiting: VersionWaiting[];
+  requests: SettingsRequest[];
+};
+
+// A version someone asked for, and what became of it.
+export type SettingsRequest = {
+  asked_at: string;
+  serial: number;
+  outcome: string;
+  link: string | null;
+};
+
+// A version someone wrote, reviewed before they ask for it: why a5s couldn't propose it, or
+// what it would change, all of it in words, and whose approval it needs.
+export type SettingsReview = {
+  problems: string[];
+  serial?: number;
+  in_force?: number | null;
+  changes?: Change[];
+  whole?: string[];
+  approvers?: string[];
+};
+
 // Whose signature a draft's release would need, and why: and who holds that role in the
 // directory, by name, where a person holds it; for a new agent's owner, nobody, till the
 // directory names someone.
@@ -746,6 +808,16 @@ export type ValidationError = {
   ctx?: Record<string, unknown>;
 };
 
+// A version waiting for approval: what it changes, who approved it so far, and why it still
+// waits, on its own page.
+export type VersionWaiting = {
+  serial: number;
+  link: string;
+  changes: Change[];
+  approved_by: string[];
+  needs: string[];
+};
+
 // Something that waits for someone: what it is, why it's theirs, and where they do it, a
 // page of a5s's, or the command line.
 export type Waiting = {
@@ -755,6 +827,13 @@ export type Waiting = {
   go: string | null;
   how?: string;
   since?: string;
+};
+
+// A version of the settings as someone wrote it in the settings app, and the version in
+// force they reviewed it against, by its serial, once they have.
+export type Written = {
+  text: string;
+  base?: number | null;
 };
 
 export type You = {

@@ -40,9 +40,9 @@ The desk's resolver assistant, which it planned and never built, built in the st
 
 11. Deployed again, `a5s release status` says who must sign the release that adds it: Ren, and its owner, Dev. They sign it with `a5s release sign`, and the team records it: it's approved, and a5s runs it.
 
-12. Its release signed and deployed, Dev puts it to work from its plan, in the settings app.
+12. Its release signed and deployed, Dev puts it to work from its plan, in the studio's settings.
 
-   ![Its release signed and deployed, Dev puts it to work from its plan, in the settings app.](12-its-release-signed-and-deployed-dev-puts-it-to-w.png)
+   ![Its release signed and deployed, Dev puts it to work from its plan, in the studio's settings.](12-its-release-signed-and-deployed-dev-puts-it-to-w.png)
 
 13. Ola, who owns access, approves it from their studio home, signed in afresh for that version alone.
 

@@ -772,3 +772,87 @@ class PullRequest(Shape):
     title: str
     body: str
     ready: bool  # whether nothing would stop its release
+
+
+# The settings app, folded into the studio (core/settings_api.py): the version in force, those
+# waiting for approval, and what someone asked for; and a version they wrote, reviewed
+
+
+class Change(Shape):
+    """A change a version of the settings makes, in words code worked out, and whether it widens
+    what agents do, as the page that approves it marks it."""
+
+    text: str
+    widens: bool
+
+
+class InForce(Shape):
+    """The version of the settings in force: as written, all of it in words, and as data, which
+    the forms change."""
+
+    serial: int
+    text: str
+    whole: list[str]
+    data: dict[str, Any] | None
+
+
+class ReleaseLevels(Shape):
+    """What an agent's release lets its instances be set to: the level it starts at, the most it
+    allows, and the types of change its own tools make."""
+
+    starts: int
+    most: int
+    actions: list[str]
+
+
+class VersionWaiting(Shape):
+    """A version waiting for approval: what it changes, who approved it so far, and why it still
+    waits, on its own page."""
+
+    serial: int
+    link: str
+    changes: list[Change]
+    approved_by: list[str]
+    needs: list[str]
+
+
+class SettingsRequest(Shape):
+    """A version someone asked for, and what became of it."""
+
+    asked_at: datetime
+    serial: int
+    outcome: str
+    link: str | None
+
+
+class SettingsNow(Shape):
+    """The settings, for someone who approves versions of them: the version in force, what the
+    forms offer, the versions waiting for approval, and what they asked for lately."""
+
+    you: str
+    me: str
+    in_force: InForce | None
+    names: dict[str, str]  # the people the settings name, and whoever signed in, by their names
+    actions: list[str]  # the types of change this deployment's tools make
+    releases: dict[str, ReleaseLevels]
+    waiting: list[VersionWaiting]
+    requests: list[SettingsRequest]
+
+
+class SettingsReview(Shape):
+    """A version someone wrote, reviewed before they ask for it: why a5s couldn't propose it, or
+    what it would change, all of it in words, and whose approval it needs."""
+
+    problems: list[str]
+    serial: int | SkipJsonSchema[None] = None  # the number it would have, once it reads
+    in_force: int | None | SkipJsonSchema[None] = None  # the version it was reviewed against
+    changes: list[Change] | SkipJsonSchema[None] = None
+    whole: list[str] | SkipJsonSchema[None] = None
+    approvers: list[str] | SkipJsonSchema[None] = None
+
+
+class SettingsAsked(Shape):
+    """A version asked for, which a5s proposes to everyone it needs within a minute."""
+
+    request: int
+    serial: int

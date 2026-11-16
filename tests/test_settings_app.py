@@ -102,7 +102,8 @@ def test_an_approver_asks_for_a_change_in_the_browser(stack, approving, provider
     page = browser.new_page()
     page.goto(f"{approving}/settings/")  # to the provider, and straight back
     page.wait_for_selector("#in-force-title >> text=In force", timeout=30000)
-    assert page.inner_text("#who") == "Ana Ortiz"
+    assert page.evaluate("location.pathname") == "/studio/settings"  # in the studio, now
+    assert page.inner_text("#me").endswith("Ana Ortiz")
     assert page.locator("#whole li").all_inner_texts()[1] == ASSISTANT
     assert page.evaluate("window.location.search") == ""  # the code doesn't linger
     page.click("#by-text")  # the whole version, as written

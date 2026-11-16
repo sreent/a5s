@@ -72,9 +72,9 @@ Master data's assistant, built again from nothing in the studio, as mdg-helper, 
 
    ![Over the quarter, each correction Mo decided is drawn as a sample, 88 of them here, made up like Raf's. Mel, who grades the agents' work in material data, from outside the team that built it, grades them on a5s's own page, twenty at a time: each is right.](19-over-the-quarter-each-correction-mo-decided-is-d.png)
 
-20. The evidence holds: a5s has raised its cap on corrections in material data to level 2. Ines asks for it there, as a version of the settings: mdg-helper makes them on its own, within their limits.
+20. The evidence holds: a5s has raised its cap on corrections in material data to level 2. From its instance's page, Ines changes its settings to ask for it there, as a version of the settings: mdg-helper makes them on its own, within their limits.
 
-   ![The evidence holds: a5s has raised its cap on corrections in material data to level 2. Ines asks for it there, as a version of the settings: mdg-helper makes them on its own, within their limits.](20-the-evidence-holds-a5s-has-raised-its-cap-on-cor.png)
+   ![The evidence holds: a5s has raised its cap on corrections in material data to level 2. From its instance's page, Ines changes its settings to ask for it there, as a version of the settings: mdg-helper makes them on its own, within their limits.](20-the-evidence-holds-a5s-has-raised-its-cap-on-cor.png)
 
 21. Carl Dunn, who owns customer data, approves it, signed in afresh for that version alone, and so do Mo, Una and Pia, who own the other data objects: a version counts once the owner of each part its instances work in has.
 

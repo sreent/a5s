@@ -9,6 +9,7 @@ import { type Catalogue, type Figures, get, type Instance, type RunLine, type Ru
 import { signInFor, takeAct } from "../auth";
 import { Confirm, rung } from "../design";
 import { Link } from "../router";
+import { shellOf } from "../Sidebar";
 import { RunsByDay } from "../RunsByDay";
 import { aboutInstance, type Loaded, OutcomeBadge, PageHead, people, plural, runners, share, StatusBadge,
          useLoad, Waiting, WaitList, when } from "../ui";
@@ -31,6 +32,8 @@ function Waits({ standing }: { standing: Loaded<Standing> }) {
 function Stopping({ id, standing, problem, setProblem }: {
   id: string; standing?: Standing; problem?: string; setProblem: (problem: string) => void;
 }) {
+  const shell = useLoad(shellOf, []);
+  const settles = Boolean(shell.data?.pages.includes("settings"));  // approves versions of the settings
   const go = (action: "suspend" | "resume") => () => {
     signInFor(action, id).catch((e: Error) => setProblem(e.message));
   };
@@ -39,13 +42,15 @@ function Stopping({ id, standing, problem, setProblem }: {
     <>
       {asked && <p className="note" role="status" id="asked">{asked.by} asked to {asked.action} it, {when(asked.at)}: a5s does so within a minute, once it has checked that sign-in again.</p>}
       {problem && <p className="problem" role="alert">{problem}</p>}
-      {standing?.may && (
+      {(standing?.may || settles) && (
         <div className="actions">
-          {standing.may === "suspend"
+          {settles && <Link to={{ page: "settings", search: `?instance=${encodeURIComponent(id)}` }} className="button"
+                            id="its-settings">Change its settings</Link>}
+          {standing?.may === "suspend"
             ? <Confirm label="Suspend it" danger title={`Suspend ${id}?`}
                        about="It stops at its next step, even in a run already going, and starts no runs, until whoever suspended it resumes it. Those it serves are told it's suspended. You'll sign in again, for this alone."
                        confirm="Sign in and suspend it" onConfirm={go("suspend")} />
-            : <Confirm label="Resume it" title={`Resume ${id}?`}
+            : standing?.may === "resume" && <Confirm label="Resume it" title={`Resume ${id}?`}
                        about="It works again as its settings say, from its next message. You'll sign in again, for this alone, with a second factor where your organisation asks for one."
                        confirm="Sign in and resume it" onConfirm={go("resume")} />}
         </div>

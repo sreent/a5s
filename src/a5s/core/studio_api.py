@@ -31,6 +31,7 @@ from a5s.core import (
     memberships,
     publishing,
     registry,
+    settings_api,
     settings_app,
     studio,
     suspension,
@@ -177,6 +178,7 @@ def router(gw: Any) -> APIRouter:
     @pages.get("/studio/new", include_in_schema=False)
     @pages.get("/studio/agents", include_in_schema=False)
     @pages.get("/studio/you", include_in_schema=False)
+    @pages.get("/studio/settings", include_in_schema=False)
     @pages.get("/studio/design", include_in_schema=False)
     def studio_new() -> Response:
         """The studio, where someone starts a new agent, sees all the agents they may, what they
@@ -899,6 +901,7 @@ def described() -> dict:
     answers, with no deployment behind it."""
     app = FastAPI(title="a5s studio")
     app.include_router(router(SimpleNamespace(cfg=None)))  # nothing it serves is asked
+    app.include_router(settings_api.router(SimpleNamespace(cfg=None)))  # the settings, folded in
     return app.openapi()
 
 

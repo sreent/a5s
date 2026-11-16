@@ -46,6 +46,7 @@ def seen(stack):
 # use. Those signed in for one act alone, deciding or grading, keep that sign-in to the act;
 # and the audit trail, which Ana may not read, isn't in hers.
 LISTED = ("chat", "tasks", "notebook", "studio", "settings", "admin")
+AT = {"settings": "/studio/settings"}  # in the studio, where its old address goes
 
 
 @pytest.mark.parametrize("name", PAGES)
@@ -60,7 +61,7 @@ def test_each_page_opens_signed_in_beside_a_sidebar(seen, approving, browser, na
     assert page.locator("aside.sidebar .brand").count() == 1
     if name in LISTED:
         page.wait_for_selector("#pages a[aria-current=page]", timeout=30000)
-        assert page.locator("#pages a[aria-current=page]").get_attribute("href") == f"/{name}/"
+        assert page.locator("#pages a[aria-current=page]").get_attribute("href") == AT.get(name, f"/{name}/")
         assert page.locator("#me").inner_text().endswith("Ana Ortiz")
     accessible(page)
     shot(page, name)

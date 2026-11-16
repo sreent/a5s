@@ -333,9 +333,12 @@ PY
 
 status=$(curl -s -o "$reply" -w '%{http_code}' http://127.0.0.1:8703/settings/api)
 [ "$status" = 401 ] || { echo "The settings app without a sign-in got $status, not 401."; exit 1; }
-curl -sf -o "$reply" http://127.0.0.1:8703/settings/
-grep -q "a5s: settings" "$reply" || { echo "The settings app's page isn't served."; exit 1; }
-echo "The settings app is served, and asks people to sign in."
+went=$(curl -s -o /dev/null -w '%{http_code} %{redirect_url}' "http://127.0.0.1:8703/settings/?add=watcher")
+[ "$went" = "303 http://127.0.0.1:8703/studio/settings?add=watcher" ] || {
+  echo "The settings app's old address went to $went, not the studio's settings."; exit 1; }
+curl -sf -o "$reply" http://127.0.0.1:8703/studio/settings
+grep -q '<div id="root">' "$reply" || { echo "The studio's settings aren't served."; exit 1; }
+echo "The settings are served in the studio, and their API asks people to sign in."
 
 curl -sf -o "$reply" -D "$work/headers" http://127.0.0.1:8703/studio/agents/assistant
 grep -q '<title>a5s: studio</title>' "$reply" || { echo "The studio's page isn't served."; exit 1; }

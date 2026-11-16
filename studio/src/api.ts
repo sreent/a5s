@@ -28,7 +28,9 @@ export async function send<T>(method: string, path: string, body?: unknown): Pro
   const answer = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   const found = await answer.json().catch(() => ({}));
   if (!answer.ok) {
-    const said = typeof found.detail === "string" ? found.detail : `a5s said ${answer.status}.`;
+    const detail = found.detail;  // words, or, from the settings, the problems a version has
+    const said = typeof detail === "string" ? detail
+      : Array.isArray(detail?.problems) ? detail.problems.join(" ") : `a5s said ${answer.status}.`;
     throw new ApiError(said, answer.status);
   }
   return found as T;
@@ -81,6 +83,10 @@ export type Catalogue = gen.Catalogue;
 // Someone's home and roles (core/home.py)
 export type Home = gen.Home;
 export type Waiting = gen.Waiting;
+export type SettingsNow = gen.SettingsNow;  // the settings, for someone who approves versions of them
+export type SettingsReview = gen.SettingsReview;
+export type SettingsAsked = gen.SettingsAsked;
+export type Change = gen.Change;  // a change a version makes, in words, and whether it widens what agents do
 export type Standing = gen.Standing;  // how an instance stands, for its viewer: what waits, and what they may do
 export type StatusAsked = gen.StatusAsked;  // a suspension or resumption asked for, which a5s carries out
 export type You = gen.You;
