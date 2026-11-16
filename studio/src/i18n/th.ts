@@ -1,141 +1,23 @@
 // The studio's words in Thai (i18n.ts): each as its pages write it in English, and in Thai, with
-// the same {name}s. Words a page has that aren't here stay in English. tests/test_languages.py
-// holds the catalogue to every t("…") the studio's pages say, so none is left out.
+// the same {name}s, kept a file for each part of the studio in th/. Words a page has that aren't
+// here stay in English. tests/test_languages.py holds the catalogue to every t() the studio's pages
+// say, so none is left out, and none is kept that no page says.
+//
+// The same thing is called the same everywhere: agent เอเจนต์, instance อินสแตนซ์, run การทำงาน
+// (counted ครั้ง), part ส่วนงาน, settings การตั้งค่า, version เวอร์ชัน, release รีลีส, draft ฉบับร่าง,
+// tool เครื่องมือ, record ระเบียน, owner เจ้าของ, deputy ผู้แทน, approver ผู้อนุมัติ, decision
+// การตัดสินใจ, grade การให้คะแนน (right ถูกต้อง, wrong ผิด, critical ร้ายแรง), sample ตัวอย่าง, level
+// ระดับ, cap เพดาน, budget งบประมาณ, model โมเดล, task งาน, notebook สมุดบันทึก, ledger เลดเจอร์,
+// sign in ลงชื่อเข้าใช้, studio สตูดิโอ, map แผนผัง, sandbox แซนด์บ็อกซ์, test case กรณีทดสอบ, judge
+// ผู้ประเมิน, suspend ระงับ, resume กลับมาทำงานต่อ, data protection officer เจ้าหน้าที่คุ้มครองข้อมูล,
+// served ให้บริการ, watch ติดตาม. Ids, such as an agent's or a record's key, stay as they are.
 
-export const TH: Record<string, string> = {
-  // Signing in
-  "Sign in again to carry on": "ลงชื่อเข้าใช้อีกครั้งเพื่อทำต่อ",
-  "Your sign-in has run out, so a5s can't keep or show anything more until you sign in again. You come back to this page, and what you've changed here that a5s hasn't kept yet comes back with you.":
-    "การลงชื่อเข้าใช้ของคุณหมดอายุแล้ว a5s จึงยังบันทึกหรือแสดงสิ่งใดเพิ่มไม่ได้จนกว่าคุณจะลงชื่อเข้าใช้อีกครั้ง คุณจะกลับมาที่หน้านี้ และสิ่งที่คุณแก้ไขไว้ซึ่ง a5s ยังไม่ได้บันทึกจะกลับมาพร้อมกับคุณ",
-  "Sign in again": "ลงชื่อเข้าใช้อีกครั้ง",
-  "Signing in didn't work": "ลงชื่อเข้าใช้ไม่สำเร็จ",
-  "Nothing was done with it. Sign in again to go back to where you were, and try again from there.":
-    "ยังไม่มีการดำเนินการใดๆ ลงชื่อเข้าใช้อีกครั้งเพื่อกลับไปยังหน้าที่คุณอยู่ แล้วลองใหม่จากตรงนั้น",
-  "Signing you in…": "กำลังลงชื่อเข้าใช้…",
+import { BUILD } from "./th/build";
+import { DECIDE } from "./th/decide";
+import { FRAME } from "./th/frame";
+import { WATCH } from "./th/watch";
 
-  // The sidebar, and finding anything
-  "a5s's pages": "หน้าต่างๆ ของ a5s",
-  "Find anything": "ค้นหา",
-  "Find a page, an agent, an instance or a draft": "ค้นหาหน้า เอเจนต์ อินสแตนซ์ หรือฉบับร่าง",
-  "What it found": "ผลการค้นหา",
-  "Nothing you may open is called “{query}”.": "ไม่พบสิ่งที่คุณเปิดได้ซึ่งชื่อ “{query}”",
-  "Looking for what you may open…": "กำลังค้นหาสิ่งที่คุณเปิดได้…",
-  "to choose": "เพื่อเลือก",
-  "to open": "เพื่อเปิด",
-  "to close": "เพื่อปิด",
-  "waits on you": "รอคุณอยู่",
-  "Waiting on you": "รอคุณอยู่",
-  "a page": "หน้า",
-  "Pages": "หน้า",
-  "All agents": "เอเจนต์ทั้งหมด",
-  "Start a new agent": "เริ่มสร้างเอเจนต์ใหม่",
-  "in the studio": "ในสตูดิโอ",
-  "What you may do": "สิ่งที่คุณทำได้",
-  "an agent": "เอเจนต์",
-  "Agents": "เอเจนต์",
-  "an instance of the {agent}": "อินสแตนซ์ของ {agent}",
-  "Instances": "อินสแตนซ์",
-  "Drafts": "ฉบับร่าง",
-  "Loading…": "กำลังโหลด…",
-  "Dismiss": "ปิด",
-  "since {when}": "ตั้งแต่ {when}",
-
-  // Home
-  "Welcome, {name}": "ยินดีต้อนรับ คุณ {name}",
-  "Welcome": "ยินดีต้อนรับ",
-  "What waits for you in a5s, and where you do it. Nothing here is done for you: each opens where it's done, signed in afresh where it counts.":
-    "สิ่งที่รอคุณอยู่ใน a5s และที่ที่คุณจัดการได้ ไม่มีสิ่งใดในนี้ทำแทนคุณ แต่ละรายการจะเปิดในหน้าที่ใช้จัดการ และให้ลงชื่อเข้าใช้ใหม่เมื่อเป็นเรื่องสำคัญ",
-  "Nothing waits on you now.": "ตอนนี้ไม่มีสิ่งใดรอคุณอยู่",
-  "Your drafts": "ฉบับร่างของคุณ",
-  "from {release} · kept {when}": "จาก {release} · บันทึกเมื่อ {when}",
-  "In the studio": "ในสตูดิโอ",
-  "The agents you may know of": "เอเจนต์ที่คุณรู้จักได้",
-  ": what each does, and how those you watch are doing": ": แต่ละตัวทำอะไร และตัวที่คุณติดตามทำงานเป็นอย่างไร",
-  "A new agent": "เอเจนต์ใหม่",
-  ", from a template": " จากแม่แบบ",
-  "What you may do in a5s": "สิ่งที่คุณทำได้ใน a5s",
-  ", and which group gave you each role, and the language you read": " กลุ่มใดให้บทบาทแต่ละบทบาทแก่คุณ และภาษาที่คุณอ่าน",
-
-  // You
-  "Home": "หน้าแรก",
-  "Each of your roles in a5s, what gave it you, and what it lets you do. Your organisation manages its groups in its identity provider, and a5s's signed settings say what each group may do: a role you lose there stops working at your next sign-in.":
-    "บทบาทแต่ละบทบาทของคุณใน a5s ได้มาจากที่ใด และให้คุณทำอะไรได้บ้าง องค์กรของคุณจัดการกลุ่มในผู้ให้บริการยืนยันตัวตน และการตั้งค่าที่ลงนามแล้วของ a5s ระบุว่าแต่ละกลุ่มทำอะไรได้ บทบาทที่คุณเสียไปที่นั่นจะหยุดใช้งานเมื่อคุณลงชื่อเข้าใช้ครั้งถัดไป",
-  "You hold none of a5s's roles: you use the agents that serve you, and see your own tasks and notebook. Whoever approves the agent you'd use can add you.":
-    "คุณยังไม่มีบทบาทใดใน a5s คุณใช้เอเจนต์ที่ให้บริการคุณ และดูงานกับสมุดบันทึกของคุณเองได้ ผู้อนุมัติเอเจนต์ที่คุณต้องการใช้สามารถเพิ่มคุณได้",
-  "Role": "บทบาท",
-  "Lets you": "ให้คุณ",
-  "Given by": "ได้รับจาก",
-  "Your groups": "กลุ่มของคุณ",
-  "Your latest sign-in showed none of the groups a5s's settings give roles.":
-    "การลงชื่อเข้าใช้ล่าสุดของคุณไม่พบกลุ่มที่การตั้งค่าของ a5s ให้บทบาท",
-  "Your latest sign-in showed": "การลงชื่อเข้าใช้ล่าสุดของคุณแสดงกลุ่ม",
-  "The language you read": "ภาษาที่คุณอ่าน",
-  "a5s's pages speak it to you, and its agents answer you in it, unless you write to them in another. Your organisation's directory sets it first; it's yours to change.":
-    "หน้าต่างๆ ของ a5s จะใช้ภาษานี้กับคุณ และเอเจนต์จะตอบคุณเป็นภาษานี้ เว้นแต่คุณจะเขียนถึงเอเจนต์เป็นภาษาอื่น ไดเรกทอรีขององค์กรตั้งไว้ให้ตั้งแต่แรก และคุณเปลี่ยนเองได้",
-  "a5s speaks to you in {language} from now on.": "จากนี้ a5s จะใช้ภาษา{language}กับคุณ",
-
-  // Spending
-  "Spending": "ค่าใช้จ่าย",
-  "What agents' model calls cost each month, at the prices models.yaml gives them: each part and agent you may see against the budget the settings set it, with a forecast to the month's end at the last week's pace, and what each message answered cost, all in. A budget guides: it stops no work, which the token budgets each release sets do.":
-    "ค่าใช้จ่ายในการเรียกใช้โมเดลของเอเจนต์ในแต่ละเดือน ตามราคาที่ models.yaml กำหนด แสดงแต่ละส่วนงานและเอเจนต์ที่คุณดูได้เทียบกับงบประมาณที่การตั้งค่ากำหนด พร้อมคาดการณ์ถึงสิ้นเดือนตามอัตราของสัปดาห์ที่ผ่านมา และค่าใช้จ่ายรวมต่อข้อความที่ตอบ งบประมาณเป็นเพียงแนวทาง ไม่ได้หยุดการทำงาน ซึ่งเป็นหน้าที่ของงบประมาณโทเค็นที่แต่ละรีลีสกำหนด",
-  "In": "เดือน",
-  "{month}, this month": "{month} (เดือนนี้)",
-  "No part or agent you may see spent anything this month, and none has a budget.":
-    "เดือนนี้ไม่มีส่วนงานหรือเอเจนต์ที่คุณดูได้มีค่าใช้จ่าย และไม่มีรายการใดกำหนดงบประมาณไว้",
-  "No part or agent you may see spent anything that month, and none has a budget.":
-    "เดือนนั้นไม่มีส่วนงานหรือเอเจนต์ที่คุณดูได้มีค่าใช้จ่าย และไม่มีรายการใดกำหนดงบประมาณไว้",
-  "A part": "ส่วนงาน",
-  "An agent": "เอเจนต์",
-  "the {agent}": "{agent}",
-  "as of day {day} of {days}": "ณ วันที่ {day} จาก {days} วัน",
-  "So far": "จนถึงตอนนี้",
-  "In {month}": "ในเดือน{month}",
-  "Spent": "ใช้ไป",
-  "Spent {amount} so far this month": "เดือนนี้ใช้ไปแล้ว {amount}",
-  "Spent {amount} in {month}": "ใช้ไป {amount} ในเดือน{month}",
-  "Budget": "งบประมาณ",
-  "Its budget: {amount} a month": "งบประมาณ {amount} ต่อเดือน",
-  "Forecast": "คาดการณ์",
-  "On course for {amount} by {day}, at the last week's pace": "คาดว่าจะถึง {amount} ภายใน {day} ตามอัตราของสัปดาห์ที่ผ่านมา",
-  "By {day}": "ภายใน {day}",
-  "Against": "เทียบกับ",
-  "{amount} over budget": "เกินงบประมาณ {amount}",
-  "{amount} under budget, at this pace": "ต่ำกว่างบประมาณ {amount} ตามอัตรานี้",
-  "{amount} under budget": "ต่ำกว่างบประมาณ {amount}",
-  "Each message answered": "ต่อข้อความที่ตอบ",
-  "All agents' work there cost, reports and chases too, over the {messages} they answered there.":
-    "ค่าใช้จ่ายทั้งหมดของงานเอเจนต์ในส่วนงานนี้ รวมรายงานและการติดตาม หารด้วย {messages} ที่ตอบในส่วนงานนี้",
-  "All its runs cost, reports and chases too, over the {messages} they answered.":
-    "ค่าใช้จ่ายทั้งหมดของการทำงาน รวมรายงานและการติดตาม หารด้วย {messages} ที่ตอบ",
-  "None": "ไม่มี",
-  "Agents answered no messages there this month.": "เดือนนี้เอเจนต์ยังไม่ได้ตอบข้อความในส่วนงานนี้",
-  "Agents answered no messages there that month.": "เดือนนั้นเอเจนต์ไม่ได้ตอบข้อความในส่วนงานนี้",
-  "Its runs answered no messages this month.": "เดือนนี้ยังไม่ได้ตอบข้อความใด",
-  "Its runs answered no messages that month.": "เดือนนั้นไม่ได้ตอบข้อความใด",
-  "A day, lately": "ต่อวัน ในช่วงนี้",
-  "The last 7 days, on average: the pace the forecast goes on at.": "ค่าเฉลี่ยของ 7 วันที่ผ่านมา ซึ่งเป็นอัตราที่ใช้คาดการณ์",
-  "Runs": "การทำงาน",
-  "{tokens} tokens.": "{tokens} โทเค็น",
-  "The settings set no budget for {whose}. With one, a5s shows each month against it, and tells its owners on their home page once a month is on course to pass it.":
-    "การตั้งค่ายังไม่ได้กำหนดงบประมาณให้ {whose} หากกำหนดไว้ a5s จะแสดงแต่ละเดือนเทียบกับงบประมาณ และแจ้งเจ้าของในหน้าแรกเมื่อเดือนใดมีแนวโน้มจะเกินงบ",
-  "1 run on a model whose prices models.yaml doesn't give isn't in these figures.":
-    "การทำงาน 1 ครั้งบนโมเดลที่ models.yaml ไม่ได้ระบุราคา ไม่ได้รวมอยู่ในตัวเลขเหล่านี้",
-  "{runs} on models whose prices models.yaml doesn't give aren't in these figures.":
-    "การทำงาน {runs} บนโมเดลที่ models.yaml ไม่ได้ระบุราคา ไม่ได้รวมอยู่ในตัวเลขเหล่านี้",
-  "None you may watch spent anything this month.": "เดือนนี้ไม่มีอินสแตนซ์ที่คุณติดตามได้มีค่าใช้จ่าย",
-  "None you may watch spent anything that month.": "เดือนนั้นไม่มีอินสแตนซ์ที่คุณติดตามได้มีค่าใช้จ่าย",
-  "What each instance spent": "ค่าใช้จ่ายของแต่ละอินสแตนซ์",
-  "What each instance you may watch spent this month, and is on course to":
-    "ค่าใช้จ่ายเดือนนี้ของแต่ละอินสแตนซ์ที่คุณติดตามได้ และที่คาดว่าจะใช้",
-  "What each instance you may watch spent in {month}": "ค่าใช้จ่ายในเดือน{month} ของแต่ละอินสแตนซ์ที่คุณติดตามได้",
-  "Instance": "อินสแตนซ์",
-  "Agent": "เอเจนต์",
-  "Messages answered": "ข้อความที่ตอบ",
-  "Each message": "ต่อข้อความ",
-  "in {parts}": "ใน {parts}",
-  "and {runs} unpriced": "และ {runs} ที่ไม่ทราบราคา",
-  "none answered": "ไม่ได้ตอบ",
-};
+export const TH: Record<string, string> = { ...FRAME, ...WATCH, ...DECIDE, ...BUILD };
 
 // Nouns counted by plural() (ui.tsx), which Thai doesn't change for many: each word after its
 // number, as a count of them is written in Thai

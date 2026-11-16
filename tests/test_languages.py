@@ -82,12 +82,13 @@ def test_someone_chooses_the_language_they_read_on_their_own_page(stack, approvi
 
 def test_the_catalogue_has_every_word_the_studio_puts_through_it():
     said: set[str] = set()
+    catalogues = [STUDIO / "i18n" / "th.ts", *sorted((STUDIO / "i18n" / "th").glob("*.ts"))]
     for path in [*STUDIO.rglob("*.tsx"), *STUDIO.rglob("*.ts")]:
-        if path.name in ("i18n.ts", "th.ts"):
+        if path.name == "i18n.ts" or path in catalogues:
             continue  # the catalogue, and its own example, in a comment
         said |= {m.group(1).replace('\\"', '"')
                  for m in re.finditer(r'\bt\(\s*"((?:[^"\\]|\\.)*)"', path.read_text())}
-    catalogue = (STUDIO / "i18n" / "th.ts").read_text()
+    catalogue = "\n".join(path.read_text() for path in catalogues)
     keys = {m.group(1).replace('\\"', '"')
             for m in re.finditer(r'^\s*"((?:[^"\\]|\\.)*)":', catalogue, re.MULTILINE)}
     assert said, "the studio says nothing through t()"
