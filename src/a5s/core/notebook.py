@@ -198,6 +198,18 @@ def check(url: str, scenario: Any, now: datetime) -> dict[str, int]:
     return found
 
 
+def keeps(person: Any, instance: dict) -> bool:
+    """Whether someone keeps an instance's notebook: they own its agent, or run it, as its
+    owner or deputy."""
+    return (f"agent-owner:{instance['definition']}" in person.roles
+            or person.id in (instance["owner"], instance["deputy"]))
+
+
+def readable(scenario: Any, person: str, row: dict) -> bool:
+    """Whether someone may see a note: every record its run read, as it reached runs."""
+    return all(scenario.sees(person, k) for k in row["read_records"] or row["sources"])
+
+
 def entry(row: dict, action: str, why: str, by: str | None = None) -> dict:
     """The ledger's record of what became of an entry: by its hash, never its words."""
     return {"kind": "notebook", "action": action, "run": None, "instance": row["instance_id"],

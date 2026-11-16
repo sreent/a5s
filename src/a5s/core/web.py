@@ -17,8 +17,8 @@ from typing import Any
 
 import httpx
 import psycopg
-from fastapi import APIRouter, Depends, HTTPException, Response
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
 from a5s import db
@@ -56,7 +56,8 @@ def webchat(gw: Any) -> bool:
 
 
 def page(gw: Any, name: str) -> Response:
-    """One of the pages people sign in to, or its script, as webchat/ holds it."""
+    """The web chat's page, or one of its files, as webchat/ holds it: every other page is the
+    studio's."""
     if not webchat(gw):
         raise HTTPException(404, "the web chat isn't set up here")
     path = WEBCHAT / name
@@ -146,17 +147,62 @@ def refusal(gw: Any, exc: Any) -> HTTPException:
     return HTTPException(exc.status, exc.reason)
 
 
-def acting(gw: Any, name: str) -> APIRouter:
-    """A page where someone signs in afresh for one act, such as approving a version of the
-    settings: the page and its script, which hold nobody's data, where it signs them in, and
-    its sign-in, passed on to the identity provider. The page gets the signed sign-in alone,
-    with no refresh token to make more like it. Each act's route checks its own sign-in, whose
-    nonce commits to the act, so the provider signs it."""
+def signing(gw: Any, at: str) -> APIRouter:
+    """Where the studio signs someone in, at `at`: where the identity provider is, at the level
+    what counts asks it for, and the provider's code, passed on to it, for the signed sign-in
+    alone, with no refresh token to make more like it. Neither holds anyone's data. An act's
+    sign-in comes this way too, its nonce committing to the act."""
 
     def available() -> None:
         approving(gw)
 
     pages = APIRouter(dependencies=[Depends(available)])
+
+    @pages.get(f"{at}/config")
+    def sign_in_config() -> dict:
+        """Where the studio signs someone in, at the level what counts asks the provider for."""
+        try:
+            where = gw.identity.endpoints()
+        except Exception as exc:  # the provider's down: the page says so, and nothing else
+            raise HTTPException(503, "the identity provider can't be reached") from exc
+        level = asked_level(gw.identity.cfg)
+        return {"signin": {"authorization_endpoint": where["authorization_endpoint"],
+                           "client_id": gw.cfg.webchat_client_id, "scope": "openid profile",
+                           **({"acr_values": level} if level else {})}}
+
+    @pages.post(f"{at}/token")
+    def sign_in_token(body: TokenRequest) -> JSONResponse:
+        """The studio's sign-in, passed on to the identity provider: the signed sign-in alone."""
+        if body.grant_type != "authorization_code" or not (body.code and body.code_verifier
+                                                            and body.redirect_uri):
+            raise HTTPException(400, "send a code and its verifier")
+        return exchange(gw, {"grant_type": "authorization_code",
+                             "client_id": gw.cfg.webchat_client_id, "code": body.code,
+                             "code_verifier": body.code_verifier,
+                             "redirect_uri": body.redirect_uri}, ("id_token",))
+
+    return pages
+
+
+def acting(gw: Any, name: str) -> APIRouter:
+    """The acts of a page where someone signs in afresh for one act, such as approving a version
+    of the settings: each act's route checks its own sign-in, whose nonce commits to the act, so
+    the provider signs it. The page is the studio's, /studio/<name>, which signs in as the
+    studio does; its old address goes there, with what it asked for, for the links already
+    sent."""
+
+    def available() -> None:
+        approving(gw)
+
+    pages = APIRouter(dependencies=[Depends(available)])
+
+    @pages.get(f"/{name}/", include_in_schema=False)
+    def act_moved(request: Request) -> Response:
+        asked = request.url.query
+        return RedirectResponse(f"/studio/{name}{'?' + asked if asked else ''}", status_code=303,
+                                headers=PAGE_HEADERS)
+
+    return pages
 
     @pages.get(f"/{name}/", include_in_schema=False)
     def act_page() -> Response:

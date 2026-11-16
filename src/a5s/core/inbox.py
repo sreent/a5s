@@ -453,9 +453,12 @@ def create_app(gw: Any) -> FastAPI:
     # The web chat (core/chat_api.py), which talks to the agents through the local channel
     app.include_router(chat_api.router(gw))
 
-    # The pages where people sign in afresh for one act, each a router of its own whose act's
-    # route checks its sign-in: approving a version of the settings (core/approve_api.py), the
-    # officer's requests, deciding held changes, and grading samples
+    # Where the studio signs people in, for its pages and for each act (core/web.py)
+    app.include_router(web.signing(gw, "/studio/sign-in"))
+
+    # The acts people sign in afresh for, each a router of its own whose act's route checks its
+    # sign-in, and whose page is the studio's: approving a version of the settings
+    # (core/approve_api.py), the officer's requests, deciding held changes, and grading samples
     for acts in (approve_api, officer_api, decide_api, grade_api):
         app.include_router(acts.router(gw))
 

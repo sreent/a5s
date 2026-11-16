@@ -38,8 +38,10 @@ from test_studio_authoring import kept
 from test_walkthrough_desk import DESK, able, definition
 from walkthrough import (
     LIVE,
+    On,
     Walk,
     answering,
+    decided_in_trail,
     deployed,
     merged,
     owned,
@@ -74,7 +76,7 @@ agent, and you say so if anyone asks.
 """
 
 
-def built(walk: Walk, stack, url: str, forge: FakeGitHub) -> tuple[dict, str, dict]:
+def built(walk: Walk, stack, url: str, forge: FakeGitHub, on: On) -> tuple[dict, str, dict]:
     """Dev builds resolver-assistant in the studio from nothing, tries it in the sandbox, and
     publishes it: its definition, as a5s keeps it, its draft, and its pull request."""
     page = walk.as_("dev", f"{url}/studio/new")
@@ -138,9 +140,11 @@ def built(walk: Walk, stack, url: str, forge: FakeGitHub) -> tuple[dict, str, di
         page.click("#try-it")
         page.wait_for_selector("#try-as option[value=rae]", state="attached", timeout=30000)
         page.select_option("#try-as", "rae")
+        if on.live:  # at night, on the night's model, so the case can fail as it's meant to
+            page.select_option("#try-model", on.alias)
         page.fill("#try-text", "What did Sam write on INC0000001?")
         page.click(".try-say button[type=submit]")
-        page.wait_for_selector(".try-answer .try-reply", timeout=30000)
+        page.wait_for_selector(".try-answer .try-reply", timeout=180000)
         page.fill("#case-name", NEVER)
         page.check("#never-uses label:has-text('reply_on_ticket') input")
         page.fill("#never-says", "closed")
@@ -148,7 +152,7 @@ def built(walk: Walk, stack, url: str, forge: FakeGitHub) -> tuple[dict, str, di
         page.wait_for_selector("#case-kept", timeout=30000)
         kept(page)
         page.click("#run-cases")
-        page.wait_for_selector("#cases-summary >> text=1 of 1 passed", timeout=60000)
+        page.wait_for_selector("#cases-summary >> text=1 of 1 passed", timeout=240000)
     [case] = yaml.safe_load(files_of(stack, page)["tests/tried.yaml"])
     assert case["name"] == NEVER and case["as"] == "rae", case
     assert [(s["avoids"], s["never_says"]) for s in case["steps"]] == [(["reply_on_ticket"], ["closed"])]
@@ -179,7 +183,7 @@ def at_work(walk: Walk, stack, url: str, draft: str) -> None:
     """Dev puts it to work from its plan, and the owners of the desk's parts approve it."""
     page = walk.as_("dev", f"{url}{draft}")
     with walk.step("Its release signed and deployed, Dev puts it to work from its plan, in the "
-                   "settings app.", page):
+                   "studio's settings.", page):
         page.click("#put-to-work")
         page.wait_for_selector("#add-instance", timeout=30000)
         assert page.input_value("#add-agent") == AGENT and page.input_value("#add-part") == "access"
@@ -252,6 +256,7 @@ def replied_and_audited(walk: Walk, stack, url: str) -> None:
         page.click("#search")
         page.wait_for_selector("#entries li", timeout=30000)
         assert "reply_on_ticket" in page.inner_text("#entries")
+        decided_in_trail(page, "ola")
 
 
 def test_the_resolver_assistant_is_built_in_the_studio_and_its_replies_wait_for_a_decider(
@@ -277,11 +282,12 @@ def test_the_resolver_assistant_is_built_in_the_studio_and_its_replies_wait_for_
             boxed = Config(database_url="postgresql://unused", gateway_url="http://unused",
                            service_token="", root=root, scenario=DESK, scenario_folder=desk,
                            agents_folder=root / "scenario-agents")
-            with (sandbox.opened(boxed, sandbox_database, tmp_path / "sandbox") as box,
+            with (sandbox.opened(boxed, sandbox_database, tmp_path / "sandbox",
+                                 transport=on.transport) as box,
                   serve(sandbox.create_app(box, "shared-token"), free_port()) as box_url):
                 stack.cfg = replace(stack.cfg, sandbox_url=box_url, sandbox_token="shared-token")
                 with deciding(stack, provider) as url:
-                    rebuilt, draft, pull = built(walk, stack, url, forge)
+                    rebuilt, draft, pull = built(walk, stack, url, forge, on)
         with walk.step("What it may do is what Dev gave it on its canvas, and no more: the desk's reads, "
                        "a draft, and a reply, which waits for a decider, at level 1 at most."):
             assert able(rebuilt)["tools"] == sorted(TOOLS)

@@ -1,7 +1,7 @@
-"""The data protection officer's page in the channels app (docs/data-protection.md): where they
-ask to export, or erase, what a5s keeps about someone, signed in afresh for that request alone,
-which someone from the team that runs a5s then carries out, once, within ten minutes
-(core/officer.py).
+"""The data protection officer's page's API in the channels app (docs/data-protection.md): where
+they ask to export, or erase, what a5s keeps about someone, signed in afresh for that request
+alone, which someone from the team that runs a5s then carries out, once, within ten minutes
+(core/officer.py). The page is the studio's, /studio/officer.
 """
 
 import hashlib
@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from a5s import db
 from a5s.core import approvals, ledger, officer, web
+from a5s.core import studio_models as shapes  # what each route answers, as the studio's types say
 
 
 class Asking(BaseModel):
@@ -25,10 +26,10 @@ class Asking(BaseModel):
 
 
 def router(gw: Any) -> APIRouter:
-    """The officer's page, its sign-in and its API, for the channels app to include."""
+    """The officer's page's API, and its old address, for the channels app to include."""
     pages = web.acting(gw, "officer")
 
-    @pages.post("/officer/requests")
+    @pages.post("/officer/requests", **shapes.answers(shapes.OfficerAsked))
     def officer_request(body: Asking, authorization: str | None = Header(default=None)) -> dict:
         """The officer's request, signed through the identity provider for it alone, and
         recorded for the gateway to check again and carry out, once."""

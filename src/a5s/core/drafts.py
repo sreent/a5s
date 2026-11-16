@@ -200,12 +200,7 @@ def start(conn: db.Connection, person: Person, agent: str, based_on: str,
     folder it began from, `base`: the agent's as released, or none for a new agent's, who
     drafted it `before` them, for a copy of someone else's, its `plan`, a copy's too, and, for
     one described in words, what it was given and why (describing.py)."""
-    held = conn.execute("select count(*) as n, bool_or(agent = %s) as already from agent_drafts "
-                        "where person = %s", (agent, person.id)).fetchone()
-    if held["already"]:
-        raise Refused(f"you have a draft of {agent} already: carry on with it, or drop it first")
-    if held["n"] >= MOST_DRAFTS:
-        raise Refused(f"you keep {MOST_DRAFTS} drafts at most: publish or drop one first")
+    room(conn, person, agent)
     made = conn.execute(
         "insert into agent_drafts (person, agent, based_on, files, base, before, plan, described) "
         f"values (%s, %s, %s, %s, %s, %s, %s, %s) returning {SHOWN}, files, base, before, plan, described",
@@ -214,6 +209,18 @@ def start(conn: db.Connection, person: Person, agent: str, based_on: str,
     if made is None:  # an insert returns the row it made
         raise Refused("a5s couldn't keep the draft: try again")
     return dict(made)
+
+
+def room(conn: db.Connection, person: Person, agent: str) -> None:
+    """Refused, saying why, unless someone has room for a new draft of `agent`: none of it yet,
+    and fewer than MOST_DRAFTS. Asked before a model is, for one described in words, so no
+    words go to a model's provider for a draft a5s would refuse to keep."""
+    held = conn.execute("select count(*) as n, bool_or(agent = %s) as already from agent_drafts "
+                        "where person = %s", (agent, person.id)).fetchone()
+    if held["already"]:
+        raise Refused(f"you have a draft of {agent} already: carry on with it, or drop it first")
+    if held["n"] >= MOST_DRAFTS:
+        raise Refused(f"you keep {MOST_DRAFTS} drafts at most: publish or drop one first")
 
 
 def save(conn: db.Connection, person: Person, draft: str, files: dict[str, str],

@@ -54,7 +54,12 @@ class PolicyEngine:
             permits = [p for p in _statements(pack).values() if p["effect"] == "permit"]
             if permits:
                 raise ValueError("a scenario's policy pack can only add restrictions (forbid)")
-        self.text = "\n".join([base if base is not None else base_pack(), *packs])
+        base = base if base is not None else base_pack()
+        own = {(p.get("annotations") or {}).get("id") for p in _statements(base).values()}
+        # a pack's own restrictions, by name: a name a5s's base pack has is never one of them
+        self._restricting = {name for pack in packs for p in _statements(pack).values()
+                             if (name := (p.get("annotations") or {}).get("id"))} - own
+        self.text = "\n".join([base, *packs])
         checked = cedarpy.validate_policies(self.text, schema())
         if not checked.validation_passed:
             problems = "; ".join(str(e) for e in checked.errors)
@@ -67,6 +72,12 @@ class PolicyEngine:
         self._holds = {pid for pid, p in statements.items()
                        if p["effect"] == "permit" and p.get("annotations", {}).get("hold") == "true"}
         self._policies = cedarpy.PolicySet.from_str(self.text)
+
+    def restricts(self, decision: Decision) -> bool:
+        """Whether only a scenario's pack denies a call, by restrictions of its own: never
+        a5s's base pack, nor a call policy couldn't check."""
+        return (not decision.allowed and not decision.held and not decision.errors
+                and bool(decision.reasons) and set(decision.reasons) <= self._restricting)
 
     def decide(
         self,

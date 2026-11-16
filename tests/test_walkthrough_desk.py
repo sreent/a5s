@@ -45,7 +45,7 @@ AGENT = "desk-helper"
 INSTANCE = f"{AGENT}-access"
 DESK = "a5s.service_desk:ServiceDeskScenario"
 TOOLS = ("search_records", "get_record", "get_messages", "search_knowledge", "read_knowledge", "create_draft",
-         "get_account", "reset_password", "reset_authenticators")
+         "get_account", "reset_password", "reset_authenticators", "search_devices", "get_device", "lock_device")
 ABILITIES = ("reminders", "recall", "documents", "digest-time", "how-i-work")
 INSTRUCTIONS = """# Desk helper
 
@@ -62,8 +62,12 @@ so if anyone asks.
   The identity provider runs its own reset, which they finish there: you never see a password.
 - Someone who lost what they sign in with: `reset_authenticators` on their own account, which
   always waits for a person to decide.
-- Never either for anyone but the person asking. You make no other changes and grant no access:
-  say what a person can do in the ITSM instead.
+- A device: `get_device` for one named by its tag, LT- or PH- and a number, and `search_devices`
+  for someone's. Say whether it meets the rules, and each reason device management gives.
+- Someone whose device is lost or stolen: `lock_device` on it, which may wait for hardware's
+  decider first.
+- Never a reset or an authenticator change for anyone but the person asking. You make no other
+  changes and grant no access: say what a person can do in the ITSM instead.
 """
 
 
@@ -104,7 +108,8 @@ def built(walk: Walk, stack, url: str, forge: FakeGitHub) -> tuple[dict, str, di
     with walk.step("From the palette, he gives it the desk's tools that read tickets, what "
                    "requesters wrote and the knowledge base, the one that saves a draft reply, and "
                    "the identity provider's self-service: an account, its own password reset, and "
-                   "removing authenticators. Both systems' come through their MCP servers.", page):
+                   "removing authenticators; and device management's: a device, and locking a lost "
+                   "one. All three systems' come through their MCP servers.", page):
         for tool in TOOLS:
             page.click(f".fd-palette [data-tool={tool}]")
             page.wait_for_selector(f".flow-canvas [data-step='tool:{tool}']", timeout=30000)
@@ -164,7 +169,7 @@ def at_work(walk: Walk, stack, url: str, draft: str) -> None:
     """Dev puts it to work from its plan, and the owners of the desk's parts approve it."""
     page = walk.as_("dev", f"{url}{draft}")
     with walk.step("Back in the studio, its draft says its release is signed and deployed, and Dev "
-                   "puts it to work from its plan, in the settings app.", page):
+                   "puts it to work from its plan, in the studio's settings.", page):
         page.click("#put-to-work")
         page.wait_for_selector("#add-instance", timeout=30000)
         assert page.input_value("#add-agent") == AGENT and page.input_value("#add-part") == "access"

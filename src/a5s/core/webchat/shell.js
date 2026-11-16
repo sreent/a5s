@@ -14,6 +14,12 @@
     ["Oversee", [["audit", "Audit trail", "audit"], ["admin", "Administration", "admin"],
                  ["officer", "Data protection", "officer"]]],
   ];
+  // Where a page is, where it isn't at its own address: the settings, the notebook, people's
+  // tasks, the administrators' page, the audit trail, deciding held changes, grading and the
+  // officer's requests are in the studio
+  const AT = { settings: "/studio/settings", notebook: "/studio/notebook", tasks: "/studio/tasks",
+               admin: "/studio/admin", audit: "/studio/audit", decide: "/studio/decide",
+               grade: "/studio/grade", officer: "/studio/officer" };
   // Icons, as lines on a 24-unit square
   const ICONS = {
     chat: ["M4 5.5h16v10.5H9l-5 4z"],
@@ -87,7 +93,7 @@
       nav.append(element("div", heading, "group"));
       for (const [key, name, glyph] of shown) {
         const link = element("a");
-        link.href = `/${key}/`;
+        link.href = AT[key] || `/${key}/`;
         link.append(icon(glyph), element("span", name));
         if (key === here) link.setAttribute("aria-current", "page");
         nav.append(link);

@@ -31,6 +31,8 @@ from test_studio_authoring import kept
 from walkthrough import (
     Walk,
     answering,
+    confirms,
+    decided_in_trail,
     deployed,
     merged,
     owned,
@@ -45,8 +47,9 @@ INSTANCE = f"{AGENT}-billing"
 INSTRUCTIONS = """# due-dates
 
 You keep the due dates of customers' questions in billing right. When someone asks you to move
-one, find the question, say what its due date is now, and ask for the change: its decider in
-billing decides it. Never move a date you weren't asked to move.
+one, find the question, say what its due date is now, and ask for the change at once, with the tool
+that makes it: its decider in billing decides it, so you needn't ask them to confirm it first.
+Never move a date you weren't asked to move.
 """
 
 
@@ -110,8 +113,8 @@ def at_work(walk: Walk, stack, url: str, draft: str) -> None:
     """Priya puts it to work from its plan, and Ana, billing's owner, approves it."""
     page = walk.as_("priya", f"{url}{draft}")
     with walk.step("Back in the studio, its draft says its release is signed and deployed. Priya "
-                   "follows its one next step: putting it to work, from its plan, in the settings "
-                   "app.", page):
+                   "follows its one next step: putting it to work, from its plan, in the studio's "
+                   "settings.", page):
         page.wait_for_selector("#put-to-work", timeout=30000)
         page.click("#put-to-work")
         page.wait_for_selector("#add-instance", timeout=30000)
@@ -151,6 +154,7 @@ def asked_and_decided(walk: Walk, stack, url: str) -> str:
     with walk.step("Ben asks due-dates, in the chat, to move a question's due date. It asks for "
                    "the change, which waits for Ana, its decider in billing.", page):
         says(page, AGENT, f"Please move Q-1002 to {day}.", f"I've asked to move it to {day}")
+        confirms(page, stack, AGENT)
     page = walk.as_("ana", f"{url}/studio/")
     with walk.step("Ana finds the change waiting for her decision, and opens its card: who asks, "
                    "for whom, and what it does, in code's words.", page):
@@ -186,6 +190,7 @@ def watched_and_audited(walk: Walk, url: str, day: str) -> None:
         page.click("#search")
         page.wait_for_selector("#entries li", timeout=30000)
         assert day in page.inner_text("#entries") or "change_due_date" in page.inner_text("#entries")
+        decided_in_trail(page, "ana")
 
 
 def test_an_agent_goes_from_an_idea_to_work_through_a5s_alone(database, tmp_path, provider, browser,

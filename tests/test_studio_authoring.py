@@ -126,7 +126,7 @@ def test_an_agents_owner_tries_their_draft_in_the_sandbox(stack, with_sandbox, a
     page.click("#try button:has-text('Say it')")
     page.wait_for_selector(".try-answer >> text=I looked it up and found Q-1001", timeout=60000)
     assert "Ben Okafor said" in page.inner_text(".try-said")
-    steps = page.inner_text(".try-answer .steps")
+    steps = page.inner_text(".try-answer .run-calls")
     assert "search_records" in steps and "allow" in steps
     page.click("details.sent summary")  # what the model was sent, whole: it's all made up
     page.wait_for_selector(".said-to.role-system", timeout=30000)

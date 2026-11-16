@@ -41,6 +41,12 @@ class Tenant:
         if self.refuse:
             return httpx.Response(self.refuse, json={"error": {"code": "Forbidden"}})
         body = json.loads(request.content) if request.content else {}
+        if request.method == "GET":  # a list, filtered as a5s asks, of what it holds
+            asked = request.url.params.get("$filter", "")
+            held = self.registrations if path == "/beta/copilot/agentRegistrations" else self.identities
+            return httpx.Response(200, json={"value": [
+                {"id": k} for k, v in held.items()
+                if f"'{v.get('sourceAgentId', v.get('displayName'))}'" in asked]})
         if path == "/beta/copilot/agentRegistrations" and request.method == "POST":
             made = f"reg-{len(self.registrations) + 1}"
             self.registrations[made] = body
@@ -53,7 +59,7 @@ class Tenant:
                 return httpx.Response(200)
             del self.registrations[made]
             return httpx.Response(204)
-        if path == "/beta/serviceprincipals/Microsoft.Graph.AgentIdentity":
+        if path == "/beta/serviceprincipals/Microsoft.Graph.AgentIdentity" and request.method == "POST":
             made = f"identity-{len(self.identities) + 1}"
             self.identities[made] = body
             return httpx.Response(201, json={"id": made})
@@ -87,7 +93,7 @@ def test_each_instance_is_registered_as_its_settings_and_release_say(stack, tena
     assert listed["ownerIds"] == [ANA, BEN] and listed["originatingStore"] == "a5s"
     assert listed["sourceAgentId"] == "assistant-finance" and listed["managedByAppId"] == "a5s-app"
     assert listed["agentCard"]["a5s"] == {"agent": "assistant", "status": "active", "level": 1,
-                                          "parts": ["billing"]}
+                                          "parts": {"billing": 1}, "actions": {}}
     [identity] = tenant.identities.values()  # its own, its owner and deputy its sponsors
     assert identity["displayName"] == "assistant-finance"
     assert identity["agentIdentityBlueprintId"] == "a5s-app"
@@ -125,6 +131,9 @@ def test_what_the_tenant_refuses_is_kept_and_tried_again(stack, tenant):
         kept = conn.execute("select * from registrations").fetchone()
     assert kept["registration"] is None and kept["problem"]
     tenant.refuse = None
+    assert sweep(stack) == []  # what's unchanged is asked again once in a while, not each sweep
+    with db.transaction(stack.admin) as conn:  # an hour on
+        conn.execute("update registrations set registered_at = registered_at - interval '2 hours'")
     assert sweep(stack)[0]["problem"] is None and len(tenant.registrations) == 1
 
 

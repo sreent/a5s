@@ -1,8 +1,8 @@
-"""The settings app's pages in the channels app (docs/administration.md): where the people who
-approve versions of the settings review the whole version in force, and ask for a new one. The
-gateway proposes it to everyone it needs, who approve it on the approval page, so asking for a
-version changes nothing by itself. What's asked for is checked and recorded in
-core/settings_app.py, which the studio asks through too.
+"""The settings app's API in the channels app (docs/administration.md), whose page is the studio's,
+/studio/settings: where the people who approve versions of the settings review the whole version
+in force, and ask for a new one. The gateway proposes it to everyone it needs, who approve it on
+the approval page, so asking for a version changes nothing by itself. What's asked for is checked
+and recorded in core/settings_app.py, which the studio's other ways to ask go through too.
 
 Every route of its API is behind the router's own check of who's signed in: someone who
 approves versions of the settings.
@@ -11,15 +11,17 @@ approves versions of the settings.
 from typing import Annotated, Any
 
 import yaml
-from fastapi import APIRouter, Depends, Header, HTTPException, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
 from a5s import db
 from a5s.contract import Person, parse_settings
 from a5s.core import approvals, memberships, registry, settings_app, web
+from a5s.core import studio_models as shapes  # what each route answers, as the studio's types say
 
 
-class Draft(BaseModel):
+class Written(BaseModel):
     """A version of the settings as someone wrote it in the settings app, and the version in
     force they reviewed it against, by its serial, once they have."""
 
@@ -65,14 +67,14 @@ def router(gw: Any) -> APIRouter:
     api = APIRouter(dependencies=[Depends(available), Depends(settling)])
 
     @pages.get("/settings/", include_in_schema=False)
-    def settings_page() -> Response:
-        return web.page(gw, "settings.html")
+    def settings_page(request: Request) -> Response:
+        """The settings are in the studio now: an address of the settings app's, such as a card's
+        or a bookmark's, goes there, with what it asked for, such as an agent to put to work."""
+        asked = request.url.query
+        return RedirectResponse(f"/studio/settings{'?' + asked if asked else ''}", status_code=303,
+                                headers=web.PAGE_HEADERS)
 
-    @pages.get("/settings/settings.js", include_in_schema=False)
-    def settings_script() -> Response:
-        return web.page(gw, "settings.js")
-
-    @api.get("/settings/api")
+    @api.get("/settings/api", **shapes.answers(shapes.SettingsNow))
     def settings_now(person: Annotated[Person, Depends(settling)]) -> dict:
         """The whole version in force, in words and as written, the versions waiting for
         approval, and what the person asked for lately."""
@@ -88,7 +90,7 @@ def router(gw: Any) -> APIRouter:
                 approved = approvals.recorded(conn, gw.scenario.name, row["digest"])
                 valid, _ = registry.signers(settings, gw.scenario.person, approved)
                 waiting.append({
-                    "serial": row["serial"], "link": f"/approve/?settings={row['digest']}",
+                    "serial": row["serial"], "link": f"/studio/approve?settings={row['digest']}",
                     "changes": approvals.changes(in_force, settings, *words),
                     "approved_by": [p.name if (p := gw.scenario.person(a)) else a for a in valid],
                     "needs": registry.missing(settings, gw.scenario.person, valid, in_force,
@@ -117,12 +119,12 @@ def router(gw: Any) -> APIRouter:
             "requests": [{"asked_at": r["asked_at"].isoformat(),
                           "serial": parse_settings(bytes(r["raw"])).serial,
                           "outcome": r["outcome"] or "waiting for a5s to ask its approvers",
-                          "link": f"/approve/?settings={r['digest']}" if r["digest"] else None}
+                          "link": f"/studio/approve?settings={r['digest']}" if r["digest"] else None}
                          for r in asked],
         }
 
-    @api.post("/settings/api/review")
-    def settings_review(body: Draft) -> dict:
+    @api.post("/settings/api/review", **shapes.answers(shapes.SettingsReview))
+    def settings_review(body: Written) -> dict:
         """What a version someone wrote would change, the whole of it in words, and who'd
         have to approve it, before they ask for it."""
         with db.transaction(gw.url) as conn:
@@ -140,8 +142,8 @@ def router(gw: Any) -> APIRouter:
                     settings, gw.scenario.holders, before,
                     memberships.rooted(gw.scenario).holders)]}
 
-    @api.post("/settings/api/requests", status_code=202)
-    def settings_request(body: Draft, person: Annotated[Person, Depends(settling)]) -> dict:
+    @api.post("/settings/api/requests", status_code=202, **shapes.answers(shapes.SettingsAsked))
+    def settings_request(body: Written, person: Annotated[Person, Depends(settling)]) -> dict:
         """Ask for a version: the gateway proposes it to everyone it needs within a minute."""
         with db.transaction(gw.url) as conn:
             try:

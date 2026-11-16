@@ -4,7 +4,7 @@
 
 import { get, type Home } from "../api";
 import { Link } from "../router";
-import { PageHead, useLoad, Waiting, when } from "../ui";
+import { PageHead, useLoad, Waiting, WaitList, when } from "../ui";
 
 export function HomePage() {
   const { data, error } = useLoad(() => get<Home>("/studio/api/home"), []);
@@ -17,17 +17,7 @@ export function HomePage() {
         <>
           <section className="card" id="waiting">
             <h2>Waiting on you</h2>
-            {data.waiting.length === 0
-              ? <p className="note">Nothing waits on you now.</p>
-              : (
-                <ul className="waits">{data.waiting.map((w) => (
-                  <li key={`${w.kind}:${w.what}`} className={`wait wait-${w.kind}`}>
-                    {w.go ? <a href={w.go}>{w.what}</a> : <span>{w.what}</span>}
-                    {w.how && <span className="faint"> · <span className="mono">{w.how}</span></span>}
-                    {w.why.length > 0 && <ul className="plain faint">{w.why.map((why) => <li key={why}>{why}</li>)}</ul>}
-                  </li>
-                ))}</ul>
-              )}
+            <WaitList waiting={data.waiting} none="Nothing waits on you now." />
           </section>
           {data.drafts.length > 0 && (
             <section className="card" id="my-drafts">

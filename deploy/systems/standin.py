@@ -86,12 +86,26 @@ def once(made: dict[str, dict], meta: dict, same: str, do: Callable[[], dict]) -
     return made[key]
 
 
-def keep(name: str, state: dict) -> None:
-    """What's been done through the made-up system `name`, kept as JSON in the folder
+def kept(name: str, folder: str | Path | None = None) -> dict:
+    """What the made-up system `name` kept of what's been done through it, as `keep` left it in
+    its folder, so it carries on where it was when it stops and starts again: nothing, if there's
+    no folder, or nothing kept there."""
+    folder = folder or os.environ.get(STATE)
+    if not folder:
+        return {}
+    try:
+        found = json.loads((Path(folder) / f"{name}.json").read_text())
+    except (OSError, ValueError):
+        return {}
+    return found if isinstance(found, dict) else {}
+
+
+def keep(name: str, state: dict, folder: str | Path | None = None) -> None:
+    """What's been done through the made-up system `name`, kept as JSON in `folder`, or the one
     A5S_SYSTEMS_STATE names, if it names one, for its scenario's own code to read, as an
-    organisation's code reads its own system as it stands: written whole, in one step, so
-    whatever reads it never reads half of it."""
-    folder = os.environ.get(STATE)
+    organisation's code reads its own system as it stands, and for itself when it starts again:
+    written whole, in one step, so whatever reads it never reads half of it."""
+    folder = folder or os.environ.get(STATE)
     if not folder:
         return
     Path(folder).mkdir(parents=True, exist_ok=True)

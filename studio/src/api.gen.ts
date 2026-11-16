@@ -5,6 +5,38 @@ export type ActedFor = {
   name: string | null;
 };
 
+// An administrative act, as the ledger records it: who did it, when, and to what, with whom
+// it was about as a stand-in until the officer agrees to names.
+export type AdminAct = {
+  seq: number;
+  at: string | null;
+  action: string;
+  what: string;
+  by: string | string[] | null;
+  instance: string | null;
+  about: Record<string, unknown>;
+};
+
+// The administrators' page: who holds each role and by what, what waits for whom, what
+// nobody answers for, and the latest acts.
+export type AdminNow = {
+  you: string;
+  roles: RoleHeld[];
+  groups: GroupGives[];
+  claim: string | null;
+  waiting: AdminWaiting;
+  ownerless: Ownerless;
+  days: number;
+  latest: AdminAct[];
+};
+
+// What waits for whom: versions of the settings, the release, and held changes.
+export type AdminWaiting = {
+  settings: VersionNeeds[];
+  release: string[];
+  held_changes: HeldIn[];
+};
+
 // An agent as someone sees it: each layer of it they see, with why. What a layer they
 // don't see would add is left out, not null.
 export type Agent = {
@@ -36,6 +68,19 @@ export type Agent = {
   asks?: Asked[];
 };
 
+// What the approval page sends with its sign-in: the salt its nonce was made with.
+export type Approval = {
+  salt: string;
+};
+
+// An approval recorded, for the gateway to check again, seal, and count.
+export type Approved = {
+  approved: boolean;
+  serial: number;
+  by: string;
+  needs: string[];
+};
+
 // Someone's own ask for an agent, as they see it: never who declined it (core/asks.py).
 export type Ask = {
   id: string;
@@ -61,6 +106,43 @@ export type Asked = {
   person: string;
   asked_at: string;
   why: string[];
+};
+
+// What the officer's page sends with its sign-in: what it's to do, for whom, and the salt
+// its nonce was made with.
+export type Asking = {
+  action: string;
+  person: string;
+  salt: string;
+};
+
+// A page of a period's entries, as the auditor asked, and where the next begins.
+export type AuditEntries = {
+  entries: Record<string, unknown>[];
+  next: number | null;
+};
+
+// A page of a period's entries exactly as the ledger holds them, to check and keep, with what
+// proves they're its own: the entries either side, and the chain's head.
+export type AuditExport = {
+  entries: Record<string, unknown>[];
+  next: number | null;
+  head: Record<string, unknown> | null;
+  bounds: Record<string, unknown>;
+};
+
+// Who's reading the trail, and how it shows people: by name, or by stand-in.
+export type AuditNow = {
+  you: string;
+  names: boolean;
+  exports: boolean;
+  kinds: string[];
+};
+
+// Who holds each role, and who did what of a period's administration.
+export type AuditReport = {
+  roles: RoleHolders[];
+  acts: AdminAct[];
 };
 
 export type Authoring = {
@@ -132,6 +214,13 @@ export type Catalogue = {
   authoring: Authoring;
 };
 
+// A change a version of the settings makes, in words code worked out, and whether it widens
+// what agents do, as the page that approves it marks it.
+export type Change = {
+  text: string;
+  widens: boolean;
+};
+
 export type CoAuthors = {
   people: Named[];
 };
@@ -150,6 +239,30 @@ export type Day = {
   day: string;
   runs: number;
   ended: Record<string, number>;
+};
+
+// The held changes someone may decide now, those they were told of, and those they decided
+// lately.
+export type DecideNow = {
+  you: string;
+  proposals: HeldChange[];
+};
+
+// A decision recorded, for the core to check again, seal and act on.
+export type Decided = {
+  decided: string[];
+  decision: string;
+  by: string;
+};
+
+// What the decision page sends with a sign-in made to decide: the changes it decides, by
+// their digests, the decision, the salt its nonce was made with, and, for a rejection, why,
+// if the decider says.
+export type Deciding = {
+  proposals: string[];
+  decision: string;
+  salt: string;
+  reason?: string | null;
 };
 
 // An agent as its folder defines it, whole, as the catalogue would show it: a draft's
@@ -306,10 +419,37 @@ export type Figures = {
   instances: string[];
 };
 
+// The samples someone may grade now, oldest first.
+export type GradeNow = {
+  you: string;
+  samples: SampleLine[];
+};
+
+// Grades recorded, for the core to check again and seal.
+export type Graded = {
+  graded: number[];
+  grades: Record<string, string>;
+  by: string;
+};
+
+// What the grading page sends with a sign-in made to grade: the grades, by sample, and the
+// salt its nonce was made with.
+export type Grading = {
+  grades: Record<string, string>;
+  salt: string;
+};
+
 export type GroupChats = {
   agent: string;
   messages: number;
   chats: number;
+  people: number;
+};
+
+// A group of the identity provider's that the settings give roles, and how many it holds.
+export type GroupGives = {
+  group: string;
+  roles: string[];
   people: number;
 };
 
@@ -338,12 +478,56 @@ export type Held = {
   decided_hours_p90: number | null;
 };
 
+// A change an agent asked for, held for a person to decide: in the words code worked out when
+// it was asked for, who asked and for whom, what to know, and whether the viewer may decide it.
+export type HeldChange = {
+  key: string;
+  digest: string;
+  said: string;
+  agent: string;
+  for: string[];
+  flags: string[];
+  sensitive: boolean;
+  status: string;
+  yours: string | null;
+  may_decide: boolean;
+  outcome: string | null;
+  proposed_at: string;
+  lapses_at: string;
+  links: string[];
+  records: RecordLink[];
+  changed: string[];
+};
+
+// Changes agents asked for in a part, waiting, and who may decide them.
+export type HeldIn = {
+  part: string;
+  waiting: number;
+  deciders: string[];
+};
+
+// Someone who holds a role, and what gave it them: the directory, or a group.
+export type Holder = {
+  id: string;
+  name: string;
+  by: string[];
+};
+
 export type Home = {
   you: string;
   waiting: Waiting[];
   drafts: DraftLine[];
   catalogue: boolean;
   authoring: boolean;
+};
+
+// The version of the settings in force: as written, all of it in words, and as data, which
+// the forms change.
+export type InForce = {
+  serial: number;
+  text: string;
+  whole: string[];
+  data: Record<string, unknown> | null;
 };
 
 // One of an agent's instances, which someone may watch.
@@ -409,6 +593,37 @@ export type Named = {
   name: string;
 };
 
+// Something nobody answers for any more, what's wrong, and what to do.
+export type Nobodys = {
+  what: string;
+  do: string;
+  agent?: string;
+  instance?: string;
+  part?: string;
+};
+
+// A note an agent kept, with the records it comes from, when it was noted, and when its
+// records were last checked.
+export type Note = {
+  entry: string;
+  instance: string;
+  text: string;
+  sources: NoteSource[];
+  noted: string;
+  checked: string;
+};
+
+// A note removed, by its keeper.
+export type NoteRemoved = {
+  removed: string;
+};
+
+// A record a note comes from, by its key, and its link in its system, if it has one.
+export type NoteSource = {
+  key: string;
+  link: string | null;
+};
+
 export type Notebook = {
   instance: string;
   notes: number;
@@ -417,6 +632,17 @@ export type Notebook = {
   let_go: number;
   given: number;
   runs_given: number;
+};
+
+// The notes of the instances someone keeps, those whose every record they may see, how many
+// more there are that they may not, and who else keeps those.
+export type NotebookNow = {
+  you: string;
+  instances: string[];
+  names: Record<string, string>;
+  entries: Note[];
+  hidden: number;
+  others: string[];
 };
 
 export type Obligations = {
@@ -457,6 +683,24 @@ export type Offered = {
   outside: string[];
 };
 
+// The officer's request, recorded for the team that runs a5s to carry out, once, with the
+// command it's carried out with.
+export type OfficerAsked = {
+  asked: string;
+  person: string;
+  name: string | null;
+  by: string;
+  lasts: string;
+  command: string;
+};
+
+// The agents, instances and parts nobody answers for.
+export type Ownerless = {
+  agents: Nobodys[];
+  instances: Nobodys[];
+  parts: Nobodys[];
+};
+
 // A part of the business, as the settings in force know it: who decides a change to one
 // of its records below level 2, by name, who approves an instance that works in it, its
 // owners, and how right graded samples must show an agent's changes there before a5s raises
@@ -475,6 +719,12 @@ export type Plan = {
   parts?: string[];
   serves?: string[];
   asks?: string[];
+};
+
+// A step of a task's plan, as its run keeps it, and how it stands.
+export type PlanStep = {
+  content: string;
+  status: string;
 };
 
 // A publish under way: the code to enter at GitHub's sign-in, and how it stands.
@@ -508,11 +758,37 @@ export type Questions = {
   answered_seconds_p90: number | null;
 };
 
+// A record a held change names, and its address in its system.
+export type RecordLink = {
+  key: string;
+  link: string;
+};
+
+// What an agent's release lets its instances be set to: the level it starts at, the most it
+// allows, and the types of change its own tools make.
+export type ReleaseLevels = {
+  starts: number;
+  most: number;
+  actions: string[];
+};
+
 export type Reminders = {
   due: number;
   on_time: number;
   missed: number;
   on_time_share: number | null;
+};
+
+// A task someone asked to be done again and again: when, how it stands, and its last task;
+// or, where its words name records they may no longer see, how it stands alone.
+export type RepeatLine = {
+  repeat: string;
+  agent: string;
+  when: string;
+  status: string;
+  "last task"?: string;
+  what?: string;
+  withheld?: boolean;
 };
 
 export type Reported = {
@@ -549,6 +825,19 @@ export type Role = {
   name: string;
   by: string[];
   may: string;
+};
+
+// A role, in words, and who holds it.
+export type RoleHeld = {
+  role: string;
+  name: string;
+  held_by: Holder[];
+};
+
+// A role, and who holds it now.
+export type RoleHolders = {
+  role: string;
+  held_by: string[];
 };
 
 export type Run = {
@@ -592,6 +881,21 @@ export type RunsPage = {
   hidden: number;
   before: string | null;
   fewer: number | null;
+};
+
+// A sample of an agent's change, waiting for a grade: in the words code worked out when it was
+// asked for or made, how it went, what code flagged, and its records as they stood then.
+export type SampleLine = {
+  id: number;
+  kind: string;
+  agent: string;
+  part: string;
+  action: string;
+  said: string;
+  records: Record<string, Record<string, unknown> | null>;
+  flags: string[];
+  decided: string | null;
+  drawn_at: string;
 };
 
 export type Samples = {
@@ -642,6 +946,44 @@ export type Serve = {
   instance: string;
 };
 
+// A version asked for, which a5s proposes to everyone it needs within a minute.
+export type SettingsAsked = {
+  request: number;
+  serial: number;
+};
+
+// The settings, for someone who approves versions of them: the version in force, what the
+// forms offer, the versions waiting for approval, and what they asked for lately.
+export type SettingsNow = {
+  you: string;
+  me: string;
+  in_force: InForce | null;
+  names: Record<string, string>;
+  actions: string[];
+  releases: Record<string, ReleaseLevels>;
+  waiting: VersionWaiting[];
+  requests: SettingsRequest[];
+};
+
+// A version someone asked for, and what became of it.
+export type SettingsRequest = {
+  asked_at: string;
+  serial: number;
+  outcome: string;
+  link: string | null;
+};
+
+// A version someone wrote, reviewed before they ask for it: why a5s couldn't propose it, or
+// what it would change, all of it in words, and whose approval it needs.
+export type SettingsReview = {
+  problems: string[];
+  serial?: number;
+  in_force?: number | null;
+  changes?: Change[];
+  whole?: string[];
+  approvers?: string[];
+};
+
 // Whose signature a draft's release would need, and why: and who holds that role in the
 // directory, by name, where a person holds it; for a new agent's owner, nobody, till the
 // directory names someone.
@@ -650,6 +992,66 @@ export type Signer = {
   who: string;
   why: string;
   held_by?: string[] | null;
+};
+
+// How an instance stands, for someone who may watch it: what of it waits, each where it's
+// done; who suspended it, if it's suspended; what they may do to it from its page, suspend it
+// or resume it, if either; and what was asked for there that a5s hasn't carried out yet.
+export type Standing = {
+  waiting: Waiting[];
+  suspended_by: string | null;
+  may: string | null;
+  asked: StatusAsked | null;
+};
+
+// Suspending or resuming an instance from its page: which, and the salt the page made its
+// sign-in's nonce with.
+export type StatusAct = {
+  action: string;
+  salt: string;
+};
+
+// Suspending or resuming an instance, asked for on its page, which a5s carries out within
+// a minute, once it has checked the sign-in that asked for it again (core/suspension.py).
+export type StatusAsked = {
+  action: string;
+  by: string;
+  at: string;
+};
+
+// One of someone's tasks, with an agent: how it stands, what it waits on, and what it has
+// spent; or, where its words name records they may no longer see, how it stands alone.
+export type TaskLine = {
+  task: string;
+  agent: string;
+  status: string;
+  ended: boolean;
+  progress: number;
+  "has until": string;
+  spent: string;
+  updated: string;
+  parts?: string;
+  withheld?: boolean;
+  what?: string;
+  plan?: PlanStep[];
+  why?: string;
+  needed?: string | null;
+  said?: string | null;
+  found?: unknown;
+  "so far"?: unknown[];
+};
+
+// A task cancelled, or a repeat stopped, at its owner's word.
+export type TaskStopped = {
+  cancelled?: string;
+  stopped?: string;
+};
+
+// Someone's own tasks, with every agent, and what they asked to be done again and again.
+export type TasksNow = {
+  you: string;
+  tasks: TaskLine[];
+  repeats: RepeatLine[];
 };
 
 // An agent a new one may start from, and the tools it needs that the scenario hasn't.
@@ -721,6 +1123,40 @@ export type ValidationError = {
   ctx?: Record<string, unknown>;
 };
 
+// A version of the settings waiting, who approved it, and whose approval it still needs.
+export type VersionNeeds = {
+  serial: number;
+  approved_by: string[];
+  needs: string[];
+};
+
+// A version of the settings as its approvers see it before approving it: what it changes
+// from the one in force, in words code worked out, all of it, who approved it so far and what
+// it still needs, who asked for it, and where it stands.
+export type VersionReview = {
+  serial: number;
+  proposed_at: string;
+  in_force: number | null;
+  changes: Change[];
+  whole: string[];
+  needs: string[];
+  approved_by: string[];
+  asked_by: string | null;
+  you: string;
+  you_approved: boolean;
+  status: string;
+};
+
+// A version waiting for approval: what it changes, who approved it so far, and why it still
+// waits, on its own page.
+export type VersionWaiting = {
+  serial: number;
+  link: string;
+  changes: Change[];
+  approved_by: string[];
+  needs: string[];
+};
+
 // Something that waits for someone: what it is, why it's theirs, and where they do it, a
 // page of a5s's, or the command line.
 export type Waiting = {
@@ -729,6 +1165,14 @@ export type Waiting = {
   why: string[];
   go: string | null;
   how?: string;
+  since?: string;
+};
+
+// A version of the settings as someone wrote it in the settings app, and the version in
+// force they reviewed it against, by its serial, once they have.
+export type Written = {
+  text: string;
+  base?: number | null;
 };
 
 export type You = {

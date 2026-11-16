@@ -15,3 +15,11 @@ when { resource.action == "reset-password" && context.level >= 2 && !context.for
 @reason("registering or removing an authenticator always goes to a person, since that's how account takeovers start: at level 1, it waits for one")
 forbid (principal is Instance, action == Action::"call_tool", resource is Tool)
 when { resource.action == "reset-authenticators" && context.level >= 2 };
+
+// A lost device's holder may lock it at once, alone, at level 2, on their own device in answer to
+// their own message, as a reset; anyone else's waits for the decider of hardware, who knows
+// whether it's really lost, as every change below level 2 does.
+@id("desk-locks-only-for-the-person-asking")
+@reason("a device locks alone only for its holder, asking themselves: anyone else's waits for the decider of hardware")
+forbid (principal is Instance, action == Action::"call_tool", resource is Tool)
+when { resource.action == "lock-device" && context.level >= 2 && !context.for_self };

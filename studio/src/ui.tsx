@@ -2,14 +2,17 @@
 // the badges that say what a tool does, how something stands, and how a run ended.
 
 import { type DependencyList, type ReactNode, useEffect, useState } from "react";
-import type { AgentUses, Instance, Tool } from "./api";
-import { Link, type Route } from "./router";
+import type { AgentUses, Instance, Tool, Waiting as Wait } from "./api";
+import { Skeleton } from "./design/feedback";
+import { inside, Link, type Route } from "./router";
 
 /** What a page shows, once loaded; while it loads again, as for another period, what it
  * showed before stays, `stale`, so nothing jumps. */
 export type Loaded<T> = { data?: T; error?: string; stale?: boolean };
 
-export function useLoad<T>(load: () => Promise<T>, deps: DependencyList): Loaded<T> {
+/** What a page shows, and `reload`, which reads it again after someone acts and settles once
+ * it's shown, so the page says what they did only with it in sight. */
+export function useLoad<T>(load: () => Promise<T>, deps: DependencyList): Loaded<T> & { reload: () => Promise<void> } {
   const [state, setState] = useState<Loaded<T>>({});
   useEffect(() => {
     let current = true;
@@ -19,11 +22,13 @@ export function useLoad<T>(load: () => Promise<T>, deps: DependencyList): Loaded
     return () => { current = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
-  return state;
+  const reload = async () => setState({ data: await load() });
+  return { ...state, reload };
 }
 
+/** While a page loads what it shows, its shape, still (Ocean's Skeleton); or what went wrong. */
 export function Waiting({ error }: { error?: string }) {
-  return <p className={error ? "problem" : "note"} role="status">{error ?? "Loading…"}</p>;
+  return error ? <p className="problem" role="status">{error}</p> : <Skeleton />;
 }
 
 export type Crumb = { label: string; to: Route };
@@ -132,4 +137,26 @@ export function aboutInstance(inst: Instance): string {
 
 export function runners(inst: Instance): string {
   return [inst.owner, inst.deputy].filter(Boolean).join(" and ") || "nobody";
+}
+
+/** A way to where something's done: within the studio, without leaving it, or a page of its own. */
+export function To({ go, children }: { go: string; children: ReactNode }) {
+  const route = inside(go);
+  return route ? <Link to={route}>{children}</Link> : <a href={go}>{children}</a>;
+}
+
+/** What waits for someone, each where they do it, on its own page or at the command line,
+ * with why it's theirs and since when, as the home and an instance's page list it. */
+export function WaitList({ waiting, none }: { waiting: Wait[]; none: string }) {
+  if (waiting.length === 0) return <p className="note">{none}</p>;
+  return (
+    <ul className="waits">{waiting.map((w) => (
+      <li key={`${w.kind}:${w.what}`} className={`wait wait-${w.kind}`}>
+        {w.go ? <To go={w.go}>{w.what}</To> : <span>{w.what}</span>}
+        {w.since && <span className="faint"> · since {when(w.since)}</span>}
+        {w.how && <span className="faint"> · <span className="mono">{w.how}</span></span>}
+        {w.why.length > 0 && <ul className="plain faint">{w.why.map((why) => <li key={why}>{why}</li>)}</ul>}
+      </li>
+    ))}</ul>
+  );
 }

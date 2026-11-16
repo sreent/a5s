@@ -682,7 +682,7 @@ def main(argv: list[str] | None = None) -> None:
         p.add_argument("--by", help="who you are, in development; else your sign-in in A5S_TOKEN")
     exported = sub.add_parser("export", help="all a5s keeps about someone, for their request "
                                              "to see it, once the data protection officer has "
-                                             "asked for it on the core's page, /officer/")
+                                             "asked for it in the studio, /studio/officer")
     exported.add_argument("--person", required=True, help="their id in the directory, or an "
                                                            "archive's name")
     exported.add_argument("--by", help="in development, the officer, who asks nowhere else")
@@ -690,7 +690,7 @@ def main(argv: list[str] | None = None) -> None:
                                                    "read, rather than print it")
     erased = sub.add_parser("erase", help="erase all a5s keeps about someone, at their "
                                           "request, once the data protection officer has asked "
-                                          "for it on the core's page, /officer/")
+                                          "for it in the studio, /studio/officer")
     erased.add_argument("--person", required=True, help="their id in the directory, or an "
                                                          "archive's name")
     erased.add_argument("--confirm", required=True, help="the same again, so that a mistyped "

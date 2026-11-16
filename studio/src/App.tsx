@@ -4,14 +4,25 @@
 import { useEffect, useState } from "react";
 import { signedIn } from "./api";
 import { signIn } from "./auth";
+import { Toasts } from "./design/feedback";
+import { Find } from "./Find";
+import { AdminPage } from "./pages/Admin";
 import { AgentPage } from "./pages/Agent";
 import { AgentsPage } from "./pages/Agents";
+import { ApprovePage } from "./pages/Approve";
+import { AuditPage } from "./pages/Audit";
+import { DecidePage } from "./pages/Decide";
 import { DesignPage } from "./pages/Design";
 import { DraftPage } from "./pages/Draft";
+import { GradePage } from "./pages/Grade";
 import { HomePage } from "./pages/Home";
 import { InstancePage } from "./pages/Instance";
 import { NewPage } from "./pages/New";
+import { NotebookPage } from "./pages/Notebook";
+import { OfficerPage } from "./pages/Officer";
 import { RunPage } from "./pages/Run";
+import { SettingsPage } from "./pages/Settings";
+import { TasksPage } from "./pages/Tasks";
 import { YouPage } from "./pages/You";
 import { reread, useRoute } from "./router";
 import { Sidebar } from "./Sidebar";
@@ -43,25 +54,41 @@ export function App() {
   else if (route.page === "agents") content = <AgentsPage />;
   else if (route.page === "you") content = <YouPage />;
   else if (route.page === "design") content = <DesignPage />;
+  else if (route.page === "settings") content = <SettingsPage />;
+  else if (route.page === "notebook") content = <NotebookPage />;
+  else if (route.page === "tasks") content = <TasksPage />;
+  else if (route.page === "admin") content = <AdminPage />;
+  else if (route.page === "audit") content = <AuditPage />;
+  else if (route.page === "decide") content = <DecidePage />;
+  else if (route.page === "grade") content = <GradePage />;
+  else if (route.page === "officer") content = <OfficerPage />;
+  else if (route.page === "approve") content = <ApprovePage key={route.settings} version={route.settings} />;
   else content = <HomePage />;
   const workbench = route.page === "draft" && state === "ready";  // a draft fills the window, as Ocean's workbench
   useEffect(() => {
     document.body.classList.toggle("workbench", workbench);
   }, [workbench]);
+  const ready = state === "ready";
   if (workbench) {
     return (
-      <div className="wb window">
-        <Sidebar signedIn rail />
-        <main className="wb-main">{content}</main>
-      </div>
+      <Toasts>
+        <Find ready={ready}>
+          <div className="wb window">
+            <Sidebar signedIn rail />
+            <main className="wb-main">{content}</main>
+          </div>
+        </Find>
+      </Toasts>
     );
   }
   return (
-    <>
-      <Sidebar signedIn={state === "ready"} />
-      <div className="page studio">
-        <main>{content}</main>
-      </div>
-    </>
+    <Toasts>
+      <Find ready={ready}>
+        <Sidebar signedIn={ready} />
+        <div className="page studio">
+          <main>{content}</main>
+        </div>
+      </Find>
+    </Toasts>
   );
 }

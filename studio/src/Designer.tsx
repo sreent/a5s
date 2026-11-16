@@ -17,7 +17,7 @@ import { ABILITIES, and, CHANNEL_WORDS, changers, dayWords, deciders, levelLines
   PREFERENCES, scheduleLines, toolLines } from "./consequences";
 import { DAYS, read, type Schedule, type Spec, Unreadable, withMap, withMessages, without, withoutSchedule,
   withReports, withSchedule, withTool, withValue, withWords } from "./definition";
-import { type Flow, FlowMap, type Step } from "./FlowMap";
+import { breakable, type Flow, FlowMap, type Step } from "./FlowMap";
 import { Icon } from "./icons";
 import { levels, type Risk, risk, RISK_NAMES, ToolBadges } from "./ui";
 
@@ -136,7 +136,7 @@ function Picker({ spec, offer, add, ability, start, owe, report }: { spec: Spec;
                       onDragStart={(e) => { e.dataTransfer.setData(DRAG, tool.name); e.dataTransfer.effectAllowed = "copy"; }}
                       onClick={() => add(tool)}>
                 <span className={`fd-type ${kind}`}><Icon name="tool" /></span>
-                <span className="fd-text"><span className="mono"><span className="hidden">Add </span>{tool.name}</span>
+                <span className="fd-text"><span className="mono"><span className="hidden">Add </span>{breakable(tool.name)}</span>
                   {tool.description && <span className="fd-about">{tool.description}</span>}</span>
               </button>
             ))}

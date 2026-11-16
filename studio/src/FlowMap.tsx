@@ -12,7 +12,7 @@
 import { type Edge, Handle, type Node, type NodeProps, Position, ReactFlow, ReactFlowProvider,
   useReactFlow } from "@xyflow/react";
 import "@xyflow/react/dist/base.css";  // React Flow's own, never its style.css: Ocean draws the rest
-import { type DragEvent, type KeyboardEvent, type ReactNode } from "react";
+import { type DragEvent, Fragment, type KeyboardEvent, type ReactNode } from "react";
 import { Icon } from "./icons";
 
 export type Tone = "reads" | "writes" | "changes" | "outside" | "own" | "refused" | "agent";  // agent: another agent
@@ -42,7 +42,7 @@ const STATES = { good: "check", warn: "clock", bad: "cross" } as const;
 const SLOTS: [Slot, string][] = [["model", "Model"], ["checks", "Checks"], ["tools", "Tools"]];
 // Where steps stand, in pixels at a rem of 15: a column of what starts it, the agent, its end,
 // and below them, in rows of five, what hangs from it
-const STEP = 120, GAP_Y = 150, AGENT_X = 250, AGENT_W = 210, END_X = 590, HANG_GAP = 132, HANG_Y = 210;
+const STEP = 120, GAP_Y = 150, AGENT_X = 250, AGENT_W = 210, END_X = 590, HANG_GAP = 140, HANG_Y = 210;
 const PER_ROW = 5, ROW_Y = 150, STARTS_FOOT = 130;
 
 function FlowStep({ data }: NodeProps<Node<Data>>) {
@@ -71,7 +71,7 @@ function FlowStep({ data }: NodeProps<Node<Data>>) {
         <button type="button" className="flow-box nodrag" data-step={step.key} aria-pressed={chosen} aria-label={label}
                 onClick={(e) => pick(step.key, e.detail === 0)}>{inside}</button>
       ) : <div className="flow-box">{inside}</div>}
-      {kind !== "agent" && <span className="flow-name">{step.name}</span>}
+      {kind !== "agent" && <span className="flow-name">{breakable(step.name)}</span>}
       {kind !== "agent" && step.about && <span className="flow-about">{step.about}</span>}
       {kind === "trigger" && <Handle type="source" position={Position.Right} className="at-right" isConnectable={false} />}
       {kind === "end" && <Handle type="target" position={Position.Left} className="at-left" isConnectable={false} />}
@@ -146,6 +146,14 @@ function placed(flow: Flow, chosen: string | null, pick: Data["pick"], stubs: St
                                   target: s.key, className: ["hangs", s.dim ? "dim" : "", s.path ?? ""].filter(Boolean).join(" ") })),
   ];
   return { nodes, edges };
+}
+
+/** A name that may break after each underscore, as a tool's long names do, so it wraps within
+ * its step, where Ocean wraps a step's words, rather than spilling onto the steps beside it. */
+export function breakable(name: string): ReactNode {
+  const parts = name.split("_");
+  return parts.map((part, i) => (
+    <Fragment key={i}>{part}{i < parts.length - 1 && <>_<wbr /></>}</Fragment>));
 }
 
 /** Which step the arrow keys move to from one, by where steps stand on the canvas. */

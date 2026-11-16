@@ -127,6 +127,9 @@ def agent_part(folder: Path) -> dict:
             "channels": sorted(d.channels), "budget": d.budget.model_dump(), "context": d.context.model_dump(),
             "scope": d.scope, "reminders": d.reminders, "preferences": sorted(d.preferences),
             "judge": d.evaluation.judge if d.evaluation else None,  # whom its samples go to
+            "tasks": d.tasks.model_dump() if d.tasks else None,  # long work, over days
+            "owner": d.owner, "deputy": d.deputy,  # who answers for it where the settings name none
+            "listed": d.listed,  # whether everyone signed in may know of it
         },
     }
 
@@ -308,6 +311,16 @@ def _widens_agent(old: dict, new: dict) -> list[str]:
     found += [f"has a new {key}" for key in ("budget", "context", "scope") if new[key] != old[key]]
     if new.get("judge") and new.get("judge") != old.get("judge"):  # its samples go to it
         found.append("has its work judged by another model")
+    if "tasks" in old and (tasks := new.get("tasks")):  # what a release before recorded of it
+        was = old["tasks"]
+        if was is None:
+            found.append("takes on long tasks")
+        elif tasks["budget_tokens"] > was["budget_tokens"] or tasks["days"] > was["days"]:
+            found.append("may spend more, or longer, on its tasks")
+    found += [f"has another {key}" for key in ("owner", "deputy")
+              if key in old and new.get(key) != old[key]]
+    if "listed" in old and new.get("listed") and not old["listed"]:
+        found.append("is listed for everyone signed in")
     return found
 
 
@@ -352,6 +365,8 @@ def needs(new: dict, old: dict | None, advisory: str | None = None) -> list[Need
                      else Need(ENGINEER, "the approved models changed, and none may do more"))
     for name in sorted(set(new["agents"]) | set(old["agents"])):
         before, after = old["agents"].get(name), new["agents"].get(name)
+        if before is not None and after is not None:  # by what the release before recorded of it
+            after = {**after, "may": {k: v for k, v in after["may"].items() if k in before["may"]}}
         if before == after:
             continue
         if after is None:

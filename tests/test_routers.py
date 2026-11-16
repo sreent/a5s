@@ -28,12 +28,12 @@ SIGNED_IN = ("/studio/api", "/settings/api", "/notebook/api", "/tasks/api", "/au
              "/admin/api", "/shell/api")
 ACTING = ("/approve/", "/officer/", "/decide/", "/grade/")
 # The routes that check for themselves: the chats', each with its own sign-in or token; the web
-# chat's, which hold nobody's data; and each act's page
-OWN = ("/channels/", "/chat/", *ACTING)
-SIGNS_IN = ("config", "token")  # where an act's page signs someone in, which holds nothing
+# chat's, which hold nobody's data; where the studio signs someone in, which holds nothing; and
+# each act's
+OWN = ("/channels/", "/chat/", "/studio/sign-in/", *ACTING)
 DIGEST = "0" * 64
 ACTS = {  # each act, with a body of the shape it takes, so it's refused for want of a sign-in
-    ("post", "/approve/settings/{version}/review"): {"salt": "s"},
+    ("get", "/approve/settings/{version}"): None,  # what an approver reads before approving
     ("post", "/approve/settings/{version}"): {"salt": "s"},
     ("post", "/officer/requests"): {"action": "export", "person": "ben", "salt": "s"},
     ("post", "/decide/review"): None,
@@ -70,8 +70,7 @@ def test_every_route_of_a_signed_in_api_refuses_someone_not_signed_in(approving,
 
 def test_every_act_refuses_someone_not_signed_in(approving):
     acts = {(method, path) for path, methods in described(approving).items()
-            if path.startswith(ACTING) and path.rsplit("/", 1)[-1] not in SIGNS_IN
-            for method in methods}
+            if path.startswith(ACTING) for method in methods}
     assert acts == set(ACTS)  # an act added says what it takes, and is refused unsigned
     for (method, path), body in ACTS.items():
         address = path.replace("{version}", DIGEST).replace("{sample}", "1")

@@ -68,16 +68,19 @@ def test_an_offer_they_never_said_yes_to_shows_as_lapsed(stack, approving, provi
 
 def test_someone_sees_and_cancels_a_task_in_the_browser(stack, approving, provider, browser):
     a_task(stack)
-    served = httpx.get(f"{approving}/tasks/", timeout=30)
+    went = httpx.get(f"{approving}/tasks/", timeout=30)  # in the studio, now
+    assert (went.status_code, went.headers["location"]) == (303, "/studio/tasks")
+    served = httpx.get(f"{approving}/studio/tasks", timeout=30)
     assert "script-src 'self'" in served.headers["Content-Security-Policy"]
     provider.person = "ana"
     page = browser.new_page()
     page.goto(f"{approving}/tasks/")
     page.wait_for_selector(f"#tasks >> text={ASKED}", timeout=30000)
-    assert page.inner_text("#who") == "Ana Ortiz"
+    assert page.inner_text("#me").endswith("Ana Ortiz")
     assert page.evaluate("window.location.search") == ""  # the code doesn't linger
     assert "with the assistant: queued, 0% done" in page.inner_text("#tasks")
-    page.click("#tasks button:has-text('Cancel')")
+    page.click("#tasks button:text-is('Cancel')")
+    page.locator("dialog[open] button:has-text('Cancel it')").click()  # asked first
     page.wait_for_selector("#status >> text=Cancelled", timeout=30000)
     assert "cancelled" in page.inner_text("#tasks") and page.locator("#tasks button").count() == 0
     assert tasks_of(stack)[0]["status"] == "cancelled"

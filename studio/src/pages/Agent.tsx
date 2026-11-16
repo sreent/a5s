@@ -226,8 +226,8 @@ function PutToWork({ agent }: { agent: AgentKnown }) {
       <p>No instance runs it yet. Its first is an instance in the settings, for a few people first, at level 0 or
         1, so it suggests, or asks before each change. Its part's owner approves it, as any change there.</p>
       {may
-        ? <div className="actions"><a className="button primary" id="put-it-to-work"
-            href={`/settings/?add=${encodeURIComponent(agent.id)}`}>Put it to work in the settings</a></div>
+        ? <div className="actions"><Link className="button primary" id="put-it-to-work"
+            to={{ page: "settings", search: `?add=${encodeURIComponent(agent.id)}` }}>Put it to work in the settings</Link></div>
         : shell.data && <p className="note">Those who approve versions of the settings put it to work there: a part's
             owner, or someone who approves instances. To have it serve you, ask for it.</p>}
     </section>

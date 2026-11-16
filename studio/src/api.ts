@@ -28,7 +28,9 @@ export async function send<T>(method: string, path: string, body?: unknown): Pro
   const answer = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   const found = await answer.json().catch(() => ({}));
   if (!answer.ok) {
-    const said = typeof found.detail === "string" ? found.detail : `a5s said ${answer.status}.`;
+    const detail = found.detail;  // words, or, from the settings, the problems a version has
+    const said = typeof detail === "string" ? detail
+      : Array.isArray(detail?.problems) ? detail.problems.join(" ") : `a5s said ${answer.status}.`;
     throw new ApiError(said, answer.status);
   }
   return found as T;
@@ -81,6 +83,32 @@ export type Catalogue = gen.Catalogue;
 // Someone's home and roles (core/home.py)
 export type Home = gen.Home;
 export type Waiting = gen.Waiting;
+export type SettingsNow = gen.SettingsNow;  // the settings, for someone who approves versions of them
+export type SettingsReview = gen.SettingsReview;
+export type SettingsAsked = gen.SettingsAsked;
+export type Change = gen.Change;  // a change a version makes, in words, and whether it widens what agents do
+export type NotebookNow = gen.NotebookNow;  // the notes of the instances someone keeps
+export type Note = gen.Note;
+export type TasksNow = gen.TasksNow;  // someone's own tasks, and what they asked to be done again and again
+export type TaskLine = gen.TaskLine;
+export type RepeatLine = gen.RepeatLine;
+export type AdminNow = gen.AdminNow;  // the administrators' page
+export type AdminAct = gen.AdminAct;
+export type AuditNow = gen.AuditNow;  // the audit trail, for auditors and assurance
+export type AuditEntries = gen.AuditEntries;
+export type AuditReport = gen.AuditReport;
+export type AuditExport = gen.AuditExport;
+export type DecideNow = gen.DecideNow;  // the held changes someone may decide, and lately decided
+export type HeldChange = gen.HeldChange;
+export type Decided = gen.Decided;
+export type GradeNow = gen.GradeNow;  // the samples someone may grade now
+export type SampleLine = gen.SampleLine;
+export type Graded = gen.Graded;
+export type OfficerAsked = gen.OfficerAsked;  // the officer's request, recorded
+export type VersionReview = gen.VersionReview;  // a version of the settings, as its approvers read it
+export type Approved = gen.Approved;
+export type Standing = gen.Standing;  // how an instance stands, for its viewer: what waits, and what they may do
+export type StatusAsked = gen.StatusAsked;  // a suspension or resumption asked for, which a5s carries out
 export type You = gen.You;
 export type Role = gen.Role;
 

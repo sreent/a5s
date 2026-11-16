@@ -223,10 +223,10 @@ def test_pages_ask_the_provider_for_the_level_what_counts_needs(stack, approving
 
     import httpx
 
-    assert "acr_values" not in httpx.get(f"{approving}/approve/config", timeout=30).json()[
+    assert "acr_values" not in httpx.get(f"{approving}/studio/sign-in/config", timeout=30).json()[
         "signin"]  # amr's, which only the provider's own policy asks for
     stack.gateway.identity.cfg = replace(stack.gateway.identity.cfg, mfa=("acr", ("gold",)))
-    signin = httpx.get(f"{approving}/approve/config", timeout=30).json()["signin"]
+    signin = httpx.get(f"{approving}/studio/sign-in/config", timeout=30).json()["signin"]
     assert signin["acr_values"] == "gold"
 
 

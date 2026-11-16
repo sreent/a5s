@@ -1,5 +1,6 @@
-"""The notebook's page in the channels app (docs/architecture.md): what agents learned from
-records, for the people who keep each instance's notebook to read and remove (core/notebook.py).
+"""The notebook's API in the channels app (docs/architecture.md), whose page is the studio's,
+/studio/notebook: what agents learned from records, for the people who keep each instance's
+notebook to read and remove (core/notebook.py).
 
 Every route of its API is behind the router's own check of who's signed in: someone who owns
 an agent, or runs one of its instances, as its owner or deputy.
@@ -7,11 +8,13 @@ an agent, or runs one of its instances, as its owner or deputy.
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
+from fastapi.responses import RedirectResponse
 
 from a5s import db
 from a5s.contract import Person
 from a5s.core import ledger, notebook, web
+from a5s.core import studio_models as shapes  # what each route answers, as the studio's types say
 
 Keeper = tuple[Person, list[dict]]  # who signed in, and the instances whose notebooks they keep
 
@@ -19,11 +22,10 @@ Keeper = tuple[Person, list[dict]]  # who signed in, and the instances whose not
 def kept(gw: Any, person: Person) -> list[dict]:
     """The instances whose notebooks someone keeps: those of an agent they own, or that they
     run, as its owner or deputy."""
-    owns = {r.removeprefix("agent-owner:") for r in person.roles if r.startswith("agent-owner:")}
     with db.transaction(gw.url) as conn:
         return [i for i in conn.execute("select id, definition, owner, deputy, parts from instances "
                                         "where status <> 'retired' order by id")
-                if i["definition"] in owns or person.id in (i["owner"], i["deputy"])]
+                if notebook.keeps(person, i)]
 
 
 def named(instance: dict) -> str:
@@ -51,18 +53,16 @@ def router(gw: Any) -> APIRouter:
     api = APIRouter(dependencies=[Depends(available), Depends(keeping)])
 
     def may_see(person: Person, row: dict) -> bool:
-        """Whether someone may see a note: every record its run read, as it reached runs."""
-        return all(gw.scenario.sees(person.id, k) for k in row["read_records"] or row["sources"])
+        return notebook.readable(gw.scenario, person.id, row)
 
     @pages.get("/notebook/", include_in_schema=False)
-    def notebook_page() -> Response:
-        return web.page(gw, "notebook.html")
+    def notebook_page(request: Request) -> Response:
+        """The notebook is in the studio now: its old address goes there."""
+        asked = request.url.query
+        return RedirectResponse(f"/studio/notebook{'?' + asked if asked else ''}", status_code=303,
+                                headers=web.PAGE_HEADERS)
 
-    @pages.get("/notebook/notebook.js", include_in_schema=False)
-    def notebook_script() -> Response:
-        return web.page(gw, "notebook.js")
-
-    @api.get("/notebook/api")
+    @api.get("/notebook/api", **shapes.answers(shapes.NotebookNow))
     def notebook_now(keeper: Annotated[Keeper, Depends(keeping)]) -> dict:
         """The entries of the instances someone keeps, those whose every record they may see,
         each with links to its records, and who else keeps the ones they may not see."""
@@ -86,7 +86,7 @@ def router(gw: Any) -> APIRouter:
                              "checked": r["checked_at"].date().isoformat()} for r in shown],
                 "hidden": len(rows) - len(shown), "others": others}
 
-    @api.post("/notebook/api/{entry}/remove")
+    @api.post("/notebook/api/{entry}/remove", **shapes.answers(shapes.NoteRemoved))
     def notebook_remove(entry: str, keeper: Annotated[Keeper, Depends(keeping)]) -> dict:
         """Remove an entry, as someone who keeps its instance's notebook and may see its records."""
         person, instances = keeper

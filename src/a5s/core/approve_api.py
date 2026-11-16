@@ -1,6 +1,7 @@
-"""The approval page in the channels app (docs/architecture.md#proposals-and-approvals): where
-the people a version of the settings needs approve it, from the card in their chat. Each signs
-in afresh to approve, with a nonce that commits to approving that version alone, so the
+"""The approval page's API in the channels app (docs/architecture.md#proposals-and-approvals):
+where the people a version of the settings needs approve it, from the card in their chat. The
+page is the studio's, /studio/approve. They read the version signed in to the studio, and sign
+in afresh to approve it, with a nonce that commits to approving that version alone, so the
 identity provider signs the approval (core/approvals.py). It's recorded once; the gateway
 checks it again, seals it and applies the version once everyone it needs has approved.
 """
@@ -16,6 +17,7 @@ from pydantic import BaseModel
 from a5s import db
 from a5s.contract import parse_settings
 from a5s.core import approvals, ledger, memberships, registry, web
+from a5s.core import studio_models as shapes  # what each route answers, as the studio's types say
 
 
 class Approval(BaseModel):
@@ -25,7 +27,7 @@ class Approval(BaseModel):
 
 
 def router(gw: Any) -> APIRouter:
-    """The approval page, its sign-in and its API, for the channels app to include."""
+    """The approval page's API, and its old address, for the channels app to include."""
     pages = web.acting(gw, "approve")
 
     def approver(version: str, body: Approval, authorization: str | None) -> tuple:
@@ -57,12 +59,16 @@ def router(gw: Any) -> APIRouter:
             status = "waiting"
         return row, last, status
 
-    @pages.post("/approve/settings/{version}/review")
-    def review(version: str, body: Approval, authorization: str | None = Header(default=None)
-               ) -> dict:
-        """What a version changes from the one in force, as code works it out, for someone it
-        needs who signed in to approve it."""
-        person, _, _ = approver(version, body, authorization)
+    @pages.get("/approve/settings/{version}", **shapes.answers(shapes.VersionReview))
+    def review(version: str, authorization: str | None = Header(default=None)) -> dict:
+        """What a version changes from the one in force, as code works it out, for someone who
+        approves versions of the settings, signed in to the studio: what they read before they
+        sign in afresh to approve it."""
+        if not re.fullmatch(r"[0-9a-f]{64}", version):
+            raise HTTPException(404, "a5s has no such version of the settings")
+        person = web.known(gw, authorization)
+        if not registry.approves(person):
+            raise HTTPException(403, approvals.APPROVERS.format(name=person.name))
         with db.transaction(gw.url) as conn:
             row, last, status = proposal(conn, version)
             approved = approvals.recorded(conn, gw.scenario.name, version)
@@ -85,7 +91,7 @@ def router(gw: Any) -> APIRouter:
                 "asked_by": asker, "you": person.name, "you_approved": person.id in approved,
                 "status": status}
 
-    @pages.post("/approve/settings/{version}")
+    @pages.post("/approve/settings/{version}", **shapes.answers(shapes.Approved))
     def approve(version: str, body: Approval, authorization: str | None = Header(default=None)
                 ) -> dict:
         """An approval of a version, signed through the identity provider for this version

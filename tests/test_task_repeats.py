@@ -139,7 +139,8 @@ def test_someone_stops_a_repeat_on_their_page_in_the_browser(stack, approving, p
     page.goto(f"{approving}/tasks/")
     page.wait_for_selector("#repeats >> text=every Thursday and Friday at 09:00", timeout=30000)
     assert "E-1, with the assistant" in page.inner_text("#repeats")
-    page.click("#repeats button:has-text('Stop')")
+    page.click("#repeats button:text-is('Stop')")
+    page.locator("dialog[open] button:has-text('Stop it')").click()  # asked first
     page.wait_for_selector("#status >> text=Stopped E-1", timeout=30000)
     assert "stopped" in page.inner_text("#repeats") and page.locator("#repeats button").count() == 0
     assert repeats_of(stack)[0]["status"] == "stopped"

@@ -21,19 +21,19 @@ from test_ui_pages import shot
 
 
 def sign_in(url: str, provider, action: str, person: str, by: str = "noor") -> tuple[str, str]:
-    """A sign-in to ask for this alone, made as the officer's page makes one: the token, and
-    its salt."""
+    """A sign-in to ask for this alone, made as the studio makes one for the officer: the token,
+    and its salt."""
     salt, verifier = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=")
     provider.person = by
     went = httpx.get(f"{provider.url}/auth", params={
-        "client_id": CLIENT, "redirect_uri": f"{url}/officer/", "state": "s",
+        "client_id": CLIENT, "redirect_uri": f"{url}/studio/", "state": "s",
         "nonce": officer.nonce(action, person, salt), "code_challenge": challenge.decode(),
         "code_challenge_method": "S256", "max_age": "0"})
     code = parse_qs(went.headers["location"].split("?", 1)[1])["code"][0]
-    tokens = httpx.post(f"{url}/officer/token", json={
+    tokens = httpx.post(f"{url}/studio/sign-in/token", json={  # as the studio signs in
         "grant_type": "authorization_code", "code": code, "code_verifier": verifier,
-        "redirect_uri": f"{url}/officer/"}).json()
+        "redirect_uri": f"{url}/studio/"}).json()
     assert set(tokens) == {"id_token"}  # nothing to make more sign-ins like it with
     return tokens["id_token"], salt
 
@@ -119,8 +119,10 @@ def test_the_officer_asks_in_the_browser(stack, approving, provider, browser):
     stack.model.reply("Noted, Ben.")
     stack.say(SAID, person="ben")
     provider.person = "noor"  # who signs in at the provider
+    went = httpx.get(f"{approving}/officer/")  # the page's old address goes to the studio's
+    assert (went.status_code, went.headers["location"]) == (303, "/studio/officer")
     page = browser.new_page()
-    page.goto(f"{approving}/officer/")
+    page.goto(f"{approving}/studio/officer")
     page.wait_for_selector("#ask", state="visible", timeout=30000)
     accessible(page)
     shot(page, "officer")

@@ -13,7 +13,7 @@ a field that may be left out, but is never null, is optional there (`SkipJsonSch
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.json_schema import SkipJsonSchema
 
 
@@ -41,6 +41,7 @@ class Waiting(Shape):
     why: list[str]
     go: str | None
     how: str | SkipJsonSchema[None] = None  # the command, for what's done at the command line
+    since: datetime | SkipJsonSchema[None] = None  # when the oldest of them began to wait
 
 
 class DraftLine(Shape):
@@ -115,6 +116,26 @@ class Instance(Shape):
     owner: str | None
     deputy: str | None
     asks: list[str]
+
+
+class StatusAsked(Shape):
+    """Suspending or resuming an instance, asked for on its page, which a5s carries out within
+    a minute, once it has checked the sign-in that asked for it again (core/suspension.py)."""
+
+    action: str  # suspend or resume
+    by: str  # who asked, by name
+    at: datetime
+
+
+class Standing(Shape):
+    """How an instance stands, for someone who may watch it: what of it waits, each where it's
+    done; who suspended it, if it's suspended; what they may do to it from its page, suspend it
+    or resume it, if either; and what was asked for there that a5s hasn't carried out yet."""
+
+    waiting: list[Waiting]
+    suspended_by: str | None
+    may: str | None  # suspend or resume, which they may do now, signed in afresh
+    asked: StatusAsked | None
 
 
 class Autonomy(Shape):
@@ -751,3 +772,463 @@ class PullRequest(Shape):
     title: str
     body: str
     ready: bool  # whether nothing would stop its release
+
+
+# The settings app, folded into the studio (core/settings_api.py): the version in force, those
+# waiting for approval, and what someone asked for; and a version they wrote, reviewed
+
+
+class Change(Shape):
+    """A change a version of the settings makes, in words code worked out, and whether it widens
+    what agents do, as the page that approves it marks it."""
+
+    text: str
+    widens: bool
+
+
+class InForce(Shape):
+    """The version of the settings in force: as written, all of it in words, and as data, which
+    the forms change."""
+
+    serial: int
+    text: str
+    whole: list[str]
+    data: dict[str, Any] | None
+
+
+class ReleaseLevels(Shape):
+    """What an agent's release lets its instances be set to: the level it starts at, the most it
+    allows, and the types of change its own tools make."""
+
+    starts: int
+    most: int
+    actions: list[str]
+
+
+class VersionWaiting(Shape):
+    """A version waiting for approval: what it changes, who approved it so far, and why it still
+    waits, on its own page."""
+
+    serial: int
+    link: str
+    changes: list[Change]
+    approved_by: list[str]
+    needs: list[str]
+
+
+class SettingsRequest(Shape):
+    """A version someone asked for, and what became of it."""
+
+    asked_at: datetime
+    serial: int
+    outcome: str
+    link: str | None
+
+
+class SettingsNow(Shape):
+    """The settings, for someone who approves versions of them: the version in force, what the
+    forms offer, the versions waiting for approval, and what they asked for lately."""
+
+    you: str
+    me: str
+    in_force: InForce | None
+    names: dict[str, str]  # the people the settings name, and whoever signed in, by their names
+    actions: list[str]  # the types of change this deployment's tools make
+    releases: dict[str, ReleaseLevels]
+    waiting: list[VersionWaiting]
+    requests: list[SettingsRequest]
+
+
+class SettingsReview(Shape):
+    """A version someone wrote, reviewed before they ask for it: why a5s couldn't propose it, or
+    what it would change, all of it in words, and whose approval it needs."""
+
+    problems: list[str]
+    serial: int | SkipJsonSchema[None] = None  # the number it would have, once it reads
+    in_force: int | None | SkipJsonSchema[None] = None  # the version it was reviewed against
+    changes: list[Change] | SkipJsonSchema[None] = None
+    whole: list[str] | SkipJsonSchema[None] = None
+    approvers: list[str] | SkipJsonSchema[None] = None
+
+
+class SettingsAsked(Shape):
+    """A version asked for, which a5s proposes to everyone it needs within a minute."""
+
+    request: int
+    serial: int
+
+
+# The notebook, folded into the studio (core/notebook_api.py): what agents noted from records,
+# for those who keep each instance's notebook
+
+
+class NoteSource(Shape):
+    """A record a note comes from, by its key, and its link in its system, if it has one."""
+
+    key: str
+    link: str | None
+
+
+class Note(Shape):
+    """A note an agent kept, with the records it comes from, when it was noted, and when its
+    records were last checked."""
+
+    entry: str  # N-<number>
+    instance: str
+    text: str
+    sources: list[NoteSource]
+    noted: str  # a date
+    checked: str  # a date
+
+
+class NotebookNow(Shape):
+    """The notes of the instances someone keeps, those whose every record they may see, how many
+    more there are that they may not, and who else keeps those."""
+
+    you: str
+    instances: list[str]
+    names: dict[str, str]  # each instance as people say it, such as "the assistant in billing"
+    entries: list[Note]
+    hidden: int
+    others: list[str]
+
+
+class NoteRemoved(Shape):
+    """A note removed, by its keeper."""
+
+    removed: str
+
+
+# Someone's own tasks, folded into the studio (core/tasks_api.py): what they asked agents to do
+# over more than one run, and what they asked to be done again and again
+
+
+class PlanStep(Shape):
+    """A step of a task's plan, as its run keeps it, and how it stands."""
+
+    content: str
+    status: str  # pending, in_progress or completed
+
+
+class TaskLine(Shape):
+    """One of someone's tasks, with an agent: how it stands, what it waits on, and what it has
+    spent; or, where its words name records they may no longer see, how it stands alone."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    task: str  # T-<number>
+    agent: str
+    status: str
+    ended: bool
+    progress: int  # percent
+    has_until: str = Field(alias="has until")
+    spent: str
+    updated: str  # a date
+    parts: str | SkipJsonSchema[None] = None  # how many of its parts are done, if it has any
+    withheld: bool | SkipJsonSchema[None] = None
+    what: str | SkipJsonSchema[None] = None
+    plan: list[PlanStep] | SkipJsonSchema[None] = None
+    why: str | SkipJsonSchema[None] = None  # why it stopped, as its run said
+    needed: str | None | SkipJsonSchema[None] = None  # what it asked its owner for
+    said: str | None | SkipJsonSchema[None] = None  # and what they said
+    found: Any = None  # what it found, as its run gave it
+    so_far: list[Any] | SkipJsonSchema[None] = Field(default=None, alias="so far")
+
+
+class RepeatLine(Shape):
+    """A task someone asked to be done again and again: when, how it stands, and its last task;
+    or, where its words name records they may no longer see, how it stands alone."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    repeat: str  # E-<number>
+    agent: str
+    when: str
+    status: str
+    last_task: str | SkipJsonSchema[None] = Field(default=None, alias="last task")
+    what: str | SkipJsonSchema[None] = None
+    withheld: bool | SkipJsonSchema[None] = None
+
+
+class TasksNow(Shape):
+    """Someone's own tasks, with every agent, and what they asked to be done again and again."""
+
+    you: str
+    tasks: list[TaskLine]
+    repeats: list[RepeatLine]
+
+
+class TaskStopped(Shape):
+    """A task cancelled, or a repeat stopped, at its owner's word."""
+
+    cancelled: str | SkipJsonSchema[None] = None
+    stopped: str | SkipJsonSchema[None] = None
+
+
+# The administrators' page, folded into the studio (core/admin_api.py): who holds each role and
+# by what, what waits for whom, what nobody answers for, and the latest administrative acts
+
+
+class Holder(Shape):
+    """Someone who holds a role, and what gave it them: the directory, or a group."""
+
+    id: str
+    name: str
+    by: list[str]
+
+
+class RoleHeld(Shape):
+    """A role, in words, and who holds it."""
+
+    role: str
+    name: str
+    held_by: list[Holder]
+
+
+class GroupGives(Shape):
+    """A group of the identity provider's that the settings give roles, and how many it holds."""
+
+    group: str
+    roles: list[str]
+    people: int
+
+
+class VersionNeeds(Shape):
+    """A version of the settings waiting, who approved it, and whose approval it still needs."""
+
+    serial: int
+    approved_by: list[str]
+    needs: list[str]
+
+
+class HeldIn(Shape):
+    """Changes agents asked for in a part, waiting, and who may decide them."""
+
+    part: str
+    waiting: int
+    deciders: list[str]
+
+
+class AdminWaiting(Shape):
+    """What waits for whom: versions of the settings, the release, and held changes."""
+
+    settings: list[VersionNeeds]
+    release: list[str]
+    held_changes: list[HeldIn]
+
+
+class Nobodys(Shape):
+    """Something nobody answers for any more, what's wrong, and what to do."""
+
+    what: str
+    do: str
+    agent: str | SkipJsonSchema[None] = None
+    instance: str | SkipJsonSchema[None] = None
+    part: str | SkipJsonSchema[None] = None
+
+
+class Ownerless(Shape):
+    """The agents, instances and parts nobody answers for."""
+
+    agents: list[Nobodys]
+    instances: list[Nobodys]
+    parts: list[Nobodys]
+
+
+class AdminAct(Shape):
+    """An administrative act, as the ledger records it: who did it, when, and to what, with whom
+    it was about as a stand-in until the officer agrees to names."""
+
+    seq: int
+    at: str | None
+    action: str
+    what: str
+    by: str | list[str] | None  # whoever did it, or each who signed it
+    instance: str | None
+    about: dict[str, Any]
+
+
+class AdminNow(Shape):
+    """The administrators' page: who holds each role and by what, what waits for whom, what
+    nobody answers for, and the latest acts."""
+
+    you: str
+    roles: list[RoleHeld]
+    groups: list[GroupGives]
+    claim: str | None  # the claim sign-ins show their groups in, if the deployment reads one
+    waiting: AdminWaiting
+    ownerless: Ownerless
+    days: int
+    latest: list[AdminAct]
+
+
+# The audit trail, folded into the studio (core/audit_api.py): the ledger as an auditor reads it
+
+
+class AuditNow(Shape):
+    """Who's reading the trail, and how it shows people: by name, or by stand-in."""
+
+    you: str
+    names: bool  # whom agents acted for shows by name, as the officer agreed
+    exports: bool  # whether a period may be exported here, which only names allow
+    kinds: list[str]
+
+
+class AuditEntries(Shape):
+    """A page of a period's entries, as the auditor asked, and where the next begins."""
+
+    entries: list[dict[str, Any]]  # each as the ledger holds it, whom it acted for as a stand-in
+    next: int | None
+
+
+class RoleHolders(Shape):
+    """A role, and who holds it now."""
+
+    role: str
+    held_by: list[str]
+
+
+class AuditReport(Shape):
+    """Who holds each role, and who did what of a period's administration."""
+
+    roles: list[RoleHolders]
+    acts: list[AdminAct]
+
+
+class AuditExport(Shape):
+    """A page of a period's entries exactly as the ledger holds them, to check and keep, with what
+    proves they're its own: the entries either side, and the chain's head."""
+
+    entries: list[dict[str, Any]]
+    next: int | None
+    head: dict[str, Any] | None
+    bounds: dict[str, Any]
+
+
+# Deciding the changes agents asked for, folded into the studio (core/decide_api.py)
+
+
+class RecordLink(Shape):
+    """A record a held change names, and its address in its system."""
+
+    key: str
+    link: str
+
+
+class HeldChange(Shape):
+    """A change an agent asked for, held for a person to decide: in the words code worked out when
+    it was asked for, who asked and for whom, what to know, and whether the viewer may decide it."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    key: str  # P-<number>
+    digest: str  # what a decision's sign-in commits to
+    said: str
+    agent: str
+    acts_for: list[str] = Field(alias="for")  # whom it was asked for, by name
+    flags: list[str]
+    sensitive: bool  # decided on its own, never with others
+    status: str
+    yours: str | None  # the viewer's decision, if they made one that counts
+    may_decide: bool
+    outcome: str | None
+    proposed_at: str
+    lapses_at: str
+    links: list[str]
+    records: list[RecordLink]
+    changed: list[str]  # the records that changed since it was asked for, in words
+
+
+class DecideNow(Shape):
+    """The held changes someone may decide now, those they were told of, and those they decided
+    lately."""
+
+    you: str
+    proposals: list[HeldChange]
+
+
+class Decided(Shape):
+    """A decision recorded, for the core to check again, seal and act on."""
+
+    decided: list[str]
+    decision: str
+    by: str
+
+
+# Grading samples of agents' changes, folded into the studio (core/grade_api.py)
+
+
+class SampleLine(Shape):
+    """A sample of an agent's change, waiting for a grade: in the words code worked out when it was
+    asked for or made, how it went, what code flagged, and its records as they stood then."""
+
+    id: int
+    kind: str  # "proposal", a held change someone decided, or "action", made at level 2
+    agent: str
+    part: str
+    action: str
+    said: str
+    records: dict[str, dict[str, Any] | None]
+    flags: list[str]
+    decided: str | None  # a decider's approve or reject, for a held change
+    drawn_at: str
+
+
+class GradeNow(Shape):
+    """The samples someone may grade now, oldest first."""
+
+    you: str
+    samples: list[SampleLine]
+
+
+class Graded(Shape):
+    """Grades recorded, for the core to check again and seal."""
+
+    graded: list[int]
+    grades: dict[str, str]
+    by: str
+
+
+# Approving a version of the settings, folded into the studio (core/approve_api.py)
+
+
+class VersionReview(Shape):
+    """A version of the settings as its approvers see it before approving it: what it changes
+    from the one in force, in words code worked out, all of it, who approved it so far and what
+    it still needs, who asked for it, and where it stands."""
+
+    serial: int
+    proposed_at: str
+    in_force: int | None  # the version in force, if any
+    changes: list[Change]
+    whole: list[str]
+    needs: list[str]
+    approved_by: list[str]
+    asked_by: str | None  # who asked for it in the settings, if anyone did
+    you: str
+    you_approved: bool
+    status: str  # waiting, applied, superseded, or why a5s couldn't apply it
+
+
+class Approved(Shape):
+    """An approval recorded, for the gateway to check again, seal, and count."""
+
+    approved: bool
+    serial: int
+    by: str
+    needs: list[str]
+
+
+# The data protection officer's requests, folded into the studio (core/officer_api.py)
+
+
+class OfficerAsked(Shape):
+    """The officer's request, recorded for the team that runs a5s to carry out, once, with the
+    command it's carried out with."""
+
+    asked: str  # export or erase
+    person: str
+    name: str | None  # whose the id is in the directory now, if anyone's
+    by: str
+    lasts: str
+    command: str

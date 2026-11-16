@@ -31,15 +31,27 @@ services:
       A5S_SANDBOX_TOKEN: ${A5S_SANDBOX_TOKEN:?set A5S_SANDBOX_TOKEN}
       DEEPSEEK_API_KEY:  # an approved model's key, for trying drafts on it, with made-up data alone
       QWEN_API_KEY:
+      A5S_SYSTEMS_STATE: /systems-state  # what its own copies of the made-up systems keep
+    volumes: ["sandbox-systems-state:/systems-state:ro"]
     networks: [sandbox-data, sandbox, egress]
     depends_on:
       sandbox-db: {condition: service_healthy}
+
+  sandbox-systems-state:  # the folder its own copies of a scenario's made-up systems keep state in
+    image: ${A5S_IMAGE:-a5s:dev}
+    user: "0"
+    entrypoint: ["chown", "10001:10001", "/state"]
+    volumes: ["sandbox-systems-state:/state"]
+    network_mode: none
 
   channels:  # the studio, which reaches the sandbox, and nothing of the sandbox's reaches back
     environment:
       A5S_SANDBOX_URL: http://sandbox:8710
       A5S_SANDBOX_TOKEN: ${A5S_SANDBOX_TOKEN:?set A5S_SANDBOX_TOKEN}
     networks: [data, egress, edge, sandbox]
+
+volumes:
+  sandbox-systems-state: {}
 
 networks:
   sandbox-data: {internal: true}

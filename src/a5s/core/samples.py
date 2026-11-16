@@ -51,7 +51,7 @@ from psycopg.types.json import Jsonb
 
 from a5s import db
 from a5s.contract import AGENT_AUTHOR, AGENT_OWNER, Person, Scenario, Tool
-from a5s.core import ledger
+from a5s.core import ledger, sealing
 from a5s.core.ledger import canonical
 
 GRADER = "grader"  # the directory's role for people who grade agents' work
@@ -315,9 +315,9 @@ def may_grade(scenario: Scenario, sample: dict, person: Person,
 
 
 def gradeable(conn: db.Connection, scenario: Scenario, person: Person,
-              most: int = 20) -> list[dict]:
-    """The samples waiting for a grade that someone may grade, oldest first, up to `most`:
-    read in pages, leaving out in the query what it can."""
+              most: int = 20, instance: str | None = None) -> list[dict]:
+    """The samples waiting for a grade that someone may grade, oldest first, up to `most`, or
+    those of one instance: read in pages, leaving out in the query what it can."""
     minders = {r["id"]: (r["owner"], r["deputy"]) for r in conn.execute(
         "select id, owner, deputy from instances")}
     drafters: dict[str, frozenset[str]] = {}
@@ -327,8 +327,9 @@ def gradeable(conn: db.Connection, scenario: Scenario, person: Person,
         rows = conn.execute(
             "select * from samples where scenario = %s and grade is null and lapsed_at "
             "is null and id > %s and not (%s = any(acts_for)) and decided_by is distinct "
-            "from %s and not (%s = any(deciders)) order by id limit 200",
-            (scenario.name, after, person.id, person.id, person.id)).fetchall()
+            "from %s and not (%s = any(deciders)) and (%s::text is null or instance_id = %s) "
+            "order by id limit 200",
+            (scenario.name, after, person.id, person.id, person.id, instance, instance)).fetchall()
         if not rows:
             break
         after = rows[-1]["id"]
@@ -379,13 +380,12 @@ def refusing(conn: db.Connection, scenario: Scenario, given: list[dict]) -> str 
 
 
 def seal_pending(conn: db.Connection, keys: tuple[str, ...], verifier: Any,
-                 scenario: Scenario, client_id: str | None, now: datetime) -> list[str]:
+                 scenario: Scenario, client_id: str | None, now: datetime) -> list[sealing.Refusal]:
     """Check again each grade the channels app recorded, by its sign-in, which covers every
     grade given with it, and that its grader may give each, seal each, when the core sealed it
     among what it seals, and let the sign-in go, in the gateway: or refuse them, so the samples
-    wait to be graded again. Why each refused one was."""
-    from a5s.core import sealing  # the check people's sign-ins share
-
+    wait to be graded again, and their grader hears why. Those whose sign-in can't be checked
+    just now, since the identity provider can't be reached, wait. Why each refused one was."""
     if not keys:
         return []  # they wait for a gateway that can seal them
     rows = conn.execute("select * from samples where scenario = %s and grade_proof is not null "
@@ -399,16 +399,25 @@ def seal_pending(conn: db.Connection, keys: tuple[str, ...], verifier: Any,
         first = together[0]
         given = conn.execute("select * from samples where grade_token = %s order by id",
                              (first["grade_token"],)).fetchall()
-        why = refusing(conn, scenario, given) or sealing.check(
-            verifier, scenario, client_id, first["grade_proof"],
-            nonce({r["id"]: r["grade"] for r in given}, first["grade_salt"]), first["graded_by"])
+        why = refusing(conn, scenario, given)
+        if why is None:
+            try:
+                why = sealing.check(verifier, scenario, client_id, first["grade_proof"],
+                                    nonce({r["id"]: r["grade"] for r in given}, first["grade_salt"]),
+                                    first["graded_by"])
+            except sealing.Unchecked:
+                continue  # checked again at the next sweep
+        if why is not None and first["graded_by"]:
+            refused.append(sealing.Refusal(
+                first["graded_by"], f"{first['graded_by']}'s grades of {len(given)} samples: {why}",
+                f"Your grades of {len(given)} samples didn't count: {why}. They wait to be graded "
+                "again, on a5s's own page."))
         for row in together:
             if why is not None:
                 conn.execute(
                     "update samples set grade = null, graded_by = null, graded_at = null, "
                     "grade_token = null, grade_nonce = null, grade_salt = null, grade_issuer = "
                     "null, grade_subject = null, grade_proof = null where id = %s", (row["id"],))
-                refused.append(f"{row['graded_by']}'s grade of sample {row['id']}: {why}")
             else:
                 conn.execute("update samples set grade_seal = %s, grade_proof = null, "
                              "sealed_at = %s where id = %s", (seal(keys, row), now, row["id"]))

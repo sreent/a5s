@@ -80,34 +80,51 @@ def sign_in(person: str) -> str:
                                        "password": os.environ["A5S_PASSWORD"]})["access_token"]
 
 
+class SignIn:
+    """A person's sign-in, renewed before any call once it's four minutes old: the stand-in's
+    last five, and one message's exchange can outlast that, tried again while the database is
+    away and waited on after a kill. The web chat renews its own before each call the same way,
+    while it's still good for half a minute (core/webchat/app.js)."""
+
+    def __init__(self, person: str):
+        self.person, self.token, self.at = person, "", 0.0
+        self.lock = threading.Lock()
+
+    def __call__(self) -> str:
+        with self.lock:
+            if time.monotonic() - self.at > 240:
+                self.token, self.at = sign_in(self.person), time.monotonic()
+            return self.token
+
+
 def for_now(exc: Exception) -> bool:
     """Whether a5s refused something only for now, as while its database is away: a 5xx, or
     no answer at all, not a 4xx, which is a5s refusing it for good."""
     return not isinstance(exc, HTTPError) or exc.code >= 500
 
 
-def send(token: str, agent: str, text: str) -> tuple[dict, int]:
+def send(signed: SignIn, agent: str, text: str) -> tuple[dict, int]:
     """A message sent, as the web chat sends it, and tried again every few seconds while a5s
     refuses it for now, as its person would: the core's answer, and how many tries it took."""
     until, tries = time.monotonic() + AGAIN, 0
     while True:
         tries += 1
         try:
-            return call("POST", CHANNEL, token, {"agent": agent, "text": text}), tries
+            return call("POST", CHANNEL, signed(), {"agent": agent, "text": text}), tries
         except (URLError, ConnectionError) as exc:
             if not for_now(exc) or time.monotonic() > until:
                 raise
             time.sleep(3)
 
 
-def answers(token: str, message: str, within: float) -> list:
+def answers(signed: SignIn, message: str, within: float) -> list:
     """The answers to a message, waiting up to `within` seconds for one, and asking again
     while a5s can't say for now."""
     until, replies = time.monotonic() + within, []
     while not replies and time.monotonic() < until:
         wait = max(1, min(OBJECTIVE, int(until - time.monotonic())))
         try:
-            replies = call("GET", f"{CHANNEL}/{message}?wait={wait}", token).get("replies") or []
+            replies = call("GET", f"{CHANNEL}/{message}?wait={wait}", signed()).get("replies") or []
         except (URLError, ConnectionError) as exc:
             if not for_now(exc):
                 raise
@@ -118,14 +135,12 @@ def answers(token: str, message: str, within: float) -> list:
 def talk(person: str, agent: str, until: float, said: list, lock: threading.Lock) -> None:
     """One person's conversation with one agent, until the time's up. A message at work as
     something is killed may wait for the core's sweep to say so, minutes on."""
-    token, signed_in = "", 0.0
+    signed = SignIn(person)
     while time.monotonic() < until:
-        if time.monotonic() - signed_in > 240:  # the stand-in's tokens last five minutes
-            token, signed_in = sign_in(person), time.monotonic()
         started, sent_at, cut, tries = time.monotonic(), time.time(), False, 1
         try:
-            sent, tries = send(token, agent, random.choice(ASKED))
-            replies = answers(token, sent["message"], AFTER_KILL + OBJECTIVE)
+            sent, tries = send(signed, agent, random.choice(ASKED))
+            replies = answers(signed, sent["message"], AFTER_KILL + OBJECTIVE)
             outcome = "answered" if len(replies) == 1 else f"{len(replies)} answers"
             cut = any(str(r).startswith(CUT_OFF) for r in replies)
         except HTTPError as exc:
@@ -140,14 +155,13 @@ def talk(person: str, agent: str, until: float, said: list, lock: threading.Lock
         time.sleep(random.uniform(0.5, 3))
 
 
-def asking(token_for, until: float, started: list, lock: threading.Lock) -> None:
+def asking(signed: SignIn, until: float, started: list, lock: threading.Lock) -> None:
     """Ana asks the assistant for a long task, and says yes to it, now and again."""
     while time.monotonic() < until:
-        token = token_for()
         try:
             for text in (TASK, "Yes, start it"):
-                sent, _ = send(token, "assistant", text)
-                replies = answers(token, sent["message"], AFTER_KILL + OBJECTIVE)
+                sent, _ = send(signed, "assistant", text)
+                replies = answers(signed, sent["message"], AFTER_KILL + OBJECTIVE)
             if found := next((r for r in replies if r.startswith("Started T-")), None):
                 with lock:  # by its number, as its owner knows it
                     started.append(int(re.match(r"Started T-(\d+)", found).group(1)))
@@ -326,15 +340,8 @@ def main() -> None:
     threads = [threading.Thread(target=talk, args=(person, agent, until, said, lock))
                for person, agent in TALKS]
     threads.append(threading.Thread(target=sample, args=(until, samples)))
-    signed: dict[str, float | str] = {}
-
-    def ana() -> str:  # her sign-in, for asking for tasks, renewed as the stand-in's expire
-        if time.monotonic() - float(signed.get("at", 0.0)) > 240:
-            signed.update(token=sign_in("ana"), at=time.monotonic())
-        return str(signed["token"])
-
     started: list = []
-    threads.append(threading.Thread(target=asking, args=(ana, until, started, lock)))
+    threads.append(threading.Thread(target=asking, args=(SignIn("ana"), until, started, lock)))
     threads.append(threading.Thread(target=restart, args=(time.monotonic() + minutes * 30,)))
     threads += [threading.Thread(target=kill, args=(part, time.monotonic() + minutes * 60 * share,
                                                     killed, lock)) for part, share in KILLED]

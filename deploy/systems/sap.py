@@ -12,13 +12,15 @@ Like the other made-up systems, it reads the data afresh for each call, keeps wh
 it over the data, makes each change once for a5s's key, and runs beside the gateway, sharing its
 network. With A5S_SYSTEMS_STATE set, it keeps what's done through it in a file in that folder,
 which the scenario's own code reads, so what a5s shows people of a request, and checks of it, is
-what SAP holds:
+what SAP holds, and it carries on from there when it starts again, each change still made once
+for its key. A5S_SYSTEM_PORT moves it, as the sandbox's own copy runs:
 
     python deploy/systems/sap.py scenarios/master-data/data.yaml      # on 127.0.0.1:9204
 """
 
 from __future__ import annotations
 
+import os
 import sys
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -29,7 +31,7 @@ import yaml
 from fastapi import FastAPI
 
 sys.path.insert(0, str(Path(__file__).parent))  # beside the other made-up systems
-from standin import KEY, Tools, keep, once, serving
+from standin import KEY, Tools, keep, kept, once, serving
 
 from a5s.master_data import CORRECTABLE, FIELDS, TYPES, UNITS, failures
 
@@ -46,13 +48,20 @@ SEARCHED = ("title", "status", "name", "description", "kind")  # what a search's
 
 @dataclass
 class Written:
-    """What's been done through SAP since it started, over the data: each change request's values
-    and status as they've changed, and what each update a5s keyed made, so one asked for again
-    makes nothing more. Kept in A5S_SYSTEMS_STATE's folder too, if it names one."""
+    """What's been done through SAP, over the data: each change request's values and status as
+    they've changed, and what each update a5s keyed made, so one asked for again makes nothing
+    more. Kept in `state`, or A5S_SYSTEMS_STATE's folder, if it names one, and read back from it
+    when SAP starts, so it forgets nothing it did when it stops (round 12, A5)."""
 
     data: Path
     changed: dict[str, dict] = field(default_factory=dict)
     made: dict[str, dict] = field(default_factory=dict)
+    state: Path | None = None
+
+    def __post_init__(self) -> None:
+        found = kept(NAME, self.state)
+        self.changed.update(found.get("changed") or {})
+        self.made.update(found.get("made") or {})
 
     def read(self) -> dict:
         return yaml.safe_load(self.data.read_text()) or {}
@@ -72,7 +81,7 @@ class Written:
         self.save()
 
     def save(self) -> None:
-        keep(NAME, {"changed": self.changed})
+        keep(NAME, {"changed": self.changed, "made": self.made}, self.state)
 
     def reset(self) -> None:
         self.changed.clear()
@@ -80,10 +89,10 @@ class Written:
         self.save()
 
 
-def make(data: Path) -> FastAPI:
-    """The server, on the scenario's data.yaml at `data`: what's done through it is in
-    `app.state.written`."""
-    written = Written(data)
+def make(data: Path, state: Path | None = None) -> FastAPI:
+    """The server, on the scenario's data.yaml at `data`, keeping what's done through it in
+    `state`, or A5S_SYSTEMS_STATE's folder: what's done through it is in `app.state.written`."""
+    written = Written(data, state=state)
 
     def shown(found: dict) -> dict:
         return {**found, "link": LINK + found["key"]}
@@ -137,7 +146,9 @@ def make(data: Path) -> FastAPI:
             return {"key": now["key"], "values": given, "status": status,
                     "at": datetime.now(UTC).isoformat(timespec="seconds"), "link": LINK + now["key"]}
 
-        return once(written.made, meta, f"update {found['key']} {sorted(given.items())}", change)
+        made = once(written.made, meta, f"update {found['key']} {sorted(given.items())}", change)
+        written.save()  # and that it made it, for its key, should it start again
+        return made
 
     tools: Tools = {
         "search_master_data": ("Search change requests and master records by words.", QUERY,
@@ -158,4 +169,5 @@ def make(data: Path) -> FastAPI:
 
 if __name__ == "__main__":
     uvicorn.run(make(Path(sys.argv[1] if len(sys.argv) > 1 else "/scenario/data.yaml")),
-                host="127.0.0.1", port=PORT, log_level="warning")
+                host="127.0.0.1", port=int(os.environ.get("A5S_SYSTEM_PORT") or PORT),
+                log_level="warning")

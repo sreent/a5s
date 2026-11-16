@@ -14,7 +14,7 @@ import { JourneyPath, type Stage } from "../design";
 import { Designer } from "../Designer";
 import { Icon } from "../icons";
 import { Publish } from "../Publish";
-import { go, Link } from "../router";
+import { go, Link, type Route } from "../router";
 import { shellOf } from "../Sidebar";
 import { TryIt } from "../TryIt";
 import { useLoad, Waiting, when } from "../ui";
@@ -191,13 +191,13 @@ const named = (them: string[]) => them.length > 1 ? `${them.slice(0, -1).join(",
 /** Where a draft stands on its way to work, and the one thing to do next: shape it and try it,
  * publish it, have its release signed, which a5s then deploys, put it to work, and watch it.
  * Once the release here holds it as it is, the rest follows its agent: at work or not yet. */
-/** Where to put a released agent to work: with a plan for its first instance, the settings app's
+/** Where to put a released agent to work: with a plan for its first instance, the settings'
  * form, starting from it, for those who may use it; else its page, which says how, or how to ask
  * for it. */
-function toWork(agent: string, plan: Plan, settles: boolean): { href: string } | null {
+function toWork(agent: string, plan: Plan, settles: boolean): Route | null {
   if (!settles || !(plan.parts.length || plan.serves.length || plan.asks.length)) return null;
   const listed = (key: keyof Plan) => (plan[key]?.length ? `&${key}=${plan[key].map(encodeURIComponent).join(",")}` : "");
-  return { href: `/settings/?add=${encodeURIComponent(agent)}${listed("parts")}${listed("serves")}${listed("asks")}` };
+  return { page: "settings", search: `?add=${encodeURIComponent(agent)}${listed("parts")}${listed("serves")}${listed("asks")}` };
 }
 
 function Journey({ draft, said, files, plan, open }: { draft: Draft; said: Said; files: Files; plan: Plan;
@@ -228,7 +228,7 @@ function Journey({ draft, said, files, plan, open }: { draft: Draft; said: Said;
   const page = { page: "agent" as const, agent: draft.agent };
   const settings = !atWork && toWork(draft.agent, plan, Boolean(shell.data?.pages.includes("settings")));
   const next = released
-    ? settings ? <a className="button primary" id="put-to-work" href={settings.href}>Put it to work in the settings</a>
+    ? settings ? <Link to={settings} className="button primary" id="put-to-work">Put it to work in the settings</Link>
       : <Link to={page} className="button primary">{atWork ? "Watch it on its page" : "Put it to work, from its page"}</Link>
     : !shaped
     ? <button type="button" className="primary" onClick={() => open("problems")}>See what stops its release</button>

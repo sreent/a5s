@@ -40,11 +40,11 @@ def test_it_says_what_waits_for_whom_and_where_they_do_it(stack, approving, prov
     assert held(stack)
     ana = {w["kind"]: w for w in api(approving, provider, "ana", "home").json()["waiting"]}
     assert ana["settings"] == {
-        "kind": "settings", "go": f"/approve/?settings={waiting['digest']}",
+        "kind": "settings", "go": f"/studio/approve?settings={waiting['digest']}",
         "what": f"Version {waiting['serial']} of the settings waits for your approval",
         "why": ["the owner of billing hasn't approved it"]}
     assert ana["decide"]["what"] == "1 change an agent asked for waits for your decision"
-    assert ana["decide"]["go"] == "/decide/"
+    assert ana["decide"]["go"] == "/studio/decide"
     for nobody in ("chen", "priya", "ben"):  # none of it waits for them
         assert api(approving, provider, nobody, "home").json()["waiting"] == []
 
@@ -63,10 +63,10 @@ def test_a_grader_and_a_tasks_owner_see_theirs(stack, approving, provider):
                      "now() + interval '1 day', %s, now())", (task, task))
     [graded] = api(approving, provider, "dana", "home").json()["waiting"]
     assert (graded["what"], graded["go"]) == ("1 sample of agents' work waits for your grade",
-                                              "/grade/")
+                                              "/studio/grade")
     [tasks] = api(approving, provider, "ben", "home").json()["waiting"]
     assert (tasks["what"], tasks["go"]) == (
-        "1 of your tasks waits for you, blocked or asked for", "/tasks/")
+        "1 of your tasks waits for you, blocked or asked for", "/studio/tasks")
 
 
 def test_it_says_which_roles_someone_holds_what_gave_them_and_what_they_let_them_do(
@@ -112,7 +112,7 @@ def test_someone_finds_what_waits_and_what_they_may_do_in_the_studio(stack, appr
     page.wait_for_selector("#waiting .wait", timeout=30000)
     waits = page.inner_text("#waiting")
     assert "waits for your approval" in waits and "the owner of billing hasn't approved it" in waits
-    assert page.get_attribute("#waiting a:has-text('waits for your decision')", "href") == "/decide/"
+    assert page.get_attribute("#waiting a:has-text('waits for your decision')", "href") == "/studio/decide"
     shot(page, "studio-home")
     page.click("#next a:has-text('What you may do in a5s')")
     page.wait_for_selector("#roles table", timeout=30000)

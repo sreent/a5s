@@ -1,5 +1,5 @@
-"""The auditors' page in the channels app (docs/administration.md): the ledger as an auditor
-reads it, read only, from the same module as the core's API (core/audit.py). Whoever acted in
+"""The auditors' page's API in the channels app (docs/administration.md), whose page is the
+studio's, /studio/audit: the ledger as an auditor reads it, read only, from the same module as the core's API (core/audit.py). Whoever acted in
 one of a5s's roles shows as themselves; whom agents acted for, as a stand-in until the data
 protection officer agrees to names.
 
@@ -11,11 +11,13 @@ the trail is the most of a5s anyone reads.
 from datetime import datetime
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
+from fastapi.responses import RedirectResponse
 
 from a5s import db
 from a5s.contract import Person
 from a5s.core import audit, web
+from a5s.core import studio_models as shapes  # what each route answers, as the studio's types say
 from a5s.core.identity import (
     IdentityError,
     UnknownPerson,
@@ -70,14 +72,13 @@ def router(gw: Any) -> APIRouter:
                            names=gw.data_protection(conn).audit_names)
 
     @pages.get("/audit/", include_in_schema=False)
-    def audit_page() -> Response:
-        return web.page(gw, "audit.html")
+    def audit_page(request: Request) -> Response:
+        """The audit trail is in the studio now: its old address goes there."""
+        asked = request.url.query
+        return RedirectResponse(f"/studio/audit{'?' + asked if asked else ''}", status_code=303,
+                                headers=web.PAGE_HEADERS)
 
-    @pages.get("/audit/audit.js", include_in_schema=False)
-    def audit_script() -> Response:
-        return web.page(gw, "audit.js")
-
-    @api.get("/audit/api")
+    @api.get("/audit/api", **shapes.answers(shapes.AuditNow))
     def audit_now(person: Annotated[Person, Depends(auditing)]) -> dict:
         """Who's reading, and how the page shows people: by name, or by stand-in."""
         with db.transaction(gw.url) as conn:
@@ -85,7 +86,7 @@ def router(gw: Any) -> APIRouter:
         return {"you": person.name, "names": names, "exports": names,
                 "kinds": list(audit.KINDS)}
 
-    @api.get("/audit/api/entries")
+    @api.get("/audit/api/entries", **shapes.answers(shapes.AuditEntries))
     def audit_entries(person: Annotated[Person, Depends(auditing)],
                       since: datetime | None = None, until: datetime | None = None,
                       kind: str | None = None, action: str | None = None,
@@ -106,7 +107,7 @@ def router(gw: Any) -> APIRouter:
                         found=len(found["entries"]), page=True)
         return {"entries": [showing.entry(e) for e in found["entries"]], "next": found["next"]}
 
-    @api.get("/audit/api/report")
+    @api.get("/audit/api/report", **shapes.answers(shapes.AuditReport))
     def audit_report(person: Annotated[Person, Depends(auditing)],
                      since: datetime | None = None, until: datetime | None = None) -> dict:
         """Who holds each role, and who did what of a period's administration."""
@@ -117,7 +118,7 @@ def router(gw: Any) -> APIRouter:
                         acts=len(found["acts"]), page=True)
             return shown(conn).report(found)
 
-    @api.get("/audit/api/export")
+    @api.get("/audit/api/export", **shapes.answers(shapes.AuditExport))
     def audit_export(person: Annotated[Person, Depends(auditing)],
                      since: datetime | None = None, until: datetime | None = None,
                      after: int = 0) -> dict:

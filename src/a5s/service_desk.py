@@ -5,10 +5,12 @@ Its ITSM's tools come through the ITSM's MCP server, which the scenario's mcp.ya
 wrote on one, and posting a reply on one, a change a5s holds for the ticket's service area's
 decider. Self-service comes through the identity provider's (deploy/systems/idp.py): an account,
 the provider's own password reset, which its holder finishes there, and removing an account's
-authenticators. What stays here is the desk's own: the directory, who may see each ticket and
-account, the obligations its tickets make, a draft reply for a person to send, its knowledge
-base, and its policy pack, pack.cedar in its folder, which lets a reset run alone only for the
-person asking, and never an authenticator change."""
+authenticators. Devices come through device management's (deploy/systems/mdm.py): each person's,
+whether it meets the organisation's rules and why not, and locking one remotely, a change a5s
+holds for hardware's decider. What stays here is the desk's own: the directory, who may see each
+ticket, account and device, the obligations its tickets make, a draft reply for a person to send,
+its knowledge base, and its policy pack, pack.cedar in its folder, which lets a reset, or a lock,
+run alone only for the person asking, on their own, and never an authenticator change."""
 
 from __future__ import annotations
 
@@ -29,19 +31,22 @@ from a5s.contract import (
     ToolCall,
     parse_settings,
 )
-from a5s.effects import draft_once
+from a5s.effects import changed_through, draft_once
 from a5s.knowledge import MarkdownKnowledge
 
 LINK = "https://itsm.desk.test/"
 IDP = "https://idp.desk.test/accounts/"
 ACCOUNT = re.compile(r"ACC-([a-z][a-z0-9-]*)")  # a person's account: ACC- and their id
 ACCESS = "access"  # the service area accounts are in
+MDM = "https://mdm.desk.test/devices/"
+DEVICE = re.compile(r"(?:LT|PH)-\d{4}")  # a device's asset tag: LT- for a laptop, PH- for a phone
+HARDWARE = "hardware"  # the service area devices are in
 
 
 class ServiceDeskScenario:
     name = "service-desk"
-    record_links = (LINK, IDP)
-    record_pattern = r"\b(?:INC|REQ)\d{7}\b|\bACC-[a-z][a-z0-9-]*\b"
+    record_links = (LINK, IDP, MDM)
+    record_pattern = r"\b(?:INC|REQ)\d{7}\b|\bACC-[a-z][a-z0-9-]*\b|\b(?:LT|PH)-\d{4}\b"
 
     def __init__(self, folder: Path, database_url: str):
         self.folder = folder
@@ -50,6 +55,7 @@ class ServiceDeskScenario:
         self._people = {p["id"]: Person.listed(p, folder) for p in data["people"]}
         self._tickets = {t["key"]: t for t in data["tickets"]}
         self._accounts = {a["key"]: a for a in data.get("accounts") or []}
+        self._devices = {d["key"]: d for d in data.get("devices") or []}
         self.drafts = []
         self._draft_lock = threading.Lock()
         self.reads = 0
@@ -71,9 +77,18 @@ class ServiceDeskScenario:
         found = ACCOUNT.fullmatch(record)
         return self._people.get(found[1]) if found else None
 
+    def _device(self, record: str) -> dict | None:
+        """A device as device management holds it now, what's been done through it, such as a
+        lock, laid over the data, if the record is one."""
+        if not DEVICE.fullmatch(record) or record not in self._devices:
+            return None
+        return {**self._devices[record], **changed_through("mdm").get(record, {})}
+
     def part_of(self, record: str) -> str | None:
         if self._holder(record) is not None:
             return ACCESS
+        if self._device(record) is not None:
+            return HARDWARE
         return (self._tickets.get(record) or {}).get("part")
 
     def sees(self, person: str, record: str) -> bool:
@@ -82,6 +97,8 @@ class ServiceDeskScenario:
             return False
         if (holder := self._holder(record)) is not None:  # its holder, and access's resolvers
             return person == holder.id or who.team == f"{ACCESS}-team"
+        if (device := self._device(record)) is not None:  # its holder, and hardware's resolvers
+            return person == device["holder"] or who.team == f"{HARDWARE}-team"
         ticket = self._tickets.get(record)
         if ticket is None:
             return False
@@ -109,6 +126,11 @@ class ServiceDeskScenario:
             state = (self._accounts.get(key) or {}).get("state", "active")
             return Record("accounts", key, holder.id, f"{holder.name}'s account", {"state": state},
                           IDP + key)
+        if (device := self._device(key)) is not None:  # whose next step it is: its holder's
+            holder = self._people.get(device["holder"])
+            return Record("devices", key, device["holder"],
+                          f"{holder.name if holder else device['holder']}'s {device['kind']}",
+                          {"locked": "yes" if device.get("locked") else "no"}, MDM + key)
         found = self._tickets.get(key)
         return self._record(found) if found else None
 

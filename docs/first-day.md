@@ -27,7 +27,7 @@ gh attestation verify oci://ghcr.io/sreent/a5s@sha256:<digest> --owner sreent  #
 
 ## 2. People's sign-in
 
-One OpenID Connect client for the pages: a public client, since the core redeems the code with PKCE and no secret, whose redirect URIs are `https://<host>/` followed by `chat/`, `approve/`, `decide/`, `grade/`, `notebook/`, `settings/`, `officer/`, `studio/`, `tasks/`, `audit/` and `admin/`. The pages that approve, decide and grade ask for a fresh sign-in, and need its time in the token (`auth_time`). Approvals, decisions, grades and the officer's requests count only from a sign-in with a second factor, which the provider's own policy must ask for, and its token must show, so a5s can check it ([administration](administration.md)). For the settings to give groups roles, the token lists the groups too.
+One OpenID Connect client for the pages: a public client, since the core redeems the code with PKCE and no secret, whose redirect URIs are `https://<host>/` followed by `chat/` and `studio/`: every page but the web chat is in the studio, and signs in as it does, the settings and approving them, deciding held changes, grading, the notebook, people's tasks, the administrators' page, the audit trail and the officer's requests among them. The pages that approve, decide and grade ask for a fresh sign-in, and need its time in the token (`auth_time`). Approvals, decisions, grades and the officer's requests count only from a sign-in with a second factor, which the provider's own policy must ask for, and its token must show, so a5s can check it ([administration](administration.md)). For the settings to give groups roles, the token lists the groups too.
 
 Fills: `people.oidcIssuer`, `people.webchatClientId` (the client's id), `people.oidcPersonClaim`, `people.oidcDirectoryPrefix` if the directory names people's accounts with one, `people.publicUrl: https://<host>`, `people.oidcMfa`, which the chart needs whenever an issuer is set, and `people.oidcGroupsClaim`.
 
@@ -134,9 +134,7 @@ host=a5s-test.example.org
 tenant=$(az account show --query tenantId -o tsv)
 az group create --name a5s-test --location uksouth  # [TBC: the region]
 web=$(az ad app create --display-name "a5s" --sign-in-audience AzureADMyOrg \
-  --public-client-redirect-uris https://$host/chat/ https://$host/approve/ https://$host/decide/ \
-    https://$host/grade/ https://$host/notebook/ https://$host/settings/ https://$host/officer/ \
-    https://$host/studio/ https://$host/tasks/ https://$host/audit/ https://$host/admin/ \
+  --public-client-redirect-uris https://$host/chat/ https://$host/studio/ \
   --optional-claims '{"idToken": [{"name": "auth_time", "essential": false},
                                    {"name": "amr", "essential": false}]}' \
   --query appId -o tsv)

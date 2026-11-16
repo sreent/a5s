@@ -59,18 +59,18 @@ def cap(stack, part: str = "billing") -> int:
 
 
 def grade(url: str, provider, sample: int, how: str, person: str = "dana") -> httpx.Response:
-    """A grade, given as the page gives it, with a sign-in made afresh to give it."""
+    """A grade, given as the studio gives it, with a sign-in made afresh to give it."""
     salt, verifier = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=")
     provider.person = person
-    query = {"client_id": CLIENT, "redirect_uri": f"{url}/grade/", "state": "s",
+    query = {"client_id": CLIENT, "redirect_uri": f"{url}/studio/", "state": "s",
              "nonce": samples.nonce({sample: how}, salt), "code_challenge": challenge.decode(),
              "code_challenge_method": "S256", "max_age": "0"}
     went = httpx.get(f"{provider.url}/auth", params=query)
     code = parse_qs(went.headers["location"].split("?", 1)[1])["code"][0]
-    token = httpx.post(f"{url}/grade/token", json={
+    token = httpx.post(f"{url}/studio/sign-in/token", json={  # as the studio signs in
         "grant_type": "authorization_code", "code": code, "code_verifier": verifier,
-        "redirect_uri": f"{url}/grade/"}).json()["id_token"]
+        "redirect_uri": f"{url}/studio/"}).json()["id_token"]
     return httpx.post(f"{url}/grade/samples", json={"grades": {str(sample): how}, "salt": salt},
                       headers={"Authorization": f"Bearer {token}"})
 
@@ -219,12 +219,13 @@ def test_a_decider_whose_approvals_are_graded_wrong_far_more_is_flagged(stack):
 
 
 def test_the_grading_page_runs_only_its_own_script_and_shows_only_text(approving):
-    page = httpx.get(f"{approving}/grade/")
-    script = httpx.get(f"{approving}/grade/grade.js")
-    assert page.status_code == script.status_code == 200
+    went = httpx.get(f"{approving}/grade/")  # a link, as it was
+    assert (went.status_code, went.headers["location"]) == (303, "/studio/grade")
+    page = httpx.get(f"{approving}/studio/grade")  # the studio's, now
+    assert page.status_code == 200 and httpx.get(f"{approving}/grade/grade.js").status_code == 404
     policy = page.headers["content-security-policy"]
     assert "script-src 'self'" in policy and "frame-ancestors 'none'" in policy
-    assert "unsafe" not in policy and "innerHTML" not in script.text
+    assert "unsafe" not in policy
 
 
 def test_a_grader_grades_in_the_browser(stack, approving, provider, browser):
@@ -234,9 +235,9 @@ def test_a_grader_grades_in_the_browser(stack, approving, provider, browser):
     sweep(stack)
     provider.person = "dana"
     page = browser.new_page()
-    page.goto(f"{approving}/grade/")
+    page.goto(f"{approving}/studio/grade")
     page.wait_for_selector("[data-sample] >> text=Q-1002", timeout=30000)
-    assert page.inner_text("#who") == "Dana Price"
+    assert page.inner_text("#me").endswith("Dana Price")
     # On the card decisions are made on: who did it, what it did in code's words, and how it went
     sample = page.locator("[data-sample]")
     assert sample.locator(".who-name").inner_text() == "The assistant asked"

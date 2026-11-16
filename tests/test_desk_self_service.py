@@ -98,15 +98,17 @@ def test_a_reset_of_the_askers_own_account_runs_alone_at_level_2(desk, approving
     assert held(desk) == []  # nobody had to decide it
 
 
-def test_a_reset_of_anyone_elses_account_is_refused_even_for_a_resolver(desk, approving):
+def test_a_reset_of_anyone_elses_account_waits_for_accesss_decider_even_at_level_2(desk, approving):
+    """The pack rules level 2 out for it, so it never runs alone: it waits for a person, as it
+    would at level 1 (round 12, B5)."""
     at_level_2(desk, "reset-password")
     asked(desk, ("reset_password", {"key": "ACC-pat"}), person="rae",
           said="Pat's locked out: reset Pat's password.")
     [(decision, reasons)] = decisions(desk, "reset_password")
-    assert decision == "deny" and "desk-self-service-only-for-the-person-asking" in reasons
+    assert decision == "hold" and "desk-self-service-only-for-the-person-asking" in reasons
     assert "ACC-pat" not in idp().resets
-    told = desk.model.requests[-1]["body"]["messages"][-1]["content"]
-    assert "a request for anyone else goes to the ITSM's approvals" in told
+    [p] = held(desk)
+    assert (p["action"], p["deciders"], p["acts_for"]) == ("reset-password", ["ola"], ["rae"])
 
 
 def test_someone_who_may_not_see_an_account_cant_reset_it(desk, approving):
@@ -121,8 +123,10 @@ def test_an_authenticator_change_never_runs_alone_whatever_the_settings(desk, ap
     at_level_2(desk, "reset-authenticators")
     asked(desk, ("reset_authenticators", {"key": "ACC-sam"}), said="I lost my phone: remove my authenticator.")
     [(decision, reasons)] = decisions(desk, "reset_authenticators")
-    assert decision == "deny" and "desk-authenticators-go-to-a-person" in reasons
+    assert decision == "hold" and "desk-authenticators-go-to-a-person" in reasons
     assert idp().removed == {}
+    [p] = held(desk)
+    assert (p["action"], p["deciders"]) == ("reset-authenticators", ["ola"])
 
 
 def test_below_level_2_a_reset_and_an_authenticator_change_wait_for_accesss_decider(desk, approving):

@@ -26,6 +26,7 @@ from a5s.core import (
     asks,
     audit,
     memberships,
+    notebook,
     proposals,
     registry,
     releases,
@@ -108,20 +109,20 @@ def waiting(conn: db.Connection, gw: Any, person: Person) -> list[dict]:
         if why:
             found.append({"kind": "settings", "what": f"Version {row['serial']} of the settings "
                           "waits for your approval", "why": list(dict.fromkeys(why)),
-                          "go": f"/approve/?settings={row['digest']}"})  # its own page
+                          "go": f"/studio/approve?settings={row['digest']}"})  # its own page
     held = sum(1 for p in conn.execute("select records, acts_for from proposals "
                                        "where status = 'waiting'")
                if proposals.may_decide(scenario, p, person.id))  # as the directory stands now
     if held:
         found.append({"kind": "decide", "what": f"{held} {'change' if held == 1 else 'changes'} "
                       f"an agent asked for {'waits' if held == 1 else 'wait'} for your decision",
-                      "why": [], "go": "/decide/"})
+                      "why": [], "go": "/studio/decide"})
     if samples.GRADER in person.roles and (
             graded := len(samples.gradeable(conn, scenario, person, MOST + 1))):
         count = f"{MOST} or more" if graded > MOST else str(graded)
         found.append({"kind": "grade", "what": f"{count} {'sample' if graded == 1 else 'samples'} "
                       f"of agents' work {'waits' if graded == 1 else 'wait'} for your grade",
-                      "why": [], "go": "/grade/"})
+                      "why": [], "go": "/studio/grade"})
     running = (gw.releases.current if gw.releases is not None and not gw.cfg.development
                else None)
     for need in releases.awaiting(conn, running, scenario, gw.cfg.team, person):
@@ -136,5 +137,56 @@ def waiting(conn: db.Connection, gw: Any, person: Person) -> list[dict]:
     if tasks:
         found.append({"kind": "tasks", "what": f"{tasks} of your tasks "
                       f"{'waits' if tasks == 1 else 'wait'} for you, blocked or asked for",
-                      "why": [], "go": "/tasks/"})
+                      "why": [], "go": "/studio/tasks"})
+    return found
+
+
+def _changes(n: int) -> str:
+    return f"{n} {'change' if n == 1 else 'changes'} it asked for {'waits' if n == 1 else 'wait'}"
+
+
+def of_instance(conn: db.Connection, gw: Any, person: Person, inst: dict) -> list[dict]:
+    """What of one instance waits, for someone who may watch it, each where it's done, as the
+    home says: the changes it asked for that wait for their decision, and for others'; its
+    samples that wait for their grade, and for others'; and its notebook, if they keep it.
+    Counts alone, and the oldest's time: what each is, they see where they may act on it."""
+    found: list[dict] = []
+    scenario = gw.scenario
+    held = conn.execute("select records, acts_for, proposed_at from proposals where status = "
+                        "'waiting' and instance_id = %s order by proposed_at, id",
+                        (inst["id"],)).fetchall()
+    mine = [p for p in held if proposals.may_decide(scenario, p, person.id)]  # the directory now
+    others = [p for p in held if p not in mine]
+    if mine:
+        found.append({"kind": "decide", "what": f"{_changes(len(mine))} for your decision",
+                      "why": [], "go": "/studio/decide", "since": mine[0]["proposed_at"]})
+    if others:
+        found.append({"kind": "held", "what": f"{_changes(len(others))} for someone else's "
+                      "decision, as its parts' owners and delegates decide them", "why": [],
+                      "go": None, "since": others[0]["proposed_at"]})
+    graded = samples.gradeable(conn, scenario, person, MOST + 1, inst["id"]) \
+        if samples.GRADER in person.roles else []
+    if graded:
+        count = f"{MOST} or more" if len(graded) > MOST else str(len(graded))
+        found.append({"kind": "grade", "what": f"{count} {'sample' if len(graded) == 1 else 'samples'} "
+                      f"of its work {'waits' if len(graded) == 1 else 'wait'} for your grade",
+                      "why": [], "go": "/studio/grade", "since": graded[0]["drawn_at"]})
+    theirs = {g["id"] for g in graded}
+    rest = [r for r in conn.execute("select id, drawn_at from samples where scenario = %s and "
+                                    "instance_id = %s and grade is null and lapsed_at is null "
+                                    "order by id", (scenario.name, inst["id"]))
+            if r["id"] not in theirs]
+    if rest and len(graded) <= MOST:  # other graders, outside the team that built it, grade them
+        found.append({"kind": "graded", "what": f"{len(rest)} {'sample' if len(rest) == 1 else 'samples'} "
+                      f"of its work {'waits' if len(rest) == 1 else 'wait'} for a grade, from "
+                      "graders outside the team that built it", "why": [], "go": None,
+                      "since": min(r["drawn_at"] for r in rest)})
+    if notebook.keeps(person, inst):
+        notes = [r for r in conn.execute("select read_records, sources from notebook where "
+                                         "instance_id = %s", (inst["id"],))
+                 if notebook.readable(scenario, person.id, r)]
+        if notes:
+            found.append({"kind": "notebook", "what": f"{len(notes)} "
+                          f"{'note' if len(notes) == 1 else 'notes'} it keeps from what it "
+                          "learned, which you may read and remove", "why": [], "go": "/studio/notebook"})
     return found

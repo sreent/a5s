@@ -32,6 +32,7 @@ from scenario_stack import running_scenario
 from test_studio_authoring import kept
 from test_walkthrough_desk import DESK, able, definition
 from walkthrough import (
+    On,
     Walk,
     answering,
     deployed,
@@ -59,41 +60,53 @@ an AI agent, and you say so if anyone asks.
 """
 
 
-def described(walk: Walk, stack, url: str, forge: FakeGitHub) -> tuple[dict, str, dict]:
+def described(walk: Walk, stack, url: str, forge: FakeGitHub, on: On) -> tuple[dict, str, dict]:
     """Dev describes joiner-coordinator, checks what it was given, refines it by hand, and
     publishes it: its definition, as a5s keeps it, its draft, and its pull request."""
     page = walk.as_("dev", f"{url}/studio/new")
     with walk.step("Dev starts the joiner coordinator the desk planned and never built, "
-                   "joiner-coordinator, by describing it in his own words, on the sandbox's stand-in "
-                   "model, rather than from a template.", page):
+                   "joiner-coordinator, by describing it in his own words, on the sandbox's model, "
+                   "rather than from a template.", page):
         page.wait_for_selector("#describe", timeout=30000)
         page.fill("#agent-name", AGENT)
         page.fill("#describe", WORDS)
+        if on.live:  # at night, the night's model proposes, which thinks, as the stand-in doesn't
+            page.select_option("#describe-model", on.alias)
         page.click("#describe-it")
-        page.wait_for_selector("#described li", timeout=30000)
-    with walk.step("The draft says what it was given, each with the reason: the desk's tools that only "
-                   "read, whose words match his, at level 0, which only reads. Nothing that writes, "
-                   "changes or sends anything.", page):
+        page.wait_for_selector("#described li", timeout=180000)
+    with walk.step("The draft says what it was given, each with the reason, of what the desk offers, "
+                   "at the lowest level each needs, never 2: on the stand-in, the tools that only "
+                   "read whose words match his, at level 0, which only reads.", page):
         page.locator("#described").scroll_into_view_if_needed()
         given = page.locator("#described li[data-given]").all_inner_texts()
-        assert any("search_records" in g for g in given) and any("get_account" in g for g in given), given
-        assert not any(t in " ".join(given) for t in ("reply_on_ticket", "reset_password", "create_draft"))
-        assert any("level 0 at most" in g for g in given), given
+        assert given and not any("level 2" in g for g in given), given
         spec = definition(stack, page)
-        assert spec["autonomy"] == {"start": 0, "max": 0}
+        if not on.live:  # the stand-in's, which thinks nothing: a model's may ask for more
+            assert any("search_records" in g for g in given) and any("get_account" in g for g in given), given
+            assert not any(t in " ".join(given) for t in ("reply_on_ticket", "reset_password", "create_draft"))
+            assert any("level 0 at most" in g for g in given), given
+            assert spec["autonomy"] == {"start": 0, "max": 0}
     with walk.step("He takes away what it doesn't need: what requesters wrote, which the joiner's own "
-                   "questions don't call for.", page):
-        if "get_messages" in str(spec["tools"]):
-            page.click(".flow-canvas [data-step='tool:get_messages']")
-            page.click("#take-away")
-            kept(page)
+                   "questions don't call for, and anything that writes, changes or sends.", page):
+        for tool in ("get_messages", "reply_on_ticket", "reset_password", "reset_authenticators",
+                     "create_draft"):
+            if tool in str(spec["tools"]):
+                page.click(f".flow-canvas [data-step='tool:{tool}']")
+                page.click("#take-away")
+                kept(page)
     with walk.step("He adds by hand what it does need: what people owe in the ITSM's tickets, which it "
                    "chases, and reminders; and level 1, since chasing writes.", page):
-        page.click(".fd-palette [data-owed=records]")
-        page.wait_for_selector(".flow-canvas [data-step=obligations]", timeout=30000)
-        kept(page)
-        page.click(".fd-palette [data-ability=reminders]")
-        kept(page)
+        for tool in ("search_records", "get_account"):  # what a model's draft may not have given it
+            if tool not in str(spec["tools"]):
+                page.click(f".fd-palette [data-tool={tool}]")
+                kept(page)
+        if "records" not in (spec.get("obligations") or []):  # the palette offers what it lacks
+            page.click(".fd-palette [data-owed=records]")
+            page.wait_for_selector(".flow-canvas [data-step=obligations]", timeout=30000)
+            kept(page)
+        if not spec.get("reminders"):
+            page.click(".fd-palette [data-ability=reminders]")
+            kept(page)
         page.click("[data-step=agent]")
         page.fill("#works-for", "New joiners before their first day, and whoever owes them something")
         page.select_option("#level-max", "1")
@@ -193,11 +206,12 @@ def test_the_joiner_coordinator_is_described_drafted_least_privilege_and_refined
             boxed = Config(database_url="postgresql://unused", gateway_url="http://unused",
                            service_token="", root=root, scenario=DESK, scenario_folder=desk,
                            agents_folder=root / "scenario-agents")
-            with (sandbox.opened(boxed, sandbox_database, tmp_path / "sandbox") as box,
+            with (sandbox.opened(boxed, sandbox_database, tmp_path / "sandbox",
+                                 transport=on.transport) as box,
                   serve(sandbox.create_app(box, "shared-token"), free_port()) as box_url):
                 stack.cfg = replace(stack.cfg, sandbox_url=box_url, sandbox_token="shared-token")
                 with deciding(stack, provider) as url:
-                    refined, draft, pull = described(walk, stack, url, forge)
+                    refined, draft, pull = described(walk, stack, url, forge, on)
         with walk.step("What it may do is what its description gave it, less what Dev took away, and what "
                        "he added by hand: reads, what people owe, and reminders, at level 1 at most."):
             found = able(refined)

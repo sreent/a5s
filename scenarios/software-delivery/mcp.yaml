@@ -1,12 +1,13 @@
 # The team's forge, with its CI, through its MCP server (docs/connectors.md#mcp-servers). In this
 # made-up team it's deploy/systems/forge.py, on the scenario's synthetic data, beside the gateway on
-# its own machine, and the same stand-in answers in the studio's sandbox. a5s offers its agents
+# its own machine, and a copy of its own answers in the studio's sandbox, beside it, with its own
+# state, so nothing tried there changes the deployment's forge. a5s offers its agents
 # nothing of the server's but the tools declared here, in a5s's words, and passes on only the
 # fields each names.
 servers:
   forge:
     url: http://127.0.0.1:9203/mcp
-    sandbox: http://127.0.0.1:9203/mcp
+    sandbox: http://127.0.0.1:9303/mcp  # the sandbox's own copy, with its own state
 tools:
   search_records:
     server: forge
@@ -40,7 +41,7 @@ tools:
     server: forge
     calls: request_review
     description: Ask someone to review an open pull request, which its repository's owners decide.
-    arguments: {type: object, required: [key, reviewer], properties: {key: {type: string, description: "A pull request, such as PR-17"}, reviewer: {type: string, description: "Who to ask, by their id in the directory"}}}
+    arguments: {type: object, required: [key, reviewer], properties: {key: {type: string, description: "A pull request, such as PR-17"}, reviewer: {type: string, pattern: "^[a-z][a-z0-9-]*$", description: "Who to ask, by their id in the directory, in lower case, such as sol"}}}
     returns: [key, reviewers, link]
     writes: true
     idempotent: true

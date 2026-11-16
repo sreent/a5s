@@ -34,7 +34,7 @@ from a5s.contract import (
     ToolCall,
     parse_settings,
 )
-from a5s.effects import draft_once
+from a5s.effects import changed_through, draft_once
 from a5s.knowledge import MarkdownKnowledge
 
 LINK = "https://code.dev.test/"
@@ -75,8 +75,18 @@ class SoftwareDeliveryScenario:
 
     # Records, and who may see each
 
+    def _now(self, found: dict) -> dict:
+        """A record as the forge holds it now: what's been done through it, such as a review
+        a5s asked for, laid over the data, so whom a5s lets see it, and chases, is the forge's."""
+        return {**found, **changed_through("forge").get(found["key"], {})}
+
     def _found(self, key: str) -> dict | None:
-        return self._issues.get(key) or self._pulls.get(key)
+        found = self._issues.get(key) or self._pulls.get(key)
+        return self._now(found) if found else None
+
+    def _all(self) -> tuple[list[dict], list[dict]]:
+        return ([self._now(i) for i in self._issues.values()],
+                [self._now(p) for p in self._pulls.values()])
 
     def part_of(self, record: str) -> str | None:
         return (self._found(record) or {}).get("part")
@@ -104,16 +114,17 @@ class SoftwareDeliveryScenario:
         owed = [Obligation("records", i["key"], i["assignee"], i["title"],
                            _at(i["opened"], "09:00:00"), _at(i["due"], "17:00:00"),
                            LINK + i["key"])
-                for i in self._issues.values() if i["status"] != "closed"]
+                for i in self._all()[0] if i["status"] != "closed"]
         owed += [Obligation("records", p["key"], reviewer, f"Review: {p['title']}",
                             _at(p["opened"], "09:00:00"), _at(p["review_due"], "17:00:00"),
                             LINK + p["key"])
-                 for p in self._pulls.values() if p["status"] == "open"
+                 for p in self._all()[1] if p["status"] == "open"
                  for reviewer in p["reviewers"]]
         return owed
 
     def watched(self) -> list[Record]:
-        return [self._record(r) for r in (*self._issues.values(), *self._pulls.values())]
+        issues, pulls = self._all()
+        return [self._record(r) for r in (*issues, *pulls)]
 
     def record(self, key: str) -> Record | None:
         found = self._found(key)

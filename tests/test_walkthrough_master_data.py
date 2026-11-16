@@ -38,6 +38,7 @@ from walkthrough import (
     On,
     Walk,
     answering,
+    decided_in_trail,
     deployed,
     merged,
     owned,
@@ -161,7 +162,7 @@ def built(walk: Walk, stack, url: str, forge: FakeGitHub, on: On) -> tuple[dict,
         page.click(".try-say button[type=submit]")
         page.wait_for_selector(".try-answer .try-reply", timeout=180000)
         assert on.live or "it waits for Mo Hassan" in page.inner_text(".try-answer .try-reply")
-        assert "hold" in page.inner_text(".try-answer .steps")
+        assert "hold" in page.inner_text(".try-answer .run-calls")
     with walk.step("She keeps what he said as a test case, with what a right answer is, in her words, "
                    "for its judge to grade beside the case's checks, since a correction can be right "
                    "in more than one way.", page):
@@ -286,7 +287,7 @@ def graded(walk: Walk, stack, url: str) -> None:
     quarter(stack)
     rounds = 0
     while True:
-        page = walk.as_("mel", f"{url}/grade/")
+        page = walk.as_("mel", f"{url}/studio/grade")
         page.wait_for_selector("#status:not(:empty), [data-sample]", timeout=30000)
         cards = page.locator("[data-sample]").all()
         if not cards:
@@ -312,10 +313,12 @@ def graded(walk: Walk, stack, url: str) -> None:
 
 def raised(walk: Walk, stack, url: str, instance: str) -> None:
     """Ines asks for level 2 for corrections in material data, and the owners approve it."""
-    page = walk.as_("ines", f"{url}/settings/")
+    page = walk.as_("ines", f"{url}/studio/instances/{instance}")
     with walk.step("The evidence holds: a5s has raised its cap on corrections in material data to "
-                   "level 2. Ines asks for it there, as a version of the settings: mdg-helper makes "
-                   "them on its own, within their limits.", page):
+                   "level 2. From its instance's page, Ines changes its settings to ask for it "
+                   "there, as a version of the settings: mdg-helper makes them on its own, within "
+                   "their limits.", page):
+        page.click("#its-settings")
         page.wait_for_selector(f"fieldset[data-instance='{instance}']", timeout=30000)
         own = page.locator(f"fieldset[data-instance='{instance}'] "
                            "label:has-text('correct-value in material') input")
@@ -348,9 +351,10 @@ def alone(walk: Walk, stack, url: str) -> None:
     made = [e for e in stack.ledger() if e["kind"] == "tool" and e["action"] == "correct_value"
             and e["decision"] == "record" and e.get("level") == 2]  # what came of it, at its level
     assert [e["outcome"]["status"] for e in made] == ["ok"], made
-    with db.transaction(stack.admin) as conn:
-        told = [r["person"] for r in conn.execute("select person from digest_items")]
-    assert "mo" in told, told
+    with db.transaction(stack.admin) as conn:  # the notice of this change, not an earlier item
+        told = [r["text"] for r in conn.execute("select text from digest_items where person = 'mo' "
+                                                "and text like '%%made a change itself, at level 2%%'")]
+    assert len(told) == 1 and "CR0000111" in told[0], told
 
 
 def audited(walk: Walk, url: str, instance: str) -> None:
@@ -363,6 +367,7 @@ def audited(walk: Walk, url: str, instance: str) -> None:
         page.click("#search")
         page.wait_for_selector("#entries li", timeout=30000)
         assert "correct_value" in page.inner_text("#entries")
+        decided_in_trail(page, "mo")
 
 
 def test_the_master_data_assistant_is_built_again_and_takes_one_correction_to_level_2(

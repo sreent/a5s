@@ -3,9 +3,22 @@
 // browser tests open it in light and dark and check it with axe.
 
 import { useEffect, useState } from "react";
-import { AgentFacts, ApprovalCard, AutonomyLadder, Badge, Confirm, Hint, JourneyPath, RunTimeline, Traced,
-  Who } from "../design";
+import { AgentFacts, ApprovalCard, AutonomyLadder, Badge, Confirm, Hint, JourneyPath, RunTimeline, Skeleton,
+  Traced, useToast, Who } from "../design";
+import { FindButton } from "../Find";
 import { PageHead } from "../ui";
+
+/** What was just done, said in the status line and in a toast. */
+function Afterwards() {
+  const toast = useToast();
+  const [said, setSaid] = useState<string>();
+  return (
+    <>
+      <button type="button" onClick={() => { setSaid("Cancelled T-1."); toast("Cancelled T-1."); }}>Cancel T-1</button>
+      <p className="note" role="status" id="afterwards">{said}</p>
+    </>
+  );
+}
 
 const MEANINGS = [
   ["page", "the page"], ["surface", "cards"], ["sunken", "wells"], ["line", "lines"], ["text", "text"],
@@ -167,6 +180,25 @@ export function DesignPage() {
             danger onConfirm={() => setRemoved(true)} />
         )}
       </section>
+
+      <section className="card wide" data-piece="find">
+        <h2>Finding anything</h2>
+        <p className="note">From any page, Ctrl-K, or ⌘K on a Mac, or the button at the top of the sidebar: go anywhere you may, by name. What waits on you comes first.</p>
+        <FindButton />
+      </section>
+
+      <div className="two-up">
+        <section className="card" data-piece="loading">
+          <h2>While it loads</h2>
+          <p className="note">What's coming keeps its shape, still, so nothing jumps when it comes.</p>
+          <Skeleton bare />
+        </section>
+        <section className="card" data-piece="toast">
+          <h2>Afterwards</h2>
+          <p className="note">What was just done, said in the page's status line and once at the foot of the window.</p>
+          <Afterwards />
+        </section>
+      </div>
     </>
   );
 }

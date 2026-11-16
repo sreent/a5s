@@ -16,6 +16,7 @@ from __future__ import annotations
 import shutil
 
 import yaml
+from playwright.sync_api import TimeoutError as NotYet
 
 from a5s import db
 from a5s.core import drafts
@@ -168,11 +169,22 @@ def reported_to_mo(walk: Walk, stack, url: str, on: On) -> str:
     with walk.step("On a working morning, Mo reads its report in his day from a5s, in the chat: how "
                    "material data stands against its target, from what code measured, and that nothing "
                    "waits on him.", page):
+        for _ in range(3 if on.live else 0):  # a real model's run can fail, and is due again at the
+            try:  # scheduler's next sweep, a minute on, as here: his day waits for all of it
+                page.wait_for_selector("li >> text=From the quality-helper", timeout=30000)
+                break
+            except NotYet:
+                stack.scheduler().work_due()
+                page.reload()
         page.wait_for_selector("li >> text=From the quality-helper", timeout=30000)
-        assert on.live or TOLD in page.inner_text("li:has-text('From the quality-helper')")
+        digest = page.inner_text("li:has-text('From the quality-helper')")
+        own = digest.partition("From the quality-helper")[2].split("\nFrom the ")[0]  # its alone
+        assert own.strip() and (on.live or TOLD in own), digest
     asked = [r["body"]["messages"][-1]["content"] for r in stack.model.requests
-             if "Tell Mo Hassan" in str(r["body"]["messages"][-1].get("content"))]
-    assert on.live or any("DQ-material" in a for a in asked), asked  # the facts code worked out
+             if "Tell Mo Hassan" in str(r["body"]["messages"][-1].get("content"))
+             and "# Quality helper" in str(r["body"]["messages"][0].get("content"))]  # its own run's
+    # code's facts, in its own run's request: a real model's requests, the walk-through never sees
+    assert on.live or any("DQ-material" in a for a in asked), asked
     with db.transaction(stack.admin) as conn:
         [run] = conn.execute("select r.id::text as id from runs r join instances i on i.id = r.instance_id "
                              "where i.definition = %s", (AGENT,)).fetchall()

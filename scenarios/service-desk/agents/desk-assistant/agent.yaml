@@ -4,7 +4,8 @@ works_for: Employees and service-desk resolvers, within their ticket and knowled
 does: >-
   Answers questions about ITSM tickets and approved knowledge articles, saves
   draft replies for people to review, starts the identity provider's own password
-  reset for the person asking, and follows up on work that falls due.
+  reset for the person asking, says whether a device meets the rules and locks a
+  lost one, and follows up on work that falls due.
 scope: none
 model: deepseek-v4-pro
 autonomy:
@@ -15,6 +16,7 @@ tools:
   knowledge: [search_knowledge, read_knowledge]
   documents: [create_draft]
   self_service: [get_account, reset_password, reset_authenticators]
+  devices: [search_devices, get_device, lock_device]
 triggers:
   - message: from the employee or resolver it works for
 obligations: [records]

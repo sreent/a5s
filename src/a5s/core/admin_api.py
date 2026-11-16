@@ -1,4 +1,5 @@
-"""The administrators' page in the channels app (docs/administration.md): who holds each role,
+"""The administrators' page's API in the channels app (docs/administration.md), whose page is the
+studio's, /studio/admin: who holds each role,
 and by what, what waits for whom, what nobody answers for any more, and the latest
 administrative acts (core/administration.py). It shows; it changes nothing.
 
@@ -8,11 +9,13 @@ of a5s's roles, or from the team that runs it.
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
+from fastapi.responses import RedirectResponse
 
 from a5s import db
 from a5s.contract import Person
 from a5s.core import administration, audit, web
+from a5s.core import studio_models as shapes  # what each route answers, as the studio's types say
 
 
 def router(gw: Any) -> APIRouter:
@@ -34,14 +37,13 @@ def router(gw: Any) -> APIRouter:
     api = APIRouter(dependencies=[Depends(available), Depends(administering)])
 
     @pages.get("/admin/", include_in_schema=False)
-    def admin_page() -> Response:
-        return web.page(gw, "admin.html")
+    def admin_page(request: Request) -> Response:
+        """The administrators' page is in the studio now: its old address goes there."""
+        asked = request.url.query
+        return RedirectResponse(f"/studio/admin{'?' + asked if asked else ''}", status_code=303,
+                                headers=web.PAGE_HEADERS)
 
-    @pages.get("/admin/admin.js", include_in_schema=False)
-    def admin_script() -> Response:
-        return web.page(gw, "admin.js")
-
-    @api.get("/admin/api")
+    @api.get("/admin/api", **shapes.answers(shapes.AdminNow))
     def admin_now(person: Annotated[Person, Depends(administering)]) -> dict:
         """Who holds each role and by what, what waits for whom, and the latest acts, read
         from the trail, with whom each was about as a stand-in until the officer agrees."""

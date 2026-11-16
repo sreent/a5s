@@ -53,15 +53,15 @@ def signed(url: str, provider, digests: list[str], decision: str, person: str = 
     salt, verifier = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=")
     provider.person = person
-    query = {"client_id": CLIENT, "redirect_uri": f"{url}/decide/", "state": "s",
+    query = {"client_id": CLIENT, "redirect_uri": f"{url}/studio/", "state": "s",
              "nonce": proposals.nonce(digests, decision, salt, reason),
              "code_challenge": challenge.decode(),
              "code_challenge_method": "S256"}
     went = httpx.get(f"{provider.url}/auth", params={**query, **({"max_age": "0"} if fresh else {})})
     code = parse_qs(went.headers["location"].split("?", 1)[1])["code"][0]
-    tokens = httpx.post(f"{url}/decide/token", json={
+    tokens = httpx.post(f"{url}/studio/sign-in/token", json={  # as the studio signs in
         "grant_type": "authorization_code", "code": code, "code_verifier": verifier,
-        "redirect_uri": f"{url}/decide/"}).json()
+        "redirect_uri": f"{url}/studio/"}).json()
     return tokens["id_token"], salt
 
 
@@ -94,7 +94,7 @@ def test_a_change_below_level_2_waits_for_the_owner_of_its_part(stack, approving
     holds = [e for e in stack.ledger() if e["kind"] == "tool" and e["action"] == "change_due_date"]
     assert [e["decision"] for e in holds] == ["hold"]
     [card] = [m for m in stack.inbox("ana") if m["text"].startswith("P-1 waits")]
-    assert f"{approving}/decide/?proposal={p['digest']}" in card["text"]
+    assert f"{approving}/studio/decide?proposal={p['digest']}" in card["text"]
 
 
 def test_what_the_decider_approves_is_made_and_whoever_asked_is_told(stack, approving, provider):
@@ -309,12 +309,13 @@ def test_the_nonce_commits_to_the_decision_and_every_change(decision):
 
 
 def test_the_decision_page_runs_only_its_own_script_and_shows_only_text(approving):
-    page = httpx.get(f"{approving}/decide/")
-    script = httpx.get(f"{approving}/decide/decide.js")
-    assert page.status_code == script.status_code == 200
+    went = httpx.get(f"{approving}/decide/?proposal={'a' * 64}")  # a card's link, as it was
+    assert (went.status_code, went.headers["location"]) == (303, f"/studio/decide?proposal={'a' * 64}")
+    page = httpx.get(f"{approving}/studio/decide")  # the studio's, now
+    assert page.status_code == 200 and httpx.get(f"{approving}/decide/decide.js").status_code == 404
     policy = page.headers["content-security-policy"]
     assert "script-src 'self'" in policy and "frame-ancestors 'none'" in policy
-    assert "unsafe" not in policy and "innerHTML" not in script.text
+    assert "unsafe" not in policy
 
 
 def test_a_decider_reviews_and_approves_in_the_browser(stack, approving, provider, browser):
@@ -322,9 +323,9 @@ def test_a_decider_reviews_and_approves_in_the_browser(stack, approving, provide
     asked(stack, call, said="Please move Q-1002 out a week.")
     [p] = held(stack)
     page = browser.new_page()
-    page.goto(f"{approving}/decide/?proposal={p['digest']}")  # signed in, to see what waits
+    page.goto(f"{approving}/studio/decide?proposal={p['digest']}")  # signed in, to see what waits
     page.wait_for_selector(".approval >> text=Q-1002", timeout=30000)
-    assert page.inner_text("#who") == "Ana Ortiz"
+    assert page.inner_text("#me").endswith("Ana Ortiz")
     assert "max_age" not in provider.asked[-1]  # seeing what waits needs no fresh sign-in
     # On its card: who asks and for whom, what it does in code's words, and what to know
     assert page.inner_text(".approval .who-name") == "The assistant asks"

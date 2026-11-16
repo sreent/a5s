@@ -69,7 +69,7 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 
 **Shows as:** samples waiting to be graded, samples that lapsed ungraded, or caps lowered in the last day.
 
-1. Samples are graded on the core's page, `/grade/`, by people who hold the grader role, from outside the teams that build and run the agent. A backlog only slows level 2: ask the scenario's owners for graders. A sample nobody grades in a quarter lapses, and goes after a year.
+1. Samples are graded in the studio, `/studio/grade`, by people who hold the grader role, from outside the teams that build and run the agent. A backlog only slows level 2: ask the scenario's owners for graders. A sample nobody grades in a quarter lapses, and goes after a year.
 2. A cap falls on a critical error, on grades that show accuracy below the part's threshold, when the threshold rises past what the grades show, or when someone lowers it. The ledger's `cap` entries give the evidence, and the instance's owner and deputy hear in their digest. It rises again only on new grades.
 3. To lower a cap at once, such as while a fault is looked into: `a5s caps lower <agent> <part> <type of action>`, as one of the part's owners, an instance approver, the agent's owner or assurance. Nobody raises a cap by hand.
 4. While the settings in force don't check out, nothing is weighed, and caps stand.
@@ -127,7 +127,7 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 
 **Shows as:** an agent relying on a note its owner thinks wrong. The status counts notes, and those let go in the last day.
 
-1. The agent's owner, or whoever runs the instance, removes the note on the core's page, `/notebook/`, which shows when each was noted and last checked, with a link to each of its records. The ledger records who removed it.
+1. The agent's owner, or whoever runs the instance, removes the note in the studio's notebook, `/studio/notebook`, which shows when each was noted and last checked, with a link to each of its records. The ledger records who removed it.
 2. A note goes by itself once its records change, checked each day apart from the retention sweep, so a records system that's down holds up no other sweep: its notes wait to be checked. The notebook keeps its newest 50.
 3. A note can't carry anyone's words, nor anything from outside: only a run on a schedule writes one, from records it read, and it reaches only people who may see every record that run read. If one seems to, tell assurance, with the note's number.
 
@@ -165,13 +165,15 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 6. `lasting-or-outside-effects-need-level-2`: a tool the scenario marks as destructive, or as sending outside the organisation, was called below level 2. Tell the agent owner: below level 2, agents draft and people act.
 7. `arguments-fit-the-schema` or `records-are-named-by-key`: the agent called a tool with arguments it doesn't take. Once in a while is the model's mistake. Many in a row may mean the tool's description misleads it: tell the agent owner.
 8. `records-can-be-read`: a change named records a5s couldn't read just then, so nobody could decide it as they stood, and a5s asked for nothing. Its records system, or the scenario's code that reads it, is failing: the log says which records and why. The change can be asked for again once they read.
+9. `a-change-names-few-records`: one call named more than 20 records to change. a5s reads each as it stands before deciding, so it reads none of so many, and asks the agent to ask for the rest apart. Many in a row may mean its instructions ask it to change records in bulk: tell the agent owner.
 
 ## An instance isn't active
 
 **Shows as:** an instance suspended, and by whom, or retired.
 
-1. Only the person who suspended it can resume it, with `a5s resume`, signed in. Resuming someone else's suspension needs the release approver.
-2. A retired instance comes back with a version of the settings that names it again.
+1. Only the person who suspended it can resume it: on its page in the studio, `/studio/instances/<id>`, signed in afresh for that alone, or with `a5s resume`, signed in. Resuming someone else's suspension needs the release approver.
+2. One suspended or resumed on its page waits for the core's next sweep, within a minute, which checks that sign-in again. If it waits longer, the status counts it among what waits to be sealed: the core is missing its seal key or can't reach the identity provider, which the log says. A request it couldn't carry out, its person hears of in their digest, with why.
+3. A retired instance comes back with a version of the settings that names it again.
 
 ## Settings or the release don't check out
 
@@ -193,7 +195,7 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 
 **Shows as:** the data protection officer asking for what a5s keeps about someone, such as for their request to see it.
 
-1. The officer asks on the core's page, `/officer/`, signed in afresh: export, and the person's id in the directory, or an archive's name. The page says whose the id is in the directory now, and the command to run.
+1. The officer asks in the studio, `/studio/officer`, signed in afresh: export, and the person's id in the directory, or an archive's name. The page says whose the id is in the directory now, and the command to run.
 2. Within ten minutes, someone from the team that runs a5s, whose service token reaches the core, runs `a5s export --person <id> --out <file>`. It needs both: the team can't export without the officer's request, which does nothing else and works once, nor can anyone else with a role, or the person themselves. If ten minutes have passed, the officer asks again.
 3. The file holds all a5s keeps that names them, and only whoever runs the command may read it: the command writes only a new file, which goes to the officer. It gives nobody else's words, only how much they heard others say in group chats or were answered there, and names records by key and title: what records hold is the records system's to answer for.
 4. If the id was archived, the command names each archive, with when its holder left. An id the directory later gave someone else exports only its new holder's, so an archive may be someone else's: the officer asks for each that's the person's by its name, `former:...`, and the team exports it the same way.

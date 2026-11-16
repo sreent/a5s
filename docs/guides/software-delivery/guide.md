@@ -64,9 +64,9 @@ Software delivery's dev assistant, built again from nothing in the studio, as de
 
    ![On his own page he watches T-1, waiting for its first slice, with what it may spend and by when.](17-on-his-own-page-he-watches-t-1-waiting-for-its-f.png)
 
-18. He stops it there, since PR-17's review comes first.
+18. He stops it there, since PR-17's review comes first: asked first, as what can't be undone is.
 
-   ![He stops it there, since PR-17's review comes first.](18-he-stops-it-there-since-pr-17-s-review-comes-fir.png)
+   ![He stops it there, since PR-17's review comes first: asked first, as what can't be undone is.](18-he-stops-it-there-since-pr-17-s-review-comes-fir.png)
 
 19. Ash, of assurance, follows it in the audit trail: the review it asked for, held, decided by Leo and asked of the forge, and the task Raj stopped.
 

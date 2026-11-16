@@ -10,6 +10,7 @@ as the core's API works it out for the team that runs a5s.
 
 import re
 import tempfile
+import time
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
@@ -22,15 +23,26 @@ from pydantic import BaseModel
 from a5s import authoring, cases, db, definitions, describing
 from a5s.contract import Person
 from a5s.core import (
+    admin_api,
     administration,
+    approvals,
+    approve_api,
     asks,
+    audit_api,
+    decide_api,
     drafts,
+    grade_api,
     ledger,
     memberships,
+    notebook_api,
+    officer_api,
     publishing,
     registry,
+    settings_api,
     settings_app,
     studio,
+    suspension,
+    tasks_api,
     typescript,
     web,
 )
@@ -84,6 +96,14 @@ class Serve(BaseModel):
     """Which of an agent's instances is to serve someone who asked for it."""
 
     instance: str
+
+
+class StatusAct(BaseModel):
+    """Suspending or resuming an instance from its page: which, and the salt the page made its
+    sign-in's nonce with."""
+
+    action: str
+    salt: str
 
 
 class CaseRun(BaseModel):
@@ -166,6 +186,15 @@ def router(gw: Any) -> APIRouter:
     @pages.get("/studio/new", include_in_schema=False)
     @pages.get("/studio/agents", include_in_schema=False)
     @pages.get("/studio/you", include_in_schema=False)
+    @pages.get("/studio/settings", include_in_schema=False)
+    @pages.get("/studio/notebook", include_in_schema=False)
+    @pages.get("/studio/tasks", include_in_schema=False)
+    @pages.get("/studio/admin", include_in_schema=False)
+    @pages.get("/studio/audit", include_in_schema=False)
+    @pages.get("/studio/decide", include_in_schema=False)
+    @pages.get("/studio/grade", include_in_schema=False)
+    @pages.get("/studio/officer", include_in_schema=False)
+    @pages.get("/studio/approve", include_in_schema=False)
     @pages.get("/studio/design", include_in_schema=False)
     def studio_new() -> Response:
         """The studio, where someone starts a new agent, sees all the agents they may, what they
@@ -336,6 +365,65 @@ def router(gw: Any) -> APIRouter:
             except studio.UnknownZone as e:
                 raise HTTPException(400, str(e)) from e
 
+    def stood(conn: Any, person: Person, instance: str) -> dict:
+        """An instance someone may watch, with who suspended it, if anyone did."""
+        watched(conn, person, instance)
+        found = conn.execute(f"select {suspension.COLUMNS}, parts from instances where id = %s",
+                             (instance,)).fetchone()
+        if found is None:
+            raise HTTPException(404, "there's no such instance that you may watch")
+        return found
+
+    def asked_line(found: dict | None) -> dict | None:
+        if found is None:
+            return None
+        who = gw.scenario.person(found["person"])
+        return {"action": found["action"], "by": who.name if who else found["person"],
+                "at": found["asked_at"]}
+
+    @api.get("/studio/api/instances/{instance}/standing", **shapes.answers(shapes.Standing))
+    def instance_standing(instance: str, person: Annotated[Person, Depends(studying)]) -> dict:
+        """How an instance stands, for someone who may watch it: what of it waits, the changes
+        it asked for, for their decision and others', its samples for their grade and others',
+        and its notebook, if they keep it, each where it's done (core/home.py); who suspended
+        it; and whether they may suspend it or resume it from its page (core/suspension.py)."""
+        with db.transaction(gw.url) as conn:
+            inst = stood(conn, person, instance)
+            pending = suspension.asked(conn, instance)
+            waiting = homes.of_instance(conn, gw, person, inst)
+        by = gw.scenario.person(inst["suspended_by"] or "")
+        may = None if pending else next(
+            (a for a in suspension.ACTIONS
+             if suspension.may(gw.scenario, person, inst, a, gw.cfg.team) is None), None)
+        return {"waiting": waiting, "may": may, "asked": asked_line(pending),
+                "suspended_by": (by.name if by else inst["suspended_by"])
+                if inst["status"] == "suspended" else None}
+
+    @api.post("/studio/api/instances/{instance}/status", **shapes.answers(shapes.StatusAsked))
+    def instance_status(instance: str, body: StatusAct,
+                        person: Annotated[Person, Depends(studying)],
+                        authorization: str | None = Header(default=None)) -> dict:
+        """Suspend or resume an instance, signed in afresh for that act alone, which the gateway
+        checks again and carries out within a minute (core/suspension.py): someone who runs it,
+        owns its agent, or is on the team that runs a5s suspends it; whoever suspended it
+        resumes it."""
+        token = (authorization or "").removeprefix("Bearer ").strip()
+        try:
+            who, claims = suspension.check(gw.identity, gw.scenario, gw.cfg.webchat_client_id,
+                                           token, body.action, instance, body.salt, time.time())
+            with db.transaction(gw.url) as conn:
+                inst = stood(conn, who, instance)
+                if suspension.asked(conn, instance):
+                    raise HTTPException(409, "a5s is carrying out what was asked for it already: "
+                                             "look again in a minute")
+                if refused := suspension.may(gw.scenario, who, inst, body.action, gw.cfg.team):
+                    raise refused
+                found = suspension.record(conn, body.action, instance, who.id, token,
+                                          body.salt, claims)
+        except approvals.Refused as exc:
+            raise web.refusal(gw, exc) from None
+        return {"action": body.action, "by": who.name, "at": found["asked_at"]}
+
     @api.get("/studio/api/instances/{instance}/runs", **shapes.answers(shapes.RunsPage))
     def studio_runs(instance: str, person: Annotated[Person, Depends(studying)], before: str | None = None,
                     limit: int = studio.RUNS) -> dict:
@@ -408,7 +496,7 @@ def router(gw: Any) -> APIRouter:
             watched = studio.instances(conn, person)
         return {"tools": studio.offered(gw.scenario.tools()), "models": sorted(gw.models),
                 **studio.rules(gw.scenario, settings),
-                "servable": studio.servable(gw.scenario, settings, person),
+                "servable": studio.servable(gw.scenario, settings, person, [i["id"] for i in watched]),
                 "askable": studio.askable(watched),
                 "owed": sorted({o.source for o in gw.scenario.obligations()})}  # an agent may chase
 
@@ -510,14 +598,27 @@ def router(gw: Any) -> APIRouter:
                 raise HTTPException(409, f"there's an agent {body.name} already: draft a change "
                                          "to it instead")
             words = body.describe.strip()[:describing.WORDS]
-            said = sandboxed("/sandbox/descriptions", {"words": words, "model": body.model or "stand-in"})
             with tempfile.TemporaryDirectory() as there:  # from the blank start, on its own model
-                try:
+                try:  # its name, and room for it, checked before any model is asked
                     made = authoring.new(authoring.templates(gw.cfg.root)[authoring.BLANK], body.name,
                                          Path(there), tools, model=next(iter(gw.models), None))
                 except ValueError as e:
                     raise HTTPException(400, str(e)) from None
                 blank = drafts.folder_files(made)
+            with db.transaction(gw.url) as conn:
+                try:
+                    drafts.room(conn, person, body.name)
+                except drafts.Refused as e:
+                    raise HTTPException(409, str(e)) from None
+            asked = body.model or "stand-in"
+            try:
+                said = sandboxed("/sandbox/descriptions", {"words": words, "model": asked})
+            finally:  # the words went to the model whatever comes of them: the ledger says so
+                with db.transaction(gw.url) as conn:
+                    ledger.append(conn, {"kind": "admin", "action": "describe", "run": None,
+                                         "instance": None, "acts_for": [], "decision": "record",
+                                         "args": {"agent": body.name, "model": asked, "by": person.id,
+                                                  "words_sha256": ledger.digest(words)}})
             proposed = found if isinstance(found := said.get("proposal"), dict) else {}
             owed = sorted({o.source for o in gw.scenario.obligations()})
             files, notes = describing.drafted(blank, body.name, proposed, tools, owed)
@@ -816,6 +917,15 @@ def described() -> dict:
     answers, with no deployment behind it."""
     app = FastAPI(title="a5s studio")
     app.include_router(router(SimpleNamespace(cfg=None)))  # nothing it serves is asked
+    app.include_router(settings_api.router(SimpleNamespace(cfg=None)))  # the settings, folded in
+    app.include_router(notebook_api.router(SimpleNamespace(cfg=None)))  # and the notebook
+    app.include_router(tasks_api.router(SimpleNamespace(cfg=None)))  # and people's tasks
+    app.include_router(admin_api.router(SimpleNamespace(cfg=None)))  # and the administrators' page
+    app.include_router(audit_api.router(SimpleNamespace(cfg=None)))  # and the audit trail
+    app.include_router(decide_api.router(SimpleNamespace(cfg=None)))  # and deciding held changes
+    app.include_router(grade_api.router(SimpleNamespace(cfg=None)))  # and grading samples
+    app.include_router(officer_api.router(SimpleNamespace(cfg=None)))  # and the officer's requests
+    app.include_router(approve_api.router(SimpleNamespace(cfg=None)))  # and approving settings
     return app.openapi()
 
 

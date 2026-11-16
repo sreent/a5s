@@ -162,14 +162,17 @@ def rules(scenario: Scenario, settings: Settings | None) -> dict:
                        for action, limit in sorted(settings.limits.items())}}
 
 
-def servable(scenario: Scenario, settings: Settings | None, person: Person) -> list[dict]:
-    """Whom a draft's first instance could serve, for its plan: those the settings in force name
-    already, as owners, deputies and whom instances serve, and whoever is signed in, as the
-    settings app offers them, so the studio names nobody the settings don't: a person by their
-    name, a team or a role as written."""
-    ids = {person.id}
+def servable(scenario: Scenario, settings: Settings | None, person: Person,
+             watched: Iterable[str] = ()) -> list[dict]:
+    """Whom a draft's first instance could serve, for its plan: whoever is signed in; the teams
+    and roles the settings in force serve, as written; and the people the instances they may
+    watch serve, run or stand in for, by their names, so the studio names nobody the settings
+    don't, nor anyone of an instance its author may not know of (round 12, C10)."""
+    ids, mine = {person.id}, set(watched)
     for inst in settings.instances if settings else ():
-        ids |= {i for i in (inst.owner, inst.deputy) if i} | set(inst.serves)
+        ids |= {i for i in inst.serves if ":" in i}  # a team or a role: nobody by name
+        if inst.id in mine:
+            ids |= {i for i in (inst.owner, inst.deputy) if i} | set(inst.serves)
     found = []
     for i in sorted(ids):
         known = scenario.person(i) if ":" not in i else None

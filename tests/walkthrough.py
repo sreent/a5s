@@ -33,7 +33,7 @@ from typing import Any
 import httpx
 import yaml
 
-from a5s import cli
+from a5s import cli, db
 from a5s.core import publishing
 from a5s.core.releases import Releases, running
 from conftest import FAKE_MODELS, ROOT, FakeModel
@@ -88,6 +88,31 @@ def walking_on(answering: Any = None) -> On:
     model = FakeModel(answering=answering)
     transport = httpx.MockTransport(model.handler)
     return On(model, "fake", FAKE_MODELS, httpx.Client(transport=transport), transport)
+
+
+def decided_in_trail(page: Any, by: str) -> None:
+    """On the audit trail, found for an instance: its held change's decision, by `by`, as the
+    ledger has it, and that a5s then made it, the auditor asking only for what `by` decided."""
+    page.fill("#by", by)
+    page.click("#search")
+    page.wait_for_selector("#entries li:has-text('proposal decide')", timeout=30000)
+    shown = page.locator("#entries li").all_inner_texts()
+    assert any("proposal decide, allow" in e and f"By {by}" in e for e in shown), shown
+    assert any("proposal made, record" in e and f"By {by}" in e for e in shown), shown
+    page.fill("#by", "")
+
+
+def waiting(stack: Any) -> int:
+    """How many changes wait for a decision."""
+    with db.transaction(stack.admin) as conn:
+        return conn.execute("select count(*) as n from proposals where status = 'waiting'").fetchone()["n"]
+
+
+def confirms(page: Any, stack: Any, agent: str, before: int = 0) -> None:
+    """At night, a real model may ask the person to confirm a change before it asks for it, though
+    a5s holds the change for its decider anyway: if no more waits than `before`, they say yes, once."""
+    if LIVE and waiting(stack) <= before:
+        says(page, agent, "Yes, please ask for it.", "")
 
 
 def says(page: Any, agent: str, text: str, words: str) -> None:
