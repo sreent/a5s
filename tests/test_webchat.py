@@ -3,6 +3,7 @@ provider and talk to the agents through the local channel."""
 
 import base64
 import hashlib
+import json
 import secrets
 import threading
 import time
@@ -170,6 +171,30 @@ def test_a_person_chats_in_the_browser_in_development(stack, browser, answering)
         said = page.locator("#conversation li").all_inner_texts()
     assert said[0].startswith("You") and "Which questions mention an invoice?" in said[0]
     assert said[1].startswith("assistant") and "wrong address" in said[1]
+
+
+def test_a_person_attaches_a_file_and_the_agent_asks_a5s_reader_about_it(stack, browser, answering):
+    stack.model.reply(None, ("ask_about", {"document": "D-1", "question": "What's the total?"}))
+    stack.model.reply("The total row says 860.00.")  # a5s's reader
+    stack.model.reply("Your costs come to 860.00, as the total says.")
+    with channels(stack) as url:
+        page = browser.new_page()
+        page.goto(f"{url}/chat/")
+        page.fill("#person", "ana")
+        page.click("#name button")
+        with page.expect_file_chooser() as chosen:
+            page.click("#attach")
+        chosen.value.set_files([{"name": "costs.csv", "mimeType": "text/csv",
+                                 "buffer": b"item,amount\nhotel,612.00\ntaxi,248.00\ntotal,860.00\n"}])
+        assert page.inner_text("#attached li span") == "costs.csv, 1 KB"
+        page.fill("#text", "Do these add up?")
+        page.keyboard.press("Enter")
+        page.wait_for_selector("li.agent >> text=as the total says", timeout=30000)
+        said = page.locator("#conversation li").all_inner_texts()
+        assert not page.is_visible("#attached")  # sent with it, and gone from the box
+    assert "Do these add up?" in said[0] and "Sent costs.csv" in said[0]
+    assert "hotel,612.00" in json.dumps(stack.model.requests[1]["body"])  # a5s's reader read it
+    assert "hotel,612.00" not in json.dumps(stack.model.requests[0]["body"])  # the agent didn't
 
 
 def test_a_person_signs_in_chats_and_hears_reminders_in_the_browser(stack, browser, answering,

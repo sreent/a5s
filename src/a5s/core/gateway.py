@@ -65,6 +65,7 @@ from a5s.core import (
     events,
     export,
     extractor,
+    files,
     groups,
     handles,
     judging,
@@ -733,6 +734,9 @@ class Gateway:
         if message and message["agent"] != inst["definition"]:
             opening.reasons.append(f"the message is for the {message['agent']}, "
                                    f"not the {inst['definition']}")
+        if message and conn.execute("select 1 from inbound_files where inbound_id = %s and "
+                                    "refused is null limit 1", (inbound,)).fetchone():
+            opening.marked = True  # what they sent with it is content from outside (core/files.py)
         return opening
 
     def reminding(self, conn: db.Connection, inst: dict, trigger: dict,
@@ -789,6 +793,14 @@ class Gateway:
             opening.reasons.append(f"{name} has fired already")
             opening.used = True
         return opening
+
+    def fetch_file(self, where: dict) -> bytes:
+        """A file someone sent, from the chat that keeps it, as the agent's own bot there."""
+        chat = {"slack": self.slack, "teams": self.teams, "matrix": self.matrix}.get(
+            str(where.get("channel")))
+        if chat is None:
+            raise ValueError(f"{where.get('channel')} isn't set up in this gateway")
+        return chat.download(where)
 
     def evented(self, conn: db.Connection, inst: dict, trigger: dict,
                 now: datetime) -> Opening:
@@ -1164,6 +1176,7 @@ class Opening:
     seen: dict | None = None  # a report's records as it tells them, kept once they have it
     marked: bool = False  # it starts as a run that has read content from outside
     told: list = field(default_factory=list)  # (source, text): more it reads as it opens
+    notes: list = field(default_factory=list)  # a5s's own words the run's agent hears first
 
 
 def values_of(traced: list[dict]) -> dict:
@@ -1388,6 +1401,9 @@ def create_app(gw: Gateway) -> FastAPI:
                 if kind == asking.KIND:  # whose run answers it, at work on it now
                     conn.execute("update questions set run_id = %s where id = %s",
                                  (run_id, opening.trigger["question"]))
+                if kind == "message":  # the files it came with, as the run's documents, unread
+                    opening.notes = [n for n in [files.attach(conn, run_id,
+                                                               opening.trigger["inbound"])] if n]
                 if kind == tasking.KIND:  # what its task's earlier runs read, as they read it
                     tasking.given(conn, opening.trigger["task"], run_id)
                 elif opening.task:  # what a5s asks it, from the records: something it has read,
@@ -1417,6 +1433,7 @@ def create_app(gw: Gateway) -> FastAPI:
                                       "owner": inst["owner"], "suspended_by": inst["suspended_by"],
                                       "answered": opening.used, "out_of_budget": bool(spent)})
         return {"run": run_id, "token": token, "task": opening.task,
+                **({"notes": opening.notes} if opening.notes else {}),
                 "topic": opening.trigger.get("topic", topics.GENERAL),
                 "history_chars": CHARS_PER_TOKEN * (release.context.budget_tokens if release
                                                     else Context().budget_tokens)}
@@ -2870,22 +2887,63 @@ def create_app(gw: Gateway) -> FastAPI:
 
         return walk(result), read
 
+    def reading_file(row: dict, number: int, found: dict) -> dict | JSONResponse:
+        """A file a run's message came with, fetched as the agent's own bot, or as the web
+        chat sent it, and read by a5s's reader, once, outside any transaction: its text, or
+        the image as it is, kept as the run's document from then (core/files.py)."""
+        source = found["source"]
+        with db.transaction(gw.url) as conn:
+            kept = conn.execute("select * from inbound_files where inbound_id = %s and "
+                                "number = %s", (source["inbound"], source["number"])).fetchone()
+        try:
+            data = bytes(kept["data"]) if kept and kept["data"] is not None else (
+                gw.fetch_file(kept["origin"] or {}) if kept else None)
+        except (httpx.HTTPError, ValueError) as exc:
+            log.warning("couldn't fetch a file someone sent: %s", exc)
+            data = None
+        if data is None:
+            return JSONResponse(status_code=502, content={
+                "error": "a5s couldn't fetch the file now: ask them to send it again"})
+        text, image, cut = files.read(data, found["media_type"])
+        text = text[:extractor.MOST] + (f"\n\n(a5s: {cut}.)" if cut else "")
+        with db.transaction(gw.url) as conn:
+            conn.execute("update run_documents set text = %s, image = %s, digest = %s, "
+                         "source = null where run_id = %s and number = %s",
+                         (text, image, hashlib.sha256(data).hexdigest(), row["run"], number))
+        return {**found, "text": text, "image": image, "source": None}
+
     def asking_about(args: dict, row: dict, seq: int, token: str) -> Any:
         """a5s's reader's answer to a question about a document the run has read: in free
         text, marked as outside content, never as an instruction."""
         number = str(args.get("document", "")).removeprefix("D-")
         with db.transaction(gw.url) as conn:
-            found = conn.execute("select text from run_documents where run_id = %s and number = %s",
+            found = conn.execute("select text, source, media_type, image from run_documents "
+                                 "where run_id = %s and number = %s",
                                  (row["run"], int(number) if number.isdigit() else -1)).fetchone()
         model = gw.models.get(row["model"])
+        if found is not None and found["source"]:  # a file its message came with, read now
+            found = reading_file(row, int(number), found)
+            if isinstance(found, JSONResponse):
+                return found
+        if found is not None and found["image"] is not None and model is not None \
+                and not model.images:  # a screenshot, for a model that can't be sent one
+            record({"kind": "tool", "action": extractor.ASK, "run": row["run"],
+                    "instance": row["id"], "decision": "record", "of": seq,
+                    "outcome": {"status": "refused"}})
+            return JSONResponse(status_code=403, content={"denied": True, "explanations": [(
+                "it's an image, and the model here isn't approved for images, so a5s's reader "
+                "can't look at it: ask them what it shows")]})
         if found is None or model is None:
             record({"kind": "tool", "action": extractor.ASK, "run": row["run"],
                     "instance": row["id"], "decision": "record", "of": seq,
                     "outcome": {"status": "refused"}})
             return JSONResponse(status_code=403, content={
                 "denied": True, "explanations": ["this run has read no such document"]})
-        answer = model_call(model.api, extractor.answer_request(
-            model.api, row["model"], found["text"], str(args.get("question", ""))[:500]), token)
+        question = str(args.get("question", ""))[:500]
+        answer = model_call(model.api, extractor.image_request(
+            model.api, row["model"], bytes(found["image"]), found["media_type"], question)
+            if found["image"] is not None else extractor.answer_request(
+                model.api, row["model"], found["text"], question), token)
         said = extractor.reply_text(model.api, json.loads(bytes(answer.body)))
         status_now = "ok" if answer.status_code < 400 and said else "error"
         recorded = record({"kind": "tool", "action": extractor.ASK, "run": row["run"],
@@ -3819,7 +3877,7 @@ def create_app(gw: Gateway) -> FastAPI:
             "parents": [],
         }
         prompt = {"system": body.get("system"), "messages": body.get("messages")}
-        forwarded, dropped, refusal = models.screen(api, body)
+        forwarded, dropped, refusal = models.screen(api, body, bool(model and model.images))
         with db.transaction(gw.url) as conn:
             row = load_run(conn, token)
             release = gw.definitions.get(row["definition"])
@@ -3827,7 +3885,8 @@ def create_app(gw: Gateway) -> FastAPI:
                 conn, gw.scenario, release.budget, row["id"], list(row["acts_for"]),
                 row["trigger"].get("kind"), row["tokens"], gw.clock(), tasking.capped(row))
             if refusal:
-                decision = Decision(False, ("agents-use-their-own-tools",), explanations=(refusal,))
+                decision = Decision(False, ("images-go-to-models-approved-for-them",) if "images" in (
+                    refusal) else ("agents-use-their-own-tools",), explanations=(refusal,))
             elif why := tasking.stopped(conn, row):  # its task was cancelled meanwhile
                 decision = Decision(False, ("tasks-stop-when-stopped",), explanations=(why,))
             elif spent:

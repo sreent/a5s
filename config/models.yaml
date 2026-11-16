@@ -40,6 +40,8 @@ models:
   #                                       # and in from the provider's cache, for what a run
   #                                       # costs (a5s measures): as the provider charges. Also
   #                                       # cache_write, where it charges to write the cache
+  #   images: true                        # it may be sent the images people send an agent,
+  #                                       # such as a screenshot, for a5s's reader to look at
 
   deepseek-v4-pro-anthropic:     # the same model, through the Anthropic-compatible API
     provider: deepseek

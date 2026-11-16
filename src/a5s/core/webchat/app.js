@@ -200,6 +200,68 @@ function welcome(agent, does) {
   $("welcome").hidden = false;
 }
 
+// Files to send with the next message: text files, PDFs and images, which the agent asks a5s's
+// reader about, as content from outside (core/files.py). A few to a message, a few megabytes in
+// all, as the channels take them with it.
+
+const MOST_FILES = 5;
+const MOST_BYTES = 4 * 1024 * 1024;
+const TAKEN = /\.(txt|csv|md|json|pdf|png|jpe?g|gif|webp)$/i;
+const attached = [];
+
+const size = (bytes) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB`
+  : `${(bytes / (1024 * 1024)).toFixed(1)} MB`);
+
+function showAttached() {
+  const list = $("attached");
+  list.replaceChildren(...attached.map((file, i) => {
+    const item = document.createElement("li");
+    item.className = "chip";
+    const name = document.createElement("span");
+    name.textContent = `${file.name}, ${size(file.size)}`;
+    const leave = document.createElement("button");
+    leave.type = "button";
+    leave.textContent = "×";
+    leave.setAttribute("aria-label", `Don't send ${file.name}`);
+    leave.addEventListener("click", () => {
+      attached.splice(i, 1);
+      showAttached();
+      $("text").focus();
+    });
+    item.append(name, leave);
+    return item;
+  }));
+  list.hidden = !attached.length;
+}
+
+function attach(files) {
+  for (const file of files) {
+    if (attached.length >= MOST_FILES) {
+      status(`Send at most ${MOST_FILES} files with a message.`);
+      break;
+    }
+    if (!TAKEN.test(file.name) && !/^image\/(png|jpeg|gif|webp)$/.test(file.type)) {
+      status(`${file.name}: a5s reads text files, PDFs and images.`);
+      continue;
+    }
+    if (attached.reduce((all, f) => all + f.size, 0) + file.size > MOST_BYTES) {
+      status(`A message's files can come to ${MOST_BYTES / (1024 * 1024)} MB in all here.`);
+      continue;
+    }
+    attached.push(file);
+  }
+  showAttached();
+}
+
+function base64(file) {
+  return new Promise((done, failed) => {
+    const reader = new FileReader();
+    reader.onload = () => done(String(reader.result).split(",", 2)[1] || "");
+    reader.onerror = () => failed(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
 // Talking to an agent
 
 async function open(agent) {
@@ -213,11 +275,13 @@ async function open(agent) {
   else welcome(agent, found.does);
 }
 
-async function send(text) {
+async function send(text, files = []) {
   const agent = state.agent;
-  say({ from: "you", by: "person", text, at: new Date().toISOString() });
+  const with_ = files.length ? `Sent ${files.map((f) => f.name).join(", ")}` : "";
+  say({ from: "you", by: "person", text: [text, with_].filter(Boolean).join("\n"), at: new Date().toISOString() });
+  const sending = await Promise.all(files.map(async (f) => ({ name: f.name, type: f.type, data: await base64(f) })));
   const sent = await api("/channels/local/messages", {
-    method: "POST", body: JSON.stringify({ agent, text, person: state.person }),
+    method: "POST", body: JSON.stringify({ agent, text, person: state.person, files: sending }),
   });
   const body = await sent.json();
   if (sent.status !== 202) {
@@ -313,12 +377,36 @@ async function main() {
     }
     $("agent").addEventListener("change", (event) => open(event.target.value));
     $("compose").hidden = false;
+    if (window.a5s) $("attach").append(window.a5s.icon("attach"));
+    $("attach").addEventListener("click", () => $("files").click());
+    $("files").addEventListener("change", (event) => {
+      attach([...event.target.files]);
+      event.target.value = "";  // so the same file can be chosen again
+    });
+    $("text").addEventListener("paste", (event) => {  // a screenshot, pasted
+      const data = event.clipboardData;
+      if (data && data.files.length && !data.types.includes("text/plain")) {
+        event.preventDefault();
+        attach([...data.files]);
+      }
+    });
+    $("compose").addEventListener("dragover", (event) => {
+      if (event.dataTransfer && event.dataTransfer.types.includes("Files")) event.preventDefault();
+    });
+    $("compose").addEventListener("drop", (event) => {
+      if (event.dataTransfer && event.dataTransfer.files.length) {
+        event.preventDefault();
+        attach([...event.dataTransfer.files]);
+      }
+    });
     $("compose").addEventListener("submit", (event) => {
       event.preventDefault();
       const text = $("text").value.trim();
-      if (!text) return;
+      if (!text && !attached.length) return;
+      const files = attached.splice(0);
+      showAttached();
       $("text").value = "";
-      send(text).catch((error) => { if (error.message !== SIGNING_IN) status(error.message); });
+      send(text, files).catch((error) => { if (error.message !== SIGNING_IN) status(error.message); });
     });
     $("text").addEventListener("keydown", (event) => {
       if (event.key === "Enter" && !event.shiftKey) {

@@ -21,7 +21,9 @@ after, and the record of whose archive it was once nothing is left under its nam
 people ask to forget goes at once (core/profiles.py). The ledger keeps what people and agents
 wrote only by hash and length (core/ledger.py), so retention needn't touch it. The values a run
 was handed as handles, what it read, and the documents from outside it read, go once the run
-has been over for an hour: a handle works only in its run, and nothing reads them after.
+has been over for an hour: a handle works only in its run, and nothing reads them after. The
+files someone sent with a message (core/files.py) go a day after it was answered, or a week
+after it came, should nothing answer it.
 
 The core sweeps every hour, by the database's clock, and the ledger records what each sweep
 deleted, in counts, never what was said. The period goes to Postgres as a value, never as part
@@ -78,6 +80,9 @@ def sweep(conn: db.Connection, now: datetime, scenario: str, kept: str = KEPT) -
     delete("handles", f"delete from run_handles where run_id in {over}")
     delete("reads", f"delete from run_reads where run_id in {over}")
     delete("documents", f"delete from run_documents where run_id in {over}")
+    delete("files", "delete from inbound_files f using inbound i where i.id = f.inbound_id and "
+                    "(i.answered_at < now() - interval '1 day' or i.received_at < now() - "
+                    "interval '7 days')")  # sent with a message, kept to answer it
 
     said = " union all ".join(f"select {WHOSE.get(table, 'person')} as person, agent, {at} as at "
                               f"from {table}" for table, at in SAID)

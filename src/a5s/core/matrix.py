@@ -24,9 +24,10 @@ import httpx
 
 from a5s import config
 from a5s.contract import Person, Scenario
-from a5s.core import groups
+from a5s.core import files, groups
 
 MEMBERS_KEPT = 60.0  # seconds a room's members, as last read, stand for who's in it
+SENT = ("m.file", "m.image")  # what someone sends a5s's reader reads
 UNKNOWN = "a5s doesn't know who you are. Ask an instance approver to add your Matrix id to the directory."
 ENCRYPTED = ("I can't read encrypted messages yet. Start a direct chat with me with encryption "
              "turned off.")
@@ -65,6 +66,7 @@ class Message:
     reply_to: dict[str, str]
     members: tuple[str, ...] = ()  # in a group's room, everyone in it, by their ids
     place: str | None = None  # in a group's room, the room
+    files: tuple[files.File, ...] = ()  # a file or an image they sent, for a5s's reader
 
 
 class Matrix:
@@ -129,6 +131,18 @@ class Matrix:
         if made.status_code != 200 and made.json().get("errcode") != "M_USER_IN_USE":
             made.raise_for_status()
         self._registered.add(bot)
+
+    def download(self, where: dict[str, Any]) -> bytes:
+        """A file or an image someone sent, from the organisation's own homeserver, as the bot
+        it was sent to: by its mxc:// address there, and nowhere else."""
+        server, _, media = str(where.get("mxc") or "").removeprefix("mxc://").partition("/")
+        if not server or not media or "/" in media or ".." in server:
+            raise ValueError("a5s fetches what's sent from the homeserver's media alone")
+        return files.download(
+            self.http, f"{self.cfg.homeserver}/_matrix/client/v1/media/download/"
+                       f"{quote(server, safe='')}/{quote(media, safe='')}?user_id="
+                       f"{quote(str(where.get('bot') or ''), safe='')}",
+            {"Authorization": f"Bearer {self.cfg.as_token}"})
 
     def join(self, room: str, bot: str) -> None:
         self.register(bot)
@@ -275,9 +289,9 @@ class Matrix:
             return "ignore", None
         if kind not in ("m.room.message", "m.room.encrypted"):
             return "ignore", None
-        if kind == "m.room.message" and (content.get("msgtype") != "m.text"
+        if kind == "m.room.message" and (content.get("msgtype") not in ("m.text", *SENT)
                                           or (content.get("m.relates_to") or {}).get("rel_type") == "m.replace"):
-            return "ignore", None  # notices, files and edits
+            return "ignore", None  # notices and edits
         bots = self.bots_in(room, agents)
         if not bots:
             return "ignore", None
@@ -305,6 +319,15 @@ class Matrix:
             return "turn away", ("a5s can't read encrypted messages yet", [person.id], ENCRYPTED,
                                  reply_to)
         if not group:
+            if content.get("msgtype") in SENT:  # a file or an image, in their own chat
+                info: dict[str, Any] = (content.get("info") if isinstance(content.get("info"),
+                                                                         dict) else None) or {}
+                name = str(content.get("filename") or content.get("body") or "a file")
+                sent = files.File(name=name, media_type=files.media_type(name, info.get("mimetype")),
+                                  size=info.get("size"), fetch={"channel": "matrix", "bot": bot,
+                                                                "mxc": str(content.get("url") or "")})
+                return "message", Message(person.id, self.agent_of(bot) or "", files.WORDS_ONLY,
+                                          reply_to, files=(sent,))
             return "message", Message(person.id, self.agent_of(bot), content.get("body", ""),
                                       reply_to)
         joined = self.members(room, bot)  # a mention in a group's room: who's in it now,
@@ -324,6 +347,8 @@ class Matrix:
             # what was said while they were only invited, which the run wasn't for
             return "turn away", ("the room shows people what was said before they joined",
                                  [person.id], groups.HISTORY, reply_to)
+        if content.get("msgtype") in SENT:  # a file can't mention a bot, so in a group's room
+            return "ignore", None  # it hears none
         return "message", Message(person.id, self.agent_of(bot),
                                   self.unmentioned(content.get("body", ""), bot), reply_to,
                                   members=members, place=room)

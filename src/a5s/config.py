@@ -701,6 +701,9 @@ class ModelConfig:
     # What a million tokens cost, as the provider charges, in the deployment's currency, for
     # what a run costs (core/measures.py); none if not given
     prices: Prices | None = None
+    # Whether it's approved to be sent images, such as a screenshot someone sent an agent, as
+    # a5s's reader sends them (core/files.py): none is, unless models.yaml says so
+    images: bool = False
 
     @property
     def api_key(self) -> str | None:
@@ -730,6 +733,7 @@ def load_models(path: Path) -> dict[str, ModelConfig]:
                           *(None if p.get(k) is None else float(p[k])
                             for k in ("cached_input", "cache_write")))
             if (p := m.get("prices")) else None,
+            images=m.get("images") is True,
         )
     return models
 

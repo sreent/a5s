@@ -123,8 +123,11 @@ def gather(conn: db.Connection, person: str) -> dict[str, Any]:
             "answers": count("select count(*) as n from outbox o join inbound i "  # to the group
                              "on i.id = o.inbound_id where o.person = any(%(names)s) "
                              "and i.conversation is not null")},
-        "messages_received": rows(
-            "select channel, agent, text, received_at, conversation is not null as in_group "
+        "messages_received": rows(  # with the files they sent, by name, while a5s keeps them
+            "select channel, agent, text, received_at, conversation is not null as in_group, "
+            "(select coalesce(jsonb_agg(jsonb_build_object('name', f.name, 'kind', f.media_type, "
+            "'refused', f.refused) order by f.number), '[]'::jsonb) from inbound_files f "
+            "where f.inbound_id = inbound.id) as files "
             "from inbound where person = any(%(names)s) order by received_at"),
         "messages_sent": rows(  # in their own conversations: what a group was told is counted
             "select o.channel, o.agent, o.text, o.at, o.delivered_at from outbox o "

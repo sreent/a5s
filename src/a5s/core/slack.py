@@ -23,12 +23,13 @@ import threading
 import time
 from dataclasses import dataclass, field
 from typing import Any
-from urllib.parse import parse_qs
+from urllib.parse import parse_qs, urlsplit
 
 import httpx
 
 from a5s import config
 from a5s.contract import Person, Scenario
+from a5s.core import files
 
 API = "https://slack.com/api"
 WINDOW = 300  # seconds: a request further than this from now is refused, as Slack advises
@@ -42,7 +43,8 @@ _CHANNEL = re.compile(r"<#[CG][A-Z0-9]+\|([^>]*)>")
 _SPECIAL = re.compile(r"<!(here|channel|everyone)[^>]*>")
 _MD_LINK = re.compile(r"\[([^\]]+)\]\((https?://[^)\s]+)\)")
 _BOLD = re.compile(r"\*\*(.+?)\*\*")
-TYPED = (None, "file_share", "thread_broadcast")  # what a person typed: its words, as in Teams
+TYPED = (None, "file_share", "thread_broadcast")  # what a person typed: its words, and files
+FILE_HOSTS = frozenset({"files.slack.com"})  # where a5s fetches what people share, and nowhere else
 BLOCK = 3000  # the most a block's text may hold, in Slack's Block Kit
 
 
@@ -94,6 +96,7 @@ class Message:
     reply_to: dict[str, str]
     kind: str  # Slack's channel type: im, mpim, channel or group (a private channel)
     mentioned: bool  # whether it mentions the agent, as a message in a group DM must
+    files: tuple[files.File, ...] = ()  # what they shared with it, for a5s's reader
 
     @property
     def personal(self) -> bool:
@@ -230,7 +233,13 @@ class Slack:
         else:
             channel_type = str(event.get("channel_type") or "")
         raw = str(event.get("text") or "")
-        text = self.said(raw, scenario, mine)
+        shared = tuple(files.File(
+            name=str(f.get("name") or "a file"), media_type=files.media_type(
+                str(f.get("name") or ""), f.get("mimetype")), size=f.get("size"),
+            fetch={"channel": "slack", "app_id": bot.app_id,
+                   "url": str(f.get("url_private_download") or f.get("url_private") or "")})
+            for f in event.get("files") or [] if isinstance(f, dict))
+        text = self.said(raw, scenario, mine) or (files.WORDS_ONLY if shared else "")
         if not text:
             return None
         person = scenario.find(f"slack:{self.cfg.team_id}/{user}")
@@ -240,7 +249,7 @@ class Slack:
             reply_to={"channel": channel, "app_id": bot.app_id, "ts": str(event["ts"]),
                       **({"thread": str(thread)} if thread else {})},
             kind=channel_type,
-            mentioned=channel_type == "im" or bool(mine and f"<@{mine}" in raw))
+            mentioned=channel_type == "im" or bool(mine and f"<@{mine}" in raw), files=shared)
 
     def kind_of(self, bot: Bot, channel: str) -> str:
         """What kind of conversation a channel id is, as Slack says: im, mpim, group (a private
@@ -342,6 +351,16 @@ class Slack:
         isn't for channels, so the channel never hears it."""
         self._call(self._bot(reply_to), "chat.postEphemeral",
                    {"channel": reply_to["channel"], "user": user, "text": mrkdwn(text)})
+
+    def download(self, where: dict[str, Any]) -> bytes:
+        """A file someone shared, as the app it was sent to, from Slack's own file host alone,
+        so the app's token goes nowhere else."""
+        url = str(where.get("url") or "")
+        parts = urlsplit(url)
+        if parts.scheme != "https" or parts.hostname not in FILE_HOSTS:
+            raise ValueError("a5s fetches shared files from Slack's own file host alone")
+        bot = self._bot({"app_id": str(where.get("app_id") or "")})
+        return files.download(self.http, url, {"Authorization": f"Bearer {bot.token}"})
 
     def _bot(self, reply_to: dict[str, str]) -> Bot:
         bot = self.bots.get(reply_to.get("app_id", ""))

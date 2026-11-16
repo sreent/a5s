@@ -20,6 +20,8 @@ sidebar (core/shell_api.py).
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import hashlib
 import logging
 import time
@@ -53,6 +55,7 @@ from a5s.core import (
     chats,
     decide_api,
     events,
+    files,
     grade_api,
     groups,
     ledger,
@@ -76,18 +79,30 @@ AWAY_RETRY = 5  # seconds a chat or a person is asked to wait before trying agai
 
 log = logging.getLogger(__name__)
 MAX_BYTES = 256 * 1024  # far more than one message needs
+MAX_UPLOAD = 6 * 1024 * 1024  # a local message's, with its files, in base64
 TRIES = 3  # deliveries of a Matrix event a5s can't act on before it's skipped, and recorded
+
+
+class Sent(BaseModel):
+    """A file sent with a message on the local channel, such as from the web chat: its name,
+    its kind, and its bytes in base64."""
+
+    name: str
+    type: str
+    data: str
 
 
 class LocalMessage(BaseModel):
     agent: str
     text: str
     person: str | None = None  # in development, without an identity provider, who it's from
+    files: list[Sent] = []  # what they sent with it, a few megabytes in all
 
 
 def record(conn: Any, *, channel: str, source_id: str, person: str, agent: str, text: str,
            reply_to: dict, identity: str, place: str | None = None,
-           members: list[str] | None = None) -> str | None:
+           members: list[str] | None = None,
+           sent: tuple[files.File, ...] | list[files.File] = ()) -> str | None:
     """Record a message whose sender the core checked, and wake the scheduler: in a group chat,
     the chat it was said in, `place`, and everyone in it then, `members` (core/groups.py).
 
@@ -110,8 +125,11 @@ def record(conn: Any, *, channel: str, source_id: str, person: str, agent: str, 
         "decision": "allow", "reasons": [],
         "args": {"inbound": inbound, "agent": agent, "identity": identity, "chars": len(text),
                  "sha256": hashlib.sha256(text.encode()).hexdigest(),
-                 **({"sender": person, "group": conversation} if conversation else {})},
+                 **({"sender": person, "group": conversation} if conversation else {}),
+                 **({"files": len(sent)} if sent else {})},
     })
+    if sent:  # what came with it, for a5s's reader, once the agent asks (core/files.py)
+        files.keep(conn, inbound, list(sent))
     conn.execute("notify a5s_inbound")
     return inbound
 
@@ -126,7 +144,8 @@ class Small:
     async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
         if scope["type"] == "http" and scope["method"] in ("POST", "PUT"):
             size = dict(scope["headers"]).get(b"content-length", b"")
-            if not size.isdigit() or int(size) > MAX_BYTES:
+            most = MAX_UPLOAD if scope.get("path") == "/channels/local/messages" else MAX_BYTES
+            if not size.isdigit() or int(size) > most:
                 refused = JSONResponse(status_code=413, content={"detail": "send one message at a time"})
                 await refused(scope, receive, send)
                 return
@@ -243,7 +262,7 @@ def create_app(gw: Any) -> FastAPI:
                        agent=message.agent, text=message.text, reply_to=message.reply_to,
                        identity="verified by teams",
                        place=message.reply_to["conversation"] if group else None,
-                       members=everyone or None)
+                       members=everyone or None, sent=message.files)
         return Response(status_code=200)
 
     # Slack: each agent's app sends what's said in the conversations it's in, signed
@@ -311,7 +330,7 @@ def create_app(gw: Any) -> FastAPI:
                        person=message.person, agent=message.agent, text=message.text,
                        reply_to=message.reply_to, identity="verified by slack",
                        place=message.reply_to["channel"] if message.group else None,
-                       members=everyone or None)
+                       members=everyone or None, sent=message.files)
         return Response(status_code=200)
 
     @app.post("/channels/slack/events")
@@ -439,7 +458,7 @@ def create_app(gw: Any) -> FastAPI:
                     record(conn, channel="matrix", source_id=event["event_id"], person=detail.person,
                            agent=detail.agent, text=detail.text, reply_to=detail.reply_to,
                            identity="verified by matrix", place=detail.place,
-                           members=list(detail.members))
+                           members=list(detail.members), sent=detail.files)
             elif what == "left":  # so a5s writes to them elsewhere, and doesn't ask them back
                 with db.transaction(gw.url) as conn:
                     chats.left(conn, "matrix", *detail)
@@ -480,9 +499,16 @@ def create_app(gw: Any) -> FastAPI:
     @app.post("/channels/local/messages", status_code=202)
     def local_message(body: LocalMessage, authorization: str | None = Header(default=None)) -> dict:
         person, identity = sender(authorization, body.person)
+        try:
+            sent = [files.File(name=f.name[:200], media_type=f.type, data=base64.b64decode(
+                f.data, validate=True)) for f in body.files]
+        except (binascii.Error, ValueError):
+            raise HTTPException(400, "a file's data is its bytes in base64") from None
+        text = body.text if body.text.strip() or not sent else files.WORDS_ONLY
         with db.transaction(gw.url) as conn:
             inbound = record(conn, channel="local", source_id=str(uuid.uuid4()), person=person,
-                             agent=body.agent, text=body.text, reply_to={}, identity=identity)
+                             agent=body.agent, text=text, reply_to={}, identity=identity,
+                             sent=sent)
         return {"message": inbound}
 
     @app.get("/channels/local/messages/{message}")
