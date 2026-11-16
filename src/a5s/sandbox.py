@@ -38,7 +38,17 @@ from pydantic import BaseModel
 
 from a5s import authoring, build, cases, db, definitions, describing
 from a5s.config import Config, load_models
-from a5s.core import extractor, inbox, judging, models, registry, retention, signing, studio
+from a5s.core import (
+    extractor,
+    inbox,
+    judging,
+    measures,
+    models,
+    registry,
+    retention,
+    signing,
+    studio,
+)
 from a5s.core.gateway import Gateway
 from a5s.core.gateway import create_app as core_app
 from a5s.services.scheduler import Scheduler
@@ -393,6 +403,7 @@ class Sandbox:
         # with an agent, so each case starts one afresh, as the suite's do
         agent = f"case-{secrets.token_hex(5)}"
         steps, problems = [], []
+        started, spent = time.monotonic(), {"in": 0, "out": 0, "cached": 0}  # what it took
         with self.lock:
             instances = self.standing.setdefault("instances", {})
             for done in [name for name in instances if name.startswith("case-")]:
@@ -404,6 +415,8 @@ class Sandbox:
             for n, step in enumerate(case["steps"], 1):
                 said = cases.dated(str(step["say"]))
                 reply, run, _ = self._said(agent, person, said)
+                for kind in spent:  # its own runs' tokens: a judge's are the same on any model
+                    spent[kind] += int((run or {}).get(f"tokens_{kind}") or 0)
                 called = used(run)
                 wrong = cases.check(step, reply, called, case.get("own_values") == "allowed")
                 if why := cases.unanswered(run["outcome"] if run else None):
@@ -418,7 +431,11 @@ class Sandbox:
                         wrong.append(f"its judge found it {verdict['grade']}: {verdict['why']}")
                 problems += [f"step {n}: {w}" for w in wrong]
                 steps.append({**done, "wrong": wrong})
-        return {**shown, "ran": True, "passed": not problems, "problems": problems, "steps": steps}
+        priced = measures.priced(load_models(self.cfg.models_file).get(model), spent["in"],
+                                 spent["out"], spent["cached"])
+        return {**shown, "ran": True, "passed": not problems, "problems": problems, "steps": steps,
+                "model": model, "seconds": round(time.monotonic() - started, 2),
+                "tokens": spent["in"] + spent["out"], "cost": priced}
 
     def _judged(self, agent: str, model: str, criterion: str, said: str, reply: str,
                 called: list[str]) -> dict:

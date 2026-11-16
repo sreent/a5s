@@ -16,9 +16,95 @@ const STAND_IN = "stand-in";
 
 type Outcome = { running: true } | { problem: string } | { run: CaseRan };
 
+/** How a model did on a draft's cases: how many it ran and passed, and what they took. */
+type Compared = { model: string; ran: number; passed: number; seconds: number; tokens: number;
+                  cost: number; unpriced: boolean; problems: number; done: boolean };
+
+const money = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: n < 0.01 ? 5 : 3 });
+
+/** A draft's cases run on each of the models chosen, one after another, side by side: how many
+ * each passed, how long they took, their tokens, and what they cost at each model's prices, so
+ * its author picks the cheapest that's good enough. A judge's grade counts as its step's, and
+ * the judge is the draft's own on every model. */
+function Compare({ draft, runnable, models, ready }: { draft: string; runnable: { number: number }[];
+                                                     models: string[]; ready: boolean }) {
+  const [chosen, setChosen] = useState<string[]>([]);
+  const [rows, setRows] = useState<Compared[]>([]);
+  const [now, setNow] = useState<string>();
+  const compare = async () => {
+    const found: Compared[] = [];
+    for (const model of chosen) {
+      const row: Compared = { model, ran: 0, passed: 0, seconds: 0, tokens: 0, cost: 0, unpriced: false, problems: 0, done: false };
+      found.push(row);
+      for (const [i, c] of runnable.entries()) {
+        setNow(`Case ${i + 1} of ${runnable.length} on ${model}…`);
+        setRows(found.map((r) => ({ ...r })));
+        try {
+          const ran = await send<CaseRan>("POST", `/studio/api/drafts/${encodeURIComponent(draft)}/cases/${c.number}`, { model });
+          if (ran.ran) {
+            row.ran += 1;
+            row.passed += ran.passed ? 1 : 0;
+            row.seconds += ran.seconds ?? 0;
+            row.tokens += ran.tokens ?? 0;
+            if (ran.cost == null) row.unpriced = true;
+            else row.cost += ran.cost;
+          }
+        } catch {
+          row.problems += 1;
+        }
+      }
+      row.done = true;
+      setRows(found.map((r) => ({ ...r })));
+    }
+    setNow(undefined);
+  };
+  const good = rows.filter((r) => r.done && r.problems === 0 && r.ran === runnable.length && r.passed === r.ran && !r.unpriced);
+  const cheapest = good.sort((a, b) => a.cost - b.cost)[0];
+  return (
+    <div className="compare" id="compare-models">
+      <h3>Compare models on them</h3>
+      <p className="note">Run them on each model you choose, one after another, and see how many each passes, how long they take, and what they cost at its prices, to pick the cheapest that's good enough. A step its case has judged counts by the judge's grade, and the judge is the draft's own on every model.</p>
+      <fieldset className="choices">
+        <legend className="hidden">Models to compare</legend>
+        {models.map((m) => (
+          <label key={m} className="check">
+            <input type="checkbox" checked={chosen.includes(m)} disabled={Boolean(now)}
+                   onChange={(e) => setChosen(e.target.checked ? [...chosen, m] : chosen.filter((x) => x !== m))} />
+            {m}{m === STAND_IN ? " (how it's wired, not what it would say)" : ""}
+          </label>
+        ))}
+      </fieldset>
+      <button type="button" id="compare-run" disabled={!ready || Boolean(now) || chosen.length < 2 || runnable.length === 0}
+              onClick={compare}>{now ?? `Compare ${chosen.length < 2 ? "two or more" : chosen.length} models`}</button>
+      {rows.length > 0 && (
+        <table className="grid-table compact" id="compare-table">
+          <thead><tr><th scope="col">Model</th><th scope="col">Passed</th><th scope="col">Took</th>
+                     <th scope="col">Tokens</th><th scope="col">Cost, at its prices</th></tr></thead>
+          <tbody>{rows.map((r) => (
+            <tr key={r.model} data-model={r.model}>
+              <th scope="row">{r.model}</th>
+              <td><span className={`badge ${!r.done ? "" : r.passed === runnable.length ? "good" : "bad"}`}>{r.passed} of {runnable.length}</span>
+                {r.problems > 0 && <span className="faint"> {r.problems} couldn't run</span>}</td>
+              <td className="num">{r.seconds.toFixed(1)} s</td>
+              <td className="num">{r.tokens.toLocaleString()}</td>
+              <td className="num">{r.unpriced ? "its prices aren't known" : money(r.cost)}</td>
+            </tr>
+          ))}</tbody>
+        </table>
+      )}
+      {!now && rows.length > 0 && (
+        <p id="compare-verdict" role="status">{cheapest
+          ? `${cheapest.model} passed every case for the least: ${money(cheapest.cost)} at its prices.`
+          : "No model with known prices passed every case."}</p>
+      )}
+    </div>
+  );
+}
+
 /** A draft's test cases, run in the sandbox one at a time, each in a conversation of its own,
  * as its suite runs them: those that need what the suite alone does, it says so of. */
-function Cases({ draft, model, ready, revision }: { draft: string; model: string; ready: boolean; revision: number }) {
+function Cases({ draft, model, ready, revision, models }: { draft: string; model: string; ready: boolean; revision: number;
+                                                             models: string[] }) {
   const listed = useLoad(() => get<Cases>(
     `/studio/api/drafts/${encodeURIComponent(draft)}/cases`), [draft, revision]);
   const [outcomes, setOutcomes] = useState<Record<number, Outcome>>({});
@@ -99,6 +185,7 @@ function Cases({ draft, model, ready, revision }: { draft: string; model: string
           );
         })}
       </ol>
+      {runnable.length > 0 && models.length > 1 && <Compare draft={draft} runnable={runnable} models={models} ready={ready && !running} />}
     </div>
   );
 }
@@ -290,7 +377,7 @@ export function TryIt({ draft, name, ready, keep, revision, acts }: {
                disabled={!ready} onChange={(e) => setText(e.target.value)} autoComplete="off" />
         <button type="submit" className="primary" disabled={!ready || busy || !text.trim()}>{busy ? "Running…" : "Say it"}</button>
       </form>
-      <Cases draft={draft} model={model} ready={ready && !busy} revision={revision} />
+      <Cases draft={draft} model={model} ready={ready && !busy} revision={revision} models={offered.data?.models ?? []} />
     </div>
   );
 }

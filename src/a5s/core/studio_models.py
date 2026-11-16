@@ -874,6 +874,13 @@ class CaseRan(Shape):
     passed: bool | SkipJsonSchema[None] = None
     problems: list[str] | SkipJsonSchema[None] = None
     steps: list[CaseStep] | SkipJsonSchema[None] = None
+    # What running it took, on the model it ran on, for comparing models on an agent's own
+    # cases: the seconds it took, its runs' tokens, and what they cost at the model's prices,
+    # in the deployment's currency, or nothing where its prices aren't known
+    model: str | SkipJsonSchema[None] = None
+    seconds: float | SkipJsonSchema[None] = None
+    tokens: int | SkipJsonSchema[None] = None
+    cost: float | None = None
 
 
 class Publish(Shape):

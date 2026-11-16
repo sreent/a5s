@@ -278,17 +278,25 @@ def _by_agent(rows: list[dict]) -> dict[str, list[tuple[str, bool]]]:
     return found
 
 
-def _cost(model: ModelConfig | None, r: dict[str, Any]) -> float | None:
-    """What a run costs on average, at its model's prices, with what it read from the cache, or
-    wrote to it, at the prices the provider charges for those."""
-    if model is None or model.prices is None or not r["runs"]:
+def priced(model: ModelConfig | None, tokens_in: int, tokens_out: int, cached: int = 0,
+           written: int = 0) -> float | None:
+    """What tokens cost at a model's prices, with what it read from the cache, or wrote to it,
+    at the prices the provider charges for those; None for a model whose prices aren't known."""
+    if model is None or model.prices is None:
         return None
     p = model.prices
-    fresh = r["tokens_in"] - r["cached"] - r["cache_written"]
-    return (fresh * p.input + r["cached"] * (p.cached_input if p.cached_input is not None
-                                             else p.input)
-            + r["cache_written"] * (p.cache_write if p.cache_write is not None else p.input)
-            + r["tokens_out"] * p.output) / 1_000_000 / r["runs"]
+    fresh = tokens_in - cached - written
+    return (fresh * p.input + cached * (p.cached_input if p.cached_input is not None else p.input)
+            + written * (p.cache_write if p.cache_write is not None else p.input)
+            + tokens_out * p.output) / 1_000_000
+
+
+def _cost(model: ModelConfig | None, r: dict[str, Any]) -> float | None:
+    """What a run costs on average, at its model's prices."""
+    if not r["runs"]:
+        return None
+    total = priced(model, r["tokens_in"], r["tokens_out"], r["cached"], r["cache_written"])
+    return None if total is None else total / r["runs"]
 
 
 def _share(part: int, whole: int) -> float | None:

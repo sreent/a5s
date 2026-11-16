@@ -209,6 +209,10 @@ export type CaseRan = {
   passed?: boolean;
   problems?: string[];
   steps?: CaseStep[];
+  model?: string;
+  seconds?: number;
+  tokens?: number;
+  cost?: number | null;
 };
 
 // Running one of a draft's test cases in the sandbox: on which of the models it offers.
