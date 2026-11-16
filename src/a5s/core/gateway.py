@@ -95,6 +95,7 @@ from a5s.core import (
     samples,
     schedules,
     sealing,
+    shadows,
     status,
     studio,
     suspension,
@@ -405,10 +406,10 @@ class Gateway:
         expected = (signed.definition, sorted(signed.serves), level, scope,
                     registry.action_levels(signed, release), sorted(release.grants),
                     release.model, release.pins, signed.owner or release.owner,
-                    signed.deputy or release.deputy, sorted(signed.asks))
+                    signed.deputy or release.deputy, sorted(signed.asks), signed.shadows)
         actual = (inst["definition"], sorted(inst["serves"]), inst["level"], inst["parts"] or {},
                   inst["actions"] or {}, sorted(inst["grants"]), inst["model"], inst["pins"],
-                  inst["owner"], inst["deputy"], sorted(inst["asks"] or []))
+                  inst["owner"], inst["deputy"], sorted(inst["asks"] or []), inst["shadows"])
         if expected != actual:
             log.error("instance %s doesn't match its signed settings and release", inst["id"])
             return [f"{inst['id']}'s record doesn't match its signed settings and release"]
@@ -416,9 +417,10 @@ class Gateway:
             "select action, entry from ledger where instance_id = %s and kind = 'admin' "
             "and action in ('suspend', 'resume', 'retire', 'restore') order by seq desc limit 1",
             (inst["id"],)).fetchone()
-        expected = _STATUS_AFTER.get(last["action"] if last else "", "active")
+        working = "shadow" if signed.shadows else "active"  # a shadow does no work of its own
+        expected = _STATUS_AFTER.get(last["action"] if last else "", working)
         if last and last["action"] == "restore":  # as it was before it was retired
-            expected = (json.loads(last["entry"]).get("args") or {}).get("status", "active")
+            expected = (json.loads(last["entry"]).get("args") or {}).get("status", working)
         if inst["status"] != expected:
             log.error("instance %s's status doesn't match the ledger", inst["id"])
             return [f"{inst['id']}'s status doesn't match the ledger"]
@@ -720,6 +722,7 @@ class Gateway:
             if instance.hands_to and release is not None and not release.context.handover:
                 problems.append(f"{instance.id} hands conversations to {', '.join(instance.hands_to)}"
                                 f", but the {instance.definition}'s release doesn't hand any over")
+        problems += shadows.problems(settings)  # the officer's choice, and each shadow narrower
         for group, roles in sorted(settings.groups.items()):  # an agent's role, for one here
             if wrong := [r for r in roles if r.partition(":")[0] in GROUP_AGENT_ROLES
                          and r.partition(":")[2] not in self.definitions]:
@@ -760,6 +763,34 @@ class Gateway:
         if message and conn.execute("select 1 from inbound_files where inbound_id = %s and "
                                     "refused is null limit 1", (inbound,)).fetchone():
             opening.marked = True  # what they sent with it is content from outside (core/files.py)
+        return opening
+
+    def shadowing(self, conn: db.Connection, inst: dict, trigger: dict,
+                  _now: datetime) -> Opening:
+        """A shadow's run, answering the message a run of the instance it shadows answered,
+        beside it: as the same people, in the same conversation and topic, sending nothing
+        (core/shadows.py). Only while the officer's choice in the settings in force lets it."""
+        settings, _ = self.settings_in_force(conn, seal=False)
+        live = str(trigger.get("live") or "")
+        try:
+            given = shadows.opening(conn, inst, trigger, bool(
+                settings is not None and settings.data_protection.shadow_runs))
+        except shadows.Refused as e:
+            return Opening({"kind": shadows.KIND, "live": live}, [], {"live": live}, [str(e)],
+                           used=True)
+        acts_for = given.pop("acts_for")
+        opening = Opening(trigger=given, acts_for=acts_for, reasons=[],
+                          args={"shadows": inst["shadows"], "live": live})
+        shadowed = conn.execute("select definition from instances where id = %s",
+                                (inst["shadows"],)).fetchone()
+        if shadowed and self.reads_outside(conn, shadowed["definition"], acts_for,  # its
+                                           given.get("topic", topics.GENERAL),  # conversation's
+                                           given.get("conversation")):  # mark, as it stands
+            opening.marked = True
+        if given.get("inbound") and conn.execute(
+                "select 1 from inbound_files where inbound_id = %s and refused is null limit 1",
+                (given["inbound"],)).fetchone():
+            opening.marked = True  # what they sent with it is content from outside
         return opening
 
     def reminding(self, conn: db.Connection, inst: dict, trigger: dict,
@@ -1330,7 +1361,8 @@ def create_app(gw: Gateway) -> FastAPI:
         kind = body.trigger.get("kind")
         opens = {"message": gw.answering, "obligation": gw.reminding, "schedule": gw.scheduled,
                  "report": gw.reporting, "reminder": gw.following_up, "summary": gw.summarising,
-                 asking.KIND: gw.questioned, tasking.KIND: gw.slicing, events.KIND: gw.evented}
+                 asking.KIND: gw.questioned, tasking.KIND: gw.slicing, events.KIND: gw.evented,
+                 shadows.KIND: gw.shadowing}
         if kind not in opens:
             raise HTTPException(400, "a run answers a message, reminds someone of an obligation "
                                      "or of what they asked, works on a schedule, tells someone "
@@ -1348,7 +1380,9 @@ def create_app(gw: Gateway) -> FastAPI:
             if holder := held_by(body.trigger.get("holder")):  # the scheduler's lease on it
                 opening.trigger["holder"] = holder
             reasons = opening.reasons
-            if inst["status"] != "active":
+            if kind == shadows.KIND:  # a shadow's own status is shadow: its opening says why not
+                pass
+            elif inst["status"] != "active":
                 reasons.append(f"{body.instance} is {inst['status']}")
             if any(not registry.serving(gw.scenario, inst["serves"], p) for p in opening.acts_for):
                 reasons.append(f"{body.instance} doesn't serve {', '.join(opening.acts_for)}")
@@ -1429,6 +1463,8 @@ def create_app(gw: Gateway) -> FastAPI:
                 if kind == "message":  # the files it came with, as the run's documents, unread
                     opening.notes = [n for n in [files.attach(conn, run_id,
                                                                opening.trigger["inbound"])] if n]
+                if kind == shadows.KIND and opening.trigger.get("inbound"):  # and a shadow's,
+                    files.attach(conn, run_id, opening.trigger["inbound"])  # as its notes said
                 if kind == tasking.KIND:  # what its task's earlier runs read, as they read it
                     tasking.given(conn, opening.trigger["task"], run_id)
                 elif opening.task:  # what a5s asks it, from the records: something it has read,
@@ -2481,6 +2517,7 @@ def create_app(gw: Gateway) -> FastAPI:
         model = gw.models.get(row["model"])
         tools = {**gw.scenario.tools(), **CORE_TOOLS}  # a5s's own first
         own = row["trigger"].get("kind") in OWN_RUNS  # a5s's own work, with one model call
+        shadow = row["trigger"].get("kind") == shadows.KIND  # only what reads
         return {
             "run": row["run"],
             "instance": row["id"],
@@ -2491,7 +2528,8 @@ def create_app(gw: Gateway) -> FastAPI:
             "model": {"alias": model.alias, "api": model.api} if model else None,
             "tools": [] if own else [tools[n].definition() for n in row["grants"] if n in tools
                                      and (n not in CORE_TOOLS or not CORE_TOOLS[n].offered
-                                          or CORE_TOOLS[n].offered(row))],  # only those that
+                                          or CORE_TOOLS[n].offered(row))
+                                     and (not shadow or shadow_may(n))],  # only those that
             # can work for the run: nothing that could only refuse it
             "plain": own,
             "skills": {} if own else definition.skills,  # read-only, from the release
@@ -2514,10 +2552,30 @@ def create_app(gw: Gateway) -> FastAPI:
                 "a5s.tool.own": name in CORE_TOOLS or None}) as current:
             return calling_tool(name, body, token, current)
 
+    def shadow_may(name: str) -> bool:
+        """Whether a shadow may call a tool: one of a5s's own that only reads, or one of its
+        scenario's that changes, writes and sends nothing (core/shadows.py)."""
+        if name in CORE_TOOLS:
+            return name in shadows.READS
+        tool = gw.scenario.tools().get(name)
+        return tool is not None and not (tool.action or tool.writes or tool.destructive
+                                         or tool.sends_outside)
+
     def calling_tool(name: str, body: ToolArgs, token: str, current: Any) -> Any:
         core = CORE_TOOLS.get(name)
         tool = None if core else gw.scenario.tools().get(name)
         args, removed = dict(body.args), 0
+        if not shadow_may(name):  # a shadow's run calls it for nothing, before anything's read
+            with db.transaction(gw.url) as conn:
+                early = load_run(conn, token)
+                if early["trigger"].get("kind") == shadows.KIND:
+                    why = "a shadow changes, writes and sends nothing: it only reads"
+                    ledger.append(conn, gw.entry(early, "tool", name, Decision(
+                        False, ("shadows-change-nothing",), explanations=(why,)),
+                        args=ledger.mask(args)))
+                    return JSONResponse(status_code=403, content={
+                        "denied": True, "reasons": ["shadows-change-nothing"],
+                        "explanations": [why]})
         for field_name in (core or tool).text_fields if (core or tool) else ():
             if field_name in args:  # outgoing text, at any depth
                 args[field_name], dropped = cleaned(args[field_name], gw.scenario.record_links)
@@ -3161,6 +3219,28 @@ def create_app(gw: Gateway) -> FastAPI:
                 studio.handled(conn, row["run"], studio.named(gw.scenario, core.sourced(result)))
         return {"result": result, "recorded": recorded}
 
+    @runs.post("/run/shadow")
+    def shadow_answer(body: Answer, token: str = Depends(run_token)) -> dict:
+        """What a shadow answered, kept beside what the instance it shadows answered, for
+        graders, and sent to nobody (core/shadows.py): cleaned as any message is, with its
+        handles as the agent wrote them. Once a run."""
+        text, removed = sanitize(body.text, gw.scenario.record_links)
+        with db.transaction(gw.url) as conn:
+            row = load_run(conn, token)
+            if row["trigger"].get("kind") != shadows.KIND:
+                raise HTTPException(403, "only a shadow's run keeps an answer for graders")
+            if body.problem or not text.strip():
+                raise HTTPException(409, "there's no answer to keep")
+            try:
+                kept = shadows.keep(conn, gw.scenario, row, text)
+            except shadows.Refused as e:
+                raise HTTPException(409, str(e)) from None
+            ledger.append(conn, gw.entry(row, "message", "shadow answer", Decision(True, ()), args={
+                "answer": kept, "shadows": row["shadows"], "live": row["trigger"].get("live"),
+                "chars": len(text), "sha256": hashlib.sha256(text.encode()).hexdigest(),
+                "links_removed": removed}))
+        return {"kept": kept}
+
     @runs.post("/run/messages")
     def send_message(body: Message, token: str = Depends(run_token)) -> Any:
         with traces.span("send_message") as current:
@@ -3182,7 +3262,10 @@ def create_app(gw: Gateway) -> FastAPI:
             group = groups.of(body.to) and body.to == row["trigger"].get("conversation")
             owner = row["trigger"].get("sender") if group else body.to
             route = None
-            if row["trigger"].get("kind") in OWN_RUNS:
+            if row["trigger"].get("kind") == shadows.KIND:
+                decision = Decision(False, ("shadows-send-nothing",), explanations=(
+                    "a shadow sends nothing: what it answers is kept for graders",))
+            elif row["trigger"].get("kind") in OWN_RUNS:
                 decision = Decision(False, ("a5s-runs-write-to-nobody",), explanations=(
                     "a5s's own runs, such as keeping a summary, write to nobody",))
             elif row["trigger"].get("kind") == tasking.KIND and (
@@ -3939,6 +4022,71 @@ def create_app(gw: Gateway) -> FastAPI:
                                                       gw.cfg.seal_keys)}
             finally:
                 held.execute("select pg_advisory_unlock(hashtext('a5s registry'))")
+
+    @services.post("/shadows/sweep")
+    def sweep_shadows() -> dict:
+        """Put each grade people gave a shadow's answer in the ledger, and ask each shadow's
+        judge, if its agent has one, about a few of its answers a sweep, apart from people's
+        grades (core/shadows.py). A judge reads what the person said and both answers, so one
+        not approved for the settings' class of data, and every class the shadow's own model
+        is, judges nothing."""
+        done: dict[str, Any] = {"noted": 0, "judged": []}
+        with db.transaction(gw.url) as conn:
+            for row in conn.execute("select * from shadow_answers where grade is not null and "
+                                    "grade_noted_at is null for update skip locked").fetchall():
+                ledger.append(conn, {"kind": "admin", "action": "shadow-grade", "run": None,
+                                     "instance": row["instance_id"], "acts_for": [],
+                                     "decision": "record",
+                                     "args": {"answer": row["id"], "grade": row["grade"],
+                                              "by": row["graded_by"]}})
+                conn.execute("update shadow_answers set grade_noted_at = now() where id = %s",
+                             (row["id"],))
+                done["noted"] += 1
+            locked = conn.execute("select pg_try_advisory_xact_lock(hashtext('a5s shadow "
+                                  "judging')) as got").fetchone()
+            settings, _ = gw.settings_in_force(conn, seal=False)
+            judged_by = {}
+            for name, release in gw.definitions.items():
+                judge = gw.models.get(release.evaluation.judge) if release.evaluation else None
+                own = gw.models.get(release.model)
+                if (settings is not None and locked and locked["got"] and judge is not None
+                        and own is not None and settings.data_class in judge.data_classes
+                        and set(own.data_classes) <= set(judge.data_classes)):
+                    judged_by[name] = judge.alias
+            due = shadows.pending(conn, judged_by)
+        for pair in due:
+            release = gw.definitions[pair["definition"]]
+            judge = gw.models[judged_by[pair["definition"]]]
+            body = shadows.judge_request(judge.api, judge.alias, release.evaluation.rubric
+                                         if release.evaluation else "", pair)
+            if not gw.breakers.allow(judge.alias):
+                continue  # it failed lately: asked again at a later sweep
+            try:
+                status, data = models.forward(judge, models.screen(judge.api, body)[0], gw.http)
+            except models.ModelUnavailable:
+                status, data = 503, {}
+            reported = data.get("model") if isinstance(data, dict) else None
+            if status < 400 and reported != (judge.reported_model or judge.model):
+                status = 502  # another model answered than the one approved
+            if status >= 500 or status == 429:
+                gw.breakers.failed(judge.alias)
+            elif status < 400:
+                gw.breakers.worked(judge.alias)
+            found = shadows.judged(extractor.reply_text(judge.api, data)) if status < 400 else None
+            with db.transaction(gw.url) as conn:
+                ledger.append(conn, {
+                    "kind": "model", "action": judge.alias, "run": None,
+                    "instance": pair["instance_id"], "acts_for": [], "decision": "record",
+                    "args": {"judging_shadow": pair["id"], "prompt_sha256": ledger.digest(body)},
+                    "outcome": {"status": status, "reported_model": reported,
+                                "verdict": found[0] if found else None}})
+                if status < 400:  # else it's asked again at a later sweep
+                    grade, why = found or (None, "its answer couldn't be read as a grade")
+                    conn.execute("update shadow_answers set judged = %s, judged_why = %s, "
+                                 "judged_at = now() where id = %s", (grade, why, pair["id"]))
+                    if found:
+                        done["judged"].append({"answer": pair["id"], "verdict": grade})
+        return done
 
     @services.post("/samples/judge")
     def judge_samples() -> dict:

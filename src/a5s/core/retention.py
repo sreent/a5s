@@ -29,6 +29,8 @@ account someone connected, so agents act as them (core/delegation.py), go once a
 them for 90 days, and a start nobody came back to after a day. How to undo a change an agent
 made (core/undoing.py) goes a day after it can no longer be undone. A conversation handed over to
 people (core/handover.py), with what was said there, goes that long after it was handed back.
+What a shadow answered (core/shadows.py), beside what was asked and sent, goes that long after
+it answered.
 
 The core sweeps every hour, by the database's clock, and the ledger records what each sweep
 deleted, in counts, never what was said. The period goes to Postgres as a value, never as part
@@ -141,6 +143,7 @@ def sweep(conn: db.Connection, now: datetime, scenario: str, kept: str = KEPT) -
     delete("connections", "delete from delegation_starts where started_at < now() - "
                           "interval '1 day'")  # nobody came back to, should no core sweep them
     delete("handovers", f"delete from handovers where ended_at < {AGO}")  # with what was said
+    delete("shadows", f"delete from shadow_answers where at < {AGO}")  # what shadows answered
     delete("undo", "delete from changes_made where until < now() - interval '1 day' and "
                    "state is distinct from 'undoing'")  # how to undo a change, once it can't be
     done = (f"(status in ('done', 'cancelled', 'failed') and updated_at < {AGO}) "

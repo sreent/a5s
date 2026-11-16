@@ -82,4 +82,28 @@ when { principal.status == "active" && resource.in_audience };
 @id("only-active-instances-act")
 @reason("the instance is suspended or retired")
 forbid (principal is Instance, action, resource)
-unless { principal.status == "active" };
+unless { principal.status == "active" || principal.status == "shadow" };
+
+// A shadow answers what the instance it shadows is asked, beside it, for graders to compare
+// (core/shadows.py): it reads with the tools of its grant that only read, and its own model,
+// and nothing it does writes, changes or sends. No permit lets it send a message.
+@id("shadows-only-read")
+@reason("a shadow reads with the tools in its grant that change nothing, and sends nothing")
+permit (principal is Instance, action == Action::"call_tool", resource is Tool)
+when {
+  principal.status == "shadow" && resource.known && principal.grants.contains(resource.name)
+  && resource.action == "" && !resource.writes && !resource.destructive && !resource.sends_outside
+};
+
+@id("shadows-change-nothing")
+@reason("a shadow changes nothing, and sends nothing: it answers for graders alone")
+forbid (principal is Instance, action == Action::"call_tool", resource is Tool)
+when {
+  principal.status == "shadow"
+  && (resource.action != "" || resource.writes || resource.destructive || resource.sends_outside)
+};
+
+@id("shadows-use-their-model")
+@reason("the model is approved, and is the shadow's own")
+permit (principal is Instance, action == Action::"call_model", resource is Model)
+when { principal.status == "shadow" && resource.approved && principal.model == resource.name };

@@ -47,6 +47,7 @@ from a5s.core import (
     run_cases,
     settings_api,
     settings_app,
+    shadows,
     shell_api,
     spending,
     studio,
@@ -146,6 +147,10 @@ class LanguageChoice(BaseModel):
     """The language someone chooses a5s's pages speak to them in, by its code, such as th."""
 
     language: str
+
+
+class ShadowGrade(BaseModel):
+    grade: str  # better, same, worse or wrong
 
 
 class HandoverReply(BaseModel):
@@ -256,6 +261,7 @@ def router(gw: Any) -> APIRouter:
     @pages.get("/studio/connections", include_in_schema=False)
     @pages.get("/studio/undo", include_in_schema=False)
     @pages.get("/studio/handovers", include_in_schema=False)
+    @pages.get("/studio/shadows", include_in_schema=False)
     def studio_new() -> Response:
         """The studio, where someone starts a new agent, sees all the agents they may, what they
         may do, or the design system's showcase."""
@@ -303,6 +309,32 @@ def router(gw: Any) -> APIRouter:
                 return {"language": languages.choose(conn, person, body.language, gw.clock())}
             except languages.Refused as e:
                 raise HTTPException(400, str(e)) from None
+
+    @api.get("/studio/api/shadows", **shapes.answers(shapes.Shadows))
+    def studio_shadows(person: Annotated[Person, Depends(someone)]) -> dict:
+        """What new versions answered beside those at work, for whoever signed in to grade, as
+        for samples, those whose records they may all see; and how each shadow they may see did,
+        in counts (core/shadows.py)."""
+        with db.transaction(gw.url) as conn:
+            pairs = shadows.gradeable(conn, gw.scenario, person)
+            return {"pairs": [{"id": r["id"], "agent": r["agent"], "shadow": r["definition"],
+                               "asked": r["asked"], "sent": r["sent"], "answer": r["answer"],
+                               "at": r["at"].isoformat()} for r in pairs],
+                    "shadows": shadows.figures(conn, gw.scenario, person)}
+
+    @api.post("/studio/api/shadows/{pair}/grade", **shapes.answers(shapes.ShadowGraded))
+    def studio_shadow_grade(pair: int, body: ShadowGrade,
+                            person: Annotated[Person, Depends(someone)]) -> dict:
+        """Grade what a shadow answered beside the answer sent: better, as good, worse, or
+        wrong, once, as someone who may grade it. The core notes it in the ledger."""
+        try:
+            with db.transaction(gw.url) as conn:
+                shadows.grade(conn, gw.scenario, person, pair, body.grade)
+        except LookupError:
+            raise HTTPException(404, "there's no such answer for you to grade") from None
+        except shadows.Refused as e:
+            raise HTTPException(409, str(e)) from None
+        return {"graded": True}
 
     @api.get("/studio/api/handovers", **shapes.answers(shapes.Handovers))
     def studio_handovers(person: Annotated[Person, Depends(someone)]) -> dict:

@@ -162,7 +162,8 @@ def test_approvers_read_whom_it_may_hand_conversations_to_and_the_core_checks_th
     settings["serial"] += 1
     settings["instances"]["assistant-finance"]["hands_to"] = ["operations"]
     after = parse_settings(yaml.safe_dump(settings).encode())
-    words = approvals.changes(before, after, stack.gateway.definitions, stack.gateway.scenario)
+    words = approvals.changes(before, after, stack.gateway.definitions,
+                              stack.gateway.scenario.person)
     [line] = [w for w in words if "hand" in w["text"]]
     assert line["widens"] and line["text"].startswith("assistant-finance may hand a conversation "
                                                       "over, at its agent's word, to the people "

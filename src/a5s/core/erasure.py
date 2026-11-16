@@ -61,6 +61,8 @@ WORDS = {
     "delegations": "the accounts they connected, so agents acted as them there",
     "changes_to_undo": "how to undo changes made for them, which they can then no longer undo",
     "handovers": "their conversations handed to people, with what was said there",
+    "shadow_answers": "what shadows answered them, beside the answers sent, for graders",
+    "shadow_grades": "whose grades of shadows' answers they were",
     "delegation_starts": "accounts they had begun to connect",
     "report_seen": "what reports told them",
     "digest_waits": "digests that wait for them",
@@ -152,6 +154,10 @@ def erase(conn: db.Connection, person: str, now: datetime,
     for table in departures.KEPT:  # what a5s keeps for someone, as archiving finds it
         delete(table, f"delete from {table} where person = any(%s)", (names,))
     delete("said_in_groups", "delete from turns where speaker = any(%s)", (names,))
+    delete("shadow_answers", "delete from shadow_answers where acts_for && %s",  # in a group's
+           ([*names, person],))  # too: what a shadow answered is only ever for graders
+    delete("shadow_grades", "update shadow_answers set graded_by = null where graded_by = "
+           "any(%s)", ([*names, person],))  # the grade stays, without whose it was
     delete("questions", "delete from questions where acts_for && %s and acts_for <@ %s",
            (names, names))  # for them alone: one for others too is theirs as well
     delete("repeats", "delete from task_repeats where owner = any(%s)", (names,))

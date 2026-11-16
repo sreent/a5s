@@ -32,6 +32,7 @@ export type Route =
   | { page: "undo"; change: string }  // a change an agent made, to undo, by its id
   | { page: "handovers" }  // the conversations handed to someone's teams
   | { page: "handover"; id: string }  // one of them
+  | { page: "shadows" }  // what new versions answered beside those at work, for graders
   | { page: "design" };
 
 export function parse(path: string, search = ""): Route {
@@ -42,6 +43,7 @@ export function parse(path: string, search = ""): Route {
   if (kind === "drafts" && id) return { page: "draft", draft: id };
   if (kind === "handovers" && id) return { page: "handover", id };
   if (kind === "handovers") return { page: "handovers" };
+  if (kind === "shadows") return { page: "shadows" };
   if (kind === "new") return { page: "new" };
   if (kind === "agents") return { page: "agents" };
   if (kind === "you") return { page: "you" };
@@ -93,6 +95,7 @@ export function href(route: Route): string {
     case "undo": return `/studio/undo?change=${encodeURIComponent(route.change)}`;
     case "handovers": return "/studio/handovers";
     case "handover": return `/studio/handovers/${encodeURIComponent(route.id)}`;
+    case "shadows": return "/studio/shadows";
     default: return "/studio/";
   }
 }

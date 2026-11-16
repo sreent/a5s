@@ -300,16 +300,17 @@ def apply(
         grants = definition.grants
         was = conn.execute("select status, suspended_by from instances where id = %s",
                            (s.id,)).fetchone()
+        working = "shadow" if s.shadows else "active"  # a shadow does no work of its own
         if was and was["status"] == "retired":  # a suspension outlasts retiring, and restoring
-            back = "suspended" if was["suspended_by"] else "active"
+            back = "suspended" if was["suspended_by"] else working
             ledger.append(conn, {"kind": "admin", "action": "restore", "instance": s.id,
                                  "decision": "record", "args": {**version, "status": back}})
         conn.execute(
             """
             insert into instances
               (id, definition, release, level, parts, actions, grants, model, serves, owner,
-               deputy, pins, settings_version, asks, hands_to)
-            values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+               deputy, pins, settings_version, asks, hands_to, shadows, status)
+            values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             on conflict (id) do update set
               definition = excluded.definition, release = excluded.release,
               level = excluded.level, parts = excluded.parts, actions = excluded.actions,
@@ -317,10 +318,11 @@ def apply(
               model = excluded.model,
               serves = excluded.serves, owner = excluded.owner, deputy = excluded.deputy,
               pins = excluded.pins, settings_version = excluded.settings_version,
-              asks = excluded.asks, hands_to = excluded.hands_to,
-              status = case when instances.status <> 'retired' then instances.status
+              asks = excluded.asks, hands_to = excluded.hands_to, shadows = excluded.shadows,
+              status = case when instances.status in ('active', 'shadow') then excluded.status
+                            when instances.status <> 'retired' then instances.status
                             when instances.suspended_by is not null then 'suspended'
-                            else 'active' end,
+                            else excluded.status end,
               updated_at = now()
             """,
             (
@@ -328,7 +330,7 @@ def apply(
                 grants, definition.model,
                 list(s.serves), s.owner or definition.owner, s.deputy or definition.deputy,
                 Jsonb(definition.pins),
-                settings.version, list(s.asks), list(s.hands_to),
+                settings.version, list(s.asks), list(s.hands_to), s.shadows, working,
             ),
         )
         ledger.append(
@@ -392,9 +394,9 @@ def set_status(conn: db.Connection, instance: str, *, by: str, suspend: bool,
         if row["suspended_by"] != by:
             return (f"only {row['suspended_by']} can resume {instance}. Resuming someone else's "
                     "suspension needs the release approver, which phase 1 doesn't have yet.")
-        conn.execute(
-            "update instances set status = 'active', suspended_by = null, updated_at = now() "
-            "where id = %s",
+        conn.execute(  # back to work, or a shadow's again
+            "update instances set status = case when shadows is null then 'active' else "
+            "'shadow' end, suspended_by = null, updated_at = now() where id = %s",
             (instance,),
         )
     ledger.append(

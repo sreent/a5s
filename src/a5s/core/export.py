@@ -162,6 +162,12 @@ def gather(conn: db.Connection, person: str) -> dict[str, Any]:
             "order by h.started_at"),
         "handover_answers": count(  # what they answered others, as one of a team, counted
             "select count(*) as n from handover_replies where by_person = any(%(names)s)"),
+        "shadow_answers": rows(  # what shadows answered them, beside what was sent, for graders
+            "select definition as shadow, shadows, asked, sent, answer, at, grade from "
+            "shadow_answers where person = any(%(names)s) or acts_for && %(names)s::text[] "
+            "order by at"),
+        "shadow_grades": count(  # what they graded, as a grader, counted
+            "select count(*) as n from shadow_answers where graded_by = any(%(names)s)"),
         "changes_to_undo": rows(  # changes made for them, or they undid, while kept to undo
             "select definition as agent, record, said, made_at, until, state, undone_at, "
             "asked_by = any(%(names)s) as asked_by_them from changes_made where "

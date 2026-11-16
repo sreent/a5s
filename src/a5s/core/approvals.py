@@ -65,6 +65,9 @@ ASKS_ABOUT = ("questions, for the people it acts for, which each answers from th
 HANDS_ABOUT = ("a conversation over, at its agent's word, to the people of {teams}, who read its "
                "brief and what the person said, and answer them in the same chat until they hand "
                "it back")
+# and its `shadows` (core/shadows.py)
+SHADOWS_ABOUT = ("answers what {live} is asked, beside it, as the same people, sending and changing "
+                 "nothing: graders read its answers beside those sent")
 
 
 def _teams(teams: Iterable[str]) -> str:
@@ -253,9 +256,15 @@ def changes(before: Settings | None, after: Settings, definitions: dict[str, Def
                                   + (f" It may ask {_asked(new.asks, asked)} {ASKS_ABOUT}."
                                      if new.asks else "")
                                   + (f" It may hand {HANDS_ABOUT.format(teams=_teams(new.hands_to))}."
-                                     if new.hands_to else ""),
+                                     if new.hands_to else "")
+                                  + (f" It's a shadow: it {SHADOWS_ABOUT.format(live=new.shadows)}."
+                                     if new.shadows else ""),
                           "widens": True})
             continue
+        if new.shadows != old.shadows:
+            found.append({"text": f"{new.id} {SHADOWS_ABOUT.format(live=new.shadows)}, as a shadow."
+                          if new.shadows else f"{new.id} is no longer a shadow of {old.shadows}: "
+                          "it works for its people itself.", "widens": True})
         if more := [t for t in new.hands_to if t not in old.hands_to]:
             found.append({"text": f"{new.id} may hand {HANDS_ABOUT.format(teams=_teams(more))}.",
                           "widens": True})
@@ -337,6 +346,11 @@ NAMING = {
     "cases_from_runs": (("Those who author an agent may keep one of its runs as a test case: "
                          "what someone said to it, masked by code and checked by its author."),
                         ("No run of an agent's becomes a test case: its cases are made up.")),
+    "shadow_runs": (("A shadow may answer what people ask the instance it shadows, beside it, "
+                     "sending and changing nothing: it reads what they say and what their records "
+                     "hold, and graders read what it answered beside what was sent."),
+                    ("No shadow answers what people ask: a new version is tried on test cases "
+                     "alone.")),
 }
 
 
@@ -438,7 +452,9 @@ def described(settings: Settings, definitions: dict[str, Definition],
                     + (f" It may ask {_asked(i.asks, {j.id: j.definition for j in settings.instances})}"
                        f" {ASKS_ABOUT}." if i.asks else "")
                     + (f" It may hand {HANDS_ABOUT.format(teams=_teams(i.hands_to))}."
-                       if i.hands_to else ""))
+                       if i.hands_to else "")
+                    + (f" It's a shadow: it {SHADOWS_ABOUT.format(live=i.shadows)}."
+                       if i.shadows else ""))
         told += [f"{i.id} works at level {lv} for {action} in {part}"
                  + (", where it acts and reports, once graded samples show it's accurate "
                     "enough: until then a5s holds it at level 1" if lv >= 2 else "") + "."

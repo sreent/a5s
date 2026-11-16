@@ -34,6 +34,7 @@ from a5s.core import (
     registry,
     releases,
     samples,
+    shadows,
     spending,
     studio,
     words,
@@ -163,6 +164,13 @@ def waiting(conn: db.Connection, gw: Any, person: Person,
                       "go": f"/studio/agents/{agent}#feedback"})
     found += spending.over(conn, scenario, gw.models, gw.spending_in_force(conn), person,
                            currency=gw.currency, language=language)
+    if waiting := len(shadows.gradeable(conn, scenario, person)):  # a new version's answers
+        found.append({"kind": "shadow", "what": words.say(
+                          language, "A new version's answer waits for you to compare with the "
+                          "one sent" if waiting == 1 else "{n} of new versions' answers wait for "
+                          "you to compare with those sent", n=waiting),
+                      "why": [words.say(language, "you grade agents' work")],
+                      "go": "/studio/shadows"})
     for line in handover.waiting(conn, scenario, person):  # conversations handed to their team
         if line["taken_by"] is None or (line["mine"] and line["unanswered"]):
             found.append({"kind": "handover", "what": words.say(

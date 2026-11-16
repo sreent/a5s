@@ -17,6 +17,7 @@ from a5s.core import (
     notebook_api,
     registry,
     samples,
+    shadows,
     spending,
     web,
 )
@@ -35,6 +36,7 @@ PAGES = (
     ("map", "Map", "map", "Build", "/studio/map"),
     ("decide", "Decisions", "decide", "Decide", "/studio/decide"),
     ("grade", "Grading", "grade", "Decide", "/studio/grade"),
+    ("shadows", "Shadows", "grade", "Decide", "/studio/shadows"),
     ("settings", "Settings", "settings", "Decide", "/studio/settings"),
     ("audit", "Audit trail", "audit", "Oversee", "/studio/audit"),
     ("admin", "Administration", "admin", "Oversee", "/studio/admin"),
@@ -45,6 +47,7 @@ PAGES = (
 # Each page's name, and each heading, for those who read Thai (core/languages.py)
 THAI = {"chat": "แชท", "handovers": "บทสนทนาที่ส่งต่อ", "tasks": "งาน", "notebook": "สมุดบันทึก", "studio": "สตูดิโอ",
         "map": "แผนผัง", "decide": "การตัดสินใจ", "grade": "การให้คะแนน",
+        "shadows": "เวอร์ชันทดลอง",
         "settings": "การตั้งค่า", "audit": "บันทึกการตรวจสอบ", "admin": "การดูแลระบบ",
         "spending": "ค่าใช้จ่าย", "officer": "การคุ้มครองข้อมูล"}
 THAI_HEADINGS = {"Work": "ทำงาน", "Build": "สร้าง", "Decide": "ตัดสินใจ", "Oversee": "กำกับดูแล"}
@@ -74,6 +77,8 @@ def router(gw: Any) -> APIRouter:
         with db.transaction(gw.url) as conn:
             language = languages.of(conn, person)
             found["handovers"] = handover.answers_any(conn, gw.scenario, person)
+            found["shadows"] = shadows.exists(conn) and (  # a new version's answers to grade,
+                samples.GRADER in roles or bool(shadows.figures(conn, gw.scenario, person)))
         thai = language == "th"
         return {"you": person.name, "language": language, "pages": [
             {"page": key, "name": THAI[key] if thai else name, "icon": icon,

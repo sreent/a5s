@@ -1255,6 +1255,50 @@ export type SettingsReview = {
   impact?: Impact;
 };
 
+export type ShadowCounts = {
+  better: number;
+  same: number;
+  worse: number;
+  wrong: number;
+};
+
+// How a shadow did: how many it answered, and how graders, and its judge, apart, graded
+// its answers.
+export type ShadowFigures = {
+  instance: string;
+  shadows: string;
+  agent: string;
+  status: string;
+  answered: number;
+  graded: ShadowCounts;
+  judged: ShadowCounts;
+};
+
+export type ShadowGrade = {
+  grade: string;
+};
+
+export type ShadowGraded = {
+  graded: boolean;
+};
+
+// What someone asked an instance, what it answered them, and what its shadow, a new
+// version, answered beside it, which went nowhere: for a grader, never whose it was.
+export type ShadowPair = {
+  id: number;
+  agent: string;
+  shadow: string;
+  asked: string;
+  sent: string;
+  answer: string;
+  at: string;
+};
+
+export type Shadows = {
+  pairs: ShadowPair[];
+  shadows: ShadowFigures[];
+};
+
 // Who signed in, the language they read, and the pages they may use, in the sidebar's
 // order.
 export type Shell = {

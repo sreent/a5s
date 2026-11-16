@@ -39,6 +39,11 @@ TH: dict[str, str] = {
     "{n} of your tasks waits for you, blocked or asked for": "งานของคุณ {n} งานรอคุณอยู่ เพราะติดขัดหรือมีคำถาม",
     "{n} of your tasks wait for you, blocked or asked for": "งานของคุณ {n} งานรอคุณอยู่ เพราะติดขัดหรือมีคำถาม",
     "you own it": "คุณเป็นเจ้าของ",
+    "A new version's answer waits for you to compare with the one sent":
+        "คำตอบของเวอร์ชันใหม่รอให้คุณเทียบกับคำตอบที่ส่งไปแล้ว",
+    "{n} of new versions' answers wait for you to compare with those sent":
+        "คำตอบของเวอร์ชันใหม่ {n} รายการรอให้คุณเทียบกับคำตอบที่ส่งไปแล้ว",
+    "you grade agents' work": "คุณให้คะแนนงานของเอเจนต์",
     "{person}'s conversation with the {agent} was handed to the {team} team, and waits for an answer":
         "บทสนทนาของ {person} กับ {agent} ถูกส่งต่อให้ทีม {team} และรอคำตอบ",
     "The {agent} made a change for you, which you can undo until {until}: {said}":

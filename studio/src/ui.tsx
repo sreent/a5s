@@ -121,6 +121,7 @@ export function ToolBadges({ tool }: { tool: Tool }) {
 const STATUSES: Record<string, string> = {
   get proposed() { return t("proposed"); }, get active() { return t("active"); },
   get suspended() { return t("suspended"); }, get retired() { return t("retired"); },
+  get shadow() { return t("a shadow, answering beside another"); },
 };
 
 // The badges a page shows are Ocean's Badge, as the showcase shows it (pages/Design.tsx)

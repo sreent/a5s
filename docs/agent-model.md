@@ -58,6 +58,7 @@ Each organisation approves a release for its own deployment, with its own people
 | Active | Working, in the parts whose owners approve it | The agent owner, the deputy or the platform owner can suspend it, except that stopping an agent the scenario marks as a check needs the scenario's assurance. The agent owner or the platform owner can retire it. |
 | Suspended | No trigger wakes it, its next call is denied, even in a run already going, and its open work is withdrawn or flagged in the scenario's process | Whoever suspended it can resume it. Anyone else needs someone outside the team, because resuming loosens. Never while it has neither an owner nor a deputy. |
 | Retired | Its identity is disabled, its grant removed and its evidence archived. Conversations follow the retention rules. | Nobody |
+| Shadow | A new version answering beside the instance it shadows, sending and changing nothing, for graders to compare ([shadow runs](#shadow-runs)). It has no work of its own. | As an active instance: suspended, it answers nothing, and resumed, it's a shadow again. The owners of its parts make it an instance of its own by taking `shadows` out of its settings. |
 
 - A part owner can stop an instance acting in their part at any time, by withdrawing its approval in the settings.
 - If the agent owner and the deputy both leave, the instances are suspended until the platform owner names a new owner.
@@ -104,6 +105,31 @@ An agent can hand a person's conversation over to people, such as the service de
 - **Handed back,** by whoever took it, or anyone of the team, the agent answers again, knowing what was said, and the person is told. One nobody has answered or handed back in three days is handed back.
 
 The ledger records each handover, each answer's delivery and its end, never the words.
+
+### Shadow runs
+
+A new version of an agent can answer what people ask an instance, beside it, sending and changing nothing, so its answers are graded before anyone puts it to work ([`core/shadows.py`](../src/a5s/core/shadows.py)). The new version is released as an agent of its own, such as `assistant-next`, with its new instructions, or another model, and its own regression suite. A shadow is an instance of it whose settings name the instance it answers beside:
+
+```yaml
+instances:
+  assistant-next-finance:
+    definition: assistant-next
+    serves: [ana, ben]        # nobody assistant-finance doesn't serve
+    parts: [billing]          # and no part it doesn't work in
+    owner: ana
+    shadows: assistant-finance
+data_protection:
+  shadow_runs: true           # the data protection officer's choice
+```
+
+- **The officer's choice.** A shadow reads what people say to the instance it shadows, and what their records hold, on a model that may be new, and graders read what it answered. So the data protection officer chooses whether shadows may answer at all, `shadow_runs` in the signed settings, which a version changes only with their approval. Without it, the core takes no version with a shadow in it, and opens no shadow's run.
+- **What its approvers read.** The owners of its parts approve it as any instance, reading that it answers what the instance it shadows is asked, beside it, as the same people, sending and changing nothing. The core won't take one that serves anyone the instance it shadows doesn't, works in a part it doesn't, shadows a shadow, or asks or hands over anything.
+- **Beside each answer.** Once the instance it shadows has answered a message, the shadow answers the same, as the same people, given the conversation as that run was given it, and the files they sent with it, under the same need-to-know. Its status, `shadow`, gives it no work of its own: no message, reminder, schedule, report or task is ever its. A run of its own is refused, and so is a second answer beside the same run.
+- **It only reads.** The policy lets a shadow call only the tools of its grant that change, write and send nothing, and its own model, and lets it send nothing at all. Of a5s's own tools, it's offered only those that read: searching the conversation, asking a5s's reader, and listing reminders and tasks. What it answers goes nowhere: the core keeps it beside the answer that was sent, cleaned as any message is.
+- **Graded beside the answer sent.** Graders, from outside the team that built the shadow's agent and the teams of its instance's owners, as for samples, and never anyone it answered, read each pair whose records they may all see, on the studio's page of new versions' answers, `/studio/shadows`, never whose it was. They say whether the new version's answer is better, as good, worse, or wrong. A shadow whose agent names a [judge](#the-judge) hears from it too, kept apart from people's grades. Its graders, its owners, the owners of the instance it shadows and its agent's owners read how it did, in counts.
+- **Costs and figures.** A shadow's runs are its own, with their own budget and spending, so what a new version costs is seen beside what it answers.
+
+A shadow's grades move no cap: they're evidence for its owners, who put the new version to work, if they choose, with a release of the agent it shadows, or by taking `shadows` out of its settings. The ledger records each shadow's run and answer, and each grade, never the words.
 
 ## The definition format
 

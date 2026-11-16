@@ -269,6 +269,9 @@ class InstanceSettings:
     # The directory's teams it may hand a conversation over to, whose people answer the person
     # in the same chat until they hand it back (core/handover.py)
     hands_to: tuple[str, ...] = ()
+    # The instance it answers beside, if it's a shadow: it answers what that one is asked,
+    # sending and changing nothing, for graders to compare (core/shadows.py)
+    shadows: str | None = None
 
     def level_in(self, part: str, start: int, most: int) -> int:
         """How far it may act in a part, between a release's starting level and its maximum."""
@@ -308,6 +311,10 @@ class DataProtection:
     # said to it, masked by code and checked by its author, in the agent's folder from then
     # (core/run_cases.py)
     cases_from_runs: bool = False
+    # Whether a shadow may answer what people ask the instance it shadows, beside it, sending
+    # nothing: it reads what they say and what their records hold, and graders read what it
+    # answered beside what was sent (core/shadows.py)
+    shadow_runs: bool = False
 
 
 @dataclass(frozen=True)
@@ -398,6 +405,7 @@ class _Instance(BaseModel):
     parts: list[_ID] | dict[_ID, _LEVEL | _Part | None] = Field(default_factory=list)
     asks: list[_ID] = Field(default_factory=list)
     hands_to: list[_ID] = Field(default_factory=list)  # teams of the directory
+    shadows: _ID | None = None  # the instance it answers beside, as a shadow
 
 
 class _Limit(BaseModel):
@@ -430,6 +438,7 @@ class _DataProtection(BaseModel):
     audit_names: bool = DataProtection.audit_names
     flag_rubber_stamps: bool = DataProtection.flag_rubber_stamps
     cases_from_runs: bool = DataProtection.cases_from_runs
+    shadow_runs: bool = DataProtection.shadow_runs
 
 
 class _Spending(BaseModel):
@@ -515,7 +524,8 @@ def parse_settings(raw: bytes, signatures: tuple[Signature, ...] = ()) -> Settin
             InstanceSettings(id=iid, definition=i.definition, serves=tuple(i.serves),
                              level=i.level, owner=i.owner, deputy=i.deputy,
                              parts=_part_levels(i.parts), actions=_action_levels(i.parts),
-                             asks=tuple(i.asks), hands_to=tuple(dict.fromkeys(i.hands_to)))
+                             asks=tuple(i.asks), hands_to=tuple(dict.fromkeys(i.hands_to)),
+                             shadows=i.shadows)
             for iid, i in version.instances.items()
         ),
     )

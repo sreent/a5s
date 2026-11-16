@@ -166,6 +166,50 @@ class HandoverDone(Shape):
     done: bool
 
 
+# What new versions answered beside those at work, for graders (core/shadows.py)
+
+class ShadowPair(Shape):
+    """What someone asked an instance, what it answered them, and what its shadow, a new
+    version, answered beside it, which went nowhere: for a grader, never whose it was."""
+
+    id: int
+    agent: str  # the agent they spoke to
+    shadow: str  # the new version's agent
+    asked: str
+    sent: str
+    answer: str
+    at: str
+
+
+class ShadowCounts(Shape):
+    better: int
+    same: int
+    worse: int
+    wrong: int
+
+
+class ShadowFigures(Shape):
+    """How a shadow did: how many it answered, and how graders, and its judge, apart, graded
+    its answers."""
+
+    instance: str
+    shadows: str  # the instance it answers beside
+    agent: str
+    status: str  # shadow, or suspended
+    answered: int
+    graded: ShadowCounts
+    judged: ShadowCounts
+
+
+class Shadows(Shape):
+    pairs: list[ShadowPair]
+    shadows: list[ShadowFigures]
+
+
+class ShadowGraded(Shape):
+    graded: bool
+
+
 # A change an agent made, which its tool says how to undo (core/undoing.py)
 
 
