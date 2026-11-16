@@ -526,6 +526,12 @@ export type Plan = {
   asks?: string[];
 };
 
+// A step of a task's plan, as its run keeps it, and how it stands.
+export type PlanStep = {
+  content: string;
+  status: string;
+};
+
 // A publish under way: the code to enter at GitHub's sign-in, and how it stands.
 export type Publish = {
   id: string;
@@ -570,6 +576,18 @@ export type Reminders = {
   on_time: number;
   missed: number;
   on_time_share: number | null;
+};
+
+// A task someone asked to be done again and again: when, how it stands, and its last task;
+// or, where its words name records they may no longer see, how it stands alone.
+export type RepeatLine = {
+  repeat: string;
+  agent: string;
+  when: string;
+  status: string;
+  "last task"?: string;
+  what?: string;
+  withheld?: boolean;
 };
 
 export type Reported = {
@@ -770,6 +788,41 @@ export type StatusAsked = {
   action: string;
   by: string;
   at: string;
+};
+
+// One of someone's tasks, with an agent: how it stands, what it waits on, and what it has
+// spent; or, where its words name records they may no longer see, how it stands alone.
+export type TaskLine = {
+  task: string;
+  agent: string;
+  status: string;
+  ended: boolean;
+  progress: number;
+  "has until": string;
+  spent: string;
+  updated: string;
+  parts?: string;
+  withheld?: boolean;
+  what?: string;
+  plan?: PlanStep[];
+  why?: string;
+  needed?: string | null;
+  said?: string | null;
+  found?: unknown;
+  "so far"?: unknown[];
+};
+
+// A task cancelled, or a repeat stopped, at its owner's word.
+export type TaskStopped = {
+  cancelled?: string;
+  stopped?: string;
+};
+
+// Someone's own tasks, with every agent, and what they asked to be done again and again.
+export type TasksNow = {
+  you: string;
+  tasks: TaskLine[];
+  repeats: RepeatLine[];
 };
 
 // An agent a new one may start from, and the tools it needs that the scenario hasn't.

@@ -46,7 +46,8 @@ def seen(stack):
 # use. Those signed in for one act alone, deciding or grading, keep that sign-in to the act;
 # and the audit trail, which Ana may not read, isn't in hers.
 LISTED = ("chat", "tasks", "notebook", "studio", "settings", "admin")
-AT = {"settings": "/studio/settings", "notebook": "/studio/notebook"}  # in the studio, where their old addresses go
+AT = {"settings": "/studio/settings", "notebook": "/studio/notebook",  # in the studio, where their
+      "tasks": "/studio/tasks"}  # old addresses go
 
 
 @pytest.mark.parametrize("name", PAGES)

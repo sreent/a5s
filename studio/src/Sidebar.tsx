@@ -30,7 +30,7 @@ export function shellOf(): Promise<Shell> {
 
 // The studio's own pages, which it opens without leaving it: the rest are pages of their own
 const INSIDE: Record<string, Route> = { studio: { page: "home" }, settings: { page: "settings" },
-                                         notebook: { page: "notebook" } };
+                                         notebook: { page: "notebook" }, tasks: { page: "tasks" } };
 
 /** A way to one of a5s's pages: within the studio, without leaving it; marked if it's here. */
 function To({ page, here, label, title, children }: {
@@ -48,7 +48,7 @@ const initials = (name: string) =>
 export function Sidebar({ signedIn, rail = false }: { signedIn: boolean; rail?: boolean }) {
   const [found, setFound] = useState<Shell | null>(null);
   const page = useRoute().page;
-  const here = page === "settings" || page === "notebook" ? page : "studio";  // the page it marks
+  const here = page === "settings" || page === "notebook" || page === "tasks" ? page : "studio";  // the page it marks
   useEffect(() => {
     if (!signedIn) return;
     shellOf().then(setFound).catch(() => setFound(null));

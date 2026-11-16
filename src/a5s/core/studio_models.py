@@ -13,7 +13,7 @@ a field that may be left out, but is never null, is optional there (`SkipJsonSch
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 from pydantic.json_schema import SkipJsonSchema
 
 
@@ -897,3 +897,69 @@ class NoteRemoved(Shape):
     """A note removed, by its keeper."""
 
     removed: str
+
+
+# Someone's own tasks, folded into the studio (core/tasks_api.py): what they asked agents to do
+# over more than one run, and what they asked to be done again and again
+
+
+class PlanStep(Shape):
+    """A step of a task's plan, as its run keeps it, and how it stands."""
+
+    content: str
+    status: str  # pending, in_progress or completed
+
+
+class TaskLine(Shape):
+    """One of someone's tasks, with an agent: how it stands, what it waits on, and what it has
+    spent; or, where its words name records they may no longer see, how it stands alone."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    task: str  # T-<number>
+    agent: str
+    status: str
+    ended: bool
+    progress: int  # percent
+    has_until: str = Field(alias="has until")
+    spent: str
+    updated: str  # a date
+    parts: str | SkipJsonSchema[None] = None  # how many of its parts are done, if it has any
+    withheld: bool | SkipJsonSchema[None] = None
+    what: str | SkipJsonSchema[None] = None
+    plan: list[PlanStep] | SkipJsonSchema[None] = None
+    why: str | SkipJsonSchema[None] = None  # why it stopped, as its run said
+    needed: str | None | SkipJsonSchema[None] = None  # what it asked its owner for
+    said: str | None | SkipJsonSchema[None] = None  # and what they said
+    found: Any = None  # what it found, as its run gave it
+    so_far: list[Any] | SkipJsonSchema[None] = Field(default=None, alias="so far")
+
+
+class RepeatLine(Shape):
+    """A task someone asked to be done again and again: when, how it stands, and its last task;
+    or, where its words name records they may no longer see, how it stands alone."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    repeat: str  # E-<number>
+    agent: str
+    when: str
+    status: str
+    last_task: str | SkipJsonSchema[None] = Field(default=None, alias="last task")
+    what: str | SkipJsonSchema[None] = None
+    withheld: bool | SkipJsonSchema[None] = None
+
+
+class TasksNow(Shape):
+    """Someone's own tasks, with every agent, and what they asked to be done again and again."""
+
+    you: str
+    tasks: list[TaskLine]
+    repeats: list[RepeatLine]
+
+
+class TaskStopped(Shape):
+    """A task cancelled, or a repeat stopped, at its owner's word."""
+
+    cancelled: str | SkipJsonSchema[None] = None
+    stopped: str | SkipJsonSchema[None] = None

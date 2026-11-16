@@ -14,6 +14,7 @@ import { NewPage } from "./pages/New";
 import { NotebookPage } from "./pages/Notebook";
 import { RunPage } from "./pages/Run";
 import { SettingsPage } from "./pages/Settings";
+import { TasksPage } from "./pages/Tasks";
 import { YouPage } from "./pages/You";
 import { reread, useRoute } from "./router";
 import { Sidebar } from "./Sidebar";
@@ -47,6 +48,7 @@ export function App() {
   else if (route.page === "design") content = <DesignPage />;
   else if (route.page === "settings") content = <SettingsPage />;
   else if (route.page === "notebook") content = <NotebookPage />;
+  else if (route.page === "tasks") content = <TasksPage />;
   else content = <HomePage />;
   const workbench = route.page === "draft" && state === "ready";  // a draft fills the window, as Ocean's workbench
   useEffect(() => {

@@ -137,7 +137,7 @@ def waiting(conn: db.Connection, gw: Any, person: Person) -> list[dict]:
     if tasks:
         found.append({"kind": "tasks", "what": f"{tasks} of your tasks "
                       f"{'waits' if tasks == 1 else 'wait'} for you, blocked or asked for",
-                      "why": [], "go": "/tasks/"})
+                      "why": [], "go": "/studio/tasks"})
     return found
 
 

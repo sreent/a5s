@@ -197,13 +197,15 @@ def tasked(walk: Walk, stack, url: str) -> None:
         stack.model.reply(None, ("confirm_task", {}))
         stack.model.reply("Started: it's T-1, and you can watch or stop it on your tasks page.")
         says(page, AGENT, "Yes, please", "it's T-1")
-    page = walk.as_("raj", f"{url}/tasks/")
+    page = walk.as_("raj", f"{url}/studio/tasks")
     with walk.step("On his own page he watches T-1, waiting for its first slice, with what it may spend "
                    "and by when.", page):
         page.wait_for_selector("#tasks li >> text=T-1", timeout=30000)
         assert LIVE or "Review all my open fixes" in page.inner_text("#tasks")  # a model's words
-    with walk.step("He stops it there, since PR-17's review comes first.", page):
-        page.click("#tasks li button:has-text('Cancel')")
+    with walk.step("He stops it there, since PR-17's review comes first: asked first, as what "
+                   "can't be undone is.", page):
+        page.click("#tasks li button:text-is('Cancel')")
+        page.locator("dialog[open] button:has-text('Cancel it')").click()
         page.wait_for_selector("#status >> text=Cancelled T-1", timeout=30000)
     with db.transaction(stack.admin) as conn:
         [task] = conn.execute("select status from tasks").fetchall()

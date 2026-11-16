@@ -66,7 +66,7 @@ def test_a_grader_and_a_tasks_owner_see_theirs(stack, approving, provider):
                                               "/grade/")
     [tasks] = api(approving, provider, "ben", "home").json()["waiting"]
     assert (tasks["what"], tasks["go"]) == (
-        "1 of your tasks waits for you, blocked or asked for", "/tasks/")
+        "1 of your tasks waits for you, blocked or asked for", "/studio/tasks")
 
 
 def test_it_says_which_roles_someone_holds_what_gave_them_and_what_they_let_them_do(
