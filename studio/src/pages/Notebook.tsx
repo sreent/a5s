@@ -21,14 +21,13 @@ function Source({ found }: { found: Note["sources"][number] }) {
 }
 
 export function NotebookPage() {
-  const [again, setAgain] = useState(0);
   const [status, setStatus] = useState<string>();
-  const { data, error } = useLoad(() => get<NotebookNow>("/notebook/api"), [again]);
+  const { data, error, reload } = useLoad(() => get<NotebookNow>("/notebook/api"), []);
   const remove = async (note: Note) => {
     try {
       await send("POST", `/notebook/api/${encodeURIComponent(note.entry)}/remove`);
+      await reload();  // it says so with the note gone from sight
       setStatus(`Removed ${note.entry}.`);
-      setAgain((n) => n + 1);
     } catch (e) {
       setStatus((e as Error).message);
     }

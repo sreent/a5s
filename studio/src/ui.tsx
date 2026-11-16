@@ -9,7 +9,9 @@ import { inside, Link, type Route } from "./router";
  * showed before stays, `stale`, so nothing jumps. */
 export type Loaded<T> = { data?: T; error?: string; stale?: boolean };
 
-export function useLoad<T>(load: () => Promise<T>, deps: DependencyList): Loaded<T> {
+/** What a page shows, and `reload`, which reads it again after someone acts and settles once
+ * it's shown, so the page says what they did only with it in sight. */
+export function useLoad<T>(load: () => Promise<T>, deps: DependencyList): Loaded<T> & { reload: () => Promise<void> } {
   const [state, setState] = useState<Loaded<T>>({});
   useEffect(() => {
     let current = true;
@@ -19,7 +21,8 @@ export function useLoad<T>(load: () => Promise<T>, deps: DependencyList): Loaded
     return () => { current = false; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, deps);
-  return state;
+  const reload = async () => setState({ data: await load() });
+  return { ...state, reload };
 }
 
 export function Waiting({ error }: { error?: string }) {

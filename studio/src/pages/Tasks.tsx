@@ -57,14 +57,13 @@ function Repeat({ repeat, stop }: { repeat: RepeatLine; stop: (repeat: RepeatLin
 }
 
 export function TasksPage() {
-  const [again, setAgain] = useState(0);
   const [status, setStatus] = useState<string>();
-  const { data, error } = useLoad(() => get<TasksNow>("/tasks/api"), [again]);
+  const { data, error, reload } = useLoad(() => get<TasksNow>("/tasks/api"), []);
   const end = async (name: string, said: string) => {
     try {
       await send("POST", `/tasks/api/${encodeURIComponent(name)}/cancel`);
+      await reload();  // it says so with what it did in sight
       setStatus(`${said} ${name}.`);
-      setAgain((n) => n + 1);
     } catch (e) {
       setStatus((e as Error).message);
     }
