@@ -28,7 +28,7 @@ const PAGES: Record<string, [string, string, Route | string]> = {
 
 async function everything(): Promise<Found[]> {
   const [shell, home, catalogue] = await Promise.all([
-    shellOf().catch(() => null), get<Home>("/studio/api/home").catch(() => null),
+    shellOf(true).catch(() => null), get<Home>("/studio/api/home").catch(() => null),
     get<Catalogue>("/studio/api").catch(() => null)]);
   const found: Found[] = [];
   for (const [n, wait] of (home?.waiting ?? []).entries()) {
@@ -84,12 +84,18 @@ export function Find({ ready, children }: { ready: boolean; children: ReactNode 
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [found, setFound] = useState<Found[]>([]);
+  const [looked, setLooked] = useState(false);  // found what there is at least once
+  const look = useCallback(() => everything().then(setFound).catch(() => setFound([]))
+    .finally(() => setLooked(true)), []);
+  useEffect(() => {  // what there is, found as the studio opens, so it's there at Ctrl-K (round 13, C9)
+    if (ready) void look();
+  }, [ready, look]);
   const show = useCallback(() => {
     if (!ready) return;
     setQuery("");
     setOpen(true);
-    everything().then(setFound).catch(() => setFound([]));
-  }, [ready]);
+    void look();  // afresh each time it opens, what it found before shown meanwhile
+  }, [ready, look]);
   useEffect(() => {
     const keys = (event: globalThis.KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
@@ -111,7 +117,7 @@ export function Find({ ready, children }: { ready: boolean; children: ReactNode 
     <Opener.Provider value={show}>
       {children}
       {ready && <Palette open={open} onClose={() => setOpen(false)} query={query} onQuery={setQuery}
-                         options={options} onChoose={choose} />}
+                         options={options} onChoose={choose} looking={!looked} />}
     </Opener.Provider>
   );
 }

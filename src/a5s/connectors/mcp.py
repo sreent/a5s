@@ -153,6 +153,10 @@ class Declared(BaseModel):
     text_fields: list[str] = []
     outside: list[str] = []
     extract: dict[str, str] = {}
+    # what a change's answer says once it's made, field by field, such as `locked: true`: an
+    # answer naming its record but saying otherwise is the change taken in hand, not made, as a
+    # device management queues a lock until the device next connects (round 13, D2)
+    made: dict[str, str | int | float | bool] = {}
 
     @model_validator(mode="after")
     def _consistent(self) -> Declared:
@@ -168,9 +172,11 @@ class Declared(BaseModel):
         if missing := [f for f in self.text_fields if f not in given]:
             raise ValueError(f"text_fields {', '.join(missing)} aren't among its arguments")
         returned = set(self.returns)
-        named = [f for f in (self.record_field, *self.handles, *self.outside) if f]
+        named = [f for f in (self.record_field, *self.handles, *self.outside, *self.made) if f]
         if missing := [f for f in named if f not in returned]:
             raise ValueError(f"{', '.join(missing)} aren't among the fields it returns")
+        if self.made and not self.action:
+            raise ValueError("only a tool that changes a record says what its answer says once made")
         return self
 
 
@@ -499,6 +505,12 @@ def answered(result: dict, tool: Served) -> Any:
         said = " ".join(texts)[:300]
         return {"error": f"the {tool.server} MCP server didn't say it made the change"
                          + (f": {said}" if said else "")}
+    if tool.action and (unmade := [f"{name} is {json.dumps(passed.get(name))}, not {json.dumps(value)}"
+                                   for name, value in tool.made if passed.get(name) != value]):
+        # taken in hand, not made, such as a lock queued until the device next connects: never
+        # counted, reported or sampled as made, and the agent says what the server answered
+        return {"error": f"the {tool.server} MCP server has the change in hand, but hasn't made it "
+                         f"yet: {'; '.join(unmade)}"}
     if left and isinstance(passed, dict):
         passed = {**passed, "a5s_left_out": f"what a5s doesn't pass on: {', '.join(left)}"}
     return passed
@@ -512,13 +524,15 @@ class Served(Tool):
     server: str = ""
     calls: str = ""
     returns: tuple[str, ...] = ()
+    made: tuple[tuple[str, str | int | float | bool], ...] = ()
 
     @property
     def schema_hash(self) -> str:
         import hashlib
-        return hashlib.sha256(canonical({"tool": super().schema_hash, "mcp": {
-            "server": self.server, "calls": self.calls, "returns": sorted(self.returns)}}).encode()
-        ).hexdigest()
+        mcp: dict[str, Any] = {"server": self.server, "calls": self.calls, "returns": sorted(self.returns)}
+        if self.made:  # what counts as made is what its approvers pinned, as what it returns
+            mcp["made"] = dict(self.made)
+        return hashlib.sha256(canonical({"tool": super().schema_hash, "mcp": mcp}).encode()).hexdigest()
 
 
 def tools(declaration: Declaration, *, sandboxed: bool = False,
@@ -571,7 +585,7 @@ def _tool(name: str, d: Declared, session: Session | None) -> Served:
                   handles=tuple(d.handles), record_arg=d.record_arg, record_field=d.record_field,
                   action=d.action, idempotent=d.idempotent, outside=tuple(d.outside),
                   extract=dict(d.extract), server=d.server, calls=d.calls,
-                  returns=tuple(d.returns))
+                  returns=tuple(d.returns), made=tuple(sorted(d.made.items())))
     holder.append(tool)
     return tool
 

@@ -90,7 +90,7 @@ def check(verifier: Verifier, scenario: Any, client_id: str, token: str, action:
     audience = claims.get("aud")
     if client_id not in ([audience] if isinstance(audience, str) else audience or []):
         raise Refused(401, "that sign-in is for something else")
-    if not 16 <= len(salt) <= 128 or claims.get("nonce") != nonce(action, instance, salt):
+    if not sealing.salted(salt) or claims.get("nonce") != nonce(action, instance, salt):
         raise Refused(403, f"your sign-in wasn't to {action} {instance}")
     if not isinstance(claims.get("auth_time"), int | float) or any(
             not isinstance(claims.get(c), int | float) or now - claims[c] > FRESH
@@ -121,7 +121,7 @@ def record(conn: db.Connection, action: str, instance: str, person: str, token: 
          claims["iss"])).fetchone()
     if row is None:
         raise Refused(409, "that sign-in has been used: sign in again")
-    ledger.append(conn, {"kind": "admin", "action": "ask", "run": None, "instance": instance,
+    ledger.append(conn, {"kind": "admin", "action": "ask-status", "run": None, "instance": instance,
                          "acts_for": [], "decision": "record",
                          "args": {"to": action, "by": person, "identity": verified(action),
                                   "issuer": claims["iss"], "token_sha256": hashed}})
@@ -147,7 +147,8 @@ def carry_out(conn: db.Connection, verifier: Verifier | None, scenario: Any,
         try:
             why = sealing.check(verifier, scenario, client_id, row["proof"],
                                 nonce(action, instance, row["salt"]), who,
-                                factor=action == "resume")  # suspending only makes a5s safer
+                                factor=action == "resume",  # suspending only makes a5s safer
+                                recorded=(row["token"], row["nonce"]), salt=row["salt"])
         except sealing.Unchecked:
             continue
         inst = conn.execute(f"select {COLUMNS} from instances where id = %s for update",

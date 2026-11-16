@@ -7,12 +7,12 @@ import { useEffect, useState } from "react";
 import { type Catalogue, type Figures, get, type Instance, type RunLine, type RunsPage, send,
          type Standing, type StatusAsked } from "../api";
 import { hashed, salted, signInFor, takeAct } from "../auth";
-import { Confirm, rung, useToast } from "../design";
+import { Confirm, rung, Skeleton, useToast } from "../design";
 import { Link } from "../router";
 import { shellOf } from "../Sidebar";
 import { RunsByDay } from "../RunsByDay";
 import { aboutInstance, type Loaded, OutcomeBadge, PageHead, people, plural, runners, share, StatusBadge,
-         useLoad, Waiting, WaitList, when } from "../ui";
+         useLoad, Waiting, WaitList, when, Wide } from "../ui";
 
 /** What of it waits: the changes it asked for, its samples for a grade, and its notebook, each
  * where it's done, for the viewer or for others. */
@@ -29,11 +29,9 @@ function Waits({ standing }: { standing: Loaded<Standing> }) {
 /** Suspending it, which stops it at its next step, or resuming it, which only whoever suspended
  * it may: each signed in afresh for that alone, and carried out by a5s within a minute, once it
  * has checked the sign-in again (core/suspension.py). */
-function Stopping({ id, standing, problem, setProblem }: {
-  id: string; standing?: Standing; problem?: string; setProblem: (problem: string) => void;
+function Stopping({ id, standing, settles, problem, setProblem }: {
+  id: string; standing?: Standing; settles: boolean; problem?: string; setProblem: (problem: string) => void;
 }) {
-  const shell = useLoad(shellOf, []);
-  const settles = Boolean(shell.data?.pages.includes("settings"));  // approves versions of the settings
   const go = (action: "suspend" | "resume") => () => {
     const salt = salted();  // the act's nonce, as core/suspension.py's `nonce` makes it
     hashed(`a5s ${action} instance ${id} ${salt}`)
@@ -70,7 +68,7 @@ function Reach({ inst }: { inst: Instance }) {
     <section className="card" id="reach">
       <h2>How far it may act</h2>
       {parts.length === 0 ? <p>Level {inst.level}, {rung(inst.level)}, in no part.</p> : (
-        <table className="grid-table compact">
+        <Wide label="How far it may act"><table className="grid-table compact">
           <thead><tr><th>Part</th><th>Level</th><th>Each type of change at its own</th></tr></thead>
           <tbody>{parts.map(([part, level]) => {
             const own = Object.entries(acts[part] ?? {});
@@ -84,7 +82,7 @@ function Reach({ inst }: { inst: Instance }) {
               </tr>
             );
           })}</tbody>
-        </table>
+        </table></Wide>
       )}
       <p className="note">As the settings its parts' owners signed give it. A type of change at level 2 is made on its own only where graded samples have raised a5s's cap on it; until they do, a person decides each.</p>
     </section>
@@ -132,12 +130,12 @@ function Breakdown({ figures }: { figures: Figures }) {
       <section className="card">
         <h2>How runs ended</h2>
         {figures.ended.length === 0 ? <p className="note">No runs in this period.</p> : (
-          <table className="grid-table compact">
+          <Wide label="What it did, by kind"><table className="grid-table compact">
             <thead><tr><th>Started by</th><th>Ended</th><th className="num">Runs</th></tr></thead>
             <tbody>{figures.ended.map((e) => (
               <tr key={`${e.kind}-${e.outcome}`}><td>{e.kind ?? "other"}</td><td><OutcomeBadge outcome={e.outcome} /></td><td className="num">{e.runs}</td></tr>
             ))}</tbody>
-          </table>
+          </table></Wide>
         )}
       </section>
       <section className="card">
@@ -198,7 +196,7 @@ function Runs({ instance }: { instance: string }) {
       {first.data?.fewer && <p className="note">It serves fewer than {first.data.fewer} people, so its runs show only in its daily figures until the data protection officer agrees to name whom runs act for: one by one, each would say what one of them did.</p>}
       {first.data && !first.data.fewer && runs.length === 0 && <p className="note">No runs you may see.</p>}
       {runs.length > 0 && (
-        <table className="grid-table runs-table">
+        <Wide label="Its runs"><table className="grid-table runs-table">
           <thead><tr><th>When</th><th>Started by</th><th>For</th><th>Ended</th><th className="num">Tokens</th><th /></tr></thead>
           <tbody>{runs.map((run) => (
             <tr key={run.run}>
@@ -210,7 +208,7 @@ function Runs({ instance }: { instance: string }) {
               <td><Link to={{ page: "run", run: run.run }} label={`The run at ${when(run.opened_at)}`}>Open</Link></td>
             </tr>
           ))}</tbody>
-        </table>
+        </table></Wide>
       )}
       {hidden > 0 && <p className="note">And {plural(hidden, "run")} that read records you may not see.</p>}
       {error && <p className="problem">{error}</p>}
@@ -244,13 +242,26 @@ export function InstancePage({ id }: { id: string }) {
   const figures = useLoad(() => get<Figures>(
     `/studio/api/instances/${encodeURIComponent(id)}?days=${days}&zone=${encodeURIComponent(ZONE)}`), [id, days]);
   const inst = catalogue.data?.agents.flatMap((a) => a.instances).find((i) => i.id === id);
+  const shell = useLoad(shellOf, []);
+  const settles = Boolean(shell.data?.pages.includes("settings"));  // approves versions of the settings
+  // what it is and what may be done with it arrive together, so nothing below them moves as
+  // each comes, as it did by a third of a phone's screen (round 13, C11)
+  const head = Boolean(inst && standing.data && (shell.data || shell.error));
+  if (standing.error) {  // refused, or none: said once, not by each part of the page (round 13, C10)
+    return <><PageHead crumbs={[{ label: "Agents", to: { page: "agents" } }]} title="An instance" />
+      <Waiting error={standing.error} /></>;
+  }
   return (
     <>
       <PageHead crumbs={[{ label: "Agents", to: { page: "agents" } },
                          ...(inst ? [{ label: inst.agent, to: { page: "agent" as const, agent: inst.agent } }] : [])]}
-                title={id} badges={inst && <StatusBadge status={inst.status} />}>
-        {inst && <div className="meta"><span>{aboutInstance(inst)}</span><span>run by {runners(inst)}</span>{standing.data?.suspended_by && <span>suspended by {standing.data.suspended_by}</span>}{!inst.current && <span className="badge warn">still on release {inst.release}</span>}</div>}
-        <Stopping id={id} standing={standing.data} problem={problem} setProblem={setProblem} />
+                title={inst?.id ?? "An instance"} badges={inst && <StatusBadge status={inst.status} />}>
+        {head && inst ? (
+          <>
+            <div className="meta"><span>{aboutInstance(inst)}</span><span>run by {runners(inst)}</span>{standing.data?.suspended_by && <span>suspended by {standing.data.suspended_by}</span>}{!inst.current && <span className="badge warn">still on release {inst.release}</span>}</div>
+            <Stopping id={id} standing={standing.data} settles={settles} problem={problem} setProblem={setProblem} />
+          </>
+        ) : <Skeleton lines={2} title={false} bare />}
         <label className="period">Over the last{" "}
           <select value={days} onChange={(e) => setDays(Number(e.target.value))}>
             <option value={7}>7 days</option><option value={30}>30 days</option><option value={90}>90 days</option>
@@ -259,7 +270,7 @@ export function InstancePage({ id }: { id: string }) {
       </PageHead>
       <div className="two-up">
         <Waits standing={standing} />
-        {inst && <Reach inst={inst} />}
+        {inst ? <Reach inst={inst} /> : <section className="card" id="reach"><Skeleton lines={3} /></section>}
       </div>
       {!figures.data && <Waiting error={figures.error} />}
       {figures.data && (

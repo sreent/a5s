@@ -10,7 +10,7 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { AgentMap } from "../AgentMap";
 import { type CoAuthors, type Draft, get, type Offer, type Plan, type Sandbox, send, whole } from "../api";
 import { CASES, keptCases, read, withCase } from "../definition";
-import { JourneyPath, type Stage } from "../design";
+import { Confirm, JourneyPath, type Stage, useToast } from "../design";
 import { Designer } from "../Designer";
 import { Icon } from "../icons";
 import { Publish } from "../Publish";
@@ -18,6 +18,9 @@ import { go, Link, type Route } from "../router";
 import { shellOf } from "../Sidebar";
 import { TryIt } from "../TryIt";
 import { useLoad, Waiting, when } from "../ui";
+import { keepUnkept, keptNow, unkept } from "../unkept";
+
+type Unkept = { files: Files; plan: Plan | null };  // what's changed, until a5s has kept it
 
 type Files = Record<string, string>;
 type View = "design" | "instructions" | "try" | "files" | "publish";
@@ -256,29 +259,45 @@ export function DraftPage({ id }: { id: string }) {
   const [revision, setRevision] = useState(0);  // each time a change is kept
   const [view, setView] = useState<View>("design");
   const [asked, setAsked] = useState(0);  // each time someone asks to see what stops its release
+  const toast = useToast();
   const latest = useRef(0);
   const timer = useRef<number | undefined>(undefined);
+  const pending = useRef<Files | null>(null);  // waiting to be kept, sent at once if they leave
+  const store = `draft.${id}`;
   const planned = useRef<{ plan: Plan; changed: boolean }>({ plan: { parts: [], serves: [], asks: [] }, changed: false });
   useEffect(() => {
     if (loaded.data && files === null) {
-      setFiles(loaded.data.files);
-      setPlan(whole(loaded.data.plan));
-      planned.current = { plan: whole(loaded.data.plan), changed: false };
+      const left = loaded.data.yours ? unkept<Unkept>(store) : null;  // from before they signed in again
+      setFiles(left?.files ?? loaded.data.files);
+      setPlan(left?.plan ?? whole(loaded.data.plan));
+      planned.current = { plan: left?.plan ?? whole(loaded.data.plan), changed: Boolean(left?.plan) };
       const { problems, preview, signers, released, at_work } = loaded.data;
       setSaid({ problems, preview, signers, released, at_work });
+      if (left) {
+        setKept("keeping");
+        void keep(left.files, ++latest.current);
+        toast("What you'd changed and a5s hadn't kept is back, and kept now.");
+      }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loaded.data, files]);
-  useEffect(() => () => window.clearTimeout(timer.current), []);
+  useEffect(() => () => {  // leaving the draft: what's waiting to be kept goes now, not never
+    window.clearTimeout(timer.current);
+    if (pending.current) void keep(pending.current, latest.current);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => {  // the view opened takes the keyboard's focus, as a section scrolled to did
     if (view === "try" || view === "publish") document.getElementById(view === "try" ? "try" : "publishing")?.focus();
   }, [view]);
 
   const keep = async (next: Files, mine: number) => {
+    if (pending.current === next) pending.current = null;
     try {
       const sending = planned.current.changed ? planned.current.plan : undefined;  // only once it changes
       const saved = await send<Draft>("PUT", `/studio/api/drafts/${encodeURIComponent(id)}`,
                                       { files: next, ...(sending ? { plan: sending } : {}) });
       if (mine !== latest.current) return;  // a later change is on its way
+      keptNow(store);  // a5s has it: the tab needn't keep it
       if (sending === planned.current.plan) planned.current.changed = false;
       const { problems, preview, signers, released, at_work } = saved;
       setSaid({ problems, preview, signers, released, at_work });
@@ -296,6 +315,8 @@ export function DraftPage({ id }: { id: string }) {
   const change = (next: Files) => {
     setFiles(next);
     setKept("keeping");
+    pending.current = next;
+    keepUnkept(store, { files: next, plan: planned.current.changed ? planned.current.plan : null });
     const mine = ++latest.current;
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => keep(next, mine), WAIT);
@@ -312,10 +333,16 @@ export function DraftPage({ id }: { id: string }) {
     planned.current = { plan: next, changed: true };
     if (files) change(nextFiles ?? files);
   };
-  const drop = async () => {
-    if (!window.confirm("Drop this draft? It can't be had back.")) return;
-    await send("DELETE", `/studio/api/drafts/${encodeURIComponent(id)}`);
-    go({ page: "agents" });
+  const drop = async () => {  // asked first, as what can't be undone (round 13, C13)
+    try {
+      await send("DELETE", `/studio/api/drafts/${encodeURIComponent(id)}`);
+      keptNow(store);
+      pending.current = null;
+      toast(`The draft of ${loaded.data?.agent ?? "the agent"} is gone.`);
+      go({ page: "agents" });
+    } catch (e) {
+      setKept({ problem: (e as Error).message });
+    }
   };
   const open = (to: View | "problems") => {
     if (to === "problems") {
@@ -351,7 +378,9 @@ export function DraftPage({ id }: { id: string }) {
             ))}
           </div>
           <HandOver id={id} />
-          <button type="button" onClick={drop}>Drop the draft</button>
+          <Confirm label="Drop the draft" danger title={`Drop the draft of ${draft?.agent ?? "this agent"}?`}
+                   about="Its files, its plan and what was tried on it go, and can't be had back. The agent itself, and any release of it, stay as they are."
+                   confirm="Drop the draft" onConfirm={drop} />
           <button type="button" className="primary" id="to-publish" aria-pressed={view === "publish"} onClick={() => setView("publish")}>Publish it</button>
         </>
       )}

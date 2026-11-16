@@ -400,7 +400,8 @@ def names_of(found: list[str]) -> str:
 
 
 def card(serial: int, found: list[dict], link: str) -> dict:
-    """The card an approver gets in Teams. It only opens the core's page, where they decide."""
+    """The card an approver gets in Teams or Slack. It only opens the core's page, where they
+    decide."""
     return {
         "type": "AdaptiveCard",
         "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
@@ -447,7 +448,7 @@ def check(verifier: Verifier, scenario: Any, client_id: str, token: str, version
     audience = claims.get("aud")
     if client_id not in ([audience] if isinstance(audience, str) else audience or []):
         raise Refused(401, "that sign-in is for something else")
-    if not 16 <= len(salt) <= 128 or claims.get("nonce") != nonce(version, salt):
+    if not sealing.salted(salt) or claims.get("nonce") != nonce(version, salt):
         raise Refused(403, "your sign-in wasn't to approve this version")
     if not isinstance(claims.get("auth_time"), int | float) or any(
             not isinstance(claims.get(c), int | float) or now - claims[c] > FRESH

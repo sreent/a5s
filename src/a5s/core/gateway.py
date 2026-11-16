@@ -109,6 +109,7 @@ from a5s.core.identity import (
 )
 from a5s.core.matrix import Matrix
 from a5s.core.policy import Decision, PolicyEngine
+from a5s.core.slack import Slack
 from a5s.core.teams import Teams
 from a5s.core.values import Value
 from a5s.definitions import Context, Definition
@@ -130,7 +131,7 @@ WHY = {  # why an agent's run didn't get its message through, in words people re
     "before it finished"}
 # The chats a5s writes to itself, as each agent's bot. People collect from the local
 # channel, the command line's and the web chat's, instead.
-PUSHED = ("teams", "matrix")
+PUSHED = ("teams", "matrix", "slack")
 _STATUS_AFTER = {"suspend": "suspended", "retire": "retired"}  # resume and restore: active
 # Outgoing text keeps only words and the scenario's own record links. Anything that
 # could fetch or point somewhere else goes: images, HTML, and links in any form,
@@ -278,6 +279,7 @@ class Gateway:
     identity: Verifier | None = None  # for the local channel's sign-in; else development only
     teams: Teams | None = None
     matrix: Matrix | None = None
+    slack: Slack | None = None
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)  # when obligations and schedules are due
     releases: releases.Releases | None = None  # the release a5s is, which must be approved here
     breakers: Breakers = field(default_factory=Breakers)  # models not called for now (core/breakers.py)
@@ -469,6 +471,10 @@ class Gateway:
                 and who is not None and (user := self.matrix.user_of(who))):
             return {"channel": "matrix", "reply_to": {},
                     "start": {"person": person, "agent": agent, "user": user}}
+        if (latest is not None and latest["channel"] == "slack" and self.slack is not None
+                and who is not None and (user := self.slack.user_of(who))):
+            return {"channel": "slack", "reply_to": {},  # its app opens a direct message
+                    "start": {"person": person, "agent": agent, "user": user}}
         return local  # such as in Teams, where only people who added the agent's app can hear it
 
     def at_once(self, conn: db.Connection, person: str, agent: str | None, *,
@@ -487,8 +493,9 @@ class Gateway:
         if (channel not in PUSHED or self.chat(channel) is None
                 or chats.gone(conn, channel, conversation["reply_to"], conversation["at"])):
             return None
-        return {"channel": channel,
-                "reply_to": {k: v for k, v in conversation["reply_to"].items() if k != "activity"}}
+        return {"channel": channel,  # a new message, never a reply to one, nor in its thread
+                "reply_to": {k: v for k, v in conversation["reply_to"].items()
+                             if k not in ("activity", "ts", "thread")}}
 
     def able(self, conn: db.Connection) -> dict[str, bool]:
         """Which instances can act now: active, as signed and released, in a release this
@@ -549,9 +556,9 @@ class Gateway:
 
         return is_open
 
-    def chat(self, channel: str) -> Teams | Matrix | None:
+    def chat(self, channel: str) -> Teams | Matrix | Slack | None:
         """A chat a5s writes to itself, if it's on here."""
-        return {"teams": self.teams, "matrix": self.matrix}.get(channel)
+        return {"teams": self.teams, "matrix": self.matrix, "slack": self.slack}.get(channel)
 
     @property
     def public_url(self) -> str:
@@ -3091,7 +3098,8 @@ def create_app(gw: Gateway) -> FastAPI:
                 card: dict | None = None) -> str | None:
         """Send text through a chat a5s writes to itself, such as Teams or Matrix, starting the
         conversation first if the route says to, and record whether it got there. The problem,
-        if not. In Teams, a card goes instead of the text, if there is one: elsewhere, the text."""
+        if not. In Teams and Slack, a card goes with or instead of the text, if there is one:
+        elsewhere, the text."""
         channel, problem, started = route["channel"], None, False
         chat = gw.chat(channel)
         if chat is None:
@@ -3194,6 +3202,8 @@ def create_app(gw: Gateway) -> FastAPI:
                     for u in joined if not matrix.agent_of(u)]
             if route["channel"] == "teams" and (teams := gw.teams) is not None:
                 return teams.members(reply_to, gw.scenario)
+            if route["channel"] == "slack" and (slack := gw.slack) is not None:
+                return slack.members(reply_to, gw.scenario)
         except (httpx.HTTPError, ValueError, KeyError):
             log.warning("couldn't read who's in a %s chat", route["channel"])
         return None

@@ -5,7 +5,7 @@
 import { AgentMap } from "../AgentMap";
 import { type AgentKnown, type Call, get, type Run, usesOf } from "../api";
 import { RunTimeline, type Step, type Tone } from "../design";
-import { OutcomeBadge, outcomeTone, PageHead, people, plural, risk, time, useLoad, Waiting, when } from "../ui";
+import { an, OutcomeBadge, outcomeTone, PageHead, people, plural, risk, time, useLoad, Waiting, when } from "../ui";
 
 const DECIDED: Record<string, string> = { allow: "allowed", deny: "refused", hold: "held for a decision" };
 
@@ -55,7 +55,7 @@ export function RunPage({ id }: { id: string }) {
   const started = run ? Object.entries(run.started_by).filter(([key]) => key !== "kind") : [];
   return (
     <>
-      <PageHead crumbs={crumbs} title={run ? `A ${run.trigger ?? "run"}, ${when(run.opened_at)}` : "A run"}
+      <PageHead crumbs={crumbs} title={run ? `${an(run.trigger ?? "run")}, ${when(run.opened_at)}` : "A run"}
                 badges={run && <OutcomeBadge outcome={run.outcome} />} />
       {!run && <Waiting error={error} />}
       {run && (

@@ -16,7 +16,7 @@ The person chooses an agent and writes to it: the chat lists only the agents tha
 
 ![Ana asking the assistant about a record](images/a5s-chat.png)
 
-The same agents can work through Matrix or Teams where the deployment enables them. The command line and web chat use the local channel.
+The same agents can work through Matrix, Teams or Slack where the deployment enables them. The command line and web chat use the local channel.
 
 ### 3. Ask for longer work, then confirm it
 
@@ -77,7 +77,7 @@ Today that path is deliberately code-led:
 7. Deploy the approved release through the existing container or Helm path.
 8. Watch it in the studio, and suspend or resume it through the existing authorised controls.
 
-The settings app and the approval, decision, grading, notebook and officer pages support that path. The studio does not hold signing keys or publish around them.
+The studio's settings, and its pages for approving, deciding, grading, the notebook and the officer's requests, support that path. The studio does not hold signing keys or publish around them.
 
 ## What is not here yet
 

@@ -78,8 +78,19 @@ export function reread(): void {
   listeners.forEach((then) => then());
 }
 
+let moved = false;  // went to another page within the studio: its heading takes the focus
+
+/** Whether the studio has just gone to another page, once: its heading takes the keyboard's
+ * focus, so a screen reader says where they are, as a page loaded afresh would (round 13, C7). */
+export function justMoved(): boolean {
+  const was = moved;
+  moved = false;
+  return was;
+}
+
 export function go(route: Route): void {
   history.pushState(null, "", href(route));
+  moved = true;
   listeners.forEach((then) => then());
   window.scrollTo(0, 0);
 }
@@ -87,12 +98,16 @@ export function go(route: Route): void {
 export function useRoute(): Route {
   const [route, setRoute] = useState(() => parse(location.pathname, location.search));
   useEffect(() => {
-    const moved = () => setRoute(parse(location.pathname, location.search));
-    listeners.add(moved);
-    window.addEventListener("popstate", moved);
+    const back = () => {  // back or forward, as a link
+      moved = true;
+      setRoute(parse(location.pathname, location.search));
+    };
+    const reread = () => setRoute(parse(location.pathname, location.search));
+    listeners.add(reread);
+    window.addEventListener("popstate", back);
     return () => {
-      listeners.delete(moved);
-      window.removeEventListener("popstate", moved);
+      listeners.delete(reread);
+      window.removeEventListener("popstate", back);
     };
   }, []);
   return route;

@@ -517,7 +517,6 @@ export type Home = {
   you: string;
   waiting: Waiting[];
   drafts: DraftLine[];
-  catalogue: boolean;
   authoring: boolean;
 };
 
@@ -544,7 +543,6 @@ export type Instance = {
   people: number;
   owner: string | null;
   deputy: string | null;
-  asks: string[];
 };
 
 // How far an agent's judge agrees with people, on the samples both graded (core/judging.py).

@@ -163,7 +163,7 @@ def of_instance(conn: db.Connection, gw: Any, person: Person, inst: dict) -> lis
     if others:
         found.append({"kind": "held", "what": f"{_changes(len(others))} for someone else's "
                       "decision, as its parts' owners and delegates decide them", "why": [],
-                      "go": None, "since": others[0]["proposed_at"]})
+                      "go": None})  # not since when: theirs to act on, not the viewer's (round 13, B5)
     graded = samples.gradeable(conn, scenario, person, MOST + 1, inst["id"]) \
         if samples.GRADER in person.roles else []
     if graded:
@@ -179,8 +179,7 @@ def of_instance(conn: db.Connection, gw: Any, person: Person, inst: dict) -> lis
     if rest and len(graded) <= MOST:  # other graders, outside the team that built it, grade them
         found.append({"kind": "graded", "what": f"{len(rest)} {'sample' if len(rest) == 1 else 'samples'} "
                       f"of its work {'waits' if len(rest) == 1 else 'wait'} for a grade, from "
-                      "graders outside the team that built it", "why": [], "go": None,
-                      "since": min(r["drawn_at"] for r in rest)})
+                      "graders outside the team that built it", "why": [], "go": None})
     if notebook.keeps(person, inst):
         notes = [r for r in conn.execute("select read_records, sources from notebook where "
                                          "instance_id = %s", (inst["id"],))

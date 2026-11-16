@@ -218,8 +218,8 @@ def router(gw: Any) -> APIRouter:
         with db.transaction(gw.url) as conn:
             asks.settle(conn, gw.scenario, studio.instances(conn))  # served since, or lapsed
             return {"you": person.name, "waiting": homes.waiting(conn, gw, person),
-                    "drafts": drafts.mine(conn, person), "catalogue": True,
-                    "authoring": drafts.authors(person)}
+                    "drafts": drafts.mine(conn, person),
+                    "authoring": drafts.may_author(person, None)}  # a new agent, as the catalogue says
 
     @api.get("/studio/api/you", **shapes.answers(shapes.You))
     def studio_you(person: Annotated[Person, Depends(someone)]) -> dict:

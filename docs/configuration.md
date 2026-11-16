@@ -90,7 +90,7 @@ The tests check that neither compose nor the chart sets a setting to its default
 | `A5S_OIDC_PERSON_CLAIM` | `preferred_username` | text | The claim that says who someone is, as the directory knows them |
 | `A5S_OIDC_METADATA_URL` | none | an http(s):// address | Where the provider's metadata is, if not where the issuer says |
 | `A5S_OIDC_DIRECTORY_PREFIX` | none | text | What to take off the person claim to find someone in the directory |
-| `A5S_OIDC_MFA` | none | claim:value,value, such as amr:mfa | The second factor what counts needs a sign-in to show, as the claim and the values that show it |
+| `A5S_OIDC_MFA` | none | claim:value,value, such as amr:mfa, acr:gold or acrs:c1 | The second factor what counts needs a sign-in to show, as the claim and the values that show it: a level (`acr`) or an authentication context (`acrs`) the pages ask the provider for |
 | `A5S_OIDC_GROUPS_CLAIM` | `groups` | text | The claim sign-ins show groups in, for the roles the settings give them; set empty for none |
 | `A5S_WEBCHAT_CLIENT_ID` | none | text | The web chat's client at the identity provider, a public one |
 
@@ -104,6 +104,14 @@ The tests check that neither compose nor the chart sets a setting to its default
 | `A5S_TEAMS_BOTS` | none | a JSON list | Several bots, one for each agent, instead: a JSON list of {agent, app_id, secret_env} |
 | `A5S_TEAMS_TENANT_ID` | none | text | The organisation's tenant: messages from any other are refused |
 | `A5S_TEAMS_SERVICE_HOSTS` | `smba.trafficmanager.net` | hosts, by commas | The hosts a5s sends Teams replies to, and no other |
+
+### Slack
+
+| Variable | Default | Takes | What it sets |
+| --- | --- | --- | --- |
+| `A5S_SLACK_BOTS` | none | a JSON list | An app for each agent, which turns Slack on: a JSON list of {agent, app_id, secret_env, token_env}, its signing secret and bot token each in the variable it names |
+| `A5S_SLACK_TEAM` | none | text | The organisation's workspace, by its team id: events from any other are refused |
+| `A5S_SLACK_API` | `https://slack.com/api` | an http(s):// address | Where a5s calls Slack's Web API |
 
 ### Matrix
 
@@ -166,6 +174,8 @@ The tests check that neither compose nor the chart sets a setting to its default
 | --- | --- |
 | `A5S_DB_<PART>_PASSWORD` | Each part's database password, which setup gives its role |
 | `A5S_TEAMS_SECRET_<AGENT>` | A bot's secret, where A5S_TEAMS_BOTS names it |
+| `A5S_SLACK_SECRET_<AGENT>` | An app's signing secret, where A5S_SLACK_BOTS names it |
+| `A5S_SLACK_TOKEN_<AGENT>` | An app's bot token, where A5S_SLACK_BOTS names it |
 | `A5S_MCP_<SERVER>_TOKEN` | An MCP server's bearer token, where the scenario's mcp.yaml names it as the server's token_env |
 <!-- end of a5s config --markdown -->
 

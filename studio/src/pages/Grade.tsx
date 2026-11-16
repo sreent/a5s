@@ -11,6 +11,9 @@ import { hashed, salted, signInFor, takeAct } from "../auth";
 import { Icon } from "../icons";
 import { useToast } from "../design";
 import { PageHead, useLoad, Waiting } from "../ui";
+import { keepUnkept, keptNow, unkept } from "../unkept";
+
+const CHOSEN = "grades";
 
 type Grade = "right" | "wrong" | "critical";
 
@@ -79,7 +82,8 @@ function Card({ sample, chosen, choose }: {
 export function GradePage() {
   const toast = useToast();
   const [status, setStatus] = useState<string>();
-  const [chosen, setChosen] = useState<Map<number, Grade>>(new Map());
+  // the grades chosen, kept in the tab until they're sent, so signing in again gives them back
+  const [chosen, setChosen] = useState<Map<number, Grade>>(() => new Map(unkept<[number, Grade][]>(CHOSEN) ?? []));
   const [acted, setActed] = useState(false);  // back from signing in to grade: sent first
   useEffect(() => {
     const act = takeAct();
@@ -89,6 +93,8 @@ export function GradePage() {
     }
     send<Graded>("POST", "/grade/samples", { grades: act.grades, salt: act.salt })
       .then((made) => {
+        keptNow(CHOSEN);
+        setChosen(new Map());
         const given = Object.values(made.grades);
         const said = given.length === 1 ? `Graded ${given[0]}.` : `Graded ${given.length} samples.`;
         setStatus(said);
@@ -105,6 +111,8 @@ export function GradePage() {
     if (grade) next.set(sample, grade);
     else next.delete(sample);
     setChosen(next);
+    if (next.size) keepUnkept(CHOSEN, [...next.entries()]);
+    else keptNow(CHOSEN);
     setStatus(next.size ? `${next.size} chosen: send them when you're ready.` : "");
   };
 

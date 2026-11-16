@@ -97,7 +97,7 @@ def router(gw: Any) -> APIRouter:
         """A decision on held changes, signed through the identity provider for that decision on
         exactly those changes. It's recorded once, and sealed. The gateway makes what's approved."""
         digests = sorted(set(body.proposals))
-        if not 1 <= len(digests) <= 20 or not all(re.fullmatch(r"[0-9a-f]{64}", d)
+        if not 1 <= len(digests) <= proposals.MOST_DECIDED or not all(re.fullmatch(r"[0-9a-f]{64}", d)
                                                   for d in digests):
             raise HTTPException(400, "name from one to 20 changes to decide, by their digests")
         reason = None  # as the decider wrote it, which their sign-in covers: the core cleans it

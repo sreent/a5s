@@ -149,6 +149,22 @@ def ownerless(conn: db.Connection, gw: Any) -> dict[str, list[dict[str, Any]]]:
     return {"agents": agents, "instances": instances, "parts": parts}
 
 
+def _seen(act: dict, conn: db.Connection, known: set[str], viewer: Person | None) -> dict | None:
+    """An act as the viewer may see it: none of an agent they may not know of, an act on an
+    instance by its agent as much as one naming it; and what it did to an instance, such as a
+    grade, the settings applied or who suspended it, only for those who may watch it (round 13,
+    B1). Without a viewer, the whole of it."""
+    about, instance = act["about"] or {}, act.get("instance")
+    inst = conn.execute("select id, definition, owner, deputy, parts from instances where id = %s",
+                        (instance,)).fetchone() if instance else None
+    agent = about.get("agent") or (inst["definition"] if inst else None)
+    if agent is not None and agent not in known:
+        return None
+    if instance and viewer is not None and (inst is None or not studio.watches(inst, viewer)):
+        return {**act, "about": {}}  # that it happened, not what it did
+    return act
+
+
 def page(conn: db.Connection, gw: Any, now: datetime, days: int = DAYS,
          viewer: Person | None = None) -> dict[str, Any]:
     """All the page shows: to a viewer, only of the agents they may know of (core/studio.py's
@@ -163,7 +179,7 @@ def page(conn: db.Connection, gw: Any, now: datetime, days: int = DAYS,
         "select distinct jsonb_object_keys(parts) as part from instances")]
     roles = [row["role"] for row in audit.roles_of(gw.scenario, parts, sorted(known))]
     report = audit.report(conn, gw.scenario, sorted(known), since=now - timedelta(days=days))
-    acts = [a for a in report["acts"] if (a["about"] or {}).get("agent") in (None, *known)]
+    acts = [a for a in (_seen(a, conn, known, viewer) for a in report["acts"]) if a is not None]
     shown = audit.Shown(gw.scenario, audit.key(conn), names=gw.data_protection(conn).audit_names)
     gone = ownerless(conn, gw)
     gone = {**gone, "agents": [a for a in gone["agents"] if a["agent"] in known],

@@ -59,7 +59,7 @@ def check(verifier: Verifier, scenario: Any, client_id: str, token: str, action:
     audience = claims.get("aud")
     if client_id not in ([audience] if isinstance(audience, str) else audience or []):
         raise Refused(401, "that sign-in is for something else")
-    if not 16 <= len(salt) <= 128 or claims.get("nonce") != nonce(action, person, salt):
+    if not sealing.salted(salt) or claims.get("nonce") != nonce(action, person, salt):
         raise Refused(403, f"your sign-in wasn't to {action} what a5s keeps about {person}")
     if not isinstance(claims.get("auth_time"), int | float) or any(
             not isinstance(claims.get(c), int | float) or now - claims[c] > FRESH
@@ -111,7 +111,8 @@ def take(conn: db.Connection, verifier: Verifier | None, scenario: Any,
                  (row["id"],))
     try:
         why = sealing.check(verifier, scenario, client_id, row["proof"],
-                            nonce(action, person, row["salt"]), row["officer"])
+                            nonce(action, person, row["salt"]), row["officer"],
+                            recorded=(row["token"], row["nonce"]), salt=row["salt"])
     except sealing.Unchecked:
         raise Refused(503, "the identity provider can't be reached just now to check the "
                            "officer's request: they ask again, on the core's page, once it can") from None

@@ -392,7 +392,8 @@ ADMIN = {"approve": "approved settings", "propose": "proposed settings",
          "restore": "restored an instance", "end-change": "ended a held change",
          "export": "exported someone's data", "erase": "erased someone's data",
          "archive": "archived a leaver", "request": "asked for a version of the settings",
-         "ask": "asked as the data protection officer", "refuse-sign-in": "a sign-in refused"}
+         "ask": "asked as the data protection officer", "refuse-sign-in": "a sign-in refused",
+         "ask-status": "asked to suspend or resume an instance", "describe": "described a new agent"}
 
 
 def roles_of(scenario: Any, parts: Iterable[str], agents: Iterable[str]) -> list[dict]:

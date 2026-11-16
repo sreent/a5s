@@ -1,10 +1,10 @@
 // What the studio's pages share: loading what a page shows, its heading with the way back, and
 // the badges that say what a tool does, how something stands, and how a run ended.
 
-import { type DependencyList, type ReactNode, useEffect, useState } from "react";
+import { type DependencyList, type ReactNode, useEffect, useRef, useState } from "react";
 import type { AgentUses, Instance, Tool, Waiting as Wait } from "./api";
 import { Skeleton } from "./design/feedback";
-import { inside, Link, type Route } from "./router";
+import { inside, justMoved, Link, type Route } from "./router";
 
 /** What a page shows, once loaded; while it loads again, as for another period, what it
  * showed before stays, `stale`, so nothing jumps. */
@@ -26,15 +26,41 @@ export function useLoad<T>(load: () => Promise<T>, deps: DependencyList): Loaded
   return { ...state, reload };
 }
 
+/** Words a5s said, as a sentence: its first letter a capital, but for a5s's own name, which
+ * Ocean no longer capitalises for every line (round 13, C10). */
+export function sentence(said: string): string {
+  return said.startsWith("a5s") ? said : said.charAt(0).toUpperCase() + said.slice(1);
+}
+
+/** A word with its article, as it's said: "an obligation", "a message" (round 13, C12). */
+export function an(word: string): string {
+  return `${/^[aeiou]/i.test(word) ? "An" : "A"} ${word}`;
+}
+
 /** While a page loads what it shows, its shape, still (Ocean's Skeleton); or what went wrong. */
-export function Waiting({ error }: { error?: string }) {
-  return error ? <p className="problem" role="status">{error}</p> : <Skeleton />;
+export function Waiting({ error, lines, title, rows, block }:
+  { error?: string; lines?: number; title?: boolean; rows?: number; block?: boolean }) {
+  return error ? <p className="problem" role="status">{sentence(error)}</p>
+    : <Skeleton lines={lines} title={title} rows={rows} block={block} />;
+}
+
+/** A table wider than its place scrolls sideways in its own frame, which the keyboard reaches,
+ * as Ocean's figures-scroll does, not the whole page, as it did on a phone (round 13, C5). */
+export function Wide({ label, children }: { label: string; children: ReactNode }) {
+  return <div className="figures-scroll" tabIndex={0} role="region" aria-label={label}>{children}</div>;
 }
 
 export type Crumb = { label: string; to: Route };
 
 export function PageHead({ crumbs = [], title, about, badges, children }:
   { crumbs?: Crumb[]; title: string; about?: string; badges?: ReactNode; children?: ReactNode }) {
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {  // each page its own title, for the tab, history and screen readers (round 13, C7)
+    document.title = `${title} · a5s studio`;
+  }, [title]);
+  useEffect(() => {
+    if (justMoved()) heading.current?.focus({ preventScroll: true });
+  }, []);
   return (
     <div className="page-head">
       {crumbs.length > 0 && (
@@ -45,7 +71,7 @@ export function PageHead({ crumbs = [], title, about, badges, children }:
         </nav>
       )}
       <div className="title-row">
-        <h1>{title}</h1>
+        <h1 ref={heading} tabIndex={-1}>{title}</h1>
         {badges}
       </div>
       {about && <p className="about">{about}</p>}

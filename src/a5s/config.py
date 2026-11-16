@@ -222,6 +222,7 @@ CORE = "The core and its parts"
 WORKERS = "Workers"
 SIGN_IN = "Signing in"
 TEAMS = "Teams"
+SLACK = "Slack"
 MATRIX = "Matrix"
 LEDGER = "The ledger's locked copies"
 STUDIO = "The studio, its sandbox and publishing"
@@ -297,8 +298,9 @@ OIDC_METADATA_URL = Var("A5S_OIDC_METADATA_URL", "where the provider's metadata 
 OIDC_DIRECTORY_PREFIX = Var("A5S_OIDC_DIRECTORY_PREFIX", "what to take off the person claim to "
                             "find someone in the directory", None, area=SIGN_IN)
 OIDC_MFA = Var("A5S_OIDC_MFA", "the second factor what counts needs a sign-in to show, as the "
-               "claim and the values that show it", None, second_factor,
-               "claim:value,value, such as amr:mfa", area=SIGN_IN)
+               "claim and the values that show it: a level (`acr`) or an authentication context "
+               "(`acrs`) the pages ask the provider for", None, second_factor,
+               "claim:value,value, such as amr:mfa, acr:gold or acrs:c1", area=SIGN_IN)
 OIDC_GROUPS_CLAIM = Var("A5S_OIDC_GROUPS_CLAIM", "the claim sign-ins show groups in, for the "
                         "roles the settings give them; set empty for none", "groups",
                         area=SIGN_IN, empty=None, empty_is_default=False)
@@ -317,6 +319,14 @@ TEAMS_TENANT_ID = Var("A5S_TEAMS_TENANT_ID", "the organisation's tenant: message
 TEAMS_SERVICE_HOSTS = Var("A5S_TEAMS_SERVICE_HOSTS", "the hosts a5s sends Teams replies to, and "
                           "no other", ("smba.trafficmanager.net",), _items, "hosts, by commas",
                           area=TEAMS)
+
+SLACK_BOTS = Var("A5S_SLACK_BOTS", "an app for each agent, which turns Slack on: a JSON list of "
+                 "{agent, app_id, secret_env, token_env}, its signing secret and bot token each in "
+                 "the variable it names", None, _json_list, "a JSON list", area=SLACK)
+SLACK_TEAM = Var("A5S_SLACK_TEAM", "the organisation's workspace, by its team id: events from any "
+                 "other are refused", None, area=SLACK)
+SLACK_API = Var("A5S_SLACK_API", "where a5s calls Slack's Web API", "https://slack.com/api",
+                _url("https", "http"), "an http(s):// address", area=SLACK)
 
 MATRIX_HOMESERVER = Var("A5S_MATRIX_HOMESERVER", "the organisation's Matrix homeserver, which "
                         "turns Matrix on", None, _url(*_WEB), "an http(s):// address",
@@ -388,8 +398,8 @@ REGISTRY_GRAPH = Var("A5S_REGISTRY_GRAPH", "Microsoft Graph, as the tenant's clo
 REGISTRY_LOGIN = Var("A5S_REGISTRY_LOGIN", "where the core signs in to the tenant",
                      "https://login.microsoftonline.com", _url("https"), "an https:// address",
                      area=INVENTORY)
-AREAS = (CORE, DATABASE, WORKERS, SIGN_IN, TEAMS, MATRIX, LEDGER, STUDIO, SCENARIO, INVENTORY,
-         COMMAND)
+AREAS = (CORE, DATABASE, WORKERS, SIGN_IN, TEAMS, SLACK, MATRIX, LEDGER, STUDIO, SCENARIO,
+         INVENTORY, COMMAND)
 # Every setting above, by its area
 VARS: tuple[Var, ...] = tuple(sorted((v for v in globals().values() if isinstance(v, Var)),
                                      key=lambda v: AREAS.index(v.area)))
@@ -398,6 +408,10 @@ FAMILIES = (
            area=DATABASE),
     Family("A5S_TEAMS_SECRET_<AGENT>", "a bot's secret, where A5S_TEAMS_BOTS names it",
            area=TEAMS),
+    Family("A5S_SLACK_SECRET_<AGENT>", "an app's signing secret, where A5S_SLACK_BOTS names it",
+           area=SLACK),
+    Family("A5S_SLACK_TOKEN_<AGENT>", "an app's bot token, where A5S_SLACK_BOTS names it",
+           area=SLACK),
     Family("A5S_MCP_<SERVER>_TOKEN", "an MCP server's bearer token, where the scenario's "
            "mcp.yaml names it as the server's token_env", area=SCENARIO),
 )
@@ -420,6 +434,7 @@ NOT_SETTINGS = frozenset({
 NEEDS: tuple[tuple[Var, tuple[Var, ...], str], ...] = (
     (TEAMS_APP_ID, (TEAMS_APP_SECRET, TEAMS_TENANT_ID), "Teams"),
     (TEAMS_BOTS, (TEAMS_TENANT_ID,), "Teams"),
+    (SLACK_BOTS, (SLACK_TEAM,), "Slack"),
     (MATRIX_HOMESERVER, (MATRIX_SERVER_NAME, MATRIX_AS_TOKEN, MATRIX_HS_TOKEN), "Matrix"),
     (GITHUB_CLIENT_ID, (GITHUB_REPO,), "publishing on GitHub"),
     (SANDBOX_URL, (SANDBOX_TOKEN,), "the sandbox"),
@@ -533,6 +548,15 @@ def check(env: Mapping[str, str] | None = None, serving: bool = True) -> tuple[l
         if not (env.get(str(bot.get("secret_env"))) or "").strip():
             problems.append(f"A5S_TEAMS_BOTS gives the {bot.get('agent')} agent's bot its secret "
                             f"in {bot.get('secret_env')}, which isn't set")
+    try:
+        apps = SLACK_BOTS.read(env) or []
+    except ConfigError:
+        apps = []
+    for app in apps:
+        for key, what in (("secret_env", "signing secret"), ("token_env", "bot token")):
+            if not (env.get(str(app.get(key))) or "").strip():
+                problems.append(f"A5S_SLACK_BOTS gives the {app.get('agent')} agent's app its "
+                                f"{what} in {app.get(key)}, which isn't set")
     strangers = []
     for name in sorted(n for n in env if n.startswith("A5S_") and not known(n) and n not in MOVED
                        and not service_link(n, env[n])):

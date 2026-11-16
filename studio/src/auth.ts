@@ -5,10 +5,12 @@
 // suspending an instance, they sign in afresh for it alone: the sign-in's nonce commits to the
 // act, so the identity provider signs it, and the page they come back to carries it out.
 
+import { leavingToSignIn } from "./unkept";
+
 const PENDING = "a5s.studio";
 const BACK = `${location.origin}/studio/`;
 
-type SignInConfig = { authorization_endpoint: string; client_id: string; scope: string; acr_values?: string };
+type SignInConfig = { authorization_endpoint: string; client_id: string; scope: string; acr_values?: string; claims?: string };
 /** An act signed in for, and what carrying it out needs, the salt its nonce was made with
  * among it: suspending or resuming an instance, deciding held changes, grading samples, the
  * data protection officer's request, or approving a version of the settings. */
@@ -59,6 +61,12 @@ export async function signIn(): Promise<string | null> {
 
 const STRONGER = /^\/studio\/audit\b/;  // the pages read only at the level what counts asks for
 
+/** Sign in again, as plainly as the first time, coming back to the page they're on: once a
+ * sign-in has run out, or one for an act didn't work (round 13, C1, C3). */
+export async function signInAgain(): Promise<void> {
+  await start(await where());
+}
+
 /** Sign in again at the level what counts asks for, such as with a second factor, to read a
  * page that needs one, coming back to it. */
 export async function signInStronger(): Promise<void> {
@@ -98,7 +106,9 @@ async function start(signin: SignInConfig, act?: Act, nonce?: string, stronger =
   };
   if (act) query.max_age = "0";  // afresh, not a sign-in the browser kept
   if ((act || stronger) && signin.acr_values) query.acr_values = signin.acr_values;  // the level what counts needs
+  if ((act || stronger) && signin.claims) query.claims = signin.claims;  // or the authentication context
   for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
+  leavingToSignIn();  // what isn't kept yet stays in the tab, and comes back with them
   location.assign(url.toString());
 }
 
