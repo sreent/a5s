@@ -574,7 +574,7 @@ Four reviewers who hadn't written it read what came after phase 5 as it was buil
 | C8 | Declining an ask took away the words that said so | Low | They're said where they stay, and take the focus | Fixed |
 | C9 | The palette said nothing was called what someone typed while it was still looking | Low | It finds as the studio opens, and says it's looking the first time (Ocean's palette) | Fixed |
 | C10 | Status lines kept the server's lowercase, or read "A5s" where Ocean capitalised them, and a refused instance said so three times | Low | a5s's words are sentences in the studio, sparing its name, Ocean drops its rule, and a refusal is said once | Fixed |
-| C11 | Pages jumped as they loaded, the instance's by a third of a phone's screen | Low | The instance page keeps its shape until what it is and what may be done arrive together; a run's map and the agents' grid, which move less, wait for skeletons of their own shape | Fixed in part, and deferred |
+| C11 | Pages jumped as they loaded, the instance's by a third of a phone's screen | Low | The instance page keeps its shape until what it is and what may be done arrive together, and the agents' grid and a run's page wait in theirs, a grid of cards, and figures, two cards and a map | Fixed |
 | C12 | A chase's run was "A obligation" | Low | A or an, as said | Fixed |
 | C13 | Dropping a draft asked through the browser's own box, and said nothing after | Low | It asks as the studio asks for what can't be undone, and says the draft is gone | Fixed |
 | C14 | A lone change offered to be decided "with the others ticked", and a page sent people to "the settings app" | Low | Only with others; "the settings" | Fixed |
@@ -584,6 +584,7 @@ Four reviewers who hadn't written it read what came after phase 5 as it was buil
 - **Removed:** the old act pages' routes, past their return; the channels app's write of a grade's seal; the catalogue's instances each may ask, and the home's field that was always true; the browser's own confirm for dropping a draft; an unused bearer(); and Ocean's capital for every status line.
 - **Proposed and kept:** a toast's undo, which no page of a5s's uses yet, since it's Ocean's piece, which the products that share Ocean may undo with.
 - **Deferred:** confirming on the test tenant which way Entra ID shows a second factor (the first day); skeletons of their own shape for a run's map and the agents' grid; one list of the studio's pages for the sidebar and the palette; the showcase's pieces no page uses, or the pages on them; one function for the four fresh sign-in checks; and the one-bot Teams variables, which compose still sets.
+- **Done since:** the agents' grid and a run's page wait in their own shape; one list of a5s's pages, which /shell/api gives every sidebar and the palette; one check for every sign-in made afresh, which now says to sign in again before what a sign-in was for; Teams turned on by a bot for each agent alone, the one-bot variables said to have moved; and the studio's badges drawn with Ocean's Badge, while ApprovalCard, Traced and Hint wait in the showcase for the pages they're for. Which way Entra ID shows a second factor is still for the first day, on the test tenant.
 
 ## Accepted risks
 
