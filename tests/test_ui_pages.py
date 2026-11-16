@@ -60,7 +60,7 @@ def test_each_page_opens_signed_in_beside_a_sidebar(seen, approving, browser, na
         page.wait_for_selector("#who:not(:empty)", timeout=30000)
     else:
         page.wait_for_load_state("networkidle", timeout=30000)
-    assert page.title().startswith("a5s")
+    assert "a5s" in page.title()  # each page its own title, the chat's and the studio's (round 13, C7)
     assert page.locator("aside.sidebar .brand").count() == 1
     if name in LISTED:
         page.wait_for_selector("#pages a[aria-current=page]", timeout=30000)

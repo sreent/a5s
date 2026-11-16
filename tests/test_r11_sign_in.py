@@ -18,7 +18,8 @@ IN_STUDIO = ("studio", "settings", "notebook", "tasks", "admin", "audit", "decid
 
 
 def status_of(page, path: str, words: str) -> str:
-    selector = "main [role=status]" if path in IN_STUDIO else "#status"
+    # in the studio, a sign-in that didn't work is said as an alert, with the way back (round 13, C3)
+    selector = "main :is([role=status], [role=alert])" if path in IN_STUDIO else "#status"
     page.wait_for_selector(f"{selector} >> text={words}", timeout=15000)
     return page.inner_text(selector)
 
