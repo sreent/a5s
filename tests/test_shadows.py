@@ -10,19 +10,31 @@ from __future__ import annotations
 import json
 import shutil
 from collections.abc import Iterator
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 
 import httpx
+import psycopg
 import pytest
 import yaml
 
 from a5s import db, definitions
 from a5s.contract import parse_settings
-from a5s.core import approvals, erasure, export, retention, shadows
+from a5s.core import approvals, erasure, export, registry, retention, shadows
 from a5s.core.policy import PolicyEngine
 from a5s.sample import SampleScenario
-from conftest import FAKE_MODELS, PROVIDER_KEY, FakeModel, Stack, accessible, build_root, running
+from a5s.services.scheduler import Scheduler
+from conftest import (
+    FAKE_MODELS,
+    PROVIDER_KEY,
+    FakeModel,
+    Stack,
+    accessible,
+    build_root,
+    running,
+    signed,
+)
 
 ASKED = "When is Q-1002 due?"
 SENT = "It's still open: I'll keep an eye on it for you."
@@ -150,6 +162,21 @@ def test_the_core_lets_a_shadow_read_and_keep_its_answer_and_nothing_else(stack)
                             ).fetchone()["n"] == 0
 
 
+
+def test_nothing_a_shadow_does_reaches_whom_it_was_beside(stack, monkeypatch):
+    """Once they have their answer, a shadow that can't answer, even for a database away as
+    the scheduler looks for it, tells them nothing more."""
+    assert not shadowed(stack).refused
+
+    def away(*_args, **_kwargs):
+        raise psycopg.OperationalError("the database is away")
+
+    monkeypatch.setattr(Scheduler, "_shadow", away)
+    stack.model.reply(SENT)
+    assert stack.say(ASKED, person="ben") == SENT  # their answer, alone
+    with db.transaction(stack.admin) as conn:
+        assert [r["text"] for r in conn.execute("select text from outbox order by id")] == [SENT]
+
 def test_a_shadow_answers_only_while_the_officer_lets_it(stack, approving, provider):
     assert not shadowed(stack, lets=False).refused  # signed, but the core's checks say no
     folder = stack.cfg.scenario_dir
@@ -242,6 +269,58 @@ def test_graders_compare_its_answers_and_its_judge_does_too_apart(stack, approvi
     home = as_person(stack, approving, provider, "dana", "GET", "/studio/api/home").json()["waiting"]
     assert not any(w["kind"] == "shadow" for w in home)  # nothing left to compare
 
+
+
+def test_graders_see_a_pair_only_if_they_may_see_every_record_its_runs_handled(
+        stack, approving, provider):
+    """Either answer may say what a record holds without naming it, so a grader who may not see
+    a record either run handled doesn't see the pair, as the studio wouldn't show them the run."""
+    assert not shadowed(stack).refused
+    stack.model.reply(SENT)
+    stack.model.reply(SHADOWED)
+    stack.say(ASKED, person="ben")
+    scenario = stack.gateway.scenario
+    hidden = next(r.key for r in scenario.watched() if not scenario.sees("dana", r.key))
+    [pair] = answered(stack)
+    for run in (pair["live_run_id"], pair["run_id"]):
+        with db.transaction(stack.admin) as conn:
+            conn.execute("insert into run_records (run_id, record) values (%s, %s)", (run, hidden))
+        assert as_person(stack, approving, provider, "dana", "GET",
+                         "/studio/api/shadows").json()["pairs"] == [], run
+        assert as_person(stack, approving, provider, "dana", "POST",
+                         f"/studio/api/shadows/{pair['id']}/grade",
+                         {"grade": "same"}).status_code == 404, run
+        with db.transaction(stack.admin) as conn:
+            conn.execute("delete from run_records where record = %s", (hidden,))
+    assert [p["id"] for p in as_person(stack, approving, provider, "dana", "GET",
+                                       "/studio/api/shadows").json()["pairs"]] == [pair["id"]]
+
+
+def test_a_judge_reads_no_pair_with_data_of_a_class_it_isnt_approved_for(stack):
+    """Either answer may say what any field of a record holds, so a judge not approved for every
+    class the settings give a field judges nothing, as for samples."""
+    assert not shadowed(stack).refused
+    stack.model.reply(SENT)
+    stack.model.reply(SHADOWED)
+    stack.say(ASKED, person="ben")
+    folder = stack.cfg.scenario_dir
+    signed(folder, {**yaml.safe_load((folder / "settings.yaml").read_text()),
+                    "classified": {"customer": "personal"}})
+    scenario = stack.gateway.scenario
+    with db.transaction(stack.admin) as conn:
+        assert not registry.apply(conn, stack.gateway.definitions, scenario.settings(),
+                                  scenario.tools(), scenario.person, scenario.name).refused
+    stack.model.answering = lambda body: (json.dumps({"grade": "same", "why": "Both say when."})
+                                          if "You compare two answers" in json.dumps(body)
+                                          else None)
+    asked = len(stack.model.requests)
+    with stack.client() as c:
+        assert c.post("/shadows/sweep").json()["judged"] == []
+    assert len(stack.model.requests) == asked  # never asked
+    fake = stack.gateway.models["fake"]
+    stack.gateway.models["fake"] = replace(fake, data_classes=(*fake.data_classes, "personal"))
+    with stack.client() as c:
+        assert [j["verdict"] for j in c.post("/shadows/sweep").json()["judged"]] == ["same"]
 
 def test_what_a_shadow_answered_is_kept_as_the_conversation_is(stack, approving, provider):
     assert not shadowed(stack).refused

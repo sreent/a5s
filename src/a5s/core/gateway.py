@@ -4027,9 +4027,10 @@ def create_app(gw: Gateway) -> FastAPI:
     def sweep_shadows() -> dict:
         """Put each grade people gave a shadow's answer in the ledger, and ask each shadow's
         judge, if its agent has one, about a few of its answers a sweep, apart from people's
-        grades (core/shadows.py). A judge reads what the person said and both answers, so one
-        not approved for the settings' class of data, and every class the shadow's own model
-        is, judges nothing."""
+        grades (core/shadows.py). A judge reads what the person said and both answers, which
+        may say what any field of a record holds, so one not approved for the settings' class
+        of data, every class they give a field, and every class the shadow's own model is,
+        judges nothing."""
         done: dict[str, Any] = {"noted": 0, "judged": []}
         with db.transaction(gw.url) as conn:
             for row in conn.execute("select * from shadow_answers where grade is not null and "
@@ -4051,8 +4052,9 @@ def create_app(gw: Gateway) -> FastAPI:
                 own = gw.models.get(release.model)
                 if (settings is not None and locked and locked["got"] and judge is not None
                         and own is not None and settings.data_class in judge.data_classes
-                        and set(own.data_classes) <= set(judge.data_classes)):
-                    judged_by[name] = judge.alias
+                        and set(own.data_classes) <= set(judge.data_classes)
+                        and set(settings.classified.values()) <= set(judge.data_classes)):
+                    judged_by[name] = judge.alias  # what both answers may say of any field
             due = shadows.pending(conn, judged_by)
         for pair in due:
             release = gw.definitions[pair["definition"]]
@@ -4083,7 +4085,8 @@ def create_app(gw: Gateway) -> FastAPI:
                 if status < 400:  # else it's asked again at a later sweep
                     grade, why = found or (None, "its answer couldn't be read as a grade")
                     conn.execute("update shadow_answers set judged = %s, judged_why = %s, "
-                                 "judged_at = now() where id = %s", (grade, why, pair["id"]))
+                                 "judged_at = now() where id = %s and judged_at is null",
+                                 (grade, why, pair["id"]))  # once, if two sweeps asked
                     if found:
                         done["judged"].append({"answer": pair["id"], "verdict": grade})
         return done

@@ -18,8 +18,8 @@ anyone puts it to work.
   model, and lets it send nothing; of a5s's own tools, it's offered those that only read. What
   it answers goes nowhere: the core keeps it beside the answer that was sent.
 - Graders, from outside the team that built the shadow's agent, as for samples, read each pair
-  whose records they may all see, and say whether the shadow's answer is better, as good, worse,
-  or wrong. A shadow whose agent has a judge hears from it too, kept apart, as for samples. Its
+  whose records they may all see, every one both its runs handled too, and say whether the
+  shadow's answer is better, as good, worse, or wrong. A shadow whose agent has a judge hears from it too, kept apart, as for samples. Its
   figures say how it did, for its owners to decide whether to put it to work.
 - What a shadow answered is kept as the conversation is, is in its people's export, and goes when
   they're erased. The ledger records each shadow run, and each grade, never the words.
@@ -33,7 +33,7 @@ from typing import Any
 
 from a5s import db
 from a5s.contract import AGENT_OWNER, Person, Scenario, Settings
-from a5s.core import extractor, samples
+from a5s.core import extractor, samples, studio
 
 KIND = "shadow"  # a run's trigger: answering beside the instance it shadows
 GRADES = ("better", "same", "worse", "wrong")  # the shadow's answer, beside the one sent
@@ -150,15 +150,27 @@ def _pair(row: dict) -> dict:
             "records": list(row["records"]), "deciders": [], "decided_by": None}
 
 
-def why_not(conn: db.Connection, scenario: Scenario, row: dict, person: Person) -> str | None:
+def _runs(row: dict) -> list[str]:
+    """A pair's two runs: the one whose answer was sent, and the shadow's."""
+    return [str(row["live_run_id"]), str(row["run_id"])]
+
+
+def why_not(conn: db.Connection, scenario: Scenario, row: dict, person: Person,
+            seen: set[str] | None = None) -> str | None:
     """Why someone may not grade a pair, if they may not: as for samples, a grader from outside
     the team that built the shadow's agent, and its instance's owners' teams, never someone it
-    answered, who may see every record it names."""
+    answered, who may see every record it names; and, since either answer may say what a record
+    holds without naming it, every record both its runs handled, as the studio shows a run
+    (core/studio.py). `seen` is the runs they may see, if the caller has asked already."""
     minders = conn.execute("select owner, deputy from instances where id = %s",
                            (row["instance_id"],)).fetchone()
-    return samples.may_grade(scenario, _pair(row), person,
-                             (minders["owner"], minders["deputy"]) if minders else (),
-                             samples.drafted(conn, row["definition"]))
+    why = samples.may_grade(scenario, _pair(row), person,
+                            (minders["owner"], minders["deputy"]) if minders else (),
+                            samples.drafted(conn, row["definition"]))
+    if why is None and not set(_runs(row)) <= (
+            studio.seeable(conn, scenario, person, _runs(row)) if seen is None else seen):
+        why = "its runs handled a record they may not see"
+    return why
 
 
 def gradeable(conn: db.Connection, scenario: Scenario, person: Person) -> list[dict]:
@@ -167,7 +179,8 @@ def gradeable(conn: db.Connection, scenario: Scenario, person: Person) -> list[d
         return []
     rows = conn.execute("select * from shadow_answers where grade is null and not "
                         "(%s = any(acts_for)) order by id limit 500", (person.id,)).fetchall()
-    return [r for r in rows if why_not(conn, scenario, r, person) is None][:MOST_GRADED]
+    seen = studio.seeable(conn, scenario, person, [run for r in rows for run in _runs(r)])
+    return [r for r in rows if why_not(conn, scenario, r, person, seen) is None][:MOST_GRADED]
 
 
 def grade(conn: db.Connection, scenario: Scenario, person: Person, pair: int, given: str) -> None:

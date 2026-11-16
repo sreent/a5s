@@ -448,7 +448,10 @@ class Scheduler:
         if outcome == "done":  # once they have their answer
             self._fold(inst["id"], conversation, agent, topic, opened.get("history_chars"),
                        members, inbound)
-            self._shadow(inst, run, history)
+            try:  # nothing a shadow does reaches them, who have their answer: not even a
+                self._shadow(inst, run, history)  # database away as it looks for its shadows
+            except Exception:
+                log.exception("the shadows of %s couldn't answer beside run %s", inst["id"], run)
 
     def _shadow(self, inst: dict, run: str, history: list[dict]) -> None:
         """Each shadow of the instance answers the message its run answered, beside it, given
