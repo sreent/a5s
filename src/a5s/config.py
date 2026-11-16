@@ -307,13 +307,9 @@ OIDC_GROUPS_CLAIM = Var("A5S_OIDC_GROUPS_CLAIM", "the claim sign-ins show groups
 WEBCHAT_CLIENT_ID = Var("A5S_WEBCHAT_CLIENT_ID", "the web chat's client at the identity "
                         "provider, a public one", None, area=SIGN_IN)
 
-TEAMS_APP_ID = Var("A5S_TEAMS_APP_ID", "one bot's registration in Entra ID, for Teams", None,
-                   area=TEAMS)
-TEAMS_APP_SECRET = Var("A5S_TEAMS_APP_SECRET", "that bot's secret", None, secret=True,
-                       area=TEAMS, takes="its secret")
-TEAMS_AGENT = Var("A5S_TEAMS_AGENT", "the agent that bot speaks for", "assistant", area=TEAMS)
-TEAMS_BOTS = Var("A5S_TEAMS_BOTS", "several bots, one for each agent, instead: a JSON list of "
-                 "{agent, app_id, secret_env}", None, _json_list, "a JSON list", area=TEAMS)
+TEAMS_BOTS = Var("A5S_TEAMS_BOTS", "a bot for each agent, which turns Teams on: a JSON list of "
+                 "{agent, app_id, secret_env}, each bot's registration in Entra ID and the "
+                 "variable its secret is in", None, _json_list, "a JSON list", area=TEAMS)
 TEAMS_TENANT_ID = Var("A5S_TEAMS_TENANT_ID", "the organisation's tenant: messages from any other "
                       "are refused", None, area=TEAMS)
 TEAMS_SERVICE_HOSTS = Var("A5S_TEAMS_SERVICE_HOSTS", "the hosts a5s sends Teams replies to, and "
@@ -420,7 +416,9 @@ MOVED = {name: f"the signed settings' data_protection.{choice}, which the data p
                 "officer approves (docs/data-protection.md)"
          for name, choice in (("A5S_STUDIO_NAMES", "studio_names"),
                               ("A5S_AUDIT_NAMES", "audit_names"),
-                              ("A5S_FLAG_RUBBER_STAMPS", "flag_rubber_stamps"))}
+                              ("A5S_FLAG_RUBBER_STAMPS", "flag_rubber_stamps"))} | {
+    name: "A5S_TEAMS_BOTS, a bot for each agent, with its secret in a variable of its own"
+    for name in ("A5S_TEAMS_APP_ID", "A5S_TEAMS_APP_SECRET", "A5S_TEAMS_AGENT")}
 # A5S_ names a5s itself never reads: its tests' (all A5S_TEST_ ones too), those compose and
 # the deployment scripts read, such as whose attestation the GitOps check asks GitHub for, and
 # the folder the made-up systems of the scenarios a5s ships keep their changes in for their code
@@ -432,7 +430,6 @@ NOT_SETTINGS = frozenset({
     "A5S_SMOKE_WORK", "A5S_SOAK_FOUND", "A5S_SYSTEMS_STATE"})
 # What some settings need beside them
 NEEDS: tuple[tuple[Var, tuple[Var, ...], str], ...] = (
-    (TEAMS_APP_ID, (TEAMS_APP_SECRET, TEAMS_TENANT_ID), "Teams"),
     (TEAMS_BOTS, (TEAMS_TENANT_ID,), "Teams"),
     (SLACK_BOTS, (SLACK_TEAM,), "Slack"),
     (MATRIX_HOMESERVER, (MATRIX_SERVER_NAME, MATRIX_AS_TOKEN, MATRIX_HS_TOKEN), "Matrix"),

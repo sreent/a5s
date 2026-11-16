@@ -55,15 +55,12 @@ class TeamsConfig:
 
     @classmethod
     def from_env(cls) -> TeamsConfig | None:
-        """One bot from A5S_TEAMS_APP_ID, or several from A5S_TEAMS_BOTS, a JSON list of
-        {"agent", "app_id", "secret_env"}, each secret in the variable it names."""
-        if listed := config.TEAMS_BOTS.read():
-            bots = tuple(Bot(b["agent"], b["app_id"], os.environ[b["secret_env"]])
-                         for b in listed)
-        elif app_id := config.TEAMS_APP_ID.read():
-            bots = (Bot(config.TEAMS_AGENT.read(), app_id, _needed(config.TEAMS_APP_SECRET)),)
-        else:
+        """Each agent's bot from A5S_TEAMS_BOTS, a JSON list of {"agent", "app_id",
+        "secret_env"}, each secret in the variable it names, so each agent talks to people as
+        itself; None where Teams isn't turned on."""
+        if not (listed := config.TEAMS_BOTS.read()):
             return None
+        bots = tuple(Bot(b["agent"], b["app_id"], os.environ[b["secret_env"]]) for b in listed)
         return cls(bots=bots, tenant_id=_needed(config.TEAMS_TENANT_ID),
                    service_hosts=config.TEAMS_SERVICE_HOSTS.read())
 

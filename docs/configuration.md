@@ -98,10 +98,7 @@ The tests check that neither compose nor the chart sets a setting to its default
 
 | Variable | Default | Takes | What it sets |
 | --- | --- | --- | --- |
-| `A5S_TEAMS_APP_ID` | none | text | One bot's registration in Entra ID, for Teams |
-| `A5S_TEAMS_APP_SECRET` | none | its secret | That bot's secret |
-| `A5S_TEAMS_AGENT` | `assistant` | text | The agent that bot speaks for |
-| `A5S_TEAMS_BOTS` | none | a JSON list | Several bots, one for each agent, instead: a JSON list of {agent, app_id, secret_env} |
+| `A5S_TEAMS_BOTS` | none | a JSON list | A bot for each agent, which turns Teams on: a JSON list of {agent, app_id, secret_env}, each bot's registration in Entra ID and the variable its secret is in |
 | `A5S_TEAMS_TENANT_ID` | none | text | The organisation's tenant: messages from any other are refused |
 | `A5S_TEAMS_SERVICE_HOSTS` | `smba.trafficmanager.net` | hosts, by commas | The hosts a5s sends Teams replies to, and no other |
 
