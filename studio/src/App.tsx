@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import { onRunOut, runOut, runsOutAt, signedIn } from "./api";
 import { signIn, signInAgain } from "./auth";
 import { Toasts } from "./design/feedback";
+import { language, onLanguage, t } from "./i18n";
 import { Find } from "./Find";
 import { AdminPage } from "./pages/Admin";
 import { AgentPage } from "./pages/Agent";
@@ -49,12 +50,12 @@ function SignInAgain({ ready }: { ready: boolean }) {
   return (
     <dialog ref={dialog} className="dialog" id="sign-in-again" aria-labelledby="sign-in-again-title"
             aria-describedby="sign-in-again-about">
-      <h2 id="sign-in-again-title">Sign in again to carry on</h2>
-      <p id="sign-in-again-about">Your sign-in has run out, so a5s can't keep or show anything more until you sign in again. You come back to this page, and what you've changed here that a5s hasn't kept yet comes back with you.</p>
+      <h2 id="sign-in-again-title">{t("Sign in again to carry on")}</h2>
+      <p id="sign-in-again-about">{t("Your sign-in has run out, so a5s can't keep or show anything more until you sign in again. You come back to this page, and what you've changed here that a5s hasn't kept yet comes back with you.")}</p>
       {problem && <p className="problem" role="alert">{problem}</p>}
       <div className="dialog-actions">
         <button type="button" className="primary" autoFocus
-                onClick={() => signInAgain().catch((e: Error) => setProblem(e.message))}>Sign in again</button>
+                onClick={() => signInAgain().catch((e: Error) => setProblem(e.message))}>{t("Sign in again")}</button>
       </div>
     </dialog>
   );
@@ -66,12 +67,12 @@ function SignInFailed({ problem }: { problem: string }) {
   const [again, setAgain] = useState<string>();
   return (
     <section className="card" id="sign-in-failed">
-      <h1>Signing in didn't work</h1>
+      <h1>{t("Signing in didn't work")}</h1>
       <p className="problem" role="alert">{problem}</p>
-      <p>Nothing was done with it. Sign in again to go back to where you were, and try again from there.</p>
+      <p>{t("Nothing was done with it. Sign in again to go back to where you were, and try again from there.")}</p>
       {again && <p className="problem" role="alert">{again}</p>}
       <button type="button" className="primary"
-              onClick={() => signInAgain().catch((e: Error) => setAgain(e.message))}>Sign in again</button>
+              onClick={() => signInAgain().catch((e: Error) => setAgain(e.message))}>{t("Sign in again")}</button>
     </section>
   );
 }
@@ -79,6 +80,8 @@ function SignInFailed({ problem }: { problem: string }) {
 export function App() {
   const [state, setState] = useState<State>("signing-in");
   const route = useRoute();
+  const [spoken, setSpoken] = useState(language());  // its pages are drawn again in a new one
+  useEffect(() => onLanguage(() => setSpoken(language())), []);
   useEffect(() => {
     signIn()
       .then((token) => {
@@ -91,7 +94,7 @@ export function App() {
       .catch((error: Error) => setState({ problem: error.message }));
   }, []);
   let content;
-  if (state === "signing-in") content = <p className="note" role="status">Signing you in…</p>;
+  if (state === "signing-in") content = <p className="note" role="status">{t("Signing you in…")}</p>;
   else if (typeof state === "object") content = <SignInFailed problem={state.problem} />;
   else if (route.page === "agent") content = <AgentPage key={route.agent} id={route.agent} />;
   else if (route.page === "instance") content = <InstancePage key={route.instance} id={route.instance} />;
@@ -121,7 +124,7 @@ export function App() {
   if (workbench) {
     return (
       <Toasts>
-        <Find ready={ready}>
+        <Find key={spoken} ready={ready}>
           <div className="wb window">
             <Sidebar signedIn rail />
             <main className="wb-main">{content}</main>
@@ -133,7 +136,7 @@ export function App() {
   }
   return (
     <Toasts>
-      <Find ready={ready}>
+      <Find key={spoken} ready={ready}>
         <Sidebar signedIn={ready} />
         <div className="page studio">
           <main>{content}</main>

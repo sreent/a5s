@@ -7,8 +7,18 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header
 
+from a5s import db
 from a5s.contract import DATA_PROTECTION, INSTANCE_APPROVER, PART_DELEGATE, PART_OWNER, Person
-from a5s.core import administration, audit, notebook_api, registry, samples, spending, web
+from a5s.core import (
+    administration,
+    audit,
+    languages,
+    notebook_api,
+    registry,
+    samples,
+    spending,
+    web,
+)
 from a5s.core import studio_models as shapes
 
 # Each page, in the order the sidebars show it: its key, its name, its icon, the heading it's
@@ -30,6 +40,13 @@ PAGES = (
     ("officer", "Data protection", "officer", "Oversee", "/studio/officer"),
 )
 
+# Each page's name, and each heading, for those who read Thai (core/languages.py)
+THAI = {"chat": "แชท", "tasks": "งาน", "notebook": "สมุดบันทึก", "studio": "สตูดิโอ",
+        "map": "แผนผัง", "decide": "การตัดสินใจ", "grade": "การให้คะแนน",
+        "settings": "การตั้งค่า", "audit": "บันทึกการตรวจสอบ", "admin": "การดูแลระบบ",
+        "spending": "ค่าใช้จ่าย", "officer": "การคุ้มครองข้อมูล"}
+THAI_HEADINGS = {"Work": "ทำงาน", "Build": "สร้าง", "Decide": "ตัดสินใจ", "Oversee": "กำกับดูแล"}
+
 
 def router(gw: Any) -> APIRouter:
     """The sidebar's API, for the channels app to include."""
@@ -41,8 +58,8 @@ def router(gw: Any) -> APIRouter:
 
     @api.get("/shell/api", **shapes.answers(shapes.Shell))
     def shell(person: Annotated[Person, Depends(someone)]) -> dict:
-        """Who signed in, and the pages they may use, for the sidebar every page shows, in its
-        order."""
+        """Who signed in, the language they read, and the pages they may use, for the sidebar
+        every page shows, in its order."""
         roles = set(person.roles)
         decides = INSTANCE_APPROVER in roles or any(
             r.startswith((f"{PART_OWNER}:", f"{PART_DELEGATE}:")) for r in roles)
@@ -52,8 +69,12 @@ def router(gw: Any) -> APIRouter:
                  "admin": administration.administers(person, gw.cfg.team),
                  "spending": spending.sees_any(gw.url, person),
                  "officer": DATA_PROTECTION in roles}
-        return {"you": person.name, "pages": [
-            {"page": key, "name": name, "icon": icon, "group": group, "at": at}
+        with db.transaction(gw.url) as conn:
+            language = languages.of(conn, person)
+        thai = language == "th"
+        return {"you": person.name, "language": language, "pages": [
+            {"page": key, "name": THAI[key] if thai else name, "icon": icon,
+             "group": THAI_HEADINGS[group] if thai else group, "at": at}
             for key, name, icon, group, at in PAGES if found[key]]}
 
     return api

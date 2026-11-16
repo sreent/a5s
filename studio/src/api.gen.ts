@@ -612,6 +612,21 @@ export type Judged = {
   judge: string | null;
 };
 
+// A language a5s's pages speak, by its code, named in its own words.
+export type Language = {
+  code: string;
+  name: string;
+};
+
+// The language someone chooses a5s's pages speak to them in, by its code, such as th.
+export type LanguageChoice = {
+  language: string;
+};
+
+export type LanguageChosen = {
+  language: string;
+};
+
 // The scenario's limits for a type of change: past either, a change waits for a person,
 // whatever the level.
 export type Limit = {
@@ -1121,9 +1136,11 @@ export type SettingsReview = {
   impact?: Impact;
 };
 
-// Who signed in, and the pages they may use, in the sidebar's order.
+// Who signed in, the language they read, and the pages they may use, in the sidebar's
+// order.
 export type Shell = {
   you: string;
+  language: string;
   pages: Place[];
 };
 
@@ -1370,4 +1387,6 @@ export type You = {
   id: string;
   roles: Role[];
   groups: string[];
+  language: string;
+  languages: Language[];
 };

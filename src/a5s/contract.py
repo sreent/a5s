@@ -71,6 +71,9 @@ class Person:
     # When their authenticator was last reset, if the directory says: how a stolen identity
     # usually starts, so their decisions wait a day after it
     reset_at: datetime | None = None
+    # The language they read, as a BCP 47 code, such as th, which they can choose otherwise on
+    # their own page in the studio (core/languages.py)
+    language: str = "en"
 
     @classmethod
     def listed(cls, entry: Mapping[str, Any], folder: Path) -> Person:

@@ -34,6 +34,7 @@ from a5s.core import (
     drafts,
     feedback,
     grade_api,
+    languages,
     ledger,
     memberships,
     notebook_api,
@@ -135,6 +136,12 @@ class RunCaseAsked(BaseModel):
     say: str
     judged: str | None = None
     checked: bool = False
+
+
+class LanguageChoice(BaseModel):
+    """The language someone chooses a5s's pages speak to them in, by its code, such as th."""
+
+    language: str
 
 
 class AnswerGrade(BaseModel):
@@ -252,7 +259,19 @@ def router(gw: Any) -> APIRouter:
         showed, of those the settings name."""
         with db.transaction(gw.url) as conn:
             return {"you": person.name, "id": person.id, "roles": homes.roles(conn, gw, person),
-                    "groups": list(memberships.stored(conn, person.id).get(person.id, ()))}
+                    "groups": list(memberships.stored(conn, person.id).get(person.id, ())),
+                    "language": languages.of(conn, person),
+                    "languages": [{"code": c, "name": n} for c, n in languages.SPOKEN.items()]}
+
+    @api.post("/studio/api/you/language", **shapes.answers(shapes.LanguageChosen))
+    def studio_language(body: LanguageChoice, person: Annotated[Person, Depends(someone)]) -> dict:
+        """Choose the language a5s's pages speak to whoever signed in, and its agents answer
+        them in, of those a5s's pages speak: theirs alone, kept with their preferences."""
+        with db.transaction(gw.url) as conn:
+            try:
+                return {"language": languages.choose(conn, person, body.language, gw.clock())}
+            except languages.Refused as e:
+                raise HTTPException(400, str(e)) from None
 
     @api.get("/studio/api", **shapes.answers(shapes.Catalogue))
     def studio_now(person: Annotated[Person, Depends(someone)]) -> dict:

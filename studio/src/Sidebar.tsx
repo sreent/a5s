@@ -5,6 +5,7 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { get, type Place, type Shell } from "./api";
 import { FindButton } from "./Find";
+import { setLanguage, t } from "./i18n";
 import { Icon } from "./icons";
 import { inside, Link, useRoute } from "./router";
 
@@ -15,7 +16,10 @@ let shell: Promise<Shell> | null = null;
  * anything does each time it opens, so a role lost meanwhile takes its page away (round 13, B6). */
 export function shellOf(afresh = false): Promise<Shell> {
   if (afresh) shell = null;
-  shell ??= get<Shell>("/shell/api").catch((e) => {
+  shell ??= get<Shell>("/shell/api").then((found) => {
+    setLanguage(found.language);  // the language they read, which the studio speaks
+    return found;
+  }).catch((e) => {
     shell = null;  // asked again next time
     throw e;
   });
@@ -66,7 +70,7 @@ export function Sidebar({ signedIn, rail = false }: { signedIn: boolean; rail?: 
       <aside className="wb-rail">
         <a className="brand" href="/chat/" aria-label="a5s"><span className="mark">a5</span></a>
         <FindButton rail />
-        <nav aria-label="a5s's pages">
+        <nav aria-label={t("a5s's pages")}>
           {pages.map((place) => (
             <To key={place.page} place={place} here={here} label={place.name} title={place.name}>
               <Icon name={place.icon} />
@@ -81,7 +85,7 @@ export function Sidebar({ signedIn, rail = false }: { signedIn: boolean; rail?: 
     <aside className="sidebar">
       <a className="brand" href="/chat/"><span className="mark">a5</span><span>a5s</span></a>
       {signedIn && <div className="find-slot"><FindButton id="find-anything" /></div>}
-      <nav id="pages" aria-label="a5s's pages">
+      <nav id="pages" aria-label={t("a5s's pages")}>
         {found && headed(found.pages).map(([heading, shown]) => (
           <div key={heading} className="nav-group">
             <div className="group">{heading}</div>

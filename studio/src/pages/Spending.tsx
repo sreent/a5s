@@ -8,27 +8,28 @@
 
 import { get } from "../api";
 import type * as gen from "../api.gen";
+import { locale, t } from "../i18n";
 import { Icon } from "../icons";
 import { go, Link } from "../router";
 import { PageHead, plural, useLoad, Waiting, Wide } from "../ui";
 
 type Kind = "part" | "agent";
 
-const MONTH = new Intl.DateTimeFormat(undefined, { month: "long", year: "numeric", timeZone: "UTC" });
-const DAY = new Intl.DateTimeFormat(undefined, { day: "numeric", month: "long", timeZone: "UTC" });
+const monthly = () => new Intl.DateTimeFormat(locale(), { month: "long", year: "numeric", timeZone: "UTC" });
+const daily = () => new Intl.DateTimeFormat(locale(), { day: "numeric", month: "long", timeZone: "UTC" });
 
 /** An amount in the currency models.yaml prices models in, or a plain figure where it names none:
  * to the cent, or to two figures below a cent, so a cheap model's month isn't shown as nothing. */
 export function money(n: number, currency: string | null): string {
   const digits: Intl.NumberFormatOptions = n !== 0 && Math.abs(n) < 0.01
     ? { maximumSignificantDigits: 2 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 };
-  return currency ? n.toLocaleString(undefined, { style: "currency", currency, ...digits })
-    : n.toLocaleString(undefined, digits);
+  return currency ? n.toLocaleString(locale(), { style: "currency", currency, ...digits })
+    : n.toLocaleString(locale(), digits);
 }
 
 function named(m: string): string {
   const [y, n] = m.split("-").map(Number);
-  return MONTH.format(new Date(Date.UTC(y, n - 1, 1)));
+  return monthly().format(new Date(Date.UTC(y, n - 1, 1)));
 }
 function moved(m: string, by: number): string {
   const [y, n] = m.split("-").map(Number);
@@ -69,80 +70,85 @@ function Bars({ id, label, bars, scale, currency }:
 /** One part's or agent's month against its budget, as Ocean's CostPanel. */
 function Panel({ kind, spend, found }: { kind: Kind; spend: gen.Spend; found: gen.Spending }) {
   const id = `${kind}-${spend.key}`;
-  const whose = kind === "part" ? spend.key : `the ${spend.key}`;
+  const whose = kind === "part" ? spend.key : t("the {agent}", { agent: spend.key });
   const { currency } = found;
-  const ends = DAY.format(new Date(new Date(found.ends).getTime() - 1));
-  const so = found.current ? "So far" : `In ${named(found.month)}`;
+  const ends = daily().format(new Date(new Date(found.ends).getTime() - 1));
+  const so = found.current ? t("So far") : t("In {month}", { month: named(found.month) });
   const forecast = found.current ? spend.forecast : null;
   const scale = Math.max(spend.spent, spend.budget ?? 0, forecast ?? 0);
   const at = forecast ?? spend.spent;  // what the month comes to, or is on course to
   const over = spend.budget !== null && at > spend.budget ? at - spend.budget : null;
   const end = [
-    ...(spend.budget !== null ? [{ name: "Budget", amount: spend.budget, fill: "s1" as const,
-                                   told: `Its budget: ${money(spend.budget, currency)} a month` }] : []),
-    ...(forecast !== null ? [{ name: "Forecast", amount: forecast, fill: "forecast" as const,
-                               told: `On course for ${money(forecast, currency)} by ${ends}, at the last week's pace` }] : []),
+    ...(spend.budget !== null ? [{ name: t("Budget"), amount: spend.budget, fill: "s1" as const,
+                                   told: t("Its budget: {amount} a month", { amount: money(spend.budget, currency) }) }] : []),
+    ...(forecast !== null ? [{ name: t("Forecast"), amount: forecast, fill: "forecast" as const,
+                               told: t("On course for {amount} by {day}, at the last week's pace", { amount: money(forecast, currency), day: ends }) }] : []),
   ];
   return (
     <section className="card cost-box" id={id} aria-labelledby={`${id}-title`} data-over={over !== null}>
       <div className="cost">
         <div className="cost-head">
           <h2 id={`${id}-title`}>{spend.key}</h2>
-          <p className="note">{kind === "part" ? "A part" : "An agent"} · {found.current
-            ? `as of day ${found.day} of ${found.days}` : named(found.month)}</p>
+          <p className="note">{kind === "part" ? t("A part") : t("An agent")} · {found.current
+            ? t("as of day {day} of {days}", { day: found.day, days: found.days }) : named(found.month)}</p>
         </div>
         <div className="cost-top">
           <div className="cost-bars">
             <Bars id={`${id}-so-far`} label={so} scale={scale} currency={currency}
-                  bars={[{ name: "Spent", amount: spend.spent, fill: "s3",
-                           told: `Spent ${money(spend.spent, currency)} ${found.current ? "so far this month" : `in ${named(found.month)}`}` }]} />
+                  bars={[{ name: t("Spent"), amount: spend.spent, fill: "s3",
+                           told: found.current ? t("Spent {amount} so far this month", { amount: money(spend.spent, currency) })
+                             : t("Spent {amount} in {month}", { amount: money(spend.spent, currency), month: named(found.month) }) }]} />
             {end.length > 0 && (
-              <Bars id={`${id}-at-end`} label={found.current ? `By ${ends}` : "Against"} scale={scale}
+              <Bars id={`${id}-at-end`} label={found.current ? t("By {day}", { day: ends }) : t("Against")} scale={scale}
                     currency={currency} bars={end} />
             )}
             {spend.budget !== null && (
               <div className="cost-over" id={`${id}-against`}>
                 {over !== null
-                  ? <span className="badge bad"><Icon name="cross" />{money(over, currency)} over budget</span>
-                  : <p className="note">{money(spend.budget - at, currency)} under budget{forecast !== null ? ", at this pace" : ""}</p>}
+                  ? <span className="badge bad"><Icon name="cross" />{t("{amount} over budget", { amount: money(over, currency) })}</span>
+                  : <p className="note">{(forecast !== null ? t("{amount} under budget, at this pace", { amount: money(spend.budget - at, currency) })
+                    : t("{amount} under budget", { amount: money(spend.budget - at, currency) }))}</p>}
               </div>
             )}
           </div>
           <div className="cost-indices">
             <div className="cost-index" id={`${id}-per-answer`}>
-              <p className="label">Each message answered</p>
+              <p className="label">{t("Each message answered")}</p>
               {spend.per_answer !== null ? (
                 <>
                   <strong>{money(spend.per_answer, currency)}</strong>
-                  <p>All {kind === "part" ? "agents' work there" : "its runs"} cost, reports and chases too, over the {plural(spend.answered, "message")} they answered{kind === "part" ? " there" : ""}.</p>
+                  <p>{kind === "part" ? t("All agents' work there cost, reports and chases too, over the {messages} they answered there.", { messages: plural(spend.answered, "message") })
+                    : t("All its runs cost, reports and chases too, over the {messages} they answered.", { messages: plural(spend.answered, "message") })}</p>
                 </>
               ) : (
                 <>
-                  <strong>None</strong>
-                  <p>{kind === "part" ? "Agents answered no messages there" : "Its runs answered no messages"} {found.current ? "this month" : "that month"}.</p>
+                  <strong>{t("None")}</strong>
+                  <p>{kind === "part" ? (found.current ? t("Agents answered no messages there this month.") : t("Agents answered no messages there that month."))
+                    : (found.current ? t("Its runs answered no messages this month.") : t("Its runs answered no messages that month."))}</p>
                 </>
               )}
             </div>
             {found.current && spend.pace !== null ? (
               <div className="cost-index" id={`${id}-pace`}>
-                <p className="label">A day, lately</p>
+                <p className="label">{t("A day, lately")}</p>
                 <strong>{money(spend.pace, currency)}</strong>
-                <p>The last 7 days, on average: the pace the forecast goes on at.</p>
+                <p>{t("The last 7 days, on average: the pace the forecast goes on at.")}</p>
               </div>
             ) : (
               <div className="cost-index">
-                <p className="label">Runs</p>
-                <strong>{spend.runs.toLocaleString()}</strong>
-                <p>{spend.tokens.toLocaleString()} tokens.</p>
+                <p className="label">{t("Runs")}</p>
+                <strong>{spend.runs.toLocaleString(locale())}</strong>
+                <p>{t("{tokens} tokens.", { tokens: spend.tokens.toLocaleString(locale()) })}</p>
               </div>
             )}
           </div>
         </div>
         {spend.budget === null && (
-          <p className="note">The settings set no budget for {whose}. With one, a5s shows each month against it, and tells {kind === "part" ? "its owners" : "its owners"} on their home page once a month is on course to pass it.</p>
+          <p className="note">{t("The settings set no budget for {whose}. With one, a5s shows each month against it, and tells its owners on their home page once a month is on course to pass it.", { whose })}</p>
         )}
         {spend.unpriced > 0 && (
-          <p className="note">{plural(spend.unpriced, "run")} on models whose prices models.yaml doesn't give {spend.unpriced === 1 ? "isn't" : "aren't"} in these figures.</p>
+          <p className="note">{spend.unpriced === 1 ? t("1 run on a model whose prices models.yaml doesn't give isn't in these figures.")
+            : t("{runs} on models whose prices models.yaml doesn't give aren't in these figures.", { runs: plural(spend.unpriced, "run") })}</p>
         )}
       </div>
     </section>
@@ -153,35 +159,36 @@ function Instances({ found }: { found: gen.Spending }) {
   const { currency } = found;
   return (
     <section className="card" id="instances" aria-labelledby="instances-title">
-      <h2 id="instances-title">Instances</h2>
+      <h2 id="instances-title">{t("Instances")}</h2>
       {found.instances.length === 0 ? (
-        <p className="note">None you may watch spent anything {found.current ? "this month" : "that month"}.</p>
+        <p className="note">{found.current ? t("None you may watch spent anything this month.") : t("None you may watch spent anything that month.")}</p>
       ) : (
-        <Wide label="What each instance spent">
+        <Wide label={t("What each instance spent")}>
           <table className="figures cost-figures">
-            <caption>What each instance you may watch spent {found.current ? "this month, and is on course to" : `in ${named(found.month)}`}</caption>
+            <caption>{found.current ? t("What each instance you may watch spent this month, and is on course to")
+              : t("What each instance you may watch spent in {month}", { month: named(found.month) })}</caption>
             <thead>
               <tr>
-                <th scope="col">Instance</th>
-                <th scope="col">Agent</th>
-                <th scope="col" className="num">Spent</th>
-                {found.current && <th scope="col" className="num">Forecast</th>}
-                <th scope="col" className="num">Runs</th>
-                <th scope="col" className="num">Messages answered</th>
-                <th scope="col" className="num">Each message</th>
+                <th scope="col">{t("Instance")}</th>
+                <th scope="col">{t("Agent")}</th>
+                <th scope="col" className="num">{t("Spent")}</th>
+                {found.current && <th scope="col" className="num">{t("Forecast")}</th>}
+                <th scope="col" className="num">{t("Runs")}</th>
+                <th scope="col" className="num">{t("Messages answered")}</th>
+                <th scope="col" className="num">{t("Each message")}</th>
               </tr>
             </thead>
             <tbody>
               {found.instances.map((i) => (
                 <tr key={i.key} data-instance={i.key}>
                   <th scope="row"><Link to={{ page: "instance", instance: i.key }}>{i.key}</Link>
-                    {i.parts && i.parts.length > 0 && <span className="cost-sub">in {i.parts.join(", ")}</span>}</th>
+                    {i.parts && i.parts.length > 0 && <span className="cost-sub">{t("in {parts}", { parts: i.parts.join(", ") })}</span>}</th>
                   <td>{i.agent}</td>
-                  <td className="num">{money(i.spent, currency)}{i.unpriced > 0 && <span className="cost-sub">and {plural(i.unpriced, "run")} unpriced</span>}</td>
+                  <td className="num">{money(i.spent, currency)}{i.unpriced > 0 && <span className="cost-sub">{t("and {runs} unpriced", { runs: plural(i.unpriced, "run") })}</span>}</td>
                   {found.current && <td className="num">{i.forecast !== null ? money(i.forecast, currency) : ""}</td>}
-                  <td className="num">{i.runs.toLocaleString()}</td>
-                  <td className="num">{i.answered.toLocaleString()}</td>
-                  <td className="num">{i.per_answer !== null ? money(i.per_answer, currency) : "none answered"}</td>
+                  <td className="num">{i.runs.toLocaleString(locale())}</td>
+                  <td className="num">{i.answered.toLocaleString(locale())}</td>
+                  <td className="num">{i.per_answer !== null ? money(i.per_answer, currency) : t("none answered")}</td>
                 </tr>
               ))}
             </tbody>
@@ -207,20 +214,21 @@ export function SpendingPage({ month }: { month?: string }) {
   const shown = data?.month ?? month ?? choices[0];
   return (
     <>
-      <PageHead title="Spending"
-                about="What agents' model calls cost each month, at the prices models.yaml gives them: each part and agent you may see against the budget the settings set it, with a forecast to the month's end at the last week's pace, and what each message answered cost, all in. A budget guides: it stops no work, which the token budgets each release sets do.">
-        <label className="period">In{" "}
+      <PageHead title={t("Spending")}
+                about={t("What agents' model calls cost each month, at the prices models.yaml gives them: each part and agent you may see against the budget the settings set it, with a forecast to the month's end at the last week's pace, and what each message answered cost, all in. A budget guides: it stops no work, which the token budgets each release sets do.")}>
+        <label className="period">{t("In")}{" "}
           <select id="month" value={shown}
                   onChange={(e) => go(e.target.value === choices[0] ? { page: "spending" } : { page: "spending", month: e.target.value })}>
             {[...new Set([...choices, shown])].map((m) => (
-              <option key={m} value={m}>{named(m)}{m === choices[0] ? ", this month" : ""}</option>
+              <option key={m} value={m}>{m === choices[0] ? t("{month}, this month", { month: named(m) }) : named(m)}</option>
             ))}
           </select>
         </label>
       </PageHead>
       {!data && <Waiting error={error} block />}
       {data && panels.length === 0 && (
-        <p className="note" id="status" role="status">No part or agent you may see spent anything {data.current ? "this month" : "that month"}, and none has a budget.</p>
+        <p className="note" id="status" role="status">{data.current ? t("No part or agent you may see spent anything this month, and none has a budget.")
+          : t("No part or agent you may see spent anything that month, and none has a budget.")}</p>
       )}
       {data && panels.map(([kind, s]) => <Panel key={`${kind}-${s.key}`} kind={kind} spend={s} found={data} />)}
       {data && <Instances found={data} />}

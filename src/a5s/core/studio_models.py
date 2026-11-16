@@ -78,9 +78,11 @@ class Place(Shape):
 
 
 class Shell(Shape):
-    """Who signed in, and the pages they may use, in the sidebar's order."""
+    """Who signed in, the language they read, and the pages they may use, in the sidebar's
+    order."""
 
     you: str
+    language: str
     pages: list[Place]
 
 
@@ -93,11 +95,24 @@ class Role(Shape):
     may: str
 
 
+class Language(Shape):
+    """A language a5s's pages speak, by its code, named in its own words."""
+
+    code: str
+    name: str
+
+
 class You(Shape):
     you: str
     id: str
     roles: list[Role]
     groups: list[str]
+    language: str  # the one they read: theirs to choose, of those a5s's pages speak
+    languages: list[Language]
+
+
+class LanguageChosen(Shape):
+    language: str
 
 
 # Each agent as someone sees it, layer by layer (core/studio.py)

@@ -2,6 +2,7 @@
 // loading, in the shape it will have, still; and what was just done, said once at the foot of the
 // window, beside the page's own status line, with Undo while it can still be undone.
 
+import { t } from "../i18n";
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { Icon } from "../icons";
 
@@ -26,7 +27,7 @@ export function Shapes({ lines = 3, title = true, rows, columns = 3, block = fal
 export function Loading({ children }: { children: ReactNode }) {
   return (
     <div aria-busy="true">
-      <p className="skeleton-words" role="status">Loading…</p>
+      <p className="skeleton-words" role="status">{t("Loading…")}</p>
       <div aria-hidden="true">{children}</div>
     </div>
   );
@@ -36,7 +37,7 @@ export function Loading({ children }: { children: ReactNode }) {
  * block for a chart. The region says it's busy, and "Loading…" in words for screen readers; on
  * a card of its own, or `bare` inside one that's already there. */
 export function Skeleton({ bare = false, ...shaped }: Shaped & { bare?: boolean }) {
-  const shapes = <><p className="skeleton-words" role="status">Loading…</p><Shapes {...shaped} /></>;
+  const shapes = <><p className="skeleton-words" role="status">{t("Loading…")}</p><Shapes {...shaped} /></>;
   return bare ? <div aria-busy="true">{shapes}</div> : <section className="card" aria-busy="true">{shapes}</section>;
 }
 
@@ -70,7 +71,7 @@ function One({ toast, gone }: { toast: Toast; gone: (id: number) => void }) {
       {toast.undo && (
         <button type="button" className="small" onClick={() => { toast.undo?.(); gone(toast.id); }}>Undo</button>
       )}
-      <button type="button" aria-label="Dismiss" onClick={() => gone(toast.id)}><Icon name="cross" /></button>
+      <button type="button" aria-label={t("Dismiss")} onClick={() => gone(toast.id)}><Icon name="cross" /></button>
     </div>
   );
 }

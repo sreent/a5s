@@ -6,6 +6,7 @@
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import { type Catalogue, get, type Home } from "./api";
 import { Palette, type PaletteOption } from "./design/palette";
+import { t } from "./i18n";
 import { Icon } from "./icons";
 import { go, inside, type Route } from "./router";
 import { shellOf } from "./Sidebar";
@@ -19,27 +20,27 @@ async function everything(): Promise<Found[]> {
   const found: Found[] = [];
   for (const [n, wait] of (home?.waiting ?? []).entries()) {
     const to = wait.go ? inside(wait.go) ?? wait.go : null;
-    if (to) found.push({ id: `wait-${n}`, name: wait.what, where: "waits on you", group: "Waiting on you", icon: "bell", to });
+    if (to) found.push({ id: `wait-${n}`, name: wait.what, where: t("waits on you"), group: t("Waiting on you"), icon: "bell", to });
   }
   for (const place of shell?.pages ?? []) {  // as the sidebar names and orders them
-    found.push({ id: `page-${place.page}`, name: place.name, where: "a page", group: "Pages", icon: place.icon,
+    found.push({ id: `page-${place.page}`, name: place.name, where: t("a page"), group: t("Pages"), icon: place.icon,
                  to: inside(place.at) ?? place.at });
   }
-  if (catalogue) found.push({ id: "page-agents", name: "All agents", where: "a page", group: "Pages", icon: "agent", to: { page: "agents" } });
-  if (home?.authoring) found.push({ id: "page-new", name: "Start a new agent", where: "in the studio", group: "Pages", icon: "plus", to: { page: "new" } });
-  found.push({ id: "page-you", name: "What you may do", where: "a page", group: "Pages", icon: "people", to: { page: "you" } });
+  if (catalogue) found.push({ id: "page-agents", name: t("All agents"), where: t("a page"), group: t("Pages"), icon: "agent", to: { page: "agents" } });
+  if (home?.authoring) found.push({ id: "page-new", name: t("Start a new agent"), where: t("in the studio"), group: t("Pages"), icon: "plus", to: { page: "new" } });
+  found.push({ id: "page-you", name: t("What you may do"), where: t("a page"), group: t("Pages"), icon: "people", to: { page: "you" } });
   for (const agent of catalogue?.agents ?? []) {
-    found.push({ id: `agent-${agent.id}`, name: agent.id, where: "an agent", group: "Agents", icon: "agent", to: { page: "agent", agent: agent.id } });
+    found.push({ id: `agent-${agent.id}`, name: agent.id, where: t("an agent"), group: t("Agents"), icon: "agent", to: { page: "agent", agent: agent.id } });
   }
   for (const agent of catalogue?.agents ?? []) {
     for (const inst of agent.instances) {
-      found.push({ id: `instance-${inst.id}`, name: inst.id, where: `an instance of the ${agent.id}`, group: "Instances",
+      found.push({ id: `instance-${inst.id}`, name: inst.id, where: t("an instance of the {agent}", { agent: agent.id }), group: t("Instances"),
                    icon: "run", to: { page: "instance", instance: inst.id } });
     }
   }
   for (const draft of home?.drafts ?? []) {
     found.push({ id: `draft-${draft.id}`, name: `The draft of ${draft.agent}`, where: draft.published ? "a draft, published" : "a draft",
-                 group: "Drafts", icon: "studio", to: { page: "draft", draft: draft.id } });
+                 group: t("Drafts"), icon: "studio", to: { page: "draft", draft: draft.id } });
   }
   return found;
 }
@@ -57,11 +58,11 @@ export function FindButton({ rail = false, id }: { rail?: boolean; id?: string }
   const open = useContext(Opener);
   const mac = /Mac|iPhone|iPad/.test(navigator.platform);
   if (rail) {
-    return <button type="button" className="palette-open" aria-label="Find anything" title="Find anything" onClick={open}><Icon name="find" /></button>;
+    return <button type="button" className="palette-open" aria-label={t("Find anything")} title={t("Find anything")} onClick={open}><Icon name="find" /></button>;
   }
   return (
     <button type="button" className="palette-open" id={id} onClick={open}>
-      <Icon name="find" /><span>Find anything</span><kbd>{mac ? "⌘" : "Ctrl"}</kbd><kbd>K</kbd>
+      <Icon name="find" /><span>{t("Find anything")}</span><kbd>{mac ? "⌘" : "Ctrl"}</kbd><kbd>K</kbd>
     </button>
   );
 }

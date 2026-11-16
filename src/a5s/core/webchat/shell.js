@@ -95,15 +95,18 @@
   }
 
   window.a5s = {
-    // Called by each page once it has signed someone in, with their sign-in
+    // Called by each page once it has signed someone in, with their sign-in: the language they
+    // read, as /shell/api says, for the page to speak, or English
     async signedIn(token) {
       try {
         const answer = await fetch("/shell/api", { headers: { Authorization: `Bearer ${token}` } });
-        if (!answer.ok) return;  // the page says what's wrong, as it always did
+        if (!answer.ok) return "en";  // the page says what's wrong, as it always did
         const found = await answer.json();
         pages(found.pages, found.you);
+        if (found.language === "th") document.getElementById("pages").setAttribute("aria-label", "หน้าต่างๆ ของ a5s");
+        return found.language || "en";
       } catch {
-        // the sidebar is a convenience: the page works without it
+        return "en";  // the sidebar is a convenience: the page works without it
       }
     },
     icon,

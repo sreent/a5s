@@ -1,6 +1,8 @@
 // What the studio's pages share: loading what a page shows, its heading with the way back, and
 // the badges that say what a tool does, how something stands, and how a run ended.
 
+import { language, locale, t } from "./i18n";
+import { TH_NOUNS } from "./i18n/th";
 import { type DependencyList, type ReactNode, useEffect, useRef, useState } from "react";
 import type { AgentUses, Instance, Tool, Waiting as Wait } from "./api";
 import { Badge, type Tone } from "./design/controls";
@@ -148,15 +150,21 @@ export function triggers(agent: Pick<AgentUses, "triggers"> & Partial<Pick<Agent
 
 // Words and numbers
 
-export const plural = (n: number, one: string, many = `${one}s`) => `${n.toLocaleString()} ${n === 1 ? one : many}`;
+export const plural = (n: number, one: string, many = `${one}s`) =>
+  language() === "th" ? `${n.toLocaleString(locale())} ${TH_NOUNS[one] ?? one}` : `${n.toLocaleString()} ${n === 1 ? one : many}`;
 export const people = (n: number) => plural(n, "person", "people");
 export const share = (x: number | null | undefined) =>
   x === null || x === undefined ? "none yet" : `${Math.round(x * 100)}%`;
 
-const WHEN = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
-const TIME = new Intl.DateTimeFormat(undefined, { timeStyle: "medium" });
-export const when = (at: string) => WHEN.format(new Date(at));
-export const time = (at: string) => TIME.format(new Date(at));
+const formats = new Map<string, Intl.DateTimeFormat>();  // each, in each language, once
+const format = (style: Intl.DateTimeFormatOptions) => {
+  const key = `${language()}:${JSON.stringify(style)}`;
+  let found = formats.get(key);
+  if (!found) formats.set(key, found = new Intl.DateTimeFormat(locale(), style));
+  return found;
+};
+export const when = (at: string) => format({ dateStyle: "medium", timeStyle: "short" }).format(new Date(at));
+export const time = (at: string) => format({ timeStyle: "medium" }).format(new Date(at));
 
 export function levels(autonomy: { start: number; max: number }): string {
   return autonomy.start === autonomy.max ? `level ${autonomy.start}` : `levels ${autonomy.start}–${autonomy.max}`;
@@ -185,7 +193,7 @@ export function WaitList({ waiting, none }: { waiting: Wait[]; none: string }) {
     <ul className="waits">{waiting.map((w) => (
       <li key={`${w.kind}:${w.what}`} className={`wait wait-${w.kind}`}>
         {w.go ? <To go={w.go}>{w.what}</To> : <span>{w.what}</span>}
-        {w.since && <span className="faint"> · since {when(w.since)}</span>}
+        {w.since && <span className="faint"> · {t("since {when}", { when: when(w.since) })}</span>}
         {w.how && <span className="faint"> · <span className="mono">{w.how}</span></span>}
         {w.why.length > 0 && <ul className="plain faint">{w.why.map((why) => <li key={why}>{why}</li>)}</ul>}
       </li>
