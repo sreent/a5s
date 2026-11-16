@@ -46,6 +46,7 @@ from walkthrough import (
     says,
     signed_and_recorded,
     walking_on,
+    watched,
 )
 
 AGENT = "mdg-helper"
@@ -139,7 +140,8 @@ def built(walk: Walk, stack, url: str, forge: FakeGitHub, on: On) -> tuple[dict,
         page.click("[data-step=agent]")
         page.check("#plan-title ~ fieldset label:has-text('material') input")
         kept(page)
-        page.check("#plan-title ~ fieldset label:has-text('team:plant') input")
+        for who in ("team:plant", "team:data-team", "team:procurement", "team:accounts-payable"):
+            page.check(f"#plan-title ~ fieldset label:has-text('{who}') input")
         kept(page)
         page.click(".wb-inspector button:has-text('The draft as a whole')")
         assert "Mo Hassan" in page.inner_text("#decides li:has-text('material')")
@@ -423,6 +425,8 @@ def test_the_master_data_assistant_is_built_again_and_takes_one_correction_to_le
                 graded(walk, stack, url)
                 raised(walk, stack, url, instance)
                 alone(walk, stack, url)
+                watched(walk, stack, url, instance, "mo", "Mo, who owns material data,", "correct_value",
+                        "CR0000111")
                 audited(walk, url, instance)
     walk.guide("Master data's assistant, built again from nothing in the studio, as mdg-helper, by the "
                "data team's own people, SAP behind its MCP server: a test case its judge grades, a "

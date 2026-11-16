@@ -14,10 +14,12 @@ it there. Ash, of assurance, follows it all in the audit trail.
 from __future__ import annotations
 
 import shutil
+from dataclasses import replace
 
 import yaml
 
-from a5s import db
+from a5s import db, sandbox
+from a5s.config import Config
 from a5s.core import drafts
 from conftest import (
     PROVIDER_KEY,
@@ -43,7 +45,9 @@ from walkthrough import (
     released,
     says,
     signed_and_recorded,
+    tried,
     walking_on,
+    watched,
 )
 
 AGENT = "dev-helper"
@@ -71,9 +75,9 @@ and you say so if anyone asks.
 """
 
 
-def built(walk: Walk, stack, url: str, forge: FakeGitHub) -> tuple[dict, str, dict]:
-    """Pam builds dev-helper in the studio from nothing, and publishes it: its definition, as a5s
-    keeps it, its draft, and its pull request."""
+def built(walk: Walk, stack, url: str, forge: FakeGitHub, on) -> tuple[dict, str, dict]:
+    """Pam builds dev-helper in the studio from nothing, tries it, keeps and runs a case, and
+    publishes it: its definition, as a5s keeps it, its draft, and its pull request."""
     page = walk.as_("pam", f"{url}/studio/new")
     with walk.step("Pam, who owns the team's agents, starts a new one, dev-helper, from the blank start.", page):
         page.wait_for_selector(".template >> text=blank", timeout=30000)
@@ -110,12 +114,14 @@ def built(walk: Walk, stack, url: str, forge: FakeGitHub) -> tuple[dict, str, di
         page.select_option("#level-max", "1")
         page.select_option("#level-start", "1")
         kept(page)
-    with walk.step("She plans its first instance in the backend and the frontend, serving the backend "
-                   "team: each review it asks for waits for that repository's owner.", page):
+    with walk.step("She plans its first instance in the backend and the frontend, serving the "
+                   "engineering, security and product people the team's own assistant serves: each "
+                   "review it asks for waits for that repository's owner.", page):
         for part in ("backend", "frontend"):
             page.check(f"#plan-title ~ fieldset label:has-text('{part}') input")
             kept(page)
-        page.check("#plan-title ~ fieldset label:has-text('team:backend-team') input")
+        for who in ("team:backend-team", "team:frontend-team", "team:security-team", "Kai Brooks"):
+            page.check(f"#plan-title ~ fieldset label:has-text('{who}') input")
         kept(page)
     with walk.step("She tells it how to work, in its instructions.", page):
         page.click(".wb-bar .modes button:has-text('Instructions')")
@@ -123,6 +129,8 @@ def built(walk: Walk, stack, url: str, forge: FakeGitHub) -> tuple[dict, str, di
         kept(page)
         page.click(".wb-bar .modes button:has-text('Design')")
         page.wait_for_selector("#problem-count >> text=No problems", timeout=30000)
+    tried(walk, stack, page, on, "Pam", "raj", "What is PR-17's state?", "get_record",
+          {"key": "PR-17"}, "PR-17 is open.", "PR-17", "PR-17 answered from the forge")
     rebuilt = definition(stack, page)
     with walk.step("Nothing stops its release. Pam publishes its pull request.", page):
         page.click("#to-publish")
@@ -225,7 +233,7 @@ def audited(walk: Walk, url: str, instance: str) -> None:
 
 
 def test_the_dev_assistant_is_built_again_in_the_studio_and_its_review_waits_for_its_owner(
-        database, tmp_path, provider, browser, monkeypatch, capsys):
+        database, sandbox_database, tmp_path, provider, browser, monkeypatch, capsys):
     monkeypatch.setenv("A5S_TEST_PROVIDER_KEY", PROVIDER_KEY)
     on = walking_on()
     model, http = on.model, on.http
@@ -244,8 +252,15 @@ def test_the_dev_assistant_is_built_again_in_the_studio_and_its_review_waits_for
             said = released(stack, tmp_path / "first", monkeypatch, capsys)
             said = signed_and_recorded(said, capsys, "rue", "ash", "ugo", "pam")
             assert said.rstrip().endswith("Approved here."), said
-            with deciding(stack, provider) as url:
-                rebuilt, draft, pull = built(walk, stack, url, forge)
+            boxed = Config(database_url="postgresql://unused", gateway_url="http://unused",
+                           service_token="", root=root, scenario=DELIVERY, scenario_folder=team,
+                           agents_folder=root / "scenario-agents")
+            with (sandbox.opened(boxed, sandbox_database, tmp_path / "sandbox",
+                                 transport=on.transport) as box,
+                  serve(sandbox.create_app(box, "shared-token"), free_port()) as box_url):
+                stack.cfg = replace(stack.cfg, sandbox_url=box_url, sandbox_token="shared-token")
+                with deciding(stack, provider) as url:
+                    rebuilt, draft, pull = built(walk, stack, url, forge, on)
         hand_written = yaml.safe_load((agents / "dev-assistant" / "agent.yaml").read_text())
         with walk.step("What dev-helper may do, and what starts it, is what the hand-written dev "
                        "assistant's definition gives it, in the studio's words: nothing more, and "
@@ -267,6 +282,8 @@ def test_the_dev_assistant_is_built_again_in_the_studio_and_its_review_waits_for
             with deciding(stack, provider) as url, answering(stack):
                 instance = at_work(walk, stack, url, draft)
                 reviewed(walk, stack, url)
+                watched(walk, stack, url, instance, "leo", "Leo, who owns the backend,", "request_review",
+                        "PR-17")
                 tasked(walk, stack, url)
                 audited(walk, url, instance)
     walk.guide("Software delivery's dev assistant, built again from nothing in the studio, as dev-helper, "

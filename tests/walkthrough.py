@@ -102,6 +102,70 @@ def decided_in_trail(page: Any, by: str) -> None:
     page.fill("#by", "")
 
 
+def watched(walk: Walk, stack: Any, url: str, instance: str, person: str, name: str, tool: str,
+            record: str) -> None:
+    """Someone who owns a part an instance works in watches its dashboard and opens the run that
+    just used `tool` on `record`, whose records they may see."""
+    page = walk.as_(person, f"{url}/studio/instances/{instance}")
+    with walk.step(f"{name} watches {instance} on its own page, as the owner of one of its parts: "
+                   "its runs and how they ended, and what it may do.", page):
+        page.wait_for_selector(".tile-label:text-is('Runs')", timeout=30000)
+        assert int(page.locator(".tile", has=page.locator(".tile-label:text-is('Runs')")
+                              ).locator(".tile-value").inner_text()) >= 1
+        assert "done" in page.inner_text("section.card:has(h2:text-is('How runs ended'))")
+        assert "Asks" in page.inner_text("#reach")
+    used = next(e["run"] for e in reversed(stack.ledger())
+                if e["kind"] == "tool" and e["action"] == tool and e["instance"] == instance)
+    with walk.step(f"They open that run: {tool} on {record}, from its message to its outcome. "
+                   "The studio shows what it did, never what anyone said.", page):
+        page.wait_for_selector(f".runs-table a[href='/studio/runs/{used}']", timeout=30000).click()
+        page.wait_for_selector(f".timeline >> text={tool}", timeout=30000)
+        assert record in page.inner_text(".chips")
+        assert "A message started it" in page.inner_text(".timeline")
+        assert "Ended: done" in page.inner_text(".timeline")
+        assert page.locator("#entries").count() == 0  # nobody's words, nor their hashes
+        page.locator(".timeline").scroll_into_view_if_needed()
+
+
+def tried(walk: Walk, stack: Any, page: Any, on: On, owner: str, person: str, question: str,
+          tool: str, args: dict, answer: str, record: str, case: str) -> None:
+    """An author tries a draft's read in the sandbox, keeps it as a case and runs that case before
+    publishing. The model's script is ignored on a real model, whose run must use the same tool."""
+    who = stack.gateway.scenario.person(person).name
+    stack.model.reply(None, (tool, args))
+    stack.model.reply(answer)
+    with walk.step(f"{owner} tries the draft in the sandbox as {who}, on its made-up records, and "
+                   f"keeps the exchange as a test case: {tool} answers about {record}, allowed by "
+                   "a5s's checks.", page):
+        page.click("#try-it")
+        page.wait_for_selector(f"#try-as option[value={person}]", state="attached", timeout=30000)
+        page.select_option("#try-as", person)
+        page.select_option("#try-model", on.alias)
+        page.fill("#try-text", question)
+        page.click(".try-say button[type=submit]")
+        page.wait_for_selector(".try-answer .try-reply", timeout=180000)
+        assert on.live or record in page.inner_text(".try-answer .try-reply")
+        assert "allow" in page.inner_text(".try-answer .run-calls")
+        page.fill("#case-name", case)
+        page.click("#keep-case")
+        page.wait_for_selector("#case-kept", timeout=30000)
+        page.wait_for_selector("#kept >> text=kept", timeout=30000)
+    stack.model.reply(None, (tool, args))
+    stack.model.reply(answer)
+    with walk.step(f"They run the case there: it uses {tool} again, and passes.", page):
+        page.click("#run-cases")
+        page.wait_for_selector("#cases-summary >> text=1 of 1 passed", timeout=300000)
+    draft = page.evaluate("location.pathname").rsplit("/", 1)[-1]
+    with db.transaction(stack.admin) as conn:
+        files = conn.execute("select files from agent_drafts where id = %s::uuid", (draft,)).fetchone()["files"]
+    [saved] = yaml.safe_load(files["tests/tried.yaml"])
+    assert (saved["name"], saved["as"]) == (case, person), saved
+    [step] = saved["steps"]
+    assert step["say"] == question and tool in step["uses"], saved
+    page.click(".wb-bar .modes button:has-text('Design')")
+    page.wait_for_selector("#problem-count >> text=No problems", timeout=30000)
+
+
 def waiting(stack: Any) -> int:
     """How many changes wait for a decision."""
     with db.transaction(stack.admin) as conn:

@@ -95,7 +95,7 @@ import json, os, time, uuid
 from urllib.parse import quote
 from urllib.request import Request, urlopen
 
-HOMESERVER = "http://127.0.0.1:8008/_matrix/client/v3"
+HOMESERVER = f"http://127.0.0.1:{os.environ.get('A5S_MATRIX_PORT', '8008')}/_matrix/client/v3"
 BOT, ASKER = f"@a5s-{os.environ['A5S_AGENT']}:a5s.test", os.environ["A5S_ASKER"]
 
 def call(method, path, body=None, token=None):
