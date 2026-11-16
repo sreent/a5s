@@ -228,7 +228,7 @@ def test_someone_connects_their_account_and_agents_act_there_as_them(stack, appr
     [never] = listed["connections"]
     assert {k: v for k, v in never.items() if v is not None} == {
         "system": "desk", "title": "Service desk", "connected": False, "connecting": False,
-        "scopes": ["tickets.read", "offline_access"]}
+        "scopes": ["tickets.read", "offline_access"], "reads": []}
     start = as_person(approving, provider, "ana", "POST", "/studio/api/you/connections/desk/start")
     go = urlsplit(start.json()["go"])
     asked = {k: v[0] for k, v in parse_qs(go.query).items()}

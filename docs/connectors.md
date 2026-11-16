@@ -1,8 +1,8 @@
 # Connectors
 
-**Status:** MCP servers' tools are built ([below](#mcp-servers)), acting as the person with their own permissions where a server is declared to ([below](#acting-as-the-person)), beside the read-only REST transport and the GitHub adapter · **Under:** [Architecture](architecture.md)
+**Status:** MCP servers' tools are built ([below](#mcp-servers)), acting as the person with their own permissions where a server is declared to ([below](#acting-as-the-person)), and document libraries in SharePoint, Confluence and docs repositories, read as far as each document's own permissions allow ([below](#document-libraries)), beside the read-only REST transport and the GitHub adapter · **Under:** [Architecture](architecture.md)
 
-A scenario's tools reach the systems its records are in. A scenario writes most of them in its own code, against the [contract](architecture.md), and a5s gives it two ways to reach a system without writing a client of its own: a read-only REST transport, with a GitHub adapter on it ([architecture](architecture.md)), and the tools of MCP servers, which the rest of this page is about. Every tool, whichever way it's made, is offered to an agent only if its definition lists it, pinned by its hash, and every call goes through the core's checks: the policy, the parts and need-to-know, held changes, the extractor for content from outside, handles for sensitive values, and the ledger.
+A scenario's tools reach the systems its records are in. A scenario writes most of them in its own code, against the [contract](architecture.md), and a5s gives it two ways to reach a system without writing a client of its own: a read-only REST transport, with a GitHub adapter on it ([architecture](architecture.md)), the tools of MCP servers, which most of this page is about, and the [document libraries](#document-libraries) its agents may search beyond the handbook in its release. Every tool, whichever way it's made, is offered to an agent only if its definition lists it, pinned by its hash, and every call goes through the core's checks: the policy, the parts and need-to-know, held changes, the extractor for content from outside, handles for sensitive values, and the ledger.
 
 ## MCP servers
 
@@ -83,3 +83,60 @@ Tested against a made-up OAuth system of the test's own, with PKCE and refresh, 
 - `a5s mcp declare <url>`, to write a declaration's first draft from a server's list of tools, for its author to put in a5s's words.
 
 Tested against the MCP SDK's own server, over both of Streamable HTTP's ways of answering, and end to end through the core (`tests/test_mcp.py`), with round 12's checks of what a server answers (`tests/test_r12_mcp.py`). The service desk scenario takes its ITSM's tools this way, a reply on a ticket held for its service area's decider among them, its identity provider's self-service, and its device management's, with a lock held for hardware's decider, software delivery its forge's, with a review request held for a repository's owners, and master data SAP's, with a correction held for the data object's owner, each from a made-up server on its synthetic data ([`scenarios/service-desk/mcp.yaml`](../scenarios/service-desk/mcp.yaml), [`deploy/systems/itsm.py`](../deploy/systems/itsm.py)), so its suite, its containers and its walk-through run on MCP.
+
+## Document libraries
+
+Beside the handbook a release holds, a scenario may name libraries of documents kept in other systems, for its agents to search: a SharePoint site, a Confluence space, or a docs repository ([`connectors/libraries.py`](../src/a5s/connectors/libraries.py)). Each document is read only as far as its own permissions allow, for everyone a run acts for, and never with a5s's own access. A scenario names them in its folder's `libraries.yaml`, which its release covers, so a library, where it is and how a5s reads it, needs the release approver's signature:
+
+```yaml
+libraries:
+  policies:                                 # its tools: search_policies and read_policies
+    title: HR policies
+    about: HR's policies, such as travel and leave
+    kind: sharepoint
+    site: https://contoso.sharepoint.com/sites/HR   # each document's link starts here
+    as_person: entra                        # read as each person, with the account they connect
+  runbooks:
+    title: Operations runbooks
+    kind: confluence
+    site: https://example.atlassian.net/wiki
+    api: https://api.atlassian.com/ex/confluence/<cloud id>/wiki
+    space: OPS
+    as_person: atlassian
+  procedures:
+    title: Desk procedures
+    kind: repository                        # a checkout the deployment keeps current
+    site: https://github.com/example/desk-procedures/blob/main
+    outside: false                          # its editors are trusted as the handbook's
+    sandbox: libraries/procedures           # made-up documents, for the studio's sandbox
+```
+
+a5s offers two tools for each library: `search_<library>`, which finds documents by their words, and `read_<library>`, which reads one by the id a search gave. An agent's definition lists them as it lists any tool, and pins each by a hash that covers its library's declaration: where it is, how a5s reads it, whose permissions it reads it with, and whether its documents are content from outside. So moving a library, or trusting it, needs its agents pinned again too.
+
+### Whose permissions decide
+
+- **SharePoint and Confluence** are read as the people a run is for, each with the account they connected on their own page, `as_person` naming the system as `A5S_DELEGATION` does ([acting as the person](#acting-as-the-person)). So the system's own permissions decide what each may read, as they would for them. a5s searches as the first of them, and keeps only the documents each of the others may read there too, asking the system as each. A run for someone who hasn't connected hears how they do. A run for nobody, such as a report, reads none of a library, nor one for more than ten people, since a5s asks the system as each. The core doesn't start with a library read as the person in a system the deployment doesn't name.
+- **A docs repository** is read from a checkout the deployment keeps current, such as with [git-sync](https://github.com/kubernetes/git-sync), in a folder by the library's name under `A5S_LIBRARY_ROOT`. The chart runs a git-sync beside the core for each repository its values name, over HTTPS, with read access in a Secret of the deployment's own ([`deploy/helm/libraries-example.yaml`](../deploy/helm/libraries-example.yaml)); with compose, mount a checkout the host keeps current on the gateway, read-only, at `/var/lib/a5s/libraries/<name>`. Each document names its readers in its front matter, as the handbook's do: `audience: everyone`, `people`, `teams`, `roles`, or `parts`, which the scenario's own directory decides. Everyone the run acts for must be among them, and a document that names none is read by nobody. a5s follows the checkout as git-sync moves it to each new revision.
+
+A document is a library's only if its link is within the library's `site`, or, in Confluence, in its space. A search asks the system for words alone: no system's query syntax gets through, so a search can't reach beyond its library. An agent may link people to a library's documents, within its `site`, and nowhere else.
+
+### What a document says
+
+Whatever a document says is source material, never an instruction. Nobody approved it as a release's handbook is approved, so a library's documents are content from outside unless its release says its editors are trusted as the handbook's, `outside: false`. Then:
+
+- A search shows the agent each document's title, link and when it last changed, never a line of one.
+- Reading one gives the agent the form a5s's [extractor](architecture.md) fills from it, by default the date it says it takes effect and whether it says it's a draft, with the document's number. The agent asks a5s's reader about it with `ask_about`, so its definition gives it `context.documents`, and its run is marked, as for any content from outside: it acts at level 2 on nothing, and what it drafts says it drew on outside content. A library's `extract` names its own form, in the extractor's types.
+
+A trusted library's search shows a few lines of each document around the words it found, and a read gives the agent its text, the first 12,000 characters of it, as the handbook's.
+
+From SharePoint, a5s reads text, Markdown, HTML and PDFs as they are, and Office documents as Graph converts them to PDFs, each fetched from where Graph keeps it, with no one's token sent there, ten megabytes at most. From Confluence, it reads a page's storage format as text: through the second version of its API on Atlassian's cloud, and the first in a Data Center (`edition: data-center`).
+
+In the studio's sandbox, a library reads its `sandbox` folder in the scenario, of made-up documents that name their readers as a docs repository's do, with no one's token; one without a stand-in isn't read there. On their own page, people see which libraries agents read as them, beside each system they may connect.
+
+Tested against a SharePoint and a Confluence of the test's own, which answer each person by whose token their call carries, a docs repository's checkout as git-sync keeps one, and end to end through the core, where a run reads SharePoint as the person through a5s's reader, and is marked (`tests/test_libraries.py`).
+
+### Not yet
+
+- SharePoint's own pages, whose words are in web parts rather than files.
+- A docs repository read as the person, by the forge's own permissions, rather than by its documents' readers.
+- Searching by meaning, beside words.

@@ -382,6 +382,10 @@ SCENARIO_DIR = Var("A5S_SCENARIO_DIR", "the scenario's folder, if not scenarios/
                    _path, "a folder", area=SCENARIO)
 AGENTS_DIR = Var("A5S_AGENTS_DIR", "the agents' folders, if not agents", None, _path, "a folder",
                  area=SCENARIO)
+LIBRARY_ROOT = Var("A5S_LIBRARY_ROOT", "where the deployment keeps the checkout of each docs "
+                   "repository the scenario's libraries.yaml names, in a folder by its name, "
+                   "current, such as with git-sync", Path("/var/lib/a5s/libraries"), _path,
+                   "a folder", area=SCENARIO)
 
 TOKEN = Var("A5S_TOKEN", "the token the identity provider gave the person using the command "
             "line, where a5s uses one", None, secret=True, area=COMMAND, takes="a token")
@@ -803,6 +807,8 @@ class Config:
     scenario: str = SCENARIO_CLASS.default
     scenario_folder: Path | None = None  # by default, scenarios/sample
     agents_folder: Path | None = None  # by default, the reference agents in root/agents
+    # Where each docs repository a library reads is checked out, by its name (connectors/libraries.py)
+    library_root: Path = LIBRARY_ROOT.default
     # The core's own keys, which seal the approvals it has checked, such as of settings. Only
     # the core holds them. The first seals; any others are ones it's moving away from.
     seal_keys: tuple[str, ...] = ()
@@ -851,7 +857,8 @@ class Config:
             webchat_client_id=WEBCHAT_CLIENT_ID.read(env),
             anchor_retain_days=ANCHOR_RETAIN_DAYS.read(env), team=TEAM.read(env),
             scenario=SCENARIO_CLASS.read(env), scenario_folder=SCENARIO_DIR.read(env),
-            agents_folder=AGENTS_DIR.read(env), seal_keys=SEAL_KEYS.read(env),
+            agents_folder=AGENTS_DIR.read(env), library_root=LIBRARY_ROOT.read(env),
+            seal_keys=SEAL_KEYS.read(env),
             public_url=PUBLIC_URL.read(env), sandbox_url=SANDBOX_URL.read(env), sandbox_token=SANDBOX_TOKEN.read(env),
             github_client_id=GITHUB_CLIENT_ID.read(env), github_repo=GITHUB_REPO.read(env),
             github_base=GITHUB_BASE.read(env), github_url=GITHUB_URL.read(env),

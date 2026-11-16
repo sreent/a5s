@@ -278,6 +278,7 @@ export type Connection = {
   scopes: string[];
   connected_at?: string;
   used_at?: string;
+  reads: string[];
 };
 
 export type ConnectionBack = {

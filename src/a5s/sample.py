@@ -276,10 +276,10 @@ class SampleScenario:
             by_name.update(Graphify(graph).tools())
         vault = self.folder / "knowledge"
         if vault.is_dir():
-            by_name.update(MarkdownKnowledge(vault, sees_part=self._knowledge_part, person=self.person).tools())
+            by_name.update(MarkdownKnowledge(vault, sees_part=self.sees_part, person=self.person).tools())
         return by_name
 
-    def _knowledge_part(self, person: str, part: str) -> bool:
+    def sees_part(self, person: str, part: str) -> bool:
         who = self._people.get(person)
         rule = self._parts.get(part) or {}
         return bool(who and (who.team == rule.get("team") or

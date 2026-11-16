@@ -82,7 +82,8 @@ function Connections() {
         <thead><tr><th>{t("System")}</th><th>{t("Now")}</th><th>{t("What a5s may do there as you")}</th><th>{t("Connect or disconnect")}</th></tr></thead>
         <tbody>{data.connections.map((c) => (
           <tr key={c.system} data-system={c.system}>
-            <td><strong>{c.title}</strong></td>
+            <td><strong>{c.title}</strong>
+              {c.reads.length > 0 && <p className="note">{t("Agents read {libraries} there as you", { libraries: c.reads.join(", ") })}</p>}</td>
             <td>
               {c.connected
                 ? <Badge tone="good" dot>{t("Connected")}</Badge>

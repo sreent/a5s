@@ -91,6 +91,7 @@ export const FRAME: Record<string, string> = {
   "Disconnect your {system} account?": "ยกเลิกการเชื่อมต่อบัญชี {system} ของคุณหรือไม่",
   "Agents won't act there as you until you connect it again. The system may keep its own record of a5s's access, which you can end there too.": "เอเจนต์จะไม่ทำงานที่นั่นในนามคุณจนกว่าคุณจะเชื่อมต่ออีกครั้ง ระบบอาจเก็บบันทึกการเข้าถึงของ a5s ไว้เอง ซึ่งคุณยกเลิกที่นั่นได้เช่นกัน",
   "Connect {system}": "เชื่อมต่อ {system}",
+  "Agents read {libraries} there as you": "เอเจนต์อ่าน {libraries} ที่นั่นในนามของคุณ",
   "a5s has forgotten your {system} account: agents no longer act there as you.": "a5s ลืมบัญชี {system} ของคุณแล้ว เอเจนต์จะไม่ทำงานที่นั่นในนามคุณอีก",
   "There's nothing here to connect. Connect an account on your own page.": "ไม่มีสิ่งใดให้เชื่อมต่อที่นี่ เชื่อมต่อบัญชีได้ที่หน้าของคุณเอง",
   "Your {system} account is connected: agents act there as you, with your permissions.": "เชื่อมต่อบัญชี {system} ของคุณแล้ว เอเจนต์จะทำงานที่นั่นในนามคุณด้วยสิทธิ์ของคุณ",

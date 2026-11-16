@@ -80,6 +80,10 @@ review_by: 2027-01-31
 
 An unmarked document is denied. For a group, every person the run acts for must be named or allowed by the scenario's `sees_part(person, part)` callback. A document whose `review_by` has passed is marked `stale`, not silently served as current. Add both tools to the agent's grants and pin their schemas with `a5s pin`. The adapter doesn't replace the agent's notebook, which holds what it learned from records rather than these curated documents.
 
+### Document libraries in other systems
+
+Beside its handbook, a scenario may name libraries of documents kept elsewhere, in its folder's `libraries.yaml`: a SharePoint site, a Confluence space or a docs repository ([connectors](connectors.md#document-libraries)). Each gives `search_<library>` and `read_<library>`, which read a document only as far as its own permissions allow, for everyone a run acts for: SharePoint and Confluence as each of them, with the accounts they connected, and a docs repository's checkout by the readers each document names in its front matter, as the handbook's do. A library nobody trusted as the handbook is trusted is content from outside: the agent reads it through a5s's reader, and its run is marked.
+
 ## A call, step by step
 
 Every tool call, model call and outgoing message takes the same path:

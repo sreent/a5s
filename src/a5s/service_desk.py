@@ -147,7 +147,7 @@ class ServiceDeskScenario:
             return False
         return person in (ticket["requester"], ticket["assignee"]) or who.team == f"{ticket['part']}-team"
 
-    def _knowledge_part(self, person: str, part: str) -> bool:
+    def sees_part(self, person: str, part: str) -> bool:
         who = self._people.get(person)
         return bool(who and who.team == f"{part}-team")
 
@@ -202,5 +202,5 @@ class ServiceDeskScenario:
             "create_draft", "Save a draft ticket reply for a person to review and use.", body, draft,
             writes=True, text_fields=("title", "body"), record_arg="record", idempotent=True)}
         tools.update(MarkdownKnowledge(self.folder / "knowledge",
-                                       sees_part=self._knowledge_part, person=self.person).tools())
+                                       sees_part=self.sees_part, person=self.person).tools())
         return tools

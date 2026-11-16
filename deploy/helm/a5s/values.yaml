@@ -123,6 +123,24 @@ anchor:
   s3Endpoint: ""
   s3Region: ""
 
+# The docs repositories the scenario's libraries.yaml names (docs/connectors.md#document-libraries):
+# beside the gateway, a git-sync for each keeps its checkout current, over HTTPS, in a folder by
+# the library's name, where the core reads it, each document naming its readers. None, and the
+# gateway runs alone.
+libraries:
+  repositories: []
+  # - name: procedures                     # the library's name, as libraries.yaml names it
+  #   repo: https://github.com/example/desk-procedures
+  #   ref: main
+  #   period: 60s                          # how often git-sync looks for a new revision
+  #   secret: ""                           # a Secret with GITSYNC_USERNAME and GITSYNC_PASSWORD,
+  #                                        # for a private repository: read access alone
+  gitSync:
+    image: registry.k8s.io/git-sync/git-sync:v4.4.2
+    resources:
+      requests: {cpu: 10m, memory: 32Mi}
+      limits: {memory: 128Mi}
+
 sandbox:
   # In a5s's release: where its sandbox is, which the studio sends people's drafts to try, by
   # the Secret's sandbox-token, such as http://a5s-sandbox.a5s-sandbox:8710 for the sandbox

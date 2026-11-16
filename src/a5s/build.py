@@ -9,7 +9,7 @@ import httpx
 
 from a5s import db, definitions
 from a5s.config import Config, load_currency, load_models
-from a5s.connectors import mcp
+from a5s.connectors import libraries, mcp
 from a5s.contract import Scenario
 from a5s.core import delegation, memberships, metrics, registration, registry, status, traces
 from a5s.core.events import EventsConfig
@@ -26,11 +26,15 @@ from a5s.core.teams import Teams, TeamsConfig
 def scenario(cfg: Config, delegated: mcp.Delegated | None = None) -> Scenario:
     """The scenario a5s serves, such as its own sample: any class that meets the contract, with
     the tools of MCP servers' its folder's mcp.yaml declares beside its own (connectors/mcp.py),
-    those that act as the person with their own tokens (`delegated`), in the core."""
+    and of the libraries its libraries.yaml names (connectors/libraries.py), those that act as
+    the person with their own tokens (`delegated`), in the core."""
     module, _, name = cfg.scenario.partition(":")
     found = getattr(importlib.import_module(module), name)(cfg.scenario_dir, cfg.database_url)
-    return mcp.served(found, cfg.scenario_dir, sandboxed=cfg.sandboxed,
-                      reserved=frozenset(CORE_TOOLS), delegated=delegated)
+    found = mcp.served(found, cfg.scenario_dir, sandboxed=cfg.sandboxed,
+                       reserved=frozenset(CORE_TOOLS), delegated=delegated)
+    return libraries.served(found, cfg.scenario_dir, root=cfg.library_root,
+                            sandboxed=cfg.sandboxed, reserved=frozenset(CORE_TOOLS),
+                            delegated=delegated)
 
 
 def delegating(cfg: Config) -> tuple[delegation.Delegation | None, mcp.Delegated | None]:
@@ -48,6 +52,10 @@ def delegating(cfg: Config) -> tuple[delegation.Delegation | None, mcp.Delegated
         if server.as_person and not cfg.sandboxed and (found is None or found.system(server.as_person) is None):
             raise RuntimeError(f"the {name} MCP server acts as the person in {server.as_person}, "
                                "which A5S_DELEGATION doesn't name, so nobody could connect it")
+    for name, system in libraries.systems(cfg.scenario_dir).items():
+        if not cfg.sandboxed and (found is None or found.system(system) is None):
+            raise RuntimeError(f"the {name} library is read as the person in {system}, which "
+                               "A5S_DELEGATION doesn't name, so nobody could connect it")
     return found, (delegation.supplier(cfg.database_url, cfg.seal_keys, found)
                    if core and found else None)
 

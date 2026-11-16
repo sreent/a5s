@@ -159,6 +159,7 @@ The tests check that neither compose nor the chart sets a setting to its default
 | `A5S_SCENARIO` | `a5s.sample:SampleScenario` | module:Class | The scenario a5s serves, as module:Class |
 | `A5S_SCENARIO_DIR` | none | a folder | The scenario's folder, if not scenarios/sample |
 | `A5S_AGENTS_DIR` | none | a folder | The agents' folders, if not agents |
+| `A5S_LIBRARY_ROOT` | `/var/lib/a5s/libraries` | a folder | Where the deployment keeps the checkout of each docs repository the scenario's libraries.yaml names, in a folder by its name, current, such as with git-sync |
 
 ### IT's inventory in Microsoft 365
 

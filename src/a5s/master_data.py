@@ -185,7 +185,7 @@ class MasterDataScenario:
             return stewards
         return stewards or who.team in (rule.get("seen_by") or ())
 
-    def _knowledge_part(self, person: str, part: str) -> bool:
+    def sees_part(self, person: str, part: str) -> bool:
         who, rule = self._people.get(person), self._objects.get(part) or {}
         return bool(who and rule and (who.team in ("data-team", rule["team"])
                                       or who.team in (rule.get("seen_by") or ())))
@@ -394,7 +394,7 @@ class MasterDataScenario:
                  idempotent=True),
         )}
         tools.update(MarkdownKnowledge(self.folder / "knowledge",
-                                       sees_part=self._knowledge_part, person=self.person).tools())
+                                       sees_part=self.sees_part, person=self.person).tools())
         return tools
 
 

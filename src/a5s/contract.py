@@ -537,7 +537,9 @@ class Scenario(Protocol):
     """What a scenario gives a5s. One may also have record(key) -> Record | None, which reads
     one record, as watched() stands to it, or None if there's no such record; a5s reads that
     one record with it, such as for a case's brief, and without it reads every record with
-    watched() to find the one."""
+    watched() to find the one. And sees_part(person, part) -> bool, whether someone may read
+    what's in a part, for documents that name their readers by part, such as a docs
+    repository's (connectors/libraries.py): without it, no part names a reader."""
 
     name: str
     record_links: tuple[str, ...]  # the only link prefixes agents' messages may carry

@@ -207,6 +207,7 @@ class Connection(Shape):
     scopes: list[str]  # what a5s may do as them there, as the system said, or asks for
     connected_at: str | SkipJsonSchema[None] = None
     used_at: str | SkipJsonSchema[None] = None
+    reads: list[str]  # the libraries agents read there as them, by their titles
 
 
 class Connections(Shape):

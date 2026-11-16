@@ -21,6 +21,7 @@ from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Response
 from pydantic import BaseModel
 
 from a5s import authoring, cases, db, definitions, describing
+from a5s.connectors import libraries
 from a5s.contract import Person
 from a5s.core import (
     admin_api,
@@ -386,7 +387,9 @@ def router(gw: Any) -> APIRouter:
         as them, with their permissions (core/delegation.py), and whether they have: none,
         where the deployment connects none."""
         with db.transaction(gw.url) as conn:
-            return {"connections": delegation.connections(conn, gw.delegation, person.id)}
+            found = delegation.connections(conn, gw.delegation, person.id)
+        reads = libraries.read_in(gw.scenario)  # what connecting each is for
+        return {"connections": [{**c, "reads": reads.get(c["system"], [])} for c in found]}
 
     @api.post("/studio/api/you/connections/{system}/start", **shapes.answers(shapes.ConnectionStarted))
     def studio_connect(system: str, person: Annotated[Person, Depends(someone)]) -> dict:
