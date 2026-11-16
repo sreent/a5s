@@ -10,7 +10,9 @@
 // ระดับ, cap เพดาน, budget งบประมาณ, model โมเดล, task งาน, notebook สมุดบันทึก, ledger เลดเจอร์,
 // sign in ลงชื่อเข้าใช้, studio สตูดิโอ, map แผนผัง, sandbox แซนด์บ็อกซ์, test case กรณีทดสอบ, judge
 // ผู้ประเมิน, suspend ระงับ, resume กลับมาทำงานต่อ, data protection officer เจ้าหน้าที่คุ้มครองข้อมูล,
-// served ให้บริการ, watch ติดตาม, scenario ซีนาริโอ, autonomy ความเป็นอิสระ, connect เชื่อมต่อ.
+// served ให้บริการ, watch ติดตาม, scenario ซีนาริโอ, autonomy ความเป็นอิสระ, connect เชื่อมต่อ,
+// publish เผยแพร่, sign ลงนาม, review ตรวจทาน, decider ผู้ตัดสินใจ, digest สรุปประจำวัน, stand-in
+// model โมเดลจำลอง, need-to-know หลักรู้เท่าที่จำเป็น, undo ยกเลิก.
 // Ids, such as an agent's or a record's key, stay as they are. Each English word is said once,
 // in one of the files, though more than one part of the studio says it.
 
@@ -30,4 +32,5 @@ export const TH_NOUNS: Record<string, string> = {
   part: "ส่วนงาน", version: "เวอร์ชัน", case: "กรณี", step: "ขั้นตอน", call: "ครั้ง",
   minute: "นาที", hour: "ชั่วโมง", week: "สัปดาห์", month: "เดือน",
   time: "ครั้ง", system: "ระบบ", model: "โมเดล", "tool call": "ครั้ง", "held change": "รายการที่รออยู่",
+  problem: "ปัญหา", "test case": "กรณีทดสอบ",
 };

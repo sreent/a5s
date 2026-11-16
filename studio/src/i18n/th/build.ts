@@ -41,8 +41,6 @@ export const BUILD: Record<string, string> = {
   "left out": "ไม่ได้ให้",
   "What stops its release": "สิ่งที่ทำให้ยังรีลีสไม่ได้",
   "passed": "ผ่าน",
-  "failed": "ไม่ผ่าน",
-  "a5s's checks": "การตรวจสอบของ a5s",
   "Nothing would stop its release here, by the checks": "ไม่มีสิ่งใดทำให้รีลีสที่นี่ไม่ได้ ตามการตรวจสอบที่",
   "makes.": "ทำ",
   "draft": "ฉบับร่าง",
@@ -50,7 +48,6 @@ export const BUILD: Record<string, string> = {
   "Make a copy of your own": "ทำสำเนาเป็นของคุณเอง",
   "{author}'s draft, from {release}, kept {when}. You may author the {agent} too, so you may read it: copy it into a draft of your own to change it.":
     "ฉบับร่างของ {author} จาก {release} บันทึกเมื่อ {when} คุณเขียน {agent} ได้เช่นกัน จึงอ่านฉบับร่างนี้ได้: ทำสำเนาเป็นฉบับร่างของคุณเองเพื่อแก้ไข",
-  "How it's wired": "การเชื่อมต่อ",
   "Its map shows once its definition loads.": "แผนผังจะแสดงเมื่อโหลดนิยามเสร็จ",
   "{name} handed it over {when}": "{name} ส่งต่อมาเมื่อ {when}",
   "it copies a draft {name} wrote": "คัดลอกมาจากฉบับร่างที่ {name} เขียน",
@@ -61,7 +58,6 @@ export const BUILD: Record<string, string> = {
     "ไม่มีใครรับต่อได้: ผู้รับต้องเขียนเอเจนต์นี้ได้ และยังไม่มีฉบับร่างของเอเจนต์นี้",
   "Hand it over to": "ส่งต่อให้",
   "Hand it over to them": "ส่งต่อให้คนนี้",
-  "Keep it": "เก็บไว้เอง",
   "Shape and try it": "ปรับแต่งและทดลอง",
   "One thing stops its release.": "มี 1 ข้อที่ทำให้ยังรีลีสไม่ได้",
   "{n} things stop its release.": "มี {n} ข้อที่ทำให้ยังรีลีสไม่ได้",
@@ -80,13 +76,11 @@ export const BUILD: Record<string, string> = {
   "It's released here as it is, and a5s deployed it.": "รีลีสที่นี่ตามที่เป็นอยู่แล้ว และ a5s ปรับใช้แล้ว",
   "By {who}. a5s deploys it once they have.": "โดย {who} a5s จะปรับใช้เมื่อลงนามครบแล้ว",
   "whoever its release needs": "ผู้ที่รีลีสนี้ต้องการ",
-  "Put it to work": "นำไปใช้งาน",
   "An instance runs it.": "มีอินสแตนซ์ทำงานอยู่",
   "An instance in the settings, for a few people first, at level 0 or 1.":
     "อินสแตนซ์ในการตั้งค่า สำหรับคนไม่กี่คนก่อน ที่ระดับ 0 หรือ 1",
   "Watch it": "ติดตาม",
   "Its runs and how they end, on its page.": "การทำงานและผลลัพธ์ ในหน้าของเอเจนต์",
-  "Put it to work in the settings": "นำไปใช้งานในการตั้งค่า",
   "Watch it on its page": "ติดตามในหน้าของเอเจนต์",
   "Put it to work, from its page": "นำไปใช้งานจากหน้าของเอเจนต์",
   "See what stops its release": "ดูสิ่งที่ทำให้ยังรีลีสไม่ได้",
@@ -94,7 +88,6 @@ export const BUILD: Record<string, string> = {
   "Try it in the sandbox": "ทดลองในแซนด์บ็อกซ์",
   "Publish it without trying it": "เผยแพร่โดยไม่ทดลอง",
   "Where it stands": "สถานะ",
-  "From a draft to an agent at work": "จากฉบับร่างสู่เอเจนต์ที่ทำงานจริง",
   "What you'd changed and a5s hadn't kept is back, and kept now.":
     "สิ่งที่คุณแก้ไขไว้ซึ่ง a5s ยังไม่ได้บันทึกกลับมาแล้ว และบันทึกแล้ว",
   "The draft of {agent} is gone.": "ลบฉบับร่างของ {agent} แล้ว",
@@ -116,7 +109,6 @@ export const BUILD: Record<string, string> = {
   "{n} things stop its release": "มี {n} ข้อที่ทำให้ยังรีลีสไม่ได้",
   "{cases} kept": "เก็บ {cases} แล้ว",
   "Nothing stops its release": "ไม่มีสิ่งใดทำให้รีลีสไม่ได้",
-  "Its instructions": "คำสั่งของเอเจนต์",
   "What it's told at the start of each run, its AGENTS.md":
     "สิ่งที่เอเจนต์ได้รับแจ้งเมื่อเริ่มการทำงานแต่ละครั้ง คือ AGENTS.md",
 
@@ -148,25 +140,14 @@ export const BUILD: Record<string, string> = {
   "It no longer keeps what people tell it of how they like to work.":
     "เอเจนต์ไม่เก็บสิ่งที่ผู้คนบอกเกี่ยวกับวิธีทำงานที่ชอบอีกต่อไป",
   "no channel": "ไม่มีช่องทาง",
-  "A message": "ข้อความ",
   "from {who}, on {channels}": "จาก {who} ทาง {channels}",
-  "{about}, on {channels}": "{about} ทาง {channels}",
   "a schedule": "กำหนดเวลา",
   "{at}, {days}": "{at} {days}",
   "no time": "ยังไม่กำหนดเวลา",
-  "What people owe": "สิ่งที่ผู้คนค้างอยู่",
-  "A report": "รายงาน",
-  "on {source}": "เรื่อง {source}",
-  "not one of the scenario's tools": "ไม่ใช่เครื่องมือของซีนาริโอ",
   "changes {action}": "เปลี่ยน {action}",
   "no model": "ไม่มีโมเดล",
   "{model}, {levels}, in {parts}": "{model}, {levels}, ใน {parts}",
-  "Reply": "คำตอบ",
-  "to whoever it acts for": "ถึงผู้ที่เอเจนต์ทำงานแทน",
-  "Model": "โมเดล",
-  "none yet": "ยังไม่มี",
   "policy, need-to-know, limits": "นโยบาย หลักรู้เท่าที่จำเป็น ขีดจำกัด",
-  "a5s's own": "ของ a5s เอง",
   "{ability} and {more}": "{ability} และอีก {more}",
   "asks it": "ถามอินสแตนซ์นี้",
   "asks it: the {agent}, in {parts}": "ถามอินสแตนซ์นี้: {agent} ใน {parts}",
@@ -210,7 +191,6 @@ export const BUILD: Record<string, string> = {
   "Stop people writing to it": "หยุดให้ผู้คนเขียนถึงเอเจนต์",
   "the agent, {levels}": "เอเจนต์, {levels}",
   "Works for": "ทำงานให้",
-  "What it does": "สิ่งที่ทำ",
   "Its model is {model} now.": "ตอนนี้ใช้โมเดล {model}",
   "Of those the deployment approves.": "จากโมเดลที่ระบบนี้อนุมัติ",
   "Level it starts at": "ระดับเริ่มต้น",
@@ -286,7 +266,6 @@ export const BUILD: Record<string, string> = {
   "Its parts' owners approve it, as a version of the settings, once its release is signed: {owners}.":
     "เจ้าของส่วนงานจะอนุมัติในรูปเวอร์ชันของการตั้งค่า เมื่อรีลีสได้รับการลงนามแล้ว: {owners}",
   "{who}, for {part}": "{who} สำหรับ {part}",
-  "nobody yet": "ยังไม่มีใคร",
   "With no part, an instance approver approves it, as a version of the settings, once its release is signed: {approvers}.":
     "เมื่อไม่มีส่วนงาน ผู้อนุมัติอินสแตนซ์จะอนุมัติในรูปเวอร์ชันของการตั้งค่า เมื่อรีลีสได้รับการลงนามแล้ว: {approvers}",
   "Its parts' owners approve it, as a version of the settings, once its release is signed.":
@@ -351,7 +330,6 @@ export const BUILD: Record<string, string> = {
   "Fridays": "วันศุกร์",
   "Saturdays": "วันเสาร์",
   "Sundays": "วันอาทิตย์",
-  "every day": "ทุกวัน",
   "on weekdays": "ทุกวันจันทร์ถึงวันศุกร์",
   "on {days}": "ทุก{days}",
   "nobody yet, so none is made there": "ยังไม่มีใคร จึงไม่มีการเปลี่ยนแปลงที่นั่น",
@@ -418,9 +396,7 @@ export const BUILD: Record<string, string> = {
   "A long task may spend {tokens}, over {days} at most.": "งานระยะยาวใช้ได้ {tokens} ภายในเวลาไม่เกิน {days}",
   "{action}: {limits}, then each waits.": "{action}: {limits} จากนั้นแต่ละรายการต้องรอ",
   "{n} a run": "{n} รายการต่อครั้ง",
-  "Reminders": "การเตือน",
   "offers reminders, and keeps those people confirm": "เสนอการเตือน และเก็บการเตือนที่ผู้คนยืนยันไว้",
-  "Its conversation": "บทสนทนา",
   "searches its conversation with the person it acts for, and corrects its summaries at their word":
     "ค้นหาในบทสนทนากับผู้ที่เอเจนต์ทำงานแทน และแก้บทสรุปตามคำของผู้นั้น",
   "Documents from outside": "เอกสารจากภายนอก",
@@ -451,12 +427,9 @@ export const BUILD: Record<string, string> = {
   "Compare two or more models": "เปรียบเทียบตั้งแต่ 2 โมเดลขึ้นไป",
   "Compare {n} models": "เปรียบเทียบ {n} โมเดล",
   "Passed": "ผ่าน",
-  "Took": "ใช้เวลา",
-  "Tokens": "โทเค็น",
   "Cost, at its prices": "ค่าใช้จ่ายตามราคาของโมเดล",
   "{passed} of {total}": "{passed} จาก {total}",
   "{n} couldn't run": "รันไม่ได้ {n} กรณี",
-  "{seconds} s": "{seconds} วินาที",
   "its prices aren't known": "ไม่ทราบราคา",
   "{model} passed every case for the least: {cost} at its prices.":
     "{model} ผ่านทุกกรณีด้วยค่าใช้จ่ายต่ำสุด: {cost} ตามราคาของโมเดล",
@@ -477,7 +450,6 @@ export const BUILD: Record<string, string> = {
   "What it was told, and answered": "ข้อความที่ได้รับ และคำตอบ",
   "Told": "ข้อความ",
   "Answered": "คำตอบ",
-  "(nothing)": "(ไม่มี)",
   "used {tools}": "ใช้ {tools}",
   "The stand-in judged it": "โมเดลจำลองประเมินแล้ว",
   "Its judge, {judge}, found it": "ผู้ประเมิน {judge} ให้ผลว่า",
@@ -529,7 +501,6 @@ export const BUILD: Record<string, string> = {
   "Its description": "คำอธิบาย",
   "Download its folder": "ดาวน์โหลดโฟลเดอร์",
   "Copy the description": "คัดลอกคำอธิบาย",
-  "published": "เผยแพร่แล้ว",
   "its pull request": "pull request",
   ". CI runs its checks and test cases there, and the people above sign its release. Publishing it again adds a commit to it.":
     " CI จะรันการตรวจสอบและกรณีทดสอบที่นั่น และผู้ที่ระบุไว้ข้างต้นจะลงนามรีลีส การเผยแพร่อีกครั้งจะเพิ่ม commit ลงใน pull request นี้",
@@ -547,7 +518,6 @@ export const BUILD: Record<string, string> = {
   "level 0, suggests: it reads and drafts, and people do the rest":
     "ระดับ 0 เสนอแนะ: อ่านและร่าง ส่วนที่เหลือคนเป็นผู้ทำ",
   "level 1, asks: its changes wait for a person's yes": "ระดับ 1 ขออนุญาต: การเปลี่ยนแปลงจะรอให้คนตอบตกลง",
-  "widens what agents do": "ขยายสิ่งที่เอเจนต์ทำได้",
   "What you'd changed and hadn't asked for is back, from before you signed in again.":
     "สิ่งที่คุณแก้ไขไว้และยังไม่ได้ขอกลับมาแล้ว จากก่อนที่คุณลงชื่อเข้าใช้อีกครั้ง",
   "No settings are in force yet.": "ยังไม่มีการตั้งค่าที่มีผลบังคับใช้",
@@ -563,7 +533,6 @@ export const BUILD: Record<string, string> = {
   "In {part}, it works at": "ใน {part} ทำงานที่",
   "{id}'s level in {part}": "ระดับของ {id} ใน {part}",
   "the level above": "ระดับข้างต้น",
-  "level {n}": "ระดับ {n}",
   "It makes these changes on its own, at level 2": "ทำการเปลี่ยนแปลงเหล่านี้เองที่ระดับ 2",
   "its release, {agent}, allows level {level} at most": "รีลีส {agent} อนุญาตสูงสุดระดับ {level}",
   "{part} needs no accuracy below, so it never earns level 2":
@@ -579,7 +548,6 @@ export const BUILD: Record<string, string> = {
   "Deputy": "ผู้แทน",
   "Owner of {id}": "เจ้าของ {id}",
   "Deputy of {id}": "ผู้แทนของ {id}",
-  "nobody": "ไม่มีใคร",
   "Its name is lowercase letters, digits and hyphens, starting with a letter or a digit.":
     "ชื่อต้องเป็นตัวอักษรพิมพ์เล็ก ตัวเลข และขีดกลาง โดยขึ้นต้นด้วยตัวอักษรหรือตัวเลข",
   "There's an instance called {id} already: give it another name.": "มีอินสแตนซ์ชื่อ {id} อยู่แล้ว: ตั้งชื่ออื่น",

@@ -246,7 +246,7 @@ export const DECIDE: Record<string, string> = {
 
   // The pieces those pages share (design/): asking before what can't be undone, a value traced to its
   // record, a decision's card, an agent's facts, its ladder of autonomy, and the way from a draft
-  "Keep it": "คงไว้",
+  "Keep it": "เก็บไว้",
   "(where it comes from)": "(แหล่งที่มา)",
   "Where it comes from": "แหล่งที่มา",
   "Why:": "เหตุผล:",

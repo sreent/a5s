@@ -350,7 +350,6 @@ export const WATCH: Record<string, string> = {
   "to whoever it acts for": "ถึงผู้ที่เอเจนต์ทำงานแทน",
   "a5s's checks": "การตรวจสอบของ a5s",
   "{calls}, {refused} refused": "เรียกใช้ {calls} · ปฏิเสธ {refused}",
-  "policy, need-to-know, limits": "นโยบาย สิทธิ์เท่าที่จำเป็น ขีดจำกัด",
   "Its path through its agent": "เส้นทางผ่านเอเจนต์",
   "Checks": "การตรวจสอบ",
   "{n} refused": "ปฏิเสธ {n} ครั้ง",
