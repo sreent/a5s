@@ -13,15 +13,16 @@ import "@xyflow/react/dist/base.css";  // React Flow's own, never its style.css:
 import type { KeyboardEvent } from "react";
 import type * as gen from "./api.gen";
 import { breakable } from "./FlowMap";
+import { t } from "./i18n";
 import { Icon } from "./icons";
 
 export type MapNode = gen.MapNode;
 export type MapEdge = gen.MapEdge;
 
 export const KINDS = ["part", "instance", "agent", "tool", "system", "model"] as const;
-export const KIND_NAMES: Record<string, [string, string]> = {  // one, and many
-  part: ["Part", "Parts"], instance: ["Instance", "Instances"], agent: ["Agent", "Agents"],
-  tool: ["Tool", "Tools"], system: ["System", "Systems"], model: ["Model", "Models"],
+export const KIND_NAMES: Record<string, string> = {  // one of each, in the language spoken when read
+  get part() { return t("Part"); }, get instance() { return t("Instance"); }, get agent() { return t("Agent"); },
+  get tool() { return t("Tool"); }, get system() { return t("System"); }, get model() { return t("Model"); },
 };
 const ICONS: Record<string, string> = {
   part: "settings", instance: "run", agent: "agent", tool: "tool", system: "plug", model: "model",
@@ -69,7 +70,7 @@ function Thing({ data }: NodeProps<Node<Data>>) {
   const tone = node.kind === "agent" ? "agent-tone" : node.tone ?? "";
   const classes = ["flow-step", tone, chosen ? "chosen" : "", dim && !near ? "dim" : ""]
     .filter(Boolean).join(" ");
-  const kind = KIND_NAMES[node.kind]?.[0] ?? node.kind;
+  const kind = KIND_NAMES[node.kind] ?? node.kind;
   return (
     <div className={classes} data-key={node.key}>
       <button type="button" className="flow-box nodrag" data-step={node.key} aria-pressed={chosen}
@@ -118,9 +119,9 @@ function Zoom() {
   const flow = useReactFlow();
   return (
     <div className="flow-tools">
-      <button type="button" aria-label="Zoom in" onClick={() => flow.zoomIn()}>+</button>
-      <button type="button" aria-label="Zoom out" onClick={() => flow.zoomOut()}>−</button>
-      <button type="button" onClick={() => flow.fitView({ padding: 0.1 })}>Show it all</button>
+      <button type="button" aria-label={t("Zoom in")} onClick={() => flow.zoomIn()}>+</button>
+      <button type="button" aria-label={t("Zoom out")} onClick={() => flow.zoomOut()}>−</button>
+      <button type="button" onClick={() => flow.fitView({ padding: 0.1 })}>{t("Show it all")}</button>
     </div>
   );
 }

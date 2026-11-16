@@ -5,10 +5,13 @@
 
 import type { Impact } from "./api";
 import { Badge, type Tone } from "./design";
+import { t } from "./i18n";
 import { plural, Wide } from "./ui";
 
-const DECIDED: Record<string, [string, Tone]> = {
-  allow: ["made alone", "good"], hold: ["held for a person", "warn"], deny: ["refused", "bad"],
+const DECIDED: Record<string, [string, Tone]> = {  // each in the language spoken whenever it's read
+  get allow(): [string, Tone] { return [t("made alone"), "good"]; },
+  get hold(): [string, Tone] { return [t("held for a person"), "warn"]; },
+  get deny(): [string, Tone] { return [t("refused"), "bad"]; },
 };
 
 function Decided({ label }: { label: string }) {
@@ -17,25 +20,26 @@ function Decided({ label }: { label: string }) {
 }
 
 export function ImpactPreview({ impact, id = "impact" }: { impact: Impact; id?: string }) {
-  const looked = `${plural(impact.calls, "tool call")} agents made in the last ${impact.days} days${
-    impact.limited ? ", the latest of them," : ""}`;
+  const calls = plural(impact.calls, "tool call");
+  const looked = impact.limited ? t("{calls} agents made in the last {days} days, the latest of them,", { calls, days: impact.days })
+    : t("{calls} agents made in the last {days} days", { calls, days: impact.days });
   return (
     <div id={id} className="impact">
-      <h3>What it would have done differently</h3>
+      <h3>{t("What it would have done differently")}</h3>
       {impact.shifts.length === 0 ? (
         <p className="note">{impact.calls
-          ? `It would have decided each of the ${looked} as the version in force did.`
-          : `Agents made no tool calls in the last ${impact.days} days that it could decide again.`}</p>
+          ? t("It would have decided each of the {looked} as the version in force did.", { looked })
+          : t("Agents made no tool calls in the last {days} days that it could decide again.", { days: impact.days })}</p>
       ) : (
         <>
-          <p className="note">Of the {looked} decided again as this version would decide them:</p>
-          <Wide label="Calls this version would decide differently">
+          <p className="note">{t("Of the {looked} decided again as this version would decide them:", { looked })}</p>
+          <Wide label={t("Calls this version would decide differently")}>
             <table>
-              <thead><tr><th>Calls</th><th>Tool</th><th>Instance</th><th>Parts</th><th>In force</th><th>This version</th><th>Why</th></tr></thead>
+              <thead><tr><th>{t("Calls")}</th><th>{t("Tool")}</th><th>{t("Instance")}</th><th>{t("Parts")}</th><th>{t("In force")}</th><th>{t("This version")}</th><th>{t("Why")}</th></tr></thead>
               <tbody>{impact.shifts.map((shift) => (
                 <tr key={`${shift.instance}/${shift.tool}/${shift.parts.join(",")}/${shift.was}/${shift.would}`}>
                   <td>{shift.calls}</td><td className="mono">{shift.tool}</td><td>{shift.instance}</td>
-                  <td>{shift.parts.join(", ") || "none"}</td>
+                  <td>{shift.parts.join(", ") || t("none")}</td>
                   <td><Decided label={shift.was} /></td><td><Decided label={shift.would} /></td>
                   <td>{shift.why}</td>
                 </tr>

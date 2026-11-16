@@ -8,6 +8,7 @@ import { type Catalogue, type Figures, get, type Instance, type RunLine, type Ru
          type Standing, type StatusAsked } from "../api";
 import { hashed, salted, signInFor, takeAct } from "../auth";
 import { Confirm, rung, Skeleton, useToast } from "../design";
+import { locale, t } from "../i18n";
 import { Link } from "../router";
 import { mayUse, shellOf } from "../Sidebar";
 import { RunsByDay } from "../RunsByDay";
@@ -19,11 +20,19 @@ import { aboutInstance, type Loaded, OutcomeBadge, PageHead, people, plural, run
 function Waits({ standing }: { standing: Loaded<Standing> }) {
   return (
     <section className="card" id="instance-waiting">
-      <h2>What waits on it</h2>
-      {standing.data ? <WaitList waiting={standing.data.waiting} none="Nothing of it waits now." />
+      <h2>{t("What waits on it")}</h2>
+      {standing.data ? <WaitList waiting={standing.data.waiting} none={t("Nothing of it waits now.")} />
                      : <Waiting error={standing.error} />}
     </section>
   );
+}
+
+/** Who asked to suspend or resume it, and when, in a sentence: each of the two its own, as the
+ * language spoken puts it. */
+function askedTo(by: string, action: string, at: string): string {
+  if (action === "suspend") return t("{by} asked to suspend it, {when}: a5s does so within a minute, once it has checked that sign-in again.", { by, when: at });
+  if (action === "resume") return t("{by} asked to resume it, {when}: a5s does so within a minute, once it has checked that sign-in again.", { by, when: at });
+  return t("{by} asked to {action} it, {when}: a5s does so within a minute, once it has checked that sign-in again.", { by, action, when: at });
 }
 
 /** Suspending it, which stops it at its next step, or resuming it, which only whoever suspended
@@ -41,19 +50,19 @@ function Stopping({ id, standing, settles, problem, setProblem }: {
   const asked = standing?.asked;
   return (
     <>
-      {asked && <p className="note" role="status" id="asked">{asked.by} asked to {asked.action} it, {when(asked.at)}: a5s does so within a minute, once it has checked that sign-in again.</p>}
+      {asked && <p className="note" role="status" id="asked">{askedTo(asked.by, asked.action, when(asked.at))}</p>}
       {problem && <p className="problem" role="alert">{problem}</p>}
       {(standing?.may || settles) && (
         <div className="actions">
           {settles && <Link to={{ page: "settings", search: `?instance=${encodeURIComponent(id)}` }} className="button"
-                            id="its-settings">Change its settings</Link>}
+                            id="its-settings">{t("Change its settings")}</Link>}
           {standing?.may === "suspend"
-            ? <Confirm label="Suspend it" danger title={`Suspend ${id}?`}
-                       about="It stops at its next step, even in a run already going, and starts no runs, until whoever suspended it resumes it. Those it serves are told it's suspended. You'll sign in again, for this alone."
-                       confirm="Sign in and suspend it" onConfirm={go("suspend")} />
-            : standing?.may === "resume" && <Confirm label="Resume it" title={`Resume ${id}?`}
-                       about="It works again as its settings say, from its next message. You'll sign in again, for this alone, with a second factor where your organisation asks for one."
-                       confirm="Sign in and resume it" onConfirm={go("resume")} />}
+            ? <Confirm label={t("Suspend it")} danger title={t("Suspend {instance}?", { instance: id })}
+                       about={t("It stops at its next step, even in a run already going, and starts no runs, until whoever suspended it resumes it. Those it serves are told it's suspended. You'll sign in again, for this alone.")}
+                       confirm={t("Sign in and suspend it")} onConfirm={go("suspend")} />
+            : standing?.may === "resume" && <Confirm label={t("Resume it")} title={t("Resume {instance}?", { instance: id })}
+                       about={t("It works again as its settings say, from its next message. You'll sign in again, for this alone, with a second factor where your organisation asks for one.")}
+                       confirm={t("Sign in and resume it")} onConfirm={go("resume")} />}
         </div>
       )}
     </>
@@ -66,25 +75,25 @@ function Reach({ inst }: { inst: Instance }) {
   const acts = inst.actions as Record<string, Record<string, number>>;
   return (
     <section className="card" id="reach">
-      <h2>How far it may act</h2>
-      {parts.length === 0 ? <p>Level {inst.level}, {rung(inst.level)}, in no part.</p> : (
-        <Wide label="How far it may act"><table className="grid-table compact">
-          <thead><tr><th>Part</th><th>Level</th><th>Each type of change at its own</th></tr></thead>
+      <h2>{t("How far it may act")}</h2>
+      {parts.length === 0 ? <p>{t("Level {level}, {rung}, in no part.", { level: inst.level, rung: rung(inst.level) })}</p> : (
+        <Wide label={t("How far it may act")}><table className="grid-table compact">
+          <thead><tr><th>{t("Part")}</th><th>{t("Level")}</th><th>{t("Each type of change at its own")}</th></tr></thead>
           <tbody>{parts.map(([part, level]) => {
             const own = Object.entries(acts[part] ?? {});
             return (
               <tr key={part}>
                 <td>{part}</td>
                 <td>{level} · {rung(level)}</td>
-                <td>{own.length === 0 ? <span className="faint">none</span> : own.map(([action, at]) => (
-                  <div key={action}><span className="mono">{action}</span> at {at} · {rung(at)}</div>
+                <td>{own.length === 0 ? <span className="faint">{t("none")}</span> : own.map(([action, at]) => (
+                  <div key={action}><span className="mono">{action}</span> {t("at {level} · {rung}", { level: at, rung: rung(at) })}</div>
                 ))}</td>
               </tr>
             );
           })}</tbody>
         </table></Wide>
       )}
-      <p className="note">As the settings its parts' owners signed give it. A type of change at level 2 is made on its own only where graded samples have raised a5s's cap on it; until they do, a person decides each.</p>
+      <p className="note">{t("As the settings its parts' owners signed give it. A type of change at level 2 is made on its own only where graded samples have raised a5s's cap on it; until they do, a person decides each.")}</p>
     </section>
   );
 }
@@ -108,15 +117,17 @@ function Tiles({ figures }: { figures: Figures }) {
   const denied = figures.denied.reduce((n, d) => n + d.times, 0);
   return (
     <div className="tiles">
-      <Tile label="Runs" value={runs.toLocaleString()} detail={plural(modelled, "called a model", "called a model")} />
-      <Tile label="Ended done" value={runs ? `${Math.round((done / runs) * 100)}%` : "none yet"} detail={`${done.toLocaleString()} of ${runs.toLocaleString()}`} />
-      <Tile label="Tokens a run" value={tokens.toLocaleString()} detail={`${share(cached)} cached`} />
-      <Tile label="Denied" value={denied.toLocaleString()} detail={figures.denied_partial ? "the latest only" : "calls a5s refused"} />
-      <Tile label="Held changes" value={figures.held.held.toLocaleString()} detail={`${figures.held.waiting} waiting`} />
-      <Tile label="Graded" value={figures.samples.graded.toLocaleString()} detail={figures.samples.graded ? `${figures.samples.right} right, ${figures.samples.critical} critical` : "no samples yet"} />
+      <Tile label={t("Runs")} value={runs.toLocaleString(locale())} detail={t("{n} called a model", { n: modelled.toLocaleString(locale()) })} />
+      <Tile label={t("Ended done")} value={runs ? `${Math.round((done / runs) * 100)}%` : t("none yet")}
+            detail={t("{done} of {runs}", { done: done.toLocaleString(locale()), runs: runs.toLocaleString(locale()) })} />
+      <Tile label={t("Tokens a run")} value={tokens.toLocaleString(locale())} detail={t("{share} cached", { share: share(cached) })} />
+      <Tile label={t("Denied")} value={denied.toLocaleString(locale())} detail={figures.denied_partial ? t("the latest only") : t("calls a5s refused")} />
+      <Tile label={t("Held changes")} value={figures.held.held.toLocaleString(locale())} detail={t("{n} waiting", { n: figures.held.waiting })} />
+      <Tile label={t("Graded")} value={figures.samples.graded.toLocaleString(locale())}
+            detail={figures.samples.graded ? t("{right} right, {critical} critical", { right: figures.samples.right, critical: figures.samples.critical }) : t("no samples yet")} />
       {figures.judge.both > 0 && (
-        <Tile label="Its judge agrees" value={share(figures.judge.agreed_share)}
-              detail={`with people, on ${plural(figures.judge.both, "sample", "samples")}; it missed ${figures.judge.missed}`} />
+        <Tile label={t("Its judge agrees")} value={share(figures.judge.agreed_share)}
+              detail={t("with people, on {samples}; it missed {missed}", { samples: plural(figures.judge.both, "sample", "samples"), missed: figures.judge.missed })} />
       )}
     </div>
   );
@@ -128,19 +139,19 @@ function Breakdown({ figures }: { figures: Figures }) {
   return (
     <div className="two-up pairs">
       <section className="card">
-        <h2>How runs ended</h2>
-        {figures.ended.length === 0 ? <p className="note">No runs in this period.</p> : (
-          <Wide label="What it did, by kind"><table className="grid-table compact">
-            <thead><tr><th>Started by</th><th>Ended</th><th className="num">Runs</th></tr></thead>
+        <h2>{t("How runs ended")}</h2>
+        {figures.ended.length === 0 ? <p className="note">{t("No runs in this period.")}</p> : (
+          <Wide label={t("What it did, by kind")}><table className="grid-table compact">
+            <thead><tr><th>{t("Started by")}</th><th>{t("Ended")}</th><th className="num">{t("Runs")}</th></tr></thead>
             <tbody>{figures.ended.map((e) => (
-              <tr key={`${e.kind}-${e.outcome}`}><td>{e.kind ?? "other"}</td><td><OutcomeBadge outcome={e.outcome} /></td><td className="num">{e.runs}</td></tr>
+              <tr key={`${e.kind}-${e.outcome}`}><td>{e.kind ?? t("other")}</td><td><OutcomeBadge outcome={e.outcome} /></td><td className="num">{e.runs}</td></tr>
             ))}</tbody>
           </table></Wide>
         )}
       </section>
       <section className="card">
-        <h2>What a5s refused</h2>
-        {figures.denied.length === 0 ? <p className="note">Nothing was denied.</p> : (
+        <h2>{t("What a5s refused")}</h2>
+        {figures.denied.length === 0 ? <p className="note">{t("Nothing was denied.")}</p> : (
           <ul className="plain">{figures.denied.map((d) => (
             <li key={`${d.kind}-${d.action}-${d.reasons.join()}`}>
               <span className="mono">{d.action}</span> · {plural(d.times, "time")}
@@ -150,18 +161,19 @@ function Breakdown({ figures }: { figures: Figures }) {
         )}
       </section>
       <section className="card">
-        <h2>What fell due</h2>
+        <h2>{t("What fell due")}</h2>
         <dl className="facts">
-          <dt>What people owed</dt><dd>{o.due ? `${o.due} due: ${o.on_time} on time, ${o.late} late, ${o.open} open; ${o.chased} chased, ${o.escalated} taken up the line` : "nothing"}</dd>
-          <dt>Reminders</dt><dd>{r.due ? `${r.due} due: ${r.on_time} on time, ${r.missed} missed` : "none fell due"}</dd>
-          <dt>Reports sent</dt><dd>{figures.reports.map((x) => `${x.source} ${x.outcome}: ${x.reports}`).join("; ") || "none"}</dd>
+          <dt>{t("What people owed")}</dt><dd>{o.due ? t("{due} due: {on_time} on time, {late} late, {open} open; {chased} chased, {escalated} taken up the line",
+            { due: o.due, on_time: o.on_time, late: o.late, open: o.open, chased: o.chased, escalated: o.escalated }) : t("nothing")}</dd>
+          <dt>{t("Reminders")}</dt><dd>{r.due ? t("{due} due: {on_time} on time, {missed} missed", { due: r.due, on_time: r.on_time, missed: r.missed }) : t("none fell due")}</dd>
+          <dt>{t("Reports sent")}</dt><dd>{figures.reports.map((x) => `${x.source} ${x.outcome}: ${x.reports}`).join("; ") || t("none")}</dd>
         </dl>
       </section>
       <section className="card">
-        <h2>Who came back</h2>
-        {figures.returning.length === 0 ? <p className="note">Nobody wrote before this period.</p> : (
+        <h2>{t("Who came back")}</h2>
+        {figures.returning.length === 0 ? <p className="note">{t("Nobody wrote before this period.")}</p> : (
           <ul className="plain">{figures.returning.map((x) => (
-            <li key={x.agent}>{x.came_back} of the {people(x.wrote_before)} who wrote to the {x.agent} before</li>
+            <li key={x.agent}>{t("{came_back} of the {people} who wrote to the {agent} before", { came_back: x.came_back, people: people(x.wrote_before), agent: x.agent })}</li>
           ))}</ul>
         )}
       </section>
@@ -171,7 +183,7 @@ function Breakdown({ figures }: { figures: Figures }) {
 
 function whom(run: RunLine): string {
   const named = run.acts_for.map((p) => p.name || p.id).join(", ");
-  return named || (run.people ? people(run.people) : "nobody");
+  return named || (run.people ? people(run.people) : t("nobody"));
 }
 
 function Runs({ instance }: { instance: string }) {
@@ -191,28 +203,28 @@ function Runs({ instance }: { instance: string }) {
   const hidden = all.reduce((n, p) => n + p.hidden, 0);
   return (
     <section className="card wide">
-      <h2>Runs</h2>
+      <h2>{t("Runs")}</h2>
       {!first.data && <Waiting error={first.error} />}
-      {first.data?.fewer && <p className="note">It serves fewer than {first.data.fewer} people, so its runs show only in its daily figures until the data protection officer agrees to name whom runs act for: one by one, each would say what one of them did.</p>}
-      {first.data && !first.data.fewer && runs.length === 0 && <p className="note">No runs you may see.</p>}
+      {first.data?.fewer && <p className="note">{t("It serves fewer than {fewer} people, so its runs show only in its daily figures until the data protection officer agrees to name whom runs act for: one by one, each would say what one of them did.", { fewer: first.data.fewer })}</p>}
+      {first.data && !first.data.fewer && runs.length === 0 && <p className="note">{t("No runs you may see.")}</p>}
       {runs.length > 0 && (
-        <Wide label="Its runs"><table className="grid-table runs-table">
-          <thead><tr><th>When</th><th>Started by</th><th>For</th><th>Ended</th><th className="num">Tokens</th><th /></tr></thead>
+        <Wide label={t("Its runs")}><table className="grid-table runs-table">
+          <thead><tr><th>{t("When")}</th><th>{t("Started by")}</th><th>{t("For")}</th><th>{t("Ended")}</th><th className="num">{t("Tokens")}</th><th /></tr></thead>
           <tbody>{runs.map((run) => (
             <tr key={run.run}>
               <td>{when(run.opened_at)}</td>
-              <td>{run.trigger ?? "other"}{run.read_outside && <span className="badge outside">read outside content</span>}</td>
+              <td>{run.trigger ?? t("other")}{run.read_outside && <span className="badge outside">{t("read outside content")}</span>}</td>
               <td>{whom(run)}</td>
               <td><OutcomeBadge outcome={run.outcome} /></td>
-              <td className="num">{run.tokens.toLocaleString()}</td>
-              <td><Link to={{ page: "run", run: run.run }} label={`The run at ${when(run.opened_at)}`}>Open</Link></td>
+              <td className="num">{run.tokens.toLocaleString(locale())}</td>
+              <td><Link to={{ page: "run", run: run.run }} label={t("The run at {when}", { when: when(run.opened_at) })}>{t("Open")}</Link></td>
             </tr>
           ))}</tbody>
         </table></Wide>
       )}
-      {hidden > 0 && <p className="note">And {plural(hidden, "run")} that read records you may not see.</p>}
+      {hidden > 0 && <p className="note">{t("And {runs} that read records you may not see.", { runs: plural(hidden, "run") })}</p>}
       {error && <p className="problem">{error}</p>}
-      {last?.before && <button type="button" onClick={older}>Older runs</button>}
+      {last?.before && <button type="button" onClick={older}>{t("Older runs")}</button>}
     </section>
   );
 }
@@ -234,7 +246,8 @@ export function InstancePage({ id }: { id: string }) {
                       { action: act.action, salt: act.salt })
       .then(() => {
         setAgain((n) => n + 1);
-        toast(`You asked to ${act.action} ${id}: a5s does it within a minute.`);
+        toast(act.action === "suspend" ? t("You asked to suspend {instance}: a5s does it within a minute.", { instance: id })
+          : t("You asked to resume {instance}: a5s does it within a minute.", { instance: id }));
       })
       .catch((e: Error) => setProblem(e.message));
   }, [id, toast]);
@@ -248,23 +261,23 @@ export function InstancePage({ id }: { id: string }) {
   // each comes, as it did by a third of a phone's screen (round 13, C11)
   const head = Boolean(inst && standing.data && (shell.data || shell.error));
   if (standing.error) {  // refused, or none: said once, not by each part of the page (round 13, C10)
-    return <><PageHead crumbs={[{ label: "Agents", to: { page: "agents" } }]} title="An instance" />
+    return <><PageHead crumbs={[{ label: t("Agents"), to: { page: "agents" } }]} title={t("An instance")} />
       <Waiting error={standing.error} /></>;
   }
   return (
     <>
-      <PageHead crumbs={[{ label: "Agents", to: { page: "agents" } },
+      <PageHead crumbs={[{ label: t("Agents"), to: { page: "agents" } },
                          ...(inst ? [{ label: inst.agent, to: { page: "agent" as const, agent: inst.agent } }] : [])]}
-                title={inst?.id ?? "An instance"} badges={inst && <StatusBadge status={inst.status} />}>
+                title={inst?.id ?? t("An instance")} badges={inst && <StatusBadge status={inst.status} />}>
         {head && inst ? (
           <>
-            <div className="meta"><span>{aboutInstance(inst)}</span><span>run by {runners(inst)}</span><Link to={{ page: "map", at: `instance:${inst.id}` }} id="on-the-map">What it depends on</Link>{standing.data?.suspended_by && <span>suspended by {standing.data.suspended_by}</span>}{!inst.current && <span className="badge warn">still on release {inst.release}</span>}</div>
+            <div className="meta"><span>{aboutInstance(inst)}</span><span>{t("run by {runners}", { runners: runners(inst) })}</span><Link to={{ page: "map", at: `instance:${inst.id}` }} id="on-the-map">{t("What it depends on")}</Link>{standing.data?.suspended_by && <span>{t("suspended by {person}", { person: standing.data.suspended_by })}</span>}{!inst.current && <span className="badge warn">{t("still on release {release}", { release: inst.release })}</span>}</div>
             <Stopping id={id} standing={standing.data} settles={settles} problem={problem} setProblem={setProblem} />
           </>
         ) : <Skeleton lines={2} title={false} bare />}
-        <label className="period">Over the last{" "}
+        <label className="period">{t("Over the last")}{" "}
           <select value={days} onChange={(e) => setDays(Number(e.target.value))}>
-            <option value={7}>7 days</option><option value={30}>30 days</option><option value={90}>90 days</option>
+            <option value={7}>{plural(7, "day")}</option><option value={30}>{plural(30, "day")}</option><option value={90}>{plural(90, "day")}</option>
           </select>
         </label>
       </PageHead>
@@ -277,7 +290,7 @@ export function InstancePage({ id }: { id: string }) {
         <div className={figures.stale ? "stale" : undefined}>
           <Tiles figures={figures.data} />
           <section className="card">
-            <h2>Runs by day</h2>
+            <h2>{t("Runs by day")}</h2>
             <RunsByDay days={figures.data.daily} zone={figures.data.zone} />
           </section>
           <Breakdown figures={figures.data} />
