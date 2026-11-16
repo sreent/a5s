@@ -110,6 +110,11 @@ const STEPS = [
   { name: "Acts", about: "One type of change on its own, within limits, sampled and graded." },
 ];
 
+/** A level's rung in words: Suggests, Asks or Acts. */
+export function rung(level: number): string {
+  return STEPS[Math.max(0, Math.min(level, STEPS.length - 1))].name;
+}
+
 /** Autonomy is earned: the level an agent works at, those its release allows beyond it, and
  * how far it has come toward the next. */
 export function AutonomyLadder({ level, max, toward }: {

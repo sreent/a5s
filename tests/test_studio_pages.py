@@ -141,6 +141,9 @@ def test_someone_watches_an_instance_in_the_browser(stack, approving, provider, 
     page.click("table.grid-table a:has-text('assistant-finance')")  # its instance
     page.wait_for_selector(".tile >> text=Runs", timeout=30000)
     assert "done" in page.inner_text("section.card:has(h2:text-is('How runs ended')) table")
+    # what of it waits, which is nothing yet, and how far it may act: it asks, in billing
+    page.wait_for_selector("#instance-waiting >> text=Nothing of it waits now.", timeout=30000)
+    assert page.inner_text("#reach tbody tr").split("\t")[:2] == ["billing", "1 · Asks"]
     # Its runs by day, on his own days: today's, as it says on hover and on focus
     today = page.locator(".runs-chart .day[tabindex='0']")
     assert today.get_attribute("aria-label").endswith(": 1 run, 1 done")

@@ -336,6 +336,14 @@ def router(gw: Any) -> APIRouter:
             except studio.UnknownZone as e:
                 raise HTTPException(400, str(e)) from e
 
+    @api.get("/studio/api/instances/{instance}/waiting", **shapes.answers(shapes.InstanceWaits))
+    def instance_waiting(instance: str, person: Annotated[Person, Depends(studying)]) -> dict:
+        """What of an instance waits, for someone who may watch it: the changes it asked for,
+        for their decision and others', its samples for their grade and others', and its
+        notebook, if they keep it, each where it's done (core/home.py)."""
+        with db.transaction(gw.url) as conn:
+            return {"waiting": homes.of_instance(conn, gw, person, watched(conn, person, instance))}
+
     @api.get("/studio/api/instances/{instance}/runs", **shapes.answers(shapes.RunsPage))
     def studio_runs(instance: str, person: Annotated[Person, Depends(studying)], before: str | None = None,
                     limit: int = studio.RUNS) -> dict:

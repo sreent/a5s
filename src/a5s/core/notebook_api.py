@@ -19,11 +19,10 @@ Keeper = tuple[Person, list[dict]]  # who signed in, and the instances whose not
 def kept(gw: Any, person: Person) -> list[dict]:
     """The instances whose notebooks someone keeps: those of an agent they own, or that they
     run, as its owner or deputy."""
-    owns = {r.removeprefix("agent-owner:") for r in person.roles if r.startswith("agent-owner:")}
     with db.transaction(gw.url) as conn:
         return [i for i in conn.execute("select id, definition, owner, deputy, parts from instances "
                                         "where status <> 'retired' order by id")
-                if i["definition"] in owns or person.id in (i["owner"], i["deputy"])]
+                if notebook.keeps(person, i)]
 
 
 def named(instance: dict) -> str:
@@ -51,8 +50,7 @@ def router(gw: Any) -> APIRouter:
     api = APIRouter(dependencies=[Depends(available), Depends(keeping)])
 
     def may_see(person: Person, row: dict) -> bool:
-        """Whether someone may see a note: every record its run read, as it reached runs."""
-        return all(gw.scenario.sees(person.id, k) for k in row["read_records"] or row["sources"])
+        return notebook.readable(gw.scenario, person.id, row)
 
     @pages.get("/notebook/", include_in_schema=False)
     def notebook_page() -> Response:

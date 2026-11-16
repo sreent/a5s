@@ -315,9 +315,9 @@ def may_grade(scenario: Scenario, sample: dict, person: Person,
 
 
 def gradeable(conn: db.Connection, scenario: Scenario, person: Person,
-              most: int = 20) -> list[dict]:
-    """The samples waiting for a grade that someone may grade, oldest first, up to `most`:
-    read in pages, leaving out in the query what it can."""
+              most: int = 20, instance: str | None = None) -> list[dict]:
+    """The samples waiting for a grade that someone may grade, oldest first, up to `most`, or
+    those of one instance: read in pages, leaving out in the query what it can."""
     minders = {r["id"]: (r["owner"], r["deputy"]) for r in conn.execute(
         "select id, owner, deputy from instances")}
     drafters: dict[str, frozenset[str]] = {}
@@ -327,8 +327,9 @@ def gradeable(conn: db.Connection, scenario: Scenario, person: Person,
         rows = conn.execute(
             "select * from samples where scenario = %s and grade is null and lapsed_at "
             "is null and id > %s and not (%s = any(acts_for)) and decided_by is distinct "
-            "from %s and not (%s = any(deciders)) order by id limit 200",
-            (scenario.name, after, person.id, person.id, person.id)).fetchall()
+            "from %s and not (%s = any(deciders)) and (%s::text is null or instance_id = %s) "
+            "order by id limit 200",
+            (scenario.name, after, person.id, person.id, person.id, instance, instance)).fetchall()
         if not rows:
             break
         after = rows[-1]["id"]

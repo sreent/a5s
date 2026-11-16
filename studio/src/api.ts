@@ -81,6 +81,7 @@ export type Catalogue = gen.Catalogue;
 // Someone's home and roles (core/home.py)
 export type Home = gen.Home;
 export type Waiting = gen.Waiting;
+export type InstanceWaits = gen.InstanceWaits;  // what of one instance waits, for its viewer
 export type You = gen.You;
 export type Role = gen.Role;
 

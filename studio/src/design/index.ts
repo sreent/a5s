@@ -1,7 +1,7 @@
 // a5s's design system, as the studio draws it (docs/design.md): its look is app.css's tokens and
 // classes, which every page shares; these are the pieces pages are made of.
 
-export { AgentFacts, ApprovalCard, AutonomyLadder, JourneyPath, RunTimeline, Traced } from "./agentic";
+export { AgentFacts, ApprovalCard, AutonomyLadder, JourneyPath, rung, RunTimeline, Traced } from "./agentic";
 export type { Change, FactsPart, Stage, Step } from "./agentic";
 export { Badge, Confirm, Hint } from "./controls";
 export type { Tone } from "./controls";

@@ -363,6 +363,11 @@ export type Instance = {
   asks: string[];
 };
 
+// What of one instance waits, for someone who may watch it, each where it's done.
+export type InstanceWaits = {
+  waiting: Waiting[];
+};
+
 // How far an agent's judge agrees with people, on the samples both graded (core/judging.py).
 export type Judge = {
   both: number;
@@ -729,6 +734,7 @@ export type Waiting = {
   why: string[];
   go: string | null;
   how?: string;
+  since?: string;
 };
 
 export type You = {

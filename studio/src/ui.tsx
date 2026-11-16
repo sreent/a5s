@@ -2,7 +2,7 @@
 // the badges that say what a tool does, how something stands, and how a run ended.
 
 import { type DependencyList, type ReactNode, useEffect, useState } from "react";
-import type { AgentUses, Instance, Tool } from "./api";
+import type { AgentUses, Instance, Tool, Waiting as Wait } from "./api";
 import { Link, type Route } from "./router";
 
 /** What a page shows, once loaded; while it loads again, as for another period, what it
@@ -132,4 +132,20 @@ export function aboutInstance(inst: Instance): string {
 
 export function runners(inst: Instance): string {
   return [inst.owner, inst.deputy].filter(Boolean).join(" and ") || "nobody";
+}
+
+/** What waits for someone, each where they do it, on its own page or at the command line,
+ * with why it's theirs and since when, as the home and an instance's page list it. */
+export function WaitList({ waiting, none }: { waiting: Wait[]; none: string }) {
+  if (waiting.length === 0) return <p className="note">{none}</p>;
+  return (
+    <ul className="waits">{waiting.map((w) => (
+      <li key={`${w.kind}:${w.what}`} className={`wait wait-${w.kind}`}>
+        {w.go ? <a href={w.go}>{w.what}</a> : <span>{w.what}</span>}
+        {w.since && <span className="faint"> · since {when(w.since)}</span>}
+        {w.how && <span className="faint"> · <span className="mono">{w.how}</span></span>}
+        {w.why.length > 0 && <ul className="plain faint">{w.why.map((why) => <li key={why}>{why}</li>)}</ul>}
+      </li>
+    ))}</ul>
+  );
 }

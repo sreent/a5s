@@ -1,12 +1,57 @@
-// An instance's dashboard: how it's doing over a period, from the measures counted for it alone,
-// and its runs, a page at a time, those whose every record the viewer may see.
+// An instance's page: what of it waits, and where each is done; how far it may act in each
+// part; how it's doing over a period, from the measures counted for it alone; and its runs, a
+// page at a time, those whose every record the viewer may see.
 
 import { useState } from "react";
-import { type Catalogue, type Figures, get, type RunLine, type RunsPage } from "../api";
+import { type Catalogue, type Figures, get, type Instance, type InstanceWaits, type RunLine,
+         type RunsPage } from "../api";
+import { rung } from "../design";
 import { Link } from "../router";
 import { RunsByDay } from "../RunsByDay";
 import { aboutInstance, OutcomeBadge, PageHead, people, plural, runners, share, StatusBadge, useLoad,
-         Waiting, when } from "../ui";
+         Waiting, WaitList, when } from "../ui";
+
+/** What of it waits: the changes it asked for, its samples for a grade, and its notebook, each
+ * where it's done, for the viewer or for others. */
+function Waits({ instance }: { instance: string }) {
+  const { data, error } = useLoad(() => get<InstanceWaits>(
+    `/studio/api/instances/${encodeURIComponent(instance)}/waiting`), [instance]);
+  return (
+    <section className="card" id="instance-waiting">
+      <h2>What waits on it</h2>
+      {data ? <WaitList waiting={data.waiting} none="Nothing of it waits now." /> : <Waiting error={error} />}
+    </section>
+  );
+}
+
+/** How far it may act in each part, and each type of change its settings set a level for. */
+function Reach({ inst }: { inst: Instance }) {
+  const parts = Object.entries(inst.parts as Record<string, number>);
+  const acts = inst.actions as Record<string, Record<string, number>>;
+  return (
+    <section className="card" id="reach">
+      <h2>How far it may act</h2>
+      {parts.length === 0 ? <p>Level {inst.level}, {rung(inst.level)}, in no part.</p> : (
+        <table className="grid-table compact">
+          <thead><tr><th>Part</th><th>Level</th><th>Each type of change at its own</th></tr></thead>
+          <tbody>{parts.map(([part, level]) => {
+            const own = Object.entries(acts[part] ?? {});
+            return (
+              <tr key={part}>
+                <td>{part}</td>
+                <td>{level} · {rung(level)}</td>
+                <td>{own.length === 0 ? <span className="faint">none</span> : own.map(([action, at]) => (
+                  <div key={action}><span className="mono">{action}</span> at {at} · {rung(at)}</div>
+                ))}</td>
+              </tr>
+            );
+          })}</tbody>
+        </table>
+      )}
+      <p className="note">As the settings its parts' owners signed give it. A type of change at level 2 is made on its own only where graded samples have raised a5s's cap on it; until they do, a person decides each.</p>
+    </section>
+  );
+}
 
 function Tile({ label, value, detail }: { label: string; value: string; detail?: string }) {
   return (
@@ -157,6 +202,10 @@ export function InstancePage({ id }: { id: string }) {
           </select>
         </label>
       </PageHead>
+      <div className="two-up">
+        <Waits instance={id} />
+        {inst && <Reach inst={inst} />}
+      </div>
       {!figures.data && <Waiting error={figures.error} />}
       {figures.data && (
         <div className={figures.stale ? "stale" : undefined}>

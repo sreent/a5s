@@ -41,6 +41,7 @@ class Waiting(Shape):
     why: list[str]
     go: str | None
     how: str | SkipJsonSchema[None] = None  # the command, for what's done at the command line
+    since: datetime | SkipJsonSchema[None] = None  # when the oldest of them began to wait
 
 
 class DraftLine(Shape):
@@ -115,6 +116,12 @@ class Instance(Shape):
     owner: str | None
     deputy: str | None
     asks: list[str]
+
+
+class InstanceWaits(Shape):
+    """What of one instance waits, for someone who may watch it, each where it's done."""
+
+    waiting: list[Waiting]
 
 
 class Autonomy(Shape):
