@@ -21,13 +21,14 @@ import logging
 import re
 import secrets
 import shutil
+import tempfile
 import threading
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Final
+from typing import Any, Final, LiteralString
 
 import httpx
 import uvicorn
@@ -52,6 +53,20 @@ BUDGET: Final = definitions.Budget()
 SIGNERS = ("instance-approver", "part-owner:")  # whose signatures its own settings carry
 KEY = re.compile(r"[a-z0-9]{6,32}")  # a draft's, as the studio names it to the sandbox
 QUIET: Final = "1 hour"  # how long it keeps what's said in it, after it's quiet: a try's alone
+# What lasts while people work but in the sandbox goes an hour after it's quiet, with what's
+# said: a note or a preference one author's try kept would otherwise reach every other's
+# tries as that made-up person, and a held change, which nobody there decides, would wait for
+# good (round 12, C5)
+QUIETED: Final[tuple[tuple[str, LiteralString], ...]] = (
+    ("notes", ("delete from profile_notes where greatest(offered_at, confirmed_at, ended_at) "
+               "< now() - %(kept)s::interval")),
+    ("preferences", "delete from preferences where set_at < now() - %(kept)s::interval"),
+    ("reminders", ("delete from reminders where greatest(offered_at, confirmed_at) "
+                   "< now() - %(kept)s::interval")),
+    ("decisions", ("delete from proposal_decisions where digest in (select digest from "
+                   "proposals where proposed_at < now() - %(kept)s::interval)")),
+    ("changes", "delete from proposals where proposed_at < now() - %(kept)s::interval"),
+)
 SWEEP_EVERY = 600  # seconds between its sweeps
 
 
@@ -223,9 +238,16 @@ class Sandbox:
         if model not in self.models():
             raise Refused(f"the sandbox can't call {model}: it has {', '.join(self.models())}")
         folder = self.cfg.agents_dir / agent
-        shutil.rmtree(folder, ignore_errors=True)
+        # Written and checked apart first: one it refuses leaves what was there as it was, so
+        # an earlier try of it, and every other, still runs (round 12, C4)
+        scratch = Path(tempfile.mkdtemp(prefix=".installing-", dir=self.cfg.agents_dir.parent))
         try:
-            self._written(folder, agent, files, model)
+            self._written(scratch / agent, agent, files, model)
+            shutil.rmtree(folder, ignore_errors=True)
+            shutil.move(scratch / agent, folder)
+        finally:
+            shutil.rmtree(scratch, ignore_errors=True)
+        try:
             found = definitions.load_all(self.cfg.agents_dir)
         except BaseException:
             shutil.rmtree(folder, ignore_errors=True)
@@ -250,8 +272,9 @@ class Sandbox:
             target.write_text(text)
         spec = folder / "agent.yaml"
         text = spec.read_text() if spec.exists() else ""
-        for name, value in (("id", agent), ("model", model)):
-            text, found = re.subn(rf"(?m)^{name}:[ \t]*\S+", f"{name}: {value}", text, count=1)
+        for name, value in (("id", agent), ("model", model)):  # its value on the line, or the next
+            text, found = re.subn(rf"(?m)^{name}:[ \t]*(?:\n[ \t]+)?[^\s#]+", f"{name}: {value}",
+                                  text, count=1)
             if not found:
                 raise Refused(f"its agent.yaml names no {name}")
         spec.write_text(text)
@@ -275,8 +298,10 @@ class Sandbox:
                                "parts": self.parts, "level": 1, "owner": person}
 
     def _said(self, instance: str, person: str, text: str) -> tuple[str, dict | None, list[dict]]:
-        """Say something to an instance, as a person: what it answered, its run, and each call
-        to the model."""
+        """Say something to an instance, as a person: what it answered, the run that answered
+        it, if one opened for it, and each call to the model."""
+        with db.transaction(self.admin) as conn:  # by the database's clock, as runs open
+            since = (conn.execute("select now() as at").fetchone() or {}).get("at")
         self.recording.calls = []
         try:
             sent = httpx.post(f"{self.channels_url}/channels/local/messages", timeout=60,
@@ -289,9 +314,14 @@ class Sandbox:
         finally:
             calls, self.recording.calls = self.recording.calls or [], None
         with db.transaction(self.admin) as conn:
-            last = conn.execute("select id::text as id from runs where instance_id = %s "
-                                "order by opened_at desc limit 1", (instance,)).fetchone()
-            run = studio.run(conn, self.scenario, last["id"]) if last else None
+            last = conn.execute("select id::text as id, outcome from runs where instance_id = %s "
+                                "and opened_at >= %s order by opened_at desc limit 1",
+                                (instance, since)).fetchone()
+            run = None
+            if last is not None:
+                run = studio.run(conn, self.scenario, last["id"])
+                if run is not None:  # how it ended: in its own answer, or not
+                    run["outcome"] = last["outcome"]
         return "\n".join(said), run, calls
 
     def turn(self, key: str, files: dict[str, str], person: str, text: str, model: str) -> dict:
@@ -376,6 +406,8 @@ class Sandbox:
                 reply, run, _ = self._said(agent, person, said)
                 called = used(run)
                 wrong = cases.check(step, reply, called, case.get("own_values") == "allowed")
+                if why := cases.unanswered(run["outcome"] if run else None):
+                    wrong.insert(0, why)  # a5s's own words pass no case's checks
                 done = {"say": step["say"], "reply": reply, "called": called}
                 if criterion := step.get("judged"):  # where it can be right in more than one way
                     done["judged"] = verdict = self._judged(agent, model, str(criterion), said,
@@ -421,7 +453,11 @@ class Sandbox:
         here gone an hour after it's quiet, not a year: long enough to try a draft over a
         few turns, and no longer, since someone may have said there what they shouldn't."""
         with db.transaction(self.admin) as conn:
-            return retention.sweep(conn, self.gateway.clock(), self.scenario.name, kept=QUIET)
+            gone = retention.sweep(conn, self.gateway.clock(), self.scenario.name, kept=QUIET)
+            for kind, sql in QUIETED:  # and what lasts where people work, here an hour after
+                if count := conn.execute(sql, {"kept": QUIET}).rowcount:
+                    gone[kind] = gone.get(kind, 0) + count
+            return gone
 
     @property
     def parts(self) -> list[str]:

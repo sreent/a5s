@@ -408,7 +408,7 @@ def router(gw: Any) -> APIRouter:
             watched = studio.instances(conn, person)
         return {"tools": studio.offered(gw.scenario.tools()), "models": sorted(gw.models),
                 **studio.rules(gw.scenario, settings),
-                "servable": studio.servable(gw.scenario, settings, person),
+                "servable": studio.servable(gw.scenario, settings, person, [i["id"] for i in watched]),
                 "askable": studio.askable(watched),
                 "owed": sorted({o.source for o in gw.scenario.obligations()})}  # an agent may chase
 
@@ -510,14 +510,27 @@ def router(gw: Any) -> APIRouter:
                 raise HTTPException(409, f"there's an agent {body.name} already: draft a change "
                                          "to it instead")
             words = body.describe.strip()[:describing.WORDS]
-            said = sandboxed("/sandbox/descriptions", {"words": words, "model": body.model or "stand-in"})
             with tempfile.TemporaryDirectory() as there:  # from the blank start, on its own model
-                try:
+                try:  # its name, and room for it, checked before any model is asked
                     made = authoring.new(authoring.templates(gw.cfg.root)[authoring.BLANK], body.name,
                                          Path(there), tools, model=next(iter(gw.models), None))
                 except ValueError as e:
                     raise HTTPException(400, str(e)) from None
                 blank = drafts.folder_files(made)
+            with db.transaction(gw.url) as conn:
+                try:
+                    drafts.room(conn, person, body.name)
+                except drafts.Refused as e:
+                    raise HTTPException(409, str(e)) from None
+            asked = body.model or "stand-in"
+            try:
+                said = sandboxed("/sandbox/descriptions", {"words": words, "model": asked})
+            finally:  # the words went to the model whatever comes of them: the ledger says so
+                with db.transaction(gw.url) as conn:
+                    ledger.append(conn, {"kind": "admin", "action": "describe", "run": None,
+                                         "instance": None, "acts_for": [], "decision": "record",
+                                         "args": {"agent": body.name, "model": asked, "by": person.id,
+                                                  "words_sha256": ledger.digest(words)}})
             proposed = found if isinstance(found := said.get("proposal"), dict) else {}
             owed = sorted({o.source for o in gw.scenario.obligations()})
             files, notes = describing.drafted(blank, body.name, proposed, tools, owed)

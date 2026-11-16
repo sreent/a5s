@@ -116,21 +116,19 @@ def check(folder: Path, tools: dict[str, Tool], models: dict[str, ModelConfig]) 
     if found.evaluation and found.evaluation.judge not in models:
         problems.append(f"its judge, {found.evaluation.judge}, isn't one config/models.yaml "
                         "approves")
-    if not found.evaluation and _judged(folder):
+    try:  # a case that can't be read as a5s runs it checks nothing, so it stops a release
+        listed = cases.found({p.relative_to(folder).as_posix(): p.read_text()
+                              for p in sorted((folder / "tests").glob("*.y*ml"))})
+    except cases.Unreadable as e:
+        problems.append(f"its test cases don't read as a5s runs them: {e}")
+        listed = []
+    except (OSError, UnicodeDecodeError):
+        problems.append("its test cases can't be read as text")
+        listed = []
+    if not found.evaluation and any(step.get("judged") for case in listed for step in case["steps"]):
         problems.append("its test cases ask its judge whether an answer is right, and it names "
                         "no judge: give it one, under evaluation")
     return problems
-
-
-def _judged(folder: Path) -> bool:
-    """Whether any of a folder's test cases has a step its judge grades."""
-    try:
-        listed = cases.found({p.relative_to(folder).as_posix(): p.read_text()
-                              for p in sorted((folder / "tests").glob("*.y*ml"))})
-    except cases.Unreadable:  # the studio says so beside its cases
-        return False
-    return any(isinstance(step, dict) and step.get("judged")
-               for case in listed for step in case["steps"])
 
 
 def _said(error: dict) -> str:
