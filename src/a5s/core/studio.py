@@ -206,8 +206,7 @@ def _instance(scenario: Scenario, definition: Definition | None, inst: dict) -> 
             "level": inst["level"], "parts": inst["parts"] or {},
             "actions": inst["actions"] or {}, "model": inst["model"],
             "people": len(registry.served(scenario, inst["serves"])),
-            "owner": _name(scenario, inst["owner"]), "deputy": _name(scenario, inst["deputy"]),
-            "asks": list(inst["asks"] or [])}
+            "owner": _name(scenario, inst["owner"]), "deputy": _name(scenario, inst["deputy"])}
 
 
 def agent(scenario: Scenario, definition: Definition, tools: dict[str, Tool],

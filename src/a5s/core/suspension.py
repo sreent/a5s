@@ -121,7 +121,7 @@ def record(conn: db.Connection, action: str, instance: str, person: str, token: 
          claims["iss"])).fetchone()
     if row is None:
         raise Refused(409, "that sign-in has been used: sign in again")
-    ledger.append(conn, {"kind": "admin", "action": "ask", "run": None, "instance": instance,
+    ledger.append(conn, {"kind": "admin", "action": "ask-status", "run": None, "instance": instance,
                          "acts_for": [], "decision": "record",
                          "args": {"to": action, "by": person, "identity": verified(action),
                                   "issuer": claims["iss"], "token_sha256": hashed}})

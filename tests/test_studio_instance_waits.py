@@ -48,8 +48,8 @@ def test_it_says_what_of_an_instance_waits_and_for_whom(stack, approving, provid
     assert (ana["decide"]["what"], ana["decide"]["go"]) == (
         "1 change it asked for waits for your decision", "/studio/decide")
     assert ana["decide"]["since"].startswith(change["proposed_at"].isoformat()[:19])
-    assert ana["graded"] == {
-        "kind": "graded", "go": None, "why": [], "since": ana["graded"]["since"],
+    assert ana["graded"] == {  # others' to grade: since when isn't hers to know (round 13, B5)
+        "kind": "graded", "go": None, "why": [],
         "what": "1 sample of its work waits for a grade, from graders outside the team that "
                 "built it"}
     assert (ana["notebook"]["what"], ana["notebook"]["go"]) == (

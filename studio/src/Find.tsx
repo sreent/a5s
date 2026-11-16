@@ -28,7 +28,7 @@ const PAGES: Record<string, [string, string, Route | string]> = {
 
 async function everything(): Promise<Found[]> {
   const [shell, home, catalogue] = await Promise.all([
-    shellOf().catch(() => null), get<Home>("/studio/api/home").catch(() => null),
+    shellOf(true).catch(() => null), get<Home>("/studio/api/home").catch(() => null),
     get<Catalogue>("/studio/api").catch(() => null)]);
   const found: Found[] = [];
   for (const [n, wait] of (home?.waiting ?? []).entries()) {

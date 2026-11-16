@@ -28,8 +28,7 @@ def api(url: str, provider, person: str, path: str, *groups: str) -> httpx.Respo
 def test_anyone_the_directory_knows_has_a_home_role_or_none(stack, approving, provider):
     assert httpx.get(f"{approving}/studio/api/home", timeout=30).status_code == 401
     chen = api(approving, provider, "chen", "home").json()  # who holds none of a5s's roles
-    assert (chen["you"], chen["waiting"], chen["catalogue"], chen["authoring"]) == (
-        "Chen Wei", [], True, False)  # the catalogue is everyone's
+    assert (chen["you"], chen["waiting"], chen["authoring"]) == ("Chen Wei", [], False)
     assert api(approving, provider, "chen", "you").json()["roles"] == []
     assert api(approving, provider, "nobody-we-know", "home").status_code == 403
 

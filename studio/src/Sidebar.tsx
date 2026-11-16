@@ -20,8 +20,10 @@ export type Shell = { you: string; pages: string[] };
 let shell: Promise<Shell> | null = null;
 
 /** Who signed in, and the pages they may use, as /shell/api works them out: asked once for
- * the studio, by the sidebar and any page that offers a way to another. */
-export function shellOf(): Promise<Shell> {
+ * the studio, by the sidebar and any page that offers a way to another, or afresh, as finding
+ * anything does each time it opens, so a role lost meanwhile takes its page away (round 13, B6). */
+export function shellOf(afresh = false): Promise<Shell> {
+  if (afresh) shell = null;
   shell ??= get<Shell>("/shell/api").catch((e) => {
     shell = null;  // asked again next time
     throw e;

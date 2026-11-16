@@ -60,8 +60,7 @@ class Home(Shape):
     you: str
     waiting: list[Waiting]
     drafts: list[DraftLine]
-    catalogue: bool
-    authoring: bool  # whether they may author anything at all
+    authoring: bool  # whether they may start a new agent: an author of one may not (round 13, B4)
 
 
 class Role(Shape):
@@ -115,7 +114,6 @@ class Instance(Shape):
     people: int
     owner: str | None
     deputy: str | None
-    asks: list[str]
 
 
 class StatusAsked(Shape):

@@ -31,7 +31,7 @@ export function HomePage() {
           <section className="card" id="next">
             <h2>In the studio</h2>
             <ul className="plain">
-              {data.catalogue && <li><Link to={{ page: "agents" }}>The agents you may know of</Link>: what each does, and how those you watch are doing</li>}
+              <li><Link to={{ page: "agents" }}>The agents you may know of</Link>: what each does, and how those you watch are doing</li>
               {data.authoring && <li><Link to={{ page: "new" }}>A new agent</Link>, from a template</li>}
               <li><Link to={{ page: "you" }}>What you may do in a5s</Link>, and which group gave you each role</li>
             </ul>
