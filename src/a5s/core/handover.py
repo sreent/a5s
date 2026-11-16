@@ -30,6 +30,7 @@ from psycopg.types.json import Jsonb
 
 from a5s import db
 from a5s.contract import Person, Scenario
+from a5s.core import studio
 from a5s.core.coretools import Call, CoreTool, Refused, one_to_one
 
 HAND = "hand_over"
@@ -38,6 +39,10 @@ BRIEF = 600  # characters of an agent's brief, at most
 REPLY = 4000  # characters of an answer from the team, at most
 LAPSE = timedelta(days=3)  # a handover nobody answers or hands back is handed back [starting value]
 HIDDEN = "[a record you may not see]"
+# A brief the agent wrote from records someone of the team may not see, in its place: a brief may
+# say what a record holds without naming it, so it's theirs to read only if the run is
+WITHHELD = ("[the agent's brief, which draws on records you may not see: read what they've said "
+            "instead]")
 
 
 def team_of(scenario: Scenario, person: Person, team: str) -> bool:
@@ -108,10 +113,17 @@ def masked(scenario: Scenario, viewer: str, text: str) -> str:
 
 def waiting(conn: db.Connection, scenario: Scenario, person: Person) -> list[dict]:
     """The conversations handed over to the teams someone is in, still open, oldest first."""
-    rows = conn.execute("select * from handovers where ended_at is null order by started_at"
-                        ).fetchall()
-    return [_line(conn, scenario, person, r) for r in rows
+    rows = [r for r in conn.execute("select * from handovers where ended_at is null order by "
+                                    "started_at").fetchall()
             if r["person"] != person.id and team_of(scenario, person, r["team"])]
+    briefed = _briefed(conn, scenario, person, rows)
+    return [_line(conn, scenario, person, r, briefed) for r in rows]
+
+
+def _briefed(conn: db.Connection, scenario: Scenario, viewer: Person, rows: list[dict]) -> set[str]:
+    """The runs that handed these over whose briefs someone may read: those whose every record
+    they may see, as the studio shows a run (core/studio.py)."""
+    return studio.seeable(conn, scenario, viewer, [str(r["run_id"]) for r in rows if r["run_id"]])
 
 
 def _name(scenario: Scenario, who: str | None) -> str | None:
@@ -127,11 +139,13 @@ def _since(conn: db.Connection, row: dict) -> list[dict]:
                         (row["person"], row["agent"], row["started_at"])).fetchall()
 
 
-def _line(conn: db.Connection, scenario: Scenario, viewer: Person, row: dict) -> dict:
+def _line(conn: db.Connection, scenario: Scenario, viewer: Person, row: dict,
+          briefed: set[str]) -> dict:
     waiting_ = [m for m in _since(conn, row) if m["answered_at"] is None]
     return {"id": row["id"], "person": _name(scenario, row["person"]) or row["person"],
             "agent": row["agent"], "team": row["team"],
-            "brief": masked(scenario, viewer.id, row["brief"]),
+            "brief": masked(scenario, viewer.id, row["brief"])
+            if row["run_id"] and str(row["run_id"]) in briefed else WITHHELD,
             "started_at": row["started_at"].isoformat(),
             "taken_by": _name(scenario, row["taken_by"]), "mine": row["taken_by"] == viewer.id,
             "unanswered": len(waiting_)}
@@ -146,7 +160,7 @@ def one(conn: db.Connection, scenario: Scenario, viewer: Person, handover: int) 
         return None
     replies = conn.execute("select by_person, text, at, sent_at from handover_replies where "
                            "handover_id = %s order by id", (handover,)).fetchall()
-    return {**_line(conn, scenario, viewer, row),
+    return {**_line(conn, scenario, viewer, row, _briefed(conn, scenario, viewer, [row])),
             "said": [{"at": s["at"], "text": masked(scenario, viewer.id, s["text"])}
                      for s in row["said"]],
             "since": [{"at": m["received_at"].isoformat(),

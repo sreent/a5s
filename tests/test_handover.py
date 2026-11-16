@@ -126,6 +126,23 @@ def test_the_agent_hands_the_conversation_to_a_team_which_answers_until_it_hands
     assert "We'll look at it today" not in json.dumps(stack.ledger())  # never the words
 
 
+
+def test_the_team_reads_a_brief_only_if_they_may_see_every_record_its_run_handled(
+        stack, approving, provider):
+    """The agent writes the brief from what its run read, which it may say without naming a
+    record: someone of the team who may not see a record the run handled reads what the person
+    said instead, as the studio wouldn't show them the run."""
+    assert not stack.settle(hands_to=["operations"]).refused
+    row = handed(stack)
+    with db.transaction(stack.admin) as conn:  # the run read Q-1002, which operations may not see
+        conn.execute("insert into run_records (run_id, record) values (%s, 'Q-1002')",
+                     (row["run_id"],))
+    [line] = as_person(approving, provider, "chen", "GET", "/studio/api/handovers").json()["handovers"]
+    assert line["brief"] == handover.WITHHELD and "refund" not in line["brief"]
+    seen = as_person(approving, provider, "chen", "GET", f"/studio/api/handovers/{row['id']}").json()
+    assert seen["brief"] == handover.WITHHELD
+    assert [s["text"] for s in seen["said"]] == [ASKS.replace("Q-1002", handover.HIDDEN)]
+
 def test_it_hands_over_only_to_a_team_its_settings_name(stack, approving):
     stack.model.reply("I can't pass you to a person here.")
     stack.say(ASKS, person="ben")
