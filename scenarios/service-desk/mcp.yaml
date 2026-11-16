@@ -1,8 +1,9 @@
-# The desk's ITSM and its identity provider's self-service, each through its MCP server
-# (docs/connectors.md#mcp-servers). In this made-up desk they're deploy/systems/itsm.py and idp.py, on
-# the desk's synthetic data, beside the gateway on its own machine, and copies of their own answer in
-# the studio's sandbox, beside it, so nothing tried there changes the deployment's. a5s offers its agents nothing of the servers' but the tools declared here,
-# in a5s's words, and passes on only the fields each names.
+# The desk's ITSM, its identity provider's self-service and its device management, each through its
+# MCP server (docs/connectors.md#mcp-servers). In this made-up desk they're deploy/systems/itsm.py,
+# idp.py and mdm.py, on the desk's synthetic data, beside the gateway on its own machine, and copies of
+# their own answer in the studio's sandbox, beside it, so nothing tried there changes the
+# deployment's. a5s offers its agents nothing of the servers' but the tools declared here, in a5s's
+# words, and passes on only the fields each names.
 servers:
   itsm:
     url: http://127.0.0.1:9201/mcp
@@ -10,6 +11,9 @@ servers:
   idp:
     url: http://127.0.0.1:9202/mcp
     sandbox: http://127.0.0.1:9302/mcp  # the sandbox's own copy, with its own state
+  mdm:
+    url: http://127.0.0.1:9205/mcp
+    sandbox: http://127.0.0.1:9305/mcp  # the sandbox's own copy, with its own state
 tools:
   search_records:
     server: itsm
@@ -88,3 +92,33 @@ tools:
     record_arg: key
     record_field: key
     action: reset-authenticators
+  # Devices, through device management: each person's, by its asset tag, LT- for a laptop and PH-
+  # for a phone, in hardware. A remote lock is a change a5s holds for hardware's decider below level
+  # 2, and makes once they approve it, once for a5s's key. The desk's pack lets it run alone, at
+  # level 2, only for the person asking, on their own device, as a reset does
+  search_devices:
+    server: mdm
+    calls: search_devices
+    description: Search devices by words in their asset tag, kind, holder, model or system, such as laptop or sam.
+    arguments: {type: object, required: [query], properties: {query: {type: string}}}
+    returns: [devices, key, kind, holder, model, os, compliant, reasons, last_seen, locked, link]
+    record_field: key
+  get_device:
+    server: mdm
+    calls: get_device
+    description: "Get a device by its asset tag, such as LT-0042: its holder, model and system, whether it meets the organisation's rules for devices and why not, and whether it's locked."
+    arguments: {type: object, required: [key], properties: {key: {type: string}}}
+    returns: [key, kind, holder, model, os, compliant, reasons, last_seen, locked, link]
+    record_arg: key
+    record_field: key
+  lock_device:
+    server: mdm
+    calls: lock_device
+    description: Lock a device remotely, such as one that's lost, so nobody can use it until its holder signs in to it again.
+    arguments: {type: object, required: [key], properties: {key: {type: string}}}
+    returns: [key, locked, link]
+    writes: true
+    idempotent: true
+    record_arg: key
+    record_field: key
+    action: lock-device

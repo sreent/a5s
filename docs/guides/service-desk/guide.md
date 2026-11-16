@@ -6,9 +6,9 @@ The desk's assistant, built again from nothing in the studio, as desk-helper, by
 
    ![Dev, who owns the desk's agents, starts a new one, desk-helper, from nothing: the blank start, which needs no tool of anyone's, so it fits the desk.](01-dev-who-owns-the-desk-s-agents-starts-a-new-one.png)
 
-2. From the palette, he gives it the desk's tools that read tickets, what requesters wrote and the knowledge base, the one that saves a draft reply, and the identity provider's self-service: an account, its own password reset, and removing authenticators. Both systems' come through their MCP servers.
+2. From the palette, he gives it the desk's tools that read tickets, what requesters wrote and the knowledge base, the one that saves a draft reply, and the identity provider's self-service: an account, its own password reset, and removing authenticators; and device management's: a device, and locking a lost one. All three systems' come through their MCP servers.
 
-   ![From the palette, he gives it the desk's tools that read tickets, what requesters wrote and the knowledge base, the one that saves a draft reply, and the identity provider's self-service: an account, its own password reset, and removing authenticators. Both systems' come through their MCP servers.](02-from-the-palette-he-gives-it-the-desk-s-tools-th.png)
+   ![From the palette, he gives it the desk's tools that read tickets, what requesters wrote and the knowledge base, the one that saves a draft reply, and the identity provider's self-service: an account, its own password reset, and removing authenticators; and device management's: a device, and locking a lost one. All three systems' come through their MCP servers.](02-from-the-palette-he-gives-it-the-desk-s-tools-th.png)
 
 3. He gives it a5s's own abilities the desk needs: reminders, its conversation, documents from outside, and the two preferences people set through it.
 

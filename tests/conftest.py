@@ -478,7 +478,7 @@ def policy_of(scenario: Any) -> PolicyEngine:
 # with where its app keeps what's written to it. Each is started once, the first time a test needs
 # it, and left up, as a deployment's systems are.
 MADE_UP: dict[str, tuple[tuple[str, str], ...]] = {
-    "service-desk": (("itsm", "written"), ("idp", "done")),
+    "service-desk": (("itsm", "written"), ("idp", "done"), ("mdm", "written")),
     "software-delivery": (("forge", "written"),),
     "master-data": (("sap", "written"),),
 }

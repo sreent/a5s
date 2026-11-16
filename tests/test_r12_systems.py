@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 
 from conftest import ROOT
 
-SERVERS = {"service-desk": ("desk", ("itsm", "idp")), "software-delivery": ("delivery", ("forge",)),
+SERVERS = {"service-desk": ("desk", ("itsm", "idp", "mdm")), "software-delivery": ("delivery", ("forge",)),
            "master-data": ("master", ("sap",))}
 
 
