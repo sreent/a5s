@@ -2,17 +2,17 @@
 
 The desk's joiner coordinator, which it planned and never built, described in plain words in the studio, drafted with the least it needs, and refined by hand. tests/test_walkthrough_joiner.py takes these steps, and made these pictures.
 
-1. Dev starts the joiner coordinator the desk planned and never built, joiner-coordinator, by describing it in his own words, on the sandbox's stand-in model, rather than from a template.
+1. Dev starts the joiner coordinator the desk planned and never built, joiner-coordinator, by describing it in his own words, on the sandbox's model, rather than from a template.
 
-   ![Dev starts the joiner coordinator the desk planned and never built, joiner-coordinator, by describing it in his own words, on the sandbox's stand-in model, rather than from a template.](01-dev-starts-the-joiner-coordinator-the-desk-plann.png)
+   ![Dev starts the joiner coordinator the desk planned and never built, joiner-coordinator, by describing it in his own words, on the sandbox's model, rather than from a template.](01-dev-starts-the-joiner-coordinator-the-desk-plann.png)
 
-2. The draft says what it was given, each with the reason: the desk's tools that only read, whose words match his, at level 0, which only reads. Nothing that writes, changes or sends anything.
+2. The draft says what it was given, each with the reason, of what the desk offers, at the lowest level each needs, never 2: on the stand-in, the tools that only read whose words match his, at level 0, which only reads.
 
-   ![The draft says what it was given, each with the reason: the desk's tools that only read, whose words match his, at level 0, which only reads. Nothing that writes, changes or sends anything.](02-the-draft-says-what-it-was-given-each-with-the-r.png)
+   ![The draft says what it was given, each with the reason, of what the desk offers, at the lowest level each needs, never 2: on the stand-in, the tools that only read whose words match his, at level 0, which only reads.](02-the-draft-says-what-it-was-given-each-with-the-r.png)
 
-3. He takes away what it doesn't need: what requesters wrote, which the joiner's own questions don't call for.
+3. He takes away what it doesn't need: what requesters wrote, which the joiner's own questions don't call for, and anything that writes, changes or sends.
 
-   ![He takes away what it doesn't need: what requesters wrote, which the joiner's own questions don't call for.](03-he-takes-away-what-it-doesn-t-need-what-requeste.png)
+   ![He takes away what it doesn't need: what requesters wrote, which the joiner's own questions don't call for, and anything that writes, changes or sends.](03-he-takes-away-what-it-doesn-t-need-what-requeste.png)
 
 4. He adds by hand what it does need: what people owe in the ITSM's tickets, which it chases, and reminders; and level 1, since chasing writes.
 

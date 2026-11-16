@@ -90,6 +90,18 @@ def walking_on(answering: Any = None) -> On:
     return On(model, "fake", FAKE_MODELS, httpx.Client(transport=transport), transport)
 
 
+def decided_in_trail(page: Any, by: str) -> None:
+    """On the audit trail, found for an instance: its held change's decision, by `by`, as the
+    ledger has it, and that a5s then made it, the auditor asking only for what `by` decided."""
+    page.fill("#by", by)
+    page.click("#search")
+    page.wait_for_selector("#entries li:has-text('proposal decide')", timeout=30000)
+    shown = page.locator("#entries li").all_inner_texts()
+    assert any("proposal decide, allow" in e and f"By {by}" in e for e in shown), shown
+    assert any("proposal made, record" in e and f"By {by}" in e for e in shown), shown
+    page.fill("#by", "")
+
+
 def says(page: Any, agent: str, text: str, words: str) -> None:
     """Someone says `text` to `agent` in the web chat, and it answers: with `words`, as the script
     has it, or, on a real model, with whatever it says."""

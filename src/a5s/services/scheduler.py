@@ -648,16 +648,22 @@ class Scheduler:
     def decided(self) -> None:
         """Ask the core to make the held changes their deciders approved, and to remind,
         escalate or let go of those still waiting; to weigh the grades of agents' work; and to
-        have each agent's judge, if it names one, grade the samples of its work beside people;
-        and to list its instances in IT's inventory, where the deployment names a tenant."""
+        have each agent's judge, if it names one, grade the samples of its work beside people."""
         for path, what in (("/proposals/sweep", "the held changes"),
                            ("/samples/sweep", "the graded samples"),
-                           ("/samples/judge", "the judge's verdicts on samples"),
-                           ("/registry/sweep", "IT's inventory in Microsoft 365")):
+                           ("/samples/judge", "the judge's verdicts on samples")):
             try:
                 self.gw.post(path, headers=self.service).raise_for_status()
             except httpx.HTTPError:
                 log.exception("couldn't ask the core about %s", what)
+
+    def register(self) -> None:
+        """Ask the core to list its instances in IT's inventory, where the deployment names a
+        tenant: on a thread of its own, so a slow tenant holds up nothing else (round 12, D9)."""
+        try:
+            self.gw.post("/registry/sweep", headers=self.service).raise_for_status()
+        except httpx.HTTPError:
+            log.exception("couldn't ask the core about IT's inventory in Microsoft 365")
 
     def deliveries(self) -> None:
         """Ask the core to deliver again what a chat it writes to didn't take before."""
@@ -762,11 +768,18 @@ class Scheduler:
                 self.check_notes()
                 stop.wait(retain_every)
 
+        def registering() -> None:  # IT's inventory, apart, each sweep
+            while not stop.is_set():
+                self.register()
+                stop.wait(sweep_every)
+
         with ThreadPoolExecutor(slots.total) as pool:
             sweeper = threading.Thread(target=sweeping, name="a5s-sweeps", daemon=True)
             sweeper.start()
             checker = threading.Thread(target=checking, name="a5s-notebook", daemon=True)
             checker.start()
+            registrar = threading.Thread(target=registering, name="a5s-registry", daemon=True)
+            registrar.start()
             while not stop.is_set():
                 try:
                     with psycopg.connect(self.cfg.database_url, autocommit=True) as conn:
@@ -787,4 +800,5 @@ class Scheduler:
                          "1 run" if busy == 1 else f"{busy} runs")
             sweeper.join()
             checker.join()
+            registrar.join()
         log.info("Stopped, with every run it took finished")

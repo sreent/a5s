@@ -35,6 +35,7 @@ from test_walkthrough_desk import able, definition
 from walkthrough import (
     Walk,
     answering,
+    decided_in_trail,
     deployed,
     merged,
     owned,
@@ -215,6 +216,7 @@ def audited(walk: Walk, url: str, instance: str) -> None:
         page.click("#search")
         page.wait_for_selector("#entries li", timeout=30000)
         assert "request_review" in page.inner_text("#entries")
+        decided_in_trail(page, "leo")
 
 
 def test_the_dev_assistant_is_built_again_in_the_studio_and_its_review_waits_for_its_owner(

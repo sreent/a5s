@@ -38,6 +38,7 @@ from walkthrough import (
     On,
     Walk,
     answering,
+    decided_in_trail,
     deployed,
     merged,
     owned,
@@ -348,9 +349,10 @@ def alone(walk: Walk, stack, url: str) -> None:
     made = [e for e in stack.ledger() if e["kind"] == "tool" and e["action"] == "correct_value"
             and e["decision"] == "record" and e.get("level") == 2]  # what came of it, at its level
     assert [e["outcome"]["status"] for e in made] == ["ok"], made
-    with db.transaction(stack.admin) as conn:
-        told = [r["person"] for r in conn.execute("select person from digest_items")]
-    assert "mo" in told, told
+    with db.transaction(stack.admin) as conn:  # the notice of this change, not an earlier item
+        told = [r["text"] for r in conn.execute("select text from digest_items where person = 'mo' "
+                                                "and text like '%%made a change itself, at level 2%%'")]
+    assert len(told) == 1 and "CR0000111" in told[0], told
 
 
 def audited(walk: Walk, url: str, instance: str) -> None:
@@ -363,6 +365,7 @@ def audited(walk: Walk, url: str, instance: str) -> None:
         page.click("#search")
         page.wait_for_selector("#entries li", timeout=30000)
         assert "correct_value" in page.inner_text("#entries")
+        decided_in_trail(page, "mo")
 
 
 def test_the_master_data_assistant_is_built_again_and_takes_one_correction_to_level_2(

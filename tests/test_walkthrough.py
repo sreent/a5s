@@ -31,6 +31,7 @@ from test_studio_authoring import kept
 from walkthrough import (
     Walk,
     answering,
+    decided_in_trail,
     deployed,
     merged,
     owned,
@@ -186,6 +187,7 @@ def watched_and_audited(walk: Walk, url: str, day: str) -> None:
         page.click("#search")
         page.wait_for_selector("#entries li", timeout=30000)
         assert day in page.inner_text("#entries") or "change_due_date" in page.inner_text("#entries")
+        decided_in_trail(page, "ana")
 
 
 def test_an_agent_goes_from_an_idea_to_work_through_a5s_alone(database, tmp_path, provider, browser,

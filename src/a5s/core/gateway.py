@@ -3531,7 +3531,8 @@ def create_app(gw: Gateway) -> FastAPI:
                 if settings is None:
                     return {"changed": [], "registering": f"nothing, since {problem}"}
                 return {"changed": registration.sweep(gw.url, gw.registry, gw.scenario,
-                                                      gw.definitions, gw.cfg.public_url)}
+                                                      gw.definitions, gw.cfg.public_url,
+                                                      gw.cfg.seal_keys)}
             finally:
                 held.execute("select pg_advisory_unlock(hashtext('a5s registry'))")
 
