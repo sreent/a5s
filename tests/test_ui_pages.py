@@ -47,7 +47,8 @@ def seen(stack):
 # and the audit trail, which Ana may not read, isn't in hers.
 LISTED = ("chat", "tasks", "notebook", "studio", "settings", "admin")
 AT = {"settings": "/studio/settings", "notebook": "/studio/notebook",  # in the studio, where their
-      "tasks": "/studio/tasks", "admin": "/studio/admin", "audit": "/studio/audit"}  # old addresses go
+      "tasks": "/studio/tasks", "admin": "/studio/admin", "audit": "/studio/audit",
+      "decide": "/studio/decide"}  # old addresses go
 
 
 @pytest.mark.parametrize("name", PAGES)

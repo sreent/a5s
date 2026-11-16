@@ -9,8 +9,11 @@ const PENDING = "a5s.studio";
 const BACK = `${location.origin}/studio/`;
 
 type SignInConfig = { authorization_endpoint: string; client_id: string; scope: string; acr_values?: string };
-/** An act signed in for: what, to which instance, and the salt its nonce was made with. */
-export type Act = { action: "suspend" | "resume"; instance: string; salt: string };
+/** An act signed in for, and what carrying it out needs, the salt its nonce was made with
+ * among it: suspending or resuming an instance, or deciding held changes. */
+export type Act =
+  | { kind: "status"; action: "suspend" | "resume"; instance: string; salt: string }
+  | { kind: "decide"; proposals: string[]; decision: "approve" | "reject"; salt: string; reason: string | null };
 type Pending = { verifier: string; state: string; nonce: string; path: string; search?: string; act?: Act };
 
 let signedFor: Act | null = null;  // the act the sign-in just made was for, until it's carried out
@@ -67,12 +70,16 @@ async function where(): Promise<SignInConfig> {
   return body.signin as SignInConfig;
 }
 
-/** Sign in afresh to suspend or resume an instance, and nothing else: the nonce commits to the
- * act, as core/suspension.py's `nonce` makes it, at the level what counts asks for. */
-export async function signInFor(action: Act["action"], instance: string): Promise<void> {
-  const salt = random();
-  await start(await where(), { action, instance, salt },
-              await sha256(`a5s ${action} instance ${instance} ${salt}`));
+/** A salt for an act's nonce, new each time, so each sign-in for it is different. */
+export const salted = random;
+
+/** Text by its hash, as the core's nonces take it: SHA-256, base64url with no padding. */
+export const hashed = sha256;
+
+/** Sign in afresh for one act, and nothing else, at the level what counts asks for: `nonce`
+ * commits to the act, as the core makes it for that act, so the identity provider signs it. */
+export async function signInFor(act: Act, nonce: string): Promise<void> {
+  await start(await where(), act, nonce);
 }
 
 async function start(signin: SignInConfig, act?: Act, nonce?: string, stronger = false): Promise<void> {

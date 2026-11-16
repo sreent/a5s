@@ -220,6 +220,30 @@ export type Day = {
   ended: Record<string, number>;
 };
 
+// The held changes someone may decide now, those they were told of, and those they decided
+// lately.
+export type DecideNow = {
+  you: string;
+  proposals: HeldChange[];
+};
+
+// A decision recorded, for the core to check again, seal and act on.
+export type Decided = {
+  decided: string[];
+  decision: string;
+  by: string;
+};
+
+// What the decision page sends with a sign-in made to decide: the changes it decides, by
+// their digests, the decision, the salt its nonce was made with, and, for a rejection, why,
+// if the decider says.
+export type Deciding = {
+  proposals: string[];
+  decision: string;
+  salt: string;
+  reason?: string | null;
+};
+
 // An agent as its folder defines it, whole, as the catalogue would show it: a draft's
 // preview.
 export type Defined = {
@@ -411,6 +435,27 @@ export type Held = {
   approved_share: number | null;
   decided_hours_p50: number | null;
   decided_hours_p90: number | null;
+};
+
+// A change an agent asked for, held for a person to decide: in the words code worked out when
+// it was asked for, who asked and for whom, what to know, and whether the viewer may decide it.
+export type HeldChange = {
+  key: string;
+  digest: string;
+  said: string;
+  agent: string;
+  for: string[];
+  flags: string[];
+  sensitive: boolean;
+  status: string;
+  yours: string | null;
+  may_decide: boolean;
+  outcome: string | null;
+  proposed_at: string;
+  lapses_at: string;
+  links: string[];
+  records: RecordLink[];
+  changed: string[];
 };
 
 // Changes agents asked for in a part, waiting, and who may decide them.
@@ -659,6 +704,12 @@ export type Questions = {
   answered: number;
   unanswered: number;
   answered_seconds_p90: number | null;
+};
+
+// A record a held change names, and its address in its system.
+export type RecordLink = {
+  key: string;
+  link: string;
 };
 
 // What an agent's release lets its instances be set to: the level it starts at, the most it

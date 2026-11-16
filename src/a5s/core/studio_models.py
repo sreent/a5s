@@ -1103,3 +1103,53 @@ class AuditExport(Shape):
     next: int | None
     head: dict[str, Any] | None
     bounds: dict[str, Any]
+
+
+# Deciding the changes agents asked for, folded into the studio (core/decide_api.py)
+
+
+class RecordLink(Shape):
+    """A record a held change names, and its address in its system."""
+
+    key: str
+    link: str
+
+
+class HeldChange(Shape):
+    """A change an agent asked for, held for a person to decide: in the words code worked out when
+    it was asked for, who asked and for whom, what to know, and whether the viewer may decide it."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+
+    key: str  # P-<number>
+    digest: str  # what a decision's sign-in commits to
+    said: str
+    agent: str
+    acts_for: list[str] = Field(alias="for")  # whom it was asked for, by name
+    flags: list[str]
+    sensitive: bool  # decided on its own, never with others
+    status: str
+    yours: str | None  # the viewer's decision, if they made one that counts
+    may_decide: bool
+    outcome: str | None
+    proposed_at: str
+    lapses_at: str
+    links: list[str]
+    records: list[RecordLink]
+    changed: list[str]  # the records that changed since it was asked for, in words
+
+
+class DecideNow(Shape):
+    """The held changes someone may decide now, those they were told of, and those they decided
+    lately."""
+
+    you: str
+    proposals: list[HeldChange]
+
+
+class Decided(Shape):
+    """A decision recorded, for the core to check again, seal and act on."""
+
+    decided: list[str]
+    decision: str
+    by: str

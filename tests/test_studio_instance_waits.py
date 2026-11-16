@@ -46,7 +46,7 @@ def test_it_says_what_of_an_instance_waits_and_for_whom(stack, approving, provid
     ana = waits(approving, provider, "ana")
     assert set(ana) == {"decide", "graded", "notebook"}
     assert (ana["decide"]["what"], ana["decide"]["go"]) == (
-        "1 change it asked for waits for your decision", "/decide/")
+        "1 change it asked for waits for your decision", "/studio/decide")
     assert ana["decide"]["since"].startswith(change["proposed_at"].isoformat()[:19])
     assert ana["graded"] == {
         "kind": "graded", "go": None, "why": [], "since": ana["graded"]["since"],

@@ -58,7 +58,7 @@ def test_a_deciders_manager_can_see_the_change_they_are_sent(stack, approving, p
     stack.at("2026-11-09T10:00:00+00:00")  # five working days on
     sweep(stack)
     [up] = [m["text"] for m in stack.inbox("lena")]
-    assert "/decide/?proposal=" in up
+    assert "/studio/decide?proposal=" in up
     shown = [p["key"] for p in review(approving, provider, "lena")]
     assert shown == ["P-1"], f"Lena follows the link she was sent and sees {shown}: {up!r}"
 

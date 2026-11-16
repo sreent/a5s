@@ -6,7 +6,7 @@
 import { useEffect, useState } from "react";
 import { type Catalogue, type Figures, get, type Instance, type RunLine, type RunsPage, send,
          type Standing, type StatusAsked } from "../api";
-import { signInFor, takeAct } from "../auth";
+import { hashed, salted, signInFor, takeAct } from "../auth";
 import { Confirm, rung } from "../design";
 import { Link } from "../router";
 import { shellOf } from "../Sidebar";
@@ -35,7 +35,10 @@ function Stopping({ id, standing, problem, setProblem }: {
   const shell = useLoad(shellOf, []);
   const settles = Boolean(shell.data?.pages.includes("settings"));  // approves versions of the settings
   const go = (action: "suspend" | "resume") => () => {
-    signInFor(action, id).catch((e: Error) => setProblem(e.message));
+    const salt = salted();  // the act's nonce, as core/suspension.py's `nonce` makes it
+    hashed(`a5s ${action} instance ${id} ${salt}`)
+      .then((nonce) => signInFor({ kind: "status", action, instance: id, salt }, nonce))
+      .catch((e: Error) => setProblem(e.message));
   };
   const asked = standing?.asked;
   return (
@@ -227,7 +230,7 @@ export function InstancePage({ id }: { id: string }) {
     `/studio/api/instances/${encodeURIComponent(id)}/standing`), [id, again]);
   useEffect(() => {  // back from signing in for an act on it: ask a5s to carry it out, once
     const act = takeAct();
-    if (!act || act.instance !== id) return;
+    if (act?.kind !== "status" || act.instance !== id) return;
     send<StatusAsked>("POST", `/studio/api/instances/${encodeURIComponent(id)}/status`,
                       { action: act.action, salt: act.salt })
       .then(() => setAgain((n) => n + 1))

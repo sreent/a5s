@@ -171,7 +171,7 @@ def test_a_reason_given_on_the_page_is_what_its_sign_in_covers(stack, approving,
     asked(stack)
     [p] = held(stack)
     page = browser.new_page()
-    page.goto(f"{approving}/decide/?proposal={p['digest']}")  # as Ana
+    page.goto(f"{approving}/studio/decide?proposal={p['digest']}")  # as Ana
     page.wait_for_selector(".approval >> text=Q-1002", timeout=30000)
     page.fill(".approval input[type=text]", "  Contoso asked for the 20th, not the 13th. ")
     page.click(".approval button >> text=Reject")  # afresh, for this decision and these words

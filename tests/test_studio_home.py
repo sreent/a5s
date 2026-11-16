@@ -44,7 +44,7 @@ def test_it_says_what_waits_for_whom_and_where_they_do_it(stack, approving, prov
         "what": f"Version {waiting['serial']} of the settings waits for your approval",
         "why": ["the owner of billing hasn't approved it"]}
     assert ana["decide"]["what"] == "1 change an agent asked for waits for your decision"
-    assert ana["decide"]["go"] == "/decide/"
+    assert ana["decide"]["go"] == "/studio/decide"
     for nobody in ("chen", "priya", "ben"):  # none of it waits for them
         assert api(approving, provider, nobody, "home").json()["waiting"] == []
 
@@ -112,7 +112,7 @@ def test_someone_finds_what_waits_and_what_they_may_do_in_the_studio(stack, appr
     page.wait_for_selector("#waiting .wait", timeout=30000)
     waits = page.inner_text("#waiting")
     assert "waits for your approval" in waits and "the owner of billing hasn't approved it" in waits
-    assert page.get_attribute("#waiting a:has-text('waits for your decision')", "href") == "/decide/"
+    assert page.get_attribute("#waiting a:has-text('waits for your decision')", "href") == "/studio/decide"
     shot(page, "studio-home")
     page.click("#next a:has-text('What you may do in a5s')")
     page.wait_for_selector("#roles table", timeout=30000)

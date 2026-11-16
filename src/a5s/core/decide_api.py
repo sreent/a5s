@@ -1,8 +1,9 @@
-"""The decision page in the channels app (docs/architecture.md#proposals-and-approvals): the page
-a decider's card opens, for the changes agents hold for a person to decide (core/proposals.py).
-They sign in to see what waits for them, and again, afresh, to decide: that sign-in's nonce
-commits to their decision on exactly the changes they chose, so the identity provider signs the
-decision. The gateway checks it again, seals it and makes what's approved.
+"""The decision page's API in the channels app (docs/architecture.md#proposals-and-approvals),
+for the changes agents hold for a person to decide (core/proposals.py). The page is the
+studio's, /studio/decide, which a decider's card opens. They sign in to see what waits for
+them, and again, afresh, to decide: that sign-in's nonce commits to their decision on exactly
+the changes they chose, so the identity provider signs the decision. The gateway checks it
+again, seals it and makes what's approved.
 """
 
 import hashlib
@@ -18,6 +19,7 @@ from pydantic import BaseModel
 from a5s import db
 from a5s.contract import INSTANCE_APPROVER, PART_DELEGATE, PART_OWNER
 from a5s.core import ledger, proposals, web
+from a5s.core import studio_models as shapes  # what each route answers, as the studio's types say
 
 log = logging.getLogger(__name__)
 
@@ -34,10 +36,10 @@ class Deciding(BaseModel):
 
 
 def router(gw: Any) -> APIRouter:
-    """The decision page, its sign-in and its API, for the channels app to include."""
-    pages = web.acting(gw, "decide")
+    """The decision page's API, and its old address, for the channels app to include."""
+    pages = web.acting(gw, "decide", moved="/studio/decide")
 
-    @pages.post("/decide/review")
+    @pages.post("/decide/review", **shapes.answers(shapes.DecideNow))
     def review_proposals(authorization: str | None = Header(default=None)) -> dict:
         """The held changes whoever signed in may decide now, oldest first, since those lapse
         first, as the directory stands now; those they were told of as a decider's manager,
@@ -89,7 +91,7 @@ def router(gw: Any) -> APIRouter:
                           "changed": [f"{k} has changed since it was asked for" for k in changed]})
         return {"you": person.name if person else who, "proposals": shown}
 
-    @pages.post("/decide/proposals")
+    @pages.post("/decide/proposals", **shapes.answers(shapes.Decided))
     def decide_proposals(body: Deciding, authorization: str | None = Header(default=None)
                          ) -> dict:
         """A decision on held changes, signed through the identity provider for that decision on

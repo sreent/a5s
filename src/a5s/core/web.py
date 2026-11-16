@@ -17,8 +17,8 @@ from typing import Any
 
 import httpx
 import psycopg
-from fastapi import APIRouter, Depends, HTTPException, Response
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi.responses import JSONResponse, RedirectResponse
 from pydantic import BaseModel
 
 from a5s import db
@@ -146,17 +146,28 @@ def refusal(gw: Any, exc: Any) -> HTTPException:
     return HTTPException(exc.status, exc.reason)
 
 
-def acting(gw: Any, name: str) -> APIRouter:
+def acting(gw: Any, name: str, moved: str | None = None) -> APIRouter:
     """A page where someone signs in afresh for one act, such as approving a version of the
     settings: the page and its script, which hold nobody's data, where it signs them in, and
     its sign-in, passed on to the identity provider. The page gets the signed sign-in alone,
     with no refresh token to make more like it. Each act's route checks its own sign-in, whose
-    nonce commits to the act, so the provider signs it."""
+    nonce commits to the act, so the provider signs it. A page `moved` into the studio keeps its
+    acts here, and signs in as the studio does; its address goes there, with what it asked for,
+    for the links already sent."""
 
     def available() -> None:
         approving(gw)
 
     pages = APIRouter(dependencies=[Depends(available)])
+
+    if moved:
+        @pages.get(f"/{name}/", include_in_schema=False)
+        def act_moved(request: Request) -> Response:
+            asked = request.url.query
+            return RedirectResponse(f"{moved}{'?' + asked if asked else ''}", status_code=303,
+                                    headers=PAGE_HEADERS)
+
+        return pages
 
     @pages.get(f"/{name}/", include_in_schema=False)
     def act_page() -> Response:

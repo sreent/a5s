@@ -116,7 +116,7 @@ def waiting(conn: db.Connection, gw: Any, person: Person) -> list[dict]:
     if held:
         found.append({"kind": "decide", "what": f"{held} {'change' if held == 1 else 'changes'} "
                       f"an agent asked for {'waits' if held == 1 else 'wait'} for your decision",
-                      "why": [], "go": "/decide/"})
+                      "why": [], "go": "/studio/decide"})
     if samples.GRADER in person.roles and (
             graded := len(samples.gradeable(conn, scenario, person, MOST + 1))):
         count = f"{MOST} or more" if graded > MOST else str(graded)
@@ -159,7 +159,7 @@ def of_instance(conn: db.Connection, gw: Any, person: Person, inst: dict) -> lis
     others = [p for p in held if p not in mine]
     if mine:
         found.append({"kind": "decide", "what": f"{_changes(len(mine))} for your decision",
-                      "why": [], "go": "/decide/", "since": mine[0]["proposed_at"]})
+                      "why": [], "go": "/studio/decide", "since": mine[0]["proposed_at"]})
     if others:
         found.append({"kind": "held", "what": f"{_changes(len(others))} for someone else's "
                       "decision, as its parts' owners and delegates decide them", "why": [],

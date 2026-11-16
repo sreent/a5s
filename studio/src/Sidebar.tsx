@@ -31,7 +31,8 @@ export function shellOf(): Promise<Shell> {
 // The studio's own pages, which it opens without leaving it: the rest are pages of their own
 const INSIDE: Record<string, Route> = { studio: { page: "home" }, settings: { page: "settings" },
                                          notebook: { page: "notebook" }, tasks: { page: "tasks" },
-                                         admin: { page: "admin" }, audit: { page: "audit" } };
+                                         admin: { page: "admin" }, audit: { page: "audit" },
+                                         decide: { page: "decide" } };
 
 /** A way to one of a5s's pages: within the studio, without leaving it; marked if it's here. */
 function To({ page, here, label, title, children }: {

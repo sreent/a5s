@@ -2721,7 +2721,7 @@ def create_app(gw: Gateway) -> FastAPI:
     def ask(conn: db.Connection, p: dict, person: str, again: bool = False) -> int | None:
         """Ask, or remind, a decider to decide a held change, where they work with its agent,
         as an urgent message. What to push once the transaction is done."""
-        link = f"{gw.public_url}/decide/?proposal={p['digest']}"
+        link = f"{gw.public_url}/studio/decide?proposal={p['digest']}"
         text = proposals.asking(p, link, again)
         route = gw.at_once(conn, person, p["definition"])
         ledger.append(conn, {
@@ -3465,7 +3465,7 @@ def create_app(gw: Gateway) -> FastAPI:
                         f"{names} to decide it.\n{p['said']}\nIt lapses on "
                         f"{obligations.day(boss, p['lapses_at'])} unless one of them decides it, "
                         f"on a5s's page. You can see it there, though only they decide it: "
-                        f"{gw.public_url}/decide/?proposal={p['digest']}")
+                        f"{gw.public_url}/studio/decide?proposal={p['digest']}")
                 route = gw.at_once(conn, boss.id, p["definition"])
                 if route["channel"] == "batch":
                     urgent.hold(conn, boss.id, None, p["instance_id"], None, text, now)
