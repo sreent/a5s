@@ -33,6 +33,7 @@ TOP = {
     "thresholds": lambda v: v["thresholds"].update(billing=0.9),
     "instances": lambda v: v["instances"].pop("watcher-finance"),
     "groups": lambda v: v.update(groups={"graders": ["grader"]}),
+    "spending": lambda v: v.update(spending={"parts": {"billing": 400}, "agents": {"assistant": 30}}),
 }
 INSTANCE = {
     "definition": lambda i: i.update(definition="watcher"),

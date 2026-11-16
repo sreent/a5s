@@ -44,6 +44,7 @@ from a5s.core import (
     settings_api,
     settings_app,
     shell_api,
+    spending,
     studio,
     suspension,
     tasks_api,
@@ -218,6 +219,7 @@ def router(gw: Any) -> APIRouter:
     @pages.get("/studio/approve", include_in_schema=False)
     @pages.get("/studio/design", include_in_schema=False)
     @pages.get("/studio/map", include_in_schema=False)
+    @pages.get("/studio/spending", include_in_schema=False)
     def studio_new() -> Response:
         """The studio, where someone starts a new agent, sees all the agents they may, what they
         may do, or the design system's showcase."""
@@ -309,6 +311,23 @@ def router(gw: Any) -> APIRouter:
         case = kept["case"]
         return {**kept, "case": {"name": case["name"], "speaker": case["as"],
                                  "steps": case["steps"]}}
+
+    @api.get("/studio/api/spending", **shapes.answers(shapes.Spending))
+    def studio_spending(person: Annotated[Person, Depends(someone)],
+                        month: str | None = None) -> dict:
+        """What agents' model calls cost in a calendar month, this one unless another is named,
+        such as 2026-10: each part's and agent's against its budget, with its forecast to the
+        month's end, and each instance someone may watch, with what a message answered cost.
+        Only what's theirs to see (core/spending.py)."""
+        if not spending.sees_any(gw.url, person):
+            raise HTTPException(403, "spending is for the people who own a part or an agent, "
+                                     "decide for a part, approve instances, or run one")
+        with db.transaction(gw.url) as conn:
+            try:
+                return spending.report(conn, gw.scenario, gw.models, gw.spending_in_force(conn),
+                                       person, None, month, gw.currency)
+            except spending.Refused as e:
+                raise HTTPException(400, str(e)) from None
 
     @api.get("/studio/api/map", **shapes.answers(shapes.DependsOn))
     def studio_map(person: Annotated[Person, Depends(someone)]) -> dict:

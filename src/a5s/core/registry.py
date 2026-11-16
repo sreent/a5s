@@ -19,6 +19,7 @@ from a5s.contract import (
     InstanceSettings,
     Person,
     Settings,
+    Spending,
     Tool,
     parse_settings,
 )
@@ -56,7 +57,8 @@ def served(scenario: Any, serves: Iterable[str]) -> list[str]:
 
 def approves(person: Person) -> bool:
     """Whether someone approves versions of the settings: the owner of a part, or an instance
-    approver, for what agents may do; an agent's owner, for the groups given its roles; the
+    approver, for what agents may do; an agent's owner, for the groups given its roles and
+    what it may cost a month; the
     data protection officer, for what's theirs; or assurance, for the groups given the
     auditor's role. Each approval counts towards what's theirs alone (`needed`)."""
     return (any(r in person.roles for r in (INSTANCE_APPROVER, DATA_PROTECTION, ASSURANCE))
@@ -108,6 +110,19 @@ def _thresholds_change(settings: Settings, before: Settings | None) -> set[str]:
             if settings.thresholds.get(p) != before.thresholds.get(p)}
 
 
+def _spending_change(settings: Settings, before: Settings | None) -> tuple[set[str], set[str]]:
+    """The parts and the agents whose monthly budget a version changes, from the version in
+    force, or for the first, from none: each needs its owner, a part's though no instance works
+    there yet, since it's theirs to say what it may cost."""
+    was = before.spending if before else Spending()
+    now = settings.spending
+
+    def changed(a: dict[str, float], b: dict[str, float]) -> set[str]:
+        return {k for k in set(a) | set(b) if a.get(k) != b.get(k)}
+
+    return changed(was.parts, now.parts), changed(was.agents, now.agents)
+
+
 def _data_protection_change(settings: Settings, before: Settings | None) -> bool:
     """Whether a version changes what the data protection officer decides: from the version
     in force, or for the first, from a5s's defaults, each of which keeps people's data close."""
@@ -124,7 +139,8 @@ def _classes_change(settings: Settings, before: Settings | None) -> bool:
 def missing(settings: Settings, directory: Directory, valid: Iterable[str],
             before: Settings | None = None, rooted: Directory | None = None) -> list[str]:
     """Whose approval a version still needs, given who validly approved it: for each part an
-    instance works in, or whose threshold it changes, its owner's, and an instance approver's
+    instance works in, or whose threshold or budget it changes, its owner's, and for each agent
+    whose budget it changes, the agent's owner's, and an instance approver's
     for any instance in no part, and for the scenario's classes of data, if it sets them
     afresh. `before` is the version before it, whose instances a version that leaves them out
     retires, so their approvers decide that too. Giving a group a role needs the role's owner
@@ -149,10 +165,13 @@ def needed(settings: Settings, directory: Directory, valid: Iterable[str],
     rooted = rooted or directory
     owners = {role for who in valid if (p := rooted(who)) for role in p.roles}
     covered = _covered(settings, before)
+    budgeted, budgeted_agents = _spending_change(settings, before)
     needs = [(f"{PART_OWNER}:{part}", f"the owner of {part} hasn't approved it", False)
              for part in sorted({p for i in covered for p in i.parts}
-                                | _thresholds_change(settings, before))
+                                | _thresholds_change(settings, before) | budgeted)
              if f"{PART_OWNER}:{part}" not in held]
+    needs += [(f"{AGENT_OWNER}:{agent}", f"the owner of the {agent} hasn't approved its budget",
+               False) for agent in sorted(budgeted_agents) if f"{AGENT_OWNER}:{agent}" not in held]
     if INSTANCE_APPROVER not in held:
         if any(not i.parts for i in covered):
             why = f"no {INSTANCE_APPROVER} has approved it, for the instances in no part"
@@ -173,13 +192,16 @@ def needed(settings: Settings, directory: Directory, valid: Iterable[str],
 
 def approvers(settings: Settings, holders: Holders, before: Settings | None = None,
               rooted: Holders | None = None) -> list[Person]:
-    """The people whose approval a version needs: each part's owners, and the instance
+    """The people whose approval a version needs: each part's owners, the owners of each agent
+    whose budget it changes, and the instance
     approvers, if any instance it decides on is in no part, or it sets the classes of data
     afresh; for each role it gives a group, the role's owners the directory names; and the data
     protection officer the directory names, if it changes their choices."""
     covered = _covered(settings, before)
+    budgeted, budgeted_agents = _spending_change(settings, before)
     roles = [f"{PART_OWNER}:{p}" for p in sorted({p for i in covered for p in i.parts}
-                                                 | _thresholds_change(settings, before))]
+                                                 | _thresholds_change(settings, before) | budgeted)]
+    roles += [f"{AGENT_OWNER}:{a}" for a in sorted(budgeted_agents)]
     if any(not i.parts for i in covered) or _classes_change(settings, before):
         roles.append(INSTANCE_APPROVER)
     found: dict[str, Person] = {}

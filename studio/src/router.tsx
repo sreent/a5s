@@ -2,8 +2,8 @@
 // their home, what they may do, all the agents, one agent, an instance's dashboard, a run, a
 // new agent, a draft of one, the settings, the notebook, someone's tasks, the administrators'
 // page, the audit trail, the changes to decide, the work to grade, the officer's requests, a
-// version of the settings to approve, the map of what depends on what, or the design system's
-// showcase.
+// version of the settings to approve, the map of what depends on what, a month's spending, or
+// the design system's showcase.
 
 import { type MouseEvent, type ReactNode, useEffect, useState } from "react";
 
@@ -26,6 +26,7 @@ export type Route =
   | { page: "officer" }
   | { page: "approve"; settings: string }  // the version, by its digest
   | { page: "map"; at?: string }  // and what's chosen on it, such as agent:assistant
+  | { page: "spending"; month?: string }  // such as 2026-10, or this month
   | { page: "design" };
 
 export function parse(path: string, search = ""): Route {
@@ -50,6 +51,10 @@ export function parse(path: string, search = ""): Route {
     const at = new URLSearchParams(search).get("at");
     return at ? { page: "map", at } : { page: "map" };
   }
+  if (kind === "spending") {
+    const month = new URLSearchParams(search).get("month");
+    return month ? { page: "spending", month } : { page: "spending" };
+  }
   if (kind === "approve") return { page: "approve", settings: new URLSearchParams(search).get("settings") ?? "" };
   return { page: "home" };
 }
@@ -73,6 +78,7 @@ export function href(route: Route): string {
     case "grade": return "/studio/grade";
     case "officer": return "/studio/officer";
     case "map": return `/studio/map${route.at ? `?at=${encodeURIComponent(route.at)}` : ""}`;
+    case "spending": return `/studio/spending${route.month ? `?month=${encodeURIComponent(route.month)}` : ""}`;
     case "approve": return `/studio/approve?settings=${encodeURIComponent(route.settings)}`;
     default: return "/studio/";
   }

@@ -1149,6 +1149,40 @@ export type Signer = {
   held_by?: string[] | null;
 };
 
+// A month of a part's, agent's or instance's model calls: what they cost so far at their
+// models' prices, its budget, if the settings set one, and while the month lasts, the pace of
+// the last week and the forecast to its end; its runs, those whose prices aren't known, the
+// messages they answered, and what each message cost, all in.
+export type Spend = {
+  key: string;
+  spent: number;
+  budget: number | null;
+  pace: number | null;
+  forecast: number | null;
+  runs: number;
+  unpriced: number;
+  answered: number;
+  tokens: number;
+  per_answer: number | null;
+  agent?: string;
+  parts?: string[];
+};
+
+// A calendar month's spending, in UTC, as someone may see it: its parts, agents and
+// instances, in the currency models.yaml prices models in, if it names one.
+export type Spending = {
+  month: string;
+  current: boolean;
+  currency: string | null;
+  starts: string;
+  ends: string;
+  days: number;
+  day: number;
+  parts: Spend[];
+  agents: Spend[];
+  instances: Spend[];
+};
+
 // How an instance stands, for someone who may watch it: what of it waits, each where it's
 // done; who suspended it, if it's suspended; what they may do to it from its page, suspend it
 // or resume it, if either; and what was asked for there that a5s hasn't carried out yet.

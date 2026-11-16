@@ -2,6 +2,11 @@
 # These two are for development with synthetic data only: both are hosted by
 # their providers, outside the organisation.
 
+# The currency each model's prices are in, as its ISO 4217 code, such as GBP or
+# THB: the studio's spending page shows amounts in it, and the monthly budgets in
+# the signed settings are in it too. Without one, amounts are plain figures.
+# currency: GBP
+
 models:
   deepseek-v4-pro:
     provider: deepseek

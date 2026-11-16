@@ -32,6 +32,7 @@ from a5s.core import (
     registry,
     releases,
     samples,
+    spending,
     studio,
 )
 from a5s.core.tasks import OFFERED
@@ -41,11 +42,13 @@ MOST = 20  # samples counted to grade, beyond which the home says "20 or more"
 # What each role lets someone do, by its kind; {scope} is its part or agent
 MAY = {
     PART_OWNER: "approve the instances that work in {scope}, and how far each may act there; "
-                "decide the changes agents ask for there; watch those instances' runs",
+                "decide the changes agents ask for there; watch those instances' runs; and "
+                "approve what agents' models may cost there a month, and see what they do",
     PART_DELEGATE: "decide the changes agents ask for in {scope}, beside its owner",
     "agent-owner": "own the {scope}: its definition and releases, drafts of it, and its "
-                   "instances' runs; start new agents; suspend it; and give a group its "
-                   "authors' or viewers' role",
+                   "instances' runs; start new agents; suspend it; give a group its authors' "
+                   "or viewers' role; and approve what its models may cost a month, and see "
+                   "what they do",
     "agent-author": "draft changes to the {scope}, try them in the sandbox, and publish them for "
                     "its owners to sign",
     "agent-viewer": "see how the {scope} is built, read only: its instructions and skills",
@@ -138,6 +141,8 @@ def waiting(conn: db.Connection, gw: Any, person: Person) -> list[dict]:
                       f"{'someone' if n == 1 else 'people'} said {'was' if n == 1 else 'were'} "
                       "wrong wait for you to check", "why": ["you own it"],
                       "go": f"/studio/agents/{agent}#feedback"})
+    found += spending.over(conn, scenario, gw.models, gw.spending_in_force(conn), person,
+                           currency=gw.currency)
     tasks = conn.execute("select count(*) as n from tasks where owner = %s and parent is null "
                          "and status in ('blocked', %s)", (person.id, OFFERED)).fetchone()["n"]
     if tasks:

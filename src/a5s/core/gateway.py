@@ -45,6 +45,7 @@ from a5s.contract import (
     Scenario,
     Settings,
     Signature,
+    Spending,
     Tool,
     ToolCall,
     parse_settings,
@@ -289,6 +290,7 @@ class Gateway:
     releases: releases.Releases | None = None  # the release a5s is, which must be approved here
     breakers: Breakers = field(default_factory=Breakers)  # models not called for now (core/breakers.py)
     registry: Any = None  # the Microsoft tenant its instances are listed in, if any (core/registration.py)
+    currency: str | None = None  # the one models.yaml prices models in, if it names one
 
     @property
     def url(self) -> str:
@@ -308,6 +310,14 @@ class Gateway:
         if settings is None and not self.cfg.seal_keys:
             settings = self.sealed_in_force(conn)
         return settings.data_protection if settings is not None else DataProtection()
+
+    def spending_in_force(self, conn: db.Connection) -> Spending:
+        """What parts and agents may cost a month, as the settings in force say, read as the
+        data protection officer's choices are: or no budgets, while none can be used."""
+        settings, _ = self.settings_in_force(conn, seal=False)
+        if settings is None and not self.cfg.seal_keys:
+            settings = self.sealed_in_force(conn)
+        return settings.spending if settings is not None else Spending()
 
     def settings_in_force(self, conn: db.Connection,
                           seal: bool = True) -> tuple[Any, str | None]:

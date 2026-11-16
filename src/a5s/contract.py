@@ -268,6 +268,18 @@ class DataProtection:
 
 
 @dataclass(frozen=True)
+class Spending:
+    """What each part's and each agent's model calls may cost a calendar month, in the
+    currency models.yaml prices models in: a budget a5s shows spending against, with a forecast
+    to the month's end, and tells its owners of once the forecast passes it, never one that
+    stops work, which the token budgets each release sets do (core/spending.py). A part's owner
+    approves its budget, and an agent's owner the agent's."""
+
+    parts: dict[str, float] = field(default_factory=dict)
+    agents: dict[str, float] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
 class Settings:
     version: str
     instances: tuple[InstanceSettings, ...] = field(default_factory=tuple)
@@ -292,6 +304,9 @@ class Settings:
     # A version's own map gives nothing towards its approval: the one in force before it does.
     groups: dict[str, tuple[str, ...]] = field(default_factory=dict)
     data_protection: DataProtection = field(default_factory=DataProtection)
+    # What each part's and each agent's model calls may cost a month, such as
+    # {"parts": {"billing": 400}, "agents": {"assistant": 300}}
+    spending: Spending = field(default_factory=Spending)
 
 
 class SettingsError(ValueError):
@@ -309,6 +324,9 @@ _FIELD = Annotated[str, StringConstraints(strict=True, pattern=r"^[A-Za-z][A-Za-
 _LEVEL = Annotated[StrictInt, Field(ge=0, le=2)]
 _COUNT = Annotated[StrictInt, Field(ge=1, le=100_000)]
 _THRESHOLD = Annotated[float, Field(strict=True, ge=0.5, le=0.999)]
+# A month's budget, in the currency models.yaml prices models in: more than nothing, and at most
+# ten million, a whole number or one with cents
+_AMOUNT = Annotated[float, Field(gt=0, le=10_000_000, allow_inf_nan=False)]
 # A group, by the id its sign-ins show it by: an Entra ID object id, or a group's name or path
 _GROUP = Annotated[str, StringConstraints(strict=True, pattern=(
     r"^[A-Za-z0-9/_](?:[A-Za-z0-9._@:/ -]{0,254}[A-Za-z0-9._@:/-])?$"))]
@@ -370,6 +388,15 @@ class _DataProtection(BaseModel):
     cases_from_runs: bool = DataProtection.cases_from_runs
 
 
+class _Spending(BaseModel):
+    """What each part's and each agent's model calls may cost a month."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    parts: dict[_ID, _AMOUNT] = Field(default_factory=dict)
+    agents: dict[_ID, _AMOUNT] = Field(default_factory=dict)
+
+
 class _Version(BaseModel):
     """a5s's own settings format, checked strictly: names are plain words, levels are whole
     numbers from 0 to 2, and nothing else may be there."""
@@ -384,6 +411,7 @@ class _Version(BaseModel):
     instances: dict[_ID, _Instance] = Field(default_factory=dict)
     groups: dict[_GROUP, list[_GROUP_ROLE]] = Field(default_factory=dict)
     data_protection: _DataProtection = Field(default_factory=_DataProtection)
+    spending: _Spending = Field(default_factory=_Spending)
 
 
 def _plain_yaml(raw: bytes) -> Any:
@@ -437,6 +465,8 @@ def parse_settings(raw: bytes, signatures: tuple[Signature, ...] = ()) -> Settin
         thresholds=dict(version.thresholds),
         groups={g: tuple(sorted(set(roles))) for g, roles in version.groups.items() if roles},
         data_protection=DataProtection(**version.data_protection.model_dump()),
+        spending=Spending(parts={p: float(v) for p, v in version.spending.parts.items()},
+                          agents={a: float(v) for a, v in version.spending.agents.items()}),
         instances=tuple(
             InstanceSettings(id=iid, definition=i.definition, serves=tuple(i.serves),
                              level=i.level, owner=i.owner, deputy=i.deputy,

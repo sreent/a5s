@@ -30,7 +30,7 @@ from collections.abc import Callable
 from typing import Any
 
 from a5s import db
-from a5s.contract import DataProtection, InstanceSettings, Person, Settings
+from a5s.contract import DataProtection, InstanceSettings, Person, Settings, Spending
 from a5s.core import memberships, registry, sealing
 from a5s.core.identity import (
     IdentityError,
@@ -230,6 +230,7 @@ def changes(before: Settings | None, after: Settings, definitions: dict[str, Def
                                   f"becomes {_percent(b) if b else 'none, so none earns it'}"
                                   + (f", instead of {_percent(a)}" if a else "") + ".",
                           "widens": b is not None and (a is None or b < a)})
+    found += _spending(before.spending if before else Spending(), after.spending)
     asked = {i.id: i.definition for i in after.instances}
     for new in after.instances:
         old = was.pop(new.id, None)
@@ -319,6 +320,41 @@ NAMING = {
 }
 
 
+def money(amount: float) -> str:
+    """An amount in the currency models.yaml prices models in: whole, or with its cents."""
+    return f"{amount:,.0f}" if amount == int(amount) else f"{amount:,.2f}"
+
+
+# What a budget is for, in words, by whose it is: a part's, or an agent's
+COVERS = {"parts": "what agents' model calls may cost there",
+          "agents": "what its model calls may cost"}
+
+
+def _whose(kind: str, name: str) -> str:
+    return name if kind == "parts" else f"the {name}"
+
+
+def _spending(was: Spending, now: Spending) -> list[dict]:
+    """What a version changes of what parts and agents may cost a month, in words: none
+    widens what agents do, since a budget stops no work."""
+    found = []
+    for kind in ("parts", "agents"):
+        a, b = getattr(was, kind), getattr(now, kind)
+        for name in sorted(set(a) | set(b)):
+            if a.get(name) == b.get(name):
+                continue
+            whose = _whose(kind, name)
+            if name not in b:
+                text = f"There's no budget for {whose} any more, instead of {money(a[name])} a month."
+            else:
+                text = (f"The budget for {whose} becomes {money(b[name])} a month"
+                        + (f", instead of {money(a[name])}" if name in a else "")
+                        + f": {COVERS[kind]}, which a5s shows spending against, and which stops "
+                          "no work.")
+            found.append({"text": text, "widens": False})
+    return found
+
+
 def _days(kept: str) -> float:
     """How long a kept_for is, in days, a month being a twelfth of a year."""
     n, unit = kept.split()
@@ -392,6 +428,9 @@ def described(settings: Settings, definitions: dict[str, Definition],
              "accurate." for part, share in sorted(settings.thresholds.items())]
     told += [f"Everyone in the group {group} holds {names_of(list(roles))}, as their sign-ins "
              "show they're in it." for group, roles in sorted(settings.groups.items())]
+    told += [f"The budget for {_whose(kind, name)} is {money(amount)} a month: {COVERS[kind]}, "
+             "which a5s shows spending against." for kind in ("parts", "agents")
+             for name, amount in sorted(getattr(settings.spending, kind).items())]
     return told + protection(settings.data_protection)
 
 

@@ -8,7 +8,7 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Header
 
 from a5s.contract import DATA_PROTECTION, INSTANCE_APPROVER, PART_DELEGATE, PART_OWNER, Person
-from a5s.core import administration, audit, notebook_api, registry, samples, web
+from a5s.core import administration, audit, notebook_api, registry, samples, spending, web
 from a5s.core import studio_models as shapes
 
 # Each page, in the order the sidebars show it: its key, its name, its icon, the heading it's
@@ -26,6 +26,7 @@ PAGES = (
     ("settings", "Settings", "settings", "Decide", "/studio/settings"),
     ("audit", "Audit trail", "audit", "Oversee", "/studio/audit"),
     ("admin", "Administration", "admin", "Oversee", "/studio/admin"),
+    ("spending", "Spending", "spend", "Oversee", "/studio/spending"),
     ("officer", "Data protection", "officer", "Oversee", "/studio/officer"),
 )
 
@@ -49,6 +50,7 @@ def router(gw: Any) -> APIRouter:
                  "studio": True, "map": True, "decide": decides, "grade": samples.GRADER in roles,
                  "settings": registry.approves(person), "audit": audit.reads(person),
                  "admin": administration.administers(person, gw.cfg.team),
+                 "spending": spending.sees_any(gw.url, person),
                  "officer": DATA_PROTECTION in roles}
         return {"you": person.name, "pages": [
             {"page": key, "name": name, "icon": icon, "group": group, "at": at}

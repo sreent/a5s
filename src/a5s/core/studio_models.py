@@ -297,6 +297,45 @@ class DependsOn(Shape):
     edges: list[MapEdge]
 
 
+# What agents' model calls cost each month, against their budgets (core/spending.py)
+
+
+class Spend(Shape):
+    """A month of a part's, agent's or instance's model calls: what they cost so far at their
+    models' prices, its budget, if the settings set one, and while the month lasts, the pace of
+    the last week and the forecast to its end; its runs, those whose prices aren't known, the
+    messages they answered, and what each message cost, all in."""
+
+    key: str
+    spent: float
+    budget: float | None
+    pace: float | None
+    forecast: float | None
+    runs: int
+    unpriced: int
+    answered: int
+    tokens: int
+    per_answer: float | None
+    agent: str | SkipJsonSchema[None] = None  # an instance's agent
+    parts: list[str] | SkipJsonSchema[None] = None  # and the parts it works in
+
+
+class Spending(Shape):
+    """A calendar month's spending, in UTC, as someone may see it: its parts, agents and
+    instances, in the currency models.yaml prices models in, if it names one."""
+
+    month: str
+    current: bool
+    currency: str | None
+    starts: str
+    ends: str
+    days: int
+    day: int
+    parts: list[Spend]
+    agents: list[Spend]
+    instances: list[Spend]
+
+
 class SaidWrong(Shape):
     """An agent's answer someone said was wrong (core/feedback.py): when, the instance and run
     behind it, the chat it was in, the answer, why, in their words, if they said, and its grade,

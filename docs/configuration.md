@@ -11,7 +11,7 @@ a5s keeps each value with whoever decides it, so the default can be the safe one
 | Layer | Who decides | What's in it | Where |
 | --- | --- | --- | --- |
 | The deployment's configuration | The team that runs a5s | Addresses, the database, timeouts, workers, channels, sign-in, publishing: what differs between one deployment and another | `A5S_` environment variables, from compose or the chart. Every one is below |
-| The signed settings | Part owners, instance approvers and the data protection officer, each for what's theirs | What agents may do and the rules for people's data: levels, limits, thresholds, classes of data, the roles groups give | Versions people sign and approve, which the ledger records ([administration](administration.md)) |
+| The signed settings | Part owners, agent owners, instance approvers and the data protection officer, each for what's theirs | What agents may do and the rules for people's data: levels, limits, thresholds, classes of data, the roles groups give, and what each part and agent may cost a month | Versions people sign and approve, which the ledger records ([administration](administration.md)) |
 | An agent's definition | The agent's owner, through a release | Its model, tools, schedules, context and budgets | `agent.yaml` in the agent's folder, checked with bounds, released and signed |
 | People's preferences | Each person | What an agent offers them to set, with it | Their own, in the chat |
 | a5s's code | A release, which its approvers sign, assurance among them | The starting values nobody needs to change between deployments, and the rules that keep a5s safe | [Starting values](starting-values.md) lists each, with its owner |

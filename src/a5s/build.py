@@ -8,7 +8,7 @@ from datetime import timedelta
 import httpx
 
 from a5s import db, definitions
-from a5s.config import Config, load_models
+from a5s.config import Config, load_currency, load_models
 from a5s.connectors import mcp
 from a5s.contract import Scenario
 from a5s.core import memberships, metrics, registration, registry, status, traces
@@ -43,6 +43,7 @@ def gateway(cfg: Config, http: httpx.Client | None = None) -> Gateway:
         scenario=directory,
         policy=PolicyEngine(packs=(pack,) if pack else ()),
         models=load_models(cfg.models_file),
+        currency=load_currency(cfg.models_file),
         definitions=definitions.load_all(cfg.agents_dir),
         http=http or httpx.Client(),
         identity=verifier_from_env(),

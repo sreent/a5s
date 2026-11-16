@@ -738,6 +738,17 @@ def load_models(path: Path) -> dict[str, ModelConfig]:
     return models
 
 
+def load_currency(path: Path) -> str | None:
+    """The currency models.yaml prices models in, as its ISO 4217 code, such as GBP, if it
+    names one: the one budgets in the settings are in too (core/spending.py)."""
+    found = (yaml.safe_load(path.read_text()) or {}).get("currency")
+    if found is None:
+        return None
+    if not isinstance(found, str) or not re.fullmatch(r"[A-Z]{3}", found):
+        raise ValueError(f"models.yaml's currency is a code such as GBP or USD, not {found!r}")
+    return found
+
+
 @dataclass(frozen=True)
 class Config:
     """What one part runs with, from the settings above: each default is theirs."""
