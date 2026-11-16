@@ -94,7 +94,7 @@ export function SaidWrong({ agent }: { agent: string }) {
       </p>
       {data.answers.map((answer) => <Answer key={answer.id} answer={answer} grade={grade} />)}
       {data.hidden > 0 && (
-        <p className="note">{t("And {more} from runs you may not see, which someone who may see their records can check.", { more: plural(data.hidden, "more") })}</p>
+        <p className="note">{t("And {more} from runs you may not see, which someone who may see their records can check.", { more: plural(data.hidden, "more", "more") })}</p>
       )}
     </section>
   );

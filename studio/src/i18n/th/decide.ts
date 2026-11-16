@@ -208,7 +208,6 @@ export const DECIDE: Record<string, string> = {
   "Find": "ค้นหา",
   "Who holds each role, and who did what": "ใครมีบทบาทใด และใครทำอะไร",
   "Export the period": "ส่งออกช่วงเวลานี้",
-  "For": "ทำแทน",
   "By": "โดย",
   "Later entries": "รายการถัดไป",
   "Who holds each role now": "ใครมีบทบาทใดอยู่ในตอนนี้",

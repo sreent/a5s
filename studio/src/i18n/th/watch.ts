@@ -41,7 +41,6 @@ export const WATCH: Record<string, string> = {
   "no part": "ไม่มีส่วนงาน",
   "level {level} · {parts} · serving {people}": "ระดับ {level} · {parts} · ให้บริการ {people}",
   "{all} and {name}": "{all} และ {name}",
-  "nobody": "ไม่มีใคร",
 
   // The agents (pages/Agents.tsx)
   "{n} change": "เปลี่ยนแปลง {n}",
@@ -64,9 +63,7 @@ export const WATCH: Record<string, string> = {
 
   // An agent (pages/Agent.tsx)
   "none": "ไม่มี",
-  "Agent facts": "ข้อมูลเอเจนต์",
   "Model": "โมเดล",
-  "Autonomy": "ความเป็นอิสระ",
   "Only reads": "อ่านอย่างเดียว",
   "Changes": "เปลี่ยนแปลง",
   "Reads outside content": "อ่านเนื้อหาจากภายนอก",
@@ -75,7 +72,6 @@ export const WATCH: Record<string, string> = {
   "In a run": "ในการทำงานแต่ละครั้ง",
   "For each person, each day": "ต่อคนต่อวัน",
   "Owned by {owners}.": "เจ้าของ: {owners}",
-  "nobody yet": "ยังไม่มีใคร",
   "Tools": "เครื่องมือ",
   "a5s's own": "ของ a5s เอง",
   "Tasks, reminders, notes and asking other agents, each held to a5s's own rules.":
@@ -144,7 +140,6 @@ export const WATCH: Record<string, string> = {
   "Asked for": "คำขอใช้",
   "{person} asked for it {when}": "{person} ขอใช้เมื่อ {when}",
   "Serve them through {instance}": "ให้บริการผ่าน {instance}",
-  "Decline": "ปฏิเสธ",
   "What depends on it": "สิ่งที่ขึ้นอยู่กับสิ่งนี้",
   "How it's wired": "เชื่อมต่ออย่างไร",
   "What starts its runs, and the tools it may call, each through a5s's checks. Changes to records wait for a person to decide at level 1.":
@@ -252,9 +247,7 @@ export const WATCH: Record<string, string> = {
 
   // A run (pages/Run.tsx)
   "allowed": "อนุญาต",
-  "refused": "ปฏิเสธ",
   "held for a decision": "พักไว้รอการตัดสินใจ",
-  "for {whom}": "สำหรับ {whom}",
   "An {trigger} started it": "{trigger} เริ่มการทำงานนี้",
   "A {trigger} started it": "{trigger} เริ่มการทำงานนี้",
   "It started": "เริ่มการทำงาน",
@@ -270,7 +263,6 @@ export const WATCH: Record<string, string> = {
   "Took": "ใช้เวลา",
   "{tokens_in} in, {tokens_out} out, {cached} cached": "ขาเข้า {tokens_in} · ขาออก {tokens_out} · แคช {cached}",
   "What started it": "สิ่งที่เริ่มการทำงาน",
-  "Kind": "ประเภท",
   "Opened": "เริ่มเมื่อ",
   "Closed": "จบเมื่อ",
   "not yet": "ยังไม่จบ",
@@ -333,7 +325,6 @@ export const WATCH: Record<string, string> = {
     "ส่วนงานที่อินสแตนซ์ซึ่งขึ้นอยู่กับสิ่งนี้ทำงานอยู่ โดยเจ้าของส่วนงานเป็นผู้ตัดสินว่าอินสแตนซ์ทำอะไรที่นั่น",
   "Nothing on the map.": "ไม่มีในแผนผัง",
   "Tool": "เครื่องมือ",
-  "System": "ระบบ",
   "Zoom in": "ซูมเข้า",
   "Zoom out": "ซูมออก",
   "Show it all": "แสดงทั้งหมด",
