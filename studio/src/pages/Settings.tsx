@@ -14,7 +14,8 @@
 import { type ReactNode, useEffect, useReducer, useRef, useState } from "react";
 import { type Change, get, send, type SettingsAsked, type SettingsNow, type SettingsReview } from "../api";
 import { useToast } from "../design";
-import { PageHead, To, Waiting, when } from "../ui";
+import { Icon } from "../icons";
+import { PageHead, sentence, To, Waiting, when } from "../ui";
 import { keepUnkept, keptNow, unkept } from "../unkept";
 
 // What they've changed and not asked for yet, against the version in force they changed, kept
@@ -118,6 +119,15 @@ function planned(): Plan | null {
   return { agent, parts: listed("parts"), serves: listed("serves"), asks: listed("asks") };
 }
 
+/** Why a review or a request didn't go through, beside its button, as Ocean's error note says it. */
+function Refused({ id, said }: { id: string; said: string }) {
+  return (
+    <p className="error-note" id={id} role="alert" tabIndex={-1}>
+      <Icon name="cross" /><strong>{sentence(said)}</strong>
+    </p>
+  );
+}
+
 export function SettingsPage() {
   const toast = useToast();
   const [now, setNow] = useState<SettingsNow>();
@@ -135,6 +145,12 @@ export function SettingsPage() {
   const [focus, setFocus] = useState<string>();  // what to bring into view and focus, once drawn
   const [busy, setBusy] = useState(false);
   const [, redraw] = useReducer((n: number) => n + 1, 0);
+  // What went wrong with a review or a request, said beside its button, where they are, and
+  // given the focus, not in the page's status line far above (round 13, C6)
+  const [refused, setRefused] = useState<{ at: "review" | "send"; said: string }>();
+  useEffect(() => {
+    if (refused) document.getElementById(`${refused.at}-refused`)?.focus();
+  }, [refused]);
 
   const textNow = useRef("");
   const remember = () => keepUnkept(WORKING, { serial: nowRef.current?.in_force?.serial ?? null,
@@ -549,11 +565,12 @@ export function SettingsPage() {
 
   const review = async () => {
     setReviewed(undefined);
+    setRefused(undefined);
     const written = draft();
     try {
       setReviewed({ found: await send<SettingsReview>("POST", "/settings/api/review", { text: written }), text: written });
     } catch (e) {
-      setStatus((e as Error).message);
+      setRefused({ at: "review", said: (e as Error).message });
     }
   };
 
@@ -568,7 +585,7 @@ export function SettingsPage() {
       await load(true);
       setGeneration((n) => n + 1);  // the forms start again from what's in force
     } catch (e) {
-      setStatus((e as Error).message);
+      setRefused({ at: "send", said: (e as Error).message });
     } finally {
       setBusy(false);
     }
@@ -625,6 +642,7 @@ export function SettingsPage() {
                     }} />
         </div>
         <p><button id="review" type="button" onClick={review}>Review</button></p>
+        {refused?.at === "review" && <Refused id="review-refused" said={refused.said} />}
         {reviewed && found && (
           <div id="reviewed">
             <p id="reviewed-summary">{found.serial === undefined ? "a5s can't propose this:"
@@ -640,6 +658,7 @@ export function SettingsPage() {
                 {found.problems.length === 0 && (
                   <button id="send" className="primary" type="button" disabled={busy} onClick={() => ask(reviewed)}>Ask its approvers</button>
                 )}
+                {refused?.at === "send" && <Refused id="send-refused" said={refused.said} />}
               </>
             )}
           </div>

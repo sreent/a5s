@@ -89,7 +89,7 @@ export function AgentsPage() {
   return (
     <>
       <PageHead title="Agents"
-                about="The agents you may know of: those you have a role on, those that serve you, and those their owners list for everyone. Each shows as much as your roles let you see: what it does and who owns it, what it may do, and where it runs. Changes to an instance go through the settings app; the changes agents ask for are decided on the decisions page.">
+                about="The agents you may know of: those you have a role on, those that serve you, and those their owners list for everyone. Each shows as much as your roles let you see: what it does and who owns it, what it may do, and where it runs. Changes to an instance go through the settings; the changes agents ask for are decided on the decisions page.">
         {data?.authoring.new && <div className="actions"><Link to={{ page: "new" }} className="button primary">New agent</Link></div>}
       </PageHead>
       {!data && <Waiting error={error} />}

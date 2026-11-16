@@ -7,9 +7,9 @@ import { Icon } from "../icons";
 
 export type PaletteOption = { id: string; name: string; where: string; group: string; icon: string };
 
-export function Palette({ open, onClose, query, onQuery, options, onChoose }: {
+export function Palette({ open, onClose, query, onQuery, options, onChoose, looking = false }: {
   open: boolean; onClose: () => void; query: string; onQuery: (query: string) => void;
-  options: PaletteOption[]; onChoose: (option: PaletteOption) => void;
+  options: PaletteOption[]; onChoose: (option: PaletteOption) => void; looking?: boolean;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const list = useId();
@@ -73,7 +73,7 @@ export function Palette({ open, onClose, query, onQuery, options, onChoose }: {
           </div>
         ))}
       </div>
-      {!options.length && <p className="palette-none" role="status">{query.trim()
+      {!options.length && <p className="palette-none" role="status">{query.trim() && !looking
         ? `Nothing you may open is called “${query.trim()}”.` : "Looking for what you may open…"}</p>}
       <p className="palette-keys">
         <span><kbd>↑</kbd> <kbd>↓</kbd> to choose</span><span><kbd>Enter</kbd> to open</span><span><kbd>Esc</kbd> to close</span>

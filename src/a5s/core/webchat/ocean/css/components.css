@@ -155,7 +155,6 @@ section > h2:first-child, .card > h2:first-child { margin-top: 0; }
 .note { color: var(--muted); font-size: 0.9rem; }
 main > h1 + .note { margin: 0 0 1.5rem; max-width: 52rem; }
 #status:empty { display: none; }
-#status::first-letter { text-transform: uppercase; }  /* what a5s says reads as a sentence */
 .role-id { display: block; color: var(--faint); font-size: 0.78rem; }
 #status { color: var(--muted); }
 

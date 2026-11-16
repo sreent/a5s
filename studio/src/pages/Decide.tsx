@@ -18,9 +18,9 @@ const day = (at: string) => new Date(at).toLocaleDateString([], { day: "numeric"
 /** A held change on the approval card (docs/design.md), made for a phone: who asks and for whom,
  * what it does in the words code worked out when it was asked for, never the agent's own, what to
  * know, and the decider's yes or no. */
-function Card({ change, decide, ticked, tick }: {
+function Card({ change, decide, ticked, tick, together }: {
   change: HeldChange; decide: (digests: string[], decision: Decision, reason: string) => void;
-  ticked: boolean; tick: (on: boolean) => void;
+  ticked: boolean; tick: (on: boolean) => void; together: boolean;  // others it may go with
 }) {
   const [reason, setReason] = useState("");
   const [what, ...rest] = change.said.split("\n");
@@ -59,7 +59,7 @@ function Card({ change, decide, ticked, tick }: {
                 <button type="button" className="primary" onClick={() => decide([change.digest], "approve", "")}>Approve</button>
                 <button type="button" onClick={() => decide([change.digest], "reject", reason.trim())}>Reject</button>
               </div>
-              {!change.sensitive && (
+              {!change.sensitive && together && (  /* only where there are others to go with (round 13, C14) */
                 <label className="tick-label">
                   <input type="checkbox" className="tick" checked={ticked} onChange={(e) => tick(e.target.checked)} />
                   <span>Decide it with the others ticked</span>
@@ -132,7 +132,7 @@ export function DecidePage() {
       {waiting.length > 0 && (
         <section id="waiting" className="bare">
           <div id="list">{waiting.map((change) => (
-            <Card key={change.digest} change={change} decide={decide} ticked={ticked.has(change.digest)}
+            <Card key={change.digest} change={change} decide={decide} ticked={ticked.has(change.digest)} together={together}
                   tick={(on) => setTicked((was) => {
                     const next = new Set(was);
                     if (on) next.add(change.digest);

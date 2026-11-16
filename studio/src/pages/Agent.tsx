@@ -1,15 +1,15 @@
 // One agent, as its release defines it: its map, what it's for, its facts and its ladder of
 // autonomy, its tools by what they do, when it works, what it knows, its budget, and where it runs.
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { type AgentKnown, type AgentUses, ApiError, builtOf, type Catalogue, type Draft,
          type Drafts, get, send, usesOf } from "../api";
 import { AgentMap } from "../AgentMap";
-import { AgentFacts, AutonomyLadder } from "../design";
+import { AgentFacts, AutonomyLadder, useToast } from "../design";
 import { go, Link } from "../router";
 import { shellOf } from "../Sidebar";
 import { aboutInstance, levels, PageHead, people, type Risk, risk, RISK_NAMES, runners, StatusBadge,
-         ToolBadges, triggers, useLoad, Waiting, when } from "../ui";
+         sentence, ToolBadges, triggers, useLoad, Waiting, when, Wide } from "../ui";
 
 const ORDER: Risk[] = ["changes", "outside", "writes", "reads"];
 
@@ -143,7 +143,7 @@ function Where({ agent }: { agent: AgentKnown }) {
       <h2>Where it runs</h2>
       {agent.instances.length === 0 && <p className="note">No instance you may watch runs it.</p>}
       {agent.instances.length > 0 && (
-        <table className="grid-table">
+        <Wide label="Where it runs"><table className="grid-table">
           <thead><tr><th>Instance</th><th>Status</th><th>Level</th><th>Parts</th><th>Serves</th><th>Run by</th><th>Release</th></tr></thead>
           <tbody>
             {agent.instances.map((inst) => (
@@ -158,7 +158,7 @@ function Where({ agent }: { agent: AgentKnown }) {
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></Wide>
       )}
     </section>
   );
@@ -265,19 +265,29 @@ function AskFor({ agent, reload }: { agent: AgentKnown; reload: () => void }) {
 }
 
 function AsksWaiting({ agent, reload }: { agent: AgentKnown; reload: () => void }) {
+  const toast = useToast();
   const [said, setSaid] = useState<string>();
   const instances = agent.instances;
-  const answer = async (ask: string, how: "serve" | "decline", instance?: string) => {
+  const asks = agent.asks?.length ?? 0;
+  useEffect(() => {  // what became of it takes the focus, the button that did it gone (round 13, C8)
+    if (said) document.getElementById("asks-said")?.focus();
+  }, [said, asks]);
+  const answer = async (ask: string, how: "serve" | "decline", instance?: string, person?: string) => {
     try {
       const done = await send<{ serial?: number }>("POST", `/studio/api/asks/${ask}/${how}`,
                                                  how === "serve" ? { instance } : undefined);
-      setSaid(how === "serve" ? `You asked for version ${done.serial} of the settings: a5s asks its approvers within a minute.` : "Declined.");
+      const words = how === "serve"
+        ? `You asked for version ${done.serial} of the settings, to serve ${person} through ${instance}: a5s asks its approvers within a minute.`
+        : `You declined ${person}'s ask for the ${agent.id}.`;
+      setSaid(words);
+      toast(words);
       reload();
     } catch (e) {
-      setSaid((e as Error).message);
+      setSaid(sentence((e as Error).message));
     }
   };
-  if (!agent.asks?.length) return null;
+  const line = said && <p className="note" role="status" id="asks-said" tabIndex={-1}>{said}</p>;
+  if (!agent.asks?.length) return line || null;  // said outside what went
   return (
     <section className="card" id="asks">
       <h2>Asked for</h2>
@@ -285,13 +295,13 @@ function AsksWaiting({ agent, reload }: { agent: AgentKnown; reload: () => void 
         <li key={a.id}>{a.person} asked for it {when(a.asked_at)} <span className="faint">· {a.why.join("; ")}</span>
           <div className="actions">
             {instances.map((i) => (
-              <button key={i.id} type="button" onClick={() => answer(a.id, "serve", i.id)}>Serve them through {i.id}</button>
+              <button key={i.id} type="button" onClick={() => answer(a.id, "serve", i.id, a.person)}>Serve them through {i.id}</button>
             ))}
-            <button type="button" onClick={() => answer(a.id, "decline")}>Decline</button>
+            <button type="button" onClick={() => answer(a.id, "decline", undefined, a.person)}>Decline</button>
           </div>
         </li>
       ))}</ul>
-      {said && <p className="note">{said}</p>}
+      {line}
     </section>
   );
 }
@@ -305,7 +315,7 @@ export function AgentPage({ id }: { id: string }) {
   const changes = catalogue.data?.authoring.agents.includes(id) ?? false;
   return (
     <>
-      <PageHead crumbs={[{ label: "Agents", to: { page: "agents" } }]} title={id}
+      <PageHead crumbs={[{ label: "Agents", to: { page: "agents" } }]} title={agent?.id ?? "An agent"}
                 about={agent?.works_for}
                 badges={agent && <span className="chip mono">{agent.release}</span>}>
         {agent && (

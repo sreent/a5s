@@ -765,5 +765,9 @@ def accessible(page) -> None:
             found = Axe().run(page, options={"resultTypes": ["violations"]})
             assert found.violations_count == 0, (f"{scheme}, {viewport['width']} wide: "
                                                  f"{found.generate_report()}")
+        # and the page reflows to its width, as axe doesn't check: nothing wider than it makes
+        # the whole page scroll sideways (round 13, C5)
+        over = page.evaluate("document.documentElement.scrollWidth - innerWidth")
+        assert over <= 0, f"{viewport['width']} wide, the page scrolls sideways by {over}px"
     if size:
         page.set_viewport_size(size)

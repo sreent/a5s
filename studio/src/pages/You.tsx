@@ -3,7 +3,7 @@
 // in the identity provider, and in the signed settings that give its groups roles: not here.
 
 import { get, type You } from "../api";
-import { PageHead, useLoad, Waiting } from "../ui";
+import { PageHead, useLoad, Waiting, Wide } from "../ui";
 
 export function YouPage() {
   const { data, error } = useLoad(() => get<You>("/studio/api/you"), []);
@@ -19,7 +19,7 @@ export function YouPage() {
             {data.roles.length === 0
               ? <p className="note">You hold none of a5s's roles: you use the agents that serve you, and see your own tasks and notebook. Whoever approves the agent you'd use can add you.</p>
               : (
-                <table className="grid-table">
+                <Wide label="What you may do"><table className="grid-table">
                   <thead><tr><th>Role</th><th>Lets you</th><th>Given by</th></tr></thead>
                   <tbody>{data.roles.map((r) => (
                     <tr key={r.role}>
@@ -27,7 +27,7 @@ export function YouPage() {
                       <td>{r.may}</td><td>{r.by.join(", ")}</td>
                     </tr>
                   ))}</tbody>
-                </table>
+                </table></Wide>
               )}
           </section>
           <section className="card" id="groups">

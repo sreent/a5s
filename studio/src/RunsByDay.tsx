@@ -5,7 +5,7 @@
 
 import { type KeyboardEvent, useLayoutEffect, useRef, useState } from "react";
 import type { Day } from "./api";
-import { FAILED_OUTCOMES, plural } from "./ui";
+import { FAILED_OUTCOMES, plural, Wide } from "./ui";
 
 export const ENDINGS = [
   { key: "done", name: "Done" },
@@ -155,7 +155,7 @@ export function RunsByDay({ days, zone }: { days: Day[]; zone: string }) {
           )}
           <details className="as-table">
             <summary>The same, as a table</summary>
-            <table className="grid-table compact">
+            <Wide label="Runs by day, as a table"><table className="grid-table compact">
               <thead>
                 <tr><th>Day</th>{ENDINGS.map((e) => <th key={e.key} className="num">{e.name}</th>)}<th className="num">All</th></tr>
               </thead>
@@ -168,7 +168,7 @@ export function RunsByDay({ days, zone }: { days: Day[]; zone: string }) {
                   </tr>
                 ))}
               </tbody>
-            </table>
+            </table></Wide>
             <p className="note">Days in {zone}. Days with no runs are left out.</p>
           </details>
         </>
