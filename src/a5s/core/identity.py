@@ -35,6 +35,11 @@ class UnknownPerson(IdentityError):
     """The token checks out, but names nobody the directory knows."""
 
 
+class IdentityUnavailable(IdentityError):
+    """The identity provider couldn't be reached, or answered nothing a5s could read, so a5s
+    couldn't check the token just now: neither that it checks out, nor that it doesn't."""
+
+
 @dataclass(frozen=True)
 class IdentityConfig:
     issuer: str
@@ -148,7 +153,12 @@ class Verifier:
     def _keyset(self, *, refresh: bool) -> PyJWKSet:
         age = time.monotonic() - self._fetched_at
         if self._keys is None or age > self.max_age or (refresh and age >= self.min_refresh):
-            (self._keys, self._published), self._fetched_at = self._fetch(), time.monotonic()
+            try:
+                fetched = self._fetch()
+            except (httpx.HTTPError, ValueError, KeyError, TypeError, AttributeError) as exc:
+                raise IdentityUnavailable("the identity provider couldn't be reached: "
+                                          f"{type(exc).__name__}") from exc
+            (self._keys, self._published), self._fetched_at = fetched, time.monotonic()
         return self._keys
 
     def _key(self, kid: str | None) -> tuple[PyJWK, dict]:

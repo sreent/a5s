@@ -474,8 +474,8 @@ def record(conn: db.Connection, scenario: str, version: str, person: str, token:
                 "nonce": claims["nonce"], "salt": salt, "issuer": claims["iss"],
                 "subject": str(claims.get("sub") or ""), "proof": token}
     if conn.execute("select 1 from settings_approvals where scenario = %s and digest = %s "
-                    "and person = %s", (scenario, version, person)).fetchone():
-        raise Refused(409, "you've approved this version already")
+                    "and person = %s and refused is null", (scenario, version, person)).fetchone():
+        raise Refused(409, "you've approved this version already")  # unless it was refused
     row = conn.execute(
         "insert into settings_approvals (scenario, digest, person, token, nonce, salt, issuer, "
         "subject, proof) values (%(scenario)s, %(digest)s, %(person)s, %(token)s, %(nonce)s, "
@@ -495,23 +495,34 @@ def recorded(conn: db.Connection, scenario: str, version: str) -> list[str]:
 
 
 def seal_pending(conn: db.Connection, keys: tuple[str, ...], verifier: Verifier | None,
-                 scenario: Any, client_id: str | None) -> list[str]:
+                 scenario: Any, client_id: str | None) -> list[sealing.Refusal]:
     """Check again each approval the channels app recorded, seal it, and let its sign-in go,
-    in the gateway: or refuse it. Why each refused one was."""
+    in the gateway: or refuse it, and tell its approver, who may approve again. One whose
+    sign-in can't be checked just now, since the identity provider can't be reached, waits.
+    Why each refused one was."""
     if not keys:
         return []  # it waits for a gateway that can seal it
     refused = []
     for row in conn.execute("select * from settings_approvals where scenario = %s and seal is "
                             "null and refused is null order by id for update skip locked",
                             (scenario.name,)).fetchall():
-        why = sealing.check(verifier, scenario, client_id, row["proof"],
-                            nonce(row["digest"], row["salt"]), row["person"])
+        try:
+            why = sealing.check(verifier, scenario, client_id, row["proof"],
+                                nonce(row["digest"], row["salt"]), row["person"])
+        except sealing.Unchecked:
+            continue  # checked again at the next sweep
         if why is not None:
             log.error("an approval of settings %s by %s is refused: %s", row["digest"],
                       row["person"], why)
             conn.execute("update settings_approvals set refused = %s, proof = null where id = %s",
                          (why, row["id"]))
-            refused.append(f"{row['person']}'s approval: {why}")
+            version = conn.execute("select serial from settings_proposals where scenario = %s "
+                                   "and digest = %s", (row["scenario"], row["digest"])).fetchone()
+            refused.append(sealing.Refusal(
+                row["person"], f"{row['person']}'s approval: {why}",
+                f"Your approval of version {version['serial'] if version else '?'} of the settings "
+                f"didn't count: {why}. If it still waits for you, approve it again on the "
+                "settings page, signing in afresh."))
             continue
         claim = verifier.cfg.groups_claim if verifier else None  # checked, so it's there
         groups = list(memberships.shown(verifier.claims(row["proof"], expired=True), claim)

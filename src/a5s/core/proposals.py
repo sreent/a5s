@@ -350,11 +350,12 @@ def record(conn: db.Connection, scenario: str, found: list[dict], decision: str,
 
 def seal_pending(conn: db.Connection, keys: tuple[str, ...], verifier: Verifier | None,
                  scenario: Scenario, client_id: str | None,
-                 clean: Callable[[str], str] = lambda said: said) -> list[str]:
+                 clean: Callable[[str], str] = lambda said: said) -> list[sealing.Refusal]:
     """Check again each decision the channels app recorded, by its sign-in, which covers every
     change decided with it and a rejection's reason, seal each, with its reason made fit to
-    tell whoever asked (`clean`), and let the sign-in go, in the gateway: or refuse them. Why
-    each refused one was."""
+    tell whoever asked (`clean`), and let the sign-in go, in the gateway: or refuse them, and
+    tell whoever decided, who may decide again. Those whose sign-in can't be checked just now,
+    since the identity provider can't be reached, wait. Why each refused one was."""
     if not keys:
         return []  # they wait for a gateway that can seal them
     rows = conn.execute("select * from proposal_decisions where scenario = %s and seal is null "
@@ -368,14 +369,24 @@ def seal_pending(conn: db.Connection, keys: tuple[str, ...], verifier: Verifier 
         first = together[0]
         decided = sorted(r["digest"] for r in conn.execute(
             "select digest from proposal_decisions where token = %s", (first["token"],)))
-        why = sealing.check(verifier, scenario, client_id, first["proof"],
-                            nonce(decided, first["decision"], first["salt"], first["reason"]),
-                            first["person"])
+        try:
+            why = sealing.check(verifier, scenario, client_id, first["proof"],
+                                nonce(decided, first["decision"], first["salt"], first["reason"]),
+                                first["person"])
+        except sealing.Unchecked:
+            continue  # checked again at the next sweep
+        if why is not None:
+            named = approvals.names_of([key(p) for p in conn.execute(
+                "select id from proposals where digest = any(%s) order by id",
+                ([r["digest"] for r in together],))]) or "a change"
+            refused.append(sealing.Refusal(
+                first["person"], f"{first['person']}'s decision: {why}",
+                f"Your decision on {named} didn't count: {why}. If it still waits for you, "
+                "decide it again on a5s's own page, signing in afresh."))
         for row in together:
             if why is not None:
                 conn.execute("update proposal_decisions set refused = %s, proof = null "
                              "where id = %s", (why, row["id"]))
-                refused.append(f"{row['person']}'s decision: {why}")
             else:
                 said = clean(row["reason"]) if row["reason"] else None
                 conn.execute("update proposal_decisions set seal = %s, reason = %s, proof = null "

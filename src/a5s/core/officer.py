@@ -109,8 +109,12 @@ def take(conn: db.Connection, verifier: Verifier | None, scenario: Any,
                            f"core's page, {PAGE}, signed in")
     conn.execute("update officer_requests set used_at = now(), proof = null where id = %s",
                  (row["id"],))
-    why = sealing.check(verifier, scenario, client_id, row["proof"],
-                        nonce(action, person, row["salt"]), row["officer"])
+    try:
+        why = sealing.check(verifier, scenario, client_id, row["proof"],
+                            nonce(action, person, row["salt"]), row["officer"])
+    except sealing.Unchecked:
+        raise Refused(503, "the identity provider can't be reached just now to check the "
+                           "officer's request: they ask again, on the core's page, once it can") from None
     officer = scenario.person(row["officer"])
     if why is None and (officer is None or DATA_PROTECTION not in officer.roles):
         why = "who asked isn't the data protection officer now"

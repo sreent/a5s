@@ -122,6 +122,7 @@ LAPSED = 120  # seconds past its time a scheduler's lease on a run's work is, on
 CHARS_PER_TOKEN = 4  # roughly, for a run's budget for its conversation
 OWN_RUNS = ("summary",)  # a5s's own work on a conversation: no tools, and it writes to nobody
 TRIES = 5  # deliveries to a chat before what it didn't take is left in the person's inbox
+MOST_NAMED = 20  # records one change may name: a5s reads each as it stands before deciding
 WHY = {  # why an agent's run didn't get its message through, in words people read
     "model unavailable": "its model isn't answering", "budget spent": "it has used its budget "
     "for today", "reply denied": "a5s didn't let its message through", "abandoned": "it stopped "
@@ -632,7 +633,9 @@ class Gateway:
                         *samples.seal_pending(conn, *args, now=self.clock())):
             ledger.append(conn, {"kind": "admin", "action": "refuse-sign-in", "run": None,
                                  "instance": None, "acts_for": [], "decision": "record",
-                                 "args": {"what": refused}})
+                                 "args": {"what": refused.what}})
+            if refused.person and refused.told:  # so they can do it again, signing in afresh
+                digests.keep(conn, refused.person, None, None, None, refused.told, self.clock())
 
     def reason_told(self, said: str) -> str:
         """A rejection's reason as whoever asked is told it: on one line, with no link but to
@@ -1034,17 +1037,28 @@ class Gateway:
 
     def decide(self, row: dict, action: str, resource: dict, extra: list[dict],
                **context: Any) -> Decision:
+        """What policy decides of a call. A change a scenario's pack rules out at level 2, and
+        nothing else denies, is decided again at level 1, so it waits for a person, as the pack
+        means it to, rather than being refused: it never runs alone."""
         given = {"level": row["level"], "read_outside": row["read_outside"],
                  "acts_for": list(row["acts_for"])}
         if action != "call_model":  # about no record, and no change, unless the call says so
             given |= {"in_scope": True, "visible": True, "for_self": False, "over_limit": False}
-        return self.policy.decide(
-            principal={"type": "Instance", "id": row["id"]},
-            action=action,
-            resource=resource["uid"],
-            context={**given, **context},
-            entities=[self.instance_entity(row), resource, *extra],
-        )
+        asked = {**given, **context}
+
+        def deciding(at: dict) -> Decision:
+            return self.policy.decide(principal={"type": "Instance", "id": row["id"]},
+                                      action=action, resource=resource["uid"], context=at,
+                                      entities=[self.instance_entity(row), resource, *extra])
+
+        decision = deciding(asked)
+        if (action == "call_tool" and asked.get("level", 0) >= 2 and resource["attrs"].get("action")
+                and self.policy.restricts(decision)):
+            held = deciding({**asked, "level": 1})
+            if held.held:  # for a person to decide, with why it isn't made alone
+                return replace(held, reasons=(*decision.reasons, *held.reasons),
+                               explanations=(*decision.explanations, *held.explanations))
+        return decision
 
     def unseen(self, conn: db.Connection, alias: str) -> set[str]:
         """The fields of a class the instance's model isn't approved for, which it never sees.
@@ -2411,10 +2425,16 @@ def create_app(gw: Gateway) -> FastAPI:
         action = tool.action if tool else None  # a change, which levels and limits govern
         # the records as they stand, read before any lock is taken, so a slow system holds
         # up nobody else: for its deciders, the owner's report and graders. A change to records
-        # that can't be read now is asked for no further: nobody could decide it as they stand
+        # that can't be read now is asked for no further: nobody could decide it as they stand.
+        # Only for a run there is, with arguments that fit, naming a few: nothing's read for less
         unreadable = False
+        if action:
+            with db.transaction(gw.url) as conn:
+                load_run(conn, token)
+        readable = (tool is not None and bool(action) and len(keys) <= MOST_NAMED
+                    and misfit(tool.schema, args) is None)
         try:
-            standing = proposals.snapshot({k: record_of(gw.scenario, k) for k in keys}) if action else {}
+            standing = proposals.snapshot({k: record_of(gw.scenario, k) for k in keys}) if readable else {}
         except Exception:  # the records system's own failure, never the run's
             log.exception("couldn't read the records %s names", name)
             standing, unreadable = {}, True
@@ -2445,7 +2465,7 @@ def create_app(gw: Gateway) -> FastAPI:
                     over = counts.over(conn, requested, action, max(len(keys), 1), found[0].limits,
                                        gw.clock())
                 about = parts.about(gw.scenario, row, keys, action, gw.approvers_in_force(conn),
-                                    gw.caps(conn, row["release"])) if action else parts.about(
+                                    gw.caps(conn, row["release"]), standing) if action else parts.about(
                     gw.scenario, row, keys)
                 decision = gw.decide(row, "call_tool", entity, [], **about,
                                      over_limit=over is not None)
@@ -2458,6 +2478,9 @@ def create_app(gw: Gateway) -> FastAPI:
                 elif any(not isinstance(r, str) or not r for r in records):
                     decision = Decision(False, ("records-are-named-by-key",), explanations=(
                         "a record is named by its key, in words",))
+                elif action and len(keys) > MOST_NAMED:
+                    decision = Decision(False, ("a-change-names-few-records",), explanations=(
+                        f"one call changes {MOST_NAMED} records at most: ask for the rest apart",))
                 elif unreadable:
                     decision = Decision(False, ("records-can-be-read",), explanations=(
                         ("the records it names can't be read just now, so a5s asked for nothing: "

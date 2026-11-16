@@ -11,30 +11,75 @@ ago. Then it seals it and lets the sign-in go,
 keeping its hash, so the seal outlasts the provider's keys. What doesn't check out is
 refused, and never counts. So breaking into the channels app gives nobody the key that makes
 anything count: it can only record what a person really signed in to do. A gateway without a
-seal key or the identity provider leaves what's recorded waiting, which the status counts.
+seal key or the identity provider leaves what's recorded waiting, which the status counts, and
+so does one whose identity provider can't be reached just now: it checks again at the next
+sweep, for up to a day, so a brief outage refuses nobody. A refusal doesn't stand in the way of
+its person doing it again, with a new sign-in, and they hear of it in their digest.
 """
 
 from __future__ import annotations
 
+import math
 import time
+from dataclasses import dataclass
 from typing import Any
 
-from a5s.core.identity import IdentityError, UnknownPerson, Verifier, second_factor, whose
+import jwt
+
+from a5s.core.identity import (
+    IdentityError,
+    IdentityUnavailable,
+    UnknownPerson,
+    Verifier,
+    second_factor,
+    whose,
+)
 
 FRESH = 600  # seconds: how long before a sign-in its person must have signed in afresh
 OLDEST = 86_400  # seconds: a sign-in older than this, still unsealed, is refused
 
 
+@dataclass(frozen=True)
+class Refusal:
+    """What the gateway refused to seal: whose it was, what the ledger says of it, and what
+    they're told, in their digest, so they can do it again."""
+    person: str | None
+    what: str
+    told: str | None = None
+
+
+class Unchecked(Exception):
+    """The identity provider couldn't be reached to check a sign-in just now, so it's neither
+    sealed nor refused: it waits for the next sweep."""
+
+
+def _age(token: str, now: float | None) -> float:
+    """How old a sign-in says it is, unchecked: only ever to give up on one, never to take it."""
+    try:
+        issued = jwt.decode(token, options={"verify_signature": False}).get("iat")
+    except jwt.PyJWTError:
+        return math.inf
+    if not isinstance(issued, int | float):
+        return math.inf
+    return (time.time() if now is None else now) - issued
+
+
 def check(verifier: Verifier | None, scenario: Any, client_id: str | None, token: str | None,
           bound: str, person: str, now: float | None = None) -> str | None:
     """Why a recorded sign-in doesn't check out, if it doesn't: None if the provider signed it
-    for a5s's client, with exactly the nonce `bound`, made afresh, for `person`, lately."""
+    for a5s's client, with exactly the nonce `bound`, made afresh, for `person`, lately.
+    Unchecked if the provider couldn't be reached to say, while the sign-in is less than a day
+    old: it waits, rather than being refused for a brief outage."""
     if verifier is None or not client_id:
         return "the core can't check sign-ins here: it has no identity provider"
     if not token:
         return "nothing records the sign-in that made it"
     try:
         claims = verifier.claims(token, expired=True)
+    except IdentityUnavailable as exc:
+        if _age(token, now) > OLDEST:
+            return "the sign-in is more than a day old, and the identity provider couldn't be reached to check it"
+        raise Unchecked(str(exc)) from None
     except IdentityError as exc:
         return f"the sign-in doesn't check out: {exc}"
     audience = claims.get("aud")

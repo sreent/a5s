@@ -13,14 +13,15 @@ from __future__ import annotations
 from collections.abc import Iterable
 from typing import Any
 
-from a5s.contract import PART_OWNER, Scenario, record_of
+from a5s.contract import PART_OWNER, Scenario
+from a5s.core import groups
 
 UNSEEN = "there's no such record, or the people this run is for may not see it"
 
 
 def about(scenario: Scenario, run: dict, records: list[str], action: str | None = None,
-          approved: Iterable[str] = (), caps: dict[tuple[str, str], int] | None = None
-          ) -> dict[str, Any]:
+          approved: Iterable[str] = (), caps: dict[tuple[str, str], int] | None = None,
+          standing: dict[str, dict | None] | None = None) -> dict[str, Any]:
     """What policy weighs of the records a call is about: the level it works at, whether
     they're all in the instance's parts, whether everyone the run acts for may see them, and
     whether they're all the own of the one person it acts for, as the scenario says whose each
@@ -42,21 +43,22 @@ def about(scenario: Scenario, run: dict, records: list[str], action: str | None 
     return {"level": level,
             "in_scope": all(p is None or p in parts for p in touched),
             "visible": all(scenario.sees(who, r) for r in records for who in run["acts_for"]),
-            "for_self": bool(action) and for_self(scenario, list(run["acts_for"]), records)}
+            "for_self": bool(action) and for_self(run, records, standing or {})}
 
 
-def for_self(scenario: Scenario, acts_for: list[str], records: list[str]) -> bool:
-    """Whether a change is about the one person its run acts for alone: it acts for one person,
-    and names records, each of them theirs, as the scenario says whose each record is. If the
-    records can't be read, it isn't, so a pack's restriction holds: it fails closed, and nothing
-    else of the call's facts waits on reading them."""
-    if len(acts_for) != 1 or not records:
+def for_self(run: dict, records: list[str], standing: dict[str, dict | None]) -> bool:
+    """Whether a change is the one person's own, at their own word: a run that answers their
+    own message, one to one, and has read nothing from outside, about records each of them
+    theirs, as the scenario said whose each was when the call read them (`standing`). Never a
+    chase, a report, a reminder, a task's slice or another agent's question, which act for one
+    person who asked for nothing, nor a group chat. If the records couldn't be read, it isn't,
+    so a pack's restriction holds: it fails closed."""
+    trigger, acts_for = run.get("trigger") or {}, list(run["acts_for"])
+    if (trigger.get("kind") != "message" or groups.of(trigger.get("conversation"))
+            or len(acts_for) != 1 or run.get("read_outside") or not records):
         return False
-    try:
-        return all((found := record_of(scenario, r)) is not None and found.person == acts_for[0]
-                   for r in records)
-    except Exception:  # noqa: BLE001 - the records system's own failure, never the run's
-        return False
+    return all((kept := standing.get(r)) is not None and kept.get("person") == acts_for[0]
+               for r in records)
 
 
 def _level(scenario: Scenario, run: dict, part: str, action: str | None, approved: set[str],

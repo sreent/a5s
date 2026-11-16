@@ -52,7 +52,8 @@ def router(gw: Any) -> APIRouter:
         with db.transaction(gw.url) as conn:
             rows = conn.execute(
                 "select p.*, d.decision as yours from proposals p left join proposal_decisions d "
-                "on d.digest = p.digest and d.person = %(who)s where p.scenario = %(scenario)s "
+                "on d.digest = p.digest and d.person = %(who)s and d.refused is null "  # theirs, if it counts
+                "where p.scenario = %(scenario)s "
                 "and ((p.status = 'waiting' and (p.parts && %(parts)s or %(who)s = any(p.escalated) "
                 "or (%(approver)s and cardinality(p.parts) = 0))) or (d.id is not null and "
                 "(p.ended_at is null or p.ended_at > %(week)s))) "

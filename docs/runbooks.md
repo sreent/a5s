@@ -165,6 +165,7 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 6. `lasting-or-outside-effects-need-level-2`: a tool the scenario marks as destructive, or as sending outside the organisation, was called below level 2. Tell the agent owner: below level 2, agents draft and people act.
 7. `arguments-fit-the-schema` or `records-are-named-by-key`: the agent called a tool with arguments it doesn't take. Once in a while is the model's mistake. Many in a row may mean the tool's description misleads it: tell the agent owner.
 8. `records-can-be-read`: a change named records a5s couldn't read just then, so nobody could decide it as they stood, and a5s asked for nothing. Its records system, or the scenario's code that reads it, is failing: the log says which records and why. The change can be asked for again once they read.
+9. `a-change-names-few-records`: one call named more than 20 records to change. a5s reads each as it stands before deciding, so it reads none of so many, and asks the agent to ask for the rest apart. Many in a row may mean its instructions ask it to change records in bulk: tell the agent owner.
 
 ## An instance isn't active
 
