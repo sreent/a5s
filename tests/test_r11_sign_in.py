@@ -13,8 +13,11 @@ PAGES = ("approve", "decide", "grade", "settings", "officer", "admin", "audit", 
          "chat", "studio")
 
 
+IN_STUDIO = ("studio", "settings", "notebook")  # the pages in the studio, whose old addresses go there
+
+
 def status_of(page, path: str, words: str) -> str:
-    selector = "main [role=status]" if path == "studio" else "#status"
+    selector = "main [role=status]" if path in IN_STUDIO else "#status"
     page.wait_for_selector(f"{selector} >> text={words}", timeout=15000)
     return page.inner_text(selector)
 
