@@ -1,6 +1,6 @@
 # Connectors
 
-**Status:** MCP servers' tools are built ([below](#mcp-servers)), beside the read-only REST transport and the GitHub adapter · **Under:** [Architecture](architecture.md)
+**Status:** MCP servers' tools are built ([below](#mcp-servers)), acting as the person with their own permissions where a server is declared to ([below](#acting-as-the-person)), beside the read-only REST transport and the GitHub adapter · **Under:** [Architecture](architecture.md)
 
 A scenario's tools reach the systems its records are in. A scenario writes most of them in its own code, against the [contract](architecture.md), and a5s gives it two ways to reach a system without writing a client of its own: a read-only REST transport, with a GitHub adapter on it ([architecture](architecture.md)), and the tools of MCP servers, which the rest of this page is about. Every tool, whichever way it's made, is offered to an agent only if its definition lists it, pinned by its hash, and every call goes through the core's checks: the policy, the parts and need-to-know, held changes, the extractor for content from outside, handles for sensitive values, and the ledger.
 
@@ -49,12 +49,35 @@ What the tool returns comes back as JSON: its structured content if it has some,
 
 ### How a5s reaches them
 
-a5s speaks MCP's Streamable HTTP, through the `initialize` handshake, in the versions from 2025-03-26 to 2025-11-25. It calls a server over HTTPS, or HTTP on the same machine, and follows no redirect. It reads an answer of 1 MB at most, counted as it comes, and asks for it uncompressed, refusing one sent compressed, which could be far larger once opened. A call takes two minutes at most, however slowly the server sends. a5s sends the bearer token in the server's `token_env` only to that server. The variable is named for the server, `A5S_MCP_<SERVER>_TOKEN`, so one server's declaration can't name another's token. It begins a session again once if the server ends a5s's. Of a5s's own, a call sends only its key, for a change or an idempotent tool, in its `_meta`, as `a5s/key`, so a server can make a change once for each key: never whom the run acts for, nor the run itself.
+a5s speaks MCP's Streamable HTTP, through the `initialize` handshake, in the versions from 2025-03-26 to 2025-11-25. It calls a server over HTTPS, or HTTP on the same machine, and follows no redirect. It reads an answer of 1 MB at most, counted as it comes, and asks for it uncompressed, refusing one sent compressed, which could be far larger once opened. A call takes two minutes at most, however slowly the server sends. a5s sends the bearer token in the server's `token_env` only to that server. The variable is named for the server, `A5S_MCP_<SERVER>_TOKEN`, so one server's declaration can't name another's token. It begins a session again once if the server ends a5s's. A server that acts as the person takes theirs instead ([below](#acting-as-the-person)). Of a5s's own, a call sends only its key, for a change or an idempotent tool, in its `_meta`, as `a5s/key`, so a server can make a change once for each key: never whom the run acts for, nor the run itself.
 
 In the studio's sandbox, a server's `sandbox` stand-in answers instead, and no token goes there: the sandbox's people and records are made up. Each scenario's made-up systems have a copy of their own for the sandbox, at an address of their own, with their own state, so nothing tried there changes the deployment's: the tests start each beside its system, and the containers run each in the sandbox's network, under the `sandbox` profile, with the sandbox's own overlay. A server with no stand-in has its tools offered there, so a draft checks as it will run, but each call is refused.
 
+### Acting as the person
+
+A server can act as the person a run is for, with their own permissions in its system, never a5s's: `as_person` names the system, as the deployment's `A5S_DELEGATION` names it, in place of a `token_env`, which a server never has beside it ([`core/delegation.py`](../src/a5s/core/delegation.py)).
+
+```yaml
+servers:
+  desk:
+    url: https://desk.example/mcp
+    as_person: servicenow                   # the account each person connects, in A5S_DELEGATION
+```
+
+So the system's own rules decide what each person sees and changes there, as they would for them, after a5s's own: the policy, the levels, held changes and need-to-know decide first, as for any tool, so an agent does the narrower of the two. Whose access a tool calls with is in its hash, as its approvers pinned it.
+
+- **Connecting.** The deployment names each system people may connect, in `A5S_DELEGATION`, a JSON list of `{name, title, authorize, token, client_id, scopes}`: the system's OAuth endpoints, over HTTPS, a5s's client there and the scopes a5s asks for. a5s's client secret there is the core's alone, in `A5S_DELEGATION_<NAME>_SECRET`, and the core doesn't start without it, nor with a server acting as the person in a system the deployment doesn't name. Each person connects their account on their own page in the studio, `/studio/you`: the system asks them, as itself, whether a5s may act for them, and sends them back to `/studio/connections`, which each system takes as a5s's way back, with a code. The core exchanges it for their tokens within a minute, with PKCE, so the code is no use to anyone else, and a way back is good only to whoever began it, for 15 minutes.
+- **Their tokens.** The core keeps them sealed, with AES-GCM under a key it derives from its own seal keys, which the channels app hasn't, each bound to the person and the system, and renews the access token with their refresh token a minute before it lapses. Neither the ledger nor any page holds a token; the ledger records each connection and its end, and someone's export names the systems they connected, with the scopes and when a5s last used them.
+- **A run acts as one person.** A tool on such a server is called only for a run acting for one person alone, never for a group chat's, or for one that acts for nobody, such as a report, and only once they've connected: a run for someone who hasn't hears how to. Each person has a session of their own with the server, which sees them as themselves, and lists what it offers them. In the sandbox, the server's stand-in answers, with no one's token.
+- **Ending it.** Someone disconnects on the same page, and a5s forgets their tokens; the system may keep its own record of a5s's access, which they end there. a5s forgets them too when the system stops taking them, after 90 days unused, when someone leaves, or when they ask a5s to erase what it keeps of them ([data protection](data-protection.md)).
+
+With Entra ID, for Microsoft Graph or an API of the organisation's, that's its authorization code flow, with offline access and the API's delegated permissions: chats pass a5s no token of the person's to exchange on their behalf, as the on-behalf-of flow needs, so a5s asks for their consent once instead, on their own page. ServiceNow and GitHub take the same flow, with a5s's OAuth app in each.
+
+Tested against a made-up OAuth system of the test's own, with PKCE and refresh, and the MCP SDK's server, which reads whose token each call carries (`tests/test_delegation.py`).
+
 ### Not yet
 
+- The on-behalf-of exchange of a token someone's chat passes a5s, where a chat passes one.
 - MCP's stateless envelope of 2026-07-28, which servers may offer beside the handshake.
 - A server's resources and prompts, its requests to the client, such as for sampling or to ask the person something, and servers run as a local process, over standard input and output.
 - `a5s mcp declare <url>`, to write a declaration's first draft from a server's list of tools, for its author to put in a5s's words.

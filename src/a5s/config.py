@@ -224,6 +224,7 @@ SIGN_IN = "Signing in"
 TEAMS = "Teams"
 SLACK = "Slack"
 EVENTS = "Events from other systems"
+DELEGATION_AREA = "Acting as the person"
 MATRIX = "Matrix"
 LEDGER = "The ledger's locked copies"
 STUDIO = "The studio, its sandbox and publishing"
@@ -322,6 +323,11 @@ EVENT_SOURCES = Var("A5S_EVENT_SOURCES", "the systems that may tell a5s somethin
                     "signing secret in the variable it names", None, _json_list, "a JSON list",
                     area=EVENTS)
 
+DELEGATION = Var("A5S_DELEGATION", "the systems people may connect their own accounts in, so "
+                 "agents act there as them, with their permissions: a JSON list of {name, title, "
+                 "authorize, token, client_id, scopes}, each system's OAuth endpoints and a5s's "
+                 "client there", None, _json_list, "a JSON list", area=DELEGATION_AREA)
+
 SLACK_BOTS = Var("A5S_SLACK_BOTS", "an app for each agent, which turns Slack on: a JSON list of "
                  "{agent, app_id, secret_env, token_env}, its signing secret and bot token each in "
                  "the variable it names", None, _json_list, "a JSON list", area=SLACK)
@@ -400,8 +406,8 @@ REGISTRY_GRAPH = Var("A5S_REGISTRY_GRAPH", "Microsoft Graph, as the tenant's clo
 REGISTRY_LOGIN = Var("A5S_REGISTRY_LOGIN", "where the core signs in to the tenant",
                      "https://login.microsoftonline.com", _url("https"), "an https:// address",
                      area=INVENTORY)
-AREAS = (CORE, DATABASE, WORKERS, SIGN_IN, TEAMS, SLACK, MATRIX, EVENTS, LEDGER, STUDIO, SCENARIO,
-         INVENTORY, COMMAND)
+AREAS = (CORE, DATABASE, WORKERS, SIGN_IN, TEAMS, SLACK, MATRIX, EVENTS, DELEGATION_AREA, LEDGER,
+         STUDIO, SCENARIO, INVENTORY, COMMAND)
 # Every setting above, by its area
 VARS: tuple[Var, ...] = tuple(sorted((v for v in globals().values() if isinstance(v, Var)),
                                      key=lambda v: AREAS.index(v.area)))
@@ -412,6 +418,8 @@ FAMILIES = (
            area=TEAMS),
     Family("A5S_EVENT_SECRET_<SOURCE>", "a system's signing secret for its events, where "
            "A5S_EVENT_SOURCES names it", area=EVENTS),
+    Family("A5S_DELEGATION_<NAME>_SECRET", "a5s's client secret in a system people connect, "
+           "where A5S_DELEGATION names it: for the core alone", area=DELEGATION_AREA),
     Family("A5S_SLACK_SECRET_<AGENT>", "an app's signing secret, where A5S_SLACK_BOTS names it",
            area=SLACK),
     Family("A5S_SLACK_TOKEN_<AGENT>", "an app's bot token, where A5S_SLACK_BOTS names it",
@@ -570,6 +578,19 @@ def check(env: Mapping[str, str] | None = None, serving: bool = True) -> tuple[l
         if not (env.get(str(source.get("secret_env"))) or "").strip():
             problems.append(f"A5S_EVENT_SOURCES gives {source.get('source')} its signing secret "
                             f"in {source.get('secret_env')}, which isn't set")
+    try:
+        systems = DELEGATION.read(env) or []
+    except ConfigError:
+        systems = []
+    for system in systems:
+        name = str(system.get("name") if isinstance(system, Mapping) else system)
+        if not isinstance(system, Mapping) or not re.fullmatch(r"[a-z][a-z0-9-]{0,31}", name):
+            problems.append(f"A5S_DELEGATION names a system {name[:40]!r}: each is named in "
+                            "lowercase, such as servicenow")
+            continue
+        for key in ("authorize", "token", "client_id"):
+            if not str(system.get(key) or "").strip():
+                problems.append(f"A5S_DELEGATION gives {name} no {key}")
     strangers = []
     for name in sorted(n for n in env if n.startswith("A5S_") and not known(n) and n not in MOVED
                        and not service_link(n, env[n])):
@@ -598,7 +619,7 @@ def _one(item: Any) -> str:
     """An item of a list as a setting shows it: an object, such as a Teams bot, by the agent
     it's for, and never what else it holds."""
     if isinstance(item, Mapping):
-        return str(item.get("agent") or "an entry")
+        return str(item.get("agent") or item.get("source") or item.get("name") or "an entry")
     return str(item)
 
 

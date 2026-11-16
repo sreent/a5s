@@ -35,7 +35,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from jwt.algorithms import RSAAlgorithm
 
-from a5s import db, definitions, devdb
+from a5s import build, db, definitions, devdb
 from a5s.config import Config, load_models
 from a5s.connectors import mcp
 from a5s.core import inbox, ledger, memberships, registry, signing
@@ -312,7 +312,8 @@ def deciding(stack: Stack, provider: Provider) -> Iterator[str]:
     stack.gateway.cfg = replace(stack.gateway.cfg, webchat_client_id=CLIENT,
                                 public_url=f"http://127.0.0.1:{port}")
     cfg = replace(stack.as_role("channels"), webchat_client_id=CLIENT, development=False,
-                  seal_keys=())  # the channels app never holds the core's seal key
+                  seal_keys=(),  # the channels app never holds the core's seal key
+                  public_url=f"http://127.0.0.1:{port}")  # where people reach it, as the core says
     with serve(inbox.create_app(replace(stack.gateway, cfg=cfg, identity=verifier)), port) as url:
         yield url
 
@@ -641,14 +642,17 @@ def running(database: str, root: Path, http: httpx.Client, model: FakeModel,
     cfg = Config(database_url=db.as_role(database, "gateway"),
                  gateway_url=f"http://127.0.0.1:{port}", service_token=SERVICE_TOKEN, root=root,
                  development=True, seal_keys=(SEAL_KEY,))
+    systems, delegated = build.delegating(cfg)  # the accounts people connect, as the core reads them
     scenario = mcp.served(SampleScenario(cfg.scenario_dir, cfg.database_url),  # its tools run
-                          cfg.scenario_dir, reserved=frozenset(CORE_TOOLS))  # in the gateway
+                          cfg.scenario_dir, reserved=frozenset(CORE_TOOLS),  # in the gateway
+                          delegated=delegated)
     for agent in ("assistant", "watcher"):
         definitions.pin(root / "agents" / agent, {n: t.schema_hash for n, t in scenario.tools().items()})
     # Its directory, with the roles groups give, as a5s builds it (core/memberships.py)
     directory = memberships.grouped(scenario, cfg.database_url, lambda conn: gw.groups_in_force(conn))
     gw = Gateway(cfg, directory, PolicyEngine(), load_models(cfg.models_file),
-                 definitions.load_all(cfg.agents_dir), http, clock=lambda: QUIET)
+                 definitions.load_all(cfg.agents_dir), http, clock=lambda: QUIET,
+                 delegation=systems)
     with db.transaction(database) as conn:
         applied = registry.apply(conn, gw.definitions, scenario.settings(), scenario.tools(),
                                  scenario.person, scenario.name)

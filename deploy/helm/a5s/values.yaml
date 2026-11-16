@@ -98,6 +98,15 @@ slack:
 events:
   sources: []
 
+# Acting as the person: the systems people may connect their own accounts in, so agents act there
+# as them, with their permissions, such as {name: servicenow, title: ServiceNow, authorize:
+# <its OAuth authorize address>, token: <its token address>, clientId: <a5s's client there>,
+# scopes: [...]}, each with a5s's client secret there in the Secret as delegation-secret-<name>,
+# which the core alone reads. Each system sends people back to <publicUrl>/studio/connections
+# (docs/connectors.md#acting-as-the-person).
+delegation:
+  systems: []
+
 # Matrix: a5s's registration on the organisation's homeserver, with its tokens in the Secret.
 matrix:
   homeserver: ""

@@ -8,7 +8,8 @@ they like to work and their reminders, under a name of its own that no person ha
 loads any of it again, and nothing more goes to them, even if the directory later gives
 someone else the same id or address. Their reminders are cancelled, their notes ended, and
 their preferences, what a5s had told them in their reports, their use of each day's budget and
-the log of their digests let go. What they owed follows the records, to whoever the records
+the log of their digests let go, and so are the accounts they connected, so agents acted as them
+(core/delegation.py): a5s forgets their tokens. What they owed follows the records, to whoever the records
 system makes their owner.
 
 Nothing is copied anywhere else. The archive goes on retention's usual clock, 12 months after
@@ -39,7 +40,7 @@ KEPT: Final = ("turns", "summaries", "inbound", "outbox", "chats", "digest_items
         "profile_notes", "reminders", "report_fires", "events", "answer_feedback")
 # What only serves the person while they're here, which it lets go
 LET_GO: Final = ("preferences", "report_seen", "digest_waits", "urgent_sent", "digests", "spend",
-          "sign_in_groups", "agent_drafts", "agent_asks")
+          "sign_in_groups", "agent_drafts", "agent_asks", "delegations", "delegation_starts")
 
 
 def sweep(conn: db.Connection, scenario: Scenario, now: datetime) -> list[str]:

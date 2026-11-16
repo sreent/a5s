@@ -124,6 +124,10 @@ seccompProfile:
   value: {{ $value | quote }}
 {{- end }}
 {{- end }}
+{{- if .Values.delegation.systems }}
+- name: A5S_DELEGATION
+  value: {{ include "a5s.delegation" . | quote }}
+{{- end }}
 {{- if .Values.matrix.homeserver }}
 {{ include "a5s.secretEnv" (dict "root" . "name" "A5S_MATRIX_AS_TOKEN" "key" "matrix-as-token") }}
 {{ include "a5s.secretEnv" (dict "root" . "name" "A5S_MATRIX_HS_TOKEN" "key" "matrix-hs-token") }}
@@ -164,6 +168,16 @@ signing secret is in. */}}
 {{- $sources = append $sources (dict "source" .source "secret_env" (printf "A5S_EVENT_SECRET_%s" (upper (replace "-" "_" .source)))) -}}
 {{- end -}}
 {{- toJson $sources -}}
+{{- end }}
+
+{{/* Each system people may connect their accounts in, as a5s reads them: its endpoints, a5s's
+client there and the scopes it asks for, never its secret. */}}
+{{- define "a5s.delegation" -}}
+{{- $systems := list -}}
+{{- range .Values.delegation.systems -}}
+{{- $systems = append $systems (dict "name" .name "title" (.title | default .name) "authorize" .authorize "token" .token "client_id" .clientId "scopes" (.scopes | default list)) -}}
+{{- end -}}
+{{- toJson $systems -}}
 {{- end }}
 
 {{/* Each agent's Slack app, as a5s reads them: its app id, and the variables its signing

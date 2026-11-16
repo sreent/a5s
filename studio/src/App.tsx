@@ -26,7 +26,7 @@ import { RunPage } from "./pages/Run";
 import { SettingsPage } from "./pages/Settings";
 import { SpendingPage } from "./pages/Spending";
 import { TasksPage } from "./pages/Tasks";
-import { YouPage } from "./pages/You";
+import { ConnectedPage, YouPage } from "./pages/You";
 import { reread, useRoute } from "./router";
 import { Sidebar } from "./Sidebar";
 
@@ -103,6 +103,7 @@ export function App() {
   else if (route.page === "draft") content = <DraftPage key={route.draft} id={route.draft} />;
   else if (route.page === "agents") content = <AgentsPage />;
   else if (route.page === "you") content = <YouPage />;
+  else if (route.page === "connections") content = <ConnectedPage />;
   else if (route.page === "design") content = <DesignPage />;
   else if (route.page === "settings") content = <SettingsPage />;
   else if (route.page === "notebook") content = <NotebookPage />;

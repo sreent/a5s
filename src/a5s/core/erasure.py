@@ -4,7 +4,8 @@ The data protection officer asks for it on the core's page (core/officer.py), na
 and a5s erases what it keeps that names them, one holder of an id at a time, as an export gives
 it (core/export.py). By an id, it erases what's its holder's since the id's last archive: their
 conversations with each agent, and what a5s and the agents said to them there, with the
-summaries of those; their notes, preferences and reminders; the chats a5s writes to them in, and
+summaries of those; their notes, preferences and reminders; the accounts they connected, so
+agents acted as them there, with their tokens; the chats a5s writes to them in, and
 what reports told them; their use of each day's budget, and their digests; what they said in
 group chats, with the summaries of the group's that hold any of it, which the group's next run
 makes again from what's left; the questions agents asked each other for them alone; what they
@@ -57,6 +58,8 @@ WORDS = {
     "events": "what other systems told a5s happened about them",
     "answer_feedback": "what they said of agents' answers that were wrong",
     "preferences": "preferences",
+    "delegations": "the accounts they connected, so agents acted as them there",
+    "delegation_starts": "accounts they had begun to connect",
     "report_seen": "what reports told them",
     "digest_waits": "digests that wait for them",
     "urgent_sent": "counts of urgent messages sent them",

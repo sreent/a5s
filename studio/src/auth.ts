@@ -49,10 +49,32 @@ function claims(jwt: string): Record<string, unknown> {
   return JSON.parse(new TextDecoder().decode(Uint8Array.from(atob(part), (c) => c.charCodeAt(0))));
 }
 
+/** What a system sent someone back with from connecting their account there, so agents act as
+ * them: its code is for the core, never a sign-in of the studio's, so it's kept aside in the tab,
+ * out of the address, while they sign in, and the page they come back to passes it on. */
+export type Connecting = { state: string; code: string | null; error: string | null };
+const CONNECTING = "a5s.studio.connecting";
+export const CONNECTIONS = "/studio/connections";
+
+/** What a system sent someone back with, once: the page it came back to passes it on. */
+export function takeConnecting(): Connecting | null {
+  const kept = JSON.parse(sessionStorage.getItem(CONNECTING) || "null") as Connecting | null;
+  sessionStorage.removeItem(CONNECTING);
+  return kept;
+}
+
 /** The sign-in, once the provider has sent someone back; or null, having sent them to it. */
 export async function signIn(): Promise<string | null> {
   if (!window.crypto?.subtle) throw new SignInError("The studio needs HTTPS, or a page on this computer.");
   const params = new URLSearchParams(location.search);
+  if (location.pathname === CONNECTIONS && params.has("state")) {
+    const kept: Connecting = { state: params.get("state") ?? "", code: params.get("code"),
+                               error: params.get("error") };
+    sessionStorage.setItem(CONNECTING, JSON.stringify(kept));
+    history.replaceState(null, "", CONNECTIONS);  // and they come back here, signed in
+    await start(await where());
+    return null;
+  }
   if (params.has("code") || params.has("error")) return finish(params);
   // the audit trail is read only with a second factor, where the deployment asks for one
   await start(await where(), undefined, undefined, STRONGER.test(location.pathname));

@@ -2,7 +2,8 @@
 
 The data protection officer, signed in with the role, names someone, and gets all a5s keeps
 that names them: their conversations with each agent, with what a5s and the agents said to
-them there, and the summaries of those; their notes, preferences and reminders; what they
+them there, and the summaries of those; their notes, preferences and reminders; the accounts
+they connected, so agents acted as them, by system and scopes, never a token; what they
 owed; the changes asked for them, and those they could decide or did; samples of those, and
 the grades they gave; the questions agents asked each other for them alone; the chats a5s writes to them
 in; what reports told them; their use of each day's budget, and their digests.
@@ -153,6 +154,9 @@ def gather(conn: db.Connection, person: str) -> dict[str, Any]:
         "preferences": rows(
             "select name, value, set_at from preferences where person = any(%(names)s) "
             "order by name"),
+        "connections": rows(  # the accounts they connected, so agents acted as them there
+            "select system, scopes, connected_at, used_at from delegations "  # never a token
+            "where person = any(%(names)s) order by system"),
         "groups": rows(  # those their latest sign-in showed, of the ones the settings name
             "select groups, seen_at from sign_in_groups where person = any(%(names)s)"),
         "asks": rows(  # the agents they asked for in the studio, and how each ask ended

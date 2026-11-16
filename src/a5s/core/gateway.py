@@ -60,6 +60,7 @@ from a5s.core import (
     chats,
     coretools,
     counts,
+    delegation,
     departures,
     digests,
     erasure,
@@ -291,6 +292,7 @@ class Gateway:
     breakers: Breakers = field(default_factory=Breakers)  # models not called for now (core/breakers.py)
     registry: Any = None  # the Microsoft tenant its instances are listed in, if any (core/registration.py)
     currency: str | None = None  # the one models.yaml prices models in, if it names one
+    delegation: Any = None  # the systems people connect, to be acted as there (core/delegation.py)
 
     @property
     def url(self) -> str:
@@ -3648,6 +3650,19 @@ def create_app(gw: Gateway) -> FastAPI:
                     changed.append(found)
                     capped(conn, found, now)
         return {"changed": changed, "lapsed": lapsed}
+
+    @services.post("/delegation/sweep")
+    def sweep_delegation() -> dict:
+        """Exchange the codes people came back with from connecting their accounts for their
+        tokens, which the core alone keeps, sealed (core/delegation.py), and let go of starts
+        nobody came back to."""
+        if gw.delegation is None or not gw.cfg.seal_keys:
+            with db.transaction(gw.url) as conn:  # nothing to connect: nothing waits, either
+                conn.execute("delete from delegation_starts")
+            return {"connected": 0, "failed": 0}
+        with db.transaction(gw.url) as conn:
+            return delegation.sweep(conn, gw.delegation, gw.cfg.seal_keys,
+                                    f"{gw.public_url}{delegation.BACK}", delegation.client())
 
     @services.post("/registry/sweep")
     def sweep_registry() -> dict:

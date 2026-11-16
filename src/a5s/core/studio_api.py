@@ -30,6 +30,7 @@ from a5s.core import (
     asks,
     audit_api,
     decide_api,
+    delegation,
     dependencies,
     drafts,
     feedback,
@@ -144,6 +145,15 @@ class LanguageChoice(BaseModel):
     language: str
 
 
+class ConnectionReturn(BaseModel):
+    """What a system sent someone back to a5s with, once they said whether a5s may act for them
+    there: the start's state, and its code, or the error it gave for a no."""
+
+    state: str
+    code: str | None = None
+    error: str | None = None
+
+
 class AnswerGrade(BaseModel):
     """An owner's grade of an answer someone said was wrong: right, wrong or critical."""
 
@@ -227,6 +237,7 @@ def router(gw: Any) -> APIRouter:
     @pages.get("/studio/design", include_in_schema=False)
     @pages.get("/studio/map", include_in_schema=False)
     @pages.get("/studio/spending", include_in_schema=False)
+    @pages.get("/studio/connections", include_in_schema=False)
     def studio_new() -> Response:
         """The studio, where someone starts a new agent, sees all the agents they may, what they
         may do, or the design system's showcase."""
@@ -274,6 +285,50 @@ def router(gw: Any) -> APIRouter:
                 return {"language": languages.choose(conn, person, body.language, gw.clock())}
             except languages.Refused as e:
                 raise HTTPException(400, str(e)) from None
+
+    @api.get("/studio/api/you/connections", **shapes.answers(shapes.Connections))
+    def studio_connections(person: Annotated[Person, Depends(someone)]) -> dict:
+        """Each system whoever signed in may connect their own account in, so agents act there
+        as them, with their permissions (core/delegation.py), and whether they have: none,
+        where the deployment connects none."""
+        with db.transaction(gw.url) as conn:
+            return {"connections": delegation.connections(conn, gw.delegation, person.id)}
+
+    @api.post("/studio/api/you/connections/{system}/start", **shapes.answers(shapes.ConnectionStarted))
+    def studio_connect(system: str, person: Annotated[Person, Depends(someone)]) -> dict:
+        """Begin connecting their account in a system: the system's own page, where it asks
+        them whether a5s may act for them, with the scopes the deployment names."""
+        if gw.delegation is None:
+            raise HTTPException(404, "this deployment connects no accounts")
+        with db.transaction(gw.url) as conn:
+            try:
+                go = delegation.start(conn, gw.delegation, person.id, system,
+                                      f"{gw.public_url}{delegation.BACK}")
+            except delegation.Refused as e:
+                raise HTTPException(404, str(e)) from None
+        return {"go": go}
+
+    @api.post("/studio/api/you/connections/back", **shapes.answers(shapes.ConnectionBack))
+    def studio_connected(body: ConnectionReturn, person: Annotated[Person, Depends(someone)]) -> dict:
+        """What a system sent them back with: its code, for the core to exchange for their
+        tokens within a minute, or their no."""
+        if gw.delegation is None:
+            raise HTTPException(404, "this deployment connects no accounts")
+        with db.transaction(gw.url) as conn:
+            try:
+                found = delegation.came_back(conn, gw.delegation, person.id, body.state,
+                                             None if body.error else body.code)
+            except delegation.Refused as e:
+                raise HTTPException(400, str(e)) from None
+        return {"system": found.name, "title": found.title,
+                "connecting": bool(body.code and not body.error)}
+
+    @api.delete("/studio/api/you/connections/{system}", **shapes.answers(shapes.Disconnected))
+    def studio_disconnect(system: str, person: Annotated[Person, Depends(someone)]) -> dict:
+        """Forget their tokens in a system: a5s acts as them there no more, until they connect
+        it again. The system may keep its own record of a5s's access, which they end there."""
+        with db.transaction(gw.url) as conn:
+            return {"forgotten": delegation.forget(conn, person.id, system, "they disconnected it")}
 
     @api.get("/studio/api", **shapes.answers(shapes.Catalogue))
     def studio_now(person: Annotated[Person, Depends(someone)]) -> dict:

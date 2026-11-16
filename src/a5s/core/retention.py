@@ -24,7 +24,9 @@ was handed as handles, what it read, and the documents from outside it read, go 
 has been over for an hour: a handle works only in its run, and nothing reads them after. The
 files someone sent with a message (core/files.py) go a day after it was answered, or a week
 after it came, should nothing answer it. What someone said of an agent's answer that was wrong
-(core/feedback.py) goes that long after they said it, or with the answer.
+(core/feedback.py) goes that long after they said it, or with the answer. The tokens of an
+account someone connected, so agents act as them (core/delegation.py), go once a5s hasn't used
+them for 90 days, and a start nobody came back to after a day.
 
 The core sweeps every hour, by the database's clock, and the ledger records what each sweep
 deleted, in counts, never what was said. The period goes to Postgres as a value, never as part
@@ -40,7 +42,7 @@ from typing import Any, Final, LiteralString
 
 from a5s import db
 from a5s.contract import DataProtection
-from a5s.core import departures
+from a5s.core import delegation, departures
 
 KEPT = DataProtection.kept_for  # until the data protection officer chooses otherwise
 HORIZON = re.compile(r"[1-9][0-9]{0,3} (hour|day|month)s?")
@@ -132,6 +134,10 @@ def sweep(conn: db.Connection, now: datetime, scenario: str, kept: str = KEPT) -
     # group chat, whose conversation goes by its own last message
     delete("questions", f"delete from questions where asked_at < {AGO}")
     delete("asks", f"delete from agent_asks where ended_at < {AGO}")  # asking for an agent
+    delete("connections", "delete from delegations where coalesce(used_at, connected_at) < "
+                          "now() - %(unused)s", unused=delegation.UNUSED)  # tokens unused that long
+    delete("connections", "delete from delegation_starts where started_at < now() - "
+                          "interval '1 day'")  # nobody came back to, should no core sweep them
     done = (f"(status in ('done', 'cancelled', 'failed') and updated_at < {AGO}) "
             f"or deadline < {AGO}")  # it can't run past its deadline
     delete("tasks", "delete from tasks where root in (select root from tasks group by root "

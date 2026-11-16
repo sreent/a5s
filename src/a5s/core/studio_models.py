@@ -115,6 +115,40 @@ class LanguageChosen(Shape):
     language: str
 
 
+# The accounts someone connects, so agents act as them there (core/delegation.py)
+
+
+class Connection(Shape):
+    """A system someone may connect their own account in, so agents act there as them, with
+    their permissions: whether they have, since when, and when a5s last did."""
+
+    system: str
+    title: str
+    connected: bool
+    connecting: bool  # they came back with its code, which the core is exchanging
+    scopes: list[str]  # what a5s may do as them there, as the system said, or asks for
+    connected_at: str | SkipJsonSchema[None] = None
+    used_at: str | SkipJsonSchema[None] = None
+
+
+class Connections(Shape):
+    connections: list[Connection]
+
+
+class ConnectionStarted(Shape):
+    go: str  # the system's own page, where they say a5s may act for them
+
+
+class ConnectionBack(Shape):
+    system: str
+    title: str
+    connecting: bool  # false where they said no there
+
+
+class Disconnected(Shape):
+    forgotten: bool
+
+
 # Each agent as someone sees it, layer by layer (core/studio.py)
 
 

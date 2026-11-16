@@ -10,6 +10,9 @@
 {{ include "a5s.teamEnv" . }}
 {{ include "a5s.peopleEnv" . }}
 {{ include "a5s.scenarioEnv" . }}
+{{- range .Values.delegation.systems }}
+{{ include "a5s.secretEnv" (dict "root" $ "name" (printf "A5S_DELEGATION_%s_SECRET" (upper (replace "-" "_" .name))) "key" (printf "delegation-secret-%s" .name)) }}
+{{- end }}
 {{- with .Values.telemetry.endpoint }}
 - name: OTEL_EXPORTER_OTLP_ENDPOINT
   value: {{ . | quote }}

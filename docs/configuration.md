@@ -125,6 +125,12 @@ The tests check that neither compose nor the chart sets a setting to its default
 | --- | --- | --- | --- |
 | `A5S_EVENT_SOURCES` | none | a JSON list | The systems that may tell a5s something happened, which turns events on: a JSON list of {source, secret_env}, each source's signing secret in the variable it names |
 
+### Acting as the person
+
+| Variable | Default | Takes | What it sets |
+| --- | --- | --- | --- |
+| `A5S_DELEGATION` | none | a JSON list | The systems people may connect their own accounts in, so agents act there as them, with their permissions: a JSON list of {name, title, authorize, token, client_id, scopes}, each system's OAuth endpoints and a5s's client there |
+
 ### The ledger's locked copies
 
 | Variable | Default | Takes | What it sets |
@@ -178,6 +184,7 @@ The tests check that neither compose nor the chart sets a setting to its default
 | `A5S_DB_<PART>_PASSWORD` | Each part's database password, which setup gives its role |
 | `A5S_TEAMS_SECRET_<AGENT>` | A bot's secret, where A5S_TEAMS_BOTS names it |
 | `A5S_EVENT_SECRET_<SOURCE>` | A system's signing secret for its events, where A5S_EVENT_SOURCES names it |
+| `A5S_DELEGATION_<NAME>_SECRET` | A5s's client secret in a system people connect, where A5S_DELEGATION names it: for the core alone |
 | `A5S_SLACK_SECRET_<AGENT>` | An app's signing secret, where A5S_SLACK_BOTS names it |
 | `A5S_SLACK_TOKEN_<AGENT>` | An app's bot token, where A5S_SLACK_BOTS names it |
 | `A5S_MCP_<SERVER>_TOKEN` | An MCP server's bearer token, where the scenario's mcp.yaml names it as the server's token_env |

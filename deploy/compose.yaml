@@ -49,6 +49,7 @@ x-people: &people
   A5S_TEAMS_SECRET_WATCHER:
   A5S_TEAMS_TENANT_ID:
   A5S_EVENT_SOURCES:  # the systems that may tell a5s something happened, as JSON (README.md)
+  A5S_DELEGATION:  # the systems people connect their accounts in, so agents act as them, as JSON (docs/connectors.md)
   A5S_SLACK_BOTS:  # each agent's app in the workspace, for Slack, as JSON (README.md)
   A5S_SLACK_TEAM:
   A5S_SLACK_SECRET_ASSISTANT:  # each app's signing secret and bot token, as A5S_SLACK_BOTS names
@@ -96,6 +97,7 @@ services:
       A5S_DATABASE_URL: postgresql://a5s_gateway:${A5S_DB_GATEWAY_PASSWORD}@postgres:5432/postgres
       A5S_SERVICE_TOKEN: ${A5S_SERVICE_TOKEN:?set A5S_SERVICE_TOKEN}
       A5S_SEAL_KEYS:  # the core's own, sealing what people approve, decide and grade: the gateway alone holds it
+      # and a5s's client secret in each system A5S_DELEGATION names, as A5S_DELEGATION_<NAME>_SECRET
       A5S_TEAM:
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       QWEN_API_KEY: ${QWEN_API_KEY:-}

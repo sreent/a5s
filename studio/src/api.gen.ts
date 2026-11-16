@@ -250,6 +250,40 @@ export type CoAuthors = {
   people: Named[];
 };
 
+// A system someone may connect their own account in, so agents act there as them, with
+// their permissions: whether they have, since when, and when a5s last did.
+export type Connection = {
+  system: string;
+  title: string;
+  connected: boolean;
+  connecting: boolean;
+  scopes: string[];
+  connected_at?: string;
+  used_at?: string;
+};
+
+export type ConnectionBack = {
+  system: string;
+  title: string;
+  connecting: boolean;
+};
+
+// What a system sent someone back to a5s with, once they said whether a5s may act for them
+// there: the start's state, and its code, or the error it gave for a no.
+export type ConnectionReturn = {
+  state: string;
+  code?: string | null;
+  error?: string | null;
+};
+
+export type ConnectionStarted = {
+  go: string;
+};
+
+export type Connections = {
+  connections: Connection[];
+};
+
 // What an agent's runs are given beyond the conversation.
 export type Context = {
   budget_tokens: number;
@@ -343,6 +377,10 @@ export type DescribedNote = {
   what: string;
   given: boolean;
   why: string;
+};
+
+export type Disconnected = {
+  forgotten: boolean;
 };
 
 // A draft: its agent's folder, file by file, what would stop its release, and how the
