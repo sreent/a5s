@@ -1187,3 +1187,18 @@ class Graded(Shape):
     graded: list[int]
     grades: dict[str, str]
     by: str
+
+
+# The data protection officer's requests, folded into the studio (core/officer_api.py)
+
+
+class OfficerAsked(Shape):
+    """The officer's request, recorded for the team that runs a5s to carry out, once, with the
+    command it's carried out with."""
+
+    asked: str  # export or erase
+    person: str
+    name: str | None  # whose the id is in the directory now, if anyone's
+    by: str
+    lasts: str
+    command: str

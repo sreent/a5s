@@ -10,11 +10,13 @@ const BACK = `${location.origin}/studio/`;
 
 type SignInConfig = { authorization_endpoint: string; client_id: string; scope: string; acr_values?: string };
 /** An act signed in for, and what carrying it out needs, the salt its nonce was made with
- * among it: suspending or resuming an instance, deciding held changes, or grading samples. */
+ * among it: suspending or resuming an instance, deciding held changes, grading samples, or the
+ * data protection officer's request. */
 export type Act =
   | { kind: "status"; action: "suspend" | "resume"; instance: string; salt: string }
   | { kind: "decide"; proposals: string[]; decision: "approve" | "reject"; salt: string; reason: string | null }
-  | { kind: "grade"; grades: Record<string, string>; salt: string };
+  | { kind: "grade"; grades: Record<string, string>; salt: string }
+  | { kind: "officer"; action: "export" | "erase"; person: string; salt: string };
 type Pending = { verifier: string; state: string; nonce: string; path: string; search?: string; act?: Act };
 
 let signedFor: Act | null = null;  // the act the sign-in just made was for, until it's carried out

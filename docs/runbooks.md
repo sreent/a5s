@@ -195,7 +195,7 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 
 **Shows as:** the data protection officer asking for what a5s keeps about someone, such as for their request to see it.
 
-1. The officer asks on the core's page, `/officer/`, signed in afresh: export, and the person's id in the directory, or an archive's name. The page says whose the id is in the directory now, and the command to run.
+1. The officer asks in the studio, `/studio/officer`, signed in afresh: export, and the person's id in the directory, or an archive's name. The page says whose the id is in the directory now, and the command to run.
 2. Within ten minutes, someone from the team that runs a5s, whose service token reaches the core, runs `a5s export --person <id> --out <file>`. It needs both: the team can't export without the officer's request, which does nothing else and works once, nor can anyone else with a role, or the person themselves. If ten minutes have passed, the officer asks again.
 3. The file holds all a5s keeps that names them, and only whoever runs the command may read it: the command writes only a new file, which goes to the officer. It gives nobody else's words, only how much they heard others say in group chats or were answered there, and names records by key and title: what records hold is the records system's to answer for.
 4. If the id was archived, the command names each archive, with when its holder left. An id the directory later gave someone else exports only its new holder's, so an archive may be someone else's: the officer asks for each that's the person's by its name, `former:...`, and the team exports it the same way.

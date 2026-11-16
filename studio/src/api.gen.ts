@@ -95,6 +95,14 @@ export type Asked = {
   why: string[];
 };
 
+// What the officer's page sends with its sign-in: what it's to do, for whom, and the salt
+// its nonce was made with.
+export type Asking = {
+  action: string;
+  person: string;
+  salt: string;
+};
+
 // A page of a period's entries, as the auditor asked, and where the next begins.
 export type AuditEntries = {
   entries: Record<string, unknown>[];
@@ -660,6 +668,17 @@ export type Offered = {
   changes: string | null;
   handles: string[];
   outside: string[];
+};
+
+// The officer's request, recorded for the team that runs a5s to carry out, once, with the
+// command it's carried out with.
+export type OfficerAsked = {
+  asked: string;
+  person: string;
+  name: string | null;
+  by: string;
+  lasts: string;
+  command: string;
 };
 
 // The agents, instances and parts nobody answers for.

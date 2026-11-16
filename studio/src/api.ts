@@ -104,6 +104,7 @@ export type Decided = gen.Decided;
 export type GradeNow = gen.GradeNow;  // the samples someone may grade now
 export type SampleLine = gen.SampleLine;
 export type Graded = gen.Graded;
+export type OfficerAsked = gen.OfficerAsked;  // the officer's request, recorded
 export type Standing = gen.Standing;  // how an instance stands, for its viewer: what waits, and what they may do
 export type StatusAsked = gen.StatusAsked;  // a suspension or resumption asked for, which a5s carries out
 export type You = gen.You;

@@ -34,7 +34,7 @@ from a5s.core.identity import (
 
 ACTIONS = ("export", "erase")
 LASTS = "10 minutes"  # how long a request waits for the team to carry it out
-PAGE = "/officer/"
+PAGE = "/studio/officer"
 
 
 def nonce(action: str, person: str, salt: str) -> str:
