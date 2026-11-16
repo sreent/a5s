@@ -81,12 +81,13 @@ def test_the_sidebar_lists_only_the_pages_each_person_may_use(stack, approving, 
         return [place["page"] for place in answer.json()["pages"]]
 
     # Ana approves instances and owns billing; Ben deputises for the instance, which is no role
-    # of a5s's own; Chen is served; Kofi is assurance, who reads the trail. The studio's home and
-    # its catalogue are everyone's
-    assert listed("ana") == ["chat", "tasks", "notebook", "studio", "decide", "settings", "admin"]
-    assert listed("ben") == ["chat", "tasks", "notebook", "studio"]
+    # of a5s's own; Chen is served; Kofi is assurance, who reads the trail. The studio's home,
+    # its catalogue and the map of what depends on what are everyone's, each as far as they see
+    assert listed("ana") == ["chat", "tasks", "notebook", "studio", "map", "decide", "settings",
+                             "admin"]
+    assert listed("ben") == ["chat", "tasks", "notebook", "studio", "map"]
     assert "audit" in listed("kofi")
-    assert listed("chen") == ["chat", "tasks", "studio"]
+    assert listed("chen") == ["chat", "tasks", "studio", "map"]
     assert httpx.get(f"{approving}/shell/api", timeout=30).status_code == 401
 
 
@@ -100,7 +101,7 @@ def test_every_sidebar_and_the_palette_show_the_pages_as_a5s_lists_them(seen, ap
     token = provider.id_token(person="ana")
     places = httpx.get(f"{approving}/shell/api", timeout=30,
                        headers={"Authorization": f"Bearer {token}"}).json()["pages"]
-    assert [p["page"] for p in places] == ["chat", "tasks", "notebook", "studio", "decide",
+    assert [p["page"] for p in places] == ["chat", "tasks", "notebook", "studio", "map", "decide",
                                           "settings", "admin"]
     for start in ("/studio/", "/chat/"):  # the studio's sidebar, and the plain pages' (shell.js)
         page = browser.new_page(viewport={"width": 1440, "height": 900})

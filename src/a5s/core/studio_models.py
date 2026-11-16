@@ -267,6 +267,36 @@ class Catalogue(Shape):
     authoring: Authoring
 
 
+class MapNode(Shape):
+    """A thing on the map of what depends on what (core/dependencies.py): its kind, part,
+    instance, agent, tool, system or model; its name; what it is, in a few words; its page in
+    the studio, if it has one; and, for a tool, what it does: reads, writes, sends outside or
+    changes records."""
+
+    key: str
+    kind: str
+    name: str
+    about: str
+    at: str | None
+    tone: str | None
+
+
+class MapEdge(Shape):
+    """That one thing depends on another, and how, in words, such as "may call it"."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    from_: str = Field(alias="from")
+    to: str
+    says: str
+
+
+class DependsOn(Shape):
+    """The map, as someone may see it."""
+
+    nodes: list[MapNode]
+    edges: list[MapEdge]
+
+
 class Requested(Shape):
     """A version of the settings asked for, which the core proposes to everyone it needs."""
 

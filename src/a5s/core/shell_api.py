@@ -20,6 +20,7 @@ PAGES = (
     ("tasks", "Tasks", "tasks", "Work", "/studio/tasks"),
     ("notebook", "Notebook", "book", "Work", "/studio/notebook"),
     ("studio", "Studio", "studio", "Build", "/studio/"),
+    ("map", "Map", "map", "Build", "/studio/map"),
     ("decide", "Decisions", "decide", "Decide", "/studio/decide"),
     ("grade", "Grading", "grade", "Decide", "/studio/grade"),
     ("settings", "Settings", "settings", "Decide", "/studio/settings"),
@@ -45,7 +46,7 @@ def router(gw: Any) -> APIRouter:
         decides = INSTANCE_APPROVER in roles or any(
             r.startswith((f"{PART_OWNER}:", f"{PART_DELEGATE}:")) for r in roles)
         found = {"chat": True, "tasks": True, "notebook": bool(notebook_api.kept(gw, person)),
-                 "studio": True, "decide": decides, "grade": samples.GRADER in roles,
+                 "studio": True, "map": True, "decide": decides, "grade": samples.GRADER in roles,
                  "settings": registry.approves(person), "audit": audit.reads(person),
                  "admin": administration.administers(person, gw.cfg.team),
                  "officer": DATA_PROTECTION in roles}

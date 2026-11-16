@@ -323,6 +323,7 @@ export function AgentPage({ id }: { id: string }) {
             {uses && <><span>{uses.model}</span><span>{levels(uses.autonomy)}</span></>}
             <span>Owned by {agent.owners.join(", ") || "nobody the directory names"}</span>
             {agent.instances.map((i) => <span key={i.id}>{i.id}: {aboutInstance(i)}</span>)}
+            <Link to={{ page: "map", at: `agent:${agent.id}` }} id="on-the-map">What depends on it</Link>
           </div>
         )}
         {agent && changes && <DraftAChange id={id} second={idle(agent)} />}

@@ -30,6 +30,7 @@ from a5s.core import (
     asks,
     audit_api,
     decide_api,
+    dependencies,
     drafts,
     grade_api,
     ledger,
@@ -197,6 +198,7 @@ def router(gw: Any) -> APIRouter:
     @pages.get("/studio/officer", include_in_schema=False)
     @pages.get("/studio/approve", include_in_schema=False)
     @pages.get("/studio/design", include_in_schema=False)
+    @pages.get("/studio/map", include_in_schema=False)
     def studio_new() -> Response:
         """The studio, where someone starts a new agent, sees all the agents they may, what they
         may do, or the design system's showcase."""
@@ -241,6 +243,14 @@ def router(gw: Any) -> APIRouter:
                     "authoring": {"new": drafts.may_author(person, None),  # what they may make
                                   "agents": sorted(a for a in gw.definitions
                                                    if drafts.may_author(person, a))}}
+
+    @api.get("/studio/api/map", **shapes.answers(shapes.DependsOn))
+    def studio_map(person: Annotated[Person, Depends(someone)]) -> dict:
+        """What depends on what, as far as someone may see it: the parts, instances, agents,
+        tools, systems and models, each joined to what it depends on (core/dependencies.py)."""
+        with db.transaction(gw.url) as conn:
+            return dependencies.drawn(conn, gw.scenario, gw.definitions, gw.scenario.tools(),
+                                      gw.models, person)
 
     @api.get("/studio/api/agents/{agent}", **shapes.answers(shapes.Agent))
     def studio_agent(agent: str, person: Annotated[Person, Depends(someone)]) -> dict:

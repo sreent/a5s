@@ -258,7 +258,7 @@ export function InstancePage({ id }: { id: string }) {
                 title={inst?.id ?? "An instance"} badges={inst && <StatusBadge status={inst.status} />}>
         {head && inst ? (
           <>
-            <div className="meta"><span>{aboutInstance(inst)}</span><span>run by {runners(inst)}</span>{standing.data?.suspended_by && <span>suspended by {standing.data.suspended_by}</span>}{!inst.current && <span className="badge warn">still on release {inst.release}</span>}</div>
+            <div className="meta"><span>{aboutInstance(inst)}</span><span>run by {runners(inst)}</span><Link to={{ page: "map", at: `instance:${inst.id}` }} id="on-the-map">What it depends on</Link>{standing.data?.suspended_by && <span>suspended by {standing.data.suspended_by}</span>}{!inst.current && <span className="badge warn">still on release {inst.release}</span>}</div>
             <Stopping id={id} standing={standing.data} settles={settles} problem={problem} setProblem={setProblem} />
           </>
         ) : <Skeleton lines={2} title={false} bare />}

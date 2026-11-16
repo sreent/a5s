@@ -300,6 +300,12 @@ export type Denied = {
   times: number;
 };
 
+// The map, as someone may see it.
+export type DependsOn = {
+  nodes: MapNode[];
+  edges: MapEdge[];
+};
+
 // How a draft was described in words: its author's words, the model that proposed what it
 // needs, and a note on each thing it was given or not, for its author to check.
 export type Described = {
@@ -587,6 +593,26 @@ export type Judged = {
 export type Limit = {
   per_run: number | null;
   per_person_30_days: number | null;
+};
+
+// That one thing depends on another, and how, in words, such as "may call it".
+export type MapEdge = {
+  from: string;
+  to: string;
+  says: string;
+};
+
+// A thing on the map of what depends on what (core/dependencies.py): its kind, part,
+// instance, agent, tool, system or model; its name; what it is, in a few words; its page in
+// the studio, if it has one; and, for a tool, what it does: reads, writes, sends outside or
+// changes records.
+export type MapNode = {
+  key: string;
+  kind: string;
+  name: string;
+  about: string;
+  at: string | null;
+  tone: string | null;
 };
 
 // One call to the model a try made: what it was sent, what came back, and how.

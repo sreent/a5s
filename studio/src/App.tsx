@@ -18,6 +18,7 @@ import { GradePage } from "./pages/Grade";
 import { HomePage } from "./pages/Home";
 import { InstancePage } from "./pages/Instance";
 import { NewPage } from "./pages/New";
+import { MapPage } from "./pages/Map";
 import { NotebookPage } from "./pages/Notebook";
 import { OfficerPage } from "./pages/Officer";
 import { RunPage } from "./pages/Run";
@@ -107,6 +108,7 @@ export function App() {
   else if (route.page === "decide") content = <DecidePage />;
   else if (route.page === "grade") content = <GradePage />;
   else if (route.page === "officer") content = <OfficerPage />;
+  else if (route.page === "map") content = <MapPage at={route.at} />;
   else if (route.page === "approve") content = <ApprovePage key={route.settings} version={route.settings} />;
   else content = <HomePage />;
   const workbench = route.page === "draft" && state === "ready";  // a draft fills the window, as Ocean's workbench
