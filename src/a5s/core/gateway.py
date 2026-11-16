@@ -71,6 +71,7 @@ from a5s.core import (
     files,
     groups,
     handles,
+    handover,
     judging,
     ledger,
     measures,
@@ -120,13 +121,15 @@ from a5s.core.slack import Slack
 from a5s.core.teams import Teams
 from a5s.core.values import Value
 from a5s.definitions import Context, Definition
+from a5s.services import context
 
 log = logging.getLogger(__name__)
 CORE_TOOLS = {**reminders.TOOLS, **digests.TOOLS, **profiles.TOOLS,  # a5s's own, on its
               **recall.TOOLS, extractor.ASK: extractor.TOOL,  # own records, and asking
               asking.ASK: asking.TOOL,  # another agent (core/asking.py), and the notebook
               notebook.NOTE: notebook.TOOL,  # of what it learns from records, and long tasks
-              **tasking.TOOLS}  # people ask it for (core/tasking.py)
+              **tasking.TOOLS,  # people ask it for (core/tasking.py), and handing a
+              **handover.TOOLS}  # conversation over to people (core/handover.py)
 LAPSED = 120  # seconds past its time a scheduler's lease on a run's work is, once it's gone
 CHARS_PER_TOKEN = 4  # roughly, for a run's budget for its conversation
 OWN_RUNS = ("summary",)  # a5s's own work on a conversation: no tools, and it writes to nobody
@@ -711,6 +714,12 @@ class Gateway:
             if empty := sorted(g for g in groups if not registry.served(self.scenario, [g])):
                 problems.append(f"{instance.id} serves groups nobody in the directory is in: "
                                 f"{', '.join(empty)}")
+            if nobody := [t for t in instance.hands_to if not self.scenario.team(t)]:
+                problems.append(f"{instance.id} hands conversations to teams nobody in the "
+                                f"directory is in: {', '.join(nobody)}")
+            if instance.hands_to and release is not None and not release.context.handover:
+                problems.append(f"{instance.id} hands conversations to {', '.join(instance.hands_to)}"
+                                f", but the {instance.definition}'s release doesn't hand any over")
         for group, roles in sorted(settings.groups.items()):  # an agent's role, for one here
             if wrong := [r for r in roles if r.partition(":")[0] in GROUP_AGENT_ROLES
                          and r.partition(":")[2] not in self.definitions]:
@@ -3706,6 +3715,94 @@ def create_app(gw: Gateway) -> FastAPI:
         with db.transaction(gw.url) as conn:
             return delegation.sweep(conn, gw.delegation, gw.cfg.seal_keys,
                                     f"{gw.public_url}{delegation.BACK}", delegation.client())
+
+    @services.post("/handovers/sweep")
+    def sweep_handovers() -> dict:
+        """Tell each person whose conversation was handed over who takes it from there, put
+        each answer the team gave in the studio in their chat, as the agent's bot, with the
+        answerer's name, keeping it and what the person said in the conversation, and hand
+        back what nobody answered or handed back in time (core/handover.py), telling them."""
+        done, sending = {"told": 0, "answered": 0, "back": 0}, []
+        with db.transaction(gw.url) as conn:
+            for row in handover.lapsing(conn):
+                ledger.append(conn, {"kind": "admin", "action": "hand-back", "run": None,
+                                     "instance": row["instance_id"], "acts_for": [row["person"]],
+                                     "decision": "record",
+                                     "args": {"handover": row["id"], "lapsed": True}})
+            for row in conn.execute("select * from handovers where told_at is null "
+                                    "for update skip locked").fetchall():
+                said = handover.words(row, gw.scenario)
+                sending.append(outbound(conn, where_to(conn, row), row["person"], said["to"],
+                                        agent=row["agent"], instance=row["instance_id"]))
+                noted(conn, row["person"], row["agent"], f"a5s handed this conversation to the "
+                      f"{row['team']} team, at the person's word.", None)
+                conn.execute("update handovers set told_at = now() where id = %s", (row["id"],))
+                done["told"] += 1
+            for reply in conn.execute(
+                    "select r.*, h.person, h.agent, h.team, h.instance_id, h.started_at from "
+                    "handover_replies r join handovers h on h.id = r.handover_id where "
+                    "r.sent_at is null order by r.id for update of r skip locked").fetchall():
+                waits = conn.execute(  # what it answers: what they wrote since, until then
+                    "select id::text as id, text from inbound where person = %s and agent = %s "
+                    "and conversation is null and answered_at is null and received_at > %s and "
+                    "received_at <= %s order by received_at",
+                    (reply["person"], reply["agent"], reply["started_at"], reply["at"])).fetchall()
+                for asked in waits:  # the conversation the agent reads, once it's back
+                    context.add_turn(conn, person=reply["person"], agent=reply["agent"],
+                                     role="person", content=asked["text"])
+                who = gw.scenario.person(reply["by_person"])
+                name = who.name if who else reply["by_person"]
+                context.add_turn(conn, person=reply["person"], agent=reply["agent"], role="notice",
+                                 content=f"{name}, of the {reply['team']} team, answered them: "
+                                         f"{reply['text']}")
+                route = where_to(conn, reply, waits[-1]["id"] if waits else None)
+                sending.append(outbound(conn, route, reply["person"],
+                                        f"{name}, of the {reply['team']} team: {reply['text']}",
+                                        agent=reply["agent"], instance=reply["instance_id"],
+                                        inbound=waits[-1]["id"] if waits else None))
+                if waits:
+                    conn.execute("update inbound set answered_at = now() where id = any(%s)",
+                                 ([w["id"] for w in waits],))
+                conn.execute("update handover_replies set sent_at = now() where id = %s",
+                             (reply["id"],))
+                ledger.append(conn, {"kind": "message", "action": "hand-over answer", "run": None,
+                                     "instance": reply["instance_id"],
+                                     "acts_for": [reply["person"]], "decision": "record",
+                                     "args": {"handover": reply["handover_id"],
+                                              "by": reply["by_person"],
+                                              "chars": len(reply["text"])}})
+                done["answered"] += 1
+            for row in conn.execute("select * from handovers where ended_at is not null and "
+                                    "back_told_at is null for update skip locked").fetchall():
+                said = handover.words(row, gw.scenario)
+                sending.append(outbound(conn, where_to(conn, row), row["person"], said["back"],
+                                        agent=row["agent"], instance=row["instance_id"]))
+                noted(conn, row["person"], row["agent"], f"The {row['team']} team handed this "
+                      "conversation back: you answer the person again.", None)
+                conn.execute("update handovers set back_told_at = now() where id = %s",
+                             (row["id"],))
+                if row["ended_by"]:
+                    ledger.append(conn, {"kind": "admin", "action": "hand-back", "run": None,
+                                         "instance": row["instance_id"],
+                                         "acts_for": [row["person"]], "decision": "record",
+                                         "args": {"handover": row["id"], "by": row["ended_by"]}})
+                done["back"] += 1
+        push([i for i in sending if i is not None])
+        return done
+
+    def where_to(conn: db.Connection, row: dict, inbound: str | None = None) -> dict:
+        """Where to write to someone about a conversation handed over: as an answer to what
+        they wrote, if it answers that, or in their own chat with the agent, as reach says."""
+        asked = gw.message_of(conn, inbound) if inbound else None
+        if asked is not None:
+            return {"channel": asked["channel"], "reply_to": asked["reply_to"]}
+        last = conn.execute("select id::text from inbound where person = %s and agent = %s and "
+                            "conversation is null order by received_at desc limit 1",
+                            (row["person"], row["agent"])).fetchone()
+        found = gw.message_of(conn, last["id"]) if last else None
+        if found is not None:
+            return {"channel": found["channel"], "reply_to": found["reply_to"]}
+        return gw.reach(conn, row["person"], row["agent"])
 
     @services.post("/undo/sweep")
     def sweep_undo() -> dict:

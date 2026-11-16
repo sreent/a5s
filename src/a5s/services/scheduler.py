@@ -240,6 +240,9 @@ class Scheduler:
                     where l.key = coalesce(i.conversation, i.person) || '/' || i.agent || '/'
                                   || %(topic)s
                       and l.expires_at > now())
+                  and not (i.conversation is null and exists (  -- handed over to people, who
+                    select 1 from handovers h where h.person = i.person  -- answer it until
+                      and h.agent = i.agent and h.ended_at is null))  -- they hand it back
                 order by i.received_at limit 1
                 for update of i skip locked
                 """,
@@ -664,7 +667,8 @@ class Scheduler:
                            ("/samples/sweep", "the graded samples"),
                            ("/samples/judge", "the judge's verdicts on samples"),
                            ("/delegation/sweep", "the accounts people connected"),
-                           ("/undo/sweep", "the changes people asked to undo")):
+                           ("/undo/sweep", "the changes people asked to undo"),
+                           ("/handovers/sweep", "the conversations handed over to people")):
             try:
                 self.gw.post(path, headers=self.service).raise_for_status()
             except httpx.HTTPError:

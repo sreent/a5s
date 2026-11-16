@@ -154,6 +154,14 @@ def gather(conn: db.Connection, person: str) -> dict[str, Any]:
         "preferences": rows(
             "select name, value, set_at from preferences where person = any(%(names)s) "
             "order by name"),
+        "handovers": rows(  # their conversations handed to people, with what was said there
+            "select h.agent, h.team, h.brief, h.said, h.started_at, h.taken_by, h.ended_at, "
+            "coalesce((select jsonb_agg(jsonb_build_object('by', r.by_person, 'text', r.text, "
+            "'at', r.at) order by r.id) from handover_replies r where r.handover_id = h.id), "
+            "'[]'::jsonb) as answers from handovers h where h.person = any(%(names)s) "
+            "order by h.started_at"),
+        "handover_answers": count(  # what they answered others, as one of a team, counted
+            "select count(*) as n from handover_replies where by_person = any(%(names)s)"),
         "changes_to_undo": rows(  # changes made for them, or they undid, while kept to undo
             "select definition as agent, record, said, made_at, until, state, undone_at, "
             "asked_by = any(%(names)s) as asked_by_them from changes_made where "

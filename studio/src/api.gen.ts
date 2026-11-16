@@ -309,6 +309,7 @@ export type Context = {
   documents: boolean;
   agents: boolean;
   notebook: boolean;
+  handover: boolean;
 };
 
 // One day's runs, by how each ended, in the viewer's own time zone.
@@ -560,6 +561,67 @@ export type HandOver = {
 export type HandedOver = {
   handed: string;
   to: string;
+};
+
+export type Handover = {
+  id: number;
+  person: string;
+  agent: string;
+  team: string;
+  brief: string;
+  started_at: string;
+  taken_by?: string;
+  mine: boolean;
+  unanswered: number;
+  said: HandoverSaid[];
+  since: HandoverSince[];
+  answers: HandoverAnswer[];
+  ended: boolean;
+};
+
+export type HandoverAnswer = {
+  by: string;
+  text: string;
+  at: string;
+  sent: boolean;
+};
+
+export type HandoverDone = {
+  done: boolean;
+};
+
+// A conversation handed to one of someone's teams: whose, with which agent, its brief, who
+// of the team has taken it, and how many of the person's messages wait for an answer.
+export type HandoverLine = {
+  id: number;
+  person: string;
+  agent: string;
+  team: string;
+  brief: string;
+  started_at: string;
+  taken_by?: string;
+  mine: boolean;
+  unanswered: number;
+};
+
+// What someone of a team answers a person whose conversation was handed to it.
+export type HandoverReply = {
+  text: string;
+};
+
+export type HandoverSaid = {
+  at: string;
+  text: string;
+};
+
+export type HandoverSince = {
+  at: string;
+  text: string;
+  answered: boolean;
+};
+
+export type Handovers = {
+  handovers: HandoverLine[];
 };
 
 export type Held = {

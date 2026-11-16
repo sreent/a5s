@@ -266,6 +266,9 @@ class InstanceSettings:
     actions: dict[str, dict[str, int]] = field(default_factory=dict)
     # The instances it may ask a question, for the people it acts for (core/asking.py)
     asks: tuple[str, ...] = ()
+    # The directory's teams it may hand a conversation over to, whose people answer the person
+    # in the same chat until they hand it back (core/handover.py)
+    hands_to: tuple[str, ...] = ()
 
     def level_in(self, part: str, start: int, most: int) -> int:
         """How far it may act in a part, between a release's starting level and its maximum."""
@@ -394,6 +397,7 @@ class _Instance(BaseModel):
     deputy: _PERSON | None = None
     parts: list[_ID] | dict[_ID, _LEVEL | _Part | None] = Field(default_factory=list)
     asks: list[_ID] = Field(default_factory=list)
+    hands_to: list[_ID] = Field(default_factory=list)  # teams of the directory
 
 
 class _Limit(BaseModel):
@@ -511,7 +515,7 @@ def parse_settings(raw: bytes, signatures: tuple[Signature, ...] = ()) -> Settin
             InstanceSettings(id=iid, definition=i.definition, serves=tuple(i.serves),
                              level=i.level, owner=i.owner, deputy=i.deputy,
                              parts=_part_levels(i.parts), actions=_action_levels(i.parts),
-                             asks=tuple(i.asks))
+                             asks=tuple(i.asks), hands_to=tuple(dict.fromkeys(i.hands_to)))
             for iid, i in version.instances.items()
         ),
     )

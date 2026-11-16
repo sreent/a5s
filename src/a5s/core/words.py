@@ -39,6 +39,8 @@ TH: dict[str, str] = {
     "{n} of your tasks waits for you, blocked or asked for": "งานของคุณ {n} งานรอคุณอยู่ เพราะติดขัดหรือมีคำถาม",
     "{n} of your tasks wait for you, blocked or asked for": "งานของคุณ {n} งานรอคุณอยู่ เพราะติดขัดหรือมีคำถาม",
     "you own it": "คุณเป็นเจ้าของ",
+    "{person}'s conversation with the {agent} was handed to the {team} team, and waits for an answer":
+        "บทสนทนาของ {person} กับ {agent} ถูกส่งต่อให้ทีม {team} และรอคำตอบ",
     "The {agent} made a change for you, which you can undo until {until}: {said}":
         "{agent} เปลี่ยนแปลงให้คุณ ซึ่งคุณยกเลิกได้จนถึง {until}: {said}",
     # On an instance's page (core/home.py, of_instance)

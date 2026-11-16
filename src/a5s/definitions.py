@@ -26,6 +26,8 @@ DOCUMENT_TOOLS = ("ask_about",)
 ASKING_TOOLS = ("ask_agent",)
 # and for noting what it learns from records, in a run that acts for nobody (core/notebook.py)
 NOTEBOOK_TOOLS = ("note_learned",)
+# and for handing a conversation over to the people of a team the settings name (core/handover.py)
+HANDOVER_TOOLS = ("hand_over",)
 # and for the long tasks people ask it for, over more than one run (core/tasking.py): offered,
 # confirmed, listed, cancelled and resumed in a person's own chat, and kept, in each run of
 # a task
@@ -131,6 +133,9 @@ class Context(BaseModel):
     agents: bool = False
     # whether it notes what it learns from records, on its schedules, for its later runs
     notebook: bool = False
+    # whether it may hand a conversation over to the people of a team its settings name, such
+    # as the service desk, who answer the person in the same chat until they hand it back
+    handover: bool = False
 
 
 class Tasks(BaseModel):
@@ -254,6 +259,7 @@ class Definition(BaseModel):
                 *(DOCUMENT_TOOLS if self.context.documents else ()),
                 *(ASKING_TOOLS if self.context.agents else ()),
                 *(NOTEBOOK_TOOLS if self.context.notebook else ()),
+                *(HANDOVER_TOOLS if self.context.handover else ()),
                 *(TASK_TOOLS + SLICE_TOOLS if self.tasks else ())]
 
     @property

@@ -26,6 +26,7 @@ import { RunPage } from "./pages/Run";
 import { SettingsPage } from "./pages/Settings";
 import { SpendingPage } from "./pages/Spending";
 import { TasksPage } from "./pages/Tasks";
+import { HandoverPage, HandoversPage } from "./pages/Handovers";
 import { UndoPage } from "./pages/Undo";
 import { ConnectedPage, YouPage } from "./pages/You";
 import { reread, useRoute } from "./router";
@@ -106,6 +107,8 @@ export function App() {
   else if (route.page === "you") content = <YouPage />;
   else if (route.page === "connections") content = <ConnectedPage />;
   else if (route.page === "undo") content = <UndoPage key={route.change} change={route.change} />;
+  else if (route.page === "handovers") content = <HandoversPage />;
+  else if (route.page === "handover") content = <HandoverPage key={route.id} id={route.id} />;
   else if (route.page === "design") content = <DesignPage />;
   else if (route.page === "settings") content = <SettingsPage />;
   else if (route.page === "notebook") content = <NotebookPage />;

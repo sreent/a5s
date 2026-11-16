@@ -94,6 +94,17 @@ A tool that changes a record can say how the change is reversed (`undo`, [`core/
 
 A tool from an MCP server says the same in `mcp.yaml`, as `undo: {tool, args, hours}` ([connectors](connectors.md#declaring-them)).
 
+### Handing a conversation over
+
+An agent can hand a person's conversation over to people, such as the service desk, who answer them in the same chat until they hand it back ([`core/handover.py`](../src/a5s/core/handover.py)). An instance's settings name the directory's teams it may hand one to, `hands_to: [service-desk]`, which the owners of its parts approve, as they approve whom it may ask, reading it in words; and its agent's release lets it, `context: {handover: true}`. The core won't take a version that names a team nobody in the directory is in, or an agent whose release hands nothing over.
+
+- **At the person's word.** The agent hands it over with `hand_over`, naming the team and a short brief of what the person needs, only in answer to a message of theirs, in their own chat, never a group chat's, and never from a run that has read content from outside. a5s tells the person, in their chat, who takes it from there and what they see.
+- **What the team reads.** The brief, and what the person said lately, their own words alone, never the agent's answers, whose records may not be the team's to see. A record's key any of them may not see reads as such. The channels app reads no conversation: the core keeps those words with the handover.
+- **While it's handed over,** the agent answers nothing in that chat. The team finds it on their home and on the studio's page of conversations handed to them, `/studio/handovers`. One of them takes it, and answers from the studio; the core puts each answer in the person's chat, as the agent's bot, with the answerer's name, and keeps it, with what the person wrote, in their conversation.
+- **Handed back,** by whoever took it, or anyone of the team, the agent answers again, knowing what was said, and the person is told. One nobody has answered or handed back in three days is handed back.
+
+The ledger records each handover, each answer's delivery and its end, never the words.
+
 ## The definition format
 
 A definition is a folder in git. A hash of everything in it is part of the release, so any change to the folder is a new release:

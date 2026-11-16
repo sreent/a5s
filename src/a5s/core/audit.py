@@ -397,7 +397,7 @@ ADMIN = {"approve": "approved settings", "propose": "proposed settings",
          "connect": "connected an account in another system",
          "disconnect": "an account in another system let go",
          "ask-undo": "asked to undo a change", "refuse-undo": "an undo refused",
-         "undone": "undid a change"}
+         "undone": "undid a change", "hand-back": "a conversation handed back to its agent"}
 
 
 def roles_of(scenario: Any, parts: Iterable[str], agents: Iterable[str]) -> list[dict]:

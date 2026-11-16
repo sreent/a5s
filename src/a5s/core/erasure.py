@@ -60,6 +60,7 @@ WORDS = {
     "preferences": "preferences",
     "delegations": "the accounts they connected, so agents acted as them there",
     "changes_to_undo": "how to undo changes made for them, which they can then no longer undo",
+    "handovers": "their conversations handed to people, with what was said there",
     "delegation_starts": "accounts they had begun to connect",
     "report_seen": "what reports told them",
     "digest_waits": "digests that wait for them",

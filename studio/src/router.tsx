@@ -3,7 +3,8 @@
 // new agent, a draft of one, the settings, the notebook, someone's tasks, the administrators'
 // page, the audit trail, the changes to decide, the work to grade, the officer's requests, a
 // version of the settings to approve, the map of what depends on what, a month's spending, the
-// way back from connecting an account, a change to undo, or the design system's showcase.
+// way back from connecting an account, a change to undo, the conversations handed to someone's
+// teams, or the design system's showcase.
 
 import { type MouseEvent, type ReactNode, useEffect, useState } from "react";
 
@@ -29,6 +30,8 @@ export type Route =
   | { page: "spending"; month?: string }  // such as 2026-10, or this month
   | { page: "connections" }  // back from connecting an account, so agents act as them there
   | { page: "undo"; change: string }  // a change an agent made, to undo, by its id
+  | { page: "handovers" }  // the conversations handed to someone's teams
+  | { page: "handover"; id: string }  // one of them
   | { page: "design" };
 
 export function parse(path: string, search = ""): Route {
@@ -37,6 +40,8 @@ export function parse(path: string, search = ""): Route {
   if (kind === "instances" && id) return { page: "instance", instance: id };
   if (kind === "runs" && id) return { page: "run", run: id };
   if (kind === "drafts" && id) return { page: "draft", draft: id };
+  if (kind === "handovers" && id) return { page: "handover", id };
+  if (kind === "handovers") return { page: "handovers" };
   if (kind === "new") return { page: "new" };
   if (kind === "agents") return { page: "agents" };
   if (kind === "you") return { page: "you" };
@@ -86,6 +91,8 @@ export function href(route: Route): string {
     case "approve": return `/studio/approve?settings=${encodeURIComponent(route.settings)}`;
     case "connections": return "/studio/connections";
     case "undo": return `/studio/undo?change=${encodeURIComponent(route.change)}`;
+    case "handovers": return "/studio/handovers";
+    case "handover": return `/studio/handovers/${encodeURIComponent(route.id)}`;
     default: return "/studio/";
   }
 }

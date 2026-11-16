@@ -26,7 +26,7 @@ import base64
 import hashlib
 import hmac
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from typing import Any
 
 from a5s import db
@@ -61,6 +61,18 @@ class Refused(Exception):
 # What approving an instance's `asks` lets through, in words (core/asking.py)
 ASKS_ABOUT = ("questions, for the people it acts for, which each answers from the records in "
               "its own parts that those people may see")
+# and its `hands_to` (core/handover.py)
+HANDS_ABOUT = ("a conversation over, at its agent's word, to the people of {teams}, who read its "
+               "brief and what the person said, and answer them in the same chat until they hand "
+               "it back")
+
+
+def _teams(teams: Iterable[str]) -> str:
+    """Teams of the directory, in words: the finance team, or the finance and quality teams."""
+    named = list(teams)
+    if len(named) == 1:
+        return f"the {named[0]} team"
+    return f"the {', '.join(named[:-1])} and {named[-1]} teams"
 
 def digest(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
@@ -239,9 +251,17 @@ def changes(before: Settings | None, after: Settings, definitions: dict[str, Def
             found.append({"text": f"Adds {new.id}: the {new.definition}, {words.where(new)}, "
                                   f"serving {words.names(new.serves)}{run_by}."
                                   + (f" It may ask {_asked(new.asks, asked)} {ASKS_ABOUT}."
-                                     if new.asks else ""),
+                                     if new.asks else "")
+                                  + (f" It may hand {HANDS_ABOUT.format(teams=_teams(new.hands_to))}."
+                                     if new.hands_to else ""),
                           "widens": True})
             continue
+        if more := [t for t in new.hands_to if t not in old.hands_to]:
+            found.append({"text": f"{new.id} may hand {HANDS_ABOUT.format(teams=_teams(more))}.",
+                          "widens": True})
+        if fewer := [t for t in old.hands_to if t not in new.hands_to]:
+            found.append({"text": f"{new.id} no longer hands conversations to {_teams(fewer)}.",
+                          "widens": False})
         if more := [a for a in new.asks if a not in old.asks]:
             found.append({"text": f"{new.id} may ask {_asked(more, asked)} {ASKS_ABOUT}.",
                           "widens": True})
@@ -416,7 +436,9 @@ def described(settings: Settings, definitions: dict[str, Definition],
         told.append(f"{i.id}: the {i.definition}, {words.where(i)}, serving "
                     f"{words.names(i.serves)}" + (f", {' '.join(run_by)}" if run_by else "") + "."
                     + (f" It may ask {_asked(i.asks, {j.id: j.definition for j in settings.instances})}"
-                       f" {ASKS_ABOUT}." if i.asks else ""))
+                       f" {ASKS_ABOUT}." if i.asks else "")
+                    + (f" It may hand {HANDS_ABOUT.format(teams=_teams(i.hands_to))}."
+                       if i.hands_to else ""))
         told += [f"{i.id} works at level {lv} for {action} in {part}"
                  + (", where it acts and reports, once graded samples show it's accurate "
                     "enough: until then a5s holds it at level 1" if lv >= 2 else "") + "."

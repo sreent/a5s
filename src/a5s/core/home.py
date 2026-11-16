@@ -26,6 +26,7 @@ from a5s.core import (
     asks,
     audit,
     feedback,
+    handover,
     languages,
     memberships,
     notebook,
@@ -162,6 +163,13 @@ def waiting(conn: db.Connection, gw: Any, person: Person,
                       "go": f"/studio/agents/{agent}#feedback"})
     found += spending.over(conn, scenario, gw.models, gw.spending_in_force(conn), person,
                            currency=gw.currency, language=language)
+    for line in handover.waiting(conn, scenario, person):  # conversations handed to their team
+        if line["taken_by"] is None or (line["mine"] and line["unanswered"]):
+            found.append({"kind": "handover", "what": words.say(
+                              language, "{person}'s conversation with the {agent} was handed to "
+                              "the {team} team, and waits for an answer", person=line["person"],
+                              agent=line["agent"], team=line["team"]),
+                          "why": [], "go": f"/studio/handovers/{line['id']}"})
     for made in conn.execute(  # changes made for them they can still undo (core/undoing.py)
             "select id, definition, record, said, until from changes_made where %s = any(acts_for) "
             "and until > now() and state is distinct from 'undone' and undone_at is null "

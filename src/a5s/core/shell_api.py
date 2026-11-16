@@ -12,6 +12,7 @@ from a5s.contract import DATA_PROTECTION, INSTANCE_APPROVER, PART_DELEGATE, PART
 from a5s.core import (
     administration,
     audit,
+    handover,
     languages,
     notebook_api,
     registry,
@@ -27,6 +28,7 @@ from a5s.core import studio_models as shapes
 # everywhere, as each had a list of its own (round 13's deferral).
 PAGES = (
     ("chat", "Chat", "chat", "Work", "/chat/"),
+    ("handovers", "Handed over", "people", "Work", "/studio/handovers"),
     ("tasks", "Tasks", "tasks", "Work", "/studio/tasks"),
     ("notebook", "Notebook", "book", "Work", "/studio/notebook"),
     ("studio", "Studio", "studio", "Build", "/studio/"),
@@ -41,7 +43,7 @@ PAGES = (
 )
 
 # Each page's name, and each heading, for those who read Thai (core/languages.py)
-THAI = {"chat": "แชท", "tasks": "งาน", "notebook": "สมุดบันทึก", "studio": "สตูดิโอ",
+THAI = {"chat": "แชท", "handovers": "บทสนทนาที่ส่งต่อ", "tasks": "งาน", "notebook": "สมุดบันทึก", "studio": "สตูดิโอ",
         "map": "แผนผัง", "decide": "การตัดสินใจ", "grade": "การให้คะแนน",
         "settings": "การตั้งค่า", "audit": "บันทึกการตรวจสอบ", "admin": "การดูแลระบบ",
         "spending": "ค่าใช้จ่าย", "officer": "การคุ้มครองข้อมูล"}
@@ -71,6 +73,7 @@ def router(gw: Any) -> APIRouter:
                  "officer": DATA_PROTECTION in roles}
         with db.transaction(gw.url) as conn:
             language = languages.of(conn, person)
+            found["handovers"] = handover.answers_any(conn, gw.scenario, person)
         thai = language == "th"
         return {"you": person.name, "language": language, "pages": [
             {"page": key, "name": THAI[key] if thai else name, "icon": icon,

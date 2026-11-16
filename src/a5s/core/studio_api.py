@@ -35,6 +35,7 @@ from a5s.core import (
     drafts,
     feedback,
     grade_api,
+    handover,
     languages,
     ledger,
     memberships,
@@ -146,6 +147,12 @@ class LanguageChoice(BaseModel):
     language: str
 
 
+class HandoverReply(BaseModel):
+    """What someone of a team answers a person whose conversation was handed to it."""
+
+    text: str
+
+
 class UndoAct(BaseModel):
     """Undoing a change, signed in afresh for that act alone: the salt its nonce was made with."""
 
@@ -225,6 +232,7 @@ def router(gw: Any) -> APIRouter:
     @pages.get("/studio/instances/{name}", include_in_schema=False)
     @pages.get("/studio/runs/{name}", include_in_schema=False)
     @pages.get("/studio/drafts/{name}", include_in_schema=False)
+    @pages.get("/studio/handovers/{name}", include_in_schema=False)
     def studio_view(name: str) -> Response:
         """The studio, at the address of one of its agents, instances, runs or drafts."""
         return built("index.html")
@@ -246,6 +254,7 @@ def router(gw: Any) -> APIRouter:
     @pages.get("/studio/spending", include_in_schema=False)
     @pages.get("/studio/connections", include_in_schema=False)
     @pages.get("/studio/undo", include_in_schema=False)
+    @pages.get("/studio/handovers", include_in_schema=False)
     def studio_new() -> Response:
         """The studio, where someone starts a new agent, sees all the agents they may, what they
         may do, or the design system's showcase."""
@@ -293,6 +302,51 @@ def router(gw: Any) -> APIRouter:
                 return {"language": languages.choose(conn, person, body.language, gw.clock())}
             except languages.Refused as e:
                 raise HTTPException(400, str(e)) from None
+
+    @api.get("/studio/api/handovers", **shapes.answers(shapes.Handovers))
+    def studio_handovers(person: Annotated[Person, Depends(someone)]) -> dict:
+        """The conversations handed over to the teams whoever signed in is in, still open
+        (core/handover.py): each record they may not see, as such."""
+        with db.transaction(gw.url) as conn:
+            return {"handovers": handover.waiting(conn, gw.scenario, person)}
+
+    @api.get("/studio/api/handovers/{handover_id}", **shapes.answers(shapes.Handover))
+    def studio_handover(handover_id: int, person: Annotated[Person, Depends(someone)]) -> dict:
+        """A conversation handed to one of their teams: its brief, what the person said before
+        and since, their own words alone, and the team's answers."""
+        with db.transaction(gw.url) as conn:
+            found = handover.one(conn, gw.scenario, person, handover_id)
+        if found is None:
+            raise HTTPException(404, "there's no such conversation handed to your teams")
+        return found
+
+    def handing(handover_id: int, person: Person, act: Any) -> dict:
+        try:
+            with db.transaction(gw.url) as conn:
+                act(conn, gw.scenario, person, handover_id)
+        except LookupError:
+            raise HTTPException(404, "there's no such conversation handed to your teams") from None
+        except handover.Refused as e:
+            raise HTTPException(409, str(e)) from None
+        return {"done": True}
+
+    @api.post("/studio/api/handovers/{handover_id}/take", **shapes.answers(shapes.HandoverDone))
+    def studio_take(handover_id: int, person: Annotated[Person, Depends(someone)]) -> dict:
+        """Take a conversation handed to one of their teams, to answer the person."""
+        return handing(handover_id, person, handover.take)
+
+    @api.post("/studio/api/handovers/{handover_id}/answer", **shapes.answers(shapes.HandoverDone))
+    def studio_answer(handover_id: int, body: HandoverReply,
+                      person: Annotated[Person, Depends(someone)]) -> dict:
+        """Answer the person, as whoever took it: the core puts it in their chat within a
+        minute, as the agent's bot, with their name."""
+        return handing(handover_id, person,
+                       lambda conn, scenario, who, h: handover.answer(conn, scenario, who, h, body.text))
+
+    @api.post("/studio/api/handovers/{handover_id}/back", **shapes.answers(shapes.HandoverDone))
+    def studio_back(handover_id: int, person: Annotated[Person, Depends(someone)]) -> dict:
+        """Hand it back to the agent, which answers the person again."""
+        return handing(handover_id, person, handover.back)
 
     @api.get("/studio/api/changes/{change}", **shapes.answers(shapes.ChangeMade))
     def studio_change(change: int, person: Annotated[Person, Depends(someone)]) -> dict:

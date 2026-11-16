@@ -1,0 +1,230 @@
+"""Handing a conversation over to people (docs/agent-model.md#handing-a-conversation-over). An
+instance's settings name the directory's teams it may hand a conversation to (`hands_to`), such
+as the service desk, which the owners of its parts approve, as they approve whom it may ask. Its
+agent, where its release lets it (`context.handover`), hands one over with hand_over, in answer
+to the person's own message, in their own chat, with a short brief of what they need.
+
+- The core keeps the brief and what the person said lately, their own words alone, never the
+  agent's, which the records behind them may not be the team's to see: the channels app reads
+  no conversation. The person is told, in their chat, who takes it from there and what they see.
+- While it's handed over, the agent answers nothing in that chat: what the person writes waits
+  for the team, who find it on their home and on the studio's page of conversations handed to
+  them. One of them takes it, and answers in the studio; the core puts each answer in the
+  person's chat, as the agent's bot, with their name, and keeps it, and what the person said,
+  in the conversation, so the agent knows it all once the conversation is handed back.
+- Whoever took it hands it back, or anyone of the team does, and the agent answers again. One
+  nobody has answered or handed back in three days lapses, and is handed back.
+- What anyone of the team reads names only the records they may see: a record's key they may
+  not see reads as such.
+
+The ledger records each handover and its end, and each answer's delivery, never the words.
+"""
+
+from __future__ import annotations
+
+import re
+from datetime import timedelta
+from typing import Any
+
+from psycopg.types.json import Jsonb
+
+from a5s import db
+from a5s.contract import Person, Scenario
+from a5s.core.coretools import Call, CoreTool, Refused, one_to_one
+
+HAND = "hand_over"
+LATELY = 10  # of the person's own messages the team reads, the latest [starting value]
+BRIEF = 600  # characters of an agent's brief, at most
+REPLY = 4000  # characters of an answer from the team, at most
+LAPSE = timedelta(days=3)  # a handover nobody answers or hands back is handed back [starting value]
+HIDDEN = "[a record you may not see]"
+
+
+def team_of(scenario: Scenario, person: Person, team: str) -> bool:
+    """Whether someone is in a team, as the directory says now."""
+    return any(p.id == person.id for p in scenario.team(team))
+
+
+def _hand(call: Call) -> dict:
+    person = call.person  # a message of theirs, in their own chat, from a run that read nothing
+    # from outside: whom the conversation goes to is theirs to have asked for
+    team = str(call.args.get("team") or "").strip()
+    teams = list(call.run.get("hands_to") or [])
+    if team not in teams:
+        raise Refused(f"this agent hands conversations to {', '.join(teams)} alone" if teams
+                      else "this agent hands conversations to nobody here")
+    if not call.scenario.team(team):
+        raise Refused(f"nobody in the directory is in the {team} team now")
+    agent = call.run["definition"]
+    if call.conn.execute("select 1 from handovers where person = %s and agent = %s and "
+                         "ended_at is null", (person.id, agent)).fetchone():
+        raise Refused("this conversation is handed over already: its people answer it until they "
+                      "hand it back")
+    brief = " ".join(str(call.args.get("brief") or "").split())[:BRIEF]
+    if not brief:
+        raise Refused("say in a brief what they need, for whoever takes it")
+    said = [{"at": r["at"].isoformat(), "text": r["content"]} for r in call.conn.execute(
+        "select content, at from turns where person = %s and agent = %s and role = 'person' "
+        "and speaker is null order by id desc limit %s", (person.id, agent, LATELY))][::-1]
+    asked = call.said  # the message it answers, if it isn't a turn yet
+    if asked and (not said or said[-1]["text"] != asked):
+        said = [*said, {"at": call.asked_at.isoformat(), "text": asked}][-LATELY:]
+    row = call.conn.execute(
+        "insert into handovers (person, agent, instance_id, run_id, team, brief, said) values "
+        "(%s, %s, %s, %s, %s, %s, %s) returning id",
+        (person.id, agent, call.run["id"], call.run["run"], team, brief, Jsonb(said))).fetchone()
+    return {"handed_over": True, "team": team, "handover": row["id"] if row else None,
+            "say": (f"Tell them the {team} team takes it from here, in this chat: they read your "
+                    "brief and what they've said to you lately, and you answer again once they "
+                    "hand it back.")}
+
+
+TOOL = CoreTool(
+    name=HAND,
+    description=("Hand this conversation to the people of a team your settings name, such as "
+                 "the service desk, with a short brief of what the person needs: they answer "
+                 "the person here, in this chat, until they hand it back to you. Use it when "
+                 "the person asks for a person, or needs what only people there can do, and say "
+                 "so to them first."),
+    schema={"type": "object", "required": ["team", "brief"], "properties": {
+        "team": {"type": "string", "description": "the team, as your settings name it"},
+        "brief": {"type": "string", "maxLength": BRIEF,
+                  "description": "what they need, in a few sentences, for whoever takes it"}}},
+    run=_hand, text_fields=("brief",), plain=("team",),
+    offered=lambda run: one_to_one(run) and bool(run.get("hands_to")))
+TOOLS = {HAND: TOOL}
+
+
+def masked(scenario: Scenario, viewer: str, text: str) -> str:
+    """Text as someone of the team reads it: each record's key they may not see, as such."""
+    pattern = getattr(scenario, "record_pattern", None)
+    if not pattern:
+        return text
+    return re.sub(pattern, lambda m: m.group(0) if scenario.sees(viewer, m.group(0)) else HIDDEN,
+                  text)
+
+
+# The studio's page of conversations handed to someone's teams, in the channels app
+
+def waiting(conn: db.Connection, scenario: Scenario, person: Person) -> list[dict]:
+    """The conversations handed over to the teams someone is in, still open, oldest first."""
+    rows = conn.execute("select * from handovers where ended_at is null order by started_at"
+                        ).fetchall()
+    return [_line(conn, scenario, person, r) for r in rows
+            if r["person"] != person.id and team_of(scenario, person, r["team"])]
+
+
+def _name(scenario: Scenario, who: str | None) -> str | None:
+    found = scenario.person(who) if who else None
+    return found.name if found else who
+
+
+def _since(conn: db.Connection, row: dict) -> list[dict]:
+    """What the person has written in their own chat with the agent since it was handed over."""
+    return conn.execute("select id::text as id, text, received_at, answered_at from inbound "
+                        "where person = %s and agent = %s and conversation is null and "
+                        "received_at > %s order by received_at",
+                        (row["person"], row["agent"], row["started_at"])).fetchall()
+
+
+def _line(conn: db.Connection, scenario: Scenario, viewer: Person, row: dict) -> dict:
+    waiting_ = [m for m in _since(conn, row) if m["answered_at"] is None]
+    return {"id": row["id"], "person": _name(scenario, row["person"]) or row["person"],
+            "agent": row["agent"], "team": row["team"],
+            "brief": masked(scenario, viewer.id, row["brief"]),
+            "started_at": row["started_at"].isoformat(),
+            "taken_by": _name(scenario, row["taken_by"]), "mine": row["taken_by"] == viewer.id,
+            "unanswered": len(waiting_)}
+
+
+def one(conn: db.Connection, scenario: Scenario, viewer: Person, handover: int) -> dict | None:
+    """A conversation handed over, as someone of its team reads it: the brief, what the person
+    said before and since, and the team's answers, each record they may not see as such. None
+    for anyone else."""
+    row = conn.execute("select * from handovers where id = %s", (handover,)).fetchone()
+    if row is None or row["person"] == viewer.id or not team_of(scenario, viewer, row["team"]):
+        return None
+    replies = conn.execute("select by_person, text, at, sent_at from handover_replies where "
+                           "handover_id = %s order by id", (handover,)).fetchall()
+    return {**_line(conn, scenario, viewer, row),
+            "said": [{"at": s["at"], "text": masked(scenario, viewer.id, s["text"])}
+                     for s in row["said"]],
+            "since": [{"at": m["received_at"].isoformat(),
+                       "text": masked(scenario, viewer.id, m["text"]),
+                       "answered": m["answered_at"] is not None} for m in _since(conn, row)],
+            "answers": [{"by": _name(scenario, r["by_person"]) or r["by_person"],
+                         "text": masked(scenario, viewer.id, r["text"]), "at": r["at"].isoformat(),
+                         "sent": r["sent_at"] is not None} for r in replies],
+            "ended": row["ended_at"] is not None}
+
+
+def _open(conn: db.Connection, scenario: Scenario, viewer: Person, handover: int) -> dict:
+    row = conn.execute("select * from handovers where id = %s for update", (handover,)).fetchone()
+    if row is None or row["person"] == viewer.id or not team_of(scenario, viewer, row["team"]):
+        raise LookupError(handover)
+    if row["ended_at"] is not None:
+        raise Refused("it's been handed back to the agent")
+    return row
+
+
+def take(conn: db.Connection, scenario: Scenario, viewer: Person, handover: int) -> None:
+    """Take a conversation handed to one's team, to answer it: one of the team at a time."""
+    row = _open(conn, scenario, viewer, handover)
+    if row["taken_by"] not in (None, viewer.id):
+        raise Refused(f"{_name(scenario, row['taken_by'])} has taken it")
+    conn.execute("update handovers set taken_by = %s, taken_at = now() where id = %s",
+                 (viewer.id, handover))
+
+
+def answer(conn: db.Connection, scenario: Scenario, viewer: Person, handover: int,
+           text: str) -> None:
+    """Answer the person, as whoever took it, for the core to put in their chat."""
+    row = _open(conn, scenario, viewer, handover)
+    if row["taken_by"] != viewer.id:
+        raise Refused("take it first, so the person hears from one of you at a time")
+    said = text.strip()[:REPLY]
+    if not said:
+        raise Refused("say something to them")
+    conn.execute("insert into handover_replies (handover_id, by_person, text) values (%s, %s, %s)",
+                 (handover, viewer.id, said))
+
+
+def back(conn: db.Connection, scenario: Scenario, viewer: Person, handover: int) -> None:
+    """Hand it back to the agent, as anyone of the team may, which answers the person again."""
+    _open(conn, scenario, viewer, handover)
+    conn.execute("update handovers set ended_at = now(), ended_by = %s where id = %s",
+                 (viewer.id, handover))
+
+
+def teams_handed_to(conn: db.Connection) -> set[str]:
+    """The teams any instance at work may hand a conversation to."""
+    return {r["team"] for r in conn.execute(
+        "select distinct unnest(hands_to) as team from instances where status <> 'retired'")}
+
+
+def answers_any(conn: db.Connection, scenario: Scenario, person: Person) -> bool:
+    """Whether someone is in a team an instance may hand conversations to: the page is theirs."""
+    return any(team_of(scenario, person, t) for t in teams_handed_to(conn))
+
+
+def open_for(conn: db.Connection, person: str, agent: str) -> dict | None:
+    return conn.execute("select * from handovers where person = %s and agent = %s and "
+                        "ended_at is null", (person, agent)).fetchone()
+
+
+def lapsing(conn: db.Connection) -> list[dict]:
+    """In the core: open handovers nobody has answered or handed back for LAPSE, ended."""
+    return conn.execute(
+        "update handovers h set ended_at = now() where ended_at is null and greatest(started_at, "
+        "coalesce((select max(at) from handover_replies r where r.handover_id = h.id), started_at)) "
+        "< now() - %s returning *", (LAPSE,)).fetchall()
+
+
+def words(row: dict, scenario: Any) -> dict[str, str]:
+    """What the person is told when it's handed over, and back."""
+    return {"to": (f"The {row['agent']} has handed this conversation to the {row['team']} team, at "
+                   f"your word: someone there answers you here. They read its brief, and what "
+                   f"you've said to it lately, but not its answers. The {row['agent']} answers "
+                   "again once they hand it back."),
+            "back": (f"The {row['team']} team has handed this conversation back to the "
+                     f"{row['agent']}, which answers you again from here.")}

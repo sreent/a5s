@@ -40,7 +40,8 @@ KEPT: Final = ("turns", "summaries", "inbound", "outbox", "chats", "digest_items
         "profile_notes", "reminders", "report_fires", "events", "answer_feedback")
 # What only serves the person while they're here, which it lets go
 LET_GO: Final = ("preferences", "report_seen", "digest_waits", "urgent_sent", "digests", "spend",
-          "sign_in_groups", "agent_drafts", "agent_asks", "delegations", "delegation_starts")
+          "sign_in_groups", "agent_drafts", "agent_asks", "delegations", "delegation_starts",
+          "handovers")
 
 
 def sweep(conn: db.Connection, scenario: Scenario, now: datetime) -> list[str]:

@@ -115,6 +115,57 @@ class LanguageChosen(Shape):
     language: str
 
 
+# Conversations handed over to people (core/handover.py)
+
+
+class HandoverLine(Shape):
+    """A conversation handed to one of someone's teams: whose, with which agent, its brief, who
+    of the team has taken it, and how many of the person's messages wait for an answer."""
+
+    id: int
+    person: str
+    agent: str
+    team: str
+    brief: str
+    started_at: str
+    taken_by: str | SkipJsonSchema[None] = None
+    mine: bool  # whether whoever's looking took it
+    unanswered: int
+
+
+class Handovers(Shape):
+    handovers: list[HandoverLine]
+
+
+class HandoverSaid(Shape):
+    at: str
+    text: str
+
+
+class HandoverSince(Shape):
+    at: str
+    text: str
+    answered: bool
+
+
+class HandoverAnswer(Shape):
+    by: str
+    text: str
+    at: str
+    sent: bool  # whether the core has put it in their chat yet
+
+
+class Handover(HandoverLine):
+    said: list[HandoverSaid]  # what they said before it was handed over, their own words
+    since: list[HandoverSince]  # what they've written since
+    answers: list[HandoverAnswer]
+    ended: bool
+
+
+class HandoverDone(Shape):
+    done: bool
+
+
 # A change an agent made, which its tool says how to undo (core/undoing.py)
 
 
@@ -265,6 +316,7 @@ class Context(Shape):
     documents: bool
     agents: bool
     notebook: bool
+    handover: bool  # whether it may hand a conversation over to people (core/handover.py)
 
 
 class Budget(Shape):

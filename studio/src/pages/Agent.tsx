@@ -108,6 +108,7 @@ const ABILITIES: Record<Ability, string> = {  // each in the language spoken whe
   get documents() { return t("ask about documents from outside"); },
   get agents() { return t("ask other agents"); },
   get notebook() { return t("keep a notebook"); },
+  get handover() { return t("hand a conversation over to people"); },
 };
 
 function Knows({ agent }: { agent: AgentUses }) {

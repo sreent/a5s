@@ -398,4 +398,6 @@ export const WATCH: Record<string, string> = {
   "In force": "ที่ใช้อยู่",
   "This version": "เวอร์ชันนี้",
   "Why": "เหตุผล",
+  // An agent's abilities (Agent.tsx)
+  "hand a conversation over to people": "ส่งต่อบทสนทนาให้คน",
 };
