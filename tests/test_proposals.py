@@ -59,7 +59,7 @@ def signed(url: str, provider, digests: list[str], decision: str, person: str = 
              "code_challenge_method": "S256"}
     went = httpx.get(f"{provider.url}/auth", params={**query, **({"max_age": "0"} if fresh else {})})
     code = parse_qs(went.headers["location"].split("?", 1)[1])["code"][0]
-    tokens = httpx.post(f"{url}/approve/token", json={  # as the studio signs in
+    tokens = httpx.post(f"{url}/studio/sign-in/token", json={  # as the studio signs in
         "grant_type": "authorization_code", "code": code, "code_verifier": verifier,
         "redirect_uri": f"{url}/studio/"}).json()
     return tokens["id_token"], salt

@@ -34,7 +34,7 @@ def act(url: str, provider, action: str, person: str, instance: str = "assistant
              **({"max_age": "0"} if fresh else {})}
     went = httpx.get(f"{provider.url}/auth", params=query)
     code = parse_qs(went.headers["location"].split("?", 1)[1])["code"][0]
-    token = httpx.post(f"{url}/approve/token", json={
+    token = httpx.post(f"{url}/studio/sign-in/token", json={
         "grant_type": "authorization_code", "code": code, "code_verifier": verifier,
         "redirect_uri": f"{url}/studio/"}).json()["id_token"]
     return httpx.post(f"{url}/studio/api/instances/{instance}/status",

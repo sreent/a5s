@@ -68,7 +68,7 @@ def grade(url: str, provider, sample: int, how: str, person: str = "dana") -> ht
              "code_challenge_method": "S256", "max_age": "0"}
     went = httpx.get(f"{provider.url}/auth", params=query)
     code = parse_qs(went.headers["location"].split("?", 1)[1])["code"][0]
-    token = httpx.post(f"{url}/approve/token", json={  # as the studio signs in
+    token = httpx.post(f"{url}/studio/sign-in/token", json={  # as the studio signs in
         "grant_type": "authorization_code", "code": code, "code_verifier": verifier,
         "redirect_uri": f"{url}/studio/"}).json()["id_token"]
     return httpx.post(f"{url}/grade/samples", json={"grades": {str(sample): how}, "salt": salt},

@@ -1,8 +1,8 @@
 // Where in the studio someone is, in its address, so links and the browser's back button work:
 // their home, what they may do, all the agents, one agent, an instance's dashboard, a run, a
 // new agent, a draft of one, the settings, the notebook, someone's tasks, the administrators'
-// page, the audit trail, the changes to decide, the work to grade, the officer's requests, or
-// the design system's showcase.
+// page, the audit trail, the changes to decide, the work to grade, the officer's requests, a
+// version of the settings to approve, or the design system's showcase.
 
 import { type MouseEvent, type ReactNode, useEffect, useState } from "react";
 
@@ -23,9 +23,10 @@ export type Route =
   | { page: "decide" }
   | { page: "grade" }
   | { page: "officer" }
+  | { page: "approve"; settings: string }  // the version, by its digest
   | { page: "design" };
 
-export function parse(path: string): Route {
+export function parse(path: string, search = ""): Route {
   const [, , kind, id] = path.split("/").map((part) => decodeURIComponent(part));
   if (kind === "agents" && id) return { page: "agent", agent: id };
   if (kind === "instances" && id) return { page: "instance", instance: id };
@@ -35,7 +36,7 @@ export function parse(path: string): Route {
   if (kind === "agents") return { page: "agents" };
   if (kind === "you") return { page: "you" };
   if (kind === "design") return { page: "design" };
-  if (kind === "settings") return { page: "settings" };
+  if (kind === "settings") return search ? { page: "settings", search } : { page: "settings" };
   if (kind === "notebook") return { page: "notebook" };
   if (kind === "tasks") return { page: "tasks" };
   if (kind === "admin") return { page: "admin" };
@@ -43,6 +44,7 @@ export function parse(path: string): Route {
   if (kind === "decide") return { page: "decide" };
   if (kind === "grade") return { page: "grade" };
   if (kind === "officer") return { page: "officer" };
+  if (kind === "approve") return { page: "approve", settings: new URLSearchParams(search).get("settings") ?? "" };
   return { page: "home" };
 }
 
@@ -64,6 +66,7 @@ export function href(route: Route): string {
     case "decide": return "/studio/decide";
     case "grade": return "/studio/grade";
     case "officer": return "/studio/officer";
+    case "approve": return `/studio/approve?settings=${encodeURIComponent(route.settings)}`;
     default: return "/studio/";
   }
 }
@@ -82,9 +85,9 @@ export function go(route: Route): void {
 }
 
 export function useRoute(): Route {
-  const [route, setRoute] = useState(() => parse(location.pathname));
+  const [route, setRoute] = useState(() => parse(location.pathname, location.search));
   useEffect(() => {
-    const moved = () => setRoute(parse(location.pathname));
+    const moved = () => setRoute(parse(location.pathname, location.search));
     listeners.add(moved);
     window.addEventListener("popstate", moved);
     return () => {
@@ -109,7 +112,12 @@ export function Link({ to, className, children, label, id, title, current }:
   );
 }
 
-/** A page of the studio's, from an address such as a wait's: null for anywhere else. */
-export function inside(path: string): Route | null {
-  return /^\/studio\/[\w./-]*$/.test(path) ? parse(path) : null;
+/** A page of the studio's, from an address such as a wait's, with what it asks for in plain
+ * words, where the page keeps it, such as the version to approve: null for anywhere else, and
+ * for a page that would lose what its address asks for, which opens as a page of its own. */
+export function inside(address: string): Route | null {
+  const [path, query] = address.split("?", 2);
+  if (!/^\/studio\/[\w./-]*$/.test(path) || !/^[\w=&,.:@%+-]*$/.test(query ?? "")) return null;
+  const route = parse(path, query ? `?${query}` : "");
+  return !query || href(route) === address ? route : null;
 }

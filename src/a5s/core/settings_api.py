@@ -90,7 +90,7 @@ def router(gw: Any) -> APIRouter:
                 approved = approvals.recorded(conn, gw.scenario.name, row["digest"])
                 valid, _ = registry.signers(settings, gw.scenario.person, approved)
                 waiting.append({
-                    "serial": row["serial"], "link": f"/approve/?settings={row['digest']}",
+                    "serial": row["serial"], "link": f"/studio/approve?settings={row['digest']}",
                     "changes": approvals.changes(in_force, settings, *words),
                     "approved_by": [p.name if (p := gw.scenario.person(a)) else a for a in valid],
                     "needs": registry.missing(settings, gw.scenario.person, valid, in_force,
@@ -119,7 +119,7 @@ def router(gw: Any) -> APIRouter:
             "requests": [{"asked_at": r["asked_at"].isoformat(),
                           "serial": parse_settings(bytes(r["raw"])).serial,
                           "outcome": r["outcome"] or "waiting for a5s to ask its approvers",
-                          "link": f"/approve/?settings={r['digest']}" if r["digest"] else None}
+                          "link": f"/studio/approve?settings={r['digest']}" if r["digest"] else None}
                          for r in asked],
         }
 

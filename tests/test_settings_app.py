@@ -200,7 +200,7 @@ def test_an_agent_is_put_to_work_from_its_page_in_the_studio(stack, approving, p
     [waiting] = api(approving, provider, "/settings/api", person="ana").json()["waiting"]
     provider.person = "ana"
     page = browser.new_page()
-    page.goto(f"{approving}{waiting['link']}")  # signing in afresh, for this version alone
+    page.goto(f"{approving}{waiting['link']}")  # to read it, then approve it signed in afresh
     page.wait_for_selector("#asker >> text=Priya Nair asked for it", timeout=30000)
     page.click("#approve")
     page.wait_for_selector("#status >> text=You approved version", timeout=30000)

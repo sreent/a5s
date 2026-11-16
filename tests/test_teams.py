@@ -422,7 +422,7 @@ def test_an_instance_approver_gets_a_card_that_opens_the_cores_page(stack, bot, 
     assert attachment["contentType"] == "application/vnd.microsoft.card.adaptive"
     content = attachment["content"]
     assert content["actions"] == [{"type": "Action.OpenUrl", "title": "Review and approve",
-                                   "url": f"https://a5s.example.test/approve/?settings={asked['digest']}"}]
+                                   "url": f"https://a5s.example.test/studio/approve?settings={asked['digest']}"}]
     assert "- assistant-finance serves Chen Wei as well." in [b["text"] for b in content["body"]]
     [delivered] = [e for e in stack.ledger() if e["action"] == "deliver"][-1:]
     assert delivered["outcome"] == {"status": "ok", "channel": "teams"}

@@ -7,6 +7,7 @@ import { signIn } from "./auth";
 import { AdminPage } from "./pages/Admin";
 import { AgentPage } from "./pages/Agent";
 import { AgentsPage } from "./pages/Agents";
+import { ApprovePage } from "./pages/Approve";
 import { AuditPage } from "./pages/Audit";
 import { DecidePage } from "./pages/Decide";
 import { DesignPage } from "./pages/Design";
@@ -59,6 +60,7 @@ export function App() {
   else if (route.page === "decide") content = <DecidePage />;
   else if (route.page === "grade") content = <GradePage />;
   else if (route.page === "officer") content = <OfficerPage />;
+  else if (route.page === "approve") content = <ApprovePage key={route.settings} version={route.settings} />;
   else content = <HomePage />;
   const workbench = route.page === "draft" && state === "ready";  // a draft fills the window, as Ocean's workbench
   useEffect(() => {

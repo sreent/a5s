@@ -1189,6 +1189,36 @@ class Graded(Shape):
     by: str
 
 
+# Approving a version of the settings, folded into the studio (core/approve_api.py)
+
+
+class VersionReview(Shape):
+    """A version of the settings as its approvers see it before approving it: what it changes
+    from the one in force, in words code worked out, all of it, who approved it so far and what
+    it still needs, who asked for it, and where it stands."""
+
+    serial: int
+    proposed_at: str
+    in_force: int | None  # the version in force, if any
+    changes: list[Change]
+    whole: list[str]
+    needs: list[str]
+    approved_by: list[str]
+    asked_by: str | None  # who asked for it in the settings, if anyone did
+    you: str
+    you_approved: bool
+    status: str  # waiting, applied, superseded, or why a5s couldn't apply it
+
+
+class Approved(Shape):
+    """An approval recorded, for the gateway to check again, seal, and count."""
+
+    approved: bool
+    serial: int
+    by: str
+    needs: list[str]
+
+
 # The data protection officer's requests, folded into the studio (core/officer_api.py)
 
 

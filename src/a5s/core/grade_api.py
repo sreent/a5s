@@ -32,7 +32,7 @@ GRADERS = "grading is for the people who grade agents' work"
 
 def router(gw: Any) -> APIRouter:
     """The grading page's API, and its old address, for the channels app to include."""
-    pages = web.acting(gw, "grade", moved="/studio/grade")
+    pages = web.acting(gw, "grade")
 
     def grader(authorization: str | None) -> Person:
         who, _ = web.sender(gw, authorization, None)

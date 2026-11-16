@@ -109,7 +109,7 @@ def waiting(conn: db.Connection, gw: Any, person: Person) -> list[dict]:
         if why:
             found.append({"kind": "settings", "what": f"Version {row['serial']} of the settings "
                           "waits for your approval", "why": list(dict.fromkeys(why)),
-                          "go": f"/approve/?settings={row['digest']}"})  # its own page
+                          "go": f"/studio/approve?settings={row['digest']}"})  # its own page
     held = sum(1 for p in conn.execute("select records, acts_for from proposals "
                                        "where status = 'waiting'")
                if proposals.may_decide(scenario, p, person.id))  # as the directory stands now

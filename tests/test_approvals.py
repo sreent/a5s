@@ -40,26 +40,34 @@ def proposed(stack, **changes) -> dict:
 
 
 def sign_in(url: str, provider, version: str, person: str = "ana") -> tuple[str, str]:
-    """A sign-in to approve a version, made as the page makes one: the token, and its salt."""
+    """A sign-in to approve a version, made as the studio makes one: the token, and its salt."""
     salt, verifier = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=")
     provider.person = person
     went = httpx.get(f"{provider.url}/auth", params={
-        "client_id": CLIENT, "redirect_uri": f"{url}/approve/", "state": "s",
+        "client_id": CLIENT, "redirect_uri": f"{url}/studio/", "state": "s",
         "nonce": approvals.nonce(version, salt), "code_challenge": challenge.decode(),
         "code_challenge_method": "S256", "max_age": "0"})
     code = parse_qs(went.headers["location"].split("?", 1)[1])["code"][0]
-    tokens = httpx.post(f"{url}/approve/token", json={
+    tokens = httpx.post(f"{url}/studio/sign-in/token", json={
         "grant_type": "authorization_code", "code": code, "code_verifier": verifier,
-        "redirect_uri": f"{url}/approve/"}).json()
+        "redirect_uri": f"{url}/studio/"}).json()
     assert set(tokens) == {"id_token"}  # nothing to make more sign-ins like it with
     return tokens["id_token"], salt
 
 
-def decide(url: str, version: str, token: str | None, salt: str, *, review: bool = False):
+def decide(url: str, version: str, token: str | None, salt: str):
     headers = {"Authorization": f"Bearer {token}"} if token else {}
-    return httpx.post(f"{url}/approve/settings/{version}{'/review' if review else ''}",
-                      json={"salt": salt}, headers=headers)
+    return httpx.post(f"{url}/approve/settings/{version}", json={"salt": salt}, headers=headers)
+
+
+def look(url: str, provider, version: str, person: str = "ana") -> dict:
+    """A version, as an approver reads it in the studio before approving it: signed in to the
+    studio, as anyone is, not afresh."""
+    headers = {"Authorization": f"Bearer {provider.id_token(person=person)}"}
+    r = httpx.get(f"{url}/approve/settings/{version}", headers=headers)
+    r.raise_for_status()
+    return r.json()
 
 
 def serves(stack) -> list[str]:
@@ -74,18 +82,18 @@ def test_an_approver_is_asked_where_they_work_and_what_they_approve_is_applied(s
     asked = proposed(stack, serves=CHEN_TOO)
     assert (asked["serial"], asked["asked"], asked["new"]) == (now + 1, ["ana"], True)
     assert asked["changes"] == [{"text": "assistant-finance serves Chen Wei as well.", "widens": True}]
-    assert asked["link"] == f"{approving}/approve/?settings={asked['digest']}"
+    assert asked["link"] == f"{approving}/studio/approve?settings={asked['digest']}"
     [told] = stack.inbox("ana")  # she's not written to a5s anywhere, so it waits in her inbox
     assert told["from"] == "a5s" and told["text"] == (
         f"Version {now + 1} of a5s's settings waits for its instance approvers to approve it.\n"
         "What it changes:\n- assistant-finance serves Chen Wei as well.\n"
         f"Review it, and approve it only if you mean it, at {asked['link']}")
 
-    token, salt = sign_in(approving, provider, asked["digest"])
-    seen = decide(approving, asked["digest"], token, salt, review=True).json()
+    seen = look(approving, provider, asked["digest"])
     assert (seen["status"], seen["you"], seen["you_approved"], seen["in_force"]) == (
         "waiting", "Ana Ortiz", False, now)
     assert seen["changes"] == asked["changes"] and seen["approved_by"] == []
+    token, salt = sign_in(approving, provider, asked["digest"])
     approved = decide(approving, asked["digest"], token, salt)
     assert approved.json() == {"approved": True, "serial": now + 1, "by": "Ana Ortiz",
                                "needs": []}
@@ -96,7 +104,7 @@ def test_an_approver_is_asked_where_they_work_and_what_they_approve_is_applied(s
     assert serves(stack) == CHEN_TOO
     stack.model.reply("Hello, Chen.")
     assert stack.say("Hello", person="chen") == "Hello, Chen."
-    assert decide(approving, asked["digest"], token, salt, review=True).json()["status"] == "applied"
+    assert look(approving, provider, asked["digest"])["status"] == "applied"
 
     entries = stack.ledger()
     [approval] = [e for e in entries if e["action"] == "approve"]
@@ -202,8 +210,8 @@ def test_a_version_waiting_for_approval_is_let_go_once_a_newer_one_is_in_force(s
                                                                                provider):
     asked = proposed(stack, level=0)
     stack.settle(serves=["ana"])  # the same serial, signed with Ana's key, applied first
+    assert look(approving, provider, asked["digest"])["status"] == "superseded"
     token, salt = sign_in(approving, provider, asked["digest"])
-    assert decide(approving, asked["digest"], token, salt, review=True).json()["status"] == "superseded"
     late = decide(approving, asked["digest"], token, salt)
     assert late.status_code == 409 and "it's superseded" in late.json()["detail"]
     stack.scheduler().apply_approved()
@@ -245,21 +253,32 @@ def test_approving_where_people_work_needs_sign_in_and_the_cores_seal(stack, pro
 
 
 def test_the_page_runs_only_its_own_script_and_shows_only_text(approving):
-    page = httpx.get(f"{approving}/approve/")
-    script = httpx.get(f"{approving}/approve/approve.js")
-    assert page.status_code == script.status_code == 200
+    went = httpx.get(f"{approving}/approve/?settings={'a' * 64}")  # a card's link, as it was
+    assert (went.status_code, went.headers["location"]) == (303, f"/studio/approve?settings={'a' * 64}")
+    page = httpx.get(f"{approving}/studio/approve")  # the studio's, now
+    assert page.status_code == 200 and httpx.get(f"{approving}/approve/approve.js").status_code == 404
     policy = page.headers["content-security-policy"]
     assert "script-src 'self'" in policy and "frame-ancestors 'none'" in policy
-    assert "unsafe" not in policy and "innerHTML" not in script.text
-    assert httpx.get(f"{approving}/approve/config").json()["signin"]["client_id"] == CLIENT
+    assert "unsafe" not in policy
+    assert httpx.get(f"{approving}/studio/sign-in/config").json()["signin"]["client_id"] == CLIENT
+
+
+def test_only_those_who_approve_settings_read_a_version(stack, approving, provider):
+    asked = proposed(stack, serves=CHEN_TOO)
+    headers = {"Authorization": f"Bearer {provider.id_token(person='chen')}"}
+    refused = httpx.get(f"{approving}/approve/settings/{asked['digest']}", headers=headers)
+    assert refused.status_code == 403 and "Chen Wei is none of them" in refused.json()["detail"]
+    assert httpx.get(f"{approving}/approve/settings/{asked['digest']}").status_code == 401
+    assert httpx.get(f"{approving}/approve/settings/{'0' * 64}", headers={
+        "Authorization": f"Bearer {provider.id_token(person='ana')}"}).status_code == 404
 
 
 def test_an_approver_reviews_and_approves_in_the_browser(stack, approving, provider, browser):
     asked = proposed(stack, serves=CHEN_TOO, level=0)
     page = browser.new_page()
-    page.goto(asked["link"])  # to the provider, afresh, and straight back
+    page.goto(asked["link"])  # signed in to the studio, to read it first
     page.wait_for_selector("#changes >> text=Chen Wei", timeout=30000)
-    assert page.inner_text("#who") == "Ana Ortiz"
+    assert page.inner_text("#me").endswith("Ana Ortiz")
     # On a card: when it was proposed, nobody having asked for it in the settings app, where it
     # stands, what it changes, the one marked as widening what agents do, and what's missing
     assert page.inner_text("#asker").startswith("Proposed ")
@@ -279,10 +298,10 @@ def test_an_approver_reviews_and_approves_in_the_browser(stack, approving, provi
         "An agent earns level 2 in billing once graded samples show it's 98% accurate.",
         "An agent earns level 2 in orders once graded samples show it's 95% accurate.",
         *approvals.protection(DataProtection())]  # the officer's choices, as a5s starts them
-    assert page.evaluate("window.location.search") == ""  # the code doesn't linger
+    assert "code=" not in page.evaluate("window.location.search")  # the code doesn't linger
     accessible(page)
     shot(page, "approve")
-    page.click("#approve")
+    page.click("#approve")  # to the provider, afresh, for this version alone, and straight back
     page.wait_for_selector(f"#status >> text=You approved version {asked['serial']}", timeout=30000)
     assert not page.is_visible("#approve") and page.inner_text("#standing") == "you approved it"
     stack.scheduler().apply_approved()

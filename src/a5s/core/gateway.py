@@ -1825,7 +1825,7 @@ def create_app(gw: Gateway) -> FastAPI:
                                  "against that")]}
         before = parse_settings(bytes(last["raw"])) if last else None
         found = approvals.changes(before, settings, gw.definitions, gw.scenario.person)
-        link = f"{gw.public_url}/approve/?settings={row['digest']}"
+        link = f"{gw.public_url}/studio/approve?settings={row['digest']}"
         sends, asked = [], []
         if new:
             ledger.append(conn, {"kind": "admin", "action": "propose", "decision": "record",

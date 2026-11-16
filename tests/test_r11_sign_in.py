@@ -14,7 +14,7 @@ PAGES = ("approve", "decide", "grade", "settings", "officer", "admin", "audit", 
 
 
 IN_STUDIO = ("studio", "settings", "notebook", "tasks", "admin", "audit", "decide", "grade",
-             "officer")  # the pages in the studio, whose old addresses go there
+             "officer", "approve")  # the pages in the studio, whose old addresses go there
 
 
 def status_of(page, path: str, words: str) -> str:

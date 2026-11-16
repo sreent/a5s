@@ -385,7 +385,7 @@ for _ in range(60):
     asked = {room: said for room in rooms if (said := [
         e["content"]["body"] for e in call(f"{HOMESERVER}/rooms/{quote(room, safe='')}/messages"
                                            f"?dir=b&limit=20", token=ana)["chunk"]
-        if e["type"] == "m.room.message" and "/approve/?settings=" in e["content"].get("body", "")])}
+        if e["type"] == "m.room.message" and "/studio/approve?settings=" in e["content"].get("body", "")])}
     if asked:
         break
     time.sleep(1)
@@ -394,7 +394,7 @@ else:
 [(room, said)] = asked.items()  # in one room only, and her own: never a group's
 there = call(f"{HOMESERVER}/rooms/{quote(room, safe='')}/joined_members", token=ana)["joined"]
 assert all(m == "@ana:a5s.test" or m.startswith("@a5s-") for m in there), there
-link = re.search(r"http\S+/approve/\?settings=[0-9a-f]{64}", said[0]).group(0)
+link = re.search(r"http\S+/studio/approve\?settings=[0-9a-f]{64}", said[0]).group(0)
 version = parse_qs(urlsplit(link).query)["settings"][0]
 print(f"Asked in Matrix: {said[0].splitlines()[0]}")
 
@@ -407,8 +407,8 @@ def b64(data):
 
 jar = CookieJar()
 browser = build_opener(HTTPCookieProcessor(jar), Stay)
-salt, verifier, back = secrets.token_urlsafe(32), secrets.token_urlsafe(32), f"{CORE}/approve/"
-signin = call(f"{CORE}/approve/config")["signin"]
+salt, verifier, back = secrets.token_urlsafe(32), secrets.token_urlsafe(32), f"{CORE}/studio/"
+signin = call(f"{CORE}/studio/sign-in/config")["signin"]  # as the studio signs her in, to approve
 page = browser.open(signin["authorization_endpoint"] + "?" + urlencode({
     "response_type": "code", "client_id": signin["client_id"], "redirect_uri": back,
     "scope": signin["scope"], "state": "s", "max_age": "0", "code_challenge_method": "S256",
@@ -425,10 +425,10 @@ try:
 except HTTPError as went:
     location = went.headers["Location"]
 assert location.startswith(back), location
-token = call(f"{CORE}/approve/token", {"grant_type": "authorization_code", "code_verifier": verifier,
+token = call(f"{CORE}/studio/sign-in/token", {"grant_type": "authorization_code", "code_verifier": verifier,
                                        "code": parse_qs(urlsplit(location).query)["code"][0],
                                        "redirect_uri": back})["id_token"]
-seen = call(f"{CORE}/approve/settings/{version}/review", {"salt": salt}, token)
+seen = call(f"{CORE}/approve/settings/{version}", token=token)  # what she reads in the studio
 assert [c["text"] for c in seen["changes"]] == [
     "assistant-finance may ask the watcher (watcher-finance) questions, for the people it acts "
     "for, which each answers from the records in its own parts that those people may see.",

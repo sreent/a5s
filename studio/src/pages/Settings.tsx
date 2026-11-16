@@ -13,7 +13,7 @@
 
 import { type ReactNode, useEffect, useReducer, useRef, useState } from "react";
 import { type Change, get, send, type SettingsAsked, type SettingsNow, type SettingsReview } from "../api";
-import { PageHead, Waiting, when } from "../ui";
+import { PageHead, To, Waiting, when } from "../ui";
 
 type PartEntry = number | null | { level?: number; actions?: Record<string, number> };
 type Inst = { definition: string; serves?: string[]; parts?: string[] | Record<string, PartEntry>;
@@ -573,7 +573,7 @@ export function SettingsPage() {
           <h2>Waiting for approval</h2>
           <div id="waiting">{settings.waiting.map((version) => (
             <div key={version.serial}>
-              <p><a href={version.link}>Version {version.serial}</a>{version.approved_by.length
+              <p><To go={version.link}>Version {version.serial}</To>{version.approved_by.length
                 ? `, approved so far by ${version.approved_by.join(", ")}.` : ", which nobody has approved yet."}</p>
               <ul className="plain">{version.changes.map(changeLine)}</ul>
               {version.needs.length > 0 && <p className="note">It still waits because {version.needs.join("; ")}.</p>}

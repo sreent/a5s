@@ -37,7 +37,7 @@ class Deciding(BaseModel):
 
 def router(gw: Any) -> APIRouter:
     """The decision page's API, and its old address, for the channels app to include."""
-    pages = web.acting(gw, "decide", moved="/studio/decide")
+    pages = web.acting(gw, "decide")
 
     @pages.post("/decide/review", **shapes.answers(shapes.DecideNow))
     def review_proposals(authorization: str | None = Header(default=None)) -> dict:

@@ -138,7 +138,7 @@ export function runners(inst: Instance): string {
 }
 
 /** A way to where something's done: within the studio, without leaving it, or a page of its own. */
-function To({ go, children }: { go: string; children: ReactNode }) {
+export function To({ go, children }: { go: string; children: ReactNode }) {
   const route = inside(go);
   return route ? <Link to={route}>{children}</Link> : <a href={go}>{children}</a>;
 }

@@ -27,7 +27,7 @@ class Asking(BaseModel):
 
 def router(gw: Any) -> APIRouter:
     """The officer's page's API, and its old address, for the channels app to include."""
-    pages = web.acting(gw, "officer", moved="/studio/officer")
+    pages = web.acting(gw, "officer")
 
     @pages.post("/officer/requests", **shapes.answers(shapes.OfficerAsked))
     def officer_request(body: Asking, authorization: str | None = Header(default=None)) -> dict:

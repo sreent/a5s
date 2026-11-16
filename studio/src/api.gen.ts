@@ -68,6 +68,19 @@ export type Agent = {
   asks?: Asked[];
 };
 
+// What the approval page sends with its sign-in: the salt its nonce was made with.
+export type Approval = {
+  salt: string;
+};
+
+// An approval recorded, for the gateway to check again, seal, and count.
+export type Approved = {
+  approved: boolean;
+  serial: number;
+  by: string;
+  needs: string[];
+};
+
 // Someone's own ask for an agent, as they see it: never who declined it (core/asks.py).
 export type Ask = {
   id: string;
@@ -1115,6 +1128,23 @@ export type VersionNeeds = {
   serial: number;
   approved_by: string[];
   needs: string[];
+};
+
+// A version of the settings as its approvers see it before approving it: what it changes
+// from the one in force, in words code worked out, all of it, who approved it so far and what
+// it still needs, who asked for it, and where it stands.
+export type VersionReview = {
+  serial: number;
+  proposed_at: string;
+  in_force: number | null;
+  changes: Change[];
+  whole: string[];
+  needs: string[];
+  approved_by: string[];
+  asked_by: string | null;
+  you: string;
+  you_approved: boolean;
+  status: string;
 };
 
 // A version waiting for approval: what it changes, who approved it so far, and why it still

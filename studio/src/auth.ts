@@ -1,5 +1,5 @@
 // Signing in through the organisation's identity provider, as every page of a5s does: with PKCE,
-// the provider's code passed on to it by the core (/approve/token), and the sign-in kept in
+// the provider's code passed on to it by the core (/studio/sign-in/token), and the sign-in kept in
 // memory alone for as long as the studio is open. Where someone was going in the studio comes
 // back with them, so a link to a run still opens that run. For an act that counts, such as
 // suspending an instance, they sign in afresh for it alone: the sign-in's nonce commits to the
@@ -10,13 +10,14 @@ const BACK = `${location.origin}/studio/`;
 
 type SignInConfig = { authorization_endpoint: string; client_id: string; scope: string; acr_values?: string };
 /** An act signed in for, and what carrying it out needs, the salt its nonce was made with
- * among it: suspending or resuming an instance, deciding held changes, grading samples, or the
- * data protection officer's request. */
+ * among it: suspending or resuming an instance, deciding held changes, grading samples, the
+ * data protection officer's request, or approving a version of the settings. */
 export type Act =
   | { kind: "status"; action: "suspend" | "resume"; instance: string; salt: string }
   | { kind: "decide"; proposals: string[]; decision: "approve" | "reject"; salt: string; reason: string | null }
   | { kind: "grade"; grades: Record<string, string>; salt: string }
-  | { kind: "officer"; action: "export" | "erase"; person: string; salt: string };
+  | { kind: "officer"; action: "export" | "erase"; person: string; salt: string }
+  | { kind: "approve"; version: string; salt: string };
 type Pending = { verifier: string; state: string; nonce: string; path: string; search?: string; act?: Act };
 
 let signedFor: Act | null = null;  // the act the sign-in just made was for, until it's carried out
@@ -65,7 +66,7 @@ export async function signInStronger(): Promise<void> {
 }
 
 async function where(): Promise<SignInConfig> {
-  const config = await fetch("/approve/config");
+  const config = await fetch("/studio/sign-in/config");
   const body = await config.json().catch(() => ({}));
   if (!config.ok) {
     throw new SignInError(typeof body.detail === "string" ? body.detail : "The studio isn't set up here.");
@@ -116,7 +117,7 @@ async function finish(params: URLSearchParams): Promise<string> {
   if (params.has("error")) {
     throw new SignInError(`Signing in didn't work: ${params.get("error_description") || params.get("error")}`);
   }
-  const answer = await fetch("/approve/token", {  // the core passes it on to the provider
+  const answer = await fetch("/studio/sign-in/token", {  // the core passes it on to the provider
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ grant_type: "authorization_code", code: params.get("code"),
                            code_verifier: pending.verifier, redirect_uri: BACK }),

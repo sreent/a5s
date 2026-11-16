@@ -432,6 +432,10 @@ def _waits(serial: int) -> str:
 
 # Approving
 
+APPROVERS = ("only a part's or an agent's owner, an instance approver, the data protection "
+             "officer or assurance can approve settings, and {name} is none of them")
+
+
 def check(verifier: Verifier, scenario: Any, client_id: str, token: str, version: str,
           salt: str, now: float) -> tuple[Person, dict]:
     """Who signed in to approve this version, and what the provider signed, if the sign-in
@@ -459,9 +463,7 @@ def check(verifier: Verifier, scenario: Any, client_id: str, token: str, version
     except IdentityError as exc:
         raise Refused(401, f"your sign-in doesn't check out: {exc}") from None
     if not registry.approves(person):
-        raise Refused(403, f"only a part's or an agent's owner, an instance approver, the "
-                           f"data protection officer or assurance can approve settings, and "
-                           f"{person.name} is none of them")
+        raise Refused(403, APPROVERS.format(name=person.name))
     return person, claims
 
 

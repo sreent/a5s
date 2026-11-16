@@ -31,7 +31,7 @@ def sign_in(url: str, provider, action: str, person: str, by: str = "noor") -> t
         "nonce": officer.nonce(action, person, salt), "code_challenge": challenge.decode(),
         "code_challenge_method": "S256", "max_age": "0"})
     code = parse_qs(went.headers["location"].split("?", 1)[1])["code"][0]
-    tokens = httpx.post(f"{url}/approve/token", json={  # as the studio signs in
+    tokens = httpx.post(f"{url}/studio/sign-in/token", json={  # as the studio signs in
         "grant_type": "authorization_code", "code": code, "code_verifier": verifier,
         "redirect_uri": f"{url}/studio/"}).json()
     assert set(tokens) == {"id_token"}  # nothing to make more sign-ins like it with
