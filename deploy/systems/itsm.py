@@ -16,6 +16,7 @@ declared before each call.
 
 from __future__ import annotations
 
+import os
 import sys
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
@@ -103,4 +104,5 @@ def make(data: Path) -> FastAPI:
 
 if __name__ == "__main__":
     uvicorn.run(make(Path(sys.argv[1] if len(sys.argv) > 1 else "/scenario/data.yaml")),
-                host="127.0.0.1", port=PORT, log_level="warning")
+                host="127.0.0.1", port=int(os.environ.get("A5S_SYSTEM_PORT") or PORT),
+                log_level="warning")

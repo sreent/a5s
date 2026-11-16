@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import inspect
 import json
 import os
 import re
@@ -485,6 +486,8 @@ SYSTEMS: dict[str, Any] = {}  # what's been written to each, by its scenario's f
 RUNNING: list[Any] = []  # the systems themselves
 # Where a made-up system whose changes its scenario's code reads, such as SAP's, keeps them
 os.environ["A5S_SYSTEMS_STATE"] = tempfile.mkdtemp(prefix="a5s-systems-")
+SANDBOX_STATE = Path(tempfile.mkdtemp(prefix="a5s-sandbox-systems-"))  # the sandbox's copies'
+SPARE = 100  # how far the sandbox's copy of each system is from it, as each mcp.yaml says
 
 
 def scenario_systems(folder: str) -> dict[str, Any]:
@@ -502,11 +505,19 @@ def scenario_systems(folder: str) -> dict[str, Any]:
             system = importlib.util.module_from_spec(spec)
             sys.modules[spec.name] = system  # as an import would, for its dataclasses
             spec.loader.exec_module(system)
-            app = system.make(ROOT / "scenarios" / folder / "data.yaml")
+            data = ROOT / "scenarios" / folder / "data.yaml"
+            app = system.make(data)
             up = serve(app, system.PORT)
             up.__enter__()  # for the rest of the tests, so long as something holds it
             RUNNING.append(up)
             found[name] = getattr(app.state, state)
+            # and the sandbox's own copy, beside it, with its own state, as each mcp.yaml says
+            keeps = "state" in inspect.signature(system.make).parameters
+            spare = system.make(data, **({"state": SANDBOX_STATE} if keeps else {}))
+            beside = serve(spare, system.PORT + SPARE)
+            beside.__enter__()
+            RUNNING.append(beside)
+            found[f"sandbox-{name}"] = getattr(spare.state, state)
         SYSTEMS[folder] = found
     for state in SYSTEMS[folder].values():
         state.reset()

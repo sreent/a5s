@@ -1,15 +1,15 @@
 # The desk's ITSM and its identity provider's self-service, each through its MCP server
 # (docs/connectors.md#mcp-servers). In this made-up desk they're deploy/systems/itsm.py and idp.py, on
-# the desk's synthetic data, beside the gateway on its own machine, and the same stand-ins answer in
-# the studio's sandbox. a5s offers its agents nothing of the servers' but the tools declared here,
+# the desk's synthetic data, beside the gateway on its own machine, and copies of their own answer in
+# the studio's sandbox, beside it, so nothing tried there changes the deployment's. a5s offers its agents nothing of the servers' but the tools declared here,
 # in a5s's words, and passes on only the fields each names.
 servers:
   itsm:
     url: http://127.0.0.1:9201/mcp
-    sandbox: http://127.0.0.1:9201/mcp
+    sandbox: http://127.0.0.1:9301/mcp  # the sandbox's own copy, with its own state
   idp:
     url: http://127.0.0.1:9202/mcp
-    sandbox: http://127.0.0.1:9202/mcp
+    sandbox: http://127.0.0.1:9302/mcp  # the sandbox's own copy, with its own state
 tools:
   search_records:
     server: itsm

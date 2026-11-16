@@ -1,9 +1,14 @@
 # The master data team's made-up SAP MDG, behind its MCP server (systems/sap.py), on the scenario's
-# synthetic data. It shares the gateway's network, as the scenario's mcp.yaml points a5s at it on
-# the gateway's own machine, and reaches nothing else. What's done through it, such as a
-# correction an owner approved, it keeps in a volume a5s's parts read, as the scenario's own code
-# reads SAP as it stands:
+# synthetic data. It shares the gateway's network namespace, as the scenario's mcp.yaml points a5s
+# at it on the gateway's own loopback, the one place a5s calls a server over plain HTTP: so it
+# reaches what the gateway reaches, which only made-up data makes acceptable, and a real SAP runs
+# on its own host, over HTTPS. What's done through it, such as a correction an owner approved, it
+# keeps in a volume a5s's parts read, as the scenario's own code reads SAP as it stands, and it
+# carries on from there when it starts again:
 #   sh deploy/smoke-scenario.sh master-data
+# With the studio's sandbox (compose.sandbox.yaml), its profile runs the sandbox's own copy in the
+# sandbox's network, with its own state, so nothing tried there changes this SAP:
+#   docker compose ... -f deploy/compose.master.yaml -f deploy/compose.sandbox.yaml --profile sandbox up -d
 
 x-reads-sap: &reads-sap
   environment: {A5S_SYSTEMS_STATE: /state}
@@ -17,13 +22,25 @@ services:
     volumes: ["systems-state:/state"]
   master-sap:
     image: ${A5S_IMAGE:-a5s:dev}
+    restart: unless-stopped  # and again with the gateway, whose network it shares
     entrypoint: ["python", "/systems/sap.py", "/app/scenarios/master-data/data.yaml"]
     environment: {A5S_SYSTEMS_STATE: /state}
     volumes: ["./systems:/systems:ro", "systems-state:/state"]
     network_mode: "service:gateway"
     depends_on:
-      gateway: {condition: service_started}
+      gateway: {condition: service_started, restart: true}
       systems-state: {condition: service_completed_successfully}
+  master-sap-sandbox:  # the sandbox's own, on the address its mcp.yaml gives the sandbox
+    image: ${A5S_IMAGE:-a5s:dev}
+    profiles: [sandbox]
+    restart: unless-stopped
+    entrypoint: ["python", "/systems/sap.py", "/app/scenarios/master-data/data.yaml"]
+    environment: {A5S_SYSTEMS_STATE: /state, A5S_SYSTEM_PORT: "9304"}
+    volumes: ["./systems:/systems:ro", "sandbox-systems-state:/state"]
+    network_mode: "service:sandbox"
+    depends_on:
+      sandbox: {condition: service_started, restart: true}
+      sandbox-systems-state: {condition: service_completed_successfully}
   gateway: *reads-sap
   channels: *reads-sap
   scheduler: *reads-sap

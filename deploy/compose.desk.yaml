@@ -1,18 +1,42 @@
 # The service desk's made-up ITSM and identity provider, each behind its MCP server (systems/itsm.py
-# and systems/idp.py), on the desk's synthetic data. They share the gateway's network, as the desk's
-# mcp.yaml points a5s at them on the gateway's own machine, and reach nothing else:
+# and systems/idp.py), on the desk's synthetic data. They share the gateway's network namespace, as
+# the desk's mcp.yaml points a5s at them on the gateway's own loopback, the one place a5s calls a
+# server over plain HTTP: so they reach what the gateway reaches, which only made-up data makes
+# acceptable, and a real ITSM or identity provider runs on its own host, over HTTPS:
 #   sh deploy/smoke-scenario.sh service-desk
+# With the studio's sandbox (compose.sandbox.yaml), its profile runs the sandbox's own copies in
+# the sandbox's network, so nothing tried there changes these:
+#   docker compose ... -f deploy/compose.desk.yaml -f deploy/compose.sandbox.yaml --profile sandbox up -d
+
+x-desk-system: &desk-system
+  image: ${A5S_IMAGE:-a5s:dev}
+  restart: unless-stopped  # and again with the gateway, whose network they share
+  volumes: ["./systems:/systems:ro"]
+  network_mode: "service:gateway"
+  depends_on:
+    gateway: {condition: service_started, restart: true}
+
+x-desk-sandbox: &desk-sandbox  # the sandbox's own, on the addresses its mcp.yaml gives the sandbox
+  image: ${A5S_IMAGE:-a5s:dev}
+  profiles: [sandbox]
+  restart: unless-stopped
+  volumes: ["./systems:/systems:ro"]
+  network_mode: "service:sandbox"
+  depends_on:
+    sandbox: {condition: service_started, restart: true}
 
 services:
   desk-itsm:
-    image: ${A5S_IMAGE:-a5s:dev}
+    <<: *desk-system
     entrypoint: ["python", "/systems/itsm.py", "/app/scenarios/service-desk/data.yaml"]
-    volumes: ["./systems:/systems:ro"]
-    network_mode: "service:gateway"
-    depends_on: [gateway]
   desk-idp:
-    image: ${A5S_IMAGE:-a5s:dev}
+    <<: *desk-system
     entrypoint: ["python", "/systems/idp.py", "/app/scenarios/service-desk/data.yaml"]
-    volumes: ["./systems:/systems:ro"]
-    network_mode: "service:gateway"
-    depends_on: [gateway]
+  desk-itsm-sandbox:
+    <<: *desk-sandbox
+    entrypoint: ["python", "/systems/itsm.py", "/app/scenarios/service-desk/data.yaml"]
+    environment: {A5S_SYSTEM_PORT: "9301"}
+  desk-idp-sandbox:
+    <<: *desk-sandbox
+    entrypoint: ["python", "/systems/idp.py", "/app/scenarios/service-desk/data.yaml"]
+    environment: {A5S_SYSTEM_PORT: "9302"}
