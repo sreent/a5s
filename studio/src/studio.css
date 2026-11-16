@@ -102,7 +102,7 @@ table.runs-table tbody tr:hover { background: var(--sunken); }
 
 /* What a run did */
 
-.steps { list-style: none; margin: 0; padding: 0 0 0 0.25rem; }
+.run-calls { list-style: none; margin: 0; padding: 0 0 0 0.25rem; }
 .step { position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;
         padding: 0.55rem 0 0.55rem 1.4rem; border-left: 2px solid var(--line); }
 .step::before { content: ""; position: absolute; left: -0.42rem; top: 0.95rem; width: 0.7rem; height: 0.7rem;
@@ -186,7 +186,7 @@ table.runs-table tbody tr:hover { background: var(--sunken); }
 .try-said { background: var(--sunken); max-width: 46rem; }
 .try-said p, .try-reply { margin: 0.25rem 0 0; white-space: pre-wrap; }
 .try-answer { background: var(--surface); margin-top: 0.5rem; }
-.try-answer .steps { margin: 0.75rem 0 0; }
+.try-answer .run-calls { margin: 0.75rem 0 0; }
 .try-say { display: flex; gap: 0.6rem; }
 .try-keep { display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: end; padding-top: 0.9rem; border-top: 1px solid var(--line); }
 .try-keep .field { flex: 1; min-width: 18rem; margin: 0; }

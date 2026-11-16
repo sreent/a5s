@@ -162,7 +162,7 @@ def built(walk: Walk, stack, url: str, forge: FakeGitHub, on: On) -> tuple[dict,
         page.click(".try-say button[type=submit]")
         page.wait_for_selector(".try-answer .try-reply", timeout=180000)
         assert on.live or "it waits for Mo Hassan" in page.inner_text(".try-answer .try-reply")
-        assert "hold" in page.inner_text(".try-answer .steps")
+        assert "hold" in page.inner_text(".try-answer .run-calls")
     with walk.step("She keeps what he said as a test case, with what a right answer is, in her words, "
                    "for its judge to grade beside the case's checks, since a correction can be right "
                    "in more than one way.", page):

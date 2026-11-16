@@ -253,3 +253,32 @@ def test_the_settings_app_starts_from_a_drafts_plan(stack, approving, provider, 
     page.wait_for_selector("#reviewed-changes li", timeout=30000)
     added = page.locator("#reviewed-changes li").first.inner_text()
     assert "watcher-billing" in added and "serving Ben Okafor" in added
+
+
+# Each step's name on the canvas, where it stands, and where its step does
+NAMES = """() => [...document.querySelectorAll('.flow-canvas .flow-step')].flatMap(step => {
+  const name = step.querySelector(':scope > .flow-name');
+  if (!name) return [];
+  const s = step.getBoundingClientRect(), n = name.getBoundingClientRect();
+  return [{step: step.dataset.key, html: name.innerHTML, left: n.left, right: n.right, top: n.top,
+           bottom: n.bottom, from: s.left, to: s.right}];
+})"""
+
+
+def test_each_steps_name_stays_within_it_and_clear_of_the_others(stack, approving, provider, browser):
+    """A tool's long name, such as change_due_date, wraps within its step, after an underscore,
+    and stands clear of the names of the steps beside it, as Ocean's FlowNode keeps them, so
+    nothing on the canvas runs into anything else (the long-label overlap)."""
+    page, refused = drafted(browser, approving, provider)
+    page.wait_for_selector("[data-step='tool:change_due_date']", timeout=30000)
+    names = page.evaluate(NAMES)
+    assert len(names) >= 8, names  # what starts it, its reply, its model, checks and six tools
+    for name in names:
+        assert name["from"] - 0.5 <= name["left"] and name["right"] <= name["to"] + 0.5, name  # within it
+    for i, one in enumerate(names):
+        for other in names[i + 1:]:
+            assert (one["right"] <= other["left"] or other["right"] <= one["left"]
+                    or one["bottom"] <= other["top"] or other["bottom"] <= one["top"]), (one, other)
+    [due] = [n for n in names if n["step"] == "tool:change_due_date"]
+    assert due["html"] == "change_<wbr>due_<wbr>date", due  # it may break after each underscore
+    assert refused == []

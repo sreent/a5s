@@ -48,7 +48,7 @@ A draft opens on a workbench, as Ocean draws one ([sreent/ocean](https://github.
 **It adopts n8n's canvas, and extends it where an agent and a5s's governance need more.** What it adopts, as n8n has worked them out:
 
 - the canvas fills the window, with a picker of parts on the left and whatever is chosen on the right;
-- each step is a square with its name beneath, joined at a dot on each side by curves, and what starts a run is rounded where nothing comes in;
+- each step is a square with its name beneath, joined at a dot on each side by curves, and what starts a run is rounded where nothing comes in; a long name, as a tool's often is, wraps within its step after an underscore, and every name stands clear of the curves and of the steps beside it ([`tests/test_studio_designer.py`](../tests/test_studio_designer.py));
 - a part is added by dragging it from the picker onto the canvas, or with Enter on it, and a "+" on the canvas finds another;
 - the canvas's one thing to do sits at its foot, **Try it**, in the sandbox, with zooming at its left;
 - Delete takes the chosen step away.

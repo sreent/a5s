@@ -131,7 +131,7 @@ function Answer({ tried, name }: { tried: Tried; name: string }) {
       <div className="faint">{name} answered</div>
       <p className="try-reply">{tried.reply || "(nothing)"}</p>
       {calls.length > 0 && (
-        <ol className="steps">
+        <ol className="run-calls">
           {calls.map((call) => (
             <li key={call.seq} className={`step ${call.decision}`}>
               <span className="mono step-tool">{call.tool}</span>
