@@ -498,7 +498,8 @@ def asking(proposal: dict, link: str, again: bool = False) -> str:
 
 
 def card(proposal: dict, link: str, again: bool = False) -> dict:
-    """The card a decider gets in Teams. It only opens the core's page, where they decide."""
+    """The card a decider gets in Teams or Slack. It only opens the core's page, where they
+    decide."""
     title = (f"Still waiting for your decision: {key(proposal)}" if again
              else f"{key(proposal)}: a change to decide")
     body = [{"type": "TextBlock", "text": title, "weight": "Bolder", "size": "Medium", "wrap": True},

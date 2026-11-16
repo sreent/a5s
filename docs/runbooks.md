@@ -94,10 +94,10 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 **Shows as:** someone saying it ignores them in a group chat, or an inbound message denied with why.
 
 1. It answers only a message that mentions it, as people do, and it's told so, so it asks for answers that mention it. Anything else in the chat it never hears, and nothing is recorded.
-2. A mention it won't work on gets one message saying why, naming who or what's in the way, and the ledger records the reason, which the status counts as a chat turned away, not a denial: someone in the chat the directory doesn't know, such as another organisation's app in Teams, more than 20 people, after which it leaves a Matrix room, a Matrix room that shows people what was said before they joined, which its administrator changes, someone a5s may not write to, or a team's channel in Teams. Nothing else runs.
+2. A mention it won't work on gets one message saying why, naming who or what's in the way, and the ledger records the reason, which the status counts as a chat turned away, not a denial: someone in the chat the directory doesn't know, such as another organisation's app in Teams, more than 20 people, after which it leaves a Matrix room, a Matrix room that shows people what was said before they joined, which its administrator changes, someone a5s may not write to, a team's channel in Teams, or a channel in Slack, where only whoever mentioned it is told. Nothing else runs.
 3. In an encrypted Matrix room it says once that it can't read it: people ask in a room made without encryption, or one to one.
 4. If no instance of the agent serves everyone in the chat, it says whom, and who can add them. A version of the settings that serves them all, which the part owners approve, lets it work there, or people ask one to one.
-5. If a message can't be read, such as when Teams won't say who's in the chat, the chat hears so and the ledger records it. A Matrix event that fails three deliveries running is skipped and recorded, so it can't hold up the rest.
+5. If a message can't be read, such as when Teams or Slack won't say who's in the chat, the chat hears so and the ledger records it. A Matrix event that fails three deliveries running is skipped and recorded, so it can't hold up the rest.
 
 ## An agent's question to another goes unanswered
 

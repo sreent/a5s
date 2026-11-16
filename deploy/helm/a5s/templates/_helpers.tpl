@@ -137,6 +137,26 @@ seccompProfile:
 {{ include "a5s.secretEnv" (dict "root" $ "name" (printf "A5S_TEAMS_SECRET_%s" (upper .agent)) "key" (printf "teams-secret-%s" .agent)) }}
 {{- end }}
 {{- end }}
+{{- if .Values.slack.teamId }}
+- name: A5S_SLACK_TEAM
+  value: {{ .Values.slack.teamId | quote }}
+- name: A5S_SLACK_BOTS
+  value: {{ include "a5s.slackApps" . | quote }}
+{{- range .Values.slack.apps }}
+{{ include "a5s.secretEnv" (dict "root" $ "name" (printf "A5S_SLACK_SECRET_%s" (upper .agent)) "key" (printf "slack-secret-%s" .agent)) }}
+{{ include "a5s.secretEnv" (dict "root" $ "name" (printf "A5S_SLACK_TOKEN_%s" (upper .agent)) "key" (printf "slack-token-%s" .agent)) }}
+{{- end }}
+{{- end }}
+{{- end }}
+
+{{/* Each agent's Slack app, as a5s reads them: its app id, and the variables its signing
+secret and bot token are in. */}}
+{{- define "a5s.slackApps" -}}
+{{- $apps := list -}}
+{{- range .Values.slack.apps -}}
+{{- $apps = append $apps (dict "agent" .agent "app_id" .appId "secret_env" (printf "A5S_SLACK_SECRET_%s" (upper .agent)) "token_env" (printf "A5S_SLACK_TOKEN_%s" (upper .agent))) -}}
+{{- end -}}
+{{- toJson $apps -}}
 {{- end }}
 
 {{/* Each agent's bot, as a5s reads them: its app id, and the variable its secret is in. */}}

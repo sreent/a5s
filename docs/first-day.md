@@ -47,9 +47,10 @@ A deployment whose people chat in Teams signs them in with Entra ID too, since T
 | --- | --- | --- |
 | Matrix | a5s's application service, registered on the organisation's homeserver, as [`deploy/matrix`](../deploy/matrix) registers it on the test stack's | `matrix.homeserver`, `matrix.serverName`, and the Secret's `matrix-as-token` and `matrix-hs-token` |
 | Teams | A bot for each agent, the assistant and the watcher, so each talks to people as itself: a single-tenant bot registration in the tenant's Entra ID, with Teams turned on, whose messaging endpoint is `https://<host>/channels/teams/messages`, made a Teams app in the personal and group chat scopes, but not a team's, which a5s turns away | `teams.tenantId`, `teams.bots: [{agent: assistant, appId: <its id>}, {agent: watcher, appId: <its id>}]`, and the Secret's `teams-secret-assistant` and `teams-secret-watcher` |
+| Slack | An app for each agent, the assistant and the watcher, so each talks to people as itself: made in the organisation's workspace and installed there, with Socket Mode and token rotation off, people allowed to write to it from its Messages tab, and its scopes, events and request URLs, `https://<host>/channels/slack/events` and `https://<host>/channels/slack/actions`, as [the README](../README.md#chats) lists them. a5s answers in direct messages and group DMs, and turns a channel away | `slack.teamId`, `slack.apps: [{agent: assistant, appId: <its id>}, {agent: watcher, appId: <its id>}]`, and the Secret's `slack-secret-<agent>` and `slack-token-<agent>` for each, its signing secret and bot token |
 | The web chat | Nothing more: the core serves it, at `https://<host>/chat/` | |
 
-A bot's secret expires: put its date in the on-call calendar, since a bot whose secret has expired can't answer.
+A Teams bot's secret expires: put its date in the on-call calendar, since a bot whose secret has expired can't answer. A Slack app's bot token lasts until the app is uninstalled, as long as its token rotation stays off, since a5s doesn't renew it. The directory names each person in Slack as `slack:<team id>/<user id>`, as Slack's own profile shows the user id.
 
 ## 4. The cluster, Postgres and locked storage
 

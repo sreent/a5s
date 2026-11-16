@@ -17,6 +17,7 @@ from a5s.core.identity import verifier_from_env
 from a5s.core.matrix import Matrix, MatrixConfig
 from a5s.core.policy import PolicyEngine
 from a5s.core.releases import Releases, running
+from a5s.core.slack import Slack, SlackConfig
 from a5s.core.stores import Store, store_from_url
 from a5s.core.teams import Teams, TeamsConfig
 
@@ -46,6 +47,7 @@ def gateway(cfg: Config, http: httpx.Client | None = None) -> Gateway:
         identity=verifier_from_env(),
         teams=Teams(teams) if (teams := TeamsConfig.from_env()) else None,
         matrix=Matrix(matrix) if (matrix := MatrixConfig.from_env()) else None,
+        slack=Slack(slack) if (slack := SlackConfig.from_env()) else None,
         releases=Releases(running(cfg.root, cfg.scenario_dir, cfg.agents_dir)),
         registry=registration.Registry.from_env(),  # IT's inventory, if the deployment asks
     )

@@ -400,7 +400,8 @@ def names_of(found: list[str]) -> str:
 
 
 def card(serial: int, found: list[dict], link: str) -> dict:
-    """The card an approver gets in Teams. It only opens the core's page, where they decide."""
+    """The card an approver gets in Teams or Slack. It only opens the core's page, where they
+    decide."""
     return {
         "type": "AdaptiveCard",
         "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",

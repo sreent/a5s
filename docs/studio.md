@@ -169,7 +169,7 @@ That's where most of a new use case's work is. In the [master data](../scenarios
 | Triggers and autonomous runs | Triggers, schedules, reports and obligations, in the definition |
 | The test pane | A chat with a draft agent in a sandbox deployment, and its test cases on real models |
 | Publishing | A release, signed by the people the change needs |
-| Channels | Teams, Matrix and the web chat, as each deployment configures them |
+| Channels | Teams, Slack, Matrix and the web chat, as each deployment configures them |
 | Environments and solutions | Deployments, each approving its own releases, and the agents' repository |
 | Analytics | The measures, the status and the ledger |
 | Admin and governance | Signed settings: instances, whom they serve, their parts, levels and owners |

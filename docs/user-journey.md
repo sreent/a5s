@@ -16,7 +16,7 @@ The person chooses an agent and writes to it: the chat lists only the agents tha
 
 ![Ana asking the assistant about a record](images/a5s-chat.png)
 
-The same agents can work through Matrix or Teams where the deployment enables them. The command line and web chat use the local channel.
+The same agents can work through Matrix, Teams or Slack where the deployment enables them. The command line and web chat use the local channel.
 
 ### 3. Ask for longer work, then confirm it
 

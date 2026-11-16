@@ -66,6 +66,8 @@ from a5s.core import (
     topics,
     web,
 )
+from a5s.core.slack import CHANNELS as SLACK_CHANNELS
+from a5s.core.slack import Refused as SlackRefused
 from a5s.core.teams import UNKNOWN, Refused
 
 AWAY = "a5s can't reach its records just now, so it couldn't take that. Try again in a moment."
@@ -151,7 +153,7 @@ def turned_away(conn: Any, channel: str, reason: str, people: list[str], text: s
 def chats_on(gw: Any) -> list[str]:
     """The chats a deployment has turned on, each by setting its own settings."""
     on = {"the command line": True, "the web chat": web.webchat(gw), "Teams": gw.teams is not None,
-          "Matrix": gw.matrix is not None}
+          "Slack": gw.slack is not None, "Matrix": gw.matrix is not None}
     return [chat for chat, is_on in on.items() if is_on]
 
 
@@ -241,6 +243,100 @@ def create_app(gw: Any) -> FastAPI:
                        identity="verified by teams",
                        place=message.reply_to["conversation"] if group else None,
                        members=everyone or None)
+        return Response(status_code=200)
+
+    # Slack: each agent's app sends what's said in the conversations it's in, signed
+
+    def tell_in_slack(reply_to: dict[str, str], text: str, user: str | None = None) -> None:
+        try:
+            if gw.slack is not None:
+                (gw.slack.whisper(reply_to, user, text) if user else gw.slack.send(reply_to, text))
+        except Exception:
+            log.exception("couldn't answer in Slack")
+
+    def slack_events(body: bytes, timestamp: str | None, signature: str | None,
+                     background: BackgroundTasks) -> Response:
+        slack = gw.slack
+        assert slack is not None
+        try:
+            bot, payload = slack.check(body, timestamp, signature)
+        except SlackRefused as exc:  # not recorded: anyone on the internet can send these
+            log.warning("refused a request for Slack: %s", exc.reason)
+            raise HTTPException(exc.status, exc.reason) from None
+        if payload.get("type") == "url_verification":  # as an app's events are set up
+            return JSONResponse({"challenge": str(payload.get("challenge") or "")})
+        if payload.get("type") != "event_callback":
+            return Response(status_code=200)
+        message = slack.message(payload, gw.scenario, bot)
+        if message is None or not message.mentioned:  # in a group DM, only what mentions it
+            return Response(status_code=200)
+        people = [message.person] if message.person else []
+        members: list[str | None] = []
+        strangers: list[str] = []
+        if message.group and message.person:  # who's in it, from Slack itself, at each message
+            try:
+                members = slack.members(message.reply_to, gw.scenario, strangers)
+            except (httpx.HTTPError, ValueError) as exc:  # recorded, and said, not dropped
+                log.warning("couldn't read who's in a Slack group DM: %s", exc)
+                with db.transaction(gw.url) as conn:
+                    turned_away(conn, "slack", "a5s couldn't read who's in the chat",
+                                people, message.text)
+                background.add_task(tell_in_slack, message.reply_to, groups.UNREAD)
+                return Response(status_code=200)
+        everyone = (sorted({p for p in (message.person, *members) if p})
+                    if message.group and message.person and None not in members else [])
+        with db.transaction(gw.url) as conn:
+            if message.person is None:
+                turned_away(conn, "slack", f"the directory doesn't know "
+                            f"slack:{slack.cfg.team_id}/{message.user}", people, message.text)
+                background.add_task(tell_in_slack, message.reply_to, UNKNOWN,
+                                    None if message.personal else message.user)
+            elif not message.personal and not message.group:  # a channel, public or private
+                turned_away(conn, "slack", "a5s works in direct messages and group DMs, not "
+                            "channels", people, message.text)
+                background.add_task(tell_in_slack, message.reply_to, SLACK_CHANNELS, message.user)
+            elif message.group and len({message.person, *members}) > groups.LIMIT:  # before naming
+                turned_away(conn, "slack", f"the group has more than {groups.LIMIT} people",
+                            people, message.text)
+                background.add_task(tell_in_slack, message.reply_to, groups.TOO_MANY)
+            elif message.group and not everyone:
+                turned_away(conn, "slack", "someone in the group isn't in the directory", people,
+                            message.text)
+                background.add_task(tell_in_slack, message.reply_to, groups.STRANGERS.format(
+                    who=groups.listed(strangers) if strangers else "someone here"))
+            else:  # Slack's message times are unique only within a conversation
+                record(conn, channel="slack",
+                       source_id=f"{message.reply_to['channel']}/{message.reply_to['ts']}",
+                       person=message.person, agent=message.agent, text=message.text,
+                       reply_to=message.reply_to, identity="verified by slack",
+                       place=message.reply_to["channel"] if message.group else None,
+                       members=everyone or None)
+        return Response(status_code=200)
+
+    @app.post("/channels/slack/events")
+    async def slack_event(request: Request, background: BackgroundTasks,
+                          x_slack_request_timestamp: str | None = Header(default=None),
+                          x_slack_signature: str | None = Header(default=None)) -> Response:
+        """What Slack sends an agent's app, its signature checked over the body as it came."""
+        if gw.slack is None:
+            raise HTTPException(404, "Slack isn't set up")
+        body = await request.body()
+        return await run_in_threadpool(slack_events, body, x_slack_request_timestamp,
+                                       x_slack_signature, background)
+
+    @app.post("/channels/slack/actions")
+    async def slack_action(request: Request,
+                           x_slack_request_timestamp: str | None = Header(default=None),
+                           x_slack_signature: str | None = Header(default=None)) -> Response:
+        """Someone choosing a card's button, which only opens its page, where they decide:
+        acknowledged once Slack's signature checks out, and nothing done."""
+        if gw.slack is None:
+            raise HTTPException(404, "Slack isn't set up")
+        body = await request.body()
+        try:
+            gw.slack.check(body, x_slack_request_timestamp, x_slack_signature)
+        except SlackRefused as exc:
+            raise HTTPException(exc.status, exc.reason) from None
         return Response(status_code=200)
 
     # Matrix: the homeserver sends what happens in the rooms the agents' bots are in
