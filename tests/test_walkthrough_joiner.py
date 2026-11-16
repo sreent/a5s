@@ -100,11 +100,13 @@ def described(walk: Walk, stack, url: str, forge: FakeGitHub, on: On) -> tuple[d
             if tool not in str(spec["tools"]):
                 page.click(f".fd-palette [data-tool={tool}]")
                 kept(page)
-        page.click(".fd-palette [data-owed=records]")
-        page.wait_for_selector(".flow-canvas [data-step=obligations]", timeout=30000)
-        kept(page)
-        page.click(".fd-palette [data-ability=reminders]")
-        kept(page)
+        if "records" not in (spec.get("obligations") or []):  # the palette offers what it lacks
+            page.click(".fd-palette [data-owed=records]")
+            page.wait_for_selector(".flow-canvas [data-step=obligations]", timeout=30000)
+            kept(page)
+        if not spec.get("reminders"):
+            page.click(".fd-palette [data-ability=reminders]")
+            kept(page)
         page.click("[data-step=agent]")
         page.fill("#works-for", "New joiners before their first day, and whoever owes them something")
         page.select_option("#level-max", "1")

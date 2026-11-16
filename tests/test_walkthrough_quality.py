@@ -175,7 +175,8 @@ def reported_to_mo(walk: Walk, stack, url: str, on: On) -> str:
     asked = [r["body"]["messages"][-1]["content"] for r in stack.model.requests
              if "Tell Mo Hassan" in str(r["body"]["messages"][-1].get("content"))
              and "# Quality helper" in str(r["body"]["messages"][0].get("content"))]  # its own run's
-    assert asked and (on.live or any("DQ-material" in a for a in asked)), asked  # code's facts
+    # code's facts, in its own run's request: a real model's requests, the walk-through never sees
+    assert on.live or any("DQ-material" in a for a in asked), asked
     with db.transaction(stack.admin) as conn:
         [run] = conn.execute("select r.id::text as id from runs r join instances i on i.id = r.instance_id "
                              "where i.definition = %s", (AGENT,)).fetchall()
