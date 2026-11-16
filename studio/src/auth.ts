@@ -45,8 +45,17 @@ export async function signIn(): Promise<string | null> {
   if (!window.crypto?.subtle) throw new SignInError("The studio needs HTTPS, or a page on this computer.");
   const params = new URLSearchParams(location.search);
   if (params.has("code") || params.has("error")) return finish(params);
-  await start(await where());
+  // the audit trail is read only with a second factor, where the deployment asks for one
+  await start(await where(), undefined, undefined, STRONGER.test(location.pathname));
   return null;
+}
+
+const STRONGER = /^\/studio\/audit\b/;  // the pages read only at the level what counts asks for
+
+/** Sign in again at the level what counts asks for, such as with a second factor, to read a
+ * page that needs one, coming back to it. */
+export async function signInStronger(): Promise<void> {
+  await start(await where(), undefined, undefined, true);
 }
 
 async function where(): Promise<SignInConfig> {
@@ -66,7 +75,7 @@ export async function signInFor(action: Act["action"], instance: string): Promis
               await sha256(`a5s ${action} instance ${instance} ${salt}`));
 }
 
-async function start(signin: SignInConfig, act?: Act, nonce?: string): Promise<void> {
+async function start(signin: SignInConfig, act?: Act, nonce?: string, stronger = false): Promise<void> {
   const pending: Pending = { verifier: random(), state: random(), nonce: nonce ?? random(),
                              path: location.pathname, search: location.search, act };
   sessionStorage.setItem(PENDING, JSON.stringify(pending));
@@ -76,10 +85,8 @@ async function start(signin: SignInConfig, act?: Act, nonce?: string): Promise<v
     state: pending.state, nonce: pending.nonce, code_challenge: await sha256(pending.verifier),
     code_challenge_method: "S256",
   };
-  if (act) {
-    query.max_age = "0";  // afresh, not a sign-in the browser kept
-    if (signin.acr_values) query.acr_values = signin.acr_values;  // the level what counts needs
-  }
+  if (act) query.max_age = "0";  // afresh, not a sign-in the browser kept
+  if ((act || stronger) && signin.acr_values) query.acr_values = signin.acr_values;  // the level what counts needs
   for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
   location.assign(url.toString());
 }

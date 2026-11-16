@@ -16,7 +16,7 @@ from conftest import CLIENT, accessible, free_port, serve
 from test_approvals import decide as approve
 from test_approvals import proposed
 from test_approvals import sign_in as sign_in_to_approve
-from test_mfa import PASSWORD, WITH_MFA
+from test_mfa import PASSWORD, WITH_MFA, asking
 from test_officer import ask
 from test_officer import sign_in as sign_in_as_officer
 from test_ui_pages import shot
@@ -173,9 +173,10 @@ def test_an_auditor_reads_the_trail_in_the_browser(stack, approving, provider, b
     talked(stack)
     provider.person = AUDITOR
     page = browser.new_page()
-    page.goto(f"{approving}/audit/")
+    page.goto(f"{approving}/audit/")  # which goes to the studio's, now
     page.wait_for_selector("#find:not([hidden])", timeout=30000)
-    assert page.inner_text("#who") == "Kofi Mensah"
+    assert page.evaluate("location.pathname") == "/studio/audit"
+    assert page.inner_text("#me").endswith("Kofi Mensah")
     assert "stand-in" in page.inner_text("#naming")
     page.select_option("#kind", "run")
     page.click("#search")
@@ -193,3 +194,21 @@ def test_an_auditor_reads_the_trail_in_the_browser(stack, approving, provider, b
     accessible(page)
     shot(page, "audit-report")
     assert page.evaluate("window.location.search") == ""  # the code doesn't linger
+
+
+def test_an_auditor_without_a_second_factor_is_asked_to_sign_in_again_with_one(
+        stack, approving, provider, browser):
+    """Where the deployment asks for one, the trail is read only with a second factor: someone
+    who signed in to the studio without one is offered a sign-in with one, and back on the trail
+    once they have."""
+    asking(stack)
+    provider.person = "kofi"
+    page = browser.new_page()
+    page.goto(f"{approving}/studio/audit")
+    page.wait_for_selector("#stronger", timeout=30000)
+    assert "second factor" in page.inner_text("main .problem")
+    assert page.locator("#find").count() == 0  # nothing of the trail without one
+    provider.claims = dict(WITH_MFA)  # the provider asks for it, this time
+    page.click("#stronger")
+    page.wait_for_selector("#find", timeout=30000)
+    assert page.evaluate("location.pathname") == "/studio/audit"

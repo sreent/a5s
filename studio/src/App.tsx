@@ -7,6 +7,7 @@ import { signIn } from "./auth";
 import { AdminPage } from "./pages/Admin";
 import { AgentPage } from "./pages/Agent";
 import { AgentsPage } from "./pages/Agents";
+import { AuditPage } from "./pages/Audit";
 import { DesignPage } from "./pages/Design";
 import { DraftPage } from "./pages/Draft";
 import { HomePage } from "./pages/Home";
@@ -51,6 +52,7 @@ export function App() {
   else if (route.page === "notebook") content = <NotebookPage />;
   else if (route.page === "tasks") content = <TasksPage />;
   else if (route.page === "admin") content = <AdminPage />;
+  else if (route.page === "audit") content = <AuditPage />;
   else content = <HomePage />;
   const workbench = route.page === "draft" && state === "ready";  // a draft fills the window, as Ocean's workbench
   useEffect(() => {

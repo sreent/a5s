@@ -95,6 +95,35 @@ export type Asked = {
   why: string[];
 };
 
+// A page of a period's entries, as the auditor asked, and where the next begins.
+export type AuditEntries = {
+  entries: Record<string, unknown>[];
+  next: number | null;
+};
+
+// A page of a period's entries exactly as the ledger holds them, to check and keep, with what
+// proves they're its own: the entries either side, and the chain's head.
+export type AuditExport = {
+  entries: Record<string, unknown>[];
+  next: number | null;
+  head: Record<string, unknown> | null;
+  bounds: Record<string, unknown>;
+};
+
+// Who's reading the trail, and how it shows people: by name, or by stand-in.
+export type AuditNow = {
+  you: string;
+  names: boolean;
+  exports: boolean;
+  kinds: string[];
+};
+
+// Who holds each role, and who did what of a period's administration.
+export type AuditReport = {
+  roles: RoleHolders[];
+  acts: AdminAct[];
+};
+
 export type Authoring = {
   new: boolean;
   agents: string[];
@@ -700,6 +729,12 @@ export type RoleHeld = {
   role: string;
   name: string;
   held_by: Holder[];
+};
+
+// A role, and who holds it now.
+export type RoleHolders = {
+  role: string;
+  held_by: string[];
 };
 
 export type Run = {

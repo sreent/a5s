@@ -1060,3 +1060,46 @@ class AdminNow(Shape):
     ownerless: Ownerless
     days: int
     latest: list[AdminAct]
+
+
+# The audit trail, folded into the studio (core/audit_api.py): the ledger as an auditor reads it
+
+
+class AuditNow(Shape):
+    """Who's reading the trail, and how it shows people: by name, or by stand-in."""
+
+    you: str
+    names: bool  # whom agents acted for shows by name, as the officer agreed
+    exports: bool  # whether a period may be exported here, which only names allow
+    kinds: list[str]
+
+
+class AuditEntries(Shape):
+    """A page of a period's entries, as the auditor asked, and where the next begins."""
+
+    entries: list[dict[str, Any]]  # each as the ledger holds it, whom it acted for as a stand-in
+    next: int | None
+
+
+class RoleHolders(Shape):
+    """A role, and who holds it now."""
+
+    role: str
+    held_by: list[str]
+
+
+class AuditReport(Shape):
+    """Who holds each role, and who did what of a period's administration."""
+
+    roles: list[RoleHolders]
+    acts: list[AdminAct]
+
+
+class AuditExport(Shape):
+    """A page of a period's entries exactly as the ledger holds them, to check and keep, with what
+    proves they're its own: the entries either side, and the chain's head."""
+
+    entries: list[dict[str, Any]]
+    next: int | None
+    head: dict[str, Any] | None
+    bounds: dict[str, Any]
