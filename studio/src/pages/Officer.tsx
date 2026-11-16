@@ -18,7 +18,7 @@ export function OfficerPage() {
   const [person, setPerson] = useState("");
   const [again, setAgain] = useState("");
   const [status, setStatus] = useState<string>();
-  const [asked, setAsked] = useState(false);  // back from signing in to ask: asked, its one job done
+  const [asked, setAsked] = useState(false);  // asked, its one job done, until they ask another
   useEffect(() => {
     const act = takeAct();
     if (act?.kind !== "officer") return;
@@ -29,8 +29,20 @@ export function OfficerPage() {
         setStatus(`You asked to ${made.asked} all a5s keeps about ${whom}. Someone from the team that runs a5s carries it out, once, within ${made.lasts}: ${made.command}`);
         toast(`You asked to ${made.asked} all a5s keeps about ${whom}.`);
       })
-      .catch((e: Error) => setStatus(e.message));
+      .catch((e: Error) => {  // refused: the form again, as they filled it, to ask again (round 13, C4)
+        setAction(act.action);
+        setPerson(act.person);
+        if (act.action === "erase") setAgain(act.person);
+        setAsked(false);
+        setStatus(`a5s didn't take your request: ${e.message}`);
+      });
   }, []);
+  const another = () => {
+    setPerson("");
+    setAgain("");
+    setStatus(undefined);
+    setAsked(false);
+  };
 
   const ask = async (event: FormEvent) => {
     event.preventDefault();
@@ -58,6 +70,7 @@ export function OfficerPage() {
       <PageHead title="A request for someone's data"
                 about="Ask to export, or erase, all a5s keeps about someone, at their request. You sign in afresh for that request alone, and someone from the team that runs a5s carries it out." />
       <p id="status" role="status" className="note">{status}</p>
+      {asked && <p><button type="button" id="another" onClick={another}>Ask about someone else</button></p>}
       {!asked && (
         <form id="ask" className="card" onSubmit={ask}>
           <p>

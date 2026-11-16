@@ -15,6 +15,12 @@ import { type ReactNode, useEffect, useReducer, useRef, useState } from "react";
 import { type Change, get, send, type SettingsAsked, type SettingsNow, type SettingsReview } from "../api";
 import { useToast } from "../design";
 import { PageHead, To, Waiting, when } from "../ui";
+import { keepUnkept, keptNow, unkept } from "../unkept";
+
+// What they've changed and not asked for yet, against the version in force they changed, kept
+// in the tab until they ask, so signing in again gives it back (round 13, C1)
+type Working = { serial: number | null; data: unknown; text: string };
+const WORKING = "settings";
 
 type PartEntry = number | null | { level?: number; actions?: Record<string, number> };
 type Inst = { definition: string; serves?: string[]; parts?: string[] | Record<string, PartEntry>;
@@ -118,6 +124,7 @@ export function SettingsPage() {
   const [error, setError] = useState<string>();
   const [status, setStatus] = useState<string>();
   const working = useRef<Data | null>(null);  // the version in force, as the forms change it
+  const nowRef = useRef<SettingsNow | null>(null);
   const [generation, setGeneration] = useState(0);  // the forms drawn afresh from what's in force
   const [names, setNames] = useState<Record<string, string>>({});
   const [mode, setMode] = useState<"forms" | "text">("forms");
@@ -129,17 +136,30 @@ export function SettingsPage() {
   const [busy, setBusy] = useState(false);
   const [, redraw] = useReducer((n: number) => n + 1, 0);
 
+  const textNow = useRef("");
+  const remember = () => keepUnkept(WORKING, { serial: nowRef.current?.in_force?.serial ?? null,
+                                               data: working.current, text: textNow.current } satisfies Working);
   // A change after a review needs a review of its own before anyone asks for it
   const touched = () => {
     setReviewed(undefined);
+    remember();
     redraw();
   };
 
   const load = async (fresh: boolean): Promise<SettingsNow> => {
     const found = await get<SettingsNow>("/settings/api");
+    nowRef.current = found;
+    const left = fresh ? null : unkept<Working>(WORKING);
+    if (fresh || (left && left.serial !== (found.in_force?.serial ?? null))) keptNow(WORKING);  // asked for, or out of date
     if (found.in_force) {
-      if (fresh || !working.current) working.current = structuredClone(found.in_force.data ?? {}) as Data;
+      if (left && left.serial === found.in_force.serial && !working.current) {
+        working.current = left.data as Data;
+        textNow.current = left.text;
+        setText(left.text);
+        setStatus("What you'd changed and hadn't asked for is back, from before you signed in again.");
+      } else if (fresh || !working.current) working.current = structuredClone(found.in_force.data ?? {}) as Data;
       const written = found.in_force.text;
+      if (!textNow.current || fresh) textNow.current = written;
       setText((was) => (was && !fresh ? was : written));
     } else {
       setMode("text");  // the forms change a version in force: with none, there's the text
@@ -599,6 +619,8 @@ export function SettingsPage() {
           <textarea id="text" spellCheck={false} aria-label="The settings, as written" value={text}
                     onChange={(e) => {
                       setText(e.target.value);
+                      textNow.current = e.target.value;
+                      remember();
                       setReviewed(undefined);
                     }} />
         </div>

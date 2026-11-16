@@ -1,9 +1,9 @@
 // The studio: signed in once, through the organisation's identity provider, then each of its
 // pages in turn, beside the sidebar every page of a5s has.
 
-import { useEffect, useState } from "react";
-import { signedIn } from "./api";
-import { signIn } from "./auth";
+import { useEffect, useRef, useState } from "react";
+import { onRunOut, runOut, runsOutAt, signedIn } from "./api";
+import { signIn, signInAgain } from "./auth";
 import { Toasts } from "./design/feedback";
 import { Find } from "./Find";
 import { AdminPage } from "./pages/Admin";
@@ -29,6 +29,51 @@ import { Sidebar } from "./Sidebar";
 
 type State = "signing-in" | "ready" | { problem: string };
 
+/** Once the sign-in has run out, a5s can neither keep nor show anything more: the studio says
+ * so over the page, and signs them in again, back to it, where what they'd changed and a5s
+ * hadn't kept comes back (round 13, C1). */
+function SignInAgain({ ready }: { ready: boolean }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const [problem, setProblem] = useState<string>();
+  useEffect(() => {
+    if (!ready) return;
+    const out = () => { if (!dialog.current?.open) dialog.current?.showModal(); };
+    const stop = onRunOut(out);
+    const at = runsOutAt();
+    const timer = at ? window.setTimeout(out, Math.max(0, at - Date.now()) + 1000) : undefined;
+    if (runOut()) out();
+    return () => { stop(); window.clearTimeout(timer); };
+  }, [ready]);
+  return (
+    <dialog ref={dialog} className="dialog" id="sign-in-again" aria-labelledby="sign-in-again-title"
+            aria-describedby="sign-in-again-about">
+      <h2 id="sign-in-again-title">Sign in again to carry on</h2>
+      <p id="sign-in-again-about">Your sign-in has run out, so a5s can't keep or show anything more until you sign in again. You come back to this page, and what you've changed here that a5s hasn't kept yet comes back with you.</p>
+      {problem && <p className="problem" role="alert">{problem}</p>}
+      <div className="dialog-actions">
+        <button type="button" className="primary" autoFocus
+                onClick={() => signInAgain().catch((e: Error) => setProblem(e.message))}>Sign in again</button>
+      </div>
+    </dialog>
+  );
+}
+
+/** A sign-in that didn't work, such as one for an act cancelled at the identity provider: what
+ * went wrong, that nothing was done, and the way back (round 13, C3). */
+function SignInFailed({ problem }: { problem: string }) {
+  const [again, setAgain] = useState<string>();
+  return (
+    <section className="card" id="sign-in-failed">
+      <h1>Signing in didn't work</h1>
+      <p className="problem" role="alert">{problem}</p>
+      <p>Nothing was done with it. Sign in again to go back to where you were, and try again from there.</p>
+      {again && <p className="problem" role="alert">{again}</p>}
+      <button type="button" className="primary"
+              onClick={() => signInAgain().catch((e: Error) => setAgain(e.message))}>Sign in again</button>
+    </section>
+  );
+}
+
 export function App() {
   const [state, setState] = useState<State>("signing-in");
   const route = useRoute();
@@ -45,7 +90,7 @@ export function App() {
   }, []);
   let content;
   if (state === "signing-in") content = <p className="note" role="status">Signing you in…</p>;
-  else if (typeof state === "object") content = <p className="problem" role="status">{state.problem}</p>;
+  else if (typeof state === "object") content = <SignInFailed problem={state.problem} />;
   else if (route.page === "agent") content = <AgentPage key={route.agent} id={route.agent} />;
   else if (route.page === "instance") content = <InstancePage key={route.instance} id={route.instance} />;
   else if (route.page === "run") content = <RunPage key={route.run} id={route.run} />;
@@ -77,6 +122,7 @@ export function App() {
             <Sidebar signedIn rail />
             <main className="wb-main">{content}</main>
           </div>
+          <SignInAgain ready={ready} />
         </Find>
       </Toasts>
     );
@@ -88,6 +134,7 @@ export function App() {
         <div className="page studio">
           <main>{content}</main>
         </div>
+        <SignInAgain ready={ready} />
       </Find>
     </Toasts>
   );

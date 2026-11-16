@@ -1,14 +1,36 @@
 // The people's studio API in the channels app, as the signed-in person may read it: each call
-// carries their sign-in, kept in memory alone while the studio is open.
+// carries their sign-in, kept in memory alone while the studio is open. A sign-in runs out, as
+// the identity provider sets it, and then the studio asks them to sign in again (round 13, C1).
 
 let token = "";
+let until = 0;  // when it runs out, in seconds, as the sign-in itself says
+const outListeners = new Set<() => void>();
 
 export function signedIn(idToken: string): void {
   token = idToken;
+  try {
+    const part = idToken.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const exp = JSON.parse(atob(part)).exp;
+    until = typeof exp === "number" ? exp : 0;
+  } catch {
+    until = 0;
+  }
 }
 
-export function bearer(): string {
-  return token;
+/** Whether the sign-in has run out, as it says itself. */
+export function runOut(): boolean {
+  return until > 0 && Date.now() / 1000 >= until;
+}
+
+/** When the sign-in runs out, in milliseconds, or 0 if it doesn't say. */
+export function runsOutAt(): number {
+  return until * 1000;
+}
+
+/** Hear when a call is refused because the sign-in has run out. */
+export function onRunOut(then: () => void): () => void {
+  outListeners.add(then);
+  return () => outListeners.delete(then);
 }
 
 export class ApiError extends Error {
@@ -28,6 +50,7 @@ export async function send<T>(method: string, path: string, body?: unknown): Pro
   const answer = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   const found = await answer.json().catch(() => ({}));
   if (!answer.ok) {
+    if (answer.status === 401 && runOut()) outListeners.forEach((then) => then());
     const detail = found.detail;  // words, or, from the settings, the problems a version has
     const said = typeof detail === "string" ? detail
       : Array.isArray(detail?.problems) ? detail.problems.join(" ") : `a5s said ${answer.status}.`;
