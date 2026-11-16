@@ -3,6 +3,7 @@
 // it in the ledger, by its hash alone.
 
 import { AgentMap } from "../AgentMap";
+import { KeepAsCase } from "../RunCase";
 import { type AgentKnown, type Call, get, type Run, usesOf } from "../api";
 import { RunTimeline, Shapes, type Step, type Tone } from "../design";
 import { an, OutcomeBadge, outcomeTone, PageHead, people, plural, risk, time, useLoad, Waiting, when } from "../ui";
@@ -108,6 +109,7 @@ export function RunPage({ id }: { id: string }) {
             <RunTimeline steps={steps(run, agent.data)} />
             <p className="note">{plural(run.calls.length, "call")} to tools. What was said isn't shown here: the team that runs a5s keeps it in the ledger, by its hash alone.</p>
           </section>
+          <KeepAsCase run={run.run} />
         </>
       )}
     </>

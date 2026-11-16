@@ -40,6 +40,7 @@ from a5s.core import (
     officer_api,
     publishing,
     registry,
+    run_cases,
     settings_api,
     settings_app,
     shell_api,
@@ -122,6 +123,17 @@ def may_study(gw: Any, person: Person) -> bool:
         theirs = studio.instances(conn, person)
     return (bool(theirs) or any(r.startswith("agent-owner:") for r in person.roles)
             or drafts.authors(person))
+
+
+class RunCaseAsked(BaseModel):
+    """A run kept as a test case: its name, the made-up person who says it, what they say, as
+    its author checked it, what a right answer is, if they say, and that they checked it."""
+
+    name: str
+    speaker: str
+    say: str
+    judged: str | None = None
+    checked: bool = False
 
 
 class AnswerGrade(BaseModel):
@@ -270,6 +282,33 @@ def router(gw: Any) -> APIRouter:
                 return feedback.grade(conn, gw.scenario, person, answer, body.grade)
             except feedback.Refused as exc:
                 raise HTTPException(404 if "no such" in str(exc) else 400, str(exc)) from None
+
+    @api.get("/studio/api/runs/{run_id}/case", **shapes.answers(shapes.RunCaseOffered))
+    def studio_run_case(run_id: str, person: Annotated[Person, Depends(studying)]) -> dict:
+        """A run as a test case, masked by code, for its agent's author to check and keep, once
+        the data protection officer agrees (core/run_cases.py)."""
+        with db.transaction(gw.url) as conn:
+            try:
+                return run_cases.proposed(conn, gw.scenario, person, run_id, gw.definitions,
+                                          gw.data_protection(conn))
+            except run_cases.Refused as exc:
+                raise HTTPException(404 if "no such" in str(exc) else 403, str(exc)) from None
+
+    @api.post("/studio/api/runs/{run_id}/case", **shapes.answers(shapes.RunCaseKept))
+    def studio_keep_run_case(run_id: str, body: RunCaseAsked,
+                             person: Annotated[Person, Depends(studying)]) -> dict:
+        """Keep a run as a test case in someone's draft of its agent, as they checked it."""
+        with db.transaction(gw.url) as conn:
+            try:
+                kept = run_cases.keep(conn, gw.scenario, person, run_id, gw.definitions,
+                                      gw.data_protection(conn), gw.cfg.agents_dir,
+                                      name=body.name, as_=body.speaker, say=body.say,
+                                      judged=body.judged, checked=body.checked)
+            except (run_cases.Refused, drafts.Refused) as exc:
+                raise HTTPException(404 if "no such" in str(exc) else 409, str(exc)) from None
+        case = kept["case"]
+        return {**kept, "case": {"name": case["name"], "speaker": case["as"],
+                                 "steps": case["steps"]}}
 
     @api.get("/studio/api/map", **shapes.answers(shapes.DependsOn))
     def studio_map(person: Annotated[Person, Depends(someone)]) -> dict:

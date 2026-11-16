@@ -935,6 +935,47 @@ export type Run = {
   calls: Call[];
 };
 
+export type RunCase = {
+  name: string;
+  speaker: string;
+  steps: RunCaseStep[];
+};
+
+// A run kept as a test case: its name, the made-up person who says it, what they say, as
+// its author checked it, what a right answer is, if they say, and that they checked it.
+export type RunCaseAsked = {
+  name: string;
+  speaker: string;
+  say: string;
+  judged?: string | null;
+  checked?: boolean;
+};
+
+// A run kept as a test case: the draft it went in, its file, and the case as kept.
+export type RunCaseKept = {
+  draft: string;
+  file: string;
+  case: RunCase;
+};
+
+// A run as a test case, for its author to check and keep (core/run_cases.py): what was
+// said to the agent and what it answered, masked by code; how many of each kind code masked,
+// such as names; and the tools it used, which a5s let it, or held for someone to decide.
+export type RunCaseOffered = {
+  run: string;
+  agent: string;
+  say: string;
+  answer: string;
+  masked: Record<string, number>;
+  uses: string[];
+};
+
+export type RunCaseStep = {
+  say: string;
+  uses?: string[];
+  judged?: string;
+};
+
 export type RunLine = {
   run: string;
   instance: string;

@@ -331,6 +331,40 @@ class AnswerGraded(Shape):
     grade: Literal["right", "wrong", "critical"]
 
 
+class RunCaseOffered(Shape):
+    """A run as a test case, for its author to check and keep (core/run_cases.py): what was
+    said to the agent and what it answered, masked by code; how many of each kind code masked,
+    such as names; and the tools it used, which a5s let it, or held for someone to decide."""
+
+    run: str
+    agent: str
+    say: str
+    answer: str
+    masked: dict[str, int]
+    uses: list[str]
+
+
+class RunCaseStep(Shape):
+    say: str
+    uses: list[str] | SkipJsonSchema[None] = None
+    judged: str | SkipJsonSchema[None] = None
+
+
+class RunCase(Shape):
+    name: str
+    # whom the case speaks as, a made-up person: "as" in the file
+    speaker: str
+    steps: list[RunCaseStep]
+
+
+class RunCaseKept(Shape):
+    """A run kept as a test case: the draft it went in, its file, and the case as kept."""
+
+    draft: str
+    file: str
+    case: RunCase
+
+
 class Requested(Shape):
     """A version of the settings asked for, which the core proposes to everyone it needs."""
 

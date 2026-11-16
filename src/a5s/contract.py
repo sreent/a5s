@@ -261,6 +261,10 @@ class DataProtection:
     # Whether the status names deciders whose approvals are graded wrong far more often than
     # others': profiling people
     flag_rubber_stamps: bool = False
+    # Whether those who author an agent may keep one of its runs as a test case: what someone
+    # said to it, masked by code and checked by its author, in the agent's folder from then
+    # (core/run_cases.py)
+    cases_from_runs: bool = False
 
 
 @dataclass(frozen=True)
@@ -363,6 +367,7 @@ class _DataProtection(BaseModel):
     studio_names: bool = DataProtection.studio_names
     audit_names: bool = DataProtection.audit_names
     flag_rubber_stamps: bool = DataProtection.flag_rubber_stamps
+    cases_from_runs: bool = DataProtection.cases_from_runs
 
 
 class _Version(BaseModel):

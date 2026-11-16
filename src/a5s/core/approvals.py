@@ -313,6 +313,9 @@ NAMING = {
                             "more often than others'."),
                            ("The status names no decider for how often their approvals are "
                             "graded wrong.")),
+    "cases_from_runs": (("Those who author an agent may keep one of its runs as a test case: "
+                         "what someone said to it, masked by code and checked by its author."),
+                        ("No run of an agent's becomes a test case: its cases are made up.")),
 }
 
 
