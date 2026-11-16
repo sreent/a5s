@@ -248,3 +248,18 @@ def test_a_salt_is_one_the_studio_makes():
     assert sealing.salted(salt) and not sealing.salted(moved)
     assert officer.nonce("erase", "ana x", salt) == officer.nonce("erase", "ana", f"x {salt}")
     assert not sealing.salted(f"x {salt}") and not sealing.salted("short") and not sealing.salted(None)
+
+
+def test_an_authentication_context_is_asked_for_where_the_deployment_shows_a_second_factor_by_one():
+    """D3: on Entra ID, a v2.0 token may never carry amr, so a deployment can show a second
+    factor by an authentication context, acrs, as Entra documents, which the pages ask for."""
+    from types import SimpleNamespace
+
+    from a5s.core import identity
+
+    entra = SimpleNamespace(mfa=("acrs", ("c1",)))
+    assert identity.asked_claims(entra) == '{"id_token":{"acrs":{"essential":true,"value":"c1"}}}'  # type: ignore[arg-type]
+    assert identity.second_factor(entra, {"acrs": ["c1"]})  # type: ignore[arg-type]
+    assert not identity.second_factor(entra, {"amr": ["pwd"]})  # type: ignore[arg-type]
+    assert identity.asked_claims(SimpleNamespace(mfa=("amr", ("mfa",)))) is None  # type: ignore[arg-type]
+    assert identity.asked_level(entra) is None  # type: ignore[arg-type]

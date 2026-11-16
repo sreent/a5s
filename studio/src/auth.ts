@@ -10,7 +10,7 @@ import { leavingToSignIn } from "./unkept";
 const PENDING = "a5s.studio";
 const BACK = `${location.origin}/studio/`;
 
-type SignInConfig = { authorization_endpoint: string; client_id: string; scope: string; acr_values?: string };
+type SignInConfig = { authorization_endpoint: string; client_id: string; scope: string; acr_values?: string; claims?: string };
 /** An act signed in for, and what carrying it out needs, the salt its nonce was made with
  * among it: suspending or resuming an instance, deciding held changes, grading samples, the
  * data protection officer's request, or approving a version of the settings. */
@@ -106,6 +106,7 @@ async function start(signin: SignInConfig, act?: Act, nonce?: string, stronger =
   };
   if (act) query.max_age = "0";  // afresh, not a sign-in the browser kept
   if ((act || stronger) && signin.acr_values) query.acr_values = signin.acr_values;  // the level what counts needs
+  if ((act || stronger) && signin.claims) query.claims = signin.claims;  // or the authentication context
   for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
   leavingToSignIn();  // what isn't kept yet stays in the tab, and comes back with them
   location.assign(url.toString());

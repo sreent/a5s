@@ -90,7 +90,7 @@ The tests check that neither compose nor the chart sets a setting to its default
 | `A5S_OIDC_PERSON_CLAIM` | `preferred_username` | text | The claim that says who someone is, as the directory knows them |
 | `A5S_OIDC_METADATA_URL` | none | an http(s):// address | Where the provider's metadata is, if not where the issuer says |
 | `A5S_OIDC_DIRECTORY_PREFIX` | none | text | What to take off the person claim to find someone in the directory |
-| `A5S_OIDC_MFA` | none | claim:value,value, such as amr:mfa | The second factor what counts needs a sign-in to show, as the claim and the values that show it |
+| `A5S_OIDC_MFA` | none | claim:value,value, such as amr:mfa, acr:gold or acrs:c1 | The second factor what counts needs a sign-in to show, as the claim and the values that show it: a level (`acr`) or an authentication context (`acrs`) the pages ask the provider for |
 | `A5S_OIDC_GROUPS_CLAIM` | `groups` | text | The claim sign-ins show groups in, for the roles the settings give them; set empty for none |
 | `A5S_WEBCHAT_CLIENT_ID` | none | text | The web chat's client at the identity provider, a public one |
 

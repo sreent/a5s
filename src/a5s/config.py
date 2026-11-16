@@ -297,8 +297,9 @@ OIDC_METADATA_URL = Var("A5S_OIDC_METADATA_URL", "where the provider's metadata 
 OIDC_DIRECTORY_PREFIX = Var("A5S_OIDC_DIRECTORY_PREFIX", "what to take off the person claim to "
                             "find someone in the directory", None, area=SIGN_IN)
 OIDC_MFA = Var("A5S_OIDC_MFA", "the second factor what counts needs a sign-in to show, as the "
-               "claim and the values that show it", None, second_factor,
-               "claim:value,value, such as amr:mfa", area=SIGN_IN)
+               "claim and the values that show it: a level (`acr`) or an authentication context "
+               "(`acrs`) the pages ask the provider for", None, second_factor,
+               "claim:value,value, such as amr:mfa, acr:gold or acrs:c1", area=SIGN_IN)
 OIDC_GROUPS_CLAIM = Var("A5S_OIDC_GROUPS_CLAIM", "the claim sign-ins show groups in, for the "
                         "roles the settings give them; set empty for none", "groups",
                         area=SIGN_IN, empty=None, empty_is_default=False)
