@@ -23,6 +23,7 @@ from pydantic import BaseModel
 from a5s import authoring, cases, db, definitions, describing
 from a5s.contract import Person
 from a5s.core import (
+    admin_api,
     administration,
     approvals,
     asks,
@@ -183,6 +184,7 @@ def router(gw: Any) -> APIRouter:
     @pages.get("/studio/settings", include_in_schema=False)
     @pages.get("/studio/notebook", include_in_schema=False)
     @pages.get("/studio/tasks", include_in_schema=False)
+    @pages.get("/studio/admin", include_in_schema=False)
     @pages.get("/studio/design", include_in_schema=False)
     def studio_new() -> Response:
         """The studio, where someone starts a new agent, sees all the agents they may, what they
@@ -908,6 +910,7 @@ def described() -> dict:
     app.include_router(settings_api.router(SimpleNamespace(cfg=None)))  # the settings, folded in
     app.include_router(notebook_api.router(SimpleNamespace(cfg=None)))  # and the notebook
     app.include_router(tasks_api.router(SimpleNamespace(cfg=None)))  # and people's tasks
+    app.include_router(admin_api.router(SimpleNamespace(cfg=None)))  # and the administrators' page
     return app.openapi()
 
 

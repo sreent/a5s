@@ -5,6 +5,38 @@ export type ActedFor = {
   name: string | null;
 };
 
+// An administrative act, as the ledger records it: who did it, when, and to what, with whom
+// it was about as a stand-in until the officer agrees to names.
+export type AdminAct = {
+  seq: number;
+  at: string | null;
+  action: string;
+  what: string;
+  by: string | string[] | null;
+  instance: string | null;
+  about: Record<string, unknown>;
+};
+
+// The administrators' page: who holds each role and by what, what waits for whom, what
+// nobody answers for, and the latest acts.
+export type AdminNow = {
+  you: string;
+  roles: RoleHeld[];
+  groups: GroupGives[];
+  claim: string | null;
+  waiting: AdminWaiting;
+  ownerless: Ownerless;
+  days: number;
+  latest: AdminAct[];
+};
+
+// What waits for whom: versions of the settings, the release, and held changes.
+export type AdminWaiting = {
+  settings: VersionNeeds[];
+  release: string[];
+  held_changes: HeldIn[];
+};
+
 // An agent as someone sees it: each layer of it they see, with why. What a layer they
 // don't see would add is left out, not null.
 export type Agent = {
@@ -320,6 +352,13 @@ export type GroupChats = {
   people: number;
 };
 
+// A group of the identity provider's that the settings give roles, and how many it holds.
+export type GroupGives = {
+  group: string;
+  roles: string[];
+  people: number;
+};
+
 export type HTTPValidationError = {
   detail?: ValidationError[];
 };
@@ -343,6 +382,20 @@ export type Held = {
   approved_share: number | null;
   decided_hours_p50: number | null;
   decided_hours_p90: number | null;
+};
+
+// Changes agents asked for in a part, waiting, and who may decide them.
+export type HeldIn = {
+  part: string;
+  waiting: number;
+  deciders: string[];
+};
+
+// Someone who holds a role, and what gave it them: the directory, or a group.
+export type Holder = {
+  id: string;
+  name: string;
+  by: string[];
 };
 
 export type Home = {
@@ -425,6 +478,15 @@ export type Named = {
   name: string;
 };
 
+// Something nobody answers for any more, what's wrong, and what to do.
+export type Nobodys = {
+  what: string;
+  do: string;
+  agent?: string;
+  instance?: string;
+  part?: string;
+};
+
 // A note an agent kept, with the records it comes from, when it was noted, and when its
 // records were last checked.
 export type Note = {
@@ -504,6 +566,13 @@ export type Offered = {
   changes: string | null;
   handles: string[];
   outside: string[];
+};
+
+// The agents, instances and parts nobody answers for.
+export type Ownerless = {
+  agents: Nobodys[];
+  instances: Nobodys[];
+  parts: Nobodys[];
 };
 
 // A part of the business, as the settings in force know it: who decides a change to one
@@ -624,6 +693,13 @@ export type Role = {
   name: string;
   by: string[];
   may: string;
+};
+
+// A role, in words, and who holds it.
+export type RoleHeld = {
+  role: string;
+  name: string;
+  held_by: Holder[];
 };
 
 export type Run = {
@@ -892,6 +968,13 @@ export type ValidationError = {
   type: string;
   input?: unknown;
   ctx?: Record<string, unknown>;
+};
+
+// A version of the settings waiting, who approved it, and whose approval it still needs.
+export type VersionNeeds = {
+  serial: number;
+  approved_by: string[];
+  needs: string[];
 };
 
 // A version waiting for approval: what it changes, who approved it so far, and why it still

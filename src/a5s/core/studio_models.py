@@ -963,3 +963,100 @@ class TaskStopped(Shape):
 
     cancelled: str | SkipJsonSchema[None] = None
     stopped: str | SkipJsonSchema[None] = None
+
+
+# The administrators' page, folded into the studio (core/admin_api.py): who holds each role and
+# by what, what waits for whom, what nobody answers for, and the latest administrative acts
+
+
+class Holder(Shape):
+    """Someone who holds a role, and what gave it them: the directory, or a group."""
+
+    id: str
+    name: str
+    by: list[str]
+
+
+class RoleHeld(Shape):
+    """A role, in words, and who holds it."""
+
+    role: str
+    name: str
+    held_by: list[Holder]
+
+
+class GroupGives(Shape):
+    """A group of the identity provider's that the settings give roles, and how many it holds."""
+
+    group: str
+    roles: list[str]
+    people: int
+
+
+class VersionNeeds(Shape):
+    """A version of the settings waiting, who approved it, and whose approval it still needs."""
+
+    serial: int
+    approved_by: list[str]
+    needs: list[str]
+
+
+class HeldIn(Shape):
+    """Changes agents asked for in a part, waiting, and who may decide them."""
+
+    part: str
+    waiting: int
+    deciders: list[str]
+
+
+class AdminWaiting(Shape):
+    """What waits for whom: versions of the settings, the release, and held changes."""
+
+    settings: list[VersionNeeds]
+    release: list[str]
+    held_changes: list[HeldIn]
+
+
+class Nobodys(Shape):
+    """Something nobody answers for any more, what's wrong, and what to do."""
+
+    what: str
+    do: str
+    agent: str | SkipJsonSchema[None] = None
+    instance: str | SkipJsonSchema[None] = None
+    part: str | SkipJsonSchema[None] = None
+
+
+class Ownerless(Shape):
+    """The agents, instances and parts nobody answers for."""
+
+    agents: list[Nobodys]
+    instances: list[Nobodys]
+    parts: list[Nobodys]
+
+
+class AdminAct(Shape):
+    """An administrative act, as the ledger records it: who did it, when, and to what, with whom
+    it was about as a stand-in until the officer agrees to names."""
+
+    seq: int
+    at: str | None
+    action: str
+    what: str
+    by: str | list[str] | None  # whoever did it, or each who signed it
+    instance: str | None
+    about: dict[str, Any]
+
+
+class AdminNow(Shape):
+    """The administrators' page: who holds each role and by what, what waits for whom, what
+    nobody answers for, and the latest acts."""
+
+    you: str
+    roles: list[RoleHeld]
+    groups: list[GroupGives]
+    claim: str | None  # the claim sign-ins show their groups in, if the deployment reads one
+    waiting: AdminWaiting
+    ownerless: Ownerless
+    days: int
+    latest: list[AdminAct]
