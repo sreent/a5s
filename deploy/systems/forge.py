@@ -32,8 +32,10 @@ NAME = "forge"  # as the scenario's mcp.yaml names it, and the file it keeps its
 PORT = 9203
 LINK = "https://code.dev.test/"
 QUERY = {"type": "object", "required": ["query"], "properties": {"query": {"type": "string"}}}
+# A reviewer is someone in the directory, by their id, which is in lower case, as a forge's are
 REVIEW = {"type": "object", "required": ["key", "reviewer"],
-          "properties": {"key": {"type": "string"}, "reviewer": {"type": "string"}}}
+          "properties": {"key": {"type": "string"},
+                         "reviewer": {"type": "string", "pattern": "^[a-z][a-z0-9-]*$"}}}
 
 
 @dataclass

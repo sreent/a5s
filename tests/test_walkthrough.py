@@ -31,6 +31,7 @@ from test_studio_authoring import kept
 from walkthrough import (
     Walk,
     answering,
+    confirms,
     decided_in_trail,
     deployed,
     merged,
@@ -46,8 +47,9 @@ INSTANCE = f"{AGENT}-billing"
 INSTRUCTIONS = """# due-dates
 
 You keep the due dates of customers' questions in billing right. When someone asks you to move
-one, find the question, say what its due date is now, and ask for the change: its decider in
-billing decides it. Never move a date you weren't asked to move.
+one, find the question, say what its due date is now, and ask for the change at once, with the tool
+that makes it: its decider in billing decides it, so you needn't ask them to confirm it first.
+Never move a date you weren't asked to move.
 """
 
 
@@ -152,6 +154,7 @@ def asked_and_decided(walk: Walk, stack, url: str) -> str:
     with walk.step("Ben asks due-dates, in the chat, to move a question's due date. It asks for "
                    "the change, which waits for Ana, its decider in billing.", page):
         says(page, AGENT, f"Please move Q-1002 to {day}.", f"I've asked to move it to {day}")
+        confirms(page, stack, AGENT)
     page = walk.as_("ana", f"{url}/studio/")
     with walk.step("Ana finds the change waiting for her decision, and opens its card: who asks, "
                    "for whom, and what it does, in code's words.", page):

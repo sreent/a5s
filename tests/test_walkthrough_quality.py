@@ -16,6 +16,7 @@ from __future__ import annotations
 import shutil
 
 import yaml
+from playwright.sync_api import TimeoutError as NotYet
 
 from a5s import db
 from a5s.core import drafts
@@ -168,6 +169,13 @@ def reported_to_mo(walk: Walk, stack, url: str, on: On) -> str:
     with walk.step("On a working morning, Mo reads its report in his day from a5s, in the chat: how "
                    "material data stands against its target, from what code measured, and that nothing "
                    "waits on him.", page):
+        for _ in range(3 if on.live else 0):  # a real model's run can fail, and is due again at the
+            try:  # scheduler's next sweep, a minute on, as here: his day waits for all of it
+                page.wait_for_selector("li >> text=From the quality-helper", timeout=30000)
+                break
+            except NotYet:
+                stack.scheduler().work_due()
+                page.reload()
         page.wait_for_selector("li >> text=From the quality-helper", timeout=30000)
         digest = page.inner_text("li:has-text('From the quality-helper')")
         own = digest.partition("From the quality-helper")[2].split("\nFrom the ")[0]  # its alone

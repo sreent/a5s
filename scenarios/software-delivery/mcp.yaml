@@ -41,7 +41,7 @@ tools:
     server: forge
     calls: request_review
     description: Ask someone to review an open pull request, which its repository's owners decide.
-    arguments: {type: object, required: [key, reviewer], properties: {key: {type: string, description: "A pull request, such as PR-17"}, reviewer: {type: string, description: "Who to ask, by their id in the directory"}}}
+    arguments: {type: object, required: [key, reviewer], properties: {key: {type: string, description: "A pull request, such as PR-17"}, reviewer: {type: string, pattern: "^[a-z][a-z0-9-]*$", description: "Who to ask, by their id in the directory, in lower case, such as sol"}}}
     returns: [key, reviewers, link]
     writes: true
     idempotent: true

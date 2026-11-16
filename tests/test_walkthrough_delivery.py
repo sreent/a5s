@@ -33,6 +33,7 @@ from scenario_stack import running_scenario
 from test_studio_authoring import kept
 from test_walkthrough_desk import able, definition
 from walkthrough import (
+    LIVE,
     Walk,
     answering,
     decided_in_trail,
@@ -63,8 +64,9 @@ and you say so if anyone asks.
 - Save a description, a review comment or a release note with `create_draft`: you never post it.
 - When someone asks for a review by a named teammate, use `request_review`: it waits for the
   repository's owners, and you say so.
-- Offer work that needs more than one sitting with `offer_task`, and start it with `confirm_task`
-  once they say yes in a later message.
+- Offer work that needs more than one sitting, or that someone asks for as a task or in slices,
+  with `offer_task` rather than doing it in the chat, and start it with `confirm_task` once they
+  say yes in a later message.
 - You merge nothing, approve no review, change no issue and run no code.
 """
 
@@ -184,8 +186,9 @@ def reviewed(walk: Walk, stack, url: str) -> None:
 
 def tasked(walk: Walk, stack, url: str) -> None:
     """Raj starts a review task in the chat, watches it on his own page, and stops it there."""
-    asked = "Review all my open fixes against their checks, in two slices"
-    stack.model.reply(None, ("offer_task", {"task": asked}))
+    asked = "As a task, in two slices: review all my open fixes against their checks"
+    stack.model.reply(None, ("offer_task", {"task": "Review all my open fixes against their checks, "
+                                                    "in two slices"}))
     stack.model.reply("I can do that as a task, over two slices: shall I start it?")
     page = walk.as_("raj", f"{url}/chat/")
     with walk.step("Raj asks it for a review of all his open fixes, which takes more than one sitting. "
@@ -198,7 +201,7 @@ def tasked(walk: Walk, stack, url: str) -> None:
     with walk.step("On his own page he watches T-1, waiting for its first slice, with what it may spend "
                    "and by when.", page):
         page.wait_for_selector("#tasks li >> text=T-1", timeout=30000)
-        assert "Review all my open fixes" in page.inner_text("#tasks")
+        assert LIVE or "Review all my open fixes" in page.inner_text("#tasks")  # a model's words
     with walk.step("He stops it there, since PR-17's review comes first.", page):
         page.click("#tasks li button:has-text('Cancel')")
         page.wait_for_selector("#status >> text=Cancelled T-1", timeout=30000)
