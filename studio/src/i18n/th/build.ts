@@ -368,6 +368,8 @@ export const BUILD: Record<string, string> = {
     "เครื่องมือนี้อ่านข้อมูล: a5s ส่งต่อเฉพาะระเบียนที่ทุกคนที่การทำงานนั้นทำแทนเห็นได้ ในส่วนงานที่อินสแตนซ์ทำงานอยู่",
   "What it brings from outside the organisation, its {what}, goes to a5s's reader first: the agent reads only what the reader takes from it, and the run is marked, so it never acts at level 2.":
     "สิ่งที่เครื่องมือนี้นำเข้ามาจากภายนอกองค์กร ได้แก่ {what} จะผ่านตัวอ่านของ a5s ก่อน: เอเจนต์อ่านเฉพาะสิ่งที่ตัวอ่านดึงออกมา และการทำงานนั้นจะถูกทำเครื่องหมายไว้ จึงไม่ทำงานที่ระดับ 2",
+  "What it brings holds a few words written outside the organisation, such as titles, which the agent reads as they are: so the run is marked, and never acts at level 2.":
+    "สิ่งที่เครื่องมือนี้นำมามีถ้อยคำสั้น ๆ ที่เขียนขึ้นภายนอกองค์กร เช่น ชื่อเอกสาร ซึ่งเอเจนต์อ่านตามที่เป็นอยู่ การทำงานนั้นจึงถูกทำเครื่องหมายไว้ และไม่ทำงานที่ระดับ 2",
   "It hands {what} over as handles: the model never sees the values, and a5s puts them back where they go.":
     "เครื่องมือนี้ส่ง {what} เป็นตัวอ้างอิง: โมเดลไม่เคยเห็นค่าจริง และ a5s จะใส่ค่ากลับไปในที่ที่ควรอยู่",
   "no time yet": "ยังไม่ได้กำหนดเวลา",

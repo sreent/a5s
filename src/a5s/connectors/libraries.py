@@ -25,7 +25,8 @@ release's handbook is approved, so unless the release says its library's editors
 the handbook's (`outside: false`), each document is content from outside: the agent gets the form
 a5s's extractor fills from it, with the document's number, and asks a5s's reader about it, and
 its run is marked, as for any content from outside (core/extractor.py). Its searches show titles
-alone, never a line of a document. A document is a library's only if its link is within the
+alone, never a line of a document, and mark the run too, since a title and a link are written
+outside the release as well. A document is a library's only if its link is within the
 library's address, or, in Confluence, its space.
 
 In the studio's sandbox, a library reads its `sandbox` folder of made-up documents in the
@@ -742,6 +743,7 @@ def _pair(name: str, library: Library, reader: _Reader) -> dict[str, Tool]:
                          f"titles and links.{about}{trust} Read a match with read_{name}."),
             schema={"type": "object", "required": ["query"], "properties": {
                 "query": {"type": "string", "maxLength": QUERY}}},
+            marks=library.outside,  # its titles and links are written outside the release too
             library=name, title=library.title, declared=declared, as_person=system),
         f"read_{name}": Shelved(
             name=f"read_{name}", run=read,

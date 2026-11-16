@@ -2730,6 +2730,11 @@ def create_app(gw: Gateway) -> FastAPI:
                 outcome["withheld"] = withheld
             if tool.outside:  # never the content itself: the extractor's form, checked by code
                 result, outcome["documents"] = read_outside(row, token, tool, result)
+            elif tool is not None and tool.marks and not (isinstance(result, dict)
+                                                          and result.get("error")):
+                with db.transaction(gw.url) as conn:  # a few words from outside, as they are
+                    conn.execute("update runs set read_outside = true where id = %s",
+                                 (row["run"],))
             with db.transaction(gw.url) as conn:  # the agent gets handles for sensitive values,
                 hidden = (*tool.handles, *sorted(gw.hidden_from(conn, row)))  # and classified
                 result = handles.issue(conn, row["run"], name, result, hidden)  # ones it can't see

@@ -27,7 +27,7 @@ function Facts({ agent, uses }: { agent: AgentKnown; uses: AgentUses }) {
           [t("Writes"), named((tool) => !!tool.writes && !tool.changes)],
           [t("Changes"), named((tool) => !!tool.changes || !!tool.destructive)],
           [t("Sends outside"), named((tool) => !!tool.sends_outside)],
-          [t("Reads outside content"), named((tool) => tool.outside.length > 0)]]}
+          [t("Reads outside content"), named((tool) => tool.outside.length > 0 || tool.marks)]]}
         more={{ title: t("It may spend"), aside: t("tokens"), rows: [
           [t("In a run"), uses.budget.per_run.toLocaleString(locale())],
           [t("For each person, each day"), uses.budget.per_person_per_day.toLocaleString(locale())]] }}

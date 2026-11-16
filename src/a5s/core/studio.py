@@ -125,6 +125,7 @@ def _tools(definition: Definition, tools: dict[str, Tool]) -> list[dict]:
                           "changes": tool.action if tool else None,
                           "handles": list(tool.handles) if tool else [],
                           "outside": list(tool.outside) if tool else [],
+                          "marks": bool(tool and tool.marks),
                           "pinned": definition.pins.get(name),
                           "missing": tool is None})
     return found
@@ -134,7 +135,7 @@ def offered(tools: dict[str, Tool]) -> list[dict]:
     """Each of the scenario's tools an agent may be given, with what it reads, writes or
     changes, as an agent's page shows its own."""
     return [{"name": name, "description": tool.description, **tool.risk, "changes": tool.action,
-             "handles": list(tool.handles), "outside": list(tool.outside)}
+             "handles": list(tool.handles), "outside": list(tool.outside), "marks": tool.marks}
             for name, tool in sorted(tools.items())]
 
 

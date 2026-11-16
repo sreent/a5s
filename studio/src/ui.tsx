@@ -110,7 +110,7 @@ export function ToolBadges({ tool }: { tool: Tool }) {
       {tool.changes && <Badge tone="changes">{t("changes {record}", { record: tool.changes })}</Badge>}
       {tool.destructive && <Badge tone="changes">{t("destructive")}</Badge>}
       {tool.sends_outside && <Badge tone="outside">{t("sends outside")}</Badge>}
-      {tool.outside.length > 0 && <Badge tone="outside">{t("reads outside content")}</Badge>}
+      {(tool.outside.length > 0 || tool.marks) && <Badge tone="outside">{t("reads outside content")}</Badge>}
       {tool.handles.length > 0 && <Badge>{t("hands over {records}", { records: tool.handles.join(", ") })}</Badge>}
       {tool.missing && <Badge tone="bad">{t("not in the scenario")}</Badge>}
     </span>

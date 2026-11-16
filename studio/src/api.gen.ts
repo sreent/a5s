@@ -883,6 +883,7 @@ export type Offered = {
   changes: string | null;
   handles: string[];
   outside: string[];
+  marks: boolean;
 };
 
 // The officer's request, recorded for the team that runs a5s to carry out, once, with the
@@ -1449,6 +1450,7 @@ export type Tool = {
   changes: string | null;
   handles: string[];
   outside: string[];
+  marks: boolean;
   pinned: string | null;
   missing: boolean;
 };

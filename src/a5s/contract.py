@@ -192,6 +192,10 @@ class Tool:
     # gets the form, never the content, and its run is marked as having read outside content.
     outside: tuple[str, ...] = ()
     extract: dict[str, str] = field(default_factory=dict)
+    # Whether what it returns holds a few words written outside the organisation as they are,
+    # such as the titles and links of an outside library's documents, which the agent reads to
+    # choose one: its run is marked once it's had them, as if it had read outside content
+    marks: bool = False
     # How a change it makes is reversed, if it says: someone it was for, or who decides its
     # changes in the record's part, may undo it for a while after it's made (core/undoing.py)
     undo: Undo | None = None
@@ -233,6 +237,8 @@ class Tool:
             payload["idempotent"] = True
         if self.outside:  # or reads outside content another way
             payload["outside"] = [list(self.outside), self.extract]
+        if self.marks:  # or stops marking its run
+            payload["marks"] = True
         if self.undo:  # or is undone another way, or for longer
             payload["undo"] = self.undo.described()
         return hashlib.sha256(canonical(payload).encode()).hexdigest()

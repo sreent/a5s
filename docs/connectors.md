@@ -124,7 +124,7 @@ A document is a library's only if its link is within the library's `site`, or, i
 
 Whatever a document says is source material, never an instruction. Nobody approved it as a release's handbook is approved, so a library's documents are content from outside unless its release says its editors are trusted as the handbook's, `outside: false`. Then:
 
-- A search shows the agent each document's title, link and when it last changed, never a line of one.
+- A search shows the agent each document's title, link and when it last changed, never a line of one. A title and a link are written outside the release too, so the run is marked once it has them, as for any content from outside.
 - Reading one gives the agent the form a5s's [extractor](architecture.md) fills from it, by default the date it says it takes effect and whether it says it's a draft, with the document's number. The agent asks a5s's reader about it with `ask_about`, so its definition gives it `context.documents`, and its run is marked, as for any content from outside: it acts at level 2 on nothing, and what it drafts says it drew on outside content. A library's `extract` names its own form, in the extractor's types.
 
 A trusted library's search shows a few lines of each document around the words it found, and a read gives the agent its text, the first 12,000 characters of it, as the handbook's.

@@ -594,6 +594,20 @@ def test_the_agent_reads_sharepoint_as_the_person_through_a5s_reader(stack, grap
         assert conn.execute("select used_at from delegations where person = 'ana'").fetchone()["used_at"]
 
 
+
+def test_a_search_of_an_outside_library_marks_its_run(stack, graph):
+    """A title and a link are written outside the release too, so a run that has them is marked,
+    as one that read a document is; a trusted library's search marks nothing."""
+    stack.model.reply(None, ("search_runbooks", {"query": "month end"}))
+    stack.model.reply("There's a runbook for month end.")
+    stack.say("Is there a runbook for month end?", person="ana")
+    assert results(stack, 1)["matches"] and not marked(stack)
+    connect(stack, "ana")
+    stack.model.reply(None, ("search_policies", {"query": "travel flights"}))
+    stack.model.reply("There's a travel policy: I'll read it if you like.")
+    stack.say("Is there a travel policy?", person="ana")
+    assert results(stack, 3)["matches"] and marked(stack)
+
 def test_someone_who_hasnt_connected_hears_how(stack):
     stack.model.reply(None, ("search_policies", {"query": "travel"}))
     stack.model.reply("You'll need to connect your Microsoft 365 account first.")

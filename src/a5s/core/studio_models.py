@@ -288,6 +288,7 @@ class Tool(Shape):
     changes: str | None  # the type of change it makes, which people decide at level 1
     handles: list[str]
     outside: list[str]
+    marks: bool  # what it returns holds a few words from outside as they are: its run is marked
     pinned: str | None
     missing: bool
 
@@ -810,6 +811,7 @@ class Offered(Shape):
     changes: str | None
     handles: list[str]
     outside: list[str]
+    marks: bool
 
 
 class PartRule(Shape):

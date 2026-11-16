@@ -91,6 +91,9 @@ export function toolLines(tool: Offered, spec: Spec, offer: Offer): string[] {
     lines.push(t("What it brings from outside the organisation, its {what}, goes to a5s's reader first: the agent reads only what the reader takes from it, and the run is marked, so it never acts at level 2.",
                  { what: and(tool.outside) }));
   }
+  if (tool.marks) {
+    lines.push(t("What it brings holds a few words written outside the organisation, such as titles, which the agent reads as they are: so the run is marked, and never acts at level 2."));
+  }
   if (tool.handles.length) {
     lines.push(t("It hands {what} over as handles: the model never sees the values, and a5s puts them back where they go.",
                  { what: and(tool.handles) }));
