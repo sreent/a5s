@@ -27,7 +27,7 @@ function steps(run: Run, agent: AgentKnown | undefined): Step[] {
       at: time(call.at), tone: tone(call), what: <code>{call.tool}</code>,
       detail: [DECIDED[call.decision] ?? call.decision, call.outcome, ...call.reasons].filter(Boolean).join(" · "),
     })),
-    ...(run.closed_at ? [{ at: time(run.closed_at), tone: outcomeTone(run.outcome) as Tone,
+    ...(run.closed_at ? [{ at: time(run.closed_at), tone: outcomeTone(run.outcome),
                            what: `Ended: ${run.outcome}`, detail: `after ${took(run)}` }] : []),
   ];
 }

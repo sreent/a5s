@@ -3,6 +3,7 @@
 
 import { type DependencyList, type ReactNode, useEffect, useRef, useState } from "react";
 import type { AgentUses, Instance, Tool, Waiting as Wait } from "./api";
+import { Badge, type Tone } from "./design/controls";
 import { Loading, Skeleton } from "./design/feedback";
 import { inside, justMoved, Link, type Route } from "./router";
 
@@ -100,40 +101,40 @@ export const RISK_NAMES: Record<Risk, string> = {
 export function ToolBadges({ tool }: { tool: Tool }) {
   return (
     <span className="badges">
-      {tool.reads && <span className="badge reads">reads</span>}
-      {tool.writes && !tool.changes && <span className="badge writes">writes</span>}
-      {tool.changes && <span className="badge changes">changes {tool.changes}</span>}
-      {tool.destructive && <span className="badge changes">destructive</span>}
-      {tool.sends_outside && <span className="badge outside">sends outside</span>}
-      {tool.outside.length > 0 && <span className="badge outside">reads outside content</span>}
-      {tool.handles.length > 0 && <span className="badge">hands over {tool.handles.join(", ")}</span>}
-      {tool.missing && <span className="badge bad">not in the scenario</span>}
+      {tool.reads && <Badge tone="reads">reads</Badge>}
+      {tool.writes && !tool.changes && <Badge tone="writes">writes</Badge>}
+      {tool.changes && <Badge tone="changes">changes {tool.changes}</Badge>}
+      {tool.destructive && <Badge tone="changes">destructive</Badge>}
+      {tool.sends_outside && <Badge tone="outside">sends outside</Badge>}
+      {tool.outside.length > 0 && <Badge tone="outside">reads outside content</Badge>}
+      {tool.handles.length > 0 && <Badge>hands over {tool.handles.join(", ")}</Badge>}
+      {tool.missing && <Badge tone="bad">not in the scenario</Badge>}
     </span>
   );
 }
 
+// The badges a page shows are Ocean's Badge, as the showcase shows it (pages/Design.tsx)
 export function StatusBadge({ status }: { status: string }) {
-  const tone = status === "active" ? "good" : status === "suspended" ? "warn" : "";
-  return <span className={`badge ${tone}`}><span className="dot" />{status}</span>;
+  const tone = status === "active" ? "good" : status === "suspended" ? "warn" : undefined;
+  return <Badge tone={tone} dot>{status}</Badge>;
 }
 
 // How a run ends, as core/status.py's OUTCOMES says it: done; failed, in one of these ways;
 // or else cut short, such as with its budget spent
 export const FAILED_OUTCOMES: readonly string[] = ["failed", "abandoned", "reply denied"];
 
-export function outcomeTone(outcome: string): string {
+export function outcomeTone(outcome: string): Tone {
   if (outcome === "done") return "good";
   if (FAILED_OUTCOMES.includes(outcome)) return "bad";
   return "warn";
 }
 
 export function OutcomeBadge({ outcome }: { outcome: string }) {
-  return <span className={`badge ${outcomeTone(outcome)}`}>{outcome}</span>;
+  return <Badge tone={outcomeTone(outcome)}>{outcome}</Badge>;
 }
 
 export function DecisionBadge({ decision }: { decision: string }) {
-  const tone = decision === "allow" ? "good" : decision === "deny" ? "bad" : "warn";
-  return <span className={`badge ${tone}`}>{decision}</span>;
+  return <Badge tone={decision === "allow" ? "good" : decision === "deny" ? "bad" : "warn"}>{decision}</Badge>;
 }
 
 /** What starts an agent's runs, as its release says: each kind, and what it says of it. */
