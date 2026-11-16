@@ -6,6 +6,7 @@ may name. The desk's own are in tests/test_r12_desk_levels.py."""
 
 from __future__ import annotations
 
+import time
 from dataclasses import replace
 
 import httpx
@@ -16,9 +17,10 @@ from test_proposals import decide, held, sweep
 
 
 def down(stack) -> httpx.Client:
-    """The identity provider, unreachable as it restarts, as the gateway's keys are an hour old."""
+    """The identity provider, unreachable as it restarts, as the gateway's keys are an hour old:
+    by the verifier's own clock, which counts from when the machine started, however long ago."""
     verifier = stack.gateway.identity
-    verifier._fetched_at = 0.0
+    verifier._fetched_at = time.monotonic() - verifier.max_age - 1
 
     def refused(request: httpx.Request) -> httpx.Response:
         raise httpx.ConnectError("the provider is restarting")
