@@ -71,6 +71,7 @@ DECISIONS = ("approve", "reject")
 _SEALED = ("scenario", "digest", "decision", "person", "nonce", "salt", "issuer", "subject",
            "reason")
 REASON = 300  # characters a rejection may give for itself
+MOST_DECIDED = 20  # changes one sign-in decides, at most
 
 
 class Refused(Exception):
@@ -301,7 +302,7 @@ def fresh(verifier: Verifier, scenario: Scenario, client_id: str, token: str, bo
                            "a sign-in your browser kept")
     if not second_factor(verifier.cfg, claims):
         raise Refused(401, without_second_factor(what), what.split()[0])
-    if not 16 <= len(salt) <= 128 or claims.get("nonce") != bound:
+    if not sealing.salted(salt) or claims.get("nonce") != bound:
         raise Refused(403, f"your sign-in wasn't to {what}")
     try:
         person = whose(verifier, scenario, claims)
@@ -348,6 +349,38 @@ def record(conn: db.Connection, scenario: str, found: list[dict], decision: str,
     return made
 
 
+# what every row of one sign-in's decision shares: else the channels app could record one
+# person's decision as another's, an approval as a rejection, or words they never wrote
+DECIDED_TOGETHER = ("person", "decision", "salt", "reason", "proof", "nonce", "issuer", "subject")
+
+
+def together_else(conn: db.Connection, scenario: Scenario, first: dict, together: list[dict],
+                  decided: list[str]) -> str | None:
+    """Why one sign-in's decision doesn't hold together as the gateway reads it, as the page that
+    records it checks it: one person's, one decision, with one reason, on 1 to 20 changes they
+    may each decide now, a sensitive one alone (round 13, A1). None if it does."""
+    if any(row[f] != first[f] for row in together for f in DECIDED_TOGETHER):
+        return "one sign-in's decision is recorded as more than one person's, or more than one decision"
+    if not 1 <= len(decided) <= MOST_DECIDED:
+        return f"a sign-in decides from one to {MOST_DECIDED} changes"
+    rows = conn.execute("select * from proposals where scenario = %s and digest = any(%s)",
+                        (scenario.name, decided)).fetchall()
+    if len(rows) != len(decided):
+        return "a change it names isn't one a5s holds"
+    if len(rows) > 1 and any(r["sensitive"] for r in rows):
+        return "a sensitive change is decided on its own, with a sign-in of its own"
+    return None
+
+
+def may_decide_all(conn: db.Connection, scenario: Scenario, person: str, decided: list[str]) -> str | None:
+    """Why someone whose sign-in checks out may not decide every change it names now, if not."""
+    rows = conn.execute("select * from proposals where scenario = %s and digest = any(%s)",
+                        (scenario.name, decided)).fetchall()
+    if any(not may_decide(scenario, r, person) for r in rows):
+        return f"{person} may not decide every change it names"
+    return None
+
+
 def seal_pending(conn: db.Connection, keys: tuple[str, ...], verifier: Verifier | None,
                  scenario: Scenario, client_id: str | None,
                  clean: Callable[[str], str] = lambda said: said) -> list[sealing.Refusal]:
@@ -369,12 +402,15 @@ def seal_pending(conn: db.Connection, keys: tuple[str, ...], verifier: Verifier 
         first = together[0]
         decided = sorted(r["digest"] for r in conn.execute(
             "select digest from proposal_decisions where token = %s", (first["token"],)))
+        why = together_else(conn, scenario, first, together, decided)
         try:
-            why = sealing.check(verifier, scenario, client_id, first["proof"],
-                                nonce(decided, first["decision"], first["salt"], first["reason"]),
-                                first["person"])
+            why = why or sealing.check(
+                verifier, scenario, client_id, first["proof"],
+                nonce(decided, first["decision"], first["salt"], first["reason"]), first["person"],
+                recorded=(first["token"], first["nonce"]), salt=first["salt"])
         except sealing.Unchecked:
             continue  # checked again at the next sweep
+        why = why or may_decide_all(conn, scenario, first["person"], decided)
         if why is not None:
             named = approvals.names_of([key(p) for p in conn.execute(
                 "select id from proposals where digest = any(%s) order by id",

@@ -4,6 +4,7 @@ again against the identity provider's keys, seals it, and lets the sign-in go: w
 check out is refused and never counts. So someone who can write what the channels app writes
 can't make a decision count without a real sign-in, by its person, for exactly that decision."""
 
+import hashlib
 import secrets
 import time
 from dataclasses import replace
@@ -14,13 +15,15 @@ from test_proposals import asked, decide, due_of, held, sweep
 
 
 def recorded(stack, digest: str, proof: str, person: str = "ana", salt: str | None = None):
-    """A decision written as the channels app writes one, with `proof` as its sign-in."""
+    """A decision written as the channels app writes one, with `proof` as its sign-in, by its
+    own hash and the nonce it should carry, so what the gateway finds is the sign-in itself."""
     salt = salt or secrets.token_urlsafe(32)
+    own = approvals.HASHED + (hashlib.sha256(proof.encode()).hexdigest() if proof else secrets.token_hex(32))
     with db.transaction(db.as_role(stack.admin, "channels")) as conn:
         conn.execute(
             "insert into proposal_decisions (scenario, digest, decision, person, token, nonce, "
-            "salt, issuer, subject, proof) values ('sample', %s, 'approve', %s, %s, 'n', %s, "
-            "'i', 's', %s)", (digest, person, approvals.HASHED + secrets.token_hex(32), salt, proof))
+            "salt, issuer, subject, proof) values ('sample', %s, 'approve', %s, %s, %s, %s, "
+            "'i', 's', %s)", (digest, person, own, proposals.nonce([digest], "approve", salt), salt, proof))
 
 
 def decisions(stack) -> list[dict]:

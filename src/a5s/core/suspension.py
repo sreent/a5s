@@ -90,7 +90,7 @@ def check(verifier: Verifier, scenario: Any, client_id: str, token: str, action:
     audience = claims.get("aud")
     if client_id not in ([audience] if isinstance(audience, str) else audience or []):
         raise Refused(401, "that sign-in is for something else")
-    if not 16 <= len(salt) <= 128 or claims.get("nonce") != nonce(action, instance, salt):
+    if not sealing.salted(salt) or claims.get("nonce") != nonce(action, instance, salt):
         raise Refused(403, f"your sign-in wasn't to {action} {instance}")
     if not isinstance(claims.get("auth_time"), int | float) or any(
             not isinstance(claims.get(c), int | float) or now - claims[c] > FRESH
@@ -147,7 +147,8 @@ def carry_out(conn: db.Connection, verifier: Verifier | None, scenario: Any,
         try:
             why = sealing.check(verifier, scenario, client_id, row["proof"],
                                 nonce(action, instance, row["salt"]), who,
-                                factor=action == "resume")  # suspending only makes a5s safer
+                                factor=action == "resume",  # suspending only makes a5s safer
+                                recorded=(row["token"], row["nonce"]), salt=row["salt"])
         except sealing.Unchecked:
             continue
         inst = conn.execute(f"select {COLUMNS} from instances where id = %s for update",

@@ -19,7 +19,10 @@ its person doing it again, with a new sign-in, and they hear of it in their dige
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import math
+import re
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -37,6 +40,25 @@ from a5s.core.identity import (
 
 FRESH = 600  # seconds: how long before a sign-in its person must have signed in afresh
 OLDEST = 86_400  # seconds: a sign-in older than this, still unsealed, is refused
+SALT = re.compile(r"[A-Za-z0-9_-]{16,128}")  # as the studio's `salted` makes one: base64url
+RECORDED_ELSE = "the sign-in isn't recorded as itself, so it may have been used already"
+
+
+def salted(salt: object) -> bool:
+    """Whether a salt is one the studio makes: base64url, 16 to 128 characters. One with spaces,
+    or anything else, could move words between what a nonce covers, such as a rejection's reason
+    into its salt, or an id's last word (round 13, A3)."""
+    return isinstance(salt, str) and SALT.fullmatch(salt) is not None
+
+
+def as_itself(recorded: str | None, token: str | None) -> bool:
+    """Whether a sign-in is recorded by its own hash. The channels app writes the hash beside
+    the sign-in, and its table keeps the hash unique, so that each sign-in works once: one
+    recorded again under another hash would work again (round 13, A2)."""
+    if not recorded or not token:
+        return False
+    own = hashlib.sha256(token.encode()).hexdigest()
+    return hmac.compare_digest(recorded.removeprefix("sha256:"), own)  # as approvals.HASHED
 
 
 @dataclass(frozen=True)
@@ -65,16 +87,25 @@ def _age(token: str, now: float | None) -> float:
 
 
 def check(verifier: Verifier | None, scenario: Any, client_id: str | None, token: str | None,
-          bound: str, person: str, now: float | None = None, factor: bool = True) -> str | None:
+          bound: str, person: str, now: float | None = None, factor: bool = True, *,
+          recorded: tuple[str | None, str | None] | None = None,
+          salt: str | None = None) -> str | None:
     """Why a recorded sign-in doesn't check out, if it doesn't: None if the provider signed it
     for a5s's client, with exactly the nonce `bound`, made afresh, for `person`, lately, with a
     second factor where the deployment asks for one, unless what it does only makes a5s safer
-    (`factor` False). Unchecked if the provider couldn't be reached to say, while the sign-in is
-    less than a day old: it waits, rather than being refused for a brief outage."""
+    (`factor` False). Where it's `recorded` by its hash and its nonce, each unique in its table,
+    they must be its own, so it can't be recorded again under others and work twice; and the
+    `salt` its nonce was made with must be one the studio makes. Unchecked if the provider
+    couldn't be reached to say, while the sign-in is less than a day old: it waits, rather than
+    being refused for a brief outage."""
     if verifier is None or not client_id:
         return "the core can't check sign-ins here: it has no identity provider"
     if not token:
         return "nothing records the sign-in that made it"
+    if recorded is not None and (not as_itself(recorded[0], token) or recorded[1] != bound):
+        return RECORDED_ELSE
+    if salt is not None and not salted(salt):
+        return "the sign-in's salt isn't one the studio makes"
     try:
         claims = verifier.claims(token, expired=True)
     except IdentityUnavailable as exc:

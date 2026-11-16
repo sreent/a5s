@@ -60,6 +60,9 @@ ALPHA = 0.05  # the test's error: 95% confidence
 PER_QUARTER = 100  # changes made at level 2 sampled, for each behaviour, part and type
 LAPSE = timedelta(days=91)  # a sample nobody grades in a quarter lapses
 MOST_GRADED = 20  # grades one sign-in gives, at most
+# what every grade one sign-in gave shares, as the gateway checks it: else the channels app
+# could record one sign-in's grades as another person's, or under another salt (round 13, A2)
+GIVEN_TOGETHER = ("graded_by", "grade_proof", "grade_salt", "grade_nonce", "grade_issuer")
 _SEALED_GRADE = ("scenario", "id", "grade", "graded_by", "graded_at", "grade_token",
                  "grade_nonce", "grade_salt", "grade_issuer", "grade_subject")
 _SEALED_CAP = ("behaviour", "part", "action", "cap", "since", "why", "threshold", "window_from",
@@ -400,11 +403,15 @@ def seal_pending(conn: db.Connection, keys: tuple[str, ...], verifier: Any,
         given = conn.execute("select * from samples where grade_token = %s order by id",
                              (first["grade_token"],)).fetchall()
         why = refusing(conn, scenario, given)
+        if why is None and any(r[f] != first[f] for r in together for f in GIVEN_TOGETHER):
+            why = sealing.RECORDED_ELSE  # one sign-in's grades, recorded as another's
         if why is None:
             try:
                 why = sealing.check(verifier, scenario, client_id, first["grade_proof"],
                                     nonce({r["id"]: r["grade"] for r in given}, first["grade_salt"]),
-                                    first["graded_by"])
+                                    first["graded_by"],
+                                    recorded=(first["grade_token"], first["grade_nonce"]),
+                                    salt=first["grade_salt"])
             except sealing.Unchecked:
                 continue  # checked again at the next sweep
         if why is not None and first["graded_by"]:

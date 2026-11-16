@@ -447,7 +447,7 @@ def check(verifier: Verifier, scenario: Any, client_id: str, token: str, version
     audience = claims.get("aud")
     if client_id not in ([audience] if isinstance(audience, str) else audience or []):
         raise Refused(401, "that sign-in is for something else")
-    if not 16 <= len(salt) <= 128 or claims.get("nonce") != nonce(version, salt):
+    if not sealing.salted(salt) or claims.get("nonce") != nonce(version, salt):
         raise Refused(403, "your sign-in wasn't to approve this version")
     if not isinstance(claims.get("auth_time"), int | float) or any(
             not isinstance(claims.get(c), int | float) or now - claims[c] > FRESH
