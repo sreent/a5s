@@ -14,6 +14,7 @@
 import { type ReactNode, useEffect, useReducer, useRef, useState } from "react";
 import { type Change, get, send, type SettingsAsked, type SettingsNow, type SettingsReview } from "../api";
 import { useToast } from "../design";
+import { t } from "../i18n";
 import { Icon } from "../icons";
 import { ImpactPreview } from "../Impact";
 import { PageHead, sentence, To, Waiting, when } from "../ui";
@@ -36,10 +37,10 @@ type Adding = { agent: string; id: string | null; part: string; level: number; s
                 owner: string; deputy: string; more: string[]; asks: string[] };
 type Plan = { agent: string; parts: string[]; serves: string[]; asks: string[] };
 
-const LEVELS: Record<number, string> = {
-  0: "level 0, suggests: it reads and drafts, and people do the rest",
-  1: "level 1, asks: its changes wait for a person's yes",
-};
+const levelWords = (): Record<number, string> => ({
+  0: t("level 0, suggests: it reads and drafts, and people do the rest"),
+  1: t("level 1, asks: its changes wait for a person's yes"),
+});
 const ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
 // whom an instance serves, as the settings write it: someone's id, or a team or a role
 const WHO = /^(?:(?:team|role):[A-Za-z0-9][A-Za-z0-9._@:-]{0,127}|[A-Za-z0-9][A-Za-z0-9._@-]{0,127})$/;
@@ -106,7 +107,7 @@ function Setting({ words, after, children }: { words: string; after?: string; ch
  * that approves it marks it. */
 function changeLine(change: Change, i: number) {
   return (
-    <li key={i}>{change.text}{change.widens && <>{" "}<span className="badge changes">widens what agents do</span></>}</li>
+    <li key={i}>{change.text}{change.widens && <>{" "}<span className="badge changes">{t("widens what agents do")}</span></>}</li>
   );
 }
 
@@ -174,7 +175,7 @@ export function SettingsPage() {
         working.current = left.data as Data;
         textNow.current = left.text;
         setText(left.text);
-        setStatus("What you'd changed and hadn't asked for is back, from before you signed in again.");
+        setStatus(t("What you'd changed and hadn't asked for is back, from before you signed in again."));
       } else if (fresh || !working.current) working.current = structuredClone(found.in_force.data ?? {}) as Data;
       const written = found.in_force.text;
       if (!textNow.current || fresh) textNow.current = written;
@@ -195,7 +196,7 @@ export function SettingsPage() {
     load(false).then((found) => {
       if (plan && found.releases[plan.agent]) offer(found, plan);
       else if (instance && ID.test(instance)) setFocus(`fieldset[data-instance="${CSS.escape(instance)}"]`);
-      if (!found.in_force) setStatus("No settings are in force yet.");
+      if (!found.in_force) setStatus(t("No settings are in force yet."));
     }).catch((e: Error) => setError(e.message));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -208,16 +209,16 @@ export function SettingsPage() {
     setFocus(undefined);
   }, [focus]);
 
-  if (error) return <><PageHead title="Settings" /><Waiting error={error} /></>;
-  if (!now) return <><PageHead title="Settings" /><Waiting /></>;
+  if (error) return <><PageHead title={t("Settings")} /><Waiting error={error} /></>;
+  if (!now) return <><PageHead title={t("Settings")} /><Waiting /></>;
   const settings = now;
   const w = working.current;
   const inForce = settings.in_force?.data as Data | null | undefined;
 
   // Someone an instance serves, by name, or a group, as the directory decides who is in it
   const whom = (who: string) => {
-    if (who.startsWith("team:")) return `everyone in the ${who.slice(5)} team`;
-    if (who.startsWith("role:")) return `everyone who holds the ${who.slice(5)} role`;
+    if (who.startsWith("team:")) return t("everyone in the {team} team", { team: who.slice(5) });
+    if (who.startsWith("role:")) return t("everyone who holds the {role} role", { role: who.slice(5) });
     return names[who] || who;
   };
   const people = () => Object.keys(names).filter((each) => !each.includes(":"));
@@ -267,19 +268,20 @@ export function SettingsPage() {
 
   function levelsOf(id: string, inst: Inst): ReactNode {
     const release = settings.releases[inst.definition];
-    const options: [number | null, string][] = [[0, LEVELS[0]], [1, LEVELS[1]], [null, release
-      ? `whatever level its release starts at, now level ${release.starts}` : "whatever level its release starts at"]];
+    const words = levelWords();
+    const options: [number | null, string][] = [[0, words[0]], [1, words[1]], [null, release
+      ? t("whatever level its release starts at, now level {level}", { level: release.starts }) : t("whatever level its release starts at")]];
     if (inst.level === 2) {
-      options.push([2, "level 2, as written: a5s holds it at level 1 in a part, and gives level 2 only to a type of change, below"]);
+      options.push([2, t("level 2, as written: a5s holds it at level 1 in a part, and gives level 2 only to a type of change, below")]);
     }
     const was = inForce?.instances?.[id];
     return (
       <>
-        <p className="lead">It works at</p>
+        <p className="lead">{t("It works at")}</p>
         <div className="choices">{options.map(([n, about]) => (
           <Choice key={String(n)} type="radio" name={`level-${id}`} checked={(inst.level ?? null) === n} label={about}
                   why={release && n !== null && n > release.most && inst.level !== n
-                    ? `its release allows level ${release.most} at most` : undefined}
+                    ? t("its release allows level {level} at most", { level: release.most }) : undefined}
                   onChange={() => {
                     if (n === null) delete inst.level;
                     else inst.level = n;
@@ -290,8 +292,8 @@ export function SettingsPage() {
           const own = partLevel(inst, part);
           if (own === null && partLevel(was, part) === null) return null;
           return (
-            <Setting key={part} words={`In ${part}, it works at`}>
-              <select aria-label={`${id}'s level in ${part}`} value={own === null ? "" : String(own)}
+            <Setting key={part} words={t("In {part}, it works at", { part })}>
+              <select aria-label={t("{id}'s level in {part}", { id, part })} value={own === null ? "" : String(own)}
                       onChange={(e) => {
                         const level = e.target.value === "" ? null : Number(e.target.value);
                         changePart(inst, part, (entry) => {
@@ -300,8 +302,8 @@ export function SettingsPage() {
                         });
                         touched();
                       }}>
-                <option value="">the level above</option>
-                {(own === 2 ? [0, 1, 2] : [0, 1]).map((n) => <option key={n} value={String(n)}>{LEVELS[n] || `level ${n}`}</option>)}
+                <option value="">{t("the level above")}</option>
+                {(own === 2 ? [0, 1, 2] : [0, 1]).map((n) => <option key={n} value={String(n)}>{words[n] || t("level {n}", { n })}</option>)}
               </select>
             </Setting>
           );
@@ -318,15 +320,15 @@ export function SettingsPage() {
     const allowed = !release || release.most >= 2;
     return (
       <>
-        <p className="lead">It makes these changes on its own, at level 2</p>
+        <p className="lead">{t("It makes these changes on its own, at level 2")}</p>
         <div className="choices">{parts.flatMap((part) => kinds.map((action) => {
           const on = actionLevel(inst, part, action) === 2;
           const earns = w?.thresholds?.[part] !== undefined;
-          const why = !allowed ? `its release, ${inst.definition}, allows level ${release?.most} at most`
-            : !earns ? `${part} needs no accuracy below, so it never earns level 2` : undefined;
+          const why = !allowed ? t("its release, {agent}, allows level {level} at most", { agent: inst.definition, level: String(release?.most) })
+            : !earns ? t("{part} needs no accuracy below, so it never earns level 2", { part }) : undefined;
           return (
             <Choice key={`${part}:${action}`} type="checkbox" name={`own-${id}`} checked={on}
-                    label={`${action} in ${part}`} why={on ? undefined : why}
+                    label={t("{action} in {part}", { action, part })} why={on ? undefined : why}
                     onChange={(checked) => {
                       // Unticked, it goes back to the level the version in force sets it, if not 2
                       const was = actionLevel(inForce?.instances?.[id], part, action);
@@ -339,7 +341,7 @@ export function SettingsPage() {
                     }} />
           );
         }))}</div>
-        <p className="note">Each within its limits, below. a5s holds it at level 1 until graded samples of its work show the accuracy its part needs.</p>
+        <p className="note">{t("Each within its limits, below. a5s holds it at level 1 until graded samples of its work show the accuracy its part needs.")}</p>
       </>
     );
   }
@@ -359,7 +361,7 @@ export function SettingsPage() {
     };
     return (
       <>
-        <p className="lead">It serves</p>
+        <p className="lead">{t("It serves")}</p>
         <div className="choices">{everyone.map((who) => (
           <Choice key={who} type="checkbox" name={`serves-${id}`} checked={(inst.serves || []).includes(who)}
                   label={whom(who)} onChange={(checked) => {
@@ -371,14 +373,14 @@ export function SettingsPage() {
                   }} />
         ))}</div>
         <div className="add-someone">
-          <input type="text" data-adds={id} placeholder="an id, team:… or role:…" aria-label={`Someone else ${id} serves`}
+          <input type="text" data-adds={id} placeholder={t("an id, team:… or role:…")} aria-label={t("Someone else {id} serves", { id })}
                  onKeyDown={(e) => {
                    if (e.key === "Enter") {
                      e.preventDefault();
                      adds();
                    }
                  }} />
-          <button type="button" onClick={adds}>Add</button>
+          <button type="button" onClick={adds}>{t("Add")}</button>
         </div>
       </>
     );
@@ -387,15 +389,15 @@ export function SettingsPage() {
   function runsOf(id: string, inst: Inst): ReactNode {
     return (
       <>
-        <p className="lead">Who runs it here</p>
-        <div className="choices">{([["owner", "Owner"], ["deputy", "Deputy"]] as const).map(([role, label]) => (
+        <p className="lead">{t("Who runs it here")}</p>
+        <div className="choices">{([["owner", t("Owner")], ["deputy", t("Deputy")]] as const).map(([role, label]) => (
           <Setting key={role} words={label}>
-            <select aria-label={`${label} of ${id}`} value={inst[role] || ""} onChange={(e) => {
+            <select aria-label={role === "owner" ? t("Owner of {id}", { id }) : t("Deputy of {id}", { id })} value={inst[role] || ""} onChange={(e) => {
               if (e.target.value) inst[role] = e.target.value;
               else delete inst[role];
               touched();
             }}>
-              <option value="">nobody</option>
+              <option value="">{t("nobody")}</option>
               {people().map((who) => <option key={who} value={who}>{names[who]}</option>)}
             </select>
           </Setting>
@@ -412,9 +414,9 @@ export function SettingsPage() {
     const change = (to: Partial<Adding>) => setAdding({ ...a, ...to });
     const add = () => {
       const id = (a.id ?? suggested(a)).trim();
-      const wrong = !ID.test(id) ? "Its name is lowercase letters, digits and hyphens, starting with a letter or a digit."
-        : w.instances?.[id] ? `There's an instance called ${id} already: give it another name.`
-        : !a.serves.size ? "Choose whom it serves: a few people first."
+      const wrong = !ID.test(id) ? t("Its name is lowercase letters, digits and hyphens, starting with a letter or a digit.")
+        : w.instances?.[id] ? t("There's an instance called {id} already: give it another name.", { id })
+        : !a.serves.size ? t("Choose whom it serves: a few people first.")
         : undefined;
       setAddProblem(wrong);
       if (wrong) return;
@@ -426,14 +428,14 @@ export function SettingsPage() {
       setAdding(null);
       touched();
       setFocus(`fieldset[data-instance="${CSS.escape(id)}"]`);
-      setStatus(`${id} is in the forms: review it, with any other change, and ask its approvers.`);
+      setStatus(t("{id} is in the forms: review it, with any other change, and ask its approvers.", { id }));
     };
     return (
       <fieldset className="form-card adding" id="add-instance">
-        <legend>Put an agent to work</legend>
-        <p className="note">A new instance of an agent, for a few people first, at level 0 or 1, so it suggests, or asks before each change. Its part's owner approves it, as any change there; with no part, someone who approves instances does.</p>
+        <legend>{t("Put an agent to work")}</legend>
+        <p className="note">{t("A new instance of an agent, for a few people first, at level 0 or 1, so it suggests, or asks before each change. Its part's owner approves it, as any change there; with no part, someone who approves instances does.")}</p>
         <div className="choices">
-          <Setting words="Agent">
+          <Setting words={t("Agent")}>
             <select id="add-agent" value={a.agent} onChange={(e) => {
               setAdding(freshAdding(e.target.value, a));
               setFocus("#add-agent");
@@ -441,30 +443,30 @@ export function SettingsPage() {
               {agents.map((name) => <option key={name} value={name}>{name}</option>)}
             </select>
           </Setting>
-          <Setting words="Works in">
+          <Setting words={t("Works in")}>
             <select id="add-part" value={a.part} onChange={(e) => change({ part: e.target.value })}>
-              <option value="">no part's records</option>
+              <option value="">{t("no part's records")}</option>
               {parts.map((each) => <option key={each} value={each}>{each}</option>)}
             </select>
           </Setting>
-          <Setting words="Its name here">
+          <Setting words={t("Its name here")}>
             {/* what it's called follows its part, unless they named it */}
             <input type="text" id="add-id" value={a.id ?? suggested(a)} onChange={(e) => change({ id: e.target.value })} />
           </Setting>
         </div>
-        <p className="lead">It starts at</p>
+        <p className="lead">{t("It starts at")}</p>
         <div className="choices">{[0, 1].map((n) => (
-          <Choice key={n} type="radio" name="add-level" checked={a.level === n} label={LEVELS[n]}
-                  why={release && n > release.most ? `its release allows level ${release.most} at most` : undefined}
+          <Choice key={n} type="radio" name="add-level" checked={a.level === n} label={levelWords()[n]}
+                  why={release && n > release.most ? t("its release allows level {level} at most", { level: release.most }) : undefined}
                   onChange={() => change({ level: n })} />
         ))}</div>
         {(a.more.length > 0 || a.asks.length > 0) && (  // as its draft's authors planned it, beyond the form
-          <p className="note">{[a.more.length ? `It works in ${a.more.join(", ")} too.` : "",
-                                a.asks.length ? `It may ask ${a.asks.join(", ")}.` : "",
-                                "As its draft's authors planned it: change the version's text for anything else."]
+          <p className="note">{[a.more.length ? t("It works in {parts} too.", { parts: a.more.join(", ") }) : "",
+                                a.asks.length ? t("It may ask {instances}.", { instances: a.asks.join(", ") }) : "",
+                                t("As its draft's authors planned it: change the version's text for anything else.")]
             .filter(Boolean).join(" ")}</p>
         )}
-        <p className="lead">It serves</p>
+        <p className="lead">{t("It serves")}</p>
         <div className="choices">{[...new Set([...servable(), ...a.serves])].map((who) => (
           <Choice key={who} type="checkbox" name="add-serves" checked={a.serves.has(who)} label={whom(who)}
                   onChange={(checked) => {
@@ -474,16 +476,16 @@ export function SettingsPage() {
                     change({ serves });
                   }} />
         ))}</div>
-        <p className="lead">Who runs it here</p>
-        <div className="choices">{([["owner", "Owner"], ["deputy", "Deputy"]] as const).map(([role, label]) => (
+        <p className="lead">{t("Who runs it here")}</p>
+        <div className="choices">{([["owner", t("Owner")], ["deputy", t("Deputy")]] as const).map(([role, label]) => (
           <Setting key={role} words={label}>
-            <select aria-label={`${label} of the new instance`} value={a[role]} onChange={(e) => change({ [role]: e.target.value })}>
-              <option value="">nobody</option>
+            <select aria-label={role === "owner" ? t("Owner of the new instance") : t("Deputy of the new instance")} value={a[role]} onChange={(e) => change({ [role]: e.target.value })}>
+              <option value="">{t("nobody")}</option>
               {people().map((who) => <option key={who} value={who}>{names[who]}</option>)}
             </select>
           </Setting>
         ))}</div>
-        <div className="add-someone"><button type="button" id="add-it" onClick={add}>Add it to the settings</button></div>
+        <div className="add-someone"><button type="button" id="add-it" onClick={add}>{t("Add it to the settings")}</button></div>
         <p className="problem-note" role="alert">{addProblem}</p>
       </fieldset>
     );
@@ -493,12 +495,12 @@ export function SettingsPage() {
     const data = w as Data;
     return (
       <fieldset className="form-card">
-        <legend>Each type of change's limits</legend>
-        <p className="note">How many one run may make, and how many for each person in 30 days. Past either, a change waits for a person to decide it, whatever the level. Empty means no limit.</p>
+        <legend>{t("Each type of change's limits")}</legend>
+        <p className="note">{t("How many one run may make, and how many for each person in 30 days. Past either, a change waits for a person to decide it, whatever the level. Empty means no limit.")}</p>
         {[...new Set([...settings.actions, ...Object.keys(data.limits || {})])].map((action) => (
           <div key={action} className="limit">
             <p className="limit-name">{action}</p>
-            {([["per_run", "In one run"], ["per_person_30_days", "For each person, in 30 days"]] as const).map(([field, words]) => (
+            {([["per_run", t("In one run")], ["per_person_30_days", t("For each person, in 30 days")]] as const).map(([field, words]) => (
               <Setting key={field} words={words}>
                 <input type="number" min="1" max="100000" defaultValue={data.limits?.[action]?.[field] ?? ""}
                        aria-label={`${action}, ${words.toLowerCase()}`} onChange={(e) => {
@@ -522,15 +524,15 @@ export function SettingsPage() {
     const data = w as Data;
     return (
       <fieldset className="form-card">
-        <legend>The accuracy level 2 needs</legend>
-        <p className="note">How accurate an agent's changes in a part must be, as graded samples show, before a5s raises its cap there to level 2. Empty means it never does.</p>
+        <legend>{t("The accuracy level 2 needs")}</legend>
+        <p className="note">{t("How accurate an agent's changes in a part must be, as graded samples show, before a5s raises its cap there to level 2. Empty means it never does.")}</p>
         <div className="choices">{parts.map((part) => {
           const share = data.thresholds?.[part];
           return (
             <Setting key={part} words={part} after="%">
               <input type="number" min="50" max="99.9" step="0.1"
                      defaultValue={share === undefined ? "" : String(Math.round(share * 1000) / 10)}
-                     aria-label={`The accuracy ${part} needs, in percent`} onChange={(e) => {
+                     aria-label={t("The accuracy {part} needs, in percent", { part })} onChange={(e) => {
                        const thresholds = (data.thresholds ||= {});
                        const n = Number(e.target.value);
                        if (e.target.value !== "" && Number.isFinite(n)) thresholds[part] = Math.round(n * 10) / 1000;
@@ -549,11 +551,11 @@ export function SettingsPage() {
     const budget = (kind: keyof Spending, key: string, words: string) => {
       const amount = data.spending?.[kind]?.[key];
       return (
-        <Setting key={`${kind}:${key}`} words={words} after="a month">
+        <Setting key={`${kind}:${key}`} words={words} after={t("a month")}>
           <input type="number" min="0.01" max="10000000" step="0.01" inputMode="decimal"
                  data-budget={`${kind}:${key}`}
                  defaultValue={amount === undefined ? "" : String(amount)}
-                 aria-label={`The monthly budget for ${kind === "parts" ? key : `the ${key}`}`} onChange={(e) => {
+                 aria-label={kind === "parts" ? t("The monthly budget for {part}", { part: key }) : t("The monthly budget for the {agent}", { agent: key })} onChange={(e) => {
                    const spending = (data.spending ||= {});
                    const these = (spending[kind] ||= {});
                    const n = Number(e.target.value);
@@ -568,11 +570,11 @@ export function SettingsPage() {
     };
     return (
       <fieldset className="form-card" id="budgets">
-        <legend>What agents' models may cost a month</legend>
-        <p className="note">A budget a5s shows each month's spending against, on the Spending page, at the prices models.yaml gives, and tells its owners of once a month is on course to pass it. It stops no work: the token budgets each release sets do. A part's owner approves its budget, and an agent's owner the agent's. Empty means none.</p>
+        <legend>{t("What agents' models may cost a month")}</legend>
+        <p className="note">{t("A budget a5s shows each month's spending against, on the Spending page, at the prices models.yaml gives, and tells its owners of once a month is on course to pass it. It stops no work: the token budgets each release sets do. A part's owner approves its budget, and an agent's owner the agent's. Empty means none.")}</p>
         <div className="choices">
           {parts.map((part) => budget("parts", part, part))}
-          {agents.map((agent) => budget("agents", agent, `the ${agent}`))}
+          {agents.map((agent) => budget("agents", agent, t("the {agent}", { agent })))}
         </div>
       </fieldset>
     );
@@ -589,7 +591,7 @@ export function SettingsPage() {
       <>
         {Object.entries(w.instances || {}).map(([id, inst]) => (
           <fieldset key={id} className="form-card" data-instance={id} tabIndex={-1}>
-            <legend>{id}, the {inst.definition}</legend>
+            <legend>{t("{id}, the {agent}", { id, agent: inst.definition })}</legend>
             {levelsOf(id, inst)}{ownChanges(id, inst)}{servesOf(id, inst)}{runsOf(id, inst)}
           </fieldset>
         ))}
@@ -621,8 +623,8 @@ export function SettingsPage() {
       const asked = await send<SettingsAsked>("POST", "/settings/api/requests",
                                               { text: asking.text, base: asking.found.in_force ?? null });
       setReviewed(undefined);
-      setStatus(`You asked for version ${asked.serial}. a5s asks its approvers within a minute, and puts it in force once they've all approved it.`);
-      toast(`You asked for version ${asked.serial}.`);
+      setStatus(t("You asked for version {serial}. a5s asks its approvers within a minute, and puts it in force once they've all approved it.", { serial: asked.serial }));
+      toast(t("You asked for version {serial}.", { serial: asked.serial }));
       await load(true);
       setGeneration((n) => n + 1);  // the forms start again from what's in force
     } catch (e) {
@@ -640,41 +642,41 @@ export function SettingsPage() {
   const found = reviewed?.found;
   return (
     <>
-      <PageHead title="Settings"
-                about="The instances at work: whom each serves, where it works and how far it may act there, and who runs it. A change is a new version, which those who must approve it approve on its own page; nothing changes until they do." />
+      <PageHead title={t("Settings")}
+                about={t("The instances at work: whom each serves, where it works and how far it may act there, and who runs it. A change is a new version, which those who must approve it approve on its own page; nothing changes until they do.")} />
       <p id="status" role="status" className="note">{status}</p>
       {settings.in_force && (
         <section className="card" id="in-force">
-          <h2 id="in-force-title">In force: version {settings.in_force.serial}</h2>
+          <h2 id="in-force-title">{t("In force: version {serial}", { serial: settings.in_force.serial })}</h2>
           <ul id="whole" className="plain">{settings.in_force.whole.map((line, i) => <li key={i}>{line}</li>)}</ul>
         </section>
       )}
       {settings.waiting.length > 0 && (
         <section className="card" id="waiting-section">
-          <h2>Waiting for approval</h2>
+          <h2>{t("Waiting for approval")}</h2>
           <div id="waiting">{settings.waiting.map((version) => (
             <div key={version.serial}>
-              <p><To go={version.link}>Version {version.serial}</To>{version.approved_by.length
-                ? `, approved so far by ${version.approved_by.join(", ")}.` : ", which nobody has approved yet."}</p>
+              <p><To go={version.link}>{t("Version {serial}", { serial: version.serial })}</To>{version.approved_by.length
+                ? t(", approved so far by {who}.", { who: version.approved_by.join(", ") }) : t(", which nobody has approved yet.")}</p>
               <ul className="plain">{version.changes.map(changeLine)}</ul>
-              {version.needs.length > 0 && <p className="note">It still waits because {version.needs.join("; ")}.</p>}
+              {version.needs.length > 0 && <p className="note">{t("It still waits because {needs}.", { needs: version.needs.join("; ") })}</p>}
             </div>
           ))}</div>
         </section>
       )}
       <section className="card" id="edit">
-        <h2>Ask for a change</h2>
-        <p className="note">Change the settings below, then review them. a5s gives the new version the next number, and once you ask for it, asks everyone who must approve it. Nothing changes until they do.</p>
+        <h2>{t("Ask for a change")}</h2>
+        <p className="note">{t("Change the settings below, then review them. a5s gives the new version the next number, and once you ask for it, asks everyone who must approve it. Nothing changes until they do.")}</p>
         {settings.in_force && (
-          <div id="modes" className="modes" role="group" aria-label="How to write the change">
-            <button id="by-forms" type="button" aria-pressed={mode === "forms"} onClick={() => chooseMode("forms")}>Change it here</button>
-            <button id="by-text" type="button" aria-pressed={mode === "text"} onClick={() => chooseMode("text")}>Edit the text</button>
+          <div id="modes" className="modes" role="group" aria-label={t("How to write the change")}>
+            <button id="by-forms" type="button" aria-pressed={mode === "forms"} onClick={() => chooseMode("forms")}>{t("Change it here")}</button>
+            <button id="by-text" type="button" aria-pressed={mode === "text"} onClick={() => chooseMode("text")}>{t("Edit the text")}</button>
           </div>
         )}
         <div id="forms" hidden={mode !== "forms"} key={generation}>{forms()}</div>
         <div id="as-text" hidden={mode !== "text"}>
-          <p className="note">The whole version, as written, for whatever the forms don't change. What you review is the way you're using: these forms, or this text.</p>
-          <textarea id="text" spellCheck={false} aria-label="The settings, as written" value={text}
+          <p className="note">{t("The whole version, as written, for whatever the forms don't change. What you review is the way you're using: these forms, or this text.")}</p>
+          <textarea id="text" spellCheck={false} aria-label={t("The settings, as written")} value={text}
                     onChange={(e) => {
                       setText(e.target.value);
                       textNow.current = e.target.value;
@@ -682,23 +684,24 @@ export function SettingsPage() {
                       setReviewed(undefined);
                     }} />
         </div>
-        <p><button id="review" type="button" onClick={review}>Review</button></p>
+        <p><button id="review" type="button" onClick={review}>{t("Review")}</button></p>
         {refused?.at === "review" && <Refused id="review-refused" said={refused.said} />}
         {reviewed && found && (
           <div id="reviewed">
-            <p id="reviewed-summary">{found.serial === undefined ? "a5s can't propose this:"
-              : found.problems.length ? `As version ${found.serial}, a5s can't propose this:` : `As version ${found.serial}, it:`}</p>
+            <p id="reviewed-summary">{found.serial === undefined ? t("a5s can't propose this:")
+              : found.problems.length ? t("As version {serial}, a5s can't propose this:", { serial: found.serial })
+              : t("As version {serial}, it:", { serial: found.serial })}</p>
             <ul id="problems" className="plain">{found.problems.map((problem, i) => <li key={i} className="problem">{problem}</li>)}</ul>
             {found.serial !== undefined && (
               <>
                 <ul id="reviewed-changes" className="plain">{(found.changes ?? []).map(changeLine)}</ul>
                 <p id="reviewed-approvers">{found.approvers?.length
-                  ? `It needs the approval of ${found.approvers.join(", ")}.` : "Nobody in the directory can approve it."}</p>
-                <h3>The whole version</h3>
+                  ? t("It needs the approval of {who}.", { who: found.approvers.join(", ") }) : t("Nobody in the directory can approve it.")}</p>
+                <h3>{t("The whole version")}</h3>
                 <ul id="reviewed-whole" className="plain">{(found.whole ?? []).map((line, i) => <li key={i}>{line}</li>)}</ul>
                 {found.impact && <ImpactPreview impact={found.impact} id="reviewed-impact" />}
                 {found.problems.length === 0 && (
-                  <button id="send" className="primary" type="button" disabled={busy} onClick={() => ask(reviewed)}>Ask its approvers</button>
+                  <button id="send" className="primary" type="button" disabled={busy} onClick={() => ask(reviewed)}>{t("Ask its approvers")}</button>
                 )}
                 {refused?.at === "send" && <Refused id="send-refused" said={refused.said} />}
               </>
@@ -708,9 +711,10 @@ export function SettingsPage() {
       </section>
       {settings.requests.length > 0 && (
         <section className="card" id="requests-section">
-          <h2>What you asked for</h2>
+          <h2>{t("What you asked for")}</h2>
           <ul id="requests" className="plain">{settings.requests.map((request) => (
-            <li key={`${request.serial}:${request.asked_at}`}>Version {request.serial}, asked for {when(request.asked_at)}: {request.outcome}.</li>
+            <li key={`${request.serial}:${request.asked_at}`}>{t("Version {serial}, asked for {when}: {outcome}.",
+              { serial: request.serial, when: when(request.asked_at), outcome: request.outcome })}</li>
           ))}</ul>
         </section>
       )}
