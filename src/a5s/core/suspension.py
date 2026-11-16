@@ -25,15 +25,8 @@ from typing import Any
 from a5s import db
 from a5s.contract import Person
 from a5s.core import ledger, registry, sealing
-from a5s.core.approvals import FRESH, HASHED, Refused
-from a5s.core.identity import (
-    IdentityError,
-    UnknownPerson,
-    Verifier,
-    second_factor,
-    whose,
-    without_second_factor,
-)
+from a5s.core.approvals import HASHED, Refused, afresh
+from a5s.core.identity import Verifier
 from a5s.core.releases import agent_owner
 
 ACTIONS = ("suspend", "resume")
@@ -83,29 +76,8 @@ def check(verifier: Verifier, scenario: Any, client_id: str, token: str, action:
     Otherwise, Refused. Whether they may is for `may`, as the instance stands."""
     if action not in ACTIONS:
         raise Refused(404, "an instance is suspended or resumed, and nothing else, from its page")
-    try:
-        claims = verifier.claims(token)
-    except IdentityError as exc:
-        raise Refused(401, f"your sign-in doesn't check out: {exc}") from None
-    audience = claims.get("aud")
-    if client_id not in ([audience] if isinstance(audience, str) else audience or []):
-        raise Refused(401, "that sign-in is for something else")
-    if not sealing.salted(salt) or claims.get("nonce") != nonce(action, instance, salt):
-        raise Refused(403, f"your sign-in wasn't to {action} {instance}")
-    if not isinstance(claims.get("auth_time"), int | float) or any(
-            not isinstance(claims.get(c), int | float) or now - claims[c] > FRESH
-            for c in ("iat", "auth_time")):  # a session's silent sign-in asks for nothing
-        raise Refused(401, f"to {action} it, sign in again, from the last ten minutes, not with "
-                           "a sign-in your browser kept")
-    if action == "resume" and not second_factor(verifier.cfg, claims):
-        raise Refused(401, without_second_factor("resume it"), "resume")
-    try:
-        person = whose(verifier, scenario, claims)
-    except UnknownPerson as exc:
-        raise Refused(403, str(exc)) from None
-    except IdentityError as exc:
-        raise Refused(401, f"your sign-in doesn't check out: {exc}") from None
-    return person, claims
+    return afresh(verifier, scenario, client_id, token, nonce(action, instance, salt), salt, now,
+                  f"{action} {instance}", "resume it" if action == "resume" else None)
 
 
 def record(conn: db.Connection, action: str, instance: str, person: str, token: str,

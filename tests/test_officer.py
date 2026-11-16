@@ -83,6 +83,9 @@ def test_a_request_is_for_its_action_and_person_alone(stack, approving, provider
 def test_no_sign_in_but_the_officers_own_for_this_asks_for_anything(stack, approving, provider):
     kept = provider.id_token(person="noor")  # as the web chat keeps one: no nonce, no auth_time
     r = ask(approving, "erase", "ben", kept, secrets.token_urlsafe(32))
+    assert r.status_code == 401 and "sign in again" in r.text  # first, as every act says it
+    fresh = provider.id_token(person="noor", signed_in_at=int(time.time()))  # but for nothing
+    r = ask(approving, "erase", "ben", fresh, secrets.token_urlsafe(32))
     assert r.status_code == 403 and "wasn't to erase" in r.text
     token, salt = sign_in(approving, provider, "erase", "ana")  # for someone else
     assert ask(approving, "erase", "ben", token, salt).status_code == 403

@@ -437,10 +437,15 @@ APPROVERS = ("only a part's or an agent's owner, an instance approver, the data 
              "officer or assurance can approve settings, and {name} is none of them")
 
 
-def check(verifier: Verifier, scenario: Any, client_id: str, token: str, version: str,
-          salt: str, now: float) -> tuple[Person, dict]:
-    """Who signed in to approve this version, and what the provider signed, if the sign-in
-    checks out for it. Otherwise, Refused."""
+def afresh(verifier: Verifier, scenario: Any, client_id: str, token: str, bound: str,
+           salt: str, now: float, what: str, factor: str | None) -> tuple[Person, dict]:
+    """Who signed in afresh to do one thing that counts, `what`, which the sign-in's nonce,
+    `bound`, commits to, and what the provider signed, if the sign-in checks out for it: made
+    for a5s's pages, salted as the studio salts it, from the last ten minutes rather than one
+    the browser kept, with a second factor where the deployment asks for one, unless `factor`,
+    the act as a refusal for want of one names it, is None, and by someone the directory
+    knows. Otherwise, Refused, saying why. Every act that counts signs in through it, for its
+    own route, and the gateway checks each sign-in again for itself (core/sealing.py)."""
     try:
         claims = verifier.claims(token)
     except IdentityError as exc:
@@ -448,21 +453,30 @@ def check(verifier: Verifier, scenario: Any, client_id: str, token: str, version
     audience = claims.get("aud")
     if client_id not in ([audience] if isinstance(audience, str) else audience or []):
         raise Refused(401, "that sign-in is for something else")
-    if not sealing.salted(salt) or claims.get("nonce") != nonce(version, salt):
-        raise Refused(403, "your sign-in wasn't to approve this version")
     if not isinstance(claims.get("auth_time"), int | float) or any(
             not isinstance(claims.get(c), int | float) or now - claims[c] > FRESH
-            for c in ("iat", "auth_time")):  # a session's silent sign-in doesn't approve
-        raise Refused(401, "approving needs you to sign in again, from the last ten minutes, "
-                           "not a sign-in your browser kept")
-    if not second_factor(verifier.cfg, claims):
-        raise Refused(401, without_second_factor("approve"), "approve")
+            for c in ("iat", "auth_time")):  # a session's silent sign-in does nothing that counts
+        raise Refused(401, f"to {what}, sign in again, from the last ten minutes, not with a "
+                           "sign-in your browser kept")  # first: what one the browser kept needs
+    if factor is not None and not second_factor(verifier.cfg, claims):
+        raise Refused(401, without_second_factor(factor), factor.split()[0])
+    if not sealing.salted(salt) or claims.get("nonce") != bound:
+        raise Refused(403, f"your sign-in wasn't to {what}")
     try:
         person = whose(verifier, scenario, claims)
     except UnknownPerson as exc:
         raise Refused(403, str(exc)) from None
     except IdentityError as exc:
         raise Refused(401, f"your sign-in doesn't check out: {exc}") from None
+    return person, claims
+
+
+def check(verifier: Verifier, scenario: Any, client_id: str, token: str, version: str,
+          salt: str, now: float) -> tuple[Person, dict]:
+    """Who signed in to approve this version, and what the provider signed, if the sign-in
+    checks out for it and they may approve settings. Otherwise, Refused."""
+    person, claims = afresh(verifier, scenario, client_id, token, nonce(version, salt), salt,
+                            now, "approve this version", "approve")
     if not registry.approves(person):
         raise Refused(403, APPROVERS.format(name=person.name))
     return person, claims
