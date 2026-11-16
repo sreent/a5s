@@ -171,8 +171,9 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 
 **Shows as:** an instance suspended, and by whom, or retired.
 
-1. Only the person who suspended it can resume it, with `a5s resume`, signed in. Resuming someone else's suspension needs the release approver.
-2. A retired instance comes back with a version of the settings that names it again.
+1. Only the person who suspended it can resume it: on its page in the studio, `/studio/instances/<id>`, signed in afresh for that alone, or with `a5s resume`, signed in. Resuming someone else's suspension needs the release approver.
+2. One suspended or resumed on its page waits for the core's next sweep, within a minute, which checks that sign-in again. If it waits longer, the status counts it among what waits to be sealed: the core is missing its seal key or can't reach the identity provider, which the log says. A request it couldn't carry out, its person hears of in their digest, with why.
+3. A retired instance comes back with a version of the settings that names it again.
 
 ## Settings or the release don't check out
 

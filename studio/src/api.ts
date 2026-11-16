@@ -81,7 +81,8 @@ export type Catalogue = gen.Catalogue;
 // Someone's home and roles (core/home.py)
 export type Home = gen.Home;
 export type Waiting = gen.Waiting;
-export type InstanceWaits = gen.InstanceWaits;  // what of one instance waits, for its viewer
+export type Standing = gen.Standing;  // how an instance stands, for its viewer: what waits, and what they may do
+export type StatusAsked = gen.StatusAsked;  // a suspension or resumption asked for, which a5s carries out
 export type You = gen.You;
 export type Role = gen.Role;
 

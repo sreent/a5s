@@ -347,8 +347,9 @@ def apply(
 
 
 def set_status(conn: db.Connection, instance: str, *, by: str, suspend: bool,
-               identity: str = "unverified (development)") -> str:
-    """Suspend or resume an instance, and return the reason if it can't be done."""
+               identity: str = "unverified (development)", proof: dict | None = None) -> str:
+    """Suspend or resume an instance, and return the reason if it can't be done. The ledger
+    keeps how a5s knew who asked: with `proof`, the sign-in's issuer and hash."""
     row = conn.execute("select status, suspended_by from instances where id = %s for update",
                        (instance,)).fetchone()
     if row is None:
@@ -379,6 +380,6 @@ def set_status(conn: db.Connection, instance: str, *, by: str, suspend: bool,
         {"kind": "admin", "action": "suspend" if suspend else "resume", "instance": instance,
          "decision": "record", "args": {"by": by, "identity": identity,
                                         "suspended_by": row["suspended_by"] or by if suspend
-                                        else None}},
+                                        else None, **(proof or {})}},
     )
     return ""

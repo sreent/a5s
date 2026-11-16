@@ -118,10 +118,24 @@ class Instance(Shape):
     asks: list[str]
 
 
-class InstanceWaits(Shape):
-    """What of one instance waits, for someone who may watch it, each where it's done."""
+class StatusAsked(Shape):
+    """Suspending or resuming an instance, asked for on its page, which a5s carries out within
+    a minute, once it has checked the sign-in that asked for it again (core/suspension.py)."""
+
+    action: str  # suspend or resume
+    by: str  # who asked, by name
+    at: datetime
+
+
+class Standing(Shape):
+    """How an instance stands, for someone who may watch it: what of it waits, each where it's
+    done; who suspended it, if it's suspended; what they may do to it from its page, suspend it
+    or resume it, if either; and what was asked for there that a5s hasn't carried out yet."""
 
     waiting: list[Waiting]
+    suspended_by: str | None
+    may: str | None  # suspend or resume, which they may do now, signed in afresh
+    asked: StatusAsked | None
 
 
 class Autonomy(Shape):

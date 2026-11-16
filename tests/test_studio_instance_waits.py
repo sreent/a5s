@@ -33,7 +33,7 @@ def note(stack, source: str = "Q-1002") -> None:
 
 
 def waits(url: str, provider, person: str, *groups: str) -> dict[str, dict]:
-    found = api(url, provider, person, "instances/assistant-finance/waiting", *groups)
+    found = api(url, provider, person, "instances/assistant-finance/standing", *groups)
     found.raise_for_status()
     return {w["kind"]: w for w in found.json()["waiting"]}
 
@@ -66,7 +66,7 @@ def test_it_says_what_of_an_instance_waits_and_for_whom(stack, approving, provid
     priya = waits(approving, provider, "priya")
     assert set(priya) == {"held", "graded"}
     for outside in ("chen", "dana"):  # nobody else may watch it, nor any instance
-        assert api(approving, provider, outside, "instances/assistant-finance/waiting").status_code == 403
+        assert api(approving, provider, outside, "instances/assistant-finance/standing").status_code == 403
 
 
 def test_a_grader_who_watches_it_is_sent_to_grade_its_samples(stack, approving, provider):
@@ -82,4 +82,4 @@ def test_a_grader_who_watches_it_is_sent_to_grade_its_samples(stack, approving, 
 
 def test_nothing_waits_on_a_quiet_instance(stack, approving, provider):
     assert waits(approving, provider, "ana") == {}
-    assert api(approving, provider, "ana", "instances/nobodys/waiting").status_code == 404
+    assert api(approving, provider, "ana", "instances/nobodys/standing").status_code == 404

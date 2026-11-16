@@ -1,26 +1,56 @@
-// An instance's page: what of it waits, and where each is done; how far it may act in each
-// part; how it's doing over a period, from the measures counted for it alone; and its runs, a
-// page at a time, those whose every record the viewer may see.
+// An instance's page: what of it waits, and where each is done; suspending or resuming it,
+// signed in afresh for that alone; how far it may act in each part; how it's doing over a
+// period, from the measures counted for it alone; and its runs, a page at a time, those whose
+// every record the viewer may see.
 
-import { useState } from "react";
-import { type Catalogue, type Figures, get, type Instance, type InstanceWaits, type RunLine,
-         type RunsPage } from "../api";
-import { rung } from "../design";
+import { useEffect, useState } from "react";
+import { type Catalogue, type Figures, get, type Instance, type RunLine, type RunsPage, send,
+         type Standing, type StatusAsked } from "../api";
+import { signInFor, takeAct } from "../auth";
+import { Confirm, rung } from "../design";
 import { Link } from "../router";
 import { RunsByDay } from "../RunsByDay";
-import { aboutInstance, OutcomeBadge, PageHead, people, plural, runners, share, StatusBadge, useLoad,
-         Waiting, WaitList, when } from "../ui";
+import { aboutInstance, type Loaded, OutcomeBadge, PageHead, people, plural, runners, share, StatusBadge,
+         useLoad, Waiting, WaitList, when } from "../ui";
 
 /** What of it waits: the changes it asked for, its samples for a grade, and its notebook, each
  * where it's done, for the viewer or for others. */
-function Waits({ instance }: { instance: string }) {
-  const { data, error } = useLoad(() => get<InstanceWaits>(
-    `/studio/api/instances/${encodeURIComponent(instance)}/waiting`), [instance]);
+function Waits({ standing }: { standing: Loaded<Standing> }) {
   return (
     <section className="card" id="instance-waiting">
       <h2>What waits on it</h2>
-      {data ? <WaitList waiting={data.waiting} none="Nothing of it waits now." /> : <Waiting error={error} />}
+      {standing.data ? <WaitList waiting={standing.data.waiting} none="Nothing of it waits now." />
+                     : <Waiting error={standing.error} />}
     </section>
+  );
+}
+
+/** Suspending it, which stops it at its next step, or resuming it, which only whoever suspended
+ * it may: each signed in afresh for that alone, and carried out by a5s within a minute, once it
+ * has checked the sign-in again (core/suspension.py). */
+function Stopping({ id, standing, problem, setProblem }: {
+  id: string; standing?: Standing; problem?: string; setProblem: (problem: string) => void;
+}) {
+  const go = (action: "suspend" | "resume") => () => {
+    signInFor(action, id).catch((e: Error) => setProblem(e.message));
+  };
+  const asked = standing?.asked;
+  return (
+    <>
+      {asked && <p className="note" role="status" id="asked">{asked.by} asked to {asked.action} it, {when(asked.at)}: a5s does so within a minute, once it has checked that sign-in again.</p>}
+      {problem && <p className="problem" role="alert">{problem}</p>}
+      {standing?.may && (
+        <div className="actions">
+          {standing.may === "suspend"
+            ? <Confirm label="Suspend it" danger title={`Suspend ${id}?`}
+                       about="It stops at its next step, even in a run already going, and starts no runs, until whoever suspended it resumes it. Those it serves are told it's suspended. You'll sign in again, for this alone."
+                       confirm="Sign in and suspend it" onConfirm={go("suspend")} />
+            : <Confirm label="Resume it" title={`Resume ${id}?`}
+                       about="It works again as its settings say, from its next message. You'll sign in again, for this alone, with a second factor where your organisation asks for one."
+                       confirm="Sign in and resume it" onConfirm={go("resume")} />}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -186,7 +216,19 @@ const ZONE = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
 
 export function InstancePage({ id }: { id: string }) {
   const [days, setDays] = useState(30);
-  const catalogue = useLoad(() => get<Catalogue>("/studio/api"), []);
+  const [again, setAgain] = useState(0);  // to read how it stands again, once something's asked
+  const [problem, setProblem] = useState<string>();
+  const standing = useLoad(() => get<Standing>(
+    `/studio/api/instances/${encodeURIComponent(id)}/standing`), [id, again]);
+  useEffect(() => {  // back from signing in for an act on it: ask a5s to carry it out, once
+    const act = takeAct();
+    if (!act || act.instance !== id) return;
+    send<StatusAsked>("POST", `/studio/api/instances/${encodeURIComponent(id)}/status`,
+                      { action: act.action, salt: act.salt })
+      .then(() => setAgain((n) => n + 1))
+      .catch((e: Error) => setProblem(e.message));
+  }, [id]);
+  const catalogue = useLoad(() => get<Catalogue>("/studio/api"), [again]);
   const figures = useLoad(() => get<Figures>(
     `/studio/api/instances/${encodeURIComponent(id)}?days=${days}&zone=${encodeURIComponent(ZONE)}`), [id, days]);
   const inst = catalogue.data?.agents.flatMap((a) => a.instances).find((i) => i.id === id);
@@ -195,7 +237,8 @@ export function InstancePage({ id }: { id: string }) {
       <PageHead crumbs={[{ label: "Agents", to: { page: "agents" } },
                          ...(inst ? [{ label: inst.agent, to: { page: "agent" as const, agent: inst.agent } }] : [])]}
                 title={id} badges={inst && <StatusBadge status={inst.status} />}>
-        {inst && <div className="meta"><span>{aboutInstance(inst)}</span><span>run by {runners(inst)}</span>{!inst.current && <span className="badge warn">still on release {inst.release}</span>}</div>}
+        {inst && <div className="meta"><span>{aboutInstance(inst)}</span><span>run by {runners(inst)}</span>{standing.data?.suspended_by && <span>suspended by {standing.data.suspended_by}</span>}{!inst.current && <span className="badge warn">still on release {inst.release}</span>}</div>}
+        <Stopping id={id} standing={standing.data} problem={problem} setProblem={setProblem} />
         <label className="period">Over the last{" "}
           <select value={days} onChange={(e) => setDays(Number(e.target.value))}>
             <option value={7}>7 days</option><option value={30}>30 days</option><option value={90}>90 days</option>
@@ -203,7 +246,7 @@ export function InstancePage({ id }: { id: string }) {
         </label>
       </PageHead>
       <div className="two-up">
-        <Waits instance={id} />
+        <Waits standing={standing} />
         {inst && <Reach inst={inst} />}
       </div>
       {!figures.data && <Waiting error={figures.error} />}

@@ -1,13 +1,26 @@
 // Signing in through the organisation's identity provider, as every page of a5s does: with PKCE,
 // the provider's code passed on to it by the core (/approve/token), and the sign-in kept in
 // memory alone for as long as the studio is open. Where someone was going in the studio comes
-// back with them, so a link to a run still opens that run.
+// back with them, so a link to a run still opens that run. For an act that counts, such as
+// suspending an instance, they sign in afresh for it alone: the sign-in's nonce commits to the
+// act, so the identity provider signs it, and the page they come back to carries it out.
 
 const PENDING = "a5s.studio";
 const BACK = `${location.origin}/studio/`;
 
-type SignInConfig = { authorization_endpoint: string; client_id: string; scope: string };
-type Pending = { verifier: string; state: string; nonce: string; path: string };
+type SignInConfig = { authorization_endpoint: string; client_id: string; scope: string; acr_values?: string };
+/** An act signed in for: what, to which instance, and the salt its nonce was made with. */
+export type Act = { action: "suspend" | "resume"; instance: string; salt: string };
+type Pending = { verifier: string; state: string; nonce: string; path: string; act?: Act };
+
+let signedFor: Act | null = null;  // the act the sign-in just made was for, until it's carried out
+
+/** The act the last sign-in was made for, once: the page it came back to carries it out. */
+export function takeAct(): Act | null {
+  const act = signedFor;
+  signedFor = null;
+  return act;
+}
 
 export class SignInError extends Error {}
 
@@ -32,18 +45,30 @@ export async function signIn(): Promise<string | null> {
   if (!window.crypto?.subtle) throw new SignInError("The studio needs HTTPS, or a page on this computer.");
   const params = new URLSearchParams(location.search);
   if (params.has("code") || params.has("error")) return finish(params);
+  await start(await where());
+  return null;
+}
+
+async function where(): Promise<SignInConfig> {
   const config = await fetch("/approve/config");
   const body = await config.json().catch(() => ({}));
   if (!config.ok) {
     throw new SignInError(typeof body.detail === "string" ? body.detail : "The studio isn't set up here.");
   }
-  await start(body.signin as SignInConfig);
-  return null;
+  return body.signin as SignInConfig;
 }
 
-async function start(signin: SignInConfig): Promise<void> {
-  const pending: Pending = { verifier: random(), state: random(), nonce: random(),
-                             path: location.pathname };
+/** Sign in afresh to suspend or resume an instance, and nothing else: the nonce commits to the
+ * act, as core/suspension.py's `nonce` makes it, at the level what counts asks for. */
+export async function signInFor(action: Act["action"], instance: string): Promise<void> {
+  const salt = random();
+  await start(await where(), { action, instance, salt },
+              await sha256(`a5s ${action} instance ${instance} ${salt}`));
+}
+
+async function start(signin: SignInConfig, act?: Act, nonce?: string): Promise<void> {
+  const pending: Pending = { verifier: random(), state: random(), nonce: nonce ?? random(),
+                             path: location.pathname, act };
   sessionStorage.setItem(PENDING, JSON.stringify(pending));
   const url = new URL(signin.authorization_endpoint);
   const query: Record<string, string> = {
@@ -51,6 +76,10 @@ async function start(signin: SignInConfig): Promise<void> {
     state: pending.state, nonce: pending.nonce, code_challenge: await sha256(pending.verifier),
     code_challenge_method: "S256",
   };
+  if (act) {
+    query.max_age = "0";  // afresh, not a sign-in the browser kept
+    if (signin.acr_values) query.acr_values = signin.acr_values;  // the level what counts needs
+  }
   for (const [key, value] of Object.entries(query)) url.searchParams.set(key, value);
   location.assign(url.toString());
 }
@@ -78,5 +107,6 @@ async function finish(params: URLSearchParams): Promise<string> {
     throw new SignInError(`Signing in didn't work: ${tokens.error_description || tokens.error || tokens.detail || answer.status}`);
   }
   if (claims(tokens.id_token).nonce !== pending.nonce) throw new SignInError(again);
+  signedFor = pending.act ?? null;
   return tokens.id_token as string;
 }

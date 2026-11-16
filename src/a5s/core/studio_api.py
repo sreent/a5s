@@ -10,6 +10,7 @@ as the core's API works it out for the team that runs a5s.
 
 import re
 import tempfile
+import time
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
@@ -23,6 +24,7 @@ from a5s import authoring, cases, db, definitions, describing
 from a5s.contract import Person
 from a5s.core import (
     administration,
+    approvals,
     asks,
     drafts,
     ledger,
@@ -31,6 +33,7 @@ from a5s.core import (
     registry,
     settings_app,
     studio,
+    suspension,
     typescript,
     web,
 )
@@ -84,6 +87,14 @@ class Serve(BaseModel):
     """Which of an agent's instances is to serve someone who asked for it."""
 
     instance: str
+
+
+class StatusAct(BaseModel):
+    """Suspending or resuming an instance from its page: which, and the salt the page made its
+    sign-in's nonce with."""
+
+    action: str
+    salt: str
 
 
 class CaseRun(BaseModel):
@@ -336,13 +347,64 @@ def router(gw: Any) -> APIRouter:
             except studio.UnknownZone as e:
                 raise HTTPException(400, str(e)) from e
 
-    @api.get("/studio/api/instances/{instance}/waiting", **shapes.answers(shapes.InstanceWaits))
-    def instance_waiting(instance: str, person: Annotated[Person, Depends(studying)]) -> dict:
-        """What of an instance waits, for someone who may watch it: the changes it asked for,
-        for their decision and others', its samples for their grade and others', and its
-        notebook, if they keep it, each where it's done (core/home.py)."""
+    def stood(conn: Any, person: Person, instance: str) -> dict:
+        """An instance someone may watch, with who suspended it, if anyone did."""
+        watched(conn, person, instance)
+        found = conn.execute(f"select {suspension.COLUMNS}, parts from instances where id = %s",
+                             (instance,)).fetchone()
+        if found is None:
+            raise HTTPException(404, "there's no such instance that you may watch")
+        return found
+
+    def asked_line(found: dict | None) -> dict | None:
+        if found is None:
+            return None
+        who = gw.scenario.person(found["person"])
+        return {"action": found["action"], "by": who.name if who else found["person"],
+                "at": found["asked_at"]}
+
+    @api.get("/studio/api/instances/{instance}/standing", **shapes.answers(shapes.Standing))
+    def instance_standing(instance: str, person: Annotated[Person, Depends(studying)]) -> dict:
+        """How an instance stands, for someone who may watch it: what of it waits, the changes
+        it asked for, for their decision and others', its samples for their grade and others',
+        and its notebook, if they keep it, each where it's done (core/home.py); who suspended
+        it; and whether they may suspend it or resume it from its page (core/suspension.py)."""
         with db.transaction(gw.url) as conn:
-            return {"waiting": homes.of_instance(conn, gw, person, watched(conn, person, instance))}
+            inst = stood(conn, person, instance)
+            pending = suspension.asked(conn, instance)
+            waiting = homes.of_instance(conn, gw, person, inst)
+        by = gw.scenario.person(inst["suspended_by"] or "")
+        may = None if pending else next(
+            (a for a in suspension.ACTIONS
+             if suspension.may(gw.scenario, person, inst, a, gw.cfg.team) is None), None)
+        return {"waiting": waiting, "may": may, "asked": asked_line(pending),
+                "suspended_by": (by.name if by else inst["suspended_by"])
+                if inst["status"] == "suspended" else None}
+
+    @api.post("/studio/api/instances/{instance}/status", **shapes.answers(shapes.StatusAsked))
+    def instance_status(instance: str, body: StatusAct,
+                        person: Annotated[Person, Depends(studying)],
+                        authorization: str | None = Header(default=None)) -> dict:
+        """Suspend or resume an instance, signed in afresh for that act alone, which the gateway
+        checks again and carries out within a minute (core/suspension.py): someone who runs it,
+        owns its agent, or is on the team that runs a5s suspends it; whoever suspended it
+        resumes it."""
+        token = (authorization or "").removeprefix("Bearer ").strip()
+        try:
+            who, claims = suspension.check(gw.identity, gw.scenario, gw.cfg.webchat_client_id,
+                                           token, body.action, instance, body.salt, time.time())
+            with db.transaction(gw.url) as conn:
+                inst = stood(conn, who, instance)
+                if suspension.asked(conn, instance):
+                    raise HTTPException(409, "a5s is carrying out what was asked for it already: "
+                                             "look again in a minute")
+                if refused := suspension.may(gw.scenario, who, inst, body.action, gw.cfg.team):
+                    raise refused
+                found = suspension.record(conn, body.action, instance, who.id, token,
+                                          body.salt, claims)
+        except approvals.Refused as exc:
+            raise web.refusal(gw, exc) from None
+        return {"action": body.action, "by": who.name, "at": found["asked_at"]}
 
     @api.get("/studio/api/instances/{instance}/runs", **shapes.answers(shapes.RunsPage))
     def studio_runs(instance: str, person: Annotated[Person, Depends(studying)], before: str | None = None,

@@ -91,6 +91,7 @@ from a5s.core import (
     sealing,
     status,
     studio,
+    suspension,
     tasking,
     topics,
     traces,
@@ -619,8 +620,10 @@ class Gateway:
 
     def seal_pending(self, conn: db.Connection) -> None:
         """Check again, and seal, what the channels app recorded people approving, deciding and
-        grading, in the gateway alone (core/sealing.py): what doesn't check out is refused.
-        Without its seal key or the identity provider, it leaves them waiting, and says so."""
+        grading, in the gateway alone (core/sealing.py), and carry out the suspensions and
+        resumptions they asked for on instances' pages (core/suspension.py): what doesn't check
+        out is refused. Without its seal key or the identity provider, it leaves them waiting,
+        and says so."""
         if problem := self.approving():
             if waiting := sealing.waiting(conn):
                 log.error("%d approvals, decisions and grades wait to be sealed, but %s",
@@ -630,7 +633,9 @@ class Gateway:
         args = (self.cfg.seal_keys, self.identity, self.scenario, self.cfg.webchat_client_id)
         for refused in (*approvals.seal_pending(conn, *args),
                         *proposals.seal_pending(conn, *args, clean=self.reason_told),
-                        *samples.seal_pending(conn, *args, now=self.clock())):
+                        *samples.seal_pending(conn, *args, now=self.clock()),
+                        *suspension.carry_out(conn, self.identity, self.scenario,
+                                              self.cfg.webchat_client_id, self.cfg.team)):
             ledger.append(conn, {"kind": "admin", "action": "refuse-sign-in", "run": None,
                                  "instance": None, "acts_for": [], "decision": "record",
                                  "args": {"what": refused.what}})

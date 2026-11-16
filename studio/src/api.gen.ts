@@ -363,11 +363,6 @@ export type Instance = {
   asks: string[];
 };
 
-// What of one instance waits, for someone who may watch it, each where it's done.
-export type InstanceWaits = {
-  waiting: Waiting[];
-};
-
 // How far an agent's judge agrees with people, on the samples both graded (core/judging.py).
 export type Judge = {
   both: number;
@@ -655,6 +650,31 @@ export type Signer = {
   who: string;
   why: string;
   held_by?: string[] | null;
+};
+
+// How an instance stands, for someone who may watch it: what of it waits, each where it's
+// done; who suspended it, if it's suspended; what they may do to it from its page, suspend it
+// or resume it, if either; and what was asked for there that a5s hasn't carried out yet.
+export type Standing = {
+  waiting: Waiting[];
+  suspended_by: string | null;
+  may: string | null;
+  asked: StatusAsked | null;
+};
+
+// Suspending or resuming an instance from its page: which, and the salt the page made its
+// sign-in's nonce with.
+export type StatusAct = {
+  action: string;
+  salt: string;
+};
+
+// Suspending or resuming an instance, asked for on its page, which a5s carries out within
+// a minute, once it has checked the sign-in that asked for it again (core/suspension.py).
+export type StatusAsked = {
+  action: string;
+  by: string;
+  at: string;
 };
 
 // An agent a new one may start from, and the tools it needs that the scenario hasn't.

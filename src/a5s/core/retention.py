@@ -141,4 +141,7 @@ def sweep(conn: db.Connection, now: datetime, scenario: str, kept: str = KEPT) -
     delete("days", "delete from digests where due_at < %(due)s", due=now - timedelta(days=3))
     delete("requests", "delete from officer_requests where asked_at < now() - interval "
                        "'1 day'")  # the officer's, carried out or not (core/officer.py)
+    delete("suspensions", "delete from status_requests where ended_at < now() - interval '1 day' "
+                          "or asked_at < now() - interval '2 days'")  # the ledger keeps each
+
     return gone

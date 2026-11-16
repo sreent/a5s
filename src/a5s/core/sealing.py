@@ -65,11 +65,12 @@ def _age(token: str, now: float | None) -> float:
 
 
 def check(verifier: Verifier | None, scenario: Any, client_id: str | None, token: str | None,
-          bound: str, person: str, now: float | None = None) -> str | None:
+          bound: str, person: str, now: float | None = None, factor: bool = True) -> str | None:
     """Why a recorded sign-in doesn't check out, if it doesn't: None if the provider signed it
-    for a5s's client, with exactly the nonce `bound`, made afresh, for `person`, lately.
-    Unchecked if the provider couldn't be reached to say, while the sign-in is less than a day
-    old: it waits, rather than being refused for a brief outage."""
+    for a5s's client, with exactly the nonce `bound`, made afresh, for `person`, lately, with a
+    second factor where the deployment asks for one, unless what it does only makes a5s safer
+    (`factor` False). Unchecked if the provider couldn't be reached to say, while the sign-in is
+    less than a day old: it waits, rather than being refused for a brief outage."""
     if verifier is None or not client_id:
         return "the core can't check sign-ins here: it has no identity provider"
     if not token:
@@ -91,7 +92,7 @@ def check(verifier: Verifier | None, scenario: Any, client_id: str | None, token
     if not isinstance(issued, int | float) or not isinstance(signed_in, int | float) \
             or issued - signed_in > FRESH:
         return "the sign-in wasn't made afresh for it"
-    if not second_factor(verifier.cfg, claims):
+    if factor and not second_factor(verifier.cfg, claims):
         return "the sign-in wasn't made with a second factor, which this deployment asks for"
     if (time.time() if now is None else now) - issued > OLDEST:
         return "the sign-in is more than a day old"
@@ -105,13 +106,16 @@ def check(verifier: Verifier | None, scenario: Any, client_id: str | None, token
 
 
 def waiting(conn: Any, longer_than: str = "0 minutes") -> int:
-    """How many approvals, decisions and grades the channels app recorded that the gateway
-    hasn't sealed or refused yet, for longer than that: none for long, while it can seal."""
+    """How many approvals, decisions, grades, suspensions and resumptions the channels app
+    recorded that the gateway hasn't sealed, carried out or refused yet, for longer than that:
+    none for long, while it can seal."""
     return conn.execute(
         "select (select count(*) from settings_approvals where seal is null and refused is null "
         "        and approved_at < now() - %(for)s::interval)"
         "     + (select count(*) from proposal_decisions where seal is null and refused is null "
         "        and decided_at < now() - %(for)s::interval)"
         "     + (select count(*) from samples where grade_proof is not null and grade_seal is null "
-        "        and graded_at < now() - %(for)s::interval) as n", {"for": longer_than}
+        "        and graded_at < now() - %(for)s::interval)"
+        "     + (select count(*) from status_requests where ended_at is null "
+        "        and asked_at < now() - %(for)s::interval) as n", {"for": longer_than}
     ).fetchone()["n"]
