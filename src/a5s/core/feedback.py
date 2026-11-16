@@ -22,7 +22,7 @@ from typing import Any
 
 from a5s import db
 from a5s.contract import Person, Scenario
-from a5s.core import ledger, studio
+from a5s.core import languages, ledger, studio, words
 from a5s.core.releases import agent_owner
 
 KIND = "feedback"  # in the ledger
@@ -33,6 +33,11 @@ WRONG = {"slack": frozenset({"-1", "thumbsdown", "x"}),  # Slack's names for ðŸ‘
 NOTED = ("Noted: its owners will see that answer, and the run behind it, to check it, and "
          "nothing more of what you said.")
 MOST_SHOWN = 100  # of an agent's, newest first
+
+
+def noted(conn: db.Connection, person: Person | None) -> str:
+    """What someone's told once a5s has kept what they said, in the language they read."""
+    return words.say(languages.of(conn, person), NOTED) if person is not None else NOTED
 
 
 class Refused(Exception):

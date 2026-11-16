@@ -238,7 +238,7 @@ def create_app(gw: Any) -> FastAPI:
                     if found is not None and feedback.record(
                             conn, found["id"], person.id, said if isinstance(said, str) else None,
                             "teams") is not None:
-                        told = feedback.NOTED
+                        told = feedback.noted(conn, person)
                 except feedback.Refused:
                     pass
         return JSONResponse({"statusCode": 200, "type": "application/vnd.microsoft.activity.message",
@@ -335,10 +335,11 @@ def create_app(gw: Any) -> FastAPI:
                                                              "slack") is not None
             except feedback.Refused:
                 made = False
+            told = feedback.noted(conn, person)
         if made:
             background.add_task(tell_in_slack, {"channel": str(item.get("channel")),
                                                 "app_id": bot.app_id},
-                                feedback.NOTED, str(event.get("user")))
+                                told, str(event.get("user")))
 
     def slack_events(body: bytes, timestamp: str | None, signature: str | None,
                      background: BackgroundTasks) -> Response:
@@ -548,9 +549,10 @@ def create_app(gw: Any) -> FastAPI:
                                                     "matrix") is not None)
                     except feedback.Refused:
                         made = False
+                    told = feedback.noted(conn, gw.scenario.person(person))
                 if made and reply_to.get("bot") and row and row["conversation"] is None:
                     background.add_task(tell_in_matrix, {"room": room, "bot": reply_to["bot"]},
-                                        feedback.NOTED)  # in their own chat: a group's isn't told
+                                        told)  # in their own chat: a group's isn't told
         return {}
 
     @matrix_api.get("/channels/matrix/_matrix/app/v1/users/{user}")
@@ -610,7 +612,8 @@ def create_app(gw: Any) -> FastAPI:
                 made = feedback.record(conn, body.message, person, body.said, "local")
             except feedback.Refused as exc:
                 raise HTTPException(404, str(exc)) from None
-        return {"noted": made is not None, "said": feedback.NOTED}
+            told = feedback.noted(conn, gw.scenario.person(person))
+        return {"noted": made is not None, "said": told}
 
     @app.get("/channels/local/messages/{message}")
     async def answers(request: Request, message: str, wait: float = 0, person: str | None = None,

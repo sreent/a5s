@@ -10,6 +10,7 @@ from pathlib import Path
 import httpx
 
 from a5s import db
+from a5s.config import Prices
 from a5s.contract import parse_settings
 from a5s.core import languages
 from conftest import ROOT, accessible
@@ -152,3 +153,31 @@ def test_ocean_gives_thai_its_own_faces_for_its_letters_alone():
         assert Path(ROOT / "src" / "a5s" / "core" / "webchat" / "ocean" / "fonts" /
                     f"plex-sans-thai-{weight}.woff2").read_bytes()[:4] == b"wOF2"
     assert parse_settings(b"serial: 1\n").instances == ()  # the settings don't hold a language
+
+
+def test_a5s_writes_its_own_words_in_the_language_someone_reads(stack, approving, provider):
+    from a5s.core import administration, feedback, home, words
+    for english, thai in words.TH.items():  # each keeps its English's {name}s
+        assert sorted(re.findall(r"\{(\w+)\}", english)) == sorted(re.findall(r"\{(\w+)\}", thai)), english
+    for kept in (*home.MAY.values(), home.TEAM_MAY, feedback.NOTED, *administration.SCOPED.values()):
+        assert kept in words.TH, kept  # what a role lets someone do, and the like, has its Thai
+    assert words.translated("th", "the owner of billing hasn't approved it") == "เจ้าของ billing ยังไม่ได้อนุมัติ"
+    assert words.translated("en", "the owner of billing hasn't approved it") == \
+        "the owner of billing hasn't approved it"
+    assert words.translated("th", "something a5s has no Thai for") == "something a5s has no Thai for"
+    # On their home and their own page, in Thai, once they read it
+    stack.gateway.models["fake"] = replace(stack.gateway.models["fake"], prices=Prices(2000.0, 8000.0))
+    assert not stack.settle(spending={"parts": {"billing": 0.05}}).refused
+    stack.model.reply("Hello.")
+    stack.say("hello")
+    as_person(approving, provider, "ana", "POST", "/studio/api/you/language", {"language": "th"})
+    waiting = as_person(approving, provider, "ana", "GET", "/studio/api/home").json()["waiting"]
+    [spent] = [w for w in waiting if w["kind"] == "spending"]
+    assert spent["what"].startswith("billing ใช้ไปแล้ว") and "เกินงบประมาณ" in spent["what"]
+    assert spent["why"] == ["คุณเป็นเจ้าของ billing"]
+    roles = as_person(approving, provider, "ana", "GET", "/studio/api/you").json()["roles"]
+    owner = next(r for r in roles if r["role"] == "part-owner:billing")
+    assert owner["name"] == "เจ้าของ billing" and owner["may"].startswith("อนุมัติอินสแตนซ์ที่ทำงานใน billing")
+    # Ben reads English still
+    ben = as_person(approving, provider, "ben", "GET", "/studio/api/you").json()["roles"]
+    assert all(not re.search(r"[฀-๿]", r["may"]) for r in ben)

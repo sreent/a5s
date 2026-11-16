@@ -248,7 +248,8 @@ def router(gw: Any) -> APIRouter:
         use, whether or not they hold a role: the catalogue is everyone's."""
         with db.transaction(gw.url) as conn:
             asks.settle(conn, gw.scenario, studio.instances(conn))  # served since, or lapsed
-            return {"you": person.name, "waiting": homes.waiting(conn, gw, person),
+            return {"you": person.name,
+                    "waiting": homes.waiting(conn, gw, person, languages.of(conn, person)),
                     "drafts": drafts.mine(conn, person),
                     "authoring": drafts.may_author(person, None)}  # a new agent, as the catalogue says
 
@@ -258,7 +259,8 @@ def router(gw: Any) -> APIRouter:
         the identity provider's, and what it lets them do; and the groups their sign-in
         showed, of those the settings name."""
         with db.transaction(gw.url) as conn:
-            return {"you": person.name, "id": person.id, "roles": homes.roles(conn, gw, person),
+            return {"you": person.name, "id": person.id,
+                    "roles": homes.roles(conn, gw, person, languages.of(conn, person)),
                     "groups": list(memberships.stored(conn, person.id).get(person.id, ())),
                     "language": languages.of(conn, person),
                     "languages": [{"code": c, "name": n} for c, n in languages.SPOKEN.items()]}

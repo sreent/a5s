@@ -109,8 +109,12 @@ def test_choosing_on_the_map_says_what_a_change_reaches(stack, approving, provid
     accessible(page)
     page.click("#depended-on-by [data-pick='agent:assistant']")
     page.wait_for_selector("#chosen h2 >> text=assistant", timeout=30000)
-    page.focus(".flow [data-step='tool:change_due_date']")  # the arrow keys move down a column
-    page.keyboard.press("ArrowDown")
+    for _ in range(3):  # the arrow keys move down a column; the map drawn again as what's
+        page.focus(".flow [data-step='tool:change_due_date']")  # chosen changes can take the
+        page.keyboard.press("ArrowDown")  # focus from it first, on a slow runner
+        if page.locator(".flow [data-step='tool:close_question']:focus").count():
+            break
+        page.wait_for_timeout(500)
     assert page.evaluate("document.activeElement.dataset.step") == "tool:close_question"
     page.goto(f"{approving}/studio/map?at=part:billing")  # the address chooses it again
     page.wait_for_selector("#chosen h2 >> text=billing", timeout=30000)

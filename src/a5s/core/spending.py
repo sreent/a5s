@@ -41,7 +41,7 @@ from a5s.contract import (
     Scenario,
     Spending,
 )
-from a5s.core import measures, studio
+from a5s.core import measures, studio, words
 from a5s.core.releases import agent_owner
 
 PACE = 7  # days: the forecast goes on at the pace of the last week
@@ -197,7 +197,7 @@ def said(amount: float, currency: str | None) -> str:
 
 def over(conn: db.Connection, scenario: Scenario, models: dict[str, ModelConfig],
          spending: Spending, person: Person, now: datetime | None = None,
-         currency: str | None = None) -> list[dict]:
+         currency: str | None = None, language: str = "en") -> list[dict]:
     """The budgets someone owns that this month has passed, or is forecast to pass, as of
     `now`, or the database's time, for their home page: each part they own and agent they own
     with a budget, in words."""
@@ -214,16 +214,21 @@ def over(conn: db.Connection, scenario: Scenario, models: dict[str, ModelConfig]
     for kind, key in mine:
         budget = getattr(spending, kind)[key]
         month = _shown(key, found[kind][key] if key in found[kind] else _blank(), budget, left)
-        whose = key if kind == "parts" else f"The {key}"
+        whose = key if kind == "parts" or language == words.THAI else f"The {key}"
         if month["spent"] > budget:
-            what = (f"{whose} has spent {said(month['spent'], currency)} this month, past its "
-                    f"budget of {said(budget, currency)}")
+            what = words.say(language, "{whose} has spent {amount} this month, past its budget of "
+                             "{budget}", whose=whose, amount=said(month["spent"], currency),
+                             budget=said(budget, currency))
         elif (month["forecast"] or 0) > budget:
-            what = (f"{whose} is on course to spend {said(month['forecast'] or 0, currency)} this "
-                    f"month, past its budget of {said(budget, currency)}")
+            what = words.say(language, "{whose} is on course to spend {amount} this month, past "
+                             "its budget of {budget}", whose=whose,
+                             amount=said(month["forecast"] or 0, currency),
+                             budget=said(budget, currency))
         else:
             continue
         items.append({"kind": "spending", "what": what,
-                      "why": [f"you own {key if kind == 'parts' else 'the ' + key}"],
+                      "why": [words.say(language, "you own {what}",
+                                        what=key if kind == "parts" or language == words.THAI
+                                        else "the " + key)],
                       "go": f"/studio/spending#{kind[:-1]}-{key}"})
     return items
