@@ -86,7 +86,8 @@ def test_an_overdue_obligation_escalates_in_code_in_the_recipients_hours(stack):
     stack.scheduler().work_due()
     assert escalations(stack) == [("Q-1003", "omar")]
     [told] = stack.inbox("omar")
-    assert told == {"from": "a5s", "by": "a5s", "about": None, "instance": None, "at": told["at"], "text": (
+    assert told == {"from": "a5s", "by": "a5s", "about": None, "instance": None, "at": told["at"],
+                    "id": told["id"], "text": (
         "Q-1003, Delivery date for order 7781, was due on Mon 2 Nov and is still open. "
         "It's Chen Wei's. No agent works on it for them, so nobody reminded them first. You're "
         "next in their reporting line, so a5s is letting you know. "

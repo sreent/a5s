@@ -30,13 +30,12 @@
 .welcome .avatar .icon { width: 1.5rem; height: 1.5rem; }
 .welcome-name { margin: 0 0 var(--space-1); color: var(--text); font-size: var(--text-lg); font-weight: 600; }
 body.app header label { color: var(--muted); }
-#compose { display: flex; gap: 0.5rem; align-items: flex-end; width: 100%; max-width: 50rem; margin: 0 auto; }
+/* What's written and the files to send with it, in Ocean's footer, which it leaves as it is: the
+   files as Ocean's chips, above what's written, each with a way to leave it out */
+#composer { display: grid; gap: 0.5rem; width: 100%; max-width: 50rem; margin: 0 auto; }
+#compose { display: flex; gap: 0.5rem; align-items: flex-end; }
 #attach { flex: none; display: inline-grid; place-items: center; width: 2.6rem; height: 2.6rem; padding: 0; }
 #attach .icon { width: 1.15rem; height: 1.15rem; }
-/* The files to send with the next message, as Ocean's chips, above what's written, each with a
-   way to leave it out */
-footer { flex-wrap: wrap; }
-#attached { width: 100%; max-width: 50rem; margin: 0 auto; }
 #attached button { border: 0; background: none; margin-inline-start: 0.2rem; padding: 0 0.15rem; color: var(--muted); }
 #compose textarea { flex: 1; min-height: 2.6rem; max-height: 12rem; }
 /* Saying an agent's answer was wrong: a quiet link under it, and its short form */
