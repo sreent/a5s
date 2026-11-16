@@ -12,20 +12,6 @@ import { shellOf } from "./Sidebar";
 
 type Found = PaletteOption & { to: Route | string };
 
-// The pages, as the sidebar names them, and the studio's own besides
-const PAGES: Record<string, [string, string, Route | string]> = {
-  studio: ["Your home", "studio", { page: "home" }],
-  chat: ["Chat", "chat", "/chat/"],
-  tasks: ["Your tasks", "tasks", { page: "tasks" }],
-  notebook: ["Notebook", "book", { page: "notebook" }],
-  decide: ["Decisions", "decide", { page: "decide" }],
-  grade: ["Grading", "grade", { page: "grade" }],
-  settings: ["Settings", "settings", { page: "settings" }],
-  audit: ["Audit trail", "audit", { page: "audit" }],
-  admin: ["Administration", "admin", { page: "admin" }],
-  officer: ["Data protection", "officer", { page: "officer" }],
-};
-
 async function everything(): Promise<Found[]> {
   const [shell, home, catalogue] = await Promise.all([
     shellOf(true).catch(() => null), get<Home>("/studio/api/home").catch(() => null),
@@ -35,8 +21,9 @@ async function everything(): Promise<Found[]> {
     const to = wait.go ? inside(wait.go) ?? wait.go : null;
     if (to) found.push({ id: `wait-${n}`, name: wait.what, where: "waits on you", group: "Waiting on you", icon: "bell", to });
   }
-  for (const [page, [name, icon, to]] of Object.entries(PAGES)) {  // home first, then as the sidebar has them
-    if (shell?.pages.includes(page)) found.push({ id: `page-${page}`, name, where: "a page", group: "Pages", icon, to });
+  for (const place of shell?.pages ?? []) {  // as the sidebar names and orders them
+    found.push({ id: `page-${place.page}`, name: place.name, where: "a page", group: "Pages", icon: place.icon,
+                 to: inside(place.at) ?? place.at });
   }
   if (catalogue) found.push({ id: "page-agents", name: "All agents", where: "a page", group: "Pages", icon: "agent", to: { page: "agents" } });
   if (home?.authoring) found.push({ id: "page-new", name: "Start a new agent", where: "in the studio", group: "Pages", icon: "plus", to: { page: "new" } });

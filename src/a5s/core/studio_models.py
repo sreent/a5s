@@ -63,6 +63,27 @@ class Home(Shape):
     authoring: bool  # whether they may start a new agent: an author of one may not (round 13, B4)
 
 
+# The sidebar every page of a5s has (core/shell_api.py)
+
+
+class Place(Shape):
+    """One of a5s's pages, as every sidebar and the studio's palette show it: its key, its
+    name, its icon, the heading it's under, and its address."""
+
+    page: str
+    name: str
+    icon: str
+    group: str
+    at: str
+
+
+class Shell(Shape):
+    """Who signed in, and the pages they may use, in the sidebar's order."""
+
+    you: str
+    pages: list[Place]
+
+
 class Role(Shape):
     """A role someone holds, what gave it them, and what it lets them do."""
 

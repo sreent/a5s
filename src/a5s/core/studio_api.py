@@ -40,6 +40,7 @@ from a5s.core import (
     registry,
     settings_api,
     settings_app,
+    shell_api,
     studio,
     suspension,
     tasks_api,
@@ -926,6 +927,7 @@ def described() -> dict:
     app.include_router(grade_api.router(SimpleNamespace(cfg=None)))  # and grading samples
     app.include_router(officer_api.router(SimpleNamespace(cfg=None)))  # and the officer's requests
     app.include_router(approve_api.router(SimpleNamespace(cfg=None)))  # and approving settings
+    app.include_router(shell_api.router(SimpleNamespace(cfg=None)))  # and every page's sidebar
     return app.openapi()
 
 

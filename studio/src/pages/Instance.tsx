@@ -9,7 +9,7 @@ import { type Catalogue, type Figures, get, type Instance, type RunLine, type Ru
 import { hashed, salted, signInFor, takeAct } from "../auth";
 import { Confirm, rung, Skeleton, useToast } from "../design";
 import { Link } from "../router";
-import { shellOf } from "../Sidebar";
+import { mayUse, shellOf } from "../Sidebar";
 import { RunsByDay } from "../RunsByDay";
 import { aboutInstance, type Loaded, OutcomeBadge, PageHead, people, plural, runners, share, StatusBadge,
          useLoad, Waiting, WaitList, when, Wide } from "../ui";
@@ -243,7 +243,7 @@ export function InstancePage({ id }: { id: string }) {
     `/studio/api/instances/${encodeURIComponent(id)}?days=${days}&zone=${encodeURIComponent(ZONE)}`), [id, days]);
   const inst = catalogue.data?.agents.flatMap((a) => a.instances).find((i) => i.id === id);
   const shell = useLoad(shellOf, []);
-  const settles = Boolean(shell.data?.pages.includes("settings"));  // approves versions of the settings
+  const settles = mayUse(shell.data, "settings");  // approves versions of the settings
   // what it is and what may be done with it arrive together, so nothing below them moves as
   // each comes, as it did by a third of a phone's screen (round 13, C11)
   const head = Boolean(inst && standing.data && (shell.data || shell.error));

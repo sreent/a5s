@@ -7,7 +7,7 @@ import { type AgentKnown, type AgentUses, ApiError, builtOf, type Catalogue, typ
 import { AgentMap } from "../AgentMap";
 import { AgentFacts, AutonomyLadder, useToast } from "../design";
 import { go, Link } from "../router";
-import { shellOf } from "../Sidebar";
+import { mayUse, shellOf } from "../Sidebar";
 import { aboutInstance, levels, PageHead, people, type Risk, risk, RISK_NAMES, runners, StatusBadge,
          sentence, ToolBadges, triggers, useLoad, Waiting, when, Wide } from "../ui";
 
@@ -219,7 +219,7 @@ const idle = (agent: AgentKnown) => Boolean(agent.layers?.changing) && agent.ins
 
 function PutToWork({ agent }: { agent: AgentKnown }) {
   const shell = useLoad(shellOf, []);
-  const may = shell.data?.pages.includes("settings");
+  const may = mayUse(shell.data, "settings");
   return (
     <section className="card" id="put-to-work">
       <h2>Put it to work</h2>

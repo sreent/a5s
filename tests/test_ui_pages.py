@@ -78,7 +78,7 @@ def test_the_sidebar_lists_only_the_pages_each_person_may_use(stack, approving, 
         answer = httpx.get(f"{approving}/shell/api", timeout=30,
                            headers={"Authorization": f"Bearer {token}"})
         assert answer.status_code == 200, answer.text
-        return answer.json()["pages"]
+        return [place["page"] for place in answer.json()["pages"]]
 
     # Ana approves instances and owns billing; Ben deputises for the instance, which is no role
     # of a5s's own; Chen is served; Kofi is assurance, who reads the trail. The studio's home and
@@ -88,3 +88,36 @@ def test_the_sidebar_lists_only_the_pages_each_person_may_use(stack, approving, 
     assert "audit" in listed("kofi")
     assert listed("chen") == ["chat", "tasks", "studio"]
     assert httpx.get(f"{approving}/shell/api", timeout=30).status_code == 401
+
+
+def test_every_sidebar_and_the_palette_show_the_pages_as_a5s_lists_them(seen, approving, provider,
+                                                                        browser):
+    """One list of the pages, a5s's own (core/shell_api.py): the studio's sidebar and palette,
+    and the chat's sidebar, name, order and place each page as /shell/api gives them, where each
+    kept a list of its own (round 13's deferral)."""
+    import httpx
+
+    token = provider.id_token(person="ana")
+    places = httpx.get(f"{approving}/shell/api", timeout=30,
+                       headers={"Authorization": f"Bearer {token}"}).json()["pages"]
+    assert [p["page"] for p in places] == ["chat", "tasks", "notebook", "studio", "decide",
+                                          "settings", "admin"]
+    for start in ("/studio/", "/chat/"):  # the studio's sidebar, and the plain pages' (shell.js)
+        page = browser.new_page(viewport={"width": 1440, "height": 900})
+        page.goto(f"{approving}{start}")
+        page.wait_for_selector("#pages a", timeout=30000)
+        links = page.locator("#pages a")
+        shown = [(links.nth(n).inner_text().strip(), links.nth(n).get_attribute("href"))
+                 for n in range(links.count())]
+        assert shown == [(p["name"], p["at"]) for p in places], start
+        headings = [h.strip() for h in page.locator("#pages .group").all_text_contents()]  # as written
+        assert headings == list(dict.fromkeys(p["group"] for p in places)), start
+    page = browser.new_page(viewport={"width": 1440, "height": 900})
+    page.goto(f"{approving}/studio/")
+    page.wait_for_selector("#find-anything", timeout=30000)
+    page.locator("#find-anything").click()
+    palette = page.get_by_role("dialog", name="Find anything")
+    palette.locator("[role=option]").first.wait_for()
+    offered = palette.locator("[role=option]").all_inner_texts()
+    for place in places:  # each by the sidebar's own name
+        assert any(o.startswith(place["name"]) for o in offered), (place["name"], offered)

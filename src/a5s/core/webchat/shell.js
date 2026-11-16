@@ -1,25 +1,11 @@
 "use strict";
-// Every page's frame: a sidebar of the pages the signed-in person may use, as a5s works them
-// out (/shell/api), and who they are. Each page still checks for itself who may use it: the
-// sidebar only leaves out those that would refuse them. Built from elements and text alone,
-// as every page is: no markup from anywhere else.
+// Every page's frame: a sidebar of the pages the signed-in person may use, and who they are,
+// as a5s works them out (/shell/api), which names each page, its icon, its heading and its
+// address, for the studio's sidebar and palette too (core/shell_api.py). Each page still checks
+// for itself who may use it: the sidebar only leaves out those that would refuse them. Built
+// from elements and text alone, as every page is: no markup from anywhere else.
 
 (() => {
-  // Each page: its address, its name, its icon, under a heading of what it's for
-  const PAGES = [
-    ["Work", [["chat", "Chat", "chat"], ["tasks", "Tasks", "tasks"], ["notebook", "Notebook", "book"]]],
-    ["Build", [["studio", "Studio", "studio"]]],
-    ["Decide", [["decide", "Decisions", "decide"], ["grade", "Grading", "grade"],
-                ["settings", "Settings", "settings"]]],
-    ["Oversee", [["audit", "Audit trail", "audit"], ["admin", "Administration", "admin"],
-                 ["officer", "Data protection", "officer"]]],
-  ];
-  // Where a page is, where it isn't at its own address: the settings, the notebook, people's
-  // tasks, the administrators' page, the audit trail, deciding held changes, grading and the
-  // officer's requests are in the studio
-  const AT = { settings: "/studio/settings", notebook: "/studio/notebook", tasks: "/studio/tasks",
-               admin: "/studio/admin", audit: "/studio/audit", decide: "/studio/decide",
-               grade: "/studio/grade", officer: "/studio/officer" };
   // Icons, as lines on a 24-unit square
   const ICONS = {
     chat: ["M4 5.5h16v10.5H9l-5 4z"],
@@ -84,20 +70,20 @@
     document.body.classList.add("app");
   }
 
-  function pages(allowed, you) {
+  function pages(allowed, you) {  // in the order a5s gives them, each under its heading
     const nav = document.getElementById("pages");
     nav.replaceChildren();
-    for (const [heading, items] of PAGES) {
-      const shown = items.filter(([key]) => allowed.includes(key));
-      if (!shown.length) continue;
-      nav.append(element("div", heading, "group"));
-      for (const [key, name, glyph] of shown) {
-        const link = element("a");
-        link.href = AT[key] || `/${key}/`;
-        link.append(icon(glyph), element("span", name));
-        if (key === here) link.setAttribute("aria-current", "page");
-        nav.append(link);
+    let heading = null;
+    for (const place of allowed) {
+      if (place.group !== heading) {
+        heading = place.group;
+        nav.append(element("div", heading, "group"));
       }
+      const link = element("a");
+      link.href = place.at;
+      link.append(icon(place.icon), element("span", place.name));
+      if (place.page === here) link.setAttribute("aria-current", "page");
+      nav.append(link);
     }
     const me = document.getElementById("me");
     me.replaceChildren();

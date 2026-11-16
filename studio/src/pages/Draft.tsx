@@ -15,7 +15,7 @@ import { Designer } from "../Designer";
 import { Icon } from "../icons";
 import { Publish } from "../Publish";
 import { go, Link, type Route } from "../router";
-import { shellOf } from "../Sidebar";
+import { mayUse, shellOf } from "../Sidebar";
 import { TryIt } from "../TryIt";
 import { useLoad, Waiting, when } from "../ui";
 import { keepUnkept, keptNow, unkept } from "../unkept";
@@ -229,7 +229,7 @@ function Journey({ draft, said, files, plan, open }: { draft: Draft; said: Said;
     { name: "Watch it", state: released && atWork ? "now" : "later", about: "Its runs and how they end, on its page." },
   ];
   const page = { page: "agent" as const, agent: draft.agent };
-  const settings = !atWork && toWork(draft.agent, plan, Boolean(shell.data?.pages.includes("settings")));
+  const settings = !atWork && toWork(draft.agent, plan, mayUse(shell.data, "settings"));
   const next = released
     ? settings ? <Link to={settings} className="button primary" id="put-to-work">Put it to work in the settings</Link>
       : <Link to={page} className="button primary">{atWork ? "Watch it on its page" : "Put it to work, from its page"}</Link>

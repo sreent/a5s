@@ -710,6 +710,16 @@ export type PartRule = {
   threshold: number | null;
 };
 
+// One of a5s's pages, as every sidebar and the studio's palette show it: its key, its
+// name, its icon, the heading it's under, and its address.
+export type Place = {
+  page: string;
+  name: string;
+  icon: string;
+  group: string;
+  at: string;
+};
+
 // Its authors' plan for a draft's first instance: the parts it would work in, whom it
 // would serve, and the instances it could ask. Never in force: the signed settings are, which
 // those parts' owners approve, and putting it to work starts from it.
@@ -980,6 +990,12 @@ export type SettingsReview = {
   changes?: Change[];
   whole?: string[];
   approvers?: string[];
+};
+
+// Who signed in, and the pages they may use, in the sidebar's order.
+export type Shell = {
+  you: string;
+  pages: Place[];
 };
 
 // Whose signature a draft's release would need, and why: and who holds that role in the
