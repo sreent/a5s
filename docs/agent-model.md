@@ -56,7 +56,7 @@ Each organisation approves a release for its own deployment, with its own people
 | --- | --- | --- |
 | Proposed | Created by its agent owner, waiting for approval | Its instance approvers |
 | Active | Working, in the parts whose owners approve it | The agent owner, the deputy or the platform owner can suspend it, except that stopping an agent the scenario marks as a check needs the scenario's assurance. The agent owner or the platform owner can retire it. |
-| Suspended | No trigger wakes it, its next call is denied, even in a run already going, and its open work is withdrawn or flagged in the scenario's process | Whoever suspended it can resume it. Anyone else needs someone outside the team, because resuming loosens. Never while it has neither an owner nor a deputy. |
+| Suspended | No trigger wakes it, its next call is denied, even in a run already going, and its open work is withdrawn or flagged in the scenario's process | Whoever suspended it can resume it. Anyone else needs the release approver, from outside the team, because resuming loosens. Its owner or deputy, its agent's owners, the owners and delegates of its parts and the team that runs a5s may suspend it. Never while it has neither an owner nor a deputy. |
 | Retired | Its identity is disabled, its grant removed and its evidence archived. Conversations follow the retention rules. | Nobody |
 | Shadow | A new version answering beside the instance it shadows, sending and changing nothing, for graders to compare ([shadow runs](#shadow-runs)). It has no work of its own. | As an active instance: suspended, it answers nothing, and resumed, it's a shadow again. The owners of its parts make it an instance of its own by taking `shadows` out of its settings. |
 

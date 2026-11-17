@@ -505,9 +505,12 @@ def apply(
 
 
 def set_status(conn: db.Connection, instance: str, *, by: str, suspend: bool,
-               identity: str = "unverified (development)", proof: dict | None = None) -> str:
+               identity: str = "unverified (development)", proof: dict | None = None,
+               others: bool = False) -> str:
     """Suspend or resume an instance, and return the reason if it can't be done. The ledger
-    keeps how a5s knew who asked: with `proof`, the sign-in's issuer and hash."""
+    keeps how a5s knew who asked: with `proof`, the sign-in's issuer and hash. Only whoever
+    suspended it resumes it, but where `others`, the release approver, whom core/suspension.py
+    checked, lifting another's suspension, which the ledger names (round 15, D6)."""
     row = conn.execute("select status, suspended_by from instances where id = %s for update",
                        (instance,)).fetchone()
     if row is None:
@@ -525,9 +528,9 @@ def set_status(conn: db.Connection, instance: str, *, by: str, suspend: bool,
     else:
         if row["status"] != "suspended":
             return f"{instance} isn't suspended"
-        if row["suspended_by"] != by:
+        if row["suspended_by"] != by and not others:
             return (f"only {row['suspended_by']} can resume {instance}. Resuming someone else's "
-                    "suspension needs the release approver, which phase 1 doesn't have yet.")
+                    "suspension needs the release approver, on its page in the studio.")
         conn.execute(  # back to work, or a shadow's again
             "update instances set status = case when shadows is null then 'active' else "
             "'shadow' end, suspended_by = null, updated_at = now() where id = %s",
@@ -538,6 +541,8 @@ def set_status(conn: db.Connection, instance: str, *, by: str, suspend: bool,
         {"kind": "admin", "action": "suspend" if suspend else "resume", "instance": instance,
          "decision": "record", "args": {"by": by, "identity": identity,
                                         "suspended_by": row["suspended_by"] or by if suspend
-                                        else None, **(proof or {})}},
+                                        else None, **(proof or {}),
+                                        **({"lifted": row["suspended_by"]} if not suspend
+                                           and row["suspended_by"] != by else {})}},
     )
     return ""
