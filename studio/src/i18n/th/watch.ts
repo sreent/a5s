@@ -316,6 +316,11 @@ export const WATCH: Record<string, string> = {
 
   // The map of what depends on what (pages/Map.tsx, DependsMap.tsx)
   "Map": "แผนผัง",
+  "Systems": "ระบบ",
+  "Models": "โมเดล",
+  "Teams": "ทีม",
+  "{things} you may see. Choose one to see what it depends on, and what depends on it.":
+    "{things} ที่คุณเห็นได้ เลือกรายการหนึ่งเพื่อดูว่าขึ้นกับอะไร และอะไรขึ้นกับรายการนั้น",
   "What depends on what: the parts the settings name, the instances at work in them, the agents they run, the tools each may call, the systems those come from, and the models. Choose anything to see what it depends on and what depends on it, so you know what a change to it reaches.":
     "สิ่งใดขึ้นอยู่กับสิ่งใด ได้แก่ ส่วนงานที่การตั้งค่าระบุ อินสแตนซ์ที่ทำงานในส่วนงานเหล่านั้น เอเจนต์ที่อินสแตนซ์ใช้ เครื่องมือที่เอเจนต์แต่ละตัวเรียกใช้ได้ ระบบที่เครื่องมือเหล่านั้นมาจาก และโมเดล เลือกสิ่งใดก็ได้เพื่อดูว่าสิ่งนั้นขึ้นอยู่กับอะไร และอะไรขึ้นอยู่กับสิ่งนั้น เพื่อให้รู้ว่าการเปลี่ยนแปลงสิ่งนั้นส่งผลถึงอะไรบ้าง",
   "There's nothing here you may see yet: no agent you may know of.":

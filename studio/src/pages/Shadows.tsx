@@ -9,7 +9,7 @@ import { get, send } from "../api";
 import type * as gen from "../api.gen";
 import { Badge, useToast } from "../design";
 import { t } from "../i18n";
-import { PageHead, plural, StatusBadge, useLoad, Waiting, when } from "../ui";
+import { focusNext, PageHead, plural, StatusBadge, useLoad, Waiting, when } from "../ui";
 
 type Grade = "better" | "same" | "worse" | "wrong";
 const GRADES: Grade[] = ["better", "same", "worse", "wrong"];
@@ -24,7 +24,11 @@ function Pair({ pair, graded }: { pair: gen.ShadowPair; graded: () => void }) {
   const grade = (given: Grade) => {
     setProblem(undefined);
     send<gen.ShadowGraded>("POST", `/studio/api/shadows/${pair.id}/grade`, { grade: given })
-      .then(() => { toast(t("Graded: thank you.")); graded(); })
+      .then(() => {
+        toast(t("Graded: thank you."));
+        focusNext(`#pairs [data-pair]:not([data-pair="${pair.id}"]) h2`, "#nothing");  // the next
+        graded();
+      })
       .catch((e: Error) => setProblem(e.message));
   };
   return (

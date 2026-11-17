@@ -6,6 +6,7 @@
 // may watch, as figures. A budget guides: it stops no work, which the token budgets each release
 // sets do.
 
+import { type FormEvent, useEffect, useState } from "react";
 import { get } from "../api";
 import type * as gen from "../api.gen";
 import { locale, t } from "../i18n";
@@ -200,24 +201,44 @@ function months(): string[] {
   return Array.from({ length: 12 }, (_, n) => moved(current, -n));
 }
 
+// Whether someone just asked for a month, whose choice takes the keyboard again once its page
+// is drawn (round 14, E-L1)
+let askedFor = false;
+
 export function SpendingPage({ month }: { month?: string }) {
   const { data, error } = useLoad(() => get<gen.Spending>(
     `/studio/api/spending${month ? `?month=${encodeURIComponent(month)}` : ""}`), [month]);
   const panels = data ? [...data.parts.map((s) => ["part", s] as const), ...data.agents.map((s) => ["agent", s] as const)] : [];
   const choices = months();
   const shown = data?.month ?? month ?? choices[0];
+  const [picked, setPicked] = useState(month ?? choices[0]);
+  const show = (event: FormEvent) => {  // on Enter or the button: never as the arrow keys step
+    event.preventDefault();
+    if (picked === (month ?? choices[0])) return;
+    askedFor = true;
+    go(picked === choices[0] ? { page: "spending" } : { page: "spending", month: picked });
+  };
+  useEffect(() => {
+    if (askedFor) {
+      askedFor = false;
+      document.getElementById("month")?.focus();
+    }
+  }, []);
   return (
     <>
       <PageHead title={t("Spending")}
                 about={t("What agents' model calls cost each month, at the prices models.yaml gives them: each part and agent you may see against the budget the settings set it, with a forecast to the month's end at the last week's pace, and what each message answered cost, all in. A budget guides: it stops no work, which the token budgets each release sets do.")}>
-        <label className="period">{t("In")}{" "}
-          <select id="month" value={shown}
-                  onChange={(e) => go(e.target.value === choices[0] ? { page: "spending" } : { page: "spending", month: e.target.value })}>
-            {[...new Set([...choices, shown])].map((m) => (
-              <option key={m} value={m}>{m === choices[0] ? t("{month}, this month", { month: named(m) }) : named(m)}</option>
-            ))}
-          </select>
-        </label>
+        <form className="period" onSubmit={show}>
+          <label>{t("In")}{" "}
+            <select id="month" value={picked} onChange={(e) => setPicked(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") show(e); }}>
+              {[...new Set([...choices, shown, picked])].map((m) => (
+                <option key={m} value={m}>{m === choices[0] ? t("{month}, this month", { month: named(m) }) : named(m)}</option>
+              ))}
+            </select>
+          </label>
+          <button type="submit">{t("Show")}</button>
+        </form>
       </PageHead>
       <p className="note" id="utc">{t("Each month runs from midnight UTC on its first day, as the database's clock stamps each run.")}</p>
       {!data && <Waiting error={error} block />}

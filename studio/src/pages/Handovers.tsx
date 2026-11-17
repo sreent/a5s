@@ -10,7 +10,7 @@ import type * as gen from "../api.gen";
 import { Badge, Confirm, useToast } from "../design";
 import { t } from "../i18n";
 import { Link } from "../router";
-import { PageHead, plural, useLoad, Waiting, when } from "../ui";
+import { focusNext, PageHead, plural, useLoad, Waiting, when } from "../ui";
 
 export function HandoversPage() {
   const { data, error } = useLoad(() => get<gen.Handovers>("/studio/api/handovers"), []);
@@ -50,6 +50,7 @@ export function HandoverPage({ id }: { id: string }) {
         if (said) toast(said);
         if (what === "answer") setText("");
         setAgain((n) => n + 1);
+        focusNext(what === "back" ? "#ended" : "#answer-text");  // where they go on from here
       })
       .catch((e: Error) => setProblem(e.message));
   };
@@ -104,7 +105,7 @@ export function HandoverPage({ id }: { id: string }) {
               )}
             </section>
           )}
-          {data.ended && <p className="note" role="status">{t("It's been handed back to the {agent}.", { agent: data.agent })}</p>}
+          {data.ended && <p className="note" id="ended" role="status">{t("It's been handed back to the {agent}.", { agent: data.agent })}</p>}
         </>
       )}
     </>

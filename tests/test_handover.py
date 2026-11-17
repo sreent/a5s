@@ -16,6 +16,7 @@ from pathlib import Path
 import httpx
 import pytest
 import yaml
+from playwright.sync_api import expect
 
 from a5s import db
 from a5s.contract import parse_settings
@@ -229,15 +230,18 @@ def test_one_of_the_team_answers_from_the_studio(stack, approving, provider, bro
     assert "Still there?" in page.inner_text("#said") and handover.HIDDEN in page.inner_text("#brief")
     page.click("#answer button.primary")  # take it
     page.wait_for_selector("#answer-text", timeout=30000)
-    page.fill("#answer-text", "Yes: I'm looking at it now.")
+    expect(page.locator("#answer-text")).to_be_focused(timeout=10000)  # where
+    page.fill("#answer-text", "Yes: I'm looking at it now.")  # they write, never the page's start
     page.click("#answer button.primary")
     page.wait_for_selector("#said >> text=Yes: I'm looking at it now.", timeout=30000)
+    expect(page.locator("#answer-text")).to_be_focused(timeout=10000)
     accessible(page)
     assert swept(stack)["answered"] == 1
     assert "Chen Wei, of the operations team: Yes: I'm looking at it now." in told(stack)
     page.click("#answer button:has-text('Hand it back')")  # it asks first
     page.click("dialog[open] button.primary")
     page.wait_for_selector("text=It's been handed back to the assistant.", timeout=30000)
+    expect(page.locator("#ended")).to_be_focused(timeout=10000)
     with db.transaction(stack.admin) as conn:
         assert conn.execute("select ended_by from handovers where id = %s",
                             (row["id"],)).fetchone()["ended_by"] == "chen"

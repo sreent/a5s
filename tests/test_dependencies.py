@@ -4,13 +4,14 @@ from and the models, each as far as someone may see it, and what a change to any
 reaches."""
 
 import httpx
+from playwright.sync_api import expect
 
 from a5s import db
 from a5s.connectors.libraries import Shelved
 from a5s.connectors.mcp import Served
-from a5s.core import dependencies
+from a5s.core import dependencies, samples
 from a5s.definitions import Evaluation
-from conftest import accessible
+from conftest import accessible, raise_cap
 from test_languages import reads
 from test_r9_studio_need_to_know import with_ops
 
@@ -139,7 +140,10 @@ def drawn(stack, person: str = "ana", extra: dict | None = None, **changed) -> d
     with db.transaction(stack.admin) as conn:
         return dependencies.drawn(conn, stack.gateway.scenario, definitions,
                                   {**stack.gateway.scenario.tools(), **(extra or {})},
-                                  stack.gateway.models, stack.gateway.scenario.person(person))
+                                  stack.gateway.models, stack.gateway.scenario.person(person),
+                                  approved=stack.gateway.approvers_in_force(conn),
+                                  caps_of=lambda release: samples.shown_caps(
+                                      conn, stack.gateway.cfg.seal_keys, release))
 
 
 def test_a_librarys_tools_come_from_it_and_one_acting_as_the_person_says_so(stack):
@@ -176,9 +180,10 @@ def test_a_judge_a_model_it_lacks_level_two_and_a_shadow_are_on_the_map(stack):
     with db.transaction(stack.admin) as conn:  # a type of change at level 2 in billing
         conn.execute("update instances set actions = '{\"billing\": {\"change-due-date\": 2}}' "
                      "where id = 'assistant-finance'")
-    said = edges(drawn(stack))
+    said = edges(drawn(stack))  # as a5s's cap, which no graded samples raised, holds it
     assert said[("instance:assistant-finance", "part:billing")] == (
-        "{from} works in {to}, at level 1, and at level 2 for change-due-date")
+        "{from} works in {to}, at level 1; the settings set level 2 for change-due-date, which "
+        "a5s's cap holds at level 1 until graded samples show it's accurate enough")
     with db.transaction(stack.admin) as conn:  # an instance answering beside it, as a shadow
         conn.execute("insert into instances (id, definition, release, level, parts, actions, "
                      "grants, model, serves, owner, status, shadows) select 'assistant-next', "
@@ -209,3 +214,48 @@ def test_whom_an_instance_may_hand_conversations_to_is_on_the_map(stack):
     assert shown["team:operations"]["kind"] == "team"
     assert edges(found)[("instance:assistant-finance", "team:operations")] == (
         "{from} may hand a conversation to {to}, whose people answer it")
+
+
+def test_the_map_says_where_level_two_counts_and_where_it_doesnt_yet(stack):
+    """Round 14 (C16): level 2 the settings set counts on the map only as policy weighs it: once
+    a5s's cap for the release lets it, and while someone who approved the settings in force owns
+    the part, and the map says which holds it back."""
+    from test_levels import levelled
+    levelled(stack, cap=0)  # Ana, who owns billing, signs level 2 for changing due dates there
+    edge = ("instance:assistant-finance", "part:billing")
+    assert edges(drawn(stack))[edge] == (
+        "{from} works in {to}, at level 1; the settings set level 2 for change-due-date, which "
+        "a5s's cap holds at level 1 until graded samples show it's accurate enough")
+    raise_cap(stack, cap=2)  # as graded samples raise it
+    assert edges(drawn(stack))[edge] == (
+        "{from} works in {to}, at level 1, and at level 2 for change-due-date")
+    with db.transaction(stack.admin) as conn:  # had nobody who approved it owned billing now
+        found = dependencies.drawn(conn, stack.gateway.scenario, stack.gateway.definitions,
+                                   stack.gateway.scenario.tools(), stack.gateway.models,
+                                   stack.gateway.scenario.person("ana"), approved=["ben"],
+                                   caps_of=lambda release: samples.shown_caps(
+                                       conn, stack.gateway.cfg.seal_keys, release))
+    assert edges(found)[edge] == (
+        "{from} works in {to}, at level 1; the settings set level 2 for change-due-date, which "
+        "counts only once an owner of {to} approves the settings in force")
+
+
+def test_on_a_phone_the_map_is_a_list_of_what_it_holds(stack, approving, provider, browser):
+    """Round 14 (E-L8): on a phone the map is a list of what's on it, by kind, each a button,
+    rather than a canvas too small to read or tap; choosing one says what it reaches, and takes
+    the keyboard there. The canvas is a choice away."""
+    from conftest import PHONE
+    provider.person = "ana"
+    page = browser.new_page(viewport=PHONE)
+    page.goto(f"{approving}/studio/map")
+    page.wait_for_selector("#things [data-pick='tool:change_due_date']", timeout=30000)
+    assert page.locator(".flow-canvas").count() == 0
+    assert page.inner_text("#things [data-kind=tool] h2") == "Tools"
+    accessible(page)
+    page.click("#things [data-pick='tool:change_due_date']")
+    page.wait_for_selector("#chosen h2 >> text=change_due_date", timeout=30000)
+    expect(page.locator("#chosen h2")).to_be_focused(timeout=10000)
+    assert page.locator("#depended-on-by [data-pick]").all_inner_texts() == [
+        "assistant-finance", "assistant"]
+    page.click(".modes button:has-text('Map')")
+    page.wait_for_selector(".flow-canvas", timeout=30000)

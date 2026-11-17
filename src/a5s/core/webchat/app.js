@@ -48,6 +48,8 @@ const TH = {
   "(a file, with no words)": "(ไฟล์ ไม่มีข้อความ)",
   "(about the {agent}) {text}": "(เกี่ยวกับ {agent}) {text}",
   "(about the agents) {text}": "(เกี่ยวกับเอเจนต์) {text}",
+  "That's wrong: the {agent}'s answer at {time}": "ไม่ถูกต้อง: คำตอบของ {agent} เวลา {time}",
+  "That's wrong: the {agent}'s answer": "ไม่ถูกต้อง: คำตอบของ {agent}",
 };
 let spoken = "en";
 const t = (text, vars) => {
@@ -231,6 +233,9 @@ function wrongOf(item, message) {
   ask.type = "button";
   ask.className = "link said-wrong";
   ask.textContent = t("That's wrong");
+  const at = message.at ? stamp(new Date(message.at)) : "";  // which answer, to whoever hears it
+  ask.setAttribute("aria-label", at ? t("That's wrong: the {agent}'s answer at {time}", { agent: message.from, time: at })
+    : t("That's wrong: the {agent}'s answer", { agent: message.from }));
   ask.addEventListener("click", () => {
     const form = document.createElement("form");
     form.className = "said-wrong";
@@ -246,7 +251,10 @@ function wrongOf(item, message) {
     const cancel = document.createElement("button");
     cancel.type = "button";
     cancel.textContent = t("Cancel");
-    cancel.addEventListener("click", () => form.replaceWith(ask));
+    cancel.addEventListener("click", () => {
+      form.replaceWith(ask);
+      ask.focus();  // the keyboard back where it was, never at the page's start
+    });
     const refused = document.createElement("p");  // why it didn't send, with what they wrote
     refused.className = "problem-note";  // kept beside it, to send again
     refused.setAttribute("role", "alert");
@@ -269,7 +277,9 @@ function wrongOf(item, message) {
         done.className = "note said-wrong";
         done.setAttribute("role", "status");
         done.textContent = body.said;
+        done.tabIndex = -1;
         form.replaceWith(done);
+        done.focus();  // what a5s kept, where the form was
       } catch (error) {
         if (error.message !== SIGNING_IN) refused.textContent = t("That didn't send. Try again.");
         send.disabled = false;

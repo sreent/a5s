@@ -19,6 +19,7 @@ import httpx
 import psycopg
 import pytest
 import yaml
+from playwright.sync_api import expect
 from psycopg.types.json import Jsonb
 
 from a5s import db, definitions
@@ -409,6 +410,7 @@ def test_graders_compare_answers_in_the_studio(stack, approving, provider, brows
     accessible(page)
     page.click("#pairs button:has-text('As good')")
     page.wait_for_selector("#nothing", timeout=30000)
+    expect(page.locator("#nothing")).to_be_focused(timeout=10000)  # never lost
     page.wait_for_selector("#figures [data-shadow='assistant-next-finance']", timeout=30000)
     assert "1 better" not in page.inner_text("#figures") and "1 as good" in page.inner_text("#figures")
     accessible(page)

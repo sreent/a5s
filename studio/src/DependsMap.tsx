@@ -25,6 +25,12 @@ export const KIND_NAMES: Record<string, string> = {  // one of each, in the lang
   get tool() { return t("Tool"); }, get system() { return t("System"); }, get model() { return t("Model"); },
   get team() { return t("Team"); },
 };
+/** Each kind, as a heading over those of it in the map's list (round 14, E-L8). */
+export const KINDS_NAMED: Record<string, string> = {
+  get part() { return t("Parts"); }, get instance() { return t("Instances"); }, get agent() { return t("Agents"); },
+  get tool() { return t("Tools"); }, get system() { return t("Systems"); }, get model() { return t("Models"); },
+  get team() { return t("Teams"); },
+};
 const ICONS: Record<string, string> = {
   part: "settings", instance: "run", agent: "agent", tool: "tool", system: "plug", model: "model",
   team: "people",

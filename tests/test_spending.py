@@ -8,6 +8,7 @@ from datetime import timedelta
 
 import httpx
 import pytest
+from playwright.sync_api import expect
 
 from a5s import db
 from a5s.config import Prices, load_currency
@@ -246,10 +247,16 @@ def test_the_spending_page_shows_each_budget_as_ocean_draws_cost_against_plan(pr
     assert page.locator("#instances caption").count() == 0  # what it is, above its frame
     assert "What each instance you may watch spent" in page.inner_text("#instances-about")
     accessible(page)
-    # The month before, which spent nothing, has no forecast
-    page.select_option("#month", index=1)
+    # The month before, which spent nothing, has no forecast: chosen with the keyboard, which
+    # steps through the months until asked to show one (round 14, E-L1)
+    page.focus("#month")
+    page.keyboard.press("ArrowDown")
+    page.wait_for_timeout(300)
+    assert "month=" not in page.url  # chosen, not yet shown
+    page.keyboard.press("Enter")
     page.wait_for_url("**/studio/spending?month=*", timeout=30000)
     page.wait_for_selector("#part-billing .cost-bars", timeout=30000)
+    expect(page.locator("#month")).to_be_focused(timeout=10000)
     assert "Forecast" not in page.inner_text("#part-billing")
     # The settings' forms set each budget
     page.goto(f"{approving}/studio/settings")

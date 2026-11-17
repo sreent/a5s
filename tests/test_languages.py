@@ -8,6 +8,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import httpx
+from playwright.sync_api import expect
 
 from a5s import db
 from a5s.config import Prices
@@ -135,6 +136,7 @@ def test_the_studio_and_the_web_chat_speak_thai_to_those_who_read_it(stack, appr
     assert page.eval_on_selector("#language label", "el => getComputedStyle(el).display") == "flex"
     page.check("#language input[value=en]")
     page.wait_for_selector("h1 >> text=What you may do", timeout=30000)
+    expect(page.locator("#language input[value=en]")).to_be_focused(timeout=10000)  # the studio drawn again in it, the keyboard on the choice
     assert page.get_attribute("html", "lang") == "en"
     page.check("#language input[value=th]")
     page.wait_for_selector("h1 >> text=สิ่งที่คุณทำได้", timeout=30000)

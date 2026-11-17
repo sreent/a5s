@@ -7,11 +7,14 @@
 import { useState } from "react";
 import { get } from "../api";
 import type * as gen from "../api.gen";
-import { DependsMap, KIND_NAMES, KINDS, type MapNode, reaching, told } from "../DependsMap";
+import { columns, DependsMap, KIND_NAMES, KINDS, KINDS_NAMED, type MapNode, reaching, told } from "../DependsMap";
 import { t } from "../i18n";
 import { href } from "../router";
-import { PageHead, plural, To, useLoad, Waiting } from "../ui";
+import { focusNext, PageHead, plural, To, useLoad, useView, Views, Waiting } from "../ui";
 
+/** How many of each kind someone may see, in words. */
+const counted = (nodes: MapNode[]) => KINDS.map((k) => [k, nodes.filter((n) => n.kind === k).length] as const)
+  .filter(([, n]) => n).map(([k, n]) => plural(n, k)).join(", ");
 const kindOf = (node: MapNode) => KIND_NAMES[node.kind]?.toLowerCase() ?? node.kind;
 /** Things on the map, each a way to choose it there, in the order the map's columns go. */
 function Things({ keys, nodes, pick, none }: { keys: string[]; nodes: Map<string, MapNode>; pick: (key: string) => void; none: string }) {
@@ -28,12 +31,35 @@ function Things({ keys, nodes, pick, none }: { keys: string[]; nodes: Map<string
   );
 }
 
+/** What's on the map, as a list, by kind, in the map's order, each a way to choose it: on a narrow
+ * screen, where the canvas is too small to read or to tap (round 14, E-L8). */
+function Listed({ nodes, chosen, pick }: { nodes: MapNode[]; chosen: string | null; pick: (key: string) => void }) {
+  return (
+    <section className="card" id="things" aria-label={t("What depends on what")}>
+      {columns(nodes).map((col) => (
+        <div key={col[0].kind} data-kind={col[0].kind}>
+          <h2>{KINDS_NAMED[col[0].kind] ?? col[0].kind}</h2>
+          <ul className="plain">{col.map((n) => (
+            <li key={n.key}>
+              <button type="button" className="link" data-pick={n.key} aria-pressed={n.key === chosen}
+                      onClick={() => pick(n.key)}>{n.name}</button>
+              {n.about && <span className="note"> {n.about}</span>}
+            </li>
+          ))}</ul>
+        </div>
+      ))}
+    </section>
+  );
+}
+
 export function MapPage({ at }: { at?: string }) {
   const { data, error } = useLoad(() => get<gen.DependsOn>("/studio/api/map"), []);
   const [chosen, setChosen] = useState<string | null>(at ?? null);
+  const [shown, show] = useView("a5s.studio.map-shown");
   const pick = (key: string) => {
     const next = key === chosen ? null : key;
     setChosen(next);
+    if (shown === "list" && next) focusNext("#chosen h2");  // what it reaches, below the list
     history.replaceState(null, "", next ? `${href({ page: "map" })}?at=${encodeURIComponent(next)}` : href({ page: "map" }));
   };
   const nodes = new Map((data?.nodes ?? []).map((n) => [n.key, n]));
@@ -43,23 +69,26 @@ export function MapPage({ at }: { at?: string }) {
   return (
     <>
       <PageHead title={t("Map")}
-                about={t("What depends on what: the parts the settings name, the instances at work in them, the agents they run, the tools each may call, the systems those come from, and the models. Choose anything to see what it depends on and what depends on it, so you know what a change to it reaches.")} />
+                about={t("What depends on what: the parts the settings name, the instances at work in them, the agents they run, the tools each may call, the systems those come from, and the models. Choose anything to see what it depends on and what depends on it, so you know what a change to it reaches.")}>
+        {data && data.nodes.length > 0 && <Views shown={shown} show={show} canvas={t("Map")} />}
+      </PageHead>
       {!data && <Waiting error={error} block />}
       {data && !data.nodes.length && (
         <p id="status" role="status" className="note">{t("There's nothing here you may see yet: no agent you may know of.")}</p>
       )}
       {data && data.nodes.length > 0 && (
         <div className="split">
-          <DependsMap nodes={data.nodes} edges={data.edges} chosen={picked?.key ?? null} pick={pick}
-                      label={t("What depends on what")} />
+          {shown === "canvas" ? (
+            <DependsMap nodes={data.nodes} edges={data.edges} chosen={picked?.key ?? null} pick={pick}
+                        label={t("What depends on what")} />
+          ) : <Listed nodes={data.nodes} chosen={picked?.key ?? null} pick={pick} />}
           <section className="card" id="chosen" aria-live="polite">
             {!picked && (
               <>
                 <h2>{t("Choose something")}</h2>
                 <p className="note">
-                  {t("{things} you may see. Choose one on the map to see what it depends on, and what depends on it.", {
-                    things: KINDS.map((k) => [k, data.nodes.filter((n) => n.kind === k).length] as const).filter(([, n]) => n)
-                      .map(([k, n]) => plural(n, k)).join(", ") })}
+                  {shown === "list" ? t("{things} you may see. Choose one to see what it depends on, and what depends on it.", { things: counted(data.nodes) })
+                    : t("{things} you may see. Choose one on the map to see what it depends on, and what depends on it.", { things: counted(data.nodes) })}
                 </p>
               </>
             )}

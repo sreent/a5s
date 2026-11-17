@@ -350,11 +350,17 @@ def test_the_web_chat_asks_why_and_its_owners_grade_it_on_the_agents_page(stack,
     page.keyboard.press("Enter")
     assert stack.scheduler().answer_waiting() == 1
     page.wait_for_selector("li.agent >> text=old address", timeout=30000)
+    assert page.get_attribute("li.agent button.said-wrong", "aria-label").startswith(
+        "That's wrong: the assistant's answer at ")  # which answer, to whoever hears it
+    page.click("li.agent button.said-wrong")
+    page.click("li.agent form.said-wrong button:has-text('Cancel')")
+    assert page.evaluate("document.activeElement.matches('li.agent button.said-wrong')")
     page.click("li.agent button.said-wrong")
     assert "Its owners will see this answer" in page.inner_text("li.agent form.said-wrong")
     page.fill("li.agent form.said-wrong textarea", "It's due Friday.")
     page.click("li.agent form.said-wrong button.primary")
     page.wait_for_selector(f"li.agent p.said-wrong >> text={feedback.NOTED[:20]}", timeout=30000)
+    assert page.evaluate("document.activeElement.matches('li.agent p.said-wrong')")  # what's kept
     [row] = kept(stack)
     assert row["said"] == "It's due Friday."
 

@@ -93,6 +93,19 @@ TH: dict[str, str] = {
     "{from} works in {to}, at level {level}": "{from} ทำงานใน {to} ที่ระดับ {level}",
     "{from} works in {to}, at level {level}, and at level 2 for {types}":
         "{from} ทำงานใน {to} ที่ระดับ {level} และที่ระดับ 2 สำหรับ {types}",
+    "{from} works in {to}, at level {level}; the settings set level 2 for {held}, which a5s's "
+    "cap holds at level 1 until graded samples show it's accurate enough":
+        "{from} ทำงานใน {to} ที่ระดับ {level} การตั้งค่ากำหนดระดับ 2 สำหรับ {held} "
+        "ซึ่งเพดานของ a5s ยังคงไว้ที่ระดับ 1 จนกว่าตัวอย่างที่ให้คะแนนแล้วจะแสดงว่าแม่นยำพอ",
+    "{from} works in {to}, at level {level}, and at level 2 for {types}; the settings set "
+    "level 2 for {held} too, which a5s's cap holds at level 1 until graded samples show it's "
+    "accurate enough":
+        "{from} ทำงานใน {to} ที่ระดับ {level} และที่ระดับ 2 สำหรับ {types} การตั้งค่ากำหนดระดับ 2 "
+        "สำหรับ {held} ด้วย ซึ่งเพดานของ a5s ยังคงไว้ที่ระดับ 1 จนกว่าตัวอย่างที่ให้คะแนนแล้วจะแสดงว่าแม่นยำพอ",
+    "{from} works in {to}, at level {level}; the settings set level 2 for {held}, which counts "
+    "only once an owner of {to} approves the settings in force":
+        "{from} ทำงานใน {to} ที่ระดับ {level} การตั้งค่ากำหนดระดับ 2 สำหรับ {held} "
+        "ซึ่งจะมีผลเมื่อเจ้าของ {to} อนุมัติการตั้งค่าที่ใช้อยู่แล้วเท่านั้น",
     "{from} may ask {to}": "{from} ถาม {to} ได้",
     "(a5s: what the {agent} just changed can be undone until {until}, on its page: {link})":
         "(a5s: สิ่งที่ {agent} เพิ่งเปลี่ยนยกเลิกได้จนถึง {until} ที่หน้าของรายการนี้: {link})",
