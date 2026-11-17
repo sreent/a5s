@@ -513,6 +513,31 @@ def decision(conn: db.Connection, keys: tuple[str, ...], scenario: Scenario,
     return None, problems
 
 
+def settled(conn: db.Connection, scenario: Scenario, proposal: dict) -> list[str]:
+    """Who decided a held change already, by name, so that no other decision on it counts:
+    whoever rejected it first, or approved it for every part it touches, by the decisions
+    recorded on it that a5s hasn't refused, sealed yet or not. Nobody while another decision
+    may still count, as a rejection does in a part nobody has approved (round 15, B3)."""
+    by_part = deciders(scenario, list(proposal["records"]), not_deciding(proposal))
+    approved: dict[str | None, str] = {}
+    first: list[str] = []
+    for row in conn.execute("select person, decision from proposal_decisions where digest = %s "
+                            "and refused is null order by id", (proposal["digest"],)):
+        parts = [part for part, people in by_part.items()
+                 if row["person"] in {p.id for p in people}]
+        if not parts:
+            continue
+        if row["decision"] == "reject":
+            first = [row["person"]]
+            break
+        for part in parts:
+            approved.setdefault(part, row["person"])
+        if all(part in approved for part in by_part):
+            first = list(dict.fromkeys(approved.values()))
+            break
+    return [who.name if (who := scenario.person(p)) else p for p in first]
+
+
 def effective(person: Person | None, decided_at: datetime) -> datetime:
     """When a decision takes effect: at once, or a day after its decider's authenticator was
     reset, if that was less than a day before."""

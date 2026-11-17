@@ -145,6 +145,12 @@ MOST_NAMED = 20  # records one change may name: a5s reads each as it stands befo
 # and so its deciders, signed: the database was changed (round 15, B1)
 ALTERED = "it has changed in a5s's records since it was asked for, so it isn't what was approved"
 
+# What a5s tells each who might have decided a held change that lapsed, and whoever asked for
+# one that waits still once its deciders' managers, or the instance's owner, hear (round 15, B4)
+WAITED = "What became of {key}, which waited for your decision: {text}"
+STILL = ("{key}, which you asked for, waits still for {names} to decide it, after {days} working "
+         "days. It lapses on {day} unless it's decided before then.")
+
 # a5s's notes on what an agent left for people to check before it goes outside (round 15)
 CHECKED = "Before anyone sends what the {agent} left in {where}: {note}"
 
@@ -3901,17 +3907,8 @@ def create_app(gw: Gateway) -> FastAPI:
                              "instance": p["instance_id"], "acts_for": list(p["acts_for"]),
                              "decision": "record", "of": p["seq"],
                              "args": {"proposal": proposals.key(p), "by": deciders_}})
-        asked = conn.execute("select trigger, acts_for from runs where id = %s",
-                             (p["run_id"],)).fetchone()
+        asked, group, told_to = whom_to_tell(conn, p)
         marked = bool(p.get("read_outside"))  # its words, as a marked run wrote them
-        group = asked["trigger"].get("conversation") if asked and groups.of(
-            asked["trigger"].get("conversation")) else None
-        told_to = [asked["trigger"]["sender"]] if group and asked["trigger"].get("sender") \
-            else list(p["acts_for"])  # in a group chat, whoever asked: a5s never writes there first
-        if not told_to:  # a run for nobody: its instance's owner hears instead
-            owner = conn.execute("select owner from instances where id = %s",
-                                 (p["instance_id"],)).fetchone()
-            told_to = [owner["owner"]] if owner and owner["owner"] else []
         sends = []
         for person in told_to:
             route = gw.reach(conn, person, p["definition"])  # what they're waiting for: at once
@@ -3920,16 +3917,34 @@ def create_app(gw: Gateway) -> FastAPI:
                                   agent=p["definition"]))
             noted(conn, person, p["definition"], theirs, next(iter(p["records"]), None),
                   marked=marked)
-        if group:  # and the group's next run knows, as everyone there then heard it asked
+        if group and asked:  # and the group's next run knows, as everyone there heard it asked
             noted(conn, group, p["definition"], text, next(iter(p["records"]), None),
                   heard_by=list(asked["acts_for"]), marked=marked)
-        for person in dict.fromkeys(deciders_):  # and those who decided it, in their digest
-            if person not in told_to:
+        waited = [d for d in p["deciders"] or [] if gw.scenario.person(d) is not None] \
+            if became == "lapsed" else []  # nobody decided it: those it waited for hear too
+        for person in dict.fromkeys([*deciders_, *waited]):  # (round 15, B4), as those who
+            if person not in told_to:  # decided it do, in their digest
                 digests.keep(conn, person, p["definition"], p["instance_id"], str(p["run_id"]),
-                             words.say(gw.spoken(conn, person), "What became of {key}, which "
-                                       "you decided: {text}", key=proposals.key(p),
-                                       text=said(person)), now)
+                             words.say(gw.spoken(conn, person), WAITED if person in waited else
+                                       "What became of {key}, which you decided: {text}",
+                                       key=proposals.key(p), text=said(person)), now)
         return {"sends": sends}
+
+    def whom_to_tell(conn: db.Connection, p: dict) -> tuple[dict | None, str | None, list[str]]:
+        """The run that asked for a held change, the group chat it was asked in, if any, and
+        whom a5s tells what becomes of it: whoever asked, in a group chat, where a5s never
+        writes first; else whom it was for; else, for a run for nobody, its instance's owner."""
+        asked = conn.execute("select trigger, acts_for from runs where id = %s",
+                             (p["run_id"],)).fetchone()
+        group = asked["trigger"].get("conversation") if asked and groups.of(
+            asked["trigger"].get("conversation")) else None
+        told_to = [asked["trigger"]["sender"]] if group and asked["trigger"].get("sender") \
+            else list(p["acts_for"])
+        if not told_to:
+            owner = conn.execute("select owner from instances where id = %s",
+                                 (p["instance_id"],)).fetchone()
+            told_to = [owner["owner"]] if owner and owner["owner"] else []
+        return asked, group, told_to
 
     def chasing(conn: db.Connection, p: dict, now: datetime) -> dict:
         """Remind each of a held change's deciders once, in their own working hours, after
@@ -3955,6 +3970,7 @@ def create_app(gw: Gateway) -> FastAPI:
                                      "of": p["seq"], "args": {"proposal": proposals.key(p),
                                                               "to": [d.id for d in working]}})
             p = {**p, "reminded": reminded}
+        deciding_now = {d.id for d in current}
         if p["escalate_at"] is not None and now >= p["escalate_at"] and (p["reminded"] or not current):
             above: dict[str, Person] = {}  # each decider's manager, who may hear of the record
             for decider in current:
@@ -3962,12 +3978,16 @@ def create_app(gw: Gateway) -> FastAPI:
                 if (boss is not None and boss.in_audience and boss.id not in p["acts_for"]
                         and all(gw.scenario.sees(boss.id, r) for r in p["records"])):
                     above.setdefault(boss.id, boss)
-            if not above:  # nobody above them: the instance's owner hears instead
-                inst = conn.execute("select owner from instances where id = %s",
-                                    (p["instance_id"],)).fetchone()
-                owner = gw.scenario.person(inst["owner"]) if inst and inst["owner"] else None
-                if owner is not None and all(gw.scenario.sees(owner.id, r) for r in p["records"]):
-                    above[owner.id] = owner
+            if not above:  # nobody above them: the instance's owner hears instead, or its
+                inst = conn.execute("select owner, deputy from instances where id = %s",  # deputy,
+                                    (p["instance_id"],)).fetchone()  # never one who may decide
+                for who in (inst["owner"], inst["deputy"]) if inst else ():  # it, nor whom it's
+                    other = gw.scenario.person(who) if who else None  # for (round 15, B4)
+                    if (other is not None and other.id not in deciding_now
+                            and other.id not in proposals.not_deciding(p)
+                            and all(gw.scenario.sees(other.id, r) for r in p["records"])):
+                        above[other.id] = other
+                        break
             due = [b for b in above.values() if b.id not in (p["escalated"] or [])]
             working = [b for b in due if obligations.working(b, now)]
             names = approvals.names_of([d.name for d in current]) or "its deciders"
@@ -3988,6 +4008,18 @@ def create_app(gw: Gateway) -> FastAPI:
                          "escalated_at, %s), escalate_at = %s where id = %s",
                          (escalated, now if working else None,
                           later if len(working) < len(due) else None, p["id"]))
+            if len(working) == len(due) and current and p["acts_for"]:  # once, as it's done:
+                for person in whom_to_tell(conn, p)[2]:  # whoever asked hears it still waits,
+                    who = gw.scenario.person(person)  # and until when (round 15, B4)
+                    if who is None or person in deciding_now:
+                        continue
+                    language = gw.spoken(conn, person)
+                    digests.keep(conn, person, p["definition"], p["instance_id"],
+                                 str(p["run_id"]), words.say(
+                                     language, STILL, key=proposals.key(p),
+                                     names=approvals.names_of([d.name for d in current], language),
+                                     days=proposals.ESCALATE,
+                                     day=obligations.day(who, p["lapses_at"], language)), now)
             if working:
                 ledger.append(conn, {"kind": "proposal", "action": "escalate",
                                      "run": str(p["run_id"]), "instance": p["instance_id"],

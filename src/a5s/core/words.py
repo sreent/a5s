@@ -24,6 +24,13 @@ TH: dict[str, str] = {
     "them before you rely on them.)":
         "(a5s: {which} มาจาก {agent} เอง ไม่ได้มาจากระเบียนหรือจากคุณ โปรดตรวจสอบก่อนนำไปใช้)",
     "{first} and {last}": "{first} และ {last}",
+    # what a5s tells of a held change that waits still, or lapsed, in a digest (round 15)
+    "What became of {key}, which waited for your decision: {text}":
+        "ผลของ {key} ที่รอการตัดสินใจของคุณ: {text}",
+    "{key}, which you asked for, waits still for {names} to decide it, after {days} working "
+    "days. It lapses on {day} unless it's decided before then.":
+        "{key} ที่คุณขอไว้ยังรอให้ {names} ตัดสินใจ หลังผ่านไป {days} วันทำการ "
+        "หากไม่มีการตัดสินใจก่อน จะหมดอายุใน {day}",
     # a5s's notes on a draft people check before it goes outside, in their digest (round 15)
     "Before anyone sends what the {agent} left in {where}: {note}":
         "ก่อนที่ใครจะส่งสิ่งที่ {agent} ร่างไว้ใน {where}: {note}",

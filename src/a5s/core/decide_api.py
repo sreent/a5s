@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from a5s import db
 from a5s.contract import INSTANCE_APPROVER, PART_DELEGATE, PART_OWNER
-from a5s.core import ledger, proposals, web
+from a5s.core import approvals, ledger, proposals, web
 from a5s.core import studio_models as shapes  # what each route answers, as the studio's types say
 
 log = logging.getLogger(__name__)
@@ -115,6 +115,9 @@ def router(gw: Any) -> APIRouter:
         except proposals.Refused as exc:
             raise web.refusal(gw, exc) from None
         with db.transaction(gw.url) as conn:
+            for digest in digests:  # one decision on a change at a time, in order, so a second
+                conn.execute(  # hears whether the first settled it (round 15, B3)
+                    "select pg_advisory_xact_lock(hashtextextended(%s, 0))", (digest,))
             rows = conn.execute("select * from proposals where scenario = %s and digest = any(%s) "
                                 "order by id", (gw.scenario.name, digests)).fetchall()
             if len(rows) != len(digests):
@@ -125,6 +128,18 @@ def router(gw: Any) -> APIRouter:
                                              f"it's {row['status']}")
                 if not proposals.may_decide(gw.scenario, row, person.id):
                     raise HTTPException(403, f"{person.name} may not decide {proposals.key(row)}")
+                if first := proposals.settled(conn, gw.scenario, row):
+                    raise HTTPException(409, f"{approvals.names_of(first)} decided "
+                                             f"{proposals.key(row)} already, and the first "
+                                             "decision is the one that counts: yours isn't "
+                                             "recorded")
+                at_work = conn.execute("select status from instances where id = %s",
+                                       (row["instance_id"],)).fetchone()
+                if body.decision == "approve" and at_work and at_work["status"] != "active":
+                    raise HTTPException(409, f"{row['instance_id']} is {at_work['status']}, and "
+                                             "a5s makes none of its changes until it's at work "
+                                             f"again: approve {proposals.key(row)} then, or "
+                                             "reject it now")
             if len(rows) > 1 and any(r["sensitive"] for r in rows):
                 raise HTTPException(409, "a sensitive change is decided on its own, with a sign-in "
                                          "of its own")
