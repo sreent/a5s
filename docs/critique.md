@@ -666,6 +666,117 @@ Five reviewers who hadn't written it read the fourteen features built after roun
 - **Proposed and kept:** grades of shadow pairs and of answers said to be wrong take no fresh sign-in and no seal, which reviewer C asked about: they move no cap, as a sample's grade does. The map's reach worked out in Python as well as on the page, which only tests use: they check from the API's own answer what the page works out. Cases kept as files in the draft, not rows of their own, as reviewer D proposed: D5 to D8 are fixed where the words are, which is where a release takes them from. Two-digit Buddhist years, which reviewer E proposed dropping: read only near this year, as people write them in chat. The web chat's own Thai beside the studio's catalogue: it's a page apart, with no build.
 - **Deferred:** a version's own words, what became of a held change, and the digests, in Thai; one place, not two, that turns an event away; the impact preview's list of refusals that aren't policy's, taken from the gateway's own; and words.PATTERNS, which translate sentences other modules write whole, replaced by templates those modules pass.
 
+## Round 15: six people who'll use a5s, and one who'd attack it
+
+Six reviewers who hadn't written a5s each took a part and tested the running stack as that person would: Nok, a finance clerk who reads Thai, on a phone, with customers mailing finance's shared mailbox (A); Ana, who decides held changes, owns a part and pays for the agents (B); a grader, an author and a second team taking a5s on (C); the operator who runs it (D); the data protection officer and an auditor (E); and someone attacking it (F). They wrote probes that run against the stack, 153 in all, and each finding below was reproduced from them before it was fixed. Each fix has a test that fails without it.
+
+| # | Finding | Severity | How the code answers it | Status |
+| --- | --- | --- | --- | --- |
+| A1, F6 | Mail to a shared mailbox started the first instance by name, even another part's, whose run, acting for nobody, read the mailbox and records its readers may not see, and drafted there | High | Mail goes only to an instance whose people all read the mailbox; a run for nobody reads one only if everyone its instance serves reads it; the run a mail starts sees only what every reader may | Fixed |
+| A2 | A search before the core's next look swallowed new mail: no event, no run, no draft | High | Every new message gets its event once, whoever saw its key first | Fixed |
+| A3, F4 | What a run read in a mailbox reached people who don't read it, through the studio | High | A mailbox's tools carry its readers as a readers rule, so the studio shows the run to its readers alone | Fixed |
+| A4 | One file, or one look in a mailbox, marked a person's whole conversation for good: no level 2, nothing said why, no way out | High | | Deferred, Medium: a run is marked only while what it's given holds the marked turns, and a person can start afresh |
+| B1, F3 | A decider's sealed approval didn't bind the change made: the database's owner could rewrite a held change's call, set an ended one waiting again to replay the approval, or rewrite how a change is undone | High | A held change's digest covers its call, its values, its records as they stood, whom it's for and the words its deciders read, with a nonce of its own, and the core works it out again before making it; a decision counts once, as the core's own ledger entries say; how a change is undone is sealed when it's kept | Fixed |
+| B2, F3 | Level 2's evidence could be forged: rows inserted as samples, then graded honestly, raised a cap, and a sample's part, words or sealing time could be moved | High | A sample counts only as the core drew and sealed it, and a grade only of that sample, in its part, as the core sealed it | Fixed |
+| C1 | Graders and the judge grade a change without what the person asked, so a change to the wrong record can't be seen | High | | Deferred, Medium: what started the run, masked, kept with the sample for graders, the judge and deciders |
+| C2 | A level-2 agent's owner and an engineer of its team could rewrite its instructions and keep level 2: the re-run of graded samples the docs promised didn't exist | High | Such a release needs the release approver too, from outside the team, for an agent whose signed manifest says it may work at level 2; it keeps the level, and the docs say what guards it | Fixed |
+| D1 | Restoring the database from a backup broke the ledger's copies for good, and sent again what had gone since; there's no runbook | High | | Deferred, Large: a restore that reads the copies back, holds what was sent since, rebuilds the mailboxes' places, and its runbook |
+| D2 | A seal key can't be rotated through: nothing is sealed again under the new key, and dropping the old one silently drops level 2 and refuses every run | High | | Deferred, Medium: a command that seals again under the first key, the status's count of seals under old keys, and a part that won't start leaving what's in force unsealed |
+| D3 | A stolen service token acts as any agent: it opens runs, makes level-2 changes, writes to people and reads the trail | High | | Deferred, Medium to Large: the scheduler's own credential, a read-only sign-in for operators, and the credential behind each run in the ledger |
+| D4 | The channels app wouldn't start where a scenario names mailboxes, without the core's mail secret | High | That check is the core's alone | Fixed |
+| D5 | The README gave the channels app the core's seal keys, with which it took itself for the core | High | It won't start with them, and the README says they're the gateway's alone | Fixed |
+| D6 | Only whoever suspended an instance could resume it, though the runbook said the release approver could | High | The release approver, from outside the team, sees an instance while it's suspended and resumes it on its page, with a second factor where the deployment asks for one; the ledger names whose suspension they lifted | Fixed |
+| E1 | Until the officer agrees to names, someone who left showed by their id on the auditors' and administrators' pages | High | Whom an entry acted for is always a stand-in, and so is anyone a5s found the directory no longer names, wherever an entry names them, until their archive goes | Fixed |
+| E2 | Asking to undo a change named the asker by name, as if acting in a role, beside the stand-in it was for | High | The asker is recorded as asking, and shows as a stand-in | Fixed |
+| F1 | Outside content got a level-2 change made through another run: a marked run's held change carried its words into an unmarked run's brief, and into a5s's own notice of what became of it | High | What a marked run wrote stays marked wherever a5s passes it on, so a run given it acts at level 2 on nothing; a tool's schema can name a string's form, which the gateway checks on the value a handle stands for | Fixed |
+| F2 | A held change's words put links and forged notes of a5s's into deciders' cards and a5s's own messages | High | Its values reach people as plain words, on one line, cleaned as outgoing text is | Fixed |
+| A5 | a5s's notes went into the body of a reply drafted to a customer, in English, and a cut could lose them | Medium | A draft holds the agent's words alone; a5s's notes go to the readers' digests, in the language each reads | Fixed |
+| A6 | A handle in a draft to an unknown sender resolved to another customer's contact | Medium | A draft takes no handle | Fixed |
+| A7, F11 | Mail nobody worked on was dropped unheard: a model that was down used up its event, and a flood passed the cap on what waits | Medium | A mail run whose model didn't answer is tried again; past 1,000 waiting, mail waits in its mailbox | Fixed |
+| A8 | The web chat never shows an answer that comes after its ten minutes of waiting, though it says it will | Medium | | Deferred, Small to Medium |
+| A9 | Thai dates in figures, Buddhist-era years in ISO form, and 860.- บาท weren't read as dates and amounts | Medium | They are | Fixed |
+| A10 | A mail's sender and subject reached the agent as written | Medium | Senders reach it as handles; a subject is the mail's own words, and the run that reads it is marked | Fixed in part |
+| A11 | A drafted reply could go to a Reply-To address | Medium | It goes to the sender a5s checked | Fixed |
+| A19, D17 | A slow mail system held up the core's sweep | Medium | A look takes 30 seconds at most | Fixed |
+| B3 | Of two deciders deciding at once, the second was told their decision stood, though the first's counted | Medium | Once the decisions recorded settle a change, a later one is refused at once, naming who decided it | Fixed |
+| B4 | With nobody above its decider, an escalation went back to the decider; a lapse wasn't told to those it waited for; whoever asked heard nothing in between | Medium | An escalation goes to the deciders' managers, else the instance's owner or deputy, never a decider nor whom it's for; whoever asked hears in their digest that it waits still, and until when; a lapse is told to those it waited for | Fixed |
+| B5 | Twenty changes, seven of them flagged, were approved in a second | Medium | A flagged change is decided on its own | Fixed |
+| B6 | A Thai decider read a change's title, its records as they stood and its flags in English, unwarned | Medium | | Deferred, Medium: flags as templates, in the reader's language |
+| B7 | A part's owner couldn't suspend an instance at work in their part | Medium | Its parts' owners and delegates may | Fixed |
+| B8 | An instance's page said level 2 where a cap held it at 1, and showed nothing of the way there | Medium | | Deferred, Small to Medium |
+| B9 | An approval while the instance was suspended was accepted, then dropped | Medium | It's refused, saying to reject it now or approve it once the instance is at work | Fixed |
+| C3 | A grade chosen for a sample that lapsed jammed the grade page | Medium | | Deferred, Small |
+| C4 | One grader alone could raise level 2 in minutes | Medium | | Deferred, Medium: a cap on one grader's share, and a second grader for some |
+| C5 | Shadow pairs show one message, without the conversation or the record | Medium | | Deferred, Medium |
+| C6 | A test case kept from a real run kept bank account numbers, dates of birth, national ids and addresses | Medium | | Deferred, Small to Medium |
+| C7 | A draft's pull request said who must sign, never what the agent may do | Medium | It says: its tools, by system, how far it may act, and what starts it besides people | Fixed |
+| C8 | The team that built the version at work could grade its challenger shadow | Medium | A shadow's grader comes from outside the teams that built either agent | Fixed |
+| D7 | On call, the team may only suspend: not lower a cap, withdraw a release or see an instance | Medium | | Deferred, Medium, with an incident console |
+| D8 | The ledger's copies show in neither the status nor the metrics | Medium | | Deferred, Small to Medium |
+| D9, F12 | Events and mail held back by a day's budget show nowhere, and events naming a person spend that person's day | Medium | | Deferred, Small to Medium |
+| D10 | A part ran as a superuser, or as another part's role, unawares | Medium | It won't start so | Fixed |
+| D11 | A part served a database older than it needs, to fail later at the first column it lacked | Medium | It refuses, saying to run `a5s migrate` | Fixed |
+| D12 | Development mode, which takes people's word for who they are, started beside an identity provider | Medium | It won't | Fixed |
+| D13 | A chat away for more than a quarter of an hour lost what a5s sent meanwhile to the local inbox for good | Medium | | Deferred, Small to Medium |
+| D14 | A post-mortem can't read what a change set after two days | Medium | | Deferred, Medium |
+| E3 | Erasing a group chat's member erased others' feedback on its answers | Medium | | Deferred, Small to Medium |
+| E4 | A file sent in chat was named in an export but not given, and kept after erasure until the next sweep | Medium | | Deferred, Medium |
+| E5 | The officer can't withdraw a choice alone | Medium | | Deferred, Medium |
+| E6 | Auditors can't follow a change from its run to its outcome on their page | Medium | | Deferred, Medium |
+| E7 | What gave level 2 wasn't in the cap's entry, and the report left caps out | Medium | A cap's entry says what it rested on: the samples by a digest of their ids, the releases and instances they came from, how many people graded them, and from when; the report lists each change of a cap | Fixed |
+| E8 | The ledger's newest hour could be rewritten unseen, and nothing tells auditors whether it checks out | Medium | | Deferred, Medium |
+| F5 | A team's words in a handed-over conversation made a level-2 change as the person's own | Medium | Such a run works at level 1 at most, and the ledger says whose words steered it | Fixed |
+| F7 | The extractor's typed form carried words, in a date or a key | Medium | Values come as code reads them, a month by its name alone, and a key only of a record the scenario knows | Fixed |
+| F8 | A forged note of a5s's survived with zero-width spaces, wide brackets or lookalike letters | Medium | It's found however it's spelled | Fixed |
+| F9 | The channels app could write ledger entries like the core's | Medium | The ledger records which part wrote each entry, which no part may write for itself | Fixed |
+| F10 | The scheduler's role could write turns into a person's conversation as theirs | Medium | | Deferred, Medium: the core alone writes people's turns, from what arrived |
+| A12 | a5s's own chat words were English for a Thai reader | Low | | Deferred, Small |
+| A13 | A second "That's wrong" said Noted but dropped its words | Low | | Deferred, Small |
+| A14 | A record in another part could be told from one that doesn't exist | Low | | Deferred, Small |
+| A15 | A draft kept the records' internal links | Low | | Deferred, Small |
+| A16 | Some senders' addresses weren't read, a cut named the wrong length, and the same mail twice made two drafts | Low | Addresses with apostrophes or other alphabets are read, and a cut tells the message's whole length | Fixed in part |
+| A17 | A mail run's page can't be tied to its mail or its draft | Low | | Deferred, Small |
+| A18 | A surname that's also a word, such as Price, masked the word | Low | Masking errs toward hiding, as its docs say | Kept |
+| B10–B15 | On the decide page: more than 20 ticked refused only after signing in; Approve offered on a change a5s won't make; on a phone, its buttons at the foot and no select-all; past 50 waiting, the rest unsaid. The approve page hides who proposed a version, and the preview's why names the grant, not the level | Low | | Deferred, Small |
+| C9 | A grader could grade a change made for their own manager or teammate | Low | They can't | Fixed |
+| C10 | The judge's verdict on the pair being graded shows beside it | Low | | Deferred, Small |
+| C11 | Naming a deputy from a grader's team voided their grades, unsaid | Low | | Deferred, Small |
+| C12 | A case kept with what a right answer is fails at once on the stand-in judge | Low | | Deferred, Small |
+| C13 | Samples name whom a change was for, whatever the officer chose, as shadows don't | Low | Graders need to know whom a change was for to judge it, as the data protection page says | Kept |
+| D15 | The report said "suspended or resumed" | Low | It says which | Fixed |
+| D16 | Seal keys and the service token could be any length | Low | Each takes at least 32 characters | Fixed |
+| E9 | A leaver's id stayed in others' drafts | Low | It goes, as erasure takes it out | Fixed |
+| E10 | A version of the settings someone asked for was kept for good, through erasure, and the docs didn't say | Low | It goes when they leave or are erased, and after the officer's `kept_for`, as the data protection page says | Fixed |
+| E11 | Mail search gave senders' addresses in clear, kept in conversations | Low | Senders are handles | Fixed |
+| F13 | A bare host with a path survived cleaning | Low | It's removed | Fixed |
+| F14 | A person's own message could carry a5s's marks | Low | Its later lines are quoted, as a group's are | Fixed |
+
+The gaps they named, and their size:
+
+| Gap | Who | Size |
+| --- | --- | --- |
+| Restoring from a backup, with a runbook | D | Large |
+| An incident console: the changes of a window, undone together, and the people told | D | Large |
+| A card on each agent for risk and audit, which assurance and the officer can read | F | Large |
+| What a5s is worth: time saved and cost for each outcome, against a baseline | B | Large |
+| An author without Python takes an agent to work in five handoffs, and a second team needs 14 steps and two to four engineer-weeks | C | Large |
+| Scanned invoices and other attachments, read | A | Large |
+| People outside the directory, such as customers in mail, exported and erased | F | Medium to Large |
+| Rotating the seal key | D | Medium |
+| A credential for operators apart from the service token, and resuming in an emergency | D | Medium to Large |
+| What operators see of the ledger's copies and what waits | D | Medium |
+| Graders see what was asked, and a second grader checks some | C | Medium |
+| The officer hears what became of each request | F | Medium |
+| Sent again once a chat is back | D | Small to Medium |
+| Deciders: grouped, all at once, one reason for many; and what the asker said | B | Small to Medium |
+| A fresh start in a conversation, and what a5s keeps of someone, for them to see | A | Small to Medium |
+| The export gives the rest: connections begun, digest waits, sends, requests, whom a5s escalated to | F | Small |
+
+- **Added:** a held change's digest over all it does, worked out again before it's made; a decision counted once; the undo and each sample sealed when kept; the ledger's writer; marks that follow what a marked run wrote; plain words for held changes; mail only to its readers, as the readers rule says; stand-ins for those who left; the release approver beside the team for a level-2 agent's instructions, and to lift another's suspension; parts that start only as themselves, on the schema they need; a second decider told at once; escalations never back to a decider; flagged changes decided alone; what an agent may do, in its pull request; what a cap rested on, and caps in the auditors' report.
+- **Removed:** an approval that didn't bind its change; samples nobody drew; a release that kept level 2 on its team's word alone; the seal keys in the channels app's settings; a suspension only its suspender could lift; the second decision recorded as if it counted; an approval of a suspended instance's change accepted, then dropped.
+- **Proposed and kept:** masking that hides a word which is also someone's name (A18), and samples that name whom a change was for (C13): graders judge a change by whom it was for. C's call to drop caps to 1 when a level-2 agent's instructions change: a release approver signs instead, so a sentence of instructions throws away no grades, as round 6 settled (G7).
+- **Deferred, with their size:** each above, and the gaps.
+
 ## Accepted risks
 
 Some risk no design removes. These remain, each accepted by its owner.
@@ -689,4 +800,4 @@ Some risk no design removes. These remain, each accepted by its owner.
 
 ## Next round
 
-Round 15 reads a5s deployed to the clouds and Teams on the test tenant, as the first day walks it, with every walk-through live each night, and settles what round 13 left to the tenant: which way Entra ID shows a second factor. It starts from the accepted risks and the deferrals of rounds 13 and 14, reads from all six angles, and reports what it removes.
+Round 16 reads a5s deployed to the clouds and Teams on the test tenant, as the first day walks it, with every walk-through live each night, and settles what round 13 left to the tenant: which way Entra ID shows a second factor. It starts from the accepted risks and the deferrals of rounds 13 to 15, reads from all six angles, and reports what it removes.
