@@ -138,8 +138,7 @@ def test_restore_erases_again_whom_an_erasure_since_the_backup_erased(database, 
                                           "archives_left": 0}})
     copy(database, store)
     restored(database, 2)
-    with db.transaction(db.as_role(database, "gateway")) as conn:
-        done = restoring.restore(conn, store, lambda person: person == "ben")
+    done = put_back(database, store)
     assert (done["erased_again"], done["erase_again"]) == (1, ["former:2a7c"])
     with db.transaction(database) as conn:  # the backup brought ben back: erased again
         assert [r["person"] for r in conn.execute("select person from fresh_starts")] == ["ana"]

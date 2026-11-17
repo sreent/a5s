@@ -16,9 +16,10 @@ restore`, run as the core before any part of a5s starts, then:
   backup, as those entries say, and as fired each schedule that fired, so no agent answers or
   acts on one again, nor makes again a change it made;
 - erases again each person an erasure since the backup erased, whom the backup brings back:
-  the officer asked for it then, and it holds. An archive's erasure, by a name a later archive
-  doesn't take, or one whose person a run looks at work for, is listed for the officer to ask
-  for again;
+  the officer asked for it then, and it holds. It keeps nothing of theirs, not even where a5s
+  writes to them first, which comes back once they write. An archive's erasure, by a name a
+  later archive doesn't take, or one whose person a run looks at work for, is listed for the
+  officer to ask for again;
 - holds what a5s was to send through a chat, which may have gone already: it waits in each
   person's local inbox instead, saying so, so nobody hears anything twice;
 - starts each mailbox afresh from now, as at its first look, so mail read since the backup
@@ -32,7 +33,6 @@ the backup, is gone with it: the runbook says what to look through.
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -43,13 +43,11 @@ from a5s.core.stores import Store
 HELD = "held after a restore from a backup: it may have gone already"
 
 
-def restore(conn: db.Connection, store: Store,
-            here: Callable[[str], bool] = lambda _: False) -> dict[str, Any]:
+def restore(conn: db.Connection, store: Store) -> dict[str, Any]:
     """Restore what a5s keeps after its database was restored from a backup, in the caller's
-    transaction, with whether the directory names someone now (`here`): how many entries it
-    put back, through which, how many messages, events and schedules it took as done, whom it
-    erased again and whom the officer must, how many sends it held, and how many mailboxes
-    start afresh."""
+    transaction: how many entries it put back, through which, how many messages, events and
+    schedules it took as done, whom it erased again and whom the officer must, how many sends
+    it held, and how many mailboxes start afresh."""
     rows = anchor.beyond(conn, store)
     for row in rows:
         conn.execute("insert into ledger (seq, entry, prev_hash, hash) values (%s, %s, %s, %s)",
@@ -57,7 +55,7 @@ def restore(conn: db.Connection, store: Store,
                       bytes.fromhex(row["hash"])))
     entries = [json.loads(r["entry"]) for r in rows]
     done = {"put_back": len(rows), "through": rows[-1]["seq"] if rows else None,
-            **_done(conn, entries), **_erased(conn, entries, here)}
+            **_done(conn, entries), **_erased(conn, entries)}
     done["held"] = conn.execute(
         "update outbox set channel = 'local', inbound_id = null, retry_at = null, problem = %s "
         "where delivered_at is null and channel <> 'local'", (HELD,)).rowcount
@@ -96,10 +94,10 @@ def _done(conn: db.Connection, entries: list[dict]) -> dict[str, int]:
     return {"answered": answered, "worked_on": taken, "fired": fired}
 
 
-def _erased(conn: db.Connection, entries: list[dict],
-            here: Callable[[str], bool]) -> dict[str, Any]:
+def _erased(conn: db.Connection, entries: list[dict]) -> dict[str, Any]:
     """Erase again each person an erasure since the backup erased, as the entries say, as the
-    officer asked then (core/erasure.py): how many, and whom the officer must ask for again."""
+    officer asked then (core/erasure.py), keeping nothing of theirs, as for someone who has
+    left: how many, and whom the officer must ask for again."""
     again, left, now = 0, [], datetime.now(UTC)
     for entry in entries:
         person = (entry.get("args") or {}).get("person")
@@ -109,7 +107,7 @@ def _erased(conn: db.Connection, entries: list[dict],
             left.append(person)
             continue
         try:
-            erasure.erase(conn, person, now, here(person))
+            erasure.erase(conn, person, now)
         except erasure.Busy:  # a run the backup kept open, which the sweep will close
             left.append(person)
             continue

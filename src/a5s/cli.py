@@ -300,17 +300,16 @@ def _seal_again(cfg: Config, leaked: bool) -> None:
 
 def _restore(cfg: Config) -> None:
     """Restore what a5s keeps after its database was restored from a backup, as the core, with
-    the ledger's copies as the copier reads them (core/restoring.py)."""
+    the ledger's copies as the copier reads them (core/restoring.py): with the core's database
+    address, such as in the copier's container, which reaches the store."""
     store = build.store(cfg)
     if store is None:
         sys.exit("Set A5S_ANCHOR_STORE to the ledger's copies, as the copier has it.")
     db.known(cfg.database_url)
     db.own_role(cfg.database_url, "gateway")
-    scenario = build.scenario(cfg)  # whom the directory names now, for an erasure made again
     try:
         with db.transaction(cfg.database_url) as conn:
-            done = restoring.restore(conn, store,
-                                     lambda person: scenario.person(person) is not None)
+            done = restoring.restore(conn, store)
     except anchor.AnchorError as exc:
         sys.exit(str(exc))
     print(restoring.told(done))

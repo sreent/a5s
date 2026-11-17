@@ -762,6 +762,7 @@ The gaps they named, and their size:
 | Scanned invoices and other attachments, read | A | Large |
 | People outside the directory, such as customers in mail, exported and erased | F | Medium to Large |
 | Resuming in an emergency | D | Medium |
+| A job in the chart that runs `a5s restore` | D | Small |
 | What operators see of the ledger's copies and what waits | D | Medium |
 | A second grader checks some samples | C | Medium |
 | The officer hears what became of each request | F | Medium |
