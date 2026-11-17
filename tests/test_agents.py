@@ -37,6 +37,7 @@ from a5s.cases import (  # the checks the sandbox makes of a draft's cases too
     judging,
     read,
     real,
+    sent_with,
     unanswered,
 )
 from a5s.config import load_models
@@ -225,7 +226,8 @@ def test_each_agents_regression_suite(database: str, tmp_path: Path, monkeypatch
                 monkeypatch.setitem(records, key, {**records[key], **fields})
             after, since = len(stack.ledger()), now(stack)
             if "say" in step:
-                reply = stack.say(dated(step["say"]), person=person, agent=agent)
+                reply = stack.say(dated(step["say"]), person=person, agent=agent,
+                                  files=sent_with(case))  # as the run it was kept from read
             else:  # what's due runs, and what people are told waits in their inbox
                 stack.scheduler().work_due()
                 reply = "\n\n".join(m["text"] for m in stack.inbox(person))

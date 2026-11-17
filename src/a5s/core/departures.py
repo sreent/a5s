@@ -138,6 +138,10 @@ def rename(conn: db.Connection, person: str, now: datetime) -> str:
                  "where members @> array[%s]::text[]", (person, name, person))
     conn.execute("update summaries set heard_by = array_replace(heard_by, %s, %s) "
                  "where %s = any(heard_by)", (person, name, person))
+    conn.execute("update kept_cases set person = case when person = %(p)s then %(n)s else "
+                 "person end, acts_for = array_replace(acts_for, %(p)s, %(n)s), kept_by = case "
+                 "when kept_by = %(p)s then %(n)s else kept_by end where %(p)s in (person, "
+                 "kept_by) or %(p)s = any(acts_for)", {"p": person, "n": name})  # test cases
     conn.execute("update questions set acts_for = array_replace(acts_for, %s, %s) "  # and what
                  "where %s = any(acts_for)", (person, name, person))  # agents asked for them
     conn.execute("update reminders set heard_by = array_replace(heard_by, %s, %s) "  # and who

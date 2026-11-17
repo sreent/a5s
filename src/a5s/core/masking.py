@@ -3,7 +3,7 @@ whom they're about (docs/studio.md): what someone said to an agent and what it a
 a test case, or shown to its owners once someone said the answer was wrong. Masked are the
 names and ids of everyone a5s knows of, those it serves and those who run its instances, with
 whomever the words are about; emails; links; numbers long enough to be a phone's or an
-account's; and, where asked, record keys. Code can't know every name someone might write, so
+account's; and, where asked, the keys of the records they name. Code can't know every name someone might write, so
 whoever reads what's left still reads it with care.
 
 It reads a text once, from start to end, whatever it holds: an address is looked for only where
@@ -14,7 +14,7 @@ letters, and a name is a word looked up, not a pattern tried at every letter for
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 
 from a5s import db
 from a5s.contract import Scenario
@@ -71,14 +71,29 @@ def _names(scenario: Scenario, people: Iterable[str]) -> tuple[set[str], set[str
                                                                             reverse=True)
 
 
+def numbered(scenario: Scenario, *texts: str | None) -> dict[str, int]:
+    """Each record key these texts name, numbered in the order they first name it, for mask's
+    `records`, so the same record reads the same in each."""
+    pattern = getattr(scenario, "record_pattern", None)
+    found: dict[str, int] = {}
+    if not pattern:
+        return found
+    for text in texts:
+        for m in re.finditer(pattern, (text or "")[:MOST]):
+            found.setdefault(m.group(0), len(found) + 1)
+    return found
+
+
 def mask(text: str, scenario: Scenario, people: Iterable[str], *,
-         records: bool = False) -> tuple[str, dict[str, int]]:
+         records: Mapping[str, int] | None = None) -> tuple[str, dict[str, int]]:
     """Text with what could say who anyone is masked by code: these people's names, each part
-    of them, and their ids, emails, links and long numbers, and with `records`, each record's
-    key, numbered, the same key the same each time. How many of each it masked. It masks the
-    first MOST characters, which are all it gives back."""
+    of them, and their ids, emails, links and long numbers, and each record key `records`
+    numbers, as [record 1] and so on. A key it doesn't number stays, such as one of the
+    sandbox's made-up records an author puts in a real one's place. How many of each it masked.
+    It masks the first MOST characters, which are all it gives back."""
     words, short, thai, ids = _names(scenario, people)
     pattern = getattr(scenario, "record_pattern", None) if records else None
+    numbers = records or {}
     ways = [*([f"(?P<records>(?:{pattern}))"] if pattern else []),
             f"(?P<emails>{EMAIL})", f"(?P<links>{LINK})", f"(?P<numbers>{NUMBER})",
             *([r"(?=[\u0e00-\u0e7f])(?P<thai>" + "|".join(map(re.escape, thai)) + ")"]
@@ -87,7 +102,6 @@ def mask(text: str, scenario: Scenario, people: Iterable[str], *,
               if ids else []),
             f"(?P<word>{WORD})"]
     masked: dict[str, int] = {}
-    numbered: dict[str, int] = {}
 
     def swap(m: re.Match) -> str:
         kind = m.lastgroup or "word"
@@ -98,9 +112,11 @@ def mask(text: str, scenario: Scenario, people: Iterable[str], *,
             kind = "names"
         elif kind in ("thai", "ids"):
             kind = "names"
+        if kind == "records" and said not in numbers:
+            return said
         masked[kind] = masked.get(kind, 0) + 1
         if kind == "records":
-            return MASKS["records"].format(n=numbered.setdefault(said, len(numbered) + 1))
+            return MASKS["records"].format(n=numbers[said])
         return MASKS[kind]
 
     return re.compile("|".join(ways), re.IGNORECASE).sub(swap, text[:MOST]), masked

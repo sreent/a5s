@@ -381,10 +381,12 @@ class Stack:
         return r.json()["replies"]
 
     def say(self, text: str, person: str = "ana", agent: str = "assistant",
-            scheduler: Scheduler | None = None) -> str:
-        """What a person is told, once the scheduler has answered their message."""
+            scheduler: Scheduler | None = None, files: list[dict] | None = None) -> str:
+        """What a person is told, once the scheduler has answered their message, with these
+        files, if any."""
         r = httpx.post(f"{self.channels_url}/channels/local/messages",
-                       json={"person": person, "agent": agent, "text": text}, timeout=30)
+                       json={"person": person, "agent": agent, "text": text,
+                             "files": files or []}, timeout=30)
         if r.status_code != 202:
             return r.json()["detail"]
         (scheduler or self.scheduler()).answer_waiting()

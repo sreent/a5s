@@ -15,7 +15,7 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from a5s import authoring, cases, sandbox
+from a5s import authoring, cases, db, sandbox
 from a5s.core import drafts, retention, signing
 from a5s.sample import SampleScenario
 from conftest import FAKE_MODELS, PROVIDER_KEY, ROOT, FakeModel, build_root, deployment
@@ -216,6 +216,19 @@ def test_a_case_kept_from_a_real_run_goes_only_where_its_data_may(box):
     assert cases.for_real(["synthetic", "internal"], {"internal"})
     assert not cases.for_real(["synthetic"], {"internal"})
     assert cases.for_real(["synthetic"], {"synthetic"})  # a deployment of made-up data
+
+def test_a_case_kept_from_a_run_that_read_outside_content_is_marked_as_it_was(box):
+    """The run it was kept from read content from outside, which the case can't keep: the
+    sandbox sends its step with a file in its place, so its run is marked as that one was."""
+    kept = [{"name": "outside", "as": "ana", "from_run": "k-0123456789ab", "read_outside": True,
+             "steps": [{"say": "Which questions mention an invoice?"}]}]
+    files = {**drafted(), cases.FROM_RUNS: yaml.safe_dump(kept)}
+    n = next(i for i, c in enumerate(cases.found(files)) if c["file"] == cases.FROM_RUNS)
+    assert box.case("3f2a9c1d", files, "stand-in", n, ["internal"])["ran"]
+    with db.transaction(box.admin) as conn:
+        assert conn.execute("select read_outside from runs order by opened_at desc limit 1"
+                            ).fetchone()["read_outside"] is True
+
 
 def test_the_sandbox_says_which_cases_it_cant_run(box):
     stranger = {**drafted(), "tests/stranger.yaml": "- name: as someone it hasn't got\n  as: zed\n"

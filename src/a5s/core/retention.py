@@ -144,6 +144,9 @@ def sweep(conn: db.Connection, now: datetime, scenario: str, kept: str = KEPT) -
                           "interval '1 day'")  # nobody came back to, should no core sweep them
     delete("handovers", f"delete from handovers where ended_at < {AGO}")  # with what was said
     delete("shadows", f"delete from shadow_answers where at < {AGO}")  # what shadows answered
+    delete("cases", "delete from kept_cases k where not exists (select 1 from agent_drafts d "
+                    "where position(k.token in coalesce(d.files ->> 'tests/from-runs.yaml', '')) "
+                    "> 0)")  # whose words a kept case holds, once no draft holds it
     delete("undo", "delete from changes_made where until < now() - interval '1 day' and "
                    "state is distinct from 'undoing'")  # how to undo a change, once it can't be
     done = (f"(status in ('done', 'cancelled', 'failed') and updated_at < {AGO}) "

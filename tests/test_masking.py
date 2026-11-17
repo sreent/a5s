@@ -51,9 +51,13 @@ def test_emails_links_long_numbers_and_record_keys_where_asked():
     said, counts = masked(text)
     assert said == ("Write to [an email] or see [a link] call [a number] about Q-1001, Q-1002 and "
                     "Q-1001 again.")
-    said, counts = masked(text, records=True)
-    assert said.endswith("about [record 1], [record 2] and [record 1] again.")
+    numbers = masking.numbered(Directory(), "Q-1002 first,", text)  # the same in each text
+    assert numbers == {"Q-1002": 1, "Q-1001": 2}
+    said, counts = masked(text, records=numbers)
+    assert said.endswith("about [record 2], [record 1] and [record 2] again.")
     assert counts == {"emails": 1, "links": 1, "numbers": 1, "records": 3}
+    said, _ = masked("Q-1003 is the sandbox's, Q-1001 isn't.", records=numbers)
+    assert said == "Q-1003 is the sandbox's, [record 2] isn't."  # a key it wasn't given stays
 
 
 def test_a_long_text_is_read_once_and_only_so_far():

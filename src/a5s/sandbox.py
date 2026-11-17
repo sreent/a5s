@@ -307,15 +307,17 @@ class Sandbox:
         instances[instance] = {"definition": agent, "serves": sorted(serving | {person}),
                                "parts": self.parts, "level": 1, "owner": person}
 
-    def _said(self, instance: str, person: str, text: str) -> tuple[str, dict | None, list[dict]]:
-        """Say something to an instance, as a person: what it answered, the run that answered
-        it, if one opened for it, and each call to the model."""
+    def _said(self, instance: str, person: str, text: str, files: list[dict] | None = None
+              ) -> tuple[str, dict | None, list[dict]]:
+        """Say something to an instance, as a person, with these files, if any: what it
+        answered, the run that answered it, if one opened for it, and each call to the model."""
         with db.transaction(self.admin) as conn:  # by the database's clock, as runs open
             since = (conn.execute("select now() as at").fetchone() or {}).get("at")
         self.recording.calls = []
         try:
             sent = httpx.post(f"{self.channels_url}/channels/local/messages", timeout=60,
-                              json={"person": person, "agent": instance, "text": text})
+                              json={"person": person, "agent": instance, "text": text,
+                                    "files": files or []})
             if sent.status_code != 202:
                 raise Refused(str(sent.json().get("detail")))
             Scheduler(self.cfg, self.gateway.scenario).answer_waiting()
@@ -426,7 +428,7 @@ class Sandbox:
             self._settle()
             for n, step in enumerate(case["steps"], 1):
                 said = cases.dated(str(step["say"]))
-                reply, run, _ = self._said(agent, person, said)
+                reply, run, _ = self._said(agent, person, said, cases.sent_with(case))
                 for kind in spent:  # its own runs' tokens: a judge's are the same on any model
                     spent[kind] += int((run or {}).get(f"tokens_{kind}") or 0)
                 called = used(run)

@@ -41,7 +41,7 @@ from psycopg.abc import Params
 from psycopg.types.json import Jsonb
 
 from a5s import db
-from a5s.core import chats, departures, export
+from a5s.core import chats, departures, export, run_cases
 
 # What each kind an erasure counts is, in the words of what a5s keeps (docs/data-protection.md)
 WORDS = {
@@ -63,6 +63,8 @@ WORDS = {
     "handovers": "their conversations handed to people, with what was said there",
     "shadow_answers": "what shadows answered them, beside the answers sent, for graders",
     "shadow_grades": "whose grades of shadows' answers they were",
+    "kept_cases": "test cases kept from runs that held what they said, out of every draft",
+    "cases_kept_by": "whose test cases kept from runs they were",
     "delegation_starts": "accounts they had begun to connect",
     "report_seen": "what reports told them",
     "digest_waits": "digests that wait for them",
@@ -158,6 +160,10 @@ def erase(conn: db.Connection, person: str, now: datetime,
            ([*names, person],))  # too: what a shadow answered is only ever for graders
     delete("shadow_grades", "update shadow_answers set graded_by = null where graded_by = "
            "any(%s)", ([*names, person],))  # the grade stays, without whose it was
+    if count := run_cases.forget(conn, [*names, person]):  # out of every draft that holds it
+        gone["kept_cases"] = count
+    delete("cases_kept_by", "update kept_cases set kept_by = null where kept_by = any(%s)",
+           ([*names, person],))
     delete("questions", "delete from questions where acts_for && %s and acts_for <@ %s",
            (names, names))  # for them alone: one for others too is theirs as well
     delete("repeats", "delete from task_repeats where owner = any(%s)", (names,))

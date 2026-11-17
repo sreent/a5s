@@ -18,6 +18,7 @@ const KINDS: Record<string, [(n: number) => string, (n: number) => string]> = {
   emails: [(n) => t("{n} email", { n }), (n) => t("{n} emails", { n })],
   links: [(n) => t("{n} link", { n }), (n) => t("{n} links", { n })],
   numbers: [(n) => t("{n} number", { n }), (n) => t("{n} numbers", { n })],
+  records: [(n) => t("{n} record's key", { n }), (n) => t("{n} records' keys", { n })],
 };
 
 function masked(counts: Record<string, number>): string {
@@ -64,8 +65,9 @@ export function KeepAsCase({ run }: { run: string }) {
   return (
     <section className="card" id="keep-case">
       <h2>{t("Keep it as a test case")}</h2>
-      <p className="note">{t("So drafts of the {agent} are judged against real work. {masked} Code can't know every name someone might write: read what's left, and put the sandbox's made-up records in place of the real ones it names.",
+      <p className="note">{t("So drafts of the {agent} are judged against real work. {masked} Code can't know every name someone might write: read what's left, and put the sandbox's made-up records where it says [record 1] and so on.",
         { agent: found.agent, masked: masked(found.masked) })}</p>
+      {found.read_outside && <p className="note" id="case-outside">{t("Its run read content from outside, which the case can't keep: the sandbox and the suite send each step with a file in its place, which marks its run as the real one was.")}</p>}
       {kept ? (
         <p role="status">{t("Kept as {name}, in {file} of", { name: kept.case.name, file: kept.file })} <Link to={{ page: "draft", draft: kept.draft }}>{t("your draft of the {agent}", { agent: found.agent })}</Link>.</p>
       ) : (

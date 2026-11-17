@@ -1100,7 +1100,8 @@ export type RunCaseKept = {
 
 // A run as a test case, for its author to check and keep (core/run_cases.py): what was
 // said to the agent and what it answered, masked by code; how many of each kind code masked,
-// such as names; and the tools it used, which a5s let it, or held for someone to decide.
+// such as names; the tools it used, which a5s let it, or held for someone to decide; and
+// whether the run read content from outside, which the case can't keep.
 export type RunCaseOffered = {
   run: string;
   agent: string;
@@ -1108,6 +1109,7 @@ export type RunCaseOffered = {
   answer: string;
   masked: Record<string, number>;
   uses: string[];
+  read_outside?: boolean;
 };
 
 export type RunCaseStep = {

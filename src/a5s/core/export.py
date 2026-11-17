@@ -27,7 +27,7 @@ from __future__ import annotations
 from typing import Any, LiteralString
 
 from a5s import db
-from a5s.core import departures, proposals, topics
+from a5s.core import departures, proposals, run_cases, topics
 
 FIRST_LINE = "split_part(said, E'\\n', 1)"  # what a change does: the rest is records and people
 # What each kind of the ledger's entries is, in words the officer can pass on
@@ -259,6 +259,7 @@ def gather(conn: db.Connection, person: str) -> dict[str, Any]:
             "approved": rows("select digest, approved_at, refused is not null as refused "
                              "from settings_approvals where person = any(%(ids)s) "
                              f"and {within('approved_at')} order by approved_at")},
+        "cases_from_runs": run_cases.held(conn, [person]),  # test cases that hold their words
         "instances_they_run": [r["id"] for r in rows(
             "select id from instances where owner = any(%(names)s) or deputy = any(%(names)s) "
             "order by id")],

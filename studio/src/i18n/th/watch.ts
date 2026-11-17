@@ -285,13 +285,17 @@ export const WATCH: Record<string, string> = {
   "{n} links": "ลิงก์ {n} รายการ",
   "{n} number": "ตัวเลข {n} รายการ",
   "{n} numbers": "ตัวเลข {n} รายการ",
+  "{n} record's key": "รหัสระเบียน {n} รายการ",
+  "{n} records' keys": "รหัสระเบียน {n} รายการ",
   "Code masked {masked}.": "โค้ดปิดบัง {masked} แล้ว",
   "Code found nothing to mask.": "โค้ดไม่พบสิ่งที่ต้องปิดบัง",
   "From run {run}": "จากการทำงาน {run}",
   "Keep it as a test case": "เก็บเป็นกรณีทดสอบ",
   "Kept it as {name} in your draft of the {agent}.": "เก็บเป็น {name} ในฉบับร่าง {agent} ของคุณแล้ว",
-  "So drafts of the {agent} are judged against real work. {masked} Code can't know every name someone might write: read what's left, and put the sandbox's made-up records in place of the real ones it names.":
-    "เพื่อให้ฉบับร่างของ {agent} ได้รับการประเมินเทียบกับงานจริง {masked} โค้ดไม่อาจรู้จักทุกชื่อที่อาจมีคนเขียนไว้ ให้อ่านสิ่งที่เหลือ และใช้ระเบียนสมมติของแซนด์บ็อกซ์แทนระเบียนจริงที่ข้อความระบุถึง",
+  "So drafts of the {agent} are judged against real work. {masked} Code can't know every name someone might write: read what's left, and put the sandbox's made-up records where it says [record 1] and so on.":
+    "เพื่อให้ฉบับร่างของ {agent} ได้รับการประเมินเทียบกับงานจริง {masked} โค้ดไม่อาจรู้จักทุกชื่อที่อาจมีคนเขียนไว้ ให้อ่านสิ่งที่เหลือ และใช้ระเบียนสมมติของแซนด์บ็อกซ์แทนตรงที่เขียนว่า [record 1] และอื่นๆ",
+  "Its run read content from outside, which the case can't keep: the sandbox and the suite send each step with a file in its place, which marks its run as the real one was.":
+    "การทำงานนั้นอ่านเนื้อหาจากภายนอก ซึ่งกรณีทดสอบเก็บไว้ไม่ได้ แซนด์บ็อกซ์และชุดทดสอบจึงส่งแต่ละขั้นตอนพร้อมไฟล์แทนเนื้อหานั้น เพื่อให้การทำงานถูกทำเครื่องหมายเช่นเดียวกับการทำงานจริง",
   "Kept as {name}, in {file} of": "เก็บเป็น {name} ไว้ใน {file} ของ",
   "your draft of the {agent}": "ฉบับร่าง {agent} ของคุณ",
   "What was said to it, as you'll keep it": "สิ่งที่พูดกับเอเจนต์ ตามที่คุณจะเก็บไว้",
