@@ -81,6 +81,18 @@
 
 {{- define "a5s.env.anchor" -}}
 {{ include "a5s.secretEnv" (dict "root" . "name" "A5S_DATABASE_URL" "key" "database-anchor-url") }}
+{{ include "a5s.env.copies" . }}
+{{- end }}
+
+{{/* `a5s restore`'s, after the database is restored from a backup: the core's database, as its
+role, and the ledger's copies, as the copier reaches them (docs/runbooks.md#restoring-from-a-backup) */}}
+{{- define "a5s.env.restore" -}}
+{{ include "a5s.secretEnv" (dict "root" . "name" "A5S_DATABASE_URL" "key" "database-gateway-url") }}
+{{ include "a5s.env.copies" . }}
+{{- end }}
+
+{{/* Where the ledger's copies are, and how to reach them and the database */}}
+{{- define "a5s.env.copies" -}}
 - name: A5S_ANCHOR_STORE
   value: {{ required "set anchor.store, where the ledger's locked copies go" .Values.anchor.store | quote }}
 {{- with .Values.anchor.retainDays }}

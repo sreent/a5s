@@ -20,6 +20,7 @@ from a5s.config import Config
 from a5s.core import anchor, ledger, restoring
 from a5s.core.stores import FolderStore
 from test_anchor import check, copy, write
+from test_configuration import pod, rendered
 
 
 def restored(url: str, through: int) -> None:
@@ -190,3 +191,37 @@ def test_the_core_wont_start_on_a_restored_database_where_it_reads_the_copies(da
                  service_token="t" * 40, root=tmp_path, anchor_store=store.path.as_uri())
     with pytest.raises(RuntimeError, match="hold entries 6 to 9, which the database lacks"):
         cli._service(cfg, "gateway")
+
+
+def test_a_restore_a_deployment_names_runs_once(database, tmp_path, capsys):
+    store = backed_up(database, tmp_path)
+    cfg = Config(database_url=db.as_role(database, "gateway"), gateway_url="http://127.0.0.1:1",
+                 service_token="t" * 40, root=tmp_path, anchor_store=store.path.as_uri())
+    cli._restore(cfg, "backup-2026-11-17")
+    assert "Put back 4 entries" in capsys.readouterr().out
+    cli._restore(cfg, "backup-2026-11-17")  # the chart's job, at the next upgrade
+    assert "already" in capsys.readouterr().out
+    with db.transaction(database) as conn:
+        assert conn.execute("select count(*) as n from ledger where kind = 'restore'"
+                            ).fetchone()["n"] == 1
+
+
+def test_the_chart_restores_before_setup_once_a_backup_is_named():
+    found = {(d["kind"], d["metadata"]["name"]): d
+             for d in rendered("ci-values.yaml", sets=("restore.id=backup-2026-11-17",))}
+
+    def weight(kind: str, name: str) -> int:
+        return int(found[(kind, name)]["metadata"]["annotations"]["helm.sh/hook-weight"])
+
+    job = found[("Job", "a5s-restore")]
+    assert set(job["metadata"]["annotations"]["helm.sh/hook"].split(",")) == {
+        "pre-install", "pre-upgrade"}  # before any part starts, in a new cluster too
+    assert weight("ServiceAccount", "a5s-restore") < weight("Job", "a5s-restore") < weight(
+        "Job", "a5s-setup")  # its own account first, then it, then setup
+    spec = pod(job)
+    [container] = spec["containers"]
+    env = {e["name"]: e for e in container["env"]}
+    assert container["args"] == ["restore", "--id", "backup-2026-11-17"]
+    assert env["A5S_DATABASE_URL"]["valueFrom"]["secretKeyRef"]["key"] == "database-gateway-url"
+    assert "A5S_ANCHOR_STORE" in env and spec["serviceAccountName"] == "a5s-restore"
+    assert not [d for d in rendered("ci-values.yaml") if d["metadata"]["name"] == "a5s-restore"]

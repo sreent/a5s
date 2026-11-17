@@ -126,6 +126,15 @@ anchor:
   s3Endpoint: ""
   s3Region: ""
 
+# Restoring the database from a backup (docs/runbooks.md#restoring-from-a-backup): with every
+# part stopped, install or upgrade with restore.id set to the backup's name, and `a5s restore`
+# runs first, before setup, which writes to the ledger. It runs as the core's database role and
+# the copier's store, under an account of its own, <release>-restore, with the copier's
+# annotations and labels below: give it the copier's right to read the store. It runs once for
+# each name, so the value can stay until the next restore.
+restore:
+  id: ""
+
 # The docs repositories the scenario's libraries.yaml names (docs/connectors.md#document-libraries):
 # beside the gateway, a git-sync for each keeps its checkout current, over HTTPS, in a folder by
 # the library's name, where the core reads it, each document naming its readers. None, and the

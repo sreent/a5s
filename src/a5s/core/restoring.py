@@ -43,18 +43,26 @@ from a5s.core.stores import Store
 HELD = "held after a restore from a backup: it may have gone already"
 
 
-def restore(conn: db.Connection, store: Store) -> dict[str, Any]:
-    """Restore what a5s keeps after its database was restored from a backup, in the caller's
-    transaction: how many entries it put back, through which, how many messages, events and
-    schedules it took as done, whom it erased again and whom the officer must, how many sends
-    it held, and how many mailboxes start afresh."""
+def restored(conn: db.Connection, backup: str) -> int | None:
+    """The ledger's entry for a restore after the backup a deployment names, if there is one:
+    so the restore its settings ask for runs once, though they go on naming it."""
+    row = conn.execute("select seq from ledger where kind = 'restore' and (entry::jsonb -> 'args' "
+                       "->> 'backup') = %s order by seq limit 1", (backup,)).fetchone()
+    return row["seq"] if row else None
+
+
+def restore(conn: db.Connection, store: Store, backup: str | None = None) -> dict[str, Any]:
+    """Restore what a5s keeps after its database was restored from a backup, which `backup`
+    names if given, in the caller's transaction: how many entries it put back, through which,
+    how many messages, events and schedules it took as done, whom it erased again and whom the
+    officer must, how many sends it held, and how many mailboxes start afresh."""
     rows = anchor.beyond(conn, store)
     for row in rows:
         conn.execute("insert into ledger (seq, entry, prev_hash, hash) values (%s, %s, %s, %s)",
                      (row["seq"], row["entry"], bytes.fromhex(row["prev_hash"]),
                       bytes.fromhex(row["hash"])))
     entries = [json.loads(r["entry"]) for r in rows]
-    done = {"put_back": len(rows), "through": rows[-1]["seq"] if rows else None,
+    done = {"backup": backup, "put_back": len(rows), "through": rows[-1]["seq"] if rows else None,
             **_done(conn, entries), **_erased(conn, entries)}
     done["held"] = conn.execute(
         "update outbox set channel = 'local', inbound_id = null, retry_at = null, problem = %s "

@@ -298,10 +298,11 @@ def _seal_again(cfg: Config, leaked: bool) -> None:
     print(rotation.told(done))
 
 
-def _restore(cfg: Config) -> None:
+def _restore(cfg: Config, backup: str | None = None) -> None:
     """Restore what a5s keeps after its database was restored from a backup, as the core, with
     the ledger's copies as the copier reads them (core/restoring.py): with the core's database
-    address, such as in the copier's container, which reaches the store."""
+    address, such as in the copier's container, which reaches the store. Once for a backup it
+    names, as the chart's job does at each install or upgrade while its settings name one."""
     store = build.store(cfg)
     if store is None:
         sys.exit("Set A5S_ANCHOR_STORE to the ledger's copies, as the copier has it.")
@@ -309,7 +310,11 @@ def _restore(cfg: Config) -> None:
     db.own_role(cfg.database_url, "gateway")
     try:
         with db.transaction(cfg.database_url) as conn:
-            done = restoring.restore(conn, store)
+            if backup and (seq := restoring.restored(conn, backup)) is not None:
+                print(f"a5s restored after the backup {backup} already, as entry {seq} of the "
+                      "ledger says: nothing to do.")
+                return
+            done = restoring.restore(conn, store, backup)
     except anchor.AnchorError as exc:
         sys.exit(str(exc))
     print(restoring.told(done))
@@ -750,11 +755,13 @@ def main(argv: list[str] | None = None) -> None:
     erased.add_argument("--by", help="in development, the officer, who asks nowhere else")
     sub.add_parser("status", help="how a5s is doing: its queue, runs, denials, budgets and "
                                   "objectives")
-    sub.add_parser("restore", help="after the database is restored from a backup, as the "
-                                   "core, before any part starts: put back the ledger's "
-                                   "entries its copies hold, take as done what their runs "
-                                   "were for, hold what a5s would send again, and start "
-                                   "mailboxes afresh")
+    restore = sub.add_parser("restore", help="after the database is restored from a backup, "
+                                             "as the core, before any part starts: put back "
+                                             "the ledger's entries its copies hold, take as "
+                                             "done what their runs were for, hold what a5s "
+                                             "would send again, and start mailboxes afresh")
+    restore.add_argument("--id", dest="backup", help="the backup's name, as the chart's "
+                         "restore.id gives it: once a5s has restored after it, nothing more")
     again = sub.add_parser("seal-again", help="to rotate the seal key: seal again with the "
                                               "first of A5S_SEAL_KEYS what the others sealed, "
                                               "and retire them, as the core, where it runs")
@@ -964,7 +971,7 @@ def main(argv: list[str] | None = None) -> None:
     elif args.command == "seal-again":
         _seal_again(cfg, args.leaked)
     elif args.command == "restore":
-        _restore(cfg)
+        _restore(cfg, args.backup)
     elif args.command == "measures":
         print(measures.told(_core(cfg, lambda core: core.measures(
             args.days, agent=args.agent, instance=args.instance))))

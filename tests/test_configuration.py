@@ -231,12 +231,13 @@ def test_compose_sets_no_setting_to_its_default():
     assert found == [], f"leave these unset, so a5s's own default holds: {found}"
 
 
-def rendered(*values: str, sandbox: bool = False) -> list[dict]:
-    """The chart, as helm renders it with these values files, as a5s's release or the
-    sandbox's."""
+def rendered(*values: str, sandbox: bool = False, sets: tuple[str, ...] = ()) -> list[dict]:
+    """The chart, as helm renders it with these values files, and these values set, as a5s's
+    release or the sandbox's."""
     charts = ROOT / "deploy" / "helm"
     args = ["template", "a5s", "/charts/a5s", *(a for v in values for a in ("-f", f"/charts/{v}")),
-            *(["--set", "mode=sandbox"] if sandbox else [])]
+            *(["--set", "mode=sandbox"] if sandbox else []),
+            *(a for s in sets for a in ("--set", s))]
     if shutil.which("helm"):
         command = ["helm", *[a.replace("/charts", str(charts)) for a in args]]
     elif shutil.which("docker") and subprocess.run(["docker", "info"], capture_output=True,
