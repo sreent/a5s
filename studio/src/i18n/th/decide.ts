@@ -112,6 +112,7 @@ export const DECIDE: Record<string, string> = {
   "The {agent} acted on its own": "{agent} ดำเนินการเอง",
   "{action} in {part} · sampled {day}": "{action} ใน {part} · สุ่มเมื่อ {day}",
   "What code flagged": "สิ่งที่โค้ดตั้งข้อสังเกต",
+  "What they asked": "สิ่งที่ผู้ขอบอกไว้",
   "Your grade for: {what}": "การให้คะแนนของคุณสำหรับ: {what}",
   "{n} chosen: send them when you're ready.": "เลือกไว้ {n} รายการ: ส่งได้เมื่อคุณพร้อม",
   "Choose a grade for a sample first.": "เลือกการให้คะแนนให้ตัวอย่างก่อน",

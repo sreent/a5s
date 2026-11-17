@@ -31,7 +31,7 @@ from typing import Any
 
 from a5s import db
 from a5s.core import extractor
-from a5s.core.samples import GRADES
+from a5s.core.samples import GRADES, asked_of
 
 MOST = 2  # samples judged a sweep: each is a model call, so a slow judge holds nothing up
 WHY = 200  # characters of the judge's reason a5s keeps
@@ -56,12 +56,22 @@ def asked(api: str, alias: str, rubric: str, sample: dict) -> dict[str, Any]:
         "What a right change is, for this agent: " + (rubric.strip() or
                                                       "what the records and what was asked call for."),
         f"The type of change: {sample['action']}",
+        _asked(sample),
         f"The change, as code describes it:\n<<<\n{sample['said']}\n>>>",
         "What code flagged to its decider: " + ("; ".join(map(str, flags)) if flags else "nothing"),
         f"The records it named, as they stood when it was asked for:\n<<<\n{records}\n>>>",
         "What became of it: " + DECIDED.get(sample.get("decided") or "",
                                             "a5s made it, at level 2, with no decider")))
     return extractor.asked(api, alias, SYSTEM, user)
+
+
+def _asked(sample: dict) -> str:
+    """What the judge is told was asked of the run that made the change (round 15, C1)."""
+    if said := asked_of(sample):
+        return f"What the people it answered asked of it, as they said it:\n<<<\n{said}\n>>>"
+    if sample.get("asked_digest"):
+        return "What was asked of it: a5s no longer keeps it"
+    return "Nobody asked for it: it came after something else, such as another system's event"
 
 
 def verdict(reply: str) -> tuple[str, str] | None:
@@ -84,7 +94,8 @@ def pending(conn: db.Connection, judged_by: dict[str, str]) -> list[dict]:
         return []
     return conn.execute(
         "select s.id, s.scenario, s.definition, s.instance_id, s.part, s.action, s.said, "
-        "s.records, s.flags, s.decided from samples s where s.definition = any(%s) "
+        "s.records, s.flags, s.decided, s.asked, s.asked_digest from samples s "
+        "where s.definition = any(%s) "
         "and not exists (select 1 from judgments j where j.sample_id = s.id) "
         "and s.drawn_at > now() - interval '91 days' order by s.id limit %s",
         (sorted(judged_by), MOST)).fetchall()

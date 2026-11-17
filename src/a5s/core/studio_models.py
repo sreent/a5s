@@ -1559,6 +1559,7 @@ class SampleLine(Shape):
     flags: list[str]
     decided: str | None  # a decider's approve or reject, for a held change
     drawn_at: str
+    asked: str | None = None  # what the people it answered said, masked until names are agreed
 
 
 class GradeNow(Shape):

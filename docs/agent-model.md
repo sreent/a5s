@@ -206,7 +206,7 @@ The register adds what changes without a release: each instance, its identity an
 
 ## The judge
 
-An agent's definition may name a judge, an approved model, with its rubric: what a right change is for this agent, in its owners' words. a5s asks the judge about each sample of the agent's work it draws for people to grade, as their page shows it: the change, in code's words, what code flagged to its decider, the records it named as they stood, and what its decider did. The judge says right, wrong or critical, and why, in a sentence ([`core/judging.py`](../src/a5s/core/judging.py)).
+An agent's definition may name a judge, an approved model, with its rubric: what a right change is for this agent, in its owners' words. a5s asks the judge about each sample of the agent's work it draws for people to grade, as their page shows it: the change, in code's words, what the people its run answered asked of it, what code flagged to its decider, the records it named as they stood, and what its decider did. The judge says right, wrong or critical, and why, in a sentence ([`core/judging.py`](../src/a5s/core/judging.py)).
 
 - **People's grades stay the evidence.** The test that raises and lowers a5s's caps reads people's grades alone, so a judge's verdict never moves a cap, however sure it is ([autonomy](#autonomy)).
 - **People grade blind.** The channels app, which serves the grading page, can read a verdict only once people have graded its sample, so graders grade as they would without it.

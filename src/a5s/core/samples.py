@@ -73,7 +73,8 @@ _SEALED_GRADE = ("scenario", "id", "grade", "graded_by", "graded_at", "grade_tok
 # A sample as the core drew it: what it is of, whose, and what graders read (round 15, B2)
 _SEALED_DRAW = ("id", "scenario", "kind", "proposal_id", "run_id", "instance_id", "release",
                 "definition", "part", "action", "said", "records", "acts_for", "decided",
-                "decided_by", "deciders", "drawn_at", "flags")
+                "decided_by", "deciders", "drawn_at", "flags", "asked_digest")
+ASKED = 2_000  # characters of what was said to the run, kept with its sample
 _SEALED_CAP = ("behaviour", "part", "action", "cap", "since", "why", "threshold", "window_from",
                "seq")
 
@@ -289,16 +290,41 @@ def draw(conn: db.Connection, keys: tuple[str, ...], scenario: str, kind: str, r
         rate = min(1.0, PER_QUARTER / max(3 * lately, 1))
         if drawn >= PER_QUARTER or random.random() >= rate:  # a sample, not a secret
             return False
+    asked = asked_in(conn, run)  # what was asked of the run, for its graders (round 15, C1)
     row = conn.execute(
         "insert into samples (scenario, kind, proposal_id, run_id, instance_id, release, "
         "definition, part, action, said, records, acts_for, decided, decided_by, deciders, "
-        "drawn_at, flags) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
-        "%s) returning *",
+        "drawn_at, flags, asked, asked_digest) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
+        "%s, %s, %s, %s, %s, %s, %s, %s, %s) returning *",
         (scenario, kind, proposal, run, instance, release, definition, part, action, said,
          Jsonb(records), acts_for, decided, decided_by[0] if decided_by else None,
-         list(dict.fromkeys(decided_by or [])), now, Jsonb(list(flags or [])))).fetchone()
+         list(dict.fromkeys(decided_by or [])), now, Jsonb(list(flags or [])), asked,
+         digest_of(asked))).fetchone()
     sealed_draw(conn, keys, row)
     return True
+
+
+def asked_in(conn: db.Connection, run: str) -> str | None:
+    """What the people a run answered said to it, as they said it, for whoever grades its
+    change: so a change to the wrong record shows (round 15, C1). None for a run nobody asked,
+    such as an event's."""
+    said = [r["content"] for r in conn.execute(
+        "select content from turns where run_id = %s::uuid and role = 'person' order by id",
+        (str(run),))]
+    return "\n\n".join(said)[:ASKED] or None
+
+
+def digest_of(asked: str | None) -> str | None:
+    """What a sample's seal holds of what was asked: its digest, so an erasure can take the
+    words out and leave the sample counting."""
+    return hashlib.sha256(asked.encode()).hexdigest() if asked else None
+
+
+def asked_of(sample: dict) -> str | None:
+    """What was asked of a sample's run, as the core drew it: nothing once an erasure took it
+    out, nor where it isn't what the core sealed."""
+    asked = sample.get("asked")
+    return asked if asked and digest_of(asked) == sample.get("asked_digest") else None
 
 
 def sealed_draw(conn: db.Connection, keys: tuple[str, ...], row: dict | None) -> None:
@@ -500,13 +526,15 @@ def undone(conn: db.Connection, keys: tuple[str, ...], scenario: str, change: di
             (scenario, change["run_id"], part, change["action"], kind,
              change["proposal_id"], change["record"])).fetchone()
         if row is None:  # never drawn: it counts all the same
+            asked = asked_in(conn, str(change["run_id"]))
             row = conn.execute(
                 "insert into samples (scenario, kind, proposal_id, run_id, instance_id, release, "
-                "definition, part, action, said, records, acts_for, drawn_at) values (%s, %s, %s, "
-                "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) returning *",
+                "definition, part, action, said, records, acts_for, drawn_at, asked, asked_digest) "
+                "values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) returning *",
                 (scenario, kind, change["proposal_id"], change["run_id"], change["instance_id"],
                  change["release"], change["definition"], part, change["action"], change["said"],
-                 Jsonb({change["record"]: None}), list(change["acts_for"]), now)).fetchone()
+                 Jsonb({change["record"]: None}), list(change["acts_for"]), now, asked,
+                 digest_of(asked))).fetchone()
             assert row is not None
             sealed_draw(conn, keys, row)
             row = conn.execute("select * from samples where id = %s", (row["id"],)).fetchone()

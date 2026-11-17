@@ -64,6 +64,7 @@ WORDS = {
     "handovers": "their conversations handed to people, with what was said there",
     "shadow_answers": "what shadows answered them, beside the answers sent, for graders",
     "shadow_grades": "whose grades of shadows' answers they were",
+    "asked_in_samples": "what they asked of runs whose changes were drawn for grading",
     "kept_cases": "test cases kept from runs that held what they said, out of every draft",
     "kept_cases_left": "test cases kept from runs that hold what they said, in a draft's file "
                        "code can't read: put it right, and erase them again",
@@ -166,6 +167,9 @@ def erase(conn: db.Connection, person: str, now: datetime,
            "any(%s)", ([*names, person],))  # the grade stays, without whose it was
     delete("feedback_grades", "update answer_feedback set graded_by = null where graded_by = "
            "any(%s)", ([*names, person],))  # as does a grade of an answer said to be wrong
+    delete("asked_in_samples", "update samples set asked = null where acts_for && %s and asked "
+           "is not null", ([*names, person],))  # the sample stays, as evidence: its seal holds
+    # what was asked by a digest alone, so it still counts (round 15, C1)
     count, stuck = run_cases.forget(conn, [*names, person])  # out of every draft holding it
     if count:
         gone["kept_cases"] = count

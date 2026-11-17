@@ -1174,6 +1174,7 @@ export type SampleLine = {
   flags: string[];
   decided: string | null;
   drawn_at: string;
+  asked?: string | null;
 };
 
 export type Samples = {
