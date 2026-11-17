@@ -126,7 +126,7 @@ def test_the_studio_and_the_web_chat_speak_thai_to_those_who_read_it(stack, appr
     accessible(page)
     page.goto(f"{approving}/studio/spending")
     page.wait_for_selector("#part-billing .cost-bars", timeout=30000)
-    assert page.inner_text("h1") == "ค่าใช้จ่าย"
+    assert page.inner_text("h1") == "ค่าใช้จ่าย" and "UTC" in page.inner_text("#utc")
     assert "งบประมาณ" in page.inner_text("#part-billing")
     accessible(page)
     # Back to English on their own page, and the studio speaks it at once
@@ -178,7 +178,8 @@ def test_a5s_writes_its_own_words_in_the_language_someone_reads(stack, approving
     as_person(approving, provider, "ana", "POST", "/studio/api/you/language", {"language": "th"})
     waiting = as_person(approving, provider, "ana", "GET", "/studio/api/home").json()["waiting"]
     [spent] = [w for w in waiting if w["kind"] == "spending"]
-    assert spent["what"].startswith("billing ใช้ไปแล้ว") and "เกินงบประมาณ" in spent["what"]
+    assert spent["what"].startswith("billing ใช้ไปแล้ว")  # past the budget it set, never
+    assert "เกินงบ\u2060ประมาณที่ตั้งไว้" in spent["what"]  # read as the overage (round 14)
     assert spent["why"] == ["คุณเป็นเจ้าของ billing"]
     roles = as_person(approving, provider, "ana", "GET", "/studio/api/you").json()["roles"]
     owner = next(r for r in roles if r["role"] == "part-owner:billing")

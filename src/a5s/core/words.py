@@ -67,9 +67,9 @@ TH: dict[str, str] = {
     "{n} changes": "การเปลี่ยนแปลง {n} รายการ",
     # Spending (core/spending.py)
     "{whose} has spent {amount} this month, past its budget of {budget}":
-        "{whose} ใช้ไปแล้ว {amount} ในเดือนนี้ เกินงบประมาณ {budget}",
+        "{whose} ใช้ไปแล้ว {amount} ในเดือนนี้ เกินงบ\u2060ประมาณที่ตั้งไว้ {budget}",
     "{whose} is on course to spend {amount} this month, past its budget of {budget}":
-        "{whose} มีแนวโน้มจะใช้ {amount} ในเดือนนี้ เกินงบประมาณ {budget}",
+        "{whose} มีแนวโน้มจะใช้ {amount} ในเดือนนี้ เกินงบ\u2060ประมาณที่ตั้งไว้ {budget}",
     "you own {what}": "คุณเป็นเจ้าของ {what}",
     "{whose} ran {n} times this month on a model whose prices aren't known, which count for "
     "nothing against its budget":

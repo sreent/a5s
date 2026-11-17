@@ -271,3 +271,25 @@ def test_models_yaml_names_the_currency_it_prices_in(tmp_path):
     named.write_text("currency: baht\nmodels: {}\n")
     with pytest.raises(ValueError, match="a code such as GBP"):
         load_currency(named)
+
+
+def test_budgets_in_another_currency_need_each_budgets_owner(stack):
+    """Round 14 (D9): the same amounts in another currency are other budgets, so a version
+    that changes only their currency needs each budget's owner, as one that changes an amount
+    does."""
+    budgets = {"parts": {"orders": 250}, "agents": {"assistant": 300}}
+    assert not stack.settle(spending=budgets, signers=("ana", "omar", "priya")).refused
+    refused = stack.settle(spending={**budgets, "currency": "THB"}, signers=("ana",)).refused
+    assert any("owner of orders" in why for why in refused), refused
+    assert any("owner of the assistant hasn't approved its budget" in why for why in refused)
+    assert not stack.settle(spending={**budgets, "currency": "THB"},
+                            signers=("ana", "omar", "priya")).refused
+
+
+def test_what_each_message_cost_is_said_only_where_every_runs_cost_is_known(stack):
+    """Round 14 (D10): a run on a model whose prices aren't known costs nothing in the figures,
+    so what each message cost isn't said while one is among them, never a part of it."""
+    stack.model.reply("Hello.")
+    stack.say("hello")
+    [agent] = [a for a in report(stack, "ana")["agents"] if a["key"] == "assistant"]
+    assert (agent["answered"], agent["unpriced"], agent["per_answer"]) == (1, 1, None)

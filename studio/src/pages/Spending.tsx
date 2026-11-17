@@ -114,7 +114,8 @@ function Panel({ kind, spend, found }: { kind: Kind; spend: gen.Spend; found: ge
               ) : (
                 <>
                   <strong>{t("None")}</strong>
-                  <p>{kind === "part" ? (found.current ? t("Agents answered no messages there this month.") : t("Agents answered no messages there that month."))
+                  <p>{spend.answered > 0 ? t("Some runs were on models whose prices models.yaml doesn't give, so a5s doesn't say what each message cost.")
+                    : kind === "part" ? (found.current ? t("Agents answered no messages there this month.") : t("Agents answered no messages there that month."))
                     : (found.current ? t("Its runs answered no messages this month.") : t("Its runs answered no messages that month."))}</p>
                 </>
               )}
@@ -216,6 +217,7 @@ export function SpendingPage({ month }: { month?: string }) {
           </select>
         </label>
       </PageHead>
+      <p className="note" id="utc">{t("Each month runs from midnight UTC on its first day, as the database's clock stamps each run.")}</p>
       {!data && <Waiting error={error} block />}
       {data && !data.compared && (
         <p className="note" id="uncompared" role="status">{t("The budgets are in {theirs}, and models.yaml prices models in {prices}, so a5s compares what's spent with neither: a version of the settings with the budgets in {prices} puts that right.",

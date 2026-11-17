@@ -120,7 +120,9 @@ def _spending_change(settings: Settings, before: Settings | None) -> tuple[set[s
     def changed(a: dict[str, float], b: dict[str, float]) -> set[str]:
         return {k for k in set(a) | set(b) if a.get(k) != b.get(k)}
 
-    return changed(was.parts, now.parts), changed(was.agents, now.agents)
+    if was.currency != now.currency:  # the same amounts in another currency are other budgets,
+        return set(was.parts) | set(now.parts), set(was.agents) | set(now.agents)  # each its
+    return changed(was.parts, now.parts), changed(was.agents, now.agents)  # owner's (round 14)
 
 
 def _data_protection_change(settings: Settings, before: Settings | None) -> bool:

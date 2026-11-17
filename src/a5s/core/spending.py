@@ -125,7 +125,9 @@ def _shown(key: str, spend: dict, budget: float | None, left: float | None) -> d
             "forecast": None if pace is None or left is None else spend["spent"] + pace * left,
             "runs": spend["runs"], "unpriced": spend["unpriced"],
             "answered": spend["answered"], "tokens": spend["tokens"],
-            "per_answer": spend["spent"] / spend["answered"] if spend["answered"] else None}
+            # what each message cost, only where every run's cost is known (round 14)
+            "per_answer": spend["spent"] / spend["answered"]
+            if spend["answered"] and not spend["unpriced"] else None}
 
 
 def sees_any(url: str, person: Person) -> bool:

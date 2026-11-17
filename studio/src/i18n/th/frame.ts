@@ -130,7 +130,11 @@ export const FRAME: Record<string, string> = {
   "On course for {amount} by {day}, at the last week's pace": "คาดว่าจะถึง {amount} ภายใน {day} ตามอัตราของสัปดาห์ที่ผ่านมา",
   "By {day}": "ภายใน {day}",
   "Against": "เทียบกับ",
-  "{amount} over budget": "เกินงบประมาณ {amount}",
+  "{amount} over budget": "เกินงบ⁠ประมาณ {amount}",
+  "Some runs were on models whose prices models.yaml doesn't give, so a5s doesn't say what each message cost.":
+    "บางการทำงานใช้โมเดลที่ models.yaml ไม่ได้ระบุราคา a5s จึงไม่บอกค่าใช้จ่ายต่อข้อความ",
+  "Each month runs from midnight UTC on its first day, as the database's clock stamps each run.":
+    "แต่ละเดือนเริ่มตั้งแต่เที่ยงคืนตามเวลา UTC ของวันแรก ตามเวลาที่ฐานข้อมูลบันทึกแต่ละการทำงาน",
   "{amount} under budget, at this pace": "ต่ำกว่างบประมาณ {amount} ตามอัตรานี้",
   "{amount} under budget": "ต่ำกว่างบประมาณ {amount}",
   "Each message answered": "ต่อข้อความที่ตอบ",
