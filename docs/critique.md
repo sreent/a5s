@@ -705,7 +705,7 @@ Six reviewers who hadn't written a5s each took a part and tested the running sta
 | B7 | A part's owner couldn't suspend an instance at work in their part | Medium | Its parts' owners and delegates may | Fixed |
 | B8 | An instance's page said level 2 where a cap held it at 1, and showed nothing of the way there | Medium | | Deferred, Small to Medium |
 | B9 | An approval while the instance was suspended was accepted, then dropped | Medium | It's refused, saying to reject it now or approve it once the instance is at work | Fixed |
-| C3 | A grade chosen for a sample that lapsed jammed the grade page | Medium | | Deferred, Small |
+| C3 | A grade chosen for a sample that lapsed jammed the grade page | Medium | A grade chosen for a sample no longer offered, which lapsed or someone else graded, goes from what's sent, saying so, and the rest go | Fixed |
 | C4 | One grader alone could raise level 2 in minutes | Medium | | Deferred, Medium: a cap on one grader's share, and a second grader for some |
 | C5 | Shadow pairs show one message, without the conversation or the record | Medium | | Deferred, Medium |
 | C6 | A test case kept from a real run kept bank account numbers, dates of birth, national ids and addresses | Medium | Code masks those too in what's kept from a run: dates of birth, by what's said before them or a year at least fifteen back, in English, Thai and the Buddhist era; ids of letters and digits; numbers of six digits or more; street addresses and postcodes. A due date stays, as do amounts, and what graders and owners read is masked as before | Fixed |

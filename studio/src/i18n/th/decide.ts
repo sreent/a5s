@@ -116,6 +116,10 @@ export const DECIDE: Record<string, string> = {
   "Your grade for: {what}": "การให้คะแนนของคุณสำหรับ: {what}",
   "{n} chosen: send them when you're ready.": "เลือกไว้ {n} รายการ: ส่งได้เมื่อคุณพร้อม",
   "Choose a grade for a sample first.": "เลือกการให้คะแนนให้ตัวอย่างก่อน",
+  "A sample you chose no longer waits for a grade: it lapsed, or someone else graded it, so it's out of your grades.":
+    "ตัวอย่างที่คุณเลือกไว้ไม่รอการให้คะแนนแล้ว เพราะหมดเวลาหรือมีผู้อื่นให้คะแนนไปแล้ว จึงนำออกจากการให้คะแนนของคุณ",
+  "{samples} you chose no longer wait for a grade: they lapsed, or someone else graded them, so they're out of your grades.":
+    "{samples}ที่คุณเลือกไว้ไม่รอการให้คะแนนแล้ว เพราะหมดเวลาหรือมีผู้อื่นให้คะแนนไปแล้ว จึงนำออกจากการให้คะแนนของคุณ",
   "Signing you in again, to give this grade alone…": "กำลังลงชื่อเข้าใช้อีกครั้ง เพื่อส่งการให้คะแนนนี้เท่านั้น…",
   "Signing you in again, to give these grades alone…": "กำลังลงชื่อเข้าใช้อีกครั้ง เพื่อส่งการให้คะแนนเหล่านี้เท่านั้น…",
   "Nothing waits for you to grade.": "ไม่มีสิ่งใดรอให้คุณให้คะแนน",

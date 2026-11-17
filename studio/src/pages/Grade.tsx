@@ -121,6 +121,22 @@ export function GradePage() {
   }, []);
   const now = useLoad(() => (acted ? send<GradeNow>("POST", "/grade/review") : new Promise<GradeNow>(() => {})),
                       [acted]);
+  // A grade chosen for a sample no longer offered, which lapsed or someone else graded, goes,
+  // or every grade sent with it would be refused for it, with no card left to take it back by
+  useEffect(() => {
+    if (!now.data) return;
+    const offered = new Set(now.data.samples.map((sample) => sample.id));
+    const gone = [...chosen.keys()].filter((id) => !offered.has(id));
+    if (!gone.length) return;
+    const next = new Map([...chosen].filter(([id]) => offered.has(id)));
+    setChosen(next);
+    if (next.size) keepUnkept(CHOSEN, [...next.entries()]);
+    else keptNow(CHOSEN);
+    setStatus(gone.length === 1
+      ? t("A sample you chose no longer waits for a grade: it lapsed, or someone else graded it, so it's out of your grades.")
+      : t("{samples} you chose no longer wait for a grade: they lapsed, or someone else graded them, so they're out of your grades.",
+          { samples: plural(gone.length, "sample") }));
+  }, [now.data]);
 
   const choose = (sample: number, grade: Grade | undefined) => {
     const next = new Map(chosen);

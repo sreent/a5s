@@ -257,3 +257,29 @@ def test_a_grader_grades_in_the_browser(stack, approving, provider, browser):
     page.click("#send")
     page.wait_for_selector("#status >> text=Graded right", timeout=30000)
     assert drawn(stack)[0]["grade"] == "right"
+
+
+def test_a_grade_chosen_for_a_sample_that_lapsed_leaves_the_rest_to_send(stack, approving,
+                                                                           provider, browser):
+    """Round 15, the grader's finding (C3): a grade chosen for a sample that lapsed, or someone
+    else graded, before it was sent, was refused each time it went, with no card left to take
+    it back by, and every other grade with it. It goes, saying so, and the rest go."""
+    for key, due in (("Q-1002", "2026-11-13"), ("Q-1001", "2026-11-20")):
+        asked(stack, ("change_due_date", {"key": key, "due": due}),
+              said=f"Please move {key} to {due}.")
+    decide(approving, provider, [p["digest"] for p in held(stack)])
+    sweep(stack)
+    provider.person = "dana"
+    page = browser.new_page()
+    page.goto(f"{approving}/studio/grade")
+    page.wait_for_selector("[data-sample] >> nth=1", timeout=30000)
+    for card in page.locator("[data-sample]").all():
+        card.get_by_role("button", name="Right").click()
+    first, second = (s["id"] for s in drawn(stack))
+    with db.transaction(stack.admin) as conn:  # as the page waits, one lapses
+        conn.execute("update samples set lapsed_at = now() where id = %s", (first,))
+    page.click("#send")
+    page.wait_for_selector("#status >> text=out of your grades", timeout=30000)
+    page.click("#send")  # what's left goes
+    page.wait_for_selector("#status >> text=Graded right", timeout=30000)
+    assert {s["id"]: s["grade"] for s in drawn(stack)} == {first: None, second: "right"}
