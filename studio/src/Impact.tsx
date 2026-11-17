@@ -48,6 +48,7 @@ export function ImpactPreview({ impact, id = "impact" }: { impact: Impact; id?: 
           </Wide>
         </>
       )}
+      {impact.hidden > 0 && <p className="note" id={`${id}-hidden`}>{t("It counts {calls} of instances you may not watch as they were decided, and shows nothing of them here.", { calls: plural(impact.hidden, "tool call") })}</p>}
       {impact.capped.length > 0 && <ul className="plain notes">{impact.capped.map((c) => <li key={c}>{c}</li>)}</ul>}
       <p className="note">{impact.about}</p>
     </div>

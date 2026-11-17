@@ -387,6 +387,8 @@ export const WATCH: Record<string, string> = {
   "{calls} agents made in the last {days} days, the latest of them,":
     "การเรียกใช้เครื่องมือ {calls} ล่าสุดที่เอเจนต์ทำในช่วง {days} วันที่ผ่านมา",
   "{calls} agents made in the last {days} days": "การเรียกใช้เครื่องมือ {calls} ที่เอเจนต์ทำในช่วง {days} วันที่ผ่านมา",
+  "It counts {calls} of instances you may not watch as they were decided, and shows nothing of them here.":
+    "นับ {calls} ของอินสแตนซ์ที่คุณดูไม่ได้ตามที่ตัดสินไว้ และไม่แสดงอะไรของอินสแตนซ์เหล่านั้นที่นี่",
   "What it would have done differently": "สิ่งที่เวอร์ชันนี้จะทำต่างออกไป",
   "It would have decided each of the {looked} as the version in force did.":
     "เวอร์ชันนี้จะตัดสิน{looked} ทุกรายการเหมือนกับเวอร์ชันที่ใช้อยู่",

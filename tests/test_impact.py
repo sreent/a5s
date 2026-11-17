@@ -2,9 +2,14 @@
 weeks, decided again as the version in force decides them and as the new one would, shown to
 whoever reviews it in the settings and to its approvers before they sign (core/impact.py)."""
 
+from collections import Counter, defaultdict
+from datetime import UTC, datetime, timedelta
+
 import yaml
 
 from a5s import db
+from a5s.contract import InstanceSettings, parse_settings
+from a5s.core import impact
 from conftest import raise_cap
 from test_levels import asked, levelled
 from test_settings_app import api
@@ -116,3 +121,47 @@ def test_the_approve_page_shows_it_beside_what_the_version_says(stack, approving
     text = shown.inner_text()
     assert "change_due_date" in text and "held for a person" in text and "made alone" in text
     accessible(page)
+
+
+def test_whoever_reviews_it_sees_only_the_instances_they_may_watch(stack, approving, provider):
+    """Omar owns orders, and may not watch billing's assistant: a version he writes that would
+    change what it does shows him nothing of its calls, only how many it left out."""
+    asked(stack)
+    raise_cap(stack)
+    text = written(approving, provider, parts=LEVEL_2)
+    mine = reviewed(approving, provider, text)  # Ana's, who runs it and owns billing
+    assert mine["shifts"] and mine["hidden"] == 0
+    found = api(approving, provider, "/settings/api/review", person="omar", text=text)
+    assert found.status_code == 200, found.text
+    his = found.json()["impact"]
+    assert (his["shifts"], his["calls"]) == ([], 0) and his["hidden"] == mine["calls"]
+
+
+def test_a_run_for_nobody_counts_against_its_instance_and_a_shadow_as_a_shadow(stack):
+    """As core/counts.py counts them: a run for nobody, such as one an event started, against
+    its instance's other runs for nobody, of each type's limit for each person in 30 days. And
+    a shadow is decided as a shadow, which changes nothing."""
+    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text())
+    settings["limits"]["change-due-date"]["per_person_30_days"] = 1
+    version = parse_settings(yaml.safe_dump(settings).encode())
+    now = datetime.now(UTC)
+    call = impact.Call(seq=1, at=now, instance="assistant-finance", tool="change_due_date",
+                       keys=("Q-1002",), decision="allow",
+                       run={"id": "r", "trigger": {"kind": "event"}, "acts_for": [],
+                            "read_outside": False})
+    nobody = [f"{impact.NOBODY}assistant-finance"]
+    earlier = defaultdict(list, {(nobody[0], "change-due-date"): [(now - timedelta(days=2), 1)]})
+    assert impact._over(version, "change-due-date", 1, "w", nobody, call, Counter(), earlier)
+    assert not impact._over(version, "change-due-date", 1, "w", nobody, call, Counter(),
+                            defaultdict(list))
+    shadow = InstanceSettings(id="assistant-finance", definition="assistant", serves=("ana",),
+                              parts={"billing": 1}, shadows="assistant-other")
+    assert impact._row(stack.gateway, shadow, call)["status"] == "shadow"
+
+
+def test_each_tool_call_keeps_whether_its_run_had_read_outside_content(stack):
+    """So a call decided before its run read anything from outside is decided again as it was,
+    not as the run stood once it had."""
+    asked(stack)
+    calls = [e for e in stack.ledger() if e["kind"] == "tool"]
+    assert calls and all(e["read_outside"] is False for e in calls)

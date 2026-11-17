@@ -81,7 +81,7 @@ def router(gw: Any) -> APIRouter:
         asker = (p.name if (p := gw.scenario.person(asked["person"])) else asked["person"]
                  ) if asked else None  # who asked for it in the settings app, if anyone did
         valid, _ = registry.signers(settings, gw.scenario.person, approved)
-        preview = impact.shown(gw, before, settings) if status == "waiting" else None
+        preview = impact.shown(gw, before, settings, person) if status == "waiting" else None
         return {"serial": row["serial"], "proposed_at": row["proposed_at"].isoformat(),
                 **({"impact": preview} if preview is not None else {}),
                 "in_force": last["serial"] if last else None, "changes": found,

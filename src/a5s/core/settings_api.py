@@ -124,7 +124,7 @@ def router(gw: Any) -> APIRouter:
         }
 
     @api.post("/settings/api/review", **shapes.answers(shapes.SettingsReview))
-    def settings_review(body: Written) -> dict:
+    def settings_review(body: Written, person: Annotated[Person, Depends(settling)]) -> dict:
         """What a version someone wrote would change, the whole of it in words, and who'd
         have to approve it, before they ask for it."""
         with db.transaction(gw.url) as conn:
@@ -134,7 +134,7 @@ def router(gw: Any) -> APIRouter:
             return {"problems": problems}
         before = parse_settings(bytes(last["raw"])) if last else None
         words = (gw.definitions, gw.scenario.person)
-        preview = impact.shown(gw, before, settings) if not problems else None
+        preview = impact.shown(gw, before, settings, person) if not problems else None
         return {"serial": settings.serial, "problems": problems,
                 **({"impact": preview} if preview is not None else {}),
                 "in_force": last["serial"] if last else None,  # what it's reviewed against

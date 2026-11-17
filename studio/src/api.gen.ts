@@ -687,6 +687,7 @@ export type Impact = {
   shifts: Shift[];
   capped: string[];
   about: string;
+  hidden: number;
 };
 
 // The version of the settings in force: as written, all of it in words, and as data, which

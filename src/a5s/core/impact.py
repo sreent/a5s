@@ -23,26 +23,32 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
 
 from a5s import db
-from a5s.contract import InstanceSettings, Settings
-from a5s.core import counts, groups, memberships, parts, registry, samples
+from a5s.contract import InstanceSettings, Person, Settings
+from a5s.core import counts, groups, memberships, parts, registry, samples, studio
 from a5s.core.policy import Decision
 
 log = logging.getLogger(__name__)
 
 DAYS = 28
+_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 MOST = 2000  # the latest calls of the period, at most, it decides again
 WORDS = {"allow": "made alone", "hold": "held for a person to decide", "deny": "refused"}
 # What refuses a call apart from policy, the same under any version: never decided again
 NOT_POLICY = frozenset({"arguments-fit-the-schema", "records-are-named-by-key",
                         "a-change-names-few-records", "records-can-be-read",
                         "a5s-runs-call-no-tools", "tasks-stop-when-stopped",
-                        "someone-else-decides", "settings-must-check-out"})
+                        "someone-else-decides", "settings-must-check-out",
+                        "shadows-change-nothing", "shadows-send-nothing"})
+# Whom a run for nobody counts against, of the type of action's limit for each person in 30
+# days: its instance, among its other runs for nobody, as core/counts.py counts them
+NOBODY = "\0"
 ABOUT = ("Each call is decided as the directory, the agents' releases, the records' parts and "
          "a5s's caps stand now. A change someone asked for of their own records counts as theirs "
          "only where the decision recorded shows it was.")
@@ -62,13 +68,20 @@ class Call:
 
 
 def preview(conn: db.Connection, gw: Any, before: Settings | None, after: Settings,
-            approvers: list[str], now: datetime) -> dict[str, Any]:
+            approvers: list[str], now: datetime, viewer: Person | None = None) -> dict[str, Any]:
     """What `after` would decide differently from `before`, the version in force, of the tool
     calls of the last DAYS days, the latest MOST of them: each difference by instance, tool,
     parts and how each version decides it, with how many calls, and why the new decision is
     what it is, in policy's words; the levels it sets that a5s's caps hold back; and how much
-    it looked at. `approvers` are who'd approve `after`, whose roles let level 2 count."""
+    it looked at. `approvers` are who'd approve `after`, whose roles let level 2 count.
+
+    Of the instances `viewer` may watch alone, as the studio shows them (core/studio.py): what
+    others' runs did is counted against the limits each call is weighed against, as it was,
+    but never decided again for them, and they hear only how many calls that leaves out."""
     calls, limited = _calls(conn, gw, now - timedelta(days=DAYS))
+    watched = {i["id"] for i in studio.instances(conn) if viewer is None
+               or studio.watches(i, viewer)}
+    hidden = 0
     shown: dict[str, dict[tuple[str, str], int]] = {}  # each release's caps, as shown
 
     def caps_of(release: str) -> dict[tuple[str, str], int]:
@@ -88,7 +101,14 @@ def preview(conn: db.Connection, gw: Any, before: Settings | None, after: Settin
         tool = tools[call.tool]
         action, weight = tool.action, max(len(call.keys), 1)
         work = counts.work({**call.run, "run": call.run["id"]})
-        whom = groups.requesters(call.run)
+        whom = groups.requesters(call.run) or [f"{NOBODY}{call.instance}"]
+        if call.instance not in watched:  # theirs to know only as a number
+            hidden += 1
+            if action and call.decision in ("allow", "hold"):
+                made[(work, action)] += weight
+                for person in whom:
+                    asked[(person, action)].append((call.at, weight))
+            continue
         decisions = []
         for settings, approved in ((before, in_force), (after, approvers)):
             over = action is not None and _over(settings, action, weight, work, whom, call,
@@ -107,7 +127,7 @@ def preview(conn: db.Connection, gw: Any, before: Settings | None, after: Settin
             made[(work, action)] += weight
             for person in whom:
                 asked[(person, action)].append((call.at, weight))
-    return {"days": DAYS, "calls": decided, "limited": limited, "about": ABOUT,
+    return {"days": DAYS, "calls": decided, "limited": limited, "about": ABOUT, "hidden": hidden,
             "capped": capped(gw, before, after, caps_of),
             "shifts": [{"instance": i, "tool": t, "parts": list(p), "was": w, "would": n,
                         "calls": c, "why": why[(i, t, p, w, n)]}
@@ -115,15 +135,16 @@ def preview(conn: db.Connection, gw: Any, before: Settings | None, after: Settin
                                                         key=lambda s: (-s[1], s[0]))]}
 
 
-def shown(gw: Any, before: Settings | None, after: Settings) -> dict[str, Any] | None:
-    """The preview, for a page: read in its own transaction, as whoever'd approve `after`
-    would see it approved; None if it can't be worked out, which a review still shows
-    without, as it's what the version says that people approve."""
+def shown(gw: Any, before: Settings | None, after: Settings,
+          viewer: Person) -> dict[str, Any] | None:
+    """The preview, for a page, as `viewer` may see it: read in its own transaction, as
+    whoever'd approve `after` would see it approved; None if it can't be worked out, which a
+    review still shows without, as it's what the version says that people approve."""
     needed = [p.id for p in registry.approvers(after, gw.scenario.holders, before,
                                                memberships.rooted(gw.scenario).holders)]
     try:
         with db.transaction(gw.url) as conn:
-            return preview(conn, gw, before, after, needed, gw.clock())
+            return preview(conn, gw, before, after, needed, gw.clock(), viewer)
     except Exception:  # a preview is help, never a reason to refuse a review
         log.exception("couldn't work out what a version of the settings would do")
         return None
@@ -133,14 +154,20 @@ def _calls(conn: db.Connection, gw: Any, since: datetime) -> tuple[list[Call], b
     """The scenario's tool calls policy decided since then, the latest MOST, oldest first, and
     whether there were more. a5s's own tools aren't among them: no version decides them
     differently, as no part's data is theirs to change."""
-    rows = conn.execute(
-        "select l.seq, l.entry, r.id, r.trigger, r.acts_for, r.read_outside from ledger l "
-        "join runs r on r.id::text = l.run_id where l.kind = 'tool' "
-        "and l.decision in ('allow', 'hold', 'deny') order by l.seq desc limit %s",
+    rows = conn.execute(  # by the ledger's index of tool calls, newest first, the latest alone
+        "select seq, entry, run_id from ledger where kind = 'tool' "
+        "and decision in ('allow', 'hold', 'deny') order by seq desc limit %s",
         (MOST + 1,)).fetchall()
+    ids = sorted({r["run_id"] for r in rows[:MOST] if r["run_id"] and _UUID.fullmatch(r["run_id"])})
+    runs = {r["id"]: r for r in conn.execute(
+        "select id::text as id, trigger, acts_for, read_outside from runs where id = any(%s::uuid[])",
+        (ids,))} if ids else {}
     tools = gw.scenario.tools()
     found: list[Call] = []
     for row in rows[:MOST]:
+        run = runs.get(row["run_id"] or "")
+        if run is None:
+            continue
         entry = json.loads(row["entry"])
         at = datetime.fromisoformat(entry["at"])
         if at < since:
@@ -155,9 +182,11 @@ def _calls(conn: db.Connection, gw: Any, since: datetime) -> tuple[list[Call], b
             continue
         found.append(Call(seq=row["seq"], at=at, instance=entry["instance"], tool=entry["action"],
                           keys=tuple(keys), decision=entry["decision"],
-                          run={"id": str(row["id"]), "trigger": row["trigger"] or {},
-                               "acts_for": list(row["acts_for"]),
-                               "read_outside": row["read_outside"]}))
+                          run={"id": run["id"], "trigger": run["trigger"] or {},
+                               "acts_for": list(run["acts_for"]),
+                               # its mark when it was decided, as the ledger kept it, or else
+                               "read_outside": entry.get("read_outside",  # the run's as it
+                                                         run["read_outside"])}))  # stands
     return found[::-1], len(rows) > MOST
 
 
@@ -169,7 +198,8 @@ def _row(gw: Any, inst: InstanceSettings, call: Call) -> dict[str, Any] | None:
     if release is None:
         return None
     level, levels = registry.levels(inst, release)
-    return {"id": inst.id, "run": call.run["id"], "status": "active", "level": level,
+    return {"id": inst.id, "run": call.run["id"],
+            "status": "shadow" if inst.shadows else "active", "level": level,
             "parts": levels, "actions": registry.action_levels(inst, release),
             "grants": list(release.grants), "model": release.model, "serves": list(inst.serves),
             "pins": dict(release.pins), "release": release.release_id,

@@ -2699,6 +2699,7 @@ def create_app(gw: Gateway) -> FastAPI:
                 seq = ledger.append(conn, gw.entry(row, "tool", name, decision,
                                                    args=ledger.mask(args, plain),
                                                    links_removed=removed,
+                                                   read_outside=bool(row["read_outside"]),
                                                    **({"values": values_of(traced)} if traced else {})))
                 studio.handled(conn, row["run"], keys)  # the records it named, whatever came of it
                 if change and (decision.allowed or decision.held):  # made or held: it counts
