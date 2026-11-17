@@ -212,9 +212,9 @@ def test_a_planted_head_neither_stops_the_copying_nor_hides_anything(database, f
     assert (second.first, second.seq) == (4, 5)
     result = check(database, folder)
     assert result.copied_through == 5
-    assert sorted(result.problems) == [
-        "heads/000000000005.json doesn't continue the copies before it",
-        "heads/999999999999.json doesn't continue the copies before it"]
+    assert sorted(result.problems) == [  # the copier marks its own (round 15, D1)
+        "heads/000000000005.json isn't a copy a5s made",
+        "heads/999999999999.json isn't a copy a5s made"]
     assert copy(database, folder) == []  # and the next copy carries on from entry 5
 
 

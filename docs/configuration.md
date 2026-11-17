@@ -141,7 +141,7 @@ The tests check that neither compose nor the chart sets a setting to its default
 
 | Variable | Default | Takes | What it sets |
 | --- | --- | --- | --- |
-| `A5S_ANCHOR_STORE` | none | s3://, azure://, gs:// or file://, such as s3://bucket/a5s | Where the ledger's locked copies go |
+| `A5S_ANCHOR_STORE` | none | s3://, azure://, gs:// or file://, such as s3://bucket/a5s | Where the ledger's locked copies go, which the copier writes and `a5s restore` reads; the core, given it to read too, won't start on a database restored from a backup until `a5s restore` runs |
 | `A5S_ANCHOR_RETAIN_DAYS` | `365` | a whole number of days from 365 to 36,500 | Days each copy stays locked: longer here, and shorter only by a release, which assurance signs |
 
 ### The studio, its sandbox and publishing

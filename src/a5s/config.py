@@ -357,7 +357,9 @@ MATRIX_AS_TOKEN = Var("A5S_MATRIX_AS_TOKEN", "a5s's token there, to speak as its
 MATRIX_HS_TOKEN = Var("A5S_MATRIX_HS_TOKEN", "the homeserver's, which comes with every delivery",
                       None, secret=True, area=MATRIX, takes="a token")
 
-ANCHOR_STORE = Var("A5S_ANCHOR_STORE", "where the ledger's locked copies go", None,
+ANCHOR_STORE = Var("A5S_ANCHOR_STORE", "where the ledger's locked copies go, which the copier "
+                   "writes and `a5s restore` reads; the core, given it to read too, won't start on "
+                   "a database restored from a backup until `a5s restore` runs", None,
                    _matching(r"(s3|azure|gs|file)://\S+"),  # as core/stores.py keeps them
                    "s3://, azure://, gs:// or file://, such as s3://bucket/a5s", area=LEDGER)
 ANCHOR_RETAIN_DAYS = Var("A5S_ANCHOR_RETAIN_DAYS", "days each copy stays locked: longer here, "

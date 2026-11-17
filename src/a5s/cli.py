@@ -35,6 +35,7 @@ from a5s.core import (
     narrowing,
     registry,
     releases,
+    restoring,
     rotation,
     signing,
     status,
@@ -269,6 +270,11 @@ def _service(cfg: Config, name: str):
         db.known(cfg.database_url)
         db.own_role(cfg.database_url, "gateway" if name == "gateway" else "channels")
     if name == "gateway":
+        if (store := build.store(cfg)) is not None:  # where it reads the ledger's copies, never
+            with db.transaction(cfg.database_url) as conn:  # on a database restored from a
+                if lacking := anchor.behind(conn, store):  # backup before `a5s restore` puts
+                    raise RuntimeError(anchor.RESTORED.format(  # back what it lacks (round 15,
+                        first=lacking[0], last=lacking[1]))  # D1), so the copies never fork
         if cfg.seal_keys:  # never without a key it sealed with, unretired (round 15, D2)
             with db.transaction(cfg.database_url) as conn:
                 rotation.started(conn, cfg.seal_keys)
@@ -290,6 +296,24 @@ def _seal_again(cfg: Config, leaked: bool) -> None:
     except rotation.Refused as exc:
         sys.exit(str(exc))
     print(rotation.told(done))
+
+
+def _restore(cfg: Config) -> None:
+    """Restore what a5s keeps after its database was restored from a backup, as the core, with
+    the ledger's copies as the copier reads them (core/restoring.py)."""
+    store = build.store(cfg)
+    if store is None:
+        sys.exit("Set A5S_ANCHOR_STORE to the ledger's copies, as the copier has it.")
+    db.known(cfg.database_url)
+    db.own_role(cfg.database_url, "gateway")
+    scenario = build.scenario(cfg)  # whom the directory names now, for an erasure made again
+    try:
+        with db.transaction(cfg.database_url) as conn:
+            done = restoring.restore(conn, store,
+                                     lambda person: scenario.person(person) is not None)
+    except anchor.AnchorError as exc:
+        sys.exit(str(exc))
+    print(restoring.told(done))
 
 
 def _stopping() -> threading.Event:
@@ -727,6 +751,11 @@ def main(argv: list[str] | None = None) -> None:
     erased.add_argument("--by", help="in development, the officer, who asks nowhere else")
     sub.add_parser("status", help="how a5s is doing: its queue, runs, denials, budgets and "
                                   "objectives")
+    sub.add_parser("restore", help="after the database is restored from a backup, as the "
+                                   "core, before any part starts: put back the ledger's "
+                                   "entries its copies hold, take as done what their runs "
+                                   "were for, hold what a5s would send again, and start "
+                                   "mailboxes afresh")
     again = sub.add_parser("seal-again", help="to rotate the seal key: seal again with the "
                                               "first of A5S_SEAL_KEYS what the others sealed, "
                                               "and retire them, as the core, where it runs")
@@ -935,6 +964,8 @@ def main(argv: list[str] | None = None) -> None:
         print(status.told(_admin(cfg, "/status")))
     elif args.command == "seal-again":
         _seal_again(cfg, args.leaked)
+    elif args.command == "restore":
+        _restore(cfg)
     elif args.command == "measures":
         print(measures.told(_core(cfg, lambda core: core.measures(
             args.days, agent=args.agent, instance=args.instance))))

@@ -57,6 +57,7 @@ Someone who leaves is archived a day after the directory stops naming them, or a
 
 - **a5s's database,** a managed Postgres in the deployment's region [TBC: which], and nowhere else. Nothing is copied out, apart from the ledger.
 - **The ledger's copies,** in locked object storage in the same region, which the copier writes and nobody can delete before their time.
+- **Backups of the database,** as the deployment's Postgres keeps them [TBC: for how long]. One taken before an erasure still holds what went; restoring from it, `a5s restore` erases again each person an erasure since had erased, and names any it can't for the officer to ask again ([runbook](runbooks.md#restoring-from-a-backup)).
 - **The models,** each in the region its approved entry names ([`config/models.yaml`](../config/models.yaml)). The model gateway refuses any model not on the list, and a failover to one.
 - **Traces, operators' figures and logs,** in the platform's telemetry, which the deployment names [TBC: which, and where].
 - **GitHub,** for a draft its author publishes there, as themselves ([publishing](studio.md#publishing)): its folder, and their name and id in its pull request's description. a5s keeps the pull request's address, in the draft and the ledger, and nothing of their GitHub account: not even the token GitHub gives it for that one publish.

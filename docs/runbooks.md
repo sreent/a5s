@@ -235,6 +235,27 @@ The scheduler calls the core with the service token, `A5S_SERVICE_TOKEN`, to ope
 
 1. Don't restart the copier to make the error go away. It stops when the ledger no longer matches its copies, which means the history changed.
 2. Run `a5s ledger verify`, and tell assurance what it says.
+3. If the copier says the ledger's copies hold entries the database lacks, the database was restored from a backup: see below. If nobody restored it, someone wrote to the store with the copier's own credentials, its database role's and the store's, since only the copier marks a copy as its own: don't run `a5s restore`; change those credentials, and tell assurance.
+
+## Restoring from a backup
+
+**When:** the database is lost or damaged, and you restore it from a backup.
+
+A database restored from a backup lacks what a5s did since the backup was taken: the ledger stops there, though its locked copies go on, and what a5s sent since looks unsent.
+
+1. Stop every part of a5s, and restore the database from the backup.
+2. Before any part starts, run `a5s restore` as the core, with the core's settings and the copier's `A5S_ANCHOR_STORE`, such as in a job given both. It:
+   - puts back into the ledger the entries its copies hold beyond it, each as its copy has it, from the copies the copier marked as its own alone;
+   - takes as answered each message, as worked on each event, and as fired each schedule, whose run opened since the backup, as those entries say, so no agent answers or acts on one again, nor makes again a change it made;
+   - erases again each person an erasure since the backup erased, whom the backup brings back, and names any it can't, such as an archive erased by its name, for the data protection officer to ask again;
+   - holds what a5s was to send through a chat, which waits in each person's local inbox instead, saying it may have gone already;
+   - and starts each mailbox afresh from now, so mail read since the backup starts no run again.
+
+   It says what it did, and the ledger records it. Run it after any restore, even where the copies hold nothing beyond the ledger: what a5s sent since still looks unsent.
+3. Start a5s. The copier goes on from the entries put back.
+4. Look through what the database lost, which the entries put back name: runs and the changes they made in other systems, held changes that were waiting for a decision, which people ask for again, conversations, approvals of the settings, and grades. Mail that came into each mailbox since the backup waits there for the team. Digests, reminders, chases, reports and the steps of tasks that fell due since the backup may come again. Entries written after the last copy, up to an hour's, are lost with the database.
+
+Until `a5s restore` runs, the copier copies nothing, saying "the ledger's copies hold entries N to M, which the database lacks", so the copies never fork, and a core given `A5S_ANCHOR_STORE` too, to read, won't start. If a core without it started first and wrote to the ledger, the copier, or `a5s restore`, says "the ledger no longer matches its copy": stop a5s, restore the backup again, and run `a5s restore` before any part starts.
 
 ## A request for someone's data
 
