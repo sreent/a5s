@@ -257,8 +257,7 @@ def needed(settings: Settings, directory: Directory, valid: Iterable[str],
     valid = list(valid)
     held = {role for who in valid if (p := directory(who)) for role in p.roles}
     if (parts := narrowed(settings, before)) is not None:  # each part's owner, for theirs alone
-        return [(f"{PART_OWNER}:{part}", (f"the owner of {part} hasn't approved it: it only "
-                                          "narrows what agents may do there"), False)
+        return [(f"{PART_OWNER}:{part}", f"the owner of {part} hasn't approved it", False)
                 for part in sorted(parts) if f"{PART_OWNER}:{part}" not in held]
     rooted = rooted or directory
     owners = {role for who in valid if (p := rooted(who)) for role in p.roles}

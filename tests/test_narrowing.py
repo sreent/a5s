@@ -108,7 +108,7 @@ def test_a_narrowing_version_needs_its_parts_owners_alone(stack):
     both = parsed(edited(lambda s: (billing(s).update(level=0),
                                     s["instances"]["assistant-ops"].update(level=0))))
     assert registry.missing(both, scenario.person, ["ana"], before) == [
-        "the owner of orders hasn't approved it: it only narrows what agents may do there"]
+        "the owner of orders hasn't approved it"]  # orders' narrowing is its owner's alone
 
 
 def propose(stack, settings: dict) -> dict:
