@@ -46,8 +46,8 @@ MOST = 20  # samples counted to grade, beyond which the home says "20 or more"
 # What each role lets someone do, by its kind; {scope} is its part or agent
 MAY = {
     PART_OWNER: "approve the instances that work in {scope}, and how far each may act there; "
-                "decide the changes agents ask for there; watch those instances' runs; and "
-                "approve what agents' models may cost there a month, and see what they do",
+                "decide the changes agents ask for there; and watch those instances' runs, and "
+                "what they cost",
     PART_DELEGATE: "decide the changes agents ask for in {scope}, beside its owner",
     "agent-owner": "own the {scope}: its definition and releases, drafts of it, and its "
                    "instances' runs; start new agents; suspend it; give a group its authors' "

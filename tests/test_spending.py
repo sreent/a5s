@@ -13,7 +13,7 @@ from playwright.sync_api import expect
 from a5s import db
 from a5s.config import Prices, load_currency
 from a5s.contract import parse_settings
-from a5s.core import approvals, measures, spending
+from a5s.core import approvals, home, measures, spending
 from conftest import accessible
 
 PRICES = Prices(2000.0, 8000.0)  # a million tokens: so a call of 10 in and 5 out costs 0.06
@@ -91,6 +91,10 @@ def test_a_runs_cost_is_its_instances_and_agents_whole_and_no_part_has_a_budget(
     stack.say("hello")
     found = report(stack, "ana")
     assert "parts" not in found and [a["key"] for a in found["agents"]] == ["assistant"]
+    # and a part's owner reads that they watch what its instances cost, never that they approve it
+    assert home.may("part-owner:billing") == (
+        "approve the instances that work in billing, and how far each may act there; decide the "
+        "changes agents ask for there; and watch those instances' runs, and what they cost")
 
 
 def test_a_budget_says_the_currency_it_is_in(stack):

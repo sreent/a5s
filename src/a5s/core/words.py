@@ -206,10 +206,9 @@ TH: dict[str, str] = {
     "the directory": "ไดเรกทอรี",
     "what the scenario gives it": "สิ่งที่ซีนาริโอกำหนดให้",
     "approve the instances that work in {scope}, and how far each may act there; decide the "
-    "changes agents ask for there; watch those instances' runs; and approve what agents' models "
-    "may cost there a month, and see what they do":
+    "changes agents ask for there; and watch those instances' runs, and what they cost":
         "อนุมัติอินสแตนซ์ที่ทำงานใน {scope} และขอบเขตที่แต่ละตัวทำได้ที่นั่น ตัดสินใจเรื่องการเปลี่ยนแปลงที่เอเจนต์ขอที่นั่น "
-        "ติดตามการทำงานของอินสแตนซ์เหล่านั้น และอนุมัติค่าใช้จ่ายโมเดลรายเดือนของเอเจนต์ที่นั่น พร้อมดูว่าใช้ไปเท่าใด",
+        "และติดตามการทำงานของอินสแตนซ์เหล่านั้น รวมถึงค่าใช้จ่าย",
     "decide the changes agents ask for in {scope}, beside its owner":
         "ตัดสินใจเรื่องการเปลี่ยนแปลงที่เอเจนต์ขอใน {scope} ร่วมกับเจ้าของ",
     "own the {scope}: its definition and releases, drafts of it, and its instances' runs; start "
