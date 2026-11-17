@@ -141,6 +141,10 @@ CHARS_PER_TOKEN = 4  # roughly, for a run's budget for its conversation
 OWN_RUNS = ("summary",)  # a5s's own work on a conversation: no tools, and it writes to nobody
 TRIES = 5  # deliveries to a chat before what it didn't take is left in the person's inbox
 MOST_NAMED = 20  # records one change may name: a5s reads each as it stands before deciding
+# Why a5s didn't make a held change whose call, values or words differ from what its digest,
+# and so its deciders, signed: the database was changed (round 15, B1)
+ALTERED = "it has changed in a5s's records since it was asked for, so it isn't what was approved"
+
 # a5s's notes on what an agent left for people to check before it goes outside (round 15)
 CHECKED = "Before anyone sends what the {agent} left in {where}: {note}"
 
@@ -2944,7 +2948,8 @@ def create_app(gw: Gateway) -> FastAPI:
             before = " ".join(proposals.stood(standing)).replace(
                 "as it stood when it was asked for", "as it stood before")
             parts_of = sorted({p for k in keys if (p := gw.scenario.part_of(k))})
-            kept = undoing.keep(conn, row, tool, keys[0], parts_of, said, undo, as_left, asked) \
+            kept = undoing.keep(conn, row, tool, keys[0], parts_of, said, undo, as_left, asked,
+                                keys=gw.cfg.seal_keys) \
                 if undo is not None and as_left is not None else None
             named = [p.name if (p := gw.scenario.person(w)) else w for w in asked]
 
@@ -3766,6 +3771,18 @@ def create_app(gw: Gateway) -> FastAPI:
         """What becomes of a held change once the people who may decide it have: whether it's
         made. An approved one is marked as making, so it's never made twice."""
         rows = found["rows"]
+        if proposals.ended_before(conn, p):  # a decision counts once (round 15, B1)
+            log.warning("%s was set waiting again after a5s ended it: it stays ended",
+                        proposals.key(p))
+            conn.execute("update proposals set status = 'not made', ended_at = coalesce(ended_at, "
+                         "%s) where id = %s", (now, p["id"]))
+            ledger.append(conn, {"kind": "proposal", "action": "refuse-again",
+                                 "run": str(p["run_id"]), "instance": p["instance_id"],
+                                 "decision": "deny", "of": p["seq"],
+                                 "args": {"proposal": proposals.key(p)}})
+            return {}
+        if not proposals.intact(conn, p):  # it isn't what its deciders signed (round 15, B1)
+            return ended(conn, p, "refused", rows, now, ALTERED)
         if found["decision"] == "reject":
             return ended(conn, p, "rejected", rows, now, reason=rows[0].get("reason"))
         if changed := proposals.changed(gw.scenario, p):
@@ -3835,7 +3852,8 @@ def create_app(gw: Gateway) -> FastAPI:
                                            "definition": p["definition"], "release": p["release"]},
                                     tool, keys[0], list(p["parts"]), p["said"], undo, as_left,
                                     list(p["acts_for"]), proposal=p["id"],
-                                    offered=True)  # in a5s's own message that it's made
+                                    offered=True,  # in a5s's own message that it's made
+                                    keys=gw.cfg.seal_keys)
                 offer = {"until": kept["until"], "id": kept["id"]}
         with db.transaction(gw.url) as conn:
             if outcome["status"] == "ok":
@@ -4187,6 +4205,12 @@ def create_app(gw: Gateway) -> FastAPI:
         """Undo one change, while its record is as the change left it, and count it, as a wrong
         grade of it, against its agent's accuracy; tell whoever it was for, and the instance's
         owner and deputy, and the ledger. Whether it was undone, refused or failed."""
+        if not undoing.intact(gw.cfg.seal_keys, row):  # not as the core kept it (round 15)
+            with db.transaction(gw.url) as conn:
+                refused_undo(conn, row, "how to undo it has changed in a5s's records since a5s "
+                             "kept it, so a5s undoes nothing: putting it right is for whoever "
+                             "decides it, in the records system")
+            return "refused"
         by = gw.scenario.tools()[row["undo"]["tool"]]
         try:  # the record as it stands, outside any transaction, in each field the change left
             now = undoing.still(row["as_left"], proposals.snapshot(

@@ -715,10 +715,20 @@ def raise_cap(stack: Stack, part: str = "billing", action: str = "change-due-dat
                         stack.gateway.clock(), threshold=0.98)
 
 
+def seal_draws(stack: Stack) -> None:
+    """Seal the samples written straight into the database, as the core seals each it draws
+    (round 15, B2): a sample nobody sealed counts for nothing."""
+    from a5s.core import samples
+    with db.transaction(stack.admin) as conn:
+        for row in conn.execute("select * from samples where drawn_seal is null").fetchall():
+            samples.sealed_draw(conn, (SEAL_KEY,), row)
+
+
 def seal_grades(stack: Stack) -> None:
     """Seal the grades written straight into the database, as the grading page has the core
-    seal each grade it checked."""
+    seal each grade it checked, of samples sealed as the core draws them."""
     from a5s.core import samples
+    seal_draws(stack)
     with db.transaction(stack.admin) as conn:
         for row in conn.execute("select * from samples where grade is not null "
                                 "and grade_seal is null").fetchall():

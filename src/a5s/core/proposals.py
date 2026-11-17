@@ -229,29 +229,67 @@ def hold(conn: db.Connection, scenario: Scenario, run: dict, tool: Tool, args: d
         "select handle, value from run_handles where run_id = %s and handle = any(%s)",
         (run["run"], found))} if found else {}
     first = who[0]
-    body = {"scenario": scenario.name, "run": run["run"], "instance": run["id"], "tool": tool.name,
-            "args": args, "records": {r: fingerprint_of(v) for r, v in standing.items()},
-            "nonce": secrets.token_hex(16)}  # each proposal is its own, even for the same call
-    row = conn.execute(
+    words = said(scenario, tool, args, standing, list(run["acts_for"]), run["definition"], kept,
+                 run.get("trigger"))
+    body = bound(scenario.name, run["run"], run["id"], tool.name, tool.schema_hash, tool.action,
+                 args, {r: fingerprint_of(v) for r, v in standing.items()}, kept,
+                 list(run["acts_for"]), words, secrets.token_hex(16))  # its own, even for the
+    row = conn.execute(  # same call
         "insert into proposals (scenario, digest, run_id, instance_id, definition, release, tool, "
         "schema_hash, action, args, records, parts, acts_for, deciders, said, flags, sensitive, "
         "read_outside, seq, proposed_at, lapses_at, change, remind_at, escalate_at, standing, "
-        "steered_by) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
-        "%s, %s, %s, %s, %s, %s, %s, %s, %s) returning *",
+        "steered_by, nonce) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
+        "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) returning *",
         (scenario.name, hashlib.sha256(canonical(body).encode()).hexdigest(), run["run"], run["id"],
          run["definition"], run["release"], tool.name, tool.schema_hash, tool.action, Jsonb(args),
          Jsonb(body["records"]), sorted({p for r in standing if (p := scenario.part_of(r))}),
-         list(run["acts_for"]), [p.id for p in who],
-         said(scenario, tool, args, standing, list(run["acts_for"]), run["definition"], kept,
-              run.get("trigger")),
+         list(run["acts_for"]), [p.id for p in who], words,
          Jsonb(flags), is_sensitive, bool(run["read_outside"]), seq, now,
          working_days_after(first, now, LAPSE), change,
          working_days_after(first, now, REMIND), working_days_after(first, now, ESCALATE),
-         Jsonb(standing), sorted(set(steered or ())))).fetchone()
+         Jsonb(standing), sorted(set(steered or ())), body["nonce"])).fetchone()
     for handle, value in kept.items():  # the values they stand for, kept until it's decided
         conn.execute("insert into proposal_values (proposal_id, handle, value) values (%s, %s, %s)",
                      (row["id"], handle, value))
     return row
+
+
+def bound(scenario: str, run: str, instance: str, tool: str, schema_hash: str,
+          action: str | None, args: Any, records: dict, values: dict[str, str],
+          acts_for: list[str], said: str, nonce: str) -> dict:
+    """What a held change's digest covers, which its deciders' sign-ins commit to: the exact
+    call, the values its handles stand for, its records as they stood, whom it's for, and the
+    words its deciders read (round 15, B1)."""
+    return {"scenario": scenario, "run": run, "instance": instance, "tool": tool,
+            "schema_hash": schema_hash, "action": action, "args": args, "records": records,
+            "values": values, "acts_for": acts_for, "said": said, "nonce": nonce}
+
+
+def intact(conn: db.Connection, proposal: dict) -> bool:
+    """Whether a held change is still what its digest, and so its deciders, signed: made again
+    from all a5s holds of it. One the database was changed in, or one kept before a5s kept
+    its nonce, isn't: it's never made (round 15, B1)."""
+    if not proposal.get("nonce"):
+        return False
+    body = bound(proposal["scenario"], str(proposal["run_id"]), proposal["instance_id"],
+                 proposal["tool"], proposal["schema_hash"], proposal["action"], proposal["args"],
+                 proposal["records"], values(conn, proposal), list(proposal["acts_for"]),
+                 proposal["said"], proposal["nonce"])
+    return hmac.compare_digest(hashlib.sha256(canonical(body).encode()).hexdigest(),
+                               proposal["digest"])
+
+
+ENDINGS = ("decide", "made", "rejected", "lapsed", "changed", "refused", "failed")
+
+
+def ended_before(conn: db.Connection, proposal: dict) -> bool:
+    """Whether the core has decided or ended a held change already, as its own entries in the
+    ledger say: so one set waiting again, in the database, is never decided twice (round 15,
+    B1)."""
+    return conn.execute(
+        "select 1 from ledger where run_id = %s and kind = 'proposal' and action = any(%s) and "
+        "writer = current_user and (entry::jsonb -> 'args' ->> 'proposal') = %s limit 1",
+        (str(proposal["run_id"]), list(ENDINGS), key(proposal))).fetchone() is not None
 
 
 def snapshot(records: dict[str, Record | None]) -> dict[str, dict | None]:

@@ -43,8 +43,9 @@ import hmac
 import json
 import math
 import random
+import uuid
 from collections.abc import Iterable
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, LiteralString
 
 from psycopg.types.json import Jsonb
@@ -64,7 +65,15 @@ MOST_GRADED = 20  # grades one sign-in gives, at most
 # could record one sign-in's grades as another person's, or under another salt (round 13, A2)
 GIVEN_TOGETHER = ("graded_by", "grade_proof", "grade_salt", "grade_nonce", "grade_issuer")
 _SEALED_GRADE = ("scenario", "id", "grade", "graded_by", "graded_at", "grade_token",
-                 "grade_nonce", "grade_salt", "grade_issuer", "grade_subject")
+                 "grade_nonce", "grade_salt", "grade_issuer", "grade_subject",
+                 # and the sample it grades, as the core drew it, and when it sealed it: so a
+                 # grade moved to another part, or sealed again later, counts nowhere (round 15)
+                 "kind", "proposal_id", "run_id", "release", "part", "action", "sealed_at",
+                 "drawn_seal")
+# A sample as the core drew it: what it is of, whose, and what graders read (round 15, B2)
+_SEALED_DRAW = ("id", "scenario", "kind", "proposal_id", "run_id", "instance_id", "release",
+                "definition", "part", "action", "said", "records", "acts_for", "decided",
+                "decided_by", "deciders", "drawn_at", "flags")
 _SEALED_CAP = ("behaviour", "part", "action", "cap", "since", "why", "threshold", "window_from",
                "seq")
 
@@ -155,8 +164,9 @@ def needed(threshold: float, errors: int = 0) -> int:
 # Caps, which count only as the core sealed them, with the ledger's last word on each
 
 def _mac(key: str, fields: dict, names: tuple[str, ...]) -> str:
-    shown = {k: (v.isoformat() if isinstance(v, datetime) else v) for k, v in fields.items()
-             if k in names}
+    shown = {k: (v.astimezone(UTC).isoformat() if isinstance(v, datetime) else
+                 str(v) if isinstance(v, uuid.UUID) else v)
+             for k, v in fields.items() if k in names}
     return hmac.new(key.encode(), canonical(shown).encode(), hashlib.sha256).hexdigest()
 
 
@@ -279,15 +289,29 @@ def draw(conn: db.Connection, keys: tuple[str, ...], scenario: str, kind: str, r
         rate = min(1.0, PER_QUARTER / max(3 * lately, 1))
         if drawn >= PER_QUARTER or random.random() >= rate:  # a sample, not a secret
             return False
-    conn.execute(
+    row = conn.execute(
         "insert into samples (scenario, kind, proposal_id, run_id, instance_id, release, "
         "definition, part, action, said, records, acts_for, decided, decided_by, deciders, "
         "drawn_at, flags) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
-        "%s)",
+        "%s) returning *",
         (scenario, kind, proposal, run, instance, release, definition, part, action, said,
          Jsonb(records), acts_for, decided, decided_by[0] if decided_by else None,
-         list(dict.fromkeys(decided_by or [])), now, Jsonb(list(flags or []))))
+         list(dict.fromkeys(decided_by or [])), now, Jsonb(list(flags or [])))).fetchone()
+    sealed_draw(conn, keys, row)
     return True
+
+
+def sealed_draw(conn: db.Connection, keys: tuple[str, ...], row: dict | None) -> None:
+    """Seal a sample the core drew, with its key: a row anyone else wrote counts for nothing
+    (round 15, B2)."""
+    if keys and row is not None:
+        conn.execute("update samples set drawn_seal = %s where id = %s",
+                     (_mac(keys[0], row, _SEALED_DRAW), row["id"]))
+
+
+def drawn_by_core(keys: tuple[str, ...], row: dict) -> bool:
+    """Whether a sample is one the core drew, as it drew it."""
+    return _sealed(keys, row, _SEALED_DRAW, row.get("drawn_seal"))
 
 
 # Grading
@@ -445,9 +469,10 @@ def seal_pending(conn: db.Connection, keys: tuple[str, ...], verifier: Any,
                     "update samples set grade = null, graded_by = null, graded_at = null, "
                     "grade_token = null, grade_nonce = null, grade_salt = null, grade_issuer = "
                     "null, grade_subject = null, grade_proof = null where id = %s", (row["id"],))
-            else:
+            else:  # sealed with when it was, which the seal covers
                 conn.execute("update samples set grade_seal = %s, grade_proof = null, "
-                             "sealed_at = %s where id = %s", (seal(keys, row), now, row["id"]))
+                             "sealed_at = %s where id = %s",
+                             (seal(keys, {**row, "sealed_at": now}), now, row["id"]))
     return refused
 
 
@@ -476,6 +501,9 @@ def undone(conn: db.Connection, keys: tuple[str, ...], scenario: str, change: di
                 (scenario, kind, change["proposal_id"], change["run_id"], change["instance_id"],
                  change["release"], change["definition"], part, change["action"], change["said"],
                  Jsonb({change["record"]: None}), list(change["acts_for"]), now)).fetchone()
+            assert row is not None
+            sealed_draw(conn, keys, row)
+            row = conn.execute("select * from samples where id = %s", (row["id"],)).fetchone()
         assert row is not None
         if row["grade"] == "critical":
             continue
@@ -494,8 +522,8 @@ def undone(conn: db.Connection, keys: tuple[str, ...], scenario: str, change: di
 
 
 def counted(keys: tuple[str, ...], row: dict) -> bool:
-    """Whether a grade counts: one the core sealed."""
-    return _sealed(keys, row, _SEALED_GRADE, row.get("grade_seal"))
+    """Whether a grade counts: one the core sealed, of a sample the core drew, as it drew it."""
+    return _sealed(keys, row, _SEALED_GRADE, row.get("grade_seal")) and drawn_by_core(keys, row)
 
 
 def _sealed_at(row: dict) -> datetime:
