@@ -11,21 +11,12 @@ import type * as gen from "../api.gen";
 import { locale, t } from "../i18n";
 import { Icon } from "../icons";
 import { go, Link } from "../router";
-import { PageHead, plural, useLoad, Waiting, Wide } from "../ui";
+import { money, PageHead, plural, useLoad, Waiting, Wide } from "../ui";
 
 type Kind = "part" | "agent";
 
 const monthly = () => new Intl.DateTimeFormat(locale(), { month: "long", year: "numeric", timeZone: "UTC" });
 const daily = () => new Intl.DateTimeFormat(locale(), { day: "numeric", month: "long", timeZone: "UTC" });
-
-/** An amount in the currency models.yaml prices models in, or a plain figure where it names none:
- * to the cent, or to two figures below a cent, so a cheap model's month isn't shown as nothing. */
-export function money(n: number, currency: string | null): string {
-  const digits: Intl.NumberFormatOptions = n !== 0 && Math.abs(n) < 0.01
-    ? { maximumSignificantDigits: 2 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 };
-  return currency ? n.toLocaleString(locale(), { style: "currency", currency, ...digits })
-    : n.toLocaleString(locale(), digits);
-}
 
 function named(m: string): string {
   const [y, n] = m.split("-").map(Number);

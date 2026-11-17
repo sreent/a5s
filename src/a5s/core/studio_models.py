@@ -1037,10 +1037,12 @@ class ModelCall(Shape):
 
 
 class Sandbox(Shape):
-    """Whom a draft may be tried as, of the sandbox's made-up people, and on which models."""
+    """Whom a draft may be tried as, of the sandbox's made-up people, and on which models, with
+    the currency models.yaml prices them in, if it names one."""
 
     people: list[Named]
     models: list[str]
+    currency: str | None = None
 
 
 class TriedRun(Run):

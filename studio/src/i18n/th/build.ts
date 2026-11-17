@@ -435,7 +435,11 @@ export const BUILD: Record<string, string> = {
   "its prices aren't known": "ไม่ทราบราคา",
   "{model} passed every case for the least: {cost} at its prices.":
     "{model} ผ่านทุกกรณีด้วยค่าใช้จ่ายต่ำสุด: {cost} ตามราคาของโมเดล",
-  "No model with known prices passed every case.": "ไม่มีโมเดลที่ทราบราคาผ่านครบทุกกรณี",
+  "It stopped: {why}": "หยุดแล้ว: {why}",
+  "{models} passed every case too, at prices a5s doesn't know.": "{models} ก็ผ่านทุกกรณีเช่นกัน แต่ a5s ไม่ทราบราคา",
+  "{models} passed every case, and a5s doesn't know their prices, so it can't say which costs least: models.yaml gives them.":
+    "{models} ผ่านทุกกรณี แต่ a5s ไม่ทราบราคาของโมเดลเหล่านี้ จึงบอกไม่ได้ว่าโมเดลใดถูกที่สุด: ราคากำหนดไว้ใน models.yaml",
+  "No model passed every case.": "ไม่มีโมเดลใดผ่านครบทุกกรณี",
   "Its test cases": "กรณีทดสอบ",
   "Running them…": "กำลังรัน…",
   "Run the {n} the sandbox can": "รัน {n} กรณีที่แซนด์บ็อกซ์รันได้",

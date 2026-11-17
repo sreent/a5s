@@ -10,8 +10,11 @@ as the core's API works it out for the team that runs a5s.
 
 import re
 import tempfile
+import threading
 import time
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -187,6 +190,21 @@ STAND_IN = "stand-in"  # the sandbox's model that answers itself, which costs no
 # The tokens someone's tries of drafts in the sandbox may take a day on real models, in all:
 # as much as an agent that names no budget gives one person a day [starting value]
 SANDBOX_DAY = definitions.Budget().per_person_per_day
+# What the channels app lets the sandbox take of it: one try at a time for each person, and a
+# few at a time in all, so tries hold few of the threads its chats are answered on; and what a
+# try on a real model counts as towards someone's day when the sandbox couldn't say what it took,
+# such as one it didn't answer in time
+SANDBOX_AT_ONCE = 4
+SANDBOX_UNSAID = SANDBOX_DAY // 10
+
+
+class Spent(HTTPException):
+    """The sandbox's refusal of a try, or its failure to answer one, with the tokens the try
+    took on a real model before it, as the sandbox says: None where it can't say."""
+
+    def __init__(self, status: int, detail: str, tokens: int | None) -> None:
+        super().__init__(status, detail)
+        self.tokens = tokens
 SANDBOX_SPENT = ("your tries in the sandbox have taken the {n} tokens a day's may take on real "
                  "models: try again tomorrow, or on the stand-in, which costs nothing")
 
@@ -941,17 +959,17 @@ def router(gw: Any) -> APIRouter:
                 except drafts.Refused as e:
                     raise HTTPException(409, str(e)) from None
             asked = body.model or STAND_IN
-            affordable(person, asked)
-            said: dict = {}
-            try:
-                said = sandboxed("/sandbox/descriptions", {"words": words, "model": asked})
-            finally:  # the words went to the model whatever comes of them: the ledger says so
-                with db.transaction(gw.url) as conn:
-                    took(conn, person, asked, said.get("tokens"))
-                    ledger.append(conn, {"kind": "admin", "action": "describe", "run": None,
-                                         "instance": None, "acts_for": [], "decision": "record",
-                                         "args": {"agent": body.name, "model": asked, "by": person.id,
-                                                  "words_sha256": ledger.digest(words)}})
+            with trying(person, asked) as spent:
+                try:
+                    said = sandboxed("/sandbox/descriptions", {"words": words, "model": asked})
+                    spent["tokens"] = said.get("tokens")
+                finally:  # the words went to the model whatever comes of them: the ledger says so
+                    with db.transaction(gw.url) as conn:
+                        ledger.append(conn, {"kind": "admin", "action": "describe", "run": None,
+                                             "instance": None, "acts_for": [], "decision": "record",
+                                             "args": {"agent": body.name, "model": asked,
+                                                      "by": person.id,
+                                                      "words_sha256": ledger.digest(words)}})
             proposed = found if isinstance(found := said.get("proposal"), dict) else {}
             owed = sorted({o.source for o in gw.scenario.obligations()})
             files, notes = describing.drafted(blank, body.name, proposed, tools, owed)
@@ -1088,15 +1106,60 @@ def router(gw: Any) -> APIRouter:
                                      "runs a5s sets one up (A5S_SANDBOX_URL)")
         try:
             answer = httpx.request("GET" if body is None else "POST", f"{gw.cfg.sandbox_url}{path}",
-                                   json=body, timeout=300,
+                                   json=body, timeout=30 if body is None else 300,
                                    headers={"Authorization": f"Bearer {gw.cfg.sandbox_token}"})
-        except httpx.HTTPError:
-            raise HTTPException(502, "the sandbox didn't answer: try again in a moment") from None
-        if answer.status_code == 400:
-            raise HTTPException(400, str(answer.json().get("detail")))
+        except (httpx.ConnectError, httpx.ConnectTimeout):  # it never had it
+            raise Spent(502, "the sandbox didn't answer: try again in a moment", 0) from None
+        except httpx.HTTPError:  # it may have worked on it all the same, for all a5s knows
+            raise Spent(502, "the sandbox didn't answer: try again in a moment", None) from None
+        try:
+            said = answer.json()
+        except ValueError:
+            said = None
+        if not isinstance(said, dict):
+            raise Spent(502, f"the sandbox said {answer.status_code}", None)
+        if answer.status_code in (400, 429):  # why not, with what it took before it knew
+            tokens = said.get("tokens")
+            raise Spent(answer.status_code, str(said.get("detail")),
+                        int(tokens) if isinstance(tokens, int) and tokens > 0 else 0)
         if answer.status_code != 200:
-            raise HTTPException(502, f"the sandbox said {answer.status_code}")
-        return answer.json()
+            raise Spent(502, f"the sandbox said {answer.status_code}", None)
+        return said
+
+    in_sandbox: set[str] = set()  # whose tries are in the sandbox now, one each
+    gate = threading.Lock()
+
+    @contextmanager
+    def trying(person: Person, model: str | None) -> Iterator[dict]:
+        """Someone's try in the sandbox, once theirs before has ended, and while few others'
+        are under way, so tries hold few of the threads this app's chats are answered on, and
+        nobody's tries sent at once pass a day's tokens many times over: refused, until then.
+        What it took on a real model, which the work in it says as `tokens`, counts towards
+        their day however it ends: as much as the sandbox says, or, where it can't say, such
+        as when it didn't answer in time, SANDBOX_UNSAID."""
+        with gate:
+            if person.id in in_sandbox:
+                raise HTTPException(429, "you have a try in the sandbox already: wait for it to "
+                                         "end, then try again")
+            if len(in_sandbox) >= SANDBOX_AT_ONCE:
+                raise HTTPException(429, "the sandbox is busy with others' tries: try again in a "
+                                         "minute")
+            in_sandbox.add(person.id)
+        try:
+            affordable(person, model)
+            spent: dict = {"tokens": 0}
+            try:
+                yield spent
+            except Spent as e:
+                spent["tokens"] = e.tokens
+                raise
+            finally:
+                n = spent["tokens"]
+                with db.transaction(gw.url) as conn:
+                    took(conn, person, model, SANDBOX_UNSAID if n is None else n)
+        finally:
+            with gate:
+                in_sandbox.discard(person.id)
 
     def affordable(person: Person, model: str | None) -> None:
         """Refuse a try on a real model once someone's tries in the sandbox have taken a day's
@@ -1124,8 +1187,8 @@ def router(gw: Any) -> APIRouter:
     @api.get("/studio/api/sandbox", **shapes.answers(shapes.Sandbox))
     def studio_sandbox(_: Annotated[Person, Depends(drafting)]) -> dict:
         """Whom a draft may be tried as in the sandbox, of its made-up people, and on which
-        models."""
-        return sandboxed("/sandbox")
+        models, with the currency models.yaml prices them in, if it names one."""
+        return {**sandboxed("/sandbox"), "currency": gw.currency}
 
     @api.post("/studio/api/drafts/{draft}/try", **shapes.answers(shapes.Tried))
     def studio_draft_try(draft: str, body: DraftTry,
@@ -1137,12 +1200,12 @@ def router(gw: Any) -> APIRouter:
             found = drafts.get(conn, person, draft)
         if found is None:
             raise HTTPException(404, "you have no such draft")
-        affordable(person, body.model)
-        said = sandboxed("/sandbox/tries", {"key": found["id"].replace("-", "")[:12],
-                                            "files": found["files"], "person": body.person,
-                                            "text": body.text, "model": body.model})
+        with trying(person, body.model) as spent:
+            said = sandboxed("/sandbox/tries", {"key": found["id"].replace("-", "")[:12],
+                                                "files": found["files"], "person": body.person,
+                                                "text": body.text, "model": body.model})
+            spent["tokens"] = said.get("tokens")
         with db.transaction(gw.url) as conn:
-            took(conn, person, body.model, said.get("tokens"))
             ledger.append(conn, {"kind": "admin", "action": "try draft", "run": None,
                                  "instance": None, "acts_for": [], "decision": "record",
                                  "args": {"agent": found["agent"], "draft": found["id"],
@@ -1182,13 +1245,13 @@ def router(gw: Any) -> APIRouter:
         # A case kept from a real run goes only to a model approved for the deployment's data
         classes = sorted({settings.data_class, *settings.classified.values()}) if settings \
             else [cases.UNKNOWN]  # while they can't be read: none a model is approved for
-        affordable(person, body.model)
-        ran = sandboxed("/sandbox/cases", {"key": found["id"].replace("-", "")[:12],
-                                           "files": found["files"], "number": number,
-                                           "model": body.model, "classes": classes})
-        with db.transaction(gw.url) as conn:  # the case's runs, and its judge's calls
-            took(conn, person, body.model, int(ran.get("tokens") or 0)
-                 + int(ran.get("judge_tokens") or 0))
+        with trying(person, body.model) as spent:
+            ran = sandboxed("/sandbox/cases", {"key": found["id"].replace("-", "")[:12],
+                                               "files": found["files"], "number": number,
+                                               "model": body.model, "classes": classes})
+            spent["tokens"] = (int(ran.get("tokens") or 0)  # the case's runs, and its judge's
+                               + int(ran.get("judge_tokens") or 0))
+        with db.transaction(gw.url) as conn:
             ledger.append(conn, {"kind": "admin", "action": "run draft case", "run": None,
                                  "instance": None, "acts_for": [], "decision": "record",
                                  "args": {"agent": found["agent"], "draft": found["id"],

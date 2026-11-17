@@ -246,7 +246,7 @@ def test_each_agents_regression_suite(database: str, tmp_path: Path, monkeypatch
             wrong = check(step, reply, called, case.get("own_values") == "allowed")
             if why := unanswered(answered(stack, agent, since)):
                 wrong.insert(0, why)  # a5s's own words pass no case's checks
-            if criterion := step.get("judged"):
+            if (criterion := step.get("judged")) and why is None:  # none of its own: nothing to judge
                 wrong += judged(release, str(criterion), dated(step.get("say", "what falls due")),
                                 reply, called, quiet=real(case))
             problems += [f"step {n}: {w}" for w in wrong]

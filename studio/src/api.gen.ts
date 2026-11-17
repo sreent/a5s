@@ -432,6 +432,7 @@ export type Draft = {
 export type DraftFiles = {
   files: Record<string, string>;
   plan?: Plan | null;
+  loaded?: string | null;
 };
 
 // One of someone's drafts, or a co-author's, without its files (core/drafts.py).
@@ -1183,10 +1184,12 @@ export type Samples = {
   right_share: number | null;
 };
 
-// Whom a draft may be tried as, of the sandbox's made-up people, and on which models.
+// Whom a draft may be tried as, of the sandbox's made-up people, and on which models, with
+// the currency models.yaml prices them in, if it names one.
 export type Sandbox = {
   people: Named[];
   models: string[];
+  currency?: string | null;
 };
 
 // When an agent works on its own, in its instance owner's time zone, and what it's asked.

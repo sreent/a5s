@@ -175,6 +175,15 @@ export function triggers(agent: Pick<AgentUses, "triggers"> & Partial<Pick<Agent
 
 // Words and numbers
 
+/** An amount in the currency models.yaml prices models in, or a plain figure where it names none:
+ * to the cent, or to two figures below a cent, so a cheap model's month isn't shown as nothing. */
+export function money(n: number, currency: string | null | undefined): string {
+  const digits: Intl.NumberFormatOptions = n !== 0 && Math.abs(n) < 0.01
+    ? { maximumSignificantDigits: 2 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 };
+  return currency ? n.toLocaleString(locale(), { style: "currency", currency, ...digits })
+    : n.toLocaleString(locale(), digits);
+}
+
 export const plural = (n: number, one: string, many = `${one}s`) =>
   language() === "th" ? `${n.toLocaleString(locale())} ${TH_NOUNS[one] ?? one}` : `${n.toLocaleString()} ${n === 1 ? one : many}`;
 export const people = (n: number) => plural(n, "person", "people");
