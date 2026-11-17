@@ -41,7 +41,7 @@ KEPT: Final = ("turns", "summaries", "inbound", "outbox", "chats", "digest_items
 # What only serves the person while they're here, which it lets go
 LET_GO: Final = ("preferences", "report_seen", "digest_waits", "urgent_sent", "digests", "spend",
           "sign_in_groups", "agent_drafts", "agent_asks", "delegations", "delegation_starts",
-          "handovers", "shadow_answers", "sandbox_spend")
+          "handovers", "shadow_answers", "sandbox_spend", "settings_requests")
 
 
 def sweep(conn: db.Connection, scenario: Scenario, now: datetime) -> list[str]:
@@ -129,6 +129,13 @@ def rename(conn: db.Connection, person: str, now: datetime) -> str:
         conn.execute(f"update {table} set person = %s where person = %s", (name, person))
     for table in LET_GO:
         conn.execute(f"delete from {table} where person = %s", (person,))
+    conn.execute("update agent_drafts set plan = jsonb_set(plan, '{serves}', (plan->'serves') - "
+                 "%(p)s) where plan->'serves' ? %(p)s", {"p": person})  # whom others' drafts
+    conn.execute("update agent_drafts set before = (select jsonb_agg(case when e.b->>'person' = "
+                 "%(p)s then e.b - 'person' else e.b end order by e.n) from jsonb_array_elements("
+                 "before) with ordinality as e(b, n)) where before @> jsonb_build_array("
+                 "jsonb_build_object('person', %(p)s::text))", {"p": person})  # plan for, and
+    # who drafted them before, as erasure takes them out (round 15, E9)
     # In group chats: what they said, and that they were there to hear it
     unsummarise(conn, [person])
     conn.execute("update turns set speaker = %s where speaker = %s", (name, person))

@@ -69,7 +69,7 @@ def router(gw: Any) -> APIRouter:
 
     def shown(conn: Any) -> audit.Shown:
         return audit.Shown(gw.scenario, audit.key(conn),
-                           names=gw.data_protection(conn).audit_names)
+                           names=gw.data_protection(conn).audit_names, left=audit.left(conn))
 
     @pages.get("/audit/", include_in_schema=False)
     def audit_page(request: Request) -> Response:

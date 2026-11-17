@@ -26,16 +26,16 @@ def told(conn: db.Connection, scenario: Any, definitions: dict[str, Definition],
     it. Whom it told: nobody, for any other version, which they approved themselves."""
     if before is None or (parts := registry.narrowed(settings, before)) is None:
         return []
-    changed = [c["text"] for c in approvals.changes(before, settings, definitions,
-                                                     scenario.person)]
-    names = approvals.names_of([p.name if (p := scenario.person(s)) else s for s in signers])
+    named = [p.name if (p := scenario.person(s)) else s for s in signers]
     whom = []
     for person in registry.told(settings, scenario.holders, before,
                                 memberships.rooted(scenario).holders):
         spoken = languages.of(conn, person)
-        text = words.say(spoken, NARROWED, names=names, serial=settings.serial,
-                         parts=approvals.names_of(sorted(parts)),
-                         said=" ".join(words.translated(spoken, c) for c in changed))
+        changed = [c["text"] for c in approvals.changes(before, settings, definitions,
+                                                         scenario.person, spoken)]
+        text = words.say(spoken, NARROWED, names=approvals.names_of(named, spoken),
+                         serial=settings.serial, parts=approvals.names_of(sorted(parts), spoken),
+                         said=" ".join(changed))
         digests.keep(conn, person.id, None, None, None, text, now)
         ledger.append(conn, {"kind": "notice", "action": "narrowed", "run": None,
                              "instance": None, "acts_for": [], "decision": "record",

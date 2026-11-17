@@ -21,7 +21,7 @@ from a5s.contract import (
     Person,
     parse_settings,
 )
-from a5s.core import approvals, audit, memberships, proposals, registry, studio, words
+from a5s.core import approvals, audit, languages, memberships, proposals, registry, studio, words
 from a5s.core.releases import agent_owner
 
 LATEST = 20  # administrative acts the page shows, newest first
@@ -52,9 +52,10 @@ def administers(person: Person | None, team: str) -> bool:
         for r in person.roles))
 
 
-def held(scenario: Any, conn: db.Connection, roles: list[str]) -> list[dict[str, Any]]:
+def held(scenario: Any, conn: db.Connection, roles: list[str],
+         language: str = languages.ENGLISH) -> list[dict[str, Any]]:
     """Who holds each role, and by what: the directory, or a group, as their latest sign-in
-    showed it and the settings in force map it."""
+    showed it and the settings in force map it, in the language someone reads."""
     own = memberships.rooted(scenario)
     state = getattr(scenario, "_a5s_roles", None)
     if state is not None:
@@ -63,13 +64,13 @@ def held(scenario: Any, conn: db.Connection, roles: list[str]) -> list[dict[str,
     kept = memberships.stored(conn) if mapping else {}
     found = []
     for role in roles:
-        holders = {p.id: {"id": p.id, "name": p.name, "by": ["the directory"]}
+        holders = {p.id: {"id": p.id, "name": p.name, "by": [words.say(language, "the directory")]}
                    for p in own.holders(role)}
         for pid, groups in sorted(kept.items()):
             for group in groups:
                 if role in mapping.get(group, ()) and (p := own.person(pid)) is not None:
                     holders.setdefault(pid, {"id": pid, "name": p.name, "by": []})["by"].append(
-                        f"group {group}")
+                        words.say(language, "group {group}", group=group))
         found.append({"role": role, "held_by": sorted(holders.values(), key=lambda h: h["id"])})
     return found
 
@@ -181,7 +182,8 @@ def page(conn: db.Connection, gw: Any, now: datetime, days: int = DAYS,
     roles = [row["role"] for row in audit.roles_of(gw.scenario, parts, sorted(known))]
     report = audit.report(conn, gw.scenario, sorted(known), since=now - timedelta(days=days))
     acts = [a for a in (_seen(a, conn, known, viewer) for a in report["acts"]) if a is not None]
-    shown = audit.Shown(gw.scenario, audit.key(conn), names=gw.data_protection(conn).audit_names)
+    shown = audit.Shown(gw.scenario, audit.key(conn), names=gw.data_protection(conn).audit_names,
+                        left=audit.left(conn))
     gone = ownerless(conn, gw)
     gone = {**gone, "agents": [a for a in gone["agents"] if a["agent"] in known],
             "instances": [i for i in gone["instances"] if i["agent"] in known]}

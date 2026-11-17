@@ -40,7 +40,9 @@ from a5s.core.identity import (
     whose,
     without_second_factor,
 )
+from a5s.core.languages import ENGLISH
 from a5s.core.ledger import canonical
+from a5s.core.words import say
 from a5s.definitions import Definition
 
 log = logging.getLogger(__name__)
@@ -58,24 +60,33 @@ class Refused(Exception):
         self.second_factor = second_factor  # what was refused for want of one, to count it
 
 
-# What approving an instance's `asks` lets through, in words (core/asking.py)
-ASKS_ABOUT = ("questions, for the people it acts for, which each answers from the records in "
-              "its own parts that those people may see")
-# and its `hands_to` (core/handover.py)
-HANDS_ABOUT = ("a conversation over, at its agent's word, to the people of {teams}, who read its "
-               "brief and what the person said, and answer them in the same chat until they hand "
-               "it back")
-# and its `shadows` (core/shadows.py)
-SHADOWS_ABOUT = ("answers what {live} is asked, beside it, as the same people, sending and changing "
-                 "nothing: graders read its answers beside those sent")
+# What approving an instance's `asks` lets through, its `hands_to` (core/handover.py) and its
+# `shadows` (core/shadows.py), in words, as a new instance's and as a change: each sentence whole,
+# so it reads whole in each language a5s has the words in (core/words.py)
+ASKS = ("It may ask {asked} questions, for the people it acts for, which each answers from the "
+        "records in its own parts that those people may see.")
+ASKS_MORE = ("{id} may ask {asked} questions, for the people it acts for, which each answers from "
+             "the records in its own parts that those people may see.")
+HANDS = ("It may hand a conversation over, at its agent's word, to the people of {teams}, who "
+         "read its brief and what the person said, and answer them in the same chat until they "
+         "hand it back.")
+HANDS_MORE = ("{id} may hand a conversation over, at its agent's word, to the people of {teams}, "
+              "who read its brief and what the person said, and answer them in the same chat "
+              "until they hand it back.")
+SHADOWS = ("It's a shadow: it answers what {live} is asked, beside it, as the same people, "
+           "sending and changing nothing: graders read its answers beside those sent.")
+SHADOWS_NOW = ("{id} answers what {live} is asked, beside it, as the same people, sending and "
+               "changing nothing: graders read its answers beside those sent, as a shadow.")
 
 
-def _teams(teams: Iterable[str]) -> str:
+def _teams(teams: Iterable[str], language: str = ENGLISH) -> str:
     """Teams of the directory, in words: the finance team, or the finance and quality teams."""
     named = list(teams)
     if len(named) == 1:
-        return f"the {named[0]} team"
-    return f"the {', '.join(named[:-1])} and {named[-1]} teams"
+        return say(language, "the {team} team", team=named[0])
+    return say(language, "the {teams} and {last} teams", teams=", ".join(named[:-1]),
+               last=named[-1])
+
 
 def digest(raw: bytes) -> str:
     return hashlib.sha256(raw).hexdigest()
@@ -159,20 +170,25 @@ def latest(conn: db.Connection, scenario: str) -> dict | None:
 
 
 class Words:
-    """How code puts a version of the settings in words, from the releases and the directory."""
+    """How code puts a version of the settings in words, from the releases and the directory,
+    in the language someone reads, where a5s has the words (core/words.py): English otherwise."""
 
-    def __init__(self, definitions: dict[str, Definition], directory: Directory):
-        self.definitions, self.directory = definitions, directory
+    def __init__(self, definitions: dict[str, Definition], directory: Directory,
+                 language: str = ENGLISH):
+        self.definitions, self.directory, self.language = definitions, directory, language
+
+    def say(self, text: str, **given: object) -> str:
+        return say(self.language, text, **given)
 
     def names(self, people: Any) -> str:
-        return names_of([self.name(pid) for pid in sorted(people)])
+        return names_of([self.name(pid) for pid in sorted(people)], self.language)
 
     def name(self, entry: str) -> str:
         """Someone, by name, or a group, as the directory decides who is in it at the time."""
         if entry.startswith("team:"):
-            return f"everyone in the {entry[5:]} team"
+            return self.say("everyone in the {team} team", team=entry[5:])
         if entry.startswith("role:"):
-            return f"everyone who holds the {entry[5:]} role"
+            return self.say("everyone who holds the {role} role", role=entry[5:])
         return p.name if (p := self.directory(entry)) else entry
 
     def actions(self, instance: InstanceSettings) -> dict[tuple[str, str], int]:
@@ -181,15 +197,15 @@ class Words:
         found = registry.action_levels(instance, release) if release else instance.actions
         return {(p, a): lv for p, acts in found.items() for a, lv in acts.items()}
 
-    @staticmethod
-    def limits(settings: Settings) -> dict[str, str]:
+    def limits(self, settings: Settings) -> dict[str, str]:
         """The scenario's limit for each type of action, in words."""
         said = {}
         for action, limit in sorted(settings.limits.items()):
-            parts = ([f"{limit['per_run']} in one run"] if "per_run" in limit else []) + (
-                [f"{limit['per_person_30_days']} for one person in 30 days"]
-                if "per_person_30_days" in limit else [])
-            said[action] = names_of(parts) if parts else "no limit"
+            parts = ([self.say("{n} in one run", n=limit["per_run"])] if "per_run" in limit
+                     else []) + ([self.say("{n} for one person in 30 days",
+                                           n=limit["per_person_30_days"])]
+                                 if "per_person_30_days" in limit else [])
+            said[action] = names_of(parts, self.language) if parts else self.say("no limit")
         return said
 
     def levels(self, instance: InstanceSettings) -> tuple[int | None, dict[str, int | None]]:
@@ -202,133 +218,158 @@ class Words:
     def where(self, instance: InstanceSettings) -> str:
         level, parts = self.levels(instance)
         if not parts:
-            return f"in no part, at level {level}"
-        return "working in " + names_of([f"{p} at level {lv}" for p, lv in parts.items()])
+            return self.say("in no part, at level {level}", level=level)
+        return self.say("working in {parts}", parts=names_of(
+            [self.say("{part} at level {level}", part=p, level=lv) for p, lv in parts.items()],
+            self.language))
 
     def owner(self, instance: InstanceSettings, who: str) -> str | None:
         release = self.definitions.get(instance.definition)
         return getattr(instance, who) or (getattr(release, who) if release else None)
 
-    @staticmethod
-    def classes(settings: Settings) -> str:
-        own = [f"{field} is {cls}" for field, cls in sorted(settings.classified.items())]
-        return f"{settings.data_class}" + (f", except that {names_of(own)}" if own else "")
+    def classes(self, settings: Settings) -> str:
+        own = [self.say("{field} is {data_class}", field=field, data_class=cls)
+               for field, cls in sorted(settings.classified.items())]
+        return self.say("{data_class}, except that {own}", data_class=settings.data_class,
+                        own=names_of(own, self.language)) if own else settings.data_class
 
 
 def changes(before: Settings | None, after: Settings, definitions: dict[str, Definition],
-            directory: Directory) -> list[dict]:
-    """What a version changes from the one in force, in words code works out, each with
-    whether it widens what agents do. A change to the classes of data counts as widening,
-    since a5s can't tell which classes are wider."""
-    words = Words(definitions, directory)
+            directory: Directory, language: str = ENGLISH) -> list[dict]:
+    """What a version changes from the one in force, in words code works out, in the language
+    someone reads, each with whether it widens what agents do. A change to the classes of data
+    counts as widening, since a5s can't tell which classes are wider."""
+    words = Words(definitions, directory, language)
+    said = words.say
     was = {i.id: i for i in before.instances} if before else {}
     found: list[dict] = []
     if before is not None and words.classes(before) != words.classes(after):
-        found.append({"text": f"The scenario's data becomes {words.classes(after)}, instead of "
-                              f"{words.classes(before)}.", "widens": True})
-    limits_was = Words.limits(before) if before else {}
-    for action, now in Words.limits(after).items():
+        found.append({"text": said("The scenario's data becomes {now}, instead of {was}.",
+                                   now=words.classes(after), was=words.classes(before)),
+                      "widens": True})
+    limits_was = words.limits(before) if before else {}
+    limits_now = words.limits(after)
+    for action, now in limits_now.items():
         if limits_was.get(action) != now:
             earlier = before.limits.get(action) if before else None
-            found.append({"text": f"The limit for {action} becomes {now}"
-                                  + (f", instead of {limits_was[action]}" if action in limits_was
-                                     else "") + ".",
+            found.append({"text": said("The limit for {action} becomes {now}, instead of {was}.",
+                                       action=action, now=now, was=limits_was[action])
+                          if action in limits_was else
+                          said("The limit for {action} becomes {now}.", action=action, now=now),
                           "widens": _looser(earlier, after.limits[action])})
-    for action in sorted(set(limits_was) - set(Words.limits(after))):
-        found.append({"text": f"{action} has no limit any more, instead of {limits_was[action]}.",
-                      "widens": True})
+    for action in sorted(set(limits_was) - set(limits_now)):
+        found.append({"text": said("{action} has no limit any more, instead of {was}.",
+                                   action=action, was=limits_was[action]), "widens": True})
     thresholds_was = before.thresholds if before else {}
     for part in sorted(set(thresholds_was) | set(after.thresholds)):
         a, b = thresholds_was.get(part), after.thresholds.get(part)
         if a != b:
-            found.append({"text": f"The accuracy {part} needs before an agent earns level 2 there "
-                                  f"becomes {_percent(b) if b else 'none, so none earns it'}"
-                                  + (f", instead of {_percent(a)}" if a else "") + ".",
+            share = _percent(b) if b else said("none, so none earns it")
+            found.append({"text": said("The accuracy {part} needs before an agent earns level 2 "
+                                       "there becomes {share}, instead of {was}.", part=part,
+                                       share=share, was=_percent(a)) if a else
+                          said("The accuracy {part} needs before an agent earns level 2 there "
+                               "becomes {share}.", part=part, share=share),
                           "widens": b is not None and (a is None or b < a)})
-    found += _spending(before.spending if before else Spending(), after.spending)
+    found += _spending(before.spending if before else Spending(), after.spending, language)
     asked = {i.id: i.definition for i in after.instances}
     for new in after.instances:
         old = was.pop(new.id, None)
         if old is None:
-            run_by = f", run by {words.names([o])}" if (o := words.owner(new, "owner")) else ""
-            found.append({"text": f"Adds {new.id}: the {new.definition}, {words.where(new)}, "
-                                  f"serving {words.names(new.serves)}{run_by}."
-                                  + (f" It may ask {_asked(new.asks, asked)} {ASKS_ABOUT}."
-                                     if new.asks else "")
-                                  + (f" It may hand {HANDS_ABOUT.format(teams=_teams(new.hands_to))}."
-                                     if new.hands_to else "")
-                                  + (f" It's a shadow: it {SHADOWS_ABOUT.format(live=new.shadows)}."
-                                     if new.shadows else ""),
-                          "widens": True})
+            given = {"id": new.id, "agent": new.definition, "where": words.where(new),
+                     "whom": words.names(new.serves)}
+            owner = words.owner(new, "owner")
+            found.append({"text": " ".join([
+                said("Adds {id}: the {agent}, {where}, serving {whom}, run by {owner}.",
+                     owner=words.names([owner]), **given) if owner else
+                said("Adds {id}: the {agent}, {where}, serving {whom}.", **given),
+                *_reaches(words, new, asked)]), "widens": True})
             continue
         if new.shadows != old.shadows:
-            found.append({"text": f"{new.id} {SHADOWS_ABOUT.format(live=new.shadows)}, as a shadow."
-                          if new.shadows else f"{new.id} is no longer a shadow of {old.shadows}: "
-                          "it works for its people itself.", "widens": True})
+            found.append({"text": said(SHADOWS_NOW, id=new.id, live=new.shadows) if new.shadows
+                          else said("{id} is no longer a shadow of {live}: it works for its "
+                                    "people itself.", id=new.id, live=old.shadows),
+                          "widens": True})
         if more := [t for t in new.hands_to if t not in old.hands_to]:
-            found.append({"text": f"{new.id} may hand {HANDS_ABOUT.format(teams=_teams(more))}.",
+            found.append({"text": said(HANDS_MORE, id=new.id, teams=_teams(more, language)),
                           "widens": True})
         if fewer := [t for t in old.hands_to if t not in new.hands_to]:
-            found.append({"text": f"{new.id} no longer hands conversations to {_teams(fewer)}.",
+            found.append({"text": said("{id} no longer hands conversations to {teams}.",
+                                       id=new.id, teams=_teams(fewer, language)),
                           "widens": False})
         if more := [a for a in new.asks if a not in old.asks]:
-            found.append({"text": f"{new.id} may ask {_asked(more, asked)} {ASKS_ABOUT}.",
-                          "widens": True})
+            found.append({"text": said(ASKS_MORE, id=new.id,
+                                       asked=_asked(more, asked, language)), "widens": True})
         if fewer := [a for a in old.asks if a not in new.asks]:
-            found.append({"text": f"{new.id} no longer asks {_asked(fewer, asked)}.",
-                          "widens": False})
+            found.append({"text": said("{id} no longer asks {asked}.", id=new.id,
+                                       asked=_asked(fewer, asked, language)), "widens": False})
         if new.definition != old.definition:
-            found.append({"text": f"{new.id} becomes the {new.definition}, instead of the "
-                                  f"{old.definition}.", "widens": True})
+            found.append({"text": said("{id} becomes the {agent}, instead of the {was}.",
+                                       id=new.id, agent=new.definition, was=old.definition),
+                          "widens": True})
         if more := set(new.serves) - set(old.serves):
-            found.append({"text": f"{new.id} serves {words.names(more)} as well.", "widens": True})
+            found.append({"text": said("{id} serves {whom} as well.", id=new.id,
+                                       whom=words.names(more)), "widens": True})
         if fewer := set(old.serves) - set(new.serves):
-            found.append({"text": f"{new.id} no longer serves {words.names(fewer)}.",
-                          "widens": False})
+            found.append({"text": said("{id} no longer serves {whom}.", id=new.id,
+                                       whom=words.names(fewer)), "widens": False})
         (a, was_in), (b, now_in) = words.levels(old), words.levels(new)
         if not was_in and not now_in and a != b:
-            found.append({"text": f"{new.id}'s level goes from {a} to {b}.",
-                          "widens": (b or 0) > (a or 0)})
+            found.append({"text": said("{id}'s level goes from {was} to {now}.", id=new.id,
+                                       was=a, now=b), "widens": (b or 0) > (a or 0)})
         for part in sorted(set(now_in) - set(was_in)):
-            found.append({"text": f"{new.id} works in {part} as well, at level {now_in[part]}.",
+            found.append({"text": said("{id} works in {part} as well, at level {level}.",
+                                       id=new.id, part=part, level=now_in[part]),
                           "widens": True})
         for part in sorted(set(was_in) - set(now_in)):
-            found.append({"text": f"{new.id} no longer works in {part}.", "widens": False})
+            found.append({"text": said("{id} no longer works in {part}.", id=new.id, part=part),
+                          "widens": False})
         for part in sorted(set(was_in) & set(now_in)):
             if (a := was_in[part]) != (b := now_in[part]):
-                found.append({"text": f"{new.id}'s level in {part} goes from {a} to {b}.",
+                found.append({"text": said("{id}'s level in {part} goes from {was} to {now}.",
+                                           id=new.id, part=part, was=a, now=b),
                               "widens": (b or 0) > (a or 0)})
         acts_was, acts_now = words.actions(old), words.actions(new)
         for part, action in sorted(set(acts_was) | set(acts_now)):
             a = acts_was.get((part, action), min(was_in.get(part) or 0, 1) if part in was_in else None)
             b = acts_now.get((part, action), min(now_in.get(part) or 0, 1) if part in now_in else None)
             if a != b and b is not None:
-                found.append({"text": f"{new.id}'s level for {action} in {part} goes from "
-                                      f"{a if a is not None else 'none'} to {b}"
-                                      + (", where it acts and reports, once samples show it's "
-                                         "accurate enough" if b >= 2 else "") + ".",
+                given = {"id": new.id, "action": action, "part": part, "now": b,
+                         "was": a if a is not None else said("none")}
+                found.append({"text": said("{id}'s level for {action} in {part} goes from {was} "
+                                           "to {now}, where it acts and reports, once samples "
+                                           "show it's accurate enough.", **given) if b >= 2 else
+                              said("{id}'s level for {action} in {part} goes from {was} to "
+                                   "{now}.", **given),
                               "widens": b > (a or 0)})
         for who in ("owner", "deputy"):
             if (a := words.owner(old, who)) != (b := words.owner(new, who)):
-                found.append({"text": f"{new.id}'s {who} changes from "
-                                      f"{words.names([a]) if a else 'nobody'} to "
-                                      f"{words.names([b]) if b else 'nobody'}.", "widens": False})
+                given = {"id": new.id, "was": words.names([a]) if a else said("nobody"),
+                         "now": words.names([b]) if b else said("nobody")}
+                found.append({"text": said("{id}'s owner changes from {was} to {now}.", **given)
+                              if who == "owner" else
+                              said("{id}'s deputy changes from {was} to {now}.", **given),
+                              "widens": False})
     for gone in was.values():
-        found.append({"text": f"Retires {gone.id}, which served {words.names(gone.serves)}.",
-                      "widens": False})
-    given = before.groups if before else {}  # the roles groups give, in the identity provider
-    for group in sorted(set(given) | set(after.groups)):
-        a, b = set(given.get(group, ())), set(after.groups.get(group, ()))
+        found.append({"text": said("Retires {id}, which served {whom}.", id=gone.id,
+                                   whom=words.names(gone.serves)), "widens": False})
+    given_by = before.groups if before else {}  # the roles groups give, in the identity provider
+    for group in sorted(set(given_by) | set(after.groups)):
+        a, b = set(given_by.get(group, ())), set(after.groups.get(group, ()))
         if more := sorted(b - a):
-            found.append({"text": f"Everyone in the group {group} holds {names_of(more)}, as "
-                                  "their sign-ins show they're in it.", "widens": True})
+            found.append({"text": said(HOLDS, group=group, roles=names_of(more, language)),
+                          "widens": True})
         if fewer := sorted(a - b):
-            found.append({"text": f"The group {group} no longer gives {names_of(fewer)}.",
-                          "widens": False})
+            found.append({"text": said("The group {group} no longer gives {roles}.", group=group,
+                                       roles=names_of(fewer, language)), "widens": False})
     found += _protection(before.data_protection if before else DataProtection(),
-                         after.data_protection)
-    return found or [{"text": "It changes nothing the agents do: only its number or its notes.",
-                      "widens": False}]
+                         after.data_protection, language)
+    return found or [{"text": said("It changes nothing the agents do: only its number or its "
+                                   "notes."), "widens": False}]
+
+
+# A group's members holding a role, as a version that gives it says it, and a whole version does
+HOLDS = "Everyone in the group {group} holds {roles}, as their sign-ins show they're in it."
 
 
 # The data protection officer's choices that name people, in words: as each stands on, and off
@@ -366,41 +407,35 @@ def money(amount: float, currency: str | None = None) -> str:
     return f"{currency} {said}" if currency else said
 
 
-def _in(currency: str | None) -> str:
-    return currency or "the currency models.yaml prices models in"
+def _in(currency: str | None, language: str = ENGLISH) -> str:
+    return currency or say(language, "the currency models.yaml prices models in")
 
 
-# What a budget is for, in words, by whose it is: a part's, or an agent's
-COVERS = {"parts": "what agents' model calls may cost there",
-          "agents": "what its model calls may cost"}
-
-
-def _whose(kind: str, name: str) -> str:
-    return name if kind == "parts" else f"the {name}"
-
-
-def _spending(was: Spending, now: Spending) -> list[dict]:
-    """What a version changes of what parts and agents may cost a month, in words: none
-    widens what agents do, since a budget stops no work."""
+def _spending(was: Spending, now: Spending, language: str = ENGLISH) -> list[dict]:
+    """What a version changes of what agents may cost a month, in words: none widens what
+    agents do, since a budget stops no work."""
     found = []
-    if was.currency != now.currency and (now.parts or now.agents or was.parts or was.agents):
-        found.append({"text": f"Budgets are in {_in(now.currency)}, instead of "
-                              f"{_in(was.currency)}.", "widens": False})
-    for kind in ("parts", "agents"):
-        a, b = getattr(was, kind), getattr(now, kind)
-        for name in sorted(set(a) | set(b)):
-            if a.get(name) == b.get(name) and was.currency == now.currency:
-                continue
-            whose = _whose(kind, name)
-            if name not in b:
-                text = (f"There's no budget for {whose} any more, instead of "
-                        f"{money(a[name], was.currency)} a month.")
-            else:
-                text = (f"The budget for {whose} becomes {money(b[name], now.currency)} a month"
-                        + (f", instead of {money(a[name], was.currency)}" if name in a else "")
-                        + f": {COVERS[kind]}, which a5s shows spending against, and which stops "
-                          "no work.")
-            found.append({"text": text, "widens": False})
+    if was.currency != now.currency and (now.agents or was.agents):
+        found.append({"text": say(language, "Budgets are in {now}, instead of {was}.",
+                                  now=_in(now.currency, language), was=_in(was.currency, language)),
+                      "widens": False})
+    a, b = was.agents, now.agents
+    for name in sorted(set(a) | set(b)):
+        if a.get(name) == b.get(name) and was.currency == now.currency:
+            continue
+        if name not in b:
+            text = say(language, "There's no budget for the {name} any more, instead of {was} a "
+                       "month.", name=name, was=money(a[name], was.currency))
+        elif name in a:
+            text = say(language, "The budget for the {name} becomes {amount} a month, instead of "
+                       "{was}: what its model calls may cost, which a5s shows spending against, "
+                       "and which stops no work.", name=name, amount=money(b[name], now.currency),
+                       was=money(a[name], was.currency))
+        else:
+            text = say(language, "The budget for the {name} becomes {amount} a month: what its "
+                       "model calls may cost, which a5s shows spending against, and which stops "
+                       "no work.", name=name, amount=money(b[name], now.currency))
+        found.append({"text": text, "widens": False})
     return found
 
 
@@ -410,37 +445,61 @@ def _days(kept: str) -> float:
     return int(n) * (1 if unit.startswith("day") else 365.25 / 12)
 
 
-def _protection(was: DataProtection, now: DataProtection) -> list[dict]:
+def _period(kept: str, language: str = ENGLISH) -> str:
+    """A kept_for, such as 90 days, as someone reads it: as written, in English."""
+    if language == ENGLISH:
+        return kept
+    n, unit = kept.split()
+    return say(language, "{n} days" if unit.startswith("day") else "{n} months", n=n)
+
+
+def _protection(was: DataProtection, now: DataProtection, language: str = ENGLISH) -> list[dict]:
     """What a version changes of the data protection officer's choices, in words: each widens
     what a5s does with people's data if it keeps it longer, names people, or lets an instance's
     figures out when it serves fewer of them."""
     found = []
     if was.kept_for != now.kept_for:
-        found.append({"text": f"a5s keeps what's said for {now.kept_for} after a conversation's "
-                              f"last message, and what goes with it, instead of {was.kept_for}.",
+        found.append({"text": say(language, "a5s keeps what's said for {kept} after a "
+                                  "conversation's last message, and what goes with it, instead of "
+                                  "{was}.", kept=_period(now.kept_for, language),
+                                  was=_period(was.kept_for, language)),
                       "widens": _days(now.kept_for) > _days(was.kept_for)})
     if was.fewest_people != now.fewest_people:
-        found.append({"text": "An instance's own figures go out to the team's dashboards once it "
-                              f"serves {now.fewest_people} people, instead of {was.fewest_people}.",
+        found.append({"text": say(language, "An instance's own figures go out to the team's "
+                                  "dashboards once it serves {n} people, instead of {was}.",
+                                  n=now.fewest_people, was=was.fewest_people),
                       "widens": now.fewest_people < was.fewest_people})
     for name, (on, off) in NAMING.items():
         if (turned := getattr(now, name)) != getattr(was, name):
-            found.append({"text": on if turned else off, "widens": turned})
+            found.append({"text": say(language, on if turned else off), "widens": turned})
     return found
 
 
-def protection(choices: DataProtection) -> list[str]:
+def protection(choices: DataProtection, language: str = ENGLISH) -> list[str]:
     """The data protection officer's choices, each in words, as a whole version says them."""
-    return [(f"a5s keeps what's said for {choices.kept_for} after a conversation's last "
-             "message, and what goes with it."),
-            ("An instance's own figures go out to the team's dashboards once it serves "
-             f"{choices.fewest_people} people or more."),
-            *(on if getattr(choices, name) else off for name, (on, off) in NAMING.items())]
+    return [say(language, "a5s keeps what's said for {kept} after a conversation's last message, "
+                "and what goes with it.", kept=_period(choices.kept_for, language)),
+            say(language, "An instance's own figures go out to the team's dashboards once it "
+                "serves {n} people or more.", n=choices.fewest_people),
+            *(say(language, on if getattr(choices, name) else off)
+              for name, (on, off) in NAMING.items())]
 
 
-def _asked(ids: list[str] | tuple[str, ...], definitions: dict[str, str]) -> str:
+def _asked(ids: list[str] | tuple[str, ...], definitions: dict[str, str],
+           language: str = ENGLISH) -> str:
     """The instances an instance may ask, in words: the watcher (watcher-finance)."""
-    return names_of([f"the {definitions[a]} ({a})" if a in definitions else a for a in ids])
+    return names_of([say(language, "the {agent} ({id})", agent=definitions[a], id=a)
+                     if a in definitions else a for a in ids], language)
+
+
+def _reaches(words: Words, instance: InstanceSettings, asked: dict[str, str]) -> list[str]:
+    """Whom an instance may ask and hand conversations to, and which it shadows, in words, each a
+    sentence of its own."""
+    return ([words.say(ASKS, asked=_asked(instance.asks, asked, words.language))]
+            if instance.asks else []) + (
+        [words.say(HANDS, teams=_teams(instance.hands_to, words.language))]
+        if instance.hands_to else []) + (
+        [words.say(SHADOWS, live=instance.shadows)] if instance.shadows else [])
 
 
 def _percent(share: float) -> str:
@@ -454,78 +513,98 @@ def _looser(was: dict[str, int] | None, now: dict[str, int]) -> bool:
 
 
 def described(settings: Settings, definitions: dict[str, Definition],
-              directory: Directory) -> list[str]:
-    """A whole version of the settings in words, for reviewing all of it before approving it."""
-    words = Words(definitions, directory)
-    told = [f"The scenario's data is {words.classes(settings)}."]
+              directory: Directory, language: str = ENGLISH) -> list[str]:
+    """A whole version of the settings in words, for reviewing all of it before approving it, in
+    the language someone reads."""
+    words = Words(definitions, directory, language)
+    said = words.say
+    told = [said("The scenario's data is {classes}.", classes=words.classes(settings))]
+    asked = {j.id: j.definition for j in settings.instances}
     for i in settings.instances:
-        run_by = [f"run by {words.names([o])}"] if (o := words.owner(i, "owner")) else []
-        if deputy := words.owner(i, "deputy"):
-            run_by.append(f"with {words.names([deputy])} as deputy")
-        told.append(f"{i.id}: the {i.definition}, {words.where(i)}, serving "
-                    f"{words.names(i.serves)}" + (f", {' '.join(run_by)}" if run_by else "") + "."
-                    + (f" It may ask {_asked(i.asks, {j.id: j.definition for j in settings.instances})}"
-                       f" {ASKS_ABOUT}." if i.asks else "")
-                    + (f" It may hand {HANDS_ABOUT.format(teams=_teams(i.hands_to))}."
-                       if i.hands_to else "")
-                    + (f" It's a shadow: it {SHADOWS_ABOUT.format(live=i.shadows)}."
-                       if i.shadows else ""))
-        told += [f"{i.id} works at level {lv} for {action} in {part}"
-                 + (", where it acts and reports, once graded samples show it's accurate "
-                    "enough: until then a5s holds it at level 1" if lv >= 2 else "") + "."
+        given = {"id": i.id, "agent": i.definition, "where": words.where(i),
+                 "whom": words.names(i.serves)}
+        owner, deputy = words.owner(i, "owner"), words.owner(i, "deputy")
+        if owner and deputy:
+            first = said("{id}: the {agent}, {where}, serving {whom}, run by {owner} with "
+                         "{deputy} as deputy.", owner=words.names([owner]),
+                         deputy=words.names([deputy]), **given)
+        elif owner:
+            first = said("{id}: the {agent}, {where}, serving {whom}, run by {owner}.",
+                         owner=words.names([owner]), **given)
+        elif deputy:
+            first = said("{id}: the {agent}, {where}, serving {whom}, with {deputy} as deputy.",
+                         deputy=words.names([deputy]), **given)
+        else:
+            first = said("{id}: the {agent}, {where}, serving {whom}.", **given)
+        told.append(" ".join([first, *_reaches(words, i, asked)]))
+        told += [said("{id} works at level {level} for {action} in {part}, where it acts and "
+                      "reports, once graded samples show it's accurate enough: until then a5s "
+                      "holds it at level 1.", id=i.id, level=lv, action=action, part=part)
+                 if lv >= 2 else
+                 said("{id} works at level {level} for {action} in {part}.", id=i.id, level=lv,
+                      action=action, part=part)
                  for (part, action), lv in sorted(words.actions(i).items())]
     if not settings.instances:
-        told.append("No instances: every agent here is retired.")
-    told += [f"Limit for {action}: {said}." for action, said in Words.limits(settings).items()]
-    told += [f"An agent earns level 2 in {part} once graded samples show it's {_percent(share)} "
-             "accurate." for part, share in sorted(settings.thresholds.items())]
-    told += [f"Everyone in the group {group} holds {names_of(list(roles))}, as their sign-ins "
-             "show they're in it." for group, roles in sorted(settings.groups.items())]
-    told += [f"The budget for {_whose(kind, name)} is {money(amount, settings.spending.currency)}"
-             f" a month: {COVERS[kind]}, which a5s shows spending against"
-             + ("" if settings.spending.currency else f", in {_in(None)}") + "."
-             for kind in ("parts", "agents")
-             for name, amount in sorted(getattr(settings.spending, kind).items())]
-    return told + protection(settings.data_protection)
+        told.append(said("No instances: every agent here is retired."))
+    told += [said("Limit for {action}: {limit}.", action=action, limit=limit)
+             for action, limit in words.limits(settings).items()]
+    told += [said("An agent earns level 2 in {part} once graded samples show it's {share} "
+                  "accurate.", part=part, share=_percent(share))
+             for part, share in sorted(settings.thresholds.items())]
+    told += [said(HOLDS, group=group, roles=names_of(list(roles), language))
+             for group, roles in sorted(settings.groups.items())]
+    currency = settings.spending.currency
+    told += [said("The budget for the {name} is {amount} a month: what its model calls may "
+                  "cost, which a5s shows spending against.", name=name,
+                  amount=money(amount, currency)) if currency else
+             said("The budget for the {name} is {amount} a month: what its model calls may "
+                  "cost, which a5s shows spending against, in the currency models.yaml prices "
+                  "models in.", name=name, amount=money(amount, currency))
+             for name, amount in sorted(settings.spending.agents.items())]
+    return told + protection(settings.data_protection, language)
 
 
-def names_of(found: list[str]) -> str:
+def names_of(found: list[str], language: str = ENGLISH) -> str:
     """Things in a list, in words: a, b and c, or nobody."""
     if not found:
-        return "nobody"
-    return found[0] if len(found) == 1 else f"{', '.join(found[:-1])} and {found[-1]}"
+        return say(language, "nobody")
+    return found[0] if len(found) == 1 else say(language, "{first} and {last}",
+                                                first=", ".join(found[:-1]), last=found[-1])
 
 
-def card(serial: int, found: list[dict], link: str) -> dict:
-    """The card an approver gets in Teams or Slack. It only opens the core's page, where they
-    decide."""
+def card(serial: int, found: list[dict], link: str, language: str = ENGLISH) -> dict:
+    """The card an approver gets in Teams or Slack, in the language they read. It only opens the
+    core's page, where they decide."""
     return {
         "type": "AdaptiveCard",
         "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
         "version": "1.4",
         "body": [
-            {"type": "TextBlock", "text": "Settings to approve", "weight": "Bolder",
+            {"type": "TextBlock", "text": say(language, "Settings to approve"), "weight": "Bolder",
              "size": "Medium", "wrap": True},
-            {"type": "TextBlock", "wrap": True, "text": f"{_waits(serial)} What it changes:"},
+            {"type": "TextBlock", "wrap": True,
+             "text": f"{_waits(serial, language)} {say(language, 'What it changes:')}"},
             {"type": "TextBlock", "wrap": True,
              "text": "\n".join(f"- {c['text']}" for c in found)},
             {"type": "TextBlock", "wrap": True, "isSubtle": True, "size": "Small",
-             "text": "You decide on a5s's page, after signing in again. Telling an agent "
-                     "doesn't approve anything."},
+             "text": say(language, "You decide on a5s's page, after signing in again. Telling an "
+                                   "agent doesn't approve anything.")},
         ],
-        "actions": [{"type": "Action.OpenUrl", "title": "Review and approve", "url": link}],
+        "actions": [{"type": "Action.OpenUrl", "title": say(language, "Review and approve"),
+                     "url": link}],
     }
 
 
-def text(serial: int, found: list[dict], link: str) -> str:
+def text(serial: int, found: list[dict], link: str, language: str = ENGLISH) -> str:
     """The same, for chats without cards. Its first line says what it's about."""
     said = "\n".join(f"- {c['text']}" for c in found)
-    return (f"{_waits(serial)}\nWhat it changes:\n{said}\n"
-            f"Review it, and approve it only if you mean it, at {link}")
+    return (f"{_waits(serial, language)}\n{say(language, 'What it changes:')}\n{said}\n"
+            + say(language, "Review it, and approve it only if you mean it, at {link}", link=link))
 
 
-def _waits(serial: int) -> str:
-    return f"Version {serial} of a5s's settings waits for its instance approvers to approve it."
+def _waits(serial: int, language: str = ENGLISH) -> str:
+    return say(language, "Version {serial} of a5s's settings waits for its instance approvers to "
+                         "approve it.", serial=serial)
 
 
 # Approving
@@ -634,9 +713,9 @@ def seal_pending(conn: db.Connection, keys: tuple[str, ...], verifier: Verifier 
                                    "and digest = %s", (row["scenario"], row["digest"])).fetchone()
             refused.append(sealing.Refusal(
                 row["person"], f"{row['person']}'s approval: {why}",
-                f"Your approval of version {version['serial'] if version else '?'} of the settings "
-                f"didn't count: {why}. If it still waits for you, approve it again on the "
-                "settings page, signing in afresh."))
+                (("Your approval of version {serial} of the settings didn't count: {why}. If it "
+                  "still waits for you, approve it again on the settings page, signing in afresh."),
+                 {"serial": version["serial"] if version else "?", "why": why})))
             continue
         claim = verifier.cfg.groups_claim if verifier else None  # checked, so it's there
         groups = list(memberships.shown(verifier.claims(row["proof"], expired=True), claim)

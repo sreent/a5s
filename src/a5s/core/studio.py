@@ -70,12 +70,14 @@ def parts_of(inst: dict) -> list[str]:
 
 def watches(inst: dict, person: Person) -> bool:
     """Whether someone may watch an instance: they run it, as its owner or deputy, own its
-    agent, own or decide for one of its parts, or approve instances."""
+    agent, own or decide for one of its parts, or approve instances; or, while it's suspended,
+    approve releases, to judge whether to resume it (round 15, D6)."""
     roles = set(person.roles)
     return (person.id in (inst.get("owner"), inst.get("deputy"))
             or agent_owner(inst["definition"]) in roles or INSTANCE_APPROVER in roles
             or any(f"{PART_OWNER}:{p}" in roles or f"{PART_DELEGATE}:{p}" in roles
-                   for p in parts_of(inst)))
+                   for p in parts_of(inst))
+            or (RELEASE_APPROVER in roles and inst.get("status") == "suspended"))
 
 
 def instances(conn: db.Connection, viewer: Person | None = None, *,

@@ -64,10 +64,11 @@ def as_itself(recorded: str | None, token: str | None) -> bool:
 @dataclass(frozen=True)
 class Refusal:
     """What the gateway refused to seal: whose it was, what the ledger says of it, and what
-    they're told, in their digest, so they can do it again."""
+    they're told, in their digest, so they can do it again: a sentence of core/words.py's, and
+    what changes in it, so they read it in their language."""
     person: str | None
     what: str
-    told: str | None = None
+    told: tuple[str, dict[str, Any]] | None = None
 
 
 class Unchecked(Exception):

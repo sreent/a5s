@@ -109,7 +109,7 @@ def test_the_catalogue_has_every_word_the_studio_puts_through_it():
 def test_the_studio_and_the_web_chat_speak_thai_to_those_who_read_it(stack, approving, provider,
                                                                     browser):
     reads(stack, "ana", "th")
-    assert not stack.settle(spending={"parts": {"billing": 5}}).refused
+    assert not stack.settle(spending={"agents": {"assistant": 5}}, signers=("ana", "priya")).refused
     provider.person = "ana"
     page = browser.new_page(viewport={"width": 1280, "height": 900})
     page.goto(f"{approving}/studio/")
@@ -126,9 +126,9 @@ def test_the_studio_and_the_web_chat_speak_thai_to_those_who_read_it(stack, appr
         raise AssertionError("the page drew Thai without Plex Sans Thai")
     accessible(page)
     page.goto(f"{approving}/studio/spending")
-    page.wait_for_selector("#part-billing .cost-bars", timeout=30000)
+    page.wait_for_selector("#agent-assistant .cost-bars", timeout=30000)
     assert page.inner_text("h1") == "ค่าใช้จ่าย" and "UTC" in page.inner_text("#utc")
-    assert "งบประมาณ" in page.inner_text("#part-billing")
+    assert "งบประมาณ" in page.inner_text("#agent-assistant")
     accessible(page)
     # Back to English on their own page, and the studio speaks it at once
     page.goto(f"{approving}/studio/you")
@@ -169,21 +169,26 @@ def test_a5s_writes_its_own_words_in_the_language_someone_reads(stack, approving
                  *dependencies.SAYS.values(), *dependencies.ABOUT.values(),
                  *dependencies.STATUS.values()):  # and the map's, every edge and thing on it
         assert kept in words.TH, kept  # what a role lets someone do, and the like, has its Thai
-    assert words.translated("th", "the owner of billing hasn't approved it") == "เจ้าของ billing ยังไม่ได้อนุมัติ"
-    assert words.translated("en", "the owner of billing hasn't approved it") == \
-        "the owner of billing hasn't approved it"
-    assert words.translated("th", "something a5s has no Thai for") == "something a5s has no Thai for"
+    owns = "the owner of {part} hasn't approved it"  # a template the module that writes it passes
+    assert words.say("th", owns, part="billing") == "เจ้าของ billing ยังไม่ได้อนุมัติ"
+    assert words.say("en", owns, part="billing") == "the owner of billing hasn't approved it"
+    assert words.say("th", "something a5s has no Thai for") == "something a5s has no Thai for"
+    assert words.say("en", "{text}, in {language}", text="a line", language="Thai") == \
+        "a line, in Thai"  # what changes may be named as say's own are
+    # and no sentence is matched after it's written whole (round 14's deferral)
+    assert not hasattr(words, "translated") and not hasattr(words, "PATTERNS")
     # On their home and their own page, in Thai, once they read it
     stack.gateway.models["fake"] = replace(stack.gateway.models["fake"], prices=Prices(2000.0, 8000.0))
-    assert not stack.settle(spending={"parts": {"billing": 0.05}}).refused
+    assert not stack.settle(spending={"agents": {"assistant": 0.05}}, signers=("ana", "priya")).refused
     stack.model.reply("Hello.")
     stack.say("hello")
-    as_person(approving, provider, "ana", "POST", "/studio/api/you/language", {"language": "th"})
-    waiting = as_person(approving, provider, "ana", "GET", "/studio/api/home").json()["waiting"]
+    for person in ("ana", "priya"):  # Priya owns the assistant, so its budget is hers to hear of
+        as_person(approving, provider, person, "POST", "/studio/api/you/language", {"language": "th"})
+    waiting = as_person(approving, provider, "priya", "GET", "/studio/api/home").json()["waiting"]
     [spent] = [w for w in waiting if w["kind"] == "spending"]
-    assert spent["what"].startswith("billing ใช้ไปแล้ว")  # past the budget it set, never
+    assert spent["what"].startswith("assistant ใช้ไปแล้ว")  # past the budget it set, never
     assert "เกินงบ\u2060ประมาณที่ตั้งไว้" in spent["what"]  # read as the overage (round 14)
-    assert spent["why"] == ["คุณเป็นเจ้าของ billing"]
+    assert spent["why"] == ["คุณเป็นเจ้าของ assistant"]
     roles = as_person(approving, provider, "ana", "GET", "/studio/api/you").json()["roles"]
     owner = next(r for r in roles if r["role"] == "part-owner:billing")
     assert owner["name"] == "เจ้าของ billing" and owner["may"].startswith("อนุมัติอินสแตนซ์ที่ทำงานใน billing")
@@ -217,3 +222,29 @@ def test_a_group_reads_a5s_in_the_language_everyone_in_it_reads(stack):
         assert languages.shared(conn, [ana, ben, None]) == "en"  # someone a5s doesn't know
         languages.choose(conn, ben, "en", stack.gateway.clock())
         assert languages.shared(conn, [ana, ben]) == "en"
+
+
+def test_a_version_of_the_settings_reads_whole_in_thai():
+    """Round 14's deferral (E-M5): what a version changes and the whole of it, in Thai for whoever
+    reads Thai, each name, level and figure as the settings write it; in English as before."""
+    from a5s.contract import Person
+    from a5s.core import approvals
+    people = {"ana": Person(id="ana", name="Ana Silva", team="finance")}
+    before = parse_settings(b"serial: 1\ninstances:\n  assistant-finance: {definition: assistant, "
+                            b"serves: [ana], parts: [billing], level: 1, owner: ana}\n")
+    after = parse_settings(b"serial: 2\nlimits:\n  change-due-date: {per_run: 3}\nspending:\n"
+                           b"  agents: {assistant: 30}\n  currency: GBP\ninstances:\n"
+                           b"  assistant-finance: {definition: assistant, serves: [ana, 'team:finance'], "
+                           b"parts: [billing, orders], level: 1, owner: ana, hands_to: [finance]}\n")
+    en = [c["text"] for c in approvals.changes(before, after, {}, people.get)]
+    th = [c["text"] for c in approvals.changes(before, after, {}, people.get, "th")]
+    assert len(th) == len(en) and not any(re.search(r"[ก-๙]", e) for e in en), en
+    assert all(re.search(r"[ก-๙]", t) for t in th), th  # each line, not a word of it English alone
+    assert "ขีดจำกัดของ change-due-date เปลี่ยนเป็น 3 รายการต่อการทำงานหนึ่งครั้ง" in th
+    assert any(t.startswith("งบประมาณของ assistant เปลี่ยนเป็น GBP 30 ต่อเดือน") for t in th), th
+    assert "assistant-finance ให้บริการ ทุกคนในทีม finance ด้วย" in th
+    assert "assistant-finance ส่งต่อการสนทนาให้คนในทีม financeได้" in " ".join(th)
+    whole = approvals.described(after, {}, people.get, "th")
+    assert all(re.search(r"[ก-๙]", line) for line in whole), whole
+    assert whole[1].startswith("assistant-finance: assistant ทำงานใน billing ที่ระดับ 1 และ orders "
+                               "ที่ระดับ 1 ให้บริการ Ana Silva และ ทุกคนในทีม finance ดูแลโดย Ana Silva")

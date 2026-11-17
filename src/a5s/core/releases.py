@@ -295,6 +295,14 @@ class Need:
 WHEN_ANY = ("events",)
 
 
+def _told(part: dict) -> dict:
+    """What an agent's part of a release tells it to do, its instructions and its skills, by
+    their hashes: not its tests, which no run reads, nor its agent.yaml, whose effect on what
+    it may do `may` holds."""
+    return {k: v for k, v in (part.get("files") or {}).items()
+            if (path := k.split("/", 2)[-1]) == "AGENTS.md" or path.startswith("skills/")}
+
+
 def _widens_agent(old: dict, new: dict) -> list[str]:
     """What an agent may do now that it couldn't before."""
     found = []
@@ -391,6 +399,12 @@ def needs(new: dict, old: dict | None, advisory: str | None = None) -> list[Need
         else:
             found += [Need(agent_owner(name), f"the {name}'s instructions changed"),
                       Need(ENGINEER, f"the {name}'s instructions changed")]
+            if _told(after) != _told(before) and (
+                    after["may"].get("autonomy") or {}).get("max", 1) >= 2:  # what it does
+                found.append(Need(RELEASE_APPROVER,  # unattended changes too (round 15, C2)
+                                  f"the {name}'s instructions changed, and it may work at "
+                                  "level 2, where nobody decides its changes before they're "
+                                  "made"))
     first: dict[str, Need] = {}
     for need in found:  # one of each is enough, with the first reason for it
         first.setdefault(need.role, need)

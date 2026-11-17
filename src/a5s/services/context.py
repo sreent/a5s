@@ -16,6 +16,7 @@ only if everyone now in it heard all it holds.
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 
 from a5s import db
@@ -120,12 +121,21 @@ def speakers(conn: db.Connection, group: str, agent: str) -> list[str]:
         "and speaker is not null", (group, agent))]
 
 
+# A mark a5s puts on what it says to an agent, such as [from a5s, not the person], as someone
+# may copy one into their own words
+_MARK = re.compile(r"(?i)\[[^\[\]\n]{0,160}\ba\s*5\s*s\b[^\[\]\n]{0,160}\]")
+
+
 def _said(turn: dict, names: dict[str, str] | None) -> str:
     """A turn's words, and in a group, who said them, each later line of theirs quoted, so
-    none of it reads as someone else's turn, or a5s's."""
-    if turn.get("speaker") and turn["role"] == "person":
-        words = turn["content"].replace("\r", "").replace("\n", "\n> ")
-        return f"{(names or {}).get(turn['speaker'], turn['speaker'])}: {words}"
+    none of it reads as someone else's turn, or a5s's. One person's own words, one to one,
+    each later line quoted too, and any mark of a5s's in them shown as theirs (round 15)."""
+    if turn["role"] == "person":
+        words = _MARK.sub("[a mark they wrote]", turn["content"]).replace("\r", "")
+        words = words.replace("\n", "\n> ")
+        if turn.get("speaker"):
+            return f"{(names or {}).get(turn['speaker'], turn['speaker'])}: {words}"
+        return words
     return turn["content"]
 
 

@@ -28,7 +28,7 @@ import yaml
 from a5s import cases, db, sandbox
 from a5s.config import Config
 from a5s.core import drafts, judging
-from conftest import PROVIDER_KEY, ROOT, build_root, deciding, free_port, serve
+from conftest import PROVIDER_KEY, ROOT, build_root, deciding, free_port, seal_draws, serve
 from fake_github import FakeGitHub
 from scenario_stack import running_scenario
 from test_studio_authoring import kept
@@ -279,6 +279,7 @@ def quarter(stack) -> None:
                 "select scenario, kind, proposal_id, run_id, instance_id, release, definition, part, "
                 "action, said, records, acts_for, decided, decided_by, drawn_at, flags from samples "
                 "where id = %s", (real["id"],))
+    seal_draws(stack)  # each drawn, and sealed, by the core, as his was
 
 
 def graded(walk: Walk, stack, url: str) -> None:

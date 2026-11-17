@@ -1174,6 +1174,7 @@ export type SampleLine = {
   flags: string[];
   decided: string | null;
   drawn_at: string;
+  asked?: string | null;
 };
 
 export type Samples = {
@@ -1340,7 +1341,7 @@ export type Signer = {
   held_by?: string[] | null;
 };
 
-// A month of a part's, agent's or instance's model calls: what they cost so far at their
+// A month of an agent's or instance's model calls: what they cost so far at their
 // models' prices, its budget, if the settings set one, and while the month lasts, the pace of
 // the last week and the forecast to its end; its runs, those whose prices aren't known, the
 // messages they answered, and what each message cost, all in.
@@ -1359,8 +1360,8 @@ export type Spend = {
   parts?: string[];
 };
 
-// A calendar month's spending, in UTC, as someone may see it: its parts, agents and
-// instances, in the currency models.yaml prices models in, if it names one.
+// A calendar month's spending, in UTC, as someone may see it: its agents and instances,
+// in the currency models.yaml prices models in, if it names one.
 export type Spending = {
   month: string;
   current: boolean;
@@ -1371,7 +1372,6 @@ export type Spending = {
   ends: string;
   days: number;
   day: number;
-  parts: Spend[];
   agents: Spend[];
   instances: Spend[];
 };

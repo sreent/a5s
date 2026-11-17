@@ -29,7 +29,7 @@ type PartEntry = number | null | { level?: number; actions?: Record<string, numb
 type Inst = { definition: string; serves?: string[]; parts?: string[] | Record<string, PartEntry>;
               level?: number; owner?: string; deputy?: string; asks?: string[]; [key: string]: unknown };
 type Limit = { per_run?: number; per_person_30_days?: number };
-type Spending = { parts?: Record<string, number>; agents?: Record<string, number>; currency?: string };
+type Spending = { agents?: Record<string, number>; currency?: string };
 type Data = { instances?: Record<string, Inst>; limits?: Record<string, Limit>;
               thresholds?: Record<string, number>; spending?: Spending; [key: string]: unknown };
 /** A new instance, as its form has it so far: `id` null while its name follows the suggestion. */
@@ -546,25 +546,25 @@ export function SettingsPage() {
     );
   }
 
-  function budgetsForm(parts: string[], agents: string[]): ReactNode {
+  function budgetsForm(agents: string[]): ReactNode {
     const data = w as Data;
-    const budget = (kind: "parts" | "agents", key: string, words: string) => {
-      const amount = data.spending?.[kind]?.[key];
+    const budget = (key: string) => {
+      const amount = data.spending?.agents?.[key];
       return (
-        <Setting key={`${kind}:${key}`} words={words} after={t("a month")}>
+        <Setting key={key} words={t("the {agent}", { agent: key })} after={t("a month")}>
           <input type="number" min="0.01" max="10000000" step="0.01" inputMode="decimal"
-                 data-budget={`${kind}:${key}`}
+                 data-budget={`agents:${key}`}
                  defaultValue={amount === undefined ? "" : String(amount)}
-                 aria-label={kind === "parts" ? t("The monthly budget for {part}", { part: key }) : t("The monthly budget for the {agent}", { agent: key })} onChange={(e) => {
+                 aria-label={t("The monthly budget for the {agent}", { agent: key })} onChange={(e) => {
                    const spending = (data.spending ||= {});
-                   const these = (spending[kind] ||= {});
+                   const these = (spending.agents ||= {});
                    const n = Number(e.target.value);
                    if (e.target.value !== "" && Number.isFinite(n) && n > 0) these[key] = Math.round(n * 100) / 100;
                    else delete these[key];
-                   if (!Object.keys(these).length) delete spending[kind];
+                   if (!Object.keys(these).length) delete spending.agents;
                    // in the currency models.yaml prices models in, which approvers then read
-                   if (settings.currency && (spending.parts || spending.agents)) spending.currency = settings.currency;
-                   if (!spending.parts && !spending.agents) delete spending.currency;
+                   if (settings.currency && spending.agents) spending.currency = settings.currency;
+                   if (!spending.agents) delete spending.currency;
                    if (!Object.keys(spending).length) delete data.spending;
                    touched();
                  }} />
@@ -574,11 +574,10 @@ export function SettingsPage() {
     return (
       <fieldset className="form-card" id="budgets">
         <legend>{t("What agents' models may cost a month")}</legend>
-        <p className="note">{t("A budget a5s shows each month's spending against, on the Spending page, at the prices models.yaml gives, and tells its owners of once a month is on course to pass it. It stops no work: the token budgets each release sets do. A part's owner approves its budget, and an agent's owner the agent's. Empty means none.")}
+        <p className="note">{t("A budget a5s shows each month's spending against, on the Spending page, at the prices models.yaml gives, and tells its owners of once a month is on course to pass it. It stops no work: the token budgets each release sets do. An agent's owner approves its budget. Empty means none.")}
           {settings.currency ? " " + t("Each is in {currency}, whole cents at most.", { currency: settings.currency }) : ""}</p>
         <div className="choices">
-          {parts.map((part) => budget("parts", part, part))}
-          {agents.map((agent) => budget("agents", agent, t("the {agent}", { agent })))}
+          {agents.map(budget)}
         </div>
       </fieldset>
     );
@@ -587,10 +586,8 @@ export function SettingsPage() {
   function forms(): ReactNode {
     if (!w) return null;
     const parts = [...new Set([...Object.keys(w.thresholds || {}), ...Object.values(w.instances || {}).flatMap(partsOf)])];
-    const budgeted = (w as Data).spending;
-    const budgetParts = [...new Set([...parts, ...Object.keys(budgeted?.parts || {})])].sort();
     const budgetAgents = [...new Set([...Object.values(w.instances || {}).map((i) => i.definition),
-                                      ...Object.keys(budgeted?.agents || {})])].sort();
+                                      ...Object.keys((w as Data).spending?.agents || {})])].sort();
     return (
       <>
         {Object.entries(w.instances || {}).map(([id, inst]) => (
@@ -602,7 +599,7 @@ export function SettingsPage() {
         {addForm([...parts].sort())}
         {(settings.actions.length > 0 || Object.keys(w.limits || {}).length > 0) && limitsForm()}
         {parts.length > 0 && thresholdsForm(parts)}
-        {(budgetParts.length > 0 || budgetAgents.length > 0) && budgetsForm(budgetParts, budgetAgents)}
+        {budgetAgents.length > 0 && budgetsForm(budgetAgents)}
       </>
     );
   }

@@ -11,7 +11,7 @@ a5s keeps each value with whoever decides it, so the default can be the safe one
 | Layer | Who decides | What's in it | Where |
 | --- | --- | --- | --- |
 | The deployment's configuration | The team that runs a5s | Addresses, the database, timeouts, workers, channels, sign-in, publishing: what differs between one deployment and another | `A5S_` environment variables, from compose or the chart. Every one is below |
-| The signed settings | Part owners, agent owners, instance approvers and the data protection officer, each for what's theirs | What agents may do and the rules for people's data: levels, limits, thresholds, classes of data, the roles groups give, and what each part and agent may cost a month | Versions people sign and approve, which the ledger records ([administration](administration.md)) |
+| The signed settings | Part owners, agent owners, instance approvers and the data protection officer, each for what's theirs | What agents may do and the rules for people's data: levels, limits, thresholds, classes of data, the roles groups give, and what each agent may cost a month | Versions people sign and approve, which the ledger records ([administration](administration.md)) |
 | An agent's definition | The agent's owner, through a release | Its model, tools, schedules, context and budgets | `agent.yaml` in the agent's folder, checked with bounds, released and signed |
 | People's preferences | Each person | What an agent offers them to set, with it | Their own, in the chat |
 | a5s's code | A release, which its approvers sign, assurance among them | The starting values nobody needs to change between deployments, and the rules that keep a5s safe | [Starting values](starting-values.md) lists each, with its owner |
@@ -28,6 +28,10 @@ Each part checks all of them as it starts. It won't start with any of these, and
 - A setting missing beside another that needs it, such as Teams's tenant beside its app.
 - An `A5S_` name that isn't a setting, such as a misspelling of `A5S_OIDC_MFA`. Ignored, it would do nothing, so a second factor nobody is asked for would go unnoticed. Where it looks like a setting, the message says which.
 - A setting that has moved, such as to the signed settings. The message says where it went.
+- Settings that can't go together: `A5S_DEVELOPMENT`, which takes people's word for who they are, beside an identity provider in `A5S_OIDC_ISSUER`.
+- A secret anyone could guess: a seal key of fewer than 32 characters, or, in a part that serves, a service token so short. `a5s up` makes each of 43, at random.
+
+Each part checks its database too, as it starts: it won't serve one a later release migrated, nor one nobody migrated to this release, and it won't connect as a superuser or as another part's role ([runbooks](runbooks.md)). The channels app won't start with the core's seal keys, which it never holds (round 15).
 
 The command line, which serves nothing, warns of a name that isn't a setting rather than stopping. Names a5s uses for its tests (`A5S_TEST_`), and those compose and the deployment scripts read, are listed as not being settings. So are the variables Kubernetes gives a pod for each service in its namespace, such as `A5S_GATEWAY_SERVICE_HOST` for one named `a5s-gateway`, which a part knows by their names and values and leaves alone: a5s finds its services by name, and the chart turns them off (`enableServiceLinks: false`). No setting has a name of their shape, so a service can never set one.
 
@@ -46,6 +50,7 @@ The tests check that neither compose nor the chart sets a setting to its default
 ## Every setting
 
 <!-- a5s config --markdown -->
+
 ### The core and its parts
 
 | Variable | Default | Takes | What it sets |
@@ -172,6 +177,16 @@ The tests check that neither compose nor the chart sets a setting to its default
 | `A5S_REGISTRY_GRAPH` | `https://graph.microsoft.com` | an https:// address | Microsoft Graph, as the tenant's cloud has it |
 | `A5S_REGISTRY_LOGIN` | `https://login.microsoftonline.com` | an https:// address | Where the core signs in to the tenant |
 
+### Mailboxes in Microsoft 365
+
+| Variable | Default | Takes | What it sets |
+| --- | --- | --- | --- |
+| `A5S_MAIL_TENANT` | none | text | The Microsoft tenant the scenario's mailboxes are in, by its id, where its mailboxes.yaml names any |
+| `A5S_MAIL_CLIENT_ID` | none | text | The app the core reads them as, granted Mail.Read and Mail.ReadWrite for its drafts, which Exchange's application access policy keeps to those mailboxes |
+| `A5S_MAIL_CLIENT_SECRET` | none | its secret | That app's client secret: for the core alone |
+| `A5S_MAIL_GRAPH` | `https://graph.microsoft.com/v1.0` | an https:// address | Microsoft Graph, as the tenant's cloud has it |
+| `A5S_MAIL_LOGIN` | `https://login.microsoftonline.com` | an https:// address | Where the core signs in to the tenant as the app |
+
 ### The command line
 
 | Variable | Default | Takes | What it sets |
@@ -189,6 +204,7 @@ The tests check that neither compose nor the chart sets a setting to its default
 | `A5S_SLACK_SECRET_<AGENT>` | An app's signing secret, where A5S_SLACK_BOTS names it |
 | `A5S_SLACK_TOKEN_<AGENT>` | An app's bot token, where A5S_SLACK_BOTS names it |
 | `A5S_MCP_<SERVER>_TOKEN` | An MCP server's bearer token, where the scenario's mcp.yaml names it as the server's token_env |
+
 <!-- end of a5s config --markdown -->
 
 The libraries a5s uses read some variables of their own: OpenTelemetry's `OTEL_EXPORTER_OTLP_ENDPOINT`, for where traces and figures go, and each cloud's own sign-in for the ledger's store, such as `AWS_REGION` or `AZURE_STORAGE_CONNECTION_STRING`. A model's key is in the variable `config/models.yaml` names for it, such as `DEEPSEEK_API_KEY`.

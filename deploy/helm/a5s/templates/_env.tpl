@@ -29,6 +29,13 @@
 - name: A5S_REGISTRY_IDENTITIES
   value: {{ $.Values.registry.identities | quote }}
 {{- end }}
+{{- with .Values.mail.tenant }}
+- name: A5S_MAIL_TENANT  # the shared mailboxes: the core alone reads them
+  value: {{ . | quote }}
+- name: A5S_MAIL_CLIENT_ID
+  value: {{ required "mail.clientId names the app the core reads the mailboxes as" $.Values.mail.clientId | quote }}
+{{ include "a5s.secretEnv" (dict "root" $ "name" "A5S_MAIL_CLIENT_SECRET" "key" "mail-secret") }}
+{{- end }}
 {{- end }}
 
 {{- define "a5s.env.channels" -}}

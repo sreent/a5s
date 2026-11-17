@@ -307,6 +307,12 @@ def key(conn: db.Connection) -> bytes:
     return bytes(conn.execute("select key from audit_key").fetchone()["key"])
 
 
+def left(conn: db.Connection) -> frozenset[str]:
+    """Everyone a5s found the directory no longer names, whom the trail names still: the page
+    shows them as stand-ins too, until their archive goes (round 15, E1)."""
+    return frozenset(r["person"] for r in conn.execute("select distinct person from departures"))
+
+
 def stand_in(secret: bytes, person: str) -> str:
     """Someone's stand-in, the same each time in a deployment, and no other's."""
     return STAND_IN + hmac.new(secret, person.encode(), hashlib.sha256).hexdigest()[:12]
@@ -324,24 +330,27 @@ class Shown:
     scenario: Any
     secret: bytes
     names: bool = False
+    left: frozenset[str] = frozenset()  # who a5s found the directory no longer names (`left`)
     _seen: dict[str, str] = field(default_factory=dict)
 
-    def person(self, value: Any) -> Any:
+    def person(self, value: Any, whom: bool = False) -> Any:
         """Someone's id as the page shows it: themselves once names are agreed, else their
-        stand-in; and anything that isn't someone the directory knows, as it is."""
-        if self.names or not isinstance(value, str):
+        stand-in; and anything that isn't someone, as it is. Someone is whoever the directory
+        names, whoever has left it, and whatever an entry acted for (`whom`), known or not
+        (round 15, E1)."""
+        if self.names or not isinstance(value, str) or not value:
             return value
-        if value not in self._seen:
-            known = self.scenario.person(value) is not None
-            self._seen[value] = stand_in(self.secret, value) if known else value
-        return self._seen[value]
+        if value not in self._seen and (whom or value in self.left
+                                        or self.scenario.person(value) is not None):
+            self._seen[value] = stand_in(self.secret, value)
+        return self._seen.get(value, value)
 
-    def _named(self, value: Any) -> Any:
+    def _named(self, value: Any, whom: bool = False) -> Any:
         if isinstance(value, list):
-            return [self._named(v) for v in value]
+            return [self._named(v, whom) for v in value]
         if isinstance(value, dict):
-            return {k: self._named(v) for k, v in value.items()}
-        return self.person(value)
+            return {k: self._named(v, whom) for k, v in value.items()}
+        return self.person(value, whom)
 
     def entry(self, entry: dict[str, Any]) -> dict[str, Any]:
         """An entry as the page shows it: whom it acted for, and everyone its arguments name,
@@ -350,8 +359,8 @@ class Shown:
             return entry
         args = entry.get("args") if isinstance(entry.get("args"), dict) else None
         shown = dict(entry)
-        if "acts_for" in entry:
-            shown["acts_for"] = self._named(entry["acts_for"])
+        if "acts_for" in entry:  # people, every one, whether or not the directory knows them
+            shown["acts_for"] = self._named(entry["acts_for"], whom=True)
         if args is not None:
             acting = entry.get("kind") in ACTORS
             shown["args"] = {k: v if acting and k in ACTING else self._named(v)
@@ -388,7 +397,8 @@ class Shown:
 ADMIN = {"approve": "approved settings", "propose": "proposed settings",
          "apply": "applied settings", "approve-release": "approved a release",
          "decide": "decided held changes", "grade": "graded samples",
-         "suspend": "suspended or resumed an instance", "retire": "retired an instance",
+         "suspend": "suspended an instance", "resume": "resumed an instance",  # each its own
+         "retire": "retired an instance",  # (round 15, D15)
          "restore": "restored an instance", "end-change": "ended a held change",
          "export": "exported someone's data", "erase": "erased someone's data",
          "archive": "archived a leaver", "request": "asked for a version of the settings",
@@ -400,6 +410,10 @@ ADMIN = {"approve": "approved settings", "propose": "proposed settings",
          "undone": "undid a change", "hand-back": "a conversation handed back to its agent",
          "shadow-grade": "graded a new version's answer beside the one sent",
          "choose-language": "chose the language they read, which agents answer them in"}
+
+
+CAPS = {"raise": "a cap raised to level 2, from graded samples",
+        "lower": "a cap lowered to level 1"}
 
 
 def roles_of(scenario: Any, parts: Iterable[str], agents: Iterable[str]) -> list[dict]:
@@ -418,20 +432,25 @@ def report(conn: db.Connection, scenario: Any, agents: Iterable[str], *,
     and to what, as the ledger records it."""
     parts = [r["part"] for r in conn.execute(
         "select distinct jsonb_object_keys(parts) as part from instances")]
-    acts, after = [], 0
-    while True:
-        page = search(conn, since=since, until=until, kind="admin", after=after)
-        for entry in page["entries"]:
-            args = entry.get("args") or {}
-            acts.append({"seq": entry["seq"], "at": entry.get("at"), "action": entry["action"],
-                         "what": ADMIN.get(entry["action"], entry["action"]),
-                         "by": args.get("by") or args.get("signed_by"),
-                         "instance": entry.get("instance"),
-                         "about": {k: v for k, v in args.items()
-                                   if k not in ("by", "signed_by", "identity")}})
-        if not page["next"]:
-            return {"roles": roles_of(scenario, parts, agents), "acts": acts}
-        after = page["next"]
+    acts: list[dict[str, Any]] = []
+    for kind in ("admin", "cap"):  # and each change of a cap, with what it rested on (round
+        after = 0  # 15, E7)
+        while True:
+            page = search(conn, since=since, until=until, kind=kind, after=after)
+            for entry in page["entries"]:
+                args = entry.get("args") or {}
+                what = CAPS if kind == "cap" else ADMIN
+                acts.append({"seq": entry["seq"], "at": entry.get("at"), "action": entry["action"],
+                             "what": what.get(entry["action"], entry["action"]),
+                             "by": args.get("by") or args.get("signed_by"),
+                             "instance": entry.get("instance"),
+                             "about": {k: v for k, v in args.items()
+                                       if k not in ("by", "signed_by", "identity")}})
+            if not page["next"]:
+                break
+            after = page["next"]
+    return {"roles": roles_of(scenario, parts, agents),
+            "acts": sorted(acts, key=lambda act: act["seq"])}
 
 
 WHOM = ("person", "acted_for", "acted_by")  # whom a read asked about, kept as a stand-in

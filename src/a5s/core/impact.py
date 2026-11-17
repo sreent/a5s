@@ -41,7 +41,7 @@ from typing import Any
 from a5s import db
 from a5s.contract import InstanceSettings, Person, Settings
 from a5s.core import counts, groups, languages, memberships, parts, registry, samples, studio, words
-from a5s.core.policy import Decision
+from a5s.core.policy import OWN, Decision
 
 log = logging.getLogger(__name__)
 
@@ -49,12 +49,9 @@ DAYS = 28
 _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
 MOST = 2000  # the latest calls of the period, at most, it decides again
 WORDS = {"allow": "made alone", "hold": "held for a person to decide", "deny": "refused"}
-# What refuses a call apart from policy, the same under any version: never decided again
-NOT_POLICY = frozenset({"arguments-fit-the-schema", "records-are-named-by-key",
-                        "a-change-names-few-records", "records-can-be-read",
-                        "a5s-runs-call-no-tools", "tasks-stop-when-stopped",
-                        "someone-else-decides", "settings-must-check-out",
-                        "shadows-change-nothing", "shadows-send-nothing"})
+# What refuses a call apart from policy, the same under any version: never decided again. The
+# gateway's own refusals, as it names them, so none it adds is missed (round 14)
+NOT_POLICY = OWN
 # Whom a run for nobody counts against, of the type of action's limit for each person in 30
 # days: its instance, among its other runs for nobody, as core/counts.py counts them
 NOBODY = "\0"
@@ -228,7 +225,7 @@ def shown(gw: Any, before: Settings | None, after: Settings,
         return None
     found["about"] = words.say(language, ABOUT)  # in the language they read, as its why
     for shift in found["shifts"]:  # is, where a5s has it in their language
-        shift["why"] = words.translated(language, shift["why"])
+        shift["why"] = words.say(language, shift["why"])
     found["beyond"] = [words.say(language, said, **values)
                        for said, values in undecided(before, after)]
     with _keeping:

@@ -56,14 +56,14 @@ Each organisation approves a release for its own deployment, with its own people
 | --- | --- | --- |
 | Proposed | Created by its agent owner, waiting for approval | Its instance approvers |
 | Active | Working, in the parts whose owners approve it | The agent owner, the deputy or the platform owner can suspend it, except that stopping an agent the scenario marks as a check needs the scenario's assurance. The agent owner or the platform owner can retire it. |
-| Suspended | No trigger wakes it, its next call is denied, even in a run already going, and its open work is withdrawn or flagged in the scenario's process | Whoever suspended it can resume it. Anyone else needs someone outside the team, because resuming loosens. Never while it has neither an owner nor a deputy. |
+| Suspended | No trigger wakes it, its next call is denied, even in a run already going, and its open work is withdrawn or flagged in the scenario's process | Whoever suspended it can resume it. Anyone else needs the release approver, from outside the team, because resuming loosens. Its owner or deputy, its agent's owners, the owners and delegates of its parts and the team that runs a5s may suspend it. Never while it has neither an owner nor a deputy. |
 | Retired | Its identity is disabled, its grant removed and its evidence archived. Conversations follow the retention rules. | Nobody |
 | Shadow | A new version answering beside the instance it shadows, sending and changing nothing, for graders to compare ([shadow runs](#shadow-runs)). It has no work of its own. | As an active instance: suspended, it answers nothing, and resumed, it's a shadow again. The owners of its parts make it an instance of its own by taking `shadows` out of its settings. |
 
 - A part owner can stop an instance acting in their part at any time, by withdrawing its approval in the settings.
 - If the agent owner and the deputy both leave, the instances are suspended until the platform owner names a new owner.
 - An instance moves to another approved release when its agent owner moves it. Runs start fresh, so nothing needs migrating, and it can always go straight back to the release it ran before.
-- a5s keeps its caps for a behaviour, not a release: the agent, its model, and the tools of a type of action it may use, as pinned. A release that changes only instructions or skills keeps its caps, after its regression suite and a re-run of the last graded samples; one that changes a tool of that type, or the model, starts again at level 1 for what it widens.
+- a5s keeps its caps for a behaviour, not a release: the agent, its model, and the tools of a type of action it may use, as pinned. A release that changes only instructions or skills keeps its caps, after its regression suite, and for an agent that may work at level 2 the release approver signs it too, from outside the team, since nobody decides its changes there before they're made (round 15); one that changes a tool of that type, or the model, starts again at level 1 for what it widens.
 
 ## Autonomy
 
@@ -206,7 +206,7 @@ The register adds what changes without a release: each instance, its identity an
 
 ## The judge
 
-An agent's definition may name a judge, an approved model, with its rubric: what a right change is for this agent, in its owners' words. a5s asks the judge about each sample of the agent's work it draws for people to grade, as their page shows it: the change, in code's words, what code flagged to its decider, the records it named as they stood, and what its decider did. The judge says right, wrong or critical, and why, in a sentence ([`core/judging.py`](../src/a5s/core/judging.py)).
+An agent's definition may name a judge, an approved model, with its rubric: what a right change is for this agent, in its owners' words. a5s asks the judge about each sample of the agent's work it draws for people to grade, as their page shows it: the change, in code's words, what the people its run answered asked of it, what code flagged to its decider, the records it named as they stood, and what its decider did. The judge says right, wrong or critical, and why, in a sentence ([`core/judging.py`](../src/a5s/core/judging.py)).
 
 - **People's grades stay the evidence.** The test that raises and lowers a5s's caps reads people's grades alone, so a judge's verdict never moves a cap, however sure it is ([autonomy](#autonomy)).
 - **People grade blind.** The channels app, which serves the grading page, can read a verdict only once people have graded its sample, so graders grade as they would without it.

@@ -575,8 +575,8 @@ def router(gw: Any) -> APIRouter:
                                      "decide for a part, approve instances, or run one")
         with db.transaction(gw.url) as conn:
             try:
-                return spending.report(conn, gw.scenario, gw.models, gw.spending_in_force(conn),
-                                       person, None, month, gw.currency)
+                return spending.report(conn, gw.models, gw.spending_in_force(conn), person,
+                                       None, month, gw.currency)
             except spending.Refused as e:
                 raise HTTPException(400, str(e)) from None
 
@@ -614,7 +614,8 @@ def router(gw: Any) -> APIRouter:
             if not asks.serving(gw.scenario, every, agent, person.id):
                 mine = asks.theirs(conn, gw.scenario.name, person.id, agent)
                 shown["ask"] = asks.shown(mine) if mine else None
-            if waiting := [a for a in asks.waiting(conn, gw.scenario, every, person)
+            if waiting := [a for a in asks.waiting(conn, gw.scenario, every, person,
+                                                   languages.of(conn, person))
                            if a["agent"] == agent]:
                 shown["asks"] = waiting
         return shown
@@ -723,7 +724,7 @@ def router(gw: Any) -> APIRouter:
     def stood(conn: Any, person: Person, instance: str) -> dict:
         """An instance someone may watch, with who suspended it, if anyone did."""
         watched(conn, person, instance)
-        found = conn.execute(f"select {suspension.COLUMNS}, parts from instances where id = %s",
+        found = conn.execute(f"select {suspension.COLUMNS} from instances where id = %s",
                              (instance,)).fetchone()
         if found is None:
             raise HTTPException(404, "there's no such instance that you may watch")
@@ -760,8 +761,8 @@ def router(gw: Any) -> APIRouter:
                         authorization: str | None = Header(default=None)) -> dict:
         """Suspend or resume an instance, signed in afresh for that act alone, which the gateway
         checks again and carries out within a minute (core/suspension.py): someone who runs it,
-        owns its agent, or is on the team that runs a5s suspends it; whoever suspended it
-        resumes it."""
+        owns its agent or one of its parts, or is on the team that runs a5s suspends it; whoever
+        suspended it resumes it, or the release approver."""
         token = (authorization or "").removeprefix("Bearer ").strip()
         try:
             who, claims = suspension.check(gw.identity, gw.scenario, gw.cfg.webchat_client_id,

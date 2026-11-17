@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable
 from typing import Any
 
 from a5s.core import values
@@ -108,11 +109,13 @@ def reply_text(api: str, data: Any) -> str:
         return ""
 
 
-def checked(reply: str, text: str, schema: dict[str, str],
-            record_pattern: str | None) -> tuple[dict[str, Any] | None, list[str]]:
+def checked(reply: str, text: str, schema: dict[str, str], record_pattern: str | None,
+            known: Callable[[str], bool] | None = None) -> tuple[dict[str, Any] | None, list[str]]:
     """The form as code can vouch for it, and what it left out: only keys, amounts, dates and
     sensitive values the document itself contains, choices from the list, and yes or no.
-    None if the reply isn't a form at all."""
+    None if the reply isn't a form at all. Each as code reads it, never as it was written,
+    which may carry words: an amount as GBP 860.00, a date with its year as 2026-11-04, and a
+    key only of a record the scenario knows (`known`, round 15, F7)."""
     found = re.search(r"\{.*\}", reply, re.DOTALL)
     try:
         filled = json.loads(found.group(0)) if found else None
@@ -140,7 +143,10 @@ def checked(reply: str, text: str, schema: dict[str, str],
                 typed[0].norm == p.norm or (typed[0].norm.startswith("--") and p.kind == "date"
                                             and p.norm[-5:] == typed[0].norm[-5:])
                 for p in present if p.kind == kind)
-            form[field] = typed[0].text if ok else None
+            if ok and kind == "key" and known is not None and not known(typed[0].norm):
+                ok = False  # a key no record has, which may be words in a key's form
+            form[field] = (None if not ok else typed[0].text if kind == "key" or (
+                kind == "date" and typed[0].norm.startswith("--")) else typed[0].norm)
         else:
             form[field] = None
         if form[field] is None and value not in (None, ""):

@@ -97,6 +97,9 @@ def _path(given: str) -> Path:
     return Path(given.strip())
 
 
+LEAST_SECRET = 32  # characters in a seal key or the service token, as `a5s up` makes 43 (round 15)
+
+
 def _items(given: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(i.strip() for i in given.split(",") if i.strip()))
 
@@ -230,6 +233,7 @@ LEDGER = "The ledger's locked copies"
 STUDIO = "The studio, its sandbox and publishing"
 SCENARIO = "The scenario"
 INVENTORY = "IT's inventory in Microsoft 365"
+MAIL = "Mailboxes in Microsoft 365"
 COMMAND = "The command line"
 
 _DB = ("postgresql", "postgres")
@@ -412,8 +416,33 @@ REGISTRY_GRAPH = Var("A5S_REGISTRY_GRAPH", "Microsoft Graph, as the tenant's clo
 REGISTRY_LOGIN = Var("A5S_REGISTRY_LOGIN", "where the core signs in to the tenant",
                      "https://login.microsoftonline.com", _url("https"), "an https:// address",
                      area=INVENTORY)
+
+
+def _graph(given: str) -> str:
+    """Microsoft 365's address: https://, or http:// on this machine alone, as a stand-in is."""
+    found = urlsplit(given.strip())
+    if not found.netloc or not (found.scheme == "https" or (
+            found.scheme == "http" and found.hostname in ("127.0.0.1", "localhost", "::1"))):
+        raise ValueError
+    return given.strip().rstrip("/")
+
+
+# The shared mailboxes a team's work arrives in, which the core alone reads, with the
+# deployment's own app (connectors/mailboxes.py)
+MAIL_TENANT = Var("A5S_MAIL_TENANT", "the Microsoft tenant the scenario's mailboxes are in, by its "
+                  "id, where its mailboxes.yaml names any", None, area=MAIL)
+MAIL_CLIENT_ID = Var("A5S_MAIL_CLIENT_ID", "the app the core reads them as, granted Mail.Read and "
+                     "Mail.ReadWrite for its drafts, which Exchange's application access policy "
+                     "keeps to those mailboxes", None, area=MAIL)
+MAIL_CLIENT_SECRET = Var("A5S_MAIL_CLIENT_SECRET", "that app's client secret: for the core alone",
+                         None, secret=True, area=MAIL, takes="its secret")
+MAIL_GRAPH = Var("A5S_MAIL_GRAPH", "Microsoft Graph, as the tenant's cloud has it",
+                 "https://graph.microsoft.com/v1.0", _graph, "an https:// address", area=MAIL)
+MAIL_LOGIN = Var("A5S_MAIL_LOGIN", "where the core signs in to the tenant as the app",
+                 "https://login.microsoftonline.com", _graph, "an https:// address", area=MAIL)
+
 AREAS = (CORE, DATABASE, WORKERS, SIGN_IN, TEAMS, SLACK, MATRIX, EVENTS, DELEGATION_AREA, LEDGER,
-         STUDIO, SCENARIO, INVENTORY, COMMAND)
+         STUDIO, SCENARIO, INVENTORY, MAIL, COMMAND)
 # Every setting above, by its area
 VARS: tuple[Var, ...] = tuple(sorted((v for v in globals().values() if isinstance(v, Var)),
                                      key=lambda v: AREAS.index(v.area)))
@@ -549,6 +578,24 @@ def check(env: Mapping[str, str] | None = None, serving: bool = True) -> tuple[l
     for name, where in MOVED.items():
         if name in env:
             problems.append(f"{name} has moved to {where}: unset it here")
+    def read(var: Var, otherwise: Any) -> Any:  # each on its own: a bad one is said above
+        try:
+            return var.read(env)
+        except ConfigError:
+            return otherwise
+
+    development, issuer = read(DEVELOPMENT, False), read(OIDC_ISSUER, None)  # round 15 (D12,
+    keys, token = read(SEAL_KEYS, ()), read(SERVICE_TOKEN, "")  # D16)
+    if development and issuer:
+        problems.append("A5S_DEVELOPMENT takes people's word for who they are, and turns checks "
+                        "off that an identity provider's deployment needs: with A5S_OIDC_ISSUER "
+                        "set, unset A5S_DEVELOPMENT")
+    if short := [k for k in keys if len(k) < LEAST_SECRET]:
+        problems.append(f"A5S_SEAL_KEYS has a key of {len(short[0])} characters: each takes at "
+                        f"least {LEAST_SECRET}, made at random, as `a5s up` makes them")
+    if serving and token and len(token) < LEAST_SECRET:  # as each part that serves holds it
+        problems.append(f"A5S_SERVICE_TOKEN has {len(token)} characters: it takes at least "
+                        f"{LEAST_SECRET}, made at random, as `a5s up` makes it")
     for given, needed, what in NEEDS:
         if given.is_set(env) and (missing := [n.name for n in needed if not n.is_set(env)]):
             problems.append(f"{what} needs {_and(missing)} as well as {given.name}")

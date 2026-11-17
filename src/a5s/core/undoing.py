@@ -30,7 +30,9 @@ from __future__ import annotations
 
 import base64
 import hashlib
-from datetime import datetime
+import hmac
+import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 from psycopg.types.json import Jsonb
@@ -121,21 +123,42 @@ def still(as_left: dict, now: dict | None) -> dict | None:
     return {f: fields.get(f) for f in as_left}
 
 
+_SEALED = ("id", "run_id", "instance_id", "definition", "release", "tool", "schema_hash", "action",
+           "record", "parts", "said", "undo", "as_left", "acts_for", "proposal_id", "until")
+
+
+def _mac(key: str, row: dict) -> str:
+    shown = {k: (v.astimezone(UTC).isoformat() if isinstance(v, datetime) else
+                 str(v) if isinstance(v, uuid.UUID) else v) for k, v in row.items() if k in _SEALED}
+    return hmac.new(key.encode(), ledger.canonical(shown).encode(), hashlib.sha256).hexdigest()
+
+
+def intact(keys: tuple[str, ...], row: dict) -> bool:
+    """Whether a change kept to undo is as the core kept it: its undo, how it left its record,
+    whom it was for, until when (round 15, B1)."""
+    return bool(keys) and bool(row.get("seal")) and any(
+        hmac.compare_digest(_mac(k, row), row["seal"]) for k in keys)
+
+
 def keep(conn: db.Connection, run: dict, tool: Tool, record: str, parts: list[str], said: str,
          undo: dict, as_left: dict, asked: list[str], proposal: int | None = None,
-         offered: bool = False) -> dict:
+         offered: bool = False, keys: tuple[str, ...] = ()) -> dict:
     """Keep how to undo a change a5s has made, for as long as its tool says, and whether a5s
-    has told whoever it was for how already. Its row."""
+    has told whoever it was for how already, sealed with the core's key, so what's undone is
+    what the core kept. Its row."""
     assert tool.undo is not None
     row = conn.execute(
         "insert into changes_made (run_id, instance_id, definition, release, tool, schema_hash, "
         "action, record, parts, said, undo, as_left, acts_for, proposal_id, until, offered_at) "
         "values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now() + %s, "
-        "case when %s then now() end) returning id, until",
+        "case when %s then now() end) returning *",
         (run["run"], run["id"], run["definition"], run["release"], tool.name, tool.schema_hash,
          tool.action, record, parts, said.split("\n", 1)[0], Jsonb(undo), Jsonb(as_left),
          asked, proposal, tool.undo.within, offered)).fetchone()
     assert row is not None
+    if keys:
+        conn.execute("update changes_made set seal = %s where id = %s", (_mac(keys[0], row),
+                                                                         row["id"]))
     return row
 
 
@@ -143,10 +166,13 @@ def link(public_url: str, change: int) -> str:
     return f"{public_url}{PAGE}?change={change}"
 
 
-def offered(until: datetime, public_url: str, change: int) -> str:
-    """What whoever a change was for is told they can do, and until when, in UTC."""
-    return (f"It can be undone until {until.strftime('%d %b %Y, %H:%M')} UTC, on its page: "
-            f"{link(public_url, change)}")
+def offered(until: datetime, public_url: str, change: int, language: str = languages.ENGLISH,
+            timezone: str = "UTC") -> str:
+    """What whoever a change was for is told they can do, and until when, in the language they
+    read and by their clock, which it names."""
+    return words.say(language, "It can be undone until {until}, on its page: {link}",
+                     until=languages.when(until, language, timezone),
+                     link=link(public_url, change))
 
 
 def for_agent(until: datetime) -> str:
@@ -263,8 +289,8 @@ def record(conn: db.Connection, change: int, person: str, token: str, salt: str,
                            "look again in a minute")
     ledger.append(conn, {"kind": "admin", "action": "ask-undo", "run": str(row["run_id"]),
                          "instance": row["instance_id"], "acts_for": [person], "decision": "record",
-                         "args": {"change": change, "by": person, "issuer": claims["iss"],
-                                  "token_sha256": hashed}})
+                         "args": {"change": change, "asker": person, "issuer": claims["iss"],
+                                  "token_sha256": hashed}})  # a stand-in, unlike `by` (round 15, E2)
     return dict(row)
 
 

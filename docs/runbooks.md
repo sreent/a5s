@@ -59,7 +59,7 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 
 **Shows as:** changes waiting for a decision for days, changes approved but not made, or one stopped part way through being made.
 
-1. A waiting change reminds each of its deciders, in their own hours, after two working days, then tells their managers, or the instance's owner, after five, and lapses after ten, telling whoever asked for it. Its deciders are worked out afresh each time, so a part's new owner, or a delegate its owner names with `part-delegate:<part>`, decides what waits there. Nothing needs doing unless a part has nobody who may decide: then the change isn't held at all, and the agent says why.
+1. A waiting change reminds each of its deciders, in their own hours, after two working days, then tells their managers, or else the instance's owner or deputy, but never one of its deciders nor whom it's for, after five, when whoever asked hears in their digest that it waits still; it lapses after ten, telling whoever asked for it and, in their digest, those it waited for. Once one decider's decision settles a change, another's is refused at once, naming who decided; and an approval while the instance is suspended is refused, so reject it, or approve it once the instance is at work again. Its deciders are worked out afresh each time, so a part's new owner, or a delegate its owner names with `part-delegate:<part>`, decides what waits there. Nothing needs doing unless a part has nobody who may decide: then the change isn't held at all, and the agent says why.
 2. A change approved but not made says why in the outcome its asker was told: its record changed after it was asked for, the instance may no longer act, or the records system didn't take it. They can ask again.
 3. A change stopped part way means a5s marked it as being made, and stopped, or the sweep failed for it, before it could record what happened: the gateway's log says `couldn't sweep P-n`. a5s never makes it again by itself. `a5s proposals` lists such changes. Check the record in the scenario's own system, then end it with `a5s proposals end P-n`, as its instance's owner or deputy, an owner of a part it touches, an instance approver or assurance: whoever asked is told it may or may not have been made, and can ask again.
 4. A decision that doesn't count shows once in the gateway's log: a decision the core didn't seal, or by someone who may no longer decide it. A sign-in the gateway refused when it checked it again, before sealing, is in the ledger as `refuse-sign-in`: the person decides again. Tell assurance about any of these that nobody can explain, since each could be someone writing what the channels app writes.
@@ -138,6 +138,20 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 1. Someone rolled a5s back after a release migrated its database. The older release doesn't know what the newer migrations mean, such as messages from group chats, so it won't serve.
 2. Roll forward to the release that migrated it, or restore the database from before it, and roll back then. Migrations wait for a table's lock 15 seconds at most, and are tried three times, so one that can't get it fails the release rather than holding up a5s.
 
+## a5s won't start: the database is older than the release
+
+**Shows as:** a service exiting with "the database is at migration N, and this release of a5s needs M: run `a5s migrate` first".
+
+1. Nobody ran this release's migrations. The chart's migration job and the stack's `setup` run them before the parts start; a part started by hand needs them run first.
+2. Run `a5s migrate` as the database's administrator, then start the parts again. A part would otherwise fail later, at the first column it lacks, without saying why.
+
+## a5s won't start: a part connects as the wrong role
+
+**Shows as:** a service exiting with "the gateway connects to the database as postgres, a superuser", or "as another part's role".
+
+1. Each part connects as its own role, which `a5s migrate` makes: the gateway as `a5s_gateway`, the channels app as `a5s_channels`, the scheduler as `a5s_scheduler`. Each role's grants keep its part to its own, and a superuser is bound by none of them, nor by the triggers that keep the ledger and the seals.
+2. Give the part its own role's address in `A5S_DATABASE_URL`, as the chart's secrets and the stack's compose file do.
+
 ## Connections to the database run out
 
 **Shows as:** errors that a connection couldn't be had, or Postgres refusing new connections.
@@ -171,7 +185,7 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 
 **Shows as:** an instance suspended, and by whom, or retired.
 
-1. Only the person who suspended it can resume it: on its page in the studio, `/studio/instances/<id>`, signed in afresh for that alone, or with `a5s resume`, signed in. Resuming someone else's suspension needs the release approver.
+1. Only the person who suspended it can resume it: on its page in the studio, `/studio/instances/<id>`, signed in afresh for that alone, or with `a5s resume`, signed in. Resuming someone else's suspension needs the release approver, from outside the team, who sees an instance while it's suspended, and resumes it on its page, signed in afresh with a second factor where the deployment asks for one. The ledger names whose suspension they lifted.
 2. One suspended or resumed on its page waits for the core's next sweep, within a minute, which checks that sign-in again. If it waits longer, the status counts it among what waits to be sealed: the core is missing its seal key or can't reach the identity provider, which the log says. A request it couldn't carry out, its person hears of in their digest, with why.
 3. A retired instance comes back with a version of the settings that names it again.
 

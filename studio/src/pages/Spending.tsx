@@ -1,10 +1,10 @@
 // What agents' model calls cost each calendar month (core/spending.py), at the prices models.yaml
-// gives them: each part and agent someone may see against the budget the settings set it, as
-// Ocean's CostPanel draws cost against plan, the spent, the budget and the forecast to the month's
-// end on one scale, each with its figure, and a badge once the forecast passes the budget; with
-// what each message answered cost, all in, and the pace of the last week; then each instance they
-// may watch, as figures. A budget guides: it stops no work, which the token budgets each release
-// sets do.
+// gives them: each agent someone may see against the budget the settings set it, as Ocean's
+// CostPanel draws cost against plan, the spent, the budget and the forecast to the month's end on
+// one scale, each with its figure, and a badge once the forecast passes the budget; with what each
+// message answered cost, all in, and the pace of the last week; then each instance they may watch,
+// as figures. A run's cost is its instance's and its agent's, whole: no part has a share of it. A
+// budget guides: it stops no work, which the token budgets each release sets do.
 
 import { type FormEvent, useEffect, useState } from "react";
 import { get } from "../api";
@@ -13,8 +13,6 @@ import { locale, t } from "../i18n";
 import { Icon } from "../icons";
 import { go, Link } from "../router";
 import { money, PageHead, plural, useLoad, Waiting, Wide } from "../ui";
-
-type Kind = "part" | "agent";
 
 const monthly = () => new Intl.DateTimeFormat(locale(), { month: "long", year: "numeric", timeZone: "UTC" });
 const daily = () => new Intl.DateTimeFormat(locale(), { day: "numeric", month: "long", timeZone: "UTC" });
@@ -59,10 +57,10 @@ function Bars({ id, label, bars, scale, currency }:
   );
 }
 
-/** One part's or agent's month against its budget, as Ocean's CostPanel. */
-function Panel({ kind, spend, found }: { kind: Kind; spend: gen.Spend; found: gen.Spending }) {
-  const id = `${kind}-${spend.key}`;
-  const whose = kind === "part" ? spend.key : t("the {agent}", { agent: spend.key });
+/** One agent's month against its budget, as Ocean's CostPanel. */
+function Panel({ spend, found }: { spend: gen.Spend; found: gen.Spending }) {
+  const id = `agent-${spend.key}`;
+  const whose = t("the {agent}", { agent: spend.key });
   const { currency } = found;
   const ends = daily().format(new Date(new Date(found.ends).getTime() - 1));
   const so = found.current ? t("So far") : t("In {month}", { month: named(found.month) });
@@ -81,7 +79,7 @@ function Panel({ kind, spend, found }: { kind: Kind; spend: gen.Spend; found: ge
       <div className="cost">
         <div className="cost-head">
           <h2 id={`${id}-title`}>{spend.key}</h2>
-          <p className="note">{kind === "part" ? t("A part") : t("An agent")} · {found.current
+          <p className="note">{t("An agent")} · {found.current
             ? t("as of day {day} of {days}", { day: found.day, days: found.days }) : named(found.month)}</p>
         </div>
         <div className="cost-top">
@@ -109,15 +107,13 @@ function Panel({ kind, spend, found }: { kind: Kind; spend: gen.Spend; found: ge
               {spend.per_answer !== null ? (
                 <>
                   <strong>{money(spend.per_answer, currency)}</strong>
-                  <p>{kind === "part" ? t("All agents' work there cost, reports and chases too, over the {messages} they answered there.", { messages: plural(spend.answered, "message") })
-                    : t("All its runs cost, reports and chases too, over the {messages} they answered.", { messages: plural(spend.answered, "message") })}</p>
+                  <p>{t("All its runs cost, reports and chases too, over the {messages} they answered.", { messages: plural(spend.answered, "message") })}</p>
                 </>
               ) : (
                 <>
                   <strong>{t("None")}</strong>
                   <p>{spend.answered > 0 ? t("Some runs were on models whose prices models.yaml doesn't give, so a5s doesn't say what each message cost.")
-                    : kind === "part" ? (found.current ? t("Agents answered no messages there this month.") : t("Agents answered no messages there that month."))
-                    : (found.current ? t("Its runs answered no messages this month.") : t("Its runs answered no messages that month."))}</p>
+                    : found.current ? t("Its runs answered no messages this month.") : t("Its runs answered no messages that month.")}</p>
                 </>
               )}
             </div>
@@ -208,7 +204,7 @@ let askedFor = false;
 export function SpendingPage({ month }: { month?: string }) {
   const { data, error } = useLoad(() => get<gen.Spending>(
     `/studio/api/spending${month ? `?month=${encodeURIComponent(month)}` : ""}`), [month]);
-  const panels = data ? [...data.parts.map((s) => ["part", s] as const), ...data.agents.map((s) => ["agent", s] as const)] : [];
+  const panels = data?.agents ?? [];
   const choices = months();
   const shown = data?.month ?? month ?? choices[0];
   const [picked, setPicked] = useState(month ?? choices[0]);
@@ -227,7 +223,7 @@ export function SpendingPage({ month }: { month?: string }) {
   return (
     <>
       <PageHead title={t("Spending")}
-                about={t("What agents' model calls cost each month, at the prices models.yaml gives them: each part and agent you may see against the budget the settings set it, with a forecast to the month's end at the last week's pace, and what each message answered cost, all in. A budget guides: it stops no work, which the token budgets each release sets do.")}>
+                about={t("What agents' model calls cost each month, at the prices models.yaml gives them: each agent you may see against the budget the settings set it, with a forecast to the month's end at the last week's pace, and what each message answered cost, all in, then each instance you may watch. A budget guides: it stops no work, which the token budgets each release sets do.")}>
         <form className="period" onSubmit={show}>
           <label>{t("In")}{" "}
             <select id="month" value={picked} onChange={(e) => setPicked(e.target.value)}
@@ -247,10 +243,10 @@ export function SpendingPage({ month }: { month?: string }) {
           { theirs: data.budget_currency ?? "", prices: data.currency ?? t("no currency it names") })}</p>
       )}
       {data && panels.length === 0 && (
-        <p className="note" id="status" role="status">{data.current ? t("No part or agent you may see spent anything this month, and none has a budget.")
-          : t("No part or agent you may see spent anything that month, and none has a budget.")}</p>
+        <p className="note" id="status" role="status">{data.current ? t("No agent you may see spent anything this month, and none has a budget.")
+          : t("No agent you may see spent anything that month, and none has a budget.")}</p>
       )}
-      {data && panels.map(([kind, s]) => <Panel key={`${kind}-${s.key}`} kind={kind} spend={s} found={data} />)}
+      {data && panels.map((s) => <Panel key={s.key} spend={s} found={data} />)}
       {data && <Instances found={data} />}
     </>
   );

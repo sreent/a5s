@@ -20,21 +20,24 @@ from psycopg.types.json import Jsonb
 
 from a5s import db
 from a5s.core import approvals, drafts, samples
-from conftest import SEAL_KEY
+from conftest import SEAL_KEY, seal_draws
 from test_classes import resettle
 from test_judging import judge, judged  # noqa: F401 - judged is the fixture
 from test_samples import cap, graded, release, weigh
 
 
 def ungraded(stack, n: int) -> list[int]:
-    """n samples of the assistant's changes of due dates in billing, which Ana decided."""
+    """n samples of the assistant's changes of due dates in billing, which Ana decided, each
+    sealed as the core seals what it draws."""
     with db.transaction(stack.admin) as conn:
-        return [conn.execute(
+        ids = [conn.execute(
             "insert into samples (scenario, kind, run_id, instance_id, release, definition, part, "
             "action, said, records, acts_for, decided, decided_by, drawn_at) values "
             "('sample', 'proposal', gen_random_uuid(), 'assistant-finance', %s, 'assistant', "
             "'billing', 'change-due-date', 'a change', '{}', '{ben}', 'approve', 'ana', now()) "
             "returning id", (release(stack),)).fetchone()["id"] for _ in range(n)]
+    seal_draws(stack)
+    return ids
 
 
 def recorded(stack, provider, database, ids: list[int], person: str, grade: str = "right",

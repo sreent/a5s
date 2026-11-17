@@ -3,10 +3,12 @@ afresh for that act alone: the sign-in's nonce commits to the act and the instan
 identity provider signs it.
 
 Who may: suspend it, which makes a5s safer, those who run it, as its owner or deputy, the owners
-of its agent, and the team that runs a5s; resume it, which loosens a5s, whoever suspended it,
-with a second factor where the deployment asks for one, as core/registry.py's set_status keeps
-the first suspender's suspension and lets only them resume it. The team can do either at the
-command line too, at once (`a5s suspend`).
+of its agent, the owners and delegates of each part it works in, and the team that runs a5s;
+resume it, which loosens a5s, whoever suspended it, or someone else's suspension, the release
+approver, from outside the team, who may watch it while it's suspended to judge it: each with
+a second factor where the deployment asks for one, as core/registry.py's set_status keeps the
+first suspender's suspension (round 15, D6, B7). The team can do either at the command line
+too, at once (`a5s suspend`), resuming only its own suspensions.
 
 The channels app checks the sign-in as it arrives, so people hear at once when it doesn't check
 out or isn't theirs to make, and records it with the sign-in. It can change no instance. The
@@ -23,14 +25,15 @@ import hashlib
 from typing import Any
 
 from a5s import db
-from a5s.contract import Person
+from a5s.contract import PART_DELEGATE, PART_OWNER, RELEASE_APPROVER, Person
 from a5s.core import ledger, registry, sealing
 from a5s.core.approvals import HASHED, Refused, afresh
 from a5s.core.identity import Verifier
 from a5s.core.releases import agent_owner
 
 ACTIONS = ("suspend", "resume")
-COLUMNS = "id, definition, owner, deputy, status, suspended_by"  # what deciding who may reads
+COLUMNS = "id, definition, owner, deputy, status, suspended_by, parts"  # what deciding who
+# may reads
 
 
 def nonce(action: str, instance: str, salt: str) -> str:
@@ -55,18 +58,27 @@ def may(scenario: Any, person: Person, inst: dict, action: str,
     if action == "suspend":
         if not (person.id in (inst["owner"], inst["deputy"])
                 or agent_owner(inst["definition"]) in person.roles
+                or any(f"{PART_OWNER}:{p}" in person.roles or f"{PART_DELEGATE}:{p}" in person.roles
+                       for p in inst.get("parts") or {})  # its parts' own (round 15, B7)
                 or (team is not None and person.team == team)):
             return Refused(403, "suspending it is for those who run it, as its owner or deputy, "
-                                "the owners of its agent, and the team that runs a5s")
+                                "the owners of its agent, the owners and delegates of its parts, "
+                                "and the team that runs a5s")
         if inst["status"] == "suspended":
             return Refused(409, f"{inst['id']} is suspended already, by {suspender}")
         return None
     if inst["status"] != "suspended":
         return Refused(409, f"{inst['id']} isn't suspended")
-    if inst["suspended_by"] != person.id:
-        return Refused(403, f"only {suspender}, who suspended it, can resume it. Resuming someone "
-                            "else's suspension needs the release approver, at the command line")
+    if inst["suspended_by"] != person.id and not lifts(person, team):
+        return Refused(403, f"only {suspender}, who suspended it, can resume it, or the release "
+                            "approver, from outside the team that runs a5s, on its page")
     return None
+
+
+def lifts(person: Person, team: str | None) -> bool:
+    """Whether someone may resume another's suspension: the release approver, from outside the
+    team that runs a5s, since resuming loosens a5s (round 15, D6)."""
+    return RELEASE_APPROVER in person.roles and (team is None or person.team != team)
 
 
 def check(verifier: Verifier, scenario: Any, client_id: str, token: str, action: str,
@@ -135,12 +147,15 @@ def carry_out(conn: db.Connection, verifier: Verifier | None, scenario: Any,
         if why is None:
             why = registry.set_status(
                 conn, instance, by=who, suspend=action == "suspend", identity=verified(action),
-                proof={"issuer": row["issuer"], "token_sha256": row["token"].removeprefix(HASHED)}
-            ) or None
+                proof={"issuer": row["issuer"], "token_sha256": row["token"].removeprefix(HASHED)},
+                others=person is not None and lifts(person, team)) or None
         conn.execute("update status_requests set ended_at = now(), outcome = %s, proof = null "
                      "where id = %s", (why or "made", row["id"]))
         if why:
             refused.append(sealing.Refusal(
                 who, f"{action} {instance}: {why}",
-                f"a5s didn't {action} {instance}, as you asked on its page in the studio: {why}."))
+                ("a5s didn't suspend {instance}, as you asked on its page in the studio: {why}."
+                 if action == "suspend" else
+                 "a5s didn't resume {instance}, as you asked on its page in the studio: {why}.",
+                 {"instance": instance, "why": why})))
     return refused

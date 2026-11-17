@@ -25,6 +25,7 @@ from pydantic import (
     StringConstraints,
     ValidationError,
     field_validator,
+    model_validator,
 )
 
 from a5s.core.ledger import canonical
@@ -129,6 +130,9 @@ class ToolCall:
     # For a change, or a tool marked idempotent, the same whenever the same effect is asked for
     # in a run or task: a system that adds something makes it once for each key
     key: str | None = None
+    # For a run that acts for nobody, such as one a system's event or a schedule started:
+    # everyone its instance serves, as the directory says now, whom what it finds may reach
+    serves: tuple[str, ...] = ()
 
 
 UNDO_WITHIN = timedelta(days=7)  # the longest a change may be undone after it's made [starting value]
@@ -197,6 +201,14 @@ class Tool:
     # such as the titles and links of an outside library's documents, which the agent reads to
     # choose one: its run is marked once it's had them, as if it had read outside content
     marks: bool = False
+    # For text it writes that people check before it goes to someone outside the organisation,
+    # such as a reply left among a shared mailbox's drafts: who checks it (people,
+    # team:<team> or role:<role>), and where, in a few words. a5s's notes on what the agent
+    # wrote, such as a date it gave itself, go to them, in a5s's own words, never into the
+    # text, which someone outside would read; and a5s puts no value a handle stands for in it,
+    # such as another customer's address: only they add what's needed (round 15)
+    checked_by: tuple[str, ...] = ()
+    checked_in: str = ""
     # How a change it makes is reversed, if it says: someone it was for, or who decides its
     # changes in the record's part, may undo it for a while after it's made (core/undoing.py)
     undo: Undo | None = None
@@ -327,15 +339,15 @@ class DataProtection:
 
 @dataclass(frozen=True)
 class Spending:
-    """What each part's and each agent's model calls may cost a calendar month, in whole cents
-    of the currency it names, which the studio's forms take from models.yaml: a budget a5s
-    shows spending against, with a forecast to the month's end, and tells its owners of once
-    the forecast passes it, never one that stops work, which the token budgets each release
-    sets do (core/spending.py). One in a currency models.yaml doesn't price models in, a5s
-    compares with nothing. Without a currency, it's in the one models.yaml prices models in. A
-    part's owner approves its budget, and an agent's owner the agent's."""
+    """What each agent's model calls may cost a calendar month, in whole cents of the currency
+    it names, which the studio's forms take from models.yaml: a budget a5s shows spending
+    against, with a forecast to the month's end, and tells its owners of once the forecast
+    passes it, never one that stops work, which the token budgets each release sets do
+    (core/spending.py). One in a currency models.yaml doesn't price models in, a5s compares
+    with nothing. Without a currency, it's in the one models.yaml prices models in. An agent's
+    owner approves its budget. A part has none: a run's cost is its instance's and its
+    agent's, whole, never shared out among parts, a figure few could check."""
 
-    parts: dict[str, float] = field(default_factory=dict)
     agents: dict[str, float] = field(default_factory=dict)
     currency: str | None = None  # as its ISO 4217 code, such as GBP
 
@@ -365,8 +377,8 @@ class Settings:
     # A version's own map gives nothing towards its approval: the one in force before it does.
     groups: dict[str, tuple[str, ...]] = field(default_factory=dict)
     data_protection: DataProtection = field(default_factory=DataProtection)
-    # What each part's and each agent's model calls may cost a month, such as
-    # {"parts": {"billing": 400}, "agents": {"assistant": 300}}
+    # What each agent's model calls may cost a month, such as {"agents": {"assistant": 300}}:
+    # a run's cost is its instance's and its agent's, whole, so no part has a budget
     spending: Spending = field(default_factory=Spending)
 
 
@@ -454,16 +466,24 @@ class _DataProtection(BaseModel):
 
 
 class _Spending(BaseModel):
-    """What each part's and each agent's model calls may cost a month, in whole cents, so the
-    words approvers read are the amount itself, and the currency they're in."""
+    """What each agent's model calls may cost a month, in whole cents, so the words approvers
+    read are the amount itself, and the currency they're in."""
 
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    parts: dict[_ID, _AMOUNT] = Field(default_factory=dict)
     agents: dict[_ID, _AMOUNT] = Field(default_factory=dict)
     currency: _CURRENCY | None = None
 
-    @field_validator("parts", "agents")
+    @model_validator(mode="before")
+    @classmethod
+    def _no_parts(cls, found: Any) -> Any:
+        if isinstance(found, dict) and "parts" in found:
+            raise ValueError("a5s budgets each agent, not each part: a run's cost is its "
+                             "instance's and its agent's, whole, so a budget goes in "
+                             "spending.agents, which the agent's owner approves")
+        return found
+
+    @field_validator("agents")
     @classmethod
     def _cents(cls, found: dict[str, float]) -> dict[str, float]:
         for name, amount in found.items():
@@ -541,8 +561,7 @@ def parse_settings(raw: bytes, signatures: tuple[Signature, ...] = ()) -> Settin
         thresholds=dict(version.thresholds),
         groups={g: tuple(sorted(set(roles))) for g, roles in version.groups.items() if roles},
         data_protection=DataProtection(**version.data_protection.model_dump()),
-        spending=Spending(parts={p: float(v) for p, v in version.spending.parts.items()},
-                          agents={a: float(v) for a, v in version.spending.agents.items()},
+        spending=Spending(agents={a: float(v) for a, v in version.spending.agents.items()},
                           currency=version.spending.currency),
         instances=tuple(
             InstanceSettings(id=iid, definition=i.definition, serves=tuple(i.serves),

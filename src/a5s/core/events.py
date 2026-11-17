@@ -54,6 +54,9 @@ _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
 _TYPE = re.compile(r"[a-z0-9][a-z0-9-]{0,62}")
 _KEY = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:/-]{0,63}")
 _PERSON = re.compile(r"[A-Za-z0-9][A-Za-z0-9._@:/-]{0,199}")
+# A message of a mailbox's, as a5s keys it (connectors/mailboxes.py): hex alone, so its run's
+# task may name it, as it names no other system's own id
+MAIL_KEY = re.compile(r"M-[0-9a-f]{16}")
 
 
 class Refused(Exception):
@@ -170,6 +173,30 @@ def taken(definition: Any, source: str, kind: str) -> Any | None:
                  if e.source == source and e.type == kind), None)
 
 
+def refuses(scenario: Any, definitions: dict[str, Any], inst: dict[str, Any],
+            row: dict[str, Any]) -> str | None:
+    """Why an instance can't take an event, or None if it can: its release, as the instance runs
+    it, takes the event's type from its system, and the instance works in the part of every
+    record the event names; and, for a mailbox's new mail, everyone the instance serves reads
+    the mailbox, since what its run finds may reach them (connectors/mailboxes.py, round 15).
+    The sweep picks the instance that takes an event by it, and the run it opens checks it
+    again by it, so the two never disagree (round 14)."""
+    definition = definitions.get(inst["definition"])
+    if (definition is None or definition.release_id != inst["release"]
+            or taken(definition, row["source"], row["type"]) is None):
+        return f"{inst['id']}'s release takes no {row['type']} events from {row['source']}"
+    if not all(scenario.part_of(k) in (inst["parts"] or {}) for k in row["records"]):
+        return f"a record it names is in a part {inst['id']} doesn't work in"
+    readers = getattr(scenario, "mail_readers", None)
+    found = readers(row["source"]) if callable(readers) else None
+    if isinstance(found, tuple) and not all(
+            registry.serving(scenario, found, p)
+            for p in registry.served(scenario, inst["serves"])):
+        return (f"{row['source']}'s mail is read only for its readers, and {inst['id']} serves "
+                "people who aren't")
+    return None
+
+
 def whose(scenario: Any, given: str | None) -> str | None:
     """Whom an event names, as the directory knows them: by one of their identities, such
     as entra:<object id>, or by their id; None for nobody, or someone it doesn't know."""
@@ -208,8 +235,10 @@ def record(conn: db.Connection, scenario: Any, source: str, event: dict[str, Any
 def topic(row: dict[str, Any]) -> str:
     """The topic of the person's conversation an event's run writes in, of its own: their reply
     continues it for a while, as any conversation's current topic, but no run in another topic
-    reads it, or is marked by what it read (gateway.reads_outside, services/context.py)."""
-    return f"event {row['source']} {row['event_id']}"
+    reads it, or is marked by what it read (gateway.reads_outside, services/context.py). It's
+    named by a5s's own id for the event, never the system's, which a run reads as the case it's
+    on: a system's id may carry words someone outside it chose, such as a ticket's title."""
+    return f"event {row['source']} {row['id']}"
 
 
 def payer(source: str) -> str:
@@ -241,10 +270,21 @@ def put_off(conn: db.Connection, event: str, instance: str | None, why: str) -> 
     return True
 
 
+def again(conn: db.Connection, event: str, run: str) -> bool:
+    """An event whose run couldn't work on it, as when its model didn't answer, waits to be
+    tried again, as one that can't be worked on now does (put_off), until it has waited WAITS:
+    whether it waits again (round 15)."""
+    row = conn.execute("update events set taken_at = null, run_id = null where id = %s and "
+                       "run_id = %s returning id", (event, run)).fetchone()
+    return row is not None and not put_off(conn, event, None, "its model didn't answer")
+
+
 def task(said: Any, row: dict[str, Any]) -> str:
     """What a run for an event is asked to do: what its release says, and the event as a5s
-    received it, in a5s's own words: its system, its type and the records it names."""
-    named = ", ".join(row["records"]) or "no record"
+    received it, in a5s's own words: its system, its type and the records it names, or, for a
+    mailbox's new mail, the message, by a5s's own key for it."""
+    named = ", ".join(row["records"]) or (
+        f"the message {row['event_id']}" if MAIL_KEY.fullmatch(row["event_id"]) else "no record")
     return (f"{said.task}\n\n{row['source']} says {row['type']} happened, about {named}. "
             "Read what you need of it with your tools.")
 
@@ -261,10 +301,7 @@ def due(conn: db.Connection, gw: Any, now: datetime) -> list[dict[str, Any]]:
             "select * from (select *, row_number() over (partition by source order by "
             "received_at) as nth from events where taken_at is null and (not_before is null or "
             "not_before <= now())) e order by nth, received_at limit %s", (SWEPT,)).fetchall():
-        takes = [i for i in insts
-                 if (d := gw.definitions.get(i["definition"])) is not None
-                 and d.release_id == i["release"] and taken(d, row["source"], row["type"])
-                 and all(gw.scenario.part_of(k) in (i["parts"] or {}) for k in row["records"])]
+        takes = [i for i in insts if refuses(gw.scenario, gw.definitions, i, row) is None]
         serves = [i for i in takes if row["person"] and registry.serving(
             gw.scenario, i["serves"], row["person"])]
         takes.sort(key=lambda i: (i["status"] != "active", i not in serves))  # by id, else

@@ -83,6 +83,7 @@ def gather(conn: db.Connection, person: str) -> dict[str, Any]:
 
     samples = rows(  # with the judge's verdict, and its reason where the change was for them
         f"select id, action, case when acts_for && %(ids)s then {FIRST_LINE} end as said, "
+        "case when acts_for && %(ids)s and acts_for <@ %(ids)s then asked end as asked, "
         "decided, grade, drawn_at, graded_at, acts_for && %(ids)s as for_them, "
         "(coalesce(decided_by = any(%(ids)s), false) or deciders && %(ids)s) as decided_it, "
         "coalesce(graded_by = any(%(ids)s), false) as graded_it, "
@@ -223,8 +224,8 @@ def gather(conn: db.Connection, person: str) -> dict[str, Any]:
             f"and {within('d.decided_at')} order by d.id")],
         "samples": [{"sample": r["id"], "as": [role for role, held in (
             ("for", r["for_them"]), ("decider", r["decided_it"]), ("grader", r["graded_it"]))
-            if held], **{k: r[k] for k in ("action", "said", "decided", "grade", "drawn_at",
-                                           "graded_at", "judged", "judged_why")}}
+            if held], **{k: r[k] for k in ("action", "said", "asked", "decided", "grade",
+                                           "drawn_at", "graded_at", "judged", "judged_why")}}
             for r in samples],
         "questions": rows(  # which an archive takes, as it does their conversations
             "select asker, asked, text, answer, asked_at, answered_at, problem from questions "

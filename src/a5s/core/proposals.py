@@ -52,11 +52,12 @@ from a5s.contract import (
     Tool,
     record_of,
 )
-from a5s.core import approvals, sealing
+from a5s.core import approvals, languages, outgoing, sealing
 from a5s.core.handles import TOKEN
 from a5s.core.identity import Verifier
 from a5s.core.ledger import canonical
 from a5s.core.obligations import a_working_day_after
+from a5s.core.words import say
 
 REMIND, ESCALATE, LAPSE = 2, 5, 10  # working days: remind its deciders, tell their managers, lapse [starting value]
 AFTER_RESET = timedelta(days=1)  # how long a decision waits after its decider's authenticator was reset
@@ -136,7 +137,8 @@ def said(scenario: Scenario, tool: Tool, args: dict, records: dict[str, dict | N
     (samples.snapshot): never the agent's own account of it. One a run nobody asked for asked
     for, such as an event's, says so, rather than that it was for the person it's about."""
     named = [k for k in records]
-    shown = ", ".join(f"{k} {_plain(v)}" for k, v in args.items() if k != tool.record_arg)
+    shown = ", ".join(f"{k} {_plain(v, scenario.record_links)}" for k, v in args.items()
+                      if k != tool.record_arg)
     lines = [resolved(f"{tool.description.rstrip('.')}: {', '.join(named) or 'no record'}"
                       + (f", with {shown}" if shown else "") + ".", values or {})]
     lines += stood(records)
@@ -162,8 +164,10 @@ def stood(records: dict[str, dict | None]) -> list[str]:
     return lines
 
 
-def _plain(value: Any) -> str:
-    return value if isinstance(value, str) else canonical(value)
+def _plain(value: Any, allowed: tuple[str, ...] = ()) -> str:
+    """A value as a held change shows it: plain words on one line, cleaned as outgoing text is,
+    never a link, or a note that reads as a5s's (core/outgoing.py, round 15, F2)."""
+    return outgoing.plain(value if isinstance(value, str) else canonical(value), allowed)
 
 
 def handles_in(args: Any) -> set[str]:
@@ -225,29 +229,67 @@ def hold(conn: db.Connection, scenario: Scenario, run: dict, tool: Tool, args: d
         "select handle, value from run_handles where run_id = %s and handle = any(%s)",
         (run["run"], found))} if found else {}
     first = who[0]
-    body = {"scenario": scenario.name, "run": run["run"], "instance": run["id"], "tool": tool.name,
-            "args": args, "records": {r: fingerprint_of(v) for r, v in standing.items()},
-            "nonce": secrets.token_hex(16)}  # each proposal is its own, even for the same call
-    row = conn.execute(
+    words = said(scenario, tool, args, standing, list(run["acts_for"]), run["definition"], kept,
+                 run.get("trigger"))
+    body = bound(scenario.name, run["run"], run["id"], tool.name, tool.schema_hash, tool.action,
+                 args, {r: fingerprint_of(v) for r, v in standing.items()}, kept,
+                 list(run["acts_for"]), words, secrets.token_hex(16))  # its own, even for the
+    row = conn.execute(  # same call
         "insert into proposals (scenario, digest, run_id, instance_id, definition, release, tool, "
         "schema_hash, action, args, records, parts, acts_for, deciders, said, flags, sensitive, "
         "read_outside, seq, proposed_at, lapses_at, change, remind_at, escalate_at, standing, "
-        "steered_by) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
-        "%s, %s, %s, %s, %s, %s, %s, %s, %s) returning *",
+        "steered_by, nonce) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
+        "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) returning *",
         (scenario.name, hashlib.sha256(canonical(body).encode()).hexdigest(), run["run"], run["id"],
          run["definition"], run["release"], tool.name, tool.schema_hash, tool.action, Jsonb(args),
          Jsonb(body["records"]), sorted({p for r in standing if (p := scenario.part_of(r))}),
-         list(run["acts_for"]), [p.id for p in who],
-         said(scenario, tool, args, standing, list(run["acts_for"]), run["definition"], kept,
-              run.get("trigger")),
+         list(run["acts_for"]), [p.id for p in who], words,
          Jsonb(flags), is_sensitive, bool(run["read_outside"]), seq, now,
          working_days_after(first, now, LAPSE), change,
          working_days_after(first, now, REMIND), working_days_after(first, now, ESCALATE),
-         Jsonb(standing), sorted(set(steered or ())))).fetchone()
+         Jsonb(standing), sorted(set(steered or ())), body["nonce"])).fetchone()
     for handle, value in kept.items():  # the values they stand for, kept until it's decided
         conn.execute("insert into proposal_values (proposal_id, handle, value) values (%s, %s, %s)",
                      (row["id"], handle, value))
     return row
+
+
+def bound(scenario: str, run: str, instance: str, tool: str, schema_hash: str,
+          action: str | None, args: Any, records: dict, values: dict[str, str],
+          acts_for: list[str], said: str, nonce: str) -> dict:
+    """What a held change's digest covers, which its deciders' sign-ins commit to: the exact
+    call, the values its handles stand for, its records as they stood, whom it's for, and the
+    words its deciders read (round 15, B1)."""
+    return {"scenario": scenario, "run": run, "instance": instance, "tool": tool,
+            "schema_hash": schema_hash, "action": action, "args": args, "records": records,
+            "values": values, "acts_for": acts_for, "said": said, "nonce": nonce}
+
+
+def intact(conn: db.Connection, proposal: dict) -> bool:
+    """Whether a held change is still what its digest, and so its deciders, signed: made again
+    from all a5s holds of it. One the database was changed in, or one kept before a5s kept
+    its nonce, isn't: it's never made (round 15, B1)."""
+    if not proposal.get("nonce"):
+        return False
+    body = bound(proposal["scenario"], str(proposal["run_id"]), proposal["instance_id"],
+                 proposal["tool"], proposal["schema_hash"], proposal["action"], proposal["args"],
+                 proposal["records"], values(conn, proposal), list(proposal["acts_for"]),
+                 proposal["said"], proposal["nonce"])
+    return hmac.compare_digest(hashlib.sha256(canonical(body).encode()).hexdigest(),
+                               proposal["digest"])
+
+
+ENDINGS = ("decide", "made", "rejected", "lapsed", "changed", "refused", "failed")
+
+
+def ended_before(conn: db.Connection, proposal: dict) -> bool:
+    """Whether the core has decided or ended a held change already, as its own entries in the
+    ledger say: so one set waiting again, in the database, is never decided twice (round 15,
+    B1)."""
+    return conn.execute(
+        "select 1 from ledger where run_id = %s and kind = 'proposal' and action = any(%s) and "
+        "writer = current_user and (entry::jsonb -> 'args' ->> 'proposal') = %s limit 1",
+        (str(proposal["run_id"]), list(ENDINGS), key(proposal))).fetchone() is not None
 
 
 def snapshot(records: dict[str, Record | None]) -> dict[str, dict | None]:
@@ -417,8 +459,9 @@ def seal_pending(conn: db.Connection, keys: tuple[str, ...], verifier: Verifier 
                 ([r["digest"] for r in together],))]) or "a change"
             refused.append(sealing.Refusal(
                 first["person"], f"{first['person']}'s decision: {why}",
-                f"Your decision on {named} didn't count: {why}. If it still waits for you, "
-                "decide it again on a5s's own page, signing in afresh."))
+                (("Your decision on {named} didn't count: {why}. If it still waits for you, "
+                  "decide it again on a5s's own page, signing in afresh."),
+                 {"named": named, "why": why})))
         for row in together:
             if why is not None:
                 conn.execute("update proposal_decisions set refused = %s, proof = null "
@@ -470,6 +513,31 @@ def decision(conn: db.Connection, keys: tuple[str, ...], scenario: Scenario,
     return None, problems
 
 
+def settled(conn: db.Connection, scenario: Scenario, proposal: dict) -> list[str]:
+    """Who decided a held change already, by name, so that no other decision on it counts:
+    whoever rejected it first, or approved it for every part it touches, by the decisions
+    recorded on it that a5s hasn't refused, sealed yet or not. Nobody while another decision
+    may still count, as a rejection does in a part nobody has approved (round 15, B3)."""
+    by_part = deciders(scenario, list(proposal["records"]), not_deciding(proposal))
+    approved: dict[str | None, str] = {}
+    first: list[str] = []
+    for row in conn.execute("select person, decision from proposal_decisions where digest = %s "
+                            "and refused is null order by id", (proposal["digest"],)):
+        parts = [part for part, people in by_part.items()
+                 if row["person"] in {p.id for p in people}]
+        if not parts:
+            continue
+        if row["decision"] == "reject":
+            first = [row["person"]]
+            break
+        for part in parts:
+            approved.setdefault(part, row["person"])
+        if all(part in approved for part in by_part):
+            first = list(dict.fromkeys(approved.values()))
+            break
+    return [who.name if (who := scenario.person(p)) else p for p in first]
+
+
 def effective(person: Person | None, decided_at: datetime) -> datetime:
     """When a decision takes effect: at once, or a day after its decider's authenticator was
     reset, if that was less than a day before."""
@@ -516,34 +584,49 @@ def card(proposal: dict, link: str, again: bool = False) -> dict:
 
 
 def told(proposal: dict, became: str, by: str | None = None, extra: str = "",
-         reason: str | None = None) -> str:
-    """What a5s tells whoever a held change was for, once something became of it."""
-    change = first(proposal)
-    why = f" They said: {reason}" if reason else ""
-    return {
-        "made": f"{by} approved {key(proposal)}, and a5s has made it: {change}"
-                + (f" {extra}" if extra else ""),
-        "rejected": f"{by} didn't approve {key(proposal)}, so a5s didn't make it: {change}{why}",
-        "lapsed": (f"Nobody decided {key(proposal)} within {LAPSE} working days, so a5s let it "
-                   f"go: {change} Ask again if it's still needed."),
-        "changed": (f"{by} approved {key(proposal)}, but a5s didn't make it, since {extra} "
-                    f"changed after it was asked for: {change} Ask again if it's still needed."),
-        "refused": f"{by} approved {key(proposal)}, but a5s couldn't make it, since {extra}: {change}",
-        "failed": (f"{by} approved {key(proposal)}, but the records system didn't take it "
-                   f"({extra}): {change}"),
-        "stopped": (f"a5s stopped part way through making {key(proposal)}, so it may or may not "
-                    f"have been made, and {by} has ended it, having checked the records "
-                    f"system: {change} Ask again if it's still needed."),
-    }[became]
+         reason: str | None = None, language: str = languages.ENGLISH, undo: str = "") -> str:
+    """What a5s tells whoever a held change was for, once something became of it, in the
+    language they read: `by` whom, with what else there is to say (`extra`), as what changed or
+    why it wasn't made, and how to undo it, once it's made, where its tool says how (`undo`).
+    The change itself is in its own words, as it was asked for."""
+    given = {"by": by, "key": key(proposal), "change": first(proposal)}
+    if became == "made":
+        return (say(language, "{by} approved {key}, and a5s has made it: {change} {undo}",
+                    undo=undo, **given) if undo else
+                say(language, "{by} approved {key}, and a5s has made it: {change}", **given))
+    if became == "rejected":
+        return (say(language, "{by} didn't approve {key}, so a5s didn't make it: {change} They "
+                    "said: {reason}", reason=reason, **given) if reason else
+                say(language, "{by} didn't approve {key}, so a5s didn't make it: {change}",
+                    **given))
+    if became == "lapsed":
+        return say(language, "Nobody decided {key} within {days} working days, so a5s let it go: "
+                   "{change} Ask again if it's still needed.", key=given["key"], days=LAPSE,
+                   change=given["change"])
+    if became == "changed":
+        return say(language, "{by} approved {key}, but a5s didn't make it, since {what} changed "
+                   "after it was asked for: {change} Ask again if it's still needed.",
+                   what=extra, **given)
+    if became == "refused":
+        return say(language, "{by} approved {key}, but a5s couldn't make it, since {why}: "
+                   "{change}", why=say(language, extra), **given)
+    if became == "failed":
+        return say(language, "{by} approved {key}, but the records system didn't take it "
+                   "({error}): {change}", error=extra, **given)
+    return say(language, "a5s stopped part way through making {key}, so it may or may not have "
+               "been made, and {by} has ended it, having checked the records system: {change} "
+               "Ask again if it's still needed.", **given)
 
 
 def brief(conn: db.Connection, instance: str, acts_for: list[str],
-          records: list[str], conversation: str | None = None) -> list[str]:
+          records: list[str], conversation: str | None = None) -> tuple[list[str], bool]:
     """The changes waiting for a decision on these records, asked for the same people, for a
     run's brief: so the agent says it waits, rather than asking again. In a group chat, those
-    asked for there while everyone now in it was there."""
+    asked for there while everyone now in it was there. And whether one was asked for by a run
+    that read content from outside, whose words the run that's given them takes on, as what a
+    marked run passed on stays marked (round 15, F1)."""
     if not records:
-        return []
+        return [], False
     if conversation is not None:
         rows = conn.execute(
             "select p.* from proposals p join runs r on r.id = p.run_id where p.instance_id = %s "
@@ -555,5 +638,5 @@ def brief(conn: db.Connection, instance: str, acts_for: list[str],
             "select * from proposals where instance_id = %s and acts_for = %s "
             "and status = 'waiting' and records ?| %s order by id",
             (instance, acts_for, records)).fetchall()
-    return [f"{key(r)} waits for a decision, asked for on {r['proposed_at']:%d %b}: {first(r)}"
-            for r in rows]
+    return ([f"{key(r)} waits for a decision, asked for on {r['proposed_at']:%d %b}: {first(r)}"
+             for r in rows], any(bool(r["read_outside"]) for r in rows))

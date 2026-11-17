@@ -66,6 +66,12 @@ function Card({ sample, chosen, choose }: {
         </div>
         <h2 className="approval-title" id={`title-${sample.id}`}>{what}</h2>
         {rest.length > 0 && <p className="said">{rest.join("\n")}</p>}
+        {sample.asked && (
+          <div className="approval-know">
+            <p className="label">{t("What they asked")}</p>
+            <p className="said">{sample.asked}</p>
+          </div>
+        )}
         <p><span className={`badge ${tone}`}>{outcome}</span></p>
         {sample.flags.length > 0 && (
           <div className="approval-know">

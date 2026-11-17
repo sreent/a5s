@@ -43,8 +43,9 @@ import hmac
 import json
 import math
 import random
+import uuid
 from collections.abc import Iterable
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, LiteralString
 
 from psycopg.types.json import Jsonb
@@ -64,7 +65,16 @@ MOST_GRADED = 20  # grades one sign-in gives, at most
 # could record one sign-in's grades as another person's, or under another salt (round 13, A2)
 GIVEN_TOGETHER = ("graded_by", "grade_proof", "grade_salt", "grade_nonce", "grade_issuer")
 _SEALED_GRADE = ("scenario", "id", "grade", "graded_by", "graded_at", "grade_token",
-                 "grade_nonce", "grade_salt", "grade_issuer", "grade_subject")
+                 "grade_nonce", "grade_salt", "grade_issuer", "grade_subject",
+                 # and the sample it grades, as the core drew it, and when it sealed it: so a
+                 # grade moved to another part, or sealed again later, counts nowhere (round 15)
+                 "kind", "proposal_id", "run_id", "release", "part", "action", "sealed_at",
+                 "drawn_seal")
+# A sample as the core drew it: what it is of, whose, and what graders read (round 15, B2)
+_SEALED_DRAW = ("id", "scenario", "kind", "proposal_id", "run_id", "instance_id", "release",
+                "definition", "part", "action", "said", "records", "acts_for", "decided",
+                "decided_by", "deciders", "drawn_at", "flags", "asked_digest")
+ASKED = 2_000  # characters of what was said to the run, kept with its sample
 _SEALED_CAP = ("behaviour", "part", "action", "cap", "since", "why", "threshold", "window_from",
                "seq")
 
@@ -155,8 +165,9 @@ def needed(threshold: float, errors: int = 0) -> int:
 # Caps, which count only as the core sealed them, with the ledger's last word on each
 
 def _mac(key: str, fields: dict, names: tuple[str, ...]) -> str:
-    shown = {k: (v.isoformat() if isinstance(v, datetime) else v) for k, v in fields.items()
-             if k in names}
+    shown = {k: (v.astimezone(UTC).isoformat() if isinstance(v, datetime) else
+                 str(v) if isinstance(v, uuid.UUID) else v)
+             for k, v in fields.items() if k in names}
     return hmac.new(key.encode(), canonical(shown).encode(), hashlib.sha256).hexdigest()
 
 
@@ -279,15 +290,54 @@ def draw(conn: db.Connection, keys: tuple[str, ...], scenario: str, kind: str, r
         rate = min(1.0, PER_QUARTER / max(3 * lately, 1))
         if drawn >= PER_QUARTER or random.random() >= rate:  # a sample, not a secret
             return False
-    conn.execute(
+    asked = asked_in(conn, run)  # what was asked of the run, for its graders (round 15, C1)
+    row = conn.execute(
         "insert into samples (scenario, kind, proposal_id, run_id, instance_id, release, "
         "definition, part, action, said, records, acts_for, decided, decided_by, deciders, "
-        "drawn_at, flags) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
-        "%s)",
+        "drawn_at, flags, asked, asked_digest) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
+        "%s, %s, %s, %s, %s, %s, %s, %s, %s) returning *",
         (scenario, kind, proposal, run, instance, release, definition, part, action, said,
          Jsonb(records), acts_for, decided, decided_by[0] if decided_by else None,
-         list(dict.fromkeys(decided_by or [])), now, Jsonb(list(flags or []))))
+         list(dict.fromkeys(decided_by or [])), now, Jsonb(list(flags or [])), asked,
+         digest_of(asked))).fetchone()
+    sealed_draw(conn, keys, row)
     return True
+
+
+def asked_in(conn: db.Connection, run: str) -> str | None:
+    """What the people a run answered said to it, as they said it, for whoever grades its
+    change: so a change to the wrong record shows (round 15, C1). None for a run nobody asked,
+    such as an event's."""
+    said = [r["content"] for r in conn.execute(
+        "select content from turns where run_id = %s::uuid and role = 'person' order by id",
+        (str(run),))]
+    return "\n\n".join(said)[:ASKED] or None
+
+
+def digest_of(asked: str | None) -> str | None:
+    """What a sample's seal holds of what was asked: its digest, so an erasure can take the
+    words out and leave the sample counting."""
+    return hashlib.sha256(asked.encode()).hexdigest() if asked else None
+
+
+def asked_of(sample: dict) -> str | None:
+    """What was asked of a sample's run, as the core drew it: nothing once an erasure took it
+    out, nor where it isn't what the core sealed."""
+    asked = sample.get("asked")
+    return asked if asked and digest_of(asked) == sample.get("asked_digest") else None
+
+
+def sealed_draw(conn: db.Connection, keys: tuple[str, ...], row: dict | None) -> None:
+    """Seal a sample the core drew, with its key: a row anyone else wrote counts for nothing
+    (round 15, B2)."""
+    if keys and row is not None:
+        conn.execute("update samples set drawn_seal = %s where id = %s",
+                     (_mac(keys[0], row, _SEALED_DRAW), row["id"]))
+
+
+def drawn_by_core(keys: tuple[str, ...], row: dict) -> bool:
+    """Whether a sample is one the core drew, as it drew it."""
+    return _sealed(keys, row, _SEALED_DRAW, row.get("drawn_seal"))
 
 
 # Grading
@@ -326,12 +376,18 @@ def may_grade(scenario: Scenario, sample: dict, person: Person,
     decided = deciders_of(sample)
     if person.id in sample["acts_for"] or person.id in decided:
         return "nobody grades a change they asked for or decided"
-    above, seen = scenario.person(person.manager) if person.manager else None, set()
-    while above is not None and above.id not in seen:
-        if above.id in decided:
-            return "nobody grades the decisions of someone they report to"
-        seen.add(above.id)
+    line: list[str] = []  # whom they report to, all the way up
+    above = scenario.person(person.manager) if person.manager else None
+    while above is not None and above.id not in line:
+        line.append(above.id)
         above = scenario.person(above.manager) if above.manager else None
+    if set(line) & set(decided):
+        return "nobody grades the decisions of someone they report to"
+    for whom in sample["acts_for"]:  # nor a change made for them (round 15, C9)
+        who = scenario.person(whom)
+        if whom in line or (who is not None and person.team is not None
+                            and who.team == person.team):
+            return "nobody grades a change made for their own team, or for someone they report to"
     if not all(scenario.sees(person.id, r) for r in sample["records"]):
         return "it names a record they may not see"
     return None
@@ -437,17 +493,18 @@ def seal_pending(conn: db.Connection, keys: tuple[str, ...], verifier: Any,
         if why is not None and first["graded_by"]:
             refused.append(sealing.Refusal(
                 first["graded_by"], f"{first['graded_by']}'s grades of {len(given)} samples: {why}",
-                f"Your grades of {len(given)} samples didn't count: {why}. They wait to be graded "
-                "again, on a5s's own page."))
+                (("Your grades of {n} samples didn't count: {why}. They wait to be graded again, "
+                  "on a5s's own page."), {"n": len(given), "why": why})))
         for row in together:
             if why is not None:
                 conn.execute(
                     "update samples set grade = null, graded_by = null, graded_at = null, "
                     "grade_token = null, grade_nonce = null, grade_salt = null, grade_issuer = "
                     "null, grade_subject = null, grade_proof = null where id = %s", (row["id"],))
-            else:
+            else:  # sealed with when it was, which the seal covers
                 conn.execute("update samples set grade_seal = %s, grade_proof = null, "
-                             "sealed_at = %s where id = %s", (seal(keys, row), now, row["id"]))
+                             "sealed_at = %s where id = %s",
+                             (seal(keys, {**row, "sealed_at": now}), now, row["id"]))
     return refused
 
 
@@ -469,13 +526,18 @@ def undone(conn: db.Connection, keys: tuple[str, ...], scenario: str, change: di
             (scenario, change["run_id"], part, change["action"], kind,
              change["proposal_id"], change["record"])).fetchone()
         if row is None:  # never drawn: it counts all the same
+            asked = asked_in(conn, str(change["run_id"]))
             row = conn.execute(
                 "insert into samples (scenario, kind, proposal_id, run_id, instance_id, release, "
-                "definition, part, action, said, records, acts_for, drawn_at) values (%s, %s, %s, "
-                "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) returning *",
+                "definition, part, action, said, records, acts_for, drawn_at, asked, asked_digest) "
+                "values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) returning *",
                 (scenario, kind, change["proposal_id"], change["run_id"], change["instance_id"],
                  change["release"], change["definition"], part, change["action"], change["said"],
-                 Jsonb({change["record"]: None}), list(change["acts_for"]), now)).fetchone()
+                 Jsonb({change["record"]: None}), list(change["acts_for"]), now, asked,
+                 digest_of(asked))).fetchone()
+            assert row is not None
+            sealed_draw(conn, keys, row)
+            row = conn.execute("select * from samples where id = %s", (row["id"],)).fetchone()
         assert row is not None
         if row["grade"] == "critical":
             continue
@@ -494,8 +556,8 @@ def undone(conn: db.Connection, keys: tuple[str, ...], scenario: str, change: di
 
 
 def counted(keys: tuple[str, ...], row: dict) -> bool:
-    """Whether a grade counts: one the core sealed."""
-    return _sealed(keys, row, _SEALED_GRADE, row.get("grade_seal"))
+    """Whether a grade counts: one the core sealed, of a sample the core drew, as it drew it."""
+    return _sealed(keys, row, _SEALED_GRADE, row.get("grade_seal")) and drawn_by_core(keys, row)
 
 
 def _sealed_at(row: dict) -> datetime:
@@ -504,6 +566,17 @@ def _sealed_at(row: dict) -> datetime:
 
 
 # Weighing the grades
+
+def rested(grades: list[dict], since: datetime | None) -> dict:
+    """What a change of cap rests on, for the ledger and its auditors: the samples, by a digest
+    of their ids, the releases and instances they came from, how many people graded them, and
+    from when (round 15, E7)."""
+    return {"samples": hashlib.sha256(",".join(str(g["id"]) for g in grades).encode()).hexdigest(),
+            "releases": sorted({g["release"] for g in grades}),
+            "instances": sorted({g["instance_id"] for g in grades}),
+            "graders": len({g["graded_by"] for g in grades}),
+            "from": since.isoformat() if since else None}
+
 
 def assess(conn: db.Connection, keys: tuple[str, ...], kind: str, part: str, action: str,
            threshold: float | None, now: datetime) -> dict | None:
@@ -521,7 +594,8 @@ def assess(conn: db.Connection, keys: tuple[str, ...], kind: str, part: str, act
     grades = [r for r in rows if counted(keys, r)]
     fresh = [g for g in grades if since is None or _sealed_at(g) > since]
     graded, errors = len(fresh), sum(g["grade"] != "right" for g in fresh)
-    evidence = {"graded": graded, "errors": errors, "threshold": threshold}
+    evidence = {"graded": graded, "errors": errors, "threshold": threshold,
+                **rested(fresh, since)}
     if current is not None and now_cap >= 2:
         if any(g["grade"] == "critical" for g in fresh):
             return set_cap(conn, keys, kind, part, action, 1, "a critical error", now, evidence,
@@ -556,7 +630,7 @@ def lower(conn: db.Connection, keys: tuple[str, ...], release: str, part: str, a
     current = _cap_row(conn, keys, kind, part, action) if kind else None
     if current is None or current["cap"] < 2:
         return None
-    return set_cap(conn, keys, kind, part, action, 1, f"lowered by {by}", now,
+    return set_cap(conn, keys, kind, part, action, 1, f"lowered by {by}", now, {"by": by},
                    threshold=current["threshold"])
 
 

@@ -24,6 +24,8 @@ from a5s.contract import (
     parse_settings,
 )
 from a5s.core import ledger, memberships, samples, signing
+from a5s.core.languages import ENGLISH
+from a5s.core.words import say
 from a5s.definitions import Definition
 
 Directory = Callable[[str], Person | None]
@@ -110,19 +112,14 @@ def _thresholds_change(settings: Settings, before: Settings | None) -> set[str]:
             if settings.thresholds.get(p) != before.thresholds.get(p)}
 
 
-def _spending_change(settings: Settings, before: Settings | None) -> tuple[set[str], set[str]]:
-    """The parts and the agents whose monthly budget a version changes, from the version in
-    force, or for the first, from none: each needs its owner, a part's though no instance works
-    there yet, since it's theirs to say what it may cost."""
+def _spending_change(settings: Settings, before: Settings | None) -> set[str]:
+    """The agents whose monthly budget a version changes, from the version in force, or for the
+    first, from none: each needs its owner, since it's theirs to say what it may cost."""
     was = before.spending if before else Spending()
     now = settings.spending
-
-    def changed(a: dict[str, float], b: dict[str, float]) -> set[str]:
-        return {k for k in set(a) | set(b) if a.get(k) != b.get(k)}
-
     if was.currency != now.currency:  # the same amounts in another currency are other budgets,
-        return set(was.parts) | set(now.parts), set(was.agents) | set(now.agents)  # each its
-    return changed(was.parts, now.parts), changed(was.agents, now.agents)  # owner's (round 14)
+        return set(was.agents) | set(now.agents)  # each its owner's (round 14)
+    return {k for k in set(was.agents) | set(now.agents) if was.agents.get(k) != now.agents.get(k)}
 
 
 def _data_protection_change(settings: Settings, before: Settings | None) -> bool:
@@ -233,7 +230,8 @@ def narrowed(settings: Settings, before: Settings | None) -> set[str] | None:
 
 
 def missing(settings: Settings, directory: Directory, valid: Iterable[str],
-            before: Settings | None = None, rooted: Directory | None = None) -> list[str]:
+            before: Settings | None = None, rooted: Directory | None = None,
+            language: str = ENGLISH) -> list[str]:
     """Whose approval a version still needs, given who validly approved it: for each part an
     instance works in, or whose threshold or budget it changes, its owner's, and for each agent
     whose budget it changes, the agent's owner's, and an instance approver's
@@ -241,52 +239,59 @@ def missing(settings: Settings, directory: Directory, valid: Iterable[str],
     afresh. `before` is the version before it, whose instances a version that leaves them out
     retires, so their approvers decide that too. Giving a group a role needs the role's owner
     as the directory alone names them (`rooted`), so no role a group gives grows itself; and
-    changing the data protection officer's choices needs the officer, named the same way."""
+    changing the data protection officer's choices needs the officer, named the same way. In
+    the language someone reads, where a5s has the words."""
     valid = list(valid)
     needs = list(dict.fromkeys(why for _, why, _ in needed(settings, directory, valid, before,
-                                                            rooted)))
+                                                            rooted, language)))
     if not any(p.roles for who in valid if (p := directory(who))):  # whoever it is for
-        return needs or ["nobody who approves instances has approved it"]
+        return needs or [say(language, "nobody who approves instances has approved it")]
     return needs
 
 
 def needed(settings: Settings, directory: Directory, valid: Iterable[str],
-           before: Settings | None = None,
-           rooted: Directory | None = None) -> list[tuple[str, str, bool]]:
+           before: Settings | None = None, rooted: Directory | None = None,
+           language: str = ENGLISH) -> list[tuple[str, str, bool]]:
     """What `missing` says a version still needs, as each role whose holder's approval would
     give it, why, and whether only someone the directory itself gives the role counts, as for
     giving a group a role: so a page can tell each approver what waits for them."""
     valid = list(valid)
     held = {role for who in valid if (p := directory(who)) for role in p.roles}
     if (parts := narrowed(settings, before)) is not None:  # each part's owner, for theirs alone
-        return [(f"{PART_OWNER}:{part}", f"the owner of {part} hasn't approved it", False)
+        return [(f"{PART_OWNER}:{part}", say(language, OWNS_NOT, part=part), False)
                 for part in sorted(parts) if f"{PART_OWNER}:{part}" not in held]
     rooted = rooted or directory
     owners = {role for who in valid if (p := rooted(who)) for role in p.roles}
     covered = _covered(settings, before)
-    budgeted, budgeted_agents = _spending_change(settings, before)
-    needs = [(f"{PART_OWNER}:{part}", f"the owner of {part} hasn't approved it", False)
+    budgeted_agents = _spending_change(settings, before)
+    needs = [(f"{PART_OWNER}:{part}", say(language, OWNS_NOT, part=part), False)
              for part in sorted({p for i in covered for p in i.parts}
-                                | _thresholds_change(settings, before) | budgeted)
+                                | _thresholds_change(settings, before))
              if f"{PART_OWNER}:{part}" not in held]
-    needs += [(f"{AGENT_OWNER}:{agent}", f"the owner of the {agent} hasn't approved its budget",
-               False) for agent in sorted(budgeted_agents) if f"{AGENT_OWNER}:{agent}" not in held]
+    needs += [(f"{AGENT_OWNER}:{agent}", say(language, "the owner of the {agent} hasn't approved "
+                                             "its budget", agent=agent), False)
+              for agent in sorted(budgeted_agents) if f"{AGENT_OWNER}:{agent}" not in held]
     if INSTANCE_APPROVER not in held:
         if any(not i.parts for i in covered):
-            why = f"no {INSTANCE_APPROVER} has approved it, for the instances in no part"
+            why = say(language, "no instance-approver has approved it, for the instances in no "
+                      "part")
             needs.append((INSTANCE_APPROVER, why, False))
         if _classes_change(settings, before):
-            why = f"no {INSTANCE_APPROVER} has approved its classes of data"
+            why = say(language, "no instance-approver has approved its classes of data")
             needs.append((INSTANCE_APPROVER, why, False))
     for group, role in memberships.grants(settings, before):
         if (owner := memberships.owner_of(role)) not in owners:
-            why = f"the {owner} named in the directory hasn't approved giving {group} the {role} role"
+            why = say(language, "the {owner} named in the directory hasn't approved giving "
+                      "{group} the {role} role", owner=owner, group=group, role=role)
             needs.append((owner, why, True))
     if _data_protection_change(settings, before) and DATA_PROTECTION not in owners:
-        why = (f"the {DATA_PROTECTION} named in the directory hasn't approved its choices for "
-               "people's data")
+        why = say(language, "the data-protection-officer named in the directory hasn't approved "
+                  "its choices for people's data")
         needs.append((DATA_PROTECTION, why, True))
     return needs
+
+
+OWNS_NOT = "the owner of {part} hasn't approved it"  # a part's owner's approval, still to come
 
 
 def approvers(settings: Settings, holders: Holders, before: Settings | None = None,
@@ -323,9 +328,9 @@ def told(settings: Settings, holders: Holders, before: Settings | None = None,
 def _approvers(settings: Settings, holders: Holders, before: Settings | None = None,
                rooted: Holders | None = None) -> list[Person]:
     covered = _covered(settings, before)
-    budgeted, budgeted_agents = _spending_change(settings, before)
+    budgeted_agents = _spending_change(settings, before)
     roles = [f"{PART_OWNER}:{p}" for p in sorted({p for i in covered for p in i.parts}
-                                                 | _thresholds_change(settings, before) | budgeted)]
+                                                 | _thresholds_change(settings, before))]
     roles += [f"{AGENT_OWNER}:{a}" for a in sorted(budgeted_agents)]
     if any(not i.parts for i in covered) or _classes_change(settings, before):
         roles.append(INSTANCE_APPROVER)
@@ -500,9 +505,12 @@ def apply(
 
 
 def set_status(conn: db.Connection, instance: str, *, by: str, suspend: bool,
-               identity: str = "unverified (development)", proof: dict | None = None) -> str:
+               identity: str = "unverified (development)", proof: dict | None = None,
+               others: bool = False) -> str:
     """Suspend or resume an instance, and return the reason if it can't be done. The ledger
-    keeps how a5s knew who asked: with `proof`, the sign-in's issuer and hash."""
+    keeps how a5s knew who asked: with `proof`, the sign-in's issuer and hash. Only whoever
+    suspended it resumes it, but where `others`, the release approver, whom core/suspension.py
+    checked, lifting another's suspension, which the ledger names (round 15, D6)."""
     row = conn.execute("select status, suspended_by from instances where id = %s for update",
                        (instance,)).fetchone()
     if row is None:
@@ -520,9 +528,9 @@ def set_status(conn: db.Connection, instance: str, *, by: str, suspend: bool,
     else:
         if row["status"] != "suspended":
             return f"{instance} isn't suspended"
-        if row["suspended_by"] != by:
+        if row["suspended_by"] != by and not others:
             return (f"only {row['suspended_by']} can resume {instance}. Resuming someone else's "
-                    "suspension needs the release approver, which phase 1 doesn't have yet.")
+                    "suspension needs the release approver, on its page in the studio.")
         conn.execute(  # back to work, or a shadow's again
             "update instances set status = case when shadows is null then 'active' else "
             "'shadow' end, suspended_by = null, updated_at = now() where id = %s",
@@ -533,6 +541,8 @@ def set_status(conn: db.Connection, instance: str, *, by: str, suspend: bool,
         {"kind": "admin", "action": "suspend" if suspend else "resume", "instance": instance,
          "decision": "record", "args": {"by": by, "identity": identity,
                                         "suspended_by": row["suspended_by"] or by if suspend
-                                        else None, **(proof or {})}},
+                                        else None, **(proof or {}),
+                                        **({"lifted": row["suspended_by"]} if not suspend
+                                           and row["suspended_by"] != by else {})}},
     )
     return ""

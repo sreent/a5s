@@ -32,18 +32,42 @@ def about(scenario: Scenario, run: dict, records: list[str], action: str | None 
     in each record's part, or else at most at level 1. Level 2 counts only while someone who
     approved the settings in force still owns the part, and only up to a5s's cap for the
     release, part and type, which is 1 until graded samples raise it. A change about no record,
-    or in a run that has read content from outside, works at level 1 at most."""
+    or in a run that has read content from outside, works at level 1 at most.
+
+    A run for nobody that a mailbox's new mail started sees only what every reader of the
+    mailbox may see, since its draft waits where they all read it (`audience`, round 15)."""
     parts = run.get("parts") or {}
     touched = {scenario.part_of(r) for r in records}
     levels = [_level(scenario, run, p, action, set(approved), caps or {})
               for p in touched if p in parts]
     level = min(levels) if levels else run["level"]
-    if action and (not levels or None in touched or run.get("read_outside")):
+    if action and (not levels or None in touched or run.get("read_outside")
+                   or run.get("steered")):  # nor for a run a team's words steered (round 15)
         level = min(level, 1)  # level 2 is for a type set in a record's part, and nothing else
+    reaching = audience(scenario, run)
+    whom = list(run["acts_for"]) if reaching is None else reaching
     return {"level": level,
             "in_scope": all(p is None or p in parts for p in touched),
-            "visible": all(scenario.sees(who, r) for r in records for who in run["acts_for"]),
+            "visible": all(scenario.sees(who, r) for r in records for who in whom) and not (
+                reaching == [] and records),  # a mailbox nobody reads: none, failing closed
             "for_self": bool(action) and for_self(run, records, standing or {})}
+
+
+def audience(scenario: Scenario, run: dict) -> list[str] | None:
+    """Whom a run's work reaches, for a run for nobody that a mailbox's new mail started:
+    everyone who reads the mailbox, as the directory says now, where its draft waits for them
+    all (connectors/mailboxes.py); None for any other run, whose work reaches whom it acts
+    for."""
+    trigger = run.get("trigger") or {}
+    readers = getattr(scenario, "mail_readers", None)
+    if run["acts_for"] or trigger.get("kind") != "event" or not callable(readers):
+        return None
+    found = readers(trigger.get("source"))
+    if not isinstance(found, tuple):
+        return None
+    from a5s.core import registry  # who's in a team or holds a role, now
+
+    return registry.served(scenario, found)
 
 
 def for_self(run: dict, records: list[str], standing: dict[str, dict | None]) -> bool:
@@ -55,7 +79,8 @@ def for_self(run: dict, records: list[str], standing: dict[str, dict | None]) ->
     so a pack's restriction holds: it fails closed."""
     trigger, acts_for = run.get("trigger") or {}, list(run["acts_for"])
     if (trigger.get("kind") != "message" or groups.of(trigger.get("conversation"))
-            or len(acts_for) != 1 or run.get("read_outside") or not records):
+            or len(acts_for) != 1 or run.get("read_outside") or run.get("steered")
+            or not records):
         return False
     return all((kept := standing.get(r)) is not None and kept.get("person") == acts_for[0]
                for r in records)

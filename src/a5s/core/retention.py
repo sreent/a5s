@@ -119,6 +119,7 @@ def sweep(conn: db.Connection, now: datetime, scenario: str, kept: str = KEPT,
                       f"and waiting_noted_at < {AGO}")  # in their words
     delete("reports", f"delete from report_fires where fired_at < {AGO}")
     delete("events", f"delete from events where received_at < {AGO}")  # what systems said
+    delete("events", f"delete from mail_messages where seen_at < {AGO}")  # mail's keys (round 15)
     delete("feedback", f"delete from answer_feedback where at < {AGO}")  # answers said wrong
     delete("reminders", "delete from reminders where greatest(reminded_at, cancelled_at, "
                         f"case when confirmed_at is null then offered_at end) < {AGO}")
@@ -141,6 +142,8 @@ def sweep(conn: db.Connection, now: datetime, scenario: str, kept: str = KEPT,
     # group chat, whose conversation goes by its own last message
     delete("questions", f"delete from questions where asked_at < {AGO}")
     delete("asks", f"delete from agent_asks where ended_at < {AGO}")  # asking for an agent
+    delete("asks", "delete from settings_requests where coalesce(decided_at, asked_at) < "
+           f"{AGO}")  # and for a version of the settings (round 15, E10)
     delete("connections", "delete from delegations where coalesce(used_at, connected_at) < "
                           "now() - %(unused)s", unused=delegation.UNUSED)  # tokens unused that long
     delete("connections", "delete from delegation_starts where started_at < now() - "
