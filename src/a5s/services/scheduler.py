@@ -397,16 +397,10 @@ class Scheduler:
         topic = opened.get("topic") or context.GENERAL  # the core decides it
         conversation = claim.get("conversation") or person  # theirs, or their group chat's
         members = list(claim["members"]) if groups.of(conversation) else None
-        heard = {"speaker": person, "heard_by": members} if members else {}
         outcome, history, behind = "failed", [], set[str]()
         try:
-            with db.transaction(self.cfg.database_url) as conn:
-                context.add_turn(conn, person=conversation, agent=agent, role="person",
-                                 content=claim["text"], run=run, topic=topic, **heard)
-                for note in opened.get("notes") or []:  # a5s's own words to the agent on what
-                    context.add_turn(conn, person=conversation, agent=agent, role="task",
-                                     content=note, run=run, topic=topic,  # came with it, such
-                                     heard_by=members or None)  # as files, after their words
+            with db.transaction(self.cfg.database_url) as conn:  # with what they said, and
+                # a5s's notes on what came with it, which the core wrote as it opened (F10)
                 history = context.history(
                     conn, person=conversation, agent=agent, topic=topic,
                     chars=opened.get("history_chars") or context.CHARS, members=members,

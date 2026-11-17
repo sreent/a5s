@@ -1562,6 +1562,7 @@ def create_app(gw: Gateway) -> FastAPI:
                                                                opening.trigger["inbound"])] if n]
                     if opening.notes:  # what they sent is theirs alone to read in the studio
                         studio.readers(conn, run_id, [studio.ALONE])
+                    turns_at_open(conn, inst["definition"], opening, run_id)
                 if kind == shadows.KIND and opening.trigger.get("inbound") and files.attach(
                         conn, run_id, opening.trigger["inbound"]):  # and a shadow's, as its
                     studio.readers(conn, run_id, [studio.ALONE])  # notes said
@@ -1608,6 +1609,24 @@ def create_app(gw: Gateway) -> FastAPI:
                 "topic": opening.trigger.get("topic", topics.GENERAL),
                 "history_chars": CHARS_PER_TOKEN * (release.context.budget_tokens if release
                                                     else Context().budget_tokens)}
+
+    def turns_at_open(conn: db.Connection, agent: str, opening: Opening, run: str) -> None:
+        """What someone said, as the message arrived, and a5s's notes on what came with it, in
+        the conversation of the run that answers it, for it and later runs to read: the core's
+        alone to write, so no other part puts words in anyone's mouth (round 15, F10)."""
+        said = conn.execute("select person, text, conversation, members from inbound where "
+                            "id = %s", (opening.trigger["inbound"],)).fetchone()
+        if said is None:
+            return
+        group = said["conversation"] if groups.of(said["conversation"]) else None
+        members = list(said["members"] or []) if group else None
+        topic = opening.trigger.get("topic", topics.GENERAL)
+        heard = {"speaker": said["person"], "heard_by": members} if members else {}
+        context.add_turn(conn, person=group or said["person"], agent=agent, role="person",
+                         content=said["text"], run=run, topic=topic, **heard)
+        for note in opening.notes:  # after their words, as heard by whoever heard them
+            context.add_turn(conn, person=group or said["person"], agent=agent, role="task",
+                             content=note, run=run, topic=topic, heard_by=members or None)
 
     @services.post("/runs/sweep")
     def sweep() -> list[dict]:
