@@ -503,3 +503,37 @@ def test_a_code_recorded_for_someone_else_connects_nothing(stack, approving, pro
         assert conn.execute("select * from delegations").fetchall() == []
     [refused] = [e for e in stack.ledger() if e.get("action") == "connect"]
     assert refused["acts_for"] == ["ben"] and "isn't theirs" in refused["outcome"]["error"]
+
+
+
+def test_a_run_nobody_asked_for_never_acts_as_anyone(stack, approving, provider, desk):
+    """Round 14 (A-M1): an event names someone, but they never asked for its run, and whoever
+    holds the system's secret, or poses as them to it, can start one: so it never acts as them
+    in another system, with the account they connected, nor reads what they may read there."""
+    from dataclasses import replace
+
+    from a5s.core import inbox
+    from a5s.core.events import EventsConfig, Source
+    from a5s.definitions import Event
+    from conftest import free_port, serve
+    from test_events import OPENED, SECRET, SOURCE, TASK, send
+
+    found, _, _ = desk
+    connect(stack, approving, provider, found, "ana")
+    found.called.clear()
+    assistant = stack.gateway.definitions["assistant"]
+    stack.gateway.definitions["assistant"] = assistant.model_copy(update={"events": [
+        Event(type="question-opened", source=SOURCE, task=TASK)]})
+    stack.gateway.events = EventsConfig((Source(SOURCE, SECRET),))
+    endpoint = replace(stack.gateway, cfg=stack.as_role("channels"))
+    with serve(inbox.create_app(endpoint), free_port()) as url:
+        assert send(f"{url}/channels/events/{SOURCE}", {
+            **OPENED, "records": ["Q-1001"], "person": "ana"}).status_code == 202
+    stack.model.reply(None, ("search_tickets", {"query": "open"}))
+    stack.model.reply("Done.")
+    assert stack.scheduler().work_due() == 1
+    assert found.called == []  # never as Ana
+    [denied] = [e for e in stack.ledger() if e.get("action") == "search_tickets"]
+    assert denied["decision"] == "deny" and denied["reasons"] == ["acts-as-nobody-unasked"]
+    tickets(stack, "ana")  # her own message does
+    assert set(found.called) == {"Bearer at-ana-1"}

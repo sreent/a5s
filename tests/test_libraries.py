@@ -687,3 +687,32 @@ def test_a_run_that_read_what_only_its_person_may_is_on_no_one_elses_page(stack,
     assert readers == ['{"people":["ben"]}']
     for path in (f"/studio/api/runs/{run}", f"/studio/api/runs/{run}/case"):
         assert as_person(approving, provider, "ana", "GET", path).status_code == 404, path
+
+
+
+def test_a_run_nobody_asked_for_reads_no_library(stack):
+    """Round 14 (A-M1): a run nobody asked for, such as an event's, which whoever holds the
+    system's secret can start, reads no library for the person it names, even one read by its
+    documents' own readers: only what they ask themselves does."""
+    from dataclasses import replace
+
+    from a5s.core import inbox
+    from a5s.core.events import EventsConfig, Source
+    from a5s.definitions import Event
+    from conftest import free_port, serve
+    from test_events import OPENED, SECRET, SOURCE, TASK, send
+
+    assistant = stack.gateway.definitions["assistant"]
+    stack.gateway.definitions["assistant"] = assistant.model_copy(update={"events": [
+        Event(type="question-opened", source=SOURCE, task=TASK)]})
+    stack.gateway.events = EventsConfig((Source(SOURCE, SECRET),))
+    endpoint = replace(stack.gateway, cfg=stack.as_role("channels"))
+    with serve(inbox.create_app(endpoint), free_port()) as url:
+        assert send(f"{url}/channels/events/{SOURCE}", {
+            **OPENED, "records": ["Q-1001"], "person": "ana"}).status_code == 202
+    stack.model.reply(None, ("read_runbooks", {"id": "month-end.md"}))
+    stack.model.reply("Done.")
+    assert stack.scheduler().work_due() == 1
+    assert "Month end closes" not in json.dumps(stack.model.requests[1]["body"]["messages"])
+    [denied] = [e for e in stack.ledger() if e.get("action") == "read_runbooks"]
+    assert denied["decision"] == "deny" and denied["reasons"] == ["acts-as-nobody-unasked"]

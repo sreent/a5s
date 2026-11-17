@@ -583,7 +583,10 @@ def check(env: Mapping[str, str] | None = None, serving: bool = True) -> tuple[l
     except ConfigError:
         sources = []
     for source in sources:
-        if not (env.get(str(source.get("secret_env"))) or "").strip():
+        from a5s.core import events  # its own rules for a system's name and secret
+        if why := events.unfit(source):
+            problems.append(why)
+        elif not (env.get(str(source.get("secret_env"))) or "").strip():
             problems.append(f"A5S_EVENT_SOURCES gives {source.get('source')} its signing secret "
                             f"in {source.get('secret_env')}, which isn't set")
     try:

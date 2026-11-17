@@ -174,6 +174,20 @@ def token_hash(token: str) -> bytes:
     return hashlib.sha256(token.encode()).digest()
 
 
+# The runs their people asked for themselves: their own message, a task or a reminder they asked
+# for, a shadow of their message, and a question such a run asked another agent. Only these act
+# as them in another system, or read what they may read there, with their own permissions
+# (core/delegation.py): never one nobody asked for, such as an event's, a report's or a chase's
+ASKED = frozenset({"message", "reminder", tasking.KIND, shadows.KIND})
+
+
+def asked_for(trigger: dict) -> bool:
+    """Whether the people a run is for asked for it themselves, as ASKED says."""
+    if trigger.get("kind") == asking.KIND:
+        return bool(trigger.get("asked"))
+    return trigger.get("kind") in ASKED
+
+
 def sanitize(text: str, allowed: tuple[str, ...], notes: bool = True) -> tuple[str, int]:
     """Keep text and the scenario's own record links. Drop images, HTML and other links, and,
     unless `notes` is False, copies of a5s's own notes, which only a5s writes."""
@@ -624,11 +638,11 @@ class Gateway:
             return False
         heard = " and heard_by @> %(members)s::text[]" if group else ""  # the latest turns'
         it_heard = " and t.heard_by @> %(members)s::text[]" if group else ""  # and the turn's
-        return bool(conn.execute(  # a task's own topic, which no other run reads, aside
-            "select 1 from turns t join runs r on r.id = t.run_id where r.read_outside "
-            "and t.person = %(person)s and t.agent = %(agent)s and (t.topic = %(topic)s or t.id in "
+        return bool(conn.execute(  # a task's or an event's own topic, which no other run
+            "select 1 from turns t join runs r on r.id = t.run_id where r.read_outside "  # reads,
+            "and t.person = %(person)s and t.agent = %(agent)s and (t.topic = %(topic)s or t.id in "  # aside
             f"(select id from turns where person = %(person)s and agent = %(agent)s{heard} "
-            "and (topic = %(topic)s or topic not like 'task %%') "
+            "and (topic = %(topic)s or (topic not like 'task %%' and topic not like 'event %%')) "
             f"order by id desc limit 200)){it_heard} limit 1",
             {"person": group or acts_for[0], "agent": agent, "topic": topic,
              "members": list(acts_for)}).fetchone())
@@ -905,8 +919,9 @@ class Gateway:
                                                            person) else []
         about = {"event": event, "source": row["source"], "type": row["type"],
                  "records": list(row["records"])}
-        opening = Opening(trigger={"kind": events.KIND, **about,
-                                   **({"person": person} if acts_for else {})},
+        opening = Opening(trigger={"kind": events.KIND, **about, "topic": events.topic(row),
+                                   **({"person": person} if acts_for else
+                                      {"payer": events.payer(row["source"])})},
                           acts_for=acts_for, args=about, reasons=[],
                           task=events.task(said, row) if said else None,
                           used=row["taken_at"] is not None)
@@ -945,7 +960,10 @@ class Gateway:
         opening = Opening(trigger={"kind": asking.KIND, **by, **({"payer": payer} if payer else {}),
                                    **({"asker_model": asker["model"]} if asker else {}),
                                    # a task's question is paid as its task is, short of their own
-                                   **({"for_task": True} if for_task else {})},
+                                   **({"for_task": True} if for_task else {}),
+                                   # and acts as them only where the run that asked could
+                                   **({"asked": True} if asking_run and asked_for(
+                                       asking_run["trigger"] or {}) else {})},
                           acts_for=list(row["acts_for"]),
                           args=by, reasons=[], marked=bool(row["read_outside"]),
                           used=bool(row["run_id"] or row["answered_at"] or row["problem"]))
@@ -1448,11 +1466,12 @@ def create_app(gw: Gateway) -> FastAPI:
                 if fired is None:
                     reasons.append(f"{opening.trigger['schedule']} has fired already")
                     opening.used = True
-            if kind == events.KIND and not opening.used:  # once for each, run or not
+            if kind == events.KIND and not opening.used and not reasons:  # once for each
                 conn.execute("update events set taken_at = %s, instance_id = %s, run_id = %s, "
-                             "outcome = %s where id = %s and taken_at is null",
-                             (now, body.instance, None if reasons else run_id,
-                              "; ".join(reasons) or "run", opening.trigger["event"]))
+                             "outcome = 'run' where id = %s and taken_at is null",
+                             (now, body.instance, run_id, opening.trigger["event"]))
+            if kind == events.KIND and not opening.used and reasons:  # it waits, for a while
+                events.put_off(conn, opening.trigger["event"], body.instance, "; ".join(reasons))
             if kind == "reminder" and not reasons:
                 conn.execute("update reminders set reminded_at = %s where id = %s",
                              (now, opening.trigger["reminder"]))
@@ -2643,6 +2662,19 @@ def create_app(gw: Gateway) -> FastAPI:
                     return JSONResponse(status_code=403, content={
                         "denied": True, "reasons": ["shadows-change-nothing"],
                         "explanations": [why]})
+        if getattr(tool, "as_person", "") or getattr(tool, "library", ""):  # as someone, or
+            with db.transaction(gw.url) as conn:  # what they may read in a library
+                early = load_run(conn, token)
+                if not asked_for(early["trigger"] or {}):
+                    why = ("nobody asked for this run, such as an event's or a report's, so it "
+                           "never acts as anyone in another system, nor reads a library for "
+                           "them: only what they ask themselves does")
+                    ledger.append(conn, gw.entry(early, "tool", name, Decision(
+                        False, ("acts-as-nobody-unasked",), explanations=(why,)),
+                        args=ledger.mask(args)))
+                    return JSONResponse(status_code=403, content={
+                        "denied": True, "reasons": ["acts-as-nobody-unasked"],
+                        "explanations": [why]})
         for field_name in (core or tool).text_fields if (core or tool) else ():
             if field_name in args:  # outgoing text, at any depth
                 args[field_name], dropped = cleaned(args[field_name], gw.scenario.record_links)
@@ -2870,7 +2902,7 @@ def create_app(gw: Gateway) -> FastAPI:
             values = {r["handle"]: r["value"] for r in conn.execute(
                 "select handle, value from run_handles where run_id = %s", (row["run"],))}
             said = proposals.said(gw.scenario, tool, args, standing, asked,
-                                  row["definition"], values)
+                                  row["definition"], values, row["trigger"])
             change = said.split("\n", 1)[0]
             before = " ".join(proposals.stood(standing)).replace(
                 "as it stood when it was asked for", "as it stood before")
@@ -2975,6 +3007,9 @@ def create_app(gw: Gateway) -> FastAPI:
         if row["read_outside"]:
             flags.append(f"the {row['definition']} read content from outside the organisation "
                          "before it asked for this")
+        if after := proposals.after(row["trigger"]):  # another system's word, not a person's
+            flags.append(f"nobody asked for it: the {row['definition']} asked for it {after}"
+                         + (f", about {whom}" if row["acts_for"] else ""))
         if over is not None:
             flags.append(f"it waits because {over}")
         proposal = proposals.hold(conn, gw.scenario, row, tool, args, standing, deciding, seq,

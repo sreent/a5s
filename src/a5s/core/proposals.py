@@ -119,19 +119,35 @@ def working_days_after(person: Person, at: datetime, days: int) -> datetime:
     return at
 
 
+def after(trigger: dict | None) -> str:
+    """What a run nobody asked for came after, in words, if another system's event started it:
+    its system and type, as a5s received it."""
+    found = trigger or {}
+    if found.get("kind") != "event":
+        return ""
+    return f"after {found.get('source')} said {found.get('type')} happened"
+
+
 def said(scenario: Scenario, tool: Tool, args: dict, records: dict[str, dict | None],
-         acts_for: list[str], agent: str, values: dict[str, str] | None = None) -> str:
+         acts_for: list[str], agent: str, values: dict[str, str] | None = None,
+         trigger: dict | None = None) -> str:
     """What a change does, in words code works out from the tool and the call, with the values
     its handles stand for, and each record as it stood when it was asked for, from a snapshot
-    (samples.snapshot): never the agent's own account of it."""
+    (samples.snapshot): never the agent's own account of it. One a run nobody asked for asked
+    for, such as an event's, says so, rather than that it was for the person it's about."""
     named = [k for k in records]
     shown = ", ".join(f"{k} {_plain(v)}" for k, v in args.items() if k != tool.record_arg)
     lines = [resolved(f"{tool.description.rstrip('.')}: {', '.join(named) or 'no record'}"
                       + (f", with {shown}" if shown else "") + ".", values or {})]
     lines += stood(records)
     people = [p.name if (p := scenario.person(who)) else who for who in acts_for]
-    lines.append(f"The {agent} asked for it" + (f", for {approvals.names_of(people)}" if people
-                                                 else ", for nobody in particular") + ".")
+    if came := after(trigger):
+        lines.append(f"The {agent} asked for it {came}" + (
+            f", about {approvals.names_of(people)}" if people else "") + ": nobody asked it to.")
+    else:
+        lines.append(f"The {agent} asked for it" + (f", for {approvals.names_of(people)}"
+                                                     if people else ", for nobody in particular")
+                     + ".")
     return "\n".join(lines)
 
 
@@ -214,7 +230,8 @@ def hold(conn: db.Connection, scenario: Scenario, run: dict, tool: Tool, args: d
          run["definition"], run["release"], tool.name, tool.schema_hash, tool.action, Jsonb(args),
          Jsonb(body["records"]), sorted({p for r in standing if (p := scenario.part_of(r))}),
          list(run["acts_for"]), [p.id for p in who],
-         said(scenario, tool, args, standing, list(run["acts_for"]), run["definition"], kept),
+         said(scenario, tool, args, standing, list(run["acts_for"]), run["definition"], kept,
+              run.get("trigger")),
          Jsonb(flags), is_sensitive, bool(run["read_outside"]), seq, now,
          working_days_after(first, now, LAPSE), change,
          working_days_after(first, now, REMIND), working_days_after(first, now, ESCALATE),

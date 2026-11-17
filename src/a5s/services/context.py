@@ -131,9 +131,10 @@ def _kept(conn: db.Connection, person: str, agent: str, topic: str, chars: int,
     In a group, only the turns all of `members` heard."""
     heard = "" if members is None else " and heard_by @> %(members)s::text[]"
     given = {"person": person, "agent": agent, "members": members, "topic": topic}
-    kept, used = _fit(conn.execute(  # never another task's own topic (core/tasking.py)
-        "select id, role, content, at, topic, speaker, run_id from turns where person = %(person)s "
-        f"and agent = %(agent)s{heard} and (topic = %(topic)s or topic not like 'task %%') "
+    kept, used = _fit(conn.execute(  # never another task's own topic (core/tasking.py), nor an
+        "select id, role, content, at, topic, speaker, run_id from turns where person = %(person)s "  # event's
+        f"and agent = %(agent)s{heard} and (topic = %(topic)s or (topic not like 'task %%' and "
+        "topic not like 'event %%')) "
         "order by id desc limit 500", given),
         chars if topic == GENERAL else int(chars * LATEST))
     if topic != GENERAL:

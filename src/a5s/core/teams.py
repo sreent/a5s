@@ -187,9 +187,10 @@ class Teams:
         return tuple(found)
 
     def download(self, where: dict[str, Any]) -> bytes:
-        """A file someone sent: an upload by the link Teams gave it, on the organisation's
-        SharePoint alone, which needs no token; or a pasted image from Teams itself, as the
-        bot it was sent to, so the bot's token goes nowhere else."""
+        """A file someone sent: an upload by the link Teams gave it, in a message from the
+        organisation's own tenant, on SharePoint's own hosts alone, which needs no token; or a
+        pasted image from Teams itself, as the bot it was sent to, so the bot's token goes
+        nowhere else."""
         url = str(where.get("url") or "")
         parts = urlparse(url)
         if where.get("app_id"):

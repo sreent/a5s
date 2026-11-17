@@ -440,7 +440,7 @@ def create_app(gw: Any) -> FastAPI:
         try:
             event = events.check(cfg, source, body, timestamp, signature)
         except events.Refused as exc:  # not recorded: anyone on the internet can send these
-            log.warning("refused an event from %s: %s", source, exc.reason)
+            log.warning("refused an event from %r: %r", source[:40], exc.reason[:200])
             raise HTTPException(exc.status, exc.reason) from None
         if not events.takers(gw.definitions, source, event["type"]):
             raise HTTPException(404, f"no agent here takes {event['type']} events from {source}")
