@@ -71,6 +71,7 @@ WORDS = {
     "urgent_sent": "counts of urgent messages sent them",
     "digests": "their digests",
     "spend": "days of the budget they used",
+    "sandbox_spend": "days of the sandbox's budget their tries of drafts used",
     "archives": "archives, with the record of whose each was",
     "waiting": "what they said they were waiting on",
     "owed": "what they owed that's done",

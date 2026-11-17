@@ -250,6 +250,8 @@ def gather(conn: db.Connection, person: str) -> dict[str, Any]:
         "days": {
             "budget": rows("select instance_id, day, tokens from spend "
                            "where person = any(%(names)s) order by day, instance_id"),
+            "sandbox": rows("select day, tokens from sandbox_spend "  # their tries of drafts
+                            "where person = any(%(names)s) order by day"),
             "digests": rows("select due_at, sent_at, items, channel from digests "
                             "where person = any(%(names)s) order by due_at")},
         "settings": {

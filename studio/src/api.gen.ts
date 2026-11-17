@@ -213,6 +213,7 @@ export type CaseRan = {
   seconds?: number;
   tokens?: number;
   cost?: number | null;
+  judge_tokens?: number;
 };
 
 // Running one of a draft's test cases in the sandbox: on which of the models it offers.
@@ -1463,6 +1464,7 @@ export type Tried = {
   reply: string;
   run: TriedRun | null;
   model_calls: ModelCall[];
+  tokens?: number;
 };
 
 // A try's run, as the sandbox shows it: its entries in the sandbox's own ledger too, of

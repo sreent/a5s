@@ -39,6 +39,7 @@ from pydantic import BaseModel
 from a5s import authoring, build, cases, db, definitions, describing
 from a5s.config import Config, load_models
 from a5s.core import (
+    budgets,
     extractor,
     inbox,
     judging,
@@ -350,7 +351,8 @@ class Sandbox:
             self._serving(agent, agent, person)
             self._settle()
             reply, run, calls = self._said(agent, person, text)
-        return {"agent": agent, "reply": reply, "run": run, "model_calls": calls}
+        return {"agent": agent, "reply": reply, "run": run, "model_calls": calls,
+                "tokens": int((run or {}).get("tokens") or 0)}
 
     def describe(self, words: str, model: str) -> dict:
         """What a model proposes for a new agent described in `words`, of what the sandbox's
@@ -377,7 +379,8 @@ class Sandbox:
         proposed = describing.proposal(extractor.reply_text(found.api, data))
         if proposed is None:
             raise Refused(f"what {model} answered doesn't read as a proposal: try again, or another model")
-        return {"proposal": proposed, "model": model, "model_calls": calls}
+        return {"proposal": proposed, "model": model, "model_calls": calls,
+                "tokens": budgets.tokens_of(data.get("usage")) if isinstance(data, dict) else 0}
 
     def case(self, key: str, files: dict[str, str], model: str, number: int,
              classes: list[str] | None = None) -> dict:
@@ -418,6 +421,7 @@ class Sandbox:
         agent = f"case-{secrets.token_hex(5)}"
         steps, problems = [], []
         started, spent = time.monotonic(), {"in": 0, "out": 0, "cached": 0}  # what it took
+        judging_took = 0  # and its judge, the same on any model, so apart
         with self.lock:
             instances = self.standing.setdefault("instances", {})
             for done in [name for name in instances if name.startswith("case-")]:
@@ -439,6 +443,7 @@ class Sandbox:
                 if criterion := step.get("judged"):  # where it can be right in more than one way
                     done["judged"] = verdict = self._judged(agent, model, str(criterion), said,
                                                             reply, called, needed)
+                    judging_took += int(verdict.pop("tokens", 0) or 0)
                     if verdict["grade"] is None:
                         wrong.append(f"nobody judged it: {verdict['why']}")
                     elif verdict["grade"] != "right":
@@ -449,7 +454,8 @@ class Sandbox:
                                  spent["out"], spent["cached"])
         return {**shown, "ran": True, "passed": not problems, "problems": problems, "steps": steps,
                 "model": model, "seconds": round(time.monotonic() - started, 2),
-                "tokens": spent["in"] + spent["out"], "cost": priced}
+                "tokens": spent["in"] + spent["out"], "cost": priced,
+                "judge_tokens": judging_took}
 
     def _judged(self, agent: str, model: str, criterion: str, said: str, reply: str,
                 called: list[str], needed: set[str] | None = None) -> dict:
@@ -479,10 +485,11 @@ class Sandbox:
         except models.ModelUnavailable as e:
             return {"grade": None, "why": f"the sandbox couldn't ask {judge}: {e}", "judge": judge}
         verdict = judging.verdict(extractor.reply_text(found.api, data)) if status < 400 else None
+        took = budgets.tokens_of(data.get("usage")) if isinstance(data, dict) else 0
         if verdict is None:
             return {"grade": None, "why": f"what {judge} answered doesn't read as a grade",
-                    "judge": judge}
-        return {"grade": verdict[0], "why": verdict[1], "judge": judge}
+                    "judge": judge, "tokens": took}
+        return {"grade": verdict[0], "why": verdict[1], "judge": judge, "tokens": took}
 
     def forget(self) -> dict[str, int]:
         """Sweep what's past its time, as a5s's retention sweep does, but with what's said

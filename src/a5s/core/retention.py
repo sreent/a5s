@@ -161,6 +161,8 @@ def sweep(conn: db.Connection, now: datetime, scenario: str, kept: str = KEPT) -
            f"and updated_at < {AGO}", scenario=scenario)  # it no longer runs: nothing syncs
     # what it owed. Each person's day: only today's is asked after, in any time zone
     delete("days", "delete from spend where day < %(day)s", day=(now - timedelta(days=2)).date())
+    delete("days", "delete from sandbox_spend where day < %(day)s",  # tries of drafts
+           day=(now - timedelta(days=2)).date())
     delete("refusals", "delete from second_factor_refusals where day < %(day)s",  # counts alone
            day=(now - timedelta(days=7)).date())
     delete("days", "delete from digests where due_at < %(due)s", due=now - timedelta(days=3))

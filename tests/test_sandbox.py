@@ -280,3 +280,64 @@ def test_a_change_a_draft_asks_for_waits_there_for_its_made_up_decider(sandbox_d
         assert sandbox.used(said["run"]) == ["change_due_date"]
         sent = model.requests[-1]["body"]["messages"][-1]["content"]
         assert '"held": "P-1"' in sent and "Ana Ortiz" in sent  # what the agent heard
+
+
+@pytest.fixture
+def costly(stack):
+    """A sandbox whose tries and cases each take tokens on a real model, as one's would, so the
+    studio counts them towards whoever tried: what it was asked, on which models."""
+    from dataclasses import replace
+
+    from fastapi import FastAPI
+
+    from conftest import free_port, serve
+    app, asked = FastAPI(), []
+
+    @app.post("/sandbox/cases")
+    def case(body: dict) -> dict:
+        asked.append(body["model"])
+        return {"name": "a case", "file": "tests/cases.yaml", "ran": True, "passed": True,
+                "problems": [], "steps": [], "model": body["model"], "seconds": 1.0,
+                "tokens": 400_000, "cost": None, "judge_tokens": 200_000}
+
+    @app.post("/sandbox/tries")
+    def tried(body: dict) -> dict:
+        asked.append(body["model"])
+        return {"agent": "try-x", "reply": "Hello", "run": None, "model_calls": [],
+                "tokens": 300_000}
+
+    with serve(app, free_port()) as url:
+        stack.cfg = replace(stack.cfg, sandbox_url=url, sandbox_token="a-token")
+        yield asked
+
+
+def test_a_days_tries_on_real_models_stop_at_its_tokens_whatever_each_case_runs_as(
+        stack, costly, approving, provider):
+    """Each case runs in the sandbox as an instance of its own, whose budget for a person's day
+    starts afresh, and a judge's calls count towards none: the studio holds each person to a
+    day's tokens across them all, the stand-in aside, which costs nothing."""
+    from a5s.core import export
+    from a5s.core.studio_api import SANDBOX_DAY
+    from test_drafts import as_, started
+
+    priya = as_(approving, provider, "priya")
+    draft = started(priya)["id"]
+    real = {"model": "deepseek-v4-pro"}
+    assert priya("POST", f"/studio/api/drafts/{draft}/cases/0", real).status_code == 200
+    assert priya("POST", f"/studio/api/drafts/{draft}/try",
+                 {"person": "ana", "text": "Hi", **real}).status_code == 200
+    with db.transaction(stack.admin) as conn:
+        [day] = conn.execute("select person, tokens from sandbox_spend").fetchall()
+    assert (day["person"], day["tokens"]) == ("priya", 900_000)  # its runs, its judge, the try
+    assert 900_000 < SANDBOX_DAY  # so the next runs, and takes the day past it
+    assert priya("POST", f"/studio/api/drafts/{draft}/cases/0", real).status_code == 200
+    over = priya("POST", f"/studio/api/drafts/{draft}/cases/0", real)
+    assert over.status_code == 429 and "a day's may take on real models" in over.json()["detail"]
+    assert priya("POST", f"/studio/api/drafts/{draft}/try",
+                 {"person": "ana", "text": "Hi", **real}).status_code == 429
+    assert priya("POST", f"/studio/api/drafts/{draft}/cases/0",
+                 {"model": "stand-in"}).status_code == 200  # which costs nothing
+    assert costly == ["deepseek-v4-pro"] * 3 + ["stand-in"]  # refused before it was asked
+    with db.transaction(stack.cfg.database_url) as conn:  # theirs, in their export
+        [kept] = export.gather(conn, "priya")["days"]["sandbox"]
+    assert kept["tokens"] == 1_500_000

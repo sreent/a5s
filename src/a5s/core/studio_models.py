@@ -1050,6 +1050,7 @@ class Tried(Shape):
     reply: str
     run: TriedRun | None
     model_calls: list[ModelCall]
+    tokens: int = 0  # what its run took, towards the day's tries on real models
 
 
 class CaseLine(Shape):
@@ -1097,6 +1098,7 @@ class CaseRan(Shape):
     seconds: float | SkipJsonSchema[None] = None
     tokens: int | SkipJsonSchema[None] = None
     cost: float | None = None
+    judge_tokens: int = 0  # and its judge's, the same on any model, towards the day's tries
 
 
 class Publish(Shape):
