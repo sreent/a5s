@@ -34,9 +34,9 @@ SAID_MOST = 1000  # characters of their words a5s keeps
 GRADES = ("right", "wrong", "critical")
 WRONG = {"slack": frozenset({"-1", "thumbsdown", "x"}),  # Slack's names for 👎 and ❌
          "matrix": frozenset({"👎", "👎️", "❌"})}
-NOTED = ("Noted: its owners will see that answer, and the run behind it, to check it, and "
-         "nothing more of what you said.")
-MOST_SHOWN = 100  # of an agent's, newest first
+NOTED = ("Noted: its owners will see that answer, the run behind it and what you said of it, "
+         "to check it, and who you are only if the data protection officer lets them.")
+MOST_SHOWN = 100  # of an agent's, those waiting for a grade first, then the newest
 
 
 def noted(conn: db.Connection, person: Person | None) -> str:
@@ -125,13 +125,15 @@ ROWS = ("select f.*, o.text as answer, r.acts_for from answer_feedback f "
 
 def shown(conn: db.Connection, scenario: Scenario, viewer: Person, agent: str,
           names: bool = False, fewest: int = DataProtection.fewest_people) -> dict:
-    """What people said of an agent's answers that an owner of it may check, newest first:
+    """What people said of an agent's answers that an owner of it may check, those that wait for
+    a grade first, then the newest, so none waiting is ever out of sight (round 14):
     each answer they may check (_checkable), with the answer, their words, how it was graded,
     and who said it only if `names`, else with whoever it names masked; how many others; and
     the counts."""
     if not owns(viewer, agent):
         return {"agent": agent, "answers": [], "hidden": 0, "waiting": 0, "graded": {}}
-    rows = conn.execute(ROWS + "where f.agent = %s order by f.at desc limit %s",
+    rows = conn.execute(ROWS + "where f.agent = %s order by (f.grade is null) desc, f.at desc "
+                        "limit %s",
                         (agent, MOST_SHOWN)).fetchall()
     checkable = _checkable(conn, scenario, viewer, rows, names, fewest)
     mine = [r for r in rows if r["id"] in checkable]

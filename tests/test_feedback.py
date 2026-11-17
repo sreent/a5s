@@ -198,8 +198,9 @@ def test_whose_grade_it_was_goes_with_its_grader_and_a_groups_answer_stays_the_g
         ).fetchone()["id"]
         out = conn.execute(
             "insert into outbox (person, channel, text, agent, run_id, instance_id, inbound_id) "
-            "select 'group:room', 'matrix', 'The rest is due Friday, Ben.', 'assistant', id, "
-            "instance_id, %s from runs limit 1 returning id", (inbound,)).fetchone()["id"]
+            "select 'ana', 'matrix', 'The rest is due Friday, Ben.', 'assistant', id, "  # as the
+            "instance_id, %s from runs limit 1 returning id", (inbound,)).fetchone()["id"]  # gateway
+        # writes a group's answer, to whoever asked in it (round 14, C12)
         assert feedback.record(conn, out, "ana", None, "matrix") is not None
         conn.execute("update answer_feedback set grade = 'wrong', graded_by = 'priya'")
     with db.transaction(stack.cfg.database_url) as conn:  # as the core, with its grants
@@ -366,3 +367,63 @@ def test_the_web_chat_asks_why_and_its_owners_grade_it_on_the_agents_page(stack,
     owner.click("#feedback .grades button.critical")
     owner.wait_for_selector("#feedback .grades button.critical[aria-pressed=true]", timeout=30000)
     assert kept(stack)[0]["grade"] == "critical"
+
+
+def test_an_answer_waiting_for_a_grade_is_shown_however_many_came_since(stack):
+    """Round 14 (C7): what waits for a grade comes first on the agent's page, however many
+    answers were said to be wrong, and graded, since, so none is counted on the owner's home
+    and never shown."""
+    shown = answered(stack)
+    with db.transaction(stack.admin) as conn:
+        first = conn.execute("select * from outbox where id = %s", (shown["id"],)).fetchone()
+        feedback.record(conn, first["id"], "ana", "That is not how refunds work", "local")
+        conn.execute("update answer_feedback set at = now() - interval '2 days'")
+        for n in range(feedback.MOST_SHOWN):  # as many since, each said to be wrong, and graded
+            later = conn.execute(
+                "insert into outbox (run_id, instance_id, person, channel, text, agent) values "
+                "(%s, %s, 'ana', 'local', %s, 'assistant') returning id",
+                (first["run_id"], first["instance_id"], f"answer {n}")).fetchone()
+            made = feedback.record(conn, later["id"], "ana", None, "local")
+            conn.execute("update answer_feedback set grade = 'right', graded_by = 'priya', "
+                         "graded_at = now() where id = %s", (made["id"],))
+    priya = stack.gateway.scenario.person("priya")
+    with db.transaction(stack.admin) as conn:
+        page = feedback.shown(conn, stack.gateway.scenario, priya, "assistant", names=True)
+        home = feedback.waiting(conn, stack.gateway.scenario, priya, ["assistant"], names=True)
+    assert home == {"assistant": 1} and page["waiting"] == 1
+    assert page["answers"][0]["said"] == "That is not how refunds work"
+
+
+def test_whoever_says_an_answer_was_wrong_hears_what_its_owners_see(stack):
+    """Round 14 (C15): they're told its owners see what they said of it, and who they are only
+    once the data protection officer lets them: never that owners see nothing more of it."""
+    shown = answered(stack)
+    said = say_wrong(stack, shown["id"], why="Wrong date.").json()["said"]
+    assert said == feedback.NOTED and "what you said of it" in said
+    assert "nothing more" not in said
+
+
+def test_a_thats_wrong_that_didnt_send_keeps_what_they_wrote(stack, approving, provider, browser):
+    """Round 14 (E-L5): when saying an answer was wrong doesn't send, such as while the database
+    is away, what they wrote stays, with why, to send again."""
+    stack.model.reply(ANSWER)
+    provider.person = "ana"
+    page = browser.new_page(viewport={"width": 1280, "height": 900})
+    page.goto(f"{approving}/chat/")
+    page.wait_for_selector("#compose", timeout=30000)
+    page.fill("#text", "What's wrong with Q-1001?")
+    page.keyboard.press("Enter")
+    assert stack.scheduler().answer_waiting() == 1
+    page.wait_for_selector("li.agent >> text=old address", timeout=30000)
+    page.route("**/channels/local/feedback", lambda route: route.fulfill(
+        status=503, content_type="application/json", body='{"detail": "the database is away"}'))
+    page.click("li.agent button.said-wrong")
+    page.fill("li.agent form.said-wrong textarea", "It's due Friday.")
+    page.click("li.agent form.said-wrong button.primary")
+    page.wait_for_selector("li.agent form.said-wrong .problem-note >> text=That didn't send",
+                           timeout=30000)
+    assert page.input_value("li.agent form.said-wrong textarea") == "It's due Friday."
+    page.unroute("**/channels/local/feedback")
+    page.click("li.agent form.said-wrong button.primary")
+    page.wait_for_selector(f"li.agent p.said-wrong >> text={feedback.NOTED[:20]}", timeout=30000)
+    assert [r["said"] for r in kept(stack)] == ["It's due Friday."]

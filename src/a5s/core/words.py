@@ -193,9 +193,10 @@ TH: dict[str, str] = {
         "ดูแลระบบ และทำให้ปลอดภัยขึ้นได้เองลำพัง: ระงับอินสแตนซ์ ลดเพดาน หรือถอนรีลีส แต่ไม่ผ่อนคลาย "
         "และลงนามรีลีสในฐานะวิศวกร",
     # a5s's notes in chat (core/feedback.py)
-    "Noted: its owners will see that answer, and the run behind it, to check it, and nothing "
-    "more of what you said.":
-        "รับทราบแล้ว เจ้าของเอเจนต์จะเห็นคำตอบนั้นและการทำงานเบื้องหลังเพื่อตรวจสอบ โดยไม่เห็นสิ่งอื่นที่คุณพูด",
+    "Noted: its owners will see that answer, the run behind it and what you said of it, to check "
+    "it, and who you are only if the data protection officer lets them.":
+        "รับทราบแล้ว เจ้าของเอเจนต์จะเห็นคำตอบนั้น การทำงานเบื้องหลัง และสิ่งที่คุณบอกเกี่ยวกับคำตอบนั้นเพื่อตรวจสอบ "
+        "และจะรู้ว่าคุณเป็นใครก็ต่อเมื่อเจ้าหน้าที่คุ้มครองข้อมูลอนุญาต",
 }
 
 # Sentences other parts of a5s write whole, by pattern: each group a name or a figure, kept as

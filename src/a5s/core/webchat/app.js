@@ -20,8 +20,8 @@ const refuse = (text) => { $("refused").textContent = text; };
 // were told to answer in; anything here without Thai words stays in English.
 const TH = {
   "That's wrong": "ไม่ถูกต้อง",
-  "What was wrong? Its owners will see this answer, the run behind it, and what you write here.":
-    "ผิดตรงไหน เจ้าของเอเจนต์จะเห็นคำตอบนี้ การทำงานเบื้องหลัง และสิ่งที่คุณเขียนตรงนี้",
+  "What was wrong? Its owners will see this answer, the run behind it and what you write here, and who you are only if the data protection officer lets them.":
+    "ผิดตรงไหน เจ้าของเอเจนต์จะเห็นคำตอบนี้ การทำงานเบื้องหลัง และสิ่งที่คุณเขียนตรงนี้ และจะรู้ว่าคุณเป็นใครก็ต่อเมื่อเจ้าหน้าที่คุ้มครองข้อมูลอนุญาต",
   "Tell its owners": "แจ้งเจ้าของ",
   "Cancel": "ยกเลิก",
   "That didn't send. Try again.": "ส่งไม่สำเร็จ ลองอีกครั้ง",
@@ -232,7 +232,7 @@ function wrongOf(item, message) {
     const form = document.createElement("form");
     form.className = "said-wrong";
     const label = document.createElement("label");
-    label.textContent = t("What was wrong? Its owners will see this answer, the run behind it, and what you write here.");
+    label.textContent = t("What was wrong? Its owners will see this answer, the run behind it and what you write here, and who you are only if the data protection officer lets them.");
     const why = document.createElement("textarea");
     why.rows = 2;
     why.maxLength = 1000;
@@ -244,22 +244,31 @@ function wrongOf(item, message) {
     cancel.type = "button";
     cancel.textContent = t("Cancel");
     cancel.addEventListener("click", () => form.replaceWith(ask));
-    form.append(label, send, " ", cancel);
+    const refused = document.createElement("p");  // why it didn't send, with what they wrote
+    refused.className = "problem-note";  // kept beside it, to send again
+    refused.setAttribute("role", "alert");
+    form.append(label, send, " ", cancel, refused);
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       send.disabled = true;
+      refused.textContent = "";
       try {
         const answer = await api("/channels/local/feedback", {
           method: "POST", body: JSON.stringify({ message: message.id, said: why.value.trim() || null, person: state.person }),
         });
-        const body = await answer.json();
+        const body = await answer.json().catch(() => ({}));
+        if (!answer.ok) {
+          refused.textContent = t("That didn't send. Try again.");
+          send.disabled = false;
+          return;
+        }
         const done = document.createElement("p");
         done.className = "note said-wrong";
         done.setAttribute("role", "status");
-        done.textContent = answer.ok ? body.said : (typeof body.detail === "string" ? body.detail : t("That didn't send. Try again."));
+        done.textContent = body.said;
         form.replaceWith(done);
       } catch (error) {
-        if (error.message !== SIGNING_IN) status(error.message);
+        if (error.message !== SIGNING_IN) refused.textContent = t("That didn't send. Try again.");
         send.disabled = false;
       }
     });

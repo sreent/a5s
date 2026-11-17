@@ -22,6 +22,7 @@ no port of its own, so nothing can send it work but the core.
 
 from __future__ import annotations
 
+import functools
 import logging
 import re
 import threading
@@ -322,6 +323,11 @@ class Scheduler:
             stop.set()
             beat.join()
             self._release(claim)
+        for then in claim.pop("then", []):  # what needs nothing of theirs, such as shadows
+            try:  # answering beside the run: nothing a shadow does reaches them, not even a
+                then()  # database away as it looks
+            except Exception:
+                log.exception("couldn't finish what %s left until it was let go", what(claim))
 
     # Answering one message
 
@@ -450,10 +456,9 @@ class Scheduler:
         if outcome == "done":  # once they have their answer
             self._fold(inst["id"], conversation, agent, topic, opened.get("history_chars"),
                        members, inbound)
-            try:  # nothing a shadow does reaches them, who have their answer: not even a
-                self._shadow(inst, run, history, behind)  # database away as it looks
-            except Exception:
-                log.exception("the shadows of %s couldn't answer beside run %s", inst["id"], run)
+            claim.setdefault("then", []).append(  # its shadows answer beside it once their
+                functools.partial(self._shadow, inst, run, history, behind))  # conversation is
+            # let go, so their next message, or the group's, never waits on a shadow (round 14)
 
     def _given(self, token: str, runs: set[str]) -> None:
         """Tell the core whose words a run is given, before the agent reads them, so the run

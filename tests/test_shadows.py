@@ -494,3 +494,49 @@ def test_older_pairs_a_grader_may_not_grade_hide_none_they_may(stack):
             pair(conn, ["Q-1003"])  # orders', which quality may not see
         pair(conn, [])
         assert len(shadows.gradeable(conn, stack.gateway.scenario, dana)) == 1
+
+
+def test_their_next_message_waits_on_no_shadow(stack):
+    """Round 14 (C3): shadows answer beside a run once its conversation is let go, so the
+    person's next message, or a group's, is taken at once, never after each shadow's run."""
+    assert not shadowed(stack).refused
+    seen = {}
+
+    def during(n: int) -> None:
+        if n != 2:  # the shadow's model call, once the live answer has gone
+            return
+        with db.transaction(stack.admin) as conn:
+            seen["leases"] = [r["key"] for r in conn.execute("select key from leases")]
+        httpx.post(f"{stack.channels_url}/channels/local/messages", timeout=30,
+                   json={"person": "ben", "agent": "assistant", "text": "And Q-1001?"})
+        seen["claimed"] = stack.scheduler()._claim()  # another scheduler, at that moment
+
+    stack.model.on_request = during
+    stack.model.reply(SENT)
+    stack.model.reply(SHADOWED)
+    assert stack.say("When is Q-1002 due?", person="ben") == SENT
+    assert "ben/assistant/general" not in seen["leases"]
+    assert seen["claimed"] is not None and seen["claimed"]["person"] == "ben"
+
+
+def test_a_group_chats_pairs_are_counted_in_exports_and_kept_under_a_leavers_archive(stack):
+    """Round 14 (C13): what a shadow answered in a group chat holds others' words too, so each
+    member's export counts it, and gives only their own chats' pairs; and someone who leaves is
+    under their archive's name in it, as in the group's turns, and so is its grader."""
+    from a5s.core import departures
+    with db.transaction(stack.admin) as conn:
+        conn.execute(
+            "insert into shadow_answers (run_id, live_run_id, instance_id, shadows, definition, "
+            "person, agent, acts_for, asked, sent, answer, graded_by) values (gen_random_uuid(), "
+            "gen_random_uuid(), 'assistant-next-finance', 'assistant-finance', 'assistant-next', "
+            "'group:room', 'assistant', '{ana,ben}', 'When is Q-1002 due, Ben?', 'Friday.', "
+            "'On Friday.', 'dana')")
+    with db.transaction(stack.cfg.database_url) as conn:
+        found = export.gather(conn, "ana")
+    assert found["shadow_answers"] == [] and found["shadow_answers_in_groups"] == 1
+    with db.transaction(stack.cfg.database_url) as conn:
+        ben = departures.rename(conn, "ben", stack.gateway.clock())
+        dana = departures.rename(conn, "dana", stack.gateway.clock())
+    with db.transaction(stack.admin) as conn:
+        [pair] = conn.execute("select acts_for, graded_by from shadow_answers").fetchall()
+    assert (pair["acts_for"], pair["graded_by"]) == (["ana", ben], dana)
