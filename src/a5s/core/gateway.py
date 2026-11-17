@@ -140,6 +140,9 @@ CHARS_PER_TOKEN = 4  # roughly, for a run's budget for its conversation
 OWN_RUNS = ("summary",)  # a5s's own work on a conversation: no tools, and it writes to nobody
 TRIES = 5  # deliveries to a chat before what it didn't take is left in the person's inbox
 MOST_NAMED = 20  # records one change may name: a5s reads each as it stands before deciding
+# a5s's notes on what an agent left for people to check before it goes outside (round 15)
+CHECKED = "Before anyone sends what the {agent} left in {where}: {note}"
+
 WHY = {  # why an agent's run didn't get its message through, in words people read
     "model unavailable": "its model isn't answering", "budget spent": "it has used its budget "
     "for today", "reply denied": "a5s didn't let its message through", "abandoned": "it stopped "
@@ -1644,8 +1647,19 @@ def create_app(gw: Gateway) -> FastAPI:
             sends = [] if ended.startswith("done") else give_instead(conn, row["trigger"],
                                                                       WHY.get(ended))
             sends += slice_closed(conn, run_id, row, ended)
+            if ended == "model unavailable" and (row["trigger"] or {}).get("kind") == events.KIND:
+                tried(conn, run_id, row["trigger"])
         push(sends)
         return {"closed": run_id}
+
+    def tried(conn: db.Connection, run_id: str, trigger: dict) -> None:
+        """An event whose run its model didn't answer, and which wrote, changed and sent
+        nothing, waits to be tried again, as one that can't be worked on now does, rather
+        than being lost, such as a customer's mail with no reply (round 15)."""
+        if not any(not shadow_may(r["action"]) for r in conn.execute(
+                "select action from ledger where run_id = %s and kind = 'tool' and decision in "
+                "('allow', 'hold')", (run_id,))):
+            events.again(conn, str(trigger.get("event")), run_id)
 
     def slice_closed(conn: db.Connection, run_id: str, row: dict,
                      outcome: str) -> list[int | None]:
@@ -2656,6 +2670,7 @@ def create_app(gw: Gateway) -> FastAPI:
         core = CORE_TOOLS.get(name)
         tool = None if core else gw.scenario.tools().get(name)
         args, removed = dict(body.args), 0
+        apart: list[str] = []  # the values it wrote itself, for whoever checks its text
         if not shadow_may(name):  # a shadow's run calls it for nothing, before anything's read
             with db.transaction(gw.url) as conn:
                 early = load_run(conn, token)
@@ -2768,9 +2783,13 @@ def create_app(gw: Gateway) -> FastAPI:
                 traced = provenance.traced(conn, gw.scenario, row, "\n".join(texts))
                 last = next((f for f in reversed(tool.text_fields)
                              if isinstance(args.get(f), str)), None) if tool else None
-                if (own := [t["value"] for t in traced if t["from"] is None]) and last:
+                own = [t["value"] for t in traced if t["from"] is None]
+                if getattr(tool, "checked_by", ()):  # a5s's notes go to whoever checks it, and
+                    apart = own  # never into what someone outside reads (round 15)
+                elif own and last:
                     args[last] += "\n\n" + provenance.note(row["definition"], own)  # apart
-                if row["read_outside"] and last and decision.allowed:  # and what it drew on
+                if (row["read_outside"] and last and decision.allowed  # and what it drew on
+                        and not getattr(tool, "checked_by", ())):
                     args[last] += "\n\n" + extractor.DREW
                 plain = (*((arg,) if arg else ()), *(core.plain if core else ()))
                 seq = ledger.append(conn, gw.entry(row, "tool", name, decision,
@@ -2817,7 +2836,11 @@ def create_app(gw: Gateway) -> FastAPI:
             return asking_agent(args, row, seq)
         if core is not None:
             return call_core_tool(core, args, row, seq)
-        given = dict(args)
+        assert tool is not None  # one of the scenario's: policy refused any tool there isn't
+        given, run = dict(args), tool.run
+        if tool.checked_by and any(handles.TOKEN.search(s) for f in tool.text_fields
+                                   for s in strings(args.get(f))):
+            run = unhandled(tool)  # what goes outside carries no handle's value (round 15)
         try:
             with db.transaction(gw.url) as conn:  # a system gets the values handles stand for
                 given = handles.resolved_args(conn, row["run"], args)
@@ -2826,10 +2849,12 @@ def create_app(gw: Gateway) -> FastAPI:
                     given[field_name], _ = cleaned(given[field_name], gw.scenario.record_links,
                                                    notes=False)
             effect = change or (counts.change(name, keys, args) if tool.idempotent else None)
-            result = tool.run(ToolCall(args=given, instance=row["id"], run=row["run"],
-                                       acts_for=tuple(row["acts_for"]),
-                                       key=counts.key(counts.work(row), effect) if effect
-                                       else None))  # once for the run, or for its task
+            result = run(ToolCall(args=given, instance=row["id"], run=row["run"],
+                                  acts_for=tuple(row["acts_for"]),
+                                  serves=() if row["acts_for"] else tuple(  # whom it may reach
+                                      registry.served(gw.scenario, row["serves"])),
+                                  key=counts.key(counts.work(row), effect) if effect
+                                  else None))  # once for the run, or for its task
             result, read_by = studio.taken(result)  # who may read each document it gave
             if getattr(tool, "as_person", "") and not (isinstance(result, dict)
                                                        and result.get("error")):
@@ -2837,6 +2862,9 @@ def create_app(gw: Gateway) -> FastAPI:
             if read_by:
                 with db.transaction(gw.url) as conn:  # kept before the run has it, so the
                     studio.readers(conn, row["run"], read_by)  # studio shows it to no one else
+            if apart and not (isinstance(result, dict) and result.get("error")):
+                with db.transaction(gw.url) as conn:  # a5s's notes, to whoever checks it
+                    checked(conn, row, tool, apart)
             refused = result.get("error") if action and isinstance(result, dict) else None
             outcome = ({"status": "error", "error": str(refused)[:200], "answered": True}
                        if refused else {"status": "ok", "result_sha256": ledger.digest(result)})
@@ -2892,6 +2920,28 @@ def create_app(gw: Gateway) -> FastAPI:
         if outcome["status"] != "ok" and not outcome.get("answered"):
             return JSONResponse(status_code=502, content={"error": outcome["error"]})
         return {"result": result, "recorded": recorded}
+
+    def unhandled(tool: Tool) -> Callable[[ToolCall], dict]:
+        """What a tool whose text people check before it goes outside says, in place of
+        writing it, when the agent put a handle in it: a5s puts no value a handle stands for,
+        such as someone's address, in what someone outside would read (round 15)."""
+        where = tool.checked_in or "what goes outside"
+        return lambda call: {"error": (
+            f"a5s puts no value a handle stands for, such as someone's address, in {where}, "
+            "which someone outside would read: write it without them, and the team adds what's "
+            "needed")}
+
+    def checked(conn: db.Connection, row: dict, tool: Tool, own: list[str]) -> None:
+        """a5s's notes on the values an agent wrote itself in text people check before it goes
+        outside, such as a reply among a shared mailbox's drafts: in the digest of each who
+        checks it, in the language they read, never in what a customer would read (round 15)."""
+        for pid in registry.served(gw.scenario, tool.checked_by):
+            if gw.scenario.person(pid) is None:
+                continue
+            spoken = gw.spoken(conn, pid)
+            digests.keep(conn, pid, None, row["id"], row["run"], words.say(
+                spoken, CHECKED, agent=row["definition"], where=tool.checked_in,
+                note=provenance.note(row["definition"], own, spoken)), gw.clock())
 
     def acted(row: dict, tool: Tool, args: dict, keys: list[str], standing: dict,
               given: dict) -> dict | None:
@@ -3113,11 +3163,13 @@ def create_app(gw: Gateway) -> FastAPI:
                 if answer.status_code < 400:
                     filled, dropped = extractor.checked(reply, text, tool.extract,
                                                         gw.scenario.record_pattern)
+            # how long it is whole, though its system gave a part, as a mailbox's long message
+            total = max(len(whole), item["length"] if isinstance(item.get("length"), int) else 0)
             shown = {**(filled if filled is not None else dict.fromkeys(tool.extract)),
                      **({"unread": why} if filled is None else {}),
                      **({"left_out": dropped} if dropped else {}),
-                     **({"cut": f"a5s read the first {len(text):,} characters of {len(whole):,}"}
-                        if len(whole) > len(text) else {})}
+                     **({"cut": f"a5s read the first {len(text):,} characters of {total:,}"}
+                        if total > len(text) else {})}
             with db.transaction(gw.url) as conn:
                 number = conn.execute(
                     "insert into run_documents (run_id, number, text, digest, form) values (%s, "

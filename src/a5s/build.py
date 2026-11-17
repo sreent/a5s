@@ -68,11 +68,6 @@ def delegating(cfg: Config) -> tuple[delegation.Delegation | None, mcp.Delegated
 def gateway(cfg: Config, http: httpx.Client | None = None) -> Gateway:
     systems, delegated = delegating(cfg)
     sc = scenario(cfg, delegated)
-    if (mailboxes.declared(cfg.scenario_dir) and not cfg.sandboxed
-            and mailboxes.App.from_env() is None):
-        raise RuntimeError("the scenario's mailboxes.yaml names mailboxes, which the core reads "
-                           "with the deployment's app in Microsoft 365: set A5S_MAIL_TENANT, "
-                           "A5S_MAIL_CLIENT_ID and A5S_MAIL_CLIENT_SECRET")
     pack = sc.policy_pack()
     # Its directory, with the roles the identity provider's groups give, as the settings in
     # force map them (core/memberships.py)
@@ -108,7 +103,12 @@ def app(cfg: Config | None = None):
     cfg = cfg or Config.from_env()
     if not cfg.service_token:
         raise RuntimeError("Set A5S_SERVICE_TOKEN, or run `a5s up` to create one.")
-    traces.setup("a5s-gateway")  # if the deployment names an OpenTelemetry endpoint
+    if (mailboxes.declared(cfg.scenario_dir) and not cfg.sandboxed
+            and mailboxes.App.from_env() is None):  # the core alone: the channels app, built
+        raise RuntimeError("the scenario's mailboxes.yaml names mailboxes, which the core reads "
+                           "with the deployment's app in Microsoft 365: set A5S_MAIL_TENANT, "
+                           "A5S_MAIL_CLIENT_ID and A5S_MAIL_CLIENT_SECRET")  # from the same
+    traces.setup("a5s-gateway")  # scenario, needs no secret of it (round 15, D4)  # if the deployment names an OpenTelemetry endpoint
     gw = gateway(cfg)
     metrics.setup("a5s-gateway", lambda: read_status(gw))  # and its figures, for its monitoring
     return create_app(gw)

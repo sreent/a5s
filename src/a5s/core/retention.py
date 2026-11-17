@@ -119,6 +119,7 @@ def sweep(conn: db.Connection, now: datetime, scenario: str, kept: str = KEPT,
                       f"and waiting_noted_at < {AGO}")  # in their words
     delete("reports", f"delete from report_fires where fired_at < {AGO}")
     delete("events", f"delete from events where received_at < {AGO}")  # what systems said
+    delete("events", f"delete from mail_messages where seen_at < {AGO}")  # mail's keys (round 15)
     delete("feedback", f"delete from answer_feedback where at < {AGO}")  # answers said wrong
     delete("reminders", "delete from reminders where greatest(reminded_at, cancelled_at, "
                         f"case when confirmed_at is null then offered_at end) < {AGO}")

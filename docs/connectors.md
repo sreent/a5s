@@ -163,19 +163,23 @@ a5s offers `search_<mailbox>`, which finds messages by their words, `read_<mailb
 
 ### How a5s reads them
 
-The core reads each mailbox through Microsoft Graph with the deployment's own app, in the tenant `A5S_MAIL_TENANT` names, as `A5S_MAIL_CLIENT_ID`, with its secret in `A5S_MAIL_CLIENT_SECRET`, which the core alone holds ([configuration](configuration.md)). The app is granted `Mail.Read`, and `Mail.ReadWrite` where agents draft, and Exchange's application access policy keeps it to the mailboxes it's given, so it reads those alone. The core doesn't start with a mailbox named and no app to read it with, and only the core reads one: in a5s's other parts, a mailbox's tools refuse.
+The core reads each mailbox through Microsoft Graph with the deployment's own app, in the tenant `A5S_MAIL_TENANT` names, as `A5S_MAIL_CLIENT_ID`, with its secret in `A5S_MAIL_CLIENT_SECRET`, which the core alone holds ([configuration](configuration.md)). The app is granted `Mail.Read`, and `Mail.ReadWrite` where agents draft, and Exchange's application access policy keeps it to the mailboxes it's given, so it reads those alone. The core doesn't start with a mailbox named and no app to read it with, and only the core reads one: in a5s's other parts, a mailbox's tools refuse, and the channels app, built from the same scenario, starts without the app's secret.
 
-Whoever a run reads a mailbox for must be among its `readers`: people, teams and roles, as the directory decides. A run for nobody reads it too, such as one its own new mail starts: the app reads it, never anyone's own account, so nobody is acted as.
+Whoever a run reads a mailbox for must be among its `readers`: people, teams and roles, as the directory decides. For a run for nobody, such as one a schedule starts, everyone its instance serves must be: what it finds may reach them. The app reads it, never anyone's own account, so nobody is acted as.
+
+A mailbox's new mail goes only to an instance whose people all read the mailbox, so finance's mail never goes to operations' instance of the same agent. The run it starts sees only the records every reader may see, since its draft waits where they all read it. What a5s found in a mailbox, the studio shows to its readers alone, on a run's page, the feedback page, shadows and cases kept from runs.
 
 a5s names each message by a key of its own, such as `M-3f2a9c0d41b7e8a6`, never by the mailbox's id for it, and keeps each key beside Graph's id, never a message's words. A search asks Graph for words alone, as a library's does.
 
 ### What a message says
 
-Everything a message says, its subject and its words, is content from outside. A search shows the agent when each message came, from whom and its subject, and marks the run, since a subject is written outside too. Reading one gives the agent the form a5s's [extractor](architecture.md) fills from it, by default the record it names, an amount, a date it gives and whether it says it's urgent, or the mailbox's own `extract`, with the message's number, and the agent asks a5s's reader about it with `ask_about`. Its run is marked, as for any content from outside: it acts at level 2 on nothing, and what it drafts says it drew on outside content.
+Everything a message says, its subject and its words, is content from outside. A search shows the agent when each message came and its subject, and marks the run, since a subject is written outside too. Whom a message came from, the agent gets as a [handle](architecture.md): its sender chose the address, and a5s alone keeps it. Reading one gives the agent the form a5s's [extractor](architecture.md) fills from it, by default the record it names, an amount, a date it gives and whether it says it's urgent, or the mailbox's own `extract`, with the message's number, and the agent asks a5s's reader about it with `ask_about`. Its run is marked, as for any content from outside: it acts at level 2 on nothing, and what it drafts says it drew on outside content.
 
 ### New mail starts runs
 
 At each of the core's sweeps of events, at most once a minute for each mailbox, a5s asks Graph what's come into the inbox since it last asked, and keeps each new message as the mailbox's event, `mail-received`, from the system named as the mailbox is. An agent whose release takes it works on it at once, as on any system's [events](architecture.md): in a topic of its own, for nobody, on the mailbox's own day of budget, its task naming the message by its key alone. The first time, a5s notes where the inbox stands, so mail already there starts nothing. A mailbox Graph doesn't answer for is asked again at the next sweep, and one core asks at a time.
+
+Every new message is kept as its event once, though a search found it first. Past 1,000 of a mailbox's events waiting, as a system is told to wait past them, the rest wait in the inbox, and a look takes 30 seconds at most, so a slow Graph holds up the sweep's other work no longer: a5s reads on from where it stopped, at the next sweep. A run whose model didn't answer, and which wrote, changed and sent nothing, leaves its message to be tried again half an hour later, for two days at most, as any event that can't be worked on now.
 
 ```yaml
 events:                                     # in the agent's definition
@@ -186,11 +190,11 @@ events:                                     # in the agent's definition
 
 ### Replies wait for a person
 
-a5s sends no mail. `draft_<mailbox>` leaves a reply to a message among the mailbox's drafts, for someone of the team to read, change and send, or not: a5s writes nothing else there. A draft changes no record and sends nothing, so it waits for no decider, and an instance at level 0 leaves none. Its words are the agent's outgoing text, cleaned as any is, and a5s's note says when a run drew on content from outside. The ledger keeps each draft by hash and length.
+a5s sends no mail. `draft_<mailbox>` leaves a reply to a message among the mailbox's drafts, for someone of the team to read, change and send, or not: a5s writes nothing else there. A draft changes no record and sends nothing, so it waits for no decider, and an instance at level 0 leaves none. Its words are the agent's outgoing text, cleaned as any is, and nothing else: a5s's notes on them, such as a date the agent gave itself, go to the mailbox's readers in their digests, in the language each reads, never into what a customer would read. a5s puts no value a [handle](architecture.md) stands for in a draft, such as another customer's address: the agent is told to write without it, and the team adds what's needed. A draft is addressed to whom the message came from, never to a Reply-To the message names, and a message whose sender a5s can't tell gets none. The ledger keeps each draft by hash and length.
 
 In the studio's sandbox, a mailbox reads its `sandbox` folder of made-up messages, each with `from`, `received`, `subject` and `text`, and a draft goes nowhere; one without a stand-in has its tools offered there, and each call refused.
 
-Tested against an Exchange of the test's own, which answers the deployment's app alone and records what a5s asks of it: new mail starting a run that reads it through a5s's reader and leaves a draft, sending nothing, and a mailbox read for its readers alone, its searches by words alone (`tests/test_mailboxes.py`).
+Tested against an Exchange of the test's own, which answers the deployment's app alone and records what a5s asks of it: new mail starting a run that reads it through a5s's reader and leaves a draft, sending nothing, and a mailbox read for its readers alone, its searches by words alone. Round 15's tests add the rest: mail going only to an instance whose people read it, its run seeing what every reader may, a search that swallows no mail, what was found shown to readers alone, notes to the readers' digests, no handle's value in a draft, a run its model failed tried again, a flood waiting in the inbox, and a look of bounded length (`tests/test_mailboxes.py`).
 
 ### Not yet
 

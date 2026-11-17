@@ -177,14 +177,23 @@ def refuses(scenario: Any, definitions: dict[str, Any], inst: dict[str, Any],
             row: dict[str, Any]) -> str | None:
     """Why an instance can't take an event, or None if it can: its release, as the instance runs
     it, takes the event's type from its system, and the instance works in the part of every
-    record the event names. The sweep picks the instance that takes an event by it, and the run
-    it opens checks it again by it, so the two never disagree (round 14)."""
+    record the event names; and, for a mailbox's new mail, everyone the instance serves reads
+    the mailbox, since what its run finds may reach them (connectors/mailboxes.py, round 15).
+    The sweep picks the instance that takes an event by it, and the run it opens checks it
+    again by it, so the two never disagree (round 14)."""
     definition = definitions.get(inst["definition"])
     if (definition is None or definition.release_id != inst["release"]
             or taken(definition, row["source"], row["type"]) is None):
         return f"{inst['id']}'s release takes no {row['type']} events from {row['source']}"
     if not all(scenario.part_of(k) in (inst["parts"] or {}) for k in row["records"]):
         return f"a record it names is in a part {inst['id']} doesn't work in"
+    readers = getattr(scenario, "mail_readers", None)
+    found = readers(row["source"]) if callable(readers) else None
+    if isinstance(found, tuple) and not all(
+            registry.serving(scenario, found, p)
+            for p in registry.served(scenario, inst["serves"])):
+        return (f"{row['source']}'s mail is read only for its readers, and {inst['id']} serves "
+                "people who aren't")
     return None
 
 
@@ -259,6 +268,15 @@ def put_off(conn: db.Connection, event: str, instance: str | None, why: str) -> 
                              "args": {"source": gone["source"], "type": gone["type"],
                                       "event": event, "waited": True}})
     return True
+
+
+def again(conn: db.Connection, event: str, run: str) -> bool:
+    """An event whose run couldn't work on it, as when its model didn't answer, waits to be
+    tried again, as one that can't be worked on now does (put_off), until it has waited WAITS:
+    whether it waits again (round 15)."""
+    row = conn.execute("update events set taken_at = null, run_id = null where id = %s and "
+                       "run_id = %s returning id", (event, run)).fetchone()
+    return row is not None and not put_off(conn, event, None, "its model didn't answer")
 
 
 def task(said: Any, row: dict[str, Any]) -> str:

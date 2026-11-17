@@ -130,6 +130,9 @@ class ToolCall:
     # For a change, or a tool marked idempotent, the same whenever the same effect is asked for
     # in a run or task: a system that adds something makes it once for each key
     key: str | None = None
+    # For a run that acts for nobody, such as one a system's event or a schedule started:
+    # everyone its instance serves, as the directory says now, whom what it finds may reach
+    serves: tuple[str, ...] = ()
 
 
 UNDO_WITHIN = timedelta(days=7)  # the longest a change may be undone after it's made [starting value]
@@ -198,6 +201,14 @@ class Tool:
     # such as the titles and links of an outside library's documents, which the agent reads to
     # choose one: its run is marked once it's had them, as if it had read outside content
     marks: bool = False
+    # For text it writes that people check before it goes to someone outside the organisation,
+    # such as a reply left among a shared mailbox's drafts: who checks it (people,
+    # team:<team> or role:<role>), and where, in a few words. a5s's notes on what the agent
+    # wrote, such as a date it gave itself, go to them, in a5s's own words, never into the
+    # text, which someone outside would read; and a5s puts no value a handle stands for in it,
+    # such as another customer's address: only they add what's needed (round 15)
+    checked_by: tuple[str, ...] = ()
+    checked_in: str = ""
     # How a change it makes is reversed, if it says: someone it was for, or who decides its
     # changes in the record's part, may undo it for a while after it's made (core/undoing.py)
     undo: Undo | None = None

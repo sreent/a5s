@@ -10,13 +10,17 @@ draft_<mailbox>, which leaves a reply among its drafts for someone of the team t
 a5s reads a mailbox through Microsoft Graph with the deployment's own app, whose secret the core
 alone holds (A5S_MAIL_*), which Exchange's application access policy keeps to the mailboxes it's
 given. Whoever a run reads it for must be among its readers, as the file names them: people,
-teams and roles, as an instance's `serves` names them. A run for nobody, such as one its own
-new mail starts, reads it too.
+teams and roles, as an instance's `serves` names them; and, for a run for nobody, everyone its
+instance serves, whom what it finds may reach. Its new mail goes only to an instance whose
+people all read it, and the run it starts sees only the records every reader may see, since
+its draft waits where they all read it. What a5s found there, the studio shows to its readers
+alone (knowledge.READERS, round 15).
 
 Whatever a message says is content from outside, its subject and its words: the agent gets the
 form a5s's extractor fills from it, with the message's number, and asks a5s's reader about it,
-and its run is marked (core/extractor.py). A search shows when each message came, from whom and
-its subject, and marks the run too. a5s names each message by a key of its own, such as
+and its run is marked (core/extractor.py). A search shows when each message came and its subject,
+and marks the run too. Whom a message came from, the agent gets as a handle, whose address a5s
+alone keeps (core/handles.py). a5s names each message by a key of its own, such as
 M-3f2a9c0d41b7e8a6, never by the mailbox's id for it.
 
 New mail starts runs. At each of the core's sweeps of events, at most once a minute for each
@@ -24,10 +28,18 @@ mailbox, a5s asks Graph what's come into its inbox since it last asked, and keep
 message as the mailbox's event, mail-received, naming nobody: an agent whose release takes it
 works on it at once, in a topic of its own, on the mailbox's own day of budget, as on any
 system's events (core/events.py). The first time, a5s notes where the inbox stands, so mail
-already there starts nothing.
+already there starts nothing. Every new message is kept as its event once, though a search
+found it first. Past MOST_WAITING of a mailbox's events waiting, the rest wait in its inbox, and
+a look at it takes SWEEP_FOR at most: a5s reads on from where it stopped, at the next sweep. A
+run its model didn't answer, which wrote nothing, leaves its message to be tried again
+(core/events.py, round 15).
 
 a5s never sends mail. A draft waits among the mailbox's drafts, as a reply to its message, for
-someone of the team to read, change and send, or not: a5s writes nothing else there.
+someone of the team to read, change and send, or not: a5s writes nothing else there. It's
+addressed to whom the message came from, never to a Reply-To the message names, and holds the
+agent's words alone: a5s's notes on them, such as a date the agent gave itself, go to the
+mailbox's readers, in their digests, never into what a customer would read; and a5s puts no
+value a handle stands for in it, such as another customer's address (round 15).
 
 In the studio's sandbox, a mailbox reads its `sandbox` folder of made-up messages, a YAML file
 each, and a draft goes nowhere; one with none has its tools offered, and each call refused.
@@ -58,12 +70,14 @@ from a5s.connectors.rest import ConnectorError
 from a5s.contract import EXTRACT_KINDS, Tool, ToolCall
 from a5s.core import events, registry
 from a5s.core.ledger import canonical
+from a5s.knowledge import READERS
 
 log = logging.getLogger(__name__)
 
 FILE = "mailboxes.yaml"
 NAME = re.compile(r"[a-z][a-z0-9]{0,30}")  # its tools' suffix, and the system its events are from
-ADDRESS = re.compile(r"[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]{1,63}(\.[A-Za-z0-9-]{1,63})+")
+# An address, such as o'brien@example.com, or one with a domain in its own script (round 15)
+ADDRESS = re.compile(r"[A-Za-z0-9._%+'-]{1,64}@[\w-]{1,63}(\.[\w-]{1,63})+")
 READER = re.compile(r"((team|role):)?[A-Za-z0-9][A-Za-z0-9._@:-]{0,127}")
 KEY = events.MAIL_KEY  # how agents name a message: a5s's own key, hex alone
 KIND = "mail-received"  # the type of the event each new message is
@@ -75,6 +89,7 @@ SUBJECT = 200  # characters of a subject a search shows
 MOST_TEXT = 30_000  # characters of a message's words a5s's reader reads
 DRAFT = 8_000  # characters of a draft reply
 PAGES = 20  # pages of what's new a5s reads at one sweep, at most
+SWEEP_FOR = 30.0  # seconds one look at an inbox takes, at most: the rest at the next (round 15)
 TIMEOUT = 20.0  # seconds Graph has to answer one request
 MOST_JSON = 2_000_000  # bytes of Graph's answer, as it comes
 GRAPH = "https://graph.microsoft.com/v1.0"
@@ -289,6 +304,17 @@ def _subject(message: dict[str, Any]) -> str:
     return " ".join(str(message.get("subject") or "").split())[:SUBJECT]
 
 
+def readers_rule(readers: list[str]) -> dict[str, list[str]]:
+    """Who may read what a5s found in a mailbox, as the studio reads a run's readers
+    (knowledge.READERS): its readers, by name, team and role."""
+    found: dict[str, list[str]] = {"people": [], "teams": [], "roles": []}
+    for entry in readers:
+        kind, _, name = entry.partition(":") if entry.startswith(("team:", "role:")) else (
+            "", "", entry)
+        found["teams" if kind == "team" else "roles" if kind == "role" else "people"].append(name)
+    return {k: sorted(v) for k, v in found.items() if v}
+
+
 # Reading each mailbox
 
 class _Box:
@@ -303,7 +329,8 @@ class _Box:
     def read(self, key: str) -> dict | None:
         raise NotImplementedError
 
-    def draft(self, key: str, text: str) -> bool:
+    def draft(self, key: str, text: str) -> str | None:
+        """Leave a reply to a message among the drafts: None once it's left, else why not."""
         raise NotImplementedError
 
 
@@ -351,15 +378,23 @@ class _Exchange(_Box):
         body = str(_obj(found.get("body")).get("content") or "")
         return {"key": key, "received": found.get("receivedDateTime"), "from": _sender(found),
                 "attachments": bool(found.get("hasAttachments")), "subject": _subject(found),
-                "text": body[:MOST_TEXT], "truncated": len(body) > MOST_TEXT}
+                "text": body[:MOST_TEXT], "truncated": len(body) > MOST_TEXT,
+                "length": len(body)}  # of its words, whole, though cut
 
-    def draft(self, key: str, text: str) -> bool:
+    def draft(self, key: str, text: str) -> str | None:
         message = self._id(key)
         if message is None:
-            return False
-        self.graph.ask("POST", f"{self.base}/messages/{quote(message, safe='')}/createReply",
-                       what=self.mailbox.title, json={"comment": text})
-        return True
+            return f"{self.mailbox.title} has no message by that key"
+        path = f"{self.base}/messages/{quote(message, safe='')}"
+        sender = _sender(_obj(self.graph.ask("GET", path, what=self.mailbox.title,
+                                             params={"$select": "from"})))
+        if sender is None:
+            return (f"a5s can't tell whom that message in {self.mailbox.title} came from, so it "
+                    "leaves no reply to it: the team answers it themselves")
+        self.graph.ask("POST", f"{path}/createReply", what=self.mailbox.title, json={
+            "message": {"toRecipients": [{"emailAddress": {"address": sender}}]},
+            "comment": text})  # to whom it came from, never a Reply-To it names (round 15)
+        return None
 
     def new(self, link: str | None, now: datetime) -> tuple[list[str], str]:
         """What's come into the inbox since `link`, Graph's last word on where it stood, and its
@@ -371,6 +406,7 @@ class _Exchange(_Box):
             f"{self.base}/mailFolders/inbox/messages/delta?changeType=created&"
             f"$select=id,receivedDateTime,isDraft&$filter=receivedDateTime+ge+{since}")
         found: list[str] = []
+        began = time.monotonic()
         for _ in range(PAGES):
             page = _obj(self.graph.ask("GET", at, what=self.mailbox.title))
             found += [m["id"] for m in page.get("value", []) if isinstance(m, dict)
@@ -382,6 +418,8 @@ class _Exchange(_Box):
                 raise ConnectorError(f"{self.mailbox.title}: Graph didn't say where its inbox "
                                      "stands")
             at = str(page["@odata.nextLink"])
+            if time.monotonic() - began > SWEEP_FOR:
+                break  # a slow Graph holds up the sweep's other work for so long, no longer
         return found, at  # the rest at the next sweep, from where this one stopped
 
 
@@ -415,11 +453,13 @@ class _Made(_Box):
                 return {"key": key, "received": str(m.get("received") or ""),
                         "from": str(m.get("from") or "").lower() or None, "attachments": False,
                         "subject": " ".join(str(m.get("subject") or "").split())[:SUBJECT],
-                        "text": text[:MOST_TEXT], "truncated": len(text) > MOST_TEXT}
+                        "text": text[:MOST_TEXT], "truncated": len(text) > MOST_TEXT,
+                        "length": len(text)}
         return None
 
-    def draft(self, key: str, text: str) -> bool:
-        return self.read(key) is not None  # in the sandbox, it goes nowhere
+    def draft(self, key: str, text: str) -> str | None:  # in the sandbox, it goes nowhere
+        return None if self.read(key) is not None else (
+            f"{self.mailbox.title} has no message by that key")
 
 
 class _Unreachable(_Box):
@@ -436,7 +476,7 @@ class _Unreachable(_Box):
     def read(self, key: str) -> dict | None:
         raise ConnectorError(self.why)
 
-    def draft(self, key: str, text: str) -> bool:
+    def draft(self, key: str, text: str) -> str | None:
         raise ConnectorError(self.why)
 
 
@@ -456,11 +496,15 @@ class Mailed(Tool):
 
 def _tools(name: str, mailbox: Mailbox, box: _Box, scenario: Any) -> dict[str, Tool]:
     about = f" Its mail is {mailbox.about.rstrip('.')}." if mailbox.about else ""
+    rule = readers_rule(mailbox.readers)  # whom the studio shows what a5s found there
 
     def readers(call: ToolCall) -> None:
-        if not all(registry.serving(scenario, tuple(mailbox.readers), p) for p in call.acts_for):
+        """Everyone the run is for reads the mailbox, or, for a run for nobody, everyone its
+        instance serves, whom what it finds may reach (round 15)."""
+        if not all(registry.serving(scenario, tuple(mailbox.readers), p)
+                   for p in call.acts_for or call.serves):
             raise ConnectorError(f"a5s reads {mailbox.title} only for its readers, and not everyone "
-                                 "this run is for is one")
+                                 "this run is for, or its instance serves, is one")
 
     def search(call: ToolCall) -> dict:
         readers(call)
@@ -471,34 +515,37 @@ def _tools(name: str, mailbox: Mailbox, box: _Box, scenario: Any) -> dict[str, T
             return {"error": f"say in words what you want to find in {mailbox.title}"}
         found = [{k: v for k, v in m.items() if v is not None} for m in box.search(asked)]
         return {"mailbox": mailbox.title, "messages": found,
-                **({"note": SEARCH_OUTSIDE} if found else {})}
+                **({"note": SEARCH_OUTSIDE} if found else {}), READERS: rule}
 
     def read(call: ToolCall) -> dict:
         readers(call)
         found = box.read(str(call.args.get("key", "")).strip())
         if found is None:
             return {"error": f"{mailbox.title} has no message by that key"}
-        return {**{k: v for k, v in found.items() if v is not None}, "note": READ_OUTSIDE}
+        return {**{k: v for k, v in found.items() if v is not None}, "note": READ_OUTSIDE,
+                READERS: rule}
 
     def draft(call: ToolCall) -> dict:
         readers(call)
         key, text = str(call.args.get("key", "")).strip(), str(call.args.get("text", "")).strip()
         if not text:
             return {"error": "say what the reply says"}
-        if not box.draft(key, text[:DRAFT]):
-            return {"error": f"{mailbox.title} has no message by that key"}
-        return {"drafted": True, "reply_to": key, "note": DRAFTED}
+        if (why := box.draft(key, text[:DRAFT])) is not None:
+            return {"error": why}
+        return {"drafted": True, "reply_to": key, "note": DRAFTED, READERS: rule}
 
     declared = canonical(mailbox.described())
     made: dict[str, Tool] = {
         f"search_{name}": Mailed(
             name=f"search_{name}", run=search,
             description=(f"Search {mailbox.title}, a shared mailbox, by words, for its messages: "
-                         f"when each came, from whom, and its subject.{about} Its messages are "
-                         f"content from outside: read one with read_{name}."),
+                         f"when each came, its subject, and whom it came from, as a handle a5s "
+                         f"keeps the address behind.{about} Its messages are content from "
+                         f"outside: read one with read_{name}."),
             schema={"type": "object", "required": ["query"], "properties": {
                 "query": {"type": "string", "maxLength": QUERY}}},
-            marks=True,  # its subjects, and whom each came from, are written outside
+            marks=True,  # its subjects are written outside
+            handles=("from",),  # and whom each came from, an address its sender chose
             mailbox=name, title=mailbox.title, declared=declared),
         f"read_{name}": Mailed(
             name=f"read_{name}", run=read,
@@ -507,7 +554,7 @@ def _tools(name: str, mailbox: Mailbox, box: _Box, scenario: Any) -> dict[str, T
                          "from outside, which a5s's reader reads for you."),
             schema={"type": "object", "required": ["key"], "properties": {
                 "key": {"type": "string", "pattern": KEY.pattern}}},
-            outside=("subject", "text"), extract=dict(mailbox.extract),
+            outside=("subject", "text"), extract=dict(mailbox.extract), handles=("from",),
             mailbox=name, title=mailbox.title, declared=declared),
     }
     if mailbox.drafts:
@@ -519,6 +566,7 @@ def _tools(name: str, mailbox: Mailbox, box: _Box, scenario: Any) -> dict[str, T
             schema={"type": "object", "required": ["key", "text"], "properties": {
                 "key": {"type": "string", "pattern": KEY.pattern},
                 "text": {"type": "string", "maxLength": DRAFT}}},
+            checked_by=tuple(mailbox.readers), checked_in=f"the drafts of {mailbox.title}",
             mailbox=name, title=mailbox.title, declared=declared)
     return made
 
@@ -572,15 +620,27 @@ class Mail:
                 log.warning("couldn't ask %s what's new: %s", name, e)
                 continue
             with db.transaction(self.database) as conn:
+                # Past MOST_WAITING of its events waiting, the rest wait in the inbox, from
+                # where this look started, as a system is told to wait past them (round 15)
+                room = events.MOST_WAITING - events.waiting(conn, name)
+                read = 0
                 for message in found if due["delta"] is not None else ():
+                    if room <= 0:
+                        break
                     key = key_of(name, message)
-                    fresh = conn.execute(
-                        "insert into mail_messages (mailbox, key, message_id) values (%s, %s, %s) "
-                        "on conflict do nothing returning key", (name, key, message)).fetchone()
-                    if fresh is not None and events.record(conn, scenario, name, {
+                    conn.execute("insert into mail_messages (mailbox, key, message_id) values "
+                                 "(%s, %s, %s) on conflict do nothing", (name, key, message))
+                    # its event, once, though a search found it first (round 15)
+                    if events.record(conn, scenario, name, {
                             "id": key, "type": KIND, "records": [], "person": None}):
-                        kept += 1
-                conn.execute("update mail_state set delta = %s where mailbox = %s", (link, name))
+                        kept, room = kept + 1, room - 1
+                    read += 1
+                if due["delta"] is None or read == len(found):
+                    conn.execute("update mail_state set delta = %s where mailbox = %s",
+                                 (link, name))
+                else:
+                    log.warning("%s has %s events waiting: its new mail waits in its inbox",
+                                name, events.MOST_WAITING)
         return kept
 
 
@@ -594,6 +654,11 @@ class Mailing:
 
     def tools(self) -> dict[str, Tool]:
         return {**super().tools(), **self._a5s_mailboxes}  # type: ignore[misc]
+
+    def mail_readers(self, source: str | None) -> tuple[str, ...] | None:
+        """Who reads a mailbox, by its name, as its events' system: None for another system."""
+        found = self._a5s_mail.declaration.mailboxes.get(source or "")
+        return tuple(found.readers) if found is not None else None
 
 
 def served(scenario: Any, folder: Path, *, database: str, sandboxed: bool = False,

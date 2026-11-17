@@ -328,23 +328,28 @@ def test_the_sweep_and_the_run_it_opens_agree_whether_an_instance_takes_an_event
     """Round 14's deferral: one check says whether an instance can take an event, which the sweep
     picks it by and the run it opens checks again by, so the two never disagree."""
     assert send(system, OPENED).status_code == 202
-    monkeypatch.setattr(events, "refuses", lambda scenario, definitions, inst, row:
+    with monkeypatch.context() as patched:  # the one check says no, for now
+        patched.setattr(events, "refuses", lambda scenario, definitions, inst, row:
                         "the one check says no")
-    assert stack.scheduler().work_due() == 0  # the sweep found none that takes it
-    [row] = kept(stack)
-    assert row["taken_at"] is None
-    assert row["outcome"] == "no instance at work takes it, in its records' parts"
-    with db.transaction(stack.admin) as conn:  # and a run opened for it all the same says why
-        inst = conn.execute("select * from instances where id = 'assistant-finance'").fetchone()
-        opening = stack.gateway.evented(conn, inst, {"event": str(row["id"])},
-                                        stack.gateway.clock())
-    assert opening.reasons == ["the one check says no"]
-    monkeypatch.undo()  # it says yes again: both take it
+        assert stack.scheduler().work_due() == 0  # the sweep found none that takes it
+        [row] = kept(stack)
+        assert row["taken_at"] is None
+        assert row["outcome"] == "no instance at work takes it, in its records' parts"
+        with db.transaction(stack.admin) as conn:  # and a run opened for it all the same says
+            inst = conn.execute("select * from instances where id = 'assistant-finance'"
+                                ).fetchone()
+            opening = stack.gateway.evented(conn, inst, {"event": str(row["id"])},
+                                            stack.gateway.clock())
+        assert opening.reasons == ["the one check says no"]  # why
+    # it says yes again: both take it (the fixture's own patches, such as the provider's key,
+    # stay, as an undo of them all wouldn't leave them: round 15)
     with db.transaction(stack.admin) as conn:
         conn.execute("update events set not_before = now() - interval '1 second'")
     stack.model.reply("Q-1002 is yours, due on the 6th.")
     assert stack.scheduler().work_due() == 1
     assert kept(stack)[0]["outcome"] == "run"
+    with db.transaction(stack.admin) as conn:
+        assert [r["outcome"] for r in conn.execute("select outcome from runs")] == ["done"]
 
 
 def test_an_events_own_id_never_reaches_its_agent_as_words(stack, system):

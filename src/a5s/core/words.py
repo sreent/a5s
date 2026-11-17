@@ -24,6 +24,9 @@ TH: dict[str, str] = {
     "them before you rely on them.)":
         "(a5s: {which} มาจาก {agent} เอง ไม่ได้มาจากระเบียนหรือจากคุณ โปรดตรวจสอบก่อนนำไปใช้)",
     "{first} and {last}": "{first} และ {last}",
+    # a5s's notes on a draft people check before it goes outside, in their digest (round 15)
+    "Before anyone sends what the {agent} left in {where}: {note}":
+        "ก่อนที่ใครจะส่งสิ่งที่ {agent} ร่างไว้ใน {where}: {note}",
     "Version {serial} of the settings waits for your approval":
         "การตั้งค่าเวอร์ชัน {serial} รอการอนุมัติจากคุณ",
     "{names} approved version {serial} of the settings alone, since it only narrows what agents "
