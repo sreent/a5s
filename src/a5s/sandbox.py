@@ -377,11 +377,16 @@ class Sandbox:
             raise Refused(f"what {model} answered doesn't read as a proposal: try again, or another model")
         return {"proposal": proposed, "model": model, "model_calls": calls}
 
-    def case(self, key: str, files: dict[str, str], model: str, number: int) -> dict:
+    def case(self, key: str, files: dict[str, str], model: str, number: int,
+             classes: list[str] | None = None) -> dict:
         """Run one of a draft's test cases, by its place among them, as the agent's suite runs
         it, in a conversation of its own: what it answered at each step, the tools it used, and
         whether that's as the case says, and if not, why. A case that needs what the suite
-        alone does, such as a time to be at, it doesn't run, and says so."""
+        alone does, such as a time to be at, it doesn't run, and says so.
+
+        A case kept from a real run says what someone really said, so it goes only to the
+        stand-in, which never leaves the sandbox, or to a model, and a judge, approved for every
+        class of the deployment's data, `classes`: never one approved for made-up data alone."""
         if not KEY.fullmatch(key):
             raise Refused("a draft is tried by its key, of lower case letters and digits")
         try:
@@ -392,6 +397,13 @@ class Sandbox:
             raise Refused(f"the draft has {len(found)} test cases, not a case {number + 1}")
         case = found[number]
         shown = {"name": case["name"], "file": case["file"]}
+        needed = set(classes or ("internal",)) if cases.real(case) else None
+        if needed is not None and model != STAND_IN:
+            chosen = load_models(self.cfg.models_file).get(model)
+            if chosen is None or not cases.for_real(chosen.data_classes, needed):
+                return {**shown, "ran": False, "why": (
+                    f"it was kept from a real run, so a5s gives it only to the stand-in, or to a "
+                    f"model approved for {', '.join(sorted(needed))} data, and {model} isn't")}
         if alone := cases.suite_alone(case):
             return {**shown, "ran": False, "why": f"it needs {', '.join(alone)}, which the "
                                                   "agent's suite alone runs"}
@@ -424,7 +436,7 @@ class Sandbox:
                 done = {"say": step["say"], "reply": reply, "called": called}
                 if criterion := step.get("judged"):  # where it can be right in more than one way
                     done["judged"] = verdict = self._judged(agent, model, str(criterion), said,
-                                                            reply, called)
+                                                            reply, called, needed)
                     if verdict["grade"] is None:
                         wrong.append(f"nobody judged it: {verdict['why']}")
                     elif verdict["grade"] != "right":
@@ -438,7 +450,7 @@ class Sandbox:
                 "tokens": spent["in"] + spent["out"], "cost": priced}
 
     def _judged(self, agent: str, model: str, criterion: str, said: str, reply: str,
-                called: list[str]) -> dict:
+                called: list[str], needed: set[str] | None = None) -> dict:
         """What a judge says of a step a case says what a right answer is for: its grade, right,
         wrong or critical, and why, and which model judged it, or why none could. A draft tried
         on the stand-in is judged by it too, by words alone; on a real model, by the judge its
@@ -453,6 +465,11 @@ class Sandbox:
                 return {"grade": None, "why": f"the sandbox can't call its judge, {judge}",
                         "judge": judge}
         found = load_models(self.cfg.models_file)[judge]
+        if needed is not None and judge != STAND_IN and not cases.for_real(found.data_classes,
+                                                                            needed):
+            return {"grade": None, "why": (f"its judge, {judge}, isn't approved for "
+                                           f"{', '.join(sorted(needed))} data, which this case, "
+                                           "kept from a real run, holds"), "judge": judge}
         body = extractor.asked(found.api, found.alias, cases.JUDGING,
                                cases.judging(criterion, said, reply, called))
         try:
@@ -583,6 +600,7 @@ class Case(BaseModel):
     files: dict[str, str]  # its agent's folder, each file's text by its path in it
     number: int  # which of its test cases, by its place among them, from 0
     model: str = STAND_IN
+    classes: list[str] = []  # the deployment's classes of data, which a real run's case holds
 
 
 class Describe(BaseModel):
@@ -635,7 +653,7 @@ def create_app(sandbox: Sandbox, token: str) -> FastAPI:
     def run_case(body: Case, authorization: str | None = Header(default=None)) -> dict:
         allowed(authorization)
         try:
-            return sandbox.case(body.key, body.files, body.model, body.number)
+            return sandbox.case(body.key, body.files, body.model, body.number, body.classes)
         except Refused as e:
             raise HTTPException(400, str(e)) from None
 

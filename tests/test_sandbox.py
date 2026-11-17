@@ -197,6 +197,26 @@ def test_a_drafts_test_cases_run_there_as_its_suite_runs_them(box):
     assert len([i for i in box.standing["instances"] if i.startswith("case-")]) == 1
 
 
+
+def test_a_case_kept_from_a_real_run_goes_only_where_its_data_may(box):
+    """What someone really said, masked, is given only to the stand-in, which never leaves the
+    sandbox, or to a model approved for every class of the deployment's data: never to one
+    approved for made-up data alone, whatever file it's in, if it says it's from a run."""
+    kept = [{"name": "kept", "as": "ana", "from_run": True,
+             "steps": [{"say": "Which questions mention an invoice?"}]}]
+    for where in (cases.FROM_RUNS, "tests/mine.yaml"):
+        files = {**drafted(), where: yaml.safe_dump(kept)}
+        n = next(i for i, c in enumerate(cases.found(files)) if c["file"] == where)
+        ran = box.case("3f2a9c1d", files, "deepseek-v4-pro", n, ["internal"])
+        assert ran["ran"] is False and "kept from a real run" in ran["why"], where
+        assert "deepseek-v4-pro isn't" in ran["why"]
+        assert box.case("3f2a9c1d", files, "stand-in", n, ["internal"])["ran"], where
+    made_up = {**drafted(), "tests/mine.yaml": yaml.safe_dump([{**kept[0], "from_run": False}])}
+    assert not cases.real(next(c for c in cases.found(made_up) if c["file"] == "tests/mine.yaml"))
+    assert cases.for_real(["synthetic", "internal"], {"internal"})
+    assert not cases.for_real(["synthetic"], {"internal"})
+    assert cases.for_real(["synthetic"], {"synthetic"})  # a deployment of made-up data
+
 def test_the_sandbox_says_which_cases_it_cant_run(box):
     stranger = {**drafted(), "tests/stranger.yaml": "- name: as someone it hasn't got\n  as: zed\n"
                                                     "  steps: [{say: Hello}]\n"}

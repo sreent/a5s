@@ -10,6 +10,9 @@ anyone is: the names and ids of the people the run acted for, emails, links, and
 enough to be a phone's or an account's. It can't know every name someone might write, so the
 author reads what's left, and keeps it only once they say it says nothing about anyone. Record
 keys stay as they were, for the author to put the sandbox's made-up records in their place.
+What's left is real, never made up, so the case says it's from a run, and only the sandbox's
+stand-in, or a model and judge approved for every class of the deployment's data, are ever
+given it: never one approved for made-up data alone (a5s/cases.py's `for_real`).
 The case goes in their draft of the agent, started from it as released if they have none, in
 tests/from-runs.yaml, which its suite runs as it runs its other cases; the ledger records that
 they kept it, of which run, never the words.
@@ -26,7 +29,7 @@ from a5s import cases, db
 from a5s.contract import DataProtection, Person, Scenario
 from a5s.core import drafts, ledger, registry, studio
 
-FILE = "tests/from-runs.yaml"  # in the agent's folder, beside its other cases
+FILE = cases.FROM_RUNS  # in the agent's folder, beside its other cases
 ABOUT = ("# Test cases kept from real runs, in the studio: what was said, masked by code and\n"
          "# checked by whoever kept it, and the tools the agent used. Put the sandbox's made-up\n"
          "# records in place of the real ones a case names, and add what it must say.\n")
@@ -134,7 +137,7 @@ def keep(conn: db.Connection, scenario: Scenario, viewer: Person, run_id: str,
         step["uses"] = uses
     if judged and judged.strip():
         step["judged"] = " ".join(judged.split())[:1000]
-    case = {"name": name, "as": as_.strip()[:80], "steps": [step]}
+    case = {"name": name, "as": as_.strip()[:80], "from_run": True, "steps": [step]}
     agent = str(shown["agent"])
     mine = next((d for d in drafts.mine(conn, viewer) if d["agent"] == agent), None)
     draft = drafts.get(conn, viewer, str(mine["id"])) if mine else None

@@ -90,6 +90,7 @@ def test_its_author_keeps_a_run_masked_in_their_draft(stack, approving, provider
     assert (draft["person"], draft["agent"]) == ("ana", "assistant")
     [case] = yaml.safe_load(draft["files"][run_cases.FILE])
     assert case["name"] == "Invoices" and case["as"] == "ben"
+    assert case["from_run"] is True  # so only models approved for the deployment's data read it
     [step] = case["steps"]
     assert "Ortiz" not in step["say"] and "ana.ortiz@" not in step["say"]
     assert (step["uses"], step["judged"]) == (["search_records"], "It names Q-1001.")

@@ -1116,11 +1116,17 @@ def router(gw: Any) -> APIRouter:
         case says."""
         with db.transaction(gw.url) as conn:
             found = drafts.get(conn, person, draft)
+            settings, _ = gw.settings_in_force(conn, seal=False)
+            if settings is None and not gw.cfg.seal_keys:
+                settings = gw.sealed_in_force(conn)
         if found is None:
             raise HTTPException(404, "you have no such draft")
+        # A case kept from a real run goes only to a model approved for the deployment's data
+        classes = sorted({settings.data_class, *settings.classified.values()}) if settings \
+            else ["internal"]
         ran = sandboxed("/sandbox/cases", {"key": found["id"].replace("-", "")[:12],
                                            "files": found["files"], "number": number,
-                                           "model": body.model})
+                                           "model": body.model, "classes": classes})
         with db.transaction(gw.url) as conn:
             ledger.append(conn, {"kind": "admin", "action": "run draft case", "run": None,
                                  "instance": None, "acts_for": [], "decision": "record",
