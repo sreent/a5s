@@ -439,11 +439,13 @@ MOVED = {name: f"the signed settings' data_protection.{choice}, which the data p
                               ("A5S_FLAG_RUBBER_STAMPS", "flag_rubber_stamps"))} | {
     name: "A5S_TEAMS_BOTS, a bot for each agent, with its secret in a variable of its own"
     for name in ("A5S_TEAMS_APP_ID", "A5S_TEAMS_APP_SECRET", "A5S_TEAMS_AGENT")}
-# A5S_ names a5s itself never reads: its tests' (all A5S_TEST_ ones too), those compose and
+# A5S_ names a5s itself never reads: its tests' (all A5S_TEST_ ones too), such as the classes
+# of the deployment's data the agents' suites hold a case kept from a real run to, those compose and
 # the deployment scripts read, such as whose attestation the GitOps check asks GitHub for, and
 # the folder the made-up systems of the scenarios a5s ships keep their changes in for their code
 NOT_SETTINGS = frozenset({
-    "A5S_AGENT", "A5S_ASKER", "A5S_ATTESTED_BY", "A5S_CHANNELS_PORT", "A5S_DB_PASSWORD", "A5S_DOC_IMAGES", "A5S_EVAL_MODEL",
+    "A5S_AGENT", "A5S_ASKER", "A5S_ATTESTED_BY", "A5S_CHANNELS_PORT", "A5S_DATA_CLASSES",
+    "A5S_DB_PASSWORD", "A5S_DOC_IMAGES", "A5S_EVAL_MODEL",
     "A5S_EXPECTED", "A5S_GUIDE", "A5S_IDP_PASSWORD", "A5S_IDP_PORT", "A5S_IMAGE", "A5S_MATRIX_CONFIG",
     "A5S_MATRIX_PORT", "A5S_PASSWORD", "A5S_POOL_ASSISTANT", "A5S_POOL_WATCHER", "A5S_QUESTION",
     "A5S_REGRESSION", "A5S_SANDBOX_DB_PASSWORD", "A5S_SCREENSHOTS", "A5S_SMOKE_ENV",
