@@ -21,6 +21,10 @@ TH: dict[str, str] = {
     # What waits on someone, on their home (core/home.py)
     "Version {serial} of the settings waits for your approval":
         "การตั้งค่าเวอร์ชัน {serial} รอการอนุมัติจากคุณ",
+    "{names} approved version {serial} of the settings alone, since it only narrows what agents "
+    "may do in {parts}: {said}":
+        "{names} อนุมัติการตั้งค่าเวอร์ชัน {serial} เพียงลำพัง เพราะเวอร์ชันนี้เพียงจำกัดสิ่งที่เอเจนต์ทำได้ใน "
+        "{parts}: {said}",
     "{n} change an agent asked for waits for your decision":
         "การเปลี่ยนแปลงที่เอเจนต์ขอ {n} รายการรอการตัดสินใจจากคุณ",
     "{n} changes an agent asked for wait for your decision":

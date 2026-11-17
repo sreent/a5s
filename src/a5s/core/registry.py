@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from psycopg.types.json import Jsonb
@@ -136,6 +136,100 @@ def _classes_change(settings: Settings, before: Settings | None) -> bool:
                               != (before.data_class, before.classified))
 
 
+def _wanted(instance: InstanceSettings, part: str) -> int | None:
+    """The level the settings give an instance in a part: the part's own, or else the
+    instance's. None means its release's starting level."""
+    given = instance.parts[part]
+    return given if given is not None else instance.level
+
+
+def _lowered(was: int | None, now: int | None) -> bool | None:
+    """Whether a level went down (True), stayed (False), or may have risen (None). None as
+    either level is the release's starting level, which only level 0 is sure to be at or
+    below."""
+    if was == now:
+        return False
+    if now is None:
+        return None  # the release's start now, whatever that is
+    if was is None:
+        return True if now == 0 else None
+    return True if now < was else None
+
+
+def _actions_lowered(was: dict[str, int], now: dict[str, int]) -> bool | None:
+    """Whether a part's levels for types of action went down (True), stayed (False), or may
+    have risen (None). A type taken back works at its part's level, at most 1, so taking one
+    back narrows only from level 1 or more, and a new one narrows only at level 0."""
+    changed = False
+    for kind in set(was) | set(now):
+        after, before = now.get(kind), was.get(kind)
+        if after == before:
+            continue
+        if after is None:
+            if before is None or before < 1:
+                return None
+        elif before is None:
+            if after != 0:
+                return None
+        elif after > before:
+            return None
+        changed = True
+    return changed
+
+
+def narrowed(settings: Settings, before: Settings | None) -> set[str] | None:
+    """The parts a version only narrows what agents may do in, if that's all it changes from
+    the version before it.
+
+    In a part, narrowing means one of:
+    - a lower level there for an instance, set for the part, or the instance's own where the
+      part sets none;
+    - a lower level for a type of action there, a type taken back from level 1 or more, or a
+      new one at level 0;
+    - a stricter threshold for earning level 2 there, or none, so agents earn it later or
+      never.
+
+    Each of these needs only its part's owner (`needed`). Code decides, and anything it can't
+    show narrows counts as widening. So a version that changes anything else, or nothing,
+    returns None, and needs every approval it would otherwise. That includes a new instance
+    or one retired, whom one serves, who runs it, its parts, the level of one in no part, or
+    the scenario's limits, which are for every part at once."""
+    if before is None:
+        return None
+    for name in ("data_class", "classified", "limits", "groups", "data_protection", "spending"):
+        if getattr(settings, name) != getattr(before, name):
+            return None
+    was = {i.id: i for i in before.instances}
+    if len(was) != len(before.instances) or set(was) != {i.id for i in settings.instances}:
+        return None
+    found: set[str] = set()
+    for now in settings.instances:
+        then = was[now.id]
+        if set(now.parts) != set(then.parts) or replace(
+                now, parts=then.parts, actions=then.actions, level=then.level) != then:
+            return None
+        if not now.parts and now.level != then.level:
+            return None  # an instance in no part is an instance approver's
+        for part in now.parts:  # its own level counts in each part that sets none
+            lower = _lowered(_wanted(then, part), _wanted(now, part))
+            acted = _actions_lowered(then.actions.get(part) or {}, now.actions.get(part) or {})
+            if lower is None or acted is None:
+                return None
+            if lower or acted:
+                found.add(part)
+        if any((now.actions.get(p) or {}) != (then.actions.get(p) or {})
+               for p in set(now.actions) | set(then.actions) if p not in now.parts):
+            return None  # a type of action for a part it doesn't work in: nothing a5s reads
+    for part in set(settings.thresholds) | set(before.thresholds):
+        after, earlier = settings.thresholds.get(part), before.thresholds.get(part)
+        if after == earlier:
+            continue
+        if earlier is None or (after is not None and after < earlier):
+            return None  # agents there could earn level 2 sooner, or at all
+        found.add(part)
+    return found or None
+
+
 def missing(settings: Settings, directory: Directory, valid: Iterable[str],
             before: Settings | None = None, rooted: Directory | None = None) -> list[str]:
     """Whose approval a version still needs, given who validly approved it: for each part an
@@ -162,6 +256,10 @@ def needed(settings: Settings, directory: Directory, valid: Iterable[str],
     giving a group a role: so a page can tell each approver what waits for them."""
     valid = list(valid)
     held = {role for who in valid if (p := directory(who)) for role in p.roles}
+    if (parts := narrowed(settings, before)) is not None:  # each part's owner, for theirs alone
+        return [(f"{PART_OWNER}:{part}", (f"the owner of {part} hasn't approved it: it only "
+                                          "narrows what agents may do there"), False)
+                for part in sorted(parts) if f"{PART_OWNER}:{part}" not in held]
     rooted = rooted or directory
     owners = {role for who in valid if (p := rooted(who)) for role in p.roles}
     covered = _covered(settings, before)
@@ -192,11 +290,37 @@ def needed(settings: Settings, directory: Directory, valid: Iterable[str],
 
 def approvers(settings: Settings, holders: Holders, before: Settings | None = None,
               rooted: Holders | None = None) -> list[Person]:
-    """The people whose approval a version needs: each part's owners, the owners of each agent
-    whose budget it changes, and the instance
-    approvers, if any instance it decides on is in no part, or it sets the classes of data
-    afresh; for each role it gives a group, the role's owners the directory names; and the data
-    protection officer the directory names, if it changes their choices."""
+    """The people whose approval a version needs. For a version that only narrows what agents
+    may do in some parts (`narrowed`), that is the owners of those parts alone.
+
+    Otherwise it is:
+    - each part's owners;
+    - the owners of each agent whose budget it changes;
+    - the instance approvers, if any instance it decides on is in no part, or it sets the
+      classes of data afresh;
+    - for each role it gives a group, the role's owners the directory names;
+    - and the data protection officer the directory names, if it changes their choices."""
+    if (parts := narrowed(settings, before)) is not None:
+        found: dict[str, Person] = {}
+        for part in sorted(parts):
+            found.update({p.id: p for p in holders(f"{PART_OWNER}:{part}") if p.id not in found})
+        return list(found.values())
+    return _approvers(settings, holders, before, rooted)
+
+
+def told(settings: Settings, holders: Holders, before: Settings | None = None,
+         rooted: Holders | None = None) -> list[Person]:
+    """Whom a version that only narrows tells in their digest, once it's in force: everyone
+    whose approval it would have needed otherwise, besides its parts' owners. Nobody, for any
+    other version, which they approved."""
+    if narrowed(settings, before) is None:
+        return []
+    approving = {p.id for p in approvers(settings, holders, before, rooted)}
+    return [p for p in _approvers(settings, holders, before, rooted) if p.id not in approving]
+
+
+def _approvers(settings: Settings, holders: Holders, before: Settings | None = None,
+               rooted: Holders | None = None) -> list[Person]:
     covered = _covered(settings, before)
     budgeted, budgeted_agents = _spending_change(settings, before)
     roles = [f"{PART_OWNER}:{p}" for p in sorted({p for i in covered for p in i.parts}

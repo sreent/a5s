@@ -73,6 +73,7 @@ from a5s.core import (
     handles,
     handover,
     judging,
+    languages,
     ledger,
     measures,
     memberships,
@@ -105,6 +106,7 @@ from a5s.core import (
     undoing,
     urgent,
     values,
+    words,
 )
 from a5s.core.breakers import FAILURES, Breakers
 from a5s.core.events import EventsConfig
@@ -277,6 +279,11 @@ def misfit(schema: dict[str, Any], value: Any, where: str = "") -> str | None:
             if problem := misfit(schema["items"], item, f"{where}[{n}]"):
                 return problem
     return None
+
+
+# What a version that only narrows tells whoever would otherwise have approved it
+NARROWED = ("{names} approved version {serial} of the settings alone, since it only narrows "
+            "what agents may do in {parts}: {said}")
 
 
 @dataclass
@@ -2058,7 +2065,30 @@ def create_app(gw: Gateway) -> FastAPI:
         else:
             refused = registry.apply(conn, gw.definitions, settings, gw.scenario.tools(),
                                      gw.scenario.person, gw.scenario.name, approved).refused
+            if not refused:
+                narrowing_told(conn, settings, before, valid)
         return ("refused: " + "; ".join(refused)) if refused else "applied", approved
+
+    def narrowing_told(conn: db.Connection, settings: Settings, before: Settings | None,
+                       valid: list[str]) -> None:
+        """Tell, in their digest, whoever would have approved a version that only narrows what
+        agents may do in some parts, had it widened anything, once those parts' owners alone
+        have approved it: what it changes, and who approved it."""
+        if before is None or (parts := registry.narrowed(settings, before)) is None:
+            return
+        said = " ".join(c["text"] for c in approvals.changes(before, settings, gw.definitions,
+                                                              gw.scenario.person))
+        names = approvals.names_of([p.name if (p := gw.scenario.person(v)) else v for v in valid])
+        for person in registry.told(settings, gw.scenario.holders, before,
+                                    memberships.rooted(gw.scenario).holders):
+            text = words.say(languages.of(conn, person), NARROWED, names=names,
+                             serial=settings.serial, parts=approvals.names_of(sorted(parts)),
+                             said=said)
+            digests.keep(conn, person.id, None, None, None, text, gw.clock())
+            ledger.append(conn, {"kind": "notice", "action": "narrowed", "run": None,
+                                 "instance": None, "acts_for": [], "decision": "record",
+                                 "args": {"settings": settings.version, "to": person.id,
+                                          "parts": sorted(parts)}})
 
     @services.post("/settings/sweep")
     def sweep_settings() -> dict:
