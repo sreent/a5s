@@ -76,10 +76,11 @@ def test_a_change_made_at_level_2_is_kept_to_undo_and_whoever_it_was_for_hears_h
     assert made["record"] == "Q-1002" and made["acts_for"] == ["ben"] and made["parts"] == ["billing"]
     assert made["undo"] == {"tool": "change_due_date", "args": {"key": "Q-1002", "due": "2026-11-06"}}
     assert made["as_left"] == {"due date": "2026-11-13"} and made["lasts"] == timedelta(hours=24)
-    # The agent is told how, to tell Ben, and so is the instance's owner, in her digest
+    # The agent hears it can be undone, never the page's link, which no message of its can
+    # carry: a5s gives Ben the link itself, beside its message, and the instance's owner too
     sent = json.dumps([r["body"] for r in stack.model.requests])
     link = f"{approving}/studio/undo?change={made['id']}"
-    assert "a5s_undo" in sent and "It can be undone until" in sent and link in sent
+    assert "a5s_undo" in sent and "It can be undone until" in sent and link not in sent
     with db.transaction(stack.admin) as conn:
         [item] = conn.execute("select text from digest_items where person = 'ana'").fetchall()
     assert item["text"].endswith(f"on its page: {link}")
@@ -226,3 +227,21 @@ def test_someone_undoes_a_change_on_its_page(stack, approving, provider, browser
     assert re.search(r"by Ben Okafor", tab.inner_text("#change"))
     assert due_of(stack) == "2026-11-06"
     accessible(tab)
+
+
+
+def test_a5s_tells_whoever_a_change_was_for_how_to_undo_it_itself(stack, approving, provider):
+    """Round 14 (E-M2): the undo page's link is a5s's, which no agent's message may carry, so
+    a5s writes it itself, in its own note beside the agent's message to whoever the change was
+    for, once, rather than leaving the agent a link that reaches them as [link removed]."""
+    levelled(stack)
+    asked(stack)  # Ben asks to move Q-1002 to 2026-11-13, and it's made
+    made = kept(stack)
+    link = f"{approving}/studio/undo?change={made['id']}"
+    with db.transaction(stack.admin) as conn:
+        said = [r["text"] for r in conn.execute(
+            "select text from outbox where person = 'ben' and run_id is not null order by id")]
+        offered = conn.execute("select offered_at from changes_made").fetchone()["offered_at"]
+    assert said[-1].startswith("Done what I could.\n\n(a5s: what the assistant just changed "
+                               "can be undone until")
+    assert said[-1].count(link) == 1 and offered is not None

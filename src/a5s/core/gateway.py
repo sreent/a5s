@@ -2880,9 +2880,9 @@ def create_app(gw: Gateway) -> FastAPI:
                 log.exception("couldn't settle the count of %s's change", row["run"])
         if action and tool is not None and outcome["status"] == "ok":  # made at level 2: told
             try:
-                offer = acted(row, tool, args, keys, standing, given)
-                if offer and isinstance(result, dict):  # so the agent can say how
-                    result = {**result, "a5s_undo": offer}
+                kept = acted(row, tool, args, keys, standing, given)
+                if kept and isinstance(result, dict):  # so the agent knows, and says no link
+                    result = {**result, "a5s_undo": undoing.for_agent(kept["until"])}
             except Exception:  # it's made: the agent hears so, whatever else fails
                 log.exception("couldn't report the change %s made", row["run"])
         traces.note(current, **{"error.type": "tool_error" if outcome["status"] != "ok" else None})
@@ -2891,14 +2891,15 @@ def create_app(gw: Gateway) -> FastAPI:
         return {"result": result, "recorded": recorded}
 
     def acted(row: dict, tool: Tool, args: dict, keys: list[str], standing: dict,
-              given: dict) -> str | None:
+              given: dict) -> dict | None:
         """Report a change an agent made at level 2, in words code works out, with each record
         as it stood before, and a link to it, so it can be reversed through the scenario's own
         process if it needs to be: in the digest of the instance's owner and deputy who may see
         its records, or, with neither, of the owners of its parts. Tell whoever it was for, in
         their conversation with the agent. And draw it as a sample, for grading. Where its tool
         says how it's undone, keep how (core/undoing.py): what whoever it was for can do, and
-        until when, for the agent to tell them."""
+        until when, which a5s tells them itself, beside the agent's next message to them. What
+        it keeps to undo it, if anything."""
         asked = groups.requesters(row)  # whose words asked for it: in a group, not everyone
         whom = approvals.names_of([p.name if (p := gw.scenario.person(w)) else w
                                    for w in asked]) if asked else "nobody"
@@ -2944,7 +2945,7 @@ def create_app(gw: Gateway) -> FastAPI:
                                                                 "tool": tool.name,
                                                                 "records": keys,
                                                                 **({"undo": kept["id"]} if kept else {})}})
-        return offer
+        return kept
 
     def undone_by(tool: Tool, keys: list[str], given: dict,
                   standing: dict) -> tuple[dict | None, dict | None]:
@@ -2961,7 +2962,7 @@ def create_app(gw: Gateway) -> FastAPI:
         except Exception:  # the records system's own failure: it can't be undone here
             log.exception("couldn't read %s again, to undo it", keys[0])
             return None, None
-        return undo, undoing.left(tool, after)
+        return undo, undoing.left(tool, after, standing.get(keys[0]))
 
     def holding(decision: Decision, records: list[str], row: dict,
                 steered: list[str]) -> list[Person] | str:
@@ -3449,11 +3450,15 @@ def create_app(gw: Gateway) -> FastAPI:
                 route["members"] = list(row["acts_for"])
             traced = provenance.traced(conn, gw.scenario, row, text) if decision.allowed else []
             said, note = text, None  # the agent's words, apart from a5s's own note on them
-            if own := [t["value"] for t in traced if t["from"] is None]:  # people see it apart
-                reader = None if groups.of(body.to) else gw.scenario.person(body.to)  # in the
-                note = provenance.note(row["definition"], own, languages.of(conn, reader)  # one
-                                       if reader else languages.ENGLISH)  # language they read
+            reader = None if groups.of(body.to) else gw.scenario.person(body.to)  # a5s's notes
+            spoken = languages.of(conn, reader) if reader else languages.ENGLISH  # are in the
+            if own := [t["value"] for t in traced if t["from"] is None]:  # one they read, apart
+                note = provenance.note(row["definition"], own, spoken)
                 text += "\n\n" + note
+            if decision.allowed and reader and (offer := undoing.offers(  # how to undo what
+                    conn, row["run"], body.to, row["definition"], gw.public_url, spoken)):  # it
+                note = f"{note}\n\n{offer}" if note else offer  # changed for them, beside it
+                text += "\n\n" + offer
             ledger.append(conn, gw.entry(row, "message", "send", decision, args={
                 "to": body.to, "chars": len(text), "sha256": hashlib.sha256(text.encode()).hexdigest(),
                 "links_removed": removed, **({"channel": route["channel"]} if route else {}),
@@ -3779,7 +3784,8 @@ def create_app(gw: Gateway) -> FastAPI:
                 kept = undoing.keep(conn, {"run": str(p["run_id"]), "id": p["instance_id"],
                                            "definition": p["definition"], "release": p["release"]},
                                     tool, keys[0], list(p["parts"]), p["said"], undo, as_left,
-                                    list(p["acts_for"]), proposal=p["id"])
+                                    list(p["acts_for"]), proposal=p["id"],
+                                    offered=True)  # in a5s's own message that it's made
                 offer = undoing.offered(kept["until"], gw.public_url, kept["id"])
         with db.transaction(gw.url) as conn:
             if outcome["status"] == "ok":
@@ -4111,10 +4117,9 @@ def create_app(gw: Gateway) -> FastAPI:
         """Undo one change, while its record is as the change left it, and count it, as a wrong
         grade of it, against its agent's accuracy; tell whoever it was for, and the instance's
         owner and deputy, and the ledger. Whether it was undone, refused or failed."""
-        tools = gw.scenario.tools()
-        made, by = tools[row["tool"]], tools[row["undo"]["tool"]]
-        try:  # the record as it stands, outside any transaction
-            now = undoing.left(made, proposals.snapshot(
+        by = gw.scenario.tools()[row["undo"]["tool"]]
+        try:  # the record as it stands, outside any transaction, in each field the change left
+            now = undoing.still(row["as_left"], proposals.snapshot(
                 {row["record"]: record_of(gw.scenario, row["record"])})[row["record"]])
         except Exception:  # the records system's own failure
             log.exception("couldn't read %s, to undo a change", row["record"])

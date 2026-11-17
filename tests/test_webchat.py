@@ -237,6 +237,7 @@ def test_a_message_the_conversation_and_the_inbox_both_give_shows_once(stack, br
         page.goto(f"{url}/chat/")
         page.fill("#person", "ana")
         page.click("#name button")
+        page.wait_for_selector(".welcome-name", timeout=30000)  # its conversation is open
         page.evaluate("""() => {
             const told = {by: "a5s", from: "a5s", id: 7, text: "Handed over.", at: new Date().toISOString()};
             say(told);

@@ -94,6 +94,8 @@ TH: dict[str, str] = {
     "{from} works in {to}, at level {level}, and at level 2 for {types}":
         "{from} ทำงานใน {to} ที่ระดับ {level} และที่ระดับ 2 สำหรับ {types}",
     "{from} may ask {to}": "{from} ถาม {to} ได้",
+    "(a5s: what the {agent} just changed can be undone until {until} UTC, on its page: {link})":
+        "(a5s: สิ่งที่ {agent} เพิ่งเปลี่ยนยกเลิกได้จนถึง {until} UTC ที่หน้าของรายการนี้: {link})",
     "{from} answers beside {to}, and sends nothing": "{from} ตอบคู่กับ {to} โดยไม่ส่งสิ่งใดออกไป",
     "{from} may hand a conversation to {to}, whose people answer it":
         "{from} ส่งต่อบทสนทนาให้ {to} ได้ ซึ่งคนในทีมจะเป็นผู้ตอบ",
