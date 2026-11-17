@@ -3,6 +3,7 @@
 {{- define "a5s.env.gateway" -}}
 {{ include "a5s.secretEnv" (dict "root" . "name" "A5S_DATABASE_URL" "key" "database-gateway-url") }}
 {{ include "a5s.secretEnv" (dict "root" . "name" "A5S_SERVICE_TOKEN" "key" "service-token") }}
+{{ include "a5s.secretEnv" (dict "root" . "name" "A5S_OPERATOR_TOKEN" "key" "operator-token" "optional" true) }}
 {{ include "a5s.secretEnv" (dict "root" . "name" "A5S_SEAL_KEYS" "key" "seal-keys") }}
 {{- range $name, $key := .Values.models.keys }}
 {{ include "a5s.secretEnv" (dict "root" $ "name" $name "key" $key "optional" true) }}

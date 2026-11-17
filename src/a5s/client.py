@@ -50,8 +50,10 @@ class Client:
 
     @classmethod
     def from_env(cls, **kwargs: Any) -> Client:
-        """The core at A5S_GATEWAY_URL, by the token in A5S_SERVICE_TOKEN, as `a5s` finds it."""
-        return cls(config.GATEWAY_URL.read(), config.SERVICE_TOKEN.read(), **kwargs)
+        """The core at A5S_GATEWAY_URL, by the token in A5S_OPERATOR_TOKEN where it's set,
+        else A5S_SERVICE_TOKEN, as `a5s` finds them."""
+        return cls(config.GATEWAY_URL.read(), config.OPERATOR_TOKEN.read()
+                   or config.SERVICE_TOKEN.read(), **kwargs)
 
     def __enter__(self) -> Self:
         return self

@@ -165,6 +165,16 @@ The core seals what people approve, decide and grade, the caps it raises, the ch
 
 If the key may have leaked, sealing again would make anything its holder sealed count. Run `a5s seal-again --leaked` instead at step 3: it retires the old key without sealing anything again, and says what stops counting with it. Then the settings must be approved again, caps earn level 2 again from graded samples, decisions still waiting are decided again, and people connect their accounts again. A key retired as leaked never comes back: the core won't start with it.
 
+## The operators' token
+
+**When:** setting a5s up, or when a token may have leaked.
+
+The scheduler calls the core with the service token, `A5S_SERVICE_TOKEN`, to open runs, answer people and sweep. Operators' commands, such as `a5s status`, `a5s runs` and `a5s audit`, and the Python client, call it with a token of their own, `A5S_OPERATOR_TOKEN`. Where the core has both, each opens only its own routes: an operator's token opens no run and writes to nobody, and the scheduler's does none of an operator's work. Without an operators' token, the service token opens both, as in development.
+
+1. Make the operators' token at random, at least 32 characters, apart from the service token, and set it on the core, the chart's `operator-token` secret, and for whoever runs operators' commands. The scheduler never holds it.
+2. Reading the audit trail through the core needs the reader's own sign-in wherever people sign in: `a5s audit` sends it from `A5S_TOKEN`.
+3. To change either token, set the new one on the core and on what holds it, and restart both. Each run's opening in the ledger names the token behind it by a fingerprint, so the runs a leaked token opened show.
+
 ## a5s won't start: a seal key is missing
 
 **Shows as:** the core exiting with "A5S_SEAL_KEYS no longer holds a key the core sealed with", or "holds a key retired as leaked".

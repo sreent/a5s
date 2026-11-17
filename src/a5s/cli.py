@@ -588,7 +588,8 @@ def _approves(approval: releases.Approval) -> str:
 
 def _core(cfg: Config, call, timeout: float = 30):
     """A call to the core's API, through its client (a5s/client.py), or the reason it's refused."""
-    with Client(cfg.gateway_url, cfg.service_token, timeout=timeout) as core:
+    with Client(cfg.gateway_url, cfg.operator_token or cfg.service_token,  # operators' own
+                timeout=timeout) as core:
         try:
             return call(core)
         except Refused as exc:

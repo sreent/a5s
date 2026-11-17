@@ -27,7 +27,7 @@ from typing import Any
 import httpx
 import psycopg
 import yaml
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel
@@ -139,6 +139,25 @@ CORE_TOOLS = {**reminders.TOOLS, **digests.TOOLS, **profiles.TOOLS,  # a5s's own
               **handover.TOOLS}  # conversation over to people (core/handover.py)
 LAPSED = 120  # seconds past its time a scheduler's lease on a run's work is, once it's gone
 CHARS_PER_TOKEN = 4  # roughly, for a run's budget for its conversation
+# The routes operators' commands call, such as `a5s status`: where A5S_OPERATOR_TOKEN is set,
+# each takes it alone, and every other route of the core's services the service token alone,
+# the scheduler's, so an operator's token opens no run and writes to nobody, and the scheduler's
+# does none of an operator's work (round 15, D3)
+OPERATING = frozenset({
+    "/status", "/measures", "/proposals", "/proposals/{key}/end", "/caps/lower",
+    "/instances/{instance}/suspend", "/instances/{instance}/resume", "/settings/proposals",
+    "/people/{person}/export", "/people/{person}/erase", "/audit/entries", "/audit/export",
+    "/audit/report", "/studio/agents", "/studio/agents/{agent}", "/studio/agents/{agent}/measures",
+    "/studio/instances/{instance}/measures", "/studio/instances/{instance}/runs",
+    "/studio/runs/{run_id}"})
+
+
+def credential(token: str) -> str:
+    """What the ledger keeps of the token that called the core: enough to tell one from
+    another, once it's changed, nothing to make it from (round 15, D3)."""
+    return hashlib.sha256(b"a5s credential\n" + token.encode()).hexdigest()[:12]
+
+
 # What whoever asked hears where only a run's mark holds a change for a person (round 15, A4)
 MARK_HOLDS = ("(a5s: {key} waits for a person to decide it, because this chat holds what a5s "
               "read from outside, such as a file or an email. Once that's further back than the "
@@ -1389,9 +1408,15 @@ def create_app(gw: Gateway) -> FastAPI:
                      "detail": str(exc)[:200]},
         )
 
-    def service(authorization: str = Header(default="")) -> None:
-        if not secrets.compare_digest(authorization, f"Bearer {gw.cfg.service_token}"):
-            raise HTTPException(401, "service token required")
+    def service(request: Request, authorization: str = Header(default="")) -> None:
+        """The service token, for the scheduler's work; for an operator's, their own token,
+        where the deployment sets one (round 15, D3)."""
+        operator = gw.cfg.operator_token and getattr(
+            request.scope.get("route"), "path", None) in OPERATING
+        token = gw.cfg.operator_token if operator else gw.cfg.service_token
+        if not secrets.compare_digest(authorization, f"Bearer {token}"):
+            raise HTTPException(401, "the operators' token required" if operator
+                                else "service token required")
 
     def counted(doing: str) -> None:
         """Count a refusal for want of a second factor, for the status."""
@@ -1562,7 +1587,8 @@ def create_app(gw: Gateway) -> FastAPI:
                 "kind": "run", "action": "open", "run": None if reasons else run_id,
                 "instance": body.instance, "acts_for": opening.acts_for,
                 "decision": "deny" if reasons else "allow", "reasons": reasons,
-                "args": {"trigger": kind, **opening.args},
+                "args": {"trigger": kind, **opening.args,  # and the token behind it (round 15)
+                         "credential": credential(gw.cfg.service_token)},
             })
             if opening.said and (to := gw.message_of(conn, opening.trigger.get("inbound"))):
                 sent = outbound(conn, {"channel": to["channel"], "reply_to": to["reply_to"]},
@@ -2230,10 +2256,13 @@ def create_app(gw: Gateway) -> FastAPI:
 
     def auditor(by: str, identity: str | None) -> tuple[str, str]:
         """Who reads the trail through the core's API, and through what: their own sign-in,
-        checked here, with a second factor where the deployment asks for one, or the service
-        token, which names them, and says so in the ledger, since whoever holds it could
-        name anyone."""
+        checked here, with a second factor where the deployment asks for one, which it takes
+        wherever people sign in; or, where nobody does, the token, which names them, and says
+        so in the ledger, since whoever holds it could name anyone."""
         through = "the service token"
+        if gw.identity is not None and not identity:  # a token names anyone (round 15, D3)
+            raise HTTPException(401, "sign in to read the audit trail: send your sign-in as "
+                                     "X-A5S-Identity, as `a5s audit` does from A5S_TOKEN")
         if identity:
             if gw.identity is None:
                 raise HTTPException(400, "a5s uses no identity provider here: name the reader "
