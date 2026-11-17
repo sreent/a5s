@@ -796,6 +796,7 @@ class Run(RunLine):
     tokens_in: int
     tokens_out: int
     tokens_cached: int
+    tokens_cache_written: int = 0
     records: list[str]
     calls: list[Call]
 

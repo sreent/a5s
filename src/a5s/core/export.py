@@ -139,9 +139,12 @@ def gather(conn: db.Connection, person: str) -> dict[str, Any]:
             "select agent, text, at, digest_due from digest_items where person = any(%(names)s) "
             "order by at, id"),
         "said_wrong": rows(  # agents' answers they said were wrong (core/feedback.py), and
-            "select f.agent, f.channel, f.said, f.at, f.grade, o.text as answer "  # how graded
-            "from answer_feedback f left join outbox o on o.id = f.outbox_id "
-            "where f.person = any(%(names)s) order by f.at, f.id"),
+            "select f.agent, f.channel, f.said, f.at, f.grade, "  # how they were graded: the
+            "case when o.person = any(%(names)s) then o.text end as answer "  # answer, if it
+            "from answer_feedback f left join outbox o on o.id = f.outbox_id "  # was to them,
+            "where f.person = any(%(names)s) order by f.at, f.id"),  # not to a group chat
+        "answers_they_graded": count(  # others' words, which aren't theirs to have, counted
+            "select count(*) as n from answer_feedback where graded_by = any(%(names)s)"),
         "events": rows(  # what other systems said happened about them (core/events.py)
             "select source, type, records, received_at, outcome from events "
             "where person = any(%(names)s) order by received_at"),

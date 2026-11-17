@@ -57,6 +57,7 @@ WORDS = {
     "report_fires": "reports sent them",
     "events": "what other systems told a5s happened about them",
     "answer_feedback": "what they said of agents' answers that were wrong",
+    "feedback_grades": "whose grades of answers said to be wrong they were",
     "preferences": "preferences",
     "delegations": "the accounts they connected, so agents acted as them there",
     "changes_to_undo": "how to undo changes made for them, which they can then no longer undo",
@@ -161,6 +162,8 @@ def erase(conn: db.Connection, person: str, now: datetime,
            ([*names, person],))  # too: what a shadow answered is only ever for graders
     delete("shadow_grades", "update shadow_answers set graded_by = null where graded_by = "
            "any(%s)", ([*names, person],))  # the grade stays, without whose it was
+    delete("feedback_grades", "update answer_feedback set graded_by = null where graded_by = "
+           "any(%s)", ([*names, person],))  # as does a grade of an answer said to be wrong
     if count := run_cases.forget(conn, [*names, person]):  # out of every draft that holds it
         gone["kept_cases"] = count
     delete("cases_kept_by", "update kept_cases set kept_by = null where kept_by = any(%s)",

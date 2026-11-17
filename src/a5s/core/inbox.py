@@ -45,7 +45,7 @@ from fastapi import (
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from psycopg.types.json import Jsonb
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from a5s import db
 from a5s.core import (
@@ -82,6 +82,7 @@ AWAY_RETRY = 5  # seconds a chat or a person is asked to wait before trying agai
 log = logging.getLogger(__name__)
 MAX_BYTES = 256 * 1024  # far more than one message needs
 MAX_UPLOAD = 6 * 1024 * 1024  # a local message's, with its files, in base64
+TEXT_MOST = 40_000  # characters a local message says, as Slack allows one: its files are apart
 TRIES = 3  # deliveries of a Matrix event a5s can't act on before it's skipped, and recorded
 
 
@@ -104,7 +105,7 @@ class Said(BaseModel):
 
 class LocalMessage(BaseModel):
     agent: str
-    text: str
+    text: str = Field(max_length=TEXT_MOST)  # a message's words: its files may be larger
     person: str | None = None  # in development, without an identity provider, who it's from
     files: list[Sent] = []  # what they sent with it, a few megabytes in all
 
@@ -230,10 +231,11 @@ def create_app(gw: Any) -> FastAPI:
         entra = (activity.get("from") or {}).get("aadObjectId")
         person = gw.scenario.find(f"entra:{entra}") if entra else None
         told = "Thanks."
+        conversation = (activity.get("conversation") or {}).get("id")
         if (value.get("actionName") == "feedback" and acted.get("reaction") == "dislike"
-                and person is not None and activity.get("replyToId")):
-            with db.transaction(gw.url) as conn:
-                found = feedback.sent(conn, "teams", str(activity["replyToId"]))
+                and person is not None and activity.get("replyToId") and conversation):
+            with db.transaction(gw.url) as conn:  # in this conversation: Teams' ids are its own
+                found = feedback.sent(conn, "teams", f"{conversation}/{activity['replyToId']}")
                 try:
                     if found is not None and feedback.record(
                             conn, found["id"], person.id, said if isinstance(said, str) else None,

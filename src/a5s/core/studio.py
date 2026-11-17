@@ -582,8 +582,9 @@ def run(conn: db.Connection, scenario: Scenario, run_id: str,
     try:
         row = conn.execute(
             "select id::text as run, instance_id, trigger, acts_for, read_outside, opened_at, "
-            "closed_at, outcome, tokens, tokens_in, tokens_out, tokens_cached, model, "
-            "records_kept from runs where id = %s::uuid", (run_id,)).fetchone()
+            "closed_at, outcome, tokens, tokens_in, tokens_out, tokens_cached, "
+            "tokens_cache_written, model, records_kept from runs where id = %s::uuid",
+            (run_id,)).fetchone()
     except psycopg.errors.InvalidTextRepresentation:
         return None
     if row is None:
@@ -601,6 +602,7 @@ def run(conn: db.Connection, scenario: Scenario, run_id: str,
              "started_by": row["trigger"] if named else {"kind": (row["trigger"] or {}).get("kind")},
              "tokens_in": row["tokens_in"], "tokens_out": row["tokens_out"],
              "tokens_cached": row["tokens_cached"],
+             "tokens_cache_written": row["tokens_cache_written"],  # priced as the provider does
              "records": sorted(keys | _trigger_records(row["trigger"])),
              "calls": _calls(entries)}
     if viewer is None:  # the team's: every entry, what was said by hash

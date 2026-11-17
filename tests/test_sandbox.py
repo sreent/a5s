@@ -341,3 +341,25 @@ def test_a_days_tries_on_real_models_stop_at_its_tokens_whatever_each_case_runs_
     with db.transaction(stack.cfg.database_url) as conn:  # theirs, in their export
         [kept] = export.gather(conn, "priya")["days"]["sandbox"]
     assert kept["tokens"] == 1_500_000
+
+
+def test_a_cases_cost_prices_what_its_runs_wrote_to_the_cache_as_the_provider_does(box):
+    """A model whose provider charges more to write a prompt to its cache than to read it, as
+    Anthropic's do: what a case's runs wrote counts at that price, never at the input's."""
+    from a5s.config import ModelConfig, Prices
+    model = ModelConfig(alias="priced", provider="anthropic", api="anthropic",
+                        base_url="https://models.test", model="m",
+                        prices=Prices(3.0, 15.0, cached_input=0.3, cache_write=3.75))
+    spent = {"in": 1_000_000, "out": 0, "cached": 0, "cache_written": 1_000_000}
+    assert sandbox.cost(model, spent) == 3.75  # every token in was written to the cache
+    assert sandbox.cost(model, {**spent, "cache_written": 0}) == 3.0
+
+
+def test_a_runs_page_gives_what_it_wrote_to_the_cache(stack):
+    stack.model.reply("Hello.")
+    stack.say("hello")
+    with db.transaction(stack.admin) as conn:
+        run = conn.execute("update runs set tokens_cache_written = 7 returning id::text as id"
+                           ).fetchone()["id"]
+        from a5s.core import studio
+        assert studio.run(conn, stack.gateway.scenario, run)["tokens_cache_written"] == 7

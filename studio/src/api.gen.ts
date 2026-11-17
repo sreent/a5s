@@ -1072,6 +1072,7 @@ export type Run = {
   tokens_in: number;
   tokens_out: number;
   tokens_cached: number;
+  tokens_cache_written?: number;
   records: string[];
   calls: Call[];
 };
@@ -1489,6 +1490,7 @@ export type TriedRun = {
   tokens_in: number;
   tokens_out: number;
   tokens_cached: number;
+  tokens_cache_written?: number;
   records: string[];
   calls: Call[];
   entries: Record<string, unknown>[];

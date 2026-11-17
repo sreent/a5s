@@ -420,7 +420,8 @@ class Sandbox:
         # with an agent, so each case starts one afresh, as the suite's do
         agent = f"case-{secrets.token_hex(5)}"
         steps, problems = [], []
-        started, spent = time.monotonic(), {"in": 0, "out": 0, "cached": 0}  # what it took
+        started = time.monotonic()  # what it took, its cache's writes too, priced apart
+        spent = {"in": 0, "out": 0, "cached": 0, "cache_written": 0}
         judging_took = 0  # and its judge, the same on any model, so apart
         with self.lock:
             instances = self.standing.setdefault("instances", {})
@@ -450,8 +451,7 @@ class Sandbox:
                         wrong.append(f"its judge found it {verdict['grade']}: {verdict['why']}")
                 problems += [f"step {n}: {w}" for w in wrong]
                 steps.append({**done, "wrong": wrong})
-        priced = measures.priced(load_models(self.cfg.models_file).get(model), spent["in"],
-                                 spent["out"], spent["cached"])
+        priced = cost(load_models(self.cfg.models_file).get(model), spent)
         return {**shown, "ran": True, "passed": not problems, "problems": problems, "steps": steps,
                 "model": model, "seconds": round(time.monotonic() - started, 2),
                 "tokens": spent["in"] + spent["out"], "cost": priced,
@@ -507,6 +507,13 @@ class Sandbox:
         """Every part its scenario's instances work in: a draft tried here may see them all."""
         return sorted({p for inst in (self.standing.get("instances") or {}).values()
                        for p in (inst.get("parts") or [])} - {""})
+
+
+def cost(model: Any, spent: dict[str, int]) -> float | None:
+    """What a case's runs cost at a model's prices: what they read from the cache, and wrote
+    to it, at the prices the provider charges for each, as the measures price runs."""
+    return measures.priced(model, spent["in"], spent["out"], spent["cached"],
+                           spent.get("cache_written", 0))
 
 
 def used(run: dict | None) -> list[str]:

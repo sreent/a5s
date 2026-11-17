@@ -11,6 +11,7 @@ from dataclasses import replace
 from urllib.parse import unquote
 
 import httpx
+import psycopg
 import pytest
 
 from a5s import db
@@ -439,3 +440,19 @@ def test_an_image_sent_in_a_matrix_chat_is_fetched_from_the_homeserver_as_the_bo
                                "%40a5s-assistant%3Aa5s.test")]
     assert fake.sent[-1]["body"] == "It's a screenshot of an error."
     assert len(images_sent(stack)) == 1
+
+
+def test_the_channels_app_keeps_files_and_reads_none_back(stack):
+    """It records what came with a message; the core gives that to the run that answers it, so
+    the channels app, which serves pages, reads none."""
+    with (pytest.raises(psycopg.errors.InsufficientPrivilege),
+          db.transaction(stack.as_role("channels").database_url) as conn):
+        conn.execute("select data from inbound_files limit 1")
+
+
+def test_a_web_chat_message_says_at_most_so_much(stack):
+    too_long = httpx.post(f"{stack.channels_url}/channels/local/messages", timeout=30, json={
+        "person": "ana", "agent": "assistant", "text": "a" * (inbox.TEXT_MOST + 1)})
+    assert too_long.status_code == 422
+    with db.transaction(stack.admin) as conn:
+        assert conn.execute("select count(*) as n from inbound").fetchone()["n"] == 0

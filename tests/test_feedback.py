@@ -186,6 +186,36 @@ def test_what_someone_said_is_theirs_kept_exported_and_erased(stack):
     assert kept(stack) == []
 
 
+def test_whose_grade_it_was_goes_with_its_grader_and_a_groups_answer_stays_the_groups(stack):
+    from a5s.core import departures, erasure, export
+    shown = answered(stack)
+    say_wrong(stack, shown["id"])
+    with db.transaction(stack.admin) as conn:  # an answer in a group chat Ana is in, too
+        inbound = conn.execute(
+            "insert into inbound (id, channel, source_id, person, agent, text, reply_to, "
+            "conversation, members) values (gen_random_uuid(), 'matrix', 'g-1', 'ana', "
+            "'assistant', 'And the rest?', '{}', 'group:room', '{ana,ben}') returning id"
+        ).fetchone()["id"]
+        out = conn.execute(
+            "insert into outbox (person, channel, text, agent, run_id, instance_id, inbound_id) "
+            "select 'group:room', 'matrix', 'The rest is due Friday, Ben.', 'assistant', id, "
+            "instance_id, %s from runs limit 1 returning id", (inbound,)).fetchone()["id"]
+        assert feedback.record(conn, out, "ana", None, "matrix") is not None
+        conn.execute("update answer_feedback set grade = 'wrong', graded_by = 'priya'")
+    with db.transaction(stack.cfg.database_url) as conn:  # as the core, with its grants
+        found = export.gather(conn, "ana")
+        assert export.gather(conn, "priya")["answers_they_graded"] == 2  # counted, not hers
+    assert sorted((s["channel"], s["answer"]) for s in found["said_wrong"]) == [
+        ("local", ANSWER), ("matrix", None)]  # the group's answer is the group's
+    with db.transaction(stack.cfg.database_url) as conn:
+        name = departures.rename(conn, "priya", stack.gateway.clock())
+    assert {r["graded_by"] for r in kept(stack)} == {name}  # under her archive's name
+    with db.transaction(stack.cfg.database_url) as conn:
+        gone, _ = erasure.erase(conn, name, stack.gateway.clock())
+    assert gone["feedback_grades"] == 2
+    assert [(r["grade"], r["graded_by"]) for r in kept(stack)] == [("wrong", None)] * 2
+
+
 # Slack, Matrix and Teams: a 👎 on what the agent's bot said
 
 
@@ -293,6 +323,12 @@ def test_teams_buttons_on_an_answer_say_it_was_wrong_with_why(stack, teams_bot):
     assert answer.status_code == 200 and answer.json()["value"] == feedback.NOTED
     [row] = kept(stack)
     assert (row["person"], row["channel"], row["said"]) == ("ana", "teams", "Due Friday.")
+    elsewhere = {**invoke, "conversation": {**invoke["conversation"], "id": "a:2-another"}}
+    httpx.post(teams_bot.url, json=elsewhere, headers=teams_bot.auth())  # the same id, there
+    assert len(kept(stack)) == 1  # Teams' ids are a conversation's own: it found nothing
+    with db.transaction(stack.admin) as conn:
+        [sent_as] = conn.execute("select sent_as from outbox where channel = 'teams'").fetchall()
+    assert sent_as["sent_as"] == f"{message['conversation']['id']}/reply-1"
     liked = {**invoke, "value": {"actionName": "feedback", "actionValue": {"reaction": "like"}}}
     assert httpx.post(teams_bot.url, json=liked, headers=teams_bot.auth()).json()["value"] == "Thanks."
     assert len(kept(stack)) == 1 and SERVICE_URL in invoke["serviceUrl"]

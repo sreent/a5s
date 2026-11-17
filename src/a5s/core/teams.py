@@ -276,7 +276,8 @@ class Teams:
         in reply to the message, if `reply_to` names one, or else as a new message. With an
         Adaptive Card, the card goes instead, and the text's first line sums it up in
         notifications. An agent's answer, `feedback`, has Teams' buttons for saying it's
-        wrong (core/feedback.py). Teams' own id for it, by which that's known."""
+        wrong (core/feedback.py). Teams' own id for it, in its conversation, by which that's
+        known."""
         if not self.allowed(reply_to["service_url"]):  # the bot's token goes nowhere else
             raise ValueError("a5s sends only to the service URLs Teams uses")
         bot = self.bots.get(reply_to.get("app_id", ""))
@@ -300,5 +301,8 @@ class Teams:
             found = r.json()
         except ValueError:
             return None
-        return str(found.get("id") or "") or None if isinstance(found, dict) else None
+        sent = str(found.get("id") or "") if isinstance(found, dict) else ""
+        # Teams' ids are its conversation's own, so with the conversation's, as Slack's with
+        # their channel's: a "that's wrong" in another conversation never finds this one
+        return f"{reply_to['conversation']}/{sent}" if sent else None
 
