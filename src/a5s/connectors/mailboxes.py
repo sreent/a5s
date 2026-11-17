@@ -364,7 +364,8 @@ class _Exchange(_Box):
     def new(self, link: str | None, now: datetime) -> tuple[list[str], str]:
         """What's come into the inbox since `link`, Graph's last word on where it stood, and its
         word on where it stands now: from `now`, the first time, so mail already there starts
-        nothing."""
+        nothing. A burst larger than PAGES pages is read a part at a sweep: Graph's link to the
+        next page is where the next sweep starts."""
         since = now.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         at = link if link is not None else (
             f"{self.base}/mailFolders/inbox/messages/delta?changeType=created&"
@@ -378,9 +379,10 @@ class _Exchange(_Box):
             if isinstance(page.get("@odata.deltaLink"), str):
                 return found, page["@odata.deltaLink"]
             if not isinstance(page.get("@odata.nextLink"), str):
-                break
+                raise ConnectorError(f"{self.mailbox.title}: Graph didn't say where its inbox "
+                                     "stands")
             at = str(page["@odata.nextLink"])
-        raise ConnectorError(f"{self.mailbox.title}: Graph didn't say where its inbox stands")
+        return found, at  # the rest at the next sweep, from where this one stopped
 
 
 class _Made(_Box):

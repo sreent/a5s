@@ -56,6 +56,7 @@ class Exchange:
         self.searched: list[str] = []
         self.tokens: list[dict[str, Any]] = []
         self.sent: list[str] = []
+        self.page = 50  # messages a page of what's new holds, as Graph pages them
 
     def arrives(self, sender: str, subject: str, text: str,
                 at: str = "2026-11-02T09:00:00Z") -> str:
@@ -88,11 +89,13 @@ class Exchange:
             since = (request.query_params.get("$filter") or "").split()  # receivedDateTime ge <time>
             new = self.inbox[seen:] if seen >= 0 else [
                 m for m in self.inbox if since and m["receivedDateTime"] >= since[-1]]
-            here = str(request.base_url).rstrip("/")
+            here = f"{str(request.base_url).rstrip('/')}{base}/mailFolders/inbox/messages/delta"
+            page, rest = new[:self.page], new[self.page:]
+            last = (seen if seen >= 0 else len(self.inbox) - len(new)) + len(page)
             return {"value": [{"id": m["id"], "receivedDateTime": m["receivedDateTime"],
-                               "isDraft": False} for m in new],
-                    "@odata.deltaLink": f"{here}{base}/mailFolders/inbox/messages/delta?"
-                                        f"$deltatoken={len(self.inbox)}"}
+                               "isDraft": False} for m in page],
+                    **({"@odata.nextLink": f"{here}?$deltatoken={last}"} if rest else
+                       {"@odata.deltaLink": f"{here}?$deltatoken={len(self.inbox)}"})}
 
         @app.get(f"{base}/messages")
         def search(request: Request) -> dict:
@@ -275,3 +278,26 @@ def test_only_the_core_reads_mail_and_the_sandbox_reads_its_stand_in(tmp_path):
     assert tools["read_requests"].outside == ("subject", "text") and tools["search_requests"].marks
     assert tools["draft_requests"].writes and not tools["draft_requests"].sends_outside
     assert not tools["draft_requests"].action  # a draft sends nothing, so it waits for no decider
+
+
+def test_a_burst_of_mail_is_read_a_part_at_each_sweep_and_none_is_lost(stack, exchange):
+    """A burst larger than a sweep reads, PAGES pages of it, is read where the last sweep
+    stopped, at the next, rather than leaving the mailbox stuck on it for good."""
+    found, _ = exchange
+    found.page = 1  # one message a page, so three are more than two pages
+    assert swept(stack) == 0
+    sent = [found.arrives("pat@customer.example", f"Question {n}", "About Q-1002.") for n in range(3)]
+    stack.model.reply("Noted.")
+    stack.model.reply("Noted.")
+    stack.model.reply("Noted.")
+    original = mailboxes.PAGES
+    mailboxes.PAGES = 2
+    try:
+        assert swept(stack) == 2  # two of three this sweep
+        assert swept(stack) == 1  # and the third at the next, from where it stopped
+    finally:
+        mailboxes.PAGES = original
+    with db.transaction(stack.admin) as conn:
+        kept = [r["event_id"] for r in conn.execute("select event_id from events order by received_at")]
+    assert kept == [mailboxes.key_of("requests", m) for m in sent]
+
