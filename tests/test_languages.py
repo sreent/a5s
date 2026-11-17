@@ -109,7 +109,7 @@ def test_the_catalogue_has_every_word_the_studio_puts_through_it():
 def test_the_studio_and_the_web_chat_speak_thai_to_those_who_read_it(stack, approving, provider,
                                                                     browser):
     reads(stack, "ana", "th")
-    assert not stack.settle(spending={"parts": {"billing": 5}}).refused
+    assert not stack.settle(spending={"agents": {"assistant": 5}}, signers=("ana", "priya")).refused
     provider.person = "ana"
     page = browser.new_page(viewport={"width": 1280, "height": 900})
     page.goto(f"{approving}/studio/")
@@ -126,9 +126,9 @@ def test_the_studio_and_the_web_chat_speak_thai_to_those_who_read_it(stack, appr
         raise AssertionError("the page drew Thai without Plex Sans Thai")
     accessible(page)
     page.goto(f"{approving}/studio/spending")
-    page.wait_for_selector("#part-billing .cost-bars", timeout=30000)
+    page.wait_for_selector("#agent-assistant .cost-bars", timeout=30000)
     assert page.inner_text("h1") == "ค่าใช้จ่าย" and "UTC" in page.inner_text("#utc")
-    assert "งบประมาณ" in page.inner_text("#part-billing")
+    assert "งบประมาณ" in page.inner_text("#agent-assistant")
     accessible(page)
     # Back to English on their own page, and the studio speaks it at once
     page.goto(f"{approving}/studio/you")
@@ -175,15 +175,16 @@ def test_a5s_writes_its_own_words_in_the_language_someone_reads(stack, approving
     assert words.translated("th", "something a5s has no Thai for") == "something a5s has no Thai for"
     # On their home and their own page, in Thai, once they read it
     stack.gateway.models["fake"] = replace(stack.gateway.models["fake"], prices=Prices(2000.0, 8000.0))
-    assert not stack.settle(spending={"parts": {"billing": 0.05}}).refused
+    assert not stack.settle(spending={"agents": {"assistant": 0.05}}, signers=("ana", "priya")).refused
     stack.model.reply("Hello.")
     stack.say("hello")
-    as_person(approving, provider, "ana", "POST", "/studio/api/you/language", {"language": "th"})
-    waiting = as_person(approving, provider, "ana", "GET", "/studio/api/home").json()["waiting"]
+    for person in ("ana", "priya"):  # Priya owns the assistant, so its budget is hers to hear of
+        as_person(approving, provider, person, "POST", "/studio/api/you/language", {"language": "th"})
+    waiting = as_person(approving, provider, "priya", "GET", "/studio/api/home").json()["waiting"]
     [spent] = [w for w in waiting if w["kind"] == "spending"]
-    assert spent["what"].startswith("billing ใช้ไปแล้ว")  # past the budget it set, never
+    assert spent["what"].startswith("assistant ใช้ไปแล้ว")  # past the budget it set, never
     assert "เกินงบ\u2060ประมาณที่ตั้งไว้" in spent["what"]  # read as the overage (round 14)
-    assert spent["why"] == ["คุณเป็นเจ้าของ billing"]
+    assert spent["why"] == ["คุณเป็นเจ้าของ assistant"]
     roles = as_person(approving, provider, "ana", "GET", "/studio/api/you").json()["roles"]
     owner = next(r for r in roles if r["role"] == "part-owner:billing")
     assert owner["name"] == "เจ้าของ billing" and owner["may"].startswith("อนุมัติอินสแตนซ์ที่ทำงานใน billing")

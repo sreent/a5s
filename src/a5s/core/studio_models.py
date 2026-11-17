@@ -475,7 +475,7 @@ class DependsOn(Shape):
 
 
 class Spend(Shape):
-    """A month of a part's, agent's or instance's model calls: what they cost so far at their
+    """A month of an agent's or instance's model calls: what they cost so far at their
     models' prices, its budget, if the settings set one, and while the month lasts, the pace of
     the last week and the forecast to its end; its runs, those whose prices aren't known, the
     messages they answered, and what each message cost, all in."""
@@ -495,8 +495,8 @@ class Spend(Shape):
 
 
 class Spending(Shape):
-    """A calendar month's spending, in UTC, as someone may see it: its parts, agents and
-    instances, in the currency models.yaml prices models in, if it names one."""
+    """A calendar month's spending, in UTC, as someone may see it: its agents and instances,
+    in the currency models.yaml prices models in, if it names one."""
 
     month: str
     current: bool
@@ -509,7 +509,6 @@ class Spending(Shape):
     ends: str
     days: int
     day: int
-    parts: list[Spend]
     agents: list[Spend]
     instances: list[Spend]
 

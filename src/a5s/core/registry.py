@@ -110,19 +110,14 @@ def _thresholds_change(settings: Settings, before: Settings | None) -> set[str]:
             if settings.thresholds.get(p) != before.thresholds.get(p)}
 
 
-def _spending_change(settings: Settings, before: Settings | None) -> tuple[set[str], set[str]]:
-    """The parts and the agents whose monthly budget a version changes, from the version in
-    force, or for the first, from none: each needs its owner, a part's though no instance works
-    there yet, since it's theirs to say what it may cost."""
+def _spending_change(settings: Settings, before: Settings | None) -> set[str]:
+    """The agents whose monthly budget a version changes, from the version in force, or for the
+    first, from none: each needs its owner, since it's theirs to say what it may cost."""
     was = before.spending if before else Spending()
     now = settings.spending
-
-    def changed(a: dict[str, float], b: dict[str, float]) -> set[str]:
-        return {k for k in set(a) | set(b) if a.get(k) != b.get(k)}
-
     if was.currency != now.currency:  # the same amounts in another currency are other budgets,
-        return set(was.parts) | set(now.parts), set(was.agents) | set(now.agents)  # each its
-    return changed(was.parts, now.parts), changed(was.agents, now.agents)  # owner's (round 14)
+        return set(was.agents) | set(now.agents)  # each its owner's (round 14)
+    return {k for k in set(was.agents) | set(now.agents) if was.agents.get(k) != now.agents.get(k)}
 
 
 def _data_protection_change(settings: Settings, before: Settings | None) -> bool:
@@ -264,10 +259,10 @@ def needed(settings: Settings, directory: Directory, valid: Iterable[str],
     rooted = rooted or directory
     owners = {role for who in valid if (p := rooted(who)) for role in p.roles}
     covered = _covered(settings, before)
-    budgeted, budgeted_agents = _spending_change(settings, before)
+    budgeted_agents = _spending_change(settings, before)
     needs = [(f"{PART_OWNER}:{part}", f"the owner of {part} hasn't approved it", False)
              for part in sorted({p for i in covered for p in i.parts}
-                                | _thresholds_change(settings, before) | budgeted)
+                                | _thresholds_change(settings, before))
              if f"{PART_OWNER}:{part}" not in held]
     needs += [(f"{AGENT_OWNER}:{agent}", f"the owner of the {agent} hasn't approved its budget",
                False) for agent in sorted(budgeted_agents) if f"{AGENT_OWNER}:{agent}" not in held]
@@ -323,9 +318,9 @@ def told(settings: Settings, holders: Holders, before: Settings | None = None,
 def _approvers(settings: Settings, holders: Holders, before: Settings | None = None,
                rooted: Holders | None = None) -> list[Person]:
     covered = _covered(settings, before)
-    budgeted, budgeted_agents = _spending_change(settings, before)
+    budgeted_agents = _spending_change(settings, before)
     roles = [f"{PART_OWNER}:{p}" for p in sorted({p for i in covered for p in i.parts}
-                                                 | _thresholds_change(settings, before) | budgeted)]
+                                                 | _thresholds_change(settings, before))]
     roles += [f"{AGENT_OWNER}:{a}" for a in sorted(budgeted_agents)]
     if any(not i.parts for i in covered) or _classes_change(settings, before):
         roles.append(INSTANCE_APPROVER)

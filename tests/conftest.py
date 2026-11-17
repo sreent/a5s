@@ -445,7 +445,7 @@ class Stack:
 
         `changes`, such as level=0, apply to assistant-finance; `instances` replaces them all.
         `data_protection` is the data protection officer's choices, which Noor signs for, and
-        `spending` what parts and agents may cost a month, which their owners sign for.
+        `spending` what agents may cost a month, which their owners sign for.
         """
         folder = self.cfg.scenario_dir
         settings = yaml.safe_load((folder / "settings.yaml").read_text())

@@ -575,8 +575,8 @@ def router(gw: Any) -> APIRouter:
                                      "decide for a part, approve instances, or run one")
         with db.transaction(gw.url) as conn:
             try:
-                return spending.report(conn, gw.scenario, gw.models, gw.spending_in_force(conn),
-                                       person, None, month, gw.currency)
+                return spending.report(conn, gw.models, gw.spending_in_force(conn), person,
+                                       None, month, gw.currency)
             except spending.Refused as e:
                 raise HTTPException(400, str(e)) from None
 

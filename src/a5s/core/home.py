@@ -165,7 +165,7 @@ def waiting(conn: db.Connection, gw: Any, person: Person,
                           "were wrong wait for you to check", n=n, agent=agent),
                       "why": [words.say(language, "you own it")],
                       "go": f"/studio/agents/{agent}#feedback"})
-    found += spending.over(conn, scenario, gw.models, gw.spending_in_force(conn), person,
+    found += spending.over(conn, gw.models, gw.spending_in_force(conn), person,
                            currency=gw.currency, language=language)
     if waiting := len(shadows.gradeable(conn, scenario, person)):  # a new version's answers
         found.append({"kind": "shadow", "what": words.say(

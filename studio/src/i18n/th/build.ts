@@ -583,11 +583,10 @@ export const BUILD: Record<string, string> = {
     "การเปลี่ยนแปลงของเอเจนต์ในส่วนงานต้องแม่นยำเพียงใด ตามที่ตัวอย่างที่ให้คะแนนแล้วแสดง ก่อนที่ a5s จะยกเพดานในส่วนงานนั้นเป็นระดับ 2 เว้นว่างไว้หมายถึงไม่ยกเลย",
   "The accuracy {part} needs, in percent": "ความแม่นยำที่ {part} ต้องการ เป็นเปอร์เซ็นต์",
   "a month": "ต่อเดือน",
-  "The monthly budget for {part}": "งบประมาณรายเดือนของ {part}",
   "The monthly budget for the {agent}": "งบประมาณรายเดือนของ {agent}",
   "What agents' models may cost a month": "ค่าใช้จ่ายโมเดลของเอเจนต์ต่อเดือน",
-  "A budget a5s shows each month's spending against, on the Spending page, at the prices models.yaml gives, and tells its owners of once a month is on course to pass it. It stops no work: the token budgets each release sets do. A part's owner approves its budget, and an agent's owner the agent's. Empty means none.":
-    "งบประมาณที่ a5s ใช้เทียบกับค่าใช้จ่ายแต่ละเดือนในหน้าค่าใช้จ่าย ตามราคาที่ models.yaml กำหนด และแจ้งเจ้าของเมื่อเดือนใดมีแนวโน้มจะเกินงบ งบประมาณนี้ไม่ได้หยุดการทำงาน ซึ่งเป็นหน้าที่ของงบประมาณโทเค็นที่แต่ละรีลีสกำหนด เจ้าของส่วนงานอนุมัติงบประมาณของส่วนงาน และเจ้าของเอเจนต์อนุมัติงบประมาณของเอเจนต์ เว้นว่างไว้หมายถึงไม่มี",
+  "A budget a5s shows each month's spending against, on the Spending page, at the prices models.yaml gives, and tells its owners of once a month is on course to pass it. It stops no work: the token budgets each release sets do. An agent's owner approves its budget. Empty means none.":
+    "งบประมาณที่ a5s ใช้เทียบกับค่าใช้จ่ายแต่ละเดือนในหน้าค่าใช้จ่าย ตามราคาที่ models.yaml กำหนด และแจ้งเจ้าของเมื่อเดือนใดมีแนวโน้มจะเกินงบ งบประมาณนี้ไม่ได้หยุดการทำงาน ซึ่งเป็นหน้าที่ของงบประมาณโทเค็นที่แต่ละรีลีสกำหนด เจ้าของเอเจนต์อนุมัติงบประมาณของเอเจนต์ เว้นว่างไว้หมายถึงไม่มี",
   "Each is in {currency}, whole cents at most.": "แต่ละรายการเป็นสกุลเงิน {currency} ละเอียดถึงหน่วยสตางค์เท่านั้น",
   "{id}, the {agent}": "{id}, เอเจนต์ {agent}",
   "You asked for version {serial}. a5s asks its approvers within a minute, and puts it in force once they've all approved it.":
