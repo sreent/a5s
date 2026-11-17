@@ -168,8 +168,9 @@ class Teams:
 
     def sent(self, activity: dict[str, Any], bot: Bot) -> tuple[files.File, ...]:
         """The files someone sent with a message: one they uploaded, by the link Teams gives
-        it, or an image they pasted, which the bot fetches from Teams itself. Never the copy
-        of the message Teams attaches as HTML."""
+        it, or an image they pasted, which the bot fetches from Teams itself, and whose kind its
+        own bytes say, as Teams calls it only `image/*`. Never the copy of the message Teams
+        attaches as HTML."""
         found = []
         for item in activity.get("attachments") or []:
             kind, name = str(item.get("contentType") or ""), str(item.get("name") or "a file")
@@ -180,7 +181,8 @@ class Teams:
                 found.append(files.File(name=name, media_type=files.media_type(name), fetch={
                     "channel": "teams", "url": str(content.get("downloadUrl") or "")}))
             elif kind.startswith("image/"):
-                found.append(files.File(name=name if "." in name else f"image.{kind[6:]}",
+                shown = "a pasted image" if kind == files.ANY_IMAGE else f"image.{kind[6:]}"
+                found.append(files.File(name=name if "." in name else shown,
                                         media_type=kind, fetch={
                                             "channel": "teams", "app_id": bot.app_id,
                                             "url": str(item.get("contentUrl") or "")}))

@@ -11,6 +11,9 @@ const SIGNING_IN = "signing in";
 
 const pause = (ms) => new Promise((done) => setTimeout(done, ms));
 const status = (text) => { $("status").textContent = text; };
+// Why a file wasn't attached, beside the composer, where the person is looking, never only at
+// the top of a long conversation; nothing, once they attach or send again
+const refuse = (text) => { $("refused").textContent = text; };
 
 // The chat's own words in the language the person reads (core/languages.py), once /shell/api
 // says which: English, as written here, or Thai. What agents say is theirs, in the language they
@@ -343,21 +346,23 @@ function showAttached() {
 }
 
 function attach(files) {
+  const refused = [];
   for (const file of files) {
     if (attached.length >= MOST_FILES) {
-      status(t("Send at most {n} files with a message.", { n: MOST_FILES }));
+      refused.push(t("Send at most {n} files with a message.", { n: MOST_FILES }));
       break;
     }
     if (!TAKEN.test(file.name) && !/^image\/(png|jpeg|gif|webp)$/.test(file.type)) {
-      status(t("{file}: a5s reads text files, PDFs and images.", { file: file.name }));
+      refused.push(t("{file}: a5s reads text files, PDFs and images.", { file: file.name }));
       continue;
     }
     if (attached.reduce((all, f) => all + f.size, 0) + file.size > MOST_BYTES) {
-      status(t("A message's files can come to {mb} MB in all here.", { mb: MOST_BYTES / (1024 * 1024) }));
+      refused.push(t("A message's files can come to {mb} MB in all here.", { mb: MOST_BYTES / (1024 * 1024) }));
       continue;
     }
     attached.push(file);
   }
+  refuse(refused.join(" "));
   showAttached();
 }
 
@@ -515,6 +520,7 @@ async function main() {
       if (!text && !attached.length) return;
       const files = attached.splice(0);
       showAttached();
+      refuse("");
       $("text").value = "";
       send(text, files).catch((error) => { if (error.message !== SIGNING_IN) status(error.message); });
     });

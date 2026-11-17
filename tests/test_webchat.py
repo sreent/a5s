@@ -15,7 +15,7 @@ import pytest
 
 from a5s.core import inbox
 from a5s.core.identity import IdentityConfig, Verifier
-from conftest import CLIENT, free_port, serve
+from conftest import CLIENT, PHONE, accessible, free_port, serve
 from test_ui_pages import shot
 
 
@@ -244,3 +244,31 @@ def test_a_message_the_conversation_and_the_inbox_both_give_shows_once(stack, br
             say({...told});
         }""")
         assert page.locator("#conversation li", has_text="Handed over.").count() == 1
+
+
+def test_why_a_file_wont_go_is_said_beside_what_they_write(stack, browser):
+    """Round 14 (E-M6): on a phone, in a conversation that's going, why a file wasn't attached is
+    said beside what they write, where they're looking, never only at the top of the page; and
+    it goes once they attach one the web chat takes."""
+    with channels(stack) as url:
+        page = browser.new_page(viewport=PHONE)
+        page.goto(f"{url}/chat/")
+        page.fill("#person", "ana")
+        page.click("#name button")
+        page.wait_for_selector(".welcome-name", timeout=30000)  # its conversation is open
+        page.evaluate("""() => { for (let n = 0; n < 40; n += 1) say({by: "a5s", from: "a5s",
+            id: 100 + n, text: `Earlier, ${n}`, at: new Date().toISOString()}); }""")
+        with page.expect_file_chooser() as chosen:
+            page.click("#attach")
+        chosen.value.set_files([{"name": "setup.zip", "mimeType": "application/zip",
+                                 "buffer": b"PK\x03\x04"}])
+        said = page.locator("#refused")
+        assert said.inner_text() == "setup.zip: a5s reads text files, PDFs and images."
+        box = said.bounding_box()
+        assert box is not None and 0 <= box["y"] and box["y"] + box["height"] <= PHONE["height"]
+        accessible(page)
+        with page.expect_file_chooser() as chosen:
+            page.click("#attach")
+        chosen.value.set_files([{"name": "costs.csv", "mimeType": "text/csv",
+                                 "buffer": b"item,amount\nhotel,612.00\n"}])
+        assert not said.is_visible() and page.inner_text("#attached li span") == "costs.csv, 1 KB"

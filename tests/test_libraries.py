@@ -716,3 +716,41 @@ def test_a_run_nobody_asked_for_reads_no_library(stack):
     assert "Month end closes" not in json.dumps(stack.model.requests[1]["body"]["messages"])
     [denied] = [e for e in stack.ledger() if e.get("action") == "read_runbooks"]
     assert denied["decision"] == "deny" and denied["reasons"] == ["acts-as-nobody-unasked"]
+
+
+class Sessions(Wiki):
+    """A Confluence Data Center that, as a server with sessions does, sets a session cookie on
+    each answer, and notes the cookie each request brought, with whose token it came."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.brought: list[tuple[str, str]] = []
+
+    def app(self) -> FastAPI:
+        app = super().app()
+
+        @app.middleware("http")
+        async def session(request: Request, call_next: Any) -> Any:
+            person = self.whose(request) or ""
+            self.brought.append((person, request.headers.get("cookie", "")))
+            answer = await call_next(request)
+            answer.set_cookie("JSESSIONID", f"session-of-{person}")
+            return answer
+
+        return app
+
+
+def test_a_session_a_system_opens_for_one_person_never_goes_with_anothers_request():
+    """Round 14 (A-M4): the libraries' one client keeps no cookie, so a session a system opens
+    for one person, which it might honour before a token, never goes with the next person's
+    request: each is theirs by their own token alone."""
+    wiki = Sessions()
+    with serve(wiki.app(), free_port()) as url:
+        center = shelf("runbooks", delegated=connected("ana", "ben"), title="Runbooks",
+                       kind="confluence", site="https://wiki.example.test",
+                       api=f"{url}/confluence", space="OPS", edition="data-center",
+                       as_person="atlassian", outside=False)  # through the core's own client
+        assert "error" not in center["read_runbooks"].run(call("ana", id="1002"))
+        assert "error" not in center["read_runbooks"].run(call("ben", id="1001"))
+    assert {who for who, _ in wiki.brought} == {"ana", "ben"}
+    assert [cookie for _, cookie in wiki.brought] == [""] * len(wiki.brought)

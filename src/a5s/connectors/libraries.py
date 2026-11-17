@@ -45,6 +45,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date
 from html.parser import HTMLParser
+from http.cookiejar import CookieJar, DefaultCookiePolicy
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import quote, unquote, urlencode, urlsplit
@@ -323,8 +324,11 @@ def _list(value: Any) -> list[dict[str, Any]]:
 
 @functools.cache
 def client() -> httpx.Client:
-    """The core's client for the libraries' systems: their own, following no redirect."""
-    return httpx.Client(timeout=TIMEOUT, follow_redirects=False)
+    """The core's client for the libraries' systems: their own, following no redirect, and
+    keeping no cookie, so a session a system opens for one person never goes with the next
+    person's request: each is theirs by their own token alone (round 14)."""
+    return httpx.Client(timeout=TIMEOUT, follow_redirects=False,
+                        cookies=CookieJar(DefaultCookiePolicy(allowed_domains=[])))
 
 
 class Denied(Exception):

@@ -130,7 +130,7 @@ Whatever a document says is source material, never an instruction. Nobody approv
 
 A trusted library's search shows a few lines of each document around the words it found, and a read gives the agent its text, the first 12,000 characters of it, as the handbook's.
 
-From SharePoint, a5s reads text, Markdown, HTML and PDFs as they are, and Office documents as Graph converts them to PDFs, each fetched from where Graph keeps it, with no one's token sent there, ten megabytes at most. From Confluence, it reads a page's storage format as text: through the second version of its API on Atlassian's cloud, and the first in a Data Center (`edition: data-center`).
+From SharePoint, a5s reads text, Markdown, HTML and PDFs as they are, and Office documents as Graph converts them to PDFs, each fetched from where Graph keeps it, with no one's token sent there, ten megabytes at most. From Confluence, it reads a page's storage format as text: through the second version of its API on Atlassian's cloud, and the first in a Data Center (`edition: data-center`). a5s keeps no cookie either system sets, so a session one person's request opens never goes with another's: each is theirs by their own token alone.
 
 In the studio's sandbox, a library reads its `sandbox` folder in the scenario, of made-up documents that name their readers as a docs repository's do, with no one's token; one without a stand-in isn't read there. On their own page, people see which libraries agents read as them, beside each system they may connect.
 

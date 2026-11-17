@@ -3148,13 +3148,15 @@ def create_app(gw: Gateway) -> FastAPI:
         if data is None:
             return JSONResponse(status_code=502, content={
                 "error": "a5s couldn't fetch the file now: ask them to send it again"})
-        text, image, cut = files.read(data, found["media_type"])
+        kind = files.kind(data, found["media_type"])  # an image's, by its own bytes
+        text, image, cut = files.read(data, kind)
         text = text[:extractor.MOST] + (f"\n\n(a5s: {cut}.)" if cut else "")
         with db.transaction(gw.url) as conn:
             conn.execute("update run_documents set text = %s, image = %s, digest = %s, "
-                         "source = null where run_id = %s and number = %s",
-                         (text, image, hashlib.sha256(data).hexdigest(), row["run"], number))
-        return {**found, "text": text, "image": image, "source": None}
+                         "media_type = %s, source = null where run_id = %s and number = %s",
+                         (text, image, hashlib.sha256(data).hexdigest(), kind, row["run"],
+                          number))
+        return {**found, "text": text, "image": image, "media_type": kind, "source": None}
 
     def asking_about(args: dict, row: dict, seq: int, token: str) -> Any:
         """a5s's reader's answer to a question about a document the run has read: in free

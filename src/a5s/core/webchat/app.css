@@ -36,6 +36,7 @@ body.app header label { color: var(--muted); }
 #compose { display: flex; gap: 0.5rem; align-items: flex-end; }
 #attach { flex: none; display: inline-grid; place-items: center; width: 2.6rem; height: 2.6rem; padding: 0; }
 #attach .icon { width: 1.15rem; height: 1.15rem; }
+#refused { margin: 0; }  /* why a file wasn't attached, where they're looking: Ocean's note */
 #attached button { border: 0; background: none; margin-inline-start: 0.2rem; padding: 0 0.15rem; color: var(--muted); }
 #compose textarea { flex: 1; min-height: 2.6rem; max-height: 12rem; }
 /* Saying an agent's answer was wrong: a quiet link under it, and its short form */

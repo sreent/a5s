@@ -83,6 +83,11 @@ log = logging.getLogger(__name__)
 MAX_BYTES = 256 * 1024  # far more than one message needs
 MAX_UPLOAD = 6 * 1024 * 1024  # a local message's, with its files, in base64
 TEXT_MOST = 40_000  # characters a local message says, as Slack allows one: its files are apart
+# Each file a local message brings waits in a5s's database until a day after it's answered, so
+# one person, or a script with their sign-in, can't fill it (round 14): a5s holds so many of
+# their messages with files unanswered at once, and so many bytes of their files a day
+WAITING_FILES = 3
+FILES_A_DAY = 40 * 1024 * 1024
 TRIES = 3  # deliveries of a Matrix event a5s can't act on before it's skipped, and recorded
 
 
@@ -143,6 +148,28 @@ def record(conn: Any, *, channel: str, source_id: str, person: str, agent: str, 
         files.keep(conn, inbound, list(sent))
     conn.execute("notify a5s_inbound")
     return inbound
+
+
+def holding(conn: Any, person: str, adding: int) -> str | None:
+    """Why a5s won't keep another message with files someone sends through the local channel,
+    such as from the web chat, if it won't, in the caller's transaction: it holds
+    WAITING_FILES of theirs unanswered, or this would take what they've sent today past
+    FILES_A_DAY. Their messages are counted one at a time, so two sent at once count as two."""
+    conn.execute("select pg_advisory_xact_lock(hashtext(%s))", (f"a5s local files {person}",))
+    held = conn.execute(
+        "select count(distinct i.id) filter (where i.answered_at is null) as waiting, "
+        "coalesce(sum(f.size) filter (where i.received_at > now() - interval '1 day'), 0) "
+        "as today from inbound i join inbound_files f on f.inbound_id = i.id where "
+        "i.person = %s and i.channel = 'local' and i.received_at > now() - interval '7 days'",
+        (person,)).fetchone() or {"waiting": 0, "today": 0}
+    mb = 1024 * 1024
+    if held["waiting"] >= WAITING_FILES:
+        return (f"a5s holds {held['waiting']} of your messages with files that wait for an "
+                "answer: send more once it has answered them")
+    if held["today"] + adding > FILES_A_DAY:
+        return (f"you've sent {held['today'] / mb:.0f} MB of files here today, and a5s keeps "
+                f"{FILES_A_DAY // mb} MB of them a day: send more tomorrow")
+    return None
 
 
 class Small:
@@ -597,13 +624,15 @@ def create_app(gw: Any) -> FastAPI:
     @app.post("/channels/local/messages", status_code=202)
     def local_message(body: LocalMessage, authorization: str | None = Header(default=None)) -> dict:
         person, identity = sender(authorization, body.person)
-        try:
-            sent = [files.File(name=f.name[:200], media_type=f.type, data=base64.b64decode(
-                f.data, validate=True)) for f in body.files]
+        try:  # each file's kind as the browser says it, or by its name, where it's none a5s reads
+            sent = [files.File(name=f.name[:200], media_type=files.media_type(f.name, f.type),
+                               data=base64.b64decode(f.data, validate=True)) for f in body.files]
         except (binascii.Error, ValueError):
             raise HTTPException(400, "a file's data is its bytes in base64") from None
         text = body.text if body.text.strip() or not sent else files.WORDS_ONLY
         with db.transaction(gw.url) as conn:
+            if sent and (why := holding(conn, person, sum(len(f.data or b"") for f in sent))):
+                raise HTTPException(429, why)
             inbound = record(conn, channel="local", source_id=str(uuid.uuid4()), person=person,
                              agent=body.agent, text=text, reply_to={}, identity=identity,
                              sent=sent)
