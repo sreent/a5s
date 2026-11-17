@@ -307,6 +307,12 @@ def key(conn: db.Connection) -> bytes:
     return bytes(conn.execute("select key from audit_key").fetchone()["key"])
 
 
+def left(conn: db.Connection) -> frozenset[str]:
+    """Everyone a5s found the directory no longer names, whom the trail names still: the page
+    shows them as stand-ins too, until their archive goes (round 15, E1)."""
+    return frozenset(r["person"] for r in conn.execute("select distinct person from departures"))
+
+
 def stand_in(secret: bytes, person: str) -> str:
     """Someone's stand-in, the same each time in a deployment, and no other's."""
     return STAND_IN + hmac.new(secret, person.encode(), hashlib.sha256).hexdigest()[:12]
@@ -324,24 +330,27 @@ class Shown:
     scenario: Any
     secret: bytes
     names: bool = False
+    left: frozenset[str] = frozenset()  # who a5s found the directory no longer names (`left`)
     _seen: dict[str, str] = field(default_factory=dict)
 
-    def person(self, value: Any) -> Any:
+    def person(self, value: Any, whom: bool = False) -> Any:
         """Someone's id as the page shows it: themselves once names are agreed, else their
-        stand-in; and anything that isn't someone the directory knows, as it is."""
-        if self.names or not isinstance(value, str):
+        stand-in; and anything that isn't someone, as it is. Someone is whoever the directory
+        names, whoever has left it, and whatever an entry acted for (`whom`), known or not
+        (round 15, E1)."""
+        if self.names or not isinstance(value, str) or not value:
             return value
-        if value not in self._seen:
-            known = self.scenario.person(value) is not None
-            self._seen[value] = stand_in(self.secret, value) if known else value
-        return self._seen[value]
+        if value not in self._seen and (whom or value in self.left
+                                        or self.scenario.person(value) is not None):
+            self._seen[value] = stand_in(self.secret, value)
+        return self._seen.get(value, value)
 
-    def _named(self, value: Any) -> Any:
+    def _named(self, value: Any, whom: bool = False) -> Any:
         if isinstance(value, list):
-            return [self._named(v) for v in value]
+            return [self._named(v, whom) for v in value]
         if isinstance(value, dict):
-            return {k: self._named(v) for k, v in value.items()}
-        return self.person(value)
+            return {k: self._named(v, whom) for k, v in value.items()}
+        return self.person(value, whom)
 
     def entry(self, entry: dict[str, Any]) -> dict[str, Any]:
         """An entry as the page shows it: whom it acted for, and everyone its arguments name,
@@ -350,8 +359,8 @@ class Shown:
             return entry
         args = entry.get("args") if isinstance(entry.get("args"), dict) else None
         shown = dict(entry)
-        if "acts_for" in entry:
-            shown["acts_for"] = self._named(entry["acts_for"])
+        if "acts_for" in entry:  # people, every one, whether or not the directory knows them
+            shown["acts_for"] = self._named(entry["acts_for"], whom=True)
         if args is not None:
             acting = entry.get("kind") in ACTORS
             shown["args"] = {k: v if acting and k in ACTING else self._named(v)

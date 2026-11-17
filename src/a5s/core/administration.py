@@ -182,7 +182,8 @@ def page(conn: db.Connection, gw: Any, now: datetime, days: int = DAYS,
     roles = [row["role"] for row in audit.roles_of(gw.scenario, parts, sorted(known))]
     report = audit.report(conn, gw.scenario, sorted(known), since=now - timedelta(days=days))
     acts = [a for a in (_seen(a, conn, known, viewer) for a in report["acts"]) if a is not None]
-    shown = audit.Shown(gw.scenario, audit.key(conn), names=gw.data_protection(conn).audit_names)
+    shown = audit.Shown(gw.scenario, audit.key(conn), names=gw.data_protection(conn).audit_names,
+                        left=audit.left(conn))
     gone = ownerless(conn, gw)
     gone = {**gone, "agents": [a for a in gone["agents"] if a["agent"] in known],
             "instances": [i for i in gone["instances"] if i["agent"] in known]}

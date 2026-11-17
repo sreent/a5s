@@ -82,7 +82,7 @@ People are found by their identity provider's id, such as Entra ID's object id o
 
 - With `A5S_OIDC_MFA` set, an approval, a decision, a grade or an officer's request whose sign-in shows no second factor never counts, and one whose sign-in does counts, as before. Without it, nothing changes, and `a5s status` says it isn't checked.
 - An auditor finds every entry of a period, filtered as asked, and nothing anyone said. Someone without the role finds none.
-- On the auditors' page, whom agents acted for shows as a stand-in, the same each time, and an id finds nothing, until the officer agrees; whoever acted in one of a5s's roles shows as themselves.
+- On the auditors' page, whom agents acted for shows as a stand-in, the same each time, and an id finds nothing, until the officer agrees; whoever acted in one of a5s's roles shows as themselves. Someone who has left shows as a stand-in too, wherever an entry names them, until their archive goes, and whoever asks to undo a change is named as a stand-in, as asking, never as acting in a role (round 15).
 - A period an auditor exports checks out against the locked copies, and one changed after export doesn't.
 - The report names who approved each settings version, release and held change in a period, as the ledger records them.
 - With roles from groups, someone taken out of a group loses the role's powers at their next sign-in, and a group the signed settings don't name gives none. Giving a group a role waits for the role's owner in the directory; a version's own map gives nothing towards it; and the map before it counts only once the core sealed it.

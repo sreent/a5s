@@ -289,8 +289,8 @@ def record(conn: db.Connection, change: int, person: str, token: str, salt: str,
                            "look again in a minute")
     ledger.append(conn, {"kind": "admin", "action": "ask-undo", "run": str(row["run_id"]),
                          "instance": row["instance_id"], "acts_for": [person], "decision": "record",
-                         "args": {"change": change, "by": person, "issuer": claims["iss"],
-                                  "token_sha256": hashed}})
+                         "args": {"change": change, "asker": person, "issuer": claims["iss"],
+                                  "token_sha256": hashed}})  # a stand-in, unlike `by` (round 15, E2)
     return dict(row)
 
 
