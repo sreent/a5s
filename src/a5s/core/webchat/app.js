@@ -6,7 +6,7 @@
 
 const $ = (id) => document.getElementById(id);
 const store = window.sessionStorage;
-const state = { config: null, agent: null, person: null };
+const state = { config: null, agent: null, person: null, shown: new Set() };  // shown: by id
 const SIGNING_IN = "signing in";
 
 const pause = (ms) => new Promise((done) => setTimeout(done, ms));
@@ -207,7 +207,7 @@ function mark(by) {
   const found = document.createElement("span");
   found.className = by === "a5s" ? "avatar own" : "avatar agent";
   found.setAttribute("aria-hidden", "true");
-  if (window.a5s) found.append(window.a5s.icon(by === "a5s" ? "audit" : "agent"));
+  if (window.a5s) found.append(window.a5s.icon(by === "a5s" ? "audit" : by === "team" ? "people" : "agent"));
   return found;
 }
 
@@ -267,11 +267,16 @@ function wrongOf(item, message) {
 }
 
 function say(message) {
+  if (message.id != null) {  // once, whether its conversation or its inbox gave it first
+    if (state.shown.has(message.id)) return;
+    state.shown.add(message.id);
+  }
   $("welcome").hidden = true;
   const item = document.createElement("li");
   // Who it's by, as the server says, never by the name alone, which an agent's could match
-  const by = message.by === "person" ? "you" : message.by === "a5s" ? "a5s" : "agent";
-  item.className = by;
+  const by = message.by === "person" ? "you" : message.by === "a5s" ? "a5s"
+    : message.by === "team" ? "team" : "agent";  // someone of a team, while it's handed over
+  item.className = by === "team" ? "agent" : by;
   const who = document.createElement("strong");
   who.textContent = by === "you" ? t("You") : by === "a5s" ? "a5s" : message.from;
   const when = document.createElement("time");
@@ -369,6 +374,7 @@ function base64(file) {
 
 async function open(agent) {
   state.agent = agent;
+  state.shown = new Set();
   $("conversation").replaceChildren();
   $("welcome").hidden = true;
   const answer = await api(`/channels/local/conversation?agent=${encodeURIComponent(agent)}`);

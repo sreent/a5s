@@ -30,7 +30,7 @@ from a5s.contract import Person, Scenario, Tool
 from a5s.core import languages, studio, words
 
 # The kinds of things on the map, in the order of its columns, left to right
-KINDS = ("part", "instance", "agent", "tool", "system", "model")
+KINDS = ("part", "instance", "agent", "tool", "system", "model", "team")
 STATUS = {"active": "at work", "suspended": "suspended", "proposed": "waiting for approval",
           "shadow": "a shadow: it answers beside another, and sends nothing"}
 # Each edge, in words, whole: what depends is {from}, what it depends on {to}, which the page
@@ -48,11 +48,13 @@ SAYS = {
     "works2": "{from} works in {to}, at level {level}, and at level 2 for {types}",
     "asks": "{from} may ask {to}",
     "shadows": "{from} answers beside {to}, and sends nothing",
+    "hands": "{from} may hand a conversation to {to}, whose people answer it",
 }
 ABOUT = {"mcp": "an MCP server", "records": "the scenario's own records",
          "library": "a library of documents", "events": "sends events",
          "as_person": "a system agents act in as the person, with their own permissions",
          "part": "a part of the records, which its owners decide for",
+         "team": "people who answer the conversations handed to them",
          "gone": "not in the scenario now", "unknown": "not in models.yaml"}
 
 
@@ -133,7 +135,9 @@ def drawn(conn: db.Connection, scenario: Scenario, definitions: dict[str, Any],
                 edge(key, target, "works", level=level)
     shadowing = {r["id"]: r["shadows"] for r in conn.execute(
         "select id, shadows from instances where shadows is not null").fetchall()}
-    for inst in watched:  # whom each may ask, and answers beside, of the instances they may see
+    for inst in watched:  # whom each may ask, and answers beside, of the instances they may see,
+        for team in sorted(inst.get("hands_to") or []):  # and the teams it may hand to
+            edge(f"instance:{inst['id']}", node("team", team, say("team")), "hands")
         for asked in inst["asks"] or []:
             if f"instance:{asked}" in nodes:
                 edge(f"instance:{inst['id']}", f"instance:{asked}", "asks")

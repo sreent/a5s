@@ -581,9 +581,13 @@ def create_app(gw: Any) -> FastAPI:
 
     # The local channel, for the command line and the web chat
 
-    def spoke(agent: str, run: Any) -> dict:
-        """Who a message a5s sent is by: a run's is its agent's, and any other is a5s's own.
-        `by` says which, whatever the agent is called, so no name passes for another's."""
+    def spoke(agent: str, run: Any, written_by: str | None = None) -> dict:
+        """Who a message a5s sent is by: a run's is its agent's, one someone of a team wrote
+        while the conversation was handed over is theirs, and any other is a5s's own. `by`
+        says which, whatever the agent or they are called, so no name passes for another's."""
+        if written_by:
+            who = gw.scenario.person(written_by)
+            return {"from": who.name if who else written_by, "by": "team"}
         return {"from": agent, "by": "agent"} if run else {"from": "a5s", "by": "a5s"}
 
     def sender(authorization: str | None, claimed: str | None) -> tuple[str, str]:
@@ -667,10 +671,11 @@ def create_app(gw: Any) -> FastAPI:
             rows = conn.execute(
                 """
                 select * from (
-                  select 'person' as kind, text, received_at as at, null::uuid as run_id, 0 as n
+                  select 'person' as kind, text, received_at as at, null::uuid as run_id, 0 as n,
+                         null as written_by
                   from inbound where person = %(who)s and agent = %(agent)s and channel = 'local'
                   union all
-                  select 'agent', o.text, o.at, o.run_id, o.id
+                  select 'agent', o.text, o.at, o.run_id, o.id, o.written_by
                   from outbox o where o.person = %(who)s and o.channel = 'local' and o.agent = %(agent)s
                 ) said order by at desc, n desc limit %(limit)s
                 """, {"who": who, "agent": agent, "limit": min(max(limit, 1), 200)}).fetchall()
@@ -681,7 +686,8 @@ def create_app(gw: Any) -> FastAPI:
                 "('active', 'suspended')", (agent,)))
         definition = gw.definitions.get(agent)
         return {"messages": [{**({"from": "you", "by": "person"} if r["kind"] == "person"
-                                 else {**spoke(agent, r["run_id"]), "id": r["n"]}),
+                                 else {**spoke(agent, r["run_id"], r["written_by"]),
+                                       "id": r["n"]}),
                               "text": r["text"], "at": r["at"].isoformat()} for r in reversed(rows)],
                 "does": definition.does if definition and served else None}
 
@@ -710,10 +716,11 @@ def create_app(gw: Any) -> FastAPI:
                     "update outbox set delivered_at = now() where id in ("
                     "  select id from outbox where person = %s and channel = 'local' "
                     "  and inbound_id is null and delivered_at is null for update skip locked) "
-                    "returning id, run_id, instance_id, agent, text, at", (who,)).fetchall()
+                    "returning id, run_id, instance_id, agent, text, at, written_by",
+                    (who,)).fetchall()
 
         return {"messages": [  # a run's message is its agent's; any other is a5s's own
-            {**spoke(r["agent"], r["run_id"]), "id": r["id"], "about": r["agent"],
+            {**spoke(r["agent"], r["run_id"], r["written_by"]), "id": r["id"], "about": r["agent"],
              "instance": r["instance_id"], "text": r["text"], "at": r["at"].isoformat()}
             for r in sorted(await waiting(request, wait, take), key=lambda r: r["id"])]}
 

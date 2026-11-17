@@ -16,6 +16,8 @@ only if everyone now in it heard all it holds.
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from a5s import db
 from a5s.core.topics import render
 from a5s.services import summaries
@@ -37,12 +39,14 @@ def add_turn(
     topic: str = GENERAL,
     speaker: str | None = None,
     heard_by: list[str] | None = None,
+    at: datetime | None = None,
 ) -> None:
-    """A turn of the conversation: in a group's, with who said it and who heard it."""
+    """A turn of the conversation: in a group's, with who said it and who heard it; and when,
+    if it wasn't just now, such as what someone wrote while it was handed over."""
     conn.execute(
-        "insert into turns (person, agent, topic, role, content, run_id, speaker, heard_by) "
-        "values (%s, %s, %s, %s, %s, %s, %s, %s)",
-        (person, agent, topic, role, content, run, speaker, heard_by),
+        "insert into turns (person, agent, topic, role, content, run_id, speaker, heard_by, at) "
+        "values (%s, %s, %s, %s, %s, %s, %s, %s, coalesce(%s, now()))",
+        (person, agent, topic, role, content, run, speaker, heard_by, at),
     )
 
 

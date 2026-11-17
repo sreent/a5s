@@ -227,3 +227,19 @@ def test_a_person_signs_in_chats_and_hears_reminders_in_the_browser(stack, brows
     page.reload()  # and the conversation is still there
     page.wait_for_selector("li.agent >> text=Q-1001 is due on Wednesday", timeout=30000)
     assert [f["grant_type"] for f in provider.forms] == ["authorization_code"]
+
+
+def test_a_message_the_conversation_and_the_inbox_both_give_shows_once(stack, browser):
+    """Round 14 (E-L6): a message a5s wrote someone, such as that their conversation was handed
+    over, can come both in their conversation and from their inbox: it shows once."""
+    with channels(stack) as url:
+        page = browser.new_page()
+        page.goto(f"{url}/chat/")
+        page.fill("#person", "ana")
+        page.click("#name button")
+        page.evaluate("""() => {
+            const told = {by: "a5s", from: "a5s", id: 7, text: "Handed over.", at: new Date().toISOString()};
+            say(told);
+            say({...told});
+        }""")
+        assert page.locator("#conversation li", has_text="Handed over.").count() == 1

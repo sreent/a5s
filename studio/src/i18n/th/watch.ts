@@ -170,6 +170,7 @@ export const WATCH: Record<string, string> = {
   "How far it may act": "ขอบเขตที่ทำได้",
   "Level {level}, {rung}, in no part.": "ระดับ {level} · {rung} · ไม่อยู่ในส่วนงานใด",
   "Part": "ส่วนงาน",
+  "Team": "ทีม",
   "Each type of change at its own": "การเปลี่ยนแปลงแต่ละประเภทที่มีระดับของตนเอง",
   "at {level} · {rung}": "ที่ระดับ {level} · {rung}",
   "As the settings its parts' owners signed give it. A type of change at level 2 is made on its own only where graded samples have raised a5s's cap on it; until they do, a person decides each.":

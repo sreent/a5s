@@ -428,10 +428,12 @@ class Gateway:
         expected = (signed.definition, sorted(signed.serves), level, scope,
                     registry.action_levels(signed, release), sorted(release.grants),
                     release.model, release.pins, signed.owner or release.owner,
-                    signed.deputy or release.deputy, sorted(signed.asks), signed.shadows)
+                    signed.deputy or release.deputy, sorted(signed.asks), signed.shadows,
+                    sorted(signed.hands_to))
         actual = (inst["definition"], sorted(inst["serves"]), inst["level"], inst["parts"] or {},
                   inst["actions"] or {}, sorted(inst["grants"]), inst["model"], inst["pins"],
-                  inst["owner"], inst["deputy"], sorted(inst["asks"] or []), inst["shadows"])
+                  inst["owner"], inst["deputy"], sorted(inst["asks"] or []), inst["shadows"],
+                  sorted(inst["hands_to"] or []))
         if expected != actual:
             log.error("instance %s doesn't match its signed settings and release", inst["id"])
             return [f"{inst['id']}'s record doesn't match its signed settings and release"]
@@ -2751,7 +2753,10 @@ def create_app(gw: Gateway) -> FastAPI:
                         "a5s's own runs, such as keeping a summary, call no tools",))
                 if why := tasking.stopped(conn, row):  # cancelled, as a suspension stops runs
                     decision = Decision(False, ("tasks-stop-when-stopped",), explanations=(why,))
-                deciding = holding(decision, records, requested)
+                steered = handover.steered(conn, row["acts_for"][0], row["definition"]) if (
+                    len(row["acts_for"]) == 1 and not groups.of(
+                        row["trigger"].get("conversation"))) else []
+                deciding = holding(decision, records, requested, steered)
                 if isinstance(deciding, str):  # nobody may decide it, or nothing can here
                     decision = Decision(False, ("someone-else-decides",), explanations=(deciding,))
                 texts = [s for f in tool.text_fields for s in strings(args.get(f))] if tool else []
@@ -2777,7 +2782,7 @@ def create_app(gw: Gateway) -> FastAPI:
                                  gw.clock())
                 if decision.held:  # it waits for a person: the exact call, kept for its deciders
                     proposal, sends = held(conn, requested, tool, args, standing, deciding or [],
-                                           seq, traced, change, over, found[0])
+                                           seq, traced, change, over, found[0], steered)
         if waits is not None or (again and again["state"] != "held"):
             where = "task" if counts.work(row) != row["run"] else "run"
             return {"result": {"held": proposals.key(waits), "status": (
@@ -2958,15 +2963,18 @@ def create_app(gw: Gateway) -> FastAPI:
             return None, None
         return undo, undoing.left(tool, after)
 
-    def holding(decision: Decision, records: list[str], row: dict) -> list[Person] | str:
-        """Who may decide a call policy holds, if it holds it: or why nobody may, in words."""
+    def holding(decision: Decision, records: list[str], row: dict,
+                steered: list[str]) -> list[Person] | str:
+        """Who may decide a call policy holds, if it holds it: or why nobody may, in words.
+        Never anyone whose words it may have asked for: whom it's for, and `steered`."""
         if not decision.held:
             return []
         # In the sandbox, whose people are made up and sign nobody in, a change waits for its
         # made-up deciders, who never decide it: as it would wait where people work
         if (problem := gw.approving()) is not None and not gw.cfg.sandboxed:
             return f"a change can't wait for a decision here, since {problem}"
-        asked = groups.requesters(row)  # in a group, whoever asked and whoever spoke of it
+        asked = groups.requesters(row)  # in a group, whoever asked and whoever spoke of it,
+        asked = [*asked, *steered]  # and whoever of a team answered them in what it was given
         by_part = proposals.deciders(gw.scenario, records, asked)
         if not (nobody := proposals.undecidable(by_part)):
             return proposals.everyone(by_part)
@@ -2988,7 +2996,8 @@ def create_app(gw: Gateway) -> FastAPI:
 
     def held(conn: db.Connection, row: dict, tool: Tool, args: dict, standing: dict,
              deciding: list[Person], seq: int, traced: list[dict], change: str | None,
-             over: str | None, settings: Settings) -> tuple[dict, list]:
+             over: str | None, settings: Settings,
+             steered: list[str] | None = None) -> tuple[dict, list]:
         """Keep a held call for its deciders, and ask each of them, where they work with the
         agent, to decide it on the core's page, as an urgent message: past their five a day,
         it waits for their next batch. The proposal, and what to send once the transaction is
@@ -3000,6 +3009,11 @@ def create_app(gw: Gateway) -> FastAPI:
             if t["from"] is None:
                 flags.append(f"{t['value']} came from the {row['definition']} itself, not from "
                              f"the records or from {whom}")
+            elif t["from"].startswith(provenance.TEAM):
+                who = gw.scenario.person(t["from"].removeprefix(provenance.TEAM))
+                flags.append(f"{t['value']} came from what {who.name if who else 'someone'} "
+                             "of a team answered them while the conversation was handed over, "
+                             f"not from the records or from {whom}")
             elif t["from"].startswith(provenance.OUTSIDE):
                 flags.append(f"{t['value']} came from a document from outside the organisation "
                              f"({t['from'].removeprefix(provenance.OUTSIDE).strip()}), such as a "
@@ -3014,7 +3028,8 @@ def create_app(gw: Gateway) -> FastAPI:
             flags.append(f"it waits because {over}")
         proposal = proposals.hold(conn, gw.scenario, row, tool, args, standing, deciding, seq,
                                   flags, gw.clock(), change, proposals.sensitive(
-                                      conn, row["run"], tool, args, settings.classified))
+                                      conn, row["run"], tool, args, settings.classified),
+                                  steered or [])
         sends = [ask(conn, proposal, person.id) for person in deciding]
         conn.execute("update proposals set asked = %s where id = %s",
                      ([p.id for p in deciding], proposal["id"]))
@@ -3502,16 +3517,18 @@ def create_app(gw: Gateway) -> FastAPI:
 
     def outbound(conn: db.Connection, route: dict, person: str, text: str, *,
                  run: str | None = None, instance: str | None = None, agent: str | None = None,
-                 inbound: str | None = None, card: dict | None = None) -> int | None:
+                 inbound: str | None = None, card: dict | None = None,
+                 written_by: str | None = None) -> int | None:
         """Keep what a5s will write to someone, in the transaction that decides it: in the
         local channel's inbox, or, for a chat a5s writes to itself, to deliver once the
         transaction is done. The row's id, to push, for a chat."""
         pushed = route["channel"] in PUSHED
         row = conn.execute(
             "insert into outbox (run_id, instance_id, agent, inbound_id, person, channel, text, "
-            "route, card) values (%s, %s, %s, %s, %s, %s, %s, %s, %s) returning id",
+            "route, card, written_by) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) returning id",
             (run, instance, agent, inbound, person, route["channel"], text,
-             Jsonb(route) if pushed else None, Jsonb(card) if card else None)).fetchone()
+             Jsonb(route) if pushed else None, Jsonb(card) if card else None,
+             written_by)).fetchone()
         return row["id"] if pushed else None
 
     def noted(conn: db.Connection, person: str, agent: str | None, text: str,
@@ -3831,7 +3848,7 @@ def create_app(gw: Gateway) -> FastAPI:
         managers, each in their own hours, or the instance's owner if nobody is above them:
         they can see what waits, and nudge, but only its deciders decide it."""
         later = now + timedelta(hours=1)  # when to look again for someone off shift
-        by_part = proposals.deciders(gw.scenario, list(p["records"]), list(p["acts_for"]))
+        by_part = proposals.deciders(gw.scenario, list(p["records"]), proposals.not_deciding(p))
         current = proposals.everyone(by_part)
         sends: list = []
         if p["remind_at"] is not None and now >= p["remind_at"]:
@@ -3972,14 +3989,19 @@ def create_app(gw: Gateway) -> FastAPI:
                                      role="person", content=asked["text"])
                 who = gw.scenario.person(reply["by_person"])
                 name = who.name if who else reply["by_person"]
-                context.add_turn(conn, person=reply["person"], agent=reply["agent"], role="notice",
-                                 content=f"{name}, of the {reply['team']} team, answered them: "
-                                         f"{reply['text']}")
+                # what a person of the team wrote, as any message a5s sends: the scenario's own
+                # links alone, and never a5s's own notes, which a5s alone writes
+                text, _ = sanitize(reply["text"], gw.scenario.record_links)
+                context.add_turn(  # theirs, not a5s's nor the agent's: the next run reads it as
+                    conn, person=reply["person"], agent=reply["agent"], role="person",  # theirs
+                    speaker=reply["by_person"], content=f"{name}, of the {reply['team']} team, "
+                    f"answered them while the conversation was handed over: {text}")
                 route = where_to(conn, reply, waits[-1]["id"] if waits else None)
                 sending.append(outbound(conn, route, reply["person"],
-                                        f"{name}, of the {reply['team']} team: {reply['text']}",
+                                        f"{name}, of the {reply['team']} team: {text}",
                                         agent=reply["agent"], instance=reply["instance_id"],
-                                        inbound=waits[-1]["id"] if waits else None))
+                                        inbound=waits[-1]["id"] if waits else None,
+                                        written_by=reply["by_person"]))
                 if waits:
                     conn.execute("update inbound set answered_at = now() where id = any(%s)",
                                  ([w["id"] for w in waits],))
@@ -3994,6 +4016,17 @@ def create_app(gw: Gateway) -> FastAPI:
                 done["answered"] += 1
             for row in conn.execute("select * from handovers where ended_at is not null and "
                                     "back_told_at is null for update skip locked").fetchall():
+                meanwhile = conn.execute(  # what they wrote that nobody answered: the agent
+                    "select id::text as id, text, received_at from inbound where person = %s "  # answers
+                    "and agent = %s and conversation is null and answered_at is null and "  # the last,
+                    "received_at > %s order by received_at",  # once, given the rest as said then
+                    (row["person"], row["agent"], row["started_at"])).fetchall()[:-1]
+                for asked in meanwhile:
+                    context.add_turn(conn, person=row["person"], agent=row["agent"], role="person",
+                                     content=asked["text"], at=asked["received_at"])
+                if meanwhile:
+                    conn.execute("update inbound set answered_at = now() where id = any(%s)",
+                                 ([m["id"] for m in meanwhile],))
                 said = handover.words(row, gw.scenario)
                 sending.append(outbound(conn, where_to(conn, row), row["person"], said["back"],
                                         agent=row["agent"], instance=row["instance_id"]))

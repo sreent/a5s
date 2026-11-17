@@ -95,6 +95,9 @@ TH: dict[str, str] = {
         "{from} ทำงานใน {to} ที่ระดับ {level} และที่ระดับ 2 สำหรับ {types}",
     "{from} may ask {to}": "{from} ถาม {to} ได้",
     "{from} answers beside {to}, and sends nothing": "{from} ตอบคู่กับ {to} โดยไม่ส่งสิ่งใดออกไป",
+    "{from} may hand a conversation to {to}, whose people answer it":
+        "{from} ส่งต่อบทสนทนาให้ {to} ได้ ซึ่งคนในทีมจะเป็นผู้ตอบ",
+    "people who answer the conversations handed to them": "ผู้ที่ตอบบทสนทนาที่ส่งต่อมาให้",
     "an MCP server": "เซิร์ฟเวอร์ MCP",
     "the scenario's own records": "ระเบียนของสถานการณ์เอง",
     "a library of documents": "คลังเอกสาร",

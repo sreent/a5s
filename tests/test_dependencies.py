@@ -198,3 +198,14 @@ def test_the_map_reads_in_the_language_someone_reads(stack, approving, provider)
     assert said[("agent:assistant", "tool:change_due_date")] == "{from} เรียกใช้ {to} ได้"
     assert {n["key"]: n["about"] for n in found["nodes"]}["instance:assistant-finance"] == (
         "กำลังทำงาน")
+
+
+def test_whom_an_instance_may_hand_conversations_to_is_on_the_map(stack):
+    """Round 14 (C16): the teams an instance may hand conversations to are on the map, as whom
+    it may ask is."""
+    assert not stack.settle(hands_to=["operations"]).refused
+    found = drawn(stack)
+    shown = {n["key"]: n for n in found["nodes"]}
+    assert shown["team:operations"]["kind"] == "team"
+    assert edges(found)[("instance:assistant-finance", "team:operations")] == (
+        "{from} may hand a conversation to {to}, whose people answer it")

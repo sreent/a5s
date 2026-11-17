@@ -58,7 +58,7 @@ RUNS = 50  # runs to a page, newest first
 MOST_RUNS = 200  # the most to a page
 DENIALS = 10_000  # each set of instances' newest denials looked through, by their own index
 COLUMNS = ("id, definition, release, status, level, model, serves, owner, deputy, parts, "
-           "actions, asks")
+           "actions, asks, hands_to")
 SERVING = ("active", "suspended")  # the instances whom an agent serves through
 REASON = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")  # a policy's own id: never words
 LAST = "ffffffff-ffff-ffff-ffff-ffffffffffff"  # after every run opened at the same moment

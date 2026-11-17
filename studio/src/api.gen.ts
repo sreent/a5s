@@ -764,7 +764,7 @@ export type MapEdge = {
 };
 
 // A thing on the map of what depends on what (core/dependencies.py): its kind, part,
-// instance, agent, tool, system or model; its name; what it is, in a few words; its page in
+// instance, agent, tool, system, model or team; its name; what it is, in a few words; its page in
 // the studio, if it has one; and, for a tool, what it does: reads, writes, sends outside or
 // changes records.
 export type MapNode = {

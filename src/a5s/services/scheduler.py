@@ -242,7 +242,8 @@ class Scheduler:
                       and l.expires_at > now())
                   and not (i.conversation is null and exists (  -- handed over to people, who
                     select 1 from handovers h where h.person = i.person  -- answer it until
-                      and h.agent = i.agent and h.ended_at is null))  -- they hand it back
+                      and h.agent = i.agent and (h.ended_at is null  -- they hand it back, and
+                      or h.back_told_at is null)))  -- it's told so, with what was written meanwhile
                 order by i.received_at limit 1
                 for update of i skip locked
                 """,

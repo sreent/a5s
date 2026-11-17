@@ -19,13 +19,15 @@ import { Icon } from "./icons";
 export type MapNode = gen.MapNode;
 export type MapEdge = gen.MapEdge;
 
-export const KINDS = ["part", "instance", "agent", "tool", "system", "model"] as const;
+export const KINDS = ["part", "instance", "agent", "tool", "system", "model", "team"] as const;
 export const KIND_NAMES: Record<string, string> = {  // one of each, in the language spoken when read
   get part() { return t("Part"); }, get instance() { return t("Instance"); }, get agent() { return t("Agent"); },
   get tool() { return t("Tool"); }, get system() { return t("System"); }, get model() { return t("Model"); },
+  get team() { return t("Team"); },
 };
 const ICONS: Record<string, string> = {
   part: "settings", instance: "run", agent: "agent", tool: "tool", system: "plug", model: "model",
+  team: "people",
 };
 // Where steps stand, in pixels at a rem of 15: a column for each kind there is, and in each, a
 // step under the one before. Each is a step as Ocean draws one, with a dot on each side where it
@@ -33,7 +35,7 @@ const ICONS: Record<string, string> = {
 // system or a model, what it is in a few words: a tool's or an agent's own words are long, and
 // are said when it's chosen
 const COLUMN = 230, ROW = 165;
-const SHORT = new Set(["part", "instance", "system", "model"]);
+const SHORT = new Set(["part", "instance", "system", "model", "team"]);
 
 type Data = { node: MapNode; chosen: boolean; near: boolean; dim: boolean; pick: (key: string) => void };
 

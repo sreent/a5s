@@ -35,6 +35,7 @@ from a5s.core.coretools import Call, CoreTool, Refused, one_to_one
 
 HAND = "hand_over"
 LATELY = 10  # of the person's own messages the team reads, the latest [starting value]
+QUIET = timedelta(days=1)  # a gap this long ends what the team reads of them, as a new talk [starting value]
 BRIEF = 600  # characters of an agent's brief, at most
 REPLY = 4000  # characters of an answer from the team, at most
 LAPSE = timedelta(days=3)  # a handover nobody answers or hands back is handed back [starting value]
@@ -68,9 +69,15 @@ def _hand(call: Call) -> dict:
     brief = " ".join(str(call.args.get("brief") or "").split())[:BRIEF]
     if not brief:
         raise Refused("say in a brief what they need, for whoever takes it")
-    said = [{"at": r["at"].isoformat(), "text": r["content"]} for r in call.conn.execute(
-        "select content, at from turns where person = %s and agent = %s and role = 'person' "
-        "and speaker is null order by id desc limit %s", (person.id, agent, LATELY))][::-1]
+    said, after = [], call.asked_at  # this talk's, back to the last quiet day: never older
+    for r in call.conn.execute(  # words of theirs, whatever they were about
+            "select content, at from turns where person = %s and agent = %s and role = 'person' "
+            "and speaker is null order by id desc limit %s", (person.id, agent, LATELY)):
+        if after - r["at"] > QUIET:
+            break
+        said.append({"at": r["at"].isoformat(), "text": r["content"]})
+        after = r["at"]
+    said.reverse()
     asked = call.said  # the message it answers, if it isn't a turn yet
     if asked and (not said or said[-1]["text"] != asked):
         said = [*said, {"at": call.asked_at.isoformat(), "text": asked}][-LATELY:]
@@ -80,8 +87,8 @@ def _hand(call: Call) -> dict:
         (person.id, agent, call.run["id"], call.run["run"], team, brief, Jsonb(said))).fetchone()
     return {"handed_over": True, "team": team, "handover": row["id"] if row else None,
             "say": (f"Tell them the {team} team takes it from here, in this chat: they read your "
-                    "brief and what they've said to you lately, and you answer again once they "
-                    "hand it back.")}
+                    "brief and what they've said to you since they last left it a day or more, "
+                    "and you answer again once they hand it back.")}
 
 
 TOOL = CoreTool(
@@ -221,6 +228,16 @@ def answers_any(conn: db.Connection, scenario: Scenario, person: Person) -> bool
     return any(team_of(scenario, person, t) for t in teams_handed_to(conn))
 
 
+def steered(conn: db.Connection, person: str, agent: str) -> list[str]:
+    """Who of a team answered someone, while their conversation with an agent was handed over,
+    among the turns a run of it is given: whose words may have asked for what it asks for, so
+    they decide none of it, as nobody decides what their own words in a group chat asked for."""
+    return sorted({r["speaker"] for r in conn.execute(
+        "select speaker from (select speaker, role from turns where person = %s and agent = %s "
+        "order by id desc limit 500) t where role = 'person' and speaker is not null",
+        (person, agent))})
+
+
 def open_for(conn: db.Connection, person: str, agent: str) -> dict | None:
     return conn.execute("select * from handovers where person = %s and agent = %s and "
                         "ended_at is null", (person, agent)).fetchone()
@@ -238,7 +255,8 @@ def words(row: dict, scenario: Any) -> dict[str, str]:
     """What the person is told when it's handed over, and back."""
     return {"to": (f"The {row['agent']} has handed this conversation to the {row['team']} team, at "
                    f"your word: someone there answers you here. They read its brief, and what "
-                   f"you've said to it lately, but not its answers. The {row['agent']} answers "
-                   "again once they hand it back."),
+                   f"you've said to it since you last left it a day or more, but not its answers "
+                   f"nor anything older. The {row['agent']} answers again once they hand it "
+                   "back."),
             "back": (f"The {row['team']} team has handed this conversation back to the "
                      f"{row['agent']}, which answers you again from here.")}

@@ -101,10 +101,10 @@ def waiting(conn: db.Connection, gw: Any) -> dict[str, Any]:
                          "needs": registry.missing(settings, gw.scenario.person, valid, before,
                                                    memberships.rooted(gw.scenario).person)})
     by_part: dict[str, dict[str, Any]] = {}  # who may decide each now, as the directory stands
-    for held_change in conn.execute("select parts, records, acts_for from proposals "
-                                    "where status = 'waiting'"):
+    for held_change in conn.execute("select parts, records, acts_for, steered_by from "
+                                    "proposals where status = 'waiting'"):
         who = {p.id for p in proposals.everyone(proposals.deciders(
-            gw.scenario, list(held_change["records"]), list(held_change["acts_for"])))}
+            gw.scenario, list(held_change["records"]), proposals.not_deciding(held_change)))}
         for part in held_change["parts"]:
             found = by_part.setdefault(part, {"n": 0, "deciders": set()})
             found["n"] += 1
