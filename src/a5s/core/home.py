@@ -189,7 +189,8 @@ def waiting(conn: db.Connection, gw: Any, person: Person,
             found.append({"kind": "undo", "what": words.say(
                               language, "The {agent} made a change for you, which you can undo "
                               "until {until}: {said}", agent=made["definition"],
-                              until=made["until"].strftime("%d %b %Y, %H:%M UTC"), said=made["said"]),
+                              until=languages.when(made["until"], language, person.timezone),
+                              said=made["said"]),
                           "why": [], "go": f"/studio/undo?change={made['id']}"})
     tasks = conn.execute("select count(*) as n from tasks where owner = %s and parent is null "
                          "and status in ('blocked', %s)", (person.id, OFFERED)).fetchone()["n"]
@@ -202,10 +203,6 @@ def waiting(conn: db.Connection, gw: Any, person: Person,
     return found
 
 
-def _changes(n: int) -> str:
-    return f"{n} {'change' if n == 1 else 'changes'} it asked for {'waits' if n == 1 else 'wait'}"
-
-
 def of_instance(conn: db.Connection, gw: Any, person: Person, inst: dict) -> list[dict]:
     """What of one instance waits, for someone who may watch it, each where it's done, as the
     home says: the changes it asked for that wait for their decision, and for others'; its
@@ -213,24 +210,36 @@ def of_instance(conn: db.Connection, gw: Any, person: Person, inst: dict) -> lis
     Counts alone, and the oldest's time: what each is, they see where they may act on it."""
     found: list[dict] = []
     scenario = gw.scenario
+    language = languages.of(conn, person)  # in the language they read (round 14)
+
+    def said(one: str, many: str, n: int) -> str:
+        return words.say(language, one if n == 1 else many, n=n)
+
     held = conn.execute("select records, acts_for, proposed_at from proposals where status = "
                         "'waiting' and instance_id = %s order by proposed_at, id",
                         (inst["id"],)).fetchall()
     mine = [p for p in held if proposals.may_decide(scenario, p, person.id)]  # the directory now
     others = [p for p in held if p not in mine]
     if mine:
-        found.append({"kind": "decide", "what": f"{_changes(len(mine))} for your decision",
+        found.append({"kind": "decide", "what": said(
+                          "{n} change it asked for waits for your decision",
+                          "{n} changes it asked for wait for your decision", len(mine)),
                       "why": [], "go": "/studio/decide", "since": mine[0]["proposed_at"]})
     if others:
-        found.append({"kind": "held", "what": f"{_changes(len(others))} for someone else's "
-                      "decision, as its parts' owners and delegates decide them", "why": [],
+        found.append({"kind": "held", "what": said(
+                          "{n} change it asked for waits for someone else's decision, as its "
+                          "parts' owners and delegates decide them",
+                          "{n} changes it asked for wait for someone else's decision, as its "
+                          "parts' owners and delegates decide them", len(others)), "why": [],
                       "go": None})  # not since when: theirs to act on, not the viewer's (round 13, B5)
     graded = samples.gradeable(conn, scenario, person, MOST + 1, inst["id"]) \
         if samples.GRADER in person.roles else []
     if graded:
-        count = f"{MOST} or more" if len(graded) > MOST else str(len(graded))
-        found.append({"kind": "grade", "what": f"{count} {'sample' if len(graded) == 1 else 'samples'} "
-                      f"of its work {'waits' if len(graded) == 1 else 'wait'} for your grade",
+        found.append({"kind": "grade", "what": words.say(
+                          language, "{n} or more samples of its work wait for your grade", n=MOST)
+                      if len(graded) > MOST else said("{n} sample of its work waits for your grade",
+                                                      "{n} samples of its work wait for your grade",
+                                                      len(graded)),
                       "why": [], "go": "/studio/grade", "since": graded[0]["drawn_at"]})
     theirs = {g["id"] for g in graded}
     rest = [r for r in conn.execute("select id, drawn_at from samples where scenario = %s and "
@@ -238,15 +247,18 @@ def of_instance(conn: db.Connection, gw: Any, person: Person, inst: dict) -> lis
                                     "order by id", (scenario.name, inst["id"]))
             if r["id"] not in theirs]
     if rest and len(graded) <= MOST:  # other graders, outside the team that built it, grade them
-        found.append({"kind": "graded", "what": f"{len(rest)} {'sample' if len(rest) == 1 else 'samples'} "
-                      f"of its work {'waits' if len(rest) == 1 else 'wait'} for a grade, from "
-                      "graders outside the team that built it", "why": [], "go": None})
+        found.append({"kind": "graded", "what": said(
+                          "{n} sample of its work waits for a grade, from graders outside the "
+                          "team that built it", "{n} samples of its work wait for a grade, from "
+                          "graders outside the team that built it", len(rest)),
+                      "why": [], "go": None})
     if notebook.keeps(person, inst):
         notes = [r for r in conn.execute("select read_records, sources from notebook where "
                                          "instance_id = %s", (inst["id"],))
                  if notebook.readable(scenario, person.id, r)]
         if notes:
-            found.append({"kind": "notebook", "what": f"{len(notes)} "
-                          f"{'note' if len(notes) == 1 else 'notes'} it keeps from what it "
-                          "learned, which you may read and remove", "why": [], "go": "/studio/notebook"})
+            found.append({"kind": "notebook", "what": said(
+                              "{n} note it keeps from what it learned, which you may read and "
+                              "remove", "{n} notes it keeps from what it learned, which you may "
+                              "read and remove", len(notes)), "why": [], "go": "/studio/notebook"})
     return found

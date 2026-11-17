@@ -17,7 +17,7 @@ import pytest
 
 from a5s import db, definitions
 from a5s.config import load_models
-from a5s.core import departures, groups, inbox, topics
+from a5s.core import departures, groups, inbox, languages, topics
 from a5s.core.matrix import Matrix, MatrixConfig
 from a5s.core.teams import Bot, Teams, TeamsConfig
 from a5s.services import context
@@ -484,3 +484,16 @@ def test_a_real_model_answers_a_group_and_knows_who_said_what(database, tmp_path
         stack.scheduler().answer_waiting()
         print(f"--> {room.sent[-1]['body']}")
         assert "Ana" in room.sent[-1]["body"]
+
+
+def test_a5s_writes_its_note_in_a_group_in_the_language_everyone_there_reads(stack, homeserver):
+    """Round 14 (E-L4): what the agent wrote itself, a5s says apart in a group chat too, in the
+    language everyone in it reads: Thai, when Ana and Ben both read it."""
+    with db.transaction(stack.admin) as conn:
+        for who in ("ana", "ben"):
+            languages.choose(conn, stack.gateway.scenario.person(who), "th", stack.gateway.clock())
+    stack.model.reply("คืนเงิน 999 ปอนด์")
+    assert deliver(homeserver, mention("ยอดคืนเงินเท่าไร")).status_code == 200
+    assert stack.scheduler().answer_waiting() == 1
+    assert homeserver.sent[-1]["body"].endswith(
+        "(a5s: 999 ปอนด์ มาจาก assistant เอง ไม่ได้มาจากระเบียนหรือจากคุณ โปรดตรวจสอบก่อนนำไปใช้)")

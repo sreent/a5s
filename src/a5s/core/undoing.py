@@ -37,7 +37,7 @@ from psycopg.types.json import Jsonb
 
 from a5s import db
 from a5s.contract import Person, Scenario, Tool
-from a5s.core import ledger, proposals, words
+from a5s.core import languages, ledger, proposals, words
 from a5s.core.approvals import HASHED, Refused, afresh
 
 PAGE = "/studio/undo"  # its page, as ?change=<id>, on the channels' address
@@ -160,11 +160,11 @@ def for_agent(until: datetime) -> str:
 
 # a5s's own note beside the agent's message to whoever a change at level 2 was for: its link is
 # a5s's, which no agent's message may carry, so a5s writes it itself, once
-OFFER = "(a5s: what the {agent} just changed can be undone until {until} UTC, on its page: {link})"
+OFFER = "(a5s: what the {agent} just changed can be undone until {until}, on its page: {link})"
 
 
 def offers(conn: db.Connection, run: str, person: str, agent: str, public_url: str,
-           language: str) -> str:
+           language: str, timezone: str = "UTC") -> str:
     """a5s's note on how to undo each change at level 2 this run made for someone, which it
     hasn't told them of yet, in the language they read, in the caller's transaction: nothing,
     if none waits."""
@@ -172,7 +172,7 @@ def offers(conn: db.Connection, run: str, person: str, agent: str, public_url: s
         "update changes_made set offered_at = now() where run_id = %s and %s = any(acts_for) "
         "and offered_at is null and state is null returning id, until", (run, person)).fetchall()
     return "\n".join(words.say(language, OFFER, agent=agent, link=link(public_url, r["id"]),
-                               until=r["until"].strftime("%d %b %Y, %H:%M"))
+                               until=languages.when(r["until"], language, timezone))
                      for r in sorted(rows, key=lambda r: r["id"]))
 
 

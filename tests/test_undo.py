@@ -13,6 +13,7 @@ import hashlib
 import json
 import re
 import secrets
+from dataclasses import replace
 from datetime import timedelta
 from urllib.parse import parse_qs
 
@@ -21,7 +22,7 @@ import pytest
 
 from a5s import db
 from a5s.contract import Tool, Undo
-from a5s.core import samples, undoing
+from a5s.core import languages, samples, undoing
 from conftest import CLIENT, SEAL_KEY, accessible
 from test_levels import asked, due_of, levelled
 from test_proposals import decide, held
@@ -245,3 +246,25 @@ def test_a5s_tells_whoever_a_change_was_for_how_to_undo_it_itself(stack, approvi
     assert said[-1].startswith("Done what I could.\n\n(a5s: what the assistant just changed "
                                "can be undone until")
     assert said[-1].count(link) == 1 and offered is not None
+
+
+def test_whoever_a_change_was_for_reads_until_when_as_they_read_a_moment(stack, approving, provider):
+    """Round 14 (E-L3): Ben, who reads Thai in Bangkok, reads until when he can undo a change
+    in Thai, by Bangkok's clock, in a5s's note beside the agent's message and on his home."""
+    with db.transaction(stack.admin) as conn:
+        languages.choose(conn, stack.gateway.scenario.person("ben"), "th", stack.gateway.clock())
+    levelled(stack)
+    people = stack.gateway.scenario._people  # as the directory says where he is
+    people["ben"] = replace(people["ben"], timezone="Asia/Bangkok")
+    asked(stack)  # Ben asks to move Q-1002 to 2026-11-13, and it's made
+    made = kept(stack)
+    until = languages.when(made["until"], "th", "Asia/Bangkok")
+    assert until.endswith("(UTC+07)") and str(made["until"].year + 543) in until
+    with db.transaction(stack.admin) as conn:
+        said = [r["text"] for r in conn.execute(
+            "select text from outbox where person = 'ben' and run_id is not null order by id")]
+    assert f"ยกเลิกได้จนถึง {until} ที่หน้า" in said[-1] and "UTC ที่หน้า" not in said[-1]
+    home = httpx.get(f"{approving}/studio/api/home", timeout=30,
+                     headers={"Authorization": f"Bearer {provider.id_token(person='ben')}"}).json()
+    [mine] = [w for w in home["waiting"] if w["kind"] == "undo"]
+    assert until in mine["what"]

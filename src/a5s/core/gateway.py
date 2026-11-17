@@ -108,6 +108,7 @@ from a5s.core import (
     undoing,
     urgent,
     values,
+    words,
 )
 from a5s.core.breakers import FAILURES, Breakers
 from a5s.core.events import EventsConfig
@@ -644,6 +645,12 @@ class Gateway:
             f"order by id desc limit 200)){it_heard} limit 1",
             {"person": group or acts_for[0], "agent": agent, "topic": topic,
              "members": list(acts_for)}).fetchone())
+
+    def spoken(self, conn: db.Connection, person: str) -> str:
+        """The language someone reads, as a5s writes to them: English for anyone it doesn't
+        know."""
+        found = self.scenario.person(person)
+        return languages.of(conn, found) if found else languages.ENGLISH
 
     def approvers_in_force(self, conn: db.Connection) -> list[str]:
         """Who approved the settings in force, by key or on a card the core sealed: who signed
@@ -3437,12 +3444,14 @@ def create_app(gw: Gateway) -> FastAPI:
             traced = provenance.traced(conn, gw.scenario, row, text) if decision.allowed else []
             said, note = text, None  # the agent's words, apart from a5s's own note on them
             reader = None if groups.of(body.to) else gw.scenario.person(body.to)  # a5s's notes
-            spoken = languages.of(conn, reader) if reader else languages.ENGLISH  # are in the
+            spoken = languages.of(conn, reader) if reader else languages.shared(  # are in the
+                conn, [gw.scenario.person(p) for p in row["acts_for"]])  # language they read
             if own := [t["value"] for t in traced if t["from"] is None]:  # one they read, apart
                 note = provenance.note(row["definition"], own, spoken)
                 text += "\n\n" + note
             if decision.allowed and reader and (offer := undoing.offers(  # how to undo what
-                    conn, row["run"], body.to, row["definition"], gw.public_url, spoken)):  # it
+                    conn, row["run"], body.to, row["definition"], gw.public_url, spoken,  # it
+                    reader.timezone)):
                 note = f"{note}\n\n{offer}" if note else offer  # changed for them, beside it
                 text += "\n\n" + offer
             ledger.append(conn, gw.entry(row, "message", "send", decision, args={
@@ -3960,7 +3969,7 @@ def create_app(gw: Gateway) -> FastAPI:
                                      "args": {"handover": row["id"], "lapsed": True}})
             for row in conn.execute("select * from handovers where told_at is null "
                                     "for update skip locked").fetchall():
-                said = handover.words(row, gw.scenario)
+                said = handover.words(row, gw.scenario, gw.spoken(conn, row["person"]))
                 sending.append(outbound(conn, where_to(conn, row), row["person"], said["to"],
                                         agent=row["agent"], instance=row["instance_id"]))
                 noted(conn, row["person"], row["agent"], f"a5s handed this conversation to the "
@@ -3989,8 +3998,10 @@ def create_app(gw: Gateway) -> FastAPI:
                     speaker=reply["by_person"], content=f"{name}, of the {reply['team']} team, "
                     f"answered them while the conversation was handed over: {text}")
                 route = where_to(conn, reply, waits[-1]["id"] if waits else None)
-                sending.append(outbound(conn, route, reply["person"],
-                                        f"{name}, of the {reply['team']} team: {text}",
+                sending.append(outbound(conn, route, reply["person"], words.say(  # in the
+                                            gw.spoken(conn, reply["person"]),  # language they
+                                            "{name}, of the {team} team: {said}",  # read
+                                            name=name, team=reply["team"], said=text),
                                         agent=reply["agent"], instance=reply["instance_id"],
                                         inbound=waits[-1]["id"] if waits else None,
                                         written_by=reply["by_person"]))
@@ -4019,7 +4030,7 @@ def create_app(gw: Gateway) -> FastAPI:
                 if meanwhile:
                     conn.execute("update inbound set answered_at = now() where id = any(%s)",
                                  ([m["id"] for m in meanwhile],))
-                said = handover.words(row, gw.scenario)
+                said = handover.words(row, gw.scenario, gw.spoken(conn, row["person"]))
                 sending.append(outbound(conn, where_to(conn, row), row["person"], said["back"],
                                         agent=row["agent"], instance=row["instance_id"]))
                 noted(conn, row["person"], row["agent"], f"The {row['team']} team handed this "

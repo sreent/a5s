@@ -10,6 +10,7 @@ their export, and goes when they leave or ask a5s to erase what it keeps of them
 from __future__ import annotations
 
 from datetime import datetime
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from a5s import db
 from a5s.contract import Person
@@ -63,3 +64,32 @@ def told(language: str) -> str | None:
     return (f"They read {name}: write to them in {name}, unless they write to you in another "
             "language, and keep record keys, names, amounts and dates exactly as the records "
             "give them.")
+
+
+# Each month as Thai readers cut it short, as a5s writes a date for them
+THAI_MONTHS = ("ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.",
+               "พ.ย.", "ธ.ค.")
+
+
+def when(at: datetime, language: str, timezone: str = "UTC") -> str:
+    """A moment as someone reads it, in their own time zone, which it names: in Thai by its
+    month's Thai name and the Buddhist era's year, as Thai readers write a date, and otherwise
+    as 18 Nov 2026, 14:08 (round 14)."""
+    try:
+        local = at.astimezone(ZoneInfo(timezone))
+    except (ZoneInfoNotFoundError, ValueError):
+        local = at.astimezone(ZoneInfo("UTC"))
+    zone = local.tzname() or "UTC"
+    if not zone[0].isalpha():  # such as +07, as the time zone database names Bangkok's
+        zone = f"UTC{zone}"
+    if language == "th":
+        return (f"{local.day} {THAI_MONTHS[local.month - 1]} {local.year + 543} "
+                f"เวลา {local:%H:%M} น. ({zone})")
+    return f"{local:%d %b %Y, %H:%M} {zone}"
+
+
+def shared(conn: db.Connection, people: list[Person | None]) -> str:
+    """The language everyone in a group reads, if they all read one, such as Thai: else
+    English, as a5s writes to a group chat."""
+    found = {of(conn, p) for p in people if p is not None}
+    return found.pop() if len(found) == 1 and None not in people else ENGLISH

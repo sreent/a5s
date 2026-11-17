@@ -188,3 +188,30 @@ def test_a5s_writes_its_own_words_in_the_language_someone_reads(stack, approving
     # Ben reads English still
     ben = as_person(approving, provider, "ben", "GET", "/studio/api/you").json()["roles"]
     assert all(not re.search(r"[฀-๿]", r["may"]) for r in ben)
+
+
+def test_a_moment_is_written_as_its_reader_reads_one():
+    """Round 14 (E-L3): until when, as someone reads a moment: in Thai by its month's Thai name
+    and the Buddhist era's year, and in their own time zone, which it names."""
+    from datetime import UTC, datetime
+    at = datetime(2026, 11, 18, 7, 8, tzinfo=UTC)
+    assert languages.when(at, "en") == "18 Nov 2026, 07:08 UTC"
+    assert languages.when(at, "en", "Asia/Bangkok") == "18 Nov 2026, 14:08 UTC+07"
+    assert languages.when(at, "th", "Asia/Bangkok") == "18 พ.ย. 2569 เวลา 14:08 น. (UTC+07)"
+    assert languages.when(at, "en", "Europe/London") == "18 Nov 2026, 07:08 GMT"
+    assert languages.when(at, "en", "Not/A_Zone") == "18 Nov 2026, 07:08 UTC"  # as UTC
+
+
+def test_a_group_reads_a5s_in_the_language_everyone_in_it_reads(stack):
+    """Round 14 (E-L4): a5s writes to a group chat in the language its members all read, if
+    they all read one, and in English if not."""
+    people = stack.gateway.scenario
+    ana, ben = people.person("ana"), people.person("ben")
+    with db.transaction(stack.admin) as conn:
+        assert languages.shared(conn, [ana, ben]) == "en"
+        for who in (ana, ben):
+            languages.choose(conn, who, "th", stack.gateway.clock())
+        assert languages.shared(conn, [ana, ben]) == "th"
+        assert languages.shared(conn, [ana, ben, None]) == "en"  # someone a5s doesn't know
+        languages.choose(conn, ben, "en", stack.gateway.clock())
+        assert languages.shared(conn, [ana, ben]) == "en"

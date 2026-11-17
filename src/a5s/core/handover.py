@@ -30,8 +30,9 @@ from psycopg.types.json import Jsonb
 
 from a5s import db
 from a5s.contract import Person, Scenario
-from a5s.core import studio
+from a5s.core import languages, studio
 from a5s.core.coretools import Call, CoreTool, Refused, one_to_one
+from a5s.core.words import say
 
 HAND = "hand_over"
 LATELY = 10  # of the person's own messages the team reads, the latest [starting value]
@@ -107,12 +108,15 @@ TOOL = CoreTool(
 TOOLS = {HAND: TOOL}
 
 
-def masked(scenario: Scenario, viewer: str, text: str) -> str:
-    """Text as someone of the team reads it: each record's key they may not see, as such."""
+def masked(scenario: Scenario, viewer: str, text: str,
+           language: str = languages.ENGLISH) -> str:
+    """Text as someone of the team reads it: each record's key they may not see, as such, in
+    the language they read."""
     pattern = getattr(scenario, "record_pattern", None)
     if not pattern:
         return text
-    return re.sub(pattern, lambda m: m.group(0) if scenario.sees(viewer, m.group(0)) else HIDDEN,
+    hidden = say(language, HIDDEN)
+    return re.sub(pattern, lambda m: m.group(0) if scenario.sees(viewer, m.group(0)) else hidden,
                   text)
 
 
@@ -149,10 +153,11 @@ def _since(conn: db.Connection, row: dict) -> list[dict]:
 def _line(conn: db.Connection, scenario: Scenario, viewer: Person, row: dict,
           briefed: set[str]) -> dict:
     waiting_ = [m for m in _since(conn, row) if m["answered_at"] is None]
+    language = languages.of(conn, viewer)  # the words a5s puts in, in theirs
     return {"id": row["id"], "person": _name(scenario, row["person"]) or row["person"],
             "agent": row["agent"], "team": row["team"],
-            "brief": masked(scenario, viewer.id, row["brief"])
-            if row["run_id"] and str(row["run_id"]) in briefed else WITHHELD,
+            "brief": masked(scenario, viewer.id, row["brief"], language)
+            if row["run_id"] and str(row["run_id"]) in briefed else say(language, WITHHELD),
             "started_at": row["started_at"].isoformat(),
             "taken_by": _name(scenario, row["taken_by"]), "mine": row["taken_by"] == viewer.id,
             "unanswered": len(waiting_)}
@@ -167,14 +172,16 @@ def one(conn: db.Connection, scenario: Scenario, viewer: Person, handover: int) 
         return None
     replies = conn.execute("select by_person, text, at, sent_at from handover_replies where "
                            "handover_id = %s order by id", (handover,)).fetchall()
+    language = languages.of(conn, viewer)
     return {**_line(conn, scenario, viewer, row, _briefed(conn, scenario, viewer, [row])),
-            "said": [{"at": s["at"], "text": masked(scenario, viewer.id, s["text"])}
+            "said": [{"at": s["at"], "text": masked(scenario, viewer.id, s["text"], language)}
                      for s in row["said"]],
             "since": [{"at": m["received_at"].isoformat(),
-                       "text": masked(scenario, viewer.id, m["text"]),
+                       "text": masked(scenario, viewer.id, m["text"], language),
                        "answered": m["answered_at"] is not None} for m in _since(conn, row)],
             "answers": [{"by": _name(scenario, r["by_person"]) or r["by_person"],
-                         "text": masked(scenario, viewer.id, r["text"]), "at": r["at"].isoformat(),
+                         "text": masked(scenario, viewer.id, r["text"], language),
+                         "at": r["at"].isoformat(),
                          "sent": r["sent_at"] is not None} for r in replies],
             "ended": row["ended_at"] is not None}
 
@@ -251,12 +258,15 @@ def lapsing(conn: db.Connection) -> list[dict]:
         "< now() - %s returning *", (LAPSE,)).fetchall()
 
 
-def words(row: dict, scenario: Any) -> dict[str, str]:
-    """What the person is told when it's handed over, and back."""
-    return {"to": (f"The {row['agent']} has handed this conversation to the {row['team']} team, at "
-                   f"your word: someone there answers you here. They read its brief, and what "
-                   f"you've said to it since you last left it a day or more, but not its answers "
-                   f"nor anything older. The {row['agent']} answers again once they hand it "
-                   "back."),
-            "back": (f"The {row['team']} team has handed this conversation back to the "
-                     f"{row['agent']}, which answers you again from here.")}
+TO = ("The {agent} has handed this conversation to the {team} team, at your word: someone there "
+      "answers you here. They read its brief, and what you've said to it since you last left it "
+      "a day or more, but not its answers nor anything older. The {agent} answers again once "
+      "they hand it back.")
+BACK = ("The {team} team has handed this conversation back to the {agent}, which answers you "
+        "again from here.")
+
+
+def words(row: dict, scenario: Any, language: str = languages.ENGLISH) -> dict[str, str]:
+    """What the person is told when it's handed over, and back, in the language they read."""
+    return {"to": say(language, TO, agent=row["agent"], team=row["team"]),
+            "back": say(language, BACK, agent=row["agent"], team=row["team"])}

@@ -289,3 +289,25 @@ def test_on_a_phone_the_newest_message_is_above_what_they_write(stack, browser):
         composer = page.locator("footer").bounding_box()
         assert newest is not None and composer is not None
         assert newest["y"] + newest["height"] <= composer["y"] + 1
+
+
+def test_what_the_web_chat_writes_itself_is_in_the_language_they_read(stack, browser):
+    """Round 14 (E-L4): the web chat's own words beside what it shows are in the language
+    someone reads: a message of theirs that was only a file, and what another agent wrote
+    them, which it says is about that agent."""
+    from a5s import db
+
+    with channels(stack) as url:
+        page = browser.new_page()
+        page.goto(f"{url}/chat/")
+        page.fill("#person", "ana")
+        page.click("#name button")
+        page.wait_for_selector(".welcome-name", timeout=30000)  # its conversation is open
+        page.evaluate("""() => { speak("th"); say({by: "person", from: "you",
+            text: "(a file, with no words)", at: new Date().toISOString()}); }""")
+        assert page.locator("#conversation li.you", has_text="(ไฟล์ ไม่มีข้อความ)").count() == 1
+        with db.transaction(stack.admin) as conn:  # the watcher writes her, unasked
+            conn.execute("insert into outbox (person, channel, agent, text) "
+                         "values ('ana', 'local', 'watcher', 'Q-1001 is overdue.')")
+        page.wait_for_selector("#conversation li >> text=(เกี่ยวกับ watcher) Q-1001 is overdue.",
+                               timeout=40000)

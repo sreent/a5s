@@ -45,6 +45,9 @@ const TH = {
   "Attach files": "แนบไฟล์",
   "Attach text files, PDFs or images": "แนบไฟล์ข้อความ PDF หรือรูปภาพ",
   "Files to send with your message": "ไฟล์ที่จะส่งไปกับข้อความ",
+  "(a file, with no words)": "(ไฟล์ ไม่มีข้อความ)",
+  "(about the {agent}) {text}": "(เกี่ยวกับ {agent}) {text}",
+  "(about the agents) {text}": "(เกี่ยวกับเอเจนต์) {text}",
 };
 let spoken = "en";
 const t = (text, vars) => {
@@ -297,8 +300,8 @@ function say(message) {
     when.dateTime = at.toISOString();
     when.textContent = stamp(at);
   }
-  const body = document.createElement("div");
-  render(body, message.text);
+  const body = document.createElement("div");  // a message that was only a file, in their words
+  render(body, by === "you" && message.text === "(a file, with no words)" ? t(message.text) : message.text);
   if (by !== "you") item.append(mark(message.by));
   item.append(who, " ", when, body);
   if (by === "agent" && message.id) wrongOf(item, message);  // an agent's answer, never a5s's
@@ -431,7 +434,8 @@ async function listen() {
       if (!answer.ok) { await pause(5000); continue; }
       for (const message of (await answer.json()).messages) {
         if ((message.by === "agent" && message.from === state.agent) || message.about === state.agent) say(message);
-        else say({ ...message, text: `(about the ${message.about || "agents"}) ${message.text}` });
+        else say({ ...message, text: message.about ? t("(about the {agent}) {text}", { agent: message.about, text: message.text })
+          : t("(about the agents) {text}", { text: message.text }) });
       }
     } catch (error) {
       if (error.message === SIGNING_IN) return;
