@@ -16,12 +16,13 @@ from a5s.core.slack import Bot as SlackBot
 from a5s.core.slack import Slack, SlackConfig
 from a5s.core.teams import Bot as TeamsBot
 from a5s.core.teams import Teams, TeamsConfig
-from conftest import accessible, free_port, serve
+from conftest import accessible, free_port, listed_runs, serve
 from test_matrix import AS_TOKEN, BOT, DM, HS_TOKEN, Homeserver, deliver, invite, said
 from test_slack import APP, BOT_USER, SECRET, TEAM, USERS, FakeSlack, event, post
 from test_teams import APP_ID, SERVICE_URL, TENANT, FakeBotFramework, activity
 
-ANSWER = "Q-1001's invoice went to the old address; it's due on Wednesday."
+ANSWER = "Your invoice went to the old address, Ana; it's due on Wednesday."
+MASKED = "Your invoice went to the old address, [someone]; it's due on Wednesday."
 
 
 def answered(stack, person: str = "ana", text: str = "What's wrong with Q-1001?") -> dict:
@@ -77,14 +78,15 @@ def test_only_whom_it_answered_says_it_and_only_of_an_agents_answer(stack):
 
 
 def test_its_owners_see_what_was_said_and_grade_it(stack, approving, provider):
+    listed_runs(stack)  # an instance whose runs the studio shows one by one
     shown = answered(stack)
-    say_wrong(stack, shown["id"], why="It's due Friday.")
+    say_wrong(stack, shown["id"], why="Ana here: it's due Friday, ask ben@example.com.")
     found = as_person(approving, provider, "priya", "GET", "/studio/api/agents/assistant/feedback")
     assert found.status_code == 200, found.text
     body = found.json()
     [answer] = body["answers"]
     assert (answer["answer"], answer["said"], answer["grade"], answer["channel"]) == (
-        ANSWER, "It's due Friday.", None, "local")
+        MASKED, "[someone] here: it's due Friday, ask [an email].", None, "local")
     assert answer["by"] is None  # who said it, only once the officer agrees to names
     assert (body["waiting"], body["hidden"]) == (1, 0)
     home = as_person(approving, provider, "priya", "GET", "/studio/api/home").json()
@@ -115,6 +117,7 @@ def test_nobody_but_its_owners_sees_or_grades_it(stack, approving, provider):
 
 def test_an_answer_from_records_its_owner_may_not_see_stays_out_of_their_sight(stack, approving,
                                                                                provider):
+    listed_runs(stack)
     stack.model.reply(None, ("get_record", {"key": "Q-1001"}))  # billing's: finance's alone
     shown = answered(stack)
     say_wrong(stack, shown["id"])
@@ -124,6 +127,49 @@ def test_an_answer_from_records_its_owner_may_not_see_stays_out_of_their_sight(s
     [row] = kept(stack)
     assert as_person(approving, provider, "priya", "POST", f"/studio/api/feedback/{row['id']}/grade",
                      {"grade": "right"}).status_code == 404
+
+
+def checks(approving, provider, person: str = "priya") -> dict:
+    return as_person(approving, provider, person, "GET",
+                     "/studio/api/agents/assistant/feedback").json()
+
+
+def test_a_record_the_answer_or_their_words_name_keeps_it_from_whoever_may_not_see_it(
+        stack, approving, provider):
+    listed_runs(stack)
+    stack.model.reply("Q-1002's refund went out on Monday.")  # billing's, from what it was told
+    first = stack.send("Where's my refund?", "ana")
+    assert stack.scheduler().answer_waiting() == 1
+    [said] = [m for m in httpx.get(f"{stack.channels_url}/channels/local/messages/{first}",
+                                   params={"person": "ana"}, timeout=30).json()["messages"]]
+    say_wrong(stack, said["id"])
+    shown = answered(stack, text="And my invoice?")
+    say_wrong(stack, shown["id"], why="It's Q-1004's, not mine.")  # their words name one
+    body = checks(approving, provider)
+    assert (body["answers"], body["hidden"], body["waiting"]) == ([], 2, 0)
+    for row in kept(stack):
+        assert as_person(approving, provider, "priya", "POST",
+                         f"/studio/api/feedback/{row['id']}/grade",
+                         {"grade": "right"}).status_code == 404
+    home = as_person(approving, provider, "priya", "GET", "/studio/api/home").json()
+    assert not [w for w in home["waiting"] if w["kind"] == "feedback"]
+
+
+def test_an_instance_serving_few_shows_none_until_the_officer_agrees_to_names(stack, approving,
+                                                                            provider):
+    shown = answered(stack)  # Ana's and Ben's assistant: two people, fewer than five
+    say_wrong(stack, shown["id"], why="Wrong date.")
+    body = checks(approving, provider)
+    assert (body["answers"], body["hidden"], body["waiting"]) == ([], 1, 0)
+    [row] = kept(stack)
+    assert as_person(approving, provider, "priya", "POST", f"/studio/api/feedback/{row['id']}/grade",
+                     {"grade": "right"}).status_code == 404
+    home = as_person(approving, provider, "priya", "GET", "/studio/api/home").json()
+    assert not [w for w in home["waiting"] if w["kind"] == "feedback"]
+    assert not stack.settle(data_protection={"studio_names": True},
+                            signers=("ana", "noor")).refused
+    [answer] = checks(approving, provider)["answers"]  # named, and so shown as it was said
+    assert (answer["answer"], answer["said"], answer["by"]) == (ANSWER, "Wrong date.", "Ana Ortiz")
 
 
 def test_what_someone_said_is_theirs_kept_exported_and_erased(stack):
@@ -257,6 +303,7 @@ def test_teams_buttons_on_an_answer_say_it_was_wrong_with_why(stack, teams_bot):
 
 def test_the_web_chat_asks_why_and_its_owners_grade_it_on_the_agents_page(stack, approving, provider,
                                                                           browser):
+    listed_runs(stack)
     stack.model.reply(ANSWER)
     provider.person = "ana"
     page = browser.new_page(viewport={"width": 1280, "height": 900})

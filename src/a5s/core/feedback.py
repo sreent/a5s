@@ -8,8 +8,12 @@ only from whom it answered, or someone in the group chat it was said in, once ea
 they write with it is for its owners, and the web chat says so as they write it.
 
 An owner of the agent sees what was said to be wrong, the answer itself, and the run behind
-it, only for a run whose every record they may see, as the studio shows runs, and who said it
-only once the data protection officer agrees to names in the studio. They grade it; a grade
+it, only as the studio shows runs: for a run whose every record they may see, and every record
+the answer and their words name, and until the data protection officer agrees to names in the
+studio, only of an instance that serves as many people as the officer chose, with the names of
+whom it answered, whoever said it was wrong and everyone a5s serves masked by code, as emails,
+links and long numbers are (core/masking.py), and who said it only once the officer agrees. They
+grade it; a grade
 changes no level, as a sample's does, but says how the agent's answers stand. It's kept as the
 conversation it's in is, 12 months, archived when someone leaves, erased when they ask, and in
 their export.
@@ -21,8 +25,8 @@ import hashlib
 from typing import Any
 
 from a5s import db
-from a5s.contract import Person, Scenario
-from a5s.core import languages, ledger, studio, words
+from a5s.contract import DataProtection, Person, Scenario
+from a5s.core import languages, ledger, masking, registry, studio, words
 from a5s.core.releases import agent_owner
 
 KIND = "feedback"  # in the ledger
@@ -96,18 +100,48 @@ def owns(viewer: Person, agent: str) -> bool:
     return agent_owner(agent) in viewer.roles
 
 
+def _checkable(conn: db.Connection, scenario: Scenario, viewer: Person, rows: list[dict],
+               names: bool, fewest: int) -> set[int]:
+    """Of these answers people said were wrong, those an owner of their agent may check, as the
+    studio shows runs: each whose run's every record they may see, and every record the answer
+    and their words name; and until the officer agrees to names, only of an instance serving at
+    least `fewest` people, whose runs the studio shows one by one."""
+    seen = studio.seeable(conn, scenario, viewer, [str(r["run_id"]) for r in rows if r["run_id"]])
+    many: set[str] = set()
+    if not names and rows:
+        many = {i["id"] for i in conn.execute(
+            "select id, serves from instances where id = any(%s)",
+            (sorted({r["instance_id"] for r in rows if r["instance_id"]}),)).fetchall()
+                if len(registry.served(scenario, i["serves"] or [])) >= fewest}
+    return {r["id"] for r in rows if r["run_id"] and str(r["run_id"]) in seen
+            and (names or r["instance_id"] in many)
+            and all(scenario.sees(viewer.id, k) for k in studio.named(
+                scenario, f"{r.get('answer') or ''}\n{r.get('said') or ''}"))}
+
+
+ROWS = ("select f.*, o.text as answer, r.acts_for from answer_feedback f "
+        "join outbox o on o.id = f.outbox_id left join runs r on r.id = f.run_id ")
+
+
 def shown(conn: db.Connection, scenario: Scenario, viewer: Person, agent: str,
-          names: bool = False) -> dict:
+          names: bool = False, fewest: int = DataProtection.fewest_people) -> dict:
     """What people said of an agent's answers that an owner of it may check, newest first:
-    each answer whose run's every record they may see, with the answer, their words, how it
-    was graded, and who said it only if `names`; how many others; and the counts."""
+    each answer they may check (_checkable), with the answer, their words, how it was graded,
+    and who said it only if `names`, else with whoever it names masked; how many others; and
+    the counts."""
     if not owns(viewer, agent):
         return {"agent": agent, "answers": [], "hidden": 0, "waiting": 0, "graded": {}}
-    rows = conn.execute(
-        "select f.*, o.text as answer from answer_feedback f join outbox o on o.id = f.outbox_id "
-        "where f.agent = %s order by f.at desc limit %s", (agent, MOST_SHOWN)).fetchall()
-    seen = studio.seeable(conn, scenario, viewer, [str(r["run_id"]) for r in rows if r["run_id"]])
-    mine = [r for r in rows if r["run_id"] and str(r["run_id"]) in seen]
+    rows = conn.execute(ROWS + "where f.agent = %s order by f.at desc limit %s",
+                        (agent, MOST_SHOWN)).fetchall()
+    checkable = _checkable(conn, scenario, viewer, rows, names, fewest)
+    mine = [r for r in rows if r["id"] in checkable]
+    everyone = masking.known(conn, scenario) if mine and not names else set()
+
+    def said(r: dict, text: str | None) -> str | None:
+        if text is None or names:
+            return text
+        return masking.mask(text, scenario, [*(r["acts_for"] or []), r["person"], *everyone])[0]
+
     graded: dict[str, int] = {}
     for r in mine:
         if r["grade"]:
@@ -116,23 +150,23 @@ def shown(conn: db.Connection, scenario: Scenario, viewer: Person, agent: str,
             "waiting": sum(1 for r in mine if r["grade"] is None), "graded": graded,
             "answers": [{
                 "id": r["id"], "at": r["at"].isoformat(), "instance": r["instance_id"],
-                "run": str(r["run_id"]), "channel": r["channel"], "answer": r["answer"],
-                "said": r["said"], "grade": r["grade"],
+                "run": str(r["run_id"]), "channel": r["channel"], "answer": said(r, r["answer"]),
+                "said": said(r, r["said"]), "grade": r["grade"],
                 "graded_at": r["graded_at"].isoformat() if r["graded_at"] else None,
                 "graded_by": studio.name_of(scenario, r["graded_by"]),
                 "by": studio.name_of(scenario, r["person"]) if names else None} for r in mine]}
 
 
 def grade(conn: db.Connection, scenario: Scenario, viewer: Person, feedback: int,
-          given: str) -> dict:
+          given: str, names: bool = False, fewest: int = DataProtection.fewest_people) -> dict:
     """An owner's grade of an answer someone said was wrong, in the caller's transaction, and
     the ledger's word on it; a grade given before is changed. Refused for an answer they may
     not check."""
     if given not in GRADES:
         raise Refused("a grade is right, wrong or critical")
-    row = conn.execute("select * from answer_feedback where id = %s", (feedback,)).fetchone()
-    if row is None or not owns(viewer, row["agent"]) or not row["run_id"] or str(
-            row["run_id"]) not in studio.seeable(conn, scenario, viewer, [str(row["run_id"])]):
+    row = conn.execute(ROWS + "where f.id = %s", (feedback,)).fetchone()
+    if row is None or not owns(viewer, row["agent"]) or feedback not in _checkable(
+            conn, scenario, viewer, [row], names, fewest):
         raise Refused("there's no such answer for you to check")
     conn.execute("update answer_feedback set grade = %s, graded_by = %s, graded_at = now() "
                  "where id = %s", (given, viewer.id, feedback))
@@ -143,15 +177,14 @@ def grade(conn: db.Connection, scenario: Scenario, viewer: Person, feedback: int
     return {"id": feedback, "grade": given}
 
 
-def waiting(conn: db.Connection, scenario: Scenario, viewer: Person,
-            agents: list[str]) -> dict[str, int]:
+def waiting(conn: db.Connection, scenario: Scenario, viewer: Person, agents: list[str],
+            names: bool = False, fewest: int = DataProtection.fewest_people) -> dict[str, int]:
     """For each agent someone owns, how many answers people said were wrong wait for them to
-    check, of those they may see."""
+    check, of those they may check."""
     found = {}
     for agent in (a for a in agents if owns(viewer, a)):
-        rows = conn.execute("select run_id from answer_feedback where agent = %s and grade is null "
-                            "and run_id is not null limit %s", (agent, MOST_SHOWN)).fetchall()
-        seen = studio.seeable(conn, scenario, viewer, [str(r["run_id"]) for r in rows])
-        if n := sum(1 for r in rows if str(r["run_id"]) in seen):
+        rows = conn.execute(ROWS + "where f.agent = %s and f.grade is null and f.run_id is not "
+                            "null limit %s", (agent, MOST_SHOWN)).fetchall()
+        if n := len(_checkable(conn, scenario, viewer, rows, names, fewest)):
             found[agent] = n
     return found

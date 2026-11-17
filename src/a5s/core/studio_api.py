@@ -481,8 +481,9 @@ def router(gw: Any) -> APIRouter:
         if agent not in gw.definitions or not feedback.owns(person, agent):
             raise HTTPException(404, "there's no such agent of yours")
         with db.transaction(gw.url) as conn:
-            return feedback.shown(conn, gw.scenario, person, agent,
-                                  names=gw.data_protection(conn).studio_names)
+            choices = gw.data_protection(conn)
+            return feedback.shown(conn, gw.scenario, person, agent, names=choices.studio_names,
+                                  fewest=choices.fewest_people)
 
     @api.post("/studio/api/feedback/{answer}/grade", **shapes.answers(shapes.AnswerGraded))
     def studio_grade_answer(answer: int, body: AnswerGrade,
@@ -490,7 +491,9 @@ def router(gw: Any) -> APIRouter:
         """An owner's grade of an answer someone said was wrong: right, wrong or critical."""
         with db.transaction(gw.url) as conn:
             try:
-                return feedback.grade(conn, gw.scenario, person, answer, body.grade)
+                choices = gw.data_protection(conn)
+                return feedback.grade(conn, gw.scenario, person, answer, body.grade,
+                                      names=choices.studio_names, fewest=choices.fewest_people)
             except feedback.Refused as exc:
                 raise HTTPException(404 if "no such" in str(exc) else 400, str(exc)) from None
 

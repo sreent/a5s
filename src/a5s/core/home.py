@@ -155,7 +155,10 @@ def waiting(conn: db.Connection, gw: Any, person: Person,
                                                         person=ask["person"], agent=ask["agent"]),
                       "why": [words.translated(language, w) for w in ask["why"]],
                       "go": f"/studio/agents/{ask['agent']}"})
-    for agent, n in feedback.waiting(conn, scenario, person, sorted(gw.definitions)).items():
+    choices = gw.data_protection(conn)
+    for agent, n in feedback.waiting(conn, scenario, person, sorted(gw.definitions),
+                                     names=choices.studio_names,
+                                     fewest=choices.fewest_people).items():
         found.append({"kind": "feedback", "what": words.say(
                           language, "{n} of the {agent}'s answers someone said was wrong wait for "
                           "you to check" if n == 1 else "{n} of the {agent}'s answers people said "
