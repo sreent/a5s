@@ -70,3 +70,13 @@ def test_a_decider_sees_the_value_a_held_change_writes(stack, approving, provide
     sweep(stack)
     made = due_of(stack)
     assert made == "2026-11-06" or made in shown, (made, shown)
+
+
+def test_a_handle_is_checked_as_the_value_it_stands_for(stack, monkeypatch):
+    """A tool's schema checks what the system would get (round 15): a handle for a date fits a
+    date's form, as above, and one for anything else doesn't, nor says what it stands for."""
+    token, handle = emailed(stack, monkeypatch, LINK)  # an address, not a date
+    with stack.client(token) as c:
+        r = c.post("/run/tools/change_due_date", json={"args": {"key": "Q-1002", "due": handle}})
+    assert r.status_code == 403 and "due isn't a date" in r.text, r.text
+    assert "evil.test" not in r.text and held(stack) == []

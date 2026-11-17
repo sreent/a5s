@@ -2697,11 +2697,12 @@ def create_app(gw: Gateway) -> FastAPI:
         # that can't be read now is asked for no further: nobody could decide it as they stand.
         # Only for a run there is, with arguments that fit, naming a few: nothing's read for less
         unreadable = False
-        if action:
+        given = args  # as the system would get them: each handle as the value it stands for,
+        if action:  # which a string's form, such as a date's, is checked on (round 15)
             with db.transaction(gw.url) as conn:
-                load_run(conn, token)
+                given = handles.resolved_args(conn, load_run(conn, token)["run"], args)
         readable = (tool is not None and bool(action) and len(keys) <= MOST_NAMED
-                    and misfit(tool.schema, args) is None)
+                    and misfit(tool.schema, given) is None)
         try:
             standing = proposals.snapshot({k: record_of(gw.scenario, k) for k in keys}) if readable else {}
         except Exception:  # the records system's own failure, never the run's
@@ -2745,7 +2746,8 @@ def create_app(gw: Gateway) -> FastAPI:
                 if found[0] is None:  # fail closed
                     decision = Decision(False, (Own.SETTINGS,), explanations=(
                         f"a5s can't use the settings in force: {found[1]}",))
-                elif problem := misfit((core or tool).schema if (core or tool) else {}, args):
+                elif problem := misfit((core or tool).schema if (core or tool) else {},
+                                       handles.resolved_args(conn, row["run"], args)):
                     decision = Decision(False, (Own.ARGUMENTS,), explanations=(
                         f"the arguments don't fit the tool: {problem}",))
                 elif any(not isinstance(r, str) or not r for r in records):
