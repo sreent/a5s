@@ -79,6 +79,43 @@ TH: dict[str, str] = {
         "a5s จึงไม่เปรียบเทียบทั้งสองอย่าง",
     "no currency it names": "สกุลเงินที่ไม่ได้ระบุ",
     "you own a budget": "คุณเป็นเจ้าของงบประมาณ",
+    # The map of what depends on what (core/dependencies.py): each edge whole, with {from} and
+    # {to} where the page names them, and what each thing on it is
+    "{from} may call {to}": "{from} เรียกใช้ {to} ได้",
+    "{from} comes from {to}": "{from} มาจาก {to}",
+    "{from} acts in {to} as the person it acts for, with their own permissions":
+        "{from} ทำงานใน {to} ในนามของผู้ที่ทำงานให้ ด้วยสิทธิ์ของผู้นั้นเอง",
+    "{to}'s {type} events start {from}'s runs": "เหตุการณ์ {type} จาก {to} เริ่มการทำงานของ {from}",
+    "{from}'s release names {to}": "รีลีสของ {from} ระบุ {to}",
+    "{to} judges {from}'s work": "{to} ประเมินงานของ {from}",
+    "{from} runs {to}'s version {release}": "{from} ใช้งาน {to} เวอร์ชัน {release}",
+    "{from} calls {to}": "{from} เรียกใช้ {to}",
+    "{from} works in {to}, at level {level}": "{from} ทำงานใน {to} ที่ระดับ {level}",
+    "{from} works in {to}, at level {level}, and at level 2 for {types}":
+        "{from} ทำงานใน {to} ที่ระดับ {level} และที่ระดับ 2 สำหรับ {types}",
+    "{from} may ask {to}": "{from} ถาม {to} ได้",
+    "{from} answers beside {to}, and sends nothing": "{from} ตอบคู่กับ {to} โดยไม่ส่งสิ่งใดออกไป",
+    "an MCP server": "เซิร์ฟเวอร์ MCP",
+    "the scenario's own records": "ระเบียนของสถานการณ์เอง",
+    "a library of documents": "คลังเอกสาร",
+    "sends events": "ส่งเหตุการณ์",
+    "a system agents act in as the person, with their own permissions":
+        "ระบบที่เอเจนต์ทำงานในนามของบุคคล ด้วยสิทธิ์ของบุคคลนั้นเอง",
+    "a part of the records, which its owners decide for":
+        "ส่วนหนึ่งของระเบียน ซึ่งเจ้าของส่วนงานเป็นผู้ตัดสินใจ",
+    "not in the scenario now": "ไม่มีในสถานการณ์แล้ว",
+    "not in models.yaml": "ไม่มีใน models.yaml",
+    "at work": "กำลังทำงาน",
+    "suspended": "ถูกระงับ",
+    "waiting for approval": "รอการอนุมัติ",
+    "a shadow: it answers beside another, and sends nothing":
+        "เงา: ตอบคู่กับอินสแตนซ์อื่น โดยไม่ส่งสิ่งใดออกไป",
+    # What a version of the settings would have done differently (core/impact.py)
+    "Each call is decided as the directory, the agents' releases, the records' parts and a5s's "
+    "caps stand now. A change someone asked for of their own records counts as theirs only "
+    "where the decision recorded shows it was.":
+        "แต่ละการเรียกใช้ถูกตัดสินตามไดเรกทอรี รีลีสของเอเจนต์ ส่วนงานของระเบียน และเพดานของ a5s "
+        "ในปัจจุบัน การเปลี่ยนแปลงที่ผู้ใดขอสำหรับระเบียนของตนเอง จะนับเป็นของผู้นั้นเฉพาะเมื่อการตัดสินที่บันทึกไว้แสดงเช่นนั้น",
     # The roles someone holds, and what each lets them do (core/home.py, core/administration.py)
     "Owner of {scope}": "เจ้าของ {scope}",
     "Delegate in {scope}": "ผู้รับมอบหมายใน {scope}",

@@ -9,8 +9,14 @@ may ask among them. So whoever changes one thing sees what may change with it, b
 everything that reaches a tool's system, a model or a part, and everything an instance reaches.
 
 An edge runs from what depends to what it depends on: an instance on the agent it runs, its
-model and its parts; an agent on its tools, its model and the systems that start it; a tool on
-its system. What depends on something is everything with a way along the edges to it.
+model, its parts and the instance it answers beside, if it's a shadow; an agent on its tools,
+its model, its judge and the systems that start it; a tool on its system: the scenario's
+records, an MCP server or a library of documents, and the system it acts in as the person, with
+their own permissions, if it does. A model a release names that this deployment doesn't have is
+on it too, said so. What depends on something is everything with a way along the edges to it.
+
+What each edge says is a whole sentence, in the language whoever looks reads, with {from} and
+{to} where the page puts their names, so it reads as itself from either end, in any language.
 """
 
 from __future__ import annotations
@@ -21,17 +27,40 @@ from typing import Any
 from a5s import db
 from a5s.config import ModelConfig
 from a5s.contract import Person, Scenario, Tool
-from a5s.core import studio
+from a5s.core import languages, studio, words
 
 # The kinds of things on the map, in the order of its columns, left to right
 KINDS = ("part", "instance", "agent", "tool", "system", "model")
-STATUS = {"active": "at work", "suspended": "suspended", "proposed": "waiting for approval"}
+STATUS = {"active": "at work", "suspended": "suspended", "proposed": "waiting for approval",
+          "shadow": "a shadow: it answers beside another, and sends nothing"}
+# Each edge, in words, whole: what depends is {from}, what it depends on {to}, which the page
+# names, so each reads as itself in any language, from either end
+SAYS = {
+    "call": "{from} may call {to}",
+    "comes": "{from} comes from {to}",
+    "as_person": "{from} acts in {to} as the person it acts for, with their own permissions",
+    "events": "{to}'s {type} events start {from}'s runs",
+    "release": "{from}'s release names {to}",
+    "judge": "{to} judges {from}'s work",
+    "runs": "{from} runs {to}'s version {release}",
+    "calls": "{from} calls {to}",
+    "works": "{from} works in {to}, at level {level}",
+    "works2": "{from} works in {to}, at level {level}, and at level 2 for {types}",
+    "asks": "{from} may ask {to}",
+    "shadows": "{from} answers beside {to}, and sends nothing",
+}
+ABOUT = {"mcp": "an MCP server", "records": "the scenario's own records",
+         "library": "a library of documents", "events": "sends events",
+         "as_person": "a system agents act in as the person, with their own permissions",
+         "part": "a part of the records, which its owners decide for",
+         "gone": "not in the scenario now", "unknown": "not in models.yaml"}
 
 
 def drawn(conn: db.Connection, scenario: Scenario, definitions: dict[str, Any],
-          tools: dict[str, Tool], models: dict[str, ModelConfig], viewer: Person) -> dict:
+          tools: dict[str, Tool], models: dict[str, ModelConfig], viewer: Person,
+          language: str = languages.ENGLISH) -> dict:
     """The map as someone may see it: each thing on it, by its kind and name, and each edge,
-    from what depends to what it depends on, saying how."""
+    from what depends to what it depends on, saying how, in the language they read."""
     every = studio.instances(conn)
     nodes: dict[str, dict] = {}
     edges: dict[tuple[str, str], str] = {}
@@ -43,13 +72,17 @@ def drawn(conn: db.Connection, scenario: Scenario, definitions: dict[str, Any],
                                "at": at, "tone": tone})
         return key
 
-    def edge(source: str, target: str, says: str) -> None:
-        edges.setdefault((source, target), says)
+    def say(about: str) -> str:
+        return words.say(language, ABOUT[about])
 
-    def model(alias: str) -> str | None:
+    def edge(source: str, target: str, how: str, **args: Any) -> None:
+        edges.setdefault((source, target), words.say(
+            language, SAYS[how], **{"from": "{from}", "to": "{to}"}, **args))
+
+    def model(alias: str) -> str:
         found = models.get(alias)
-        if found is None:
-            return None
+        if found is None:  # a release may name one this deployment doesn't have
+            return node("model", alias, say("unknown"), tone="warn")
         return node("model", alias, f"{found.provider}, {found.region}" if found.region != (
             "not stated") else found.provider)
 
@@ -62,33 +95,50 @@ def drawn(conn: db.Connection, scenario: Scenario, definitions: dict[str, Any],
             continue  # what it may do isn't theirs to see
         for listed in definition.tool_names:
             tool = tools.get(listed)
-            key = node("tool", listed, tool.description if tool else "not in the scenario now",
+            key = node("tool", listed, tool.description if tool else say("gone"),
                        tone=_tone(tool))
-            edge(agent, key, "may call it")
-            server = getattr(tool, "server", "") if tool else ""
-            if tool is not None:
+            edge(agent, key, "call")
+            if tool is None:
+                continue
+            server, library = getattr(tool, "server", ""), getattr(tool, "library", "")
+            if library:  # a library's documents, read as its declaration says
+                edge(key, node("system", getattr(tool, "title", "") or library, say("library")),
+                     "comes")
+            else:
                 edge(key, node("system", server or scenario.name,
-                               "an MCP server" if server else "the scenario's own records"),
-                     "comes from it")
+                               say("mcp") if server else say("records")), "comes")
+            if person_in := getattr(tool, "as_person", ""):  # with the person's own permissions
+                edge(key, node("system", person_in, say("as_person")), "as_person")
         for event in definition.events:
-            edge(agent, node("system", event.source, "sends events"),
-                 f"its {event.type} events start runs")
-        if (chosen := model(definition.model)) is not None:
-            edge(agent, chosen, "its release names it")
+            edge(agent, node("system", event.source, say("events")), "events", type=event.type)
+        edge(agent, model(definition.model), "release")
+        if definition.evaluation is not None:  # its judge, which reads what its runs did
+            edge(agent, model(definition.evaluation.judge), "judge")
     watched = [i for i in every if studio.watches(i, viewer) and f"agent:{i['definition']}" in nodes]
     for inst in watched:
         status = str(inst["status"])
-        key = node("instance", inst["id"], STATUS.get(status, status), f"/studio/instances/{inst['id']}")
-        edge(key, f"agent:{inst['definition']}", f"runs its version {inst['release']}")
-        if inst["model"] and (chosen := model(inst["model"])) is not None:
-            edge(key, chosen, "calls it")
+        key = node("instance", inst["id"], words.say(language, STATUS[status])
+                   if status in STATUS else status, f"/studio/instances/{inst['id']}")
+        edge(key, f"agent:{inst['definition']}", "runs", release=inst["release"])
+        if inst["model"]:
+            edge(key, model(inst["model"]), "calls")
+        actions = inst.get("actions") or {}
         for part, level in sorted((inst["parts"] or {}).items()):
-            edge(key, node("part", part, "a part of the records, which its owners decide for",
-                           "/studio/settings"), f"works in it, at level {level}")
-    for inst in watched:  # whom each may ask, of the instances they may see
+            there = actions.get(part) if isinstance(actions, dict) else None
+            second = sorted(a for a, n in (there or {}).items() if n == 2)  # level 2's types
+            target = node("part", part, say("part"), "/studio/settings")
+            if second:
+                edge(key, target, "works2", level=level, types=", ".join(second))
+            else:
+                edge(key, target, "works", level=level)
+    shadowing = {r["id"]: r["shadows"] for r in conn.execute(
+        "select id, shadows from instances where shadows is not null").fetchall()}
+    for inst in watched:  # whom each may ask, and answers beside, of the instances they may see
         for asked in inst["asks"] or []:
             if f"instance:{asked}" in nodes:
-                edge(f"instance:{inst['id']}", f"instance:{asked}", "may ask it")
+                edge(f"instance:{inst['id']}", f"instance:{asked}", "asks")
+        if (beside := shadowing.get(inst["id"])) and f"instance:{beside}" in nodes:
+            edge(f"instance:{inst['id']}", f"instance:{beside}", "shadows")
     order = {kind: i for i, kind in enumerate(KINDS)}
     return {"nodes": sorted(nodes.values(), key=lambda n: (order[n["kind"]], n["name"])),
             "edges": [{"from": s, "to": t, "says": says} for (s, t), says in sorted(edges.items())]}

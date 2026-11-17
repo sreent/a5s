@@ -159,10 +159,12 @@ def test_ocean_gives_thai_its_own_faces_for_its_letters_alone():
 
 
 def test_a5s_writes_its_own_words_in_the_language_someone_reads(stack, approving, provider):
-    from a5s.core import administration, feedback, home, words
+    from a5s.core import administration, dependencies, feedback, home, words
     for english, thai in words.TH.items():  # each keeps its English's {name}s
         assert sorted(re.findall(r"\{(\w+)\}", english)) == sorted(re.findall(r"\{(\w+)\}", thai)), english
-    for kept in (*home.MAY.values(), home.TEAM_MAY, feedback.NOTED, *administration.SCOPED.values()):
+    for kept in (*home.MAY.values(), home.TEAM_MAY, feedback.NOTED, *administration.SCOPED.values(),
+                 *dependencies.SAYS.values(), *dependencies.ABOUT.values(),
+                 *dependencies.STATUS.values()):  # and the map's, every edge and thing on it
         assert kept in words.TH, kept  # what a role lets someone do, and the like, has its Thai
     assert words.translated("th", "the owner of billing hasn't approved it") == "เจ้าของ billing ยังไม่ได้อนุมัติ"
     assert words.translated("en", "the owner of billing hasn't approved it") == \

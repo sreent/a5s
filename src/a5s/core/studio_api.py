@@ -556,7 +556,7 @@ def router(gw: Any) -> APIRouter:
         tools, systems and models, each joined to what it depends on (core/dependencies.py)."""
         with db.transaction(gw.url) as conn:
             return dependencies.drawn(conn, gw.scenario, gw.definitions, gw.scenario.tools(),
-                                      gw.models, person)
+                                      gw.models, person, languages.of(conn, person))
 
     @api.get("/studio/api/agents/{agent}", **shapes.answers(shapes.Agent))
     def studio_agent(agent: str, person: Annotated[Person, Depends(someone)]) -> dict:

@@ -6,8 +6,12 @@ reaches."""
 import httpx
 
 from a5s import db
+from a5s.connectors.libraries import Shelved
+from a5s.connectors.mcp import Served
 from a5s.core import dependencies
+from a5s.definitions import Evaluation
 from conftest import accessible
+from test_languages import reads
 from test_r9_studio_need_to_know import with_ops
 
 
@@ -32,11 +36,13 @@ def test_the_map_joins_each_part_instance_agent_tool_system_and_model(stack, app
     assert keys(found)[:3] == ["part:billing", "instance:assistant-finance", "agent:assistant"]
     assert keys(found)[-2:] == ["system:sample", "model:fake"]  # in its columns' order
     said = edges(found)
-    assert said[("instance:assistant-finance", "part:billing")] == "works in it, at level 1"
-    assert said[("instance:assistant-finance", "agent:assistant")].startswith("runs its version ")
-    assert said[("instance:assistant-finance", "model:fake")] == "calls it"
-    assert said[("agent:assistant", "tool:change_due_date")] == "may call it"
-    assert said[("tool:change_due_date", "system:sample")] == "comes from it"
+    assert said[("instance:assistant-finance", "part:billing")] == "{from} works in {to}, at level 1"
+    assert said[("instance:assistant-finance", "agent:assistant")].startswith(
+        "{from} runs {to}'s version ")  # whole, with each end where the page names it
+    assert said[("instance:assistant-finance", "model:fake")] == "{from} calls {to}"
+    assert said[("agent:assistant", "tool:change_due_date")] == "{from} may call {to}"
+    assert said[("tool:change_due_date", "system:sample")] == "{from} comes from {to}"
+    assert said[("agent:assistant", "model:fake")] == "{from}'s release names {to}"
     shown = {n["key"]: n for n in found["nodes"]}
     assert (shown["tool:change_due_date"]["tone"], shown["tool:search_records"]["tone"]) == (
         "changes", "reads")  # as the studio colours what a tool does
@@ -79,13 +85,13 @@ def test_whom_an_instance_may_ask_shows_only_among_those_someone_may_watch(stack
     with db.transaction(stack.admin) as conn:
         conn.execute("update instances set asks = '{assistant-finance}' where id = 'assistant-ops'")
     ana = mapped(approving, provider, "ana")  # who approves instances watches both
-    assert edges(ana)[("instance:assistant-ops", "instance:assistant-finance")] == "may ask it"
+    assert edges(ana)[("instance:assistant-ops", "instance:assistant-finance")] == "{from} may ask {to}"
     assert dependencies.reaching(ana, "part:billing")["depended_on_by"] == [
         "instance:assistant-finance", "instance:assistant-ops"]  # what billing's change reaches
     omar = mapped(approving, provider, "omar")
     assert "instance:assistant-ops" in keys(omar) and "part:orders" in keys(omar)
     assert "instance:assistant-finance" not in keys(omar) and "part:billing" not in keys(omar)
-    assert not [e for e in omar["edges"] if e["says"] == "may ask it"]
+    assert not [e for e in omar["edges"] if e["says"] == "{from} may ask {to}"]
 
 
 def test_choosing_on_the_map_says_what_a_change_reaches(stack, approving, provider, browser):
@@ -102,7 +108,7 @@ def test_choosing_on_the_map_says_what_a_change_reaches(stack, approving, provid
     assert page.locator("#parts-reached [data-pick]").all_inner_texts() == ["billing"]
     assert page.locator("#depends-on [data-pick]").all_inner_texts() == ["sample"]
     assert page.locator("#says li").all_inner_texts() == [
-        "assistant may call change_due_date.", "It comes from sample."]
+        "assistant may call change_due_date", "change_due_date comes from sample"]
     assert page.locator(".flow-step.dim[data-key='model:fake']").count() == 1  # beyond its reach
     assert page.locator(".flow-step.dim[data-key='part:billing']").count() == 0  # within it
     assert "at=tool%3Achange_due_date" in page.url  # so it can be linked to
@@ -122,3 +128,73 @@ def test_choosing_on_the_map_says_what_a_change_reaches(stack, approving, provid
     page.goto(f"{approving}/studio/agents/assistant")  # an agent's page leads to it there
     page.click("#on-the-map")
     page.wait_for_selector("#chosen h2 >> text=assistant", timeout=30000)
+
+
+def drawn(stack, person: str = "ana", extra: dict | None = None, **changed) -> dict:
+    """The map as someone may see it, of the assistant as `changed` makes it, with the tools the
+    scenario has and those in `extra`."""
+    definitions = dict(stack.gateway.definitions)
+    if changed:
+        definitions["assistant"] = definitions["assistant"].model_copy(update=changed)
+    with db.transaction(stack.admin) as conn:
+        return dependencies.drawn(conn, stack.gateway.scenario, definitions,
+                                  {**stack.gateway.scenario.tools(), **(extra or {})},
+                                  stack.gateway.models, stack.gateway.scenario.person(person))
+
+
+def test_a_librarys_tools_come_from_it_and_one_acting_as_the_person_says_so(stack):
+    def nothing(call):
+        return {}
+    library = Shelved(name="search_handbook", description="Searches the handbook",
+                      schema={"type": "object"}, run=nothing, library="handbook",
+                      title="The staff handbook", as_person="sharepoint")
+    served = Served(name="find_ticket", description="Finds a ticket", schema={"type": "object"},
+                    run=nothing, server="itsm", as_person="servicenow")
+    assistant = stack.gateway.definitions["assistant"]
+    found = drawn(stack, extra={"search_handbook": library, "find_ticket": served},
+                  tools={**assistant.tools, "documents": ["search_handbook", "find_ticket"]})
+    said = edges(found)
+    about = {n["key"]: n["about"] for n in found["nodes"]}
+    # A library's documents come from it, never from the scenario's records
+    assert said[("tool:search_handbook", "system:The staff handbook")] == "{from} comes from {to}"
+    assert ("tool:search_handbook", "system:sample") not in said
+    assert about["system:The staff handbook"] == "a library of documents"
+    assert said[("tool:find_ticket", "system:itsm")] == "{from} comes from {to}"
+    for tool, system in (("search_handbook", "sharepoint"), ("find_ticket", "servicenow")):
+        assert said[(f"tool:{tool}", f"system:{system}")] == (
+            "{from} acts in {to} as the person it acts for, with their own permissions")
+    assert dependencies.reaching(found, "system:servicenow")["depended_on_by"][:2] == [
+        "tool:find_ticket", "agent:assistant"]  # what a change to the system it acts in reaches
+
+
+def test_a_judge_a_model_it_lacks_level_two_and_a_shadow_are_on_the_map(stack):
+    found = drawn(stack, evaluation=Evaluation(judge="fake-judge"), model="gone-model")
+    said, about = edges(found), {n["key"]: n["about"] for n in found["nodes"]}
+    assert said[("agent:assistant", "model:fake-judge")] == "{to} judges {from}'s work"
+    assert said[("agent:assistant", "model:gone-model")] == "{from}'s release names {to}"
+    assert about["model:gone-model"] == about["model:fake-judge"] == "not in models.yaml"
+    with db.transaction(stack.admin) as conn:  # a type of change at level 2 in billing
+        conn.execute("update instances set actions = '{\"billing\": {\"change-due-date\": 2}}' "
+                     "where id = 'assistant-finance'")
+    said = edges(drawn(stack))
+    assert said[("instance:assistant-finance", "part:billing")] == (
+        "{from} works in {to}, at level 1, and at level 2 for change-due-date")
+    with db.transaction(stack.admin) as conn:  # an instance answering beside it, as a shadow
+        conn.execute("insert into instances (id, definition, release, level, parts, actions, "
+                     "grants, model, serves, owner, status, shadows) select 'assistant-next', "
+                     "definition, release, level, parts, '{}', grants, model, serves, owner, "
+                     "'shadow', 'assistant-finance' from instances where id = 'assistant-finance'")
+    found = drawn(stack)
+    assert edges(found)[("instance:assistant-next", "instance:assistant-finance")] == (
+        "{from} answers beside {to}, and sends nothing")
+    assert {n["key"]: n["about"] for n in found["nodes"]}["instance:assistant-next"] == (
+        "a shadow: it answers beside another, and sends nothing")
+
+
+def test_the_map_reads_in_the_language_someone_reads(stack, approving, provider):
+    reads(stack, "ana", "th")
+    found = mapped(approving, provider, "ana")
+    said = edges(found)
+    assert said[("agent:assistant", "tool:change_due_date")] == "{from} เรียกใช้ {to} ได้"
+    assert {n["key"]: n["about"] for n in found["nodes"]}["instance:assistant-finance"] == (
+        "กำลังทำงาน")

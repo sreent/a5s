@@ -321,7 +321,6 @@ export const WATCH: Record<string, string> = {
   "{things} you may see. Choose one on the map to see what it depends on, and what depends on it.":
     "คุณดูได้ {things} เลือกสิ่งใดสิ่งหนึ่งบนแผนผังเพื่อดูว่าสิ่งนั้นขึ้นอยู่กับอะไร และอะไรขึ้นอยู่กับสิ่งนั้น",
   "Open its page": "เปิดหน้าของสิ่งนี้",
-  "It {says}.": "สิ่งนี้ {says}",
   "A change to it may change how these work.": "การเปลี่ยนแปลงสิ่งนี้อาจเปลี่ยนวิธีทำงานของรายการเหล่านี้",
   "Nothing you may see depends on it.": "ไม่มีสิ่งที่คุณดูได้ซึ่งขึ้นอยู่กับสิ่งนี้",
   "The parts it reaches": "ส่วนงานที่ได้รับผลกระทบ",

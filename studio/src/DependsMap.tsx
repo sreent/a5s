@@ -88,6 +88,11 @@ function Thing({ data }: NodeProps<Node<Data>>) {
 
 const NODE_TYPES = { thing: Thing };
 
+/** How one thing depends on another, whole, in the words the map gives it in the reader's
+ * language, with {from} and {to} where what depends and what it depends on are named. */
+export const told = (says: string, from: string, to: string) =>
+  says.replaceAll("{from}", from).replaceAll("{to}", to);
+
 /** Each kind's column, of those there are, and each thing's place in it. */
 export function columns(nodes: MapNode[]): MapNode[][] {
   return KINDS.map((kind) => nodes.filter((n) => n.kind === kind)).filter((col) => col.length);
@@ -109,7 +114,9 @@ function placed(nodes: MapNode[], edges: MapEdge[], chosen: string | null, pick:
     const [source, target] = a <= b ? [e.from, e.to] : [e.to, e.from];  // drawn left to right
     const lit = !chosen || (near.has(e.from) && near.has(e.to));
     return { id: `${e.from}>${e.to}`, source, target, sourceHandle: "out", targetHandle: a === b ? "beside" : "in",
-             className: lit ? "" : "dim", ariaLabel: `${e.from} ${e.says} ${e.to}` };
+             className: lit ? "" : "dim",
+             ariaLabel: told(e.says, nodes.find((n) => n.key === e.from)?.name ?? e.from,
+                             nodes.find((n) => n.key === e.to)?.name ?? e.to) };
   });
   return { nodes: placedNodes, edges: placedEdges, cols, tallest };
 }

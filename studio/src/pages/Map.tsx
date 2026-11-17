@@ -7,17 +7,12 @@
 import { useState } from "react";
 import { get } from "../api";
 import type * as gen from "../api.gen";
-import { DependsMap, KIND_NAMES, KINDS, type MapNode, reaching } from "../DependsMap";
+import { DependsMap, KIND_NAMES, KINDS, type MapNode, reaching, told } from "../DependsMap";
 import { t } from "../i18n";
 import { href } from "../router";
 import { PageHead, plural, To, useLoad, Waiting } from "../ui";
 
 const kindOf = (node: MapNode) => KIND_NAMES[node.kind]?.toLowerCase() ?? node.kind;
-/** How one thing depends on another, in the words the map gives it, about something named:
- * "may call it" about change_due_date is "may call change_due_date". */
-const told = (says: string, name: string) =>
-  says.replace(/\bits\b/g, `${name}'s`).replace(/\bit\b/g, name);
-
 /** Things on the map, each a way to choose it there, in the order the map's columns go. */
 function Things({ keys, nodes, pick, none }: { keys: string[]; nodes: Map<string, MapNode>; pick: (key: string) => void; none: string }) {
   const found = keys.map((k) => nodes.get(k)).filter((n): n is MapNode => Boolean(n))
@@ -76,8 +71,7 @@ export function MapPage({ at }: { at?: string }) {
                 {says.length > 0 && (
                   <ul className="plain" id="says">{says.map((e) => (
                     <li key={`${e.from}>${e.to}`}>
-                      {e.from === picked.key ? t("It {says}.", { says: told(e.says, nodes.get(e.to)?.name ?? e.to) })
-                        : `${nodes.get(e.from)?.name ?? e.from} ${told(e.says, picked.name)}.`}
+                      {told(e.says, nodes.get(e.from)?.name ?? e.from, nodes.get(e.to)?.name ?? e.to)}
                     </li>
                   ))}</ul>
                 )}

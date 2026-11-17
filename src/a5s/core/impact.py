@@ -31,7 +31,7 @@ from typing import Any
 
 from a5s import db
 from a5s.contract import InstanceSettings, Person, Settings
-from a5s.core import counts, groups, memberships, parts, registry, samples, studio
+from a5s.core import counts, groups, languages, memberships, parts, registry, samples, studio, words
 from a5s.core.policy import Decision
 
 log = logging.getLogger(__name__)
@@ -144,10 +144,15 @@ def shown(gw: Any, before: Settings | None, after: Settings,
                                                memberships.rooted(gw.scenario).holders)]
     try:
         with db.transaction(gw.url) as conn:
-            return preview(conn, gw, before, after, needed, gw.clock(), viewer)
+            language = languages.of(conn, viewer)
+            found = preview(conn, gw, before, after, needed, gw.clock(), viewer)
     except Exception:  # a preview is help, never a reason to refuse a review
         log.exception("couldn't work out what a version of the settings would do")
         return None
+    found["about"] = words.say(language, ABOUT)  # in the language they read, as its why
+    for shift in found["shifts"]:  # is, where a5s has it in their language
+        shift["why"] = words.translated(language, shift["why"])
+    return found
 
 
 def _calls(conn: db.Connection, gw: Any, since: datetime) -> tuple[list[Call], bool]:
