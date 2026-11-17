@@ -160,7 +160,9 @@ def erase(conn: db.Connection, person: str, now: datetime,
         delete("owed", "delete from obligations where person = %(id)s and done_at is not null "
                "and " + window.format(at="owed_since"), span)  # owed only in their time
     for table in departures.KEPT:  # what a5s keeps for someone, as archiving finds it
-        delete(table, f"delete from {table} where person = any(%s)", (names,))
+        delete(table, f"delete from {table} where person = any(%s)" + (  # but an agent's
+            " and not coalesce(route ? 'members', false)" if table == "outbox" else ""),  # answer
+               (names,))  # in a group chat is the group's, with what others said of it (E3)
     delete("said_in_groups", "delete from turns where speaker = any(%s)", (names,))
     delete("shadow_answers", "delete from shadow_answers where acts_for && %s",  # in a group's
            ([*names, person],))  # too: what a shadow answered is only ever for graders

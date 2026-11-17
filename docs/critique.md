@@ -719,7 +719,7 @@ Six reviewers who hadn't written a5s each took a part and tested the running sta
 | D12 | Development mode, which takes people's word for who they are, started beside an identity provider | Medium | It won't | Fixed |
 | D13 | A chat away for more than a quarter of an hour lost what a5s sent meanwhile to the local inbox for good | Medium | | Deferred, Small to Medium |
 | D14 | A post-mortem can't read what a change set after two days | Medium | | Deferred, Medium |
-| E3 | Erasing a group chat's member erased others' feedback on its answers | Medium | | Deferred, Small to Medium |
+| E3 | Erasing a group chat's member erased others' feedback on its answers | Medium | An agent's answer in a group chat is the group's: it stays through its asker's erasure, under a name no person has, with what others said of it; what the erased person said of it goes | Fixed |
 | E4 | A file sent in chat was named in an export but not given, and kept after erasure until the next sweep | Medium | | Deferred, Medium |
 | E5 | The officer can't withdraw a choice alone | Medium | | Deferred, Medium |
 | E6 | Auditors can't follow a change from its run to its outcome on their page | Medium | | Deferred, Medium |
