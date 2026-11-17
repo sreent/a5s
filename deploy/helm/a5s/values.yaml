@@ -101,8 +101,11 @@ events:
 # Acting as the person: the systems people may connect their own accounts in, so agents act there
 # as them, with their permissions, such as {name: servicenow, title: ServiceNow, authorize:
 # <its OAuth authorize address>, token: <its token address>, clientId: <a5s's client there>,
-# scopes: [...]}, each with a5s's client secret there in the Secret as delegation-secret-<name>,
-# which the core alone reads. Each system sends people back to <publicUrl>/studio/connections
+# scopes: [...], whoami: <where it says whose account a token is>, whose: <the field naming it,
+# such as result.user_name>, knownAs: <the directory's identities it is, such as entra, or none
+# for the a5s id>}, each with a5s's client secret there in the Secret as
+# delegation-secret-<name>, which the core alone reads. The core keeps a token only for the
+# account the system says it is, as the directory knows its person. Each system sends people back to <publicUrl>/studio/connections
 # (docs/connectors.md#acting-as-the-person).
 delegation:
   systems: []

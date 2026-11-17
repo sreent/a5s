@@ -3896,7 +3896,8 @@ def create_app(gw: Gateway) -> FastAPI:
             return {"connected": 0, "failed": 0}
         with db.transaction(gw.url) as conn:
             return delegation.sweep(conn, gw.delegation, gw.cfg.seal_keys,
-                                    f"{gw.public_url}{delegation.BACK}", delegation.client())
+                                    f"{gw.public_url}{delegation.BACK}", delegation.client(),
+                                    gw.scenario.person)  # whose each account is, the directory says
 
     @services.post("/handovers/sweep")
     def sweep_handovers() -> dict:

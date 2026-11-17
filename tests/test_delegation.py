@@ -109,6 +109,12 @@ class Desk:
             return {"access_token": access, "refresh_token": refresh, "token_type": "Bearer",
                     "expires_in": self.lifetime, "scope": "tickets.read"}
 
+        @app.get("/me")
+        def me(request: Request) -> Any:
+            whose = self.access.get(request.headers.get("authorization", "")
+                                    .removeprefix("Bearer "))
+            return {"user": {"name": whose}} if whose else JSONResponse({"error": "who?"}, 401)
+
         return app
 
     def server(self) -> Any:
@@ -143,6 +149,7 @@ def declared(url: str, **server: Any) -> dict:
 def systems(url: str) -> str:
     return json.dumps([{"name": "desk", "title": "Service desk", "authorize": f"{url}/authorize",
                         "token": f"{url}/token", "client_id": "a5s-desk",
+                        "whoami": f"{url}/me", "whose": "user.name",
                         "scopes": ["tickets.read", "offline_access"]}])
 
 
@@ -472,3 +479,27 @@ def test_someone_connects_from_their_own_page_in_the_studio(stack, approving, pr
     page.wait_for_selector("#connections >> text=Not connected", timeout=30000)
     with db.transaction(stack.admin) as conn:
         assert conn.execute("select count(*) as n from delegations").fetchone()["n"] == 0
+
+
+def test_a_code_recorded_for_someone_else_connects_nothing(stack, approving, provider, desk):
+    """Round 14 (B-H2): the part people reach records where they come back to, and whatever it
+    records, the core keeps a token only for the account the desk says it is, as the directory
+    knows its person: Ana's way back, recorded as Ben's, connects nobody."""
+    found, _, _ = desk
+    start = as_person(approving, provider, "ana", "POST", "/studio/api/you/connections/desk/start")
+    assert start.status_code == 200, start.text
+    found.person = "ana"
+    there = httpx.get(start.json()["go"], follow_redirects=False, timeout=30)
+    back = {k: v[0] for k, v in parse_qs(urlsplit(there.headers["location"]).query).items()}
+    with db.transaction(db.as_role(stack.admin, "channels")) as conn:
+        row = conn.execute("select * from delegation_starts where state = %s",
+                           (back["state"],)).fetchone()
+        conn.execute("delete from delegation_starts where state = %s", (back["state"],))
+        conn.execute("insert into delegation_starts (state, person, system, verifier, code, "
+                     "coded_at) values ('elsewhere', 'ben', 'desk', %s, %s, now())",
+                     (row["verifier"], back["code"]))
+    assert swept(stack) == {"connected": 0, "failed": 1}
+    with db.transaction(stack.admin) as conn:
+        assert conn.execute("select * from delegations").fetchall() == []
+    [refused] = [e for e in stack.ledger() if e.get("action") == "connect"]
+    assert refused["acts_for"] == ["ben"] and "isn't theirs" in refused["outcome"]["error"]

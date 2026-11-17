@@ -504,7 +504,8 @@ def test_an_agent_given_a_library_only_a5s_reader_reads_can_ask_it(tmp_path):
 # Through the core, as a run reads them
 
 DELEGATION = [{"name": "entra", "title": "Microsoft 365", "authorize": "https://login.example.test/authorize",
-               "token": "https://login.example.test/token", "client_id": "a5s-test"}]
+               "token": "https://login.example.test/token", "client_id": "a5s-test",
+               "whoami": "https://graph.example.test/v1.0/me", "whose": "id", "known_as": "entra"}]
 
 
 @pytest.fixture

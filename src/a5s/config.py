@@ -325,8 +325,10 @@ EVENT_SOURCES = Var("A5S_EVENT_SOURCES", "the systems that may tell a5s somethin
 
 DELEGATION = Var("A5S_DELEGATION", "the systems people may connect their own accounts in, so "
                  "agents act there as them, with their permissions: a JSON list of {name, title, "
-                 "authorize, token, client_id, scopes}, each system's OAuth endpoints and a5s's "
-                 "client there", None, _json_list, "a JSON list", area=DELEGATION_AREA)
+                 "authorize, token, client_id, scopes, whoami, whose, known_as}, each system's "
+                 "OAuth endpoints, a5s's client there, and where a5s asks whose account a token "
+                 "is and how the directory knows it", None, _json_list, "a JSON list",
+                 area=DELEGATION_AREA)
 
 SLACK_BOTS = Var("A5S_SLACK_BOTS", "an app for each agent, which turns Slack on: a JSON list of "
                  "{agent, app_id, secret_env, token_env}, its signing secret and bot token each in "
@@ -594,7 +596,7 @@ def check(env: Mapping[str, str] | None = None, serving: bool = True) -> tuple[l
             problems.append(f"A5S_DELEGATION names a system {name[:40]!r}: each is named in "
                             "lowercase, such as servicenow")
             continue
-        for key in ("authorize", "token", "client_id"):
+        for key in ("authorize", "token", "client_id", "whoami", "whose"):
             if not str(system.get(key) or "").strip():
                 problems.append(f"A5S_DELEGATION gives {name} no {key}")
     strangers = []
