@@ -78,9 +78,25 @@ def test_a_budget_is_its_owners_to_approve_and_reads_in_words(stack):
     assert not any(c["widens"] for c in approvals.changes(before, after, stack.gateway.definitions,
                                                           stack.gateway.scenario.person))
     for wrong in (b"spending:\n  parts: {billing: 0}\n", b"spending:\n  parts: {billing: '4'}\n",
-                  b"spending:\n  teams: {}\n"):
+                  b"spending:\n  teams: {}\n",
+                  b"spending:\n  parts: {billing: 400.505}\n",  # whole cents, as words say it
+                  b"spending:\n  currency: pounds\n"):  # its ISO 4217 code
         with pytest.raises(ValueError):
             parse_settings(wrong)
+
+
+def test_a_budget_says_the_currency_it_is_in(stack):
+    before = parse_settings(b"spending:\n  parts: {billing: 300}\n")
+    after = parse_settings(b"spending:\n  parts: {billing: 300}\n  currency: GBP\n")
+    said = [c["text"] for c in approvals.changes(before, after, stack.gateway.definitions,
+                                                 stack.gateway.scenario.person)]
+    assert said[0] == ("Budgets are in GBP, instead of the currency models.yaml prices models "
+                       "in.")
+    assert said[1].startswith("The budget for billing becomes GBP 300 a month, instead of 300")
+    whole = approvals.described(after, stack.gateway.definitions, stack.gateway.scenario.person)
+    assert any(line.startswith("The budget for billing is GBP 300 a month") for line in whole)
+    plain = approvals.described(before, stack.gateway.definitions, stack.gateway.scenario.person)
+    assert any("in the currency models.yaml prices models in" in line for line in plain)
 
 
 def test_what_runs_cost_goes_to_their_parts_agent_and_instance_with_a_forecast(priced):
@@ -124,7 +140,7 @@ def test_what_runs_cost_goes_to_their_parts_agent_and_instance_with_a_forecast(p
     assert gone["current"] is False
     [then] = [a for a in gone["agents"] if a["key"] == "assistant"]
     assert then["spent"] == pytest.approx(total) and (then["pace"], then["forecast"]) == (None, None)
-    for wrong in ("2099-01", "11-2026"):
+    for wrong in ("2099-01", "11-2026", "0000-01"):  # the year 0000 is none
         with pytest.raises(spending.Refused):
             report(stack, "ana", now, month=wrong)
     # A model whose prices aren't known is counted apart, never as costing nothing
@@ -155,6 +171,8 @@ def test_each_sees_only_what_is_theirs_to_watch(priced, approving, provider):
     assert chen.status_code == 403 and "own a part or an agent" in chen.json()["detail"]
     wrong = as_person(approving, provider, "ana", "/studio/api/spending?month=2099-01")
     assert wrong.status_code == 400 and "hasn't begun" in wrong.json()["detail"]
+    none = as_person(approving, provider, "ana", "/studio/api/spending?month=0000-01")
+    assert none.status_code == 400 and "such as 2026-11" in none.json()["detail"]
 
 
 def test_an_owner_is_told_on_their_home_once_the_month_passes_its_budget(priced, approving,
@@ -173,6 +191,38 @@ def test_an_owner_is_told_on_their_home_once_the_month_passes_its_budget(priced,
     assert told["why"] == ["you own billing"] and told["go"] == "/studio/spending#part-billing"
     ben = as_person(approving, provider, "ben", "/studio/api/home").json()
     assert not [w for w in ben["waiting"] if w["kind"] == "spending"]  # it isn't Ben's budget
+
+
+def test_budgets_in_another_currency_than_prices_are_compared_with_nothing(priced, approving,
+                                                                             provider):
+    stack = priced  # models.yaml prices models in pounds
+    assert not stack.settle(spending={"parts": {"billing": 0.05}, "currency": "USD"}).refused
+    stack.model.reply("Hello.")
+    stack.say("hello")  # 0.06 in pounds, which no budget in dollars is past
+    found = report(stack, "ana", currency="GBP")
+    assert (found["budget_currency"], found["compared"]) == ("USD", False)
+    [billing] = [p for p in found["parts"] if p["key"] == "billing"]
+    assert billing["budget"] is None and billing["spent"] > 0.05
+    home = as_person(approving, provider, "ana", "/studio/api/home").json()
+    [told] = [w for w in home["waiting"] if w["kind"] == "spending"]
+    assert told["what"] == ("Budgets are in USD, and models.yaml prices models in GBP, so a5s "
+                            "compares neither"), told
+    assert not stack.settle(spending={"parts": {"billing": 0.05}, "currency": "GBP"}).refused
+    assert report(stack, "ana", currency="GBP")["compared"] is True
+
+
+def test_an_owner_is_told_of_runs_on_a_model_whose_prices_arent_known(priced, approving,
+                                                                        provider):
+    stack = priced
+    assert not stack.settle(spending={"parts": {"billing": 100}}).refused
+    stack.gateway.models["fake"] = replace(stack.gateway.models["fake"], prices=None)
+    stack.model.reply("Hello.")
+    stack.say("hello")  # it costs nothing that a5s knows of, so its budget is never past
+    home = as_person(approving, provider, "ana", "/studio/api/home").json()
+    [told] = [w for w in home["waiting"] if w["kind"] == "spending"]
+    assert told["what"] == ("billing ran 1 times this month on a model whose prices aren't "
+                            "known, which count for nothing against its budget"), told
+    assert told["go"] == "/studio/spending#part-billing"
 
 
 def test_the_spending_page_shows_each_budget_as_ocean_draws_cost_against_plan(priced, approving,
@@ -204,6 +254,12 @@ def test_the_spending_page_shows_each_budget_as_ocean_draws_cost_against_plan(pr
     page.wait_for_selector("#budgets [data-budget='parts:billing']", timeout=30000)
     assert page.input_value("#budgets [data-budget='parts:billing']") == "0.05"
     assert page.input_value("#budgets [data-budget='agents:assistant']") == "20"
+    page.fill("#budgets [data-budget='parts:billing']", "0.07")  # in pounds, as models.yaml says
+    page.click("#review")
+    page.wait_for_selector("#reviewed-changes li", timeout=30000)
+    changes = page.locator("#reviewed-changes li").all_inner_texts()
+    assert any(c.startswith("Budgets are in GBP") for c in changes), changes
+    assert any("The budget for billing becomes GBP 0.07 a month" in c for c in changes), changes
 
 
 def test_models_yaml_names_the_currency_it_prices_in(tmp_path):

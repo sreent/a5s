@@ -116,6 +116,7 @@ def router(gw: Any) -> APIRouter:
                                                    if t in tools and tools[t].action})}
                          for name, d in sorted(gw.definitions.items())},
             "waiting": waiting,
+            "currency": gw.currency,  # which budgets the forms set are in
             "requests": [{"asked_at": r["asked_at"].isoformat(),
                           "serial": parse_settings(bytes(r["raw"])).serial,
                           "outcome": r["outcome"] or "waiting for a5s to ask its approvers",

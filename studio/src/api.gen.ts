@@ -1238,6 +1238,7 @@ export type SettingsNow = {
   releases: Record<string, ReleaseLevels>;
   waiting: VersionWaiting[];
   requests: SettingsRequest[];
+  currency?: string | null;
 };
 
 // A version someone asked for, and what became of it.
@@ -1359,6 +1360,8 @@ export type Spending = {
   month: string;
   current: boolean;
   currency: string | null;
+  budget_currency?: string | null;
+  compared?: boolean;
   starts: string;
   ends: string;
   days: number;

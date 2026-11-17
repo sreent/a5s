@@ -226,6 +226,10 @@ export function SpendingPage({ month }: { month?: string }) {
         </label>
       </PageHead>
       {!data && <Waiting error={error} block />}
+      {data && !data.compared && (
+        <p className="note" id="uncompared" role="status">{t("The budgets are in {theirs}, and models.yaml prices models in {prices}, so a5s compares what's spent with neither: a version of the settings with the budgets in {prices} puts that right.",
+          { theirs: data.budget_currency ?? "", prices: data.currency ?? t("no currency it names") })}</p>
+      )}
       {data && panels.length === 0 && (
         <p className="note" id="status" role="status">{data.current ? t("No part or agent you may see spent anything this month, and none has a budget.")
           : t("No part or agent you may see spent anything that month, and none has a budget.")}</p>

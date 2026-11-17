@@ -29,7 +29,7 @@ type PartEntry = number | null | { level?: number; actions?: Record<string, numb
 type Inst = { definition: string; serves?: string[]; parts?: string[] | Record<string, PartEntry>;
               level?: number; owner?: string; deputy?: string; asks?: string[]; [key: string]: unknown };
 type Limit = { per_run?: number; per_person_30_days?: number };
-type Spending = { parts?: Record<string, number>; agents?: Record<string, number> };
+type Spending = { parts?: Record<string, number>; agents?: Record<string, number>; currency?: string };
 type Data = { instances?: Record<string, Inst>; limits?: Record<string, Limit>;
               thresholds?: Record<string, number>; spending?: Spending; [key: string]: unknown };
 /** A new instance, as its form has it so far: `id` null while its name follows the suggestion. */
@@ -548,7 +548,7 @@ export function SettingsPage() {
 
   function budgetsForm(parts: string[], agents: string[]): ReactNode {
     const data = w as Data;
-    const budget = (kind: keyof Spending, key: string, words: string) => {
+    const budget = (kind: "parts" | "agents", key: string, words: string) => {
       const amount = data.spending?.[kind]?.[key];
       return (
         <Setting key={`${kind}:${key}`} words={words} after={t("a month")}>
@@ -562,6 +562,9 @@ export function SettingsPage() {
                    if (e.target.value !== "" && Number.isFinite(n) && n > 0) these[key] = Math.round(n * 100) / 100;
                    else delete these[key];
                    if (!Object.keys(these).length) delete spending[kind];
+                   // in the currency models.yaml prices models in, which approvers then read
+                   if (settings.currency && (spending.parts || spending.agents)) spending.currency = settings.currency;
+                   if (!spending.parts && !spending.agents) delete spending.currency;
                    if (!Object.keys(spending).length) delete data.spending;
                    touched();
                  }} />
@@ -571,7 +574,8 @@ export function SettingsPage() {
     return (
       <fieldset className="form-card" id="budgets">
         <legend>{t("What agents' models may cost a month")}</legend>
-        <p className="note">{t("A budget a5s shows each month's spending against, on the Spending page, at the prices models.yaml gives, and tells its owners of once a month is on course to pass it. It stops no work: the token budgets each release sets do. A part's owner approves its budget, and an agent's owner the agent's. Empty means none.")}</p>
+        <p className="note">{t("A budget a5s shows each month's spending against, on the Spending page, at the prices models.yaml gives, and tells its owners of once a month is on course to pass it. It stops no work: the token budgets each release sets do. A part's owner approves its budget, and an agent's owner the agent's. Empty means none.")}
+          {settings.currency ? " " + t("Each is in {currency}, whole cents at most.", { currency: settings.currency }) : ""}</p>
         <div className="choices">
           {parts.map((part) => budget("parts", part, part))}
           {agents.map((agent) => budget("agents", agent, t("the {agent}", { agent })))}

@@ -584,6 +584,7 @@ export const BUILD: Record<string, string> = {
   "What agents' models may cost a month": "ค่าใช้จ่ายโมเดลของเอเจนต์ต่อเดือน",
   "A budget a5s shows each month's spending against, on the Spending page, at the prices models.yaml gives, and tells its owners of once a month is on course to pass it. It stops no work: the token budgets each release sets do. A part's owner approves its budget, and an agent's owner the agent's. Empty means none.":
     "งบประมาณที่ a5s ใช้เทียบกับค่าใช้จ่ายแต่ละเดือนในหน้าค่าใช้จ่าย ตามราคาที่ models.yaml กำหนด และแจ้งเจ้าของเมื่อเดือนใดมีแนวโน้มจะเกินงบ งบประมาณนี้ไม่ได้หยุดการทำงาน ซึ่งเป็นหน้าที่ของงบประมาณโทเค็นที่แต่ละรีลีสกำหนด เจ้าของส่วนงานอนุมัติงบประมาณของส่วนงาน และเจ้าของเอเจนต์อนุมัติงบประมาณของเอเจนต์ เว้นว่างไว้หมายถึงไม่มี",
+  "Each is in {currency}, whole cents at most.": "แต่ละรายการเป็นสกุลเงิน {currency} ละเอียดถึงหน่วยสตางค์เท่านั้น",
   "{id}, the {agent}": "{id}, เอเจนต์ {agent}",
   "You asked for version {serial}. a5s asks its approvers within a minute, and puts it in force once they've all approved it.":
     "คุณขอเวอร์ชัน {serial} แล้ว a5s จะขอผู้อนุมัติภายในหนึ่งนาที และให้มีผลเมื่อทุกคนอนุมัติแล้ว",

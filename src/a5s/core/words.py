@@ -71,6 +71,14 @@ TH: dict[str, str] = {
     "{whose} is on course to spend {amount} this month, past its budget of {budget}":
         "{whose} มีแนวโน้มจะใช้ {amount} ในเดือนนี้ เกินงบประมาณ {budget}",
     "you own {what}": "คุณเป็นเจ้าของ {what}",
+    "{whose} ran {n} times this month on a model whose prices aren't known, which count for "
+    "nothing against its budget":
+        "{whose} ทำงาน {n} ครั้งในเดือนนี้บนโมเดลที่ไม่ทราบราคา ซึ่งไม่ถูกนับรวมในงบประมาณ",
+    "Budgets are in {theirs}, and models.yaml prices models in {prices}, so a5s compares neither":
+        "งบประมาณเป็นสกุลเงิน {theirs} แต่ models.yaml กำหนดราคาโมเดลเป็น {prices} "
+        "a5s จึงไม่เปรียบเทียบทั้งสองอย่าง",
+    "no currency it names": "สกุลเงินที่ไม่ได้ระบุ",
+    "you own a budget": "คุณเป็นเจ้าของงบประมาณ",
     # The roles someone holds, and what each lets them do (core/home.py, core/administration.py)
     "Owner of {scope}": "เจ้าของ {scope}",
     "Delegate in {scope}": "ผู้รับมอบหมายใน {scope}",

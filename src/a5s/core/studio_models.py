@@ -501,6 +501,10 @@ class Spending(Shape):
     month: str
     current: bool
     currency: str | None
+    # The currency the signed budgets are in, if they name one, and whether it's the one
+    # models.yaml prices models in, so a5s compares what's spent with them
+    budget_currency: str | None = None
+    compared: bool = True
     starts: str
     ends: str
     days: int
@@ -1189,6 +1193,7 @@ class SettingsNow(Shape):
     releases: dict[str, ReleaseLevels]
     waiting: list[VersionWaiting]
     requests: list[SettingsRequest]
+    currency: str | None = None  # the one models.yaml prices models in, which budgets are in
 
 
 class Shift(Shape):

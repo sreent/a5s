@@ -60,7 +60,7 @@ def month_of(now: datetime, month: str | None = None) -> tuple[datetime, datetim
         start = now.astimezone(UTC).replace(day=1, hour=0, minute=0, second=0, microsecond=0)
     else:
         found = MONTH.match(month)
-        if found is None:
+        if found is None or int(found[1]) < 1:  # the year 0000 is none
             raise Refused("a month is written as its year and its number, such as 2026-11")
         start = datetime(int(found[1]), int(found[2]), 1, tzinfo=UTC)
         if start > now:
@@ -158,12 +158,19 @@ def _now(conn: db.Connection) -> datetime:
     return row["t"]
 
 
+def compared(spending: Spending, currency: str | None) -> bool:
+    """Whether the budgets are in the currency models.yaml prices models in, so a5s compares
+    what's spent with them: one the settings don't name is."""
+    return spending.currency is None or spending.currency == currency
+
+
 def report(conn: db.Connection, scenario: Scenario, models: dict[str, ModelConfig],
            spending: Spending, viewer: Person, now: datetime | None = None,
            month: str | None = None, currency: str | None = None) -> dict:
     """A month's spending as someone may see it, as of `now`, or the database's time: each
     part's and agent's against its budget, with its forecast to the month's end while it lasts,
-    and each instance they may watch, with what each message it answered cost. Refused if the
+    and each instance they may watch, with what each message it answered cost: with no budget
+    where the budgets are in a currency models.yaml doesn't price models in. Refused if the
     month isn't one."""
     now = now or _now(conn)
     start, end = month_of(now, month)
@@ -172,11 +179,12 @@ def report(conn: db.Connection, scenario: Scenario, models: dict[str, ModelConfi
     found = totals(conn, scenario, models, insts, start, end, now)
     left = (end - now).total_seconds() / 86400 if current else None
     shown: dict[str, list[dict]] = {}
+    same = compared(spending, currency)
     for kind in KINDS:
         budgets = getattr(spending, kind)
         keys = sorted({k for k in set(found[kind]) | set(budgets) if sees(viewer, kind, k)})
         shown[kind] = [_shown(k, found[kind][k] if k in found[kind] else _blank(),
-                              budgets.get(k), left) for k in keys]
+                              budgets.get(k) if same else None, left) for k in keys]
     watched = [i for i in insts if studio.watches(i, viewer)
                and (i["id"] in found["instances"] or i["status"] in studio.SERVING)]
     shown["instances"] = [{**_shown(i["id"], found["instances"][i["id"]] if i["id"] in
@@ -184,6 +192,7 @@ def report(conn: db.Connection, scenario: Scenario, models: dict[str, ModelConfi
                            "agent": i["definition"], "parts": studio.parts_of(i)}
                           for i in watched]
     return {"month": start.strftime("%Y-%m"), "current": current, "currency": currency,
+            "budget_currency": spending.currency, "compared": same,
             "starts": start.isoformat(), "ends": end.isoformat(),
             "days": (end - start).days,
             "day": min((end - start).days, (now - start).days + 1) if current else (end - start).days,
@@ -200,12 +209,20 @@ def over(conn: db.Connection, scenario: Scenario, models: dict[str, ModelConfig]
          currency: str | None = None, language: str = "en") -> list[dict]:
     """The budgets someone owns that this month has passed, or is forecast to pass, as of
     `now`, or the database's time, for their home page: each part they own and agent they own
-    with a budget, in words."""
+    with a budget, in words; and those whose runs this month were on a model whose prices
+    aren't known, which count for nothing against it. Budgets in a currency models.yaml doesn't
+    price models in, a5s compares with nothing, and says so once."""
     roles = set(person.roles)
     mine = [(kind, key) for kind in KINDS for key in getattr(spending, kind)
             if (f"{PART_OWNER}:{key}" if kind == "parts" else agent_owner(key)) in roles]
     if not mine:
         return []
+    if not compared(spending, currency):
+        return [{"kind": "spending", "what": words.say(
+                     language, "Budgets are in {theirs}, and models.yaml prices models in "
+                     "{prices}, so a5s compares neither", theirs=spending.currency or "",
+                     prices=currency or words.say(language, "no currency it names")),
+                 "why": [words.say(language, "you own a budget")], "go": "/studio/settings"}]
     now = now or _now(conn)
     start, end = month_of(now)
     found = totals(conn, scenario, models, studio.instances(conn, retired=True), start, end, now)
@@ -225,10 +242,15 @@ def over(conn: db.Connection, scenario: Scenario, models: dict[str, ModelConfig]
                              amount=said(month["forecast"] or 0, currency),
                              budget=said(budget, currency))
         else:
-            continue
-        items.append({"kind": "spending", "what": what,
-                      "why": [words.say(language, "you own {what}",
-                                        what=key if kind == "parts" or language == words.THAI
-                                        else "the " + key)],
-                      "go": f"/studio/spending#{kind[:-1]}-{key}"})
+            what = None
+        why = [words.say(language, "you own {what}", what=key if kind == "parts"
+                         or language == words.THAI else "the " + key)]
+        go = f"/studio/spending#{kind[:-1]}-{key}"
+        if what:
+            items.append({"kind": "spending", "what": what, "why": why, "go": go})
+        if month["unpriced"]:  # which counted for nothing against it
+            items.append({"kind": "spending", "what": words.say(
+                language, "{whose} ran {n} times this month on a model whose prices aren't known, "
+                "which count for nothing against its budget", whose=whose, n=month["unpriced"]),
+                "why": why, "go": go})
     return items

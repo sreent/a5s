@@ -24,6 +24,7 @@ from pydantic import (
     StrictInt,
     StringConstraints,
     ValidationError,
+    field_validator,
 )
 
 from a5s.core.ledger import canonical
@@ -325,14 +326,17 @@ class DataProtection:
 
 @dataclass(frozen=True)
 class Spending:
-    """What each part's and each agent's model calls may cost a calendar month, in the
-    currency models.yaml prices models in: a budget a5s shows spending against, with a forecast
-    to the month's end, and tells its owners of once the forecast passes it, never one that
-    stops work, which the token budgets each release sets do (core/spending.py). A part's owner
-    approves its budget, and an agent's owner the agent's."""
+    """What each part's and each agent's model calls may cost a calendar month, in whole cents
+    of the currency it names, which the studio's forms take from models.yaml: a budget a5s
+    shows spending against, with a forecast to the month's end, and tells its owners of once
+    the forecast passes it, never one that stops work, which the token budgets each release
+    sets do (core/spending.py). One in a currency models.yaml doesn't price models in, a5s
+    compares with nothing. Without a currency, it's in the one models.yaml prices models in. A
+    part's owner approves its budget, and an agent's owner the agent's."""
 
     parts: dict[str, float] = field(default_factory=dict)
     agents: dict[str, float] = field(default_factory=dict)
+    currency: str | None = None  # as its ISO 4217 code, such as GBP
 
 
 @dataclass(frozen=True)
@@ -383,6 +387,7 @@ _THRESHOLD = Annotated[float, Field(strict=True, ge=0.5, le=0.999)]
 # A month's budget, in the currency models.yaml prices models in: more than nothing, and at most
 # ten million, a whole number or one with cents
 _AMOUNT = Annotated[float, Field(gt=0, le=10_000_000, allow_inf_nan=False)]
+_CURRENCY = Annotated[str, StringConstraints(strict=True, pattern=r"^[A-Z]{3}$")]  # ISO 4217
 # A group, by the id its sign-ins show it by: an Entra ID object id, or a group's name or path
 _GROUP = Annotated[str, StringConstraints(strict=True, pattern=(
     r"^[A-Za-z0-9/_](?:[A-Za-z0-9._@:/ -]{0,254}[A-Za-z0-9._@:/-])?$"))]
@@ -448,12 +453,23 @@ class _DataProtection(BaseModel):
 
 
 class _Spending(BaseModel):
-    """What each part's and each agent's model calls may cost a month."""
+    """What each part's and each agent's model calls may cost a month, in whole cents, so the
+    words approvers read are the amount itself, and the currency they're in."""
 
     model_config = ConfigDict(extra="forbid", strict=True)
 
     parts: dict[_ID, _AMOUNT] = Field(default_factory=dict)
     agents: dict[_ID, _AMOUNT] = Field(default_factory=dict)
+    currency: _CURRENCY | None = None
+
+    @field_validator("parts", "agents")
+    @classmethod
+    def _cents(cls, found: dict[str, float]) -> dict[str, float]:
+        for name, amount in found.items():
+            if abs(amount * 100 - round(amount * 100)) > 1e-6:
+                raise ValueError(f"{name}'s budget is in whole cents, such as 520.40, "
+                                 f"not {amount!r}")
+        return found
 
 
 class _Version(BaseModel):
@@ -525,7 +541,8 @@ def parse_settings(raw: bytes, signatures: tuple[Signature, ...] = ()) -> Settin
         groups={g: tuple(sorted(set(roles))) for g, roles in version.groups.items() if roles},
         data_protection=DataProtection(**version.data_protection.model_dump()),
         spending=Spending(parts={p: float(v) for p, v in version.spending.parts.items()},
-                          agents={a: float(v) for a, v in version.spending.agents.items()}),
+                          agents={a: float(v) for a, v in version.spending.agents.items()},
+                          currency=version.spending.currency),
         instances=tuple(
             InstanceSettings(id=iid, definition=i.definition, serves=tuple(i.serves),
                              level=i.level, owner=i.owner, deputy=i.deputy,

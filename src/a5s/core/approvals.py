@@ -354,9 +354,15 @@ NAMING = {
 }
 
 
-def money(amount: float) -> str:
-    """An amount in the currency models.yaml prices models in: whole, or with its cents."""
-    return f"{amount:,.0f}" if amount == int(amount) else f"{amount:,.2f}"
+def money(amount: float, currency: str | None = None) -> str:
+    """An amount, whole or with its cents, which a budget is in, in the currency it names, or
+    in the one models.yaml prices models in, which the words then say they're in."""
+    said = f"{amount:,.0f}" if amount == int(amount) else f"{amount:,.2f}"
+    return f"{currency} {said}" if currency else said
+
+
+def _in(currency: str | None) -> str:
+    return currency or "the currency models.yaml prices models in"
 
 
 # What a budget is for, in words, by whose it is: a part's, or an agent's
@@ -372,17 +378,21 @@ def _spending(was: Spending, now: Spending) -> list[dict]:
     """What a version changes of what parts and agents may cost a month, in words: none
     widens what agents do, since a budget stops no work."""
     found = []
+    if was.currency != now.currency and (now.parts or now.agents or was.parts or was.agents):
+        found.append({"text": f"Budgets are in {_in(now.currency)}, instead of "
+                              f"{_in(was.currency)}.", "widens": False})
     for kind in ("parts", "agents"):
         a, b = getattr(was, kind), getattr(now, kind)
         for name in sorted(set(a) | set(b)):
-            if a.get(name) == b.get(name):
+            if a.get(name) == b.get(name) and was.currency == now.currency:
                 continue
             whose = _whose(kind, name)
             if name not in b:
-                text = f"There's no budget for {whose} any more, instead of {money(a[name])} a month."
+                text = (f"There's no budget for {whose} any more, instead of "
+                        f"{money(a[name], was.currency)} a month.")
             else:
-                text = (f"The budget for {whose} becomes {money(b[name])} a month"
-                        + (f", instead of {money(a[name])}" if name in a else "")
+                text = (f"The budget for {whose} becomes {money(b[name], now.currency)} a month"
+                        + (f", instead of {money(a[name], was.currency)}" if name in a else "")
                         + f": {COVERS[kind]}, which a5s shows spending against, and which stops "
                           "no work.")
             found.append({"text": text, "widens": False})
@@ -466,8 +476,10 @@ def described(settings: Settings, definitions: dict[str, Definition],
              "accurate." for part, share in sorted(settings.thresholds.items())]
     told += [f"Everyone in the group {group} holds {names_of(list(roles))}, as their sign-ins "
              "show they're in it." for group, roles in sorted(settings.groups.items())]
-    told += [f"The budget for {_whose(kind, name)} is {money(amount)} a month: {COVERS[kind]}, "
-             "which a5s shows spending against." for kind in ("parts", "agents")
+    told += [f"The budget for {_whose(kind, name)} is {money(amount, settings.spending.currency)}"
+             f" a month: {COVERS[kind]}, which a5s shows spending against"
+             + ("" if settings.spending.currency else f", in {_in(None)}") + "."
+             for kind in ("parts", "agents")
              for name, amount in sorted(getattr(settings.spending, kind).items())]
     return told + protection(settings.data_protection)
 

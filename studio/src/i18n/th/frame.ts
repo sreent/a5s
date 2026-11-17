@@ -108,6 +108,9 @@ export const FRAME: Record<string, string> = {
     "ค่าใช้จ่ายในการเรียกใช้โมเดลของเอเจนต์ในแต่ละเดือน ตามราคาที่ models.yaml กำหนด แสดงแต่ละส่วนงานและเอเจนต์ที่คุณดูได้เทียบกับงบประมาณที่การตั้งค่ากำหนด พร้อมคาดการณ์ถึงสิ้นเดือนตามอัตราของสัปดาห์ที่ผ่านมา และค่าใช้จ่ายรวมต่อข้อความที่ตอบ งบประมาณเป็นเพียงแนวทาง ไม่ได้หยุดการทำงาน ซึ่งเป็นหน้าที่ของงบประมาณโทเค็นที่แต่ละรีลีสกำหนด",
   "In": "เดือน",
   "{month}, this month": "{month} (เดือนนี้)",
+  "The budgets are in {theirs}, and models.yaml prices models in {prices}, so a5s compares what's spent with neither: a version of the settings with the budgets in {prices} puts that right.":
+    "งบประมาณเป็นสกุลเงิน {theirs} แต่ models.yaml กำหนดราคาโมเดลเป็น {prices} a5s จึงไม่เปรียบเทียบค่าใช้จ่ายกับงบประมาณ การตั้งค่าฉบับใหม่ที่กำหนดงบประมาณเป็น {prices} จะแก้ไขได้",
+  "no currency it names": "สกุลเงินที่ไม่ได้ระบุ",
   "No part or agent you may see spent anything this month, and none has a budget.":
     "เดือนนี้ไม่มีส่วนงานหรือเอเจนต์ที่คุณดูได้มีค่าใช้จ่าย และไม่มีรายการใดกำหนดงบประมาณไว้",
   "No part or agent you may see spent anything that month, and none has a budget.":
