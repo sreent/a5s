@@ -2042,9 +2042,12 @@ def create_app(gw: Gateway) -> FastAPI:
                                  "args": {"settings": settings.version, "serial": settings.serial,
                                           "digest": row["digest"], **asker,
                                           "widens": any(c["widens"] for c in found)}})
-            text = approvals.text(settings.serial, found, link)
             for approver in registry.approvers(settings, gw.scenario.holders, before,
                                                memberships.rooted(gw.scenario).holders):
+                spoken = languages.of(conn, approver)  # each in the language they read
+                theirs = found if spoken == languages.ENGLISH else approvals.changes(
+                    before, settings, gw.definitions, gw.scenario.person, spoken)
+                text = approvals.text(settings.serial, theirs, link, spoken)
                 route = gw.reach(conn, approver.id, None)
                 ledger.append(conn, {
                     "kind": "notice", "action": "ask-approval", "run": None, "instance": None,
@@ -2053,7 +2056,7 @@ def create_app(gw: Gateway) -> FastAPI:
                              "channel": route["channel"], "chars": len(text),
                              "sha256": hashlib.sha256(text.encode()).hexdigest()}})
                 sends.append(outbound(conn, route, approver.id, text,
-                                      card=approvals.card(settings.serial, found, link)))
+                                      card=approvals.card(settings.serial, theirs, link, spoken)))
                 asked.append(approver.id)
         return {"refused": [], "row": row, "new": new, "changes": found, "link": link,
                 "asked": asked, "sends": sends}

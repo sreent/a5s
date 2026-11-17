@@ -24,6 +24,8 @@ from a5s.contract import (
     parse_settings,
 )
 from a5s.core import ledger, memberships, samples, signing
+from a5s.core.languages import ENGLISH
+from a5s.core.words import say
 from a5s.definitions import Definition
 
 Directory = Callable[[str], Person | None]
@@ -228,7 +230,8 @@ def narrowed(settings: Settings, before: Settings | None) -> set[str] | None:
 
 
 def missing(settings: Settings, directory: Directory, valid: Iterable[str],
-            before: Settings | None = None, rooted: Directory | None = None) -> list[str]:
+            before: Settings | None = None, rooted: Directory | None = None,
+            language: str = ENGLISH) -> list[str]:
     """Whose approval a version still needs, given who validly approved it: for each part an
     instance works in, or whose threshold or budget it changes, its owner's, and for each agent
     whose budget it changes, the agent's owner's, and an instance approver's
@@ -236,52 +239,59 @@ def missing(settings: Settings, directory: Directory, valid: Iterable[str],
     afresh. `before` is the version before it, whose instances a version that leaves them out
     retires, so their approvers decide that too. Giving a group a role needs the role's owner
     as the directory alone names them (`rooted`), so no role a group gives grows itself; and
-    changing the data protection officer's choices needs the officer, named the same way."""
+    changing the data protection officer's choices needs the officer, named the same way. In
+    the language someone reads, where a5s has the words."""
     valid = list(valid)
     needs = list(dict.fromkeys(why for _, why, _ in needed(settings, directory, valid, before,
-                                                            rooted)))
+                                                            rooted, language)))
     if not any(p.roles for who in valid if (p := directory(who))):  # whoever it is for
-        return needs or ["nobody who approves instances has approved it"]
+        return needs or [say(language, "nobody who approves instances has approved it")]
     return needs
 
 
 def needed(settings: Settings, directory: Directory, valid: Iterable[str],
-           before: Settings | None = None,
-           rooted: Directory | None = None) -> list[tuple[str, str, bool]]:
+           before: Settings | None = None, rooted: Directory | None = None,
+           language: str = ENGLISH) -> list[tuple[str, str, bool]]:
     """What `missing` says a version still needs, as each role whose holder's approval would
     give it, why, and whether only someone the directory itself gives the role counts, as for
     giving a group a role: so a page can tell each approver what waits for them."""
     valid = list(valid)
     held = {role for who in valid if (p := directory(who)) for role in p.roles}
     if (parts := narrowed(settings, before)) is not None:  # each part's owner, for theirs alone
-        return [(f"{PART_OWNER}:{part}", f"the owner of {part} hasn't approved it", False)
+        return [(f"{PART_OWNER}:{part}", say(language, OWNS_NOT, part=part), False)
                 for part in sorted(parts) if f"{PART_OWNER}:{part}" not in held]
     rooted = rooted or directory
     owners = {role for who in valid if (p := rooted(who)) for role in p.roles}
     covered = _covered(settings, before)
     budgeted_agents = _spending_change(settings, before)
-    needs = [(f"{PART_OWNER}:{part}", f"the owner of {part} hasn't approved it", False)
+    needs = [(f"{PART_OWNER}:{part}", say(language, OWNS_NOT, part=part), False)
              for part in sorted({p for i in covered for p in i.parts}
                                 | _thresholds_change(settings, before))
              if f"{PART_OWNER}:{part}" not in held]
-    needs += [(f"{AGENT_OWNER}:{agent}", f"the owner of the {agent} hasn't approved its budget",
-               False) for agent in sorted(budgeted_agents) if f"{AGENT_OWNER}:{agent}" not in held]
+    needs += [(f"{AGENT_OWNER}:{agent}", say(language, "the owner of the {agent} hasn't approved "
+                                             "its budget", agent=agent), False)
+              for agent in sorted(budgeted_agents) if f"{AGENT_OWNER}:{agent}" not in held]
     if INSTANCE_APPROVER not in held:
         if any(not i.parts for i in covered):
-            why = f"no {INSTANCE_APPROVER} has approved it, for the instances in no part"
+            why = say(language, "no instance-approver has approved it, for the instances in no "
+                      "part")
             needs.append((INSTANCE_APPROVER, why, False))
         if _classes_change(settings, before):
-            why = f"no {INSTANCE_APPROVER} has approved its classes of data"
+            why = say(language, "no instance-approver has approved its classes of data")
             needs.append((INSTANCE_APPROVER, why, False))
     for group, role in memberships.grants(settings, before):
         if (owner := memberships.owner_of(role)) not in owners:
-            why = f"the {owner} named in the directory hasn't approved giving {group} the {role} role"
+            why = say(language, "the {owner} named in the directory hasn't approved giving "
+                      "{group} the {role} role", owner=owner, group=group, role=role)
             needs.append((owner, why, True))
     if _data_protection_change(settings, before) and DATA_PROTECTION not in owners:
-        why = (f"the {DATA_PROTECTION} named in the directory hasn't approved its choices for "
-               "people's data")
+        why = say(language, "the data-protection-officer named in the directory hasn't approved "
+                  "its choices for people's data")
         needs.append((DATA_PROTECTION, why, True))
     return needs
+
+
+OWNS_NOT = "the owner of {part} hasn't approved it"  # a part's owner's approval, still to come
 
 
 def approvers(settings: Settings, holders: Holders, before: Settings | None = None,

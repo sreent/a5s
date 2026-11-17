@@ -17,7 +17,7 @@ from pydantic import BaseModel
 
 from a5s import db
 from a5s.contract import Person, parse_settings
-from a5s.core import approvals, impact, memberships, registry, settings_app, web
+from a5s.core import approvals, impact, languages, memberships, registry, settings_app, web
 from a5s.core import studio_models as shapes  # what each route answers, as the studio's types say
 
 
@@ -78,8 +78,9 @@ def router(gw: Any) -> APIRouter:
     def settings_now(person: Annotated[Person, Depends(settling)]) -> dict:
         """The whole version in force, in words and as written, the versions waiting for
         approval, and what the person asked for lately."""
-        words = (gw.definitions, gw.scenario.person)
         with db.transaction(gw.url) as conn:
+            spoken = languages.of(conn, person)  # in their language, where a5s has the words
+            words = (gw.definitions, gw.scenario.person, spoken)
             last = approvals.latest(conn, gw.scenario.name)
             in_force = parse_settings(bytes(last["raw"])) if last else None
             waiting = []
@@ -94,7 +95,7 @@ def router(gw: Any) -> APIRouter:
                     "changes": approvals.changes(in_force, settings, *words),
                     "approved_by": [p.name if (p := gw.scenario.person(a)) else a for a in valid],
                     "needs": registry.missing(settings, gw.scenario.person, valid, in_force,
-                                              memberships.rooted(gw.scenario).person)})
+                                              memberships.rooted(gw.scenario).person, spoken)})
             asked = conn.execute("select * from settings_requests where scenario = %s and "
                                  "person = %s order by id desc limit 5",
                                  (gw.scenario.name, person.id)).fetchall()
@@ -130,11 +131,12 @@ def router(gw: Any) -> APIRouter:
         have to approve it, before they ask for it."""
         with db.transaction(gw.url) as conn:
             last = approvals.latest(conn, gw.scenario.name)
+            spoken = languages.of(conn, person)
         settings, _, problems = settings_app.drafted(gw, body.text, last)
         if settings is None:
             return {"problems": problems}
         before = parse_settings(bytes(last["raw"])) if last else None
-        words = (gw.definitions, gw.scenario.person)
+        words = (gw.definitions, gw.scenario.person, spoken)
         preview = impact.shown(gw, before, settings, person) if not problems else None
         return {"serial": settings.serial, "problems": problems,
                 **({"impact": preview} if preview is not None else {}),

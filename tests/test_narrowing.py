@@ -212,10 +212,10 @@ def test_a_narrowing_keeps_level_2_in_every_other_part_and_tells_whoever_it_appl
         "narrows what agents may do in orders: ")
 
 
-def test_a_thai_approver_reads_whats_missing_in_thai(stack, approving, provider, browser):
-    """Round 14 (E-M5): what's missing before a version goes in force is in the language its
-    approver reads, as on their home; what the version says it changes stays English, which
-    the page tells them."""
+def test_a_thai_approver_reads_a_whole_version_in_thai(stack, approving, provider, browser):
+    """Round 14 (E-M5) and its deferral: what's missing before a version goes in force, what it
+    changes and the whole of it are in the language its approver reads, as on their home, and
+    so is the card that asks them, each name and figure kept as the settings write it."""
     from a5s.core import words
     from test_languages import reads
     from test_settings_app import api
@@ -225,14 +225,25 @@ def test_a_thai_approver_reads_whats_missing_in_thai(stack, approving, provider,
     settings["serial"] += 1
     settings["instances"]["assistant-ops"] = copy.deepcopy(BASE["instances"]["assistant-ops"])
     asked = propose(stack, settings)
+    with db.transaction(stack.admin) as conn:  # the card in her chat, in Thai
+        [card] = conn.execute("select text from outbox where person = 'ana' and text like %s",
+                              (f"%{settings['serial']}%",)).fetchall()
+    assert card["text"].startswith(f"การตั้งค่า a5s เวอร์ชัน {settings['serial']} รอให้ผู้อนุมัติอนุมัติ")
+    assert "เพิ่ม assistant-ops: assistant ไม่อยู่ในส่วนงานใด" in card["text"] or \
+        "เพิ่ม assistant-ops: assistant ทำงานใน orders ที่ระดับ" in card["text"], card["text"]
     [said] = approve(approving, provider, asked, "ana")
     english = "the owner of orders hasn't approved it"
-    missing = [words.translated("th", english)]
+    missing = [words.say("th", "the owner of {part} hasn't approved it", part="orders")]
     assert said["needs"] == missing != [english]
     shown = api(approving, provider, f"/approve/settings/{asked['digest']}").json()
     assert shown["needs"] == missing
+    assert [c["text"].split(":")[0] for c in shown["changes"]] == ["เพิ่ม assistant-ops"]
+    assert shown["whole"][0].startswith("ข้อมูลของซีนาริโอเป็น synthetic")
+    assert any(line.startswith("assistant-ops: assistant ทำงานใน orders") for line in shown["whole"])
     provider.person = "ana"
     page = browser.new_page()
     page.goto(f"{approving}/studio/approve?settings={asked['digest']}")
-    page.wait_for_selector("#in-english", timeout=30000)
+    page.wait_for_selector("#changes li", timeout=30000)
     assert page.inner_text("#needs") == missing[0]
+    assert page.inner_text("#changes li").startswith("เพิ่ม assistant-ops")
+    assert page.locator("#in-english").count() == 0  # no word that any of it is in English

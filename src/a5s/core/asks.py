@@ -22,7 +22,9 @@ from typing import Any
 from a5s import db
 from a5s.contract import INSTANCE_APPROVER, PART_OWNER, Person, Scenario
 from a5s.core import ledger, registry
+from a5s.core.languages import ENGLISH
 from a5s.core.releases import agent_owner
+from a5s.core.words import say
 
 LAPSE = timedelta(days=30)  # an ask nobody answers [starting value]
 SERVING = ("active", "suspended")
@@ -39,20 +41,22 @@ def serving(scenario: Scenario, insts: list[dict], agent: str, person: str) -> l
             and registry.serving(scenario, i["serves"], person)]
 
 
-def waits_on(insts: list[dict], agent: str, person: Person) -> list[str]:
+def waits_on(insts: list[dict], agent: str, person: Person,
+             language: str = ENGLISH) -> list[str]:
     """Why an ask for an agent waits on someone: they own it, own a part one of its instances
     works in, or approve instances, where one is in no part. None if it doesn't wait on them.
     Each of these may know of the agent (studio.layers): an agent with no instance waits on its
     owners alone, since nobody is served through an instance that isn't there (round 11, D-4)."""
     roles, why = set(person.roles), []
     if agent_owner(agent) in roles:
-        why.append(f"you own the {agent}")
+        why.append(say(language, "you own the {agent}", agent=agent))
     mine = [i for i in insts if i["definition"] == agent and i["status"] != "retired"]
     for inst in mine:
-        why += [f"you own {part}, where {inst['id']} works" for part in sorted(inst["parts"] or {})
+        why += [say(language, "you own {part}, where {instance} works", part=part,
+                    instance=inst["id"]) for part in sorted(inst["parts"] or {})
                 if f"{PART_OWNER}:{part}" in roles]
     if INSTANCE_APPROVER in roles and any(not i["parts"] for i in mine):
-        why.append("you approve instances")
+        why.append(say(language, "you approve instances"))
     return list(dict.fromkeys(why))
 
 
@@ -114,12 +118,13 @@ def settle(conn: db.Connection, scenario: Scenario, insts: list[dict]) -> None:
 
 
 def waiting(conn: db.Connection, scenario: Scenario, insts: list[dict],
-            person: Person) -> list[dict]:
-    """The open asks that wait on someone, each with whose it is and why it's theirs."""
+            person: Person, language: str = ENGLISH) -> list[dict]:
+    """The open asks that wait on someone, each with whose it is and why it's theirs, in the
+    language they read."""
     found = []
     for row in conn.execute(f"select {COLUMNS} from agent_asks where scenario = %s and ended_at "
                             "is null order by asked_at", (scenario.name,)):
-        if row["person"] != person.id and (why := waits_on(insts, row["agent"], person)):
+        if row["person"] != person.id and (why := waits_on(insts, row["agent"], person, language)):
             asker = scenario.person(row["person"])
             found.append({"id": str(row["id"]), "agent": row["agent"], "asker": row["person"],
                           "person": asker.name if asker else row["person"],

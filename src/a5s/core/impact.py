@@ -228,7 +228,7 @@ def shown(gw: Any, before: Settings | None, after: Settings,
         return None
     found["about"] = words.say(language, ABOUT)  # in the language they read, as its why
     for shift in found["shifts"]:  # is, where a5s has it in their language
-        shift["why"] = words.translated(language, shift["why"])
+        shift["why"] = words.say(language, shift["why"])
     found["beyond"] = [words.say(language, said, **values)
                        for said, values in undecided(before, after)]
     with _keeping:

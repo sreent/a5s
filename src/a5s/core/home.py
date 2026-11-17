@@ -86,8 +86,8 @@ def roles(conn: db.Connection, gw: Any, person: Person,
     """Each role someone holds, what gave it them, and what it lets them do, in the language
     they read: the team that runs a5s first, if they're in it."""
     found = [{"role": h["role"], "name": administration.named(h["role"], language),
-              "by": [words.translated(language, b) for b in by], "may": may(h["role"], language)}
-             for h in administration.held(gw.scenario, conn, list(person.roles))
+              "by": by, "may": may(h["role"], language)}
+             for h in administration.held(gw.scenario, conn, list(person.roles), language)
              for by in [next((x["by"] for x in h["held_by"] if x["id"] == person.id), None)]
              if by]
     if person.team == gw.cfg.team:
@@ -116,14 +116,14 @@ def waiting(conn: db.Connection, gw: Any, person: Person,
         if person.id in valid:
             continue
         why = [w for role, w, directory_alone in registry.needed(
-                   settings, scenario.person, valid, before, rooted.person)
+                   settings, scenario.person, valid, before, rooted.person, language)
                if role in (own.roles if directory_alone and own else
                            () if directory_alone else person.roles)]
         if why:
             found.append({"kind": "settings", "what": words.say(
                               language, "Version {serial} of the settings waits for your approval",
                               serial=row["serial"]),
-                          "why": [words.translated(language, w) for w in dict.fromkeys(why)],
+                          "why": list(dict.fromkeys(why)),
                           "go": f"/studio/approve?settings={row['digest']}"})  # its own page
     held = sum(1 for p in conn.execute("select records, acts_for from proposals "
                                        "where status = 'waiting'")
@@ -150,10 +150,10 @@ def waiting(conn: db.Connection, gw: Any, person: Person,
                           version=running.version if running else "", who=releases.who(need.role)),
                       "why": [need.why],
                       "go": None, "how": "a5s release sign"})
-    for ask in asks.waiting(conn, scenario, studio.instances(conn), person):
+    for ask in asks.waiting(conn, scenario, studio.instances(conn), person, language):
         found.append({"kind": "ask", "what": words.say(language, "{person} asks for the {agent}",
                                                         person=ask["person"], agent=ask["agent"]),
-                      "why": [words.translated(language, w) for w in ask["why"]],
+                      "why": ask["why"],
                       "go": f"/studio/agents/{ask['agent']}"})
     choices = gw.data_protection(conn)
     for agent, n in feedback.waiting(conn, scenario, person, sorted(gw.definitions),

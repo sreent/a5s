@@ -614,7 +614,8 @@ def router(gw: Any) -> APIRouter:
             if not asks.serving(gw.scenario, every, agent, person.id):
                 mine = asks.theirs(conn, gw.scenario.name, person.id, agent)
                 shown["ask"] = asks.shown(mine) if mine else None
-            if waiting := [a for a in asks.waiting(conn, gw.scenario, every, person)
+            if waiting := [a for a in asks.waiting(conn, gw.scenario, every, person,
+                                                   languages.of(conn, person))
                            if a["agent"] == agent]:
                 shown["asks"] = waiting
         return shown
