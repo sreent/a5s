@@ -173,6 +173,8 @@ def test_a5s_writes_its_own_words_in_the_language_someone_reads(stack, approving
     assert words.say("th", owns, part="billing") == "เจ้าของ billing ยังไม่ได้อนุมัติ"
     assert words.say("en", owns, part="billing") == "the owner of billing hasn't approved it"
     assert words.say("th", "something a5s has no Thai for") == "something a5s has no Thai for"
+    assert words.say("en", "{text}, in {language}", text="a line", language="Thai") == \
+        "a line, in Thai"  # what changes may be named as say's own are
     # and no sentence is matched after it's written whole (round 14's deferral)
     assert not hasattr(words, "translated") and not hasattr(words, "PATTERNS")
     # On their home and their own page, in Thai, once they read it

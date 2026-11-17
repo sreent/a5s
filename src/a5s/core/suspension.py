@@ -142,5 +142,8 @@ def carry_out(conn: db.Connection, verifier: Verifier | None, scenario: Any,
         if why:
             refused.append(sealing.Refusal(
                 who, f"{action} {instance}: {why}",
-                f"a5s didn't {action} {instance}, as you asked on its page in the studio: {why}."))
+                ("a5s didn't suspend {instance}, as you asked on its page in the studio: {why}."
+                 if action == "suspend" else
+                 "a5s didn't resume {instance}, as you asked on its page in the studio: {why}.",
+                 {"instance": instance, "why": why})))
     return refused

@@ -52,11 +52,12 @@ from a5s.contract import (
     Tool,
     record_of,
 )
-from a5s.core import approvals, sealing
+from a5s.core import approvals, languages, sealing
 from a5s.core.handles import TOKEN
 from a5s.core.identity import Verifier
 from a5s.core.ledger import canonical
 from a5s.core.obligations import a_working_day_after
+from a5s.core.words import say
 
 REMIND, ESCALATE, LAPSE = 2, 5, 10  # working days: remind its deciders, tell their managers, lapse [starting value]
 AFTER_RESET = timedelta(days=1)  # how long a decision waits after its decider's authenticator was reset
@@ -417,8 +418,9 @@ def seal_pending(conn: db.Connection, keys: tuple[str, ...], verifier: Verifier 
                 ([r["digest"] for r in together],))]) or "a change"
             refused.append(sealing.Refusal(
                 first["person"], f"{first['person']}'s decision: {why}",
-                f"Your decision on {named} didn't count: {why}. If it still waits for you, "
-                "decide it again on a5s's own page, signing in afresh."))
+                (("Your decision on {named} didn't count: {why}. If it still waits for you, "
+                  "decide it again on a5s's own page, signing in afresh."),
+                 {"named": named, "why": why})))
         for row in together:
             if why is not None:
                 conn.execute("update proposal_decisions set refused = %s, proof = null "
@@ -516,25 +518,38 @@ def card(proposal: dict, link: str, again: bool = False) -> dict:
 
 
 def told(proposal: dict, became: str, by: str | None = None, extra: str = "",
-         reason: str | None = None) -> str:
-    """What a5s tells whoever a held change was for, once something became of it."""
-    change = first(proposal)
-    why = f" They said: {reason}" if reason else ""
-    return {
-        "made": f"{by} approved {key(proposal)}, and a5s has made it: {change}"
-                + (f" {extra}" if extra else ""),
-        "rejected": f"{by} didn't approve {key(proposal)}, so a5s didn't make it: {change}{why}",
-        "lapsed": (f"Nobody decided {key(proposal)} within {LAPSE} working days, so a5s let it "
-                   f"go: {change} Ask again if it's still needed."),
-        "changed": (f"{by} approved {key(proposal)}, but a5s didn't make it, since {extra} "
-                    f"changed after it was asked for: {change} Ask again if it's still needed."),
-        "refused": f"{by} approved {key(proposal)}, but a5s couldn't make it, since {extra}: {change}",
-        "failed": (f"{by} approved {key(proposal)}, but the records system didn't take it "
-                   f"({extra}): {change}"),
-        "stopped": (f"a5s stopped part way through making {key(proposal)}, so it may or may not "
-                    f"have been made, and {by} has ended it, having checked the records "
-                    f"system: {change} Ask again if it's still needed."),
-    }[became]
+         reason: str | None = None, language: str = languages.ENGLISH, undo: str = "") -> str:
+    """What a5s tells whoever a held change was for, once something became of it, in the
+    language they read: `by` whom, with what else there is to say (`extra`), as what changed or
+    why it wasn't made, and how to undo it, once it's made, where its tool says how (`undo`).
+    The change itself is in its own words, as it was asked for."""
+    given = {"by": by, "key": key(proposal), "change": first(proposal)}
+    if became == "made":
+        return (say(language, "{by} approved {key}, and a5s has made it: {change} {undo}",
+                    undo=undo, **given) if undo else
+                say(language, "{by} approved {key}, and a5s has made it: {change}", **given))
+    if became == "rejected":
+        return (say(language, "{by} didn't approve {key}, so a5s didn't make it: {change} They "
+                    "said: {reason}", reason=reason, **given) if reason else
+                say(language, "{by} didn't approve {key}, so a5s didn't make it: {change}",
+                    **given))
+    if became == "lapsed":
+        return say(language, "Nobody decided {key} within {days} working days, so a5s let it go: "
+                   "{change} Ask again if it's still needed.", key=given["key"], days=LAPSE,
+                   change=given["change"])
+    if became == "changed":
+        return say(language, "{by} approved {key}, but a5s didn't make it, since {what} changed "
+                   "after it was asked for: {change} Ask again if it's still needed.",
+                   what=extra, **given)
+    if became == "refused":
+        return say(language, "{by} approved {key}, but a5s couldn't make it, since {why}: "
+                   "{change}", why=say(language, extra), **given)
+    if became == "failed":
+        return say(language, "{by} approved {key}, but the records system didn't take it "
+                   "({error}): {change}", error=extra, **given)
+    return say(language, "a5s stopped part way through making {key}, so it may or may not have "
+               "been made, and {by} has ended it, having checked the records system: {change} "
+               "Ask again if it's still needed.", **given)
 
 
 def brief(conn: db.Connection, instance: str, acts_for: list[str],

@@ -143,10 +143,13 @@ def link(public_url: str, change: int) -> str:
     return f"{public_url}{PAGE}?change={change}"
 
 
-def offered(until: datetime, public_url: str, change: int) -> str:
-    """What whoever a change was for is told they can do, and until when, in UTC."""
-    return (f"It can be undone until {until.strftime('%d %b %Y, %H:%M')} UTC, on its page: "
-            f"{link(public_url, change)}")
+def offered(until: datetime, public_url: str, change: int, language: str = languages.ENGLISH,
+            timezone: str = "UTC") -> str:
+    """What whoever a change was for is told they can do, and until when, in the language they
+    read and by their clock, which it names."""
+    return words.say(language, "It can be undone until {until}, on its page: {link}",
+                     until=languages.when(until, language, timezone),
+                     link=link(public_url, change))
 
 
 def for_agent(until: datetime) -> str:

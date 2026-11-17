@@ -17,6 +17,7 @@ from a5s.contract import Person
 
 PREFERENCE = "language"  # its name among someone's preferences
 ENGLISH = "en"
+THAI = "th"
 # The languages a5s's own pages have words in, each named in its own words, as people choose it
 SPOKEN = {"en": "English", "th": "ไทย"}
 # Languages as an agent is told them, by their BCP 47 code, in English, which every model reads
@@ -66,7 +67,9 @@ def told(language: str) -> str | None:
             "give them.")
 
 
-# Each month as Thai readers cut it short, as a5s writes a date for them
+# Each weekday, Monday first, and each month, as Thai readers cut them short, as a5s writes a
+# date for them
+THAI_DAYS = ("จ.", "อ.", "พ.", "พฤ.", "ศ.", "ส.", "อา.")
 THAI_MONTHS = ("ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.",
                "พ.ย.", "ธ.ค.")
 

@@ -22,7 +22,9 @@ from datetime import UTC, datetime, time, timedelta
 from a5s import db
 from a5s.contract import Person
 from a5s.core.coretools import Call, CoreTool, Refused, one_to_one
+from a5s.core.languages import ENGLISH
 from a5s.core.obligations import day, local, working
+from a5s.core.words import say
 
 KINDS = ("obligation", "report", "reminder")  # the runs whose messages wait for a digest
 TIME = "digest-time"
@@ -72,18 +74,21 @@ def waiting(conn: db.Connection, person: str) -> list[dict]:
                         "order by id for update", (person,)).fetchall()
 
 
-def compose(person: Person, items: list[dict], due: datetime, agent: str | None = None) -> str:
+def compose(person: Person, items: list[dict], due: datetime, agent: str | None = None,
+            language: str = ENGLISH) -> str:
     """One message from several items, each under the agent that wrote it, or, as `agent`'s
-    own message in its own chat, its items, with a5s's own about it marked as a5s's."""
+    own message in its own chat, its items, with a5s's own about it marked as a5s's: a5s's own
+    words around them in the language the person reads."""
+    own = say(language, "From a5s:")
     if agent is not None:
-        parts = [f"Your day from the {agent}, {day(person, due)}."]
-        parts += [item["text"] if item["agent"] else f"From a5s:\n{item['text']}"
-                  for item in items]
+        parts = [say(language, "Your day from the {agent}, {day}.", agent=agent,
+                     day=day(person, due, language))]
+        parts += [item["text"] if item["agent"] else f"{own}\n{item['text']}" for item in items]
         return "\n\n".join(parts)
-    parts = [f"Your day from a5s, {day(person, due)}."]
+    parts = [say(language, "Your day from a5s, {day}.", day=day(person, due, language))]
     for item in items:
-        parts.append(f"From the {item['agent']}:\n{item['text']}" if item["agent"]
-                     else f"From a5s:\n{item['text']}")
+        parts.append(f"{say(language, 'From the {agent}:', agent=item['agent'])}\n{item['text']}"
+                     if item["agent"] else f"{own}\n{item['text']}")
     return "\n\n".join(parts)
 
 

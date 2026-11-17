@@ -705,7 +705,10 @@ class Gateway:
                                  "instance": None, "acts_for": [], "decision": "record",
                                  "args": {"what": refused.what}})
             if refused.person and refused.told:  # so they can do it again, signing in afresh
-                digests.keep(conn, refused.person, None, None, None, refused.told, self.clock())
+                spoken, (said, given) = self.spoken(conn, refused.person), refused.told
+                digests.keep(conn, refused.person, None, None, None, words.say(spoken, said, **{
+                    k: words.say(spoken, v) if k == "why" else v for k, v in given.items()}),
+                    self.clock())
 
     def reason_told(self, said: str) -> str:
         """A rejection's reason as whoever asked is told it: on one line, with no link but to
@@ -1691,7 +1694,10 @@ def create_app(gw: Gateway) -> FastAPI:
             if row is None or row["cancelled_at"] or person is None or not person.in_audience:
                 return []
             conn.execute("update reminders set reminded_at = %s where id = %s", (now, row["id"]))
-            text = reminders.notice(row, person, f"unable to write to you just now, as {why}")
+            spoken = gw.spoken(conn, person.id)
+            text = reminders.notice(row, person, words.say(
+                spoken, "unable to write to you just now, as {why}", why=words.say(spoken, why)),
+                spoken)
             ledger.append(conn, {"kind": "notice", "action": "remind", "run": None,
                                  "instance": row["instance_id"], "acts_for": [person.id],
                                  "decision": "record", "args": {
@@ -1712,7 +1718,7 @@ def create_app(gw: Gateway) -> FastAPI:
                 return []
             conn.execute("update obligations set chased_at = %s, updated_at = %s where id = %s",
                          (now, now, row["id"]))
-            text = obligations.instead(row, person, why)
+            text = obligations.instead(row, person, why, gw.spoken(conn, person.id))
             ledger.append(conn, {"kind": "notice", "action": "chase", "run": None,
                                  "instance": row["instance_id"], "acts_for": [person.id],
                                  "decision": "record", "args": {
@@ -1907,7 +1913,8 @@ def create_app(gw: Gateway) -> FastAPI:
                     continue
                 conn.execute("update reminders set reminded_at = %s where id = %s", (now, row["id"]))
                 status = inst["status"] if inst["status"] != "active" else "unable to act"
-                text = reminders.notice(row, person, status)
+                spoken = gw.spoken(conn, person.id)
+                text = reminders.notice(row, person, words.say(spoken, status), spoken)
                 if row["in_digest"]:  # a5s's own item in their digest
                     digests.keep(conn, person.id, None, inst["id"], None, text, now)
                     noted(conn, person.id, row["agent"], text, row["record"])
@@ -1977,7 +1984,8 @@ def create_app(gw: Gateway) -> FastAPI:
                 for agent, group in groups.items():
                     one = group[0] if len(group) == 1 else None
                     writer = agent or (one["agent"] if one else None)
-                    text = one["text"] if one else digests.compose(person, group, due, agent)
+                    text = one["text"] if one else digests.compose(person, group, due, agent,
+                                                                    gw.spoken(conn, who))
                     route = gw.reach(conn, who, writer)
                     ledger.append(conn, {
                         "kind": "notice", "action": "digest", "run": None,
@@ -2895,8 +2903,6 @@ def create_app(gw: Gateway) -> FastAPI:
         until when, which a5s tells them itself, beside the agent's next message to them. What
         it keeps to undo it, if anything."""
         asked = groups.requesters(row)  # whose words asked for it: in a group, not everyone
-        whom = approvals.names_of([p.name if (p := gw.scenario.person(w)) else w
-                                   for w in asked]) if asked else "nobody"
         undo, as_left = undone_by(tool, keys, given, standing)
         with db.transaction(gw.url) as conn:
             values = {r["handle"]: r["value"] for r in conn.execute(
@@ -2909,9 +2915,18 @@ def create_app(gw: Gateway) -> FastAPI:
             parts_of = sorted({p for k in keys if (p := gw.scenario.part_of(k))})
             kept = undoing.keep(conn, row, tool, keys[0], parts_of, said, undo, as_left, asked) \
                 if undo is not None and as_left is not None else None
-            offer = undoing.offered(kept["until"], gw.public_url, kept["id"]) if kept else None
-            text = (f"The {row['definition']} made a change itself, at level 2, for {whom}: "
-                    f"{change}" + (f" {before}" if before else "") + (f" {offer}" if offer else ""))
+            named = [p.name if (p := gw.scenario.person(w)) else w for w in asked]
+
+            def made(person: str) -> str:
+                """The change, as someone it's reported to reads it: in their language, and how
+                to undo it by their clock."""
+                language, who = gw.spoken(conn, person), gw.scenario.person(person)
+                offer = undoing.offered(kept["until"], gw.public_url, kept["id"], language,
+                                        who.timezone if who else "UTC") if kept else None
+                return words.say(language, "The {agent} made a change itself, at level 2, for "
+                                 "{whom}: {change}", agent=row["definition"],
+                                 whom=approvals.names_of(named, language), change=change) + (
+                    f" {before}" if before else "") + (f" {offer}" if offer else "")
             inst = conn.execute("select owner, deputy from instances where id = %s",
                                 (row["id"],)).fetchone()
             told = [p for p in (inst["owner"], inst["deputy"])
@@ -2920,8 +2935,8 @@ def create_app(gw: Gateway) -> FastAPI:
                 told = [p.id for p in proposals.everyone(proposals.deciders(
                     gw.scenario, keys, []))]
             for person in dict.fromkeys(told):
-                digests.keep(conn, person, row["definition"], row["id"], row["run"], text,
-                             gw.clock())
+                digests.keep(conn, person, row["definition"], row["id"], row["run"],
+                             made(person), gw.clock())
             group = row["trigger"].get("conversation")  # and its next run knows a5s made it:
             for person in ([group] if groups.of(group) else row["acts_for"]):  # the group's, in one
                 noted(conn, person, row["definition"],
@@ -3784,23 +3799,34 @@ def create_app(gw: Gateway) -> FastAPI:
                                     tool, keys[0], list(p["parts"]), p["said"], undo, as_left,
                                     list(p["acts_for"]), proposal=p["id"],
                                     offered=True)  # in a5s's own message that it's made
-                offer = undoing.offered(kept["until"], gw.public_url, kept["id"])
+                offer = {"until": kept["until"], "id": kept["id"]}
         with db.transaction(gw.url) as conn:
             if outcome["status"] == "ok":
-                going = ended(conn, p, "made", rows, gw.clock(), offer or "")
+                going = ended(conn, p, "made", rows, gw.clock(), offer=offer)
             else:
                 going = ended(conn, p, "failed", rows, gw.clock(), outcome["error"])
         return going["sends"]
 
     def ended(conn: db.Connection, p: dict, became: str, rows: list[dict],
-              now: datetime, extra: str = "", reason: str | None = None) -> dict:
+              now: datetime, extra: str = "", reason: str | None = None,
+              offer: dict | None = None) -> dict:
         """End a held change, let go of the values it kept, and tell whoever it was for, in the
         conversation with its agent, so its next run knows too, and, in their digest, everyone
         who decided it. Its records as they stood when it was asked for go to graders."""
         deciders_ = [r["person"] for r in rows]
-        names = approvals.names_of([who.name if (who := gw.scenario.person(d)) else d
-                                    for d in deciders_]) if deciders_ else None
-        text = proposals.told(p, became, names, extra, reason)
+        named = [who.name if (who := gw.scenario.person(d)) else d for d in deciders_]
+
+        def said(person: str | None = None) -> str:
+            """What became of it, as someone reads it: in their language, and how to undo it, if
+            it's made, by their clock; as the records keep it, in English, for nobody."""
+            language = gw.spoken(conn, person) if person else languages.ENGLISH
+            who = gw.scenario.person(person) if person else None
+            undo = undoing.offered(offer["until"], gw.public_url, offer["id"], language,
+                                   who.timezone if who else "UTC") if offer else ""
+            return proposals.told(p, became, approvals.names_of(named, language) if named else None,
+                                  extra, reason, language, undo)
+
+        text = said()
         conn.execute("update proposals set status = %s, decided_by = coalesce(decided_by, %s), "
                      "ended_at = %s, outcome = %s where id = %s",
                      ("made" if became == "made" else "not made" if became in (
@@ -3833,17 +3859,19 @@ def create_app(gw: Gateway) -> FastAPI:
         sends = []
         for person in told_to:
             route = gw.reach(conn, person, p["definition"])  # what they're waiting for: at once
-            sends.append(outbound(conn, route, person, text, instance=p["instance_id"],
+            theirs = said(person)
+            sends.append(outbound(conn, route, person, theirs, instance=p["instance_id"],
                                   agent=p["definition"]))
-            noted(conn, person, p["definition"], text, next(iter(p["records"]), None))
+            noted(conn, person, p["definition"], theirs, next(iter(p["records"]), None))
         if group:  # and the group's next run knows, as everyone there then heard it asked
             noted(conn, group, p["definition"], text, next(iter(p["records"]), None),
                   heard_by=list(asked["acts_for"]))
         for person in dict.fromkeys(deciders_):  # and those who decided it, in their digest
             if person not in told_to:
                 digests.keep(conn, person, p["definition"], p["instance_id"], str(p["run_id"]),
-                             f"What became of {proposals.key(p)}, which you decided: {text}",
-                             now)
+                             words.say(gw.spoken(conn, person), "What became of {key}, which "
+                                       "you decided: {text}", key=proposals.key(p),
+                                       text=said(person)), now)
         return {"sends": sends}
 
     def chasing(conn: db.Connection, p: dict, now: datetime) -> dict:
@@ -4109,9 +4137,12 @@ def create_app(gw: Gateway) -> FastAPI:
         ledger.append(conn, {"kind": "admin", "action": "refuse-undo", "run": str(row["run_id"]),
                              "instance": row["instance_id"], "acts_for": [row["asked_by"]],
                              "decision": "record", "args": {"change": row["id"], "why": why}})
+        spoken = gw.spoken(conn, row["asked_by"])
         digests.keep(conn, row["asked_by"], row["definition"], row["instance_id"],
-                     str(row["run_id"]), f"a5s didn't undo the change the {row['definition']} "
-                     f"made, as you asked on its page: {why}. {row['said']}", gw.clock())
+                     str(row["run_id"]), words.say(
+                         spoken, "a5s didn't undo the change the {agent} made, as you asked on its "
+                         "page: {why}. {said}", agent=row["definition"],
+                         why=words.say(spoken, why), said=row["said"]), gw.clock())
 
     def undo_one(row: dict) -> str:
         """Undo one change, while its record is as the change left it, and count it, as a wrong
@@ -4151,13 +4182,14 @@ def create_app(gw: Gateway) -> FastAPI:
                 undoing.end(conn, row["id"], "failed",
                             f"the records system didn't take it: {str(failed)[:200]}")
                 digests.keep(conn, row["asked_by"], row["definition"], row["instance_id"],
-                             str(row["run_id"]), f"a5s couldn't undo the change the "
-                             f"{row['definition']} made, as you asked: the records system didn't "
-                             f"take it. {row['said']}", gw.clock())
+                             str(row["run_id"]), words.say(
+                                 gw.spoken(conn, row["asked_by"]), "a5s couldn't undo the change "
+                                 "the {agent} made, as you asked: the records system didn't take "
+                                 "it. {said}", agent=row["definition"], said=row["said"]),
+                             gw.clock())
                 return "failed"
             undoing.end(conn, row["id"], "undone", "undone", by=row["asked_by"])
             graded = samples.undone(conn, gw.cfg.seal_keys, gw.scenario.name, row, gw.clock())
-            text = f"{name} undid a change the {row['definition']} made: {row['said']}"
             for person in row["acts_for"]:  # their conversation: the agent's next run knows
                 noted(conn, person, row["definition"], f"{name} undid the change a5s made: "
                       f"{row['said']}", row["record"])
@@ -4167,7 +4199,10 @@ def create_app(gw: Gateway) -> FastAPI:
                     if p and p != row["asked_by"] and gw.scenario.sees(p, row["record"])]
             for person in dict.fromkeys(told):
                 digests.keep(conn, person, row["definition"], row["instance_id"],
-                             str(row["run_id"]), text, gw.clock())
+                             str(row["run_id"]), words.say(
+                                 gw.spoken(conn, person), "{name} undid a change the {agent} "
+                                 "made: {said}", name=name, agent=row["definition"],
+                                 said=row["said"]), gw.clock())
             ledger.append(conn, {"kind": "admin", "action": "undone", "run": str(row["run_id"]),
                                  "instance": row["instance_id"], "acts_for": [row["asked_by"]],
                                  "decision": "record",
@@ -4336,12 +4371,18 @@ def create_app(gw: Gateway) -> FastAPI:
             "b.release = i.release where b.behaviour = %s and b.action = %s and i.status = 'active'",
             (found["behaviour"], found["action"])).fetchall()
         for inst in rows:
-            text = (f"a5s's cap on {inst['id']} for {found['action']} in {found['part']} is now "
-                    f"{found['cap']}: {found['why']}" + (
-                        f", on {found['graded']} grades, {found['errors']} of them wrong."
-                        if "graded" in found else "."))
             for person in dict.fromkeys(p for p in (inst["owner"], inst["deputy"]) if p):
-                digests.keep(conn, person, inst["definition"], inst["id"], None, text, now)
+                spoken = gw.spoken(conn, person)  # each in the language they read
+                given = {"instance": inst["id"], "action": found["action"], "part": found["part"],
+                         "cap": found["cap"], "why": words.say(spoken, "lowered by {by}",
+                                                               by=found["by"])
+                         if "by" in found else words.say(spoken, found["why"])}
+                digests.keep(conn, person, inst["definition"], inst["id"], None, words.say(
+                    spoken, "a5s's cap on {instance} for {action} in {part} is now {cap}: {why}, "
+                    "on {graded} grades, {errors} of them wrong.", graded=found["graded"],
+                    errors=found["errors"], **given) if "graded" in found else words.say(
+                    spoken, "a5s's cap on {instance} for {action} in {part} is now {cap}: {why}.",
+                    **given), now)
 
     @services.get("/proposals")
     def list_proposals() -> dict:

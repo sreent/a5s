@@ -437,8 +437,8 @@ def seal_pending(conn: db.Connection, keys: tuple[str, ...], verifier: Any,
         if why is not None and first["graded_by"]:
             refused.append(sealing.Refusal(
                 first["graded_by"], f"{first['graded_by']}'s grades of {len(given)} samples: {why}",
-                f"Your grades of {len(given)} samples didn't count: {why}. They wait to be graded "
-                "again, on a5s's own page."))
+                (("Your grades of {n} samples didn't count: {why}. They wait to be graded again, "
+                  "on a5s's own page."), {"n": len(given), "why": why})))
         for row in together:
             if why is not None:
                 conn.execute(
@@ -556,7 +556,7 @@ def lower(conn: db.Connection, keys: tuple[str, ...], release: str, part: str, a
     current = _cap_row(conn, keys, kind, part, action) if kind else None
     if current is None or current["cap"] < 2:
         return None
-    return set_cap(conn, keys, kind, part, action, 1, f"lowered by {by}", now,
+    return set_cap(conn, keys, kind, part, action, 1, f"lowered by {by}", now, {"by": by},
                    threshold=current["threshold"])
 
 

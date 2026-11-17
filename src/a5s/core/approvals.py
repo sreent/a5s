@@ -713,9 +713,9 @@ def seal_pending(conn: db.Connection, keys: tuple[str, ...], verifier: Verifier 
                                    "and digest = %s", (row["scenario"], row["digest"])).fetchone()
             refused.append(sealing.Refusal(
                 row["person"], f"{row['person']}'s approval: {why}",
-                f"Your approval of version {version['serial'] if version else '?'} of the settings "
-                f"didn't count: {why}. If it still waits for you, approve it again on the "
-                "settings page, signing in afresh."))
+                (("Your approval of version {serial} of the settings didn't count: {why}. If it "
+                  "still waits for you, approve it again on the settings page, signing in afresh."),
+                 {"serial": version["serial"] if version else "?", "why": why})))
             continue
         claim = verifier.cfg.groups_claim if verifier else None  # checked, so it's there
         groups = list(memberships.shown(verifier.claims(row["proof"], expired=True), claim)

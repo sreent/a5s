@@ -20,6 +20,7 @@ from zoneinfo import ZoneInfo
 
 from a5s import db
 from a5s.contract import PART_OWNER, Obligation, Person, Scenario
+from a5s.core import languages, words
 from a5s.definitions import Definition
 
 LOCK = 0x0A5_0B16  # one sweep at a time
@@ -61,9 +62,11 @@ def a_working_day_after(person: Person, at: datetime) -> datetime:
 WITHHELD = "[title withheld]"  # a title of a class the model isn't approved for
 
 
-def day(person: Person, at: datetime) -> str:
-    """Such as Mon 2 Nov, in the person's time zone."""
+def day(person: Person, at: datetime, language: str = languages.ENGLISH) -> str:
+    """Such as Mon 2 Nov, in the person's time zone, as they read a day: จ. 2 พ.ย. in Thai."""
     here = local(person, at)
+    if language == languages.THAI:
+        return f"{languages.THAI_DAYS[here.weekday()]} {here.day} {languages.THAI_MONTHS[here.month - 1]}"
     return f"{here:%a} {here.day} {here:%b}"
 
 
@@ -222,13 +225,17 @@ def escalation(row: dict, scenario: Scenario, recipient: Person, inst: dict | No
     return " ".join(said)
 
 
-def instead(row: dict, person: Person, why: str) -> str:
-    """a5s's own reminder of what someone owes, when their agent couldn't write it."""
+def instead(row: dict, person: Person, why: str, language: str = languages.ENGLISH) -> str:
+    """a5s's own reminder of what someone owes, when their agent couldn't write it, in the
+    language they read."""
     due = local(person, row["due_at"])
     link = f" {row['link']}" if row["link"] else ""
-    return (f"{row['record']}, {row['title']}, is due by {due:%H:%M} on "
-            f"{day(person, row['due_at'])} and is still open. The {row.get('agent') or 'agent'} "
-            f"couldn't write to you about it, as {why}, so a5s is telling you itself.{link}")
+    return words.say(language, "{record}, {title}, is due by {time} on {day} and is still open. "
+                     "The {agent} couldn't write to you about it, as {why}, so a5s is telling you "
+                     "itself.", record=row["record"], title=row["title"], time=f"{due:%H:%M}",
+                     day=day(person, row["due_at"], language),
+                     agent=row.get("agent") or words.say(language, "agent"),
+                     why=words.say(language, why)) + link
 
 
 def chase(row: dict, person: Person, *, withheld: bool = False) -> str:

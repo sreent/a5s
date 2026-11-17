@@ -506,6 +506,7 @@ TH: dict[str, str] = {
         "{record} {title} ครบกำหนดภายในเวลา {time} น. วันที่ {day} และยังเปิดอยู่ "
         "{agent} เขียนถึงคุณเรื่องนี้ไม่ได้ เพราะ{why} a5s จึงแจ้งคุณเอง",
     "it couldn't finish": "ทำงานไม่เสร็จ",
+    "unable to write to you just now, as {why}": "เขียนถึงคุณไม่ได้ในตอนนี้ เพราะ{why}",
     "its model isn't answering": "โมเดลไม่ตอบสนอง",
     "it has used its budget for today": "ใช้งบประมาณของวันนี้หมดแล้ว",
     "a5s didn't let its message through": "a5s ไม่อนุญาตให้ส่งข้อความนั้น",
@@ -545,7 +546,8 @@ TH: dict[str, str] = {
 }
 
 
-def say(language: str, text: str, **given: object) -> str:
-    """Words in someone's language, as the catalogue has them, with what changes put in."""
+def say(language: str, text: str, /, **given: object) -> str:
+    """Words in someone's language, as the catalogue has them, with what changes put in: by any
+    name, {text} and {language} among them, as its own two are given only by place."""
     said = TH.get(text, text) if language == THAI else text
     return said.format(**given) if given else said

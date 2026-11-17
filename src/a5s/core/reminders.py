@@ -23,7 +23,7 @@ from zoneinfo import ZoneInfo
 
 from a5s import db
 from a5s.contract import Person, record_of
-from a5s.core import parts
+from a5s.core import languages, parts, words
 from a5s.core.coretools import Call, CoreTool, Refused, one_to_one
 from a5s.core.obligations import day, local
 
@@ -240,7 +240,10 @@ def task(row: dict, person: Person) -> str:
             f"{row['about']}.{record} Write to them briefly, in one message.")
 
 
-def notice(row: dict, person: Person, status: str) -> str:
-    """a5s's own words, when the agent can't remind them itself."""
-    return (f"On {day(person, row['confirmed_at'])}, you asked the {row['agent']} to remind you "
-            f"now: {row['about']}. The {row['agent']} is {status}, so a5s is reminding you itself.")
+def notice(row: dict, person: Person, status: str, language: str = languages.ENGLISH) -> str:
+    """a5s's own words, when the agent can't remind them itself, in the language they read, with
+    the agent's `status` in it already."""
+    return words.say(language, "On {day}, you asked the {agent} to remind you now: {about}. The "
+                     "{agent} is {status}, so a5s is reminding you itself.",
+                     day=day(person, row["confirmed_at"], language), agent=row["agent"],
+                     about=row["about"], status=status)
