@@ -79,6 +79,9 @@ def test_someone_chooses_the_language_they_read_on_their_own_page(stack, approvi
         [row] = conn.execute("select value from preferences where person = 'ana' "
                              "and name = 'language'").fetchall()
     assert row["value"] == "th"
+    [noted] = [e for e in stack.ledger() if e.get("action") == "choose-language"]  # it changes
+    assert noted["acts_for"] == ["ana"] and noted["args"] == {"language": "th"}  # what agents
+    # are told, as connecting an account does, so the ledger keeps it
 
 
 def test_the_catalogue_has_every_word_the_studio_puts_through_it():

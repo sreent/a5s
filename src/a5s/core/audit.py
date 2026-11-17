@@ -398,7 +398,8 @@ ADMIN = {"approve": "approved settings", "propose": "proposed settings",
          "disconnect": "an account in another system let go",
          "ask-undo": "asked to undo a change", "refuse-undo": "an undo refused",
          "undone": "undid a change", "hand-back": "a conversation handed back to its agent",
-         "shadow-grade": "graded a new version's answer beside the one sent"}
+         "shadow-grade": "graded a new version's answer beside the one sent",
+         "choose-language": "chose the language they read, which agents answer them in"}
 
 
 def roles_of(scenario: Any, parts: Iterable[str], agents: Iterable[str]) -> list[dict]:

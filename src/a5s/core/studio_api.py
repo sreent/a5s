@@ -306,9 +306,13 @@ def router(gw: Any) -> APIRouter:
         them in, of those a5s's pages speak: theirs alone, kept with their preferences."""
         with db.transaction(gw.url) as conn:
             try:
-                return {"language": languages.choose(conn, person, body.language, gw.clock())}
+                chosen = languages.choose(conn, person, body.language, gw.clock())
             except languages.Refused as e:
                 raise HTTPException(400, str(e)) from None
+            ledger.append(conn, {"kind": "admin", "action": "choose-language", "run": None,
+                                 "instance": None, "acts_for": [person.id], "decision": "record",
+                                 "args": {"language": chosen}})  # it changes what agents are told
+            return {"language": chosen}
 
     @api.get("/studio/api/shadows", **shapes.answers(shapes.Shadows))
     def studio_shadows(person: Annotated[Person, Depends(someone)]) -> dict:

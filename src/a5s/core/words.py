@@ -19,6 +19,14 @@ THAI = "th"
 
 TH: dict[str, str] = {
     # What waits on someone, on their home (core/home.py)
+    # What a5s says of values the agent wrote itself, beside its answer (core/provenance.py)
+    "(a5s: {which} came from the {agent} itself, not from the records or from you, so check "
+    "it before you rely on it.)":
+        "(a5s: {which} มาจาก {agent} เอง ไม่ได้มาจากระเบียนหรือจากคุณ โปรดตรวจสอบก่อนนำไปใช้)",
+    "(a5s: {which} came from the {agent} itself, not from the records or from you, so check "
+    "them before you rely on them.)":
+        "(a5s: {which} มาจาก {agent} เอง ไม่ได้มาจากระเบียนหรือจากคุณ โปรดตรวจสอบก่อนนำไปใช้)",
+    "{first} and {last}": "{first} และ {last}",
     "Version {serial} of the settings waits for your approval":
         "การตั้งค่าเวอร์ชัน {serial} รอการอนุมัติจากคุณ",
     "{names} approved version {serial} of the settings alone, since it only narrows what agents "

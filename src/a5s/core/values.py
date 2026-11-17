@@ -4,7 +4,9 @@ exactly against where they came from, never by asking a model.
 A record's key is found by the scenario's pattern for its keys. An amount is a number with
 a currency, such as £1,240.50, $300, GBP 1,240.50 or 1,240.50 EUR. A date is a full date,
 such as 2026-11-04, or a day and month either way round, such as 4 Nov, 4 November or
-Nov 4. Each is normalised, so the same
+Nov 4. In Thai, as agents answer people who read it, a date such as 6 พฤศจิกายน 2569 or 6 พ.ย. 69,
+its year in the Buddhist era, and an amount such as 860 บาท or ฿860, in Thai digits or not.
+Each is normalised, so the same
 value written two ways matches: £1,240.5 and £1240.50 are one amount, and 4 Nov matches
 2026-11-04, though 2025-11-04 doesn't.
 """
@@ -16,12 +18,12 @@ from dataclasses import dataclass
 from decimal import Decimal, InvalidOperation
 
 _MONTHS = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
-_SYMBOLS = {"£": "GBP", "$": "USD", "€": "EUR", "¥": "JPY", "₹": "INR"}
+_SYMBOLS = {"£": "GBP", "$": "USD", "€": "EUR", "¥": "JPY", "₹": "INR", "฿": "THB"}
 _CODES = ("GBP|USD|EUR|JPY|CNY|INR|SGD|HKD|AUD|NZD|CAD|CHF|SEK|NOK|DKK|PLN|CZK|ZAR|BRL|MXN|AED|SAR"
           "|KRW|TWD|THB|MYR|IDR|PHP|ILS|TRY")
 _NUMBER = r"\d[\d,]*(?:\.\d+)?"
 # A symbol or a code before the number, such as £1,240.50 or GBP 1,240.50, or a code after it
-_AMOUNT = re.compile(rf"([£$€¥₹])\s?({_NUMBER})|\b({_CODES})\s?({_NUMBER})"
+_AMOUNT = re.compile(rf"([£$€¥₹฿])\s?({_NUMBER})|\b({_CODES})\s?({_NUMBER})"
                      rf"|({_NUMBER})\s?({_CODES})\b")
 _ISO = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
 _MONTH = "(" + "|".join(_MONTHS) + r")[a-z]*\.?"
@@ -30,6 +32,20 @@ _DAY_MONTH = re.compile(rf"\b(\d{{1,2}})(?:st|nd|rd|th)?\s+{_MONTH}(?:\s+(\d{{4}
                         re.IGNORECASE)
 _MONTH_DAY = re.compile(rf"\b{_MONTH}\s+(\d{{1,2}})(?:st|nd|rd|th)?\b(?:,?\s+(\d{{4}})\b)?",
                         re.IGNORECASE)
+# Thai, as people write it and as agents answer them in it: each month by its name or as it's
+# cut short, such as 6 พฤศจิกายน 2569 or 6 พ.ย. 69, its year in the Buddhist era, 543 years on,
+# and often only its last two digits; Thai digits; and the currencies by their Thai names, such
+# as 860 บาท, beside ฿ (core/languages.py)
+_TH_MONTHS = (("มกราคม", "ม.ค."), ("กุมภาพันธ์", "ก.พ."), ("มีนาคม", "มี.ค."), ("เมษายน", "เม.ย."),
+              ("พฤษภาคม", "พ.ค."), ("มิถุนายน", "มิ.ย."), ("กรกฎาคม", "ก.ค."), ("สิงหาคม", "ส.ค."),
+              ("กันยายน", "ก.ย."), ("ตุลาคม", "ต.ค."), ("พฤศจิกายน", "พ.ย."), ("ธันวาคม", "ธ.ค."))
+_TH_MONTH = {name: n for n, names in enumerate(_TH_MONTHS, 1) for name in names}
+_TH_DATE = re.compile(r"(?<!\d)(\d{1,2})\s*(" + "|".join(
+    re.escape(m) for m in sorted(_TH_MONTH, key=len, reverse=True)) + r")\s*(\d{4}(?!\d)|\d{2}(?!\d))?")
+_TH_CURRENCY = {"บาท": "THB", "ปอนด์": "GBP", "ดอลลาร์": "USD", "ยูโร": "EUR", "เยน": "JPY",
+                "รูปี": "INR"}
+_TH_AMOUNT = re.compile(rf"(?<![\d.,])({_NUMBER})\s?(" + "|".join(_TH_CURRENCY) + ")")
+_TH_DIGITS = str.maketrans("๐๑๒๓๔๕๖๗๘๙", "0123456789")  # one for one, so each keeps its place
 
 
 @dataclass(frozen=True)
@@ -51,6 +67,7 @@ def found(text: str, record_pattern: str | None) -> list[Value]:
     """The typed values in text, in the order they appear, each once."""
     values: dict[tuple[str, str], Value] = {}
     spans = []
+    written, text = text, text.translate(_TH_DIGITS)  # what's matched; what's said, as written
     if record_pattern:
         for m in re.finditer(record_pattern, text):
             spans.append((m.start(), Value("key", m.group(0), m.group(0))))
@@ -73,9 +90,30 @@ def found(text: str, record_pattern: str | None) -> list[Value]:
         month, day, year = _MONTHS.index(m.group(1)[:3].lower()) + 1, int(m.group(2)), m.group(3)
         if 1 <= day <= 31 and not any(m.start() in r or m.end() - 1 in r for r in taken):
             spans.append((m.start(), Value("date", m.group(0), _norm(year, month, day))))
+    for m in _TH_AMOUNT.finditer(text):
+        try:
+            amount = Decimal(m.group(1).replace(",", ""))
+        except InvalidOperation:
+            continue
+        spans.append((m.start(), Value("amount", written[m.start():m.end()],
+                                       f"{_TH_CURRENCY[m.group(2)]} {amount:.2f}")))
+    for m in _TH_DATE.finditer(text):
+        day, month = int(m.group(1)), _TH_MONTH[m.group(2)]
+        if 1 <= day <= 31:
+            spans.append((m.start(), Value("date", written[m.start():m.end()].strip(),
+                                           _norm(_era(m.group(3)), month, day))))
     for _, value in sorted(spans, key=lambda s: s[0]):
         values.setdefault((value.kind, value.norm), value)
     return list(values.values())
+
+
+def _era(given: str | None) -> str | None:
+    """A year as Thai writes it, in the common era: one of the Buddhist era, 543 years on, or
+    only its last two digits, as 69 is 2569 and so 2026; one already in the common era as it is."""
+    if not given:
+        return None
+    year = int(given) + (2500 if len(given) == 2 else 0)
+    return str(year - 543 if year >= 2400 else year)
 
 
 def _norm(year: str | None, month: int, day: int) -> str:

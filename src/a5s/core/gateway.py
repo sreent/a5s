@@ -3337,7 +3337,9 @@ def create_app(gw: Gateway) -> FastAPI:
             traced = provenance.traced(conn, gw.scenario, row, text) if decision.allowed else []
             said, note = text, None  # the agent's words, apart from a5s's own note on them
             if own := [t["value"] for t in traced if t["from"] is None]:  # people see it apart
-                note = provenance.note(row["definition"], own)
+                reader = None if groups.of(body.to) else gw.scenario.person(body.to)  # in the
+                note = provenance.note(row["definition"], own, languages.of(conn, reader)  # one
+                                       if reader else languages.ENGLISH)  # language they read
                 text += "\n\n" + note
             ledger.append(conn, gw.entry(row, "message", "send", decision, args={
                 "to": body.to, "chars": len(text), "sha256": hashlib.sha256(text.encode()).hexdigest(),
