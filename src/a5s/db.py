@@ -129,15 +129,48 @@ class NewerSchema(RuntimeError):
     """The database has migrations this a5s doesn't know: a later release made it."""
 
 
+class OlderSchema(RuntimeError):
+    """The database lacks migrations this a5s needs: nobody ran `a5s migrate` (round 15, D11)."""
+
+
+class WrongRole(RuntimeError):
+    """A part connects as a role that isn't its own (round 15, D10)."""
+
+
 def known(url: str) -> None:
     """Refuse to serve a database a later release of a5s migrated, such as after rolling a5s
-    back: this code doesn't know what those migrations mean, such as a message for a group."""
+    back: this code doesn't know what those migrations mean, such as a message for a group.
+    And one older than this release needs, which would fail later, at the first column it
+    lacks, rather than now, saying why (round 15, D11)."""
     with transaction(url) as conn:
         found = conn.execute("select max(version) as v from schema_migrations").fetchone()["v"]
-    if found is not None and found > max(v for v, _, _ in migrations()):
+    newest = max(v for v, _, _ in migrations())
+    if found is not None and found > newest:
         raise NewerSchema(f"the database is at migration {found}, from a later release of a5s "
                           "than this one: run that release, or restore the database from before "
                           "it (docs/runbooks.md)")
+    if found is None or found < newest:
+        raise OlderSchema(f"the database is at migration {found or 0}, and this release of a5s "
+                          f"needs {newest}: run `a5s migrate` first, as the deployment's "
+                          "migration job does (docs/runbooks.md)")
+
+
+def own_role(url: str, part: str) -> None:
+    """Refuse to serve one of a5s's parts as a superuser, whom no grant or trigger binds, or as
+    another part's role, whose grants aren't this part's: each part's role is what keeps it
+    to its own (round 15, D10)."""
+    with transaction(url) as conn:
+        row = conn.execute("select current_user as who, coalesce((select rolsuper from pg_roles "
+                           "where rolname = current_user), false) as superuser").fetchone()
+    assert row is not None
+    if row["superuser"]:
+        raise WrongRole(f"the {part} connects to the database as {row['who']}, a superuser, "
+                        "whom none of a5s's grants binds: give it its own role, "
+                        f"{ROLES.get(part, 'its own')} (docs/runbooks.md)")
+    others = {role for name, role in ROLES.items() if name != part}
+    if row["who"] in others:
+        raise WrongRole(f"the {part} connects to the database as {row['who']}, another part's "
+                        f"role: give it its own, {ROLES.get(part, 'its own')} (docs/runbooks.md)")
 
 
 def migrate(url: str, tries: int = 3) -> list[str]:

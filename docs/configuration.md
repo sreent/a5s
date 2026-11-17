@@ -28,6 +28,10 @@ Each part checks all of them as it starts. It won't start with any of these, and
 - A setting missing beside another that needs it, such as Teams's tenant beside its app.
 - An `A5S_` name that isn't a setting, such as a misspelling of `A5S_OIDC_MFA`. Ignored, it would do nothing, so a second factor nobody is asked for would go unnoticed. Where it looks like a setting, the message says which.
 - A setting that has moved, such as to the signed settings. The message says where it went.
+- Settings that can't go together: `A5S_DEVELOPMENT`, which takes people's word for who they are, beside an identity provider in `A5S_OIDC_ISSUER`.
+- A secret anyone could guess: a seal key of fewer than 32 characters, or, in a part that serves, a service token so short. `a5s up` makes each of 43, at random.
+
+Each part checks its database too, as it starts: it won't serve one a later release migrated, nor one nobody migrated to this release, and it won't connect as a superuser or as another part's role ([runbooks](runbooks.md)). The channels app won't start with the core's seal keys, which it never holds (round 15).
 
 The command line, which serves nothing, warns of a name that isn't a setting rather than stopping. Names a5s uses for its tests (`A5S_TEST_`), and those compose and the deployment scripts read, are listed as not being settings. So are the variables Kubernetes gives a pod for each service in its namespace, such as `A5S_GATEWAY_SERVICE_HOST` for one named `a5s-gateway`, which a part knows by their names and values and leaves alone: a5s finds its services by name, and the chart turns them off (`enableServiceLinks: false`). No setting has a name of their shape, so a service can never set one.
 

@@ -138,6 +138,20 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 1. Someone rolled a5s back after a release migrated its database. The older release doesn't know what the newer migrations mean, such as messages from group chats, so it won't serve.
 2. Roll forward to the release that migrated it, or restore the database from before it, and roll back then. Migrations wait for a table's lock 15 seconds at most, and are tried three times, so one that can't get it fails the release rather than holding up a5s.
 
+## a5s won't start: the database is older than the release
+
+**Shows as:** a service exiting with "the database is at migration N, and this release of a5s needs M: run `a5s migrate` first".
+
+1. Nobody ran this release's migrations. The chart's migration job and the stack's `setup` run them before the parts start; a part started by hand needs them run first.
+2. Run `a5s migrate` as the database's administrator, then start the parts again. A part would otherwise fail later, at the first column it lacks, without saying why.
+
+## a5s won't start: a part connects as the wrong role
+
+**Shows as:** a service exiting with "the gateway connects to the database as postgres, a superuser", or "as another part's role".
+
+1. Each part connects as its own role, which `a5s migrate` makes: the gateway as `a5s_gateway`, the channels app as `a5s_channels`, the scheduler as `a5s_scheduler`. Each role's grants keep its part to its own, and a superuser is bound by none of them, nor by the triggers that keep the ledger and the seals.
+2. Give the part its own role's address in `A5S_DATABASE_URL`, as the chart's secrets and the stack's compose file do.
+
 ## Connections to the database run out
 
 **Shows as:** errors that a connection couldn't be had, or Postgres refusing new connections.

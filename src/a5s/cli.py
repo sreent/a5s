@@ -260,8 +260,13 @@ def _summaries(cfg: Config, person: str, agent: str) -> None:
 
 
 def _service(cfg: Config, name: str):
-    if name != "worker":  # never against a schema a later release made
+    if name == "channels" and cfg.seal_keys:  # the core's alone (round 15, D5)
+        raise RuntimeError("A5S_SEAL_KEYS is the core's alone, which seals what people approve, "
+                           "decide and grade: unset it for the channels app, which never holds "
+                           "it, and would take itself for the core")
+    if name != "worker":  # never against a schema another release made, nor as another's role
         db.known(cfg.database_url)
+        db.own_role(cfg.database_url, "gateway" if name == "gateway" else "channels")
     if name == "gateway":
         return build.app(cfg)
     if name == "worker":
@@ -279,7 +284,8 @@ def _stopping() -> threading.Event:
 
 
 def _scheduler(cfg: Config) -> None:
-    db.known(cfg.database_url)  # never against a schema a later release made
+    db.known(cfg.database_url)  # never against a schema another release made
+    db.own_role(cfg.database_url, "scheduler")  # nor as another part's role
     hand_off = remote_worker(cfg.worker_url) if cfg.worker_url else worker.run_agent
     pools = {agent: remote_worker(url) for agent, url in cfg.worker_urls.items()}
     Scheduler(cfg, build.scenario(cfg), worker=hand_off, pools=pools).listen(_stopping())

@@ -146,7 +146,7 @@ def test_a_bot_whose_secret_isnt_set_stops_teams_as_it_starts():
 
 def test_what_a_part_runs_with_is_shown_with_its_secrets_masked(monkeypatch, capsys, tmp_path):
     env = {"A5S_DATABASE_URL": "postgresql://a5s_gateway:hunter2@db:5432/a5s",
-           "A5S_SERVICE_TOKEN": "s3cret", "A5S_DB_POOL_SIZE": "20",
+           "A5S_SERVICE_TOKEN": "s3cret-" * 6, "A5S_DB_POOL_SIZE": "20",  # as long as one must be
            "A5S_OIDC_ISSUER": "https://login.example/tenant/", "A5S_OIDC_GROUPS_CLAIM": ""}
     assert config.set_here(env) == {
         "A5S_SERVICE_TOKEN": "•••", "A5S_DATABASE_URL": "postgresql://a5s_gateway:•••@db:5432/a5s",

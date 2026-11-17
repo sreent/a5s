@@ -97,6 +97,9 @@ def _path(given: str) -> Path:
     return Path(given.strip())
 
 
+LEAST_SECRET = 32  # characters in a seal key or the service token, as `a5s up` makes 43 (round 15)
+
+
 def _items(given: str) -> tuple[str, ...]:
     return tuple(dict.fromkeys(i.strip() for i in given.split(",") if i.strip()))
 
@@ -575,6 +578,24 @@ def check(env: Mapping[str, str] | None = None, serving: bool = True) -> tuple[l
     for name, where in MOVED.items():
         if name in env:
             problems.append(f"{name} has moved to {where}: unset it here")
+    def read(var: Var, otherwise: Any) -> Any:  # each on its own: a bad one is said above
+        try:
+            return var.read(env)
+        except ConfigError:
+            return otherwise
+
+    development, issuer = read(DEVELOPMENT, False), read(OIDC_ISSUER, None)  # round 15 (D12,
+    keys, token = read(SEAL_KEYS, ()), read(SERVICE_TOKEN, "")  # D16)
+    if development and issuer:
+        problems.append("A5S_DEVELOPMENT takes people's word for who they are, and turns checks "
+                        "off that an identity provider's deployment needs: with A5S_OIDC_ISSUER "
+                        "set, unset A5S_DEVELOPMENT")
+    if short := [k for k in keys if len(k) < LEAST_SECRET]:
+        problems.append(f"A5S_SEAL_KEYS has a key of {len(short[0])} characters: each takes at "
+                        f"least {LEAST_SECRET}, made at random, as `a5s up` makes them")
+    if serving and token and len(token) < LEAST_SECRET:  # as each part that serves holds it
+        problems.append(f"A5S_SERVICE_TOKEN has {len(token)} characters: it takes at least "
+                        f"{LEAST_SECRET}, made at random, as `a5s up` makes it")
     for given, needed, what in NEEDS:
         if given.is_set(env) and (missing := [n.name for n in needed if not n.is_set(env)]):
             problems.append(f"{what} needs {_and(missing)} as well as {given.name}")
