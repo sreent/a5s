@@ -121,7 +121,7 @@ from a5s.core.identity import (
     without_second_factor,
 )
 from a5s.core.matrix import Matrix
-from a5s.core.policy import Decision, PolicyEngine
+from a5s.core.policy import Decision, Own, PolicyEngine
 from a5s.core.slack import Slack
 from a5s.core.teams import Teams
 from a5s.core.values import Value
@@ -943,11 +943,8 @@ class Gateway:
                           used=row["taken_at"] is not None)
         if opening.used:
             opening.reasons.append("the event has been worked on already")
-        elif said is None:
-            opening.reasons.append(f"{inst['id']}'s release takes no {row['type']} events from "
-                                   f"{row['source']}")
-        elif not all(self.scenario.part_of(k) in (inst["parts"] or {}) for k in row["records"]):
-            opening.reasons.append(f"a record it names is in a part {inst['id']} doesn't work in")
+        elif why := events.refuses(self.scenario, self.definitions, inst, row):  # as the sweep
+            opening.reasons.append(why)  # that picked it found, unless it changed since
         return opening
 
     def questioned(self, conn: db.Connection, inst: dict, trigger: dict,
@@ -2661,10 +2658,10 @@ def create_app(gw: Gateway) -> FastAPI:
                 if early["trigger"].get("kind") == shadows.KIND:
                     why = "a shadow changes, writes and sends nothing: it only reads"
                     ledger.append(conn, gw.entry(early, "tool", name, Decision(
-                        False, ("shadows-change-nothing",), explanations=(why,)),
+                        False, (Own.SHADOW_CHANGES,), explanations=(why,)),
                         args=ledger.mask(args)))
                     return JSONResponse(status_code=403, content={
-                        "denied": True, "reasons": ["shadows-change-nothing"],
+                        "denied": True, "reasons": [Own.SHADOW_CHANGES],
                         "explanations": [why]})
         if getattr(tool, "as_person", "") or getattr(tool, "library", ""):  # as someone, or
             with db.transaction(gw.url) as conn:  # what they may read in a library
@@ -2674,10 +2671,10 @@ def create_app(gw: Gateway) -> FastAPI:
                            "never acts as anyone in another system, nor reads a library for "
                            "them: only what they ask themselves does")
                     ledger.append(conn, gw.entry(early, "tool", name, Decision(
-                        False, ("acts-as-nobody-unasked",), explanations=(why,)),
+                        False, (Own.UNASKED,), explanations=(why,)),
                         args=ledger.mask(args)))
                     return JSONResponse(status_code=403, content={
-                        "denied": True, "reasons": ["acts-as-nobody-unasked"],
+                        "denied": True, "reasons": [Own.UNASKED],
                         "explanations": [why]})
         for field_name in (core or tool).text_fields if (core or tool) else ():
             if field_name in args:  # outgoing text, at any depth
@@ -2735,32 +2732,32 @@ def create_app(gw: Gateway) -> FastAPI:
                 decision = gw.decide(row, "call_tool", entity, [], **about,
                                      over_limit=over is not None)
                 if found[0] is None:  # fail closed
-                    decision = Decision(False, ("settings-must-check-out",), explanations=(
+                    decision = Decision(False, (Own.SETTINGS,), explanations=(
                         f"a5s can't use the settings in force: {found[1]}",))
                 elif problem := misfit((core or tool).schema if (core or tool) else {}, args):
-                    decision = Decision(False, ("arguments-fit-the-schema",), explanations=(
+                    decision = Decision(False, (Own.ARGUMENTS,), explanations=(
                         f"the arguments don't fit the tool: {problem}",))
                 elif any(not isinstance(r, str) or not r for r in records):
-                    decision = Decision(False, ("records-are-named-by-key",), explanations=(
+                    decision = Decision(False, (Own.KEYS,), explanations=(
                         "a record is named by its key, in words",))
                 elif action and len(keys) > MOST_NAMED:
-                    decision = Decision(False, ("a-change-names-few-records",), explanations=(
+                    decision = Decision(False, (Own.FEW,), explanations=(
                         f"one call changes {MOST_NAMED} records at most: ask for the rest apart",))
                 elif unreadable:
-                    decision = Decision(False, ("records-can-be-read",), explanations=(
+                    decision = Decision(False, (Own.READABLE,), explanations=(
                         ("the records it names can't be read just now, so a5s asked for nothing: "
                          "try again later"),))
                 if row["trigger"].get("kind") in OWN_RUNS:
-                    decision = Decision(False, ("a5s-runs-call-no-tools",), explanations=(
+                    decision = Decision(False, (Own.OWN_RUNS_CALL,), explanations=(
                         "a5s's own runs, such as keeping a summary, call no tools",))
                 if why := tasking.stopped(conn, row):  # cancelled, as a suspension stops runs
-                    decision = Decision(False, ("tasks-stop-when-stopped",), explanations=(why,))
+                    decision = Decision(False, (Own.STOPPED,), explanations=(why,))
                 steered = handover.steered(conn, row["acts_for"][0], row["definition"]) if (
                     len(row["acts_for"]) == 1 and not groups.of(
                         row["trigger"].get("conversation"))) else []
                 deciding = holding(decision, records, requested, steered)
                 if isinstance(deciding, str):  # nobody may decide it, or nothing can here
-                    decision = Decision(False, ("someone-else-decides",), explanations=(deciding,))
+                    decision = Decision(False, (Own.DECIDER,), explanations=(deciding,))
                 texts = [s for f in tool.text_fields for s in strings(args.get(f))] if tool else []
                 if decision.held:  # what deciders should know: every value the agent wrote itself
                     texts = strings(args)
@@ -3424,26 +3421,26 @@ def create_app(gw: Gateway) -> FastAPI:
             owner = row["trigger"].get("sender") if group else body.to
             route = None
             if row["trigger"].get("kind") == shadows.KIND:
-                decision = Decision(False, ("shadows-send-nothing",), explanations=(
+                decision = Decision(False, (Own.SHADOW_SENDS,), explanations=(
                     "a shadow sends nothing: what it answers is kept for graders",))
             elif row["trigger"].get("kind") in OWN_RUNS:
-                decision = Decision(False, ("a5s-runs-write-to-nobody",), explanations=(
+                decision = Decision(False, (Own.OWN_RUNS_WRITE,), explanations=(
                     "a5s's own runs, such as keeping a summary, write to nobody",))
             elif row["trigger"].get("kind") == tasking.KIND and (
                     why := tasking.stopped(conn, row) or tasking.held(conn, row)):  # a part,
                 # a task still at work, or one cancelled meanwhile
                 decision = Decision(False, (tasking.HELD,), explanations=(why,))
             elif row["trigger"].get("kind") == asking.KIND:
-                decision = Decision(False, ("answers-go-to-the-asker",), explanations=(
+                decision = Decision(False, (Own.ASKER,), explanations=(
                     ("a run that answers another agent's question writes to nobody: its answer "
                      "goes back to that agent"),))
             elif groups.of(row["trigger"].get("conversation")) and not group:
-                decision = Decision(False, ("a-group-run-writes-to-the-group",), explanations=(
+                decision = Decision(False, (Own.GROUP,), explanations=(
                     ("a run in a group chat writes only to the chat, so to everyone in it"),))
             elif not group and body.to not in row["acts_for"]:
                 why = ("a run writes only to the people it acts for, such as whoever sent the "
                        "message it answers")
-                decision = Decision(False, ("writes-to-whom-it-acts-for",), explanations=(why,))
+                decision = Decision(False, (Own.WHOM,), explanations=(why,))
             else:
                 decisions = [gw.decide(row, "send_message", recipient(who), [])
                              for who in (row["acts_for"] if group else [body.to])]
@@ -4533,14 +4530,14 @@ def create_app(gw: Gateway) -> FastAPI:
                 conn, gw.scenario, release.budget, row["id"], list(row["acts_for"]),
                 row["trigger"].get("kind"), row["tokens"], gw.clock(), tasking.capped(row))
             if refusal:
-                decision = Decision(False, ("images-go-to-models-approved-for-them",) if "images" in (
-                    refusal) else ("agents-use-their-own-tools",), explanations=(refusal,))
+                decision = Decision(False, (Own.IMAGES,) if "images" in (
+                    refusal) else (Own.TOOLS,), explanations=(refusal,))
             elif why := tasking.stopped(conn, row):  # its task was cancelled meanwhile
-                decision = Decision(False, ("tasks-stop-when-stopped",), explanations=(why,))
+                decision = Decision(False, (Own.STOPPED,), explanations=(why,))
             elif spent:
-                decision = Decision(False, ("budgets",), explanations=(spent,))
+                decision = Decision(False, (Own.BUDGETS,), explanations=(spent,))
             elif (found := gw.settings_in_force(conn))[0] is None:
-                decision = Decision(False, ("settings-must-check-out",), explanations=(
+                decision = Decision(False, (Own.SETTINGS,), explanations=(
                     f"a5s can't use the settings in force: {found[1]}",))
             else:
                 decision = gw.decide(row, "call_model", approved, [],

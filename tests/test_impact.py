@@ -235,3 +235,17 @@ def test_on_a_phone_nothing_the_approve_page_says_is_cut_off(stack, approving, p
             .map((el) => el.tagName + (el.id ? '#' + el.id : ''));
     }""")
     assert cut == []
+
+
+def test_the_preview_leaves_every_call_the_gateway_refused_itself_as_it_was():
+    """Round 14's deferral: the refusals the preview never decides again are the gateway's own,
+    as the gateway names them, every one, so none it adds is missed."""
+    import re
+    from pathlib import Path
+
+    from a5s.core import gateway, policy
+    source = Path(gateway.__file__).read_text()
+    assert not re.findall(r'Decision\(\s*False,\s*\("', source)  # each by its name, Own's
+    used = set(re.findall(r"Own\.([A-Z_]+)", source)) | {"TASK_WRITES"}  # tasking.HELD is one
+    assert {getattr(policy.Own, name) for name in used} == policy.OWN
+    assert impact.NOT_POLICY is policy.OWN

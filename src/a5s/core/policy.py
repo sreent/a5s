@@ -17,6 +17,35 @@ import cedarpy
 _DEFAULT_DENY = "nothing permits it, such as a tool outside the instance's grant"
 
 
+class Own:
+    """The gateway's own refusals, apart from policy's, each by the reason a Decision it refuses
+    gives: the same under any version of the settings, so the impact preview, which decides
+    calls again as another version would, never decides again one these refused (core/impact.py,
+    round 14)."""
+    SETTINGS = "settings-must-check-out"
+    ARGUMENTS = "arguments-fit-the-schema"
+    KEYS = "records-are-named-by-key"
+    FEW = "a-change-names-few-records"
+    READABLE = "records-can-be-read"
+    OWN_RUNS_CALL = "a5s-runs-call-no-tools"
+    OWN_RUNS_WRITE = "a5s-runs-write-to-nobody"
+    STOPPED = "tasks-stop-when-stopped"
+    TASK_WRITES = "a-task-writes-once-it-ends"
+    DECIDER = "someone-else-decides"
+    UNASKED = "acts-as-nobody-unasked"
+    SHADOW_CHANGES = "shadows-change-nothing"
+    SHADOW_SENDS = "shadows-send-nothing"
+    ASKER = "answers-go-to-the-asker"
+    GROUP = "a-group-run-writes-to-the-group"
+    WHOM = "writes-to-whom-it-acts-for"
+    IMAGES = "images-go-to-models-approved-for-them"
+    TOOLS = "agents-use-their-own-tools"
+    BUDGETS = "budgets"
+
+
+OWN = frozenset(v for k, v in vars(Own).items() if k.isupper())
+
+
 @dataclass(frozen=True)
 class Decision:
     allowed: bool

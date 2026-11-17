@@ -33,6 +33,7 @@ from a5s import db
 from a5s.contract import Person
 from a5s.core import repeats, studio
 from a5s.core.coretools import Call, CoreTool, Refused, one_to_one
+from a5s.core.policy import Own
 from a5s.core.reminders import CONFIRM_WITHIN, say
 from a5s.core.tasks import (
     ENDED,
@@ -45,7 +46,7 @@ from a5s.core.tasks import (
 )
 
 KIND = "task"
-HELD = "a-task-writes-once-it-ends"  # the policy's id when a task's run would write too soon
+HELD = Own.TASK_WRITES  # the policy's id when a task's run would write too soon
 MOST_CHARS = 2000  # the most a task's words may be
 MOST_PARTIAL = 4000  # the most of what its earlier slices found that a run is shown, in characters
 SAID = ("done", "blocked", "waiting")  # what a slice may say it came to

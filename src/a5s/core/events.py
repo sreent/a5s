@@ -170,6 +170,21 @@ def taken(definition: Any, source: str, kind: str) -> Any | None:
                  if e.source == source and e.type == kind), None)
 
 
+def refuses(scenario: Any, definitions: dict[str, Any], inst: dict[str, Any],
+            row: dict[str, Any]) -> str | None:
+    """Why an instance can't take an event, or None if it can: its release, as the instance runs
+    it, takes the event's type from its system, and the instance works in the part of every
+    record the event names. The sweep picks the instance that takes an event by it, and the run
+    it opens checks it again by it, so the two never disagree (round 14)."""
+    definition = definitions.get(inst["definition"])
+    if (definition is None or definition.release_id != inst["release"]
+            or taken(definition, row["source"], row["type"]) is None):
+        return f"{inst['id']}'s release takes no {row['type']} events from {row['source']}"
+    if not all(scenario.part_of(k) in (inst["parts"] or {}) for k in row["records"]):
+        return f"a record it names is in a part {inst['id']} doesn't work in"
+    return None
+
+
 def whose(scenario: Any, given: str | None) -> str | None:
     """Whom an event names, as the directory knows them: by one of their identities, such
     as entra:<object id>, or by their id; None for nobody, or someone it doesn't know."""
@@ -261,10 +276,7 @@ def due(conn: db.Connection, gw: Any, now: datetime) -> list[dict[str, Any]]:
             "select * from (select *, row_number() over (partition by source order by "
             "received_at) as nth from events where taken_at is null and (not_before is null or "
             "not_before <= now())) e order by nth, received_at limit %s", (SWEPT,)).fetchall():
-        takes = [i for i in insts
-                 if (d := gw.definitions.get(i["definition"])) is not None
-                 and d.release_id == i["release"] and taken(d, row["source"], row["type"])
-                 and all(gw.scenario.part_of(k) in (i["parts"] or {}) for k in row["records"])]
+        takes = [i for i in insts if refuses(gw.scenario, gw.definitions, i, row) is None]
         serves = [i for i in takes if row["person"] and registry.serving(
             gw.scenario, i["serves"], row["person"])]
         takes.sort(key=lambda i: (i["status"] != "active", i not in serves))  # by id, else

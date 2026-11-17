@@ -321,3 +321,27 @@ def test_a_system_is_named_as_releases_name_it_with_its_secret_in_its_own_variab
     monkeypatch.setenv("A5S_EVENT_SECRET_ITSM", "its-own")
     found = EventsConfig.from_env()
     assert found is not None and found.sources[0].name == "itsm"
+
+
+def test_the_sweep_and_the_run_it_opens_agree_whether_an_instance_takes_an_event(
+        stack, system, monkeypatch):
+    """Round 14's deferral: one check says whether an instance can take an event, which the sweep
+    picks it by and the run it opens checks again by, so the two never disagree."""
+    assert send(system, OPENED).status_code == 202
+    monkeypatch.setattr(events, "refuses", lambda scenario, definitions, inst, row:
+                        "the one check says no")
+    assert stack.scheduler().work_due() == 0  # the sweep found none that takes it
+    [row] = kept(stack)
+    assert row["taken_at"] is None
+    assert row["outcome"] == "no instance at work takes it, in its records' parts"
+    with db.transaction(stack.admin) as conn:  # and a run opened for it all the same says why
+        inst = conn.execute("select * from instances where id = 'assistant-finance'").fetchone()
+        opening = stack.gateway.evented(conn, inst, {"event": str(row["id"])},
+                                        stack.gateway.clock())
+    assert opening.reasons == ["the one check says no"]
+    monkeypatch.undo()  # it says yes again: both take it
+    with db.transaction(stack.admin) as conn:
+        conn.execute("update events set not_before = now() - interval '1 second'")
+    stack.model.reply("Q-1002 is yours, due on the 6th.")
+    assert stack.scheduler().work_due() == 1
+    assert kept(stack)[0]["outcome"] == "run"
