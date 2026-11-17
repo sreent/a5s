@@ -56,7 +56,9 @@ def test_a_change_to_an_agents_instructions_needs_its_owner(tmp_path):
     assert after.releases.current.digest != before.digest
     needed = {n.role for n in releases.needs(yaml.safe_load(after.releases.current.raw),
                                              yaml.safe_load(before.raw))}
-    assert needed == {"agent-owner:mdg-assistant", releases.ENGINEER}  # its owner and another
+    assert needed == {"agent-owner:mdg-assistant", releases.ENGINEER,  # its owner, another,
+                      releases.RELEASE_APPROVER}  # and, as it may work at level 2, the release
+    # approver, from outside the team (round 15, C2)
 
 
 def test_a_change_to_the_handbook_needs_the_release_approver(tmp_path):

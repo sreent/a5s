@@ -198,7 +198,8 @@ def test_a_draft_says_who_would_sign_its_release(stack, approving, provider):
     files = {**change["files"], "AGENTS.md": change["files"]["AGENTS.md"] + "\nBe brief.\n"}
     worded = priya("PUT", f"/studio/api/drafts/{change['id']}", {"files": files}).json()
     assert [(s["role"], s["held_by"]) for s in worded["signers"]] == [
-        ("agent-owner:assistant", ["Priya Nair"]), ("engineer", None)]  # anyone in the team
+        ("agent-owner:assistant", ["Priya Nair"]), ("engineer", None),  # anyone in the team,
+        ("release-approver", ["Rosa Mendes"])]  # and, as it may work at level 2, from outside it
     files["agent.yaml"] = files["agent.yaml"].replace("documents: [create_draft]",
                                                       "documents: [create_draft, shred_it]")
     widened = priya("PUT", f"/studio/api/drafts/{change['id']}", {"files": files}).json()
