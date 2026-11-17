@@ -717,7 +717,7 @@ Six reviewers who hadn't written a5s each took a part and tested the running sta
 | D10 | A part ran as a superuser, or as another part's role, unawares | Medium | It won't start so | Fixed |
 | D11 | A part served a database older than it needs, to fail later at the first column it lacked | Medium | It refuses, saying to run `a5s migrate` | Fixed |
 | D12 | Development mode, which takes people's word for who they are, started beside an identity provider | Medium | It won't | Fixed |
-| D13 | A chat away for more than a quarter of an hour lost what a5s sent meanwhile to the local inbox for good | Medium | | Deferred, Small to Medium |
+| D13 | A chat away for more than a quarter of an hour lost what a5s sent meanwhile to the local inbox for good | Medium | What fell back to the inbox is tried again for a day, unless they read it there first: at once when the chat next takes something for them, else hourly. What a departure or a restore leaves there never goes again | Fixed |
 | D14 | A post-mortem can't read what a change set after two days | Medium | | Deferred, Medium |
 | E3 | Erasing a group chat's member erased others' feedback on its answers | Medium | An agent's answer in a group chat is the group's: it stays through its asker's erasure, under a name no person has, with what others said of it; what the erased person said of it goes | Fixed |
 | E4 | A file sent in chat was named in an export but not given, and kept after erasure until the next sweep | Medium | | Deferred, Medium |
@@ -765,7 +765,6 @@ The gaps they named, and their size:
 | What operators see of the ledger's copies and what waits | D | Medium |
 | A second grader checks some samples | C | Medium |
 | The officer hears what became of each request | F | Medium |
-| Sent again once a chat is back | D | Small to Medium |
 | Deciders: grouped, all at once, one reason for many; and what the asker said | B | Small to Medium |
 | What a5s keeps of someone, for them to see | A | Small to Medium |
 | The export gives the rest: connections begun, digest waits, sends, requests, whom a5s escalated to | F | Small |

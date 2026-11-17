@@ -164,6 +164,7 @@ MARK_HOLDS = ("(a5s: {key} waits for a person to decide it, because this chat ho
               "{agent} reads, or after you say \"start afresh\", a change like it needn't wait.)")
 OWN_RUNS = ("summary",)  # a5s's own work on a conversation: no tools, and it writes to nobody
 TRIES = 5  # deliveries to a chat before what it didn't take is left in the person's inbox
+FELL_BACK = timedelta(days=1)  # how long that's tried again, hourly, and when the chat's back
 MOST_NAMED = 20  # records one change may name: a5s reads each as it stands before deciding
 # Why a5s didn't make a held change whose call, values or words differ from what its digest,
 # and so its deciders, signed: the database was changed (round 15, B1)
@@ -3678,7 +3679,9 @@ def create_app(gw: Gateway) -> FastAPI:
         """Deliver what waits for a chat a5s writes to itself: the rows given, or every one
         that's due again. Each is taken for five minutes while it's tried, so two gateways
         don't send it twice. One the chat doesn't take is tried again, after a minute, then
-        two, four and eight, and after five tries it's left in the person's local inbox."""
+        two, four and eight, and after five tries it's left in the person's local inbox. From
+        there it's tried again for a day, unless they read it there first: at once when the
+        chat takes something else for them, else hourly (round 15, D13)."""
         wanted = None if ids is None else [i for i in ids if i is not None]
         if wanted == []:
             return
@@ -3686,12 +3689,15 @@ def create_app(gw: Gateway) -> FastAPI:
         with db.transaction(gw.url) as conn:
             rows = conn.execute(
                 "update outbox set attempts = attempts + 1, retry_at = %s where id in ("
-                "  select id from outbox where delivered_at is null and channel = any(%s) "
+                "  select id from outbox where delivered_at is null "
+                "  and (channel = any(%s) or (channel = 'local' and fell_back_at > %s)) "
                 "  and (retry_at is null or retry_at <= %s) "
                 "  and (%s::bigint[] is null or id = any(%s)) "
                 "  order by id limit 100 for update skip locked) returning *",
-                (now + timedelta(minutes=5), list(PUSHED), now, wanted, wanted)).fetchall()
+                (now + timedelta(minutes=5), list(PUSHED), now - FELL_BACK, now, wanted,
+                 wanted)).fetchall()
         later: list[int | None] = []
+        back: list[int | None] = []  # what fell back to the inbox, from a chat that's back
         for row in sorted(rows, key=lambda r: r["id"]):  # in the order a5s wrote them
             run = str(row["run_id"]) if row["run_id"] else None
             expected = (row["route"] or {}).get("members")  # a group's answer: for whom it was
@@ -3704,14 +3710,24 @@ def create_app(gw: Gateway) -> FastAPI:
                                 deliver(row["route"], row["text"], run, row["instance_id"],
                                         card=row["card"], answer=feedback.answer(row)))
             with db.transaction(gw.url) as conn:
-                if problem is None:
+                if problem is None:  # in its chat, once more, if it had fallen back
                     conn.execute("update outbox set delivered_at = now(), retry_at = null, "
-                                 "problem = null, sent_as = %s where id = %s",
-                                 (sent_as, row["id"]))
-                elif row["attempts"] >= TRIES:  # the chat won't take it: the inbox will
+                                 "problem = null, sent_as = %s, channel = %s, fell_back_at = null "
+                                 "where id = %s", (sent_as, row["route"]["channel"], row["id"]))
+                    back += [r["id"] for r in conn.execute(  # the chat's back for them: what
+                        "update outbox set retry_at = %s where person = %s and channel = "  # fell
+                        "'local' and fell_back_at > %s and delivered_at is null and route ->> "
+                        "'channel' = %s and not (retry_at > %s and retry_at <= %s) returning id",
+                        (now, row["person"], now - FELL_BACK, row["route"]["channel"], now,
+                         now + timedelta(minutes=5)))]  # back goes now, but none another core
+                    # has taken for its five minutes
+                elif row["fell_back_at"] is not None:  # not yet: again in an hour, for a day
+                    conn.execute("update outbox set retry_at = %s, problem = %s where id = %s",
+                                 (now + timedelta(hours=1), problem, row["id"]))
+                elif row["attempts"] >= TRIES:  # the chat won't take it: the inbox will, while
                     conn.execute("update outbox set channel = 'local', inbound_id = null, "
-                                 "retry_at = null, problem = %s where id = %s",
-                                 (problem, row["id"]))
+                                 "retry_at = %s, problem = %s, fell_back_at = %s where id = %s",
+                                 (now + timedelta(hours=1), problem, now, row["id"]))
                     ledger.append(conn, {
                         "kind": "message", "action": "fallback", "run": run,
                         "instance": row["instance_id"], "acts_for": [row["person"]],
@@ -3724,6 +3740,8 @@ def create_app(gw: Gateway) -> FastAPI:
                                   row["id"]))
         if [i for i in later if i is not None]:  # an answer kept back, where it goes instead,
             push(later)  # and the notice of it in the chat
+        if back:  # in the order a5s wrote them, after what the chat just took
+            push(back)
 
     def present(route: dict) -> list[str | None] | None:
         """Who's in a group chat now, by their ids in the directory, None for anyone it doesn't
