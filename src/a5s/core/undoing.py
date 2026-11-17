@@ -133,6 +133,11 @@ def _mac(key: str, row: dict) -> str:
     return hmac.new(key.encode(), ledger.canonical(shown).encode(), hashlib.sha256).hexdigest()
 
 
+def seal_of(keys: tuple[str, ...], row: dict) -> str:
+    """The core's seal over a change kept to undo, with the first of its keys."""
+    return _mac(keys[0], row)
+
+
 def intact(keys: tuple[str, ...], row: dict) -> bool:
     """Whether a change kept to undo is as the core kept it: its undo, how it left its record,
     whom it was for, until when (round 15, B1)."""

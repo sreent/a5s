@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from a5s import db
-from a5s.core import samples, sealing
+from a5s.core import rotation, samples, sealing
 
 # a5s's starting objectives [starting value]: set from the first users' baseline
 OBJECTIVES = {"reply_seconds_p90": 120, "chased_on_time": 0.95}
@@ -99,6 +99,7 @@ def report(conn: db.Connection, breakers: list[str], keys: tuple[str, ...] = (),
         "count(*) filter (where lapsed_at > now() - interval '91 days') as lapsed from samples"
     ).fetchone()
     unsealed = sealing.waiting(conn, "5 minutes")  # the gateway seals each minute
+    moving = rotation.waiting(conn, keys)  # seals under a key it moves away from (round 15, D2)
     raised = sorted(samples.standing_caps(conn, keys, "cap >= 2"),
                     key=lambda r: (r["part"], r["action"]))
     lowered = conn.execute("select count(*) as n from ledger where kind = 'cap' and action = "
@@ -162,6 +163,7 @@ def report(conn: db.Connection, breakers: list[str], keys: tuple[str, ...] = (),
                     "caps_lowered": lowered["n"],
                     "rubber_stamps": samples.rubber_stamps(conn) if rubber_stamps else None},
         "unsealed": unsealed,
+        "seals_waiting": moving,
         "sign_ins": None if sign_ins is False else {  # what counts, with a second factor
             "second_factor": f"{sign_ins[0]}:{','.join(sign_ins[1])}" if sign_ins else None,
             "refused": {r["doing"]: int(r["n"]) for r in refused}},
@@ -269,6 +271,10 @@ def told(status: dict[str, Any]) -> str:
         *([(f"  Approvals, decisions and grades the gateway hasn't sealed in 5 minutes: "
             f"{status['unsealed']}, which don't count until it does (see A5S_SEAL_KEYS).")]
           if status.get("unsealed") else []),
+        *([("  Sealed with a key A5S_SEAL_KEYS is moving away from: " + "; ".join(
+            f"{kind}, {n}" for kind, n in status["seals_waiting"].items()) + ". Run `a5s "
+            "seal-again` as the core, then drop the old key (docs/runbooks.md#rotating-the-seal"
+            "-key).")] if status.get("seals_waiting") else []),
         *([("  Approvals, decisions, grades and the officer's requests count with a second "
             f"factor only: {status['sign_ins']['second_factor']}." if status["sign_ins"][
                 "second_factor"] else

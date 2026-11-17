@@ -152,6 +152,27 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 1. Each part connects as its own role, which `a5s migrate` makes: the gateway as `a5s_gateway`, the channels app as `a5s_channels`, the scheduler as `a5s_scheduler`. Each role's grants keep its part to its own, and a superuser is bound by none of them, nor by the triggers that keep the ledger and the seals.
 2. Give the part its own role's address in `A5S_DATABASE_URL`, as the chart's secrets and the stack's compose file do.
 
+## Rotating the seal key
+
+**When:** on a schedule your security team sets, when someone who held the key leaves, or when the key may have leaked.
+
+The core seals what people approve, decide and grade, the caps it raises, the changes it keeps to undo and the accounts people connect, with the first key of `A5S_SEAL_KEYS`, and takes a seal made with any of them. It remembers each key it starts with by a fingerprint, never the key.
+
+1. Make a new key of at least 32 characters, at random, and put it first in `A5S_SEAL_KEYS`, keeping the old one after it: `new,old`. Only the core holds the keys.
+2. Restart the core. Everything counts as before, and the status says how much is sealed with the old key: "Sealed with a key A5S_SEAL_KEYS is moving away from".
+3. Run `a5s seal-again` where the core runs, with its settings, such as `kubectl exec deploy/a5s-gateway -- a5s seal-again`. It seals again with the new key everything the old one sealed that still checks out, and retires the old key. What checks out under no key stays as it is, and counts for nothing, as before. It refuses until the core at work seals with the new key.
+4. Take the old key out of `A5S_SEAL_KEYS` and restart the core.
+
+If the key may have leaked, sealing again would make anything its holder sealed count. Run `a5s seal-again --leaked` instead at step 3: it retires the old key without sealing anything again, and says what stops counting with it. Then the settings must be approved again, caps earn level 2 again from graded samples, decisions still waiting are decided again, and people connect their accounts again. A key retired as leaked never comes back: the core won't start with it.
+
+## a5s won't start: a seal key is missing
+
+**Shows as:** the core exiting with "A5S_SEAL_KEYS no longer holds a key the core sealed with", or "holds a key retired as leaked".
+
+1. Someone took a key out of `A5S_SEAL_KEYS` before `a5s seal-again` retired it. What it sealed would stop counting unsaid: the approvals of the settings in force, so every run would be refused, and the caps, so level 2 would go.
+2. Put the key back after the first, start the core, and rotate as above. If the key is lost, or leaked, put back any key you still hold and run `a5s seal-again --leaked`, which retires the keys after the first and says what stops counting.
+3. A key retired as leaked is in `A5S_SEAL_KEYS` again: take it out.
+
 ## Connections to the database run out
 
 **Shows as:** errors that a connection couldn't be had, or Postgres refusing new connections.

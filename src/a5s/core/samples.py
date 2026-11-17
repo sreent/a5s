@@ -176,6 +176,16 @@ def _sealed(keys: tuple[str, ...], row: dict, names: tuple[str, ...], seal: str 
         hmac.compare_digest(_mac(k, row, names), seal) for k in keys)
 
 
+def cap_sealed(keys: tuple[str, ...], row: dict) -> bool:
+    """Whether the core sealed a cap with one of these keys."""
+    return _sealed(keys, row, _SEALED_CAP, row.get("seal"))
+
+
+def cap_seal(keys: tuple[str, ...], row: dict) -> str:
+    """The core's seal on a cap, with the first of its keys."""
+    return _mac(keys[0], row, _SEALED_CAP)
+
+
 def _last_entries(conn: db.Connection) -> dict[tuple[str, str, str], int]:
     """The ledger's last entry for each cap: what a cap's row must carry to count."""
     last = {}
@@ -327,12 +337,17 @@ def asked_of(sample: dict) -> str | None:
     return asked if asked and digest_of(asked) == sample.get("asked_digest") else None
 
 
+def draw_seal(keys: tuple[str, ...], row: dict) -> str:
+    """The core's seal on a sample it drew, with the first of its keys."""
+    return _mac(keys[0], row, _SEALED_DRAW)
+
+
 def sealed_draw(conn: db.Connection, keys: tuple[str, ...], row: dict | None) -> None:
     """Seal a sample the core drew, with its key: a row anyone else wrote counts for nothing
     (round 15, B2)."""
     if keys and row is not None:
         conn.execute("update samples set drawn_seal = %s where id = %s",
-                     (_mac(keys[0], row, _SEALED_DRAW), row["id"]))
+                     (draw_seal(keys, row), row["id"]))
 
 
 def drawn_by_core(keys: tuple[str, ...], row: dict) -> bool:
@@ -555,9 +570,14 @@ def undone(conn: db.Connection, keys: tuple[str, ...], scenario: str, change: di
     return graded
 
 
+def grade_sealed(keys: tuple[str, ...], row: dict) -> bool:
+    """Whether the core sealed a grade with one of these keys, whatever its sample is."""
+    return _sealed(keys, row, _SEALED_GRADE, row.get("grade_seal"))
+
+
 def counted(keys: tuple[str, ...], row: dict) -> bool:
     """Whether a grade counts: one the core sealed, of a sample the core drew, as it drew it."""
-    return _sealed(keys, row, _SEALED_GRADE, row.get("grade_seal")) and drawn_by_core(keys, row)
+    return grade_sealed(keys, row) and drawn_by_core(keys, row)
 
 
 def _sealed_at(row: dict) -> datetime:

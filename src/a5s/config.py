@@ -251,7 +251,8 @@ DB_CONNECT_TIMEOUT = Var("A5S_DB_CONNECT_TIMEOUT", "seconds a part waits to conn
 SERVICE_TOKEN = Var("A5S_SERVICE_TOKEN", "the token a5s's parts call the core with", "",
                     secret=True, area=CORE, takes="a token", file=".a5s/service-token")
 SEAL_KEYS = Var("A5S_SEAL_KEYS", "the core's own keys, sealing what people approve, decide and "
-                "grade: the first seals, the others are ones it's moving from", (), _items,
+                "grade: the first seals, the others are ones it's moving from, until `a5s "
+                "seal-again` retires them (docs/runbooks.md#rotating-the-seal-key)", (), _items,
                 "keys, by commas", secret=True, area=CORE, file=".a5s/seal-key")
 GATEWAY_URL = Var("A5S_GATEWAY_URL", "where the other parts reach the core",
                   DEFAULT_GATEWAY_URL, _url(*_WEB), "an http(s):// address", area=CORE)

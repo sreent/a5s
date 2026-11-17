@@ -478,6 +478,11 @@ def sealed(keys: tuple[str, ...], entry: dict) -> bool:
     return bool(keys) and any(hmac.compare_digest(_mac(k, entry), entry["seal"]) for k in keys)
 
 
+def seal_of(keys: tuple[str, ...], entry: dict) -> str:
+    """The core's seal over a decision, with the first of its keys."""
+    return _mac(keys[0], entry)
+
+
 def _mac(key: str, entry: dict) -> str:
     fields = {k: entry.get(k) for k in _SEALED}
     fields["token"] = entry["token"].removeprefix(approvals.HASHED)

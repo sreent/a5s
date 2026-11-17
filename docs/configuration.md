@@ -57,7 +57,7 @@ The tests check that neither compose nor the chart sets a setting to its default
 | --- | --- | --- | --- |
 | `A5S_ROOT` | none | a folder | The folder a5s's own files are in: its agents, config and scenarios |
 | `A5S_SERVICE_TOKEN` | none, or `.a5s/service-token` under `A5S_ROOT` | a token | The token a5s's parts call the core with |
-| `A5S_SEAL_KEYS` | none, or `.a5s/seal-key` under `A5S_ROOT` | keys, by commas | The core's own keys, sealing what people approve, decide and grade: the first seals, the others are ones it's moving from |
+| `A5S_SEAL_KEYS` | none, or `.a5s/seal-key` under `A5S_ROOT` | keys, by commas | The core's own keys, sealing what people approve, decide and grade: the first seals, the others are ones it's moving from, until `a5s seal-again` retires them (docs/runbooks.md#rotating-the-seal-key) |
 | `A5S_GATEWAY_URL` | `http://127.0.0.1:8700` | an http(s):// address | Where the other parts reach the core |
 | `A5S_CHANNELS_URL` | `http://127.0.0.1:8703` | an http(s):// address | Where people's messages reach the core's channels |
 | `A5S_PUBLIC_URL` | none | an http(s):// address | Where people reach the channels, for links, if not A5S_CHANNELS_URL |

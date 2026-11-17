@@ -35,6 +35,7 @@ from a5s.core import (
     narrowing,
     registry,
     releases,
+    rotation,
     signing,
     status,
     studio,
@@ -268,10 +269,27 @@ def _service(cfg: Config, name: str):
         db.known(cfg.database_url)
         db.own_role(cfg.database_url, "gateway" if name == "gateway" else "channels")
     if name == "gateway":
+        if cfg.seal_keys:  # never without a key it sealed with, unretired (round 15, D2)
+            with db.transaction(cfg.database_url) as conn:
+                rotation.started(conn, cfg.seal_keys)
         return build.app(cfg)
     if name == "worker":
         return worker.create_app(cfg.gateway_url, cfg.worker_agents, cfg.worker_pooled)
     return inbox.create_app(build.gateway(cfg))  # the channels' endpoints, in the core
+
+
+def _seal_again(cfg: Config, leaked: bool) -> None:
+    """Rotate the seal key, as the core, with its settings (core/rotation.py)."""
+    if not cfg.seal_keys:
+        sys.exit("Run this where the core runs, with its A5S_SEAL_KEYS, the new key first.")
+    db.known(cfg.database_url)
+    db.own_role(cfg.database_url, "gateway")
+    try:
+        with db.transaction(cfg.database_url) as conn:
+            done = rotation.again(conn, cfg.seal_keys, leaked=leaked)
+    except rotation.Refused as exc:
+        sys.exit(str(exc))
+    print(rotation.told(done))
 
 
 def _stopping() -> threading.Event:
@@ -708,6 +726,12 @@ def main(argv: list[str] | None = None) -> None:
     erased.add_argument("--by", help="in development, the officer, who asks nowhere else")
     sub.add_parser("status", help="how a5s is doing: its queue, runs, denials, budgets and "
                                   "objectives")
+    again = sub.add_parser("seal-again", help="to rotate the seal key: seal again with the "
+                                              "first of A5S_SEAL_KEYS what the others sealed, "
+                                              "and retire them, as the core, where it runs")
+    again.add_argument("--leaked", action="store_true",
+                       help="for a key that leaked: retire the keys after the first, sealing "
+                            "nothing again, so what they sealed stops counting")
     measured = sub.add_parser("measures", help="the measures its first users baseline, and the "
                                                "pilot's later stages show: what fell due and "
                                                "was met, who came back, what runs cost, how "
@@ -908,6 +932,8 @@ def main(argv: list[str] | None = None) -> None:
         _anchor(cfg, args.every)
     elif args.command == "status":
         print(status.told(_admin(cfg, "/status")))
+    elif args.command == "seal-again":
+        _seal_again(cfg, args.leaked)
     elif args.command == "measures":
         print(measures.told(_core(cfg, lambda core: core.measures(
             args.days, agent=args.agent, instance=args.instance))))
