@@ -84,6 +84,7 @@ WORDS = {
     "questions": "questions agents asked each other for them alone",
     "tasks": "tasks they asked for, with what each did",
     "repeats": "tasks they asked to be done again and again",
+    "fresh_starts": "when they started their conversations afresh",
 }
 
 

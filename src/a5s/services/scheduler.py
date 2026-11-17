@@ -523,7 +523,8 @@ class Scheduler:
                 break
             taken.append(turn)
             size += len(turn["content"])
-        turns = taken
+        turns = [{**t, "content": context.OUTSIDE} if t.get("outside") else t  # none of it,
+                 for t in taken]  # so the summary marks no run it's given (round 15, A4)
         trigger = {"kind": "summary", "person": person, "topic": topic,
                    **({"message": inbound} if members is not None else {})}
         try:
@@ -546,7 +547,8 @@ class Scheduler:
                                                names)
             with db.transaction(self.cfg.database_url) as conn:  # folded, either way, once
                 summaries.keep(conn, person, agent, topic, body, turns[-1]["id"], run,
-                               summaries.heard_by(previous, turns))
+                               summaries.heard_by(previous, turns),
+                               bool(previous and previous.get("outside")))
             if problems:  # how many, never what: they're what someone said
                 log.warning("kept %s's summary for %s without %d things code couldn't trace",
                             topic, person, len(problems))

@@ -24,6 +24,17 @@ TH: dict[str, str] = {
     "them before you rely on them.)":
         "(a5s: {which} มาจาก {agent} เอง ไม่ได้มาจากระเบียนหรือจากคุณ โปรดตรวจสอบก่อนนำไปใช้)",
     "{first} and {last}": "{first} และ {last}",
+    # starting a conversation afresh, and why a change waits where only a run's mark holds it
+    # (core/afresh.py, core/gateway.py; round 15, A4)
+    "Started afresh: the {agent} won't read what came before in this chat, though a5s keeps it "
+    "on record as before.":
+        "เริ่มใหม่แล้ว: {agent} จะไม่อ่านสิ่งที่คุยกันก่อนหน้านี้ในแชตนี้ แต่ a5s ยังเก็บบันทึกไว้เหมือนเดิม",
+    "(a5s: {key} waits for a person to decide it, because this chat holds what a5s read from "
+    "outside, such as a file or an email. Once that's further back than the {agent} reads, or "
+    "after you say \"start afresh\", a change like it needn't wait.)":
+        "(a5s: {key} รอให้มีคนตัดสินใจ เพราะแชตนี้มีสิ่งที่ a5s อ่านจากภายนอก เช่น ไฟล์หรืออีเมล "
+        "เมื่อสิ่งนั้นอยู่ไกลเกินกว่าที่ {agent} อ่าน หรือหลังจากคุณพิมพ์ \"เริ่มใหม่\" "
+        "การเปลี่ยนแปลงแบบนี้ก็ไม่ต้องรอ)",
     # what a5s tells of a held change that waits still, or lapsed, in a digest (round 15)
     "What became of {key}, which waited for your decision: {text}":
         "ผลของ {key} ที่รอการตัดสินใจของคุณ: {text}",

@@ -52,6 +52,7 @@ from a5s.contract import (
     record_of,
 )
 from a5s.core import (
+    afresh,
     approvals,
     asking,
     asks,
@@ -138,6 +139,10 @@ CORE_TOOLS = {**reminders.TOOLS, **digests.TOOLS, **profiles.TOOLS,  # a5s's own
               **handover.TOOLS}  # conversation over to people (core/handover.py)
 LAPSED = 120  # seconds past its time a scheduler's lease on a run's work is, once it's gone
 CHARS_PER_TOKEN = 4  # roughly, for a run's budget for its conversation
+# What whoever asked hears where only a run's mark holds a change for a person (round 15, A4)
+MARK_HOLDS = ("(a5s: {key} waits for a person to decide it, because this chat holds what a5s "
+              "read from outside, such as a file or an email. Once that's further back than the "
+              "{agent} reads, or after you say \"start afresh\", a change like it needn't wait.)")
 OWN_RUNS = ("summary",)  # a5s's own work on a conversation: no tools, and it writes to nobody
 TRIES = 5  # deliveries to a chat before what it didn't take is left in the person's inbox
 MOST_NAMED = 20  # records one change may name: a5s reads each as it stands before deciding
@@ -613,26 +618,26 @@ class Gateway:
 
     @staticmethod
     def reads_outside(conn: db.Connection, agent: str, acts_for: list[str],
-                      topic: str, conversation: str | None = None) -> bool:
-        """Whether a run opens marked: whether the conversation it reads holds a turn from a
-        run that read outside content, in its topic, which its summary may have folded, or
-        among the conversation's latest turns. In a group chat's conversation, among the
-        turns everyone it acts for heard, which are all it's given. What a marked run passed
-        on stays marked."""
+                      topic: str, conversation: str | None = None,
+                      chars: int = context.CHARS) -> bool:
+        """Whether a run opens marked: whether what it's given of its conversation, as the
+        context service gives it, holds what a run that read outside content wrote, or a5s's
+        words carrying it, or a summary kept before summaries folded none of it. Once that's
+        further back than a run is given, or the conversation started afresh since, a run opens
+        unmarked: one file or one mail no longer marks it for good (round 15, A4). In a group
+        chat's conversation, of the turns everyone it acts for heard, which are all it's
+        given."""
         group = conversation if groups.of(conversation) else None
         if group is None and len(acts_for) != 1:
             return False
-        heard = " and heard_by @> %(members)s::text[]" if group else ""  # the latest turns'
-        it_heard = " and t.heard_by @> %(members)s::text[]" if group else ""  # and the turn's
-        return bool(conn.execute(  # a task's or an event's own topic, which no other run
-            "select 1 from turns t left join runs r on r.id = t.run_id where (r.read_outside "  # reads,
-            "or t.marked) "  # or a5s's own words carrying what such a run wrote (round 15)
-            "and t.person = %(person)s and t.agent = %(agent)s and (t.topic = %(topic)s or t.id in "  # aside
-            f"(select id from turns where person = %(person)s and agent = %(agent)s{heard} "
-            "and (topic = %(topic)s or (topic not like 'task %%' and topic not like 'event %%')) "
-            f"order by id desc limit 200)){it_heard} limit 1",
-            {"person": group or acts_for[0], "agent": agent, "topic": topic,
-             "members": list(acts_for)}).fetchone())
+        summary, turns = context.given(conn, person=group or acts_for[0], agent=agent,
+                                       topic=topic, chars=chars,
+                                       members=list(acts_for) if group else None)
+        if summary is not None and summary.get("outside"):
+            return True
+        return bool(turns) and conn.execute(
+            "select 1 from turns t left join runs r on r.id = t.run_id where t.id = any(%s) "
+            f"and {context.CARRIES} limit 1", (turns,)).fetchone() is not None
 
     def spoken(self, conn: db.Connection, person: str) -> str:
         """The language someone reads, as a5s writes to them: English for anyone it doesn't
@@ -786,6 +791,13 @@ class Gateway:
         if message and message["agent"] != inst["definition"]:
             opening.reasons.append(f"the message is for the {message['agent']}, "
                                    f"not the {inst['definition']}")
+        elif message and afresh.asked(message["text"]):  # theirs to say: no run (round 15, A4)
+            afresh.start(conn, group or str(sender), inst["definition"], inst["id"], acts_for)
+            opening.reasons.append("the conversation started afresh")
+            opening.used = True
+            opening.said = words.say(self.spoken(conn, str(sender)), afresh.SAID,
+                                     agent=inst["definition"])
+            return opening
         if message and conn.execute("select 1 from inbound_files where inbound_id = %s limit 1",
                                     (inbound,)).fetchone():  # any file they sent with it, kept
             opening.marked = True  # or not: its name, at least, is from outside (core/files.py)
@@ -1277,6 +1289,7 @@ class Opening:
     due: datetime | None = None  # the time a schedule or a report fires for
     seen: dict | None = None  # a report's records as it tells them, kept once they have it
     marked: bool = False  # it starts as a run that has read content from outside
+    said: str | None = None  # a5s's own answer in a run's place, such as to a fresh start
     told: list = field(default_factory=list)  # (source, text): more it reads as it opens
     notes: list = field(default_factory=list)  # a5s's own words the run's agent hears first
 
@@ -1511,7 +1524,9 @@ def create_app(gw: Gateway) -> FastAPI:
                      opening.marked or gw.reads_outside(
                          conn, inst["definition"], opening.acts_for,
                          opening.trigger.get("topic", topics.GENERAL),
-                         opening.trigger.get("conversation"))),
+                         opening.trigger.get("conversation"), CHARS_PER_TOKEN * (
+                             release.context.budget_tokens if release
+                             else Context().budget_tokens))),
                 )
                 if kind == asking.KIND:  # whose run answers it, at work on it now
                     conn.execute("update questions set run_id = %s where id = %s",
@@ -1549,6 +1564,11 @@ def create_app(gw: Gateway) -> FastAPI:
                 "decision": "deny" if reasons else "allow", "reasons": reasons,
                 "args": {"trigger": kind, **opening.args},
             })
+            if opening.said and (to := gw.message_of(conn, opening.trigger.get("inbound"))):
+                sent = outbound(conn, {"channel": to["channel"], "reply_to": to["reply_to"]},
+                                to["person"], opening.said, instance=body.instance,
+                                agent=inst["definition"], inbound=to["id"])  # in a run's place
+                pushing += [sent] if sent is not None else []
         traces.note(current, **{"a5s.run.id": None if reasons else run_id,
                                 "a5s.decision": "deny" if reasons else "allow"})
         push(pushing)
@@ -2795,8 +2815,14 @@ def create_app(gw: Gateway) -> FastAPI:
                                  over is not None, "making" if decision.allowed else "held",
                                  gw.clock())
                 if decision.held:  # it waits for a person: the exact call, kept for its deciders
+                    marked_only = bool(row["read_outside"] and action and gw.decide(
+                        {**row, "read_outside": False}, "call_tool", entity, [], **parts.about(
+                            gw.scenario, {**weighed, "read_outside": False}, keys, action,
+                            gw.approvers_in_force(conn), gw.caps(conn, row["release"]),
+                            standing), over_limit=over is not None).allowed)  # (round 15, A4)
                     proposal, sends = held(conn, requested, tool, args, standing, deciding or [],
-                                           seq, traced, change, over, found[0], steered)
+                                           seq, traced, change, over, found[0], steered,
+                                           marked_only)
         if waits is not None or (again and again["state"] != "held"):
             where = "task" if counts.work(row) != row["run"] else "run"
             return {"result": {"held": proposals.key(waits), "status": (
@@ -3051,11 +3077,12 @@ def create_app(gw: Gateway) -> FastAPI:
     def held(conn: db.Connection, row: dict, tool: Tool, args: dict, standing: dict,
              deciding: list[Person], seq: int, traced: list[dict], change: str | None,
              over: str | None, settings: Settings,
-             steered: list[str] | None = None) -> tuple[dict, list]:
+             steered: list[str] | None = None, marked_only: bool = False) -> tuple[dict, list]:
         """Keep a held call for its deciders, and ask each of them, where they work with the
         agent, to decide it on the core's page, as an urgent message: past their five a day,
-        it waits for their next batch. The proposal, and what to send once the transaction is
-        done."""
+        it waits for their next batch. Where only the run's mark holds it, whoever asked hears
+        why, once a run, and how to start afresh (round 15, A4). The proposal, and what to send
+        once the transaction is done."""
         whom = approvals.names_of([p.name if (p := gw.scenario.person(w)) else w
                                    for w in row["acts_for"]])
         flags = []
@@ -3087,6 +3114,15 @@ def create_app(gw: Gateway) -> FastAPI:
         sends = [ask(conn, proposal, person.id) for person in deciding]
         conn.execute("update proposals set asked = %s where id = %s",
                      ([p.id for p in deciding], proposal["id"]))
+        first = conn.execute("select count(*) = 1 as one from proposals where run_id = %s",
+                             (row["run"],)).fetchone()  # once a run
+        if marked_only and first and first["one"] and (
+                to := gw.message_of(conn, row["trigger"].get("inbound"))):
+            said = words.say(gw.spoken(conn, to["person"]), MARK_HOLDS,
+                             key=proposals.key(proposal), agent=row["definition"])
+            sends.append(outbound(conn, {"channel": to["channel"], "reply_to": to["reply_to"]},
+                                  to["person"], said, run=row["run"], instance=row["id"],
+                                  agent=row["definition"], inbound=to["id"]))
         return proposal, sends
 
     def ask(conn: db.Connection, p: dict, person: str, again: bool = False) -> int | None:
