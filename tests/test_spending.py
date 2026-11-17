@@ -107,7 +107,7 @@ def test_what_runs_cost_goes_to_their_parts_agent_and_instance_with_a_forecast(p
     stack.model.reply("Q-1001 mentions an invoice.")
     stack.say("which questions mention an invoice?")
     stack.model.reply("Hello.")
-    stack.say("hello")
+    stack.say("hello", person="ben")  # his own conversation: given no run's records (round 14)
     first, second = runs(stack)
     assert first["records"] and all(k.startswith("Q-") for k in first["records"])
     assert not second["records"]
