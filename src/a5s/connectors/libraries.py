@@ -58,7 +58,7 @@ from a5s.connectors.rest import ConnectorError
 from a5s.contract import EXTRACT_KINDS, Tool, ToolCall
 from a5s.core import files
 from a5s.core.ledger import canonical
-from a5s.knowledge import MarkdownKnowledge
+from a5s.knowledge import READERS, MarkdownKnowledge
 
 FILE = "libraries.yaml"
 NAME = re.compile(r"[a-z][a-z0-9_]{0,40}")  # so its tools are search_<it> and read_<it>
@@ -623,7 +623,8 @@ class _Repository(_Reader):
         found = self._vault().search(ToolCall(args={"query": " ".join(words)}, instance="",
                                               run="", acts_for=people))
         return [{"id": m["id"], "title": _title(m["title"]), "link": self._link(m["id"]),
-                 "snippet": m["snippet"], "stale": m["stale"]}
+                 "snippet": m["snippet"], "stale": m["stale"],
+                 **({READERS: m[READERS]} if READERS in m else {})}  # whom a5s shows the run to
                 for m in found.get("matches") or []][:HITS]
 
     def read(self, people: tuple[str, ...], doc: str) -> dict | None:
@@ -631,7 +632,8 @@ class _Repository(_Reader):
         if "error" in found:
             return None
         return {"id": found["id"], "title": _title(found["title"]), "link": self._link(found["id"]),
-                "text": found["text"], "stale": found["stale"]}
+                "text": found["text"], "stale": found["stale"],
+                **({READERS: found[READERS]} if READERS in found else {})}
 
 
 class _Absent(_Reader):

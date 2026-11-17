@@ -240,3 +240,33 @@ def test_one_of_the_team_answers_from_the_studio(stack, approving, provider, bro
     with db.transaction(stack.admin) as conn:
         assert conn.execute("select ended_by from handovers where id = %s",
                             (row["id"],)).fetchone()["ended_by"] == "chen"
+
+
+def test_a_brief_is_withheld_where_its_conversation_held_what_the_team_may_not_see(
+        stack, approving, provider):
+    """Round 14 (B-H1): the run that hands Ben over is given his conversation's latest turns,
+    whatever their topic, so a brief can carry what an earlier run read: here, yesterday's
+    answer about his billing question. The run takes the records the runs behind those turns
+    handled, so Chen, who may not see billing, reads that the brief is withheld."""
+    assert not stack.settle(hands_to=["operations"]).refused
+    stack.model.reply(None, ("get_record", {"key": "Q-1002"}))
+    stack.model.reply("Q-1002 is Contoso's refund of £860.00, paid twice on 2026-10-20: finance "
+                      "is checking it.")
+    stack.say("What's happening with Q-1002?", person="ben")
+    with db.transaction(stack.admin) as conn:
+        conn.execute("update turns set at = at - interval '20 hours'")
+    before = len(stack.model.requests)
+    stack.model.reply(None, ("hand_over", {"team": "operations", "brief": (
+        "Ben wants to talk to someone about his laptop. He is also waiting on Contoso's refund "
+        "of £860.00, paid twice on 2026-10-20.")}))
+    stack.model.reply("I've passed you to operations.")
+    stack.say("Can I talk to a person about my laptop?", person="ben")
+    given = json.dumps(stack.model.requests[before]["body"]["messages"], ensure_ascii=False)
+    assert "£860.00" in given  # it was given yesterday's answer
+    with db.transaction(stack.admin) as conn:
+        row = conn.execute("select * from handovers").fetchone()
+        handled = {r["record"] for r in conn.execute(
+            "select record from run_records where run_id = %s", (row["run_id"],))}
+    assert "Q-1002" in handled and not stack.gateway.scenario.sees("chen", "Q-1002")
+    seen = as_person(approving, provider, "chen", "GET", f"/studio/api/handovers/{row['id']}").json()
+    assert seen["brief"] == handover.WITHHELD

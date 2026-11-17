@@ -29,11 +29,12 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Iterable
 from typing import Any
 
 from a5s import db
 from a5s.contract import AGENT_OWNER, Person, Scenario, Settings
-from a5s.core import extractor, samples, studio
+from a5s.core import extractor, masking, registry, samples, studio
 
 KIND = "shadow"  # a run's trigger: answering beside the instance it shadows
 GRADES = ("better", "same", "worse", "wrong")  # the shadow's answer, beside the one sent
@@ -43,6 +44,8 @@ SAID = {"better": "better than the answer sent", "same": "as good as the answer 
 READS = frozenset({"search_conversation", "ask_about", "list_reminders", "list_tasks"})
 MOST = 4000  # characters of each of the three a5s keeps for graders
 MOST_GRADED = 20  # pairs a grader reads at once
+SCAN = 500  # pairs a5s reads at once looking for those someone may grade
+SCANS = 20  # and how many times over, at most, before it stops looking
 
 
 class Refused(ValueError):
@@ -156,12 +159,14 @@ def _runs(row: dict) -> list[str]:
 
 
 def why_not(conn: db.Connection, scenario: Scenario, row: dict, person: Person,
-            seen: set[str] | None = None) -> str | None:
+            seen: set[str] | None = None, *, names: bool = True, fewest: int = 0) -> str | None:
     """Why someone may not grade a pair, if they may not: as for samples, a grader from outside
     the team that built the shadow's agent, and its instance's owners' teams, never someone it
     answered, who may see every record it names; and, since either answer may say what a record
     holds without naming it, every record both its runs handled, as the studio shows a run
-    (core/studio.py). `seen` is the runs they may see, if the caller has asked already."""
+    (core/studio.py), and all they read; and, until the officer agrees to `names`, only of an
+    instance serving at least `fewest` people, whose runs the studio shows one by one. `seen` is
+    the runs they may see, if the caller has asked already."""
     minders = conn.execute("select owner, deputy from instances where id = %s",
                            (row["instance_id"],)).fetchone()
     why = samples.may_grade(scenario, _pair(row), person,
@@ -169,26 +174,54 @@ def why_not(conn: db.Connection, scenario: Scenario, row: dict, person: Person,
                             samples.drafted(conn, row["definition"]))
     if why is None and not set(_runs(row)) <= (
             studio.seeable(conn, scenario, person, _runs(row)) if seen is None else seen):
-        why = "its runs handled a record they may not see"
+        why = "its runs handled a record they may not see, or read what they may not"
+    if why is None and not names and fewest:
+        live = conn.execute("select serves from instances where id = %s",
+                            (row["shadows"],)).fetchone()
+        if live is None or len(registry.served(scenario, live["serves"] or [])) < fewest:
+            why = "the instance it shadows serves too few people to show its runs one by one"
     return why
 
 
-def gradeable(conn: db.Connection, scenario: Scenario, person: Person) -> list[dict]:
-    """The pairs waiting for a grade that someone may grade, oldest first."""
-    if samples.GRADER not in person.roles:
+def gradeable(conn: db.Connection, scenario: Scenario, person: Person, *, may: bool = True,
+              names: bool = True, fewest: int = 0) -> list[dict]:
+    """The pairs waiting for a grade that someone may grade, oldest first, while the officer's
+    choice in force, `may`, lets shadows answer: a page at a time, so those they may not grade
+    hide none they may. Until the officer agrees to `names`, what was said and answered with
+    names, emails, links and long numbers masked by code, as answers said to be wrong are."""
+    if samples.GRADER not in person.roles or not may:
         return []
-    rows = conn.execute("select * from shadow_answers where grade is null and not "
-                        "(%s = any(acts_for)) order by id limit 500", (person.id,)).fetchall()
-    seen = studio.seeable(conn, scenario, person, [run for r in rows for run in _runs(r)])
-    return [r for r in rows if why_not(conn, scenario, r, person, seen) is None][:MOST_GRADED]
+    found: list[dict] = []
+    after = 0
+    for _ in range(SCANS):
+        rows = conn.execute("select * from shadow_answers where grade is null and not "
+                            "(%s = any(acts_for)) and id > %s order by id limit %s",
+                            (person.id, after, SCAN)).fetchall()
+        if not rows:
+            break
+        after = rows[-1]["id"]
+        seen = studio.seeable(conn, scenario, person, [run for r in rows for run in _runs(r)])
+        found += [r for r in rows if why_not(conn, scenario, r, person, seen, names=names,
+                                             fewest=fewest) is None]
+        if len(found) >= MOST_GRADED or len(rows) < SCAN:
+            break
+    found = found[:MOST_GRADED]
+    if names or not found:
+        return found
+    everyone = masking.known(conn, scenario)
+    return [{**r, **{k: masking.mask(r[k] or "", scenario,
+                                     [*(r["acts_for"] or []), r["person"], *everyone])[0]
+                     for k in ("asked", "sent", "answer")}} for r in found]
 
 
-def grade(conn: db.Connection, scenario: Scenario, person: Person, pair: int, given: str) -> None:
-    """Grade a pair, once, as someone who may."""
+def grade(conn: db.Connection, scenario: Scenario, person: Person, pair: int, given: str, *,
+          may: bool = True, names: bool = True, fewest: int = 0) -> None:
+    """Grade a pair, once, as someone who may, while the officer's choice lets shadows answer."""
     if given not in GRADES:
         raise Refused(f"a shadow's answer is {', '.join(GRADES[:-1])} or {GRADES[-1]}")
     row = conn.execute("select * from shadow_answers where id = %s for update", (pair,)).fetchone()
-    why = why_not(conn, scenario, row, person) if row is not None else "there's no such answer"
+    why = (why_not(conn, scenario, row, person, names=names, fewest=fewest)
+           if row is not None and may else "there's no such answer")
     if row is None or why is not None:
         raise LookupError(why)
     if row["grade"] is not None:
@@ -197,10 +230,17 @@ def grade(conn: db.Connection, scenario: Scenario, person: Person, pair: int, gi
                  "where id = %s", (given, person.id, pair))
 
 
-def figures(conn: db.Connection, scenario: Scenario, person: Person) -> list[dict]:
+def figures(conn: db.Connection, scenario: Scenario, person: Person, *,
+            offered: Iterable[str] = (), known: Iterable[str] = ()) -> list[dict]:
     """How each shadow someone may see did: how many it answered, and how graders, and its judge,
-    graded them. They see a shadow's as a grader, as its owner or deputy, or the instance's it
-    shadows, or as its agent's owner: counts alone, never what was said."""
+    graded them. They see a shadow's as its owner or deputy, or the instance's it shadows, or as
+    its agent's owner; and as a grader, only one they're `offered` a pair of to grade, or have
+    graded one of, or whose agent they may know exists, `known`: counts alone, never what was
+    said."""
+    offered, known = set(offered), set(known)
+    if samples.GRADER in person.roles:
+        offered |= {r["instance_id"] for r in conn.execute(
+            "select distinct instance_id from shadow_answers where graded_by = %s", (person.id,))}
     shown = []
     for inst in conn.execute("select id, shadows, definition, owner, deputy, status from "
                              "instances where shadows is not null and status <> 'retired' "
@@ -208,8 +248,9 @@ def figures(conn: db.Connection, scenario: Scenario, person: Person) -> list[dic
         live = conn.execute("select owner, deputy from instances where id = %s",
                             (inst["shadows"],)).fetchone()
         minders = {inst["owner"], inst["deputy"], *((live["owner"], live["deputy"]) if live else ())}
-        if not (samples.GRADER in person.roles or person.id in minders
-                or f"{AGENT_OWNER}:{inst['definition']}" in person.roles):
+        if not (person.id in minders or f"{AGENT_OWNER}:{inst['definition']}" in person.roles
+                or (samples.GRADER in person.roles and (inst["id"] in offered
+                                                        or inst["definition"] in known))):
             continue
         counts = conn.execute(
             "select count(*) as answered, "

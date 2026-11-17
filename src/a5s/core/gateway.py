@@ -772,6 +772,24 @@ class Gateway:
             opening.marked = True  # or not: its name, at least, is from outside (core/files.py)
         return opening
 
+    def _unfit_shadow(self, settings: Settings | None, inst: dict,
+                      shadowed: dict | None) -> str | None:
+        """Why a shadow's model may not read the conversation of the instance it shadows: it
+        must be approved for the settings' class of data, and for each class of field the
+        live instance's model may read, which that conversation may hold."""
+        mine = self.definitions.get(inst["definition"])
+        theirs = self.definitions.get(shadowed["definition"]) if shadowed else None
+        model = self.models.get(mine.model) if mine else None
+        live = self.models.get(theirs.model) if theirs else None
+        if settings is None or model is None or live is None:
+            return f"{inst['id']}'s model, or that of {inst['shadows']}, isn't one a5s knows"
+        needed = {settings.data_class} | (set(settings.classified.values())
+                                          & set(live.data_classes))
+        if missing := sorted(needed - set(model.data_classes)):
+            return (f"{inst['id']}'s model isn't approved for {', '.join(missing)} data, which "
+                    f"what people say to {inst['shadows']} may hold")
+        return None
+
     def shadowing(self, conn: db.Connection, inst: dict, trigger: dict,
                   _now: datetime) -> Opening:
         """A shadow's run, answering the message a run of the instance it shadows answered,
@@ -790,6 +808,9 @@ class Gateway:
                           args={"shadows": inst["shadows"], "live": live})
         shadowed = conn.execute("select definition from instances where id = %s",
                                 (inst["shadows"],)).fetchone()
+        if why := self._unfit_shadow(settings, inst, shadowed):  # what its run is given
+            opening.reasons.append(why)  # of the live run's conversation is for its model too
+            opening.used = True
         if shadowed and self.reads_outside(conn, shadowed["definition"], acts_for,  # its
                                            given.get("topic", topics.GENERAL),  # conversation's
                                            given.get("conversation")):  # mark, as it stands
@@ -1298,6 +1319,13 @@ class Message(BaseModel):
     text: str
 
 
+class Given(BaseModel):
+    runs: list[str] = []  # the runs whose turns, or whose summary's, a run was given
+
+
+GIVEN_MOST = 2000  # runs a run may be given the words of at once
+
+
 class Answer(BaseModel):
     text: str = ""
     problem: str | None = None  # why there's no answer, such as its model being down
@@ -1470,8 +1498,15 @@ def create_app(gw: Gateway) -> FastAPI:
                 if kind == "message":  # the files it came with, as the run's documents, unread
                     opening.notes = [n for n in [files.attach(conn, run_id,
                                                                opening.trigger["inbound"])] if n]
-                if kind == shadows.KIND and opening.trigger.get("inbound"):  # and a shadow's,
-                    files.attach(conn, run_id, opening.trigger["inbound"])  # as its notes said
+                    if opening.notes:  # what they sent is theirs alone to read in the studio
+                        studio.readers(conn, run_id, [studio.ALONE])
+                if kind == shadows.KIND and opening.trigger.get("inbound") and files.attach(
+                        conn, run_id, opening.trigger["inbound"]):  # and a shadow's, as its
+                    studio.readers(conn, run_id, [studio.ALONE])  # notes said
+                if kind == asking.KIND:  # the question's words are the run's that asked
+                    asked = conn.execute("select asked_by_run from questions where id = %s",
+                                         (opening.trigger["question"],)).fetchone()
+                    studio.given_from(conn, run_id, [asked["asked_by_run"]] if asked else [])
                 if kind == tasking.KIND:  # what its task's earlier runs read, as they read it
                     tasking.given(conn, opening.trigger["task"], run_id)
                 elif opening.task:  # what a5s asks it, from the records: something it has read,
@@ -2753,6 +2788,13 @@ def create_app(gw: Gateway) -> FastAPI:
                                        acts_for=tuple(row["acts_for"]),
                                        key=counts.key(counts.work(row), effect) if effect
                                        else None))  # once for the run, or for its task
+            result, read_by = studio.taken(result)  # who may read each document it gave
+            if getattr(tool, "as_person", "") and not (isinstance(result, dict)
+                                                       and result.get("error")):
+                read_by.append(studio.ALONE)  # what a system gave as them is theirs alone
+            if read_by:
+                with db.transaction(gw.url) as conn:  # kept before the run has it, so the
+                    studio.readers(conn, row["run"], read_by)  # studio shows it to no one else
             refused = result.get("error") if action and isinstance(result, dict) else None
             outcome = ({"status": "error", "error": str(refused)[:200], "answered": True}
                        if refused else {"status": "ok", "result_sha256": ledger.digest(result)})
@@ -3148,6 +3190,23 @@ def create_app(gw: Gateway) -> FastAPI:
         return {"answer_with": {"token": opened["token"], "task": opened["task"],
                                 "question": question, "agent": agent}, "recorded": True}
 
+    @runs.post("/run/given")
+    def given_runs(body: Given, token: str = Depends(run_token)) -> dict:
+        """The runs whose words a run was given, its conversation's turns and those its topic's
+        summary holds, as the scheduler names them before the agent reads them: the run takes
+        the records they handled, and who may read what they read, so the studio shows it to
+        nobody who may not see them (core/studio.py). It can only narrow who may see it."""
+        if len(body.runs) > GIVEN_MOST:
+            raise HTTPException(422, f"a run is given the words of {GIVEN_MOST} runs at most")
+        try:
+            given = {str(uuid.UUID(r)) for r in body.runs}
+        except ValueError as exc:
+            raise HTTPException(422, "a run is named by its id") from exc
+        with db.transaction(gw.url) as conn:
+            row = load_run(conn, token)
+            studio.given_from(conn, row["run"], given)
+        return {"given": len(given - {row["run"]})}
+
     @runs.post("/run/answer")
     def answer_question(body: Answer, token: str = Depends(run_token)) -> dict:
         """A run's answer to the question it was opened for, back to the run that asked: with
@@ -3180,6 +3239,8 @@ def create_app(gw: Gateway) -> FastAPI:
             to_run = str(asked["asked_by_run"])
             if why is None and marked:  # the mark follows the answer
                 conn.execute("update runs set read_outside = true where id = %s", (to_run,))
+            if why is None:  # and what it handled and read, whom the studio may show it to
+                studio.given_from(conn, to_run, [row["run"]])
             for source, said in carried:  # what it found, as found, and outside as outside
                 provenance.read(conn, to_run, source, said, gw.scenario.record_pattern)
             ledger.append(conn, gw.entry(row, "message", "answer", Decision(True, ()), args={

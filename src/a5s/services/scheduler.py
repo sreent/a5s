@@ -391,7 +391,7 @@ class Scheduler:
         conversation = claim.get("conversation") or person  # theirs, or their group chat's
         members = list(claim["members"]) if groups.of(conversation) else None
         heard = {"speaker": person, "heard_by": members} if members else {}
-        outcome, history = "failed", []
+        outcome, history, behind = "failed", [], set[str]()
         try:
             with db.transaction(self.cfg.database_url) as conn:
                 context.add_turn(conn, person=conversation, agent=agent, role="person",
@@ -404,7 +404,8 @@ class Scheduler:
                     conn, person=conversation, agent=agent, topic=topic,
                     chars=opened.get("history_chars") or context.CHARS, members=members,
                     names=self._names([*members, *context.speakers(conn, conversation, agent)])
-                    if members else None)
+                    if members else None, behind=behind)
+            self._given(token, behind - {run})  # whose words it reads, before it reads them
             reply = self._worker(agent)(self.cfg.gateway_url, token, history)
             if not reply.strip():
                 raise RuntimeError("the agent's reply was empty")
@@ -449,11 +450,19 @@ class Scheduler:
             self._fold(inst["id"], conversation, agent, topic, opened.get("history_chars"),
                        members, inbound)
             try:  # nothing a shadow does reaches them, who have their answer: not even a
-                self._shadow(inst, run, history)  # database away as it looks for its shadows
+                self._shadow(inst, run, history, behind)  # database away as it looks
             except Exception:
                 log.exception("the shadows of %s couldn't answer beside run %s", inst["id"], run)
 
-    def _shadow(self, inst: dict, run: str, history: list[dict]) -> None:
+    def _given(self, token: str, runs: set[str]) -> None:
+        """Tell the core whose words a run is given, before the agent reads them, so the run
+        takes what they handled and read, and the studio shows it to nobody who may not see
+        those (core/studio.py)."""
+        if runs:
+            self.gw.post("/run/given", headers={"Authorization": f"Bearer {token}"},
+                         json={"runs": sorted(runs)}).raise_for_status()
+
+    def _shadow(self, inst: dict, run: str, history: list[dict], behind: set[str]) -> None:
         """Each shadow of the instance answers the message its run answered, beside it, given
         the same conversation as that run was, sending nothing (core/shadows.py): the core
         keeps what it answers for graders. A shadow that can't answer now, such as one out of
@@ -473,6 +482,7 @@ class Scheduler:
                 continue
             token, answering, outcome = opened.json()["token"], opened.json()["run"], "failed"
             try:
+                self._given(token, behind | {run})  # the same words as its run, read as they
                 reply = self._worker(shadow["definition"])(self.cfg.gateway_url, token, history)
                 if reply.strip():
                     self.gw.post("/run/shadow", headers={"Authorization": f"Bearer {token}"},
@@ -578,12 +588,14 @@ class Scheduler:
         # and an event for the person it names, where the instance serves them
         outcome = "failed"
         try:
-            history = []
+            history, behind = [], set[str]()
             if person:
                 with db.transaction(self.cfg.database_url) as conn:
                     history = context.history(
                         conn, person=person, agent=agent, topic=topic,
-                        chars=opened.json().get("history_chars") or context.CHARS)
+                        chars=opened.json().get("history_chars") or context.CHARS,
+                        behind=behind)
+                self._given(token, behind - {run})  # whose words it reads, before it does
             asked = {"role": "task", "content": task, "at": datetime.now(UTC).isoformat()}
             reply = self._worker(agent)(self.cfg.gateway_url, token, [*history, asked])
             if person and not reply.strip():

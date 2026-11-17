@@ -49,17 +49,29 @@ def add_turn(
 def history(
     conn: db.Connection, *, person: str, agent: str, topic: str = GENERAL,
     chars: int = CHARS, members: list[str] | None = None, names: dict[str, str] | None = None,
+    behind: set[str] | None = None,
 ) -> list[dict]:
     """What a run is given of the conversation, oldest first, with when each was and its
     topic: the topic's summary, if it has one, then the conversation's latest turns that fit
     the rest of the budget, or in a case, their share of it, and the case's older turns that
     fit what's left. In a group, only what all of `members` heard, each turn people said with
-    the name of whoever said it, from `names`."""
+    the name of whoever said it, from `names`. Into `behind` go the runs whose words it gives,
+    each turn's and those of the turns the summary holds, which the run then takes what they
+    read from (core/studio.py)."""
     summary = summaries.load(conn, person, agent, topic, members)
     told = _told(summary, chars)
+    kept = _kept(conn, person, agent, topic, chars - len(told), members)
     turns = [{"role": t["role"], "content": _said(t, names), "at": t["at"].isoformat(),
-              "topic": t["topic"]} for _, t in sorted(_kept(conn, person, agent, topic,
-                                                             chars - len(told), members).items())]
+              "topic": t["topic"]} for _, t in sorted(kept.items())]
+    if behind is not None:
+        behind.update(str(t["run_id"]) for t in kept.values() if t.get("run_id"))
+        if told and summary:
+            heard = "" if members is None else " and heard_by @> %(members)s::text[]"
+            behind.update(r["run"] for r in conn.execute(
+                "select distinct run_id::text as run from turns where person = %(person)s and "
+                f"agent = %(agent)s and topic = %(topic)s{heard} and id <= %(through)s and "
+                "run_id is not null", {"person": person, "agent": agent, "topic": topic,
+                                       "members": members, "through": summary["through"]}))
     return ([{"role": "summary", "content": told, "at": summary["updated_at"].isoformat(),
               "topic": topic, **({"group": True} if members is not None else {})}]
             if told else []) + turns
@@ -120,14 +132,14 @@ def _kept(conn: db.Connection, person: str, agent: str, topic: str, chars: int,
     heard = "" if members is None else " and heard_by @> %(members)s::text[]"
     given = {"person": person, "agent": agent, "members": members, "topic": topic}
     kept, used = _fit(conn.execute(  # never another task's own topic (core/tasking.py)
-        "select id, role, content, at, topic, speaker from turns where person = %(person)s "
+        "select id, role, content, at, topic, speaker, run_id from turns where person = %(person)s "
         f"and agent = %(agent)s{heard} and (topic = %(topic)s or topic not like 'task %%') "
         "order by id desc limit 500", given),
         chars if topic == GENERAL else int(chars * LATEST))
     if topic != GENERAL:
         before = min(kept) if kept else None
         older, _ = _fit(conn.execute(
-            "select id, role, content, at, topic, speaker from turns where person = %(person)s "
+            "select id, role, content, at, topic, speaker, run_id from turns where person = %(person)s "
             f"and agent = %(agent)s and topic = %(topic)s{heard} and (%(before)s::bigint is null "
             "or id < %(before)s) order by id desc limit 500", {**given, "before": before}),
             chars - used, keep_one=False)

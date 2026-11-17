@@ -660,3 +660,29 @@ def test_the_chart_keeps_each_docs_repository_current_beside_the_core():
     assert {"name": "libraries", "emptyDir": {}} in pod(kept)["volumes"]
     assert [c["name"] for c in containers(gateway("ci-values.yaml"))] == ["gateway"]  # else alone
 
+
+
+def test_a_run_that_read_what_only_its_person_may_is_on_no_one_elses_page(stack, approving,
+                                                                          provider):
+    """Round 14 (D1): a run for Ben that read a document only he may read is on no page of
+    Ana's, though she owns the assistant and may see its records: not its own, nor the case it
+    would make. The agent never reads who may read it: a5s keeps that for the run."""
+    from test_run_cases import agreed, as_person, owning
+    document(stack.cfg.root / "libraries" / "runbooks", "ben-review.md",
+             "Ben's review: a 12% rise from 1 January, and the written warning of March stands.",
+             people=["ben"])
+    owning(stack)
+    agreed(stack)
+    stack.model.reply(None, ("read_runbooks", {"id": "ben-review.md"}))
+    stack.model.reply("Your review gives you a 12% rise from 1 January; the written warning "
+                      "of March stands.")
+    stack.say("What does my review say?", person="ben")
+    assert "a5s_readers" not in json.dumps(stack.model.requests[-1]["body"])
+    with db.transaction(stack.admin) as conn:
+        run = conn.execute("select id::text as id from runs order by opened_at desc limit 1"
+                           ).fetchone()["id"]
+        readers = [r["rule"] for r in conn.execute("select rule from run_readers where "
+                                                   "run_id = %s", (run,))]
+    assert readers == ['{"people":["ben"]}']
+    for path in (f"/studio/api/runs/{run}", f"/studio/api/runs/{run}/case"):
+        assert as_person(approving, provider, "ana", "GET", path).status_code == 404, path

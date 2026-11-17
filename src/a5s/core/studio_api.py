@@ -329,11 +329,17 @@ def router(gw: Any) -> APIRouter:
         for samples, those whose records they may all see; and how each shadow they may see did,
         in counts (core/shadows.py)."""
         with db.transaction(gw.url) as conn:
-            pairs = shadows.gradeable(conn, gw.scenario, person)
+            choices = gw.data_protection(conn)
+            pairs = shadows.gradeable(conn, gw.scenario, person, may=choices.shadow_runs,
+                                      names=choices.studio_names, fewest=choices.fewest_people)
+            every = studio.instances(conn)
+            known = {n for n, d in gw.definitions.items()
+                     if studio.layers(n, d, every, person, gw.scenario)}
             return {"pairs": [{"id": r["id"], "agent": r["agent"], "shadow": r["definition"],
                                "asked": r["asked"], "sent": r["sent"], "answer": r["answer"],
                                "at": r["at"].isoformat()} for r in pairs],
-                    "shadows": shadows.figures(conn, gw.scenario, person)}
+                    "shadows": shadows.figures(conn, gw.scenario, person, known=known,
+                                               offered={r["instance_id"] for r in pairs})}
 
     @api.post("/studio/api/shadows/{pair}/grade", **shapes.answers(shapes.ShadowGraded))
     def studio_shadow_grade(pair: int, body: ShadowGrade,
@@ -342,7 +348,10 @@ def router(gw: Any) -> APIRouter:
         wrong, once, as someone who may grade it. The core notes it in the ledger."""
         try:
             with db.transaction(gw.url) as conn:
-                shadows.grade(conn, gw.scenario, person, pair, body.grade)
+                choices = gw.data_protection(conn)
+                shadows.grade(conn, gw.scenario, person, pair, body.grade,
+                              may=choices.shadow_runs, names=choices.studio_names,
+                              fewest=choices.fewest_people)
         except LookupError:
             raise HTTPException(404, "there's no such answer for you to grade") from None
         except shadows.Refused as e:

@@ -348,7 +348,9 @@ NAMING = {
                         ("No run of an agent's becomes a test case: its cases are made up.")),
     "shadow_runs": (("A shadow may answer what people ask the instance it shadows, beside it, "
                      "sending and changing nothing: it reads what they say and what their records "
-                     "hold, and graders read what it answered beside what was sent."),
+                     "hold, and graders read what it answered beside what was sent, with "
+                     "what they said, masked by code unless names are shown, as the studio shows "
+                     "runs."),
                     ("No shadow answers what people ask: a new version is tried on test cases "
                      "alone.")),
 }
