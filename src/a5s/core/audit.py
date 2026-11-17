@@ -412,6 +412,10 @@ ADMIN = {"approve": "approved settings", "propose": "proposed settings",
          "choose-language": "chose the language they read, which agents answer them in"}
 
 
+CAPS = {"raise": "a cap raised to level 2, from graded samples",
+        "lower": "a cap lowered to level 1"}
+
+
 def roles_of(scenario: Any, parts: Iterable[str], agents: Iterable[str]) -> list[dict]:
     """Who holds each of a5s's roles now, as the directory says."""
     names = [INSTANCE_APPROVER, RELEASE_APPROVER, ASSURANCE, DATA_PROTECTION, AUDITOR, "grader",
@@ -428,20 +432,25 @@ def report(conn: db.Connection, scenario: Any, agents: Iterable[str], *,
     and to what, as the ledger records it."""
     parts = [r["part"] for r in conn.execute(
         "select distinct jsonb_object_keys(parts) as part from instances")]
-    acts, after = [], 0
-    while True:
-        page = search(conn, since=since, until=until, kind="admin", after=after)
-        for entry in page["entries"]:
-            args = entry.get("args") or {}
-            acts.append({"seq": entry["seq"], "at": entry.get("at"), "action": entry["action"],
-                         "what": ADMIN.get(entry["action"], entry["action"]),
-                         "by": args.get("by") or args.get("signed_by"),
-                         "instance": entry.get("instance"),
-                         "about": {k: v for k, v in args.items()
-                                   if k not in ("by", "signed_by", "identity")}})
-        if not page["next"]:
-            return {"roles": roles_of(scenario, parts, agents), "acts": acts}
-        after = page["next"]
+    acts: list[dict[str, Any]] = []
+    for kind in ("admin", "cap"):  # and each change of a cap, with what it rested on (round
+        after = 0  # 15, E7)
+        while True:
+            page = search(conn, since=since, until=until, kind=kind, after=after)
+            for entry in page["entries"]:
+                args = entry.get("args") or {}
+                what = CAPS if kind == "cap" else ADMIN
+                acts.append({"seq": entry["seq"], "at": entry.get("at"), "action": entry["action"],
+                             "what": what.get(entry["action"], entry["action"]),
+                             "by": args.get("by") or args.get("signed_by"),
+                             "instance": entry.get("instance"),
+                             "about": {k: v for k, v in args.items()
+                                       if k not in ("by", "signed_by", "identity")}})
+            if not page["next"]:
+                break
+            after = page["next"]
+    return {"roles": roles_of(scenario, parts, agents),
+            "acts": sorted(acts, key=lambda act: act["seq"])}
 
 
 WHOM = ("person", "acted_for", "acted_by")  # whom a read asked about, kept as a stand-in

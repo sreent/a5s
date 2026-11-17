@@ -539,6 +539,17 @@ def _sealed_at(row: dict) -> datetime:
 
 # Weighing the grades
 
+def rested(grades: list[dict], since: datetime | None) -> dict:
+    """What a change of cap rests on, for the ledger and its auditors: the samples, by a digest
+    of their ids, the releases and instances they came from, how many people graded them, and
+    from when (round 15, E7)."""
+    return {"samples": hashlib.sha256(",".join(str(g["id"]) for g in grades).encode()).hexdigest(),
+            "releases": sorted({g["release"] for g in grades}),
+            "instances": sorted({g["instance_id"] for g in grades}),
+            "graders": len({g["graded_by"] for g in grades}),
+            "from": since.isoformat() if since else None}
+
+
 def assess(conn: db.Connection, keys: tuple[str, ...], kind: str, part: str, action: str,
            threshold: float | None, now: datetime) -> dict | None:
     """Raise or lower a cap for a type of action in a part, if the grades the core sealed since
@@ -555,7 +566,8 @@ def assess(conn: db.Connection, keys: tuple[str, ...], kind: str, part: str, act
     grades = [r for r in rows if counted(keys, r)]
     fresh = [g for g in grades if since is None or _sealed_at(g) > since]
     graded, errors = len(fresh), sum(g["grade"] != "right" for g in fresh)
-    evidence = {"graded": graded, "errors": errors, "threshold": threshold}
+    evidence = {"graded": graded, "errors": errors, "threshold": threshold,
+                **rested(fresh, since)}
     if current is not None and now_cap >= 2:
         if any(g["grade"] == "critical" for g in fresh):
             return set_cap(conn, keys, kind, part, action, 1, "a critical error", now, evidence,
