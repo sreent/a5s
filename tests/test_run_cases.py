@@ -16,12 +16,18 @@ SAID = ("Hi, I'm Ana Ortiz (ana.ortiz@example.com, +44 20 7946 0958). My account
         "12345678: which questions mention an invoice? See https://intranet.example/x")
 
 
-def owning(stack, person: str = "ana") -> None:
-    """Make someone an owner of the assistant too, in the directory: who watches its instance
-    and sees billing's records, so may see its runs, and author it."""
-    found = stack.gateway.scenario._people[person]
-    stack.gateway.scenario._people[person] = replace(
-        found, roles=(*found.roles, "agent-owner:assistant"))
+AUTHORING = ("agent-owner:assistant", "agent-author:assistant")
+
+
+def owning(stack, person: str = "ana", *others: str) -> None:
+    """Make someone the assistant's owner, in the directory: who watches its instance and sees
+    billing's records, so may see its runs and author it; and nobody else its owner or author but
+    `others`, since everyone who authors it reads a case kept in a draft of it (round 14)."""
+    people = stack.gateway.scenario._people
+    for who, found in list(people.items()):
+        roles = tuple(r for r in found.roles if r not in AUTHORING)
+        people[who] = replace(found, roles=(*roles, "agent-owner:assistant")
+                              if who in (person, *others) else roles)
 
 
 def agreed(stack, cases: bool = True) -> None:
@@ -199,15 +205,20 @@ def test_whose_words_a_case_holds_are_exported_erased_and_archived(stack, approv
         gone, _ = erasure.erase(conn, "ben", stack.gateway.clock(), here=True)
     assert gone["kept_cases"] == 1
     assert cases_in(stack, body["draft"]) == []  # out of Ana's draft, which stays hers
-    with db.transaction(stack.admin) as conn:
-        assert conn.execute("select count(*) as n from kept_cases").fetchone()["n"] == 0
+    with db.transaction(stack.admin) as conn:  # known as erased, with nothing of whose it was
+        [erased] = conn.execute("select person, acts_for, kept_by, run_id, erased_at from "
+                                "kept_cases").fetchall()
+    assert (erased["person"], erased["acts_for"], erased["kept_by"], erased["run_id"]) == (
+        None, [], None, None)
+    assert erased["erased_at"] is not None
     kept_from(stack, approving, provider, a_run(stack), "Again")  # Ana's own words, this time
     with db.transaction(stack.cfg.database_url) as conn:  # as Ana leaves
         name = departures.rename(conn, "ana", stack.gateway.clock())
-        [whose] = conn.execute("select person, acts_for, kept_by from kept_cases").fetchall()
+        [whose] = conn.execute("select person, acts_for, kept_by from kept_cases where "
+                               "erased_at is null").fetchall()
     assert (whose["person"], whose["acts_for"], whose["kept_by"]) == (name, [name], name)
-    with stack.client() as c:  # her drafts went as she left, so no draft holds it now
-        assert c.post("/retention/sweep").json()["deleted"]["cases"] == 1
+    with stack.client() as c:  # her drafts went as she left, so no draft holds either now
+        assert c.post("/retention/sweep").json()["deleted"]["cases"] == 2
 
 
 def test_a_case_from_a_run_that_read_outside_content_marks_its_runs_as_that_run_was(
@@ -228,3 +239,147 @@ def test_a_case_from_a_run_that_read_outside_content_marks_its_runs_as_that_run_
         last = conn.execute("select read_outside from runs order by opened_at desc limit 1"
                             ).fetchone()
     assert last["read_outside"] is True
+
+
+# Round 14
+
+BEN_SAID = "Which questions mention an invoice?"  # what's kept of Ben's run, as kept_from keeps it
+
+
+def files_of(stack, draft: str) -> dict:
+    with db.transaction(stack.admin) as conn:
+        return conn.execute("select files from agent_drafts where id = %s", (draft,)).fetchone()["files"]
+
+
+def released_with(stack, files: dict) -> None:
+    """A draft of the assistant, published and merged: its folder as released holds its cases."""
+    tests = stack.cfg.agents_dir / "assistant" / "tests"
+    tests.mkdir(exist_ok=True)
+    (tests / "from-runs.yaml").write_text(files[run_cases.FILE])
+
+
+def test_a_case_is_kept_only_where_everyone_who_authors_its_agent_may_see_the_run(
+        stack, approving, provider):
+    """D2: everyone who authors the assistant reads a case kept in a draft of it, so a run whose
+    records Priya may not see, as she owns the assistant too, is kept by nobody; once she
+    doesn't, Ana keeps it."""
+    owning(stack, "ana", "priya")
+    agreed(stack)
+    run = a_run(stack, person="ben")
+    assert not stack.gateway.scenario.sees("priya", "Q-1001")
+    refused = as_person(approving, provider, "ana", "GET", f"/studio/api/runs/{run}/case")
+    assert refused.status_code == 403 and "not everyone who authors" in refused.json()["detail"]
+    owning(stack, "ana")
+    assert as_person(approving, provider, "ana", "GET", f"/studio/api/runs/{run}/case"
+                     ).status_code == 200
+
+
+def test_erased_words_stay_out_of_a_draft_started_from_a_release_that_holds_them(
+        stack, approving, provider):
+    """D5: erasure takes Ben's words out of every draft, and keeps that they were erased, so a
+    draft started from the release, which still holds them, leaves them out; his export and a
+    second erasure find nothing of his."""
+    from test_drafts import as_
+    owning(stack)
+    agreed(stack)
+    body = kept_from(stack, approving, provider, a_run(stack, person="ben"))
+    released_with(stack, files_of(stack, body["draft"]))
+    with db.transaction(stack.cfg.database_url) as conn:
+        gone, _ = erasure.erase(conn, "ben", stack.gateway.clock(), here=True)
+    assert gone["kept_cases"] == 1 and cases_in(stack, body["draft"]) == []
+    ana = as_(approving, provider, "ana")
+    assert ana("DELETE", f"/studio/api/drafts/{body['draft']}").status_code == 200
+    started = ana("POST", "/studio/api/drafts", {"agent": "assistant"})
+    assert started.status_code == 200, started.text
+    assert BEN_SAID not in started.json()["files"].get(run_cases.FILE, "")
+    with db.transaction(stack.cfg.database_url) as conn:
+        assert export.gather(conn, "ben")["cases_from_runs"] == []
+        again, _ = erasure.erase(conn, "ben", stack.gateway.clock(), here=True)
+    assert "kept_cases" not in again
+
+
+def test_whose_words_a_case_holds_is_kept_while_a_release_holds_it(stack, approving, provider):
+    """D5: the retention sweep keeps knowing whose words a case holds while the release at work
+    holds it, though no draft does, so Ben's export finds it, and erasure keeps it out of the
+    next draft."""
+    from test_drafts import as_
+    owning(stack)
+    agreed(stack)
+    body = kept_from(stack, approving, provider, a_run(stack, person="ben"))
+    released_with(stack, files_of(stack, body["draft"]))
+    assert as_(approving, provider, "ana")("DELETE", f"/studio/api/drafts/{body['draft']}"
+                                           ).status_code == 200
+    with stack.client() as c:
+        assert "cases" not in c.post("/retention/sweep").json()["deleted"]
+    with db.transaction(stack.cfg.database_url) as conn:
+        [held] = export.gather(conn, "ben")["cases_from_runs"]
+        gone, _ = erasure.erase(conn, "ben", stack.gateway.clock(), here=True)
+    assert held["case"] and gone["kept_cases"] == 1
+
+
+def test_erasure_takes_a_case_out_of_any_file_and_counts_only_what_it_took(
+        stack, approving, provider):
+    """D6: a case moved to another file of the draft is still found and taken out; one in a file
+    that doesn't read as YAML is left, said to be left, and still known as Ben's."""
+    from test_drafts import as_
+    owning(stack)
+    agreed(stack)
+    ana = as_(approving, provider, "ana")
+    body = kept_from(stack, approving, provider, a_run(stack, person="ben"))
+    files = dict(files_of(stack, body["draft"]))
+    files["tests/cases.yaml"] = files.pop(run_cases.FILE)  # her cases, in one file
+    assert ana("PUT", f"/studio/api/drafts/{body['draft']}", {"files": files}).status_code == 200
+    with stack.client() as c:
+        assert "cases" not in c.post("/retention/sweep").json()["deleted"]
+    with db.transaction(stack.cfg.database_url) as conn:
+        assert export.gather(conn, "ben")["cases_from_runs"][0]["says"] == [BEN_SAID]
+        gone, _ = erasure.erase(conn, "ben", stack.gateway.clock(), here=True)
+    assert gone["kept_cases"] == 1 and BEN_SAID not in files_of(stack, body["draft"])["tests/cases.yaml"]
+    second = kept_from(stack, approving, provider, a_run(stack, person="ben"))
+    files = files_of(stack, second["draft"])
+    half = {**files, run_cases.FILE: files[run_cases.FILE] + "- name: [a case she's writing\n"}
+    assert ana("PUT", f"/studio/api/drafts/{second['draft']}", {"files": half}).status_code == 200
+    with db.transaction(stack.cfg.database_url) as conn:
+        gone, _ = erasure.erase(conn, "ben", stack.gateway.clock(), here=True)
+    assert "kept_cases" not in gone and gone["kept_cases_left"] == 1
+    with db.transaction(stack.admin) as conn:  # still known as his, under his archive's name
+        assert conn.execute("select person from kept_cases where erased_at is null").fetchone()[
+            "person"].startswith("former:")
+
+
+def test_a_case_kept_while_its_draft_is_open_stays_at_the_designers_next_keep(
+        stack, approving, provider):
+    """D7: the designer keeps the draft whole, as the tab had it; a case kept from a run's page
+    since then is kept with it, while one the tab took out itself stays out."""
+    from test_drafts import as_
+    owning(stack)
+    agreed(stack)
+    ana = as_(approving, provider, "ana")
+    opened = ana("POST", "/studio/api/drafts", {"agent": "assistant"}).json()  # open in a tab
+    body = kept_from(stack, approving, provider, a_run(stack, person="ben"))  # from the run's page
+    assert body["draft"] == opened["id"] and cases_in(stack, opened["id"])
+    edited = {**opened["files"], "AGENTS.md": opened["files"].get("AGENTS.md", "") + "\nBe brief."}
+    saved = ana("PUT", f"/studio/api/drafts/{opened['id']}",
+                {"files": edited, "loaded": opened["updated_at"]})
+    assert saved.status_code == 200 and BEN_SAID in saved.json()["files"][run_cases.FILE]
+    gone = {k: v for k, v in saved.json()["files"].items() if k != run_cases.FILE}
+    dropped = ana("PUT", f"/studio/api/drafts/{opened['id']}",
+                  {"files": gone, "loaded": saved.json()["updated_at"]})
+    assert run_cases.FILE not in dropped.json()["files"]  # theirs to take out, having had it
+
+
+def test_a_group_members_export_gives_no_one_elses_words(stack, approving, provider):
+    """D8: a case kept from a group chat's run holds what one of them said: the others' exports
+    count it, never with the words."""
+    owning(stack)
+    agreed(stack)
+    run = a_run(stack, person="ben", said="Which questions mention my invoice to the Lisbon office?")
+    with db.transaction(stack.admin) as conn:  # as a group chat's run, for everyone in it
+        conn.execute("update runs set acts_for = array['ben', 'chen'] where id = %s", (run,))
+    offered = as_person(approving, provider, "ana", "GET", f"/studio/api/runs/{run}/case").json()
+    assert as_person(approving, provider, "ana", "POST", f"/studio/api/runs/{run}/case", {
+        "name": "Ben's", "speaker": "ana", "say": offered["say"], "checked": True}).status_code == 200
+    with db.transaction(stack.cfg.database_url) as conn:
+        [chens] = export.gather(conn, "chen")["cases_from_runs"]
+        [bens] = export.gather(conn, "ben")["cases_from_runs"]
+    assert chens["says"] == [] and chens["said_by"] and "Lisbon office" in bens["says"][0]

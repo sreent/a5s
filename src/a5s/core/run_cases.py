@@ -5,14 +5,16 @@ it used, and what a right answer is, in its author's words.
 Only once the data protection officer agrees (`cases_from_runs` in the signed settings), since
 what someone said goes into the agent's folder, which its drafts are published from; only for
 someone who may author the agent and may see the run, every record it handled and every record
-what was said and answered names, as the studio shows runs; and only for a run that answered
-someone's message. Code masks what could say who anyone is (core/masking.py): the names and ids
+what was said and answered names, as the studio shows runs, and only where everyone else who
+owns or authors the agent may too, since each of them reads the draft it goes in; and only for
+a run that answered someone's message. Code masks what could say who anyone is (core/masking.py): the names and ids
 of the people the run acted for and of everyone a5s serves, emails, links, numbers long enough
 to be a phone's or an account's, and the keys of the records the run's words name, each
 numbered, [record 1] and so on, for the author to put the sandbox's made-up records in their
 place. It can't know every name someone might write, so the author reads what's left, and keeps
-it only once they say it says nothing about anyone; what they write is masked again, as are the
-case's name and what a right answer is. What's left is real, never made up, so the case says
+it only once they say it says nothing about anyone, nor what a real record says, since once it's
+released everyone who reads the agents' repository reads it too; what they write is masked
+again, as are the case's name and what a right answer is. What's left is real, never made up, so the case says
 it's from a run, and only the sandbox's stand-in, or a model and judge approved for every class
 of the deployment's data, are ever given it: never one approved for made-up data alone
 (a5s/cases.py's `for_real`). A run that read content from outside says so too, and the sandbox
@@ -22,9 +24,14 @@ The case goes in their draft of the agent, started from it as released if they h
 tests/from-runs.yaml, which its suite runs as it runs its other cases; the ledger records that
 they kept it, of which run, never the words. a5s records whose words each case holds
 (kept_cases), by a token the case carries in its from_run, which says nothing of whom: their
-export lists it, erasure takes it out of every draft that holds it, and when they leave it's
-archived with what else a5s kept for them. Once a draft is released, the case is in that
-release's folder until a release without it.
+export lists it, with what they said in it, and of a group chat's run only that it holds someone
+else's words; erasure takes it out of every file of every draft that holds it, and where code
+can't, such as from a file that isn't YAML, says so and keeps whose it is; when they leave it's
+archived with what else a5s kept for them. An erased case stays known as erased, with nothing
+of whose it was, so a draft started from a release that still holds it leaves it out. Once a
+draft is released, the case is in that release's folder until a release without it, and a5s
+keeps whose it is while a release at work holds it. A case kept while its draft is open in the
+designer stays there at the designer's next save.
 """
 
 from __future__ import annotations
@@ -39,6 +46,8 @@ from psycopg.types.json import Jsonb
 from a5s import cases, db
 from a5s.contract import DataProtection, Person, Scenario
 from a5s.core import drafts, ledger, masking, registry, studio
+from a5s.core.drafts import agent_author
+from a5s.core.releases import agent_owner
 
 FILE = cases.FROM_RUNS  # in the agent's folder, beside its other cases
 ABOUT = ("# Test cases kept from real runs, in the studio: what was said, masked by code and\n"
@@ -59,18 +68,30 @@ def mask(conn: db.Connection, scenario: Scenario, run: dict, *texts: str) -> Any
     return lambda text: masking.mask(text, scenario, people, records=numbers)
 
 
-def _run(conn: db.Connection, scenario: Scenario, viewer: Person, run_id: str,
-         definitions: dict[str, Any], choices: DataProtection) -> tuple[dict, dict, str, str]:
-    """A run someone may keep as a test case: what the studio shows them of it, its row, with
-    who said what started it, what they said, and what the agent answered. Refused, saying why,
-    if they may not: as the run's page is, for one of an instance serving too few people to show
-    its runs one by one, or one whose words name a record they may not see."""
-    shown = studio.run(conn, scenario, run_id, viewer, names=False)
+def _visible(conn: db.Connection, scenario: Scenario, person: Person, run_id: str,
+             choices: DataProtection, words: str = "") -> dict | None:
+    """What the studio shows someone of a run, if they may see it: as its page is, and not of
+    an instance serving too few people to show its runs one by one, nor one whose `words` name a
+    record they may not see. None otherwise."""
+    shown = studio.run(conn, scenario, run_id, person, names=False)
     if shown is not None and not choices.studio_names:
         inst = conn.execute("select serves from instances where id = %s",
                             (shown["instance"],)).fetchone()
         if inst is None or len(registry.served(scenario, inst["serves"])) < choices.fewest_people:
             shown = None
+    if shown is not None and not all(scenario.sees(person.id, k)
+                                     for k in studio.named(scenario, words)):
+        shown = None
+    return shown
+
+
+def _run(conn: db.Connection, scenario: Scenario, viewer: Person, run_id: str,
+         definitions: dict[str, Any], choices: DataProtection) -> tuple[dict, dict, str, str]:
+    """A run someone may keep as a test case: what the studio shows them of it, its row, with
+    who said what started it, what they said, and what the agent answered. Refused, saying why,
+    if they may not see it, as _visible says, or anyone else who authors its agent may not: a
+    case kept in a draft is in what each of them reads."""
+    shown = _visible(conn, scenario, viewer, run_id, choices)
     if shown is None:
         raise Refused("there's no such run that you may see")
     agent = str(shown["agent"] or "")
@@ -89,9 +110,15 @@ def _run(conn: db.Connection, scenario: Scenario, viewer: Person, run_id: str,
         raise Refused("what was said in it is no longer kept")
     answered = "\n".join(r["text"] for r in conn.execute(
         "select text from outbox where run_id = %s::uuid order by id", (run_id,)).fetchall())
-    if not all(scenario.sees(viewer.id, k) for k in studio.named(
-            scenario, f"{said['text']}\n{answered}")):  # one the agent drew from what it was told
+    words = f"{said['text']}\n{answered}"  # each record it names, one it drew from what it was told
+    if _visible(conn, scenario, viewer, run_id, choices, words) is None:
         raise Refused("there's no such run that you may see")
+    readers = {p.id: p for role in (agent_owner(agent), agent_author(agent))
+               for p in scenario.holders(role) if p.id != viewer.id}
+    if any(_visible(conn, scenario, p, run_id, choices, words) is None
+           for p in readers.values()):
+        raise Refused(f"not everyone who authors the {agent} may see this run, and a case kept "
+                      "from it would be in your draft, which they read: it stays a run")
     return shown, {**(dict(row) if row else {}), "sender": said["person"]}, str(said["text"]), \
         answered
 
@@ -140,9 +167,9 @@ def keep(conn: db.Connection, scenario: Scenario, viewer: Person, run_id: str,
     mine = next((d for d in drafts.mine(conn, viewer) if d["agent"] == agent), None)
     draft = drafts.get(conn, viewer, str(mine["id"])) if mine else None
     if draft is None:
-        files = drafts.folder_files(agents_dir / agent)
+        released = drafts.folder_files(agents_dir / agent)
         draft = drafts.start(conn, viewer, agent, f"{agent} {definitions[agent].release_id}",
-                             files, base=dict(files))
+                             cleared(conn, released), base=dict(released))
     files = dict(draft["files"])
     kept = yaml.safe_load(files.get(FILE) or "[]") or []
     if not isinstance(kept, list):
@@ -173,11 +200,83 @@ def _in(files: dict) -> list:
 
 
 def _holding(conn: db.Connection, tokens: list[str]) -> list[dict]:
-    """The drafts that hold any of these cases, by their tokens: whoever's they are now, and
-    copies of them too."""
-    return conn.execute("select id, agent, files from agent_drafts where files ->> %s is not null "
-                        "and files ->> %s ~ %s", (FILE, FILE, "|".join(map(re.escape, tokens)))
-                        ).fetchall() if tokens else []
+    """The drafts that hold any of these cases, by their tokens, in any of their files:
+    whoever's they are now, and copies of them too."""
+    return conn.execute("select id, agent, files from agent_drafts where files::text ~ %s",
+                        ("|".join(map(re.escape, tokens)),)).fetchall() if tokens else []
+
+
+def _without(text: str, tokens: set[str]) -> str | None:
+    """A file of test cases without the cases that carry these tokens, as YAML, or None if it
+    doesn't read as a list of them, so they can't be taken out by code."""
+    try:
+        found = yaml.safe_load(text or "[]") or []
+    except yaml.YAMLError:
+        return None
+    if not isinstance(found, list):
+        return None
+    left = [c for c in found if not (isinstance(c, dict) and c.get("from_run") in tokens)]
+    return ABOUT + yaml.safe_dump(left, sort_keys=False, allow_unicode=True)
+
+
+def kept_since(conn: db.Connection, stored: dict[str, str], saving: dict[str, str],
+               since: Any) -> dict[str, str]:
+    """A draft's files as a tab saves them, with the cases kept from runs into it since the tab
+    last had it, `since`, which it doesn't know of: a case kept from a run's page while the draft
+    is open in the designer is never lost to the designer's next keep. One the tab took out
+    itself, having had it, stays out."""
+    have = set(TOKEN.findall("\n".join(saving.values())))
+    missing = [c for c in _cases(stored.get(FILE)) if c.get("from_run")
+               and c["from_run"] not in have]
+    if not missing or since is None:
+        return saving
+    newer = {r["token"] for r in conn.execute(
+        "select token from kept_cases where token = any(%s) and kept_at > %s and erased_at is null",
+        ([c["from_run"] for c in missing], since))}
+    add = [c for c in missing if c["from_run"] in newer]
+    if not add:
+        return saving
+    try:
+        theirs = yaml.safe_load(saving.get(FILE) or "[]") or []
+    except yaml.YAMLError:
+        return saving  # a file they're midway through: theirs to put right, the checks say why
+    if not isinstance(theirs, list):
+        return saving
+    return {**saving, FILE: ABOUT + yaml.safe_dump([*theirs, *add], sort_keys=False,
+                                                   allow_unicode=True)}
+
+
+def released(agents_dir: Any) -> str:
+    """The tokens of the cases kept from runs that the releases at work hold, in any agent's
+    files: the retention sweep keeps knowing whose words those are."""
+    found: set[str] = set()
+    for path in sorted(agents_dir.glob("*/tests/*.y*ml")) if agents_dir.is_dir() else []:
+        try:
+            found |= set(TOKEN.findall(path.read_text()))
+        except (OSError, UnicodeDecodeError):
+            continue
+    return " ".join(sorted(found))
+
+
+def cleared(conn: db.Connection, files: dict[str, str]) -> dict[str, str]:
+    """A draft's files as it starts from a release, without the cases kept from runs whose
+    words someone erased since, or that a5s no longer knows whose they were: a release holds
+    them until a release without them, which this draft makes."""
+    tokens = sorted({t for text in files.values() for t in TOKEN.findall(text or "")})
+    if not tokens:
+        return files
+    live = {r["token"] for r in conn.execute(
+        "select token from kept_cases where token = any(%s) and erased_at is null", (tokens,))}
+    gone = set(tokens) - live
+    if not gone:
+        return files
+    found = dict(files)
+    for name, text in files.items():
+        if name.endswith((".yaml", ".yml")) and any(t in (text or "") for t in gone):
+            kept = _without(text, gone)
+            if kept is not None:
+                found[name] = kept
+    return found
 
 
 def held(conn: db.Connection, people: list[str]) -> list[dict]:
@@ -187,24 +286,48 @@ def held(conn: db.Connection, people: list[str]) -> list[dict]:
                         "order by kept_at, token", (people, people)).fetchall()
     drafts_now = _holding(conn, [r["token"] for r in rows])
     return [{"agent": r["agent"], "case": r["name"], "kept_at": r["kept_at"].isoformat(),
-             "says": [s.get("say") for d in drafts_now for c in _in(d["files"])
-                      if isinstance(c, dict) and c.get("from_run") == r["token"]
-                      for s in c.get("steps") or [] if isinstance(s, dict) and s.get("say")]}
+             # what they said themselves; of a group chat's, someone else's words, never given
+             "says": [s.get("say") for d in drafts_now for f in d["files"].values()
+                      for c in _cases(f) if c.get("from_run") == r["token"]
+                      for s in c.get("steps") or [] if isinstance(s, dict) and s.get("say")]
+             if r["person"] in people else [],
+             **({} if r["person"] in people else {"said_by": "someone else, in a chat they were in"})}
             for r in rows]
 
 
-def forget(conn: db.Connection, people: list[str]) -> int:
-    """Take the cases that hold these people's words out of every draft that holds them, in the
-    caller's transaction, and what a5s kept of whose they were: how many cases went."""
-    rows = conn.execute("delete from kept_cases where person = any(%s) or acts_for && %s::text[] "
-                        "returning token", (people, people)).fetchall()
+def _cases(text: Any) -> list[dict]:
+    try:
+        found = yaml.safe_load(text or "[]") if isinstance(text, str) else None
+    except yaml.YAMLError:
+        return []
+    return [c for c in found if isinstance(c, dict)] if isinstance(found, list) else []
+
+
+def forget(conn: db.Connection, people: list[str]) -> tuple[int, int]:
+    """Take the cases that hold these people's words out of every file of every draft that
+    holds them, in the caller's transaction, and forget whose they were, keeping that each was
+    erased, so a draft started from a release that still holds one leaves it out (`cleared`).
+    How many cases went, and how many are left where code can't take them out, such as a file
+    that doesn't read as YAML: a5s keeps whose those are, for an erasure once it's put right."""
+    rows = conn.execute("select token from kept_cases where (person = any(%s) or acts_for && "
+                        "%s::text[]) and erased_at is null", (people, people)).fetchall()
     tokens = {r["token"] for r in rows}
+    stuck: set[str] = set()
     for draft in _holding(conn, sorted(tokens)):
-        kept = _in(draft["files"])
-        left = [c for c in kept if not (isinstance(c, dict) and c.get("from_run") in tokens)]
-        if len(left) != len(kept):
-            files = {**draft["files"], FILE: ABOUT + yaml.safe_dump(left, sort_keys=False,
-                                                                    allow_unicode=True)}
+        files = dict(draft["files"])
+        for name, text in draft["files"].items():
+            held_here = {t for t in tokens if t in (text or "")}
+            if not held_here:
+                continue
+            kept = _without(text, held_here) if name.endswith((".yaml", ".yml")) else None
+            if kept is None or any(t in kept for t in held_here):
+                stuck |= held_here
+            else:
+                files[name] = kept
+        if files != draft["files"]:
             conn.execute("update agent_drafts set files = %s, updated_at = now() where id = %s",
                          (Jsonb(files), draft["id"]))
-    return len(tokens)
+    gone = sorted(tokens - stuck)
+    conn.execute("update kept_cases set person = null, acts_for = '{}', kept_by = null, "
+                 "run_id = null, erased_at = now() where token = any(%s)", (gone,))
+    return len(gone), len(stuck)

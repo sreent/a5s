@@ -307,7 +307,10 @@ export const WATCH: Record<string, string> = {
   "Choose someone": "เลือกบุคคล",
   "What a right answer is, in your words, if you'd have its judge grade it":
     "คำตอบที่ถูกต้องเป็นอย่างไร ในคำพูดของคุณ หากต้องการให้ผู้ประเมินให้คะแนน",
-  "I've read it, and it says nothing about anyone": "ฉันอ่านแล้ว และข้อความนี้ไม่ได้ระบุถึงบุคคลใด",
+  "Everyone who authors the {agent} reads it in your draft, and once it's released, so does everyone who reads the agents' repository: put the sandbox's made-up amounts and dates in place of real ones too.":
+    "ผู้เขียน {agent} ทุกคนอ่านกรณีนี้ได้ในฉบับร่างของคุณ และเมื่อรีลีสแล้ว ทุกคนที่อ่าน repository ของเอเจนต์ได้ก็อ่านได้เช่นกัน: ให้ใช้จำนวนเงินและวันที่สมมติของแซนด์บ็อกซ์แทนของจริงด้วย",
+  "I've read it, and it says nothing about anyone, nor what a real record says":
+    "ฉันอ่านแล้ว ข้อความนี้ไม่ได้ระบุถึงบุคคลใด และไม่มีสิ่งที่ระเบียนจริงระบุไว้",
   "Keep it in my draft": "เก็บไว้ในฉบับร่างของฉัน",
 
   // The map of what depends on what (pages/Map.tsx, DependsMap.tsx)

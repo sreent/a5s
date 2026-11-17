@@ -93,6 +93,7 @@ from a5s.core import (
     repeats,
     reports,
     retention,
+    run_cases,
     samples,
     schedules,
     sealing,
@@ -2402,7 +2403,8 @@ def create_app(gw: Gateway) -> FastAPI:
             asks.settle(conn, gw.scenario, studio.instances(conn))
         with db.transaction(gw.url) as conn:
             gone = retention.sweep(conn, gw.clock(), gw.scenario.name,
-                                   kept=gw.data_protection(conn).kept_for)
+                                   kept=gw.data_protection(conn).kept_for,
+                                   released=run_cases.released(gw.cfg.agents_dir))
             if gone:
                 ledger.append(conn, {"kind": "retention", "action": "delete", "run": None,
                                      "instance": None, "acts_for": [], "decision": "record",

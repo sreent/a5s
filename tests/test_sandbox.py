@@ -363,3 +363,45 @@ def test_a_runs_page_gives_what_it_wrote_to_the_cache(stack):
                            ).fetchone()["id"]
         from a5s.core import studio
         assert studio.run(conn, stack.gateway.scenario, run)["tokens_cache_written"] == 7
+
+
+@pytest.fixture
+def classes_asked(stack):
+    """A sandbox that says which classes of data the studio told it a case's models must be
+    approved for."""
+    from dataclasses import replace
+
+    from fastapi import FastAPI
+
+    from conftest import free_port, serve
+    app, asked = FastAPI(), []
+
+    @app.post("/sandbox/cases")
+    def case(body: dict) -> dict:
+        asked.append(body.get("classes"))
+        return {"name": "a case", "file": "tests/cases.yaml", "ran": True, "passed": True,
+                "problems": [], "steps": [], "model": body["model"], "seconds": 1.0,
+                "tokens": 0, "cost": None, "judge_tokens": 0}
+
+    with serve(app, free_port()) as url:
+        stack.cfg = replace(stack.cfg, sandbox_url=url, sandbox_token="a-token")
+        yield asked
+
+
+def test_while_the_settings_cant_be_read_a_real_case_goes_to_the_stand_in_alone(
+        stack, classes_asked, approving, provider, monkeypatch):
+    """Round 14 (D11): until the channels app can read the settings in force, such as before a
+    new version is sealed, a5s doesn't know the deployment's classes of data, so it tells the
+    sandbox one no model is approved for, and a case kept from a real run runs on the stand-in
+    alone, rather than on any model approved for internal data."""
+    from a5s.core.gateway import Gateway
+    from test_drafts import as_, started
+
+    priya = as_(approving, provider, "priya")
+    draft = started(priya)["id"]
+    monkeypatch.setattr(Gateway, "settings_in_force", lambda self, *a, **k: (None, None))
+    monkeypatch.setattr(Gateway, "sealed_in_force", lambda self, *a, **k: None)
+    assert priya("POST", f"/studio/api/drafts/{draft}/cases/0", {}).status_code == 200
+    assert classes_asked == [[cases.UNKNOWN]]
+    assert not any(cases.for_real(m.data_classes, {cases.UNKNOWN})
+                   for m in stack.gateway.models.values())

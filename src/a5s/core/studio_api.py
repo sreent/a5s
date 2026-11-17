@@ -12,6 +12,7 @@ import re
 import tempfile
 import time
 import uuid
+from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Annotated, Any
@@ -93,6 +94,7 @@ class DraftFiles(BaseModel):
 
     files: dict[str, str]
     plan: shapes.Plan | None = None
+    loaded: datetime | None = None  # when the tab last had the draft, as it was then saved
 
 
 class DraftTry(BaseModel):
@@ -916,6 +918,8 @@ def router(gw: Any) -> APIRouter:
                                          "the organisation names its authors")
             name, files = body.agent, drafts.folder_files(gw.cfg.agents_dir / body.agent)
             base = dict(files)  # as released: what a publish merges against what's merged since
+            with db.transaction(gw.url) as conn:  # without cases whose words were erased since
+                files = run_cases.cleared(conn, files)
             based_on = f"{body.agent} {gw.definitions[body.agent].release_id}"
         elif body.name and body.describe and not (body.template or body.agent):
             if not drafts.may_author(person, None):
@@ -1057,6 +1061,7 @@ def router(gw: Any) -> APIRouter:
                 raise HTTPException(404, "you have no such draft")
             files = drafts.pinned(found["agent"], {path: text for path, text in body.files.items()
                                                    if path != "tools.lock"}, gw.scenario.tools())
+            files = run_cases.kept_since(conn, found["files"], files, body.loaded)  # none lost
             saved = drafts.save(conn, person, draft, files, plan)
         if saved is None:  # let go meanwhile, as from another tab
             raise HTTPException(404, "you have no such draft")
@@ -1176,7 +1181,7 @@ def router(gw: Any) -> APIRouter:
             raise HTTPException(404, "you have no such draft")
         # A case kept from a real run goes only to a model approved for the deployment's data
         classes = sorted({settings.data_class, *settings.classified.values()}) if settings \
-            else ["internal"]
+            else [cases.UNKNOWN]  # while they can't be read: none a model is approved for
         affordable(person, body.model)
         ran = sandboxed("/sandbox/cases", {"key": found["id"].replace("-", "")[:12],
                                            "files": found["files"], "number": number,
