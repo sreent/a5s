@@ -3,6 +3,7 @@ the web chat, Slack, Matrix or Teams, which the agent's owners see and grade, as
 see the run behind it."""
 
 import json
+import time
 import uuid
 from dataclasses import replace
 
@@ -338,6 +339,15 @@ def test_teams_buttons_on_an_answer_say_it_was_wrong_with_why(stack, teams_bot):
 # In the browser
 
 
+def answered_once_sent(stack, within: float = 30.0) -> int:
+    """Answer the message a page sent, once it reaches the core: the browser sends it a moment
+    after Enter, so answering at once could find nothing waiting yet (round 15: twice in CI)."""
+    deadline = time.monotonic() + within
+    while (answered := stack.scheduler().answer_waiting()) == 0 and time.monotonic() < deadline:
+        time.sleep(0.1)
+    return answered
+
+
 def test_the_web_chat_asks_why_and_its_owners_grade_it_on_the_agents_page(stack, approving, provider,
                                                                           browser):
     listed_runs(stack)
@@ -348,7 +358,7 @@ def test_the_web_chat_asks_why_and_its_owners_grade_it_on_the_agents_page(stack,
     page.wait_for_selector("#compose", timeout=30000)
     page.fill("#text", "What's wrong with Q-1001?")
     page.keyboard.press("Enter")
-    assert stack.scheduler().answer_waiting() == 1
+    assert answered_once_sent(stack) == 1
     page.wait_for_selector("li.agent >> text=old address", timeout=30000)
     assert page.get_attribute("li.agent button.said-wrong", "aria-label").startswith(
         "That's wrong: the assistant's answer at ")  # which answer, to whoever hears it
@@ -420,7 +430,7 @@ def test_a_thats_wrong_that_didnt_send_keeps_what_they_wrote(stack, approving, p
     page.wait_for_selector("#compose", timeout=30000)
     page.fill("#text", "What's wrong with Q-1001?")
     page.keyboard.press("Enter")
-    assert stack.scheduler().answer_waiting() == 1
+    assert answered_once_sent(stack) == 1
     page.wait_for_selector("li.agent >> text=old address", timeout=30000)
     page.route("**/channels/local/feedback", lambda route: route.fulfill(
         status=503, content_type="application/json", body='{"detail": "the database is away"}'))

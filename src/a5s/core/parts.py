@@ -41,7 +41,8 @@ def about(scenario: Scenario, run: dict, records: list[str], action: str | None 
     levels = [_level(scenario, run, p, action, set(approved), caps or {})
               for p in touched if p in parts]
     level = min(levels) if levels else run["level"]
-    if action and (not levels or None in touched or run.get("read_outside")):
+    if action and (not levels or None in touched or run.get("read_outside")
+                   or run.get("steered")):  # nor for a run a team's words steered (round 15)
         level = min(level, 1)  # level 2 is for a type set in a record's part, and nothing else
     reaching = audience(scenario, run)
     whom = list(run["acts_for"]) if reaching is None else reaching
@@ -78,7 +79,8 @@ def for_self(run: dict, records: list[str], standing: dict[str, dict | None]) ->
     so a pack's restriction holds: it fails closed."""
     trigger, acts_for = run.get("trigger") or {}, list(run["acts_for"])
     if (trigger.get("kind") != "message" or groups.of(trigger.get("conversation"))
-            or len(acts_for) != 1 or run.get("read_outside") or not records):
+            or len(acts_for) != 1 or run.get("read_outside") or run.get("steered")
+            or not records):
         return False
     return all((kept := standing.get(r)) is not None and kept.get("person") == acts_for[0]
                for r in records)

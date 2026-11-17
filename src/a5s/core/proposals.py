@@ -52,7 +52,7 @@ from a5s.contract import (
     Tool,
     record_of,
 )
-from a5s.core import approvals, languages, sealing
+from a5s.core import approvals, languages, outgoing, sealing
 from a5s.core.handles import TOKEN
 from a5s.core.identity import Verifier
 from a5s.core.ledger import canonical
@@ -137,7 +137,8 @@ def said(scenario: Scenario, tool: Tool, args: dict, records: dict[str, dict | N
     (samples.snapshot): never the agent's own account of it. One a run nobody asked for asked
     for, such as an event's, says so, rather than that it was for the person it's about."""
     named = [k for k in records]
-    shown = ", ".join(f"{k} {_plain(v)}" for k, v in args.items() if k != tool.record_arg)
+    shown = ", ".join(f"{k} {_plain(v, scenario.record_links)}" for k, v in args.items()
+                      if k != tool.record_arg)
     lines = [resolved(f"{tool.description.rstrip('.')}: {', '.join(named) or 'no record'}"
                       + (f", with {shown}" if shown else "") + ".", values or {})]
     lines += stood(records)
@@ -163,8 +164,10 @@ def stood(records: dict[str, dict | None]) -> list[str]:
     return lines
 
 
-def _plain(value: Any) -> str:
-    return value if isinstance(value, str) else canonical(value)
+def _plain(value: Any, allowed: tuple[str, ...] = ()) -> str:
+    """A value as a held change shows it: plain words on one line, cleaned as outgoing text is,
+    never a link, or a note that reads as a5s's (core/outgoing.py, round 15, F2)."""
+    return outgoing.plain(value if isinstance(value, str) else canonical(value), allowed)
 
 
 def handles_in(args: Any) -> set[str]:
@@ -553,12 +556,14 @@ def told(proposal: dict, became: str, by: str | None = None, extra: str = "",
 
 
 def brief(conn: db.Connection, instance: str, acts_for: list[str],
-          records: list[str], conversation: str | None = None) -> list[str]:
+          records: list[str], conversation: str | None = None) -> tuple[list[str], bool]:
     """The changes waiting for a decision on these records, asked for the same people, for a
     run's brief: so the agent says it waits, rather than asking again. In a group chat, those
-    asked for there while everyone now in it was there."""
+    asked for there while everyone now in it was there. And whether one was asked for by a run
+    that read content from outside, whose words the run that's given them takes on, as what a
+    marked run passed on stays marked (round 15, F1)."""
     if not records:
-        return []
+        return [], False
     if conversation is not None:
         rows = conn.execute(
             "select p.* from proposals p join runs r on r.id = p.run_id where p.instance_id = %s "
@@ -570,5 +575,5 @@ def brief(conn: db.Connection, instance: str, acts_for: list[str],
             "select * from proposals where instance_id = %s and acts_for = %s "
             "and status = 'waiting' and records ?| %s order by id",
             (instance, acts_for, records)).fetchall()
-    return [f"{key(r)} waits for a decision, asked for on {r['proposed_at']:%d %b}: {first(r)}"
-            for r in rows]
+    return ([f"{key(r)} waits for a decision, asked for on {r['proposed_at']:%d %b}: {first(r)}"
+             for r in rows], any(bool(r["read_outside"]) for r in rows))

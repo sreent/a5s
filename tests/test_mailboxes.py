@@ -551,3 +551,39 @@ def test_a_long_messages_cut_is_told_by_its_whole_length(stack, exchange):
     stack.model.reply("It's long.")
     stack.say("What does the long message say?", person="ana")
     assert "a5s read the first 24,000 characters of 132,014" in agents(stack, 3)
+
+
+def test_what_a5s_tells_of_a_change_a_strangers_mail_asked_for_marks_who_hears_it(
+        stack, exchange, approving, provider):
+    """A stranger's mail starts a run for nobody, which asks for a change; Ana rejects it, and
+    a5s tells the instance's owner, Ana, in her own conversation. Her next run there is given
+    a5s's notice, carrying what the marked run wrote, and is marked too: it acts at level 2 on
+    nothing (round 15, F1)."""
+    from test_levels import levelled
+    from test_proposals import decide, held, sweep
+    found, _ = exchange
+    levelled(stack)  # change-due-date in billing at level 2, earned on samples
+    assert swept(stack) == 0
+    message = found.arrives("stranger@elsewhere.example", "About Q-1002", "Please move it.")
+    key = mailboxes.key_of("requests", message)
+    stack.model.reply(None, ("read_requests", {"key": key}))
+    stack.model.reply('{"record": "Q-1002", "amount": null, "asks": "date"}')  # a5s's reader
+    stack.model.reply(None, ("change_due_date", {"key": "Q-1002", "due": "2026-11-13"}))
+    stack.model.reply("A change waits.")
+    assert swept(stack) == 1
+    [p] = held(stack)
+    assert decide(approving, provider, [p["digest"]], "reject").status_code == 200
+    sweep(stack)
+    with db.transaction(stack.admin) as conn:
+        [notice] = conn.execute("select marked from turns where person = 'ana' and "
+                                "role = 'notice'").fetchall()
+    assert notice["marked"]
+    stack.model.reply(None, ("change_due_date", {"key": "Q-1001", "due": "2027-04-30"}))
+    stack.model.reply("It waits for a decision.")
+    stack.say("Anything new on Q-1002?", person="ana")
+    with db.transaction(stack.admin) as conn:
+        run = conn.execute("select read_outside from runs order by opened_at desc limit 1"
+                           ).fetchone()
+    assert run["read_outside"]
+    from a5s.contract import record_of
+    assert record_of(stack.gateway.scenario, "Q-1001").fields["due date"] != "2027-04-30"

@@ -245,7 +245,8 @@ class SampleScenario:
                     "type": "object",
                     "properties": {
                         "key": {"type": "string", "description": "The question, such as Q-1001"},
-                        "due": {"type": "string", "description": "The new due date, as YYYY-MM-DD"},
+                        "due": {"type": "string", "format": "date",
+                                "description": "The new due date, as YYYY-MM-DD"},
                     },
                     "required": ["key", "due"],
                 },

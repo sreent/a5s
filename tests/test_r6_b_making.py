@@ -114,13 +114,15 @@ def test_the_same_change_asked_for_again_while_it_waits_isnt_held_twice(stack, a
     assert len(asking) == 1  # Ana is asked once, so she can't approve it twice
 
 
-def test_a_level_2_change_the_records_system_refused_isnt_reported_as_made(stack):
-    levelled(stack)
+def test_a_level_2_change_the_records_system_refused_isnt_reported_as_made(stack, monkeypatch):
+    levelled(stack)  # a date the tool's schema takes, which the records system refuses: one
+    monkeypatch.setattr(stack.gateway.scenario, "_change_due_date", lambda call: {  # that isn't
+        "error": "the records system refused it"})  # a date a5s refuses first (round 15)
     _, token = stack.open_run(sender="ben")
     with stack.client(token) as c:
         r = c.post("/run/tools/change_due_date",
-                   json={"args": {"key": "Q-1002", "due": "next Friday"}})
-    assert r.json()["result"] == {"error": "a due date is written as YYYY-MM-DD"}
+                   json={"args": {"key": "Q-1002", "due": "2026-11-20"}})
+    assert r.json()["result"] == {"error": "the records system refused it"}
     assert due_of(stack) == "2026-11-06"  # nothing changed
     with db.transaction(stack.admin) as conn:
         told = [r["text"] for r in conn.execute("select text from digest_items where person = 'ana'")]

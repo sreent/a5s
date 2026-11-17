@@ -121,6 +121,7 @@ from a5s.core.identity import (
     without_second_factor,
 )
 from a5s.core.matrix import Matrix
+from a5s.core.outgoing import cleaned, sanitize
 from a5s.core.policy import Decision, Own, PolicyEngine
 from a5s.core.slack import Slack
 from a5s.core.teams import Teams
@@ -151,17 +152,7 @@ WHY = {  # why an agent's run didn't get its message through, in words people re
 # channel, the command line's and the web chat's, instead.
 PUSHED = ("teams", "matrix", "slack")
 _STATUS_AFTER = {"suspend": "suspended", "retire": "retired"}  # resume and restore: active
-# Outgoing text keeps only words and the scenario's own record links. Anything that
-# could fetch or point somewhere else goes: images, HTML, and links in any form,
-# whatever their case, slashes or scheme.
-_IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
-_TAG = re.compile(r"</?[A-Za-z][^>]*>")  # HTML, and autolinks such as <https://...>
-# A link's target, and an address, end where a page's would end one: at a quote, a backtick or a
-# <, as well as at a space or a bracket, so what a5s checks is all a page links (round 11, E-2)
-_MARKDOWN_LINK = re.compile(r"\[([^\]]*)\]\(\s*([^)\s'\"`<]*)[^)]*\)")
-_URL = re.compile(r"(?i)(?:\b[a-z][a-z0-9+.-]*:[/\\]+|(?<![\w:/\\])//|\bwww\.)[^\s)>\]'\"`<]*")
-# a5s's own note on values, which only a5s writes: an agent's copy of one is dropped
-_FORGED_NOTE = re.compile(r"(?is)\(\s*a5s\s*:.*?\)")
+# Outgoing text keeps only words and the scenario's own record links (core/outgoing.py)
 
 
 def held_by(holder: Any) -> str | None:
@@ -192,51 +183,6 @@ def asked_for(trigger: dict) -> bool:
     return trigger.get("kind") in ASKED
 
 
-def sanitize(text: str, allowed: tuple[str, ...], notes: bool = True) -> tuple[str, int]:
-    """Keep text and the scenario's own record links. Drop images, HTML and other links, and,
-    unless `notes` is False, copies of a5s's own notes, which only a5s writes."""
-    removed = 0
-
-    def kept(url: str) -> bool:
-        return any(url.startswith(prefix) for prefix in allowed)
-
-    def link(match: re.Match) -> str:
-        nonlocal removed
-        label = _URL.sub(url, match.group(1))  # whose words may hold an address too
-        if kept(match.group(2)):  # the link alone: nothing else it carries past its target
-            return f"[{label}]({match.group(2)})"
-        removed += 1
-        return f"{label} [link removed]"
-
-    def url(match: re.Match) -> str:
-        nonlocal removed
-        if kept(match.group(0)):
-            return match.group(0)
-        removed += 1
-        return "[link removed]"
-
-    text, forged = _FORGED_NOTE.subn("", text) if notes else (text, 0)
-    text, images = _IMAGE.subn("[image removed]", text)
-    text, tags = _TAG.subn("[removed]", text)
-    text = _MARKDOWN_LINK.sub(link, text)
-    parts = re.split(r"(\[[^\]]*\]\([^)]*\))", text)  # record links already kept stay whole
-    text = "".join(p if _MARKDOWN_LINK.fullmatch(p) else _URL.sub(url, p) for p in parts)
-    return text.strip() if forged else text, removed + images + tags + forged
-
-
-def cleaned(value: Any, allowed: tuple[str, ...], notes: bool = True) -> tuple[Any, int]:
-    """Text at any depth of a value, sanitized, and how many things were removed."""
-    if isinstance(value, str):
-        return sanitize(value, allowed, notes)
-    if isinstance(value, list):
-        found = [cleaned(item, allowed, notes) for item in value]
-        return [v for v, _ in found], sum(n for _, n in found)
-    if isinstance(value, dict):
-        found = {k: cleaned(v, allowed, notes) for k, v in value.items()}
-        return {k: v for k, (v, _) in found.items()}, sum(n for _, n in found.values())
-    return value, 0
-
-
 def strings(value: Any) -> list[str]:
     """Every string at any depth of a value, in order."""
     if isinstance(value, str):
@@ -246,6 +192,30 @@ def strings(value: Any) -> list[str]:
     if isinstance(value, dict):
         return [s for v in value.values() for s in strings(v)]
     return []
+
+
+# The forms a string's schema may name, which a5s checks, as a model can write anything: a value
+# in its form alone, never one with words after it (round 15, F1)
+_FORMS = {"date": (r"\d{4}-\d{2}-\d{2}", "2026-11-04"),
+          "date-time": (r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})?",
+                        "2026-11-04T09:30:00Z"),
+          "email": (r"[^@\s]{1,64}@[^@\s]{1,255}\.[^@\s.]{2,63}", "pat@example.com")}
+
+
+def _formed(form: str, value: str) -> bool:
+    """Whether a value is in the form its schema names: a date, a date and time, or an address,
+    and a real one; any other form a5s doesn't check."""
+    found = _FORMS.get(form)
+    if found is None:
+        return True
+    if not re.fullmatch(found[0], value):
+        return False
+    if form in ("date", "date-time"):
+        try:
+            datetime.fromisoformat(value)  # Z too, as Python reads it
+        except ValueError:
+            return False
+    return True
 
 
 _TYPES = {"string": str, "integer": int, "number": int | float, "boolean": bool, "object": dict,
@@ -273,6 +243,9 @@ def misfit(schema: dict[str, Any], value: Any, where: str = "") -> str | None:
             return f"{named} is longer than {schema['maxLength']} characters"
         if "pattern" in schema and not re.search(str(schema["pattern"]), value):
             return f"{named} isn't in the form it takes"
+        if (form := schema.get("format")) and not _formed(str(form), value):
+            return f"{named} isn't a {form}, such as {_FORMS[str(form)][1]}" if str(
+                form) in _FORMS else f"{named} isn't in the form it takes"
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         if "minimum" in schema and value < schema["minimum"]:
             return f"{named} is less than {schema['minimum']}"
@@ -642,7 +615,8 @@ class Gateway:
         heard = " and heard_by @> %(members)s::text[]" if group else ""  # the latest turns'
         it_heard = " and t.heard_by @> %(members)s::text[]" if group else ""  # and the turn's
         return bool(conn.execute(  # a task's or an event's own topic, which no other run
-            "select 1 from turns t join runs r on r.id = t.run_id where r.read_outside "  # reads,
+            "select 1 from turns t left join runs r on r.id = t.run_id where (r.read_outside "  # reads,
+            "or t.marked) "  # or a5s's own words carrying what such a run wrote (round 15)
             "and t.person = %(person)s and t.agent = %(agent)s and (t.topic = %(topic)s or t.id in "  # aside
             f"(select id from turns where person = %(person)s and agent = %(agent)s{heard} "
             "and (topic = %(topic)s or (topic not like 'task %%' and topic not like 'event %%')) "
@@ -2560,8 +2534,12 @@ def create_app(gw: Gateway) -> FastAPI:
                                             gw.hidden_from(conn, row)))
                 provenance.read(conn, row["run"], f"the records, on {topic}", context[-1]["text"],
                                 gw.scenario.record_pattern)
-                if waiting := proposals.brief(conn, row["id"], list(row["acts_for"]), [topic],
-                                              group):
+                waiting, outside = proposals.brief(conn, row["id"], list(row["acts_for"]),
+                                                   [topic], group)
+                if outside:  # a change a marked run asked for: its words mark this one too
+                    conn.execute("update runs set read_outside = true where id = %s",
+                                 (row["run"],))
+                if waiting:
                     context.append({  # a5s's own, not the records': so it says it waits
                         "title": f"Changes to {topic} waiting for a decision",
                         "text": "a5s holds these, as they were asked for, until their deciders "
@@ -2745,9 +2723,13 @@ def create_app(gw: Gateway) -> FastAPI:
                 if change:
                     over = counts.over(conn, requested, action, max(len(keys), 1), found[0].limits,
                                        gw.clock())
-                about = parts.about(gw.scenario, row, keys, action, gw.approvers_in_force(conn),
+                steered = handover.steered(conn, row["acts_for"][0], row["definition"]) if (
+                    len(row["acts_for"]) == 1 and not groups.of(
+                        row["trigger"].get("conversation"))) else []
+                weighed = {**row, "steered": bool(steered)}  # a team's words: level 1 at most
+                about = parts.about(gw.scenario, weighed, keys, action, gw.approvers_in_force(conn),
                                     gw.caps(conn, row["release"]), standing) if action else parts.about(
-                    gw.scenario, row, keys)
+                    gw.scenario, weighed, keys)
                 decision = gw.decide(row, "call_tool", entity, [], **about,
                                      over_limit=over is not None)
                 if found[0] is None:  # fail closed
@@ -2771,9 +2753,6 @@ def create_app(gw: Gateway) -> FastAPI:
                         "a5s's own runs, such as keeping a summary, call no tools",))
                 if why := tasking.stopped(conn, row):  # cancelled, as a suspension stops runs
                     decision = Decision(False, (Own.STOPPED,), explanations=(why,))
-                steered = handover.steered(conn, row["acts_for"][0], row["definition"]) if (
-                    len(row["acts_for"]) == 1 and not groups.of(
-                        row["trigger"].get("conversation"))) else []
                 deciding = holding(decision, records, requested, steered)
                 if isinstance(deciding, str):  # nobody may decide it, or nothing can here
                     decision = Decision(False, (Own.DECIDER,), explanations=(deciding,))
@@ -2796,6 +2775,7 @@ def create_app(gw: Gateway) -> FastAPI:
                                                    args=ledger.mask(args, plain),
                                                    links_removed=removed,
                                                    read_outside=bool(row["read_outside"]),
+                                                   **({"steered_by": steered} if steered else {}),
                                                    **({"values": values_of(traced)} if traced else {})))
                 studio.handled(conn, row["run"], keys)  # the records it named, whatever came of it
                 if change and (decision.allowed or decision.held):  # made or held: it counts
@@ -3161,8 +3141,9 @@ def create_app(gw: Gateway) -> FastAPI:
                     model.api, row["model"], tool.extract, text), token)
                 reply = extractor.reply_text(model.api, json.loads(bytes(answer.body)))
                 if answer.status_code < 400:
-                    filled, dropped = extractor.checked(reply, text, tool.extract,
-                                                        gw.scenario.record_pattern)
+                    filled, dropped = extractor.checked(
+                        reply, text, tool.extract, gw.scenario.record_pattern,
+                        lambda k: gw.scenario.part_of(k) is not None)  # records it knows
             # how long it is whole, though its system gave a part, as a mailbox's long message
             total = max(len(whole), item["length"] if isinstance(item.get("length"), int) else 0)
             shown = {**(filled if filled is not None else dict.fromkeys(tool.extract)),
@@ -3603,14 +3584,17 @@ def create_app(gw: Gateway) -> FastAPI:
         return row["id"] if pushed else None
 
     def noted(conn: db.Connection, person: str, agent: str | None, text: str,
-              topic: str | None, heard_by: list[str] | None = None) -> None:
+              topic: str | None, heard_by: list[str] | None = None,
+              marked: bool = False) -> None:
         """a5s's own words to someone, in their conversation with the agent whose chat they
         go in, so the agent's next run knows what the person is answering: or in a group
-        chat's conversation, as heard by everyone in it then, though not sent there."""
+        chat's conversation, as heard by everyone in it then, though not sent there. Words
+        that carry what a run that read content from outside wrote, such as a held change's,
+        are marked, so a run given them is marked too (round 15, F1)."""
         if agent:
-            conn.execute("insert into turns (person, agent, topic, role, content, heard_by) "
-                         "values (%s, %s, %s, 'notice', %s, %s)",
-                         (person, agent, topic or topics.GENERAL, text, heard_by))
+            conn.execute("insert into turns (person, agent, topic, role, content, heard_by, "
+                         "marked) values (%s, %s, %s, 'notice', %s, %s, %s)",
+                         (person, agent, topic or topics.GENERAL, text, heard_by, marked))
 
     def push(ids: list[int | None] | None = None) -> None:
         """Deliver what waits for a chat a5s writes to itself: the rows given, or every one
@@ -3901,6 +3885,7 @@ def create_app(gw: Gateway) -> FastAPI:
                              "args": {"proposal": proposals.key(p), "by": deciders_}})
         asked = conn.execute("select trigger, acts_for from runs where id = %s",
                              (p["run_id"],)).fetchone()
+        marked = bool(p.get("read_outside"))  # its words, as a marked run wrote them
         group = asked["trigger"].get("conversation") if asked and groups.of(
             asked["trigger"].get("conversation")) else None
         told_to = [asked["trigger"]["sender"]] if group and asked["trigger"].get("sender") \
@@ -3915,10 +3900,11 @@ def create_app(gw: Gateway) -> FastAPI:
             theirs = said(person)
             sends.append(outbound(conn, route, person, theirs, instance=p["instance_id"],
                                   agent=p["definition"]))
-            noted(conn, person, p["definition"], theirs, next(iter(p["records"]), None))
+            noted(conn, person, p["definition"], theirs, next(iter(p["records"]), None),
+                  marked=marked)
         if group:  # and the group's next run knows, as everyone there then heard it asked
             noted(conn, group, p["definition"], text, next(iter(p["records"]), None),
-                  heard_by=list(asked["acts_for"]))
+                  heard_by=list(asked["acts_for"]), marked=marked)
         for person in dict.fromkeys(deciders_):  # and those who decided it, in their digest
             if person not in told_to:
                 digests.keep(conn, person, p["definition"], p["instance_id"], str(p["run_id"]),
