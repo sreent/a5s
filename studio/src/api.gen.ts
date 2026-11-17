@@ -55,6 +55,7 @@ export type Agent = {
   autonomy?: Autonomy;
   triggers?: Record<string, unknown>[];
   schedules?: Schedule[];
+  events?: EventTaken[];
   reports?: string[];
   obligations?: string[];
   reminders?: boolean;
@@ -66,6 +67,26 @@ export type Agent = {
   instructions?: string;
   ask?: Ask | null;
   asks?: Asked[];
+};
+
+// An owner's grade of an answer someone said was wrong: right, wrong or critical.
+export type AnswerGrade = {
+  grade: string;
+};
+
+export type AnswerGraded = {
+  id: number;
+  grade: "right" | "wrong" | "critical";
+};
+
+// An agent's answers people said were wrong, as an owner of it may check them: newest
+// first, how many others there are, how many wait, and how many have each grade.
+export type AnswersSaidWrong = {
+  agent: string;
+  answers: SaidWrong[];
+  hidden: number;
+  waiting: number;
+  graded: Record<string, number>;
 };
 
 // What the approval page sends with its sign-in: the salt its nonce was made with.
@@ -188,6 +209,11 @@ export type CaseRan = {
   passed?: boolean;
   problems?: string[];
   steps?: CaseStep[];
+  model?: string;
+  seconds?: number;
+  tokens?: number;
+  cost?: number | null;
+  judge_tokens?: number;
 };
 
 // Running one of a draft's test cases in the sandbox: on which of the models it offers.
@@ -221,8 +247,61 @@ export type Change = {
   widens: boolean;
 };
 
+// A change a5s made for someone, as its page shows whoever it was for, and whoever may undo
+// it: what it did, until when it can be undone, and how it stands.
+export type ChangeMade = {
+  id: number;
+  agent: string;
+  instance: string;
+  record: string;
+  said: string;
+  made_at: string;
+  until: string;
+  whom: string[];
+  may: boolean;
+  why_not?: string;
+  state: string;
+  by?: string;
+  outcome?: string;
+};
+
 export type CoAuthors = {
   people: Named[];
+};
+
+// A system someone may connect their own account in, so agents act there as them, with
+// their permissions: whether they have, since when, and when a5s last did.
+export type Connection = {
+  system: string;
+  title: string;
+  connected: boolean;
+  connecting: boolean;
+  scopes: string[];
+  connected_at?: string;
+  used_at?: string;
+  reads: string[];
+};
+
+export type ConnectionBack = {
+  system: string;
+  title: string;
+  connecting: boolean;
+};
+
+// What a system sent someone back to a5s with, once they said whether a5s may act for them
+// there: the start's state, and its code, or the error it gave for a no.
+export type ConnectionReturn = {
+  state: string;
+  code?: string | null;
+  error?: string | null;
+};
+
+export type ConnectionStarted = {
+  go: string;
+};
+
+export type Connections = {
+  connections: Connection[];
 };
 
 // What an agent's runs are given beyond the conversation.
@@ -232,6 +311,7 @@ export type Context = {
   documents: boolean;
   agents: boolean;
   notebook: boolean;
+  handover: boolean;
 };
 
 // One day's runs, by how each ended, in the viewer's own time zone.
@@ -280,6 +360,7 @@ export type Defined = {
   skills: string[];
   triggers: Record<string, unknown>[];
   schedules: Schedule[];
+  events: EventTaken[];
   reports: string[];
   obligations: string[];
   reminders: boolean;
@@ -298,6 +379,12 @@ export type Denied = {
   times: number;
 };
 
+// The map, as someone may see it.
+export type DependsOn = {
+  nodes: MapNode[];
+  edges: MapEdge[];
+};
+
 // How a draft was described in words: its author's words, the model that proposed what it
 // needs, and a note on each thing it was given or not, for its author to check.
 export type Described = {
@@ -311,6 +398,10 @@ export type DescribedNote = {
   what: string;
   given: boolean;
   why: string;
+};
+
+export type Disconnected = {
+  forgotten: boolean;
 };
 
 // A draft: its agent's folder, file by file, what would stop its release, and how the
@@ -396,6 +487,13 @@ export type Ended = {
   runs: number;
 };
 
+// What another system may tell an agent happened, and what it's asked to do each time.
+export type EventTaken = {
+  type: string;
+  source: string;
+  task: string;
+};
+
 // How some instances are doing over the last `days` days.
 export type Figures = {
   days: number;
@@ -467,6 +565,67 @@ export type HandedOver = {
   to: string;
 };
 
+export type Handover = {
+  id: number;
+  person: string;
+  agent: string;
+  team: string;
+  brief: string;
+  started_at: string;
+  taken_by?: string;
+  mine: boolean;
+  unanswered: number;
+  said: HandoverSaid[];
+  since: HandoverSince[];
+  answers: HandoverAnswer[];
+  ended: boolean;
+};
+
+export type HandoverAnswer = {
+  by: string;
+  text: string;
+  at: string;
+  sent: boolean;
+};
+
+export type HandoverDone = {
+  done: boolean;
+};
+
+// A conversation handed to one of someone's teams: whose, with which agent, its brief, who
+// of the team has taken it, and how many of the person's messages wait for an answer.
+export type HandoverLine = {
+  id: number;
+  person: string;
+  agent: string;
+  team: string;
+  brief: string;
+  started_at: string;
+  taken_by?: string;
+  mine: boolean;
+  unanswered: number;
+};
+
+// What someone of a team answers a person whose conversation was handed to it.
+export type HandoverReply = {
+  text: string;
+};
+
+export type HandoverSaid = {
+  at: string;
+  text: string;
+};
+
+export type HandoverSince = {
+  at: string;
+  text: string;
+  answered: boolean;
+};
+
+export type Handovers = {
+  handovers: HandoverLine[];
+};
+
 export type Held = {
   held: number;
   approved: number;
@@ -520,6 +679,18 @@ export type Home = {
   authoring: boolean;
 };
 
+// What a version would have done differently in the last weeks, decided again from the
+// ledger's tool calls, and what it can't know.
+export type Impact = {
+  days: number;
+  calls: number;
+  limited: boolean;
+  shifts: Shift[];
+  capped: string[];
+  about: string;
+  hidden: number;
+};
+
 // The version of the settings in force: as written, all of it in words, and as data, which
 // the forms change.
 export type InForce = {
@@ -562,11 +733,46 @@ export type Judged = {
   judge: string | null;
 };
 
+// A language a5s's pages speak, by its code, named in its own words.
+export type Language = {
+  code: string;
+  name: string;
+};
+
+// The language someone chooses a5s's pages speak to them in, by its code, such as th.
+export type LanguageChoice = {
+  language: string;
+};
+
+export type LanguageChosen = {
+  language: string;
+};
+
 // The scenario's limits for a type of change: past either, a change waits for a person,
 // whatever the level.
 export type Limit = {
   per_run: number | null;
   per_person_30_days: number | null;
+};
+
+// That one thing depends on another, and how, in words, such as "may call it".
+export type MapEdge = {
+  from: string;
+  to: string;
+  says: string;
+};
+
+// A thing on the map of what depends on what (core/dependencies.py): its kind, part,
+// instance, agent, tool, system or model; its name; what it is, in a few words; its page in
+// the studio, if it has one; and, for a tool, what it does: reads, writes, sends outside or
+// changes records.
+export type MapNode = {
+  key: string;
+  kind: string;
+  name: string;
+  about: string;
+  at: string | null;
+  tone: string | null;
 };
 
 // One call to the model a try made: what it was sent, what came back, and how.
@@ -679,6 +885,7 @@ export type Offered = {
   changes: string | null;
   handles: string[];
   outside: string[];
+  marks: boolean;
 };
 
 // The officer's request, recorded for the team that runs a5s to carry out, once, with the
@@ -708,6 +915,16 @@ export type PartRule = {
   deciders: string[];
   owners: string[];
   threshold: number | null;
+};
+
+// One of a5s's pages, as every sidebar and the studio's palette show it: its key, its
+// name, its icon, the heading it's under, and its address.
+export type Place = {
+  page: string;
+  name: string;
+  icon: string;
+  group: string;
+  at: string;
 };
 
 // Its authors' plan for a draft's first instance: the parts it would work in, whom it
@@ -855,8 +1072,52 @@ export type Run = {
   tokens_in: number;
   tokens_out: number;
   tokens_cached: number;
+  tokens_cache_written?: number;
   records: string[];
   calls: Call[];
+};
+
+export type RunCase = {
+  name: string;
+  speaker: string;
+  steps: RunCaseStep[];
+};
+
+// A run kept as a test case: its name, the made-up person who says it, what they say, as
+// its author checked it, what a right answer is, if they say, and that they checked it.
+export type RunCaseAsked = {
+  name: string;
+  speaker: string;
+  say: string;
+  judged?: string | null;
+  checked?: boolean;
+};
+
+// A run kept as a test case: the draft it went in, its file, and the case as kept.
+export type RunCaseKept = {
+  draft: string;
+  file: string;
+  case: RunCase;
+};
+
+// A run as a test case, for its author to check and keep (core/run_cases.py): what was
+// said to the agent and what it answered, masked by code; how many of each kind code masked,
+// such as names; the tools it used, which a5s let it, or held for someone to decide; and
+// whether the run read content from outside, which the case can't keep.
+export type RunCaseOffered = {
+  run: string;
+  agent: string;
+  say: string;
+  answer: string;
+  masked: Record<string, number>;
+  uses: string[];
+  read_outside?: boolean;
+};
+
+export type RunCaseStep = {
+  say: string;
+  uses?: string[];
+  judged?: string;
 };
 
 export type RunLine = {
@@ -879,6 +1140,23 @@ export type RunsPage = {
   hidden: number;
   before: string | null;
   fewer: number | null;
+};
+
+// An agent's answer someone said was wrong (core/feedback.py): when, the instance and run
+// behind it, the chat it was in, the answer, why, in their words, if they said, and its grade,
+// if an owner has given one; who said it only once the officer agrees to names.
+export type SaidWrong = {
+  id: number;
+  at: string;
+  instance: string | null;
+  run: string;
+  channel: string;
+  answer: string;
+  said: string | null;
+  grade: "right" | "wrong" | "critical" | null;
+  graded_at: string | null;
+  graded_by: string | null;
+  by: string | null;
 };
 
 // A sample of an agent's change, waiting for a grade: in the words code worked out when it was
@@ -961,6 +1239,7 @@ export type SettingsNow = {
   releases: Record<string, ReleaseLevels>;
   waiting: VersionWaiting[];
   requests: SettingsRequest[];
+  currency?: string | null;
 };
 
 // A version someone asked for, and what became of it.
@@ -980,6 +1259,71 @@ export type SettingsReview = {
   changes?: Change[];
   whole?: string[];
   approvers?: string[];
+  impact?: Impact;
+};
+
+export type ShadowCounts = {
+  better: number;
+  same: number;
+  worse: number;
+  wrong: number;
+};
+
+// How a shadow did: how many it answered, and how graders, and its judge, apart, graded
+// its answers.
+export type ShadowFigures = {
+  instance: string;
+  shadows: string;
+  agent: string;
+  status: string;
+  answered: number;
+  graded: ShadowCounts;
+  judged: ShadowCounts;
+};
+
+export type ShadowGrade = {
+  grade: string;
+};
+
+export type ShadowGraded = {
+  graded: boolean;
+};
+
+// What someone asked an instance, what it answered them, and what its shadow, a new
+// version, answered beside it, which went nowhere: for a grader, never whose it was.
+export type ShadowPair = {
+  id: number;
+  agent: string;
+  shadow: string;
+  asked: string;
+  sent: string;
+  answer: string;
+  at: string;
+};
+
+export type Shadows = {
+  pairs: ShadowPair[];
+  shadows: ShadowFigures[];
+};
+
+// Who signed in, the language they read, and the pages they may use, in the sidebar's
+// order.
+export type Shell = {
+  you: string;
+  language: string;
+  pages: Place[];
+};
+
+// Calls a version would decide differently from the one in force (core/impact.py): of one
+// tool, by one instance, about records in these parts.
+export type Shift = {
+  instance: string;
+  tool: string;
+  parts: string[];
+  was: string;
+  would: string;
+  calls: number;
+  why: string;
 };
 
 // Whose signature a draft's release would need, and why: and who holds that role in the
@@ -990,6 +1334,42 @@ export type Signer = {
   who: string;
   why: string;
   held_by?: string[] | null;
+};
+
+// A month of a part's, agent's or instance's model calls: what they cost so far at their
+// models' prices, its budget, if the settings set one, and while the month lasts, the pace of
+// the last week and the forecast to its end; its runs, those whose prices aren't known, the
+// messages they answered, and what each message cost, all in.
+export type Spend = {
+  key: string;
+  spent: number;
+  budget: number | null;
+  pace: number | null;
+  forecast: number | null;
+  runs: number;
+  unpriced: number;
+  answered: number;
+  tokens: number;
+  per_answer: number | null;
+  agent?: string;
+  parts?: string[];
+};
+
+// A calendar month's spending, in UTC, as someone may see it: its parts, agents and
+// instances, in the currency models.yaml prices models in, if it names one.
+export type Spending = {
+  month: string;
+  current: boolean;
+  currency: string | null;
+  budget_currency?: string | null;
+  compared?: boolean;
+  starts: string;
+  ends: string;
+  days: number;
+  day: number;
+  parts: Spend[];
+  agents: Spend[];
+  instances: Spend[];
 };
 
 // How an instance stands, for someone who may watch it: what of it waits, each where it's
@@ -1078,6 +1458,7 @@ export type Tool = {
   changes: string | null;
   handles: string[];
   outside: string[];
+  marks: boolean;
   pinned: string | null;
   missing: boolean;
 };
@@ -1087,6 +1468,7 @@ export type Tried = {
   reply: string;
   run: TriedRun | null;
   model_calls: ModelCall[];
+  tokens?: number;
 };
 
 // A try's run, as the sandbox shows it: its entries in the sandbox's own ledger too, of
@@ -1108,9 +1490,20 @@ export type TriedRun = {
   tokens_in: number;
   tokens_out: number;
   tokens_cached: number;
+  tokens_cache_written?: number;
   records: string[];
   calls: Call[];
   entries: Record<string, unknown>[];
+};
+
+// Undoing a change, signed in afresh for that act alone: the salt its nonce was made with.
+export type UndoAct = {
+  salt: string;
+};
+
+export type UndoAsked = {
+  change: number;
+  at: string;
 };
 
 export type ValidationError = {
@@ -1143,6 +1536,7 @@ export type VersionReview = {
   you: string;
   you_approved: boolean;
   status: string;
+  impact?: Impact;
 };
 
 // A version waiting for approval: what it changes, who approved it so far, and why it still
@@ -1178,4 +1572,6 @@ export type You = {
   id: string;
   roles: Role[];
   groups: string[];
+  language: string;
+  languages: Language[];
 };

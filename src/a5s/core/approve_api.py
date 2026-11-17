@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 from a5s import db
 from a5s.contract import parse_settings
-from a5s.core import approvals, ledger, memberships, registry, web
+from a5s.core import approvals, impact, ledger, memberships, registry, web
 from a5s.core import studio_models as shapes  # what each route answers, as the studio's types say
 
 
@@ -81,7 +81,9 @@ def router(gw: Any) -> APIRouter:
         asker = (p.name if (p := gw.scenario.person(asked["person"])) else asked["person"]
                  ) if asked else None  # who asked for it in the settings app, if anyone did
         valid, _ = registry.signers(settings, gw.scenario.person, approved)
+        preview = impact.shown(gw, before, settings, person) if status == "waiting" else None
         return {"serial": row["serial"], "proposed_at": row["proposed_at"].isoformat(),
+                **({"impact": preview} if preview is not None else {}),
                 "in_force": last["serial"] if last else None, "changes": found,
                 "whole": approvals.described(settings, gw.definitions, gw.scenario.person),
                 "needs": registry.missing(settings, gw.scenario.person, valid, before,

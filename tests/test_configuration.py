@@ -101,15 +101,15 @@ def test_a_value_a_part_cant_use_stops_it_as_it_starts_saying_which_and_what_it_
     run = subprocess.run(
         [sys.executable, "-m", "a5s.cli", "scheduler"], capture_output=True, text=True,
         timeout=120, check=False, env=bare_env(A5S_DB_POOL_SIZE="ten", A5S_DB_POOLSIZE="20",
-                                  A5S_DEVELOPMENT="ture", A5S_TEAMS_APP_ID="app",
+                                  A5S_DEVELOPMENT="ture", A5S_SLACK_BOTS="[]", A5S_TEAMS_APP_ID="app",
                                   A5S_SERVICE_TOKEN="a secret"))
     assert run.returncode == 1, run.stderr
     said = run.stderr
     assert "a5s scheduler can't start, as its settings need changing:" in said
     assert "A5S_DB_POOL_SIZE is 'ten': it takes a whole number from 1 to 200" in said
     assert "A5S_DEVELOPMENT is 'ture': it takes true or false" in said
-    assert ("Teams needs A5S_TEAMS_APP_SECRET and A5S_TEAMS_TENANT_ID as well as "
-            "A5S_TEAMS_APP_ID") in said
+    assert "Slack needs A5S_SLACK_TEAM as well as A5S_SLACK_BOTS" in said
+    assert "A5S_TEAMS_APP_ID has moved to A5S_TEAMS_BOTS, a bot for each agent" in said
     assert "A5S_DB_POOLSIZE isn't one of a5s's settings: did you mean A5S_DB_POOL_SIZE?" in said
     assert "a secret" not in said  # nor any secret's value
 

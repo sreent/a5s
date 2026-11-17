@@ -54,14 +54,7 @@ from a5s.contract import (
 )
 from a5s.core import approvals, sealing
 from a5s.core.handles import TOKEN
-from a5s.core.identity import (
-    IdentityError,
-    UnknownPerson,
-    Verifier,
-    second_factor,
-    whose,
-    without_second_factor,
-)
+from a5s.core.identity import Verifier
 from a5s.core.ledger import canonical
 from a5s.core.obligations import a_working_day_after
 
@@ -286,31 +279,13 @@ def check(verifier: Verifier, scenario: Scenario, client_id: str, token: str, di
 def fresh(verifier: Verifier, scenario: Scenario, client_id: str, token: str, bound: str,
           salt: str, now: float, what: str) -> tuple[Person, dict]:
     """Who signed in afresh to do exactly one thing, which the sign-in's nonce commits to,
-    and what the provider signed, if the sign-in checks out for it. Otherwise, Refused: a
-    sign-in the browser kept does nothing."""
+    and what the provider signed, if the sign-in checks out for it, as every act that counts
+    checks it (approvals.afresh). Otherwise, Refused: a sign-in the browser kept does
+    nothing."""
     try:
-        claims = verifier.claims(token)
-    except IdentityError as exc:
-        raise Refused(401, f"your sign-in doesn't check out: {exc}") from None
-    audience = claims.get("aud")
-    if client_id not in ([audience] if isinstance(audience, str) else audience or []):
-        raise Refused(401, "that sign-in is for something else")
-    if not isinstance(claims.get("auth_time"), int | float) or any(
-            not isinstance(claims.get(c), int | float) or now - claims[c] > approvals.FRESH
-            for c in ("iat", "auth_time")):  # a session's silent sign-in decides nothing
-        raise Refused(401, f"to {what} you sign in again, from the last ten minutes, not with "
-                           "a sign-in your browser kept")
-    if not second_factor(verifier.cfg, claims):
-        raise Refused(401, without_second_factor(what), what.split()[0])
-    if not sealing.salted(salt) or claims.get("nonce") != bound:
-        raise Refused(403, f"your sign-in wasn't to {what}")
-    try:
-        person = whose(verifier, scenario, claims)
-    except UnknownPerson as exc:
-        raise Refused(403, str(exc)) from None
-    except IdentityError as exc:
-        raise Refused(401, f"your sign-in doesn't check out: {exc}") from None
-    return person, claims
+        return approvals.afresh(verifier, scenario, client_id, token, bound, salt, now, what, what)
+    except approvals.Refused as exc:
+        raise Refused(exc.status, exc.reason, exc.second_factor) from None
 
 
 def may_decide(scenario: Scenario, proposal: dict, person: str) -> bool:
@@ -521,7 +496,8 @@ def told(proposal: dict, became: str, by: str | None = None, extra: str = "",
     change = first(proposal)
     why = f" They said: {reason}" if reason else ""
     return {
-        "made": f"{by} approved {key(proposal)}, and a5s has made it: {change}",
+        "made": f"{by} approved {key(proposal)}, and a5s has made it: {change}"
+                + (f" {extra}" if extra else ""),
         "rejected": f"{by} didn't approve {key(proposal)}, so a5s didn't make it: {change}{why}",
         "lapsed": (f"Nobody decided {key(proposal)} within {LAPSE} working days, so a5s let it "
                    f"go: {change} Ask again if it's still needed."),

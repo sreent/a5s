@@ -6,7 +6,7 @@ export type { Change, FactsPart, Stage, Step } from "./agentic";
 export { Badge, Confirm, Hint } from "./controls";
 export type { Tone } from "./controls";
 export { Avatar, initials, Who } from "./people";
-export { Skeleton, Toasts, useToast } from "./feedback";
+export { Loading, Shapes, Skeleton, Toasts, useToast } from "./feedback";
 export { Palette } from "./palette";
 export type { PaletteOption } from "./palette";
 export type { Kind } from "./people";

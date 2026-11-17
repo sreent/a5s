@@ -38,7 +38,18 @@ from pydantic import BaseModel
 
 from a5s import authoring, build, cases, db, definitions, describing
 from a5s.config import Config, load_models
-from a5s.core import extractor, inbox, judging, models, registry, retention, signing, studio
+from a5s.core import (
+    budgets,
+    extractor,
+    inbox,
+    judging,
+    measures,
+    models,
+    registry,
+    retention,
+    signing,
+    studio,
+)
 from a5s.core.gateway import Gateway
 from a5s.core.gateway import create_app as core_app
 from a5s.services.scheduler import Scheduler
@@ -297,15 +308,17 @@ class Sandbox:
         instances[instance] = {"definition": agent, "serves": sorted(serving | {person}),
                                "parts": self.parts, "level": 1, "owner": person}
 
-    def _said(self, instance: str, person: str, text: str) -> tuple[str, dict | None, list[dict]]:
-        """Say something to an instance, as a person: what it answered, the run that answered
-        it, if one opened for it, and each call to the model."""
+    def _said(self, instance: str, person: str, text: str, files: list[dict] | None = None
+              ) -> tuple[str, dict | None, list[dict]]:
+        """Say something to an instance, as a person, with these files, if any: what it
+        answered, the run that answered it, if one opened for it, and each call to the model."""
         with db.transaction(self.admin) as conn:  # by the database's clock, as runs open
             since = (conn.execute("select now() as at").fetchone() or {}).get("at")
         self.recording.calls = []
         try:
             sent = httpx.post(f"{self.channels_url}/channels/local/messages", timeout=60,
-                              json={"person": person, "agent": instance, "text": text})
+                              json={"person": person, "agent": instance, "text": text,
+                                    "files": files or []})
             if sent.status_code != 202:
                 raise Refused(str(sent.json().get("detail")))
             Scheduler(self.cfg, self.gateway.scenario).answer_waiting()
@@ -338,7 +351,8 @@ class Sandbox:
             self._serving(agent, agent, person)
             self._settle()
             reply, run, calls = self._said(agent, person, text)
-        return {"agent": agent, "reply": reply, "run": run, "model_calls": calls}
+        return {"agent": agent, "reply": reply, "run": run, "model_calls": calls,
+                "tokens": int((run or {}).get("tokens") or 0)}
 
     def describe(self, words: str, model: str) -> dict:
         """What a model proposes for a new agent described in `words`, of what the sandbox's
@@ -365,13 +379,19 @@ class Sandbox:
         proposed = describing.proposal(extractor.reply_text(found.api, data))
         if proposed is None:
             raise Refused(f"what {model} answered doesn't read as a proposal: try again, or another model")
-        return {"proposal": proposed, "model": model, "model_calls": calls}
+        return {"proposal": proposed, "model": model, "model_calls": calls,
+                "tokens": budgets.tokens_of(data.get("usage")) if isinstance(data, dict) else 0}
 
-    def case(self, key: str, files: dict[str, str], model: str, number: int) -> dict:
+    def case(self, key: str, files: dict[str, str], model: str, number: int,
+             classes: list[str] | None = None) -> dict:
         """Run one of a draft's test cases, by its place among them, as the agent's suite runs
         it, in a conversation of its own: what it answered at each step, the tools it used, and
         whether that's as the case says, and if not, why. A case that needs what the suite
-        alone does, such as a time to be at, it doesn't run, and says so."""
+        alone does, such as a time to be at, it doesn't run, and says so.
+
+        A case kept from a real run says what someone really said, so it goes only to the
+        stand-in, which never leaves the sandbox, or to a model, and a judge, approved for every
+        class of the deployment's data, `classes`: never one approved for made-up data alone."""
         if not KEY.fullmatch(key):
             raise Refused("a draft is tried by its key, of lower case letters and digits")
         try:
@@ -382,6 +402,13 @@ class Sandbox:
             raise Refused(f"the draft has {len(found)} test cases, not a case {number + 1}")
         case = found[number]
         shown = {"name": case["name"], "file": case["file"]}
+        needed = set(classes or ("internal",)) if cases.real(case) else None
+        if needed is not None and model != STAND_IN:
+            chosen = load_models(self.cfg.models_file).get(model)
+            if chosen is None or not cases.for_real(chosen.data_classes, needed):
+                return {**shown, "ran": False, "why": (
+                    f"it was kept from a real run, so a5s gives it only to the stand-in, or to a "
+                    f"model approved for {', '.join(sorted(needed))} data, and {model} isn't")}
         if alone := cases.suite_alone(case):
             return {**shown, "ran": False, "why": f"it needs {', '.join(alone)}, which the "
                                                   "agent's suite alone runs"}
@@ -393,6 +420,9 @@ class Sandbox:
         # with an agent, so each case starts one afresh, as the suite's do
         agent = f"case-{secrets.token_hex(5)}"
         steps, problems = [], []
+        started = time.monotonic()  # what it took, its cache's writes too, priced apart
+        spent = {"in": 0, "out": 0, "cached": 0, "cache_written": 0}
+        judging_took = 0  # and its judge, the same on any model, so apart
         with self.lock:
             instances = self.standing.setdefault("instances", {})
             for done in [name for name in instances if name.startswith("case-")]:
@@ -403,7 +433,9 @@ class Sandbox:
             self._settle()
             for n, step in enumerate(case["steps"], 1):
                 said = cases.dated(str(step["say"]))
-                reply, run, _ = self._said(agent, person, said)
+                reply, run, _ = self._said(agent, person, said, cases.sent_with(case))
+                for kind in spent:  # its own runs' tokens: a judge's are the same on any model
+                    spent[kind] += int((run or {}).get(f"tokens_{kind}") or 0)
                 called = used(run)
                 wrong = cases.check(step, reply, called, case.get("own_values") == "allowed")
                 if why := cases.unanswered(run["outcome"] if run else None):
@@ -411,17 +443,22 @@ class Sandbox:
                 done = {"say": step["say"], "reply": reply, "called": called}
                 if criterion := step.get("judged"):  # where it can be right in more than one way
                     done["judged"] = verdict = self._judged(agent, model, str(criterion), said,
-                                                            reply, called)
+                                                            reply, called, needed)
+                    judging_took += int(verdict.pop("tokens", 0) or 0)
                     if verdict["grade"] is None:
                         wrong.append(f"nobody judged it: {verdict['why']}")
                     elif verdict["grade"] != "right":
                         wrong.append(f"its judge found it {verdict['grade']}: {verdict['why']}")
                 problems += [f"step {n}: {w}" for w in wrong]
                 steps.append({**done, "wrong": wrong})
-        return {**shown, "ran": True, "passed": not problems, "problems": problems, "steps": steps}
+        priced = cost(load_models(self.cfg.models_file).get(model), spent)
+        return {**shown, "ran": True, "passed": not problems, "problems": problems, "steps": steps,
+                "model": model, "seconds": round(time.monotonic() - started, 2),
+                "tokens": spent["in"] + spent["out"], "cost": priced,
+                "judge_tokens": judging_took}
 
     def _judged(self, agent: str, model: str, criterion: str, said: str, reply: str,
-                called: list[str]) -> dict:
+                called: list[str], needed: set[str] | None = None) -> dict:
         """What a judge says of a step a case says what a right answer is for: its grade, right,
         wrong or critical, and why, and which model judged it, or why none could. A draft tried
         on the stand-in is judged by it too, by words alone; on a real model, by the judge its
@@ -436,6 +473,11 @@ class Sandbox:
                 return {"grade": None, "why": f"the sandbox can't call its judge, {judge}",
                         "judge": judge}
         found = load_models(self.cfg.models_file)[judge]
+        if needed is not None and judge != STAND_IN and not cases.for_real(found.data_classes,
+                                                                            needed):
+            return {"grade": None, "why": (f"its judge, {judge}, isn't approved for "
+                                           f"{', '.join(sorted(needed))} data, which this case, "
+                                           "kept from a real run, holds"), "judge": judge}
         body = extractor.asked(found.api, found.alias, cases.JUDGING,
                                cases.judging(criterion, said, reply, called))
         try:
@@ -443,10 +485,11 @@ class Sandbox:
         except models.ModelUnavailable as e:
             return {"grade": None, "why": f"the sandbox couldn't ask {judge}: {e}", "judge": judge}
         verdict = judging.verdict(extractor.reply_text(found.api, data)) if status < 400 else None
+        took = budgets.tokens_of(data.get("usage")) if isinstance(data, dict) else 0
         if verdict is None:
             return {"grade": None, "why": f"what {judge} answered doesn't read as a grade",
-                    "judge": judge}
-        return {"grade": verdict[0], "why": verdict[1], "judge": judge}
+                    "judge": judge, "tokens": took}
+        return {"grade": verdict[0], "why": verdict[1], "judge": judge, "tokens": took}
 
     def forget(self) -> dict[str, int]:
         """Sweep what's past its time, as a5s's retention sweep does, but with what's said
@@ -464,6 +507,13 @@ class Sandbox:
         """Every part its scenario's instances work in: a draft tried here may see them all."""
         return sorted({p for inst in (self.standing.get("instances") or {}).values()
                        for p in (inst.get("parts") or [])} - {""})
+
+
+def cost(model: Any, spent: dict[str, int]) -> float | None:
+    """What a case's runs cost at a model's prices: what they read from the cache, and wrote
+    to it, at the prices the provider charges for each, as the measures price runs."""
+    return measures.priced(model, spent["in"], spent["out"], spent["cached"],
+                           spent.get("cache_written", 0))
 
 
 def used(run: dict | None) -> list[str]:
@@ -566,6 +616,7 @@ class Case(BaseModel):
     files: dict[str, str]  # its agent's folder, each file's text by its path in it
     number: int  # which of its test cases, by its place among them, from 0
     model: str = STAND_IN
+    classes: list[str] = []  # the deployment's classes of data, which a real run's case holds
 
 
 class Describe(BaseModel):
@@ -618,7 +669,7 @@ def create_app(sandbox: Sandbox, token: str) -> FastAPI:
     def run_case(body: Case, authorization: str | None = Header(default=None)) -> dict:
         allowed(authorization)
         try:
-            return sandbox.case(body.key, body.files, body.model, body.number)
+            return sandbox.case(body.key, body.files, body.model, body.number, body.classes)
         except Refused as e:
             raise HTTPException(400, str(e)) from None
 

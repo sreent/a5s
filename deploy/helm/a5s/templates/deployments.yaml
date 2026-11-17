@@ -112,6 +112,40 @@ spec:
               subPath: models.yaml
               readOnly: true
             {{- end }}
+            {{- if and (eq $part "gateway") $.Values.libraries.repositories }}
+            - name: libraries  # each docs repository's checkout, as git-sync keeps it
+              mountPath: /var/lib/a5s/libraries
+              readOnly: true
+            {{- end }}
+        {{- if eq $part "gateway" }}
+        {{- range $.Values.libraries.repositories }}
+        # Keeps the docs repository a library reads current, at the same path the core reads
+        # it from, so the link it moves to each new revision resolves there too
+        - name: {{ printf "git-sync-%s" (.name | replace "_" "-") | trunc 63 | trimSuffix "-" }}
+          image: {{ $.Values.libraries.gitSync.image }}
+          args:
+            - {{ printf "--repo=%s" .repo | quote }}
+            - {{ printf "--ref=%s" (.ref | default "main") | quote }}
+            - {{ printf "--root=/var/lib/a5s/libraries/.git-sync/%s" .name | quote }}
+            - {{ printf "--link=/var/lib/a5s/libraries/%s" .name | quote }}
+            - {{ printf "--period=%s" (.period | default "60s") | quote }}
+            - "--depth=1"
+          {{- with .secret }}
+          envFrom:
+            - secretRef:
+                name: {{ . }}
+          {{- end }}
+          securityContext:
+            {{- include "a5s.securityContext" $ | nindent 12 }}
+          resources:
+            {{- toYaml $.Values.libraries.gitSync.resources | nindent 12 }}
+          volumeMounts:
+            - name: libraries
+              mountPath: /var/lib/a5s/libraries
+            - name: scratch
+              mountPath: /tmp
+        {{- end }}
+        {{- end }}
       volumes:
         - name: scratch
           emptyDir: {}
@@ -119,6 +153,10 @@ spec:
         - name: models
           configMap:
             name: {{ $.Values.models.configMap }}
+        {{- end }}
+        {{- if and (eq $part "gateway") $.Values.libraries.repositories }}
+        - name: libraries
+          emptyDir: {}
         {{- end }}
 {{- end }}
 {{- end }}

@@ -18,6 +18,7 @@ import json
 
 import yaml
 
+from a5s import db
 from conftest import PHONE, accessible
 from test_agent_asks import listed
 from test_agent_asks import send as ask_api
@@ -32,6 +33,11 @@ def signed_in(browser, provider, approving, person: str, path: str, ready: str, 
     page.goto(f"{approving}{path}")
     page.wait_for_selector(ready, timeout=30000)
     return page
+
+
+def holding(held: list):
+    """A route's handler that holds each request, as a slow network would, till it's let go."""
+    return lambda route: held.append(route)
 
 
 def test_each_page_has_its_title_and_moving_gives_its_heading_the_focus(stack, approving, provider, browser):
@@ -92,6 +98,42 @@ def test_the_palette_says_its_looking_while_it_first_finds(stack, approving, pro
     page.keyboard.press("Control+k")
     page.keyboard.type("assistant-finance")
     assert "Looking for what you may open" in page.inner_text("dialog.palette")
+
+
+def test_the_agents_grid_and_a_runs_page_keep_their_shape_as_they_load(stack, approving, provider,
+                                                                       browser):
+    """C11, the rest of it: the agents' grid and a run's page waited as one card's lines, then
+    jumped to a grid of cards, and to figures, two cards and a map. Each waits as the shape it
+    will have, and says it's loading, once, to a screen reader."""
+    stack.model.reply(None, ("search_records", {"query": "invoice"}))
+    stack.model.reply("Q-1001 mentions an invoice.")
+    stack.say("Which questions mention an invoice?")
+    with db.transaction(stack.admin) as conn:
+        run = conn.execute("select id from runs order by opened_at desc limit 1").fetchone()["id"]
+    # so a run of an instance serving few people shows, as the officer chooses (noor signs)
+    assert not stack.settle(data_protection={"studio_names": True}, signers=("ana", "noor")).refused
+    provider.person = "ana"
+    page = browser.new_page(viewport={"width": 1440, "height": 900})
+    for path, ready, shape in (
+            ("/studio/agents", ".agent-grid .agent-card",
+             {".agent-grid .card .skeleton": 6}),
+            (f"/studio/runs/{run}", ".tiles .tile .tile-value",
+             {".tiles .tile .skeleton": 4, ".two-up .card .skeleton": 2,
+              ".map-card .skeleton-block": 1})):
+        held: list = []  # what the page shows, still on its way, as on a slow day
+        asked = "**/studio/api" if path == "/studio/agents" else f"**/studio/api/runs/{run}"
+        page.route(asked, holding(held))
+        page.goto(f"{approving}{path}")
+        page.wait_for_selector("[aria-busy=true] .skeleton", timeout=30000)
+        for found, count in shape.items():
+            assert page.locator(f"[aria-busy=true] {found}").count() == count, (path, found)
+        assert page.locator("[aria-busy=true] [role=status]").all_text_contents() == ["Loading…"]
+        accessible(page)
+        for route in held:  # let them go, then let the page ask as it will
+            route.continue_()
+        page.unroute(asked)
+        page.wait_for_selector(ready, timeout=30000)
+        assert page.locator("[aria-busy=true]").count() == 0, path
 
 
 def test_an_instance_someone_may_not_watch_says_so_once(stack, approving, provider, browser):

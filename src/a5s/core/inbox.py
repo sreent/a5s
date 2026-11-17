@@ -20,7 +20,10 @@ sidebar (core/shell_api.py).
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import hashlib
+import json
 import logging
 import time
 import uuid
@@ -42,7 +45,7 @@ from fastapi import (
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from psycopg.types.json import Jsonb
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from a5s import db
 from a5s.core import (
@@ -52,6 +55,9 @@ from a5s.core import (
     chat_api,
     chats,
     decide_api,
+    events,
+    feedback,
+    files,
     grade_api,
     groups,
     ledger,
@@ -75,18 +81,39 @@ AWAY_RETRY = 5  # seconds a chat or a person is asked to wait before trying agai
 
 log = logging.getLogger(__name__)
 MAX_BYTES = 256 * 1024  # far more than one message needs
+MAX_UPLOAD = 6 * 1024 * 1024  # a local message's, with its files, in base64
+TEXT_MOST = 40_000  # characters a local message says, as Slack allows one: its files are apart
 TRIES = 3  # deliveries of a Matrix event a5s can't act on before it's skipped, and recorded
+
+
+class Sent(BaseModel):
+    """A file sent with a message on the local channel, such as from the web chat: its name,
+    its kind, and its bytes in base64."""
+
+    name: str
+    type: str
+    data: str
+
+
+class Said(BaseModel):
+    """That an agent's answer in the web chat was wrong: the answer, and why, if they say."""
+
+    message: int
+    said: str | None = None
+    person: str | None = None  # in development, without an identity provider, who it's from
 
 
 class LocalMessage(BaseModel):
     agent: str
-    text: str
+    text: str = Field(max_length=TEXT_MOST)  # a message's words: its files may be larger
     person: str | None = None  # in development, without an identity provider, who it's from
+    files: list[Sent] = []  # what they sent with it, a few megabytes in all
 
 
 def record(conn: Any, *, channel: str, source_id: str, person: str, agent: str, text: str,
            reply_to: dict, identity: str, place: str | None = None,
-           members: list[str] | None = None) -> str | None:
+           members: list[str] | None = None,
+           sent: tuple[files.File, ...] | list[files.File] = ()) -> str | None:
     """Record a message whose sender the core checked, and wake the scheduler: in a group chat,
     the chat it was said in, `place`, and everyone in it then, `members` (core/groups.py).
 
@@ -109,8 +136,11 @@ def record(conn: Any, *, channel: str, source_id: str, person: str, agent: str, 
         "decision": "allow", "reasons": [],
         "args": {"inbound": inbound, "agent": agent, "identity": identity, "chars": len(text),
                  "sha256": hashlib.sha256(text.encode()).hexdigest(),
-                 **({"sender": person, "group": conversation} if conversation else {})},
+                 **({"sender": person, "group": conversation} if conversation else {}),
+                 **({"files": len(sent)} if sent else {})},
     })
+    if sent:  # what came with it, for a5s's reader, once the agent asks (core/files.py)
+        files.keep(conn, inbound, list(sent))
     conn.execute("notify a5s_inbound")
     return inbound
 
@@ -125,7 +155,8 @@ class Small:
     async def __call__(self, scope: dict, receive: Any, send: Any) -> None:
         if scope["type"] == "http" and scope["method"] in ("POST", "PUT"):
             size = dict(scope["headers"]).get(b"content-length", b"")
-            if not size.isdigit() or int(size) > MAX_BYTES:
+            most = MAX_UPLOAD if scope.get("path") == "/channels/local/messages" else MAX_BYTES
+            if not size.isdigit() or int(size) > most:
                 refused = JSONResponse(status_code=413, content={"detail": "send one message at a time"})
                 await refused(scope, receive, send)
                 return
@@ -185,6 +216,36 @@ def create_app(gw: Any) -> FastAPI:
         except Exception:
             log.exception("couldn't answer in Teams")
 
+    def wrong_in_teams(activity: dict[str, Any]) -> Response:
+        """Teams' 👎 on an agent's answer, with what they wrote in its form, if anything, for
+        the agent's owners (core/feedback.py). Teams asks for an answer to show them."""
+        raw = activity.get("value")
+        value: dict[str, Any] = raw if isinstance(raw, dict) else {}
+        raw = value.get("actionValue")
+        acted: dict[str, Any] = raw if isinstance(raw, dict) else {}
+        said = acted.get("feedback")
+        try:
+            said = json.loads(said).get("feedbackText") if isinstance(said, str) else None
+        except (ValueError, AttributeError):
+            said = None
+        entra = (activity.get("from") or {}).get("aadObjectId")
+        person = gw.scenario.find(f"entra:{entra}") if entra else None
+        told = "Thanks."
+        conversation = (activity.get("conversation") or {}).get("id")
+        if (value.get("actionName") == "feedback" and acted.get("reaction") == "dislike"
+                and person is not None and activity.get("replyToId") and conversation):
+            with db.transaction(gw.url) as conn:  # in this conversation: Teams' ids are its own
+                found = feedback.sent(conn, "teams", f"{conversation}/{activity['replyToId']}")
+                try:
+                    if found is not None and feedback.record(
+                            conn, found["id"], person.id, said if isinstance(said, str) else None,
+                            "teams") is not None:
+                        told = feedback.noted(conn, person)
+                except feedback.Refused:
+                    pass
+        return JSONResponse({"statusCode": 200, "type": "application/vnd.microsoft.activity.message",
+                             "value": told})
+
     @app.post("/channels/teams/messages")
     def teams_message(activity: dict[str, Any], background: BackgroundTasks,
                       authorization: str | None = Header(default=None)) -> Response:
@@ -195,6 +256,8 @@ def create_app(gw: Any) -> FastAPI:
         except Refused as exc:  # not recorded: anyone on the internet can send these
             log.warning("refused a message for Teams: %s", exc.reason)
             raise HTTPException(exc.status, exc.reason) from None
+        if activity.get("type") == "invoke" and activity.get("name") == "message/submitAction":
+            return wrong_in_teams(activity)  # Teams' buttons on an agent's answer
         if (installed := gw.teams.installed(activity, gw.scenario, bot)) is not None:
             person, reply_to, added = installed  # its bot may write to them first, or no more
             with db.transaction(gw.url) as conn:
@@ -242,7 +305,7 @@ def create_app(gw: Any) -> FastAPI:
                        agent=message.agent, text=message.text, reply_to=message.reply_to,
                        identity="verified by teams",
                        place=message.reply_to["conversation"] if group else None,
-                       members=everyone or None)
+                       members=everyone or None, sent=message.files)
         return Response(status_code=200)
 
     # Slack: each agent's app sends what's said in the conversations it's in, signed
@@ -253,6 +316,32 @@ def create_app(gw: Any) -> FastAPI:
                 (gw.slack.whisper(reply_to, user, text) if user else gw.slack.send(reply_to, text))
         except Exception:
             log.exception("couldn't answer in Slack")
+
+    def wrong_in_slack(payload: dict[str, Any], bot: Any, background: BackgroundTasks) -> None:
+        """A 👎 on an agent's answer in Slack, from whom it answered or someone in the group DM
+        it was said in (core/feedback.py): kept, and they're told privately what that means."""
+        raw = payload.get("event")
+        event: dict[str, Any] = raw if isinstance(raw, dict) else {}
+        raw = event.get("item")
+        item: dict[str, Any] = raw if isinstance(raw, dict) else {}
+        if item.get("type") != "message" or not feedback.wrong("slack", str(event.get("reaction") or "")):
+            return
+        assert gw.slack is not None
+        person = gw.scenario.find(f"slack:{gw.slack.cfg.team_id}/{event.get('user')}")
+        if person is None:
+            return
+        with db.transaction(gw.url) as conn:
+            found = feedback.sent(conn, "slack", f"{item.get('channel')}/{item.get('ts')}")
+            try:
+                made = found is not None and feedback.record(conn, found["id"], person.id, None,
+                                                             "slack") is not None
+            except feedback.Refused:
+                made = False
+            told = feedback.noted(conn, person)
+        if made:
+            background.add_task(tell_in_slack, {"channel": str(item.get("channel")),
+                                                "app_id": bot.app_id},
+                                told, str(event.get("user")))
 
     def slack_events(body: bytes, timestamp: str | None, signature: str | None,
                      background: BackgroundTasks) -> Response:
@@ -266,6 +355,9 @@ def create_app(gw: Any) -> FastAPI:
         if payload.get("type") == "url_verification":  # as an app's events are set up
             return JSONResponse({"challenge": str(payload.get("challenge") or "")})
         if payload.get("type") != "event_callback":
+            return Response(status_code=200)
+        if (payload.get("event") or {}).get("type") == "reaction_added":
+            wrong_in_slack(payload, bot, background)  # a 👎 on an agent's answer
             return Response(status_code=200)
         message = slack.message(payload, gw.scenario, bot)
         if message is None or not message.mentioned:  # in a group DM, only what mentions it
@@ -310,7 +402,7 @@ def create_app(gw: Any) -> FastAPI:
                        person=message.person, agent=message.agent, text=message.text,
                        reply_to=message.reply_to, identity="verified by slack",
                        place=message.reply_to["channel"] if message.group else None,
-                       members=everyone or None)
+                       members=everyone or None, sent=message.files)
         return Response(status_code=200)
 
     @app.post("/channels/slack/events")
@@ -338,6 +430,40 @@ def create_app(gw: Any) -> FastAPI:
         except SlackRefused as exc:
             raise HTTPException(exc.status, exc.reason) from None
         return Response(status_code=200)
+
+    # Events: other systems tell a5s something happened, signed with their own secret
+
+    def receiving_event(source: str, body: bytes, timestamp: str | None,
+                        signature: str | None) -> Response:
+        cfg = gw.events
+        assert cfg is not None
+        try:
+            event = events.check(cfg, source, body, timestamp, signature)
+        except events.Refused as exc:  # not recorded: anyone on the internet can send these
+            log.warning("refused an event from %s: %s", source, exc.reason)
+            raise HTTPException(exc.status, exc.reason) from None
+        if not events.takers(gw.definitions, source, event["type"]):
+            raise HTTPException(404, f"no agent here takes {event['type']} events from {source}")
+        with db.transaction(gw.url) as conn:
+            if events.waiting(conn, source) >= events.MOST_WAITING:
+                raise HTTPException(429, f"{events.MOST_WAITING} of {source}'s events wait "
+                                         "already: send this one again later")
+            kept = events.record(conn, gw.scenario, source, event)
+        return JSONResponse({"event": event["id"], "kept": kept}, status_code=202 if kept else 200)
+
+    @app.post("/channels/events/{source}")
+    async def event_received(source: str, request: Request,
+                             x_a5s_timestamp: str | None = Header(default=None),
+                             x_a5s_signature: str | None = Header(default=None)) -> Response:
+        """An event another system sent, such as a ticket opened: checked against that
+        system's signing secret before a word of it is read, kept once by its own id, for the
+        core to open the run of the agent whose release takes it (core/events.py). The same
+        event sent again is answered as kept already."""
+        if gw.events is None:
+            raise HTTPException(404, "a5s takes no events here")
+        body = await request.body()
+        return await run_in_threadpool(receiving_event, source, body, x_a5s_timestamp,
+                                       x_a5s_signature)
 
     # Matrix: the homeserver sends what happens in the rooms the agents' bots are in
 
@@ -371,26 +497,11 @@ def create_app(gw: Any) -> FastAPI:
     @matrix_api.put("/channels/matrix/_matrix/app/v1/transactions/{txn}")
     def matrix_transaction(txn: str, body: dict[str, Any], background: BackgroundTasks) -> dict:
         agents = sorted(gw.definitions)
-        for event in body.get("events") or []:
-            try:
-                what, detail = gw.matrix.event(event, gw.scenario, agents)
-                if what == "join":
-                    gw.matrix.join(*detail)
-            except httpx.HTTPError as exc:
-                failed = failures[event.get("event_id", "")] = failures.get(
-                    event.get("event_id", ""), 0) + 1
-                server = isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code < 500
-                if not server and failed < TRIES:  # the homeserver sends it all again later
-                    raise
-                # It sends nothing more until this delivery is taken, so one event it won't let
-                # a5s act on, such as an invitation withdrawn before a5s joined, or one room it
-                # can't read three times running, is skipped, and recorded
-                log.warning("skipped a Matrix event: %s", exc)
-                failures.pop(event.get("event_id", ""), None)
-                with db.transaction(gw.url) as conn:
-                    turned_away(conn, "matrix", f"a5s couldn't act on it: {type(exc).__name__}",
-                                [], "")
-                continue
+
+        def act(event: dict[str, Any]) -> None:
+            what, detail = gw.matrix.event(event, gw.scenario, agents)
+            if what == "join":
+                gw.matrix.join(*detail)
             if what == "turn away":
                 reason, people, reply, reply_to = detail
                 with db.transaction(gw.url) as conn:
@@ -404,13 +515,50 @@ def create_app(gw: Any) -> FastAPI:
                     record(conn, channel="matrix", source_id=event["event_id"], person=detail.person,
                            agent=detail.agent, text=detail.text, reply_to=detail.reply_to,
                            identity="verified by matrix", place=detail.place,
-                           members=list(detail.members))
+                           members=list(detail.members), sent=detail.files)
             elif what == "left":  # so a5s writes to them elsewhere, and doesn't ask them back
                 with db.transaction(gw.url) as conn:
                     chats.left(conn, "matrix", *detail)
             elif what == "shared":  # someone joined their own chat: a5s writes first elsewhere
                 with db.transaction(gw.url) as conn:
                     chats.shared(conn, "matrix", *detail)
+            elif what == "wrong":  # a 👎 on an agent's answer (core/feedback.py)
+                person, said_to, room = detail
+                with db.transaction(gw.url) as conn:
+                    found = feedback.sent(conn, "matrix", said_to)
+                    row = conn.execute("select o.route, i.conversation from outbox o left join "
+                                       "inbound i on i.id = o.inbound_id where o.id = %s",
+                                       (found["id"],)).fetchone() if found else None
+                    reply_to = (row["route"] or {}).get("reply_to") or {} if row else {}
+                    try:
+                        made = (found is not None and reply_to.get("room") == room
+                                and feedback.record(conn, found["id"], person, None,
+                                                    "matrix") is not None)
+                    except feedback.Refused:
+                        made = False
+                    told = feedback.noted(conn, gw.scenario.person(person))
+                if made and reply_to.get("bot") and row and row["conversation"] is None:
+                    background.add_task(tell_in_matrix, {"room": room, "bot": reply_to["bot"]},
+                                        told)  # in their own chat: a group's isn't told
+
+        for event in body.get("events") or []:
+            key = str(event.get("event_id") or "") if isinstance(event, dict) else ""
+            try:
+                act(event)
+            except Exception as exc:  # one event never holds up every later one for long
+                failed = failures[key] = failures.get(key, 0) + 1
+                server = isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code < 500
+                if not server and failed < TRIES:  # the homeserver sends it all again later
+                    raise
+                # It sends nothing more until this delivery is taken, so one event a5s can't act
+                # on is skipped, and recorded: an invitation withdrawn before a5s joined, one
+                # room it can't read three times running, or one it can't read at all, such as a
+                # file whose size isn't a number
+                log.warning("skipped a Matrix event: %s", type(exc).__name__)
+                failures.pop(key, None)
+                with db.transaction(gw.url) as conn:
+                    turned_away(conn, "matrix", f"a5s couldn't act on it: {type(exc).__name__}",
+                                [], "")
         return {}
 
     @matrix_api.get("/channels/matrix/_matrix/app/v1/users/{user}")
@@ -445,10 +593,33 @@ def create_app(gw: Any) -> FastAPI:
     @app.post("/channels/local/messages", status_code=202)
     def local_message(body: LocalMessage, authorization: str | None = Header(default=None)) -> dict:
         person, identity = sender(authorization, body.person)
+        try:
+            sent = [files.File(name=f.name[:200], media_type=f.type, data=base64.b64decode(
+                f.data, validate=True)) for f in body.files]
+        except (binascii.Error, ValueError):
+            raise HTTPException(400, "a file's data is its bytes in base64") from None
+        text = body.text if body.text.strip() or not sent else files.WORDS_ONLY
         with db.transaction(gw.url) as conn:
             inbound = record(conn, channel="local", source_id=str(uuid.uuid4()), person=person,
-                             agent=body.agent, text=body.text, reply_to={}, identity=identity)
+                             agent=body.agent, text=text, reply_to={}, identity=identity,
+                             sent=sent)
         return {"message": inbound}
+
+    @app.post("/channels/local/feedback")
+    def local_feedback(body: Said, authorization: str | None = Header(default=None)) -> dict:
+        """That an agent's answer in the web chat was wrong, with why, in their words, for its
+        owners (core/feedback.py): whether it's newly kept."""
+        person, _ = sender(authorization, body.person)
+        with db.transaction(gw.url) as conn:
+            row = conn.execute("select channel from outbox where id = %s", (body.message,)).fetchone()
+            try:
+                if row is None or row["channel"] != "local":
+                    raise feedback.Refused("that isn't an agent's answer")
+                made = feedback.record(conn, body.message, person, body.said, "local")
+            except feedback.Refused as exc:
+                raise HTTPException(404, str(exc)) from None
+            told = feedback.noted(conn, gw.scenario.person(person))
+        return {"noted": made is not None, "said": told}
 
     @app.get("/channels/local/messages/{message}")
     async def answers(request: Request, message: str, wait: float = 0, person: str | None = None,
@@ -472,7 +643,7 @@ def create_app(gw: Any) -> FastAPI:
 
         said = sorted(await waiting(request, wait, take), key=lambda r: r["id"])
         return {"replies": [r["text"] for r in said],
-                "messages": [{**spoke(r["agent"], r["run_id"]), "text": r["text"],
+                "messages": [{**spoke(r["agent"], r["run_id"]), "id": r["id"], "text": r["text"],
                               "at": r["at"].isoformat()} for r in said]}
 
     @app.get("/channels/local/agents")
@@ -510,7 +681,7 @@ def create_app(gw: Any) -> FastAPI:
                 "('active', 'suspended')", (agent,)))
         definition = gw.definitions.get(agent)
         return {"messages": [{**({"from": "you", "by": "person"} if r["kind"] == "person"
-                                 else spoke(agent, r["run_id"])),
+                                 else {**spoke(agent, r["run_id"]), "id": r["n"]}),
                               "text": r["text"], "at": r["at"].isoformat()} for r in reversed(rows)],
                 "does": definition.does if definition and served else None}
 
@@ -542,7 +713,7 @@ def create_app(gw: Any) -> FastAPI:
                     "returning id, run_id, instance_id, agent, text, at", (who,)).fetchall()
 
         return {"messages": [  # a run's message is its agent's; any other is a5s's own
-            {**spoke(r["agent"], r["run_id"]), "about": r["agent"],
+            {**spoke(r["agent"], r["run_id"]), "id": r["id"], "about": r["agent"],
              "instance": r["instance_id"], "text": r["text"], "at": r["at"].isoformat()}
             for r in sorted(await waiting(request, wait, take), key=lambda r: r["id"])]}
 

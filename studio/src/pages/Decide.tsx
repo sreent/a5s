@@ -7,13 +7,14 @@
 import { useEffect, useState } from "react";
 import { type DecideNow, type Decided, type HeldChange, send } from "../api";
 import { hashed, salted, signInFor, takeAct } from "../auth";
+import { locale, t } from "../i18n";
 import { Icon } from "../icons";
 import { useToast } from "../design";
 import { PageHead, useLoad, Waiting } from "../ui";
 
 type Decision = "approve" | "reject";
 
-const day = (at: string) => new Date(at).toLocaleDateString([], { day: "numeric", month: "short" });
+const day = (at: string) => new Date(at).toLocaleDateString(locale(), { day: "numeric", month: "short" });
 
 /** A held change on the approval card (docs/design.md), made for a phone: who asks and for whom,
  * what it does in the words code worked out when it was asked for, never the agent's own, what to
@@ -24,7 +25,8 @@ function Card({ change, decide, ticked, tick, together }: {
 }) {
   const [reason, setReason] = useState("");
   const [what, ...rest] = change.said.split("\n");
-  const about = [change.key, change.for.length ? `for ${change.for.join(" and ")}` : "", `asked ${day(change.proposed_at)}`]
+  const about = [change.key, change.for.length ? t("for {whom}", { whom: change.for.join(` ${t("and")} `) }) : "",
+                 t("asked {day}", { day: day(change.proposed_at) })]
     .filter(Boolean).join(" · ");
   const know = change.sensitive || change.changed.length > 0 || change.flags.length > 0;
   return (
@@ -33,39 +35,40 @@ function Card({ change, decide, ticked, tick, together }: {
       <div className="approval-body">
         <div className="who">
           <span className="avatar agent" aria-hidden="true"><Icon name="agent" /></span>
-          <span><span className="who-name">The {change.agent} asks</span><span className="who-about">{about}</span></span>
+          <span><span className="who-name">{t("The {agent} asks", { agent: change.agent })}</span><span className="who-about">{about}</span></span>
         </div>
         <h2 className="approval-title" id={`title-${change.key}`}>{what}</h2>
         {rest.length > 0 && <p className="said">{rest.join("\n")}</p>}
         {know && (
           <div className="approval-know">
-            <p className="label">What to know</p>
-            {change.sensitive && <ul className="flags sensitive"><li>It's decided on its own, never with others.</li></ul>}
+            <p className="label">{t("What to know")}</p>
+            {change.sensitive && <ul className="flags sensitive"><li>{t("It's decided on its own, never with others.")}</li></ul>}
             {change.changed.length > 0 && <ul className="flags changed">{change.changed.map((c) => <li key={c}>{c}</li>)}</ul>}
             {change.flags.length > 0 && <ul className="flags">{change.flags.map((f) => <li key={f}>{f}</li>)}</ul>}
           </div>
         )}
         {change.records.filter((r) => /^https?:\/\//i.test(r.link)).map((record) => (  // a web page, and nothing else
-          <p key={record.key}><a href={record.link} rel="noopener noreferrer" target="_blank">Open {record.key}</a></p>
+          <p key={record.key}><a href={record.link} rel="noopener noreferrer" target="_blank">{t("Open {record}", { record: record.key })}</a></p>
         ))}
-        <p className="note">It lapses on {new Date(change.lapses_at).toLocaleDateString([], { dateStyle: "medium" })} unless someone decides it.</p>
+        <p className="note">{t("It lapses on {day} unless someone decides it.",
+          { day: new Date(change.lapses_at).toLocaleDateString(locale(), { dateStyle: "medium" }) })}</p>
         {!change.may_decide
-          ? <p className="note">You can see it, as you were told it waits, but only its deciders decide it.</p>
+          ? <p className="note">{t("You can see it, as you were told it waits, but only its deciders decide it.")}</p>
           : (
             <>
-              <input type="text" maxLength={300} placeholder="Why, if you reject it (optional)" value={reason}
-                     aria-label={`Why you reject ${change.key}, if you do`} onChange={(e) => setReason(e.target.value)} />
+              <input type="text" maxLength={300} placeholder={t("Why, if you reject it (optional)")} value={reason}
+                     aria-label={t("Why you reject {key}, if you do", { key: change.key })} onChange={(e) => setReason(e.target.value)} />
               <div className="approval-actions">
-                <button type="button" className="primary" onClick={() => decide([change.digest], "approve", "")}>Approve</button>
-                <button type="button" onClick={() => decide([change.digest], "reject", reason.trim())}>Reject</button>
+                <button type="button" className="primary" onClick={() => decide([change.digest], "approve", "")}>{t("Approve")}</button>
+                <button type="button" onClick={() => decide([change.digest], "reject", reason.trim())}>{t("Reject")}</button>
               </div>
               {!change.sensitive && together && (  /* only where there are others to go with (round 13, C14) */
                 <label className="tick-label">
                   <input type="checkbox" className="tick" checked={ticked} onChange={(e) => tick(e.target.checked)} />
-                  <span>Decide it with the others ticked</span>
+                  <span>{t("Decide it with the others ticked")}</span>
                 </label>
               )}
-              <p className="approval-signed"><Icon name="audit" /><span>Deciding signs you in again, for this decision alone, and the ledger keeps it.</span></p>
+              <p className="approval-signed"><Icon name="audit" /><span>{t("Deciding signs you in again, for this decision alone, and the ledger keeps it.")}</span></p>
             </>
           )}
       </div>
@@ -91,10 +94,11 @@ export function DecidePage() {
                                                 ...(act.reason ? { reason: act.reason } : {}) })
       .then((made) => {
         const which = made.decided.join(", ");
-        setStatus(made.decision === "approve"
-          ? `You approved ${which}. a5s makes each change within a minute, once every part it touches has approved it, if its records haven't changed.`
-          : `You rejected ${which}. a5s tells whoever asked for it.`);
-        toast(`You ${made.decision === "approve" ? "approved" : "rejected"} ${which}.`);
+        const done = made.decision === "approve" ? t("You approved {which}.", { which }) : t("You rejected {which}.", { which });
+        setStatus(`${done} ${made.decision === "approve"
+          ? t("a5s makes each change within a minute, once every part it touches has approved it, if its records haven't changed.")
+          : t("a5s tells whoever asked for it.")}`);
+        toast(done);
       })
       .catch((e: Error) => setStatus(e.message))
       .finally(() => setActed(true));
@@ -111,7 +115,10 @@ export function DecidePage() {
       const salt = salted();
       const words = said ? ` said ${await hashed(said)}` : "";
       const nonce = await hashed(`a5s ${decision}s proposals ${proposals.join(",")} ${salt}${words}`);
-      setStatus(`Signing you in again, to ${decision} ${digests.length === 1 ? "this change" : "these changes"} alone…`);
+      const one = digests.length === 1;
+      setStatus(decision === "approve"
+        ? (one ? t("Signing you in again, to approve this change alone…") : t("Signing you in again, to approve these changes alone…"))
+        : (one ? t("Signing you in again, to reject this change alone…") : t("Signing you in again, to reject these changes alone…")));
       await signInFor({ kind: "decide", proposals, decision, salt, reason: said }, nonce);
     } catch (e) {
       setStatus((e as Error).message);
@@ -125,9 +132,9 @@ export function DecidePage() {
   const together = waiting.filter((p) => p.may_decide && !p.sensitive).length >= 2;
   return (
     <>
-      <PageHead title="Changes to decide"
-                about="An agent asked for each of these, and it waits for you. Decide only what you mean: deciding signs you in again, and your sign-in decides once." />
-      <p id="status" role="status" className="note">{status ?? (found && waiting.length === 0 ? "Nothing waits for your decision." : "")}</p>
+      <PageHead title={t("Changes to decide")}
+                about={t("An agent asked for each of these, and it waits for you. Decide only what you mean: deciding signs you in again, and your sign-in decides once.")} />
+      <p id="status" role="status" className="note">{status ?? (found && waiting.length === 0 ? t("Nothing waits for your decision.") : "")}</p>
       {!found && <Waiting error={now.error} />}
       {waiting.length > 0 && (
         <section id="waiting" className="bare">
@@ -142,19 +149,19 @@ export function DecidePage() {
           ))}</div>
           {together && (
             <div className="actions" id="together">
-              <button id="approve-ticked" type="button" onClick={() => ticked.size && decide([...ticked], "approve", "")}>Approve the ticked ones</button>
-              <button id="reject-ticked" type="button" onClick={() => ticked.size && decide([...ticked], "reject", "")}>Reject the ticked ones</button>
+              <button id="approve-ticked" type="button" onClick={() => ticked.size && decide([...ticked], "approve", "")}>{t("Approve the ticked ones")}</button>
+              <button id="reject-ticked" type="button" onClick={() => ticked.size && decide([...ticked], "reject", "")}>{t("Reject the ticked ones")}</button>
             </div>
           )}
         </section>
       )}
       {decided.length > 0 && (
         <section className="card" id="earlier">
-          <h2>Decided lately</h2>
+          <h2>{t("Decided lately")}</h2>
           <ul id="decided" className="plain">{decided.map((change) => (
-            <li key={change.digest}>{change.outcome || `${change.key}: you've decided it, and a5s acts on it within a minute.`}</li>
+            <li key={change.digest}>{change.outcome || t("{key}: you've decided it, and a5s acts on it within a minute.", { key: change.key })}</li>
           ))}</ul>
-          <button type="button" className="ghost" onClick={() => setAgain((n) => n + 1)}>Look again</button>
+          <button type="button" className="ghost" onClick={() => setAgain((n) => n + 1)}>{t("Look again")}</button>
         </section>
       )}
     </>

@@ -5,13 +5,14 @@
 
 import { type KeyboardEvent, useLayoutEffect, useRef, useState } from "react";
 import type { Day } from "./api";
-import { FAILED_OUTCOMES, plural, Wide } from "./ui";
+import { locale, t } from "./i18n";
+import { FAILED_OUTCOMES, format, plural, Wide } from "./ui";
 
-export const ENDINGS = [
-  { key: "done", name: "Done" },
-  { key: "short", name: "Cut short" },
-  { key: "failed", name: "Failed" },
-  { key: "open", name: "Still running" },
+export const ENDINGS = [  // each name in the language spoken whenever it's read
+  { key: "done", get name() { return t("Done"); } },
+  { key: "short", get name() { return t("Cut short"); } },
+  { key: "failed", get name() { return t("Failed"); } },
+  { key: "open", get name() { return t("Still running"); } },
 ] as const;
 type Ending = (typeof ENDINGS)[number]["key"];
 
@@ -36,10 +37,11 @@ const GAP = 2;     // the surface between touching marks
 const ROUND = 4;   // the rounding of a column's end; its foot stays square
 const TIP = 176;   // the tooltip's width
 
-const SHORT = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric", timeZone: "UTC" });
-const LONG = new Intl.DateTimeFormat(undefined, { weekday: "long", month: "long", day: "numeric",
-                                                  timeZone: "UTC" });
 const date = (day: string) => new Date(`${day}T00:00:00Z`);  // a day, already in their zone
+// its name, short or long, as the language spoken writes it
+const shortDay = (day: string) => format({ month: "short", day: "numeric", timeZone: "UTC" }).format(date(day));
+const longDay = (day: string) => format({ weekday: "long", month: "long", day: "numeric", timeZone: "UTC" })
+  .format(date(day));
 
 /** The counts up the side: whole runs, in steps of 1, 2 or 5 times a power of ten. */
 export function steps(most: number): number[] {
@@ -57,7 +59,7 @@ function capped(x: number, y: number, w: number, h: number): string {
 
 function said(day: Day, parts: Record<Ending, number>): string {
   const how = ENDINGS.filter((e) => parts[e.key] > 0).map((e) => `${parts[e.key]} ${e.name.toLowerCase()}`);
-  return `${LONG.format(date(day.day))}: ${plural(day.runs, "run")}${how.length ? `, ${how.join(", ")}` : ""}`;
+  return `${longDay(day.day)}: ${plural(day.runs, "run")}${how.length ? `, ${how.join(", ")}` : ""}`;
 }
 
 export function RunsByDay({ days, zone }: { days: Day[]; zone: string }) {
@@ -92,19 +94,19 @@ export function RunsByDay({ days, zone }: { days: Day[]; zone: string }) {
   };
   return (
     <div className="runs-chart" ref={box}>
-      {most === 0 ? <p className="note">No runs in this period.</p> : (
+      {most === 0 ? <p className="note">{t("No runs in this period.")}</p> : (
         <>
-          <ul className="legend" aria-label="How runs ended">
+          <ul className="legend" aria-label={t("How runs ended")}>
             {ENDINGS.filter((_, k) => totals[k] > 0).map((e) => (
               <li key={e.key}><span className={`swatch ${e.key}`} />{e.name}</li>
             ))}
           </ul>
           <svg width={width} height={TOP + PLOT + AXIS} role="group"
-               aria-label={`Runs by day over ${plural(days.length, "day")}, in ${zone}`}>
-            {ticks.map((t) => (
-              <g key={t}>
-                <line className={t === 0 ? "baseline" : "grid"} x1={LEFT} x2={width - 4} y1={y(t)} y2={y(t)} />
-                <text className="tick" x={LEFT - 8} y={y(t)} dy="0.32em" textAnchor="end">{t.toLocaleString()}</text>
+               aria-label={t("Runs by day over {days}, in {zone}", { days: plural(days.length, "day"), zone })}>
+            {ticks.map((tick) => (
+              <g key={tick}>
+                <line className={tick === 0 ? "baseline" : "grid"} x1={LEFT} x2={width - 4} y1={y(tick)} y2={y(tick)} />
+                <text className="tick" x={LEFT - 8} y={y(tick)} dy="0.32em" textAnchor="end">{tick.toLocaleString(locale())}</text>
               </g>
             ))}
             {days.map((day, i) => {
@@ -131,45 +133,45 @@ export function RunsByDay({ days, zone }: { days: Day[]; zone: string }) {
               );
             })}
             {tallest >= 0 && (
-              <text className="figure" x={centre(tallest)} y={y(most) - 5} textAnchor="middle">{most.toLocaleString()}</text>
+              <text className="figure" x={centre(tallest)} y={y(most) - 5} textAnchor="middle">{most.toLocaleString(locale())}</text>
             )}
             {days.map((day, i) => (days.length - 1 - i) % every === 0 && (
               <text key={day.day} className="tick" y={TOP + PLOT + 16}
                     x={band < 60 && i === days.length - 1 ? width - 4 : band < 60 && i === 0 ? LEFT : centre(i)}
                     textAnchor={band < 60 && i === days.length - 1 ? "end" : band < 60 && i === 0 ? "start" : "middle"}>
-                {SHORT.format(date(day.day))}
+                {shortDay(day.day)}
               </text>
             ))}
           </svg>
           {on !== null && (
             <div className="tip" style={{ left: Math.max(0, centre(on) + 12 + TIP <= width  // beside it, not on it
                                                            ? centre(on) + 12 : centre(on) - 12 - TIP) }}>
-              <div className="tip-head">{LONG.format(date(days[on].day))}</div>
-              <div className="tip-row"><strong>{days[on].runs.toLocaleString()}</strong>{days[on].runs === 1 ? "run" : "runs"}</div>
+              <div className="tip-head">{longDay(days[on].day)}</div>
+              <div className="tip-row"><strong>{days[on].runs.toLocaleString(locale())}</strong>{days[on].runs === 1 ? t("run") : t("runs")}</div>
               {ENDINGS.filter((e) => parts[on][e.key] > 0).map((e) => (
                 <div key={e.key} className="tip-row">
-                  <span className={`line-key ${e.key}`} /><strong>{parts[on][e.key].toLocaleString()}</strong>{e.name.toLowerCase()}
+                  <span className={`line-key ${e.key}`} /><strong>{parts[on][e.key].toLocaleString(locale())}</strong>{e.name.toLowerCase()}
                 </div>
               ))}
             </div>
           )}
           <details className="as-table">
-            <summary>The same, as a table</summary>
-            <Wide label="Runs by day, as a table"><table className="grid-table compact">
+            <summary>{t("The same, as a table")}</summary>
+            <Wide label={t("Runs by day, as a table")}><table className="grid-table compact">
               <thead>
-                <tr><th>Day</th>{ENDINGS.map((e) => <th key={e.key} className="num">{e.name}</th>)}<th className="num">All</th></tr>
+                <tr><th>{t("Day")}</th>{ENDINGS.map((e) => <th key={e.key} className="num">{e.name}</th>)}<th className="num">{t("All")}</th></tr>
               </thead>
               <tbody>
                 {days.map((day, i) => day.runs > 0 && (
                   <tr key={day.day}>
-                    <td>{LONG.format(date(day.day))}</td>
+                    <td>{longDay(day.day)}</td>
                     {ENDINGS.map((e) => <td key={e.key} className="num">{parts[i][e.key]}</td>)}
                     <td className="num">{day.runs}</td>
                   </tr>
                 ))}
               </tbody>
             </table></Wide>
-            <p className="note">Days in {zone}. Days with no runs are left out.</p>
+            <p className="note">{t("Days in {zone}. Days with no runs are left out.", { zone })}</p>
           </details>
         </>
       )}

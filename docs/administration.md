@@ -12,7 +12,7 @@ There's no administrator over everything. Each power is a role with a scope, and
 | --- | --- | --- | --- |
 | The platform owner and the team that runs a5s | The deployment | Run it, and make it safer alone: suspend an instance, lower a cap, withdraw a release. Never loosen it. | The command line and the chart |
 | Instance approver | Instances that work in no part | Approve them and set their level | The studio's settings, signed |
-| Part owner, `part-owner:<part>` | One part of the business, such as billing | Approve the instances that work in their part, and how far each may act there | The studio's settings, each approval a fresh sign-in |
+| Part owner, `part-owner:<part>` | One part of the business, such as billing | Approve the instances that work in their part, and how far each may act there, and alone, a version that only narrows what agents may do there | The studio's settings, each approval a fresh sign-in |
 | Part delegate, `part-delegate:<part>` | One part | Decide the changes agents ask for there, beside its owner, such as while they're away. They approve no settings. | Approval cards and the held changes' page |
 | Agent owner, `agent-owner:<agent>`, and their deputy | One agent | Own its definition and releases, watch its runs in the studio, and suspend it. Give a group its authors' or viewers' role | The agents' repository and the studio; the studio's settings, signed |
 | Release approver | Each release | Approve it. Never someone from the team that runs a5s, nor above it. | `a5s release sign` |
@@ -20,6 +20,14 @@ There's no administrator over everything. Each power is a role with a scope, and
 | Data protection officer | Requests for someone's data, and the settings' choices for people's data | Export or erase what a5s keeps about one person, one request at a time. Where the directory names them, approve how long a5s keeps what's said and whom its pages name (`data_protection` in the signed settings, [data protection](data-protection.md)), and give a group their role | The officer's page in the studio, signed in for that request alone; the studio's settings, signed |
 | Grader | Samples | Grade agents' work, never their own team's | The grading page, each grade a fresh sign-in |
 | Auditor, `auditor`, and assurance | The ledger | Read it all: find a period's entries, export a period with what proves it's the ledger's own, and report who holds each role and who did what. Change nothing. | Their own page, in the studio, `/studio/audit`, signed in, and `a5s audit`, which the team runs for them |
+
+**A version that only narrows a part needs that part's owner alone** ([`core/registry.py`](../src/a5s/core/registry.py)). Each version of the settings is approved whole: by the owner of each part its instances work in, and by whoever else's choices it changes. A version whose only changes narrow what agents may do in some parts needs only those parts' owners. In a part, narrowing means:
+
+- a lower level there for an instance, set for the part, or the instance's own where the part sets none;
+- a type of action's level lowered there, a type taken back from level 1 or more, or a new one at level 0;
+- a stricter threshold for earning level 2 there, or none.
+
+Code decides, comparing a version with the one in force, and anything it can't show narrows counts as widening, so it needs every approval it otherwise would: a new instance or one retired, whom one serves, who runs it, its parts, the level of an instance in no part, the scenario's limits, which are every part's at once, budgets, the classes of data, the groups given roles, and the data protection officer's choices. Lowering a part's level can lower its instance's own level, the lowest of its parts', and so what it does about no record. So once such a version is in force, everyone else whose approval it would have needed hears in their digest what it changed and who approved it.
 
 So the "sub-administrators" an enterprise asks about are the scoped roles: a part's owner administers what agents may do in their part of the business, and an agent's owner their agent, and neither gets more. Every change they make is a new settings version or release, signed by the people it needs, and in the ledger.
 

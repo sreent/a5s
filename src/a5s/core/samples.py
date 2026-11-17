@@ -196,6 +196,26 @@ def caps(conn: db.Connection, keys: tuple[str, ...], release: str) -> dict[tuple
         if mine.get(r["action"]) == r["behaviour"]}
 
 
+def shown_caps(conn: db.Connection, keys: tuple[str, ...],
+               release: str) -> dict[tuple[str, str], int]:
+    """a5s's caps for a release, as a page shows them: checked against the seal keys where the
+    part reading them holds them, as the core checks them; in the channels app, which holds
+    none, as the core sealed them, each with the ledger's last word on it. What a page shows,
+    never what decides a call: the gateway checks each seal itself (core/impact.py)."""
+    if keys:
+        return caps(conn, keys, release)
+    mine = {r["action"]: r["behaviour"] for r in conn.execute(
+        "select action, behaviour from behaviours where release = %s", (release,))}
+    if not mine:
+        return {}
+    last = _last_entries(conn)
+    return {(r["part"], r["action"]): r["cap"] for r in conn.execute(
+        "select * from caps where behaviour = any(%s) and seal is not null",
+        (list(mine.values()),)).fetchall()
+        if mine.get(r["action"]) == r["behaviour"]
+        and last.get((r["behaviour"], r["part"], r["action"])) == r["seq"]}
+
+
 def _cap_row(conn: db.Connection, keys: tuple[str, ...], kind: str, part: str,
              action: str) -> dict | None:
     found = standing_caps(conn, keys, "behaviour = %s and part = %s and action = %s",
@@ -429,6 +449,48 @@ def seal_pending(conn: db.Connection, keys: tuple[str, ...], verifier: Any,
                 conn.execute("update samples set grade_seal = %s, grade_proof = null, "
                              "sealed_at = %s where id = %s", (seal(keys, row), now, row["id"]))
     return refused
+
+
+def undone(conn: db.Connection, keys: tuple[str, ...], scenario: str, change: dict,
+           now: datetime) -> list[int]:
+    """Count a change someone undid against its agent's accuracy (core/undoing.py): as a wrong
+    grade of it, for each part it touched, which the core seals at once, by the sign-in that
+    undid it, whether or not it was drawn as a sample. A critical grade stays critical. The
+    samples so graded."""
+    if not keys:
+        return []
+    graded = []
+    kind = "proposal" if change["proposal_id"] else "action"
+    for part in change["parts"]:
+        row = conn.execute(
+            "select * from samples where scenario = %s and run_id = %s and part = %s and "
+            "action = %s and kind = %s and proposal_id is not distinct from %s "
+            "order by id limit 1 for update",
+            (scenario, change["run_id"], part, change["action"], kind,
+             change["proposal_id"])).fetchone()
+        if row is None:  # never drawn: it counts all the same
+            row = conn.execute(
+                "insert into samples (scenario, kind, proposal_id, run_id, instance_id, release, "
+                "definition, part, action, said, records, acts_for, drawn_at) values (%s, %s, %s, "
+                "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) returning *",
+                (scenario, kind, change["proposal_id"], change["run_id"], change["instance_id"],
+                 change["release"], change["definition"], part, change["action"], change["said"],
+                 Jsonb({change["record"]: None}), list(change["acts_for"]), now)).fetchone()
+        assert row is not None
+        if row["grade"] == "critical":
+            continue
+        conn.execute(
+            "update samples set grade = 'wrong', graded_by = %s, graded_at = %s, grade_token = %s, "
+            "grade_nonce = %s, grade_salt = %s, grade_issuer = %s, grade_subject = %s, "
+            "grade_proof = null, sealed_at = %s, lapsed_at = null, undone_at = %s where id = %s",
+            (change["asked_by"], now, change["token"], change["nonce"], change["salt"],
+             change["issuer"], change["subject"], now, now, row["id"]))
+        sealed = conn.execute("select * from samples where id = %s", (row["id"],)).fetchone()
+        assert sealed is not None
+        conn.execute("update samples set grade_seal = %s where id = %s", (seal(keys, sealed),
+                                                                           sealed["id"]))
+        graded.append(sealed["id"])
+    return graded
 
 
 def counted(keys: tuple[str, ...], row: dict) -> bool:

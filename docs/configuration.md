@@ -11,7 +11,7 @@ a5s keeps each value with whoever decides it, so the default can be the safe one
 | Layer | Who decides | What's in it | Where |
 | --- | --- | --- | --- |
 | The deployment's configuration | The team that runs a5s | Addresses, the database, timeouts, workers, channels, sign-in, publishing: what differs between one deployment and another | `A5S_` environment variables, from compose or the chart. Every one is below |
-| The signed settings | Part owners, instance approvers and the data protection officer, each for what's theirs | What agents may do and the rules for people's data: levels, limits, thresholds, classes of data, the roles groups give | Versions people sign and approve, which the ledger records ([administration](administration.md)) |
+| The signed settings | Part owners, agent owners, instance approvers and the data protection officer, each for what's theirs | What agents may do and the rules for people's data: levels, limits, thresholds, classes of data, the roles groups give, and what each part and agent may cost a month | Versions people sign and approve, which the ledger records ([administration](administration.md)) |
 | An agent's definition | The agent's owner, through a release | Its model, tools, schedules, context and budgets | `agent.yaml` in the agent's folder, checked with bounds, released and signed |
 | People's preferences | Each person | What an agent offers them to set, with it | Their own, in the chat |
 | a5s's code | A release, which its approvers sign, assurance among them | The starting values nobody needs to change between deployments, and the rules that keep a5s safe | [Starting values](starting-values.md) lists each, with its owner |
@@ -98,10 +98,7 @@ The tests check that neither compose nor the chart sets a setting to its default
 
 | Variable | Default | Takes | What it sets |
 | --- | --- | --- | --- |
-| `A5S_TEAMS_APP_ID` | none | text | One bot's registration in Entra ID, for Teams |
-| `A5S_TEAMS_APP_SECRET` | none | its secret | That bot's secret |
-| `A5S_TEAMS_AGENT` | `assistant` | text | The agent that bot speaks for |
-| `A5S_TEAMS_BOTS` | none | a JSON list | Several bots, one for each agent, instead: a JSON list of {agent, app_id, secret_env} |
+| `A5S_TEAMS_BOTS` | none | a JSON list | A bot for each agent, which turns Teams on: a JSON list of {agent, app_id, secret_env}, each bot's registration in Entra ID and the variable its secret is in |
 | `A5S_TEAMS_TENANT_ID` | none | text | The organisation's tenant: messages from any other are refused |
 | `A5S_TEAMS_SERVICE_HOSTS` | `smba.trafficmanager.net` | hosts, by commas | The hosts a5s sends Teams replies to, and no other |
 
@@ -121,6 +118,18 @@ The tests check that neither compose nor the chart sets a setting to its default
 | `A5S_MATRIX_SERVER_NAME` | none | text | Its people's domain, as in @ana:<it> |
 | `A5S_MATRIX_AS_TOKEN` | none | a token | A5s's token there, to speak as its bots |
 | `A5S_MATRIX_HS_TOKEN` | none | a token | The homeserver's, which comes with every delivery |
+
+### Events from other systems
+
+| Variable | Default | Takes | What it sets |
+| --- | --- | --- | --- |
+| `A5S_EVENT_SOURCES` | none | a JSON list | The systems that may tell a5s something happened, which turns events on: a JSON list of {source, secret_env}, each source's signing secret in the variable it names |
+
+### Acting as the person
+
+| Variable | Default | Takes | What it sets |
+| --- | --- | --- | --- |
+| `A5S_DELEGATION` | none | a JSON list | The systems people may connect their own accounts in, so agents act there as them, with their permissions: a JSON list of {name, title, authorize, token, client_id, scopes}, each system's OAuth endpoints and a5s's client there |
 
 ### The ledger's locked copies
 
@@ -150,6 +159,7 @@ The tests check that neither compose nor the chart sets a setting to its default
 | `A5S_SCENARIO` | `a5s.sample:SampleScenario` | module:Class | The scenario a5s serves, as module:Class |
 | `A5S_SCENARIO_DIR` | none | a folder | The scenario's folder, if not scenarios/sample |
 | `A5S_AGENTS_DIR` | none | a folder | The agents' folders, if not agents |
+| `A5S_LIBRARY_ROOT` | `/var/lib/a5s/libraries` | a folder | Where the deployment keeps the checkout of each docs repository the scenario's libraries.yaml names, in a folder by its name, current, such as with git-sync |
 
 ### IT's inventory in Microsoft 365
 
@@ -174,6 +184,8 @@ The tests check that neither compose nor the chart sets a setting to its default
 | --- | --- |
 | `A5S_DB_<PART>_PASSWORD` | Each part's database password, which setup gives its role |
 | `A5S_TEAMS_SECRET_<AGENT>` | A bot's secret, where A5S_TEAMS_BOTS names it |
+| `A5S_EVENT_SECRET_<SOURCE>` | A system's signing secret for its events, where A5S_EVENT_SOURCES names it |
+| `A5S_DELEGATION_<NAME>_SECRET` | A5s's client secret in a system people connect, where A5S_DELEGATION names it: for the core alone |
 | `A5S_SLACK_SECRET_<AGENT>` | An app's signing secret, where A5S_SLACK_BOTS names it |
 | `A5S_SLACK_TOKEN_<AGENT>` | An app's bot token, where A5S_SLACK_BOTS names it |
 | `A5S_MCP_<SERVER>_TOKEN` | An MCP server's bearer token, where the scenario's mcp.yaml names it as the server's token_env |

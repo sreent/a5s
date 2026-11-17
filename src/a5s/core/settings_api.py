@@ -17,7 +17,7 @@ from pydantic import BaseModel
 
 from a5s import db
 from a5s.contract import Person, parse_settings
-from a5s.core import approvals, memberships, registry, settings_app, web
+from a5s.core import approvals, impact, memberships, registry, settings_app, web
 from a5s.core import studio_models as shapes  # what each route answers, as the studio's types say
 
 
@@ -116,6 +116,7 @@ def router(gw: Any) -> APIRouter:
                                                    if t in tools and tools[t].action})}
                          for name, d in sorted(gw.definitions.items())},
             "waiting": waiting,
+            "currency": gw.currency,  # which budgets the forms set are in
             "requests": [{"asked_at": r["asked_at"].isoformat(),
                           "serial": parse_settings(bytes(r["raw"])).serial,
                           "outcome": r["outcome"] or "waiting for a5s to ask its approvers",
@@ -124,7 +125,7 @@ def router(gw: Any) -> APIRouter:
         }
 
     @api.post("/settings/api/review", **shapes.answers(shapes.SettingsReview))
-    def settings_review(body: Written) -> dict:
+    def settings_review(body: Written, person: Annotated[Person, Depends(settling)]) -> dict:
         """What a version someone wrote would change, the whole of it in words, and who'd
         have to approve it, before they ask for it."""
         with db.transaction(gw.url) as conn:
@@ -134,7 +135,9 @@ def router(gw: Any) -> APIRouter:
             return {"problems": problems}
         before = parse_settings(bytes(last["raw"])) if last else None
         words = (gw.definitions, gw.scenario.person)
+        preview = impact.shown(gw, before, settings, person) if not problems else None
         return {"serial": settings.serial, "problems": problems,
+                **({"impact": preview} if preview is not None else {}),
                 "in_force": last["serial"] if last else None,  # what it's reviewed against
                 "changes": approvals.changes(before, settings, *words),
                 "whole": approvals.described(settings, *words),

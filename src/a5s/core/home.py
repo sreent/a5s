@@ -25,13 +25,19 @@ from a5s.core import (
     approvals,
     asks,
     audit,
+    feedback,
+    handover,
+    languages,
     memberships,
     notebook,
     proposals,
     registry,
     releases,
     samples,
+    shadows,
+    spending,
     studio,
+    words,
 )
 from a5s.core.tasks import OFFERED
 
@@ -40,11 +46,13 @@ MOST = 20  # samples counted to grade, beyond which the home says "20 or more"
 # What each role lets someone do, by its kind; {scope} is its part or agent
 MAY = {
     PART_OWNER: "approve the instances that work in {scope}, and how far each may act there; "
-                "decide the changes agents ask for there; watch those instances' runs",
+                "decide the changes agents ask for there; watch those instances' runs; and "
+                "approve what agents' models may cost there a month, and see what they do",
     PART_DELEGATE: "decide the changes agents ask for in {scope}, beside its owner",
     "agent-owner": "own the {scope}: its definition and releases, drafts of it, and its "
-                   "instances' runs; start new agents; suspend it; and give a group its "
-                   "authors' or viewers' role",
+                   "instances' runs; start new agents; suspend it; give a group its authors' "
+                   "or viewers' role; and approve what its models may cost a month, and see "
+                   "what they do",
     "agent-author": "draft changes to the {scope}, try them in the sandbox, and publish them for "
                     "its owners to sign",
     "agent-viewer": "see how the {scope} is built, read only: its instructions and skills",
@@ -65,29 +73,34 @@ TEAM_MAY = ("run it, and make it safer alone: suspend an instance, lower a cap o
             "release, never loosen it; sign its releases as an engineer")
 
 
-def may(role: str) -> str:
-    """What a role lets someone do, in words."""
+def may(role: str, language: str = languages.ENGLISH) -> str:
+    """What a role lets someone do, in words, in the language they read."""
     kind, _, scope = role.partition(":")
-    words = MAY.get(kind) or MAY.get(role)
-    return words.format(scope=scope) if words else "what the scenario gives it"
+    found = MAY.get(kind) or MAY.get(role)
+    return words.say(language, found, scope=scope) if found else words.say(
+        language, "what the scenario gives it")
 
 
-def roles(conn: db.Connection, gw: Any, person: Person) -> list[dict]:
-    """Each role someone holds, what gave it them, and what it lets them do: the team that
-    runs a5s first, if they're in it."""
-    found = [{"role": h["role"], "name": administration.named(h["role"]), "by": by, "may": may(h["role"])}
+def roles(conn: db.Connection, gw: Any, person: Person,
+          language: str = languages.ENGLISH) -> list[dict]:
+    """Each role someone holds, what gave it them, and what it lets them do, in the language
+    they read: the team that runs a5s first, if they're in it."""
+    found = [{"role": h["role"], "name": administration.named(h["role"], language),
+              "by": [words.translated(language, b) for b in by], "may": may(h["role"], language)}
              for h in administration.held(gw.scenario, conn, list(person.roles))
              for by in [next((x["by"] for x in h["held_by"] if x["id"] == person.id), None)]
              if by]
     if person.team == gw.cfg.team:
-        found.insert(0, {"role": TEAM, "name": "The team that runs a5s", "by": ["the directory"],
-                         "may": TEAM_MAY})
+        found.insert(0, {"role": TEAM, "name": words.say(language, "The team that runs a5s"),
+                         "by": [words.say(language, "the directory")],
+                         "may": words.say(language, TEAM_MAY)})
     return found
 
 
-def waiting(conn: db.Connection, gw: Any, person: Person) -> list[dict]:
+def waiting(conn: db.Connection, gw: Any, person: Person,
+            language: str = languages.ENGLISH) -> list[dict]:
     """What waits for someone: each with what it is, why it's theirs, and where they do it, a
-    page of a5s's, or the command line."""
+    page of a5s's, or the command line, in the language they read."""
     found: list[dict] = []
     scenario = gw.scenario
     rooted = memberships.rooted(scenario)
@@ -107,36 +120,84 @@ def waiting(conn: db.Connection, gw: Any, person: Person) -> list[dict]:
                if role in (own.roles if directory_alone and own else
                            () if directory_alone else person.roles)]
         if why:
-            found.append({"kind": "settings", "what": f"Version {row['serial']} of the settings "
-                          "waits for your approval", "why": list(dict.fromkeys(why)),
+            found.append({"kind": "settings", "what": words.say(
+                              language, "Version {serial} of the settings waits for your approval",
+                              serial=row["serial"]),
+                          "why": [words.translated(language, w) for w in dict.fromkeys(why)],
                           "go": f"/studio/approve?settings={row['digest']}"})  # its own page
     held = sum(1 for p in conn.execute("select records, acts_for from proposals "
                                        "where status = 'waiting'")
                if proposals.may_decide(scenario, p, person.id))  # as the directory stands now
     if held:
-        found.append({"kind": "decide", "what": f"{held} {'change' if held == 1 else 'changes'} "
-                      f"an agent asked for {'waits' if held == 1 else 'wait'} for your decision",
+        found.append({"kind": "decide", "what": words.say(
+                          language, "{n} change an agent asked for waits for your decision"
+                          if held == 1 else "{n} changes an agent asked for wait for your decision",
+                          n=held),
                       "why": [], "go": "/studio/decide"})
     if samples.GRADER in person.roles and (
             graded := len(samples.gradeable(conn, scenario, person, MOST + 1))):
-        count = f"{MOST} or more" if graded > MOST else str(graded)
-        found.append({"kind": "grade", "what": f"{count} {'sample' if graded == 1 else 'samples'} "
-                      f"of agents' work {'waits' if graded == 1 else 'wait'} for your grade",
+        found.append({"kind": "grade", "what": words.say(
+                          language, "{n} or more samples of agents' work wait for your grade"
+                          if graded > MOST else "{n} sample of agents' work waits for your grade"
+                          if graded == 1 else "{n} samples of agents' work wait for your grade",
+                          n=min(graded, MOST)),
                       "why": [], "go": "/studio/grade"})
     running = (gw.releases.current if gw.releases is not None and not gw.cfg.development
                else None)
     for need in releases.awaiting(conn, running, scenario, gw.cfg.team, person):
-        found.append({"kind": "release", "what": f"Release {running.version} of a5s waits for "
-                      f"your signature, as {releases.who(need.role)}", "why": [need.why],
+        found.append({"kind": "release", "what": words.say(
+                          language, "Release {version} of a5s waits for your signature, as {who}",
+                          version=running.version if running else "", who=releases.who(need.role)),
+                      "why": [need.why],
                       "go": None, "how": "a5s release sign"})
     for ask in asks.waiting(conn, scenario, studio.instances(conn), person):
-        found.append({"kind": "ask", "what": f"{ask['person']} asks for the {ask['agent']}",
-                      "why": ask["why"], "go": f"/studio/agents/{ask['agent']}"})
+        found.append({"kind": "ask", "what": words.say(language, "{person} asks for the {agent}",
+                                                        person=ask["person"], agent=ask["agent"]),
+                      "why": [words.translated(language, w) for w in ask["why"]],
+                      "go": f"/studio/agents/{ask['agent']}"})
+    choices = gw.data_protection(conn)
+    for agent, n in feedback.waiting(conn, scenario, person, sorted(gw.definitions),
+                                     names=choices.studio_names,
+                                     fewest=choices.fewest_people).items():
+        found.append({"kind": "feedback", "what": words.say(
+                          language, "{n} of the {agent}'s answers someone said was wrong wait for "
+                          "you to check" if n == 1 else "{n} of the {agent}'s answers people said "
+                          "were wrong wait for you to check", n=n, agent=agent),
+                      "why": [words.say(language, "you own it")],
+                      "go": f"/studio/agents/{agent}#feedback"})
+    found += spending.over(conn, scenario, gw.models, gw.spending_in_force(conn), person,
+                           currency=gw.currency, language=language)
+    if waiting := len(shadows.gradeable(conn, scenario, person)):  # a new version's answers
+        found.append({"kind": "shadow", "what": words.say(
+                          language, "A new version's answer waits for you to compare with the "
+                          "one sent" if waiting == 1 else "{n} of new versions' answers wait for "
+                          "you to compare with those sent", n=waiting),
+                      "why": [words.say(language, "you grade agents' work")],
+                      "go": "/studio/shadows"})
+    for line in handover.waiting(conn, scenario, person):  # conversations handed to their team
+        if line["taken_by"] is None or (line["mine"] and line["unanswered"]):
+            found.append({"kind": "handover", "what": words.say(
+                              language, "{person}'s conversation with the {agent} was handed to "
+                              "the {team} team, and waits for an answer", person=line["person"],
+                              agent=line["agent"], team=line["team"]),
+                          "why": [], "go": f"/studio/handovers/{line['id']}"})
+    for made in conn.execute(  # changes made for them they can still undo (core/undoing.py)
+            "select id, definition, record, said, until from changes_made where %s = any(acts_for) "
+            "and until > now() and state is distinct from 'undone' and undone_at is null "
+            "order by made_at desc limit 5", (person.id,)):
+        if scenario.sees(person.id, made["record"]):
+            found.append({"kind": "undo", "what": words.say(
+                              language, "The {agent} made a change for you, which you can undo "
+                              "until {until}: {said}", agent=made["definition"],
+                              until=made["until"].strftime("%d %b %Y, %H:%M UTC"), said=made["said"]),
+                          "why": [], "go": f"/studio/undo?change={made['id']}"})
     tasks = conn.execute("select count(*) as n from tasks where owner = %s and parent is null "
                          "and status in ('blocked', %s)", (person.id, OFFERED)).fetchone()["n"]
     if tasks:
-        found.append({"kind": "tasks", "what": f"{tasks} of your tasks "
-                      f"{'waits' if tasks == 1 else 'wait'} for you, blocked or asked for",
+        found.append({"kind": "tasks", "what": words.say(
+                          language, "{n} of your tasks waits for you, blocked or asked for"
+                          if tasks == 1 else "{n} of your tasks wait for you, blocked or asked for",
+                          n=tasks),
                       "why": [], "go": "/studio/tasks"})
     return found
 

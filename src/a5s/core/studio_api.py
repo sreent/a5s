@@ -21,6 +21,7 @@ from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Response
 from pydantic import BaseModel
 
 from a5s import authoring, cases, db, definitions, describing
+from a5s.connectors import libraries
 from a5s.contract import Person
 from a5s.core import (
     admin_api,
@@ -29,21 +30,32 @@ from a5s.core import (
     approve_api,
     asks,
     audit_api,
+    budgets,
     decide_api,
+    delegation,
+    dependencies,
     drafts,
+    feedback,
     grade_api,
+    handover,
+    languages,
     ledger,
     memberships,
     notebook_api,
     officer_api,
     publishing,
     registry,
+    run_cases,
     settings_api,
     settings_app,
+    shadows,
+    shell_api,
+    spending,
     studio,
     suspension,
     tasks_api,
     typescript,
+    undoing,
     web,
 )
 from a5s.core import home as homes  # the studio's home: `home` is the site's
@@ -121,6 +133,62 @@ def may_study(gw: Any, person: Person) -> bool:
             or drafts.authors(person))
 
 
+class RunCaseAsked(BaseModel):
+    """A run kept as a test case: its name, the made-up person who says it, what they say, as
+    its author checked it, what a right answer is, if they say, and that they checked it."""
+
+    name: str
+    speaker: str
+    say: str
+    judged: str | None = None
+    checked: bool = False
+
+
+class LanguageChoice(BaseModel):
+    """The language someone chooses a5s's pages speak to them in, by its code, such as th."""
+
+    language: str
+
+
+class ShadowGrade(BaseModel):
+    grade: str  # better, same, worse or wrong
+
+
+class HandoverReply(BaseModel):
+    """What someone of a team answers a person whose conversation was handed to it."""
+
+    text: str
+
+
+class UndoAct(BaseModel):
+    """Undoing a change, signed in afresh for that act alone: the salt its nonce was made with."""
+
+    salt: str
+
+
+class ConnectionReturn(BaseModel):
+    """What a system sent someone back to a5s with, once they said whether a5s may act for them
+    there: the start's state, and its code, or the error it gave for a no."""
+
+    state: str
+    code: str | None = None
+    error: str | None = None
+
+
+class AnswerGrade(BaseModel):
+    """An owner's grade of an answer someone said was wrong: right, wrong or critical."""
+
+    grade: str
+
+
+STAND_IN = "stand-in"  # the sandbox's model that answers itself, which costs nothing
+# The tokens someone's tries of drafts in the sandbox may take a day on real models, in all:
+# as much as an agent that names no budget gives one person a day [starting value]
+SANDBOX_DAY = definitions.Budget().per_person_per_day
+SANDBOX_SPENT = ("your tries in the sandbox have taken the {n} tokens a day's may take on real "
+                 "models: try again tomorrow, or on the stand-in, which costs nothing")
+
+
 def router(gw: Any) -> APIRouter:
     """The studio's page and its API, for the channels app to include."""
 
@@ -179,6 +247,7 @@ def router(gw: Any) -> APIRouter:
     @pages.get("/studio/instances/{name}", include_in_schema=False)
     @pages.get("/studio/runs/{name}", include_in_schema=False)
     @pages.get("/studio/drafts/{name}", include_in_schema=False)
+    @pages.get("/studio/handovers/{name}", include_in_schema=False)
     def studio_view(name: str) -> Response:
         """The studio, at the address of one of its agents, instances, runs or drafts."""
         return built("index.html")
@@ -196,6 +265,12 @@ def router(gw: Any) -> APIRouter:
     @pages.get("/studio/officer", include_in_schema=False)
     @pages.get("/studio/approve", include_in_schema=False)
     @pages.get("/studio/design", include_in_schema=False)
+    @pages.get("/studio/map", include_in_schema=False)
+    @pages.get("/studio/spending", include_in_schema=False)
+    @pages.get("/studio/connections", include_in_schema=False)
+    @pages.get("/studio/undo", include_in_schema=False)
+    @pages.get("/studio/handovers", include_in_schema=False)
+    @pages.get("/studio/shadows", include_in_schema=False)
     def studio_new() -> Response:
         """The studio, where someone starts a new agent, sees all the agents they may, what they
         may do, or the design system's showcase."""
@@ -217,7 +292,8 @@ def router(gw: Any) -> APIRouter:
         use, whether or not they hold a role: the catalogue is everyone's."""
         with db.transaction(gw.url) as conn:
             asks.settle(conn, gw.scenario, studio.instances(conn))  # served since, or lapsed
-            return {"you": person.name, "waiting": homes.waiting(conn, gw, person),
+            return {"you": person.name,
+                    "waiting": homes.waiting(conn, gw, person, languages.of(conn, person)),
                     "drafts": drafts.mine(conn, person),
                     "authoring": drafts.may_author(person, None)}  # a new agent, as the catalogue says
 
@@ -227,8 +303,174 @@ def router(gw: Any) -> APIRouter:
         the identity provider's, and what it lets them do; and the groups their sign-in
         showed, of those the settings name."""
         with db.transaction(gw.url) as conn:
-            return {"you": person.name, "id": person.id, "roles": homes.roles(conn, gw, person),
-                    "groups": list(memberships.stored(conn, person.id).get(person.id, ()))}
+            return {"you": person.name, "id": person.id,
+                    "roles": homes.roles(conn, gw, person, languages.of(conn, person)),
+                    "groups": list(memberships.stored(conn, person.id).get(person.id, ())),
+                    "language": languages.of(conn, person),
+                    "languages": [{"code": c, "name": n} for c, n in languages.SPOKEN.items()]}
+
+    @api.post("/studio/api/you/language", **shapes.answers(shapes.LanguageChosen))
+    def studio_language(body: LanguageChoice, person: Annotated[Person, Depends(someone)]) -> dict:
+        """Choose the language a5s's pages speak to whoever signed in, and its agents answer
+        them in, of those a5s's pages speak: theirs alone, kept with their preferences."""
+        with db.transaction(gw.url) as conn:
+            try:
+                chosen = languages.choose(conn, person, body.language, gw.clock())
+            except languages.Refused as e:
+                raise HTTPException(400, str(e)) from None
+            ledger.append(conn, {"kind": "admin", "action": "choose-language", "run": None,
+                                 "instance": None, "acts_for": [person.id], "decision": "record",
+                                 "args": {"language": chosen}})  # it changes what agents are told
+            return {"language": chosen}
+
+    @api.get("/studio/api/shadows", **shapes.answers(shapes.Shadows))
+    def studio_shadows(person: Annotated[Person, Depends(someone)]) -> dict:
+        """What new versions answered beside those at work, for whoever signed in to grade, as
+        for samples, those whose records they may all see; and how each shadow they may see did,
+        in counts (core/shadows.py)."""
+        with db.transaction(gw.url) as conn:
+            pairs = shadows.gradeable(conn, gw.scenario, person)
+            return {"pairs": [{"id": r["id"], "agent": r["agent"], "shadow": r["definition"],
+                               "asked": r["asked"], "sent": r["sent"], "answer": r["answer"],
+                               "at": r["at"].isoformat()} for r in pairs],
+                    "shadows": shadows.figures(conn, gw.scenario, person)}
+
+    @api.post("/studio/api/shadows/{pair}/grade", **shapes.answers(shapes.ShadowGraded))
+    def studio_shadow_grade(pair: int, body: ShadowGrade,
+                            person: Annotated[Person, Depends(someone)]) -> dict:
+        """Grade what a shadow answered beside the answer sent: better, as good, worse, or
+        wrong, once, as someone who may grade it. The core notes it in the ledger."""
+        try:
+            with db.transaction(gw.url) as conn:
+                shadows.grade(conn, gw.scenario, person, pair, body.grade)
+        except LookupError:
+            raise HTTPException(404, "there's no such answer for you to grade") from None
+        except shadows.Refused as e:
+            raise HTTPException(409, str(e)) from None
+        return {"graded": True}
+
+    @api.get("/studio/api/handovers", **shapes.answers(shapes.Handovers))
+    def studio_handovers(person: Annotated[Person, Depends(someone)]) -> dict:
+        """The conversations handed over to the teams whoever signed in is in, still open
+        (core/handover.py): each record they may not see, as such."""
+        with db.transaction(gw.url) as conn:
+            return {"handovers": handover.waiting(conn, gw.scenario, person)}
+
+    @api.get("/studio/api/handovers/{handover_id}", **shapes.answers(shapes.Handover))
+    def studio_handover(handover_id: int, person: Annotated[Person, Depends(someone)]) -> dict:
+        """A conversation handed to one of their teams: its brief, what the person said before
+        and since, their own words alone, and the team's answers."""
+        with db.transaction(gw.url) as conn:
+            found = handover.one(conn, gw.scenario, person, handover_id)
+        if found is None:
+            raise HTTPException(404, "there's no such conversation handed to your teams")
+        return found
+
+    def handing(handover_id: int, person: Person, act: Any) -> dict:
+        try:
+            with db.transaction(gw.url) as conn:
+                act(conn, gw.scenario, person, handover_id)
+        except LookupError:
+            raise HTTPException(404, "there's no such conversation handed to your teams") from None
+        except handover.Refused as e:
+            raise HTTPException(409, str(e)) from None
+        return {"done": True}
+
+    @api.post("/studio/api/handovers/{handover_id}/take", **shapes.answers(shapes.HandoverDone))
+    def studio_take(handover_id: int, person: Annotated[Person, Depends(someone)]) -> dict:
+        """Take a conversation handed to one of their teams, to answer the person."""
+        return handing(handover_id, person, handover.take)
+
+    @api.post("/studio/api/handovers/{handover_id}/answer", **shapes.answers(shapes.HandoverDone))
+    def studio_answer(handover_id: int, body: HandoverReply,
+                      person: Annotated[Person, Depends(someone)]) -> dict:
+        """Answer the person, as whoever took it: the core puts it in their chat within a
+        minute, as the agent's bot, with their name."""
+        return handing(handover_id, person,
+                       lambda conn, scenario, who, h: handover.answer(conn, scenario, who, h, body.text))
+
+    @api.post("/studio/api/handovers/{handover_id}/back", **shapes.answers(shapes.HandoverDone))
+    def studio_back(handover_id: int, person: Annotated[Person, Depends(someone)]) -> dict:
+        """Hand it back to the agent, which answers the person again."""
+        return handing(handover_id, person, handover.back)
+
+    @api.get("/studio/api/changes/{change}", **shapes.answers(shapes.ChangeMade))
+    def studio_change(change: int, person: Annotated[Person, Depends(someone)]) -> dict:
+        """A change an agent made, which its tool says how to undo (core/undoing.py), for
+        whoever it was for, and whoever decides changes like it in its record's part: what it
+        did, until when it can be undone, whether they may, and how it stands."""
+        with db.transaction(gw.url) as conn:
+            found = undoing.shown(conn, gw.scenario, person, change)
+        if found is None:
+            raise HTTPException(404, "there's no such change of yours to undo")
+        return found
+
+    @api.post("/studio/api/changes/{change}/undo", **shapes.answers(shapes.UndoAsked))
+    def studio_undo(change: int, body: UndoAct, person: Annotated[Person, Depends(someone)],
+                    authorization: str | None = Header(default=None)) -> dict:
+        """Undo a change, signed in afresh for that act alone, which the core checks again and
+        carries out within a minute, while its record is as the change left it: whoever it was
+        for, or decides changes like it in its record's part."""
+        token = (authorization or "").removeprefix("Bearer ").strip()
+        try:
+            who, claims = undoing.check(gw.identity, gw.scenario, gw.cfg.webchat_client_id,
+                                        token, change, body.salt, time.time())
+            with db.transaction(gw.url) as conn:
+                row = undoing.found(conn, change)
+                if row is None or undoing.shown(conn, gw.scenario, who, change) is None:
+                    raise HTTPException(404, "there's no such change of yours to undo")
+                if why := undoing.may(gw.scenario, who, row, bool(row["open"])):
+                    raise HTTPException(409, why)
+                asked = undoing.record(conn, change, who.id, token, body.salt, claims)
+        except approvals.Refused as exc:
+            raise web.refusal(gw, exc) from None
+        return {"change": change, "at": asked["asked_at"].isoformat()}
+
+    @api.get("/studio/api/you/connections", **shapes.answers(shapes.Connections))
+    def studio_connections(person: Annotated[Person, Depends(someone)]) -> dict:
+        """Each system whoever signed in may connect their own account in, so agents act there
+        as them, with their permissions (core/delegation.py), and whether they have: none,
+        where the deployment connects none."""
+        with db.transaction(gw.url) as conn:
+            found = delegation.connections(conn, gw.delegation, person.id)
+        reads = libraries.read_in(gw.scenario)  # what connecting each is for
+        return {"connections": [{**c, "reads": reads.get(c["system"], [])} for c in found]}
+
+    @api.post("/studio/api/you/connections/{system}/start", **shapes.answers(shapes.ConnectionStarted))
+    def studio_connect(system: str, person: Annotated[Person, Depends(someone)]) -> dict:
+        """Begin connecting their account in a system: the system's own page, where it asks
+        them whether a5s may act for them, with the scopes the deployment names."""
+        if gw.delegation is None:
+            raise HTTPException(404, "this deployment connects no accounts")
+        with db.transaction(gw.url) as conn:
+            try:
+                go = delegation.start(conn, gw.delegation, person.id, system,
+                                      f"{gw.public_url}{delegation.BACK}")
+            except delegation.Refused as e:
+                raise HTTPException(404, str(e)) from None
+        return {"go": go}
+
+    @api.post("/studio/api/you/connections/back", **shapes.answers(shapes.ConnectionBack))
+    def studio_connected(body: ConnectionReturn, person: Annotated[Person, Depends(someone)]) -> dict:
+        """What a system sent them back with: its code, for the core to exchange for their
+        tokens within a minute, or their no."""
+        if gw.delegation is None:
+            raise HTTPException(404, "this deployment connects no accounts")
+        with db.transaction(gw.url) as conn:
+            try:
+                found = delegation.came_back(conn, gw.delegation, person.id, body.state,
+                                             None if body.error else body.code)
+            except delegation.Refused as e:
+                raise HTTPException(400, str(e)) from None
+        return {"system": found.name, "title": found.title,
+                "connecting": bool(body.code and not body.error)}
+
+    @api.delete("/studio/api/you/connections/{system}", **shapes.answers(shapes.Disconnected))
+    def studio_disconnect(system: str, person: Annotated[Person, Depends(someone)]) -> dict:
+        """Forget their tokens in a system: a5s acts as them there no more, until they connect
+        it again. The system may keep its own record of a5s's access, which they end there."""
+        with db.transaction(gw.url) as conn:
+            return {"forgotten": delegation.forget(conn, person.id, system, "they disconnected it")}
 
     @api.get("/studio/api", **shapes.answers(shapes.Catalogue))
     def studio_now(person: Annotated[Person, Depends(someone)]) -> dict:
@@ -240,6 +482,81 @@ def router(gw: Any) -> APIRouter:
                     "authoring": {"new": drafts.may_author(person, None),  # what they may make
                                   "agents": sorted(a for a in gw.definitions
                                                    if drafts.may_author(person, a))}}
+
+    @api.get("/studio/api/agents/{agent}/feedback", **shapes.answers(shapes.AnswersSaidWrong))
+    def studio_said_wrong(agent: str, person: Annotated[Person, Depends(someone)]) -> dict:
+        """The agent's answers people said were wrong, for its owners to check (core/feedback.py):
+        those whose runs they may see, and who said each only once the officer agrees to names."""
+        if agent not in gw.definitions or not feedback.owns(person, agent):
+            raise HTTPException(404, "there's no such agent of yours")
+        with db.transaction(gw.url) as conn:
+            choices = gw.data_protection(conn)
+            return feedback.shown(conn, gw.scenario, person, agent, names=choices.studio_names,
+                                  fewest=choices.fewest_people)
+
+    @api.post("/studio/api/feedback/{answer}/grade", **shapes.answers(shapes.AnswerGraded))
+    def studio_grade_answer(answer: int, body: AnswerGrade,
+                            person: Annotated[Person, Depends(someone)]) -> dict:
+        """An owner's grade of an answer someone said was wrong: right, wrong or critical."""
+        with db.transaction(gw.url) as conn:
+            try:
+                choices = gw.data_protection(conn)
+                return feedback.grade(conn, gw.scenario, person, answer, body.grade,
+                                      names=choices.studio_names, fewest=choices.fewest_people)
+            except feedback.Refused as exc:
+                raise HTTPException(404 if "no such" in str(exc) else 400, str(exc)) from None
+
+    @api.get("/studio/api/runs/{run_id}/case", **shapes.answers(shapes.RunCaseOffered))
+    def studio_run_case(run_id: str, person: Annotated[Person, Depends(studying)]) -> dict:
+        """A run as a test case, masked by code, for its agent's author to check and keep, once
+        the data protection officer agrees (core/run_cases.py)."""
+        with db.transaction(gw.url) as conn:
+            try:
+                return run_cases.proposed(conn, gw.scenario, person, run_id, gw.definitions,
+                                          gw.data_protection(conn))
+            except run_cases.Refused as exc:
+                raise HTTPException(404 if "no such" in str(exc) else 403, str(exc)) from None
+
+    @api.post("/studio/api/runs/{run_id}/case", **shapes.answers(shapes.RunCaseKept))
+    def studio_keep_run_case(run_id: str, body: RunCaseAsked,
+                             person: Annotated[Person, Depends(studying)]) -> dict:
+        """Keep a run as a test case in someone's draft of its agent, as they checked it."""
+        with db.transaction(gw.url) as conn:
+            try:
+                kept = run_cases.keep(conn, gw.scenario, person, run_id, gw.definitions,
+                                      gw.data_protection(conn), gw.cfg.agents_dir,
+                                      name=body.name, as_=body.speaker, say=body.say,
+                                      judged=body.judged, checked=body.checked)
+            except (run_cases.Refused, drafts.Refused) as exc:
+                raise HTTPException(404 if "no such" in str(exc) else 409, str(exc)) from None
+        case = kept["case"]
+        return {**kept, "case": {"name": case["name"], "speaker": case["as"],
+                                 "steps": case["steps"]}}
+
+    @api.get("/studio/api/spending", **shapes.answers(shapes.Spending))
+    def studio_spending(person: Annotated[Person, Depends(someone)],
+                        month: str | None = None) -> dict:
+        """What agents' model calls cost in a calendar month, this one unless another is named,
+        such as 2026-10: each part's and agent's against its budget, with its forecast to the
+        month's end, and each instance someone may watch, with what a message answered cost.
+        Only what's theirs to see (core/spending.py)."""
+        if not spending.sees_any(gw.url, person):
+            raise HTTPException(403, "spending is for the people who own a part or an agent, "
+                                     "decide for a part, approve instances, or run one")
+        with db.transaction(gw.url) as conn:
+            try:
+                return spending.report(conn, gw.scenario, gw.models, gw.spending_in_force(conn),
+                                       person, None, month, gw.currency)
+            except spending.Refused as e:
+                raise HTTPException(400, str(e)) from None
+
+    @api.get("/studio/api/map", **shapes.answers(shapes.DependsOn))
+    def studio_map(person: Annotated[Person, Depends(someone)]) -> dict:
+        """What depends on what, as far as someone may see it: the parts, instances, agents,
+        tools, systems and models, each joined to what it depends on (core/dependencies.py)."""
+        with db.transaction(gw.url) as conn:
+            return dependencies.drawn(conn, gw.scenario, gw.definitions, gw.scenario.tools(),
+                                      gw.models, person, languages.of(conn, person))
 
     @api.get("/studio/api/agents/{agent}", **shapes.answers(shapes.Agent))
     def studio_agent(agent: str, person: Annotated[Person, Depends(someone)]) -> dict:
@@ -610,11 +927,14 @@ def router(gw: Any) -> APIRouter:
                     drafts.room(conn, person, body.name)
                 except drafts.Refused as e:
                     raise HTTPException(409, str(e)) from None
-            asked = body.model or "stand-in"
+            asked = body.model or STAND_IN
+            affordable(person, asked)
+            said: dict = {}
             try:
                 said = sandboxed("/sandbox/descriptions", {"words": words, "model": asked})
             finally:  # the words went to the model whatever comes of them: the ledger says so
                 with db.transaction(gw.url) as conn:
+                    took(conn, person, asked, said.get("tokens"))
                     ledger.append(conn, {"kind": "admin", "action": "describe", "run": None,
                                          "instance": None, "acts_for": [], "decision": "record",
                                          "args": {"agent": body.name, "model": asked, "by": person.id,
@@ -764,6 +1084,29 @@ def router(gw: Any) -> APIRouter:
             raise HTTPException(502, f"the sandbox said {answer.status_code}")
         return answer.json()
 
+    def affordable(person: Person, model: str | None) -> None:
+        """Refuse a try on a real model once someone's tries in the sandbox have taken a day's
+        tokens: each case runs there as an instance of its own, whose own budget for a person's
+        day starts afresh, and a judge's calls count towards none. The stand-in costs nothing."""
+        if (model or STAND_IN) == STAND_IN:
+            return
+        with db.transaction(gw.url) as conn:
+            day = budgets.day_of(gw.scenario, person.id, gw.clock())
+            row = conn.execute("select tokens from sandbox_spend where person = %s and day = %s",
+                               (person.id, day)).fetchone()
+        if row and int(row["tokens"]) >= SANDBOX_DAY:
+            raise HTTPException(429, SANDBOX_SPENT.format(n=f"{SANDBOX_DAY:,}"))
+
+    def took(conn: Any, person: Person, model: str | None, tokens: Any) -> None:
+        """Count what a try took on a real model towards someone's day in the sandbox."""
+        n = int(tokens or 0) if isinstance(tokens, int | float) else 0
+        if (model or STAND_IN) == STAND_IN or n <= 0:
+            return
+        conn.execute("insert into sandbox_spend (person, day, tokens) values (%s, %s, %s) "
+                     "on conflict (person, day) do update set tokens = sandbox_spend.tokens + "
+                     "excluded.tokens", (person.id, budgets.day_of(gw.scenario, person.id,
+                                                                   gw.clock()), n))
+
     @api.get("/studio/api/sandbox", **shapes.answers(shapes.Sandbox))
     def studio_sandbox(_: Annotated[Person, Depends(drafting)]) -> dict:
         """Whom a draft may be tried as in the sandbox, of its made-up people, and on which
@@ -780,10 +1123,12 @@ def router(gw: Any) -> APIRouter:
             found = drafts.get(conn, person, draft)
         if found is None:
             raise HTTPException(404, "you have no such draft")
+        affordable(person, body.model)
         said = sandboxed("/sandbox/tries", {"key": found["id"].replace("-", "")[:12],
                                             "files": found["files"], "person": body.person,
                                             "text": body.text, "model": body.model})
         with db.transaction(gw.url) as conn:
+            took(conn, person, body.model, said.get("tokens"))
             ledger.append(conn, {"kind": "admin", "action": "try draft", "run": None,
                                  "instance": None, "acts_for": [], "decision": "record",
                                  "args": {"agent": found["agent"], "draft": found["id"],
@@ -815,12 +1160,21 @@ def router(gw: Any) -> APIRouter:
         case says."""
         with db.transaction(gw.url) as conn:
             found = drafts.get(conn, person, draft)
+            settings, _ = gw.settings_in_force(conn, seal=False)
+            if settings is None and not gw.cfg.seal_keys:
+                settings = gw.sealed_in_force(conn)
         if found is None:
             raise HTTPException(404, "you have no such draft")
+        # A case kept from a real run goes only to a model approved for the deployment's data
+        classes = sorted({settings.data_class, *settings.classified.values()}) if settings \
+            else ["internal"]
+        affordable(person, body.model)
         ran = sandboxed("/sandbox/cases", {"key": found["id"].replace("-", "")[:12],
                                            "files": found["files"], "number": number,
-                                           "model": body.model})
-        with db.transaction(gw.url) as conn:
+                                           "model": body.model, "classes": classes})
+        with db.transaction(gw.url) as conn:  # the case's runs, and its judge's calls
+            took(conn, person, body.model, int(ran.get("tokens") or 0)
+                 + int(ran.get("judge_tokens") or 0))
             ledger.append(conn, {"kind": "admin", "action": "run draft case", "run": None,
                                  "instance": None, "acts_for": [], "decision": "record",
                                  "args": {"agent": found["agent"], "draft": found["id"],
@@ -926,6 +1280,7 @@ def described() -> dict:
     app.include_router(grade_api.router(SimpleNamespace(cfg=None)))  # and grading samples
     app.include_router(officer_api.router(SimpleNamespace(cfg=None)))  # and the officer's requests
     app.include_router(approve_api.router(SimpleNamespace(cfg=None)))  # and approving settings
+    app.include_router(shell_api.router(SimpleNamespace(cfg=None)))  # and every page's sidebar
     return app.openapi()
 
 

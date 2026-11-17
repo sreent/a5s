@@ -6,6 +6,7 @@
 
 import { type FormEvent, useState } from "react";
 import { type Draft, send, get, type Sandbox, type Templates } from "../api";
+import { t } from "../i18n";
 import { go } from "../router";
 import { PageHead, useLoad, Waiting } from "../ui";
 
@@ -38,57 +39,55 @@ export function NewPage() {
   const named = NAME.test(name) && name.length <= 40;
   return (
     <>
-      <PageHead crumbs={[{ label: "Agents", to: { page: "agents" } }]} title="A new agent"
-                about="Start from one of the agents a5s ships. It's a draft, yours alone, until you publish it as a pull request: nothing runs it, and its first release needs the release approver." />
+      <PageHead crumbs={[{ label: t("Agents"), to: { page: "agents" } }]} title={t("A new agent")}
+                about={t("Start from one of the agents a5s ships. It's a draft, yours alone, until you publish it as a pull request: nothing runs it, and its first release needs the release approver.")} />
       {!data && <Waiting error={error} />}
       {data && (
         <form className="new-agent" onSubmit={make}>
           <section className="card">
-            <h2>Its name</h2>
+            <h2>{t("Its name")}</h2>
             <label className="field">
-              <span>Lower case letters and digits, with single hyphens between</span>
+              <span>{t("Lower case letters and digits, with single hyphens between")}</span>
               <input id="agent-name" value={name} placeholder="finance-helper" autoComplete="off"
                      onChange={(e) => setName(e.target.value.trim())} />
             </label>
           </section>
           <section className="card">
-            <h2>Start from</h2>
-            <div className="template-grid" role="radiogroup" aria-label="Start from">
-              {data.templates.map((t) => (
-                <label key={t.name} className={`template${t.lacks.length ? " lacking" : ""}${chosen === t.name ? " chosen" : ""}`}>
-                  <input type="radio" name="template" value={t.name} disabled={t.lacks.length > 0}
-                         checked={chosen === t.name} onChange={() => setChosen(t.name)} />
-                  <span className="template-name mono">{t.name}</span>
-                  <span className="template-for">{t.works_for}</span>
-                  <span className="faint">{t.tools.length} tools · {t.model}</span>
-                  {t.lacks.length > 0 && <span className="faint">needs {t.lacks.join(", ")}, which this scenario hasn't got</span>}
+            <h2>{t("Start from")}</h2>
+            <div className="template-grid" role="radiogroup" aria-label={t("Start from")}>
+              {data.templates.map((template) => (
+                <label key={template.name} className={`template${template.lacks.length ? " lacking" : ""}${chosen === template.name ? " chosen" : ""}`}>
+                  <input type="radio" name="template" value={template.name} disabled={template.lacks.length > 0}
+                         checked={chosen === template.name} onChange={() => setChosen(template.name)} />
+                  <span className="template-name mono">{template.name}</span>
+                  <span className="template-for">{template.works_for}</span>
+                  <span className="faint">{t("{n} tools · {model}", { n: template.tools.length, model: template.model })}</span>
+                  {template.lacks.length > 0 && <span className="faint">{t("needs {tools}, which this scenario hasn't got", { tools: template.lacks.join(", ") })}</span>}
                 </label>
               ))}
             </div>
           </section>
           {problem && <p className="problem" role="alert">{problem}</p>}
           <button type="submit" id="make" disabled={!named || !chosen || making}>
-            {making ? "Making it…" : "Make the draft"}
+            {making ? t("Making it…") : t("Make the draft")}
           </button>
           <section className="card" aria-labelledby="describe-title">
-            <h2 id="describe-title">Or describe it</h2>
-            {sandbox.error && <p className="note" id="no-describing">Describing it needs the sandbox, which drafts it there: {sandbox.error}</p>}
+            <h2 id="describe-title">{t("Or describe it")}</h2>
+            {sandbox.error && <p className="note" id="no-describing">{t("Describing it needs the sandbox, which drafts it there: {problem}", { problem: sandbox.error })}</p>}
             {sandbox.data && (
               <>
-                <p className="note">Say what it's for, in your own words. The sandbox's model proposes what it needs of what this
-                  scenario offers, and a5s gives it the least of that, never level 2, each with the reason, for you to check and
-                  change by hand. What you write goes to the model you choose, as what's said in the sandbox does.</p>
-                <label className="field"><span>What it's for, and for whom</span>
+                <p className="note">{t("Say what it's for, in your own words. The sandbox's model proposes what it needs of what this scenario offers, and a5s gives it the least of that, never level 2, each with the reason, for you to check and change by hand. What you write goes to the model you choose, as what's said in the sandbox does.")}</p>
+                <label className="field"><span>{t("What it's for, and for whom")}</span>
                   <textarea id="describe" rows={4} value={words} maxLength={2000}
-                            placeholder="Tracks each new joiner's equipment and access requests in the ITSM against their start date, and answers their questions before day one."
+                            placeholder={t("Tracks each new joiner's equipment and access requests in the ITSM against their start date, and answers their questions before day one.")}
                             onChange={(e) => setWords(e.target.value)} /></label>
-                <label className="field"><span>On the model</span>
+                <label className="field"><span>{t("On the model")}</span>
                   <select id="describe-model" value={model} onChange={(e) => setModel(e.target.value)}>
-                    {sandbox.data.models.map((m) => <option key={m} value={m}>{m === "stand-in" ? "the stand-in, which thinks nothing" : m}</option>)}
+                    {sandbox.data.models.map((m) => <option key={m} value={m}>{m === "stand-in" ? t("the stand-in, which thinks nothing") : m}</option>)}
                   </select></label>
                 <button type="button" id="describe-it" disabled={!named || !words.trim() || making}
                         onClick={() => void start({ describe: words.trim(), model })}>
-                  {making ? "Drafting it…" : "Draft it from my words"}</button>
+                  {making ? t("Drafting it…") : t("Draft it from my words")}</button>
               </>
             )}
           </section>

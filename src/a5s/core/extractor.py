@@ -77,6 +77,27 @@ def answer_request(api: str, alias: str, text: str, question: str) -> dict[str, 
     return asked(api, alias, ANSWER, f"The question: {question}\n\nThe document:\n<<<\n{text}\n>>>")
 
 
+def image_request(api: str, alias: str, image: bytes, media_type: str,
+                  question: str) -> dict[str, Any]:
+    """A question about an image someone sent, such as a screenshot, to a model approved for
+    images, in its API's style, with no tools: the image as the document."""
+    import base64
+
+    data = base64.b64encode(image).decode()
+    said = f"The question: {question}\n\nThe document is the image."
+    if api == "anthropic":
+        return {"model": alias, "system": ANSWER, "max_tokens": 1000, "messages": [{
+            "role": "user", "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": media_type,
+                                             "data": data}},
+                {"type": "text", "text": said}]}]}
+    return {"model": alias, "temperature": 0, "messages": [
+        {"role": "system", "content": ANSWER},
+        {"role": "user", "content": [
+            {"type": "text", "text": said},
+            {"type": "image_url", "image_url": {"url": f"data:{media_type};base64,{data}"}}]}]}
+
+
 def reply_text(api: str, data: Any) -> str:
     """The text of a model's reply, in either API's style."""
     try:

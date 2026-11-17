@@ -33,8 +33,11 @@ from a5s.cases import (  # the checks the sandbox makes of a draft's cases too
     JUDGING,
     check,
     dated,
+    for_real,
     judging,
     read,
+    real,
+    sent_with,
     unanswered,
 )
 from a5s.config import load_models
@@ -70,6 +73,7 @@ def cases() -> list:
         for path in paths:
             for case in read(path.read_text(), path.relative_to(ROOT).as_posix()):
                 where = f"{scenario}/" if scenario else ""
+                case = {**case, "file": path.relative_to(folder).as_posix()}  # as the studio's
                 found.append(pytest.param(scenario, folder.name, case,
                                           id=f"{where}{folder.name}/{path.stem}/{case['name']}"))
     return found
@@ -183,6 +187,17 @@ def test_each_agents_regression_suite(database: str, tmp_path: Path, monkeypatch
         pytest.skip(f"{model.key_env} isn't set")
     if scenario is not None and any("records" in step for step in case["steps"]):
         pytest.fail("a step that changes records first is for the sample's agents alone")
+    if real(case):  # what someone really said: never to a model for made-up data alone
+        approved = load_models(ROOT / "config" / "models.yaml")
+        needed = set(filter(None, os.environ.get("A5S_DATA_CLASSES", "internal").split(",")))
+        judge = release.evaluation.judge if release.evaluation else None
+        given = [release.model, *([judge] if judge and any(
+            "judged" in step for step in case["steps"]) else [])]
+        if barred := [m for m in given if m not in approved
+                      or not for_real(approved[m].data_classes, needed)]:
+            pytest.fail(f"it was kept from a real run, and {', '.join(barred)} isn't approved "
+                        f"for {', '.join(sorted(needed))} data, the deployment's "
+                        "(A5S_DATA_CLASSES): a real run's case goes only to models that are")
     root = build_root(tmp_path, release.model, (ROOT / "config" / "models.yaml").read_text())
     with stack_for(database, root, tmp_path, scenario, agent, case.get("as", "ana"),
                    release.model) as stack:
@@ -211,7 +226,8 @@ def test_each_agents_regression_suite(database: str, tmp_path: Path, monkeypatch
                 monkeypatch.setitem(records, key, {**records[key], **fields})
             after, since = len(stack.ledger()), now(stack)
             if "say" in step:
-                reply = stack.say(dated(step["say"]), person=person, agent=agent)
+                reply = stack.say(dated(step["say"]), person=person, agent=agent,
+                                  files=sent_with(case))  # as the run it was kept from read
             else:  # what's due runs, and what people are told waits in their inbox
                 stack.scheduler().work_due()
                 reply = "\n\n".join(m["text"] for m in stack.inbox(person))

@@ -23,7 +23,7 @@ For example, a5s's own assistant is a definition, and its release 0.3.0 a releas
 | Scope | The parts an instance may act in: one, several, or none, for an agent that acts on no part's data |
 | Grant | The tools, data and models an instance may use: what its release lists, as far as its parts' owners approve |
 | Type of action | A kind of action that a level is set for, as the scenario defines it, such as a change type or a catalogue item |
-| Acts for | Everyone whose words a run serves: whoever sent the message, set the reminder, or wrote the reply a request came from, whoever a reminder of an obligation is for, and whoever a report on their own records is for. A run started only by an event or a schedule acts for nobody. A run writes only to the people it acts for. |
+| Acts for | Everyone whose words a run serves: whoever sent the message, set the reminder, or wrote the reply a request came from, whoever a reminder of an obligation is for, and whoever a report on their own records is for. A run started only by a schedule acts for nobody, and one started by another system's event acts for the person it names, where the instance serves them, or else for nobody. A run writes only to the people it acts for. |
 
 The [scenario contract](architecture.md#the-scenario-contract) says where the settings, the governed process and the decision surface come from. Each scenario's page maps these terms, as the [IT service desk](../scenarios/it-service-desk.md) does.
 
@@ -58,6 +58,7 @@ Each organisation approves a release for its own deployment, with its own people
 | Active | Working, in the parts whose owners approve it | The agent owner, the deputy or the platform owner can suspend it, except that stopping an agent the scenario marks as a check needs the scenario's assurance. The agent owner or the platform owner can retire it. |
 | Suspended | No trigger wakes it, its next call is denied, even in a run already going, and its open work is withdrawn or flagged in the scenario's process | Whoever suspended it can resume it. Anyone else needs someone outside the team, because resuming loosens. Never while it has neither an owner nor a deputy. |
 | Retired | Its identity is disabled, its grant removed and its evidence archived. Conversations follow the retention rules. | Nobody |
+| Shadow | A new version answering beside the instance it shadows, sending and changing nothing, for graders to compare ([shadow runs](#shadow-runs)). It has no work of its own. | As an active instance: suspended, it answers nothing, and resumed, it's a shadow again. The owners of its parts make it an instance of its own by taking `shadows` out of its settings. |
 
 - A part owner can stop an instance acting in their part at any time, by withdrawing its approval in the settings.
 - If the agent owner and the deputy both leave, the instances are suspended until the platform owner names a new owner.
@@ -81,6 +82,54 @@ Each organisation approves a release for its own deployment, with its own people
 - Reminding, chasing and routing are allowed at every level, within the contact rules, because they change no data.
 - A scenario's policy pack can rule out level 2 for some actions, such as anything a person asked for in their own words, or narrow it, such as to self-service that the identity provider verifies.
 - There's no level above 2. An agent that acts always tells someone.
+
+### Undoing a change
+
+A tool that changes a record can say how the change is reversed (`undo`, [`core/undoing.py`](../src/a5s/core/undoing.py)): by calling a tool of the scenario's, often the same one, with arguments from the change's own (`args.<name>`) and from the record as it stood before it (`before.<field>`, a field of the record as the scenario gives it), for as long after it's made as the tool says, a day unless it says otherwise and a week at most. The sample's `change_due_date` is undone by setting the due date the question had before, for a day. How a tool is undone is part of what its approvers pin, in its hash, and the core doesn't start with an undo that names a tool it hasn't, or doesn't name the record the change did.
+
+- **What a5s keeps.** When a5s makes such a change, at level 2 or once its deciders approve it, it keeps the call that reverses it, worked out then, and the fields it restores as the change left them, read again just after. A change about more than one record, or to a record a5s couldn't read before, can't be undone this way.
+- **Who may undo it.** Whoever it was for, and whoever decides that type of change in its record's part, so long as they may see the record, until its time is up. Whoever it was for finds it on their home, and the agent is told how and until when, to tell them, as the instance's owner is, in their digest. Each undoes it on its page in the studio, `/studio/undo?change=<id>`, signing in afresh for that act alone, as for deciding: the channels app records it with the sign-in and can undo nothing, and the core checks the sign-in again, and whether they may now, then makes the call that reverses it, within a minute.
+- **Only as the change left it.** A record someone has changed since is left as it is: putting it right is for whoever changed it, in the records system. So is one that can't be read just then. A tool that has changed since undoes nothing.
+- **It counts against the agent.** An undone change counts as a wrong grade of the agent's work, which the core seals at once, whether or not it was drawn as a sample, so an agent whose changes people undo loses level 2 sooner, and earns it later ([samples](#autonomy)). A critical grade stays critical.
+- **Everyone hears.** The ledger records each undo and who asked for it, never what the record held. Whoever the change was for, and the instance's owner and deputy, hear of it in their digest, and the agent's next run knows, from the conversation. Whoever asked hears in their digest of one a5s couldn't undo, and why.
+
+A tool from an MCP server says the same in `mcp.yaml`, as `undo: {tool, args, hours}` ([connectors](connectors.md#declaring-them)).
+
+### Handing a conversation over
+
+An agent can hand a person's conversation over to people, such as the service desk, who answer them in the same chat until they hand it back ([`core/handover.py`](../src/a5s/core/handover.py)). An instance's settings name the directory's teams it may hand one to, `hands_to: [service-desk]`, which the owners of its parts approve, as they approve whom it may ask, reading it in words; and its agent's release lets it, `context: {handover: true}`. The core won't take a version that names a team nobody in the directory is in, or an agent whose release hands nothing over.
+
+- **At the person's word.** The agent hands it over with `hand_over`, naming the team and a short brief of what the person needs, only in answer to a message of theirs, in their own chat, never a group chat's, and never from a run that has read content from outside. a5s tells the person, in their chat, who takes it from there and what they see.
+- **What the team reads.** The brief, and what the person said lately, their own words alone, never the agent's answers, whose records may not be the team's to see. A record's key any of them may not see reads as such. The agent writes the brief from what its run read, which it may say without naming a record, so someone of the team reads it only if they may see every record that run handled, as the studio would show them the run; anyone else reads what the person said instead. The channels app reads no conversation: the core keeps those words with the handover.
+- **While it's handed over,** the agent answers nothing in that chat. The team finds it on their home and on the studio's page of conversations handed to them, `/studio/handovers`. One of them takes it, and answers from the studio; the core puts each answer in the person's chat, as the agent's bot, with the answerer's name, and keeps it, with what the person wrote, in their conversation.
+- **Handed back,** by whoever took it, or anyone of the team, the agent answers again, knowing what was said, and the person is told. One nobody has answered or handed back in three days is handed back.
+
+The ledger records each handover, each answer's delivery and its end, never the words.
+
+### Shadow runs
+
+A new version of an agent can answer what people ask an instance, beside it, sending and changing nothing, so its answers are graded before anyone puts it to work ([`core/shadows.py`](../src/a5s/core/shadows.py)). The new version is released as an agent of its own, such as `assistant-next`, with its new instructions, or another model, and its own regression suite. A shadow is an instance of it whose settings name the instance it answers beside:
+
+```yaml
+instances:
+  assistant-next-finance:
+    definition: assistant-next
+    serves: [ana, ben]        # nobody assistant-finance doesn't serve
+    parts: [billing]          # and no part it doesn't work in
+    owner: ana
+    shadows: assistant-finance
+data_protection:
+  shadow_runs: true           # the data protection officer's choice
+```
+
+- **The officer's choice.** A shadow reads what people say to the instance it shadows, and what their records hold, on a model that may be new, and graders read what it answered. So the data protection officer chooses whether shadows may answer at all, `shadow_runs` in the signed settings, which a version changes only with their approval. Without it, the core takes no version with a shadow in it, and opens no shadow's run.
+- **What its approvers read.** The owners of its parts approve it as any instance, reading that it answers what the instance it shadows is asked, beside it, as the same people, sending and changing nothing. The core won't take one that serves anyone the instance it shadows doesn't, works in a part it doesn't, shadows a shadow, or asks or hands over anything.
+- **Beside each answer.** Once the instance it shadows has answered a message, the shadow answers the same, as the same people, given the conversation as that run was given it, and the files they sent with it, under the same need-to-know. Its status, `shadow`, gives it no work of its own: no message, reminder, schedule, report or task is ever its. A run of its own is refused, and so is a second answer beside the same run.
+- **It only reads.** The policy lets a shadow call only the tools of its grant that change, write and send nothing, and its own model, and lets it send nothing at all. Of a5s's own tools, it's offered only those that read: searching the conversation, asking a5s's reader, and listing reminders and tasks. What it answers goes nowhere: the core keeps it beside the answer that was sent, cleaned as any message is.
+- **Graded beside the answer sent.** Graders, from outside the team that built the shadow's agent and the teams of its instance's owners, as for samples, and never anyone it answered, read each pair whose records they may all see, on the studio's page of new versions' answers, `/studio/shadows`, never whose it was. They say whether the new version's answer is better, as good, worse, or wrong. A shadow whose agent names a [judge](#the-judge) hears from it too, kept apart from people's grades. Its graders, its owners, the owners of the instance it shadows and its agent's owners read how it did, in counts.
+- **Costs and figures.** A shadow's runs are its own, with their own budget and spending, so what a new version costs is seen beside what it answers.
+
+A shadow's grades move no cap: they're evidence for its owners, who put the new version to work, if they choose, with a release of the agent it shadows, or by taking `shadows` out of its settings. The ledger records each shadow's run and answer, and each grade, never the words.
 
 ## The definition format
 
@@ -140,6 +189,8 @@ evaluation:                      # a judge of its work, beside people's grades (
 Each model call carries the whole context and, beside it, the instructions, the tools and what the run has read so far, so the budgets are checked against the context when a release is loaded: a run's budget must fit six calls of the context and about 6,000 tokens beside it, and a person's day, beside the fifth kept for chases and reminders, twelve answers of two calls each. A release that doesn't fit is refused.
 
 A schedule names its times, in the time zone of the instance's owner, its days, and the task a5s gives the agent each time, such as `{name: morning, at: "09:00", days: weekdays, task: Look through the open questions.}`. Times need quotes, because YAML reads an unquoted 9:00 as a number.
+
+An event is what another system says happened, such as a ticket opened: `events` names each the agent takes, by its `type`, the `source` that sends it, as the deployment names that system, and the `task` a5s gives the agent each time, such as `{type: ticket-opened, source: itsm, task: Read the new ticket, and if it's a known problem, propose its fix.}`. The system names the records it's about and the person, if anyone, and nothing else: the agent reads what it needs of each record itself, through its tools. Within a minute, the instance at work in every record's part works on it, acting for the person it names, where it serves them, and writing to them; else for nobody, as a schedule's run does. Taking events widens what an agent does, so its release approver signs for them ([`core/events.py`](../src/a5s/core/events.py)).
 
 An agent whose release keeps reminders gets a5s's own tools for them: it offers a reminder, or to follow something up, and a5s keeps it only once the person says yes in a later message of their own. Its people can list and cancel theirs, and say what they're waiting on for one of their records, which pauses a5s's chases about it until the date they give. Confirming names the offer the person said yes to, so two offers waiting are never confused.
 

@@ -18,8 +18,11 @@ need-to-know checks every one: what a5s can't check, it doesn't pass on.
 
 It speaks MCP's Streamable HTTP, through the initialize handshake (2025-03-26 to 2025-11-25),
 over HTTPS unless the server is on this machine, with no redirects, an answer of 1 MB at
-most, and a bearer token from the environment, A5S_MCP_<SERVER>_TOKEN. In the studio's
-sandbox, a server's declared stand-in answers instead, and no token goes there.
+most, and a bearer token from the environment, A5S_MCP_<SERVER>_TOKEN. A server that acts as
+the person (`as_person`, docs/connectors.md#acting-as-the-person) takes theirs instead, from the
+account they connected in its system (core/delegation.py), for a run acting for them alone, with
+a session of its own for each person. In the studio's sandbox, a server's declared stand-in
+answers instead, and no token goes there.
 """
 
 from __future__ import annotations
@@ -31,7 +34,8 @@ import os
 import re
 import threading
 import time
-from collections.abc import Iterator
+from collections import OrderedDict
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -43,7 +47,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 
 from a5s import definitions, reach
 from a5s.connectors.rest import ConnectorError
-from a5s.contract import Tool, ToolCall
+from a5s.contract import Tool, ToolCall, Undo
 from a5s.core.ledger import canonical
 
 FILE = "mcp.yaml"
@@ -56,6 +60,9 @@ PAGES = 10  # of a server's list of tools, at most
 NAME = re.compile(r"[a-z][a-z0-9_]{0,63}")
 CALLS = re.compile(r"[A-Za-z0-9_.\-/]{1,128}")
 TOKEN = re.compile(r"A5S_MCP_[A-Z0-9_]+_TOKEN")
+SYSTEM = re.compile(r"[a-z][a-z0-9-]{0,31}")  # as A5S_DELEGATION names systems
+PEOPLE = 256  # sessions kept for a server that acts as the person, the latest used
+Delegated = Callable[[str, str], str]  # (person, system) to their access token there
 # What only describes an argument, and never constrains it: a server may change its words
 WORDS = frozenset({"title", "description", "examples", "$comment", "$schema", "deprecated"})
 SCHEMA_MAPS = frozenset({"properties", "patternProperties", "$defs", "definitions",
@@ -117,6 +124,9 @@ class Server(BaseModel):
     model_config = ConfigDict(extra="forbid")
     url: str  # its Streamable HTTP endpoint
     token_env: str | None = None  # the variable that holds its bearer token, if it takes one
+    # or the system, as A5S_DELEGATION names it, whose account each person connects, so a5s
+    # calls it as them, with their own permissions, never its own
+    as_person: str | None = None
     sandbox: str | None = None  # the stand-in the studio's sandbox calls instead, with no token
 
     @field_validator("url", "sandbox")
@@ -130,6 +140,37 @@ class Server(BaseModel):
         if name is not None and not TOKEN.fullmatch(name):
             raise ValueError(f"{name}: a server's token is in A5S_MCP_<SERVER>_TOKEN")
         return name
+
+    @field_validator("as_person")
+    @classmethod
+    def _system(cls, name: str | None) -> str | None:
+        if name is not None and not SYSTEM.fullmatch(name):
+            raise ValueError(f"{name}: a server acts as the person in a system A5S_DELEGATION "
+                             "names, in lowercase, such as servicenow")
+        return name
+
+    @model_validator(mode="after")
+    def _one_token(self) -> Server:
+        if self.as_person and self.token_env:
+            raise ValueError("a server takes a5s's token or the person's, never both: "
+                             "as_person or token_env")
+        return self
+
+
+class Undone(BaseModel):
+    """How a change a tool makes is undone (core/undoing.py): with which of the scenario's
+    tools, each argument from the change's own (args.<name>) or from its record as it stood
+    before (before.<field>), for how many hours after it's made."""
+
+    model_config = ConfigDict(extra="forbid")
+    tool: str
+    args: dict[str, str]
+    hours: float = 24
+
+    def contract(self) -> Undo:
+        from datetime import timedelta
+        return Undo(tool=self.tool, args=tuple(sorted(self.args.items())),
+                    within=timedelta(hours=self.hours))
 
 
 class Declared(BaseModel):
@@ -157,6 +198,7 @@ class Declared(BaseModel):
     # answer naming its record but saying otherwise is the change taken in hand, not made, as a
     # device management queues a lock until the device next connects (round 13, D2)
     made: dict[str, str | int | float | bool] = {}
+    undo: Undone | None = None  # how a change it makes is undone, if it can be
 
     @model_validator(mode="after")
     def _consistent(self) -> Declared:
@@ -177,6 +219,10 @@ class Declared(BaseModel):
             raise ValueError(f"{', '.join(missing)} aren't among the fields it returns")
         if self.made and not self.action:
             raise ValueError("only a tool that changes a record says what its answer says once made")
+        if self.undo is not None:
+            if not self.action:
+                raise ValueError("only a tool that changes a record says how to undo it")
+            self.undo.contract()  # its arguments' sources, and how long, as a5s takes them
         return self
 
 
@@ -229,8 +275,10 @@ class Session:
     """a5s's session with one MCP server, over Streamable HTTP, shared by its tools' calls."""
 
     def __init__(self, name: str, url: str, token_env: str | None, *,
-                 http: httpx.Client | None = None, timeout: float = 30):
+                 http: httpx.Client | None = None, timeout: float = 30,
+                 token: Callable[[], str] | None = None):
         self.name, self.url, self.token_env = name, _origin(url), token_env
+        self.token = token  # the person's, as it is when each message goes, for one acting as them
         self.http = http or reach.client(timeout=timeout)
         self.ids = itertools.count(1)
         self.lock = threading.Lock()
@@ -250,6 +298,8 @@ class Session:
             if not token:
                 raise ConnectorError(f"the {self.name} MCP server's {self.token_env} isn't set")
             found["Authorization"] = f"Bearer {token}"
+        elif self.token is not None:
+            found["Authorization"] = f"Bearer {self.token()}"
         return found
 
     def _send(self, message: dict, started: tuple[str | None, str] | None
@@ -525,6 +575,7 @@ class Served(Tool):
     calls: str = ""
     returns: tuple[str, ...] = ()
     made: tuple[tuple[str, str | int | float | bool], ...] = ()
+    as_person: str = ""  # the system it acts as the person in, with their own permissions
 
     @property
     def schema_hash(self) -> str:
@@ -532,32 +583,83 @@ class Served(Tool):
         mcp: dict[str, Any] = {"server": self.server, "calls": self.calls, "returns": sorted(self.returns)}
         if self.made:  # what counts as made is what its approvers pinned, as what it returns
             mcp["made"] = dict(self.made)
+        if self.as_person:  # whose access it calls with, as its approvers pinned it
+            mcp["as_person"] = self.as_person
         return hashlib.sha256(canonical({"tool": super().schema_hash, "mcp": mcp}).encode()).hexdigest()
 
 
-def tools(declaration: Declaration, *, sandboxed: bool = False,
-          http: httpx.Client | None = None) -> dict[str, Tool]:
-    """The tools a declaration offers, each called through its server's session: in the
-    sandbox, through its stand-in, and with no token."""
-    sessions: dict[str, Session | None] = {}
+class People:
+    """The sessions of a server that acts as the person: one for each person a run acts for,
+    with their own token as each message goes, so the server sees each as themselves and lists
+    what it offers them. The latest PEOPLE used are kept."""
+
+    def __init__(self, name: str, url: str, system: str, delegated: Delegated | None,
+                 http: httpx.Client | None):
+        self.name, self.url, self.system, self.delegated, self.http = name, url, system, delegated, http
+        self.kept: OrderedDict[str, Session] = OrderedDict()
+        self.lock = threading.Lock()
+
+    def of(self, person: str) -> Session:
+        if self.delegated is None:
+            raise ConnectorError(f"the {self.name} MCP server acts as the person, in {self.system}, "
+                                 "and only the core, with its seal keys, acts as anyone")
+        with self.lock:
+            if (found := self.kept.get(person)) is not None:
+                self.kept.move_to_end(person)
+                return found
+            found = Session(self.name, self.url, None, http=self.http,
+                            token=lambda: self._token(person))
+            self.kept[person] = found
+            while len(self.kept) > PEOPLE:
+                self.kept.popitem(last=False)
+            return found
+
+    def _token(self, person: str) -> str:
+        assert self.delegated is not None
+        try:
+            return self.delegated(person, self.system)
+        except ValueError as e:  # not connected, or the system no longer takes it: in words
+            raise ConnectorError(str(e)) from None
+
+
+def tools(declaration: Declaration, *, sandboxed: bool = False, http: httpx.Client | None = None,
+          delegated: Delegated | None = None) -> dict[str, Tool]:
+    """The tools a declaration offers, each called through its server's session, or, for one
+    that acts as the person, theirs (`delegated` gives their token): in the sandbox, through its
+    stand-in, and with no token."""
+    sessions: dict[str, Session | People | None] = {}
     for name, server in declaration.servers.items():
         url = server.sandbox if sandboxed else server.url
-        sessions[name] = Session(name, url, None if sandboxed else server.token_env,
-                                 http=http) if url else None
+        if not url:
+            sessions[name] = None
+        elif server.as_person and not sandboxed:
+            sessions[name] = People(name, url, server.as_person, delegated, http)
+        else:
+            sessions[name] = Session(name, url, None if sandboxed else server.token_env, http=http)
     made: dict[str, Tool] = {}
     for name, d in declaration.tools.items():
-        made[name] = _tool(name, d, sessions[d.server])
+        made[name] = _tool(name, d, sessions[d.server],
+                           declaration.servers[d.server].as_person or "")
     return made
 
 
-def _tool(name: str, d: Declared, session: Session | None) -> Served:
+def _tool(name: str, d: Declared, serving: Session | People | None, as_person: str) -> Served:
     holder: list[Served] = []
 
     def run(call: ToolCall) -> Any:
         tool = holder[0]
-        if session is None:
+        if serving is None:
             raise ConnectorError(f"the {d.server} MCP server has no stand-in in the sandbox, so "
                                  "its tools don't run here")
+        if isinstance(serving, People):  # as the one person the run acts for, or not at all
+            if len(call.acts_for) != 1:
+                whom = "no one" if not call.acts_for else f"{len(call.acts_for)} people"
+                raise ConnectorError(f"the {d.server} MCP server acts as the person a run is for, "
+                                     f"in their own account, and this run acts for {whom}, so "
+                                     "a5s doesn't call it")
+            session = serving.of(call.acts_for[0])
+        else:
+            session = serving
         offered = session.tools().get(d.calls)
         if offered is None:
             raise ConnectorError(f"the {d.server} MCP server no longer offers {d.calls}")
@@ -585,7 +687,8 @@ def _tool(name: str, d: Declared, session: Session | None) -> Served:
                   handles=tuple(d.handles), record_arg=d.record_arg, record_field=d.record_field,
                   action=d.action, idempotent=d.idempotent, outside=tuple(d.outside),
                   extract=dict(d.extract), server=d.server, calls=d.calls,
-                  returns=tuple(d.returns), made=tuple(sorted(d.made.items())))
+                  returns=tuple(d.returns), made=tuple(sorted(d.made.items())),
+                  as_person=as_person, undo=d.undo.contract() if d.undo else None)
     holder.append(tool)
     return tool
 
@@ -602,7 +705,8 @@ class Serving:
 
 
 def served(scenario: Any, folder: Path, *, sandboxed: bool = False,
-           reserved: frozenset[str] = frozenset(), http: httpx.Client | None = None) -> Any:
+           reserved: frozenset[str] = frozenset(), http: httpx.Client | None = None,
+           delegated: Delegated | None = None) -> Any:
     """A scenario, with the tools its folder's mcp.yaml declares mixed into its own class: the
     same object, unchanged if it declares none. A tool named as one of the scenario's own, or
     of a5s's (`reserved`), stops it here, as it starts."""
@@ -615,7 +719,7 @@ def served(scenario: Any, folder: Path, *, sandboxed: bool = False,
     if clash:
         raise ValueError(f"{folder / FILE} names {', '.join(clash)}, which the scenario or a5s "
                          "has already: an MCP server's tool takes a name of its own")
-    made = tools(declaration, sandboxed=sandboxed, http=http)
+    made = tools(declaration, sandboxed=sandboxed, http=http, delegated=delegated)
     if not isinstance(scenario, Serving):
         cls = type(scenario)
         scenario.__class__ = type(cls.__name__, (Serving, cls),

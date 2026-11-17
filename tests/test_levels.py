@@ -62,11 +62,11 @@ def test_at_level_2_a_change_is_made_and_reported_to_the_instances_owner(stack, 
     with db.transaction(stack.admin) as conn:
         [item] = conn.execute("select * from digest_items where person = 'ana'").fetchall()
         assert conn.execute("select count(*) from proposals").fetchone()["count"] == 0
-    assert item["text"] == (
+    assert item["text"].startswith(
         "The assistant made a change itself, at level 2, for Ben Okafor: Change a customer "
         "question's due date: Q-1002, with due 2026-11-13. Q-1002, Refund for a duplicate "
         "payment, as it stood before: status waiting on finance, due date 2026-11-06, customer "
-        "Contoso. https://sample.a5s.dev/records/Q-1002")
+        "Contoso. https://sample.a5s.dev/records/Q-1002 It can be undone until ")  # its tool says how
 
 
 def test_level_2_waits_for_samples_to_raise_a5s_cap(stack, approving):

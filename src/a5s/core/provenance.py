@@ -14,7 +14,7 @@ from typing import Any
 
 from a5s import db
 from a5s.contract import Scenario
-from a5s.core import groups, values
+from a5s.core import groups, languages, values, words
 from a5s.core.values import Value
 
 THEY = "they said it"
@@ -124,9 +124,16 @@ def traced(conn: db.Connection, scenario: Scenario, run: dict, text: str) -> lis
             for v in values.found(text, getattr(scenario, "record_pattern", None))]
 
 
-def note(agent: str, own: list[str]) -> str:
-    """a5s's words on what the agent wrote itself, for people to see apart from its own."""
-    which = own[0] if len(own) == 1 else f"{', '.join(own[:-1])} and {own[-1]}"
-    them = "it" if len(own) == 1 else "them"
-    return (f"(a5s: {which} came from the {agent} itself, not from the records or from you, "
-            f"so check {them} before you rely on {them}.)")
+NOTE = ("(a5s: {which} came from the {agent} itself, not from the records or from you, so check "
+        "it before you rely on it.)")
+NOTES = ("(a5s: {which} came from the {agent} itself, not from the records or from you, so check "
+         "them before you rely on them.)")
+
+
+def note(agent: str, own: list[str], language: str = languages.ENGLISH) -> str:
+    """a5s's words on what the agent wrote itself, for people to see apart from its own, in the
+    language they read."""
+    if len(own) == 1:
+        return words.say(language, NOTE, which=own[0], agent=agent)
+    which = words.say(language, "{first} and {last}", first=", ".join(own[:-1]), last=own[-1])
+    return words.say(language, NOTES, which=which, agent=agent)

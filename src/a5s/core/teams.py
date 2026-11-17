@@ -22,12 +22,14 @@ import httpx
 
 from a5s import config
 from a5s.contract import Scenario
+from a5s.core import files
 from a5s.core.identity import IdentityConfig, IdentityError, Verifier
 
 BOT_FRAMEWORK = "https://api.botframework.com"
 METADATA = "https://login.botframework.com/v1/.well-known/openidconfiguration"
 UNKNOWN = "a5s doesn't know who you are, so no agent can help. Ask whoever runs a5s to add you."
 _MENTION = re.compile(r"<at>(.*?)</at>", re.DOTALL)
+DOWNLOAD = "application/vnd.microsoft.teams.file.download.info"  # an uploaded file, by its link
 
 
 class Refused(Exception):
@@ -55,15 +57,12 @@ class TeamsConfig:
 
     @classmethod
     def from_env(cls) -> TeamsConfig | None:
-        """One bot from A5S_TEAMS_APP_ID, or several from A5S_TEAMS_BOTS, a JSON list of
-        {"agent", "app_id", "secret_env"}, each secret in the variable it names."""
-        if listed := config.TEAMS_BOTS.read():
-            bots = tuple(Bot(b["agent"], b["app_id"], os.environ[b["secret_env"]])
-                         for b in listed)
-        elif app_id := config.TEAMS_APP_ID.read():
-            bots = (Bot(config.TEAMS_AGENT.read(), app_id, _needed(config.TEAMS_APP_SECRET)),)
-        else:
+        """Each agent's bot from A5S_TEAMS_BOTS, a JSON list of {"agent", "app_id",
+        "secret_env"}, each secret in the variable it names, so each agent talks to people as
+        itself; None where Teams isn't turned on."""
+        if not (listed := config.TEAMS_BOTS.read()):
             return None
+        bots = tuple(Bot(b["agent"], b["app_id"], os.environ[b["secret_env"]]) for b in listed)
         return cls(bots=bots, tenant_id=_needed(config.TEAMS_TENANT_ID),
                    service_hosts=config.TEAMS_SERVICE_HOSTS.read())
 
@@ -87,6 +86,7 @@ class Message:
     personal: bool  # a one-to-one chat with the bot
     kind: str = "personal"  # Teams' conversation type: personal, groupChat or channel
     mentioned: bool = True  # whether it mentions the bot, as a message in a group chat must
+    files: tuple[files.File, ...] = ()  # what they sent with it, for a5s's reader
 
 
 class Teams:
@@ -146,7 +146,8 @@ class Teams:
 
     def message(self, activity: dict[str, Any], scenario: Scenario, bot: Bot) -> Message | None:
         """The message in an activity that checked out, if it's one a person typed."""
-        text = self.said(activity)
+        sent = self.sent(activity, bot)
+        text = self.said(activity) or (files.WORDS_ONLY if sent else "")
         conversation = activity.get("conversation") or {}
         if activity.get("type") != "message" or not text or not conversation.get("id"):
             return None  # such as a typing indicator, or the bot being added
@@ -159,11 +160,48 @@ class Teams:
             reply_to={"service_url": activity["serviceUrl"], "conversation": conversation["id"],
                       "activity": activity.get("id") or "", "bot": recipient,
                       "app_id": bot.app_id},
-            personal=kind == "personal", kind=kind,
+            personal=kind == "personal", kind=kind, files=sent,
             mentioned=kind == "personal" or any(  # Teams marks each mention of the bot
                 e.get("type") == "mention" and (e.get("mentioned") or {}).get("id") == recipient
                 for e in activity.get("entities") or []),
         )
+
+    def sent(self, activity: dict[str, Any], bot: Bot) -> tuple[files.File, ...]:
+        """The files someone sent with a message: one they uploaded, by the link Teams gives
+        it, or an image they pasted, which the bot fetches from Teams itself. Never the copy
+        of the message Teams attaches as HTML."""
+        found = []
+        for item in activity.get("attachments") or []:
+            kind, name = str(item.get("contentType") or ""), str(item.get("name") or "a file")
+            content = item.get("content") if isinstance(item.get("content"), dict) else {}
+            if kind == DOWNLOAD:
+                given = str(content.get("fileType") or "")  # its extension, if not in its name
+                name = f"{name}.{given}" if given and "." not in name else name
+                found.append(files.File(name=name, media_type=files.media_type(name), fetch={
+                    "channel": "teams", "url": str(content.get("downloadUrl") or "")}))
+            elif kind.startswith("image/"):
+                found.append(files.File(name=name if "." in name else f"image.{kind[6:]}",
+                                        media_type=kind, fetch={
+                                            "channel": "teams", "app_id": bot.app_id,
+                                            "url": str(item.get("contentUrl") or "")}))
+        return tuple(found)
+
+    def download(self, where: dict[str, Any]) -> bytes:
+        """A file someone sent: an upload by the link Teams gave it, on the organisation's
+        SharePoint alone, which needs no token; or a pasted image from Teams itself, as the
+        bot it was sent to, so the bot's token goes nowhere else."""
+        url = str(where.get("url") or "")
+        parts = urlparse(url)
+        if where.get("app_id"):
+            if not self.allowed(url):
+                raise ValueError("a5s fetches pasted images from Teams itself alone")
+            bot = self.bots.get(str(where["app_id"]))
+            if bot is None:
+                raise ValueError("the message came to a bot a5s no longer has")
+            return files.download(self.http, url, {"Authorization": f"Bearer {self._bot_token(bot)}"})
+        if parts.scheme != "https" or not (parts.hostname or "").endswith(".sharepoint.com"):
+            raise ValueError("a5s fetches uploaded files from SharePoint's links alone")
+        return files.download(self.http, url)
 
     def members(self, reply_to: dict[str, str], scenario: Scenario,
                 strangers: list[str] | None = None) -> list[str | None]:
@@ -232,11 +270,14 @@ class Teams:
                                         time.monotonic() + int(body.get("expires_in", 3600)) - 300)
             return body["access_token"]
 
-    def send(self, reply_to: dict[str, str], text: str, card: dict | None = None) -> None:
+    def send(self, reply_to: dict[str, str], text: str, card: dict | None = None,
+             feedback: bool = False) -> str | None:
         """Send text into the conversation a message came from, as the bot it was sent to:
         in reply to the message, if `reply_to` names one, or else as a new message. With an
         Adaptive Card, the card goes instead, and the text's first line sums it up in
-        notifications."""
+        notifications. An agent's answer, `feedback`, has Teams' buttons for saying it's
+        wrong (core/feedback.py). Teams' own id for it, in its conversation, by which that's
+        known."""
         if not self.allowed(reply_to["service_url"]):  # the bot's token goes nowhere else
             raise ValueError("a5s sends only to the service URLs Teams uses")
         bot = self.bots.get(reply_to.get("app_id", ""))
@@ -251,7 +292,17 @@ class Teams:
             headers={"Authorization": f"Bearer {self._bot_token(bot)}"},
             json={"type": "message", **said,
                   "from": {"id": reply_to["bot"]}, "conversation": {"id": reply_to["conversation"]},
-                  **({"replyToId": reply_to["activity"]} if reply_to.get("activity") else {})},
+                  **({"replyToId": reply_to["activity"]} if reply_to.get("activity") else {}),
+                  **({"channelData": {"feedbackLoop": {"type": "default"}}}
+                     if feedback and card is None else {})},
         )
         r.raise_for_status()
+        try:
+            found = r.json()
+        except ValueError:
+            return None
+        sent = str(found.get("id") or "") if isinstance(found, dict) else ""
+        # Teams' ids are its conversation's own, so with the conversation's, as Slack's with
+        # their channel's: a "that's wrong" in another conversation never finds this one
+        return f"{reply_to['conversation']}/{sent}" if sent else None
 

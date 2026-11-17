@@ -90,7 +90,7 @@ export type Layer = "exists" | "uses" | "built" | "doing" | "did" | "changing";
 export type AgentKnown = gen.Agent;
 // What it may do: for the people it serves, those who watch its instances, and its makers
 export type AgentUses = AgentKnown & Required<Pick<AgentKnown,
-  "tools" | "a5s_tools" | "model" | "autonomy" | "triggers" | "schedules" | "reports" |
+  "tools" | "a5s_tools" | "model" | "autonomy" | "triggers" | "schedules" | "events" | "reports" |
   "obligations" | "reminders" | "preferences" | "channels" | "context" | "budget">>;
 // How it's built: for its owners, authors, engineers, release approvers, auditors and viewers
 export type Agent = AgentUses & Required<Pick<AgentKnown, "skills">>;
@@ -102,6 +102,11 @@ export const builtOf = (agent: AgentKnown): agent is Agent => "skills" in agent;
 export type Ask = gen.Ask;
 export type Asked = gen.Asked;
 export type Catalogue = gen.Catalogue;
+
+// Every sidebar's pages, and who signed in (core/shell_api.py)
+export type Shell = gen.Shell;
+export type Impact = gen.Impact;  // what a version of the settings would have done differently
+export type Place = gen.Place;
 
 // Someone's home and roles (core/home.py)
 export type Home = gen.Home;

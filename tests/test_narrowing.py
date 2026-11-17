@@ -1,0 +1,175 @@
+"""A version that only narrows what agents may do in a part needs that part's owner alone
+(registry.narrowed): a lower level there, a type of action's level lowered or taken back, or a
+stricter threshold. Code decides, and anything it can't show narrows counts as widening, so it
+needs every part's owner, as before. Once one is in force, the others whose approval it would
+have needed hear of it in their digest."""
+
+from __future__ import annotations
+
+import base64
+import copy
+from collections.abc import Callable
+
+import pytest
+import yaml
+
+from a5s import db
+from a5s.contract import parse_settings
+from a5s.core import registry
+from conftest import ROOT
+from test_approvals import decide, sign_in
+
+# The sample's settings, with an instance in orders beside those in billing: Ana owns
+# billing, Omar orders
+BASE = yaml.safe_load((ROOT / "scenarios" / "sample" / "settings.yaml").read_text())
+BASE["instances"]["assistant-finance"]["parts"] = {
+    "billing": {"level": 1, "actions": {"change-due-date": 1, "close-question": 0}}}
+BASE["instances"]["assistant-ops"] = {"definition": "assistant", "serves": ["chen", "omar"],
+                                      "parts": ["orders"], "level": 1, "owner": "omar"}
+
+
+def finance(s: dict) -> dict:
+    return s["instances"]["assistant-finance"]
+
+
+def billing(s: dict) -> dict:
+    return finance(s)["parts"]["billing"]
+
+
+def parsed(given: dict):
+    return parse_settings(yaml.safe_dump(given).encode())
+
+
+def edited(change: Callable[[dict], object]) -> dict:
+    after = copy.deepcopy(BASE)
+    after["serial"] += 1
+    change(after)
+    return after
+
+
+CASES = [  # what a version changes, and the parts it only narrows, if that's all it does
+    ("a lower level for the part", lambda s: billing(s).update(level=0), {"billing"}),
+    ("a lower level for the instance, which its part takes",
+     lambda s: (finance(s).update(level=0), billing(s).pop("level")), {"billing"}),
+    ("a higher level", lambda s: finance(s).update(level=2, parts={"billing": {
+        "actions": billing(s)["actions"]}}), None),
+    ("a type of action's level lowered", lambda s: billing(s)["actions"].update(
+        {"change-due-date": 0}), {"billing"}),
+    ("a type of action's level raised", lambda s: billing(s)["actions"].update(
+        {"change-due-date": 2}), None),
+    ("a type of action taken back from level 1", lambda s: billing(s)["actions"].pop(
+        "change-due-date"), {"billing"}),
+    ("a type of action taken back from level 0, which then works at level 1",
+     lambda s: billing(s)["actions"].pop("close-question"), None),
+    ("a new type of action at level 0", lambda s: billing(s)["actions"].update(
+        {"refund": 0}), {"billing"}),
+    ("a new type of action at level 2", lambda s: billing(s)["actions"].update(
+        {"refund": 2}), None),
+    ("a stricter threshold", lambda s: s["thresholds"].update(billing=0.99), {"billing"}),
+    ("a threshold taken away, so level 2 is never earned there",
+     lambda s: s["thresholds"].pop("billing"), {"billing"}),
+    ("a looser threshold", lambda s: s["thresholds"].update(billing=0.9), None),
+    ("limits tightened, which are every part's",
+     lambda s: s["limits"]["change-due-date"].update(per_run=1), None),
+    ("whom it serves, beside a lower level",
+     lambda s: (billing(s).update(level=0), finance(s).update(serves=["ana"])), None),
+    ("an instance added", lambda s: s["instances"].update({"assistant-two": {
+        **copy.deepcopy(BASE["instances"]["assistant-ops"]), "level": 0}}), None),
+    ("an instance retired", lambda s: s["instances"].pop("assistant-ops"), None),
+    ("a part taken away, which can raise the instance's own level",
+     lambda s: s["instances"]["watcher-finance"].update(parts=[]), None),
+    ("nothing but its number", lambda s: None, None),
+    ("narrowing in two parts", lambda s: (billing(s).update(level=0),
+                                          s["instances"]["assistant-ops"].update(level=0)),
+     {"billing", "orders"}),
+]
+
+
+@pytest.mark.parametrize(("what", "change", "parts"), CASES, ids=[c[0] for c in CASES])
+def test_code_decides_what_only_narrows_a_part(what, change, parts):
+    assert registry.narrowed(parsed(edited(change)), parsed(BASE)) == parts, what
+
+
+def test_the_first_version_narrows_nothing():
+    assert registry.narrowed(parsed(BASE), None) is None
+
+
+def test_a_narrowing_version_needs_its_parts_owners_alone(stack):
+    scenario = stack.gateway.scenario
+    before = parsed(BASE)
+    lower = parsed(edited(lambda s: billing(s).update(level=0)))
+    assert registry.missing(lower, scenario.person, ["ana"], before) == []
+    assert [p.id for p in registry.approvers(lower, scenario.holders, before)] == ["ana"]
+    assert [p.id for p in registry.told(lower, scenario.holders, before)] == ["omar"]
+    higher = parsed(edited(lambda s: billing(s)["actions"].update({"change-due-date": 2})))
+    assert "the owner of orders hasn't approved it" in registry.missing(
+        higher, scenario.person, ["ana"], before)
+    assert registry.told(higher, scenario.holders, before) == []
+    both = parsed(edited(lambda s: (billing(s).update(level=0),
+                                    s["instances"]["assistant-ops"].update(level=0))))
+    assert registry.missing(both, scenario.person, ["ana"], before) == [
+        "the owner of orders hasn't approved it"]  # orders' narrowing is its owner's alone
+
+
+def propose(stack, settings: dict) -> dict:
+    raw = yaml.safe_dump(settings).encode()
+    with stack.client() as c:
+        r = c.post("/settings/proposals", json={"raw": base64.b64encode(raw).decode()})
+    r.raise_for_status()
+    return r.json()
+
+
+def approve(approving, provider, asked: dict, *people: str) -> list[dict]:
+    said = []
+    for person in people:
+        token, salt = sign_in(approving, provider, asked["digest"], person)
+        r = decide(approving, asked["digest"], token, salt)
+        assert r.status_code == 200, r.text
+        said.append(r.json())
+    return said
+
+
+def level(stack) -> int:
+    with db.transaction(stack.admin) as conn:
+        return conn.execute("select level from instances where id = 'assistant-finance'"
+                            ).fetchone()["level"]
+
+
+def test_billings_owner_narrows_it_alone_and_orders_owner_hears(stack, approving, provider):
+    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text())
+    settings["serial"] += 1
+    settings["instances"]["assistant-ops"] = copy.deepcopy(BASE["instances"]["assistant-ops"])
+    asked = propose(stack, settings)
+    assert sorted(asked["asked"]) == ["ana", "omar"]  # a new instance: every part's owner
+    approve(approving, provider, asked, "ana", "omar")
+    stack.scheduler().apply_approved()
+    assert level(stack) == 1
+
+    lower = copy.deepcopy(settings)
+    lower["serial"] += 1
+    lower["instances"]["assistant-finance"]["level"] = 0  # billing takes it: it only narrows
+    asked = propose(stack, lower)
+    assert asked["asked"] == ["ana"]
+    [said] = approve(approving, provider, asked, "ana")
+    assert said["needs"] == []
+    stack.scheduler().apply_approved()
+    assert level(stack) == 0
+    with db.transaction(stack.admin) as conn:
+        [item] = conn.execute("select text from digest_items where person = 'omar'").fetchall()
+    assert item["text"].startswith(f"Ana Ortiz approved version {lower['serial']} of the "
+                                   "settings alone, since it only narrows what agents may do in "
+                                   "billing: ")
+    [told] = [e for e in stack.ledger() if e.get("action") == "narrowed"]
+    assert told["args"]["to"] == "omar" and told["args"]["parts"] == ["billing"]
+    stack.model.reply("Hello, Ben.")  # the core checks it again at every run: it holds
+    assert stack.say("Hello", person="ben") == "Hello, Ben."
+
+    higher = copy.deepcopy(lower)
+    higher["serial"] += 1
+    higher["instances"]["assistant-finance"]["level"] = 1  # back up: every part's owner again
+    asked = propose(stack, higher)
+    assert sorted(asked["asked"]) == ["ana", "omar"]
+    [said] = approve(approving, provider, asked, "ana")
+    assert "the owner of orders hasn't approved it" in said["needs"]
+    stack.scheduler().apply_approved()
+    assert level(stack) == 0  # it waits for Omar

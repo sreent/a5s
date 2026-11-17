@@ -35,9 +35,9 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, RedirectResponse
 from jwt.algorithms import RSAAlgorithm
 
-from a5s import db, definitions, devdb
+from a5s import build, db, definitions, devdb
 from a5s.config import Config, load_models
-from a5s.connectors import mcp
+from a5s.connectors import libraries, mcp
 from a5s.core import inbox, ledger, memberships, registry, signing
 from a5s.core.gateway import CORE_TOOLS, Gateway, create_app
 from a5s.core.identity import IdentityConfig, Verifier
@@ -312,7 +312,8 @@ def deciding(stack: Stack, provider: Provider) -> Iterator[str]:
     stack.gateway.cfg = replace(stack.gateway.cfg, webchat_client_id=CLIENT,
                                 public_url=f"http://127.0.0.1:{port}")
     cfg = replace(stack.as_role("channels"), webchat_client_id=CLIENT, development=False,
-                  seal_keys=())  # the channels app never holds the core's seal key
+                  seal_keys=(),  # the channels app never holds the core's seal key
+                  public_url=f"http://127.0.0.1:{port}")  # where people reach it, as the core says
     with serve(inbox.create_app(replace(stack.gateway, cfg=cfg, identity=verifier)), port) as url:
         yield url
 
@@ -380,10 +381,12 @@ class Stack:
         return r.json()["replies"]
 
     def say(self, text: str, person: str = "ana", agent: str = "assistant",
-            scheduler: Scheduler | None = None) -> str:
-        """What a person is told, once the scheduler has answered their message."""
+            scheduler: Scheduler | None = None, files: list[dict] | None = None) -> str:
+        """What a person is told, once the scheduler has answered their message, with these
+        files, if any."""
         r = httpx.post(f"{self.channels_url}/channels/local/messages",
-                       json={"person": person, "agent": agent, "text": text}, timeout=30)
+                       json={"person": person, "agent": agent, "text": text,
+                             "files": files or []}, timeout=30)
         if r.status_code != 202:
             return r.json()["detail"]
         (scheduler or self.scheduler()).answer_waiting()
@@ -435,17 +438,21 @@ class Stack:
         return Scheduler(self.as_role("scheduler"), self.gateway.scenario, **kwargs)
 
     def settle(self, instances: dict | None = None, signers: tuple[str, ...] = ("ana",),
-               data_protection: dict | None = None, **changes: Any) -> registry.Applied:
+               data_protection: dict | None = None, spending: dict | None = None,
+               **changes: Any) -> registry.Applied:
         """Sign a new version of the settings as Ana, an instance approver who owns billing,
         or as `signers`, and apply it.
 
         `changes`, such as level=0, apply to assistant-finance; `instances` replaces them all.
-        `data_protection` is the data protection officer's choices, which Noor signs for.
+        `data_protection` is the data protection officer's choices, which Noor signs for, and
+        `spending` what parts and agents may cost a month, which their owners sign for.
         """
         folder = self.cfg.scenario_dir
         settings = yaml.safe_load((folder / "settings.yaml").read_text())
         if data_protection is not None:
             settings["data_protection"] = data_protection
+        if spending is not None:
+            settings["spending"] = spending
         if instances is not None:
             settings["instances"] = instances
         else:
@@ -636,15 +643,20 @@ def running(database: str, root: Path, http: httpx.Client, model: FakeModel,
     port = free_port()
     cfg = Config(database_url=db.as_role(database, "gateway"),
                  gateway_url=f"http://127.0.0.1:{port}", service_token=SERVICE_TOKEN, root=root,
-                 development=True, seal_keys=(SEAL_KEY,))
+                 development=True, seal_keys=(SEAL_KEY,), library_root=root / "libraries")
+    systems, delegated = build.delegating(cfg)  # the accounts people connect, as the core reads them
     scenario = mcp.served(SampleScenario(cfg.scenario_dir, cfg.database_url),  # its tools run
-                          cfg.scenario_dir, reserved=frozenset(CORE_TOOLS))  # in the gateway
+                          cfg.scenario_dir, reserved=frozenset(CORE_TOOLS),  # in the gateway
+                          delegated=delegated)
+    scenario = libraries.served(scenario, cfg.scenario_dir, root=cfg.library_root,
+                                reserved=frozenset(CORE_TOOLS), delegated=delegated)
     for agent in ("assistant", "watcher"):
         definitions.pin(root / "agents" / agent, {n: t.schema_hash for n, t in scenario.tools().items()})
     # Its directory, with the roles groups give, as a5s builds it (core/memberships.py)
     directory = memberships.grouped(scenario, cfg.database_url, lambda conn: gw.groups_in_force(conn))
     gw = Gateway(cfg, directory, PolicyEngine(), load_models(cfg.models_file),
-                 definitions.load_all(cfg.agents_dir), http, clock=lambda: QUIET)
+                 definitions.load_all(cfg.agents_dir), http, clock=lambda: QUIET,
+                 delegation=systems)
     with db.transaction(database) as conn:
         applied = registry.apply(conn, gw.definitions, scenario.settings(), scenario.tools(),
                                  scenario.person, scenario.name)

@@ -63,6 +63,29 @@ class Home(Shape):
     authoring: bool  # whether they may start a new agent: an author of one may not (round 13, B4)
 
 
+# The sidebar every page of a5s has (core/shell_api.py)
+
+
+class Place(Shape):
+    """One of a5s's pages, as every sidebar and the studio's palette show it: its key, its
+    name, its icon, the heading it's under, and its address."""
+
+    page: str
+    name: str
+    icon: str
+    group: str
+    at: str
+
+
+class Shell(Shape):
+    """Who signed in, the language they read, and the pages they may use, in the sidebar's
+    order."""
+
+    you: str
+    language: str
+    pages: list[Place]
+
+
 class Role(Shape):
     """A role someone holds, what gave it them, and what it lets them do."""
 
@@ -72,11 +95,181 @@ class Role(Shape):
     may: str
 
 
+class Language(Shape):
+    """A language a5s's pages speak, by its code, named in its own words."""
+
+    code: str
+    name: str
+
+
 class You(Shape):
     you: str
     id: str
     roles: list[Role]
     groups: list[str]
+    language: str  # the one they read: theirs to choose, of those a5s's pages speak
+    languages: list[Language]
+
+
+class LanguageChosen(Shape):
+    language: str
+
+
+# Conversations handed over to people (core/handover.py)
+
+
+class HandoverLine(Shape):
+    """A conversation handed to one of someone's teams: whose, with which agent, its brief, who
+    of the team has taken it, and how many of the person's messages wait for an answer."""
+
+    id: int
+    person: str
+    agent: str
+    team: str
+    brief: str
+    started_at: str
+    taken_by: str | SkipJsonSchema[None] = None
+    mine: bool  # whether whoever's looking took it
+    unanswered: int
+
+
+class Handovers(Shape):
+    handovers: list[HandoverLine]
+
+
+class HandoverSaid(Shape):
+    at: str
+    text: str
+
+
+class HandoverSince(Shape):
+    at: str
+    text: str
+    answered: bool
+
+
+class HandoverAnswer(Shape):
+    by: str
+    text: str
+    at: str
+    sent: bool  # whether the core has put it in their chat yet
+
+
+class Handover(HandoverLine):
+    said: list[HandoverSaid]  # what they said before it was handed over, their own words
+    since: list[HandoverSince]  # what they've written since
+    answers: list[HandoverAnswer]
+    ended: bool
+
+
+class HandoverDone(Shape):
+    done: bool
+
+
+# What new versions answered beside those at work, for graders (core/shadows.py)
+
+class ShadowPair(Shape):
+    """What someone asked an instance, what it answered them, and what its shadow, a new
+    version, answered beside it, which went nowhere: for a grader, never whose it was."""
+
+    id: int
+    agent: str  # the agent they spoke to
+    shadow: str  # the new version's agent
+    asked: str
+    sent: str
+    answer: str
+    at: str
+
+
+class ShadowCounts(Shape):
+    better: int
+    same: int
+    worse: int
+    wrong: int
+
+
+class ShadowFigures(Shape):
+    """How a shadow did: how many it answered, and how graders, and its judge, apart, graded
+    its answers."""
+
+    instance: str
+    shadows: str  # the instance it answers beside
+    agent: str
+    status: str  # shadow, or suspended
+    answered: int
+    graded: ShadowCounts
+    judged: ShadowCounts
+
+
+class Shadows(Shape):
+    pairs: list[ShadowPair]
+    shadows: list[ShadowFigures]
+
+
+class ShadowGraded(Shape):
+    graded: bool
+
+
+# A change an agent made, which its tool says how to undo (core/undoing.py)
+
+
+class ChangeMade(Shape):
+    """A change a5s made for someone, as its page shows whoever it was for, and whoever may undo
+    it: what it did, until when it can be undone, and how it stands."""
+
+    id: int
+    agent: str
+    instance: str
+    record: str
+    said: str
+    made_at: str
+    until: str
+    whom: list[str]  # whom it was for
+    may: bool  # whether whoever's looking may undo it now
+    why_not: str | SkipJsonSchema[None] = None
+    state: str  # kept, asked, undoing, undone, refused or failed
+    by: str | SkipJsonSchema[None] = None  # who asked to undo it, or did
+    outcome: str | SkipJsonSchema[None] = None
+
+
+class UndoAsked(Shape):
+    change: int
+    at: str
+
+
+# The accounts someone connects, so agents act as them there (core/delegation.py)
+
+
+class Connection(Shape):
+    """A system someone may connect their own account in, so agents act there as them, with
+    their permissions: whether they have, since when, and when a5s last did."""
+
+    system: str
+    title: str
+    connected: bool
+    connecting: bool  # they came back with its code, which the core is exchanging
+    scopes: list[str]  # what a5s may do as them there, as the system said, or asks for
+    connected_at: str | SkipJsonSchema[None] = None
+    used_at: str | SkipJsonSchema[None] = None
+    reads: list[str]  # the libraries agents read there as them, by their titles
+
+
+class Connections(Shape):
+    connections: list[Connection]
+
+
+class ConnectionStarted(Shape):
+    go: str  # the system's own page, where they say a5s may act for them
+
+
+class ConnectionBack(Shape):
+    system: str
+    title: str
+    connecting: bool  # false where they said no there
+
+
+class Disconnected(Shape):
+    forgotten: bool
 
 
 # Each agent as someone sees it, layer by layer (core/studio.py)
@@ -95,6 +288,7 @@ class Tool(Shape):
     changes: str | None  # the type of change it makes, which people decide at level 1
     handles: list[str]
     outside: list[str]
+    marks: bool  # what it returns holds a few words from outside as they are: its run is marked
     pinned: str | None
     missing: bool
 
@@ -152,6 +346,14 @@ class Schedule(Shape):
     task: str
 
 
+class EventTaken(Shape):
+    """What another system may tell an agent happened, and what it's asked to do each time."""
+
+    type: str
+    source: str
+    task: str
+
+
 class Context(Shape):
     """What an agent's runs are given beyond the conversation."""
 
@@ -160,6 +362,7 @@ class Context(Shape):
     documents: bool
     agents: bool
     notebook: bool
+    handover: bool  # whether it may hand a conversation over to people (core/handover.py)
 
 
 class Budget(Shape):
@@ -211,6 +414,7 @@ class Agent(Shape):
     autonomy: Autonomy | SkipJsonSchema[None] = None
     triggers: list[dict[str, Any]] | SkipJsonSchema[None] = None
     schedules: list[Schedule] | SkipJsonSchema[None] = None
+    events: list[EventTaken] | SkipJsonSchema[None] = None
     reports: list[str] | SkipJsonSchema[None] = None
     obligations: list[str] | SkipJsonSchema[None] = None
     reminders: bool | SkipJsonSchema[None] = None
@@ -235,6 +439,149 @@ class Catalogue(Shape):
     you: str
     agents: list[Agent]
     authoring: Authoring
+
+
+class MapNode(Shape):
+    """A thing on the map of what depends on what (core/dependencies.py): its kind, part,
+    instance, agent, tool, system or model; its name; what it is, in a few words; its page in
+    the studio, if it has one; and, for a tool, what it does: reads, writes, sends outside or
+    changes records."""
+
+    key: str
+    kind: str
+    name: str
+    about: str
+    at: str | None
+    tone: str | None
+
+
+class MapEdge(Shape):
+    """That one thing depends on another, and how, in words, such as "may call it"."""
+
+    model_config = ConfigDict(extra="forbid", populate_by_name=True)
+    from_: str = Field(alias="from")
+    to: str
+    says: str
+
+
+class DependsOn(Shape):
+    """The map, as someone may see it."""
+
+    nodes: list[MapNode]
+    edges: list[MapEdge]
+
+
+# What agents' model calls cost each month, against their budgets (core/spending.py)
+
+
+class Spend(Shape):
+    """A month of a part's, agent's or instance's model calls: what they cost so far at their
+    models' prices, its budget, if the settings set one, and while the month lasts, the pace of
+    the last week and the forecast to its end; its runs, those whose prices aren't known, the
+    messages they answered, and what each message cost, all in."""
+
+    key: str
+    spent: float
+    budget: float | None
+    pace: float | None
+    forecast: float | None
+    runs: int
+    unpriced: int
+    answered: int
+    tokens: int
+    per_answer: float | None
+    agent: str | SkipJsonSchema[None] = None  # an instance's agent
+    parts: list[str] | SkipJsonSchema[None] = None  # and the parts it works in
+
+
+class Spending(Shape):
+    """A calendar month's spending, in UTC, as someone may see it: its parts, agents and
+    instances, in the currency models.yaml prices models in, if it names one."""
+
+    month: str
+    current: bool
+    currency: str | None
+    # The currency the signed budgets are in, if they name one, and whether it's the one
+    # models.yaml prices models in, so a5s compares what's spent with them
+    budget_currency: str | None = None
+    compared: bool = True
+    starts: str
+    ends: str
+    days: int
+    day: int
+    parts: list[Spend]
+    agents: list[Spend]
+    instances: list[Spend]
+
+
+class SaidWrong(Shape):
+    """An agent's answer someone said was wrong (core/feedback.py): when, the instance and run
+    behind it, the chat it was in, the answer, why, in their words, if they said, and its grade,
+    if an owner has given one; who said it only once the officer agrees to names."""
+
+    id: int
+    at: str
+    instance: str | None
+    run: str
+    channel: str
+    answer: str
+    said: str | None
+    grade: Literal["right", "wrong", "critical"] | None
+    graded_at: str | None
+    graded_by: str | None
+    by: str | None
+
+
+class AnswersSaidWrong(Shape):
+    """An agent's answers people said were wrong, as an owner of it may check them: newest
+    first, how many others there are, how many wait, and how many have each grade."""
+
+    agent: str
+    answers: list[SaidWrong]
+    hidden: int
+    waiting: int
+    graded: dict[str, int]
+
+
+class AnswerGraded(Shape):
+    id: int
+    grade: Literal["right", "wrong", "critical"]
+
+
+class RunCaseOffered(Shape):
+    """A run as a test case, for its author to check and keep (core/run_cases.py): what was
+    said to the agent and what it answered, masked by code; how many of each kind code masked,
+    such as names; the tools it used, which a5s let it, or held for someone to decide; and
+    whether the run read content from outside, which the case can't keep."""
+
+    run: str
+    agent: str
+    say: str
+    answer: str
+    masked: dict[str, int]
+    uses: list[str]
+    read_outside: bool = False
+
+
+class RunCaseStep(Shape):
+    say: str
+    uses: list[str] | SkipJsonSchema[None] = None
+    judged: str | SkipJsonSchema[None] = None
+
+
+class RunCase(Shape):
+    name: str
+    # whom the case speaks as, a made-up person: "as" in the file
+    speaker: str
+    steps: list[RunCaseStep]
+
+
+class RunCaseKept(Shape):
+    """A run kept as a test case: the draft it went in, its file, and the case as kept."""
+
+    draft: str
+    file: str
+    case: RunCase
 
 
 class Requested(Shape):
@@ -449,6 +796,7 @@ class Run(RunLine):
     tokens_in: int
     tokens_out: int
     tokens_cached: int
+    tokens_cache_written: int = 0
     records: list[str]
     calls: list[Call]
 
@@ -470,6 +818,7 @@ class Offered(Shape):
     changes: str | None
     handles: list[str]
     outside: list[str]
+    marks: bool
 
 
 class PartRule(Shape):
@@ -559,6 +908,7 @@ class Defined(Shape):
     skills: list[str]
     triggers: list[dict[str, Any]]
     schedules: list[Schedule]
+    events: list[EventTaken]
     reports: list[str]
     obligations: list[str]
     reminders: bool
@@ -705,6 +1055,7 @@ class Tried(Shape):
     reply: str
     run: TriedRun | None
     model_calls: list[ModelCall]
+    tokens: int = 0  # what its run took, towards the day's tries on real models
 
 
 class CaseLine(Shape):
@@ -745,6 +1096,14 @@ class CaseRan(Shape):
     passed: bool | SkipJsonSchema[None] = None
     problems: list[str] | SkipJsonSchema[None] = None
     steps: list[CaseStep] | SkipJsonSchema[None] = None
+    # What running it took, on the model it ran on, for comparing models on an agent's own
+    # cases: the seconds it took, its runs' tokens, and what they cost at the model's prices,
+    # in the deployment's currency, or nothing where its prices aren't known
+    model: str | SkipJsonSchema[None] = None
+    seconds: float | SkipJsonSchema[None] = None
+    tokens: int | SkipJsonSchema[None] = None
+    cost: float | None = None
+    judge_tokens: int = 0  # and its judge's, the same on any model, towards the day's tries
 
 
 class Publish(Shape):
@@ -835,6 +1194,33 @@ class SettingsNow(Shape):
     releases: dict[str, ReleaseLevels]
     waiting: list[VersionWaiting]
     requests: list[SettingsRequest]
+    currency: str | None = None  # the one models.yaml prices models in, which budgets are in
+
+
+class Shift(Shape):
+    """Calls a version would decide differently from the one in force (core/impact.py): of one
+    tool, by one instance, about records in these parts."""
+
+    instance: str
+    tool: str
+    parts: list[str]
+    was: str  # allow, hold or deny, as the version in force decides them
+    would: str  # as this version would
+    calls: int
+    why: str  # policy's words for how this version would decide them
+
+
+class Impact(Shape):
+    """What a version would have done differently in the last weeks, decided again from the
+    ledger's tool calls, and what it can't know."""
+
+    days: int
+    calls: int  # the calls it decided again
+    limited: bool  # whether it read only the latest of the period's calls
+    shifts: list[Shift]
+    capped: list[str]  # levels it sets that a5s's caps hold back, in words
+    about: str  # what it can't know, in words
+    hidden: int  # calls of instances whoever reads it may not watch, left out of the shifts
 
 
 class SettingsReview(Shape):
@@ -847,6 +1233,7 @@ class SettingsReview(Shape):
     changes: list[Change] | SkipJsonSchema[None] = None
     whole: list[str] | SkipJsonSchema[None] = None
     approvers: list[str] | SkipJsonSchema[None] = None
+    impact: Impact | SkipJsonSchema[None] = None  # what it would have done differently
 
 
 class SettingsAsked(Shape):
@@ -1206,6 +1593,7 @@ class VersionReview(Shape):
     you: str
     you_approved: bool
     status: str  # waiting, applied, superseded, or why a5s couldn't apply it
+    impact: Impact | SkipJsonSchema[None] = None  # while it waits: what it would do differently
 
 
 class Approved(Shape):

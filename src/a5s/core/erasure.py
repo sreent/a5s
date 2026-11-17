@@ -4,7 +4,8 @@ The data protection officer asks for it on the core's page (core/officer.py), na
 and a5s erases what it keeps that names them, one holder of an id at a time, as an export gives
 it (core/export.py). By an id, it erases what's its holder's since the id's last archive: their
 conversations with each agent, and what a5s and the agents said to them there, with the
-summaries of those; their notes, preferences and reminders; the chats a5s writes to them in, and
+summaries of those; their notes, preferences and reminders; the accounts they connected, so
+agents acted as them there, with their tokens; the chats a5s writes to them in, and
 what reports told them; their use of each day's budget, and their digests; what they said in
 group chats, with the summaries of the group's that hold any of it, which the group's next run
 makes again from what's left; the questions agents asked each other for them alone; what they
@@ -40,7 +41,7 @@ from psycopg.abc import Params
 from psycopg.types.json import Jsonb
 
 from a5s import db
-from a5s.core import chats, departures, export
+from a5s.core import chats, departures, export, run_cases
 
 # What each kind an erasure counts is, in the words of what a5s keeps (docs/data-protection.md)
 WORDS = {
@@ -54,12 +55,24 @@ WORDS = {
     "reminders": "reminders",
     "chats": "chats a5s wrote to them in",
     "report_fires": "reports sent them",
+    "events": "what other systems told a5s happened about them",
+    "answer_feedback": "what they said of agents' answers that were wrong",
+    "feedback_grades": "whose grades of answers said to be wrong they were",
     "preferences": "preferences",
+    "delegations": "the accounts they connected, so agents acted as them there",
+    "changes_to_undo": "how to undo changes made for them, which they can then no longer undo",
+    "handovers": "their conversations handed to people, with what was said there",
+    "shadow_answers": "what shadows answered them, beside the answers sent, for graders",
+    "shadow_grades": "whose grades of shadows' answers they were",
+    "kept_cases": "test cases kept from runs that held what they said, out of every draft",
+    "cases_kept_by": "whose test cases kept from runs they were",
+    "delegation_starts": "accounts they had begun to connect",
     "report_seen": "what reports told them",
     "digest_waits": "digests that wait for them",
     "urgent_sent": "counts of urgent messages sent them",
     "digests": "their digests",
     "spend": "days of the budget they used",
+    "sandbox_spend": "days of the sandbox's budget their tries of drafts used",
     "archives": "archives, with the record of whose each was",
     "waiting": "what they said they were waiting on",
     "owed": "what they owed that's done",
@@ -109,6 +122,10 @@ def erase(conn: db.Connection, person: str, now: datetime,
     else:  # their holder's, since the id's last archive: a name only this links to them
         for table in departures.LET_GO:
             delete(table, f"delete from {table} where person = %s", (person,))
+        delete("changes_to_undo", "delete from changes_made where %(p)s = any(acts_for) "
+               "and state is distinct from 'undoing'", {"p": person})  # theirs to undo no more
+        delete("changes_to_undo", "update changes_made set asked_by = null, undone_by = null, "
+               "subject = null where %(p)s in (asked_by, undone_by)", {"p": person})
         delete("planned_for", "update agent_drafts set plan = jsonb_set(plan, '{serves}', "
                "(plan->'serves') - %(p)s) where plan->'serves' ? %(p)s", {"p": person})
         delete("drafted_first", "update agent_drafts set before = (select jsonb_agg(case when "
@@ -141,6 +158,16 @@ def erase(conn: db.Connection, person: str, now: datetime,
     for table in departures.KEPT:  # what a5s keeps for someone, as archiving finds it
         delete(table, f"delete from {table} where person = any(%s)", (names,))
     delete("said_in_groups", "delete from turns where speaker = any(%s)", (names,))
+    delete("shadow_answers", "delete from shadow_answers where acts_for && %s",  # in a group's
+           ([*names, person],))  # too: what a shadow answered is only ever for graders
+    delete("shadow_grades", "update shadow_answers set graded_by = null where graded_by = "
+           "any(%s)", ([*names, person],))  # the grade stays, without whose it was
+    delete("feedback_grades", "update answer_feedback set graded_by = null where graded_by = "
+           "any(%s)", ([*names, person],))  # as does a grade of an answer said to be wrong
+    if count := run_cases.forget(conn, [*names, person]):  # out of every draft that holds it
+        gone["kept_cases"] = count
+    delete("cases_kept_by", "update kept_cases set kept_by = null where kept_by = any(%s)",
+           ([*names, person],))
     delete("questions", "delete from questions where acts_for && %s and acts_for <@ %s",
            (names, names))  # for them alone: one for others too is theirs as well
     delete("repeats", "delete from task_repeats where owner = any(%s)", (names,))

@@ -8,7 +8,8 @@ they like to work and their reminders, under a name of its own that no person ha
 loads any of it again, and nothing more goes to them, even if the directory later gives
 someone else the same id or address. Their reminders are cancelled, their notes ended, and
 their preferences, what a5s had told them in their reports, their use of each day's budget and
-the log of their digests let go. What they owed follows the records, to whoever the records
+the log of their digests let go, and so are the accounts they connected, so agents acted as them
+(core/delegation.py): a5s forgets their tokens. What they owed follows the records, to whoever the records
 system makes their owner.
 
 Nothing is copied anywhere else. The archive goes on retention's usual clock, 12 months after
@@ -36,10 +37,11 @@ FORMER = "former:"  # what an archive's name starts with: never a person in the 
 
 # What a5s keeps for a person, which it archives under the archive's name
 KEPT: Final = ("turns", "summaries", "inbound", "outbox", "chats", "digest_items", "urgent_held",
-        "profile_notes", "reminders", "report_fires")
+        "profile_notes", "reminders", "report_fires", "events", "answer_feedback")
 # What only serves the person while they're here, which it lets go
 LET_GO: Final = ("preferences", "report_seen", "digest_waits", "urgent_sent", "digests", "spend",
-          "sign_in_groups", "agent_drafts", "agent_asks")
+          "sign_in_groups", "agent_drafts", "agent_asks", "delegations", "delegation_starts",
+          "handovers", "shadow_answers", "sandbox_spend")
 
 
 def sweep(conn: db.Connection, scenario: Scenario, now: datetime) -> list[str]:
@@ -136,6 +138,12 @@ def rename(conn: db.Connection, person: str, now: datetime) -> str:
                  "where members @> array[%s]::text[]", (person, name, person))
     conn.execute("update summaries set heard_by = array_replace(heard_by, %s, %s) "
                  "where %s = any(heard_by)", (person, name, person))
+    conn.execute("update answer_feedback set graded_by = %s where graded_by = %s",
+                 (name, person))  # whose grades they were, as their archive's
+    conn.execute("update kept_cases set person = case when person = %(p)s then %(n)s else "
+                 "person end, acts_for = array_replace(acts_for, %(p)s, %(n)s), kept_by = case "
+                 "when kept_by = %(p)s then %(n)s else kept_by end where %(p)s in (person, "
+                 "kept_by) or %(p)s = any(acts_for)", {"p": person, "n": name})  # test cases
     conn.execute("update questions set acts_for = array_replace(acts_for, %s, %s) "  # and what
                  "where %s = any(acts_for)", (person, name, person))  # agents asked for them
     conn.execute("update reminders set heard_by = array_replace(heard_by, %s, %s) "  # and who

@@ -154,7 +154,8 @@ def test_only_an_instance_approvers_fresh_sign_in_for_this_approves(stack, appro
     forged = provider.id_token(bound, "ana")
     forged = forged.rsplit(".", 1)[0] + "." + base64.urlsafe_b64encode(b"x" * 256).rstrip(b"=").decode()
     assert decide(approving, version, forged, salt).status_code == 401
-    assert decide(approving, "f" * 64, provider.id_token(bound, "ana"), salt).status_code == 403
+    fresh = provider.id_token(bound, "ana", signed_in_at=int(time.time()))  # for another version
+    assert decide(approving, "f" * 64, fresh, salt).status_code == 403
 
     stack.scheduler().apply_approved()
     assert serves(stack) == ["ana", "ben"]

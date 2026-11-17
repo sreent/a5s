@@ -111,18 +111,20 @@ def test_a5s_restyles_none_of_oceans_pieces_so_ocean_stays_the_one_source():
 def test_the_pages_load_their_type_from_a5s_and_nowhere_else(stack):
     assert sorted(p for p in web.OCEAN_FILES if p.startswith("fonts/")) == [
         f"fonts/plex-{face}.woff2" for face in ("mono-400", "mono-500", "sans-400", "sans-500",
-                                                "sans-600", "sans-700")]
+                                                "sans-600", "sans-700", "sans-thai-400",
+                                                "sans-thai-500", "sans-thai-600", "sans-thai-700")]
     for css in (CSS, (OCEAN / "css" / "components.css").read_text(), OWN):
         assert "https:" not in css and "//" not in re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
     with channels(stack) as url:
         font = httpx.get(f"{url}/chat/ocean/fonts/plex-sans-400.woff2")
+        thai = httpx.get(f"{url}/chat/ocean/fonts/plex-sans-thai-400.woff2")  # for Thai letters
         tokens = httpx.get(f"{url}/chat/ocean/css/tokens.css")
         assert httpx.get(f"{url}/chat/ocean/fonts/OFL-plex-sans.txt").status_code == 404
         assert httpx.get(f"{url}/chat/ocean/fonts/..%2F..%2Fapp.js").status_code == 404
         assert httpx.get(f"{url}/chat/ocean/css/ocean.json").status_code == 404
         page = httpx.get(f"{url}/chat/")
     assert font.status_code == 200 and font.headers["content-type"] == "font/woff2"
-    assert font.content[:4] == b"wOF2"
+    assert font.content[:4] == b"wOF2" and thai.content[:4] == b"wOF2"
     assert tokens.status_code == 200 and tokens.text == CSS
     assert "font-src 'self'" in page.headers["content-security-policy"]
     assert "default-src 'none'" in page.headers["content-security-policy"]

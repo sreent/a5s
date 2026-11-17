@@ -14,6 +14,7 @@ quotes and the tools it names.
 
 from __future__ import annotations
 
+import base64
 import json
 import re
 from datetime import date, timedelta
@@ -28,12 +29,19 @@ NOTE = "(a5s: "  # how a5s starts its note on values the agent wrote itself
 # What a case, and each of its steps, may hold that the sandbox runs. The rest, such as a time
 # to be at, records changed first, earlier turns, or what a5s keeps afterwards, the agent's
 # suite alone runs, on a stack of its own.
-CASE = {"name", "as", "steps", "own_values"}
+CASE = {"name", "as", "steps", "own_values", "from_run", "read_outside"}
+# Where cases kept from real runs go (core/run_cases.py): what someone really said, masked
+FROM_RUNS = "tests/from-runs.yaml"
 STEP = {"say", "uses", "uses_any", "avoids", "says", "says_any", "never_says", "judged"}
 SUITE_CASE = {"before", "then", "deciding", "budget_tokens", "with_watcher"}  # the suite's alone
 SUITE_STEP = {"at", "records"}
 LISTS = ("uses", "uses_any", "avoids", "says", "says_any", "never_says")  # each a list of words
 SAY = 4000  # characters one step says, at most
+# What a step of a case kept from a run that read content from outside is sent with, in the
+# sandbox and the suite, in its place: a file, which marks the case's run as the real one was,
+# so it acts at level 2 on nothing, as that run couldn't (core/run_cases.py)
+OUTSIDE = {"name": "from-outside.txt", "type": "text/plain", "data": base64.b64encode(
+    b"What came from outside with what was said, which the case doesn't keep.").decode()}
 JUDGING = (
     "You judge one step of an AI agent's test case, as the person who wrote the case would: "
     "whether what the agent did is what they say a right answer is. Right: it is. Wrong: it "
@@ -50,6 +58,26 @@ QUOTED = re.compile(r'"([^"]+)"|\u201c([^\u201d]+)\u201d')  # what a criterion q
 
 class Unreadable(ValueError):
     """A file of test cases that doesn't read as a list of them."""
+
+
+def real(case: dict) -> bool:
+    """Whether a case was kept from a real run (core/run_cases.py), so what it says is what
+    someone really said, masked by code and read by its author, but never made up. Its file
+    says so, or the case does."""
+    return bool(case.get("from_run")) or case.get("file") == FROM_RUNS
+
+
+def sent_with(case: dict) -> list[dict]:
+    """The files each step of a case is sent with: one from outside, in its place, if the run
+    it was kept from read content from outside, and none otherwise."""
+    return [dict(OUTSIDE)] if case.get("read_outside") is True else []
+
+
+def for_real(classes: Any, needed: set[str]) -> bool:
+    """Whether a model approved for `classes` may read a case kept from a real run: one approved
+    for every class the deployment's data is, `needed`, as its runs' models are. So where it's
+    real, never one approved for made-up data alone."""
+    return bool(needed) and needed <= set(classes or ())
 
 
 def dated(text: str, today: date | None = None) -> str:
@@ -91,6 +119,8 @@ def _ill(case: Any) -> str | None:
         return f"{case['name']} has {', '.join(sorted(map(str, extra)))}, which a case doesn't take"
     if "as" in case and not isinstance(case["as"], str):
         return f"{case['name']}: as is whom it's said as, by their id"
+    if "read_outside" in case and not isinstance(case["read_outside"], bool):
+        return f"{case['name']}: read_outside is true or false"
     steps = case.get("steps")
     if not isinstance(steps, list) or not steps:
         return f"{case['name']} has no steps"

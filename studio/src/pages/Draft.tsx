@@ -9,22 +9,25 @@
 import { type ReactNode, useEffect, useRef, useState } from "react";
 import { AgentMap } from "../AgentMap";
 import { type CoAuthors, type Draft, get, type Offer, type Plan, type Sandbox, send, whole } from "../api";
+import { and } from "../consequences";
 import { CASES, keptCases, read, withCase } from "../definition";
 import { Confirm, JourneyPath, type Stage, useToast } from "../design";
 import { Designer } from "../Designer";
+import { t } from "../i18n";
 import { Icon } from "../icons";
 import { Publish } from "../Publish";
 import { go, Link, type Route } from "../router";
-import { shellOf } from "../Sidebar";
+import { mayUse, shellOf } from "../Sidebar";
 import { TryIt } from "../TryIt";
-import { useLoad, Waiting, when } from "../ui";
+import { plural, useLoad, Waiting, when } from "../ui";
 import { keepUnkept, keptNow, unkept } from "../unkept";
 
 type Unkept = { files: Files; plan: Plan | null };  // what's changed, until a5s has kept it
 
 type Files = Record<string, string>;
 type View = "design" | "instructions" | "try" | "files" | "publish";
-const VIEWS: [View, string][] = [["design", "Design"], ["instructions", "Instructions"], ["try", "Try it"], ["files", "Files"]];
+const views = (): [View, string][] => [["design", t("Design")], ["instructions", t("Instructions")], ["try", t("Try it")],
+                                       ["files", t("Files")]];
 const WAIT = 600;  // ms after the last change before it's kept
 
 type Kept = "kept" | "keeping" | { problem: string };
@@ -36,13 +39,13 @@ function Raw({ files, change, readOnly = false }: { files: Files; change: (f: Fi
   const pinned = open === "tools.lock";
   return (
     <div className="raw">
-      <ul className="file-list" aria-label="Its files">
+      <ul className="file-list" aria-label={t("Its files")}>
         {names.map((name) => (
           <li key={name}><button type="button" className={name === open ? "on" : ""} onClick={() => setOpen(name)}>{name}</button></li>
         ))}
       </ul>
       <div className="raw-file">
-        {pinned && <p className="note">a5s pins its tools as the scenario has them each time it's kept, as `a5s pin` does.</p>}
+        {pinned && <p className="note">{t("a5s pins its tools as the scenario has them each time it's kept, as `a5s pin` does.")}</p>}
         <textarea id="file-text" aria-label={open} spellCheck={false} readOnly={pinned || readOnly} value={files[open] ?? ""}
                   onChange={(e) => change({ ...files, [open]: e.target.value })} />
       </div>
@@ -67,20 +70,19 @@ function Described({ described }: { described: NonNullable<Draft["described"]> }
   const left = described.notes.filter((n) => !n.given);
   return (
     <section id="described" aria-labelledby="described-title">
-      <h2 id="described-title">Drafted from your words</h2>
-      <p className="note">On {described.model === "stand-in" ? "the sandbox's stand-in, which thinks nothing" : described.model},
-        from: <q>{described.words}</q> It was given the least it needs of what the scenario offers, each for the reason
-        the model gave. Check each: take away what it doesn't need, and add by hand what it does.</p>
+      <h2 id="described-title">{t("Drafted from your words")}</h2>
+      <p className="note">{t("On {model}, from:", { model: described.model === "stand-in" ? t("the sandbox's stand-in, which thinks nothing") : described.model })}{" "}
+        <q>{described.words}</q> {t("It was given the least it needs of what the scenario offers, each for the reason the model gave. Check each: take away what it doesn't need, and add by hand what it does.")}</p>
       <ul className="gates">
         {given.map((n) => (
           <li key={`given-${n.what}`} data-given={n.what}>
-            <span className="badge good"><Icon name="check" />given</span>
+            <span className="badge good"><Icon name="check" />{t("given")}</span>
             <span><span className="gate-name mono">{n.what}</span><span className="gate-about">{n.why}</span></span>
           </li>
         ))}
         {left.map((n) => (
           <li key={`left-${n.what}`} data-left={n.what}>
-            <span className="badge"><Icon name="cross" />left out</span>
+            <span className="badge"><Icon name="cross" />{t("left out")}</span>
             <span><span className="gate-name mono">{n.what}</span><span className="gate-about">{n.why}</span></span>
           </li>
         ))}
@@ -93,15 +95,15 @@ function Problems({ problems }: { problems: string[] }) {
   const passed = problems.length === 0;
   return (
     <section id="problems" aria-live="polite" tabIndex={-1} aria-labelledby="problems-title">
-      <h2 id="problems-title">What stops its release</h2>
+      <h2 id="problems-title">{t("What stops its release")}</h2>
       <ul className="gates">
         <li>
-          {passed ? <span className="badge good"><Icon name="check" />passed</span>
-            : <span className="badge bad"><Icon name="cross" />failed</span>}
+          {passed ? <span className="badge good"><Icon name="check" />{t("passed")}</span>
+            : <span className="badge bad"><Icon name="cross" />{t("failed")}</span>}
           <span>
-            <span className="gate-name">a5s's checks</span>
+            <span className="gate-name">{t("a5s's checks")}</span>
             {passed
-              ? <span className="gate-about">Nothing would stop its release here, by the checks <span className="mono">a5s agent check</span> makes.</span>
+              ? <span className="gate-about">{t("Nothing would stop its release here, by the checks")} <span className="mono">a5s agent check</span> {t("makes.")}</span>
               : problems.map((p) => <span key={p} className="gate-about">{p}</span>)}
           </span>
         </li>
@@ -125,21 +127,21 @@ function TheirDraft({ draft }: { draft: Draft }) {
   return (
     <>
       <header className="wb-bar">
-        <Link to={{ page: "agents" }} className="crumb"><Icon name="back" />Agents</Link>
+        <Link to={{ page: "agents" }} className="crumb"><Icon name="back" />{t("Agents")}</Link>
         <h1>{draft.agent}</h1>
-        <span className="chip">draft</span> <span className="chip">read only</span>
+        <span className="chip">{t("draft")}</span> <span className="chip">{t("read only")}</span>
         <span className="wb-spacer" />
-        <button type="button" className="primary" id="copy-draft" onClick={copy}>Make a copy of your own</button>
+        <button type="button" className="primary" id="copy-draft" onClick={copy}>{t("Make a copy of your own")}</button>
       </header>
       <div className="wb-body whole">
         <div className="wb-view">
-          <p className="note">{draft.author}'s draft, from {draft.based_on}, kept {when(draft.updated_at)}. You may author
-            the {draft.agent} too, so you may read it: copy it into a draft of your own to change it.</p>
+          <p className="note">{t("{author}'s draft, from {release}, kept {when}. You may author the {agent} too, so you may read it: copy it into a draft of your own to change it.",
+                                 { author: draft.author ?? "", release: draft.based_on ?? "", when: when(draft.updated_at), agent: draft.agent })}</p>
           {problem && <p className="problem">{problem}</p>}
           <Problems problems={draft.problems} />
-          <section aria-labelledby="their-map"><h2 id="their-map">How it's wired</h2>
-            {draft.preview ? <AgentMap agent={draft.preview} /> : <p className="note">Its map shows once its definition loads.</p>}</section>
-          <section id="their-files" aria-labelledby="their-files-title"><h2 id="their-files-title">Its files</h2>
+          <section aria-labelledby="their-map"><h2 id="their-map">{t("How it's wired")}</h2>
+            {draft.preview ? <AgentMap agent={draft.preview} /> : <p className="note">{t("Its map shows once its definition loads.")}</p>}</section>
+          <section id="their-files" aria-labelledby="their-files-title"><h2 id="their-files-title">{t("Its files")}</h2>
             <Raw files={draft.files} change={() => undefined} readOnly /></section>
         </div>
       </div>
@@ -151,8 +153,8 @@ function TheirDraft({ draft }: { draft: Draft }) {
  * theirs (round 11, E-4). */
 function handedBy(draft: Draft): string {
   const went = draft.drafted_before.map((d) => d.how === "handed"
-    ? `${d.name} handed it over ${when(d.at)}` : `it copies a draft ${d.name} wrote`);
-  return went.length ? ` Before you, ${went.join("; then ")}.` : "";
+    ? t("{name} handed it over {when}", { name: d.name, when: when(d.at) }) : t("it copies a draft {name} wrote", { name: d.name }));
+  return went.length ? t("Before you, {went}.", { went: went.join(t("; then ")) }) : "";
 }
 
 /** Hand one's own draft over to a co-author, who may author its agent too: it's theirs then. */
@@ -162,7 +164,7 @@ function HandOver({ id }: { id: string }) {
   const [problem, setProblem] = useState<string | null>(null);
   const people = useLoad(() => (open ? get<CoAuthors>(
     `/studio/api/drafts/${encodeURIComponent(id)}/co-authors`) : Promise.resolve({ people: [] })), [open, id]);
-  if (!open) return <button type="button" id="hand-over" onClick={() => setOpen(true)}>Hand it over</button>;
+  if (!open) return <button type="button" id="hand-over" onClick={() => setOpen(true)}>{t("Hand it over")}</button>;
   const found = people.data?.people ?? [];
   const hand = async () => {
     try {
@@ -174,22 +176,20 @@ function HandOver({ id }: { id: string }) {
   };
   return (
     <span className="hand-over">
-      {people.data && found.length === 0 && <span className="faint">Nobody else may take it: they may author its agent, and have no draft of it.</span>}
+      {people.data && found.length === 0 && <span className="faint">{t("Nobody else may take it: they may author its agent, and have no draft of it.")}</span>}
       {found.length > 0 && (
         <>
-          <select id="hand-to" value={to || found[0].id} onChange={(e) => setTo(e.target.value)} aria-label="Hand it over to">
+          <select id="hand-to" value={to || found[0].id} onChange={(e) => setTo(e.target.value)} aria-label={t("Hand it over to")}>
             {found.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
-          <button type="button" id="hand-over-to" onClick={hand}>Hand it over to them</button>
+          <button type="button" id="hand-over-to" onClick={hand}>{t("Hand it over to them")}</button>
         </>
       )}
-      <button type="button" onClick={() => setOpen(false)}>Keep it</button>
+      <button type="button" onClick={() => setOpen(false)}>{t("Keep it")}</button>
       {problem && <span className="problem"> {problem}</span>}
     </span>
   );
 }
-
-const named = (them: string[]) => them.length > 1 ? `${them.slice(0, -1).join(", ")} and ${them[them.length - 1]}` : them[0];
 
 /** Where a draft stands on its way to work, and the one thing to do next: shape it and try it,
  * publish it, have its release signed, which a5s then deploys, put it to work, and watch it.
@@ -214,37 +214,38 @@ function Journey({ draft, said, files, plan, open }: { draft: Draft; said: Said;
   const untried = !cases && !sandbox.error && !published;  // a sandbox to try it in, before it's out
   const signers = [...new Set((said.signers ?? []).map((s) => s.who))];
   const stages: Stage[] = [
-    { name: "Shape and try it", state: released || (shaped && !untried) ? "done" : "now",
-      about: !shaped ? `${said.problems.length === 1 ? "One thing stops" : `${said.problems.length} things stop`} its release.`
-        : cases ? `Nothing stops its release, and ${cases} test case${cases === 1 ? "" : "s"} kept from the sandbox.`
-        : untried ? "Nothing stops its release. Try it in the sandbox, and keep what it should do as test cases."
-        : sandbox.error ? "Nothing stops its release. There's no sandbox here to try it in." : "Nothing stops its release." },
-    { name: "Publish it", state: published ? "done" : shaped && !untried ? "now" : "later",
-      about: draft.publishing ? "As a pull request, which a5s opens as you." : "As a pull request, which you open with the words a5s gives." },
-    { name: "Have its release signed", state: released ? "done" : published ? "now" : "later",
-      about: released ? "It's released here as it is, and a5s deployed it."
-        : `By ${signers.length ? named(signers) : "whoever its release needs"}. a5s deploys it once they have.` },
-    { name: "Put it to work", state: released && atWork ? "done" : released ? "now" : "later",
-      about: released && atWork ? "An instance runs it." : "An instance in the settings, for a few people first, at level 0 or 1." },
-    { name: "Watch it", state: released && atWork ? "now" : "later", about: "Its runs and how they end, on its page." },
+    { name: t("Shape and try it"), state: released || (shaped && !untried) ? "done" : "now",
+      about: !shaped ? (said.problems.length === 1 ? t("One thing stops its release.")
+                        : t("{n} things stop its release.", { n: said.problems.length }))
+        : cases ? t("Nothing stops its release, and {cases} kept from the sandbox.", { cases: plural(cases, "test case") })
+        : untried ? t("Nothing stops its release. Try it in the sandbox, and keep what it should do as test cases.")
+        : sandbox.error ? t("Nothing stops its release. There's no sandbox here to try it in.") : t("Nothing stops its release.") },
+    { name: t("Publish it"), state: published ? "done" : shaped && !untried ? "now" : "later",
+      about: draft.publishing ? t("As a pull request, which a5s opens as you.") : t("As a pull request, which you open with the words a5s gives.") },
+    { name: t("Have its release signed"), state: released ? "done" : published ? "now" : "later",
+      about: released ? t("It's released here as it is, and a5s deployed it.")
+        : t("By {who}. a5s deploys it once they have.", { who: signers.length ? and(signers) : t("whoever its release needs") }) },
+    { name: t("Put it to work"), state: released && atWork ? "done" : released ? "now" : "later",
+      about: released && atWork ? t("An instance runs it.") : t("An instance in the settings, for a few people first, at level 0 or 1.") },
+    { name: t("Watch it"), state: released && atWork ? "now" : "later", about: t("Its runs and how they end, on its page.") },
   ];
   const page = { page: "agent" as const, agent: draft.agent };
-  const settings = !atWork && toWork(draft.agent, plan, Boolean(shell.data?.pages.includes("settings")));
+  const settings = !atWork && toWork(draft.agent, plan, mayUse(shell.data, "settings"));
   const next = released
-    ? settings ? <Link to={settings} className="button primary" id="put-to-work">Put it to work in the settings</Link>
-      : <Link to={page} className="button primary">{atWork ? "Watch it on its page" : "Put it to work, from its page"}</Link>
+    ? settings ? <Link to={settings} className="button primary" id="put-to-work">{t("Put it to work in the settings")}</Link>
+      : <Link to={page} className="button primary">{atWork ? t("Watch it on its page") : t("Put it to work, from its page")}</Link>
     : !shaped
-    ? <button type="button" className="primary" onClick={() => open("problems")}>See what stops its release</button>
+    ? <button type="button" className="primary" onClick={() => open("problems")}>{t("See what stops its release")}</button>
     : draft.published
-      ? <a className="button primary" href={draft.published ?? "#"} target="_blank" rel="noopener noreferrer">Open its pull request</a>
+      ? <a className="button primary" href={draft.published ?? "#"} target="_blank" rel="noopener noreferrer">{t("Open its pull request")}</a>
       : untried
-        ? <><button type="button" className="primary" onClick={() => open("try")}>Try it in the sandbox</button>
-            <button type="button" onClick={() => open("publish")}>Publish it without trying it</button></>
-        : <button type="button" className="primary" onClick={() => open("publish")}>Publish it</button>;
+        ? <><button type="button" className="primary" onClick={() => open("try")}>{t("Try it in the sandbox")}</button>
+            <button type="button" onClick={() => open("publish")}>{t("Publish it without trying it")}</button></>
+        : <button type="button" className="primary" onClick={() => open("publish")}>{t("Publish it")}</button>;
   return (
     <section id="journey" aria-labelledby="journey-title">
-      <h2 id="journey-title">Where it stands</h2>
-      <JourneyPath stages={stages} next={next} />
+      <h2 id="journey-title">{t("Where it stands")}</h2>
+      <JourneyPath stages={stages} next={next} label={t("From a draft to an agent at work")} />
     </section>
   );
 }
@@ -276,7 +277,7 @@ export function DraftPage({ id }: { id: string }) {
       if (left) {
         setKept("keeping");
         void keep(left.files, ++latest.current);
-        toast("What you'd changed and a5s hadn't kept is back, and kept now.");
+        toast(t("What you'd changed and a5s hadn't kept is back, and kept now."));
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -338,7 +339,7 @@ export function DraftPage({ id }: { id: string }) {
       await send("DELETE", `/studio/api/drafts/${encodeURIComponent(id)}`);
       keptNow(store);
       pending.current = null;
-      toast(`The draft of ${loaded.data?.agent ?? "the agent"} is gone.`);
+      toast(t("The draft of {agent} is gone.", { agent: loaded.data?.agent ?? t("the agent") }));
       go({ page: "agents" });
     } catch (e) {
       setKept({ problem: (e as Error).message });
@@ -354,34 +355,34 @@ export function DraftPage({ id }: { id: string }) {
   const draft = loaded.data;
   if (draft && !draft.yours) return <TheirDraft draft={draft} />;
   const status = typeof kept === "object" ? <span className="badge bad"><Icon name="cross" />{kept.problem}</span>
-    : kept === "keeping" ? <>Keeping…</> : <><Icon name="check" />Kept</>;
+    : kept === "keeping" ? <>{t("Keeping…")}</> : <><Icon name="check" />{t("Kept")}</>;
   const ready = Boolean(said && said.problems.length === 0 && kept === "kept");
   const bar = (
     <header className="wb-bar">
-      <Link to={{ page: "agents" }} className="crumb"><Icon name="back" />Agents</Link>
-      <h1>{draft ? draft.agent : "A draft"}</h1>
-      {draft && <span className="chip">draft</span>}
+      <Link to={{ page: "agents" }} className="crumb"><Icon name="back" />{t("Agents")}</Link>
+      <h1>{draft ? draft.agent : t("A draft")}</h1>
+      {draft && <span className="chip">{t("draft")}</span>}
       {draft && <span className="chip mono">{draft.based_on}</span>}
       {draft && <span className="wb-saved" id="kept">{status}</span>}
       {said && (
         <button type="button" className={`badge ${said.problems.length ? "bad" : "good"}`} id="problem-count" onClick={() => open("problems")}>
           <Icon name={said.problems.length ? "cross" : "check"} />
-          {said.problems.length ? `${said.problems.length} problem${said.problems.length === 1 ? "" : "s"}` : "No problems"}
+          {said.problems.length ? plural(said.problems.length, "problem") : t("No problems")}
         </button>
       )}
       <span className="wb-spacer" />
       {draft && (
         <>
-          <div className="modes" role="group" aria-label="The draft">
-            {VIEWS.map(([key, label]) => (
+          <div className="modes" role="group" aria-label={t("The draft")}>
+            {views().map(([key, label]) => (
               <button key={key} type="button" aria-pressed={view === key} onClick={() => setView(key)}>{label}</button>
             ))}
           </div>
           <HandOver id={id} />
-          <Confirm label="Drop the draft" danger title={`Drop the draft of ${draft?.agent ?? "this agent"}?`}
-                   about="Its files, its plan and what was tried on it go, and can't be had back. The agent itself, and any release of it, stay as they are."
-                   confirm="Drop the draft" onConfirm={drop} />
-          <button type="button" className="primary" id="to-publish" aria-pressed={view === "publish"} onClick={() => setView("publish")}>Publish it</button>
+          <Confirm label={t("Drop the draft")} danger title={t("Drop the draft of {agent}?", { agent: draft?.agent ?? t("this agent") })}
+                   about={t("Its files, its plan and what was tried on it go, and can't be had back. The agent itself, and any release of it, stay as they are.")}
+                   confirm={t("Drop the draft")} onConfirm={drop} />
+          <button type="button" className="primary" id="to-publish" aria-pressed={view === "publish"} onClick={() => setView("publish")}>{t("Publish it")}</button>
         </>
       )}
     </header>
@@ -391,8 +392,10 @@ export function DraftPage({ id }: { id: string }) {
   }
   const overview: ReactNode = (
     <>
-      <p className="note" id="about-draft">From {draft.based_on}, started {when(draft.created_at)}.{handedBy(draft)} Yours to change,
-        and readable by the agent's other owners and authors: nothing runs it until it's published and its release signed.</p>
+      <p className="note" id="about-draft">{[t("From {release}, started {when}.", { release: draft.based_on ?? "", when: when(draft.created_at) }),
+        handedBy(draft),
+        t("Yours to change, and readable by the agent's other owners and authors: nothing runs it until it's published and its release signed.")]
+        .filter(Boolean).join(" ")}</p>
       {draft.described && <Described described={draft.described} />}
       <Journey draft={draft} said={said} files={files} plan={plan} open={open} />
       <Problems problems={said.problems} />
@@ -401,9 +404,10 @@ export function DraftPage({ id }: { id: string }) {
   const cases = keptCases(files[CASES]);
   const tryIt = (
     <>
-      <button type="button" className="primary" id="try-it" onClick={() => setView("try")}><Icon name="run" />Try it</button>
-      <p className="note">{said.problems.length ? `${said.problems.length === 1 ? "One thing stops" : `${said.problems.length} things stop`} its release`
-        : cases ? `${cases} test case${cases === 1 ? "" : "s"} kept` : "Nothing stops its release"}</p>
+      <button type="button" className="primary" id="try-it" onClick={() => setView("try")}><Icon name="run" />{t("Try it")}</button>
+      <p className="note">{said.problems.length ? (said.problems.length === 1 ? t("One thing stops its release")
+                                                  : t("{n} things stop its release", { n: said.problems.length }))
+        : cases ? t("{cases} kept", { cases: plural(cases, "test case") }) : t("Nothing stops its release")}</p>
     </>
   );
   return (
@@ -417,8 +421,8 @@ export function DraftPage({ id }: { id: string }) {
       <div className="wb-body whole" hidden={view === "design"}>
         {view === "instructions" && (
           <section className="wb-view" aria-labelledby="instructions-title">
-            <h2 id="instructions-title">Its instructions</h2>
-            <label className="wb-field"><span className="wb-label">What it's told at the start of each run, its AGENTS.md</span>
+            <h2 id="instructions-title">{t("Its instructions")}</h2>
+            <label className="wb-field"><span className="wb-label">{t("What it's told at the start of each run, its AGENTS.md")}</span>
               <textarea id="instructions" rows={24} value={files["AGENTS.md"] ?? ""}
                         onChange={(e) => change({ ...files, "AGENTS.md": e.target.value })} /></label>
           </section>
@@ -426,18 +430,18 @@ export function DraftPage({ id }: { id: string }) {
         {view === "files" && (
           <section className="wb-view" aria-labelledby="files-title">
             <Problems problems={said.problems} />
-            <h2 id="files-title">Its files</h2>
+            <h2 id="files-title">{t("Its files")}</h2>
             <Raw files={files} change={change} />
           </section>
         )}
         <section className="wb-view" id="try" tabIndex={-1} hidden={view !== "try"} aria-labelledby="try-title">
-          <h2 id="try-title">Try it in the sandbox</h2>
+          <h2 id="try-title">{t("Try it in the sandbox")}</h2>
           <TryIt draft={id} name={draft.agent} ready={ready}
                  keep={(testCase) => change({ ...files, [CASES]: withCase(files[CASES] ?? "", testCase) })}
                  revision={revision} acts={acting(files, tools.data)} />
         </section>
         <section className="wb-view" id="publishing" tabIndex={-1} hidden={view !== "publish"} aria-labelledby="publish-title">
-          <h2 id="publish-title">Publish it</h2>
+          <h2 id="publish-title">{t("Publish it")}</h2>
           <Publish draft={id} name={draft.agent} ready={ready} published={draft.published} publishing={draft.publishing}
                    revision={revision} />
         </section>

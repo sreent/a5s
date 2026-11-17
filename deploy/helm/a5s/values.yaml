@@ -26,7 +26,7 @@ imagePullSecrets: []
 #   database-<part>-url and database-<part>-password, for gateway, channels, scheduler and anchor;
 #   service-token and seal-keys;
 #   and as the deployment needs them: deepseek-api-key, qwen-api-key, teams-secret-<agent>,
-#   slack-secret-<agent>, slack-token-<agent>,
+#   slack-secret-<agent>, slack-token-<agent>, event-secret-<source>,
 #   matrix-as-token and matrix-hs-token, and sandbox-token, which it shares with its sandbox.
 # The sandbox's release has its own, in its own namespace, with sandbox-database-url, its own
 # database server's administrator, and sandbox-token, and the models' keys if it has them.
@@ -92,6 +92,21 @@ slack:
   teamId: ""
   apps: []
 
+# Events: the systems that may tell a5s something happened, such as {source: itsm}, each with
+# its signing secret in the Secret as event-secret-<source>. They post to
+# /channels/events/<source> on the channels' address (README.md).
+events:
+  sources: []
+
+# Acting as the person: the systems people may connect their own accounts in, so agents act there
+# as them, with their permissions, such as {name: servicenow, title: ServiceNow, authorize:
+# <its OAuth authorize address>, token: <its token address>, clientId: <a5s's client there>,
+# scopes: [...]}, each with a5s's client secret there in the Secret as delegation-secret-<name>,
+# which the core alone reads. Each system sends people back to <publicUrl>/studio/connections
+# (docs/connectors.md#acting-as-the-person).
+delegation:
+  systems: []
+
 # Matrix: a5s's registration on the organisation's homeserver, with its tokens in the Secret.
 matrix:
   homeserver: ""
@@ -107,6 +122,24 @@ anchor:
   # Secret, as anchor-s3-access-key-id and anchor-s3-secret-access-key.
   s3Endpoint: ""
   s3Region: ""
+
+# The docs repositories the scenario's libraries.yaml names (docs/connectors.md#document-libraries):
+# beside the gateway, a git-sync for each keeps its checkout current, over HTTPS, in a folder by
+# the library's name, where the core reads it, each document naming its readers. None, and the
+# gateway runs alone.
+libraries:
+  repositories: []
+  # - name: procedures                     # the library's name, as libraries.yaml names it
+  #   repo: https://github.com/example/desk-procedures
+  #   ref: main
+  #   period: 60s                          # how often git-sync looks for a new revision
+  #   secret: ""                           # a Secret with GITSYNC_USERNAME and GITSYNC_PASSWORD,
+  #                                        # for a private repository: read access alone
+  gitSync:
+    image: registry.k8s.io/git-sync/git-sync:v4.4.2
+    resources:
+      requests: {cpu: 10m, memory: 32Mi}
+      limits: {memory: 128Mi}
 
 sandbox:
   # In a5s's release: where its sandbox is, which the studio sends people's drafts to try, by

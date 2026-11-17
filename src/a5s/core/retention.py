@@ -21,7 +21,16 @@ after, and the record of whose archive it was once nothing is left under its nam
 people ask to forget goes at once (core/profiles.py). The ledger keeps what people and agents
 wrote only by hash and length (core/ledger.py), so retention needn't touch it. The values a run
 was handed as handles, what it read, and the documents from outside it read, go once the run
-has been over for an hour: a handle works only in its run, and nothing reads them after.
+has been over for an hour: a handle works only in its run, and nothing reads them after. The
+files someone sent with a message (core/files.py) go a day after it was answered, or a week
+after it came, should nothing answer it. What someone said of an agent's answer that was wrong
+(core/feedback.py) goes that long after they said it, or with the answer. The tokens of an
+account someone connected, so agents act as them (core/delegation.py), go once a5s hasn't used
+them for 90 days, and a start nobody came back to after a day. How to undo a change an agent
+made (core/undoing.py) goes a day after it can no longer be undone. A conversation handed over to
+people (core/handover.py), with what was said there, goes that long after it was handed back.
+What a shadow answered (core/shadows.py), beside what was asked and sent, goes that long after
+it answered.
 
 The core sweeps every hour, by the database's clock, and the ledger records what each sweep
 deleted, in counts, never what was said. The period goes to Postgres as a value, never as part
@@ -37,7 +46,7 @@ from typing import Any, Final, LiteralString
 
 from a5s import db
 from a5s.contract import DataProtection
-from a5s.core import departures
+from a5s.core import delegation, departures
 
 KEPT = DataProtection.kept_for  # until the data protection officer chooses otherwise
 HORIZON = re.compile(r"[1-9][0-9]{0,3} (hour|day|month)s?")
@@ -78,6 +87,9 @@ def sweep(conn: db.Connection, now: datetime, scenario: str, kept: str = KEPT) -
     delete("handles", f"delete from run_handles where run_id in {over}")
     delete("reads", f"delete from run_reads where run_id in {over}")
     delete("documents", f"delete from run_documents where run_id in {over}")
+    delete("files", "delete from inbound_files f using inbound i where i.id = f.inbound_id and "
+                    "(i.answered_at < now() - interval '1 day' or i.received_at < now() - "
+                    "interval '7 days')")  # sent with a message, kept to answer it
 
     said = " union all ".join(f"select {WHOSE.get(table, 'person')} as person, agent, {at} as at "
                               f"from {table}" for table, at in SAID)
@@ -103,6 +115,8 @@ def sweep(conn: db.Connection, now: datetime, scenario: str, kept: str = KEPT) -
     delete("waiting", "update obligations set waiting_on = null where waiting_on is not null "
                       f"and waiting_noted_at < {AGO}")  # in their words
     delete("reports", f"delete from report_fires where fired_at < {AGO}")
+    delete("events", f"delete from events where received_at < {AGO}")  # what systems said
+    delete("feedback", f"delete from answer_feedback where at < {AGO}")  # answers said wrong
     delete("reminders", "delete from reminders where greatest(reminded_at, cancelled_at, "
                         f"case when confirmed_at is null then offered_at end) < {AGO}")
     delete("counts", "delete from urgent_sent where day < (now() - interval '2 days')::date")
@@ -124,6 +138,17 @@ def sweep(conn: db.Connection, now: datetime, scenario: str, kept: str = KEPT) -
     # group chat, whose conversation goes by its own last message
     delete("questions", f"delete from questions where asked_at < {AGO}")
     delete("asks", f"delete from agent_asks where ended_at < {AGO}")  # asking for an agent
+    delete("connections", "delete from delegations where coalesce(used_at, connected_at) < "
+                          "now() - %(unused)s", unused=delegation.UNUSED)  # tokens unused that long
+    delete("connections", "delete from delegation_starts where started_at < now() - "
+                          "interval '1 day'")  # nobody came back to, should no core sweep them
+    delete("handovers", f"delete from handovers where ended_at < {AGO}")  # with what was said
+    delete("shadows", f"delete from shadow_answers where at < {AGO}")  # what shadows answered
+    delete("cases", "delete from kept_cases k where not exists (select 1 from agent_drafts d "
+                    "where position(k.token in coalesce(d.files ->> 'tests/from-runs.yaml', '')) "
+                    "> 0)")  # whose words a kept case holds, once no draft holds it
+    delete("undo", "delete from changes_made where until < now() - interval '1 day' and "
+                   "state is distinct from 'undoing'")  # how to undo a change, once it can't be
     done = (f"(status in ('done', 'cancelled', 'failed') and updated_at < {AGO}) "
             f"or deadline < {AGO}")  # it can't run past its deadline
     delete("tasks", "delete from tasks where root in (select root from tasks group by root "
@@ -136,6 +161,8 @@ def sweep(conn: db.Connection, now: datetime, scenario: str, kept: str = KEPT) -
            f"and updated_at < {AGO}", scenario=scenario)  # it no longer runs: nothing syncs
     # what it owed. Each person's day: only today's is asked after, in any time zone
     delete("days", "delete from spend where day < %(day)s", day=(now - timedelta(days=2)).date())
+    delete("days", "delete from sandbox_spend where day < %(day)s",  # tries of drafts
+           day=(now - timedelta(days=2)).date())
     delete("refusals", "delete from second_factor_refusals where day < %(day)s",  # counts alone
            day=(now - timedelta(days=7)).date())
     delete("days", "delete from digests where due_at < %(due)s", due=now - timedelta(days=3))

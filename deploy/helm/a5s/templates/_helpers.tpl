@@ -124,6 +124,10 @@ seccompProfile:
   value: {{ $value | quote }}
 {{- end }}
 {{- end }}
+{{- if .Values.delegation.systems }}
+- name: A5S_DELEGATION
+  value: {{ include "a5s.delegation" . | quote }}
+{{- end }}
 {{- if .Values.matrix.homeserver }}
 {{ include "a5s.secretEnv" (dict "root" . "name" "A5S_MATRIX_AS_TOKEN" "key" "matrix-as-token") }}
 {{ include "a5s.secretEnv" (dict "root" . "name" "A5S_MATRIX_HS_TOKEN" "key" "matrix-hs-token") }}
@@ -137,6 +141,13 @@ seccompProfile:
 {{ include "a5s.secretEnv" (dict "root" $ "name" (printf "A5S_TEAMS_SECRET_%s" (upper .agent)) "key" (printf "teams-secret-%s" .agent)) }}
 {{- end }}
 {{- end }}
+{{- if .Values.events.sources }}
+- name: A5S_EVENT_SOURCES
+  value: {{ include "a5s.eventSources" . | quote }}
+{{- range .Values.events.sources }}
+{{ include "a5s.secretEnv" (dict "root" $ "name" (printf "A5S_EVENT_SECRET_%s" (upper (replace "-" "_" .source))) "key" (printf "event-secret-%s" .source)) }}
+{{- end }}
+{{- end }}
 {{- if .Values.slack.teamId }}
 - name: A5S_SLACK_TEAM
   value: {{ .Values.slack.teamId | quote }}
@@ -147,6 +158,26 @@ seccompProfile:
 {{ include "a5s.secretEnv" (dict "root" $ "name" (printf "A5S_SLACK_TOKEN_%s" (upper .agent)) "key" (printf "slack-token-%s" .agent)) }}
 {{- end }}
 {{- end }}
+{{- end }}
+
+{{/* Each system that may send events, as a5s reads them: its name, and the variable its
+signing secret is in. */}}
+{{- define "a5s.eventSources" -}}
+{{- $sources := list -}}
+{{- range .Values.events.sources -}}
+{{- $sources = append $sources (dict "source" .source "secret_env" (printf "A5S_EVENT_SECRET_%s" (upper (replace "-" "_" .source)))) -}}
+{{- end -}}
+{{- toJson $sources -}}
+{{- end }}
+
+{{/* Each system people may connect their accounts in, as a5s reads them: its endpoints, a5s's
+client there and the scopes it asks for, never its secret. */}}
+{{- define "a5s.delegation" -}}
+{{- $systems := list -}}
+{{- range .Values.delegation.systems -}}
+{{- $systems = append $systems (dict "name" .name "title" (.title | default .name) "authorize" .authorize "token" .token "client_id" .clientId "scopes" (.scopes | default list)) -}}
+{{- end -}}
+{{- toJson $systems -}}
 {{- end }}
 
 {{/* Each agent's Slack app, as a5s reads them: its app id, and the variables its signing

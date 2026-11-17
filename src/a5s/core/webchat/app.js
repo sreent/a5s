@@ -12,6 +12,59 @@ const SIGNING_IN = "signing in";
 const pause = (ms) => new Promise((done) => setTimeout(done, ms));
 const status = (text) => { $("status").textContent = text; };
 
+// The chat's own words in the language the person reads (core/languages.py), once /shell/api
+// says which: English, as written here, or Thai. What agents say is theirs, in the language they
+// were told to answer in; anything here without Thai words stays in English.
+const TH = {
+  "That's wrong": "ไม่ถูกต้อง",
+  "What was wrong? Its owners will see this answer, the run behind it, and what you write here.":
+    "ผิดตรงไหน เจ้าของเอเจนต์จะเห็นคำตอบนี้ การทำงานเบื้องหลัง และสิ่งที่คุณเขียนตรงนี้",
+  "Tell its owners": "แจ้งเจ้าของ",
+  "Cancel": "ยกเลิก",
+  "That didn't send. Try again.": "ส่งไม่สำเร็จ ลองอีกครั้ง",
+  "You": "คุณ",
+  "The {agent}": "{agent}",
+  "Write to it below.": "พิมพ์ถึงเอเจนต์ได้ด้านล่าง",
+  "Don't send {file}": "ไม่ส่ง {file}",
+  "Send at most {n} files with a message.": "ส่งไฟล์ได้ไม่เกิน {n} ไฟล์ต่อข้อความ",
+  "{file}: a5s reads text files, PDFs and images.": "{file}: a5s อ่านได้เฉพาะไฟล์ข้อความ PDF และรูปภาพ",
+  "A message's files can come to {mb} MB in all here.": "ไฟล์ของแต่ละข้อความรวมกันได้ไม่เกิน {mb} MB",
+  "Sent {files}": "ส่งแล้ว: {files}",
+  "No answer yet. It'll be in your conversation when it comes.": "ยังไม่มีคำตอบ เมื่อได้รับแล้วจะแสดงในการสนทนาของคุณ",
+  "No agent serves you here yet. The studio lists the agents you may ask for, at /studio/.":
+    "ยังไม่มีเอเจนต์ที่ให้บริการคุณที่นี่ สตูดิโอมีรายชื่อเอเจนต์ที่คุณขอใช้ได้ที่ /studio/",
+  "Agent": "เอเจนต์",
+  "Sign out": "ออกจากระบบ",
+  "Chat": "แชท",
+  "Your message": "ข้อความของคุณ",
+  "Write to the agent. Enter sends, Shift+Enter starts a new line.": "พิมพ์ถึงเอเจนต์ กด Enter เพื่อส่ง กด Shift+Enter เพื่อขึ้นบรรทัดใหม่",
+  "Send": "ส่ง",
+  "Attach files": "แนบไฟล์",
+  "Attach text files, PDFs or images": "แนบไฟล์ข้อความ PDF หรือรูปภาพ",
+  "Files to send with your message": "ไฟล์ที่จะส่งไปกับข้อความ",
+};
+let spoken = "en";
+const t = (text, vars) => {
+  const said = (spoken === "th" && TH[text]) || text;
+  return vars ? said.replace(/\{(\w+)\}/g, (all, name) => (name in vars ? String(vars[name]) : all)) : said;
+};
+
+// Speak the language someone reads, from now on: the page's own words, and what it says next
+function speak(language) {
+  spoken = language === "th" ? "th" : "en";
+  document.documentElement.lang = spoken;
+  const label = document.querySelector("header label");
+  if (label && label.firstChild && label.firstChild.nodeType === Node.TEXT_NODE) label.firstChild.textContent = `${t("Agent")} `;
+  $("signout").textContent = t("Sign out");
+  document.querySelector("main h1").textContent = t("Chat");
+  document.querySelector("label[for=text]").textContent = t("Your message");
+  $("text").placeholder = t("Write to the agent. Enter sends, Shift+Enter starts a new line.");
+  $("compose").querySelector("button.primary").textContent = t("Send");
+  $("attach").setAttribute("aria-label", t("Attach files"));
+  $("attach").title = t("Attach text files, PDFs or images");
+  $("attached").setAttribute("aria-label", t("Files to send with your message"));
+}
+
 // Signing in, with the authorization code flow and PKCE
 
 function b64url(bytes) {
@@ -161,7 +214,56 @@ function mark(by) {
 // When, as the time alone for today, and with the day before that
 function stamp(at) {
   const today = at.toDateString() === new Date().toDateString();
-  return at.toLocaleString([], today ? { timeStyle: "short" } : { dateStyle: "medium", timeStyle: "short" });
+  return at.toLocaleString(spoken === "th" ? "th-TH" : [], today ? { timeStyle: "short" } : { dateStyle: "medium", timeStyle: "short" });
+}
+
+// Saying an agent's answer was wrong (core/feedback.py), for its owners to check: with why, in
+// their words, if they say, and what its owners will see, said before they send it
+
+function wrongOf(item, message) {
+  const ask = document.createElement("button");
+  ask.type = "button";
+  ask.className = "link said-wrong";
+  ask.textContent = t("That's wrong");
+  ask.addEventListener("click", () => {
+    const form = document.createElement("form");
+    form.className = "said-wrong";
+    const label = document.createElement("label");
+    label.textContent = t("What was wrong? Its owners will see this answer, the run behind it, and what you write here.");
+    const why = document.createElement("textarea");
+    why.rows = 2;
+    why.maxLength = 1000;
+    label.append(why);
+    const send = document.createElement("button");
+    send.className = "primary";
+    send.textContent = t("Tell its owners");
+    const cancel = document.createElement("button");
+    cancel.type = "button";
+    cancel.textContent = t("Cancel");
+    cancel.addEventListener("click", () => form.replaceWith(ask));
+    form.append(label, send, " ", cancel);
+    form.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      send.disabled = true;
+      try {
+        const answer = await api("/channels/local/feedback", {
+          method: "POST", body: JSON.stringify({ message: message.id, said: why.value.trim() || null, person: state.person }),
+        });
+        const body = await answer.json();
+        const done = document.createElement("p");
+        done.className = "note said-wrong";
+        done.setAttribute("role", "status");
+        done.textContent = answer.ok ? body.said : (typeof body.detail === "string" ? body.detail : t("That didn't send. Try again."));
+        form.replaceWith(done);
+      } catch (error) {
+        if (error.message !== SIGNING_IN) status(error.message);
+        send.disabled = false;
+      }
+    });
+    ask.replaceWith(form);
+    why.focus();
+  });
+  item.append(ask);
 }
 
 function say(message) {
@@ -171,7 +273,7 @@ function say(message) {
   const by = message.by === "person" ? "you" : message.by === "a5s" ? "a5s" : "agent";
   item.className = by;
   const who = document.createElement("strong");
-  who.textContent = by === "you" ? "You" : by === "a5s" ? "a5s" : message.from;
+  who.textContent = by === "you" ? t("You") : by === "a5s" ? "a5s" : message.from;
   const when = document.createElement("time");
   if (message.at) {
     const at = new Date(message.at);
@@ -182,6 +284,7 @@ function say(message) {
   render(body, message.text);
   if (by !== "you") item.append(mark(message.by));
   item.append(who, " ", when, body);
+  if (by === "agent" && message.id) wrongOf(item, message);  // an agent's answer, never a5s's
   $("conversation").append(item);
   item.scrollIntoView({ block: "end" });
 }
@@ -190,14 +293,76 @@ function say(message) {
 function welcome(agent, does) {
   const name = document.createElement("p");
   name.className = "welcome-name";
-  name.textContent = `The ${agent}`;
+  name.textContent = t("The {agent}", { agent });
   const about = document.createElement("p");
   about.textContent = does || "";
   const next = document.createElement("p");
   next.className = "note";
-  next.textContent = "Write to it below.";
+  next.textContent = t("Write to it below.");
   $("welcome").replaceChildren(mark("agent"), name, ...(does ? [about] : []), next);
   $("welcome").hidden = false;
+}
+
+// Files to send with the next message: text files, PDFs and images, which the agent asks a5s's
+// reader about, as content from outside (core/files.py). A few to a message, a few megabytes in
+// all, as the channels take them with it.
+
+const MOST_FILES = 5;
+const MOST_BYTES = 4 * 1024 * 1024;
+const TAKEN = /\.(txt|csv|md|json|pdf|png|jpe?g|gif|webp)$/i;
+const attached = [];
+
+const size = (bytes) => (bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB`
+  : `${(bytes / (1024 * 1024)).toFixed(1)} MB`);
+
+function showAttached() {
+  const list = $("attached");
+  list.replaceChildren(...attached.map((file, i) => {
+    const item = document.createElement("li");
+    item.className = "chip";
+    const name = document.createElement("span");
+    name.textContent = `${file.name}, ${size(file.size)}`;
+    const leave = document.createElement("button");
+    leave.type = "button";
+    leave.textContent = "×";
+    leave.setAttribute("aria-label", t("Don't send {file}", { file: file.name }));
+    leave.addEventListener("click", () => {
+      attached.splice(i, 1);
+      showAttached();
+      $("text").focus();
+    });
+    item.append(name, leave);
+    return item;
+  }));
+  list.hidden = !attached.length;
+}
+
+function attach(files) {
+  for (const file of files) {
+    if (attached.length >= MOST_FILES) {
+      status(t("Send at most {n} files with a message.", { n: MOST_FILES }));
+      break;
+    }
+    if (!TAKEN.test(file.name) && !/^image\/(png|jpeg|gif|webp)$/.test(file.type)) {
+      status(t("{file}: a5s reads text files, PDFs and images.", { file: file.name }));
+      continue;
+    }
+    if (attached.reduce((all, f) => all + f.size, 0) + file.size > MOST_BYTES) {
+      status(t("A message's files can come to {mb} MB in all here.", { mb: MOST_BYTES / (1024 * 1024) }));
+      continue;
+    }
+    attached.push(file);
+  }
+  showAttached();
+}
+
+function base64(file) {
+  return new Promise((done, failed) => {
+    const reader = new FileReader();
+    reader.onload = () => done(String(reader.result).split(",", 2)[1] || "");
+    reader.onerror = () => failed(reader.error);
+    reader.readAsDataURL(file);
+  });
 }
 
 // Talking to an agent
@@ -213,15 +378,17 @@ async function open(agent) {
   else welcome(agent, found.does);
 }
 
-async function send(text) {
+async function send(text, files = []) {
   const agent = state.agent;
-  say({ from: "you", by: "person", text, at: new Date().toISOString() });
+  const with_ = files.length ? t("Sent {files}", { files: files.map((f) => f.name).join(", ") }) : "";
+  say({ from: "you", by: "person", text: [text, with_].filter(Boolean).join("\n"), at: new Date().toISOString() });
+  const sending = await Promise.all(files.map(async (f) => ({ name: f.name, type: f.type, data: await base64(f) })));
   const sent = await api("/channels/local/messages", {
-    method: "POST", body: JSON.stringify({ agent, text, person: state.person }),
+    method: "POST", body: JSON.stringify({ agent, text, person: state.person, files: sending }),
   });
   const body = await sent.json();
   if (sent.status !== 202) {
-    say({ from: "a5s", by: "a5s", text: typeof body.detail === "string" ? body.detail : "That didn't send. Try again." });
+    say({ from: "a5s", by: "a5s", text: typeof body.detail === "string" ? body.detail : t("That didn't send. Try again.") });
     return;
   }
   for (let tries = 0; tries < 24; tries += 1) {  // ten minutes
@@ -232,7 +399,7 @@ async function send(text) {
       return;
     }
   }
-  status("No answer yet. It'll be in your conversation when it comes.");
+  status(t("No answer yet. It'll be in your conversation when it comes."));
 }
 
 async function listen() {
@@ -289,7 +456,8 @@ async function main() {
       if (!(await signIn())) return;  // gone to the identity provider
       const who = claims(JSON.parse(store.getItem("a5s.tokens")).id);
       $("who").textContent = who.name || who.preferred_username || "";
-      window.a5s?.signedIn(JSON.parse(store.getItem("a5s.tokens")).id);  // the sidebar
+      const shell = window.a5s?.signedIn(JSON.parse(store.getItem("a5s.tokens")).id);  // the sidebar
+      speak(shell ? await shell : "en");  // the language they read, which /shell/api says
       $("signout").hidden = false;
       $("signout").addEventListener("click", signOut);
     } else if (state.config.development) {
@@ -302,7 +470,7 @@ async function main() {
     const serving = await api("/channels/local/agents");
     const { agents } = serving.ok ? await serving.json() : { agents: [] };
     if (!agents.length) {  // the studio lists those they may know of, and ask for
-      status("No agent serves you here yet. The studio lists the agents you may ask for, at /studio/.");
+      status(t("No agent serves you here yet. The studio lists the agents you may ask for, at /studio/."));
       return;
     }
     for (const agent of agents) {
@@ -313,12 +481,36 @@ async function main() {
     }
     $("agent").addEventListener("change", (event) => open(event.target.value));
     $("compose").hidden = false;
+    if (window.a5s) $("attach").append(window.a5s.icon("attach"));
+    $("attach").addEventListener("click", () => $("files").click());
+    $("files").addEventListener("change", (event) => {
+      attach([...event.target.files]);
+      event.target.value = "";  // so the same file can be chosen again
+    });
+    $("text").addEventListener("paste", (event) => {  // a screenshot, pasted
+      const data = event.clipboardData;
+      if (data && data.files.length && !data.types.includes("text/plain")) {
+        event.preventDefault();
+        attach([...data.files]);
+      }
+    });
+    $("compose").addEventListener("dragover", (event) => {
+      if (event.dataTransfer && event.dataTransfer.types.includes("Files")) event.preventDefault();
+    });
+    $("compose").addEventListener("drop", (event) => {
+      if (event.dataTransfer && event.dataTransfer.files.length) {
+        event.preventDefault();
+        attach([...event.dataTransfer.files]);
+      }
+    });
     $("compose").addEventListener("submit", (event) => {
       event.preventDefault();
       const text = $("text").value.trim();
-      if (!text) return;
+      if (!text && !attached.length) return;
+      const files = attached.splice(0);
+      showAttached();
       $("text").value = "";
-      send(text).catch((error) => { if (error.message !== SIGNING_IN) status(error.message); });
+      send(text, files).catch((error) => { if (error.message !== SIGNING_IN) status(error.message); });
     });
     $("text").addEventListener("keydown", (event) => {
       if (event.key === "Enter" && !event.shiftKey) {

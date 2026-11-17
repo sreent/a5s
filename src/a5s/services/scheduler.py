@@ -97,6 +97,8 @@ class Retry(Exception):
 def what(claim: dict) -> str:
     if claim["kind"] == "schedule":
         return f"schedule {claim['schedule']} of {claim['instance']}"
+    if claim["kind"] == "event":
+        return f"event {claim['event']} for {claim['instance']}"
     return f"{claim['kind']} {claim.get(claim['kind']) or claim.get('id')}"
 
 
@@ -238,6 +240,9 @@ class Scheduler:
                     where l.key = coalesce(i.conversation, i.person) || '/' || i.agent || '/'
                                   || %(topic)s
                       and l.expires_at > now())
+                  and not (i.conversation is null and exists (  -- handed over to people, who
+                    select 1 from handovers h where h.person = i.person  -- answer it until
+                      and h.agent = i.agent and h.ended_at is null))  -- they hand it back
                 order by i.received_at limit 1
                 for update of i skip locked
                 """,
@@ -257,6 +262,8 @@ class Scheduler:
             key = f"{item['person']}/{item['agent']}/{context.GENERAL}"
         elif item["kind"] == tasking.KIND:
             key = f"task/{item['task']}"
+        elif item["kind"] == "event":  # one run for each
+            key = f"event/{item['event']}"
         else:
             key = f"schedule/{item['instance']}/{item['schedule']}"
         holder = str(uuid.uuid4())
@@ -322,8 +329,9 @@ class Scheduler:
         group = groups.of(claim.get("conversation"))
         with db.transaction(self.cfg.database_url) as conn:
             instances = conn.execute(
-                "select * from instances where definition = %s and status <> 'retired' "
-                "order by (status = 'active') desc, id", (agent,)).fetchall()
+                "select * from instances where definition = %s and status not in ('retired', "
+                "'shadow') order by (status = 'active') desc, id", (agent,)).fetchall()  # a
+        # shadow answers no message itself, only beside the instance it shadows (_shadow)
         members = list(claim["members"]) if group else [person]
         if group and (unwritten := [m for m in members if (p := self.scenario.person(m))
                                     and not p.in_audience]):  # before a run, not after it
@@ -383,11 +391,15 @@ class Scheduler:
         conversation = claim.get("conversation") or person  # theirs, or their group chat's
         members = list(claim["members"]) if groups.of(conversation) else None
         heard = {"speaker": person, "heard_by": members} if members else {}
-        outcome = "failed"
+        outcome, history = "failed", []
         try:
             with db.transaction(self.cfg.database_url) as conn:
                 context.add_turn(conn, person=conversation, agent=agent, role="person",
                                  content=claim["text"], run=run, topic=topic, **heard)
+                for note in opened.get("notes") or []:  # a5s's own words to the agent on what
+                    context.add_turn(conn, person=conversation, agent=agent, role="task",
+                                     content=note, run=run, topic=topic,  # came with it, such
+                                     heard_by=members or None)  # as files, after their words
                 history = context.history(
                     conn, person=conversation, agent=agent, topic=topic,
                     chars=opened.get("history_chars") or context.CHARS, members=members,
@@ -436,6 +448,44 @@ class Scheduler:
         if outcome == "done":  # once they have their answer
             self._fold(inst["id"], conversation, agent, topic, opened.get("history_chars"),
                        members, inbound)
+            try:  # nothing a shadow does reaches them, who have their answer: not even a
+                self._shadow(inst, run, history)  # database away as it looks for its shadows
+            except Exception:
+                log.exception("the shadows of %s couldn't answer beside run %s", inst["id"], run)
+
+    def _shadow(self, inst: dict, run: str, history: list[dict]) -> None:
+        """Each shadow of the instance answers the message its run answered, beside it, given
+        the same conversation as that run was, sending nothing (core/shadows.py): the core
+        keeps what it answers for graders. A shadow that can't answer now, such as one out of
+        budget, answers nothing, and the person never knows."""
+        with db.transaction(self.cfg.database_url) as conn:
+            found = conn.execute("select id, definition from instances where shadows = %s and "
+                                 "status = 'shadow' order by id", (inst["id"],)).fetchall()
+        for shadow in found:
+            try:
+                opened = self.gw.post("/runs", headers=self.service, json={
+                    "instance": shadow["id"], "trigger": {"kind": "shadow", "live": run}})
+            except httpx.HTTPError:
+                log.warning("couldn't open %s's run beside %s", shadow["id"], run)
+                continue
+            if opened.status_code != 200:
+                log.info("%s doesn't answer beside %s: %s", shadow["id"], run, opened.text[:200])
+                continue
+            token, answering, outcome = opened.json()["token"], opened.json()["run"], "failed"
+            try:
+                reply = self._worker(shadow["definition"])(self.cfg.gateway_url, token, history)
+                if reply.strip():
+                    self.gw.post("/run/shadow", headers={"Authorization": f"Bearer {token}"},
+                                 json={"text": reply}).raise_for_status()
+                    outcome = "done"
+            except ModelDown:
+                outcome = "model unavailable"
+            except BudgetSpent:
+                outcome = "budget spent"
+            except Exception:
+                log.exception("%s's run beside %s failed", shadow["id"], run)
+            finally:
+                self._close(answering, outcome)
 
     def _fold(self, instance: str, person: str, agent: str, topic: str,
               chars: int | None, members: list[str] | None = None,
@@ -524,7 +574,8 @@ class Scheduler:
             return
         run, token, task = (opened.json()[k] for k in ("run", "token", "task"))
         topic = opened.json().get("topic") or context.GENERAL  # the core decides it
-        person, agent = claim.get("person"), claim["agent"]  # a schedule acts for nobody
+        person, agent = claim.get("person"), claim["agent"]  # a schedule acts for nobody,
+        # and an event for the person it names, where the instance serves them
         outcome = "failed"
         try:
             history = []
@@ -608,7 +659,7 @@ class Scheduler:
         overdue obligations as it works this out."""
         found: list[dict] = []
         for path in ("/obligations/sweep", "/schedules/sweep", "/reports/sweep",
-                     "/reminders/sweep", "/tasks/sweep"):
+                     "/reminders/sweep", "/tasks/sweep", "/events/sweep"):
             try:
                 response = self.gw.post(path, headers=self.service)
                 response.raise_for_status()
@@ -647,11 +698,18 @@ class Scheduler:
 
     def decided(self) -> None:
         """Ask the core to make the held changes their deciders approved, and to remind,
-        escalate or let go of those still waiting; to weigh the grades of agents' work; and to
-        have each agent's judge, if it names one, grade the samples of its work beside people."""
+        escalate or let go of those still waiting; to weigh the grades of agents' work; to
+        have each agent's judge, if it names one, grade the samples of its work beside people;
+        to take the accounts people came back from connecting (core/delegation.py); to
+        undo the changes people asked to (core/undoing.py); and to note the grades of shadows'
+        answers, with their judges' verdicts (core/shadows.py)."""
         for path, what in (("/proposals/sweep", "the held changes"),
                            ("/samples/sweep", "the graded samples"),
-                           ("/samples/judge", "the judge's verdicts on samples")):
+                           ("/samples/judge", "the judge's verdicts on samples"),
+                           ("/delegation/sweep", "the accounts people connected"),
+                           ("/undo/sweep", "the changes people asked to undo"),
+                           ("/handovers/sweep", "the conversations handed over to people"),
+                           ("/shadows/sweep", "the shadows' grades and their judges' verdicts")):
             try:
                 self.gw.post(path, headers=self.service).raise_for_status()
             except httpx.HTTPError:

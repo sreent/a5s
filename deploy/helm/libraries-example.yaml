@@ -1,0 +1,10 @@
+# An example: a docs repository the scenario's libraries.yaml names, kept current beside the
+# gateway by git-sync (docs/connectors.md#document-libraries), with read access to the
+# repository in a Secret of the deployment's own. The chart's test renders it
+# (tests/test_libraries.py).
+libraries:
+  repositories:
+    - name: procedures
+      repo: https://github.com/example/desk-procedures
+      ref: main
+      secret: desk-procedures-git

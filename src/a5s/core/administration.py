@@ -21,7 +21,7 @@ from a5s.contract import (
     Person,
     parse_settings,
 )
-from a5s.core import approvals, audit, memberships, proposals, registry, studio
+from a5s.core import approvals, audit, memberships, proposals, registry, studio, words
 from a5s.core.releases import agent_owner
 
 LATEST = 20  # administrative acts the page shows, newest first
@@ -36,12 +36,13 @@ SCOPED = {PART_OWNER: "Owner of {scope}", PART_DELEGATE: "Delegate in {scope}",
           "agent-viewer": "Viewer of the {scope}"}
 
 
-def named(role: str) -> str:
-    """A role's name, in words: its id stays beside it where groups are given it."""
+def named(role: str, language: str = "en") -> str:
+    """A role's name, in words, in the language someone reads: its id stays beside it where
+    groups are given it."""
     kind, _, scope = role.partition(":")
     if scope and kind in SCOPED:
-        return SCOPED[kind].format(scope=scope)
-    return role.replace("-", " ").capitalize()
+        return words.say(language, SCOPED[kind], scope=scope)
+    return words.say(language, role.replace("-", " ").capitalize())
 
 
 def administers(person: Person | None, team: str) -> bool:

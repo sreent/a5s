@@ -13,6 +13,19 @@
              src: url(../fonts/plex-sans-600.woff2) format("woff2"); }
 @font-face { font-family: "IBM Plex Sans"; font-style: normal; font-weight: 700; font-display: swap;
              src: url(../fonts/plex-sans-700.woff2) format("woff2"); }
+/* Thai, drawn to match Plex Sans: for Thai letters alone, so it loads only where a page has them */
+@font-face { font-family: "IBM Plex Sans Thai"; font-style: normal; font-weight: 400; font-display: swap;
+             src: url(../fonts/plex-sans-thai-400.woff2) format("woff2");
+             unicode-range: U+0E01-0E5B, U+200C-200D, U+25CC; }
+@font-face { font-family: "IBM Plex Sans Thai"; font-style: normal; font-weight: 500; font-display: swap;
+             src: url(../fonts/plex-sans-thai-500.woff2) format("woff2");
+             unicode-range: U+0E01-0E5B, U+200C-200D, U+25CC; }
+@font-face { font-family: "IBM Plex Sans Thai"; font-style: normal; font-weight: 600; font-display: swap;
+             src: url(../fonts/plex-sans-thai-600.woff2) format("woff2");
+             unicode-range: U+0E01-0E5B, U+200C-200D, U+25CC; }
+@font-face { font-family: "IBM Plex Sans Thai"; font-style: normal; font-weight: 700; font-display: swap;
+             src: url(../fonts/plex-sans-thai-700.woff2) format("woff2");
+             unicode-range: U+0E01-0E5B, U+200C-200D, U+25CC; }
 @font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 400; font-display: swap;
              src: url(../fonts/plex-mono-400.woff2) format("woff2"); }
 @font-face { font-family: "IBM Plex Mono"; font-style: normal; font-weight: 500; font-display: swap;
@@ -37,7 +50,7 @@
   --deep-600: #1e3449; --deep-700: #1a2d40; --deep-800: #0f2133; --deep-850: #0c1b2a;
   --deep-900: #0a1724;
 
-  --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-sans: "IBM Plex Sans", "IBM Plex Sans Thai", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
   --text-xs: 0.75rem; --text-sm: 0.85rem; --text-md: 0.94rem; --text-base: 15px;
   --text-lg: 1.05rem; --text-xl: 1.45rem; --text-2xl: 1.9rem;
@@ -91,6 +104,10 @@
   color-scheme: light dark;
   font: var(--text-base)/1.5 var(--font-sans);
 }
+
+/* A page in Thai: its vowels and tones stack above and below each line's letters, so its lines
+   have more room, and they never touch the line's above or below */
+:root:lang(th) { line-height: 1.7; }
 
 @media (prefers-color-scheme: dark) {
   :root {

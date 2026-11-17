@@ -223,6 +223,8 @@ WORKERS = "Workers"
 SIGN_IN = "Signing in"
 TEAMS = "Teams"
 SLACK = "Slack"
+EVENTS = "Events from other systems"
+DELEGATION_AREA = "Acting as the person"
 MATRIX = "Matrix"
 LEDGER = "The ledger's locked copies"
 STUDIO = "The studio, its sandbox and publishing"
@@ -307,18 +309,24 @@ OIDC_GROUPS_CLAIM = Var("A5S_OIDC_GROUPS_CLAIM", "the claim sign-ins show groups
 WEBCHAT_CLIENT_ID = Var("A5S_WEBCHAT_CLIENT_ID", "the web chat's client at the identity "
                         "provider, a public one", None, area=SIGN_IN)
 
-TEAMS_APP_ID = Var("A5S_TEAMS_APP_ID", "one bot's registration in Entra ID, for Teams", None,
-                   area=TEAMS)
-TEAMS_APP_SECRET = Var("A5S_TEAMS_APP_SECRET", "that bot's secret", None, secret=True,
-                       area=TEAMS, takes="its secret")
-TEAMS_AGENT = Var("A5S_TEAMS_AGENT", "the agent that bot speaks for", "assistant", area=TEAMS)
-TEAMS_BOTS = Var("A5S_TEAMS_BOTS", "several bots, one for each agent, instead: a JSON list of "
-                 "{agent, app_id, secret_env}", None, _json_list, "a JSON list", area=TEAMS)
+TEAMS_BOTS = Var("A5S_TEAMS_BOTS", "a bot for each agent, which turns Teams on: a JSON list of "
+                 "{agent, app_id, secret_env}, each bot's registration in Entra ID and the "
+                 "variable its secret is in", None, _json_list, "a JSON list", area=TEAMS)
 TEAMS_TENANT_ID = Var("A5S_TEAMS_TENANT_ID", "the organisation's tenant: messages from any other "
                       "are refused", None, area=TEAMS)
 TEAMS_SERVICE_HOSTS = Var("A5S_TEAMS_SERVICE_HOSTS", "the hosts a5s sends Teams replies to, and "
                           "no other", ("smba.trafficmanager.net",), _items, "hosts, by commas",
                           area=TEAMS)
+
+EVENT_SOURCES = Var("A5S_EVENT_SOURCES", "the systems that may tell a5s something happened, "
+                    "which turns events on: a JSON list of {source, secret_env}, each source's "
+                    "signing secret in the variable it names", None, _json_list, "a JSON list",
+                    area=EVENTS)
+
+DELEGATION = Var("A5S_DELEGATION", "the systems people may connect their own accounts in, so "
+                 "agents act there as them, with their permissions: a JSON list of {name, title, "
+                 "authorize, token, client_id, scopes}, each system's OAuth endpoints and a5s's "
+                 "client there", None, _json_list, "a JSON list", area=DELEGATION_AREA)
 
 SLACK_BOTS = Var("A5S_SLACK_BOTS", "an app for each agent, which turns Slack on: a JSON list of "
                  "{agent, app_id, secret_env, token_env}, its signing secret and bot token each in "
@@ -374,6 +382,10 @@ SCENARIO_DIR = Var("A5S_SCENARIO_DIR", "the scenario's folder, if not scenarios/
                    _path, "a folder", area=SCENARIO)
 AGENTS_DIR = Var("A5S_AGENTS_DIR", "the agents' folders, if not agents", None, _path, "a folder",
                  area=SCENARIO)
+LIBRARY_ROOT = Var("A5S_LIBRARY_ROOT", "where the deployment keeps the checkout of each docs "
+                   "repository the scenario's libraries.yaml names, in a folder by its name, "
+                   "current, such as with git-sync", Path("/var/lib/a5s/libraries"), _path,
+                   "a folder", area=SCENARIO)
 
 TOKEN = Var("A5S_TOKEN", "the token the identity provider gave the person using the command "
             "line, where a5s uses one", None, secret=True, area=COMMAND, takes="a token")
@@ -398,8 +410,8 @@ REGISTRY_GRAPH = Var("A5S_REGISTRY_GRAPH", "Microsoft Graph, as the tenant's clo
 REGISTRY_LOGIN = Var("A5S_REGISTRY_LOGIN", "where the core signs in to the tenant",
                      "https://login.microsoftonline.com", _url("https"), "an https:// address",
                      area=INVENTORY)
-AREAS = (CORE, DATABASE, WORKERS, SIGN_IN, TEAMS, SLACK, MATRIX, LEDGER, STUDIO, SCENARIO,
-         INVENTORY, COMMAND)
+AREAS = (CORE, DATABASE, WORKERS, SIGN_IN, TEAMS, SLACK, MATRIX, EVENTS, DELEGATION_AREA, LEDGER,
+         STUDIO, SCENARIO, INVENTORY, COMMAND)
 # Every setting above, by its area
 VARS: tuple[Var, ...] = tuple(sorted((v for v in globals().values() if isinstance(v, Var)),
                                      key=lambda v: AREAS.index(v.area)))
@@ -408,6 +420,10 @@ FAMILIES = (
            area=DATABASE),
     Family("A5S_TEAMS_SECRET_<AGENT>", "a bot's secret, where A5S_TEAMS_BOTS names it",
            area=TEAMS),
+    Family("A5S_EVENT_SECRET_<SOURCE>", "a system's signing secret for its events, where "
+           "A5S_EVENT_SOURCES names it", area=EVENTS),
+    Family("A5S_DELEGATION_<NAME>_SECRET", "a5s's client secret in a system people connect, "
+           "where A5S_DELEGATION names it: for the core alone", area=DELEGATION_AREA),
     Family("A5S_SLACK_SECRET_<AGENT>", "an app's signing secret, where A5S_SLACK_BOTS names it",
            area=SLACK),
     Family("A5S_SLACK_TOKEN_<AGENT>", "an app's bot token, where A5S_SLACK_BOTS names it",
@@ -420,19 +436,22 @@ MOVED = {name: f"the signed settings' data_protection.{choice}, which the data p
                 "officer approves (docs/data-protection.md)"
          for name, choice in (("A5S_STUDIO_NAMES", "studio_names"),
                               ("A5S_AUDIT_NAMES", "audit_names"),
-                              ("A5S_FLAG_RUBBER_STAMPS", "flag_rubber_stamps"))}
-# A5S_ names a5s itself never reads: its tests' (all A5S_TEST_ ones too), those compose and
+                              ("A5S_FLAG_RUBBER_STAMPS", "flag_rubber_stamps"))} | {
+    name: "A5S_TEAMS_BOTS, a bot for each agent, with its secret in a variable of its own"
+    for name in ("A5S_TEAMS_APP_ID", "A5S_TEAMS_APP_SECRET", "A5S_TEAMS_AGENT")}
+# A5S_ names a5s itself never reads: its tests' (all A5S_TEST_ ones too), such as the classes
+# of the deployment's data the agents' suites hold a case kept from a real run to, those compose and
 # the deployment scripts read, such as whose attestation the GitOps check asks GitHub for, and
 # the folder the made-up systems of the scenarios a5s ships keep their changes in for their code
 NOT_SETTINGS = frozenset({
-    "A5S_AGENT", "A5S_ASKER", "A5S_ATTESTED_BY", "A5S_CHANNELS_PORT", "A5S_DB_PASSWORD", "A5S_DOC_IMAGES", "A5S_EVAL_MODEL",
+    "A5S_AGENT", "A5S_ASKER", "A5S_ATTESTED_BY", "A5S_CHANNELS_PORT", "A5S_DATA_CLASSES",
+    "A5S_DB_PASSWORD", "A5S_DOC_IMAGES", "A5S_EVAL_MODEL",
     "A5S_EXPECTED", "A5S_GUIDE", "A5S_IDP_PASSWORD", "A5S_IDP_PORT", "A5S_IMAGE", "A5S_MATRIX_CONFIG",
     "A5S_MATRIX_PORT", "A5S_PASSWORD", "A5S_POOL_ASSISTANT", "A5S_POOL_WATCHER", "A5S_QUESTION",
     "A5S_REGRESSION", "A5S_SANDBOX_DB_PASSWORD", "A5S_SCREENSHOTS", "A5S_SMOKE_ENV",
     "A5S_SMOKE_WORK", "A5S_SOAK_FOUND", "A5S_SYSTEMS_STATE"})
 # What some settings need beside them
 NEEDS: tuple[tuple[Var, tuple[Var, ...], str], ...] = (
-    (TEAMS_APP_ID, (TEAMS_APP_SECRET, TEAMS_TENANT_ID), "Teams"),
     (TEAMS_BOTS, (TEAMS_TENANT_ID,), "Teams"),
     (SLACK_BOTS, (SLACK_TEAM,), "Slack"),
     (MATRIX_HOMESERVER, (MATRIX_SERVER_NAME, MATRIX_AS_TOKEN, MATRIX_HS_TOKEN), "Matrix"),
@@ -557,6 +576,27 @@ def check(env: Mapping[str, str] | None = None, serving: bool = True) -> tuple[l
             if not (env.get(str(app.get(key))) or "").strip():
                 problems.append(f"A5S_SLACK_BOTS gives the {app.get('agent')} agent's app its "
                                 f"{what} in {app.get(key)}, which isn't set")
+    try:
+        sources = EVENT_SOURCES.read(env) or []
+    except ConfigError:
+        sources = []
+    for source in sources:
+        if not (env.get(str(source.get("secret_env"))) or "").strip():
+            problems.append(f"A5S_EVENT_SOURCES gives {source.get('source')} its signing secret "
+                            f"in {source.get('secret_env')}, which isn't set")
+    try:
+        systems = DELEGATION.read(env) or []
+    except ConfigError:
+        systems = []
+    for system in systems:
+        name = str(system.get("name") if isinstance(system, Mapping) else system)
+        if not isinstance(system, Mapping) or not re.fullmatch(r"[a-z][a-z0-9-]{0,31}", name):
+            problems.append(f"A5S_DELEGATION names a system {name[:40]!r}: each is named in "
+                            "lowercase, such as servicenow")
+            continue
+        for key in ("authorize", "token", "client_id"):
+            if not str(system.get(key) or "").strip():
+                problems.append(f"A5S_DELEGATION gives {name} no {key}")
     strangers = []
     for name in sorted(n for n in env if n.startswith("A5S_") and not known(n) and n not in MOVED
                        and not service_link(n, env[n])):
@@ -585,7 +625,7 @@ def _one(item: Any) -> str:
     """An item of a list as a setting shows it: an object, such as a Teams bot, by the agent
     it's for, and never what else it holds."""
     if isinstance(item, Mapping):
-        return str(item.get("agent") or "an entry")
+        return str(item.get("agent") or item.get("source") or item.get("name") or "an entry")
     return str(item)
 
 
@@ -688,6 +728,9 @@ class ModelConfig:
     # What a million tokens cost, as the provider charges, in the deployment's currency, for
     # what a run costs (core/measures.py); none if not given
     prices: Prices | None = None
+    # Whether it's approved to be sent images, such as a screenshot someone sent an agent, as
+    # a5s's reader sends them (core/files.py): none is, unless models.yaml says so
+    images: bool = False
 
     @property
     def api_key(self) -> str | None:
@@ -717,8 +760,20 @@ def load_models(path: Path) -> dict[str, ModelConfig]:
                           *(None if p.get(k) is None else float(p[k])
                             for k in ("cached_input", "cache_write")))
             if (p := m.get("prices")) else None,
+            images=m.get("images") is True,
         )
     return models
+
+
+def load_currency(path: Path) -> str | None:
+    """The currency models.yaml prices models in, as its ISO 4217 code, such as GBP, if it
+    names one: the one budgets in the settings are in too (core/spending.py)."""
+    found = (yaml.safe_load(path.read_text()) or {}).get("currency")
+    if found is None:
+        return None
+    if not isinstance(found, str) or not re.fullmatch(r"[A-Z]{3}", found):
+        raise ValueError(f"models.yaml's currency is a code such as GBP or USD, not {found!r}")
+    return found
 
 
 @dataclass(frozen=True)
@@ -754,6 +809,8 @@ class Config:
     scenario: str = SCENARIO_CLASS.default
     scenario_folder: Path | None = None  # by default, scenarios/sample
     agents_folder: Path | None = None  # by default, the reference agents in root/agents
+    # Where each docs repository a library reads is checked out, by its name (connectors/libraries.py)
+    library_root: Path = LIBRARY_ROOT.default
     # The core's own keys, which seal the approvals it has checked, such as of settings. Only
     # the core holds them. The first seals; any others are ones it's moving away from.
     seal_keys: tuple[str, ...] = ()
@@ -802,7 +859,8 @@ class Config:
             webchat_client_id=WEBCHAT_CLIENT_ID.read(env),
             anchor_retain_days=ANCHOR_RETAIN_DAYS.read(env), team=TEAM.read(env),
             scenario=SCENARIO_CLASS.read(env), scenario_folder=SCENARIO_DIR.read(env),
-            agents_folder=AGENTS_DIR.read(env), seal_keys=SEAL_KEYS.read(env),
+            agents_folder=AGENTS_DIR.read(env), library_root=LIBRARY_ROOT.read(env),
+            seal_keys=SEAL_KEYS.read(env),
             public_url=PUBLIC_URL.read(env), sandbox_url=SANDBOX_URL.read(env), sandbox_token=SANDBOX_TOKEN.read(env),
             github_client_id=GITHUB_CLIENT_ID.read(env), github_repo=GITHUB_REPO.read(env),
             github_base=GITHUB_BASE.read(env), github_url=GITHUB_URL.read(env),

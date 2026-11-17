@@ -101,7 +101,7 @@ class SoftwareDeliveryScenario:
                     *(found.get("reviewers") or ())}
         return person in involved or who.team == f"{found['part']}-team"
 
-    def _knowledge_part(self, person: str, part: str) -> bool:
+    def sees_part(self, person: str, part: str) -> bool:
         who = self._people.get(person)
         return bool(who and who.team == f"{part}-team")
 
@@ -164,5 +164,5 @@ class SoftwareDeliveryScenario:
                  idempotent=True),
         )}
         tools.update(MarkdownKnowledge(self.folder / "knowledge",
-                                       sees_part=self._knowledge_part, person=self.person).tools())
+                                       sees_part=self.sees_part, person=self.person).tools())
         return tools

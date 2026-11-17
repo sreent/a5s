@@ -99,8 +99,9 @@ def sync(conn: db.Connection, scenario: str, owed: list[Obligation],
     give is done, or handed on, if they owe its record to someone else: some time since
     `read_before`, when a5s last read them and found it owed.
     """
-    instances = conn.execute("select id, definition, serves, parts from instances "
-                             "where status <> 'retired' order by (status = 'active') desc, id").fetchall()
+    instances = conn.execute("select id, definition, serves, parts from instances where status "
+                             "not in ('retired', 'shadow') order by (status = 'active') desc, "
+                             "id").fetchall()  # a shadow owes nobody anything
 
     def acting(source: str, person: str, record: str) -> str | None:
         part = part_of(record)

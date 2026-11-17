@@ -125,6 +125,7 @@ def _tools(definition: Definition, tools: dict[str, Tool]) -> list[dict]:
                           "changes": tool.action if tool else None,
                           "handles": list(tool.handles) if tool else [],
                           "outside": list(tool.outside) if tool else [],
+                          "marks": bool(tool and tool.marks),
                           "pinned": definition.pins.get(name),
                           "missing": tool is None})
     return found
@@ -134,7 +135,7 @@ def offered(tools: dict[str, Tool]) -> list[dict]:
     """Each of the scenario's tools an agent may be given, with what it reads, writes or
     changes, as an agent's page shows its own."""
     return [{"name": name, "description": tool.description, **tool.risk, "changes": tool.action,
-             "handles": list(tool.handles), "outside": list(tool.outside)}
+             "handles": list(tool.handles), "outside": list(tool.outside), "marks": tool.marks}
             for name, tool in sorted(tools.items())]
 
 
@@ -224,6 +225,7 @@ def agent(scenario: Scenario, definition: Definition, tools: dict[str, Tool],
         "skills": sorted(definition.skills),
         "triggers": definition.triggers,
         "schedules": [s.model_dump() for s in definition.schedules],
+        "events": [e.model_dump() for e in definition.events],
         "reports": [r.source for r in definition.reports],
         "obligations": list(definition.obligations),
         "reminders": definition.reminders, "preferences": list(definition.preferences),
@@ -281,7 +283,8 @@ def seen_by(name: str, insts: list[dict], viewer: Person) -> list[str]:
 LAYERS = ("exists", "uses", "built", "doing", "did", "changing")
 # What each layer adds to an agent as someone sees it
 SHOWN = {"exists": ("id", "release", "works_for", "does", "owners"),
-         "uses": ("tools", "a5s_tools", "model", "autonomy", "triggers", "schedules", "reports",
+         "uses": ("tools", "a5s_tools", "model", "autonomy", "triggers", "schedules", "events",
+                  "reports",
                   "obligations", "reminders", "preferences", "channels", "context", "budget"),
          "built": ("skills", "instructions"),
          "doing": ("instances",)}
@@ -478,6 +481,22 @@ def _sees(scenario: Scenario, viewer: Person, run: dict, keys: set[str]) -> bool
         scenario.sees(viewer.id, k) for k in keys | _trigger_records(run["trigger"]))
 
 
+def seeable(conn: db.Connection, scenario: Scenario, viewer: Person, runs: list[str]) -> set[str]:
+    """Of these runs, those someone may see: a5s kept their records, and they may see every
+    one, as an instance's runs show them."""
+    if not runs:
+        return set()
+    rows = conn.execute("select id::text as run, trigger, records_kept from runs "
+                        "where id = any(%s::uuid[])", (runs,)).fetchall()
+    keys = _handled(conn, [r["run"] for r in rows])
+    return {r["run"] for r in rows if _sees(scenario, viewer, r, keys[r["run"]])}
+
+
+def name_of(scenario: Scenario, who: str | None) -> str | None:
+    """Someone's name, as the directory knows them, or as they were given."""
+    return _name(scenario, who)
+
+
 def _shown(scenario: Scenario, run: dict, names: bool) -> dict:
     return {"run": run["run"], "instance": run["instance_id"],
             "trigger": (run["trigger"] or {}).get("kind"),
@@ -563,8 +582,9 @@ def run(conn: db.Connection, scenario: Scenario, run_id: str,
     try:
         row = conn.execute(
             "select id::text as run, instance_id, trigger, acts_for, read_outside, opened_at, "
-            "closed_at, outcome, tokens, tokens_in, tokens_out, tokens_cached, model, "
-            "records_kept from runs where id = %s::uuid", (run_id,)).fetchone()
+            "closed_at, outcome, tokens, tokens_in, tokens_out, tokens_cached, "
+            "tokens_cache_written, model, records_kept from runs where id = %s::uuid",
+            (run_id,)).fetchone()
     except psycopg.errors.InvalidTextRepresentation:
         return None
     if row is None:
@@ -582,6 +602,7 @@ def run(conn: db.Connection, scenario: Scenario, run_id: str,
              "started_by": row["trigger"] if named else {"kind": (row["trigger"] or {}).get("kind")},
              "tokens_in": row["tokens_in"], "tokens_out": row["tokens_out"],
              "tokens_cached": row["tokens_cached"],
+             "tokens_cache_written": row["tokens_cache_written"],  # priced as the provider does
              "records": sorted(keys | _trigger_records(row["trigger"])),
              "calls": _calls(entries)}
     if viewer is None:  # the team's: every entry, what was said by hash

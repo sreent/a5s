@@ -1,17 +1,22 @@
 {
   "repository": "https://github.com/sreent/ocean",
-  "commit": "660adf0ec89a6b4e71d4fff8972ad47c3c1bbe21",
+  "commit": "be82c7a4b20ed7f8eade69a326a7bd74c10e2f85",
   "files": {
     "css/charts.css": "fd037a22b9df4de1f7c81aab9a452b78bb3783c350ebb4469cd96c5a0c126d84",
     "css/components.css": "c54941581bd242c6be7c0859e3fb89f3ba70ce55d94cd64e31551dc39be8da56",
-    "css/tokens.css": "43465d77471d42b301efd3b966c61ef218dd48bee6a3c620948bcad04235f834",
+    "css/tokens.css": "05ebebb433f35579965d929c4d6d29b338bfddb56856a77471ad27281e832f20",
     "fonts/OFL-plex-mono.txt": "23b0a9d0c6d3f140a0b77e483c5cfa6bba574325ef5cb189ed9f2fec4884533f",
+    "fonts/OFL-plex-sans-thai.txt": "7e6b2818edbd8f6a01ae80641cc8f16a51080d08fb4e532be3a0b6f74adb07da",
     "fonts/OFL-plex-sans.txt": "d0283623ef57e722fd0eb688a8041589670c608ab780cd3612d06ba6f153d3fd",
     "fonts/plex-mono-400.woff2": "08949f728dc52d528e69b1667d15c89a5686a4ee9a296ff90983985f99c380f7",
     "fonts/plex-mono-500.woff2": "01d285447409c8a588692162439a038b8cbd7871309ee20267b0d2d91c6e8e22",
     "fonts/plex-sans-400.woff2": "3b646991d30055a93a4ecc499713d4347953a74a947ecab435ab72070cbdab0e",
     "fonts/plex-sans-500.woff2": "0717336fb31fcdcde4b8deb3675bb4a0f7f6d484864afcd6751ac29975962203",
     "fonts/plex-sans-600.woff2": "8960851d691c054ed38e259bdcf1a6190d157b4203ed5bb32c632a863fb8ec2f",
-    "fonts/plex-sans-700.woff2": "42e7b0c143c19df9d99fd896e76b48f846edf0902d200bc29796b34d12c33aa7"
+    "fonts/plex-sans-700.woff2": "42e7b0c143c19df9d99fd896e76b48f846edf0902d200bc29796b34d12c33aa7",
+    "fonts/plex-sans-thai-400.woff2": "0350508969dad82ffd2b7608d8299454bf19ec54e464a16a66e5a9733e83654d",
+    "fonts/plex-sans-thai-500.woff2": "8249537de3768f46ce7b04e9e832c47f3ffa84900bdac2b18968d431d8814c61",
+    "fonts/plex-sans-thai-600.woff2": "83f9d86c099e0006077854cac1cf6f9d3177fb0c4f356254a7d56d047c097e52",
+    "fonts/plex-sans-thai-700.woff2": "c65640f017e19c668aa927ec7e539d4306a8c77fec717ea979b12a1bb1c40121"
   }
 }
