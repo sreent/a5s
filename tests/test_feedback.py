@@ -363,6 +363,7 @@ def test_the_web_chat_asks_why_and_its_owners_grade_it_on_the_agents_page(stack,
     owner.goto(f"{approving}/studio/agents/assistant#feedback")
     owner.wait_for_selector("#feedback [data-said-wrong]", timeout=30000)
     assert "It's due Friday." in owner.inner_text("#feedback")
+    assert owner.locator("#feedback [data-said-wrong] .avatar.agent").count() == 0  # a person's
     accessible(owner)
     owner.click("#feedback .grades button.critical")
     owner.wait_for_selector("#feedback .grades button.critical[aria-pressed=true]", timeout=30000)

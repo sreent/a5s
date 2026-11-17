@@ -74,10 +74,10 @@ function Compare({ draft, runnable, models, ready, currency }: { draft: string; 
     <div className="compare" id="compare-models">
       <h3>{t("Compare models on them")}</h3>
       <p className="note">{t("Run them on each model you choose, one after another, and see how many each passes, how long they take, and what they cost at its prices, to pick the cheapest that's good enough. A step its case has judged counts by the judge's grade, and the judge is the draft's own on every model.")}</p>
-      <fieldset className="choices">
+      <fieldset className="choice-group column">
         <legend className="hidden">{t("Models to compare")}</legend>
         {models.map((m) => (
-          <label key={m} className="check">
+          <label key={m} className="choice">
             <input type="checkbox" checked={chosen.includes(m)} disabled={Boolean(now)}
                    onChange={(e) => setChosen(e.target.checked ? [...chosen, m] : chosen.filter((x) => x !== m))} />
             {m}{m === STAND_IN ? t(" (how it's wired, not what it would say)") : ""}

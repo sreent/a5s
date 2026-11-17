@@ -272,3 +272,20 @@ def test_why_a_file_wont_go_is_said_beside_what_they_write(stack, browser):
         chosen.value.set_files([{"name": "costs.csv", "mimeType": "text/csv",
                                  "buffer": b"item,amount\nhotel,612.00\n"}])
         assert not said.is_visible() and page.inner_text("#attached li span") == "costs.csv, 1 KB"
+
+
+def test_on_a_phone_the_newest_message_is_above_what_they_write(stack, browser):
+    """Round 14 (E-L7): the web chat scrolls to its end, so the newest message, with its
+    "That's wrong", is above the composer at the foot of a phone's screen, never under it."""
+    with channels(stack) as url:
+        page = browser.new_page(viewport=PHONE)
+        page.goto(f"{url}/chat/")
+        page.fill("#person", "ana")
+        page.click("#name button")
+        page.wait_for_selector(".welcome-name", timeout=30000)  # its conversation is open
+        page.evaluate("""() => { for (let n = 0; n < 30; n += 1) say({by: "a5s", from: "a5s",
+            id: 200 + n, text: `Earlier, ${n}`, at: new Date().toISOString()}); }""")
+        newest = page.locator("#conversation li").last.bounding_box()
+        composer = page.locator("footer").bounding_box()
+        assert newest is not None and composer is not None
+        assert newest["y"] + newest["height"] <= composer["y"] + 1

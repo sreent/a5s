@@ -403,6 +403,9 @@ def test_graders_compare_answers_in_the_studio(stack, approving, provider, brows
     page.wait_for_selector("#pairs [data-pair]", timeout=30000)
     shown = page.inner_text("#pairs")
     assert SHADOWED in shown and SENT in shown and ASKED in shown
+    room = page.eval_on_selector("#pairs [data-pair] [role=group]", """el => [getComputedStyle(el).columnGap,
+        el.getBoundingClientRect().top - el.previousElementSibling.getBoundingClientRect().bottom]""")
+    assert room[0] != "normal" and room[1] > 4  # its buttons apart, and apart from the answers
     accessible(page)
     page.click("#pairs button:has-text('As good')")
     page.wait_for_selector("#nothing", timeout=30000)

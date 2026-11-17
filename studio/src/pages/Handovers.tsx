@@ -20,7 +20,7 @@ export function HandoversPage() {
       {!data && <Waiting error={error} />}
       {data && data.handovers.length === 0 && <p className="note">{t("Nothing's handed to your teams now.")}</p>}
       {data && data.handovers.length > 0 && (
-        <ul className="plain card" id="handovers">
+        <div className="card"><ul className="plain" id="handovers">
           {data.handovers.map((h) => (
             <li key={h.id}>
               <Link to={{ page: "handover", id: String(h.id) }}><strong>{t("{person}, with the {agent}", { person: h.person, agent: h.agent })}</strong></Link>{" "}
@@ -31,7 +31,7 @@ export function HandoversPage() {
               <p>{h.brief}</p>
             </li>
           ))}
-        </ul>
+        </ul></div>
       )}
     </>
   );

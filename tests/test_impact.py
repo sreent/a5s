@@ -201,3 +201,37 @@ def test_a_preview_is_worked_out_once_while_the_ledger_stands(stack, approving, 
     assert reviewed(approving, provider, text) == first and len(worked) == 1
     asked(stack, MOVE_ANOTHER, said="Please move Q-1001 to the 20th.")
     assert reviewed(approving, provider, text)["calls"] == 2 and len(worked) == 2
+
+
+def test_on_a_phone_nothing_the_approve_page_says_is_cut_off(stack, approving, provider, browser):
+    """Round 14 (E-M1): on a phone, the preview's table scrolls in a frame of its own, and the
+    card cuts nothing of what it says off: what the version changes, what's missing, the whole
+    of it, and the button that approves it (Ocean's approval card)."""
+    from conftest import PHONE
+    asked(stack)
+    raise_cap(stack)
+    asking = api(approving, provider, "/settings/api/requests",
+                 text=written(approving, provider, parts=LEVEL_2))
+    assert asking.status_code == 202, asking.text
+    stack.scheduler().apply_approved()
+    with db.transaction(stack.admin) as conn:
+        [row] = conn.execute("select digest from settings_proposals where outcome is null "
+                             "order by serial desc limit 1").fetchall()
+    provider.person = "ana"
+    page = browser.new_page(viewport=PHONE)
+    page.goto(f"{approving}/studio/approve?settings={row['digest']}")
+    page.wait_for_selector("#impact table", timeout=30000)
+    cut = page.evaluate("""() => {
+        const card = document.querySelector('.approval');
+        const edge = card.getBoundingClientRect().right;
+        const framed = (el) => {
+            for (let p = el.parentElement; p && p !== card; p = p.parentElement) {
+                if (/(auto|scroll)/.test(getComputedStyle(p).overflowX)) return true;
+            }
+            return false;
+        };
+        return [...card.querySelectorAll('.approval-body *')].filter((el) => !framed(el)
+            && el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().right > edge + 1)
+            .map((el) => el.tagName + (el.id ? '#' + el.id : ''));
+    }""")
+    assert cut == []

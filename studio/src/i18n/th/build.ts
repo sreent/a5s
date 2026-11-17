@@ -620,4 +620,5 @@ export const BUILD: Record<string, string> = {
   "Ask its approvers": "ขอผู้อนุมัติ",
   "What you asked for": "สิ่งที่คุณขอ",
   "Version {serial}, asked for {when}: {outcome}.": "เวอร์ชัน {serial} ขอเมื่อ {when}: {outcome}",
+  "From {from} to {to}": "จาก {from} ไปยัง {to}",
 };

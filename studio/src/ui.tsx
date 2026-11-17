@@ -184,6 +184,10 @@ export function money(n: number, currency: string | null | undefined): string {
     : n.toLocaleString(locale(), digits);
 }
 
+/** Someone's initials, for their avatar, as a person's, never an agent's. */
+export const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2)
+  .map((w) => w[0].toUpperCase()).join("");
+
 export const plural = (n: number, one: string, many = `${one}s`) =>
   language() === "th" ? `${n.toLocaleString(locale())} ${TH_NOUNS[one] ?? one}` : `${n.toLocaleString()} ${n === 1 ? one : many}`;
 export const people = (n: number) => plural(n, "person", "people");

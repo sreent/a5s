@@ -198,6 +198,8 @@ def test_a_runs_path_shows_what_a5s_refused_it(stack, approving, provider, brows
     assert "called once" in page.inner_text(".agent-map [data-key='tool:search_records'] .flow-about")
     assert "2 calls, 1 refused" in page.inner_text(".agent-map [data-key=checks]")
     assert page.locator(".agent-map .react-flow__edge.refused").count() == 1
+    labels = page.eval_on_selector_all(".agent-map .react-flow__edge", "es => es.map((e) => e.getAttribute('aria-label'))")
+    assert labels and all(label.startswith("From ") for label in labels)  # never React Flow's own
 
 
 def test_the_studio_serves_its_one_page_and_its_own_files_alone(approving, monkeypatch, tmp_path):

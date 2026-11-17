@@ -221,6 +221,8 @@ def test_one_of_the_team_answers_from_the_studio(stack, approving, provider, bro
     page.goto(f"{approving}/studio/handovers")
     page.wait_for_selector("#handovers a", timeout=30000)
     assert "Ben Okafor" in page.inner_text("#handovers")
+    assert page.eval_on_selector("#handovers", """el => el.querySelector('li').getBoundingClientRect()
+        .left - el.closest('.card').getBoundingClientRect().left""") > 4  # never flush to its card
     accessible(page)
     page.click("#handovers a")
     page.wait_for_selector("#answer button.primary", timeout=30000)

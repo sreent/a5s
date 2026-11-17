@@ -132,6 +132,7 @@ def test_the_studio_and_the_web_chat_speak_thai_to_those_who_read_it(stack, appr
     # Back to English on their own page, and the studio speaks it at once
     page.goto(f"{approving}/studio/you")
     page.wait_for_selector("#language input[value=en]", timeout=30000)
+    assert page.eval_on_selector("#language label", "el => getComputedStyle(el).display") == "flex"
     page.check("#language input[value=en]")
     page.wait_for_selector("h1 >> text=What you may do", timeout=30000)
     assert page.get_attribute("html", "lang") == "en"

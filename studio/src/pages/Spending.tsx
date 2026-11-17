@@ -155,10 +155,11 @@ function Instances({ found }: { found: gen.Spending }) {
       {found.instances.length === 0 ? (
         <p className="note">{found.current ? t("None you may watch spent anything this month.") : t("None you may watch spent anything that month.")}</p>
       ) : (
+        <>
+        <p className="note" id="instances-about">{found.current ? t("What each instance you may watch spent this month, and is on course to")
+          : t("What each instance you may watch spent in {month}", { month: named(found.month) })}</p>
         <Wide label={t("What each instance spent")}>
-          <table className="figures cost-figures">
-            <caption>{found.current ? t("What each instance you may watch spent this month, and is on course to")
-              : t("What each instance you may watch spent in {month}", { month: named(found.month) })}</caption>
+          <table className="figures cost-figures" aria-describedby="instances-about">
             <thead>
               <tr>
                 <th scope="col">{t("Instance")}</th>
@@ -180,12 +181,13 @@ function Instances({ found }: { found: gen.Spending }) {
                   {found.current && <td className="num">{i.forecast !== null ? money(i.forecast, currency) : ""}</td>}
                   <td className="num">{i.runs.toLocaleString(locale())}</td>
                   <td className="num">{i.answered.toLocaleString(locale())}</td>
-                  <td className="num">{i.per_answer !== null ? money(i.per_answer, currency) : t("none answered")}</td>
+                  <td className="num">{i.per_answer !== null ? money(i.per_answer, currency) : i.answered > 0 ? t("not known") : t("none answered")}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </Wide>
+        </>
       )}
     </section>
   );

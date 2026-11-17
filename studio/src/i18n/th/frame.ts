@@ -170,6 +170,7 @@ export const FRAME: Record<string, string> = {
   "in {parts}": "ใน {parts}",
   "and {runs} unpriced": "และ {runs} ที่ไม่ทราบราคา",
   "none answered": "ไม่ได้ตอบ",
+  "not known": "ไม่ทราบ",
   // Conversations handed over to someone's teams (Handovers.tsx)
   "A conversation handed over": "บทสนทนาที่ส่งต่อ",
   "Answer them": "ตอบกลับ",

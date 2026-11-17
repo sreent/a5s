@@ -92,7 +92,7 @@ export function KeepAsCase({ run }: { run: string }) {
           <label className="field"><span>{t("What a right answer is, in your words, if you'd have its judge grade it")}</span>
             <textarea id="case-judged" rows={2} value={judged} onChange={(e) => setJudged(e.target.value)} /></label>
           <p className="note" id="case-readers">{t("Everyone who authors the {agent} reads it in your draft, and once it's released, so does everyone who reads the agents' repository: put the sandbox's made-up amounts and dates in place of real ones too.", { agent: found.agent })}</p>
-          <label className="check"><input type="checkbox" id="case-checked" checked={checked}
+          <label className="choice"><input type="checkbox" id="case-checked" checked={checked}
                                            onChange={(e) => setChecked(e.target.checked)} required />
             {t("I've read it, and it says nothing about anyone, nor what a real record says")}</label>
           {problem && <p className="problem" role="alert">{problem}</p>}

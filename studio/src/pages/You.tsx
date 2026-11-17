@@ -41,7 +41,7 @@ function Language({ found }: { found: You }) {
       <p className="note">{t("a5s's pages speak it to you, and its agents answer you in it, unless you write to them in another. Your organisation's directory sets it first; it's yours to change.")}</p>
       <div className="choices" role="radiogroup" aria-labelledby="language-title">
         {found.languages.map((l) => (
-          <label key={l.code} className="check" lang={l.code}>
+          <label key={l.code} className="choice" lang={l.code}>
             <input type="radio" name="language" value={l.code} checked={chosen === l.code}
                    onChange={() => choose(l.code)} />
             {l.name}

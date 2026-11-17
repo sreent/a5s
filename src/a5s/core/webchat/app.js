@@ -303,7 +303,8 @@ function say(message) {
   item.append(who, " ", when, body);
   if (by === "agent" && message.id) wrongOf(item, message);  // an agent's answer, never a5s's
   $("conversation").append(item);
-  item.scrollIntoView({ block: "end" });
+  // to the page's end, so the newest is above the composer, which stays at the foot, never under it
+  window.scrollTo({ top: document.documentElement.scrollHeight });
 }
 
 // A conversation's first words: the agent, what it does, if it serves them, and what to do

@@ -243,6 +243,8 @@ def test_the_spending_page_shows_each_budget_as_ocean_draws_cost_against_plan(pr
     assert "under budget" in page.inner_text("#agent-assistant .cost-over")
     assert "£" in billing  # the currency models.yaml names
     assert page.locator("#instances tr[data-instance=assistant-finance]").count() == 1
+    assert page.locator("#instances caption").count() == 0  # what it is, above its frame
+    assert "What each instance you may watch spent" in page.inner_text("#instances-about")
     accessible(page)
     # The month before, which spent nothing, has no forecast
     page.select_option("#month", index=1)

@@ -37,7 +37,7 @@ function Pair({ pair, graded }: { pair: gen.ShadowPair; graded: () => void }) {
         <li className="try-answer"><span className="note">{t("The new version's answer, which went nowhere")}</span><p className="try-reply">{pair.answer}</p></li>
       </ol>
       {problem && <p className="problem" role="alert">{problem}</p>}
-      <div className="actions" role="group" aria-label={t("Grade the new version's answer")}>
+      <div className="grades shadow-grades" role="group" aria-label={t("Grade the new version's answer")}>
         {GRADES.map((g) => (
           <button key={g} type="button" className={g === "wrong" ? "danger" : g === "better" ? "primary" : ""}
                   onClick={() => grade(g)}>{named(g)}</button>
