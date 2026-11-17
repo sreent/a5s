@@ -350,12 +350,18 @@ def may_grade(scenario: Scenario, sample: dict, person: Person,
     decided = deciders_of(sample)
     if person.id in sample["acts_for"] or person.id in decided:
         return "nobody grades a change they asked for or decided"
-    above, seen = scenario.person(person.manager) if person.manager else None, set()
-    while above is not None and above.id not in seen:
-        if above.id in decided:
-            return "nobody grades the decisions of someone they report to"
-        seen.add(above.id)
+    line: list[str] = []  # whom they report to, all the way up
+    above = scenario.person(person.manager) if person.manager else None
+    while above is not None and above.id not in line:
+        line.append(above.id)
         above = scenario.person(above.manager) if above.manager else None
+    if set(line) & set(decided):
+        return "nobody grades the decisions of someone they report to"
+    for whom in sample["acts_for"]:  # nor a change made for them (round 15, C9)
+        who = scenario.person(whom)
+        if whom in line or (who is not None and person.team is not None
+                            and who.team == person.team):
+            return "nobody grades a change made for their own team, or for someone they report to"
     if not all(scenario.sees(person.id, r) for r in sample["records"]):
         return "it names a record they may not see"
     return None

@@ -397,7 +397,8 @@ class Shown:
 ADMIN = {"approve": "approved settings", "propose": "proposed settings",
          "apply": "applied settings", "approve-release": "approved a release",
          "decide": "decided held changes", "grade": "graded samples",
-         "suspend": "suspended or resumed an instance", "retire": "retired an instance",
+         "suspend": "suspended an instance", "resume": "resumed an instance",  # each its own
+         "retire": "retired an instance",  # (round 15, D15)
          "restore": "restored an instance", "end-change": "ended a held change",
          "export": "exported someone's data", "erase": "erased someone's data",
          "archive": "archived a leaver", "request": "asked for a version of the settings",

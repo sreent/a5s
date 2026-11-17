@@ -161,7 +161,8 @@ def _runs(row: dict) -> list[str]:
 def why_not(conn: db.Connection, scenario: Scenario, row: dict, person: Person,
             seen: set[str] | None = None, *, names: bool = True, fewest: int = 0) -> str | None:
     """Why someone may not grade a pair, if they may not: as for samples, a grader from outside
-    the team that built the shadow's agent, and its instance's owners' teams, never someone it
+    the teams that built the shadow's agent and the one it's compared with, and both instances'
+    owners' teams, never someone it
     answered, who may see every record it names; and, since either answer may say what a record
     holds without naming it, every record both its runs handled, as the studio shows a run
     (core/studio.py), and all they read; and, until the officer agrees to `names`, only of an
@@ -172,6 +173,12 @@ def why_not(conn: db.Connection, scenario: Scenario, row: dict, person: Person,
     why = samples.may_grade(scenario, _pair(row), person,
                             (minders["owner"], minders["deputy"]) if minders else (),
                             samples.drafted(conn, row["definition"]))
+    if why is None and row["agent"] != row["definition"]:  # nor the version at work's, whose
+        live = conn.execute("select owner, deputy from instances where id = %s",  # builders
+                            (row["shadows"],)).fetchone()  # would grade its challenger
+        why = samples.may_grade(scenario, {**_pair(row), "definition": row["agent"]}, person,
+                                (live["owner"], live["deputy"]) if live else (),
+                                samples.drafted(conn, row["agent"]))  # (round 15, C8)
     if why is None and not set(_runs(row)) <= (
             studio.seeable(conn, scenario, person, _runs(row)) if seen is None else seen):
         why = "its runs handled a record they may not see, or read what they may not"

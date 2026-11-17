@@ -3079,9 +3079,9 @@ def create_app(gw: Gateway) -> FastAPI:
         if over is not None:
             flags.append(f"it waits because {over}")
         proposal = proposals.hold(conn, gw.scenario, row, tool, args, standing, deciding, seq,
-                                  flags, gw.clock(), change, proposals.sensitive(
+                                  flags, gw.clock(), change, bool(flags) or proposals.sensitive(
                                       conn, row["run"], tool, args, settings.classified),
-                                  steered or [])
+                                  steered or [])  # one flagged is decided alone (round 15, B5)
         sends = [ask(conn, proposal, person.id) for person in deciding]
         conn.execute("update proposals set asked = %s where id = %s",
                      ([p.id for p in deciding], proposal["id"]))
