@@ -69,11 +69,17 @@ def _level(scenario: Scenario, run: dict, part: str, action: str | None, approve
     chosen = ((run.get("actions") or {}).get(part) or {}).get(action)
     level = min(level, 1) if chosen is None else chosen
     if level >= 2:
-        role = f"{PART_OWNER}:{part}"
-        if not any(role in who.roles for a in approved if (who := scenario.person(a))):
+        if not owned(scenario, part, approved):
             return 1  # nobody who approved it owns the part now: until the new owner does
         level = min(level, caps.get((part, action), 1))
     return level
+
+
+def owned(scenario: Scenario, part: str, approved: Iterable[str]) -> bool:
+    """Whether someone who approved the settings in force owns a part now, so level 2 there
+    counts."""
+    role = f"{PART_OWNER}:{part}"
+    return any(role in who.roles for a in approved if (who := scenario.person(a)))
 
 
 def workable(scenario: Scenario, run: dict, record: str) -> bool:

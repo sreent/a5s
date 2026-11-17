@@ -4,11 +4,14 @@ one, with arguments from the change's own and from the record as it stood before
 as the tool says, a day unless it says otherwise, and a week at most (contract.Undo).
 
 - When a5s makes such a change, at level 2 or once its deciders approve it, it keeps how to
-  undo it: the call that reverses it, worked out then, and the fields it restores as the change
-  left them, read again just after.
+  undo it: the call that reverses it, worked out then, and, read again just after, the fields
+  it restores and every field the change itself altered, as the change left them.
 - Whoever it was for, and whoever decides its type of change in the record's part, may undo it,
   so long as they may see the record, on its page in the studio, `/studio/undo?change=<id>`,
-  signing in afresh for that act alone, as for deciding. The channels app records it with the
+  signing in afresh for that act alone, as for deciding. a5s tells them how, and until when,
+  itself: in its own note beside the agent's next message to them, for a change at level 2, as
+  its link is a5s's, which no agent's message may carry, and in its own message for one its
+  deciders approved. The channels app records it with the
   sign-in, and can undo nothing. The core checks the sign-in again, as it checks a decision,
   and whether they may now, and makes the call that reverses it, within a minute, but only
   while the record is as the change left it: one changed since is for whoever changed it to put
@@ -34,7 +37,7 @@ from psycopg.types.json import Jsonb
 
 from a5s import db
 from a5s.contract import Person, Scenario, Tool
-from a5s.core import ledger, proposals
+from a5s.core import languages, ledger, proposals, words
 from a5s.core.approvals import HASHED, Refused, afresh
 
 PAGE = "/studio/undo"  # its page, as ?change=<id>, on the channels' address
@@ -96,26 +99,42 @@ def restores(tool: Tool) -> list[str]:
             if s.startswith("before.")]
 
 
-def left(tool: Tool, after: dict | None) -> dict | None:
-    """The fields an undo restores, as the change left them, from the record read again just
-    after it: what the record must still hold for the undo to be made."""
+def left(tool: Tool, after: dict | None, before: dict | None = None) -> dict | None:
+    """The fields the change left as they are, from the record read again just after it: those
+    an undo restores, and every one the change itself altered, from the record as it stood
+    before: what the record must still hold for the undo to be made, so an undo never puts back
+    what someone has changed since, such as a question they closed."""
     fields = (after or {}).get("fields") if isinstance(after, dict) else None
     if not isinstance(fields, dict):
         return None
-    return {f: fields.get(f) for f in restores(tool)}
+    was = (before or {}).get("fields") if isinstance(before, dict) else None
+    altered = {f for f in fields if isinstance(was, dict) and was.get(f) != fields.get(f)}
+    return {f: fields.get(f) for f in sorted({*restores(tool), *altered})}
+
+
+def still(as_left: dict, now: dict | None) -> dict | None:
+    """The fields a change left, as the record holds them now: the same as `as_left`, while
+    nobody has changed them since. None if it can't be read."""
+    fields = (now or {}).get("fields") if isinstance(now, dict) else None
+    if not isinstance(fields, dict):
+        return None
+    return {f: fields.get(f) for f in as_left}
 
 
 def keep(conn: db.Connection, run: dict, tool: Tool, record: str, parts: list[str], said: str,
-         undo: dict, as_left: dict, asked: list[str], proposal: int | None = None) -> dict:
-    """Keep how to undo a change a5s has made, for as long as its tool says. Its row."""
+         undo: dict, as_left: dict, asked: list[str], proposal: int | None = None,
+         offered: bool = False) -> dict:
+    """Keep how to undo a change a5s has made, for as long as its tool says, and whether a5s
+    has told whoever it was for how already. Its row."""
     assert tool.undo is not None
     row = conn.execute(
         "insert into changes_made (run_id, instance_id, definition, release, tool, schema_hash, "
-        "action, record, parts, said, undo, as_left, acts_for, proposal_id, until) values (%s, %s, "
-        "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now() + %s) returning id, until",
+        "action, record, parts, said, undo, as_left, acts_for, proposal_id, until, offered_at) "
+        "values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, now() + %s, "
+        "case when %s then now() end) returning id, until",
         (run["run"], run["id"], run["definition"], run["release"], tool.name, tool.schema_hash,
          tool.action, record, parts, said.split("\n", 1)[0], Jsonb(undo), Jsonb(as_left),
-         asked, proposal, tool.undo.within)).fetchone()
+         asked, proposal, tool.undo.within, offered)).fetchone()
     assert row is not None
     return row
 
@@ -128,6 +147,33 @@ def offered(until: datetime, public_url: str, change: int) -> str:
     """What whoever a change was for is told they can do, and until when, in UTC."""
     return (f"It can be undone until {until.strftime('%d %b %Y, %H:%M')} UTC, on its page: "
             f"{link(public_url, change)}")
+
+
+def for_agent(until: datetime) -> str:
+    """What the agent that made a change at level 2 hears of undoing it: never the page's link,
+    which is a5s's, and which its message can't carry, as a5s gives it them itself."""
+    return (f"It can be undone until {until.strftime('%d %b %Y, %H:%M')} UTC, by whoever it was "
+            "for, on its page. a5s tells them how itself, with the page's link, in its own note "
+            "beside your next message to them: give no link yourself, as your message can't "
+            "carry one of a5s's.")
+
+
+# a5s's own note beside the agent's message to whoever a change at level 2 was for: its link is
+# a5s's, which no agent's message may carry, so a5s writes it itself, once
+OFFER = "(a5s: what the {agent} just changed can be undone until {until}, on its page: {link})"
+
+
+def offers(conn: db.Connection, run: str, person: str, agent: str, public_url: str,
+           language: str, timezone: str = "UTC") -> str:
+    """a5s's note on how to undo each change at level 2 this run made for someone, which it
+    hasn't told them of yet, in the language they read, in the caller's transaction: nothing,
+    if none waits."""
+    rows = conn.execute(
+        "update changes_made set offered_at = now() where run_id = %s and %s = any(acts_for) "
+        "and offered_at is null and state is null returning id, until", (run, person)).fetchall()
+    return "\n".join(words.say(language, OFFER, agent=agent, link=link(public_url, r["id"]),
+                               until=languages.when(r["until"], language, timezone))
+                     for r in sorted(rows, key=lambda r: r["id"]))
 
 
 # Who may, and asking

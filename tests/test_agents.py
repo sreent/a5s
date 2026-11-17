@@ -141,9 +141,10 @@ def kept(stack, what: str):
 
 
 def judged(release: definitions.Definition, criterion: str, said: str, reply: str,
-           called: list[str]) -> list[str]:
+           called: list[str], quiet: bool = False) -> list[str]:
     """What the release's judge finds wrong with a step whose case says what a right answer is,
-    as the sandbox asks it: nothing, if it says right."""
+    as the sandbox asks it: nothing, if it says right. `quiet` for a case kept from a real run,
+    whose why may quote what was really said, which no log keeps."""
     if release.evaluation is None:
         return ["its case asks a judge, and it names none"]
     judge = load_models(ROOT / "config" / "models.yaml")[release.evaluation.judge]
@@ -152,7 +153,9 @@ def judged(release: definitions.Definition, criterion: str, said: str, reply: st
     found = verdict(extractor.reply_text(judge.api, data)) if status < 400 else None
     if found is None:
         return [f"what its judge, {judge.alias}, answered doesn't read as a grade"]
-    return [] if found[0] == "right" else [f"its judge found it {found[0]}: {found[1]}"]
+    if found[0] == "right":
+        return []
+    return [f"its judge found it {found[0]}" + ("" if quiet else f": {found[1]}")]
 
 
 def stack_for(database: str, root: Path, tmp_path: Path, scenario: str | None, agent: str,
@@ -189,7 +192,11 @@ def test_each_agents_regression_suite(database: str, tmp_path: Path, monkeypatch
         pytest.fail("a step that changes records first is for the sample's agents alone")
     if real(case):  # what someone really said: never to a model for made-up data alone
         approved = load_models(ROOT / "config" / "models.yaml")
-        needed = set(filter(None, os.environ.get("A5S_DATA_CLASSES", "internal").split(",")))
+        needed = set(filter(None, os.environ.get("A5S_DATA_CLASSES", "").split(",")))
+        if not needed:
+            pytest.fail("it was kept from a real run, and A5S_DATA_CLASSES doesn't say the "
+                        "classes of the deployment's data, which a model it goes to must be "
+                        "approved for")
         judge = release.evaluation.judge if release.evaluation else None
         given = [release.model, *([judge] if judge and any(
             "judged" in step for step in case["steps"]) else [])]
@@ -231,14 +238,17 @@ def test_each_agents_regression_suite(database: str, tmp_path: Path, monkeypatch
             else:  # what's due runs, and what people are told waits in their inbox
                 stack.scheduler().work_due()
                 reply = "\n\n".join(m["text"] for m in stack.inbox(person))
-            print(f"[{n}] {step.get('say', 'what falls due')}\n--> {reply}\n")
+            if real(case):  # what someone really said, and its answer: never in a log
+                print(f"[{n}] (a real run's words, and what it answered, aren't printed)\n")
+            else:
+                print(f"[{n}] {step.get('say', 'what falls due')}\n--> {reply}\n")
             called = turns_called(stack, after)
             wrong = check(step, reply, called, case.get("own_values") == "allowed")
             if why := unanswered(answered(stack, agent, since)):
                 wrong.insert(0, why)  # a5s's own words pass no case's checks
-            if criterion := step.get("judged"):
+            if (criterion := step.get("judged")) and why is None:  # none of its own: nothing to judge
                 wrong += judged(release, str(criterion), dated(step.get("say", "what falls due")),
-                                reply, called)
+                                reply, called, quiet=real(case))
             problems += [f"step {n}: {w}" for w in wrong]
         for what, expected in (case.get("then") or {}).items():
             if (found := kept(stack, what)) != expected:

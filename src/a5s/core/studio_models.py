@@ -443,7 +443,7 @@ class Catalogue(Shape):
 
 class MapNode(Shape):
     """A thing on the map of what depends on what (core/dependencies.py): its kind, part,
-    instance, agent, tool, system or model; its name; what it is, in a few words; its page in
+    instance, agent, tool, system, model or team; its name; what it is, in a few words; its page in
     the studio, if it has one; and, for a tool, what it does: reads, writes, sends outside or
     changes records."""
 
@@ -1037,10 +1037,12 @@ class ModelCall(Shape):
 
 
 class Sandbox(Shape):
-    """Whom a draft may be tried as, of the sandbox's made-up people, and on which models."""
+    """Whom a draft may be tried as, of the sandbox's made-up people, and on which models, with
+    the currency models.yaml prices them in, if it names one."""
 
     people: list[Named]
     models: list[str]
+    currency: str | None = None
 
 
 class TriedRun(Run):
@@ -1221,6 +1223,7 @@ class Impact(Shape):
     capped: list[str]  # levels it sets that a5s's caps hold back, in words
     about: str  # what it can't know, in words
     hidden: int  # calls of instances whoever reads it may not watch, left out of the shifts
+    beyond: list[str] = []  # what the version changes that it doesn't decide again, in words
 
 
 class SettingsReview(Shape):

@@ -9,7 +9,7 @@ import { get, send } from "../api";
 import type * as gen from "../api.gen";
 import { Badge, useToast } from "../design";
 import { t } from "../i18n";
-import { PageHead, plural, StatusBadge, useLoad, Waiting, when } from "../ui";
+import { focusNext, PageHead, plural, StatusBadge, useLoad, Waiting, when } from "../ui";
 
 type Grade = "better" | "same" | "worse" | "wrong";
 const GRADES: Grade[] = ["better", "same", "worse", "wrong"];
@@ -24,7 +24,11 @@ function Pair({ pair, graded }: { pair: gen.ShadowPair; graded: () => void }) {
   const grade = (given: Grade) => {
     setProblem(undefined);
     send<gen.ShadowGraded>("POST", `/studio/api/shadows/${pair.id}/grade`, { grade: given })
-      .then(() => { toast(t("Graded: thank you.")); graded(); })
+      .then(() => {
+        toast(t("Graded: thank you."));
+        focusNext(`#pairs [data-pair]:not([data-pair="${pair.id}"]) h2`, "#nothing");  // the next
+        graded();
+      })
       .catch((e: Error) => setProblem(e.message));
   };
   return (
@@ -37,7 +41,7 @@ function Pair({ pair, graded }: { pair: gen.ShadowPair; graded: () => void }) {
         <li className="try-answer"><span className="note">{t("The new version's answer, which went nowhere")}</span><p className="try-reply">{pair.answer}</p></li>
       </ol>
       {problem && <p className="problem" role="alert">{problem}</p>}
-      <div className="actions" role="group" aria-label={t("Grade the new version's answer")}>
+      <div className="grades shadow-grades" role="group" aria-label={t("Grade the new version's answer")}>
         {GRADES.map((g) => (
           <button key={g} type="button" className={g === "wrong" ? "danger" : g === "better" ? "primary" : ""}
                   onClick={() => grade(g)}>{named(g)}</button>

@@ -6,19 +6,22 @@
 
 const $ = (id) => document.getElementById(id);
 const store = window.sessionStorage;
-const state = { config: null, agent: null, person: null };
+const state = { config: null, agent: null, person: null, shown: new Set() };  // shown: by id
 const SIGNING_IN = "signing in";
 
 const pause = (ms) => new Promise((done) => setTimeout(done, ms));
 const status = (text) => { $("status").textContent = text; };
+// Why a file wasn't attached, beside the composer, where the person is looking, never only at
+// the top of a long conversation; nothing, once they attach or send again
+const refuse = (text) => { $("refused").textContent = text; };
 
 // The chat's own words in the language the person reads (core/languages.py), once /shell/api
 // says which: English, as written here, or Thai. What agents say is theirs, in the language they
 // were told to answer in; anything here without Thai words stays in English.
 const TH = {
   "That's wrong": "ไม่ถูกต้อง",
-  "What was wrong? Its owners will see this answer, the run behind it, and what you write here.":
-    "ผิดตรงไหน เจ้าของเอเจนต์จะเห็นคำตอบนี้ การทำงานเบื้องหลัง และสิ่งที่คุณเขียนตรงนี้",
+  "What was wrong? Its owners will see this answer, the run behind it and what you write here, and who you are only if the data protection officer lets them.":
+    "ผิดตรงไหน เจ้าของเอเจนต์จะเห็นคำตอบนี้ การทำงานเบื้องหลัง และสิ่งที่คุณเขียนตรงนี้ และจะรู้ว่าคุณเป็นใครก็ต่อเมื่อเจ้าหน้าที่คุ้มครองข้อมูลอนุญาต",
   "Tell its owners": "แจ้งเจ้าของ",
   "Cancel": "ยกเลิก",
   "That didn't send. Try again.": "ส่งไม่สำเร็จ ลองอีกครั้ง",
@@ -42,6 +45,11 @@ const TH = {
   "Attach files": "แนบไฟล์",
   "Attach text files, PDFs or images": "แนบไฟล์ข้อความ PDF หรือรูปภาพ",
   "Files to send with your message": "ไฟล์ที่จะส่งไปกับข้อความ",
+  "(a file, with no words)": "(ไฟล์ ไม่มีข้อความ)",
+  "(about the {agent}) {text}": "(เกี่ยวกับ {agent}) {text}",
+  "(about the agents) {text}": "(เกี่ยวกับเอเจนต์) {text}",
+  "That's wrong: the {agent}'s answer at {time}": "ไม่ถูกต้อง: คำตอบของ {agent} เวลา {time}",
+  "That's wrong: the {agent}'s answer": "ไม่ถูกต้อง: คำตอบของ {agent}",
 };
 let spoken = "en";
 const t = (text, vars) => {
@@ -207,7 +215,7 @@ function mark(by) {
   const found = document.createElement("span");
   found.className = by === "a5s" ? "avatar own" : "avatar agent";
   found.setAttribute("aria-hidden", "true");
-  if (window.a5s) found.append(window.a5s.icon(by === "a5s" ? "audit" : "agent"));
+  if (window.a5s) found.append(window.a5s.icon(by === "a5s" ? "audit" : by === "team" ? "people" : "agent"));
   return found;
 }
 
@@ -225,11 +233,14 @@ function wrongOf(item, message) {
   ask.type = "button";
   ask.className = "link said-wrong";
   ask.textContent = t("That's wrong");
+  const at = message.at ? stamp(new Date(message.at)) : "";  // which answer, to whoever hears it
+  ask.setAttribute("aria-label", at ? t("That's wrong: the {agent}'s answer at {time}", { agent: message.from, time: at })
+    : t("That's wrong: the {agent}'s answer", { agent: message.from }));
   ask.addEventListener("click", () => {
     const form = document.createElement("form");
     form.className = "said-wrong";
     const label = document.createElement("label");
-    label.textContent = t("What was wrong? Its owners will see this answer, the run behind it, and what you write here.");
+    label.textContent = t("What was wrong? Its owners will see this answer, the run behind it and what you write here, and who you are only if the data protection officer lets them.");
     const why = document.createElement("textarea");
     why.rows = 2;
     why.maxLength = 1000;
@@ -240,23 +251,37 @@ function wrongOf(item, message) {
     const cancel = document.createElement("button");
     cancel.type = "button";
     cancel.textContent = t("Cancel");
-    cancel.addEventListener("click", () => form.replaceWith(ask));
-    form.append(label, send, " ", cancel);
+    cancel.addEventListener("click", () => {
+      form.replaceWith(ask);
+      ask.focus();  // the keyboard back where it was, never at the page's start
+    });
+    const refused = document.createElement("p");  // why it didn't send, with what they wrote
+    refused.className = "problem-note";  // kept beside it, to send again
+    refused.setAttribute("role", "alert");
+    form.append(label, send, " ", cancel, refused);
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       send.disabled = true;
+      refused.textContent = "";
       try {
         const answer = await api("/channels/local/feedback", {
           method: "POST", body: JSON.stringify({ message: message.id, said: why.value.trim() || null, person: state.person }),
         });
-        const body = await answer.json();
+        const body = await answer.json().catch(() => ({}));
+        if (!answer.ok) {
+          refused.textContent = t("That didn't send. Try again.");
+          send.disabled = false;
+          return;
+        }
         const done = document.createElement("p");
         done.className = "note said-wrong";
         done.setAttribute("role", "status");
-        done.textContent = answer.ok ? body.said : (typeof body.detail === "string" ? body.detail : t("That didn't send. Try again."));
+        done.textContent = body.said;
+        done.tabIndex = -1;
         form.replaceWith(done);
+        done.focus();  // what a5s kept, where the form was
       } catch (error) {
-        if (error.message !== SIGNING_IN) status(error.message);
+        if (error.message !== SIGNING_IN) refused.textContent = t("That didn't send. Try again.");
         send.disabled = false;
       }
     });
@@ -267,11 +292,16 @@ function wrongOf(item, message) {
 }
 
 function say(message) {
+  if (message.id != null) {  // once, whether its conversation or its inbox gave it first
+    if (state.shown.has(message.id)) return;
+    state.shown.add(message.id);
+  }
   $("welcome").hidden = true;
   const item = document.createElement("li");
   // Who it's by, as the server says, never by the name alone, which an agent's could match
-  const by = message.by === "person" ? "you" : message.by === "a5s" ? "a5s" : "agent";
-  item.className = by;
+  const by = message.by === "person" ? "you" : message.by === "a5s" ? "a5s"
+    : message.by === "team" ? "team" : "agent";  // someone of a team, while it's handed over
+  item.className = by === "team" ? "agent" : by;
   const who = document.createElement("strong");
   who.textContent = by === "you" ? t("You") : by === "a5s" ? "a5s" : message.from;
   const when = document.createElement("time");
@@ -280,13 +310,14 @@ function say(message) {
     when.dateTime = at.toISOString();
     when.textContent = stamp(at);
   }
-  const body = document.createElement("div");
-  render(body, message.text);
+  const body = document.createElement("div");  // a message that was only a file, in their words
+  render(body, by === "you" && message.text === "(a file, with no words)" ? t(message.text) : message.text);
   if (by !== "you") item.append(mark(message.by));
   item.append(who, " ", when, body);
   if (by === "agent" && message.id) wrongOf(item, message);  // an agent's answer, never a5s's
   $("conversation").append(item);
-  item.scrollIntoView({ block: "end" });
+  // to the page's end, so the newest is above the composer, which stays at the foot, never under it
+  window.scrollTo({ top: document.documentElement.scrollHeight });
 }
 
 // A conversation's first words: the agent, what it does, if it serves them, and what to do
@@ -338,21 +369,23 @@ function showAttached() {
 }
 
 function attach(files) {
+  const refused = [];
   for (const file of files) {
     if (attached.length >= MOST_FILES) {
-      status(t("Send at most {n} files with a message.", { n: MOST_FILES }));
+      refused.push(t("Send at most {n} files with a message.", { n: MOST_FILES }));
       break;
     }
     if (!TAKEN.test(file.name) && !/^image\/(png|jpeg|gif|webp)$/.test(file.type)) {
-      status(t("{file}: a5s reads text files, PDFs and images.", { file: file.name }));
+      refused.push(t("{file}: a5s reads text files, PDFs and images.", { file: file.name }));
       continue;
     }
     if (attached.reduce((all, f) => all + f.size, 0) + file.size > MOST_BYTES) {
-      status(t("A message's files can come to {mb} MB in all here.", { mb: MOST_BYTES / (1024 * 1024) }));
+      refused.push(t("A message's files can come to {mb} MB in all here.", { mb: MOST_BYTES / (1024 * 1024) }));
       continue;
     }
     attached.push(file);
   }
+  refuse(refused.join(" "));
   showAttached();
 }
 
@@ -369,6 +402,7 @@ function base64(file) {
 
 async function open(agent) {
   state.agent = agent;
+  state.shown = new Set();
   $("conversation").replaceChildren();
   $("welcome").hidden = true;
   const answer = await api(`/channels/local/conversation?agent=${encodeURIComponent(agent)}`);
@@ -410,7 +444,8 @@ async function listen() {
       if (!answer.ok) { await pause(5000); continue; }
       for (const message of (await answer.json()).messages) {
         if ((message.by === "agent" && message.from === state.agent) || message.about === state.agent) say(message);
-        else say({ ...message, text: `(about the ${message.about || "agents"}) ${message.text}` });
+        else say({ ...message, text: message.about ? t("(about the {agent}) {text}", { agent: message.about, text: message.text })
+          : t("(about the agents) {text}", { text: message.text }) });
       }
     } catch (error) {
       if (error.message === SIGNING_IN) return;
@@ -509,6 +544,7 @@ async function main() {
       if (!text && !attached.length) return;
       const files = attached.splice(0);
       showAttached();
+      refuse("");
       $("text").value = "";
       send(text, files).catch((error) => { if (error.message !== SIGNING_IN) status(error.message); });
     });

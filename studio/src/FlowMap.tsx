@@ -139,12 +139,15 @@ function placed(flow: Flow, chosen: string | null, pick: Data["pick"], stubs: St
                                                        : node(s, kind, at(i).x, at(i).y))),
     ...stubs.filter((s) => !s.slot).map((s) => node(s, "stub", 46, foot + 4)),
   ];
-  const edges: Edge[] = [
-    ...flow.starts.map((s) => ({ id: `in-${s.key}`, source: s.key, target: flow.agent.key,
+  const said = (from: Step, to: Step) => t("From {from} to {to}", { from: from.name, to: to.name });  // read
+  const edges: Edge[] = [  // aloud in the language spoken, never React Flow's own English
+    ...flow.starts.map((s) => ({ id: `in-${s.key}`, source: s.key, target: flow.agent.key, ariaLabel: said(s, flow.agent),
                                  className: [s.dim ? "dim" : "", s.path ?? ""].filter(Boolean).join(" ") })),
-    ...(flow.end ? [{ id: "out", source: flow.agent.key, sourceHandle: "end", target: flow.end.key }] : []),
+    ...(flow.end ? [{ id: "out", source: flow.agent.key, sourceHandle: "end", target: flow.end.key,
+                      ariaLabel: said(flow.agent, flow.end) }] : []),
     ...flow.hanging.map((s) => ({ id: `hangs-${s.key}`, source: flow.agent.key, sourceHandle: s.slot ?? "tools",
-                                  target: s.key, className: ["hangs", s.dim ? "dim" : "", s.path ?? ""].filter(Boolean).join(" ") })),
+                                  target: s.key, ariaLabel: said(flow.agent, s),
+                                  className: ["hangs", s.dim ? "dim" : "", s.path ?? ""].filter(Boolean).join(" ") })),
   ];
   return { nodes, edges };
 }

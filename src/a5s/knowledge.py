@@ -14,6 +14,9 @@ from a5s.contract import Person, Tool, ToolCall
 
 MOST = 12_000
 SNIPPET = 300
+# Who may read a document a tool gave a run, where not everyone may: a5s keeps it for the run
+# and takes it out before the agent reads the answer (core/studio.py)
+READERS = "a5s_readers"
 # Words a question asks with, which say nothing of what it's about
 STOP = frozenset([
     "a", "about", "an", "and", "any", "are", "as", "at", "be", "been", "but", "by", "can",
@@ -107,6 +110,14 @@ class MarkdownKnowledge:
 
         return all(may(person) for person in call.acts_for)
 
+    @staticmethod
+    def readers(document: dict[str, Any]) -> dict[str, list[str]] | None:
+        """Who may read a document, as its front matter names them, or None for everyone."""
+        if document["everyone"]:
+            return None
+        return {kind: list(document[kind]) for kind in ("people", "teams", "roles", "parts")
+                if document[kind]}
+
     def _find(self, document_id: str, call: ToolCall) -> dict[str, Any] | None:
         try:
             path = (self.root / document_id).resolve()
@@ -159,7 +170,8 @@ class MarkdownKnowledge:
             matches.append({"id": document["id"], "title": document["title"],
                             "snippet": ("..." if start else "") + document["text"][start:end]
                             + ("..." if end < len(document["text"]) else ""),
-                            "stale": document["stale"], "score": score})
+                            "stale": document["stale"], "score": score,
+                            **({READERS: rule} if (rule := self.readers(document)) else {})})
         matches.sort(key=lambda m: (tuple(-s for s in m["score"]), m["id"]))
         return {"matches": [{k: v for k, v in match.items() if k != "score"}
                             for match in matches[:10]]}
@@ -170,7 +182,8 @@ class MarkdownKnowledge:
             return {"error": "no readable knowledge document has that id"}
         text = document["text"]
         return {"id": document["id"], "title": document["title"], "text": text[:MOST],
-                "stale": document["stale"], "truncated": len(text) > MOST}
+                "stale": document["stale"], "truncated": len(text) > MOST,
+                **({READERS: rule} if (rule := self.readers(document)) else {})}
 
     def tools(self) -> dict[str, Tool]:
         return {

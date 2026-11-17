@@ -9,13 +9,12 @@ import { useEffect, useState } from "react";
 import { type Approved, get, send, type VersionReview } from "../api";
 import { hashed, salted, signInFor, takeAct } from "../auth";
 import { useToast } from "../design";
-import { locale, t } from "../i18n";
+import { language, locale, t } from "../i18n";
 import { ImpactPreview } from "../Impact";
-import { PageHead, useLoad, Waiting } from "../ui";
+import { initials, PageHead, useLoad, Waiting } from "../ui";
 
 const VERSION = /^[0-9a-f]{64}$/;
 
-const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("");
 
 const missing = (needs: string[]) => (needs.length
   ? t("It goes in force once nothing more is missing: {needs}.", { needs: needs.join("; ") })
@@ -100,6 +99,7 @@ export function ApprovePage({ version }: { version: string }) {
               <h2 id="title" className="approval-title">{t("Version {serial} of the settings", { serial: found.serial })}</h2>
               <span id="standing" className={`badge ${tone}`}>{word}</span>
             </div>
+            {language() !== "en" && <p id="in-english" className="note">{t("What a version changes, and the whole of it, are in English, as a5s works them out from the settings: read them before you approve.")}</p>}
             <div>
               <p id="summary" className="label">{found.in_force === null
                 ? t("What it sets, with nothing in force yet")

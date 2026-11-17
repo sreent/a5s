@@ -22,6 +22,7 @@ no port of its own, so nothing can send it work but the core.
 
 from __future__ import annotations
 
+import functools
 import logging
 import re
 import threading
@@ -242,7 +243,8 @@ class Scheduler:
                       and l.expires_at > now())
                   and not (i.conversation is null and exists (  -- handed over to people, who
                     select 1 from handovers h where h.person = i.person  -- answer it until
-                      and h.agent = i.agent and h.ended_at is null))  -- they hand it back
+                      and h.agent = i.agent and (h.ended_at is null  -- they hand it back, and
+                      or h.back_told_at is null)))  -- it's told so, with what was written meanwhile
                 order by i.received_at limit 1
                 for update of i skip locked
                 """,
@@ -321,6 +323,11 @@ class Scheduler:
             stop.set()
             beat.join()
             self._release(claim)
+        for then in claim.pop("then", []):  # what needs nothing of theirs, such as shadows
+            try:  # answering beside the run: nothing a shadow does reaches them, not even a
+                then()  # database away as it looks
+            except Exception:
+                log.exception("couldn't finish what %s left until it was let go", what(claim))
 
     # Answering one message
 
@@ -391,7 +398,7 @@ class Scheduler:
         conversation = claim.get("conversation") or person  # theirs, or their group chat's
         members = list(claim["members"]) if groups.of(conversation) else None
         heard = {"speaker": person, "heard_by": members} if members else {}
-        outcome, history = "failed", []
+        outcome, history, behind = "failed", [], set[str]()
         try:
             with db.transaction(self.cfg.database_url) as conn:
                 context.add_turn(conn, person=conversation, agent=agent, role="person",
@@ -404,7 +411,8 @@ class Scheduler:
                     conn, person=conversation, agent=agent, topic=topic,
                     chars=opened.get("history_chars") or context.CHARS, members=members,
                     names=self._names([*members, *context.speakers(conn, conversation, agent)])
-                    if members else None)
+                    if members else None, behind=behind)
+            self._given(token, behind - {run})  # whose words it reads, before it reads them
             reply = self._worker(agent)(self.cfg.gateway_url, token, history)
             if not reply.strip():
                 raise RuntimeError("the agent's reply was empty")
@@ -448,12 +456,19 @@ class Scheduler:
         if outcome == "done":  # once they have their answer
             self._fold(inst["id"], conversation, agent, topic, opened.get("history_chars"),
                        members, inbound)
-            try:  # nothing a shadow does reaches them, who have their answer: not even a
-                self._shadow(inst, run, history)  # database away as it looks for its shadows
-            except Exception:
-                log.exception("the shadows of %s couldn't answer beside run %s", inst["id"], run)
+            claim.setdefault("then", []).append(  # its shadows answer beside it once their
+                functools.partial(self._shadow, inst, run, history, behind))  # conversation is
+            # let go, so their next message, or the group's, never waits on a shadow (round 14)
 
-    def _shadow(self, inst: dict, run: str, history: list[dict]) -> None:
+    def _given(self, token: str, runs: set[str]) -> None:
+        """Tell the core whose words a run is given, before the agent reads them, so the run
+        takes what they handled and read, and the studio shows it to nobody who may not see
+        those (core/studio.py)."""
+        if runs:
+            self.gw.post("/run/given", headers={"Authorization": f"Bearer {token}"},
+                         json={"runs": sorted(runs)}).raise_for_status()
+
+    def _shadow(self, inst: dict, run: str, history: list[dict], behind: set[str]) -> None:
         """Each shadow of the instance answers the message its run answered, beside it, given
         the same conversation as that run was, sending nothing (core/shadows.py): the core
         keeps what it answers for graders. A shadow that can't answer now, such as one out of
@@ -473,6 +488,7 @@ class Scheduler:
                 continue
             token, answering, outcome = opened.json()["token"], opened.json()["run"], "failed"
             try:
+                self._given(token, behind | {run})  # the same words as its run, read as they
                 reply = self._worker(shadow["definition"])(self.cfg.gateway_url, token, history)
                 if reply.strip():
                     self.gw.post("/run/shadow", headers={"Authorization": f"Bearer {token}"},
@@ -578,12 +594,14 @@ class Scheduler:
         # and an event for the person it names, where the instance serves them
         outcome = "failed"
         try:
-            history = []
+            history, behind = [], set[str]()
             if person:
                 with db.transaction(self.cfg.database_url) as conn:
                     history = context.history(
                         conn, person=person, agent=agent, topic=topic,
-                        chars=opened.json().get("history_chars") or context.CHARS)
+                        chars=opened.json().get("history_chars") or context.CHARS,
+                        behind=behind)
+                self._given(token, behind - {run})  # whose words it reads, before it does
             asked = {"role": "task", "content": task, "at": datetime.now(UTC).isoformat()}
             reply = self._worker(agent)(self.cfg.gateway_url, token, [*history, asked])
             if person and not reply.strip():

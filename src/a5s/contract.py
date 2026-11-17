@@ -314,9 +314,10 @@ class DataProtection:
     # Whether the status names deciders whose approvals are graded wrong far more often than
     # others': profiling people
     flag_rubber_stamps: bool = False
-    # Whether those who author an agent may keep one of its runs as a test case: what someone
-    # said to it, masked by code and checked by its author, in the agent's folder from then
-    # (core/run_cases.py)
+    # Whether those who author an agent may keep one of its runs as a test case, where every
+    # one of them may see the run: what someone said to it, masked by code and checked by whoever
+    # keeps it, in the agent's folder from then, which every author reads, and once released, the
+    # agents' repository (core/run_cases.py)
     cases_from_runs: bool = False
     # Whether a shadow may answer what people ask the instance it shadows, beside it, sending
     # nothing: it reads what they say and what their records hold, and graders read what it

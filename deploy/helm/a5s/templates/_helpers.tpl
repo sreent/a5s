@@ -171,11 +171,12 @@ signing secret is in. */}}
 {{- end }}
 
 {{/* Each system people may connect their accounts in, as a5s reads them: its endpoints, a5s's
-client there and the scopes it asks for, never its secret. */}}
+client there, the scopes it asks for, and where the core asks whose account a token is and how
+the directory knows it, never its secret. */}}
 {{- define "a5s.delegation" -}}
 {{- $systems := list -}}
 {{- range .Values.delegation.systems -}}
-{{- $systems = append $systems (dict "name" .name "title" (.title | default .name) "authorize" .authorize "token" .token "client_id" .clientId "scopes" (.scopes | default list)) -}}
+{{- $systems = append $systems (dict "name" .name "title" (.title | default .name) "authorize" .authorize "token" .token "client_id" .clientId "scopes" (.scopes | default list) "whoami" .whoami "whose" .whose "known_as" (.knownAs | default "")) -}}
 {{- end -}}
 {{- toJson $systems -}}
 {{- end }}

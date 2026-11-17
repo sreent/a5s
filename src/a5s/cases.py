@@ -73,6 +73,11 @@ def sent_with(case: dict) -> list[dict]:
     return [dict(OUTSIDE)] if case.get("read_outside") is True else []
 
 
+# The deployment's classes of data, while a5s can't read them, such as before the settings in
+# force are sealed: a class no model is approved for, so a real case goes to the stand-in alone
+UNKNOWN = "the deployment's, not known yet"
+
+
 def for_real(classes: Any, needed: set[str]) -> bool:
     """Whether a model approved for `classes` may read a case kept from a real run: one approved
     for every class the deployment's data is, `needed`, as its runs' models are. So where it's

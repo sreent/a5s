@@ -129,7 +129,7 @@ The tests check that neither compose nor the chart sets a setting to its default
 
 | Variable | Default | Takes | What it sets |
 | --- | --- | --- | --- |
-| `A5S_DELEGATION` | none | a JSON list | The systems people may connect their own accounts in, so agents act there as them, with their permissions: a JSON list of {name, title, authorize, token, client_id, scopes}, each system's OAuth endpoints and a5s's client there |
+| `A5S_DELEGATION` | none | a JSON list | The systems people may connect their own accounts in, so agents act there as them, with their permissions: a JSON list of {name, title, authorize, token, client_id, scopes, whoami, whose, known_as}, each system's OAuth endpoints, a5s's client there, and where a5s asks whose account a token is and how the directory knows it |
 
 ### The ledger's locked copies
 

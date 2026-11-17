@@ -22,15 +22,16 @@ What each edge says is a whole sentence, in the language whoever looks reads, wi
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Callable, Iterable
 from typing import Any
 
 from a5s import db
 from a5s.config import ModelConfig
 from a5s.contract import Person, Scenario, Tool
-from a5s.core import languages, studio, words
+from a5s.core import languages, parts, studio, words
 
 # The kinds of things on the map, in the order of its columns, left to right
-KINDS = ("part", "instance", "agent", "tool", "system", "model")
+KINDS = ("part", "instance", "agent", "tool", "system", "model", "team")
 STATUS = {"active": "at work", "suspended": "suspended", "proposed": "waiting for approval",
           "shadow": "a shadow: it answers beside another, and sends nothing"}
 # Each edge, in words, whole: what depends is {from}, what it depends on {to}, which the page
@@ -46,21 +47,39 @@ SAYS = {
     "calls": "{from} calls {to}",
     "works": "{from} works in {to}, at level {level}",
     "works2": "{from} works in {to}, at level {level}, and at level 2 for {types}",
+    # Level 2 the settings set that doesn't count yet (round 14, C16): a5s's cap holds it at 1
+    # until graded samples show the type's accurate enough, or nobody who approved the settings
+    # in force owns the part now
+    "capped": ("{from} works in {to}, at level {level}; the settings set level 2 for {held}, "
+               "which a5s's cap holds at level 1 until graded samples show it's accurate "
+               "enough"),
+    "capped2": ("{from} works in {to}, at level {level}, and at level 2 for {types}; the "
+                "settings set level 2 for {held} too, which a5s's cap holds at level 1 until "
+                "graded samples show it's accurate enough"),
+    "unowned": ("{from} works in {to}, at level {level}; the settings set level 2 for {held}, "
+                "which counts only once an owner of {to} approves the settings in force"),
     "asks": "{from} may ask {to}",
     "shadows": "{from} answers beside {to}, and sends nothing",
+    "hands": "{from} may hand a conversation to {to}, whose people answer it",
 }
 ABOUT = {"mcp": "an MCP server", "records": "the scenario's own records",
          "library": "a library of documents", "events": "sends events",
          "as_person": "a system agents act in as the person, with their own permissions",
          "part": "a part of the records, which its owners decide for",
+         "team": "people who answer the conversations handed to them",
          "gone": "not in the scenario now", "unknown": "not in models.yaml"}
 
 
 def drawn(conn: db.Connection, scenario: Scenario, definitions: dict[str, Any],
           tools: dict[str, Tool], models: dict[str, ModelConfig], viewer: Person,
-          language: str = languages.ENGLISH) -> dict:
+          language: str = languages.ENGLISH, *, approved: Iterable[str],
+          caps_of: Callable[[str], dict[tuple[str, str], int]]) -> dict:
     """The map as someone may see it: each thing on it, by its kind and name, and each edge,
-    from what depends to what it depends on, saying how, in the language they read."""
+    from what depends to what it depends on, saying how, in the language they read. Level 2
+    counts where the settings set it only as a5s's caps for an instance's release
+    (`caps_of`), and the approvers of the settings in force (`approved`), let it, as policy
+    weighs it (core/parts.py): where they don't, the map says so (round 14, C16)."""
+    approved = list(approved)
     every = studio.instances(conn)
     nodes: dict[str, dict] = {}
     edges: dict[tuple[str, str], str] = {}
@@ -127,13 +146,23 @@ def drawn(conn: db.Connection, scenario: Scenario, definitions: dict[str, Any],
             there = actions.get(part) if isinstance(actions, dict) else None
             second = sorted(a for a, n in (there or {}).items() if n == 2)  # level 2's types
             target = node("part", part, say("part"), "/studio/settings")
-            if second:
+            caps = caps_of(str(inst["release"])) if second else {}
+            earned = [a for a in second if caps.get((part, a), 1) >= 2]
+            held = ", ".join(a for a in second if a not in earned)
+            if second and not parts.owned(scenario, part, approved):  # until an owner approves
+                edge(key, target, "unowned", level=level, held=", ".join(second))
+            elif held:
+                edge(key, target, "capped2" if earned else "capped", level=level,
+                     types=", ".join(earned), held=held)
+            elif second:
                 edge(key, target, "works2", level=level, types=", ".join(second))
             else:
                 edge(key, target, "works", level=level)
     shadowing = {r["id"]: r["shadows"] for r in conn.execute(
         "select id, shadows from instances where shadows is not null").fetchall()}
-    for inst in watched:  # whom each may ask, and answers beside, of the instances they may see
+    for inst in watched:  # whom each may ask, and answers beside, of the instances they may see,
+        for team in sorted(inst.get("hands_to") or []):  # and the teams it may hand to
+            edge(f"instance:{inst['id']}", node("team", team, say("team")), "hands")
         for asked in inst["asks"] or []:
             if f"instance:{asked}" in nodes:
                 edge(f"instance:{inst['id']}", f"instance:{asked}", "asks")

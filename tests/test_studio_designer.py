@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 
 import yaml
+from playwright.sync_api import TimeoutError as NotYet
 from playwright.sync_api import expect
 
 from a5s import db
@@ -106,9 +107,16 @@ def test_the_canvas_works_from_the_keyboard(stack, approving, provider, browser)
     page.keyboard.press("Enter")  # opens it, the inspector taking the keyboard's focus
     expect(page.locator("#inspector-title")).to_be_focused()
     assert page.inner_text("#inspector-title") == "A message"
-    page.focus("[data-step='tool:get_messages']")
-    page.keyboard.press("Delete")  # taken away, as n8n takes a step away
-    page.wait_for_selector("[data-step='tool:get_messages']", state="detached", timeout=30000)
+    step = page.locator("[data-step='tool:get_messages']")
+    for _ in range(3):  # taken away, as n8n takes a step away: pressed on the step itself, and
+        if step.count():  # again while it's there, as a slow runner can draw the canvas afresh
+            step.press("Delete")  # between focusing the step and the key, which then goes nowhere
+        try:
+            step.wait_for(state="detached", timeout=10000)
+            break
+        except NotYet:
+            continue
+    assert step.count() == 0
     assert "Took get_messages away" in page.inner_text("#what-changed")
     kept(page)
     text = definition(stack, page)

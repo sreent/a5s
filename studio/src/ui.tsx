@@ -175,6 +175,19 @@ export function triggers(agent: Pick<AgentUses, "triggers"> & Partial<Pick<Agent
 
 // Words and numbers
 
+/** An amount in the currency models.yaml prices models in, or a plain figure where it names none:
+ * to the cent, or to two figures below a cent, so a cheap model's month isn't shown as nothing. */
+export function money(n: number, currency: string | null | undefined): string {
+  const digits: Intl.NumberFormatOptions = n !== 0 && Math.abs(n) < 0.01
+    ? { maximumSignificantDigits: 2 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 };
+  return currency ? n.toLocaleString(locale(), { style: "currency", currency, ...digits })
+    : n.toLocaleString(locale(), digits);
+}
+
+/** Someone's initials, for their avatar, as a person's, never an agent's. */
+export const initials = (name: string) => name.split(/\s+/).filter(Boolean).slice(0, 2)
+  .map((w) => w[0].toUpperCase()).join("");
+
 export const plural = (n: number, one: string, many = `${one}s`) =>
   language() === "th" ? `${n.toLocaleString(locale())} ${TH_NOUNS[one] ?? one}` : `${n.toLocaleString()} ${n === 1 ? one : many}`;
 export const people = (n: number) => plural(n, "person", "people");
@@ -229,5 +242,55 @@ export function WaitList({ waiting, none }: { waiting: Wait[]; none: string }) {
         {w.why.length > 0 && <ul className="plain faint">{w.why.map((why) => <li key={why}>{why}</li>)}</ul>}
       </li>
     ))}</ul>
+  );
+}
+
+/** After an act, where the keyboard goes next, once the page shows what the act changed (round
+ * 14, E-L1): the first of these on the page, looked for until it's drawn, which takes the focus
+ * as a control does, or as a heading or a note can, so the keyboard never falls back to the
+ * page's start, where an act's button that's gone leaves it. */
+export function focusNext(...selectors: string[]): void {
+  let tries = 0;
+  const look = () => {
+    for (const selector of selectors) {
+      const found = document.querySelector<HTMLElement>(selector);
+      if (found) {
+        if (!found.matches("a[href], button, input, select, textarea, [tabindex]")) found.tabIndex = -1;
+        found.focus();
+        return;
+      }
+    }
+    if ((tries += 1) < 50) setTimeout(look, 100);
+  };
+  setTimeout(look, 0);
+}
+
+/** A canvas, or the same as a list: a page that draws something on a canvas, such as an agent's
+ * designer or the map, shows it as a list on a narrow screen, where a canvas is too small to read
+ * or to tap (round 14, E-L8), or as someone chose last on this browser. */
+export type View = "canvas" | "list";
+const NARROW = "(max-width: 56rem)";
+
+export function useView(kept: string): [View, (v: View) => void] {
+  const [shown, setShown] = useState<View>(() => {
+    try {
+      const was = window.localStorage.getItem(kept);
+      if (was === "canvas" || was === "list") return was;
+    } catch { /* a browser that keeps nothing starts afresh */ }
+    return window.matchMedia?.(NARROW).matches ? "list" : "canvas";
+  });
+  return [shown, (v: View) => {
+    setShown(v);
+    try { window.localStorage.setItem(kept, v); } catch { /* as above */ }
+  }];
+}
+
+/** Canvas or list, a choice of views, as Ocean's FlowList has it: `canvas` names the canvas. */
+export function Views({ shown, show, canvas }: { shown: View; show: (v: View) => void; canvas: string }) {
+  return (
+    <div className="modes" role="group" aria-label={t("Show it")}>
+      <button type="button" aria-pressed={shown === "canvas"} onClick={() => show("canvas")}>{canvas}</button>
+      <button type="button" aria-pressed={shown === "list"} onClick={() => show("list")}>{t("List")}</button>
+    </div>
   );
 }

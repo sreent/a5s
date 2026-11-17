@@ -14,17 +14,26 @@ its type before it, among the calls read. It's read in the channels app, which d
 it shows a5s's caps as the core sealed them (core/samples.py), and the gateway decides every call
 itself, as ever.
 
-What it can't know, it says: each call is decided as the directory, the agents' releases, the
-records' parts and a5s's caps stand now, and a change someone asked for of their own records
+What it can't know, it says: it decides the agents' tool calls again and nothing else, so it
+names what else a version changes that it doesn't decide again, such as whom an instance serves
+or which models may answer; each call is decided as the directory, the agents' releases, the
+records' parts and a5s's caps stand now; and a change someone asked for of their own records
 counts as theirs only where the decision recorded shows it was.
+
+Each preview takes a few seconds of the channels app's processor, so it's worked out once for a
+version, a reader and the ledger as it stands, kept a few minutes, and only so many at once.
 """
 
 from __future__ import annotations
 
+import copy
+import hashlib
 import json
 import logging
 import re
-from collections import Counter, defaultdict
+import threading
+import time
+from collections import Counter, OrderedDict, defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any
@@ -49,9 +58,30 @@ NOT_POLICY = frozenset({"arguments-fit-the-schema", "records-are-named-by-key",
 # Whom a run for nobody counts against, of the type of action's limit for each person in 30
 # days: its instance, among its other runs for nobody, as core/counts.py counts them
 NOBODY = "\0"
-ABOUT = ("Each call is decided as the directory, the agents' releases, the records' parts and "
-         "a5s's caps stand now. A change someone asked for of their own records counts as theirs "
-         "only where the decision recorded shows it was.")
+ABOUT = ("It decides again the agents' tool calls, and nothing else: not which models may "
+         "answer, whom an instance serves, whom it asks or hands conversations to, or what "
+         "shadows do. Each call is decided as the directory, the agents' releases, the records' "
+         "parts and a5s's caps stand now. A change someone asked for of their own records counts "
+         "as theirs only where the decision recorded shows it was.")
+# What a version changes that it doesn't decide again, in words (round 14)
+UNDECIDED = {
+    "classes": ("It changes the classes of data, which decide which models may answer: it "
+                "doesn't decide the agents' model calls again."),
+    "serves": "It changes whom {instance} serves, which it doesn't decide again.",
+    "asks": "It changes whom {instance} may ask, which it doesn't decide again.",
+    "hands_to": "It changes whom {instance} may hand conversations to, which it doesn't decide again.",
+    "shadows": "It changes what {instance} shadows, which it doesn't decide again.",
+    "spending": ("It changes what agents may spend, which decides when they stop for the month: "
+                 "it doesn't decide that again."),
+    "choices": "It changes the data protection officer's choices, which it doesn't decide again.",
+}
+KEEP = 300  # seconds a preview is kept for whoever saw it, while the ledger stays as it was
+KEPT_MOST = 64  # previews kept at once, the latest
+AT_ONCE = 2  # previews worked out at once in each process: each takes a few seconds of it
+WAIT = 30  # seconds one waits its turn, at most: past it, a review shows without it
+_kept: OrderedDict[tuple[str, ...], tuple[float, dict[str, Any]]] = OrderedDict()
+_keeping = threading.Lock()
+_working = threading.BoundedSemaphore(AT_ONCE)
 
 
 @dataclass(frozen=True)
@@ -90,6 +120,8 @@ def preview(conn: db.Connection, gw: Any, before: Settings | None, after: Settin
         return shown[release]
 
     in_force = list(gw.approvers_in_force(conn))
+    carried = [a for a in in_force if a not in approvers] if registry.narrowed(  # a version
+        after, before) is not None else []  # that only narrows keeps the approvals before it
     tools = gw.scenario.tools()
     made: Counter[tuple[str, str]] = Counter()  # (piece of work, type): records made or held
     asked: dict[tuple[str, str], list[tuple[datetime, int]]] = defaultdict(list)  # (person, type)
@@ -110,7 +142,7 @@ def preview(conn: db.Connection, gw: Any, before: Settings | None, after: Settin
                     asked[(person, action)].append((call.at, weight))
             continue
         decisions = []
-        for settings, approved in ((before, in_force), (after, approvers)):
+        for settings, approved in ((before, in_force), (after, [*approvers, *carried])):
             over = action is not None and _over(settings, action, weight, work, whom, call,
                                                made, asked)
             decisions.append(_decide(gw, tool, call, settings, approved, caps_of, over, memo))
@@ -128,6 +160,7 @@ def preview(conn: db.Connection, gw: Any, before: Settings | None, after: Settin
             for person in whom:
                 asked[(person, action)].append((call.at, weight))
     return {"days": DAYS, "calls": decided, "limited": limited, "about": ABOUT, "hidden": hidden,
+            "beyond": [said.format(**values) for said, values in undecided(before, after)],
             "capped": capped(gw, before, after, caps_of),
             "shifts": [{"instance": i, "tool": t, "parts": list(p), "was": w, "would": n,
                         "calls": c, "why": why[(i, t, p, w, n)]}
@@ -135,23 +168,74 @@ def preview(conn: db.Connection, gw: Any, before: Settings | None, after: Settin
                                                         key=lambda s: (-s[1], s[0]))]}
 
 
+def undecided(before: Settings | None, after: Settings) -> list[tuple[str, dict[str, str]]]:
+    """What a version changes from the one in force that the preview doesn't decide again,
+    each as its words and what goes in them: such as whom an instance serves."""
+    if before is None:
+        return []
+    found: list[tuple[str, dict[str, str]]] = []
+    if (before.data_class, before.classified) != (after.data_class, after.classified):
+        found.append((UNDECIDED["classes"], {}))
+    was = {i.id: i for i in before.instances}
+    for inst in after.instances:
+        if (then := was.get(inst.id)) is None:
+            continue  # a new instance has made no calls to decide again
+        found += [(UNDECIDED[name], {"instance": inst.id})
+                  for name in ("serves", "asks", "hands_to", "shadows")
+                  if getattr(then, name) != getattr(inst, name)]
+    if before.spending != after.spending:
+        found.append((UNDECIDED["spending"], {}))
+    if before.data_protection != after.data_protection:
+        found.append((UNDECIDED["choices"], {}))
+    return found
+
+
+def _digest(settings: Settings | None) -> str:
+    if settings is None:
+        return "none"
+    return hashlib.sha256(settings.raw or repr(settings).encode()).hexdigest()
+
+
 def shown(gw: Any, before: Settings | None, after: Settings,
           viewer: Person) -> dict[str, Any] | None:
     """The preview, for a page, as `viewer` may see it: read in its own transaction, as
     whoever'd approve `after` would see it approved; None if it can't be worked out, which a
-    review still shows without, as it's what the version says that people approve."""
+    review still shows without, as it's what the version says that people approve. It's
+    worked out once for a version, its reader and the ledger as it stands, and kept KEEP
+    seconds, AT_ONCE at a time (round 14)."""
     needed = [p.id for p in registry.approvers(after, gw.scenario.holders, before,
                                                memberships.rooted(gw.scenario).holders)]
     try:
         with db.transaction(gw.url) as conn:
             language = languages.of(conn, viewer)
-            found = preview(conn, gw, before, after, needed, gw.clock(), viewer)
+            head = (conn.execute("select encode(hash, 'hex') as head from ledger order by seq "
+                                 "desc limit 1").fetchone() or {"head": ""})["head"]
+        key = (_digest(after), _digest(before), viewer.id, language, head)
+        with _keeping:
+            kept = _kept.get(key)
+        if kept is not None and time.monotonic() - kept[0] < KEEP:
+            return copy.deepcopy(kept[1])
+        if not _working.acquire(timeout=WAIT):  # as others are worked out: it shows without
+            log.warning("a preview of a version waited longer for its turn than a5s gives one")
+            return None
+        try:
+            with db.transaction(gw.url) as conn:
+                found = preview(conn, gw, before, after, needed, gw.clock(), viewer)
+        finally:
+            _working.release()
     except Exception:  # a preview is help, never a reason to refuse a review
         log.exception("couldn't work out what a version of the settings would do")
         return None
     found["about"] = words.say(language, ABOUT)  # in the language they read, as its why
     for shift in found["shifts"]:  # is, where a5s has it in their language
         shift["why"] = words.translated(language, shift["why"])
+    found["beyond"] = [words.say(language, said, **values)
+                       for said, values in undecided(before, after)]
+    with _keeping:
+        _kept[key] = (time.monotonic(), copy.deepcopy(found))
+        _kept.move_to_end(key)
+        while len(_kept) > KEPT_MOST:
+            _kept.popitem(last=False)
     return found
 
 

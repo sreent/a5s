@@ -8,6 +8,7 @@ from dataclasses import replace
 from pathlib import Path
 
 import httpx
+from playwright.sync_api import expect
 
 from a5s import db
 from a5s.config import Prices
@@ -126,14 +127,16 @@ def test_the_studio_and_the_web_chat_speak_thai_to_those_who_read_it(stack, appr
     accessible(page)
     page.goto(f"{approving}/studio/spending")
     page.wait_for_selector("#part-billing .cost-bars", timeout=30000)
-    assert page.inner_text("h1") == "ค่าใช้จ่าย"
+    assert page.inner_text("h1") == "ค่าใช้จ่าย" and "UTC" in page.inner_text("#utc")
     assert "งบประมาณ" in page.inner_text("#part-billing")
     accessible(page)
     # Back to English on their own page, and the studio speaks it at once
     page.goto(f"{approving}/studio/you")
     page.wait_for_selector("#language input[value=en]", timeout=30000)
+    assert page.eval_on_selector("#language label", "el => getComputedStyle(el).display") == "flex"
     page.check("#language input[value=en]")
     page.wait_for_selector("h1 >> text=What you may do", timeout=30000)
+    expect(page.locator("#language input[value=en]")).to_be_focused(timeout=10000)  # the studio drawn again in it, the keyboard on the choice
     assert page.get_attribute("html", "lang") == "en"
     page.check("#language input[value=th]")
     page.wait_for_selector("h1 >> text=สิ่งที่คุณทำได้", timeout=30000)
@@ -178,7 +181,8 @@ def test_a5s_writes_its_own_words_in_the_language_someone_reads(stack, approving
     as_person(approving, provider, "ana", "POST", "/studio/api/you/language", {"language": "th"})
     waiting = as_person(approving, provider, "ana", "GET", "/studio/api/home").json()["waiting"]
     [spent] = [w for w in waiting if w["kind"] == "spending"]
-    assert spent["what"].startswith("billing ใช้ไปแล้ว") and "เกินงบประมาณ" in spent["what"]
+    assert spent["what"].startswith("billing ใช้ไปแล้ว")  # past the budget it set, never
+    assert "เกินงบ\u2060ประมาณที่ตั้งไว้" in spent["what"]  # read as the overage (round 14)
     assert spent["why"] == ["คุณเป็นเจ้าของ billing"]
     roles = as_person(approving, provider, "ana", "GET", "/studio/api/you").json()["roles"]
     owner = next(r for r in roles if r["role"] == "part-owner:billing")
@@ -186,3 +190,30 @@ def test_a5s_writes_its_own_words_in_the_language_someone_reads(stack, approving
     # Ben reads English still
     ben = as_person(approving, provider, "ben", "GET", "/studio/api/you").json()["roles"]
     assert all(not re.search(r"[฀-๿]", r["may"]) for r in ben)
+
+
+def test_a_moment_is_written_as_its_reader_reads_one():
+    """Round 14 (E-L3): until when, as someone reads a moment: in Thai by its month's Thai name
+    and the Buddhist era's year, and in their own time zone, which it names."""
+    from datetime import UTC, datetime
+    at = datetime(2026, 11, 18, 7, 8, tzinfo=UTC)
+    assert languages.when(at, "en") == "18 Nov 2026, 07:08 UTC"
+    assert languages.when(at, "en", "Asia/Bangkok") == "18 Nov 2026, 14:08 UTC+07"
+    assert languages.when(at, "th", "Asia/Bangkok") == "18 พ.ย. 2569 เวลา 14:08 น. (UTC+07)"
+    assert languages.when(at, "en", "Europe/London") == "18 Nov 2026, 07:08 GMT"
+    assert languages.when(at, "en", "Not/A_Zone") == "18 Nov 2026, 07:08 UTC"  # as UTC
+
+
+def test_a_group_reads_a5s_in_the_language_everyone_in_it_reads(stack):
+    """Round 14 (E-L4): a5s writes to a group chat in the language its members all read, if
+    they all read one, and in English if not."""
+    people = stack.gateway.scenario
+    ana, ben = people.person("ana"), people.person("ben")
+    with db.transaction(stack.admin) as conn:
+        assert languages.shared(conn, [ana, ben]) == "en"
+        for who in (ana, ben):
+            languages.choose(conn, who, "th", stack.gateway.clock())
+        assert languages.shared(conn, [ana, ben]) == "th"
+        assert languages.shared(conn, [ana, ben, None]) == "en"  # someone a5s doesn't know
+        languages.choose(conn, ben, "en", stack.gateway.clock())
+        assert languages.shared(conn, [ana, ben]) == "en"

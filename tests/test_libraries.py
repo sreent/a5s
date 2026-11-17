@@ -504,7 +504,8 @@ def test_an_agent_given_a_library_only_a5s_reader_reads_can_ask_it(tmp_path):
 # Through the core, as a run reads them
 
 DELEGATION = [{"name": "entra", "title": "Microsoft 365", "authorize": "https://login.example.test/authorize",
-               "token": "https://login.example.test/token", "client_id": "a5s-test"}]
+               "token": "https://login.example.test/token", "client_id": "a5s-test",
+               "whoami": "https://graph.example.test/v1.0/me", "whose": "id", "known_as": "entra"}]
 
 
 @pytest.fixture
@@ -660,3 +661,96 @@ def test_the_chart_keeps_each_docs_repository_current_beside_the_core():
     assert {"name": "libraries", "emptyDir": {}} in pod(kept)["volumes"]
     assert [c["name"] for c in containers(gateway("ci-values.yaml"))] == ["gateway"]  # else alone
 
+
+
+def test_a_run_that_read_what_only_its_person_may_is_on_no_one_elses_page(stack, approving,
+                                                                          provider):
+    """Round 14 (D1): a run for Ben that read a document only he may read is on no page of
+    Ana's, though she owns the assistant and may see its records: not its own, nor the case it
+    would make. The agent never reads who may read it: a5s keeps that for the run."""
+    from test_run_cases import agreed, as_person, owning
+    document(stack.cfg.root / "libraries" / "runbooks", "ben-review.md",
+             "Ben's review: a 12% rise from 1 January, and the written warning of March stands.",
+             people=["ben"])
+    owning(stack)
+    agreed(stack)
+    stack.model.reply(None, ("read_runbooks", {"id": "ben-review.md"}))
+    stack.model.reply("Your review gives you a 12% rise from 1 January; the written warning "
+                      "of March stands.")
+    stack.say("What does my review say?", person="ben")
+    assert "a5s_readers" not in json.dumps(stack.model.requests[-1]["body"])
+    with db.transaction(stack.admin) as conn:
+        run = conn.execute("select id::text as id from runs order by opened_at desc limit 1"
+                           ).fetchone()["id"]
+        readers = [r["rule"] for r in conn.execute("select rule from run_readers where "
+                                                   "run_id = %s", (run,))]
+    assert readers == ['{"people":["ben"]}']
+    for path in (f"/studio/api/runs/{run}", f"/studio/api/runs/{run}/case"):
+        assert as_person(approving, provider, "ana", "GET", path).status_code == 404, path
+
+
+
+def test_a_run_nobody_asked_for_reads_no_library(stack):
+    """Round 14 (A-M1): a run nobody asked for, such as an event's, which whoever holds the
+    system's secret can start, reads no library for the person it names, even one read by its
+    documents' own readers: only what they ask themselves does."""
+    from dataclasses import replace
+
+    from a5s.core import inbox
+    from a5s.core.events import EventsConfig, Source
+    from a5s.definitions import Event
+    from conftest import free_port, serve
+    from test_events import OPENED, SECRET, SOURCE, TASK, send
+
+    assistant = stack.gateway.definitions["assistant"]
+    stack.gateway.definitions["assistant"] = assistant.model_copy(update={"events": [
+        Event(type="question-opened", source=SOURCE, task=TASK)]})
+    stack.gateway.events = EventsConfig((Source(SOURCE, SECRET),))
+    endpoint = replace(stack.gateway, cfg=stack.as_role("channels"))
+    with serve(inbox.create_app(endpoint), free_port()) as url:
+        assert send(f"{url}/channels/events/{SOURCE}", {
+            **OPENED, "records": ["Q-1001"], "person": "ana"}).status_code == 202
+    stack.model.reply(None, ("read_runbooks", {"id": "month-end.md"}))
+    stack.model.reply("Done.")
+    assert stack.scheduler().work_due() == 1
+    assert "Month end closes" not in json.dumps(stack.model.requests[1]["body"]["messages"])
+    [denied] = [e for e in stack.ledger() if e.get("action") == "read_runbooks"]
+    assert denied["decision"] == "deny" and denied["reasons"] == ["acts-as-nobody-unasked"]
+
+
+class Sessions(Wiki):
+    """A Confluence Data Center that, as a server with sessions does, sets a session cookie on
+    each answer, and notes the cookie each request brought, with whose token it came."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.brought: list[tuple[str, str]] = []
+
+    def app(self) -> FastAPI:
+        app = super().app()
+
+        @app.middleware("http")
+        async def session(request: Request, call_next: Any) -> Any:
+            person = self.whose(request) or ""
+            self.brought.append((person, request.headers.get("cookie", "")))
+            answer = await call_next(request)
+            answer.set_cookie("JSESSIONID", f"session-of-{person}")
+            return answer
+
+        return app
+
+
+def test_a_session_a_system_opens_for_one_person_never_goes_with_anothers_request():
+    """Round 14 (A-M4): the libraries' one client keeps no cookie, so a session a system opens
+    for one person, which it might honour before a token, never goes with the next person's
+    request: each is theirs by their own token alone."""
+    wiki = Sessions()
+    with serve(wiki.app(), free_port()) as url:
+        center = shelf("runbooks", delegated=connected("ana", "ben"), title="Runbooks",
+                       kind="confluence", site="https://wiki.example.test",
+                       api=f"{url}/confluence", space="OPS", edition="data-center",
+                       as_person="atlassian", outside=False)  # through the core's own client
+        assert "error" not in center["read_runbooks"].run(call("ana", id="1002"))
+        assert "error" not in center["read_runbooks"].run(call("ben", id="1001"))
+    assert {who for who, _ in wiki.brought} == {"ana", "ben"}
+    assert [cookie for _, cookie in wiki.brought] == [""] * len(wiki.brought)

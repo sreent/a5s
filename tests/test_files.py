@@ -5,6 +5,7 @@ answered (core/files.py)."""
 
 import base64
 import json
+import threading
 import time
 import uuid
 from dataclasses import replace
@@ -456,3 +457,116 @@ def test_a_web_chat_message_says_at_most_so_much(stack):
     assert too_long.status_code == 422
     with db.transaction(stack.admin) as conn:
         assert conn.execute("select count(*) as n from inbound").fetchone()["n"] == 0
+
+
+# Round 14: what a5s reads, and keeps, of the files people send
+
+def test_a_pdf_made_to_take_all_the_memory_it_can_is_stopped_within_its_own(monkeypatch):
+    """Round 14 (A-M5): a PDF of a few kilobytes can make its reader take hundreds of megabytes,
+    so a5s's reader reads one in a process that may take 256 MB at most, whatever the PDF makes
+    it do, and says it couldn't read it, rather than let a few sent at once take the core's
+    memory with them. An ordinary one reads as before."""
+    invoice = pdf("Invoice INV-4471 for 860.00")
+    assert files.read(invoice, files.PDF) == ("Invoice INV-4471 for 860.00", None, None)
+    greedy = files._LIMITED + (  # as a PDF made to unpack to 400 MB would
+        "taken = bytearray(400 * 1024 * 1024)\n"
+        'sys.stdout.write(\'{"text": "read", "pages": 1, "read": 1}\')\n')
+    monkeypatch.setattr(files, "_PDF", greedy)
+    assert files.read(invoice, files.PDF) == ("", None, "a5s couldn't read this PDF")
+
+
+def test_a_pdf_waits_its_turn_while_others_are_read(monkeypatch):
+    """Round 14 (A-M5): each of the core's processes reads two PDFs at once at most: one more
+    waits its turn, and, if it waits too long, a5s says to ask about it again."""
+    assert files.PDF_AT_ONCE == 2
+    busy = threading.BoundedSemaphore(1)
+    monkeypatch.setattr(files, "READING", busy)
+    monkeypatch.setattr(files, "PDF_WAIT", 0.2)
+    invoice = pdf("Invoice INV-4471 for 860.00")
+    busy.acquire()  # as the two others being read hold it
+    try:
+        assert files.read(invoice, files.PDF) == ("", None, files.BUSY)
+    finally:
+        busy.release()
+    assert files.read(invoice, files.PDF)[0] == "Invoice INV-4471 for 860.00"
+
+
+def test_an_image_pasted_in_teams_is_kept_and_known_by_its_own_bytes():
+    """Round 14 (A-M6): Teams calls an image someone pasted only `image/*`, so a5s keeps it, and
+    knows which kind it is by its own bytes, once it has them."""
+    cfg = TeamsConfig(bots=(TeamsBot("assistant", "a5s-bot-app", "bot-secret"),),
+                      tenant_id="0a5a7e17-0000-4000-8000-000000000001", service_hosts=("smba.test",))
+    chat = Teams(cfg, httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(500))))
+    [pasted] = chat.sent({"attachments": [
+        {"contentType": "image/*", "contentUrl": "https://smba.test/v3/attachments/1/views/original"},
+        {"contentType": "text/html", "content": '<div><img src="https://smba.test/v3/x"></div>'}]},
+        cfg.bots[0])
+    assert (pasted.name, pasted.media_type, files.refused(pasted)) == (
+        "a pasted image", "image/*", None)
+    assert files.kind(PNG, "image/*") == "image/png"
+    assert files.kind(b"\xff\xd8\xff\xe0" + bytes(16), "image/png") == "image/jpeg"
+    assert files.kind(b"RIFF\x10\x00\x00\x00WEBPVP8 ", "image/*") == "image/webp"
+
+
+def test_an_image_a_chat_calls_only_an_image_goes_to_the_model_as_what_it_is(stack):
+    """Round 14 (A-M6): end to end, an image whose chat called it only `image/*` goes to a model
+    approved for images as the PNG its bytes say it is."""
+    approve_images(stack)
+    r = send(stack, "What's this error?", ("a pasted image", "image/*", PNG))
+    stack.model.reply(None, ("ask_about", {"document": "D-1", "question": "What does it say?"}))
+    stack.model.reply("It says the disk is full.")  # the reader, looking at the image
+    stack.model.reply("Your screenshot says the disk is full.")
+    assert answered(stack, r.json()["message"]) == "Your screenshot says the disk is full."
+    assert images_sent(stack) == ["data:image/png;base64," + base64.b64encode(PNG).decode()]
+    with db.transaction(stack.admin) as conn:
+        [kept_as] = conn.execute("select media_type from run_documents").fetchall()
+    assert kept_as["media_type"] == "image/png"
+
+
+def test_an_image_whose_bytes_are_none_a5s_reads_goes_to_no_model(stack):
+    """Round 14 (A-M6): what a chat calls an image, but whose bytes are none a5s reads, goes to
+    no model as one: a5s's reader says it can't read it."""
+    approve_images(stack)
+    r = send(stack, "What's this?", ("screen.png", "image/png", b"not an image at all"))
+    stack.model.reply(None, ("ask_about", {"document": "D-1", "question": "What does it say?"}))
+    stack.model.reply("a5s says it isn't an image it can read.")  # the reader, from a5s's words
+    stack.model.reply("I couldn't open that one: what does it show?")
+    answered(stack, r.json()["message"])
+    assert images_sent(stack) == []
+    assert files.UNSEEN in json.dumps(stack.model.requests[1]["body"])
+
+
+def test_the_web_chat_takes_a_file_by_its_name_where_the_browser_names_none_a5s_reads(stack):
+    """Round 14 (A-L1): a browser on Windows says nothing of a .md file's kind, and calls a .csv
+    Excel's where Excel is installed: the web chat takes either by its name, and so does a5s."""
+    assert send(stack, "Notes", ("notes.md", "", b"# Notes\nThe total is 860.00\n")).status_code == 202
+    assert send(stack, "Costs", ("costs.csv", "application/vnd.ms-excel", CSV)).status_code == 202
+    assert sorted((f["name"], f["media_type"], f["refused"]) for f in kept(stack)) == [
+        ("costs.csv", "text/csv", None), ("notes.md", "text/markdown", None)]
+
+
+def test_a5s_holds_so_many_of_someones_messages_with_files_unanswered(stack):
+    """Round 14 (A-M7): the web chat's files wait in a5s's database until a day after they're
+    answered, so it holds three of someone's messages with files unanswered at most: one more
+    is refused, with why, while their words, and others' files, are taken."""
+    for n in range(inbox.WAITING_FILES):
+        assert send(stack, f"Page {n}", (f"page-{n}.txt", "text/plain", b"more")).status_code == 202
+    refused = send(stack, "And this", ("page-9.txt", "text/plain", b"more"))
+    assert refused.status_code == 429
+    assert refused.json()["detail"] == ("a5s holds 3 of your messages with files that wait for "
+                                        "an answer: send more once it has answered them")
+    assert send(stack, "Just words").status_code == 202
+    assert send(stack, "Mine", ("mine.txt", "text/plain", b"more"), person="ben").status_code == 202
+
+
+def test_a5s_keeps_so_many_megabytes_of_someones_files_a_day(stack):
+    """Round 14 (A-M7): and 40 MB of their files a day, however many of them it has answered."""
+    blob = b"x" * (4 * 1024 * 1024)
+    for n in range(10):
+        assert send(stack, f"Scan {n}", (f"scan-{n}.txt", "text/plain", blob)).status_code == 202
+        with db.transaction(stack.admin) as conn:  # answered, as a run opens for each
+            conn.execute("update inbound set answered_at = now() where answered_at is null")
+    refused = send(stack, "One more", ("scan-10.txt", "text/plain", blob))
+    assert refused.status_code == 429
+    assert refused.json()["detail"] == ("you've sent 40 MB of files here today, and a5s keeps "
+                                        "40 MB of them a day: send more tomorrow")

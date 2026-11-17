@@ -462,12 +462,12 @@ def undone(conn: db.Connection, keys: tuple[str, ...], scenario: str, change: di
     graded = []
     kind = "proposal" if change["proposal_id"] else "action"
     for part in change["parts"]:
-        row = conn.execute(
+        row = conn.execute(  # the sample of this change, of its record: never another's
             "select * from samples where scenario = %s and run_id = %s and part = %s and "
-            "action = %s and kind = %s and proposal_id is not distinct from %s "
+            "action = %s and kind = %s and proposal_id is not distinct from %s and records ? %s "
             "order by id limit 1 for update",
             (scenario, change["run_id"], part, change["action"], kind,
-             change["proposal_id"])).fetchone()
+             change["proposal_id"], change["record"])).fetchone()
         if row is None:  # never drawn: it counts all the same
             row = conn.execute(
                 "insert into samples (scenario, kind, proposal_id, run_id, instance_id, release, "

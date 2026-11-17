@@ -343,12 +343,17 @@ NAMING = {
                             "more often than others'."),
                            ("The status names no decider for how often their approvals are "
                             "graded wrong.")),
-    "cases_from_runs": (("Those who author an agent may keep one of its runs as a test case: "
-                         "what someone said to it, masked by code and checked by its author."),
+    "cases_from_runs": (("Those who author an agent may keep one of its runs as a test case, "
+                         "where every one of them may see the run: what someone said to it, "
+                         "masked by code and checked by whoever keeps it. Every author of the "
+                         "agent reads it, and once it's released, so does everyone who reads the "
+                         "agents' repository."),
                         ("No run of an agent's becomes a test case: its cases are made up.")),
     "shadow_runs": (("A shadow may answer what people ask the instance it shadows, beside it, "
                      "sending and changing nothing: it reads what they say and what their records "
-                     "hold, and graders read what it answered beside what was sent."),
+                     "hold, and graders read what it answered beside what was sent, with "
+                     "what they said, masked by code unless names are shown, as the studio shows "
+                     "runs."),
                     ("No shadow answers what people ask: a new version is tried on test cases "
                      "alone.")),
 }

@@ -9,7 +9,7 @@ import { useToast } from "./design";
 import { t } from "./i18n";
 import { Icon } from "./icons";
 import { Link } from "./router";
-import { plural, sentence, useLoad, when } from "./ui";
+import { initials, plural, sentence, useLoad, when } from "./ui";
 
 const GRADES = ["right", "wrong", "critical"] as const;
 // Each grade in words, and how many were given it, in the language spoken whenever they're read
@@ -28,7 +28,7 @@ function Answer({ answer, grade }: { answer: gen.SaidWrong; grade: (answer: gen.
       <div className="approval-stripe" />
       <div className="approval-body">
         <div className="who">
-          <span className="avatar agent" aria-hidden="true"><Icon name="agent" /></span>
+          <span className="avatar" aria-hidden="true">{answer.by ? initials(answer.by) : <Icon name="people" />}</span>
           <span>
             <span className="who-name">{answer.by ? t("{person} said this was wrong", { person: answer.by }) : t("Someone it served said this was wrong")}</span>
             <span className="who-about">{`${t("in {chat}, {when}", { chat: CHATS[answer.channel] ?? answer.channel, when: when(answer.at) })}${answer.instance ? ` · ${answer.instance}` : ""}`}</span>
@@ -92,7 +92,7 @@ export function SaidWrong({ agent }: { agent: string }) {
           ? t("Nobody has said any of its answers was wrong. People say so with a 👎 in Slack or Matrix, Teams' buttons on an answer, or the web chat's.")
           : waits(data.waiting, graded)}
       </p>
-      {data.answers.map((answer) => <Answer key={answer.id} answer={answer} grade={grade} />)}
+      <div className="said-wrong-list">{data.answers.map((answer) => <Answer key={answer.id} answer={answer} grade={grade} />)}</div>
       {data.hidden > 0 && (
         <p className="note">{t("And {more} from runs you may not see, which someone who may see their records can check.", { more: plural(data.hidden, "more", "more") })}</p>
       )}

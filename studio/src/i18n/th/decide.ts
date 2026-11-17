@@ -157,6 +157,8 @@ export const DECIDE: Record<string, string> = {
   "What's missing": "สิ่งที่ยังขาด",
   "The whole version, as it would be": "ทั้งเวอร์ชัน ตามที่จะมีผลบังคับใช้",
   "Approve version {serial}": "อนุมัติเวอร์ชัน {serial}",
+  "What a version changes, and the whole of it, are in English, as a5s works them out from the settings: read them before you approve.":
+    "สิ่งที่เวอร์ชันเปลี่ยนและเนื้อหาทั้งหมดของเวอร์ชันเป็นภาษาอังกฤษ ตามที่ a5s สรุปจากการตั้งค่า: โปรดอ่านก่อนอนุมัติ",
   "Approve only if you mean these changes. Approving signs you in again, for this version alone, and only once.":
     "อนุมัติเฉพาะเมื่อคุณตั้งใจให้เกิดการเปลี่ยนแปลงเหล่านี้ การอนุมัติจะให้คุณลงชื่อเข้าใช้อีกครั้งสำหรับเวอร์ชันนี้เท่านั้น และได้เพียงครั้งเดียว",
 

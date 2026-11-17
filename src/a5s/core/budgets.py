@@ -121,8 +121,9 @@ def spent(conn: db.Connection, scenario: Scenario, budget: Budget, run: dict, to
         "on conflict (instance_id, person, day) do update set tokens = spend.tokens + excluded.tokens "
         "returning tokens, warned_at", (run["id"], person, day_of(scenario, person, now), tokens)
     ).fetchone()
-    if not person or row["warned_at"] or row["tokens"] < WARN * budget.per_person_per_day:
-        return None
+    if row is None or not person or scenario.person(person) is None or row["warned_at"] or (
+            row["tokens"] < WARN * budget.per_person_per_day):  # nobody to warn, such as a
+        return None  # system's events' own day (core/events.py)
     conn.execute("update spend set warned_at = %s where instance_id = %s and person = %s "
                  "and day = %s", (now, run["id"], person, day_of(scenario, person, now)))
     return {"person": person, "used": row["tokens"], "budget": budget.per_person_per_day}

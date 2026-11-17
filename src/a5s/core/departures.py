@@ -140,6 +140,10 @@ def rename(conn: db.Connection, person: str, now: datetime) -> str:
                  "where %s = any(heard_by)", (person, name, person))
     conn.execute("update answer_feedback set graded_by = %s where graded_by = %s",
                  (name, person))  # whose grades they were, as their archive's
+    conn.execute("update shadow_answers set acts_for = array_replace(acts_for, %(p)s, %(n)s), "
+                 "graded_by = case when graded_by = %(p)s then %(n)s else graded_by end "
+                 "where %(p)s = any(acts_for) or graded_by = %(p)s",  # a group chat's shadow
+                 {"p": person, "n": name})  # pairs, and whose grades they were
     conn.execute("update kept_cases set person = case when person = %(p)s then %(n)s else "
                  "person end, acts_for = array_replace(acts_for, %(p)s, %(n)s), kept_by = case "
                  "when kept_by = %(p)s then %(n)s else kept_by end where %(p)s in (person, "

@@ -20,15 +20,13 @@ import { DAYS, read, type Schedule, type Spec, Unreadable, withMap, withMessages
 import { breakable, type Flow, FlowMap, type Step } from "./FlowMap";
 import { t } from "./i18n";
 import { Icon } from "./icons";
-import { levels, plural, type Risk, risk, RISK_NAMES, ToolBadges } from "./ui";
+import { levels, plural, type Risk, risk, RISK_NAMES, ToolBadges, useView, Views } from "./ui";
 
 type Files = Record<string, string>;
-type Shown = "canvas" | "list";
 
 const ORDER: Risk[] = ["changes", "outside", "writes", "reads"];
 const DRAG = "application/x-a5s-tool";
 const SHOWN = "a5s.studio.design-shown";
-const NARROW = "(max-width: 56rem)";
 const FIRST_SCHEDULE: Omit<Schedule, "name"> = { at: ["09:00"], days: ["mon", "tue", "wed", "thu", "fri"],
                                                  task: "Look through the open records." };
 /** What an ability's being added or taken away makes follow, in words. */
@@ -52,21 +50,6 @@ const turned = (): Record<Ability, [now: string, gone: string]> => ({
 const asTool = (t: Offered): Tool => ({ ...t, group: "", pinned: null, missing: false });
 const has = (spec: Spec, key: Ability) => (key === "tasks" ? Boolean(spec.tasks) : key === "reminders" ? spec.reminders
   : PREFERENCES.includes(key) ? spec.preferences.includes(key) : spec.context[key as keyof Spec["context"]] === true);
-
-/** Canvas or list, as someone chose last, or the list on a narrow screen. */
-function useShown(): [Shown, (v: Shown) => void] {
-  const [shown, setShown] = useState<Shown>(() => {
-    try {
-      const kept = window.localStorage.getItem(SHOWN);
-      if (kept === "canvas" || kept === "list") return kept;
-    } catch { /* a browser that keeps nothing starts afresh */ }
-    return window.matchMedia?.(NARROW).matches ? "list" : "canvas";
-  });
-  return [shown, (v: Shown) => {
-    setShown(v);
-    try { window.localStorage.setItem(SHOWN, v); } catch { /* as above */ }
-  }];
-}
 
 // The agent as steps: what the canvas and the list both show
 
@@ -590,16 +573,6 @@ export function Consequences({ spec, offer, signers, plan }: { spec: Spec; offer
 
 // The list: the same steps, row by row, each opening in place
 
-/** Canvas or list, a choice of views, as Ocean's FlowList has it. */
-function Views({ shown, show }: { shown: Shown; show: (v: Shown) => void }) {
-  return (
-    <div className="modes" role="group" aria-label={t("Show it")}>
-      <button type="button" aria-pressed={shown === "canvas"} onClick={() => show("canvas")}>{t("Canvas")}</button>
-      <button type="button" aria-pressed={shown === "list"} onClick={() => show("list")}>{t("List")}</button>
-    </div>
-  );
-}
-
 function DesignList({ flow, chosen, pick, close, panel, adding, picker, views, after }: { flow: Flow; chosen: string | null;
   pick: (key: string, keyboard: boolean) => void; close: (key: string) => void; panel: (key: string) => ReactNode;
   adding: boolean; picker: ReactNode; views: ReactNode; after: ReactNode }) {
@@ -651,7 +624,7 @@ export function Designer({ name, files, offer, signers, problems, change, plan, 
   tryIt: ReactNode;  // the canvas's one thing to do, at its foot
   asked: number;  // each time someone asks to see what stops its release
 }) {
-  const [shown, setShown] = useShown();
+  const [shown, setShown] = useView(SHOWN);
   const [chosen, setChosen] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
   const [focus, setFocus] = useState(0);  // each time the inspector should take the keyboard's focus
@@ -814,7 +787,7 @@ export function Designer({ name, files, offer, signers, problems, change, plan, 
     setChosen(null);
     window.setTimeout(() => document.querySelector<HTMLElement>(`[data-row="${CSS.escape(key)}"]`)?.focus());
   };
-  const views = <Views shown={shown} show={setShown} />;
+  const views = <Views shown={shown} show={setShown} canvas={t("Canvas")} />;
   return (
     <div className={`wb-body ${listing ? "whole" : "designer"}`} id="designer">
       {!listing && picker}

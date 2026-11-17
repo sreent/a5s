@@ -168,8 +168,9 @@ class Teams:
 
     def sent(self, activity: dict[str, Any], bot: Bot) -> tuple[files.File, ...]:
         """The files someone sent with a message: one they uploaded, by the link Teams gives
-        it, or an image they pasted, which the bot fetches from Teams itself. Never the copy
-        of the message Teams attaches as HTML."""
+        it, or an image they pasted, which the bot fetches from Teams itself, and whose kind its
+        own bytes say, as Teams calls it only `image/*`. Never the copy of the message Teams
+        attaches as HTML."""
         found = []
         for item in activity.get("attachments") or []:
             kind, name = str(item.get("contentType") or ""), str(item.get("name") or "a file")
@@ -180,16 +181,18 @@ class Teams:
                 found.append(files.File(name=name, media_type=files.media_type(name), fetch={
                     "channel": "teams", "url": str(content.get("downloadUrl") or "")}))
             elif kind.startswith("image/"):
-                found.append(files.File(name=name if "." in name else f"image.{kind[6:]}",
+                shown = "a pasted image" if kind == files.ANY_IMAGE else f"image.{kind[6:]}"
+                found.append(files.File(name=name if "." in name else shown,
                                         media_type=kind, fetch={
                                             "channel": "teams", "app_id": bot.app_id,
                                             "url": str(item.get("contentUrl") or "")}))
         return tuple(found)
 
     def download(self, where: dict[str, Any]) -> bytes:
-        """A file someone sent: an upload by the link Teams gave it, on the organisation's
-        SharePoint alone, which needs no token; or a pasted image from Teams itself, as the
-        bot it was sent to, so the bot's token goes nowhere else."""
+        """A file someone sent: an upload by the link Teams gave it, in a message from the
+        organisation's own tenant, on SharePoint's own hosts alone, which needs no token; or a
+        pasted image from Teams itself, as the bot it was sent to, so the bot's token goes
+        nowhere else."""
         url = str(where.get("url") or "")
         parts = urlparse(url)
         if where.get("app_id"):

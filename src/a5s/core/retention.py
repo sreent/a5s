@@ -67,12 +67,15 @@ WHOSE: Final[dict[str, LiteralString]] = {
               "person)"}
 
 
-def sweep(conn: db.Connection, now: datetime, scenario: str, kept: str = KEPT) -> dict[str, int]:
+def sweep(conn: db.Connection, now: datetime, scenario: str, kept: str = KEPT,
+          released: str = "") -> dict[str, int]:
     """Delete what's past its time, in the caller's transaction, with `now` the core's clock,
     which stamps a day's use and the digest log, and `scenario` the scenario it runs. How many
     of each kind went, leaving out the kinds where none did. What's kept for KEPT is kept for
     `kept` instead: the data protection officer's choice, in the signed settings in force, or
-    the sandbox's hour. It goes to Postgres as a value, never as part of the SQL."""
+    the sandbox's hour. It goes to Postgres as a value, never as part of the SQL. `released`
+    holds the tokens of the cases kept from runs that the releases at work still hold, whose
+    words a5s keeps knowing whose they are (core/run_cases.py)."""
     if not HORIZON.fullmatch(kept):
         raise ValueError(f"{kept!r} isn't a time to keep things for, such as 12 months")
     if not conn.execute("select pg_try_advisory_xact_lock(%s) as got", (LOCK,)).fetchone()["got"]:
@@ -145,8 +148,9 @@ def sweep(conn: db.Connection, now: datetime, scenario: str, kept: str = KEPT) -
     delete("handovers", f"delete from handovers where ended_at < {AGO}")  # with what was said
     delete("shadows", f"delete from shadow_answers where at < {AGO}")  # what shadows answered
     delete("cases", "delete from kept_cases k where not exists (select 1 from agent_drafts d "
-                    "where position(k.token in coalesce(d.files ->> 'tests/from-runs.yaml', '')) "
-                    "> 0)")  # whose words a kept case holds, once no draft holds it
+                    "where position(k.token in d.files::text) > 0) and position(k.token in "
+                    "%(released)s) = 0", released=released)  # whose words a kept case holds,
+    # once no draft and no release holds it
     delete("undo", "delete from changes_made where until < now() - interval '1 day' and "
                    "state is distinct from 'undoing'")  # how to undo a change, once it can't be
     done = (f"(status in ('done', 'cancelled', 'failed') and updated_at < {AGO}) "

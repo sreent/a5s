@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from datetime import date
 from decimal import Decimal, InvalidOperation
 
 _MONTHS = ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec")
@@ -40,11 +41,18 @@ _TH_MONTHS = (("มกราคม", "ม.ค."), ("กุมภาพันธ�
               ("พฤษภาคม", "พ.ค."), ("มิถุนายน", "มิ.ย."), ("กรกฎาคม", "ก.ค."), ("สิงหาคม", "ส.ค."),
               ("กันยายน", "ก.ย."), ("ตุลาคม", "ต.ค."), ("พฤศจิกายน", "พ.ย."), ("ธันวาคม", "ธ.ค."))
 _TH_MONTH = {name: n for n, names in enumerate(_TH_MONTHS, 1) for name in names}
+# A year after its month: four digits, after พ.ศ. or ค.ศ., which say its era, as in
+# 6 พฤศจิกายน พ.ศ. 2568, or two, never a time's, as in 6 พ.ย. 10:00 น., and only where they make a
+# year near this one (_era), so a count, as in 6 พ.ย. 15 รายการ, is no year (round 14)
+_TH_YEAR = r"(?:(?:พ\.ศ\.|ค\.ศ\.)\s*)?(\d{4}(?!\d)|\d{2}(?![\d:]|\.\d))"
 _TH_DATE = re.compile(r"(?<!\d)(\d{1,2})\s*(" + "|".join(
-    re.escape(m) for m in sorted(_TH_MONTH, key=len, reverse=True)) + r")\s*(\d{4}(?!\d)|\d{2}(?!\d))?")
+    re.escape(m) for m in sorted(_TH_MONTH, key=len, reverse=True)) + r")(?:\s*" + _TH_YEAR + ")?")
 _TH_CURRENCY = {"บาท": "THB", "ปอนด์": "GBP", "ดอลลาร์": "USD", "ยูโร": "EUR", "เยน": "JPY",
                 "รูปี": "INR"}
-_TH_AMOUNT = re.compile(rf"(?<![\d.,])({_NUMBER})\s?(" + "|".join(_TH_CURRENCY) + ")")
+# How many, by its word before the currency's, as 1.5 ล้านบาท is a million and a half baht
+_TH_SCALE = {"พัน": 1_000, "หมื่น": 10_000, "แสน": 100_000, "ล้าน": 1_000_000}
+_TH_AMOUNT = re.compile(rf"(?<![\d.,])({_NUMBER})\s?(" + "|".join(_TH_SCALE) + r")?\s?("
+                        + "|".join(_TH_CURRENCY) + ")")
 _TH_DIGITS = str.maketrans("๐๑๒๓๔๕๖๗๘๙", "0123456789")  # one for one, so each keeps its place
 
 
@@ -92,28 +100,36 @@ def found(text: str, record_pattern: str | None) -> list[Value]:
             spans.append((m.start(), Value("date", m.group(0), _norm(year, month, day))))
     for m in _TH_AMOUNT.finditer(text):
         try:
-            amount = Decimal(m.group(1).replace(",", ""))
+            amount = Decimal(m.group(1).replace(",", "")) * _TH_SCALE.get(m.group(2) or "", 1)
         except InvalidOperation:
             continue
         spans.append((m.start(), Value("amount", written[m.start():m.end()],
-                                       f"{_TH_CURRENCY[m.group(2)]} {amount:.2f}")))
+                                       f"{_TH_CURRENCY[m.group(3)]} {amount:.2f}")))
     for m in _TH_DATE.finditer(text):
-        day, month = int(m.group(1)), _TH_MONTH[m.group(2)]
-        if 1 <= day <= 31:
-            spans.append((m.start(), Value("date", written[m.start():m.end()].strip(),
-                                           _norm(_era(m.group(3)), month, day))))
+        day, month, year = int(m.group(1)), _TH_MONTH[m.group(2)], _era(m.group(3))
+        if 1 <= day <= 31:  # what it couldn't take as the year is no part of the date
+            end = m.end() if year else m.end(2)
+            spans.append((m.start(), Value("date", written[m.start():end].strip(),
+                                           _norm(year, month, day))))
     for _, value in sorted(spans, key=lambda s: s[0]):
         values.setdefault((value.kind, value.norm), value)
     return list(values.values())
 
 
+NEAR = 20  # years from this one that two digits after a Thai month may name, at most
+
+
 def _era(given: str | None) -> str | None:
     """A year as Thai writes it, in the common era: one of the Buddhist era, 543 years on, or
-    only its last two digits, as 69 is 2569 and so 2026; one already in the common era as it is."""
+    only its last two digits, as 69 is 2569 and so 2026; one already in the common era as it is.
+    Two digits that make no year near this one are none, such as a count after the month."""
     if not given:
         return None
     year = int(given) + (2500 if len(given) == 2 else 0)
-    return str(year - 543 if year >= 2400 else year)
+    year = year - 543 if year >= 2400 else year
+    if len(given) == 2 and abs(year - date.today().year) > NEAR:
+        return None
+    return str(year)
 
 
 def _norm(year: str | None, month: int, day: int) -> str:

@@ -161,3 +161,18 @@ def test_what_a_search_found_is_read_but_the_agents_own_words_are_not(stack):
             "select kind, text from run_reads where source = 'search_conversation'")}
     assert ("amount", "£50") not in read and ("key", "Q-1001") in read
     assert any(kind == "date" for kind, _ in read)  # when each was said, which a5s knows
+
+
+def test_thai_dates_and_amounts_are_found_as_people_write_them():
+    """Round 14 (E-M4): a formal date names its era, a time or a count after a month is no
+    year, and an amount in millions is one."""
+    def norms(text: str) -> list[str]:
+        return [v.norm for v in values.found(text, PATTERN)]
+    assert norms("ครบกำหนด 6 พฤศจิกายน พ.ศ. 2568") == ["2025-11-06"]
+    assert norms("6 พ.ย. 10:00 น.") == ["--11-06"]
+    assert norms("นัดวันที่ 6 พ.ย. 10.00 น.") == ["--11-06"]
+    [count] = values.found("6 พ.ย. 15 รายการ", PATTERN)
+    assert (count.norm, count.text) == ("--11-06", "6 พ.ย.")  # never quoted with the count
+    assert norms("4 พ.ย. 69 หรือ ๒๐ ธ.ค.") == ["2026-11-04", "--12-20"]  # as before
+    assert norms("วงเงิน 1.5 ล้านบาท") == ["THB 1500000.00"]
+    assert norms("5 แสนบาท และ 860 บาท") == ["THB 500000.00", "THB 860.00"]

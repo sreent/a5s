@@ -10,10 +10,19 @@ nothing else, since what a run reads of a record it reads itself, through its to
 checks, as any run does, so nothing a system was told can reach a run as words.
 
 It's kept once by its id, and the core opens a run for it at its next sweep, within a minute:
-in the instance at work of an agent whose release takes it, which works in every record's part.
+in the instance at work of an agent whose release takes it, which works in every record's part,
+one that serves the person it names first. The sweep takes each system's events in turn, so one
+that sends many holds no other's back. One that can't be worked on now, such as while that
+instance is suspended, its release waits for approval, or the day's budget is spent, waits
+AGAIN and is tried again, for WAITS at most: then it's turned away, and the ledger says why.
+
 The run acts for the person it names, where the directory knows them and the instance serves
-them, and writes to them; else it acts for nobody, as a schedule's does, and works through its
-tools alone.
+them, and writes to them, in a topic of its own, which their reply continues for a while: what
+it read, such as a customer's words from outside, marks that topic alone, never their own chat.
+Nobody asked for it, so it never acts as them in another system, nor reads what they may read
+there, and a change it asks for says it came of the event. One that names nobody acts for
+nobody, as a schedule's does, and works through its tools alone, on a day's budget each system
+has of its own (PAYER), as one person's day.
 """
 
 from __future__ import annotations
@@ -25,16 +34,21 @@ import os
 import re
 import time
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 from a5s import config, db
-from a5s.core import ledger, registry
+from a5s.core import budgets, ledger, registry
 
 KIND = "event"  # the trigger of a run that works on one
 WINDOW = 300  # seconds: a request further than this from now is refused
 MOST_RECORDS = 5  # the records one event names at most, as one change names few
 MOST_WAITING = 1000  # one system's events waiting at once: past them, it's told to wait
+SWEPT = 100  # the events one sweep takes, in turn by system
+AGAIN = timedelta(minutes=30)  # how long one that can't be worked on now waits to be tried again [starting value]
+WAITS = timedelta(days=2)  # how long it waits at most, before it's turned away [starting value]
+PAYER = "event:"  # whose day's budget a system's events naming nobody use: event:<source>
+SOURCE = re.compile(r"[a-z0-9][a-z0-9-]{0,30}")  # a system's name, as releases name it
 FIELDS = frozenset({"id", "type", "records", "person"})
 _ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
 _TYPE = re.compile(r"[a-z0-9][a-z0-9-]{0,62}")
@@ -63,12 +77,35 @@ class EventsConfig:
     @classmethod
     def from_env(cls) -> EventsConfig | None:
         """Each system from A5S_EVENT_SOURCES, a JSON list of {"source", "secret_env"}, its
-        signing secret in the variable it names; None where events aren't turned on."""
+        signing secret in A5S_EVENT_SECRET_<SOURCE>, which secret_env names; None where events
+        aren't turned on."""
         listed = config.EVENT_SOURCES.read()
         if not listed:
             return None
+        for s in listed:
+            if why := unfit(s):
+                raise config.ConfigError(why)
         return cls(sources=tuple(Source(s["source"], os.environ[s["secret_env"]])
                                  for s in listed))
+
+
+def secret_env(source: str) -> str:
+    """The variable a system's signing secret is in."""
+    return f"A5S_EVENT_SECRET_{source.upper().replace('-', '_')}"
+
+
+def unfit(listed: Any) -> str | None:
+    """Why a system A5S_EVENT_SOURCES lists isn't one a5s can take events from, if it isn't:
+    its name as releases name it, in lowercase, and its secret in its own variable, never one
+    another system's or another part of a5s's."""
+    source = listed.get("source") if isinstance(listed, dict) else None
+    if not isinstance(source, str) or not SOURCE.fullmatch(source):
+        return (f"A5S_EVENT_SOURCES names {source!r}, and a system is named as releases name it, "
+                "in lowercase letters, digits and dashes, such as itsm")
+    if listed.get("secret_env") != secret_env(source):
+        return (f"A5S_EVENT_SOURCES gives {source} its signing secret in "
+                f"{listed.get('secret_env')}, and it's in {secret_env(source)}, its own")
+    return None
 
 
 def signature(secret: str, body: bytes, at: int) -> str:
@@ -86,7 +123,8 @@ def check(cfg: EventsConfig, source: str, body: bytes, timestamp: str | None,
     found = next((s for s in cfg.sources if s.name == source), None)
     if found is None:
         raise Refused(404, f"a5s takes no events from {source}")
-    if not timestamp or not signature_given or not signature_given.startswith("v1="):
+    if not timestamp or not signature_given or not signature_given.startswith("v1=") or (
+            not signature_given.isascii()):
         raise Refused(401, f"{source} signs what it sends")
     try:
         at = int(timestamp)
@@ -167,6 +205,42 @@ def record(conn: db.Connection, scenario: Any, source: str, event: dict[str, Any
     return True
 
 
+def topic(row: dict[str, Any]) -> str:
+    """The topic of the person's conversation an event's run writes in, of its own: their reply
+    continues it for a while, as any conversation's current topic, but no run in another topic
+    reads it, or is marked by what it read (gateway.reads_outside, services/context.py)."""
+    return f"event {row['source']} {row['event_id']}"
+
+
+def payer(source: str) -> str:
+    """Whose day's budget the runs of a system's events that name nobody use: the system's
+    own, as one person's day, so a flood of them spends no one's and has a bound."""
+    return f"{PAYER}{source}"
+
+
+def put_off(conn: db.Connection, event: str, instance: str | None, why: str) -> bool:
+    """An event that can't be worked on now waits AGAIN, to be tried again, rather than being
+    turned away for good, until it has waited WAITS, by the database's clock: then it's turned
+    away, and the ledger says why, once. Whether it was turned away."""
+    row = conn.execute(
+        "update events set not_before = now() + %s, outcome = %s, instance_id = %s where id = %s "
+        "and taken_at is null and received_at > now() - %s returning id",
+        (AGAIN, why[:500], instance, event, WAITS)).fetchone()
+    if row is not None:
+        return False
+    gone = conn.execute(
+        "update events set taken_at = now(), outcome = %s, instance_id = %s where id = %s and "
+        "taken_at is null returning source, type, person", (why[:500], instance, event)).fetchone()
+    if gone is not None:
+        ledger.append(conn, {"kind": "event", "action": "turn away", "run": None,
+                             "instance": instance,
+                             "acts_for": [gone["person"]] if gone["person"] else [],
+                             "decision": "deny", "reasons": [why],
+                             "args": {"source": gone["source"], "type": gone["type"],
+                                      "event": event, "waited": True}})
+    return True
+
+
 def task(said: Any, row: dict[str, Any]) -> str:
     """What a run for an event is asked to do: what its release says, and the event as a5s
     received it, in a5s's own words: its system, its type and the records it names."""
@@ -176,34 +250,38 @@ def task(said: Any, row: dict[str, Any]) -> str:
 
 
 def due(conn: db.Connection, gw: Any, now: datetime) -> list[dict[str, Any]]:
-    """The events waiting for a run, oldest first, each with the instance at work that takes
-    it: of an agent whose release takes it, working in every record's part it names. One no
-    instance at work takes, or whose instance is suspended, is recorded so, once."""
+    """The events waiting for a run, each system's in turn, oldest first, each with the instance
+    that takes it: of an agent whose release takes it, working in every record's part it names,
+    at work, and serving the person it names, if one does. One that no instance at work takes,
+    or whose budget for the day is spent, waits to be tried again (put_off)."""
     insts = conn.execute("select * from instances where status in ('active', 'suspended') "
                          "order by id").fetchall()
     found = []
-    for row in conn.execute("select * from events where taken_at is null order by received_at "
-                            "limit 100").fetchall():
+    for row in conn.execute(
+            "select * from (select *, row_number() over (partition by source order by "
+            "received_at) as nth from events where taken_at is null and (not_before is null or "
+            "not_before <= now())) e order by nth, received_at limit %s", (SWEPT,)).fetchall():
         takes = [i for i in insts
                  if (d := gw.definitions.get(i["definition"])) is not None
                  and d.release_id == i["release"] and taken(d, row["source"], row["type"])
                  and all(gw.scenario.part_of(k) in (i["parts"] or {}) for k in row["records"])]
+        serves = [i for i in takes if row["person"] and registry.serving(
+            gw.scenario, i["serves"], row["person"])]
+        takes.sort(key=lambda i: (i["status"] != "active", i not in serves))  # by id, else
         why = (None if takes and takes[0]["status"] == "active" else
                f"{takes[0]['id']} is suspended" if takes else
                "no instance at work takes it, in its records' parts")
+        inst = takes[0] if takes else None
+        person = row["person"] if inst is not None and inst in serves else None
+        release = gw.definitions.get(inst["definition"]) if inst is not None else None
+        if why is None and inst is not None and release is not None:  # its day, before a run
+            why = budgets.refused(conn, gw.scenario, release.budget, inst["id"],
+                                  [person] if person else [], KIND, 0, now,
+                                  {} if person else {"payer": payer(row["source"])})
         if why:
-            conn.execute("update events set taken_at = %s, instance_id = %s, outcome = %s where "
-                         "id = %s", (now, takes[0]["id"] if takes else None, why, row["id"]))
-            ledger.append(conn, {"kind": "event", "action": "turn away", "run": None,
-                                 "instance": takes[0]["id"] if takes else None,
-                                 "acts_for": [row["person"]] if row["person"] else [],
-                                 "decision": "deny", "reasons": [why],
-                                 "args": {"source": row["source"], "type": row["type"],
-                                          "event": str(row["id"])}})
+            put_off(conn, str(row["id"]), inst["id"] if inst is not None else None, why)
             continue
-        inst = takes[0]
-        person = row["person"] if row["person"] and registry.serving(
-            gw.scenario, inst["serves"], row["person"]) else None
+        assert inst is not None
         found.append({"kind": "event", "event": str(row["id"]), "instance": inst["id"],
                       "agent": inst["definition"], **({"person": person} if person else {})})
     return found

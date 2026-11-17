@@ -29,6 +29,7 @@ type View = "design" | "instructions" | "try" | "files" | "publish";
 const views = (): [View, string][] => [["design", t("Design")], ["instructions", t("Instructions")], ["try", t("Try it")],
                                        ["files", t("Files")]];
 const WAIT = 600;  // ms after the last change before it's kept
+const KEPT = "tests/from-runs.yaml";  // the cases kept from runs, which a run's page adds to
 
 type Kept = "kept" | "keeping" | { problem: string };
 type Said = Pick<Draft, "problems" | "preview" | "signers" | "released" | "at_work">;
@@ -264,10 +265,12 @@ export function DraftPage({ id }: { id: string }) {
   const latest = useRef(0);
   const timer = useRef<number | undefined>(undefined);
   const pending = useRef<Files | null>(null);  // waiting to be kept, sent at once if they leave
+  const since = useRef<string | undefined>(undefined);  // when this tab last had the draft as kept
   const store = `draft.${id}`;
   const planned = useRef<{ plan: Plan; changed: boolean }>({ plan: { parts: [], serves: [], asks: [] }, changed: false });
   useEffect(() => {
     if (loaded.data && files === null) {
+      since.current = loaded.data.updated_at;
       const left = loaded.data.yours ? unkept<Unkept>(store) : null;  // from before they signed in again
       setFiles(left?.files ?? loaded.data.files);
       setPlan(left?.plan ?? whole(loaded.data.plan));
@@ -296,8 +299,9 @@ export function DraftPage({ id }: { id: string }) {
     try {
       const sending = planned.current.changed ? planned.current.plan : undefined;  // only once it changes
       const saved = await send<Draft>("PUT", `/studio/api/drafts/${encodeURIComponent(id)}`,
-                                      { files: next, ...(sending ? { plan: sending } : {}) });
+                                      { files: next, loaded: since.current, ...(sending ? { plan: sending } : {}) });
       if (mine !== latest.current) return;  // a later change is on its way
+      since.current = saved.updated_at;
       keptNow(store);  // a5s has it: the tab needn't keep it
       if (sending === planned.current.plan) planned.current.changed = false;
       const { problems, preview, signers, released, at_work } = saved;
@@ -305,7 +309,10 @@ export function DraftPage({ id }: { id: string }) {
       setFiles((now) => {  // a5s's pins, beside what they've typed since
         if (!now) return now;
         const { ["tools.lock"]: _old, ...rest } = now;
-        return saved.files["tools.lock"] === undefined ? rest : { ...rest, "tools.lock": saved.files["tools.lock"] };
+        // and a case kept from a run's page meanwhile, unless they've changed its file since
+        const cases = saved.files[KEPT] !== undefined && saved.files[KEPT] !== next[KEPT]
+          && now[KEPT] === next[KEPT] ? { ...rest, [KEPT]: saved.files[KEPT] } : rest;
+        return saved.files["tools.lock"] === undefined ? cases : { ...cases, "tools.lock": saved.files["tools.lock"] };
       });
       setKept("kept");
       setRevision((n) => n + 1);

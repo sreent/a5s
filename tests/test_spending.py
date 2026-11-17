@@ -8,6 +8,7 @@ from datetime import timedelta
 
 import httpx
 import pytest
+from playwright.sync_api import expect
 
 from a5s import db
 from a5s.config import Prices, load_currency
@@ -107,7 +108,7 @@ def test_what_runs_cost_goes_to_their_parts_agent_and_instance_with_a_forecast(p
     stack.model.reply("Q-1001 mentions an invoice.")
     stack.say("which questions mention an invoice?")
     stack.model.reply("Hello.")
-    stack.say("hello")
+    stack.say("hello", person="ben")  # his own conversation: given no run's records (round 14)
     first, second = runs(stack)
     assert first["records"] and all(k.startswith("Q-") for k in first["records"])
     assert not second["records"]
@@ -243,11 +244,19 @@ def test_the_spending_page_shows_each_budget_as_ocean_draws_cost_against_plan(pr
     assert "under budget" in page.inner_text("#agent-assistant .cost-over")
     assert "£" in billing  # the currency models.yaml names
     assert page.locator("#instances tr[data-instance=assistant-finance]").count() == 1
+    assert page.locator("#instances caption").count() == 0  # what it is, above its frame
+    assert "What each instance you may watch spent" in page.inner_text("#instances-about")
     accessible(page)
-    # The month before, which spent nothing, has no forecast
-    page.select_option("#month", index=1)
+    # The month before, which spent nothing, has no forecast: chosen with the keyboard, which
+    # steps through the months until asked to show one (round 14, E-L1)
+    page.focus("#month")
+    page.keyboard.press("ArrowDown")
+    page.wait_for_timeout(300)
+    assert "month=" not in page.url  # chosen, not yet shown
+    page.keyboard.press("Enter")
     page.wait_for_url("**/studio/spending?month=*", timeout=30000)
     page.wait_for_selector("#part-billing .cost-bars", timeout=30000)
+    expect(page.locator("#month")).to_be_focused(timeout=10000)
     assert "Forecast" not in page.inner_text("#part-billing")
     # The settings' forms set each budget
     page.goto(f"{approving}/studio/settings")
@@ -271,3 +280,25 @@ def test_models_yaml_names_the_currency_it_prices_in(tmp_path):
     named.write_text("currency: baht\nmodels: {}\n")
     with pytest.raises(ValueError, match="a code such as GBP"):
         load_currency(named)
+
+
+def test_budgets_in_another_currency_need_each_budgets_owner(stack):
+    """Round 14 (D9): the same amounts in another currency are other budgets, so a version
+    that changes only their currency needs each budget's owner, as one that changes an amount
+    does."""
+    budgets = {"parts": {"orders": 250}, "agents": {"assistant": 300}}
+    assert not stack.settle(spending=budgets, signers=("ana", "omar", "priya")).refused
+    refused = stack.settle(spending={**budgets, "currency": "THB"}, signers=("ana",)).refused
+    assert any("owner of orders" in why for why in refused), refused
+    assert any("owner of the assistant hasn't approved its budget" in why for why in refused)
+    assert not stack.settle(spending={**budgets, "currency": "THB"},
+                            signers=("ana", "omar", "priya")).refused
+
+
+def test_what_each_message_cost_is_said_only_where_every_runs_cost_is_known(stack):
+    """Round 14 (D10): a run on a model whose prices aren't known costs nothing in the figures,
+    so what each message cost isn't said while one is among them, never a part of it."""
+    stack.model.reply("Hello.")
+    stack.say("hello")
+    [agent] = [a for a in report(stack, "ana")["agents"] if a["key"] == "assistant"]
+    assert (agent["answered"], agent["unpriced"], agent["per_answer"]) == (1, 1, None)

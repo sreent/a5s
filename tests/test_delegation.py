@@ -109,6 +109,12 @@ class Desk:
             return {"access_token": access, "refresh_token": refresh, "token_type": "Bearer",
                     "expires_in": self.lifetime, "scope": "tickets.read"}
 
+        @app.get("/me")
+        def me(request: Request) -> Any:
+            whose = self.access.get(request.headers.get("authorization", "")
+                                    .removeprefix("Bearer "))
+            return {"user": {"name": whose}} if whose else JSONResponse({"error": "who?"}, 401)
+
         return app
 
     def server(self) -> Any:
@@ -143,6 +149,7 @@ def declared(url: str, **server: Any) -> dict:
 def systems(url: str) -> str:
     return json.dumps([{"name": "desk", "title": "Service desk", "authorize": f"{url}/authorize",
                         "token": f"{url}/token", "client_id": "a5s-desk",
+                        "whoami": f"{url}/me", "whose": "user.name",
                         "scopes": ["tickets.read", "offline_access"]}])
 
 
@@ -472,3 +479,61 @@ def test_someone_connects_from_their_own_page_in_the_studio(stack, approving, pr
     page.wait_for_selector("#connections >> text=Not connected", timeout=30000)
     with db.transaction(stack.admin) as conn:
         assert conn.execute("select count(*) as n from delegations").fetchone()["n"] == 0
+
+
+def test_a_code_recorded_for_someone_else_connects_nothing(stack, approving, provider, desk):
+    """Round 14 (B-H2): the part people reach records where they come back to, and whatever it
+    records, the core keeps a token only for the account the desk says it is, as the directory
+    knows its person: Ana's way back, recorded as Ben's, connects nobody."""
+    found, _, _ = desk
+    start = as_person(approving, provider, "ana", "POST", "/studio/api/you/connections/desk/start")
+    assert start.status_code == 200, start.text
+    found.person = "ana"
+    there = httpx.get(start.json()["go"], follow_redirects=False, timeout=30)
+    back = {k: v[0] for k, v in parse_qs(urlsplit(there.headers["location"]).query).items()}
+    with db.transaction(db.as_role(stack.admin, "channels")) as conn:
+        row = conn.execute("select * from delegation_starts where state = %s",
+                           (back["state"],)).fetchone()
+        conn.execute("delete from delegation_starts where state = %s", (back["state"],))
+        conn.execute("insert into delegation_starts (state, person, system, verifier, code, "
+                     "coded_at) values ('elsewhere', 'ben', 'desk', %s, %s, now())",
+                     (row["verifier"], back["code"]))
+    assert swept(stack) == {"connected": 0, "failed": 1}
+    with db.transaction(stack.admin) as conn:
+        assert conn.execute("select * from delegations").fetchall() == []
+    [refused] = [e for e in stack.ledger() if e.get("action") == "connect"]
+    assert refused["acts_for"] == ["ben"] and "isn't theirs" in refused["outcome"]["error"]
+
+
+
+def test_a_run_nobody_asked_for_never_acts_as_anyone(stack, approving, provider, desk):
+    """Round 14 (A-M1): an event names someone, but they never asked for its run, and whoever
+    holds the system's secret, or poses as them to it, can start one: so it never acts as them
+    in another system, with the account they connected, nor reads what they may read there."""
+    from dataclasses import replace
+
+    from a5s.core import inbox
+    from a5s.core.events import EventsConfig, Source
+    from a5s.definitions import Event
+    from conftest import free_port, serve
+    from test_events import OPENED, SECRET, SOURCE, TASK, send
+
+    found, _, _ = desk
+    connect(stack, approving, provider, found, "ana")
+    found.called.clear()
+    assistant = stack.gateway.definitions["assistant"]
+    stack.gateway.definitions["assistant"] = assistant.model_copy(update={"events": [
+        Event(type="question-opened", source=SOURCE, task=TASK)]})
+    stack.gateway.events = EventsConfig((Source(SOURCE, SECRET),))
+    endpoint = replace(stack.gateway, cfg=stack.as_role("channels"))
+    with serve(inbox.create_app(endpoint), free_port()) as url:
+        assert send(f"{url}/channels/events/{SOURCE}", {
+            **OPENED, "records": ["Q-1001"], "person": "ana"}).status_code == 202
+    stack.model.reply(None, ("search_tickets", {"query": "open"}))
+    stack.model.reply("Done.")
+    assert stack.scheduler().work_due() == 1
+    assert found.called == []  # never as Ana
+    [denied] = [e for e in stack.ledger() if e.get("action") == "search_tickets"]
+    assert denied["decision"] == "deny" and denied["reasons"] == ["acts-as-nobody-unasked"]
+    tickets(stack, "ana")  # her own message does
+    assert set(found.called) == {"Bearer at-ana-1"}

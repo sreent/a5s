@@ -140,9 +140,10 @@ def gather(conn: db.Connection, person: str) -> dict[str, Any]:
             "order by at, id"),
         "said_wrong": rows(  # agents' answers they said were wrong (core/feedback.py), and
             "select f.agent, f.channel, f.said, f.at, f.grade, "  # how they were graded: the
-            "case when o.person = any(%(names)s) then o.text end as answer "  # answer, if it
-            "from answer_feedback f left join outbox o on o.id = f.outbox_id "  # was to them,
-            "where f.person = any(%(names)s) order by f.at, f.id"),  # not to a group chat
+            "case when o.person = any(%(names)s) and i.conversation is null then o.text end "
+            "as answer from answer_feedback f left join outbox o on o.id = f.outbox_id "  # answer,
+            "left join inbound i on i.id = o.inbound_id "  # if it was to them, never a group
+            "where f.person = any(%(names)s) order by f.at, f.id"),  # chat's, sent to its asker
         "answers_they_graded": count(  # others' words, which aren't theirs to have, counted
             "select count(*) as n from answer_feedback where graded_by = any(%(names)s)"),
         "events": rows(  # what other systems said happened about them (core/events.py)
@@ -165,10 +166,12 @@ def gather(conn: db.Connection, person: str) -> dict[str, Any]:
             "order by h.started_at"),
         "handover_answers": count(  # what they answered others, as one of a team, counted
             "select count(*) as n from handover_replies where by_person = any(%(names)s)"),
-        "shadow_answers": rows(  # what shadows answered them, beside what was sent, for graders
-            "select definition as shadow, shadows, asked, sent, answer, at, grade from "
-            "shadow_answers where person = any(%(names)s) or acts_for && %(names)s::text[] "
-            "order by at"),
+        "shadow_answers": rows(  # what shadows answered them, beside what was sent, for graders,
+            "select definition as shadow, shadows, asked, sent, answer, at, grade from "  # in
+            "shadow_answers where person = any(%(names)s) order by at"),  # their own chats
+        "shadow_answers_in_groups": count(  # and in group chats they were in, where others
+            "select count(*) as n from shadow_answers where acts_for && %(names)s::text[] "  # spoke
+            "and not (person = any(%(names)s))"),  # too, counted
         "shadow_grades": count(  # what they graded, as a grader, counted
             "select count(*) as n from shadow_answers where graded_by = any(%(names)s)"),
         "changes_to_undo": rows(  # changes made for them, or they undid, while kept to undo

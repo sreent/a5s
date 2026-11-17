@@ -119,19 +119,35 @@ def working_days_after(person: Person, at: datetime, days: int) -> datetime:
     return at
 
 
+def after(trigger: dict | None) -> str:
+    """What a run nobody asked for came after, in words, if another system's event started it:
+    its system and type, as a5s received it."""
+    found = trigger or {}
+    if found.get("kind") != "event":
+        return ""
+    return f"after {found.get('source')} said {found.get('type')} happened"
+
+
 def said(scenario: Scenario, tool: Tool, args: dict, records: dict[str, dict | None],
-         acts_for: list[str], agent: str, values: dict[str, str] | None = None) -> str:
+         acts_for: list[str], agent: str, values: dict[str, str] | None = None,
+         trigger: dict | None = None) -> str:
     """What a change does, in words code works out from the tool and the call, with the values
     its handles stand for, and each record as it stood when it was asked for, from a snapshot
-    (samples.snapshot): never the agent's own account of it."""
+    (samples.snapshot): never the agent's own account of it. One a run nobody asked for asked
+    for, such as an event's, says so, rather than that it was for the person it's about."""
     named = [k for k in records]
     shown = ", ".join(f"{k} {_plain(v)}" for k, v in args.items() if k != tool.record_arg)
     lines = [resolved(f"{tool.description.rstrip('.')}: {', '.join(named) or 'no record'}"
                       + (f", with {shown}" if shown else "") + ".", values or {})]
     lines += stood(records)
     people = [p.name if (p := scenario.person(who)) else who for who in acts_for]
-    lines.append(f"The {agent} asked for it" + (f", for {approvals.names_of(people)}" if people
-                                                 else ", for nobody in particular") + ".")
+    if came := after(trigger):
+        lines.append(f"The {agent} asked for it {came}" + (
+            f", about {approvals.names_of(people)}" if people else "") + ": nobody asked it to.")
+    else:
+        lines.append(f"The {agent} asked for it" + (f", for {approvals.names_of(people)}"
+                                                     if people else ", for nobody in particular")
+                     + ".")
     return "\n".join(lines)
 
 
@@ -191,11 +207,19 @@ def sensitive(conn: db.Connection, run: str, tool: Tool, args: dict,
         "select field from run_handles where run_id = %s and handle = any(%s)", (run, found)))
 
 
+def not_deciding(proposal: dict) -> list[str]:
+    """Who decides nothing of a held change: whom it's for, and whose answers, from a team that
+    took their conversation, its run was given, which may have asked for it."""
+    return [*proposal["acts_for"], *(proposal.get("steered_by") or [])]
+
+
 def hold(conn: db.Connection, scenario: Scenario, run: dict, tool: Tool, args: dict,
          standing: dict[str, dict | None], who: list[Person], seq: int, flags: list[str],
-         now: datetime, change: str | None, is_sensitive: bool) -> dict:
+         now: datetime, change: str | None, is_sensitive: bool,
+         steered: list[str] | None = None) -> dict:
     """Keep a held call for its deciders, in the transaction that decided it, with its records
-    as they stood, read before it began."""
+    as they stood, read before it began, and `steered`, whose answers from a team its run was
+    given, who decide nothing of it either."""
     found = sorted(handles_in(args))
     kept = {r["handle"]: r["value"] for r in conn.execute(
         "select handle, value from run_handles where run_id = %s and handle = any(%s)",
@@ -207,18 +231,19 @@ def hold(conn: db.Connection, scenario: Scenario, run: dict, tool: Tool, args: d
     row = conn.execute(
         "insert into proposals (scenario, digest, run_id, instance_id, definition, release, tool, "
         "schema_hash, action, args, records, parts, acts_for, deciders, said, flags, sensitive, "
-        "read_outside, seq, proposed_at, lapses_at, change, remind_at, escalate_at, standing) "
-        "values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
-        "%s, %s, %s, %s, %s) returning *",
+        "read_outside, seq, proposed_at, lapses_at, change, remind_at, escalate_at, standing, "
+        "steered_by) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
+        "%s, %s, %s, %s, %s, %s, %s, %s, %s) returning *",
         (scenario.name, hashlib.sha256(canonical(body).encode()).hexdigest(), run["run"], run["id"],
          run["definition"], run["release"], tool.name, tool.schema_hash, tool.action, Jsonb(args),
          Jsonb(body["records"]), sorted({p for r in standing if (p := scenario.part_of(r))}),
          list(run["acts_for"]), [p.id for p in who],
-         said(scenario, tool, args, standing, list(run["acts_for"]), run["definition"], kept),
+         said(scenario, tool, args, standing, list(run["acts_for"]), run["definition"], kept,
+              run.get("trigger")),
          Jsonb(flags), is_sensitive, bool(run["read_outside"]), seq, now,
          working_days_after(first, now, LAPSE), change,
          working_days_after(first, now, REMIND), working_days_after(first, now, ESCALATE),
-         Jsonb(standing))).fetchone()
+         Jsonb(standing), sorted(set(steered or ())))).fetchone()
     for handle, value in kept.items():  # the values they stand for, kept until it's decided
         conn.execute("insert into proposal_values (proposal_id, handle, value) values (%s, %s, %s)",
                      (row["id"], handle, value))
@@ -290,9 +315,9 @@ def fresh(verifier: Verifier, scenario: Scenario, client_id: str, token: str, bo
 
 def may_decide(scenario: Scenario, proposal: dict, person: str) -> bool:
     """Whether someone may decide a held change now: they may decide it for one of the parts
-    it touches, as the directory stands, never anyone it was for, and they may see its
-    records."""
-    by_part = deciders(scenario, list(proposal["records"]), list(proposal["acts_for"]))
+    it touches, as the directory stands, never anyone it was for, nor anyone whose answer to
+    them may have asked for it, and they may see its records."""
+    by_part = deciders(scenario, list(proposal["records"]), not_deciding(proposal))
     return person in {p.id for p in everyone(by_part)}
 
 
@@ -422,7 +447,7 @@ def decision(conn: db.Connection, keys: tuple[str, ...], scenario: Scenario,
     by anyone who may decide it, or an approval for every part it touches, each the core
     sealed, by someone who may decide for that part now. And what's wrong with any other.
     {"decision", "rows"}, or None while it still waits."""
-    by_part = deciders(scenario, list(proposal["records"]), list(proposal["acts_for"]))
+    by_part = deciders(scenario, list(proposal["records"]), not_deciding(proposal))
     problems: list[str] = []
     approved: dict[str | None, dict] = {}
     for row in conn.execute("select * from proposal_decisions where digest = %s and refused is "

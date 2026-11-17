@@ -347,7 +347,9 @@ article { background: var(--surface); border: 1px solid var(--line); border-radi
 .approval-stripe.writes { background: var(--writes); }
 .approval-stripe.outside { background: var(--outside); }
 .approval-stripe.own { background: var(--own); }  /* a version of a5s's own settings */
-.approval-body { display: grid; gap: var(--space-3); padding: var(--space-4) var(--space-5) var(--space-5); }
+.approval-body { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-3);
+                 padding: var(--space-4) var(--space-5) var(--space-5); }  /* its one column never
+   widens past the card: something wide, such as a table, scrolls in a frame of its own */
 .approval-title { margin: 0; color: var(--text); font-size: var(--text-lg); font-weight: 600; }
 .approval-changes { display: grid; grid-template-columns: max-content 1fr; gap: var(--space-1) var(--space-3);
                     margin: 0; padding: var(--space-3); border-radius: var(--radius-md); background: var(--sunken); }

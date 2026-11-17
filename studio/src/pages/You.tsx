@@ -16,6 +16,10 @@ import { go, Link } from "../router";
 import { shellOf } from "../Sidebar";
 import { PageHead, useLoad, Waiting, when, Wide } from "../ui";
 
+// The language just chosen, whose choice takes the keyboard again once the studio, drawn anew
+// in it, shows this page again (round 14, E-L1)
+let justChosen: string | null = null;
+
 function Language({ found }: { found: You }) {
   const toast = useToast();
   const [problem, setProblem] = useState<string>();
@@ -26,6 +30,7 @@ function Language({ found }: { found: You }) {
     send<gen.LanguageChosen>("POST", "/studio/api/you/language", { language: code })
       .then((kept) => {
         shellOf(true).catch(() => null);  // the sidebar's names, afresh in it
+        justChosen = kept.language;
         setLanguage(kept.language);  // which draws the studio again in it
         toast(t("a5s speaks to you in {language} from now on.", {
           language: found.languages.find((l) => l.code === kept.language)?.name ?? kept.language }));
@@ -35,13 +40,19 @@ function Language({ found }: { found: You }) {
         setProblem(e.message);
       });
   };
+  useEffect(() => {
+    if (justChosen) {
+      document.querySelector<HTMLInputElement>(`#language input[value="${CSS.escape(justChosen)}"]`)?.focus();
+      justChosen = null;
+    }
+  }, []);
   return (
     <section className="card" id="language" aria-labelledby="language-title">
       <h2 id="language-title">{t("The language you read")}</h2>
       <p className="note">{t("a5s's pages speak it to you, and its agents answer you in it, unless you write to them in another. Your organisation's directory sets it first; it's yours to change.")}</p>
       <div className="choices" role="radiogroup" aria-labelledby="language-title">
         {found.languages.map((l) => (
-          <label key={l.code} className="check" lang={l.code}>
+          <label key={l.code} className="choice" lang={l.code}>
             <input type="radio" name="language" value={l.code} checked={chosen === l.code}
                    onChange={() => choose(l.code)} />
             {l.name}

@@ -170,6 +170,7 @@ export const WATCH: Record<string, string> = {
   "How far it may act": "ขอบเขตที่ทำได้",
   "Level {level}, {rung}, in no part.": "ระดับ {level} · {rung} · ไม่อยู่ในส่วนงานใด",
   "Part": "ส่วนงาน",
+  "Team": "ทีม",
   "Each type of change at its own": "การเปลี่ยนแปลงแต่ละประเภทที่มีระดับของตนเอง",
   "at {level} · {rung}": "ที่ระดับ {level} · {rung}",
   "As the settings its parts' owners signed give it. A type of change at level 2 is made on its own only where graded samples have raised a5s's cap on it; until they do, a person decides each.":
@@ -307,11 +308,19 @@ export const WATCH: Record<string, string> = {
   "Choose someone": "เลือกบุคคล",
   "What a right answer is, in your words, if you'd have its judge grade it":
     "คำตอบที่ถูกต้องเป็นอย่างไร ในคำพูดของคุณ หากต้องการให้ผู้ประเมินให้คะแนน",
-  "I've read it, and it says nothing about anyone": "ฉันอ่านแล้ว และข้อความนี้ไม่ได้ระบุถึงบุคคลใด",
+  "Everyone who authors the {agent} reads it in your draft, and once it's released, so does everyone who reads the agents' repository: put the sandbox's made-up amounts and dates in place of real ones too.":
+    "ผู้เขียน {agent} ทุกคนอ่านกรณีนี้ได้ในฉบับร่างของคุณ และเมื่อรีลีสแล้ว ทุกคนที่อ่าน repository ของเอเจนต์ได้ก็อ่านได้เช่นกัน: ให้ใช้จำนวนเงินและวันที่สมมติของแซนด์บ็อกซ์แทนของจริงด้วย",
+  "I've read it, and it says nothing about anyone, nor what a real record says":
+    "ฉันอ่านแล้ว ข้อความนี้ไม่ได้ระบุถึงบุคคลใด และไม่มีสิ่งที่ระเบียนจริงระบุไว้",
   "Keep it in my draft": "เก็บไว้ในฉบับร่างของฉัน",
 
   // The map of what depends on what (pages/Map.tsx, DependsMap.tsx)
   "Map": "แผนผัง",
+  "Systems": "ระบบ",
+  "Models": "โมเดล",
+  "Teams": "ทีม",
+  "{things} you may see. Choose one to see what it depends on, and what depends on it.":
+    "{things} ที่คุณเห็นได้ เลือกรายการหนึ่งเพื่อดูว่าขึ้นกับอะไร และอะไรขึ้นกับรายการนั้น",
   "What depends on what: the parts the settings name, the instances at work in them, the agents they run, the tools each may call, the systems those come from, and the models. Choose anything to see what it depends on and what depends on it, so you know what a change to it reaches.":
     "สิ่งใดขึ้นอยู่กับสิ่งใด ได้แก่ ส่วนงานที่การตั้งค่าระบุ อินสแตนซ์ที่ทำงานในส่วนงานเหล่านั้น เอเจนต์ที่อินสแตนซ์ใช้ เครื่องมือที่เอเจนต์แต่ละตัวเรียกใช้ได้ ระบบที่เครื่องมือเหล่านั้นมาจาก และโมเดล เลือกสิ่งใดก็ได้เพื่อดูว่าสิ่งนั้นขึ้นอยู่กับอะไร และอะไรขึ้นอยู่กับสิ่งนั้น เพื่อให้รู้ว่าการเปลี่ยนแปลงสิ่งนั้นส่งผลถึงอะไรบ้าง",
   "There's nothing here you may see yet: no agent you may know of.":

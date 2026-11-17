@@ -107,6 +107,7 @@ export const FRAME: Record<string, string> = {
   "What agents' model calls cost each month, at the prices models.yaml gives them: each part and agent you may see against the budget the settings set it, with a forecast to the month's end at the last week's pace, and what each message answered cost, all in. A budget guides: it stops no work, which the token budgets each release sets do.":
     "ค่าใช้จ่ายในการเรียกใช้โมเดลของเอเจนต์ในแต่ละเดือน ตามราคาที่ models.yaml กำหนด แสดงแต่ละส่วนงานและเอเจนต์ที่คุณดูได้เทียบกับงบประมาณที่การตั้งค่ากำหนด พร้อมคาดการณ์ถึงสิ้นเดือนตามอัตราของสัปดาห์ที่ผ่านมา และค่าใช้จ่ายรวมต่อข้อความที่ตอบ งบประมาณเป็นเพียงแนวทาง ไม่ได้หยุดการทำงาน ซึ่งเป็นหน้าที่ของงบประมาณโทเค็นที่แต่ละรีลีสกำหนด",
   "In": "เดือน",
+  "Show": "แสดง",
   "{month}, this month": "{month} (เดือนนี้)",
   "The budgets are in {theirs}, and models.yaml prices models in {prices}, so a5s compares what's spent with neither: a version of the settings with the budgets in {prices} puts that right.":
     "งบประมาณเป็นสกุลเงิน {theirs} แต่ models.yaml กำหนดราคาโมเดลเป็น {prices} a5s จึงไม่เปรียบเทียบค่าใช้จ่ายกับงบประมาณ การตั้งค่าฉบับใหม่ที่กำหนดงบประมาณเป็น {prices} จะแก้ไขได้",
@@ -130,7 +131,11 @@ export const FRAME: Record<string, string> = {
   "On course for {amount} by {day}, at the last week's pace": "คาดว่าจะถึง {amount} ภายใน {day} ตามอัตราของสัปดาห์ที่ผ่านมา",
   "By {day}": "ภายใน {day}",
   "Against": "เทียบกับ",
-  "{amount} over budget": "เกินงบประมาณ {amount}",
+  "{amount} over budget": "เกินงบ⁠ประมาณ {amount}",
+  "Some runs were on models whose prices models.yaml doesn't give, so a5s doesn't say what each message cost.":
+    "บางการทำงานใช้โมเดลที่ models.yaml ไม่ได้ระบุราคา a5s จึงไม่บอกค่าใช้จ่ายต่อข้อความ",
+  "Each month runs from midnight UTC on its first day, as the database's clock stamps each run.":
+    "แต่ละเดือนเริ่มตั้งแต่เที่ยงคืนตามเวลา UTC ของวันแรก ตามเวลาที่ฐานข้อมูลบันทึกแต่ละการทำงาน",
   "{amount} under budget, at this pace": "ต่ำกว่างบประมาณ {amount} ตามอัตรานี้",
   "{amount} under budget": "ต่ำกว่างบประมาณ {amount}",
   "Each message answered": "ต่อข้อความที่ตอบ",
@@ -166,6 +171,7 @@ export const FRAME: Record<string, string> = {
   "in {parts}": "ใน {parts}",
   "and {runs} unpriced": "และ {runs} ที่ไม่ทราบราคา",
   "none answered": "ไม่ได้ตอบ",
+  "not known": "ไม่ทราบ",
   // Conversations handed over to someone's teams (Handovers.tsx)
   "A conversation handed over": "บทสนทนาที่ส่งต่อ",
   "Answer them": "ตอบกลับ",

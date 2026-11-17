@@ -67,9 +67,9 @@ TH: dict[str, str] = {
     "{n} changes": "การเปลี่ยนแปลง {n} รายการ",
     # Spending (core/spending.py)
     "{whose} has spent {amount} this month, past its budget of {budget}":
-        "{whose} ใช้ไปแล้ว {amount} ในเดือนนี้ เกินงบประมาณ {budget}",
+        "{whose} ใช้ไปแล้ว {amount} ในเดือนนี้ เกินงบ\u2060ประมาณที่ตั้งไว้ {budget}",
     "{whose} is on course to spend {amount} this month, past its budget of {budget}":
-        "{whose} มีแนวโน้มจะใช้ {amount} ในเดือนนี้ เกินงบประมาณ {budget}",
+        "{whose} มีแนวโน้มจะใช้ {amount} ในเดือนนี้ เกินงบ\u2060ประมาณที่ตั้งไว้ {budget}",
     "you own {what}": "คุณเป็นเจ้าของ {what}",
     "{whose} ran {n} times this month on a model whose prices aren't known, which count for "
     "nothing against its budget":
@@ -93,8 +93,61 @@ TH: dict[str, str] = {
     "{from} works in {to}, at level {level}": "{from} ทำงานใน {to} ที่ระดับ {level}",
     "{from} works in {to}, at level {level}, and at level 2 for {types}":
         "{from} ทำงานใน {to} ที่ระดับ {level} และที่ระดับ 2 สำหรับ {types}",
+    "{from} works in {to}, at level {level}; the settings set level 2 for {held}, which a5s's "
+    "cap holds at level 1 until graded samples show it's accurate enough":
+        "{from} ทำงานใน {to} ที่ระดับ {level} การตั้งค่ากำหนดระดับ 2 สำหรับ {held} "
+        "ซึ่งเพดานของ a5s ยังคงไว้ที่ระดับ 1 จนกว่าตัวอย่างที่ให้คะแนนแล้วจะแสดงว่าแม่นยำพอ",
+    "{from} works in {to}, at level {level}, and at level 2 for {types}; the settings set "
+    "level 2 for {held} too, which a5s's cap holds at level 1 until graded samples show it's "
+    "accurate enough":
+        "{from} ทำงานใน {to} ที่ระดับ {level} และที่ระดับ 2 สำหรับ {types} การตั้งค่ากำหนดระดับ 2 "
+        "สำหรับ {held} ด้วย ซึ่งเพดานของ a5s ยังคงไว้ที่ระดับ 1 จนกว่าตัวอย่างที่ให้คะแนนแล้วจะแสดงว่าแม่นยำพอ",
+    "{from} works in {to}, at level {level}; the settings set level 2 for {held}, which counts "
+    "only once an owner of {to} approves the settings in force":
+        "{from} ทำงานใน {to} ที่ระดับ {level} การตั้งค่ากำหนดระดับ 2 สำหรับ {held} "
+        "ซึ่งจะมีผลเมื่อเจ้าของ {to} อนุมัติการตั้งค่าที่ใช้อยู่แล้วเท่านั้น",
     "{from} may ask {to}": "{from} ถาม {to} ได้",
+    "(a5s: what the {agent} just changed can be undone until {until}, on its page: {link})":
+        "(a5s: สิ่งที่ {agent} เพิ่งเปลี่ยนยกเลิกได้จนถึง {until} ที่หน้าของรายการนี้: {link})",
+    # Handing a conversation over (core/handover.py), and what the team answers
+    "The {agent} has handed this conversation to the {team} team, at your word: someone there "
+    "answers you here. They read its brief, and what you've said to it since you last left it a "
+    "day or more, but not its answers nor anything older. The {agent} answers again once they "
+    "hand it back.":
+        "{agent} ส่งต่อการสนทนานี้ให้ทีม {team} ตามที่คุณขอ: จะมีคนจากทีมนั้นตอบคุณที่นี่ "
+        "พวกเขาอ่านสรุปของเอเจนต์ และสิ่งที่คุณพูดกับเอเจนต์ตั้งแต่ครั้งล่าสุดที่คุณเว้นไปหนึ่งวันขึ้นไป "
+        "แต่ไม่ได้อ่านคำตอบของเอเจนต์หรือสิ่งที่เก่ากว่านั้น {agent} จะตอบอีกครั้งเมื่อทีมส่งคืน",
+    "The {team} team has handed this conversation back to the {agent}, which answers you again "
+    "from here.":
+        "ทีม {team} ส่งการสนทนานี้คืนให้ {agent} แล้ว ซึ่งจะตอบคุณต่อจากนี้",
+    "{name}, of the {team} team: {said}": "{name} จากทีม {team}: {said}",
+    "[a record you may not see]": "[ระเบียนที่คุณไม่มีสิทธิ์เห็น]",
+    "[the agent's brief, which draws on records you may not see: read what they've said "
+    "instead]": "[สรุปของเอเจนต์ ซึ่งอ้างอิงระเบียนที่คุณไม่มีสิทธิ์เห็น: โปรดอ่านสิ่งที่ผู้นั้นพูดแทน]",
+    # What waits on an instance (core/home.py)
+    "{n} change it asked for waits for your decision": "การเปลี่ยนแปลง {n} รายการที่เอเจนต์ขอรอการตัดสินใจของคุณ",
+    "{n} changes it asked for wait for your decision": "การเปลี่ยนแปลง {n} รายการที่เอเจนต์ขอรอการตัดสินใจของคุณ",
+    "{n} change it asked for waits for someone else's decision, as its parts' owners and "
+    "delegates decide them":
+        "การเปลี่ยนแปลง {n} รายการที่เอเจนต์ขอรอการตัดสินใจของผู้อื่น ตามที่เจ้าของส่วนงานและผู้ได้รับมอบหมายเป็นผู้ตัดสิน",
+    "{n} changes it asked for wait for someone else's decision, as its parts' owners and "
+    "delegates decide them":
+        "การเปลี่ยนแปลง {n} รายการที่เอเจนต์ขอรอการตัดสินใจของผู้อื่น ตามที่เจ้าของส่วนงานและผู้ได้รับมอบหมายเป็นผู้ตัดสิน",
+    "{n} sample of its work waits for your grade": "ตัวอย่างงาน {n} รายการรอการให้คะแนนของคุณ",
+    "{n} samples of its work wait for your grade": "ตัวอย่างงาน {n} รายการรอการให้คะแนนของคุณ",
+    "{n} or more samples of its work wait for your grade": "ตัวอย่างงาน {n} รายการขึ้นไปรอการให้คะแนนของคุณ",
+    "{n} sample of its work waits for a grade, from graders outside the team that built it":
+        "ตัวอย่างงาน {n} รายการรอการให้คะแนนจากผู้ให้คะแนนนอกทีมที่สร้างเอเจนต์",
+    "{n} samples of its work wait for a grade, from graders outside the team that built it":
+        "ตัวอย่างงาน {n} รายการรอการให้คะแนนจากผู้ให้คะแนนนอกทีมที่สร้างเอเจนต์",
+    "{n} note it keeps from what it learned, which you may read and remove":
+        "บันทึก {n} รายการที่เอเจนต์เก็บจากสิ่งที่เรียนรู้ ซึ่งคุณอ่านและลบได้",
+    "{n} notes it keeps from what it learned, which you may read and remove":
+        "บันทึก {n} รายการที่เอเจนต์เก็บจากสิ่งที่เรียนรู้ ซึ่งคุณอ่านและลบได้",
     "{from} answers beside {to}, and sends nothing": "{from} ตอบคู่กับ {to} โดยไม่ส่งสิ่งใดออกไป",
+    "{from} may hand a conversation to {to}, whose people answer it":
+        "{from} ส่งต่อบทสนทนาให้ {to} ได้ ซึ่งคนในทีมจะเป็นผู้ตอบ",
+    "people who answer the conversations handed to them": "ผู้ที่ตอบบทสนทนาที่ส่งต่อมาให้",
     "an MCP server": "เซิร์ฟเวอร์ MCP",
     "the scenario's own records": "ระเบียนของสถานการณ์เอง",
     "a library of documents": "คลังเอกสาร",
@@ -111,11 +164,31 @@ TH: dict[str, str] = {
     "a shadow: it answers beside another, and sends nothing":
         "เงา: ตอบคู่กับอินสแตนซ์อื่น โดยไม่ส่งสิ่งใดออกไป",
     # What a version of the settings would have done differently (core/impact.py)
-    "Each call is decided as the directory, the agents' releases, the records' parts and a5s's "
-    "caps stand now. A change someone asked for of their own records counts as theirs only "
-    "where the decision recorded shows it was.":
+    "It decides again the agents' tool calls, and nothing else: not which models may answer, "
+    "whom an instance serves, whom it asks or hands conversations to, or what shadows do. Each "
+    "call is decided as the directory, the agents' releases, the records' parts and a5s's caps "
+    "stand now. A change someone asked for of their own records counts as theirs only where the "
+    "decision recorded shows it was.":
+        "ตัวอย่างนี้ตัดสินเฉพาะการเรียกใช้เครื่องมือของเอเจนต์ใหม่อีกครั้งเท่านั้น ไม่ได้ตัดสินว่าโมเดลใดตอบได้ "
+        "อินสแตนซ์ให้บริการใคร ถามใครหรือส่งต่อการสนทนาให้ใคร หรือเงาทำอะไร "
         "แต่ละการเรียกใช้ถูกตัดสินตามไดเรกทอรี รีลีสของเอเจนต์ ส่วนงานของระเบียน และเพดานของ a5s "
         "ในปัจจุบัน การเปลี่ยนแปลงที่ผู้ใดขอสำหรับระเบียนของตนเอง จะนับเป็นของผู้นั้นเฉพาะเมื่อการตัดสินที่บันทึกไว้แสดงเช่นนั้น",
+    "It changes the classes of data, which decide which models may answer: it doesn't decide "
+    "the agents' model calls again.":
+        "เวอร์ชันนี้เปลี่ยนประเภทข้อมูล ซึ่งกำหนดว่าโมเดลใดตอบได้: ตัวอย่างนี้ไม่ได้ตัดสินการเรียกโมเดลของเอเจนต์ใหม่",
+    "It changes whom {instance} serves, which it doesn't decide again.":
+        "เวอร์ชันนี้เปลี่ยนผู้ที่ {instance} ให้บริการ ซึ่งตัวอย่างนี้ไม่ได้ตัดสินใหม่",
+    "It changes whom {instance} may ask, which it doesn't decide again.":
+        "เวอร์ชันนี้เปลี่ยนผู้ที่ {instance} ถามได้ ซึ่งตัวอย่างนี้ไม่ได้ตัดสินใหม่",
+    "It changes whom {instance} may hand conversations to, which it doesn't decide again.":
+        "เวอร์ชันนี้เปลี่ยนผู้ที่ {instance} ส่งต่อการสนทนาให้ได้ ซึ่งตัวอย่างนี้ไม่ได้ตัดสินใหม่",
+    "It changes what {instance} shadows, which it doesn't decide again.":
+        "เวอร์ชันนี้เปลี่ยนสิ่งที่ {instance} เป็นเงาให้ ซึ่งตัวอย่างนี้ไม่ได้ตัดสินใหม่",
+    "It changes what agents may spend, which decides when they stop for the month: it doesn't "
+    "decide that again.":
+        "เวอร์ชันนี้เปลี่ยนงบที่เอเจนต์ใช้ได้ ซึ่งกำหนดว่าจะหยุดเมื่อใดในเดือนนั้น: ตัวอย่างนี้ไม่ได้ตัดสินใหม่",
+    "It changes the data protection officer's choices, which it doesn't decide again.":
+        "เวอร์ชันนี้เปลี่ยนตัวเลือกของเจ้าหน้าที่คุ้มครองข้อมูล ซึ่งตัวอย่างนี้ไม่ได้ตัดสินใหม่",
     # The roles someone holds, and what each lets them do (core/home.py, core/administration.py)
     "Owner of {scope}": "เจ้าของ {scope}",
     "Delegate in {scope}": "ผู้รับมอบหมายใน {scope}",
@@ -168,9 +241,10 @@ TH: dict[str, str] = {
         "ดูแลระบบ และทำให้ปลอดภัยขึ้นได้เองลำพัง: ระงับอินสแตนซ์ ลดเพดาน หรือถอนรีลีส แต่ไม่ผ่อนคลาย "
         "และลงนามรีลีสในฐานะวิศวกร",
     # a5s's notes in chat (core/feedback.py)
-    "Noted: its owners will see that answer, and the run behind it, to check it, and nothing "
-    "more of what you said.":
-        "รับทราบแล้ว เจ้าของเอเจนต์จะเห็นคำตอบนั้นและการทำงานเบื้องหลังเพื่อตรวจสอบ โดยไม่เห็นสิ่งอื่นที่คุณพูด",
+    "Noted: its owners will see that answer, the run behind it and what you said of it, to check "
+    "it, and who you are only if the data protection officer lets them.":
+        "รับทราบแล้ว เจ้าของเอเจนต์จะเห็นคำตอบนั้น การทำงานเบื้องหลัง และสิ่งที่คุณบอกเกี่ยวกับคำตอบนั้นเพื่อตรวจสอบ "
+        "และจะรู้ว่าคุณเป็นใครก็ต่อเมื่อเจ้าหน้าที่คุ้มครองข้อมูลอนุญาต",
 }
 
 # Sentences other parts of a5s write whole, by pattern: each group a name or a figure, kept as

@@ -36,6 +36,7 @@ import secrets
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import timedelta
+from typing import Any
 from urllib.parse import urlencode, urlsplit
 
 import httpx
@@ -45,9 +46,11 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 
 from a5s import config, db
+from a5s.contract import Person
 from a5s.core import ledger
 
 NAME = re.compile(r"[a-z][a-z0-9-]{0,31}")
+WHOSE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,63}(\.[A-Za-z_][A-Za-z0-9_]{0,63}){0,3}")  # a field
 WITHIN = timedelta(minutes=15)  # to come back with a code, from starting to connect [starting value]
 UNUSED = timedelta(days=90)  # tokens unused this long are forgotten [starting value]
 EARLY = timedelta(seconds=60)  # an access token is renewed this long before it lapses
@@ -85,6 +88,9 @@ class System:
     scopes: tuple[str, ...] = ()
     title: str = ""  # its name, as people know it, such as ServiceNow
     secret: str | None = field(default=None, repr=False)  # the core's alone
+    whoami: str = ""  # where the core asks, with a new token, whose account it is
+    whose: str = ""  # the field of that answer naming the account, such as id or result.user_name
+    known_as: str = ""  # the directory's identities it is, such as entra; none: the a5s id
 
 
 @dataclass(frozen=True)
@@ -95,8 +101,10 @@ class Delegation:
     def from_env(cls, secrets_too: bool = False,
                  env: dict[str, str] | None = None) -> Delegation | None:
         """Each system from A5S_DELEGATION, a JSON list of {name, authorize, token, client_id,
-        scopes, title}, with a5s's client secret there from A5S_DELEGATION_<NAME>_SECRET where
-        `secrets_too`, as the core reads it; None where nobody may connect anything."""
+        scopes, title, whoami, whose, known_as}, with a5s's client secret there from
+        A5S_DELEGATION_<NAME>_SECRET where `secrets_too`, as the core reads it; None where nobody
+        may connect anything. Each says where the core asks whose account a token is, and how
+        the directory knows that account, since the core keeps a token only for its own."""
         source = os.environ if env is None else env
         listed = config.DELEGATION.read(source)
         if not listed:
@@ -108,12 +116,25 @@ class Delegation:
                                          "servicenow")
             name = str(s["name"])
             secret = source.get(f"A5S_DELEGATION_{name.upper().replace('-', '_')}_SECRET")
-            found.append(System(name=name, authorize=_address(str(s.get("authorize", "")), "authorize"),
-                                token=_address(str(s.get("token", "")), "token"),
+            authorize = _address(str(s.get("authorize", "")), "authorize")
+            token = _address(str(s.get("token", "")), "token")
+            whose = str(s.get("whose") or "")
+            if not WHOSE.fullmatch(whose):
+                raise config.ConfigError(
+                    f"A5S_DELEGATION's {name} says where a5s asks whose account a token is "
+                    "(whoami) and the field of its answer that names it (whose), such as id: "
+                    "a5s keeps someone's token only for an account the system says is theirs")
+            known_as = str(s.get("known_as") or "")
+            if known_as and not NAME.fullmatch(known_as):
+                raise config.ConfigError(f"A5S_DELEGATION's {name} names the directory's "
+                                         "identities it is in lowercase, such as entra")
+            found.append(System(name=name, authorize=authorize, token=token,
                                 client_id=str(s.get("client_id") or ""),
                                 scopes=tuple(str(x) for x in s.get("scopes") or ()),
                                 title=str(s.get("title") or name),
-                                secret=secret if secrets_too else None))
+                                secret=secret if secrets_too else None,
+                                whoami=_address(str(s.get("whoami", "")), "whoami"),
+                                whose=whose, known_as=known_as))
         return cls(systems=tuple(found))
 
     def system(self, name: str) -> System | None:
@@ -207,6 +228,33 @@ def _post(system: System, form: dict[str, str], http: httpx.Client) -> dict:
     return body
 
 
+def _account(system: System, access: str, http: httpx.Client) -> str:
+    """Whose account a token is, as the system says it: the field `whose` names, of what it
+    answers at `whoami` with the token. Refused, saying why, if it says none."""
+    try:
+        answer = http.get(system.whoami, headers={"Authorization": f"Bearer {access}",
+                                                  "Accept": "application/json"},
+                          timeout=TIMEOUT, follow_redirects=False)
+        found: Any = answer.json() if answer.status_code == 200 else None
+    except (httpx.HTTPError, ValueError):
+        found = None
+    for key in system.whose.split("."):
+        found = found.get(key) if isinstance(found, dict) else None
+    if not isinstance(found, str | int) or isinstance(found, bool) or not str(found).strip():
+        raise Refused(f"{system.title} didn't say whose account it is, so a5s keeps nothing")
+    return str(found).strip()
+
+
+def theirs(system: System, account: str, person: Person | None) -> bool:
+    """Whether an account in a system is someone's, as the directory knows them: their
+    identity of the kind the system says, or where it says none, their a5s id."""
+    if person is None:
+        return False
+    if not system.known_as:
+        return account.casefold() == person.id.casefold()
+    return f"{system.known_as}:{account}".casefold() in {i.casefold() for i in person.identities}
+
+
 def _kept(body: dict, before: dict | None) -> tuple[dict, timedelta | None]:
     """What to keep of a token endpoint's answer: the access token, the refresh token, the one
     before if it sent no new one, and how long until the access token lapses."""
@@ -219,10 +267,12 @@ def _kept(body: dict, before: dict | None) -> tuple[dict, timedelta | None]:
 
 
 def sweep(conn: db.Connection, cfg: Delegation | None, seal_keys: tuple[str, ...], back: str,
-          http: httpx.Client) -> dict[str, int]:
+          http: httpx.Client, person: Callable[[str], Person | None]) -> dict[str, int]:
     """The core exchanges each code people came back with for their tokens, keeping them
-    sealed, and lets go of starts nobody came back to. How many connected, and failed: by the
-    database's clock, as retention goes."""
+    sealed only once the system says whose account they are and the directory, `person`, says
+    that's who came back with it: whatever the part people reach recorded, a5s acts as nobody
+    in an account that isn't theirs. It lets go of starts nobody came back to. How many
+    connected, and failed: by the database's clock, as retention goes."""
     done = {"connected": 0, "failed": 0}
     conn.execute("delete from delegation_starts where code is null and started_at < now() - %s",
                  (WITHIN,))
@@ -236,6 +286,9 @@ def sweep(conn: db.Connection, cfg: Delegation | None, seal_keys: tuple[str, ...
             body = _post(system, {"grant_type": "authorization_code", "code": row["code"],
                                   "redirect_uri": back, "code_verifier": row["verifier"]}, http)
             tokens, lapses = _kept(body, None)
+            if not theirs(system, _account(system, tokens["access"], http), person(row["person"])):
+                raise Refused(f"{system.title} says that account isn't theirs, as the directory "
+                              "knows them, so a5s keeps nothing")
             conn.execute(
                 "insert into delegations (person, system, sealed, scopes, expires_at) "
                 "values (%s, %s, %s, %s, now() + %s) on conflict (person, system) do update set "

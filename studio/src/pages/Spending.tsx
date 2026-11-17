@@ -6,26 +6,18 @@
 // may watch, as figures. A budget guides: it stops no work, which the token budgets each release
 // sets do.
 
+import { type FormEvent, useEffect, useState } from "react";
 import { get } from "../api";
 import type * as gen from "../api.gen";
 import { locale, t } from "../i18n";
 import { Icon } from "../icons";
 import { go, Link } from "../router";
-import { PageHead, plural, useLoad, Waiting, Wide } from "../ui";
+import { money, PageHead, plural, useLoad, Waiting, Wide } from "../ui";
 
 type Kind = "part" | "agent";
 
 const monthly = () => new Intl.DateTimeFormat(locale(), { month: "long", year: "numeric", timeZone: "UTC" });
 const daily = () => new Intl.DateTimeFormat(locale(), { day: "numeric", month: "long", timeZone: "UTC" });
-
-/** An amount in the currency models.yaml prices models in, or a plain figure where it names none:
- * to the cent, or to two figures below a cent, so a cheap model's month isn't shown as nothing. */
-export function money(n: number, currency: string | null): string {
-  const digits: Intl.NumberFormatOptions = n !== 0 && Math.abs(n) < 0.01
-    ? { maximumSignificantDigits: 2 } : { minimumFractionDigits: 2, maximumFractionDigits: 2 };
-  return currency ? n.toLocaleString(locale(), { style: "currency", currency, ...digits })
-    : n.toLocaleString(locale(), digits);
-}
 
 function named(m: string): string {
   const [y, n] = m.split("-").map(Number);
@@ -123,7 +115,8 @@ function Panel({ kind, spend, found }: { kind: Kind; spend: gen.Spend; found: ge
               ) : (
                 <>
                   <strong>{t("None")}</strong>
-                  <p>{kind === "part" ? (found.current ? t("Agents answered no messages there this month.") : t("Agents answered no messages there that month."))
+                  <p>{spend.answered > 0 ? t("Some runs were on models whose prices models.yaml doesn't give, so a5s doesn't say what each message cost.")
+                    : kind === "part" ? (found.current ? t("Agents answered no messages there this month.") : t("Agents answered no messages there that month."))
                     : (found.current ? t("Its runs answered no messages this month.") : t("Its runs answered no messages that month."))}</p>
                 </>
               )}
@@ -163,10 +156,11 @@ function Instances({ found }: { found: gen.Spending }) {
       {found.instances.length === 0 ? (
         <p className="note">{found.current ? t("None you may watch spent anything this month.") : t("None you may watch spent anything that month.")}</p>
       ) : (
+        <>
+        <p className="note" id="instances-about">{found.current ? t("What each instance you may watch spent this month, and is on course to")
+          : t("What each instance you may watch spent in {month}", { month: named(found.month) })}</p>
         <Wide label={t("What each instance spent")}>
-          <table className="figures cost-figures">
-            <caption>{found.current ? t("What each instance you may watch spent this month, and is on course to")
-              : t("What each instance you may watch spent in {month}", { month: named(found.month) })}</caption>
+          <table className="figures cost-figures" aria-describedby="instances-about">
             <thead>
               <tr>
                 <th scope="col">{t("Instance")}</th>
@@ -188,12 +182,13 @@ function Instances({ found }: { found: gen.Spending }) {
                   {found.current && <td className="num">{i.forecast !== null ? money(i.forecast, currency) : ""}</td>}
                   <td className="num">{i.runs.toLocaleString(locale())}</td>
                   <td className="num">{i.answered.toLocaleString(locale())}</td>
-                  <td className="num">{i.per_answer !== null ? money(i.per_answer, currency) : t("none answered")}</td>
+                  <td className="num">{i.per_answer !== null ? money(i.per_answer, currency) : i.answered > 0 ? t("not known") : t("none answered")}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </Wide>
+        </>
       )}
     </section>
   );
@@ -206,25 +201,46 @@ function months(): string[] {
   return Array.from({ length: 12 }, (_, n) => moved(current, -n));
 }
 
+// Whether someone just asked for a month, whose choice takes the keyboard again once its page
+// is drawn (round 14, E-L1)
+let askedFor = false;
+
 export function SpendingPage({ month }: { month?: string }) {
   const { data, error } = useLoad(() => get<gen.Spending>(
     `/studio/api/spending${month ? `?month=${encodeURIComponent(month)}` : ""}`), [month]);
   const panels = data ? [...data.parts.map((s) => ["part", s] as const), ...data.agents.map((s) => ["agent", s] as const)] : [];
   const choices = months();
   const shown = data?.month ?? month ?? choices[0];
+  const [picked, setPicked] = useState(month ?? choices[0]);
+  const show = (event: FormEvent) => {  // on Enter or the button: never as the arrow keys step
+    event.preventDefault();
+    if (picked === (month ?? choices[0])) return;
+    askedFor = true;
+    go(picked === choices[0] ? { page: "spending" } : { page: "spending", month: picked });
+  };
+  useEffect(() => {
+    if (askedFor) {
+      askedFor = false;
+      document.getElementById("month")?.focus();
+    }
+  }, []);
   return (
     <>
       <PageHead title={t("Spending")}
                 about={t("What agents' model calls cost each month, at the prices models.yaml gives them: each part and agent you may see against the budget the settings set it, with a forecast to the month's end at the last week's pace, and what each message answered cost, all in. A budget guides: it stops no work, which the token budgets each release sets do.")}>
-        <label className="period">{t("In")}{" "}
-          <select id="month" value={shown}
-                  onChange={(e) => go(e.target.value === choices[0] ? { page: "spending" } : { page: "spending", month: e.target.value })}>
-            {[...new Set([...choices, shown])].map((m) => (
-              <option key={m} value={m}>{m === choices[0] ? t("{month}, this month", { month: named(m) }) : named(m)}</option>
-            ))}
-          </select>
-        </label>
+        <form className="period" onSubmit={show}>
+          <label>{t("In")}{" "}
+            <select id="month" value={picked} onChange={(e) => setPicked(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") show(e); }}>
+              {[...new Set([...choices, shown, picked])].map((m) => (
+                <option key={m} value={m}>{m === choices[0] ? t("{month}, this month", { month: named(m) }) : named(m)}</option>
+              ))}
+            </select>
+          </label>
+          <button type="submit">{t("Show")}</button>
+        </form>
       </PageHead>
+      <p className="note" id="utc">{t("Each month runs from midnight UTC on its first day, as the database's clock stamps each run.")}</p>
       {!data && <Waiting error={error} block />}
       {data && !data.compared && (
         <p className="note" id="uncompared" role="status">{t("The budgets are in {theirs}, and models.yaml prices models in {prices}, so a5s compares what's spent with neither: a version of the settings with the budgets in {prices} puts that right.",

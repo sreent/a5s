@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import uuid
 from collections.abc import Iterator
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -18,6 +19,8 @@ import httpx
 import psycopg
 import pytest
 import yaml
+from playwright.sync_api import expect
+from psycopg.types.json import Jsonb
 
 from a5s import db, definitions
 from a5s.contract import parse_settings
@@ -62,14 +65,15 @@ def stack(database: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Ite
         yield s
 
 
-def shadowed(stack: Stack, lets: bool = True, **more) -> object:
+def shadowed(stack: Stack, lets: bool = True, names: bool = True, **more) -> object:
     """A version with the assistant's next version shadowing assistant-finance, which Ana,
-    billing's owner, and Noor, the officer, sign."""
+    billing's owner, and Noor, the officer, sign: with names in the studio, unless not
+    `names`, so graders read the pairs of an instance serving two people."""
     settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text())
     return stack.settle(instances={**settings["instances"], "assistant-next-finance": {
         "definition": "assistant-next", "serves": ["ana", "ben"], "parts": ["billing"],
         "level": 1, "owner": "ana", "deputy": "ben", "shadows": "assistant-finance", **more}},
-        data_protection={"shadow_runs": lets}, signers=("ana", "noor"))
+        data_protection={"shadow_runs": lets, "studio_names": names}, signers=("ana", "noor"))
 
 
 def as_person(stack: Stack, approving: str, provider, person: str, method: str, path: str,
@@ -400,12 +404,144 @@ def test_graders_compare_answers_in_the_studio(stack, approving, provider, brows
     page.wait_for_selector("#pairs [data-pair]", timeout=30000)
     shown = page.inner_text("#pairs")
     assert SHADOWED in shown and SENT in shown and ASKED in shown
+    room = page.eval_on_selector("#pairs [data-pair] [role=group]", """el => [getComputedStyle(el).columnGap,
+        el.getBoundingClientRect().top - el.previousElementSibling.getBoundingClientRect().bottom]""")
+    assert room[0] != "normal" and room[1] > 4  # its buttons apart, and apart from the answers
     accessible(page)
     page.click("#pairs button:has-text('As good')")
     page.wait_for_selector("#nothing", timeout=30000)
+    expect(page.locator("#nothing")).to_be_focused(timeout=10000)  # never lost
     page.wait_for_selector("#figures [data-shadow='assistant-next-finance']", timeout=30000)
     assert "1 better" not in page.inner_text("#figures") and "1 as good" in page.inner_text("#figures")
     accessible(page)
     with db.transaction(stack.admin) as conn:
         assert conn.execute("select grade, graded_by from shadow_answers").fetchone() == {
             "grade": "same", "graded_by": "dana"}
+
+
+# Round 14
+
+def test_until_names_are_agreed_graders_read_no_pair_of_a_small_instance_and_others_masked(
+        stack, approving, provider):
+    """C4: graders read what someone said as well as both answers, as owners read answers said
+    to be wrong: until the officer agrees to names, none of an instance serving fewer than the
+    officer chose, and the rest with names, emails, links and long numbers masked by code."""
+    assert not shadowed(stack, names=False).refused
+    stack.model.reply("Hello, Ben: Q-1002 is still open.")
+    stack.model.reply("Hi Ben, it's still open.")
+    stack.say("Hello, I'm Ben Okafor: is Q-1002 still open?", person="ben")
+    page = as_person(stack, approving, provider, "dana", "GET", "/studio/api/shadows").json()
+    assert page["pairs"] == []  # assistant-finance serves two, fewer than the officer's five
+    dana = stack.gateway.scenario.person("dana")
+    with db.transaction(stack.admin) as conn:
+        [pair] = shadows.gradeable(conn, stack.gateway.scenario, dana, names=False)
+    assert pair["asked"] == "Hello, I'm [someone] [someone]: is Q-1002 still open?"
+    assert (pair["sent"], pair["answer"]) == ("Hello, [someone]: Q-1002 is still open.",
+                                             "Hi [someone], it's still open.")
+
+
+def test_once_shadows_may_not_answer_graders_read_none_they_answered(stack, approving, provider):
+    """C's question: the officer's choice in force decides whether graders read pairs at all,
+    not only whether shadows answer: pairs already kept go unread once it's taken back."""
+    assert not shadowed(stack).refused
+    stack.model.reply(SENT)
+    stack.model.reply(SHADOWED)
+    stack.say(ASKED, person="ben")
+    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text())
+    assert not stack.settle(instances=settings["instances"], data_protection={
+        "shadow_runs": False, "studio_names": True}, signers=("ana", "noor")).refused
+    page = as_person(stack, approving, provider, "dana", "GET", "/studio/api/shadows")
+    assert page.json()["pairs"] == []
+    with db.transaction(stack.admin) as conn:
+        pair = conn.execute("select id from shadow_answers").fetchone()["id"]
+    assert as_person(stack, approving, provider, "dana", "POST", f"/studio/api/shadows/{pair}/grade",
+                     {"grade": "same"}).status_code == 404
+
+
+def test_a_grader_reads_how_a_shadow_did_only_with_a_pair_of_it_to_grade(stack, approving,
+                                                                         provider):
+    """C5: Dana grades, and may not know the assistant or its next version exist: the shadows
+    page names a shadow to her only once it offers her a pair of its to grade."""
+    assert not shadowed(stack).refused
+    assert as_person(stack, approving, provider, "dana", "GET",
+                     "/studio/api/agents/assistant-next").status_code == 404
+    page = as_person(stack, approving, provider, "dana", "GET", "/studio/api/shadows").json()
+    assert page["shadows"] == []
+    stack.model.reply(SENT)
+    stack.model.reply(SHADOWED)
+    stack.say(ASKED, person="ben")
+    page = as_person(stack, approving, provider, "dana", "GET", "/studio/api/shadows").json()
+    assert [s["instance"] for s in page["shadows"]] == ["assistant-next-finance"]
+
+
+def test_older_pairs_a_grader_may_not_grade_hide_none_they_may(stack):
+    """C8: graders read pairs a page at a time, so 500 older ones Dana may not grade, of orders'
+    records, don't keep her from a newer one she may."""
+    assert not shadowed(stack).refused
+    dana = stack.gateway.scenario.person("dana")
+
+    def pair(conn, records: list[str]) -> None:
+        runs = []
+        for instance in ("assistant-next-finance", "assistant-finance"):
+            run = str(uuid.uuid4())
+            conn.execute("insert into runs (id, instance_id, token_hash, trigger, acts_for) "
+                         "values (%s, %s, %s, %s, %s)", (run, instance, uuid.uuid4().bytes,
+                                                         Jsonb({"kind": "message"}), ["ben"]))
+            runs.append(run)
+        conn.execute(
+            "insert into shadow_answers (run_id, live_run_id, instance_id, shadows, definition, "
+            "person, agent, acts_for, asked, sent, answer, records) values (%s, %s, "
+            "'assistant-next-finance', 'assistant-finance', 'assistant-next', 'ben', "
+            "'assistant', %s, 'asked', 'sent', 'answer', %s)", (*runs, ["ben"], records))
+
+    with db.transaction(stack.admin) as conn:
+        for _ in range(shadows.SCAN):
+            pair(conn, ["Q-1003"])  # orders', which quality may not see
+        pair(conn, [])
+        assert len(shadows.gradeable(conn, stack.gateway.scenario, dana)) == 1
+
+
+def test_their_next_message_waits_on_no_shadow(stack):
+    """Round 14 (C3): shadows answer beside a run once its conversation is let go, so the
+    person's next message, or a group's, is taken at once, never after each shadow's run."""
+    assert not shadowed(stack).refused
+    seen = {}
+
+    def during(n: int) -> None:
+        if n != 2:  # the shadow's model call, once the live answer has gone
+            return
+        with db.transaction(stack.admin) as conn:
+            seen["leases"] = [r["key"] for r in conn.execute("select key from leases")]
+        httpx.post(f"{stack.channels_url}/channels/local/messages", timeout=30,
+                   json={"person": "ben", "agent": "assistant", "text": "And Q-1001?"})
+        seen["claimed"] = stack.scheduler()._claim()  # another scheduler, at that moment
+
+    stack.model.on_request = during
+    stack.model.reply(SENT)
+    stack.model.reply(SHADOWED)
+    assert stack.say("When is Q-1002 due?", person="ben") == SENT
+    assert "ben/assistant/general" not in seen["leases"]
+    assert seen["claimed"] is not None and seen["claimed"]["person"] == "ben"
+
+
+def test_a_group_chats_pairs_are_counted_in_exports_and_kept_under_a_leavers_archive(stack):
+    """Round 14 (C13): what a shadow answered in a group chat holds others' words too, so each
+    member's export counts it, and gives only their own chats' pairs; and someone who leaves is
+    under their archive's name in it, as in the group's turns, and so is its grader."""
+    from a5s.core import departures
+    with db.transaction(stack.admin) as conn:
+        conn.execute(
+            "insert into shadow_answers (run_id, live_run_id, instance_id, shadows, definition, "
+            "person, agent, acts_for, asked, sent, answer, graded_by) values (gen_random_uuid(), "
+            "gen_random_uuid(), 'assistant-next-finance', 'assistant-finance', 'assistant-next', "
+            "'group:room', 'assistant', '{ana,ben}', 'When is Q-1002 due, Ben?', 'Friday.', "
+            "'On Friday.', 'dana')")
+    with db.transaction(stack.cfg.database_url) as conn:
+        found = export.gather(conn, "ana")
+    assert found["shadow_answers"] == [] and found["shadow_answers_in_groups"] == 1
+    with db.transaction(stack.cfg.database_url) as conn:
+        ben = departures.rename(conn, "ben", stack.gateway.clock())
+        dana = departures.rename(conn, "dana", stack.gateway.clock())
+    with db.transaction(stack.admin) as conn:
+        [pair] = conn.execute("select acts_for, graded_by from shadow_answers").fetchall()
+    assert (pair["acts_for"], pair["graded_by"]) == (["ana", ben], dana)

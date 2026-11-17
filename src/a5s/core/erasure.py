@@ -65,6 +65,8 @@ WORDS = {
     "shadow_answers": "what shadows answered them, beside the answers sent, for graders",
     "shadow_grades": "whose grades of shadows' answers they were",
     "kept_cases": "test cases kept from runs that held what they said, out of every draft",
+    "kept_cases_left": "test cases kept from runs that hold what they said, in a draft's file "
+                       "code can't read: put it right, and erase them again",
     "cases_kept_by": "whose test cases kept from runs they were",
     "delegation_starts": "accounts they had begun to connect",
     "report_seen": "what reports told them",
@@ -164,8 +166,11 @@ def erase(conn: db.Connection, person: str, now: datetime,
            "any(%s)", ([*names, person],))  # the grade stays, without whose it was
     delete("feedback_grades", "update answer_feedback set graded_by = null where graded_by = "
            "any(%s)", ([*names, person],))  # as does a grade of an answer said to be wrong
-    if count := run_cases.forget(conn, [*names, person]):  # out of every draft that holds it
+    count, stuck = run_cases.forget(conn, [*names, person])  # out of every draft holding it
+    if count:
         gone["kept_cases"] = count
+    if stuck:  # where code can't take a case out, such as a file that isn't YAML: whose stays
+        gone["kept_cases_left"] = stuck
     delete("cases_kept_by", "update kept_cases set kept_by = null where kept_by = any(%s)",
            ([*names, person],))
     delete("questions", "delete from questions where acts_for && %s and acts_for <@ %s",

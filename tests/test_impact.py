@@ -172,3 +172,66 @@ def test_it_reads_in_the_language_its_reviewer_reads(stack, approving, provider)
     reads(stack, "ana", "th")
     found = reviewed(approving, provider, written(approving, provider, parts=LEVEL_2))
     assert found["about"] == words.TH[impact.ABOUT]  # in the language Ana reads
+
+
+def test_it_says_what_a_version_changes_that_it_doesnt_decide_again(stack, approving, provider):
+    """Round 14 (C10): the preview decides the agents' tool calls again and nothing else, and
+    says so, and names what else a version changes that it doesn't decide again, such as whom
+    an instance serves."""
+    edited = yaml.safe_load(written(approving, provider))
+    edited["instances"]["assistant-finance"]["serves"] = ["ana"]
+    found = reviewed(approving, provider, yaml.safe_dump(edited))
+    assert found["about"] == impact.ABOUT and found["about"].startswith(
+        "It decides again the agents' tool calls, and nothing else")
+    assert found["beyond"] == [
+        "It changes whom assistant-finance serves, which it doesn't decide again."]
+
+
+def test_a_preview_is_worked_out_once_while_the_ledger_stands(stack, approving, provider,
+                                                               monkeypatch):
+    """Round 14 (C11): a preview takes a few seconds of the channels app, so it's worked out
+    once for a version, its reader and the ledger as it stands, and kept a while: a look again
+    costs nothing, and a call more is worked out afresh."""
+    asked(stack)
+    worked = []
+    real = impact.preview
+    monkeypatch.setattr(impact, "preview", lambda *a, **k: worked.append(1) or real(*a, **k))
+    text = written(approving, provider, parts=LEVEL_2)
+    first = reviewed(approving, provider, text)
+    assert reviewed(approving, provider, text) == first and len(worked) == 1
+    asked(stack, MOVE_ANOTHER, said="Please move Q-1001 to the 20th.")
+    assert reviewed(approving, provider, text)["calls"] == 2 and len(worked) == 2
+
+
+def test_on_a_phone_nothing_the_approve_page_says_is_cut_off(stack, approving, provider, browser):
+    """Round 14 (E-M1): on a phone, the preview's table scrolls in a frame of its own, and the
+    card cuts nothing of what it says off: what the version changes, what's missing, the whole
+    of it, and the button that approves it (Ocean's approval card)."""
+    from conftest import PHONE
+    asked(stack)
+    raise_cap(stack)
+    asking = api(approving, provider, "/settings/api/requests",
+                 text=written(approving, provider, parts=LEVEL_2))
+    assert asking.status_code == 202, asking.text
+    stack.scheduler().apply_approved()
+    with db.transaction(stack.admin) as conn:
+        [row] = conn.execute("select digest from settings_proposals where outcome is null "
+                             "order by serial desc limit 1").fetchall()
+    provider.person = "ana"
+    page = browser.new_page(viewport=PHONE)
+    page.goto(f"{approving}/studio/approve?settings={row['digest']}")
+    page.wait_for_selector("#impact table", timeout=30000)
+    cut = page.evaluate("""() => {
+        const card = document.querySelector('.approval');
+        const edge = card.getBoundingClientRect().right;
+        const framed = (el) => {
+            for (let p = el.parentElement; p && p !== card; p = p.parentElement) {
+                if (/(auto|scroll)/.test(getComputedStyle(p).overflowX)) return true;
+            }
+            return false;
+        };
+        return [...card.querySelectorAll('.approval-body *')].filter((el) => !framed(el)
+            && el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().right > edge + 1)
+            .map((el) => el.tagName + (el.id ? '#' + el.id : ''));
+    }""")
+    assert cut == []

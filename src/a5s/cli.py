@@ -14,7 +14,7 @@ import sys
 import threading
 import time
 from dataclasses import replace
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import quote
 
@@ -32,6 +32,7 @@ from a5s.core import (
     inbox,
     ledger,
     measures,
+    narrowing,
     registry,
     releases,
     signing,
@@ -86,9 +87,12 @@ def _migrate(cfg: Config, url: str | None = None) -> None:
 
 def _apply(cfg: Config) -> None:
     sc = build.scenario(cfg)
+    found, settings = definitions.load_all(cfg.agents_dir), sc.settings()
     with db.transaction(cfg.database_url) as conn:
-        result = registry.apply(conn, definitions.load_all(cfg.agents_dir), sc.settings(),
-                                sc.tools(), sc.person, sc.name)
+        result = registry.apply(conn, found, settings, sc.tools(), sc.person, sc.name)
+        if not result.refused:  # one that only narrows tells others, as it does where people
+            narrowing.told(conn, sc, found, settings, result.before,  # approve it (round 14)
+                           result.signers, datetime.now(UTC))
     if result.refused:
         sys.exit("Not applied, because " + "; ".join(result.refused) + ".")
     print(f"Applied {', '.join(result.instances)}, signed by {', '.join(result.signers)}.")
