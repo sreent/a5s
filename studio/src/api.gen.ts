@@ -690,6 +690,7 @@ export type Impact = {
   capped: string[];
   about: string;
   hidden: number;
+  beyond?: string[];
 };
 
 // The version of the settings in force: as written, all of it in words, and as data, which

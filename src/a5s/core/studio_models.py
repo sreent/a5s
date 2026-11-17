@@ -1223,6 +1223,7 @@ class Impact(Shape):
     capped: list[str]  # levels it sets that a5s's caps hold back, in words
     about: str  # what it can't know, in words
     hidden: int  # calls of instances whoever reads it may not watch, left out of the shifts
+    beyond: list[str] = []  # what the version changes that it doesn't decide again, in words
 
 
 class SettingsReview(Shape):

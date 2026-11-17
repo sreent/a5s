@@ -78,6 +78,7 @@ from a5s.core import (
     measures,
     memberships,
     models,
+    narrowing,
     notebook,
     obligations,
     officer,
@@ -107,7 +108,6 @@ from a5s.core import (
     undoing,
     urgent,
     values,
-    words,
 )
 from a5s.core.breakers import FAILURES, Breakers
 from a5s.core.events import EventsConfig
@@ -295,10 +295,6 @@ def misfit(schema: dict[str, Any], value: Any, where: str = "") -> str | None:
                 return problem
     return None
 
-
-# What a version that only narrows tells whoever would otherwise have approved it
-NARROWED = ("{names} approved version {serial} of the settings alone, since it only narrows "
-            "what agents may do in {parts}: {said}")
 
 
 @dataclass
@@ -650,10 +646,18 @@ class Gateway:
              "members": list(acts_for)}).fetchone())
 
     def approvers_in_force(self, conn: db.Connection) -> list[str]:
-        """Who approved the settings in force, by key or on a card the core sealed."""
-        row = conn.execute("select signers from settings_versions where scenario = %s "
-                           "order by serial desc limit 1", (self.scenario.name,)).fetchone()
-        return list(row["signers"]) if row else []
+        """Who approved the settings in force, by key or on a card the core sealed: who signed
+        the version in force, and, where it only narrowed what agents may do in some parts, who
+        signed the versions before it, back to the last that didn't, since a narrowing changes
+        nothing in any other part, so its owner's approval stands there (round 14)."""
+        found: list[str] = []
+        for row in conn.execute("select signers, narrows from settings_versions where "
+                                "scenario = %s order by serial desc limit 100",
+                                (self.scenario.name,)).fetchall():
+            found += [s for s in row["signers"] if s not in found]
+            if row["narrows"] is None:
+                break
+        return found
 
     def caps(self, conn: db.Connection, release: str) -> dict[tuple[str, str], int]:
         """a5s's caps for a release's types of action in each part, as the core sealed them
@@ -2120,32 +2124,12 @@ def create_app(gw: Gateway) -> FastAPI:
                                  "reasons": refused, "args": {"settings": settings.version,
                                                               "serial": settings.serial}})
         else:
-            refused = registry.apply(conn, gw.definitions, settings, gw.scenario.tools(),
-                                     gw.scenario.person, gw.scenario.name, approved).refused
-            if not refused:
-                narrowing_told(conn, settings, before, valid)
+            applied = registry.apply(conn, gw.definitions, settings, gw.scenario.tools(),
+                                     gw.scenario.person, gw.scenario.name, approved)
+            if not (refused := applied.refused):  # a version that only narrows tells others
+                narrowing.told(conn, gw.scenario, gw.definitions, settings, applied.before,
+                               valid, gw.clock())
         return ("refused: " + "; ".join(refused)) if refused else "applied", approved
-
-    def narrowing_told(conn: db.Connection, settings: Settings, before: Settings | None,
-                       valid: list[str]) -> None:
-        """Tell, in their digest, whoever would have approved a version that only narrows what
-        agents may do in some parts, had it widened anything, once those parts' owners alone
-        have approved it: what it changes, and who approved it."""
-        if before is None or (parts := registry.narrowed(settings, before)) is None:
-            return
-        said = " ".join(c["text"] for c in approvals.changes(before, settings, gw.definitions,
-                                                              gw.scenario.person))
-        names = approvals.names_of([p.name if (p := gw.scenario.person(v)) else v for v in valid])
-        for person in registry.told(settings, gw.scenario.holders, before,
-                                    memberships.rooted(gw.scenario).holders):
-            text = words.say(languages.of(conn, person), NARROWED, names=names,
-                             serial=settings.serial, parts=approvals.names_of(sorted(parts)),
-                             said=said)
-            digests.keep(conn, person.id, None, None, None, text, gw.clock())
-            ledger.append(conn, {"kind": "notice", "action": "narrowed", "run": None,
-                                 "instance": None, "acts_for": [], "decision": "record",
-                                 "args": {"settings": settings.version, "to": person.id,
-                                          "parts": sorted(parts)}})
 
     @services.post("/settings/sweep")
     def sweep_settings() -> dict:

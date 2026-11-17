@@ -50,6 +50,7 @@ export function ImpactPreview({ impact, id = "impact" }: { impact: Impact; id?: 
       )}
       {impact.hidden > 0 && <p className="note" id={`${id}-hidden`}>{t("It counts {calls} of instances you may not watch as they were decided, and shows nothing of them here.", { calls: plural(impact.hidden, "tool call") })}</p>}
       {impact.capped.length > 0 && <ul className="plain notes">{impact.capped.map((c) => <li key={c}>{c}</li>)}</ul>}
+      {(impact.beyond ?? []).length > 0 && <ul id={`${id}-beyond`} className="plain notes">{(impact.beyond ?? []).map((b) => <li key={b}>{b}</li>)}</ul>}
       <p className="note">{impact.about}</p>
     </div>
   );

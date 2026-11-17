@@ -173,3 +173,66 @@ def test_billings_owner_narrows_it_alone_and_orders_owner_hears(stack, approving
     assert "the owner of orders hasn't approved it" in said["needs"]
     stack.scheduler().apply_approved()
     assert level(stack) == 0  # it waits for Omar
+
+
+def test_a_narrowing_keeps_level_2_in_every_other_part_and_tells_whoever_it_applies_from(stack):
+    """Round 14 (C2, C9): Omar narrows orders alone. Ben's due dates in billing, made alone at
+    level 2 before it, still are: the approvals of the version before it stand in every part it
+    didn't narrow. And applied from the signed file, as `a5s apply` does, it tells Ana, as one
+    approved where people work does."""
+    from a5s import cli
+    from a5s.contract import record_of
+    from conftest import raise_cap, signed
+
+    folder = stack.cfg.scenario_dir
+
+    def move(due: str) -> str:
+        stack.model.reply(None, ("change_due_date", {"key": "Q-1002", "due": due}))
+        stack.model.reply("Done what I could.")
+        stack.say(f"Please move Q-1002 to {due}.", person="ben")
+        return record_of(stack.gateway.scenario, "Q-1002").fields["due date"]
+
+    s = yaml.safe_load((folder / "settings.yaml").read_text())
+    finance(s)["parts"] = {"billing": {"level": 1, "actions": {"change-due-date": 2}}}
+    s["instances"]["assistant-ops"] = copy.deepcopy(BASE["instances"]["assistant-ops"])
+    signed(folder, s, ("ana", "omar"))
+    cli._apply(stack.cfg)
+    raise_cap(stack, cap=2)
+    assert move("2026-11-13") == "2026-11-13"  # made alone, at level 2
+    s = yaml.safe_load((folder / "settings.yaml").read_text())
+    s["instances"]["assistant-ops"]["level"] = 0  # Omar narrows orders, alone
+    signed(folder, s, ("omar",))
+    cli._apply(stack.cfg)
+    assert move("2026-11-20") == "2026-11-20"  # billing's level 2 stands
+    with db.transaction(stack.admin) as conn:
+        [told] = conn.execute("select person, text from digest_items where text like %s",
+                              ("%only narrows%",)).fetchall()
+    assert told["person"] == "ana" and told["text"].startswith(
+        f"Omar Haddad approved version {s['serial'] + 1} of the settings alone, since it only "
+        "narrows what agents may do in orders: ")
+
+
+def test_a_thai_approver_reads_whats_missing_in_thai(stack, approving, provider, browser):
+    """Round 14 (E-M5): what's missing before a version goes in force is in the language its
+    approver reads, as on their home; what the version says it changes stays English, which
+    the page tells them."""
+    from a5s.core import words
+    from test_languages import reads
+    from test_settings_app import api
+
+    reads(stack, "ana", "th")
+    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text())
+    settings["serial"] += 1
+    settings["instances"]["assistant-ops"] = copy.deepcopy(BASE["instances"]["assistant-ops"])
+    asked = propose(stack, settings)
+    [said] = approve(approving, provider, asked, "ana")
+    english = "the owner of orders hasn't approved it"
+    missing = [words.translated("th", english)]
+    assert said["needs"] == missing != [english]
+    shown = api(approving, provider, f"/approve/settings/{asked['digest']}").json()
+    assert shown["needs"] == missing
+    provider.person = "ana"
+    page = browser.new_page()
+    page.goto(f"{approving}/studio/approve?settings={asked['digest']}")
+    page.wait_for_selector("#in-english", timeout=30000)
+    assert page.inner_text("#needs") == missing[0]

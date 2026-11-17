@@ -361,6 +361,7 @@ class Applied:
     instances: list[str] = field(default_factory=list)
     signers: list[str] = field(default_factory=list)
     refused: list[str] = field(default_factory=list)  # why this version doesn't count
+    before: Settings | None = None  # the version that was in force before it
 
 
 def apply(
@@ -405,14 +406,17 @@ def apply(
                              "reasons": refused, "args": version})
         return Applied(signers=valid, refused=refused)
     signatures = Jsonb([{"signer": s.signer, "value": s.value} for s in settings.signatures])
-    conn.execute(  # exactly what was signed, so the core can check it again at every run
-        "insert into settings_versions (scenario, serial, version, signers, raw, signatures) "
-        "values (%s, %s, %s, %s, %s, %s) on conflict (scenario, serial) do update "
+    narrows = None if last and settings.serial == last["serial"] else narrowed(settings, before)
+    conn.execute(  # exactly what was signed, so the core can check it again at every run, and
+        # the parts it only narrows, if that's all it does, so the approvals before it stand
+        "insert into settings_versions (scenario, serial, version, signers, raw, signatures, "
+        "narrows) values (%s, %s, %s, %s, %s, %s, %s) on conflict (scenario, serial) do update "
         "set raw = excluded.raw, signatures = excluded.signatures",
-        (scenario, settings.serial, settings.version, valid, settings.raw, signatures),
+        (scenario, settings.serial, settings.version, valid, settings.raw, signatures,
+         sorted(narrows) if narrows is not None else None),
     )
 
-    applied = Applied(signers=valid)
+    applied = Applied(signers=valid, before=before)
     samples.note_behaviours(conn, definitions.values(), tools)  # what caps are kept for
     for s in settings.instances:
         definition = definitions.get(s.definition)

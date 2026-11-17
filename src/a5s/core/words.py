@@ -116,11 +116,31 @@ TH: dict[str, str] = {
     "a shadow: it answers beside another, and sends nothing":
         "เงา: ตอบคู่กับอินสแตนซ์อื่น โดยไม่ส่งสิ่งใดออกไป",
     # What a version of the settings would have done differently (core/impact.py)
-    "Each call is decided as the directory, the agents' releases, the records' parts and a5s's "
-    "caps stand now. A change someone asked for of their own records counts as theirs only "
-    "where the decision recorded shows it was.":
+    "It decides again the agents' tool calls, and nothing else: not which models may answer, "
+    "whom an instance serves, whom it asks or hands conversations to, or what shadows do. Each "
+    "call is decided as the directory, the agents' releases, the records' parts and a5s's caps "
+    "stand now. A change someone asked for of their own records counts as theirs only where the "
+    "decision recorded shows it was.":
+        "ตัวอย่างนี้ตัดสินเฉพาะการเรียกใช้เครื่องมือของเอเจนต์ใหม่อีกครั้งเท่านั้น ไม่ได้ตัดสินว่าโมเดลใดตอบได้ "
+        "อินสแตนซ์ให้บริการใคร ถามใครหรือส่งต่อการสนทนาให้ใคร หรือเงาทำอะไร "
         "แต่ละการเรียกใช้ถูกตัดสินตามไดเรกทอรี รีลีสของเอเจนต์ ส่วนงานของระเบียน และเพดานของ a5s "
         "ในปัจจุบัน การเปลี่ยนแปลงที่ผู้ใดขอสำหรับระเบียนของตนเอง จะนับเป็นของผู้นั้นเฉพาะเมื่อการตัดสินที่บันทึกไว้แสดงเช่นนั้น",
+    "It changes the classes of data, which decide which models may answer: it doesn't decide "
+    "the agents' model calls again.":
+        "เวอร์ชันนี้เปลี่ยนประเภทข้อมูล ซึ่งกำหนดว่าโมเดลใดตอบได้: ตัวอย่างนี้ไม่ได้ตัดสินการเรียกโมเดลของเอเจนต์ใหม่",
+    "It changes whom {instance} serves, which it doesn't decide again.":
+        "เวอร์ชันนี้เปลี่ยนผู้ที่ {instance} ให้บริการ ซึ่งตัวอย่างนี้ไม่ได้ตัดสินใหม่",
+    "It changes whom {instance} may ask, which it doesn't decide again.":
+        "เวอร์ชันนี้เปลี่ยนผู้ที่ {instance} ถามได้ ซึ่งตัวอย่างนี้ไม่ได้ตัดสินใหม่",
+    "It changes whom {instance} may hand conversations to, which it doesn't decide again.":
+        "เวอร์ชันนี้เปลี่ยนผู้ที่ {instance} ส่งต่อการสนทนาให้ได้ ซึ่งตัวอย่างนี้ไม่ได้ตัดสินใหม่",
+    "It changes what {instance} shadows, which it doesn't decide again.":
+        "เวอร์ชันนี้เปลี่ยนสิ่งที่ {instance} เป็นเงาให้ ซึ่งตัวอย่างนี้ไม่ได้ตัดสินใหม่",
+    "It changes what agents may spend, which decides when they stop for the month: it doesn't "
+    "decide that again.":
+        "เวอร์ชันนี้เปลี่ยนงบที่เอเจนต์ใช้ได้ ซึ่งกำหนดว่าจะหยุดเมื่อใดในเดือนนั้น: ตัวอย่างนี้ไม่ได้ตัดสินใหม่",
+    "It changes the data protection officer's choices, which it doesn't decide again.":
+        "เวอร์ชันนี้เปลี่ยนตัวเลือกของเจ้าหน้าที่คุ้มครองข้อมูล ซึ่งตัวอย่างนี้ไม่ได้ตัดสินใหม่",
     # The roles someone holds, and what each lets them do (core/home.py, core/administration.py)
     "Owner of {scope}": "เจ้าของ {scope}",
     "Delegate in {scope}": "ผู้รับมอบหมายใน {scope}",

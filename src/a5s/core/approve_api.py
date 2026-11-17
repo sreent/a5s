@@ -16,7 +16,7 @@ from pydantic import BaseModel
 
 from a5s import db
 from a5s.contract import parse_settings
-from a5s.core import approvals, impact, ledger, memberships, registry, web
+from a5s.core import approvals, impact, languages, ledger, memberships, registry, web, words
 from a5s.core import studio_models as shapes  # what each route answers, as the studio's types say
 
 
@@ -75,9 +75,11 @@ def router(gw: Any) -> APIRouter:
             asked = conn.execute("select person from settings_requests where scenario = %s and "
                                  "digest = %s order by id limit 1",
                                  (gw.scenario.name, version)).fetchone()
+            spoken = languages.of(conn, person)  # in their language, where a5s has the words
         before = parse_settings(bytes(last["raw"])) if last else None
         settings = parse_settings(bytes(row["raw"]))
-        found = approvals.changes(before, settings, gw.definitions, gw.scenario.person)
+        found = [{**c, "text": words.translated(spoken, c["text"])}
+                 for c in approvals.changes(before, settings, gw.definitions, gw.scenario.person)]
         asker = (p.name if (p := gw.scenario.person(asked["person"])) else asked["person"]
                  ) if asked else None  # who asked for it in the settings app, if anyone did
         valid, _ = registry.signers(settings, gw.scenario.person, approved)
@@ -85,10 +87,11 @@ def router(gw: Any) -> APIRouter:
         return {"serial": row["serial"], "proposed_at": row["proposed_at"].isoformat(),
                 **({"impact": preview} if preview is not None else {}),
                 "in_force": last["serial"] if last else None, "changes": found,
-                "whole": approvals.described(settings, gw.definitions, gw.scenario.person),
-                "needs": registry.missing(settings, gw.scenario.person, valid, before,
-                                          memberships.rooted(gw.scenario).person)
-                if status == "waiting" else [],
+                "whole": [words.translated(spoken, line) for line in approvals.described(
+                    settings, gw.definitions, gw.scenario.person)],
+                "needs": [words.translated(spoken, n) for n in registry.missing(
+                    settings, gw.scenario.person, valid, before,
+                    memberships.rooted(gw.scenario).person)] if status == "waiting" else [],
                 "approved_by": [p.name if (p := gw.scenario.person(a)) else a for a in approved],
                 "asked_by": asker, "you": person.name, "you_approved": person.id in approved,
                 "status": status}
@@ -118,11 +121,13 @@ def router(gw: Any) -> APIRouter:
                          "token_sha256": hashlib.sha256(token.encode()).hexdigest()}})
             approved = approvals.recorded(conn, gw.scenario.name, version)
             last = approvals.latest(conn, gw.scenario.name)
+            spoken = languages.of(conn, person)
         settings = parse_settings(bytes(row["raw"]))
         valid, _ = registry.signers(settings, gw.scenario.person, approved)
         before = parse_settings(bytes(last["raw"])) if last else None
         return {"approved": True, "serial": row["serial"], "by": person.name,
-                "needs": registry.missing(settings, gw.scenario.person, valid, before,
-                                          memberships.rooted(gw.scenario).person)}
+                "needs": [words.translated(spoken, n) for n in registry.missing(
+                    settings, gw.scenario.person, valid, before,
+                    memberships.rooted(gw.scenario).person)]}
 
     return pages
