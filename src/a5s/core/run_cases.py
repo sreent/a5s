@@ -9,8 +9,9 @@ what was said and answered names, as the studio shows runs, and only where every
 owns or authors the agent may too, since each of them reads the draft it goes in; and only for
 a run that answered someone's message. Code masks what could say who anyone is (core/masking.py): the names and ids
 of the people the run acted for and of everyone a5s serves, emails, links, numbers long enough
-to be a phone's or an account's, and the keys of the records the run's words name, each
-numbered, [record 1] and so on, for the author to put the sandbox's made-up records in their
+to be a phone's or an account's, and, strictly, dates of birth, ids of letters and digits such
+as a passport's or an IBAN, and street addresses and postcodes (round 15, C6); and the keys of
+the records the run's words name, each numbered, [record 1] and so on, for the author to put the sandbox's made-up records in their
 place. It can't know every name someone might write, so the author reads what's left, and keeps
 it only once they say it says nothing about anyone, nor what a real record says, since once it's
 released everyone who reads the agents' repository reads it too; what they write is masked
@@ -65,7 +66,8 @@ def mask(conn: db.Connection, scenario: Scenario, run: dict, *texts: str) -> Any
     names, everyone a5s serves among them, and its records' keys, numbered the same in each."""
     people = [*(run.get("acts_for") or []), run.get("sender"), *masking.known(conn, scenario)]
     numbers = masking.numbered(scenario, *texts)
-    return lambda text: masking.mask(text, scenario, people, records=numbers)
+    return lambda text: masking.mask(text, scenario, people, records=numbers,  # strictly, as
+                                     strict=True)  # its repository's readers read it (C6)
 
 
 def _visible(conn: db.Connection, scenario: Scenario, person: Person, run_id: str,

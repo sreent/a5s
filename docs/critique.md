@@ -708,7 +708,7 @@ Six reviewers who hadn't written a5s each took a part and tested the running sta
 | C3 | A grade chosen for a sample that lapsed jammed the grade page | Medium | | Deferred, Small |
 | C4 | One grader alone could raise level 2 in minutes | Medium | | Deferred, Medium: a cap on one grader's share, and a second grader for some |
 | C5 | Shadow pairs show one message, without the conversation or the record | Medium | | Deferred, Medium |
-| C6 | A test case kept from a real run kept bank account numbers, dates of birth, national ids and addresses | Medium | | Deferred, Small to Medium |
+| C6 | A test case kept from a real run kept bank account numbers, dates of birth, national ids and addresses | Medium | Code masks those too in what's kept from a run: dates of birth, by what's said before them or a year at least fifteen back, in English, Thai and the Buddhist era; ids of letters and digits; numbers of six digits or more; street addresses and postcodes. A due date stays, as do amounts, and what graders and owners read is masked as before | Fixed |
 | C7 | A draft's pull request said who must sign, never what the agent may do | Medium | It says: its tools, by system, how far it may act, and what starts it besides people | Fixed |
 | C8 | The team that built the version at work could grade its challenger shadow | Medium | A shadow's grader comes from outside the teams that built either agent | Fixed |
 | D7 | On call, the team may only suspend: not lower a cap, withdraw a release or see an instance | Medium | | Deferred, Medium, with an incident console |
