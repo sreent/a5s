@@ -9,7 +9,7 @@ import httpx
 
 from a5s import db, definitions
 from a5s.config import Config, load_currency, load_models
-from a5s.connectors import libraries, mcp
+from a5s.connectors import libraries, mailboxes, mcp
 from a5s.contract import Scenario
 from a5s.core import delegation, memberships, metrics, registration, registry, status, traces
 from a5s.core.events import EventsConfig
@@ -27,14 +27,19 @@ def scenario(cfg: Config, delegated: mcp.Delegated | None = None) -> Scenario:
     """The scenario a5s serves, such as its own sample: any class that meets the contract, with
     the tools of MCP servers' its folder's mcp.yaml declares beside its own (connectors/mcp.py),
     and of the libraries its libraries.yaml names (connectors/libraries.py), those that act as
-    the person with their own tokens (`delegated`), in the core."""
+    the person with their own tokens (`delegated`), in the core, and of the mailboxes its
+    mailboxes.yaml names (connectors/mailboxes.py), which the core alone reads, with the
+    deployment's app."""
     module, _, name = cfg.scenario.partition(":")
     found = getattr(importlib.import_module(module), name)(cfg.scenario_dir, cfg.database_url)
     found = mcp.served(found, cfg.scenario_dir, sandboxed=cfg.sandboxed,
                        reserved=frozenset(CORE_TOOLS), delegated=delegated)
-    return libraries.served(found, cfg.scenario_dir, root=cfg.library_root,
+    found = libraries.served(found, cfg.scenario_dir, root=cfg.library_root,
+                             sandboxed=cfg.sandboxed, reserved=frozenset(CORE_TOOLS),
+                             delegated=delegated)
+    return mailboxes.served(found, cfg.scenario_dir, database=cfg.database_url,
                             sandboxed=cfg.sandboxed, reserved=frozenset(CORE_TOOLS),
-                            delegated=delegated)
+                            app=mailboxes.App.from_env())
 
 
 def delegating(cfg: Config) -> tuple[delegation.Delegation | None, mcp.Delegated | None]:
@@ -63,6 +68,11 @@ def delegating(cfg: Config) -> tuple[delegation.Delegation | None, mcp.Delegated
 def gateway(cfg: Config, http: httpx.Client | None = None) -> Gateway:
     systems, delegated = delegating(cfg)
     sc = scenario(cfg, delegated)
+    if (mailboxes.declared(cfg.scenario_dir) and not cfg.sandboxed
+            and mailboxes.App.from_env() is None):
+        raise RuntimeError("the scenario's mailboxes.yaml names mailboxes, which the core reads "
+                           "with the deployment's app in Microsoft 365: set A5S_MAIL_TENANT, "
+                           "A5S_MAIL_CLIENT_ID and A5S_MAIL_CLIENT_SECRET")
     pack = sc.policy_pack()
     # Its directory, with the roles the identity provider's groups give, as the settings in
     # force map them (core/memberships.py)
@@ -83,6 +93,7 @@ def gateway(cfg: Config, http: httpx.Client | None = None) -> Gateway:
         releases=Releases(running(cfg.root, cfg.scenario_dir, cfg.agents_dir)),
         registry=registration.Registry.from_env(),  # IT's inventory, if the deployment asks
         delegation=systems,  # the accounts people may connect, so agents act as them there
+        mail=mailboxes.of(sc),  # the mailboxes it asks for new mail, if the scenario names any
     )
     return gw
 

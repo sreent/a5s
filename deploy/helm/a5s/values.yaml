@@ -178,6 +178,13 @@ registry:
   clientId: ""  # the app the core signs in as, granted AgentRegistration.ReadWrite.All
   identities: false  # true: each instance gets an Entra agent identity too, under that app
 
+# The shared mailboxes the scenario's mailboxes.yaml names: the core alone reads them, as the
+# deployment's app in the tenant, with its secret in the Secret's mail-secret
+# (docs/connectors.md#mailboxes). Empty, and the core reads none.
+mail:
+  tenant: ""
+  clientId: ""  # the app, granted Mail.Read, and Mail.ReadWrite where agents draft
+
 publishing:
   githubClientId: ""
   repo: ""

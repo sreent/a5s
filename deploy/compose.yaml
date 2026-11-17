@@ -97,7 +97,8 @@ services:
       A5S_DATABASE_URL: postgresql://a5s_gateway:${A5S_DB_GATEWAY_PASSWORD}@postgres:5432/postgres
       A5S_SERVICE_TOKEN: ${A5S_SERVICE_TOKEN:?set A5S_SERVICE_TOKEN}
       A5S_SEAL_KEYS:  # the core's own, sealing what people approve, decide and grade: the gateway alone holds it
-      # and a5s's client secret in each system A5S_DELEGATION names, as A5S_DELEGATION_<NAME>_SECRET
+      # and a5s's client secret in each system A5S_DELEGATION names, as A5S_DELEGATION_<NAME>_SECRET,
+      # and, where the scenario names mailboxes, A5S_MAIL_TENANT, A5S_MAIL_CLIENT_ID and A5S_MAIL_CLIENT_SECRET
       A5S_TEAM:
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       QWEN_API_KEY: ${QWEN_API_KEY:-}

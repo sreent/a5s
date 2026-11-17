@@ -46,6 +46,7 @@ The tests check that neither compose nor the chart sets a setting to its default
 ## Every setting
 
 <!-- a5s config --markdown -->
+
 ### The core and its parts
 
 | Variable | Default | Takes | What it sets |
@@ -172,6 +173,16 @@ The tests check that neither compose nor the chart sets a setting to its default
 | `A5S_REGISTRY_GRAPH` | `https://graph.microsoft.com` | an https:// address | Microsoft Graph, as the tenant's cloud has it |
 | `A5S_REGISTRY_LOGIN` | `https://login.microsoftonline.com` | an https:// address | Where the core signs in to the tenant |
 
+### Mailboxes in Microsoft 365
+
+| Variable | Default | Takes | What it sets |
+| --- | --- | --- | --- |
+| `A5S_MAIL_TENANT` | none | text | The Microsoft tenant the scenario's mailboxes are in, by its id, where its mailboxes.yaml names any |
+| `A5S_MAIL_CLIENT_ID` | none | text | The app the core reads them as, granted Mail.Read and Mail.ReadWrite for its drafts, which Exchange's application access policy keeps to those mailboxes |
+| `A5S_MAIL_CLIENT_SECRET` | none | its secret | That app's client secret: for the core alone |
+| `A5S_MAIL_GRAPH` | `https://graph.microsoft.com/v1.0` | an https:// address | Microsoft Graph, as the tenant's cloud has it |
+| `A5S_MAIL_LOGIN` | `https://login.microsoftonline.com` | an https:// address | Where the core signs in to the tenant as the app |
+
 ### The command line
 
 | Variable | Default | Takes | What it sets |
@@ -189,6 +200,7 @@ The tests check that neither compose nor the chart sets a setting to its default
 | `A5S_SLACK_SECRET_<AGENT>` | An app's signing secret, where A5S_SLACK_BOTS names it |
 | `A5S_SLACK_TOKEN_<AGENT>` | An app's bot token, where A5S_SLACK_BOTS names it |
 | `A5S_MCP_<SERVER>_TOKEN` | An MCP server's bearer token, where the scenario's mcp.yaml names it as the server's token_env |
+
 <!-- end of a5s config --markdown -->
 
 The libraries a5s uses read some variables of their own: OpenTelemetry's `OTEL_EXPORTER_OTLP_ENDPOINT`, for where traces and figures go, and each cloud's own sign-in for the ledger's store, such as `AWS_REGION` or `AZURE_STORAGE_CONNECTION_STRING`. A model's key is in the variable `config/models.yaml` names for it, such as `DEEPSEEK_API_KEY`.

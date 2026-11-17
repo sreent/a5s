@@ -1,8 +1,8 @@
 # Connectors
 
-**Status:** MCP servers' tools are built ([below](#mcp-servers)), acting as the person with their own permissions where a server is declared to ([below](#acting-as-the-person)), and document libraries in SharePoint, Confluence and docs repositories, read as far as each document's own permissions allow ([below](#document-libraries)), beside the read-only REST transport and the GitHub adapter · **Under:** [Architecture](architecture.md)
+**Status:** MCP servers' tools are built ([below](#mcp-servers)), acting as the person with their own permissions where a server is declared to ([below](#acting-as-the-person)), document libraries in SharePoint, Confluence and docs repositories, read as far as each document's own permissions allow ([below](#document-libraries)), and the shared mailboxes a team's work arrives in, whose new mail starts runs and where agents leave draft replies, sending none ([below](#mailboxes)), beside the read-only REST transport and the GitHub adapter · **Under:** [Architecture](architecture.md)
 
-A scenario's tools reach the systems its records are in. A scenario writes most of them in its own code, against the [contract](architecture.md), and a5s gives it two ways to reach a system without writing a client of its own: a read-only REST transport, with a GitHub adapter on it ([architecture](architecture.md)), the tools of MCP servers, which most of this page is about, and the [document libraries](#document-libraries) its agents may search beyond the handbook in its release. Every tool, whichever way it's made, is offered to an agent only if its definition lists it, pinned by its hash, and every call goes through the core's checks: the policy, the parts and need-to-know, held changes, the extractor for content from outside, handles for sensitive values, and the ledger.
+A scenario's tools reach the systems its records are in. A scenario writes most of them in its own code, against the [contract](architecture.md), and a5s gives it two ways to reach a system without writing a client of its own: a read-only REST transport, with a GitHub adapter on it ([architecture](architecture.md)), the tools of MCP servers, which most of this page is about, the [document libraries](#document-libraries) its agents may search beyond the handbook in its release, and the [mailboxes](#mailboxes) its teams' work arrives in. Every tool, whichever way it's made, is offered to an agent only if its definition lists it, pinned by its hash, and every call goes through the core's checks: the policy, the parts and need-to-know, held changes, the extractor for content from outside, handles for sensitive values, and the ledger.
 
 ## MCP servers
 
@@ -141,3 +141,60 @@ Tested against a SharePoint and a Confluence of the test's own, which answer eac
 - SharePoint's own pages, whose words are in web parts rather than files.
 - A docs repository read as the person, by the forge's own permissions, rather than by its documents' readers.
 - Searching by meaning, beside words.
+
+
+## Mailboxes
+
+Much of a team's work arrives by email. A scenario may name the shared mailboxes in Microsoft 365 it arrives in, for its agents to read, and to leave replies in for the team to send ([`connectors/mailboxes.py`](../src/a5s/connectors/mailboxes.py)). It names them in its folder's `mailboxes.yaml`, which its release covers, so a mailbox, and whom an agent may read it for, needs the release approver's signature:
+
+```yaml
+mailboxes:
+  requests:                                 # its tools search_requests, read_requests, draft_requests
+    address: requests@contoso.example       # the shared mailbox
+    title: Finance requests
+    about: customers' questions about their invoices
+    readers: [team:finance]                 # whom an agent may read it for, as `serves` names them
+    drafts: true                            # agents may leave a reply among its drafts
+    extract: {record: key, amount: amount, asks: "choice:refund|copy|date|other"}
+    sandbox: mailboxes/requests             # made-up messages, a YAML file each, for the sandbox
+```
+
+a5s offers `search_<mailbox>`, which finds messages by their words, `read_<mailbox>`, which reads one, and, where `drafts` is true, `draft_<mailbox>`. An agent's definition lists them as it lists any tool, and pins each by a hash that covers the mailbox's declaration: where it is, whom it's read for, whether agents draft there, and the form its messages are read through.
+
+### How a5s reads them
+
+The core reads each mailbox through Microsoft Graph with the deployment's own app, in the tenant `A5S_MAIL_TENANT` names, as `A5S_MAIL_CLIENT_ID`, with its secret in `A5S_MAIL_CLIENT_SECRET`, which the core alone holds ([configuration](configuration.md)). The app is granted `Mail.Read`, and `Mail.ReadWrite` where agents draft, and Exchange's application access policy keeps it to the mailboxes it's given, so it reads those alone. The core doesn't start with a mailbox named and no app to read it with, and only the core reads one: in a5s's other parts, a mailbox's tools refuse.
+
+Whoever a run reads a mailbox for must be among its `readers`: people, teams and roles, as the directory decides. A run for nobody reads it too, such as one its own new mail starts: the app reads it, never anyone's own account, so nobody is acted as.
+
+a5s names each message by a key of its own, such as `M-3f2a9c0d41b7e8a6`, never by the mailbox's id for it, and keeps each key beside Graph's id, never a message's words. A search asks Graph for words alone, as a library's does.
+
+### What a message says
+
+Everything a message says, its subject and its words, is content from outside. A search shows the agent when each message came, from whom and its subject, and marks the run, since a subject is written outside too. Reading one gives the agent the form a5s's [extractor](architecture.md) fills from it, by default the record it names, an amount, a date it gives and whether it says it's urgent, or the mailbox's own `extract`, with the message's number, and the agent asks a5s's reader about it with `ask_about`. Its run is marked, as for any content from outside: it acts at level 2 on nothing, and what it drafts says it drew on outside content.
+
+### New mail starts runs
+
+At each of the core's sweeps of events, at most once a minute for each mailbox, a5s asks Graph what's come into the inbox since it last asked, and keeps each new message as the mailbox's event, `mail-received`, from the system named as the mailbox is. An agent whose release takes it works on it at once, as on any system's [events](architecture.md): in a topic of its own, for nobody, on the mailbox's own day of budget, its task naming the message by its key alone. The first time, a5s notes where the inbox stands, so mail already there starts nothing. A mailbox Graph doesn't answer for is asked again at the next sweep, and one core asks at a time.
+
+```yaml
+events:                                     # in the agent's definition
+  - source: requests
+    type: mail-received
+    task: Read the new message, find its record, and leave a reply among the mailbox's drafts.
+```
+
+### Replies wait for a person
+
+a5s sends no mail. `draft_<mailbox>` leaves a reply to a message among the mailbox's drafts, for someone of the team to read, change and send, or not: a5s writes nothing else there. A draft changes no record and sends nothing, so it waits for no decider, and an instance at level 0 leaves none. Its words are the agent's outgoing text, cleaned as any is, and a5s's note says when a run drew on content from outside. The ledger keeps each draft by hash and length.
+
+In the studio's sandbox, a mailbox reads its `sandbox` folder of made-up messages, each with `from`, `received`, `subject` and `text`, and a draft goes nowhere; one without a stand-in has its tools offered there, and each call refused.
+
+Tested against an Exchange of the test's own, which answers the deployment's app alone and records what a5s asks of it: new mail starting a run that reads it through a5s's reader and leaves a draft, sending nothing, and a mailbox read for its readers alone, its searches by words alone (`tests/test_mailboxes.py`).
+
+### Not yet
+
+- Attachments: a5s says a message has some, and reads none.
+- Mailboxes read as the person, each in their own mailbox with their own account.
+- Mail outside Microsoft 365, through IMAP.
+- Threads: a message is read alone, never with the replies before it.

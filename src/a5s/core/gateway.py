@@ -317,6 +317,7 @@ class Gateway:
     registry: Any = None  # the Microsoft tenant its instances are listed in, if any (core/registration.py)
     currency: str | None = None  # the one models.yaml prices models in, if it names one
     delegation: Any = None  # the systems people connect, to be acted as there (core/delegation.py)
+    mail: Any = None  # the scenario's mailboxes, which the core asks for new mail (connectors/mailboxes.py)
 
     @property
     def url(self) -> str:
@@ -1831,7 +1832,10 @@ def create_app(gw: Gateway) -> FastAPI:
     @services.post("/events/sweep")
     def sweep_events() -> list[dict]:
         """The events other systems sent that wait for a run, for the scheduler to run, each
-        with the instance at work that takes it (core/events.py)."""
+        with the instance at work that takes it (core/events.py): the scenario's mailboxes'
+        new mail among them, which a5s asks each for first, at most once a minute."""
+        if gw.mail is not None:
+            gw.mail.sweep(gw.scenario, gw.clock())
         with db.transaction(gw.url) as conn:
             return events.due(conn, gw, gw.clock())
 

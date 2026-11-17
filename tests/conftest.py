@@ -37,7 +37,7 @@ from jwt.algorithms import RSAAlgorithm
 
 from a5s import build, db, definitions, devdb
 from a5s.config import Config, load_models
-from a5s.connectors import libraries, mcp
+from a5s.connectors import libraries, mailboxes, mcp
 from a5s.core import inbox, ledger, memberships, registry, signing
 from a5s.core.gateway import CORE_TOOLS, Gateway, create_app
 from a5s.core.identity import IdentityConfig, Verifier
@@ -650,13 +650,15 @@ def running(database: str, root: Path, http: httpx.Client, model: FakeModel,
                           delegated=delegated)
     scenario = libraries.served(scenario, cfg.scenario_dir, root=cfg.library_root,
                                 reserved=frozenset(CORE_TOOLS), delegated=delegated)
+    scenario = mailboxes.served(scenario, cfg.scenario_dir, database=cfg.database_url,
+                                reserved=frozenset(CORE_TOOLS), app=mailboxes.App.from_env())
     for agent in ("assistant", "watcher"):
         definitions.pin(root / "agents" / agent, {n: t.schema_hash for n, t in scenario.tools().items()})
     # Its directory, with the roles groups give, as a5s builds it (core/memberships.py)
     directory = memberships.grouped(scenario, cfg.database_url, lambda conn: gw.groups_in_force(conn))
     gw = Gateway(cfg, directory, PolicyEngine(), load_models(cfg.models_file),
                  definitions.load_all(cfg.agents_dir), http, clock=lambda: QUIET,
-                 delegation=systems)
+                 delegation=systems, mail=mailboxes.of(scenario))
     with db.transaction(database) as conn:
         applied = registry.apply(conn, gw.definitions, scenario.settings(), scenario.tools(),
                                  scenario.person, scenario.name)

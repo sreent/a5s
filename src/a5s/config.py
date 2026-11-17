@@ -230,6 +230,7 @@ LEDGER = "The ledger's locked copies"
 STUDIO = "The studio, its sandbox and publishing"
 SCENARIO = "The scenario"
 INVENTORY = "IT's inventory in Microsoft 365"
+MAIL = "Mailboxes in Microsoft 365"
 COMMAND = "The command line"
 
 _DB = ("postgresql", "postgres")
@@ -412,8 +413,33 @@ REGISTRY_GRAPH = Var("A5S_REGISTRY_GRAPH", "Microsoft Graph, as the tenant's clo
 REGISTRY_LOGIN = Var("A5S_REGISTRY_LOGIN", "where the core signs in to the tenant",
                      "https://login.microsoftonline.com", _url("https"), "an https:// address",
                      area=INVENTORY)
+
+
+def _graph(given: str) -> str:
+    """Microsoft 365's address: https://, or http:// on this machine alone, as a stand-in is."""
+    found = urlsplit(given.strip())
+    if not found.netloc or not (found.scheme == "https" or (
+            found.scheme == "http" and found.hostname in ("127.0.0.1", "localhost", "::1"))):
+        raise ValueError
+    return given.strip().rstrip("/")
+
+
+# The shared mailboxes a team's work arrives in, which the core alone reads, with the
+# deployment's own app (connectors/mailboxes.py)
+MAIL_TENANT = Var("A5S_MAIL_TENANT", "the Microsoft tenant the scenario's mailboxes are in, by its "
+                  "id, where its mailboxes.yaml names any", None, area=MAIL)
+MAIL_CLIENT_ID = Var("A5S_MAIL_CLIENT_ID", "the app the core reads them as, granted Mail.Read and "
+                     "Mail.ReadWrite for its drafts, which Exchange's application access policy "
+                     "keeps to those mailboxes", None, area=MAIL)
+MAIL_CLIENT_SECRET = Var("A5S_MAIL_CLIENT_SECRET", "that app's client secret: for the core alone",
+                         None, secret=True, area=MAIL, takes="its secret")
+MAIL_GRAPH = Var("A5S_MAIL_GRAPH", "Microsoft Graph, as the tenant's cloud has it",
+                 "https://graph.microsoft.com/v1.0", _graph, "an https:// address", area=MAIL)
+MAIL_LOGIN = Var("A5S_MAIL_LOGIN", "where the core signs in to the tenant as the app",
+                 "https://login.microsoftonline.com", _graph, "an https:// address", area=MAIL)
+
 AREAS = (CORE, DATABASE, WORKERS, SIGN_IN, TEAMS, SLACK, MATRIX, EVENTS, DELEGATION_AREA, LEDGER,
-         STUDIO, SCENARIO, INVENTORY, COMMAND)
+         STUDIO, SCENARIO, INVENTORY, MAIL, COMMAND)
 # Every setting above, by its area
 VARS: tuple[Var, ...] = tuple(sorted((v for v in globals().values() if isinstance(v, Var)),
                                      key=lambda v: AREAS.index(v.area)))
