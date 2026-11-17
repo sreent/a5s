@@ -767,9 +767,9 @@ class Gateway:
         if message and message["agent"] != inst["definition"]:
             opening.reasons.append(f"the message is for the {message['agent']}, "
                                    f"not the {inst['definition']}")
-        if message and conn.execute("select 1 from inbound_files where inbound_id = %s and "
-                                    "refused is null limit 1", (inbound,)).fetchone():
-            opening.marked = True  # what they sent with it is content from outside (core/files.py)
+        if message and conn.execute("select 1 from inbound_files where inbound_id = %s limit 1",
+                                    (inbound,)).fetchone():  # any file they sent with it, kept
+            opening.marked = True  # or not: its name, at least, is from outside (core/files.py)
         return opening
 
     def shadowing(self, conn: db.Connection, inst: dict, trigger: dict,
@@ -795,9 +795,9 @@ class Gateway:
                                            given.get("conversation")):  # mark, as it stands
             opening.marked = True
         if given.get("inbound") and conn.execute(
-                "select 1 from inbound_files where inbound_id = %s and refused is null limit 1",
+                "select 1 from inbound_files where inbound_id = %s limit 1",
                 (given["inbound"],)).fetchone():
-            opening.marked = True  # what they sent with it is content from outside
+            opening.marked = True  # what they sent with it, kept or not, is from outside
         return opening
 
     def reminding(self, conn: db.Connection, inst: dict, trigger: dict,
@@ -3046,9 +3046,9 @@ def create_app(gw: Gateway) -> FastAPI:
         try:
             data = bytes(kept["data"]) if kept and kept["data"] is not None else (
                 gw.fetch_file(kept["origin"] or {}) if kept else None)
-        except (httpx.HTTPError, ValueError) as exc:
-            log.warning("couldn't fetch a file someone sent: %s", exc)
-            data = None
+        except (httpx.HTTPError, ValueError) as exc:  # its kind alone: what httpx says of it
+            log.warning("couldn't fetch a file someone sent: %s", type(exc).__name__)  # names
+            data = None  # where it is, and a chat's link to it may carry a key
         if data is None:
             return JSONResponse(status_code=502, content={
                 "error": "a5s couldn't fetch the file now: ask them to send it again"})

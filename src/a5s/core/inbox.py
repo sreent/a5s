@@ -495,26 +495,11 @@ def create_app(gw: Any) -> FastAPI:
     @matrix_api.put("/channels/matrix/_matrix/app/v1/transactions/{txn}")
     def matrix_transaction(txn: str, body: dict[str, Any], background: BackgroundTasks) -> dict:
         agents = sorted(gw.definitions)
-        for event in body.get("events") or []:
-            try:
-                what, detail = gw.matrix.event(event, gw.scenario, agents)
-                if what == "join":
-                    gw.matrix.join(*detail)
-            except httpx.HTTPError as exc:
-                failed = failures[event.get("event_id", "")] = failures.get(
-                    event.get("event_id", ""), 0) + 1
-                server = isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code < 500
-                if not server and failed < TRIES:  # the homeserver sends it all again later
-                    raise
-                # It sends nothing more until this delivery is taken, so one event it won't let
-                # a5s act on, such as an invitation withdrawn before a5s joined, or one room it
-                # can't read three times running, is skipped, and recorded
-                log.warning("skipped a Matrix event: %s", exc)
-                failures.pop(event.get("event_id", ""), None)
-                with db.transaction(gw.url) as conn:
-                    turned_away(conn, "matrix", f"a5s couldn't act on it: {type(exc).__name__}",
-                                [], "")
-                continue
+
+        def act(event: dict[str, Any]) -> None:
+            what, detail = gw.matrix.event(event, gw.scenario, agents)
+            if what == "join":
+                gw.matrix.join(*detail)
             if what == "turn away":
                 reason, people, reply, reply_to = detail
                 with db.transaction(gw.url) as conn:
@@ -553,6 +538,25 @@ def create_app(gw: Any) -> FastAPI:
                 if made and reply_to.get("bot") and row and row["conversation"] is None:
                     background.add_task(tell_in_matrix, {"room": room, "bot": reply_to["bot"]},
                                         told)  # in their own chat: a group's isn't told
+
+        for event in body.get("events") or []:
+            key = str(event.get("event_id") or "") if isinstance(event, dict) else ""
+            try:
+                act(event)
+            except Exception as exc:  # one event never holds up every later one for long
+                failed = failures[key] = failures.get(key, 0) + 1
+                server = isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code < 500
+                if not server and failed < TRIES:  # the homeserver sends it all again later
+                    raise
+                # It sends nothing more until this delivery is taken, so one event a5s can't act
+                # on is skipped, and recorded: an invitation withdrawn before a5s joined, one
+                # room it can't read three times running, or one it can't read at all, such as a
+                # file whose size isn't a number
+                log.warning("skipped a Matrix event: %s", type(exc).__name__)
+                failures.pop(key, None)
+                with db.transaction(gw.url) as conn:
+                    turned_away(conn, "matrix", f"a5s couldn't act on it: {type(exc).__name__}",
+                                [], "")
         return {}
 
     @matrix_api.get("/channels/matrix/_matrix/app/v1/users/{user}")

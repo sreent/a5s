@@ -340,14 +340,20 @@ class Matrix:
             if content.get("msgtype") in SENT:  # a file or an image, in their own chat
                 info: dict[str, Any] = (content.get("info") if isinstance(content.get("info"),
                                                                          dict) else None) or {}
-                name = str(content.get("filename") or content.get("body") or "a file")
-                sent = files.File(name=name, media_type=files.media_type(name, info.get("mimetype")),
-                                  size=info.get("size"), fetch={"channel": "matrix", "bot": bot,
-                                                                "mxc": str(content.get("url") or "")})
+                given = content.get("filename") or content.get("body")  # each as the sender
+                name = given.strip()[:files.NAME] if isinstance(given, str) and given.strip() \
+                    else "a file"  # says it: of any type, or none
+                kind, size = info.get("mimetype"), info.get("size")
+                sent = files.File(name=name, media_type=files.media_type(
+                    name, kind if isinstance(kind, str) else None),
+                    size=size if isinstance(size, int) and not isinstance(size, bool)
+                    and size >= 0 else None,
+                    fetch={"channel": "matrix", "bot": bot, "mxc": str(content.get("url") or "")})
                 return "message", Message(person.id, self.agent_of(bot) or "", files.WORDS_ONLY,
                                           reply_to, files=(sent,))
-            return "message", Message(person.id, self.agent_of(bot), content.get("body", ""),
-                                      reply_to)
+            body = content.get("body")
+            return "message", Message(person.id, self.agent_of(bot),
+                                      body if isinstance(body, str) else "", reply_to)
         joined = self.members(room, bot)  # a mention in a group's room: who's in it now,
         if joined is None:  # afresh, since a run there acts for them all
             return "ignore", None
