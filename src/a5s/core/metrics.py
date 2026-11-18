@@ -69,6 +69,8 @@ FIGURES: dict[str, tuple[str, str]] = {
     "a5s.ledger.copies.age": ("s", "How long since the copier last copied, or found nothing new"),
     "a5s.ledger.copies.failing": ("1", "Whether the copier's last try failed: 1, or 0"),
     "a5s.ledger.copies.stopped": ("1", "Whether the copier stopped until someone acts: 1, or 0"),
+    "a5s.ledger.check.problems": ("{problem}", "What the copier's last full check found wrong"),
+    "a5s.ledger.check.age": ("s", "How long since the copier last checked the whole ledger"),
     "a5s.instances.not_active": ("{instance}", "Instances not active, by status"),
     "a5s.breakers.open": ("{model}", "Models a5s isn't calling for now, by model"),
     "a5s.replies.answered": ("{message}", "Messages answered over the last day"),
@@ -110,6 +112,7 @@ def figures(status: dict[str, Any]) -> dict[str, list[tuple[float, dict[str, str
 
     not_active = Counter(r["status"] for r in status["not_active"])  # never who suspended it
     copies = status.get("copies")  # as the copier records it, if one has run
+    checked = copies.get("checked") if copies else None  # its check of the whole ledger
     tokens = by_instance(status["tokens"], status.get("serving", {}), "tokens", "budget_warnings",
                          fewest=status.get("fewest_people", DataProtection.fewest_people))
     return {
@@ -143,6 +146,8 @@ def figures(status: dict[str, Any]) -> dict[str, list[tuple[float, dict[str, str
         "a5s.ledger.copies.age": one(copies["copied_seconds_ago"]) if copies else [],
         "a5s.ledger.copies.failing": one(int(bool(copies["problem"]))) if copies else [],
         "a5s.ledger.copies.stopped": one(int(copies["stopped"])) if copies else [],
+        "a5s.ledger.check.problems": one(len(checked["problems"])) if checked else [],  # (E8)
+        "a5s.ledger.check.age": one(checked["seconds_ago"]) if checked else [],
         "a5s.instances.not_active": [(float(n), {"a5s.status": s})
                                      for s, n in sorted(not_active.items())] or one(0),
         "a5s.breakers.open": [(1.0, {"gen_ai.request.model": m})

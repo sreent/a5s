@@ -1,14 +1,23 @@
 """Copies of the ledger in locked storage, and the check that the ledger still matches them.
 
-Every hour, the entries added since the last copy go to the store as a segment,
-with a head naming its first and last entries and the hashes around them.
+The entries added since the last copy go to the store as a segment, with a head naming
+its first and last entries and the hashes around them: what people decided, and what a5s
+gave up, within a minute of it, and every other entry within 15 minutes (round 15, E8).
 Nobody can change or delete either until its retention ends. So if anyone
 rewrites the ledger, even recomputing every hash after the change, it no longer
-matches its copies, and a5s refuses to copy any more of it. Each head the copier
-makes is marked with a secret the database alone keeps, and only those count:
-anything else in the store, such as a head someone planted, even one whose hashes
-chain on from the copies, as anyone's can, is reported and otherwise ignored. It
-can't stop the copying, or hide a change (round 15, D1).
+matches its copies, and a5s refuses to copy any more of it. Only an entry not yet
+copied can be rewritten unseen, by someone with the database's own powers: that
+window is an accepted risk, and the auditors' page marks the entries still in it.
+Each head the copier makes is marked with a secret the database alone keeps, and
+only those count: anything else in the store, such as a head someone planted, even
+one whose hashes chain on from the copies, as anyone's can, is reported and
+otherwise ignored. It can't stop the copying, or hide a change (round 15, D1).
+
+The copier looks every minute, by the database alone: it keeps the last copy it made,
+and reads the copies afresh only when it starts, when another copier copied since, or
+when the ledger no longer holds what it copied as it copied it, which stops it. Once a
+day, and when it starts, it checks the whole ledger, its chain and every copy, and
+records what it found, for the core's status and the auditors' page.
 
 After the database is restored from a backup, its ledger lacks entries its copies
 hold: the copier copies nothing until `a5s restore` puts them back
@@ -24,14 +33,25 @@ import json
 import logging
 import re
 from collections import defaultdict
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime, timedelta
 
 from a5s import db
+from a5s.core import ledger
 from a5s.core.ledger import GENESIS, canonical
 from a5s.core.stores import Exists, Store
 
 log = logging.getLogger(__name__)
+# How soon the copier copies (round 15, E8): the kinds of entry that record what people
+# decided, approved, graded, read of the trail, or what a5s gave up, within a minute of being
+# written, and the rest within COPY_WITHIN
+WEIGHTY = ("admin", "audit", "cap", "proposal", "registry", "retention")
+LOOK_EVERY = timedelta(minutes=1)
+COPY_WITHIN = timedelta(minutes=15)
+CHECK_EVERY = timedelta(days=1)  # how often it checks the whole ledger against its copies
+MOST_PROBLEMS = 20  # a full check's problems the copier records, at most
+SHIFTED = 5  # entries taken out or put in that a difference names as such, at most
 SEGMENTS, HEADS = "segments/", "heads/"
 _LOCK = 0x0A5_A2C0  # one copier at a time
 _NUMBERED = re.compile(r"heads/(\d+)(\.\d+)?\.json")  # by the last entry each copies
@@ -218,38 +238,146 @@ def _put(store: Store, base: str, ext: str, body: bytes) -> str:
     raise AnchorError(f"{base}{ext} and the names after it are all taken")
 
 
+def _put_head(store: Store, secret: bytes, head: Head) -> str:
+    """Write a head once, or take as its own the one another copier made of the same entries,
+    marked as the copier marks each, rather than fork the copies (round 15, E8)."""
+    base, body = f"{HEADS}{head.seq:012d}", canonical(asdict(head)).encode()
+    for n in range(10):
+        key = f"{base}{f'.{n}' if n else ''}.json"
+        try:
+            store.put(key, body)
+            return key
+        except Exists:
+            try:
+                there = Head(**json.loads(store.get(key)))
+            except (ValueError, TypeError, KeyError):
+                continue
+            if _marked(secret, there) and (there.first, there.seq, there.hash, there.prev,
+                                           there.segment_sha256) == (
+                    head.first, head.seq, head.hash, head.prev, head.segment_sha256):
+                return key
+    raise AnchorError(f"{base}.json and the names after it are all taken")
+
+
+class Copier:
+    """The copier, as `a5s anchor` keeps it running: it remembers the last copy it made, or
+    found, so it can look every minute by the database alone, and reads the copies only when
+    it starts, when another copier copied since, or when the ledger no longer holds the last
+    entry it copied as it copied it (round 15, E8)."""
+
+    def __init__(self, store: Store) -> None:
+        self.store = store
+        self.known = False  # whether it knows the last copy, which may be none yet
+        self.last: Head | None = None
+        self.checked: datetime | None = None  # when it last checked the whole ledger
+
+    def holds(self, conn: db.Connection) -> bool:
+        """Whether what it knows still holds: the ledger has the last entry it copied, as it
+        copied it, and no other copier has recorded copying past it."""
+        if not self.known:
+            return False
+        row = conn.execute(
+            "select (select hash from ledger where seq = %s) as hash, "
+            "(select through from copier) as through", (self.last.seq if self.last else 0,)
+        ).fetchone() or {}
+        copied = self.last.seq if self.last else 0
+        if (row.get("through") or 0) > copied:
+            return False  # another copier copied since: read the copies afresh
+        return self.last is None or (row.get("hash") is not None
+                                     and bytes(row["hash"]).hex() == self.last.hash)
+
+    def waiting(self, conn: db.Connection, within: timedelta = COPY_WITHIN,
+                now: datetime | None = None) -> str:
+        """What waits past the last copy, by the database alone: "nothing"; "now", where any
+        of it is weighty, or the oldest has waited `within`; else "later"."""
+        row = conn.execute(
+            "select (select entry from ledger where seq = %(after)s + 1) as oldest, exists "
+            "(select 1 from ledger where seq > %(after)s and kind = any(%(weighty)s)) as weighty",
+            {"after": self.last.seq if self.last else 0, "weighty": list(WEIGHTY)}).fetchone()
+        if row is None or row["oldest"] is None:
+            return "nothing"
+        at = datetime.fromisoformat(json.loads(row["oldest"])["at"])
+        return "now" if row["weighty"] or (now or datetime.now(UTC)) - at >= within else "later"
+
+    def tick(self, conn: db.Connection, within: timedelta = COPY_WITHIN,
+             now: datetime | None = None) -> list[Head]:
+        """What the copier does each time it looks: copy what's due, or everything, if it must
+        read the copies afresh; else see that the ledger still holds what it copied, and
+        record that it looked, where nothing waits."""
+        if not self.holds(conn):
+            return self.copy(conn)
+        waiting = self.waiting(conn, within, now)
+        if waiting == "now":
+            return self.copy(conn)
+        if waiting == "nothing":
+            went(conn, self.last.seq if self.last else 0)
+        return []
+
+    def copy(self, conn: db.Connection, *, batch: int = 10_000) -> list[Head]:
+        """Copy every entry not yet copied, in segments of up to `batch` entries."""
+        locked = conn.execute("select pg_try_advisory_xact_lock(%s) as got", (_LOCK,)).fetchone()
+        if not (locked and locked["got"]):
+            return []  # another copier is at work
+        if not self.holds(conn):  # read the copies afresh
+            if lacking := behind(conn, self.store):  # never fork them: they'd stop for good
+                raise AnchorError(RESTORED.format(first=lacking[0], last=lacking[1]))
+            found = tip(conn, self.store)
+            self.last, self.known = (found.head if found else None), True
+        secret = _secret(conn)
+        last = self.last
+        through, prev = (last.seq, bytes.fromhex(last.hash)) if last else (0, GENESIS)
+        made: list[Head] = []
+        while rows := conn.execute(
+                "select seq, entry, prev_hash, hash from ledger where seq > %s order by seq "
+                "limit %s", (through, batch)).fetchall():
+            before, lines = prev, []
+            for row in rows:
+                if (bytes(row["prev_hash"]) != prev or bytes(row["hash"])
+                        != hashlib.sha256(prev + row["entry"].encode()).digest()):
+                    raise AnchorError(f"entry {row['seq']} doesn't follow the one before it, "
+                                      "so a5s won't copy it")
+                lines.append(canonical({"seq": row["seq"], "entry": row["entry"],
+                                        "prev_hash": prev.hex(), "hash": bytes(row["hash"]).hex()}))
+                prev = bytes(row["hash"])
+            body = ("\n".join(lines) + "\n").encode()
+            first, through = rows[0]["seq"], rows[-1]["seq"]
+            segment = _put(self.store, f"{SEGMENTS}{first:012d}-{through:012d}", ".jsonl", body)
+            head = Head(first, through, prev.hex(), segment, hashlib.sha256(body).hexdigest(),
+                        datetime.now(UTC).isoformat(), before.hex())
+            head = replace(head, mark=_mark(secret, head))  # the copier's own (round 15, D1)
+            _put_head(self.store, secret, head)
+            self.last = head  # in the store for good, whatever becomes of this transaction
+            made.append(head)
+        went(conn, through)
+        return made
+
+    def checking(self, conn: db.Connection, within: timedelta = COPY_WITHIN,
+                 now: datetime | None = None) -> tuple[str, ...] | None:
+        """Check the whole ledger, its chain and every copy, when it starts and once a day
+        after, by `now`, and record what it found, for the core's status and the auditors'
+        page: the problems, or None where it isn't time yet."""
+        at = now or datetime.now(UTC)
+        if self.checked is not None and at - self.checked < CHECK_EVERY:
+            return None
+        found = audited(conn, self.store, every=within)
+        checked(conn, found.copied_through, found.problems)
+        self.checked = at
+        return found.problems
+
+
 def anchor(conn: db.Connection, store: Store, *, batch: int = 10_000) -> list[Head]:
-    """Copy every entry not yet copied, in segments of up to `batch` entries."""
-    if not conn.execute("select pg_try_advisory_xact_lock(%s) as got", (_LOCK,)).fetchone()["got"]:
-        return []  # another copier is at work
-    if lacking := behind(conn, store):  # never fork them: they'd stop for good (round 15, D1)
-        raise AnchorError(RESTORED.format(first=lacking[0], last=lacking[1]))
-    secret = _secret(conn)
-    last = tip(conn, store)
-    through, prev = (last.head.seq, bytes.fromhex(last.head.hash)) if last else (0, GENESIS)
-    made: list[Head] = []
-    while rows := conn.execute(
-            "select seq, entry, prev_hash, hash from ledger where seq > %s order by seq limit %s",
-            (through, batch)).fetchall():
-        before, lines = prev, []
-        for row in rows:
-            if (bytes(row["prev_hash"]) != prev
-                    or bytes(row["hash"]) != hashlib.sha256(prev + row["entry"].encode()).digest()):
-                raise AnchorError(f"entry {row['seq']} doesn't follow the one before it, "
-                                  "so a5s won't copy it")
-            lines.append(canonical({"seq": row["seq"], "entry": row["entry"],
-                                    "prev_hash": prev.hex(), "hash": bytes(row["hash"]).hex()}))
-            prev = bytes(row["hash"])
-        body = ("\n".join(lines) + "\n").encode()
-        first, through = rows[0]["seq"], rows[-1]["seq"]
-        segment = _put(store, f"{SEGMENTS}{first:012d}-{through:012d}", ".jsonl", body)
-        head = Head(first, through, prev.hex(), segment, hashlib.sha256(body).hexdigest(),
-                    datetime.now(UTC).isoformat(), before.hex())
-        head = replace(head, mark=_mark(secret, head))  # the copier's own (round 15, D1)
-        _put(store, f"{HEADS}{through:012d}", ".json", canonical(asdict(head)).encode())
-        made.append(head)
-    went(conn, through)
-    return made
+    """Copy every entry not yet copied, in segments of up to `batch` entries, as a copier that
+    starts afresh does."""
+    return Copier(store).copy(conn, batch=batch)
+
+
+def audited(conn: db.Connection, store: Store, *, every: timedelta = COPY_WITHIN,
+            now: datetime | None = None) -> AnchorCheck:
+    """The whole ledger checked: its chain, from its first entry, and against every copy."""
+    chain = ledger.verify(conn)
+    found = check(conn, store, every=every, now=now)
+    broken = () if chain.ok else (f"the ledger's chain breaks at entry {chain.broken_at}",)
+    return replace(found, ok=found.ok and chain.ok, problems=broken + found.problems)
 
 
 # How the copier is doing, for the core's status and the operators' figures, which read no
@@ -280,36 +408,95 @@ def stuck(url: str, problem: str, stopped: bool) -> None:
         log.exception("couldn't record why the copier couldn't copy")
 
 
+def checked(conn: db.Connection, through: int, problems: Iterable[str]) -> None:
+    """Record what the copier's check of the whole ledger found, in the caller's transaction:
+    how far its copies matched it, and the problems, if any (round 15, E8)."""
+    conn.execute(
+        "insert into copier (only_one, checked_at, checked_through, check_problems) values "
+        "(true, now(), %s, %s) on conflict (only_one) do update set checked_at = "
+        "excluded.checked_at, checked_through = excluded.checked_through, check_problems = "
+        "excluded.check_problems", (through, list(problems)[:MOST_PROBLEMS]))
+
+
 def state(conn: db.Connection) -> dict | None:
     """How the copier is doing, as it last recorded it, and how far the ledger has gone on
-    past its copies since: None if no copier has run."""
+    past its copies since: None if no copier has run. With what its last check of the whole
+    ledger found, if it has checked it (round 15, E8)."""
     found = conn.execute(
         "select through, problem, stopped, extract(epoch from now() - copied_at) as age, "
+        "checked_through, check_problems, extract(epoch from now() - checked_at) as checked, "
         "(select coalesce(max(seq), 0) from ledger) as top from copier").fetchone()
     if found is None:
         return None
     return {"through": found["through"], "behind": max(0, found["top"] - (found["through"] or 0)),
             "copied_seconds_ago": float(found["age"]) if found["age"] is not None else None,
-            "problem": found["problem"], "stopped": bool(found["stopped"])}
+            "problem": found["problem"], "stopped": bool(found["stopped"]),
+            "checked": None if found["checked"] is None else {
+                "seconds_ago": float(found["checked"]), "through": found["checked_through"],
+                "problems": list(found["check_problems"] or [])}}
+
+
+def trail(conn: db.Connection) -> dict | None:
+    """Whether the trail checks out, as auditors are told (round 15, E8): by what the copier
+    last recorded, which reads the copies for them, None where no copier has run. It checks
+    out once the copier has checked the whole ledger and found nothing wrong, and while it
+    isn't stopped. Entries past `copied_through` aren't in the locked copies yet, so until
+    they are, someone with the database's own powers could rewrite them unseen."""
+    found = state(conn)
+    if found is None:
+        return None
+    full = found["checked"]
+    problems = [*(full["problems"] if full else [])]
+    if found["stopped"] and found["problem"] not in problems:
+        problems.insert(0, found["problem"])
+    return {"checks_out": bool(full) and not problems, "problems": problems,
+            "copied_through": found["through"], "uncopied": found["behind"],
+            "copied_minutes_ago": None if found["copied_seconds_ago"] is None
+            else int(found["copied_seconds_ago"] // 60),
+            "checked_hours_ago": None if not full else int(full["seconds_ago"] // 3600),
+            "failing": bool(found["problem"]) and not found["stopped"]}
 
 
 def _difference(conn: db.Connection, rows: list[dict]) -> str | None:
-    """The first way the ledger differs from a copy of some of its entries, if it does."""
+    """The first way the ledger differs from a copy of some of its entries, if it does: an
+    entry missing, changed, or taken out or put in, with those after it renumbered."""
     if not rows:
         return None
     stored = {r["seq"]: r for r in conn.execute(
         "select seq, entry, hash from ledger where seq between %s and %s",
-        (rows[0]["seq"], rows[-1]["seq"]))}
-    for row in rows:
+        (rows[0]["seq"], rows[-1]["seq"] + SHIFTED))}
+    for n, row in enumerate(rows):
         mine = stored.get(row["seq"])
         if mine is None:
             return f"entry {row['seq']} is missing from the ledger, though it was copied"
         if mine["entry"] != row["entry"] or bytes(mine["hash"]).hex() != row["hash"]:
-            return f"entry {row['seq']} was changed after it was copied"
+            return _shifted(row["seq"], mine["entry"], rows[n:], stored) or (
+                f"entry {row['seq']} was changed after it was copied")
     return None
 
 
-def check(conn: db.Connection, store: Store, *, every: timedelta = timedelta(hours=1),
+def _shifted(seq: int, mine: str, copied: list[dict], stored: dict[int, dict]) -> str | None:
+    """Whether entries were taken out of the ledger at `seq` after they were copied, or put in
+    there, and those after renumbered: the ledger's entry there is a later one of the copy's,
+    or the copy's a later one of the ledger's, but for its number (round 15, E8)."""
+    def unnumbered(entry: str) -> dict:
+        return {k: v for k, v in json.loads(entry).items() if k != "seq"}
+
+    here = unnumbered(mine)
+    for gap, later in enumerate(copied[1:SHIFTED + 1], start=1):
+        if unnumbered(later["entry"]) == here:
+            return (f"entry {seq} was taken out after it was copied, and those after it "
+                    "renumbered" if gap == 1 else f"entries {seq} to {seq + gap - 1} were taken "
+                    "out after they were copied, and those after them renumbered")
+    theirs = unnumbered(copied[0]["entry"])
+    for gap in range(1, SHIFTED + 1):
+        if (later := stored.get(seq + gap)) and unnumbered(later["entry"]) == theirs:
+            return (f"{'an entry was' if gap == 1 else f'{gap} entries were'} put in at entry "
+                    f"{seq} after it was copied, and those after renumbered")
+    return None
+
+
+def check(conn: db.Connection, store: Store, *, every: timedelta = COPY_WITHIN,
           now: datetime | None = None) -> AnchorCheck:
     """Whether the ledger matches its copies, the copies are whole, and they're up to date."""
     problems = [f"someone tried to replace or delete {key}"

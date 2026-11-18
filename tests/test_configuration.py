@@ -319,13 +319,13 @@ def test_the_charts_pods_are_given_no_service_links():
     assert pods and all(p.get("enableServiceLinks") is False for p in pods)
 
 
-def test_the_copier_copies_every_hour_unless_its_told_otherwise(monkeypatch, tmp_path):
+def test_the_copier_copies_within_15_minutes_unless_its_told_otherwise(monkeypatch, tmp_path):
     every: list[int | None] = []
     monkeypatch.setattr(cli, "_anchor", lambda cfg, n: every.append(n))
     monkeypatch.chdir(tmp_path)
     for args in (["anchor", "--every"], ["anchor", "--every", "60"], ["anchor"]):
         cli.main(args)
-    assert every == [cli.ANCHOR_EVERY, 60, None] and cli.ANCHOR_EVERY == 3600  # once, alone
+    assert every == [cli.ANCHOR_EVERY, 60, None] and cli.ANCHOR_EVERY == 900  # once, alone
 
 
 def test_no_value_in_the_code_waits_on_where_it_lives():

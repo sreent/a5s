@@ -14,7 +14,7 @@ import sys
 import threading
 import time
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote
 
@@ -353,15 +353,24 @@ def _dev(cfg: Config) -> None:
 
 
 def _anchor(cfg: Config, every: int | None) -> None:
+    """The copier: once, copying everything new and checking the whole ledger, or, `every`
+    given, for good, looking each minute, copying what people decided within a minute and the
+    rest within `every` seconds, and checking the whole ledger once a day (round 15, E8)."""
     store = build.store(cfg)
     if store is None:
         sys.exit("Set A5S_ANCHOR_STORE to a locked store, such as s3://bucket/a5s.")
+    copier = anchor.Copier(store)
+    within = timedelta(seconds=every) if every else anchor.COPY_WITHIN
     while True:
         try:
             with db.transaction(cfg.database_url) as conn:
-                made = anchor.anchor(conn, store)
-            print(f"Copied entries {made[0].first} to {made[-1].seq}." if made
-                  else "Nothing new to copy.", flush=True)
+                made = copier.copy(conn) if every is None else copier.tick(conn, within)
+            if made or every is None:
+                print(f"Copied entries {made[0].first} to {made[-1].seq}." if made
+                      else "Nothing new to copy.", flush=True)
+            with db.transaction(cfg.database_url) as conn:
+                if problems := copier.checking(conn, within):
+                    log.error("the ledger doesn't check out: %s", "; ".join(problems))
         except anchor.AnchorError as exc:  # the ledger doesn't match its copies: stop, loudly
             log.error("%s", exc)
             anchor.stuck(cfg.database_url, str(exc), stopped=True)  # for the status (D8)
@@ -374,7 +383,7 @@ def _anchor(cfg: Config, every: int | None) -> None:
             log.exception("copying the ledger failed")
         if every is None:
             return
-        time.sleep(every)
+        time.sleep(min(anchor.LOOK_EVERY.total_seconds(), every))
 
 
 def _verify(cfg: Config) -> None:
@@ -632,8 +641,9 @@ def _admin(cfg: Config, path: str, body: dict | None = None, timeout: float = 30
                  timeout)
 
 
-# How often the copier copies the ledger, when it keeps copying: assurance's, by a release
-ANCHOR_EVERY = 3600
+# How long an entry waits to be copied at most, when the copier keeps copying: assurance's, by
+# a release. What people decided is copied within a minute, whatever it says (round 15, E8)
+ANCHOR_EVERY = int(anchor.COPY_WITHIN.total_seconds())
 
 # The commands that run one of a5s's parts, or set it up: each stops at once on a setting it
 # can't use, or an A5S_ name that isn't a setting, which elsewhere it's only told of
@@ -802,8 +812,8 @@ def main(argv: list[str] | None = None) -> None:
     caps.add_argument("--by", help="who you are, in development; else your sign-in in A5S_TOKEN")
     copy = sub.add_parser("anchor", help="copy the ledger to locked storage")
     copy.add_argument("--every", type=int, nargs="?", const=ANCHOR_EVERY, metavar="SECONDS",
-                      help=f"keep copying, this often: every {ANCHOR_EVERY // 60} minutes if it "
-                           "doesn't say")
+                      help=f"keep copying, each entry within this long: {ANCHOR_EVERY // 60} "
+                           "minutes if it doesn't say, and what people decided within a minute")
     rel = sub.add_parser("release", help="approve a release of a5s for this deployment")
     rel_sub = rel.add_subparsers(dest="what", required=True)
     manifest = rel_sub.add_parser("manifest", help="print the manifest of a source tree, as an "

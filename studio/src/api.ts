@@ -124,6 +124,7 @@ export type AdminNow = gen.AdminNow;  // the administrators' page
 export type AdminAct = gen.AdminAct;
 export type AuditNow = gen.AuditNow;  // the audit trail, for auditors and assurance
 export type AuditEntries = gen.AuditEntries;
+export type AuditTrail = gen.AuditTrail;  // whether the trail checks out (round 15, E8)
 export type AuditReport = gen.AuditReport;
 export type AuditExport = gen.AuditExport;
 export type DecideNow = gen.DecideNow;  // the held changes someone may decide, and lately decided

@@ -16,7 +16,7 @@ from fastapi.responses import RedirectResponse
 
 from a5s import db
 from a5s.contract import Person
-from a5s.core import audit, web
+from a5s.core import anchor, audit, ledger, web
 from a5s.core import studio_models as shapes  # what each route answers, as the studio's types say
 from a5s.core.identity import (
     IdentityError,
@@ -83,8 +83,9 @@ def router(gw: Any) -> APIRouter:
         """Who's reading, and how the page shows people: by name, or by stand-in."""
         with db.transaction(gw.url) as conn:
             names = gw.data_protection(conn).audit_names
+            trail = anchor.trail(conn)  # as the copier last found it (round 15, E8)
         return {"you": person.name, "names": names, "exports": names,
-                "kinds": list(audit.KINDS)}
+                "kinds": list(audit.KINDS), "trail": trail}
 
     @api.get("/audit/api/entries", **shapes.answers(shapes.AuditEntries))
     def audit_entries(person: Annotated[Person, Depends(auditing)],
@@ -101,11 +102,14 @@ def router(gw: Any) -> APIRouter:
             found = {"entries": [], "next": None} if acted_for and whom is None else audit.search(
                 conn, since=since, until=until, kind=kind, action=action, decision=decision,
                 instance=instance, acted_for=whom, by=by, after=after, limit=limit)
+            copies = anchor.state(conn)  # which aren't copied yet, and which don't chain (E8)
+            broken = ledger.unchained(conn, [e["seq"] for e in found["entries"]])
             audit.noted(conn, person.id, "search", "their sign-in", **period(since, until),
                         kind=kind, action=action, decision=decision, instance=instance,
                         acted_for=acted_for, acted_by=by, after=after or None,
                         found=len(found["entries"]), page=True)
-        return {"entries": [showing.entry(e) for e in found["entries"]], "next": found["next"]}
+        return {"entries": [showing.entry(e) for e in found["entries"]], "next": found["next"],
+                "copied_through": copies["through"] if copies else None, "broken": broken}
 
     @api.get("/audit/api/report", **shapes.answers(shapes.AuditReport))
     def audit_report(person: Annotated[Person, Depends(auditing)],

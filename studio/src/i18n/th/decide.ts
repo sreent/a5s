@@ -196,6 +196,33 @@ export const DECIDE: Record<string, string> = {
   "Exported {n} entries. Check them yourself, against the ledger's locked copies, with: a5s audit verify a5s-audit.jsonl":
     "ส่งออกแล้ว {n} รายการ ตรวจสอบเองเทียบกับสำเนาที่ล็อกไว้ของเลดเจอร์ได้ด้วยคำสั่ง: a5s audit verify a5s-audit.jsonl",
   "Audit trail": "บันทึกการตรวจสอบ",
+  // Whether the trail checks out (round 15, E8)
+  "Whether the trail checks out": "บันทึกการตรวจสอบถูกต้องหรือไม่",
+  "It checks out": "ถูกต้อง",
+  "It doesn't check out": "ไม่ถูกต้อง",
+  "Not checked yet": "ยังไม่ได้ตรวจ",
+  "a5s keeps no locked copies of the ledger here, so nothing shows whether anyone rewrote it.":
+    "ที่นี่ a5s ไม่ได้เก็บสำเนาที่ล็อกไว้ของเลดเจอร์ จึงไม่มีสิ่งใดแสดงว่ามีใครเขียนทับเลดเจอร์หรือไม่",
+  "What a5s found wrong with the ledger and its locked copies:":
+    "สิ่งที่ a5s พบว่าผิดปกติในเลดเจอร์และสำเนาที่ล็อกไว้:",
+  "Tell assurance and the team that runs a5s: until they know why, take what this page shows as unproven.":
+    "แจ้งผู้ตรวจรับรองและทีมที่ดูแล a5s จนกว่าจะทราบสาเหตุ ให้ถือว่าสิ่งที่หน้านี้แสดงยังพิสูจน์ไม่ได้",
+  "Every entry follows the one before it, and the ledger matched its locked copies when a5s last checked it whole, {when}.":
+    "ทุกรายการต่อเนื่องจากรายการก่อนหน้า และเลดเจอร์ตรงกับสำเนาที่ล็อกไว้เมื่อ a5s ตรวจทั้งหมดครั้งล่าสุด {when}",
+  "{n} ago": "เมื่อ {n} ที่แล้ว",
+  "just now": "เมื่อสักครู่",
+  "within the last hour": "ภายในชั่วโมงที่ผ่านมา",
+  "a5s checks the whole ledger against its locked copies when its copier starts, and once a day: it hasn't yet.":
+    "a5s ตรวจเลดเจอร์ทั้งหมดเทียบกับสำเนาที่ล็อกไว้เมื่อตัวคัดลอกเริ่มทำงาน และวันละครั้ง แต่ยังไม่ได้ตรวจ",
+  "Nothing is copied yet.": "ยังไม่มีการคัดลอก",
+  "The locked copies hold every entry through #{seq}, copied {when}.":
+    "สำเนาที่ล็อกไว้มีทุกรายการจนถึง #{seq} คัดลอก{when}",
+  "Entries written since aren't copied yet: what people decided is copied within a minute, and the rest within 15 minutes. Until they are, someone with the database's own powers could rewrite them unseen.":
+    "รายการที่เขียนหลังจากนั้นยังไม่ได้คัดลอก สิ่งที่ผู้คนตัดสินใจจะถูกคัดลอกภายในหนึ่งนาที และรายการอื่นภายใน 15 นาที จนกว่าจะคัดลอกแล้ว ผู้ที่มีสิทธิ์ระดับฐานข้อมูลอาจเขียนทับได้โดยไม่มีใครเห็น",
+  "The copier's last try failed: it tries again each minute.":
+    "ตัวคัดลอกพยายามครั้งล่าสุดไม่สำเร็จ และจะลองใหม่ทุกนาที",
+  "doesn't check out": "ตรวจแล้วไม่ถูกต้อง",
+  "not copied yet": "ยังไม่ได้คัดลอก",
   "The ledger, as an auditor reads it: everything a5s did and decided, in the order it happened, and never what anyone said, which it keeps by hash alone. Whoever approved, decided, signed or read the trail shows as themselves. Each search here is itself in the ledger.":
     "เลดเจอร์ในแบบที่ผู้ตรวจสอบอ่าน: ทุกสิ่งที่ a5s ทำและตัดสินใจ ตามลำดับที่เกิดขึ้น โดยไม่มีสิ่งที่ใครพูด ซึ่งเก็บไว้เป็นค่าแฮชเท่านั้น ผู้ที่อนุมัติ ตัดสินใจ ลงนาม หรืออ่านบันทึกนี้จะแสดงเป็นตัวตนจริง การค้นหาแต่ละครั้งที่นี่ก็อยู่ในเลดเจอร์ด้วย",
   "Whom agents acted for shows by name, as the data protection officer agreed.":

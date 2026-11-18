@@ -141,6 +141,8 @@ export type Asking = {
 export type AuditEntries = {
   entries: Record<string, unknown>[];
   next: number | null;
+  copied_through: number | null;
+  broken: number[];
 };
 
 // A page of a period's entries exactly as the ledger holds them, to check and keep, with what
@@ -152,18 +154,33 @@ export type AuditExport = {
   bounds: Record<string, unknown>;
 };
 
-// Who's reading the trail, and how it shows people: by name, or by stand-in.
+// Who's reading the trail, how it shows people, by name or by stand-in, and whether the
+// trail checks out.
 export type AuditNow = {
   you: string;
   names: boolean;
   exports: boolean;
   kinds: string[];
+  trail: AuditTrail | null;
 };
 
 // Who holds each role, and who did what of a period's administration.
 export type AuditReport = {
   roles: RoleHolders[];
   acts: AdminAct[];
+};
+
+// Whether the trail checks out, as the copier last found it (round 15, E8): it checks out
+// once the copier has checked the whole ledger, its chain and every locked copy, and found
+// nothing wrong, while it isn't stopped.
+export type AuditTrail = {
+  checks_out: boolean;
+  problems: string[];
+  copied_through: number | null;
+  uncopied: number;
+  copied_minutes_ago: number | null;
+  checked_hours_ago: number | null;
+  failing: boolean;
 };
 
 export type Authoring = {

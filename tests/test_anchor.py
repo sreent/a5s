@@ -222,10 +222,10 @@ def test_a_copier_that_finds_a_rewritten_history_stops_loudly(database, folder, 
     from a5s import cli
     from a5s.config import Config
 
-    def rewritten(conn, store):
+    def rewritten(self, conn, **kwargs):
         raise anchor.AnchorError("the ledger no longer matches its copy heads/000000000006.json")
 
-    monkeypatch.setattr(anchor, "anchor", rewritten)
+    monkeypatch.setattr(anchor.Copier, "copy", rewritten)
     cfg = Config(database_url=database, gateway_url="http://unused", service_token="",
                  root=folder, anchor_store=folder.path.as_uri())
     with pytest.raises(SystemExit) as stopped:

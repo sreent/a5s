@@ -316,8 +316,13 @@ def _copies_told(found: dict[str, Any] | None) -> str:
     held = (f"through entry {found['through']}, {found['behind']} entries behind, copied "
             f"{age / 60:.0f} minutes ago" if found["through"] is not None and age is not None
             else "nothing copied yet")
+    full = found.get("checked")  # the copier's check of the whole ledger (round 15, E8)
+    checked = ("; the whole ledger not checked yet" if not full else
+               f"; the whole ledger checked {full['seconds_ago'] / 3600:.0f} hours ago: "
+               + ("; ".join(full["problems"]) if full["problems"] else "it checks out"))
     return (f"  The ledger's copies: {held}"
-            + (f"; the last try failed: {found['problem']}" if found["problem"] else "") + ".")
+            + (f"; the last try failed: {found['problem']}" if found["problem"] else "")
+            + checked + ".")
 
 
 def _configuration_told(found: dict[str, Any]) -> str:
