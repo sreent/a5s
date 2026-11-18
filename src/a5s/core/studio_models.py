@@ -1455,15 +1455,17 @@ class AdminNow(Shape):
 class AuditTrail(Shape):
     """Whether the trail checks out, as the copier last found it (round 15, E8): it checks out
     once the copier has checked the whole ledger, its chain and every locked copy, and found
-    nothing wrong, while it isn't stopped."""
+    nothing wrong, while it isn't stopped, and while that check isn't long overdue."""
 
     checks_out: bool
     problems: list[str]  # what's wrong, in a5s's words, if anything
     copied_through: int | None  # the last entry the locked copies hold
     uncopied: int  # entries written since, which someone could still rewrite unseen
     copied_minutes_ago: int | None
-    checked_hours_ago: int | None  # when the copier last checked the whole ledger; None: not yet
+    checked_minutes_ago: int | None  # since the copier last checked the whole ledger; None: not yet
     failing: bool  # the copier's last try failed, and it tries again
+    stale: bool  # its last check is two days old or more, as when the copier stopped running
+    late: bool  # entries have waited to be copied twice as long as they should
 
 
 class AuditNow(Shape):

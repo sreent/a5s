@@ -30,9 +30,11 @@ function Held({ value }: { value: unknown }) {
   return <pre className="entries" tabIndex={0}>{JSON.stringify(value, null, 1)}</pre>;
 }
 
-// How long ago, in the words of the language spoken
-const ago = (n: number, unit: "minute" | "hour") => (n > 0 ? t("{n} ago", { n: plural(n, unit) })
-  : unit === "minute" ? t("just now") : t("within the last hour"));
+// How long ago, in minutes, in the words of the language spoken
+const ago = (minutes: number) => (minutes < 1 ? t("just now")
+  : minutes < 120 ? t("{n} ago", { n: plural(minutes, "minute") })
+  : minutes < 2880 ? t("{n} ago", { n: plural(Math.floor(minutes / 60), "hour") })
+  : t("{n} ago", { n: plural(Math.floor(minutes / 1440), "day") }));
 
 /** Whether the trail checks out, as a5s's copier last found it (round 15, E8): it reads every
  * locked copy once a day, so this page needn't. An entry is evidence only once it's copied, so
@@ -43,7 +45,8 @@ function Trail({ trail }: { trail: AuditTrail | null }) {
       <h2>{t("Whether the trail checks out")}{" "}
         {trail?.checks_out && <span className="badge good">{t("It checks out")}</span>}
         {trail && trail.problems.length > 0 && <span className="badge bad">{t("It doesn't check out")}</span>}
-        {trail && !trail.checks_out && trail.problems.length === 0 && <span className="badge warn">{t("Not checked yet")}</span>}
+        {trail && !trail.checks_out && trail.problems.length === 0
+          && <span className="badge warn">{trail.stale ? t("Not checked lately") : t("Not checked yet")}</span>}
       </h2>
       {!trail && <p className="note">{t("a5s keeps no locked copies of the ledger here, so nothing shows whether anyone rewrote it.")}</p>}
       {trail && trail.problems.length > 0 && (
@@ -53,18 +56,23 @@ function Trail({ trail }: { trail: AuditTrail | null }) {
           <p className="note">{t("Tell assurance and the team that runs a5s: until they know why, take what this page shows as unproven.")}</p>
         </>
       )}
-      {trail?.checks_out && trail.checked_hours_ago !== null && (
+      {trail?.checks_out && trail.checked_minutes_ago !== null && (
         <p>{t("Every entry follows the one before it, and the ledger matched its locked copies when a5s last checked it whole, {when}.",
-          { when: ago(trail.checked_hours_ago, "hour") })}</p>
+          { when: ago(trail.checked_minutes_ago) })}</p>
       )}
-      {trail && !trail.checks_out && trail.problems.length === 0 && (
+      {trail?.stale && trail.problems.length === 0 && trail.checked_minutes_ago !== null && (
+        <p>{t("a5s last checked the whole ledger against its locked copies {when}, though it checks once a day: its copier may have stopped. Tell the team that runs a5s.",
+          { when: ago(trail.checked_minutes_ago) })}</p>
+      )}
+      {trail && !trail.checks_out && !trail.stale && trail.problems.length === 0 && (
         <p>{t("a5s checks the whole ledger against its locked copies when its copier starts, and once a day: it hasn't yet.")}</p>
       )}
       {trail && (
         <p className="note">{trail.copied_through === null ? t("Nothing is copied yet.")
           : t("The locked copies hold every entry through #{seq}, copied {when}.",
-              { seq: trail.copied_through, when: ago(trail.copied_minutes_ago ?? 0, "minute") })}{" "}
+              { seq: trail.copied_through, when: ago(trail.copied_minutes_ago ?? 0) })}{" "}
           {t("Entries written since aren't copied yet: what people decided is copied within a minute, and the rest within 15 minutes. Until they are, someone with the database's own powers could rewrite them unseen.")}
+          {trail.late && ` ${t("Those entries have waited longer than they should: tell the team that runs a5s.")}`}
           {trail.failing && ` ${t("The copier's last try failed: it tries again each minute.")}`}
         </p>
       )}

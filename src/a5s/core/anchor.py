@@ -439,9 +439,10 @@ def state(conn: db.Connection) -> dict | None:
 def trail(conn: db.Connection) -> dict | None:
     """Whether the trail checks out, as auditors are told (round 15, E8): by what the copier
     last recorded, which reads the copies for them, None where no copier has run. It checks
-    out once the copier has checked the whole ledger and found nothing wrong, and while it
-    isn't stopped. Entries past `copied_through` aren't in the locked copies yet, so until
-    they are, someone with the database's own powers could rewrite them unseen."""
+    out once the copier has checked the whole ledger and found nothing wrong, while it isn't
+    stopped, and while its last check isn't long overdue. Entries past `copied_through` aren't
+    in the locked copies yet, so until they are, someone with the database's own powers could
+    rewrite them unseen."""
     found = state(conn)
     if found is None:
         return None
@@ -449,12 +450,16 @@ def trail(conn: db.Connection) -> dict | None:
     problems = [*(full["problems"] if full else [])]
     if found["stopped"] and found["problem"] not in problems:
         problems.insert(0, found["problem"])
-    return {"checks_out": bool(full) and not problems, "problems": problems,
+    copied = found["copied_seconds_ago"]
+    # a check or a copy long overdue, as when the copier stopped running: it can't vouch now
+    stale = bool(full) and full["seconds_ago"] > 2 * CHECK_EVERY.total_seconds()
+    late = found["behind"] > 0 and (copied or 0) > 2 * COPY_WITHIN.total_seconds()
+    return {"checks_out": bool(full) and not problems and not stale, "problems": problems,
             "copied_through": found["through"], "uncopied": found["behind"],
-            "copied_minutes_ago": None if found["copied_seconds_ago"] is None
-            else int(found["copied_seconds_ago"] // 60),
-            "checked_hours_ago": None if not full else int(full["seconds_ago"] // 3600),
-            "failing": bool(found["problem"]) and not found["stopped"]}
+            "copied_minutes_ago": None if copied is None else int(copied // 60),
+            "checked_minutes_ago": None if not full else int(full["seconds_ago"] // 60),
+            "failing": bool(found["problem"]) and not found["stopped"], "stale": stale,
+            "late": late}
 
 
 def _difference(conn: db.Connection, rows: list[dict]) -> str | None:

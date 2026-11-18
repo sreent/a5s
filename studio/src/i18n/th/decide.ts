@@ -211,7 +211,11 @@ export const DECIDE: Record<string, string> = {
     "ทุกรายการต่อเนื่องจากรายการก่อนหน้า และเลดเจอร์ตรงกับสำเนาที่ล็อกไว้เมื่อ a5s ตรวจทั้งหมดครั้งล่าสุด {when}",
   "{n} ago": "เมื่อ {n} ที่แล้ว",
   "just now": "เมื่อสักครู่",
-  "within the last hour": "ภายในชั่วโมงที่ผ่านมา",
+  "Not checked lately": "ไม่ได้ตรวจมาสักพัก",
+  "a5s last checked the whole ledger against its locked copies {when}, though it checks once a day: its copier may have stopped. Tell the team that runs a5s.":
+    "a5s ตรวจเลดเจอร์ทั้งหมดเทียบกับสำเนาที่ล็อกไว้ครั้งล่าสุด{when} ทั้งที่ตรวจวันละครั้ง ตัวคัดลอกอาจหยุดทำงาน โปรดแจ้งทีมที่ดูแล a5s",
+  "Those entries have waited longer than they should: tell the team that runs a5s.":
+    "รายการเหล่านั้นรอนานกว่าที่ควร โปรดแจ้งทีมที่ดูแล a5s",
   "a5s checks the whole ledger against its locked copies when its copier starts, and once a day: it hasn't yet.":
     "a5s ตรวจเลดเจอร์ทั้งหมดเทียบกับสำเนาที่ล็อกไว้เมื่อตัวคัดลอกเริ่มทำงาน และวันละครั้ง แต่ยังไม่ได้ตรวจ",
   "Nothing is copied yet.": "ยังไม่มีการคัดลอก",

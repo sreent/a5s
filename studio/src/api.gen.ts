@@ -172,15 +172,17 @@ export type AuditReport = {
 
 // Whether the trail checks out, as the copier last found it (round 15, E8): it checks out
 // once the copier has checked the whole ledger, its chain and every locked copy, and found
-// nothing wrong, while it isn't stopped.
+// nothing wrong, while it isn't stopped, and while that check isn't long overdue.
 export type AuditTrail = {
   checks_out: boolean;
   problems: string[];
   copied_through: number | null;
   uncopied: number;
   copied_minutes_ago: number | null;
-  checked_hours_ago: number | null;
+  checked_minutes_ago: number | null;
   failing: boolean;
+  stale: boolean;
+  late: boolean;
 };
 
 export type Authoring = {

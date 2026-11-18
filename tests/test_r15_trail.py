@@ -201,7 +201,8 @@ def test_auditors_are_told_whether_the_trail_checks_out(stack, approving, provid
     checked(stack.admin, copier)
     trail = api("/audit/api").json()["trail"]
     assert (trail["checks_out"], trail["problems"], trail["failing"]) == (True, [], False)
-    assert trail["copied_through"] >= copied[-1] and trail["checked_hours_ago"] == 0
+    assert trail["copied_through"] >= copied[-1] and trail["checked_minutes_ago"] == 0
+    assert (trail["stale"], trail["late"]) == (False, False)
     newer = acted(stack.admin, 2)
     page = api("/audit/api/entries", kind="tool").json()
     assert page["broken"] == [] and [e["seq"] for e in page["entries"]] == copied + newer
@@ -213,6 +214,24 @@ def test_auditors_are_told_whether_the_trail_checks_out(stack, approving, provid
     assert not trail["checks_out"] and trail["problems"] == [
         f"the ledger's chain breaks at entry {copied[1]}",
         f"entry {copied[1]} was changed after it was copied"]
+
+
+def test_a_check_or_copies_long_overdue_never_show_as_checking_out(stack, approving, provider,
+                                                                  tmp_path):
+    """As when the copier stopped running: its last check, however good, vouches for nothing
+    written since, and the page says what's overdue."""
+    copier = anchor.Copier(FolderStore(tmp_path / "copies"))
+    acted(stack.admin, 1)
+    ticked(stack.admin, copier)
+    checked(stack.admin, copier)
+    with psycopg.connect(stack.admin) as conn:
+        conn.execute("update copier set checked_at = now() - interval '3 days', "
+                     "copied_at = now() - interval '3 days'")
+    acted(stack.admin, 1)
+    trail = reading(approving, provider)("/audit/api").json()["trail"]
+    assert (trail["checks_out"], trail["stale"], trail["late"], trail["problems"]) == (
+        False, True, True, [])
+    assert trail["checked_minutes_ago"] >= 3 * 24 * 60
 
 
 def test_an_auditor_reads_whether_the_trail_checks_out_in_the_browser(stack, approving, provider,
