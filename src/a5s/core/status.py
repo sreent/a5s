@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from a5s import db
-from a5s.core import rotation, samples, sealing
+from a5s.core import anchor, rotation, samples, sealing
 
 # a5s's starting objectives [starting value]: set from the first users' baseline
 OBJECTIVES = {"reply_seconds_p90": 120, "chased_on_time": 0.95}
@@ -137,6 +137,7 @@ def report(conn: db.Connection, breakers: list[str], keys: tuple[str, ...] = (),
         "count(*) filter (where status = 'failed' and updated_at > now() - interval '1 day') "
         "  as failed "
         "from tasks where parent is null").fetchone()
+    copies = anchor.state(conn)  # as the copier records it (round 15, D8)
     refused = conn.execute(  # what counts, refused for want of a second factor
         "select doing, sum(n) as n from second_factor_refusals "
         "where day >= current_date - 1 group by doing order by doing").fetchall()
@@ -172,6 +173,7 @@ def report(conn: db.Connection, breakers: list[str], keys: tuple[str, ...] = (),
                   "blocked": tasked["blocked"], "done": tasked["done"],
                   "failed": tasked["failed"]},
         "missing": missing["n"],
+        "copies": copies,
         "not_active": [dict(r) for r in stopped],
         "breakers_open": breakers,
         "objectives": {
@@ -292,6 +294,7 @@ def told(status: dict[str, Any]) -> str:
         *([(f"  People the directory no longer names, not yet archived: {status['missing']}"
             " (many at once wait a week, in case it's the directory).")]
           if status.get("missing") else []),
+        _copies_told(status.get("copies")),
         "  Not active: " + (", ".join(f"{i['id']}, {i['status']}"
                                       + (f" by {i['suspended_by']}" if i["suspended_by"] else "")
                                       for i in status["not_active"]) or "none") + ".",
@@ -299,6 +302,22 @@ def told(status: dict[str, Any]) -> str:
         *([_configuration_told(status["configuration"])] if status.get("configuration") else []),
     ]
     return "\n".join(lines)
+
+
+def _copies_told(found: dict[str, Any] | None) -> str:
+    """How the ledger's copies stand, as the copier last recorded it (round 15, D8)."""
+    if found is None:
+        return ("  The ledger's copies: none recorded, as no copier has run here "
+                "(A5S_ANCHOR_STORE).")
+    if found["stopped"]:
+        return (f"  The ledger's copies: stopped, until someone acts: {found['problem']} "
+                "(docs/runbooks.md#the-ledgers-copies-stop).")
+    age = found["copied_seconds_ago"]
+    held = (f"through entry {found['through']}, {found['behind']} entries behind, copied "
+            f"{age / 60:.0f} minutes ago" if found["through"] is not None and age is not None
+            else "nothing copied yet")
+    return (f"  The ledger's copies: {held}"
+            + (f"; the last try failed: {found['problem']}" if found["problem"] else "") + ".")
 
 
 def _configuration_told(found: dict[str, Any]) -> str:

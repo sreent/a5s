@@ -65,6 +65,10 @@ FIGURES: dict[str, tuple[str, str]] = {
     "a5s.caps.lowered": ("{cap}", "Caps lowered over the last day"),
     "a5s.unsealed": ("{entry}", "Approvals, decisions and grades the gateway hasn't sealed"),
     "a5s.departures.missing": ("{person}", "People the directory no longer names, not archived"),
+    "a5s.ledger.copies.behind": ("{entry}", "Ledger entries its locked copies don't hold yet"),
+    "a5s.ledger.copies.age": ("s", "How long since the copier last copied, or found nothing new"),
+    "a5s.ledger.copies.failing": ("1", "Whether the copier's last try failed: 1, or 0"),
+    "a5s.ledger.copies.stopped": ("1", "Whether the copier stopped until someone acts: 1, or 0"),
     "a5s.instances.not_active": ("{instance}", "Instances not active, by status"),
     "a5s.breakers.open": ("{model}", "Models a5s isn't calling for now, by model"),
     "a5s.replies.answered": ("{message}", "Messages answered over the last day"),
@@ -105,6 +109,7 @@ def figures(status: dict[str, Any]) -> dict[str, list[tuple[float, dict[str, str
         return [] if value is None else [(float(value), {})]
 
     not_active = Counter(r["status"] for r in status["not_active"])  # never who suspended it
+    copies = status.get("copies")  # as the copier records it, if one has run
     tokens = by_instance(status["tokens"], status.get("serving", {}), "tokens", "budget_warnings",
                          fewest=status.get("fewest_people", DataProtection.fewest_people))
     return {
@@ -134,6 +139,10 @@ def figures(status: dict[str, Any]) -> dict[str, list[tuple[float, dict[str, str
         "a5s.caps.lowered": one(samples["caps_lowered"]),
         "a5s.unsealed": one(status["unsealed"]),
         "a5s.departures.missing": one(status["missing"]),
+        "a5s.ledger.copies.behind": one(copies["behind"]) if copies else [],  # (round 15, D8)
+        "a5s.ledger.copies.age": one(copies["copied_seconds_ago"]) if copies else [],
+        "a5s.ledger.copies.failing": one(int(bool(copies["problem"]))) if copies else [],
+        "a5s.ledger.copies.stopped": one(int(copies["stopped"])) if copies else [],
         "a5s.instances.not_active": [(float(n), {"a5s.status": s})
                                      for s, n in sorted(not_active.items())] or one(0),
         "a5s.breakers.open": [(1.0, {"gen_ai.request.model": m})

@@ -21,6 +21,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 import re
 from collections import defaultdict
 from dataclasses import asdict, dataclass, replace
@@ -30,6 +31,7 @@ from a5s import db
 from a5s.core.ledger import GENESIS, canonical
 from a5s.core.stores import Exists, Store
 
+log = logging.getLogger(__name__)
 SEGMENTS, HEADS = "segments/", "heads/"
 _LOCK = 0x0A5_A2C0  # one copier at a time
 _NUMBERED = re.compile(r"heads/(\d+)(\.\d+)?\.json")  # by the last entry each copies
@@ -246,7 +248,49 @@ def anchor(conn: db.Connection, store: Store, *, batch: int = 10_000) -> list[He
         head = replace(head, mark=_mark(secret, head))  # the copier's own (round 15, D1)
         _put(store, f"{HEADS}{through:012d}", ".json", canonical(asdict(head)).encode())
         made.append(head)
+    went(conn, through)
     return made
+
+
+# How the copier is doing, for the core's status and the operators' figures, which read no
+# copies themselves (round 15, D8)
+
+def went(conn: db.Connection, through: int) -> None:
+    """Record that the copier copied the ledger through an entry, or found nothing new past
+    it, in the caller's transaction, which copied them."""
+    conn.execute(
+        "insert into copier (only_one, through, copied_at, problem, problem_at, stopped) "
+        "values (true, %s, now(), null, null, false) on conflict (only_one) do update set "
+        "through = excluded.through, copied_at = excluded.copied_at, problem = null, "
+        "problem_at = null, stopped = false", (through,))
+
+
+def stuck(url: str, problem: str, stopped: bool) -> None:
+    """Record why the copier couldn't copy, and whether it stopped until someone acts, such as
+    `a5s restore` after a restore from a backup. Logged alone where even that can't be
+    recorded, as while the database is away."""
+    try:
+        with db.transaction(url) as conn:
+            conn.execute(
+                "insert into copier (only_one, problem, problem_at, stopped) values "
+                "(true, %s, now(), %s) on conflict (only_one) do update set problem = "
+                "excluded.problem, problem_at = excluded.problem_at, stopped = excluded.stopped",
+                (problem[:500], stopped))
+    except Exception:  # what the copier says of it is in its log regardless
+        log.exception("couldn't record why the copier couldn't copy")
+
+
+def state(conn: db.Connection) -> dict | None:
+    """How the copier is doing, as it last recorded it, and how far the ledger has gone on
+    past its copies since: None if no copier has run."""
+    found = conn.execute(
+        "select through, problem, stopped, extract(epoch from now() - copied_at) as age, "
+        "(select coalesce(max(seq), 0) from ledger) as top from copier").fetchone()
+    if found is None:
+        return None
+    return {"through": found["through"], "behind": max(0, found["top"] - (found["through"] or 0)),
+            "copied_seconds_ago": float(found["age"]) if found["age"] is not None else None,
+            "problem": found["problem"], "stopped": bool(found["stopped"])}
 
 
 def _difference(conn: db.Connection, rows: list[dict]) -> str | None:

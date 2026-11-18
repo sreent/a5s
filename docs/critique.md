@@ -712,7 +712,7 @@ Six reviewers who hadn't written a5s each took a part and tested the running sta
 | C7 | A draft's pull request said who must sign, never what the agent may do | Medium | It says: its tools, by system, how far it may act, and what starts it besides people | Fixed |
 | C8 | The team that built the version at work could grade its challenger shadow | Medium | A shadow's grader comes from outside the teams that built either agent | Fixed |
 | D7 | On call, the team may only suspend: not lower a cap, withdraw a release or see an instance | Medium | | Deferred, Medium, with an incident console |
-| D8 | The ledger's copies show in neither the status nor the metrics | Medium | | Deferred, Small to Medium |
+| D8 | The ledger's copies show in neither the status nor the metrics | Medium | The copier records how it's doing each time it copies, or can't, and the status and figures say through which entry its copies hold the ledger, how far behind, since when, and whether its last try failed or it stopped until someone acts, such as after a restore | Fixed |
 | D9, F12 | Events and mail held back by a day's budget show nowhere, and events naming a person spend that person's day | Medium | | Deferred, Small to Medium |
 | D10 | A part ran as a superuser, or as another part's role, unawares | Medium | It won't start so | Fixed |
 | D11 | A part served a database older than it needs, to fail later at the first column it lacked | Medium | It refuses, saying to run `a5s migrate` | Fixed |

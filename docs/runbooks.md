@@ -6,7 +6,7 @@ For the team that runs a5s. `a5s status` shows how a5s did over the last day, an
 
 To follow one run, find its spans by `a5s.run.id`, where the deployment sends traces (`OTEL_EXPORTER_OTLP_ENDPOINT`), and its entries with `a5s ledger tail`, or `a5s runs show <run>`. Traces are for debugging. The ledger is the evidence.
 
-The gateway sends the status's figures to the same endpoint as OpenTelemetry metrics, each minute, named `a5s.*` ([`core/metrics.py`](../src/a5s/core/metrics.py)), so the organisation's monitoring can alert on them: `a5s.status.readable` at 0 when the gateway can't read its status, which is the database ([below](#connections-to-the-database-run-out)); `a5s.queue.oldest` when [messages are waiting](#messages-are-waiting); `a5s.breakers.open` when [a model isn't answering](#runs-fail-or-a-model-isnt-answering); `a5s.changes.stuck` and `a5s.unsealed` when [changes stop part way, or aren't sealed](#changes-wait-or-stop-part-way); and `a5s.instances.not_active` when [an instance isn't active](#an-instance-isnt-active). `a5s agents`, `a5s runs <instance>` and `a5s measures --instance <instance>` show one agent's or instance's part in it.
+The gateway sends the status's figures to the same endpoint as OpenTelemetry metrics, each minute, named `a5s.*` ([`core/metrics.py`](../src/a5s/core/metrics.py)), so the organisation's monitoring can alert on them: `a5s.status.readable` at 0 when the gateway can't read its status, which is the database ([below](#connections-to-the-database-run-out)); `a5s.queue.oldest` when [messages are waiting](#messages-are-waiting); `a5s.breakers.open` when [a model isn't answering](#runs-fail-or-a-model-isnt-answering); `a5s.changes.stuck` and `a5s.unsealed` when [changes stop part way, or aren't sealed](#changes-wait-or-stop-part-way); `a5s.instances.not_active` when [an instance isn't active](#an-instance-isnt-active); and `a5s.ledger.copies.stopped` or `a5s.ledger.copies.failing` at 1, or `a5s.ledger.copies.age` past two hours, when [the ledger's copies stop](#the-ledgers-copies-stop), as the copier records them each time it copies, or can't. `a5s agents`, `a5s runs <instance>` and `a5s measures --instance <instance>` show one agent's or instance's part in it.
 
 ## On call
 
@@ -231,7 +231,7 @@ The scheduler calls the core with the service token, `A5S_SERVICE_TOKEN`, to ope
 
 ## The ledger's copies stop
 
-**Shows as:** the copier exiting with an error, or `a5s ledger verify` failing.
+**Shows as:** the copier exiting with an error, `a5s status` saying the ledger's copies stopped, or that the copier's last try failed, with `a5s.ledger.copies.stopped` or `a5s.ledger.copies.failing` at 1, the copies falling behind the ledger for hours, or `a5s ledger verify` failing. The status says why the copier stopped in its own words; what a store answered stays in the copier's log, since it may name the store.
 
 1. Don't restart the copier to make the error go away. It stops when the ledger no longer matches its copies, which means the history changed.
 2. Run `a5s ledger verify`, and tell assurance what it says.

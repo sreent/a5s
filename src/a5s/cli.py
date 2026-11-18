@@ -364,11 +364,14 @@ def _anchor(cfg: Config, every: int | None) -> None:
                   else "Nothing new to copy.", flush=True)
         except anchor.AnchorError as exc:  # the ledger doesn't match its copies: stop, loudly
             log.error("%s", exc)
+            anchor.stuck(cfg.database_url, str(exc), stopped=True)  # for the status (D8)
             sys.exit(1)
-        except Exception:
+        except Exception as exc:  # such as the store being down: try again
+            anchor.stuck(cfg.database_url, f"{type(exc).__name__}, as the copier's log says",
+                         stopped=False)  # its words, which might name the store, stay there
             if every is None:
                 raise
-            log.exception("copying the ledger failed")  # such as the store being down: try again
+            log.exception("copying the ledger failed")
         if every is None:
             return
         time.sleep(every)
