@@ -57,7 +57,8 @@ def test_only_what_the_scenario_offers_each_with_a_reason_is_given():
     spec = yaml.safe_load(files["agent.yaml"])
     assert spec["tools"] == {"reads": ["search_records"]}
     assert spec["obligations"] == ["records"] and spec["reminders"] is True
-    assert spec["autonomy"] == {"start": 1, "max": 1}  # what it writes needs 1, and never 2
+    # what it writes needs it to ask first, and never to act on its own: by name
+    assert spec["autonomy"] == {"start": "asks first", "max": "asks first"}
     assert "schedules" not in spec or spec["schedules"] == [] and not spec["context"].get("agents")
     assert spec["works_for"] == "Hiring managers and new joiners"
     assert files["AGENTS.md"] == ("# joiner-coordinator\n\n- Chase what's owed.\n- Answer the joiner's "

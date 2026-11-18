@@ -3,13 +3,13 @@ import shutil
 import pytest
 from pydantic import ValidationError
 
-from a5s import definitions
+from a5s import definitions, levels
 from conftest import ROOT
 
 
 def test_the_assistant_loads_with_its_instructions_and_pins():
     d = definitions.load(ROOT / "agents" / "assistant")
-    assert d.id == "assistant" and d.autonomy.max == 2
+    assert d.id == "assistant" and d.autonomy.max == levels.ASKS_FIRST  # for the pilot
     assert d.tool_names == ["search_records", "get_record", "get_messages", "create_draft",
                             "change_due_date", "close_question"]
     assert set(d.pins) == set(d.tool_names)
@@ -33,10 +33,12 @@ def test_unknown_fields_are_refused(tmp_path):
         definitions.load(folder)
 
 
-def test_level_2_never_comes_from_the_release(tmp_path):
+@pytest.mark.parametrize("starts", ["acts on its own", "2"])  # by name, or as before by number
+def test_acting_on_its_own_never_comes_from_the_release(tmp_path, starts):
     folder = tmp_path / "assistant"
     shutil.copytree(ROOT / "agents" / "assistant", folder)
-    spec = (folder / "agent.yaml").read_text().replace("start: 1", "start: 2")
+    spec = (folder / "agent.yaml").read_text().replace("start: asks first", f"start: {starts}")
+    assert f"start: {starts}" in spec
     (folder / "agent.yaml").write_text(spec)
     with pytest.raises(ValidationError):
         definitions.load(folder)
