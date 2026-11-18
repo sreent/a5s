@@ -9,8 +9,8 @@ releases from outside the team that runs a5s, and signs the release that adds it
 owners of the data objects put it to work in material data, which then needs 95% accuracy
 before level 2. Raf gives it the base unit his new material lacks:
 the correction waits for Mo, who owns material data, who approves it, and SAP makes it. Over the
-quarter, Mel, who grades the agents' work in material data, grades its corrections there, and the
-evidence raises a5s's cap; the owners give it level 2 for corrections in material, as a version of
+quarter, Mel and Kit, who grade the agents' work in material data, grade its corrections there,
+half each, and the evidence raises a5s's cap; the owners give it level 2 for corrections in material, as a version of
 the settings; and Raf's next correction is made alone, and Mo hears of it. Ken, of assurance,
 follows it all in the audit trail.
 
@@ -283,29 +283,32 @@ def quarter(stack) -> None:
 
 
 def graded(walk: Walk, stack, url: str) -> None:
-    """Mel grades the quarter's corrections, twenty at a time, and the evidence raises a5s's cap
-    on them in material data to level 2."""
+    """Mel and Kit grade the quarter's corrections, half each, twenty at a time, taking turns,
+    and the evidence raises a5s's cap on them in material data to level 2: neither's grades
+    count beyond the other's (round 15, C4)."""
     quarter(stack)
-    rounds = 0
+    rounds, done = 0, {"mel": 0, "kit": 0}
     while True:
-        page = walk.as_("mel", f"{url}/studio/grade")
+        grader = ("mel", "kit")[rounds % 2]
+        page = walk.as_(grader, f"{url}/studio/grade")
         page.wait_for_selector("#status:not(:empty), [data-sample]", timeout=30000)
-        cards = page.locator("[data-sample]").all()
+        cards = page.locator("[data-sample]").all()[:GRADED // 2 - done[grader]]
         if not cards:
             break
         for card in cards:
             card.get_by_role("button", name="Right").click()
         if rounds == 0:
             with walk.step(f"Over the quarter, each correction Mo decided is drawn as a sample, {GRADED} "
-                           "of them here, made up like Raf's. Mel, who grades the agents' work in "
-                           "material data, from outside the team that built it, grades them on a5s's "
-                           "own page, twenty at a time: each is right.", page):
+                           "of them here, made up like Raf's. Mel and Kit, who grade the agents' work "
+                           "in material data, from outside the team that built it, grade them on "
+                           "a5s's own page, twenty at a time, half each, since no grader's grades "
+                           "count beyond everyone else's: each is right.", page):
                 pass
         page.click("#send")
         page.wait_for_selector("#status >> text=Graded", timeout=30000)
-        rounds += 1
+        rounds, done[grader] = rounds + 1, done[grader] + len(cards)
         page.close()
-    assert rounds == 5
+    assert rounds == 6 and done == {"mel": GRADED // 2, "kit": GRADED // 2}
     stack.scheduler().decided()  # the core seals them, and weighs the evidence
     with db.transaction(stack.admin) as conn:
         caps = [(r["part"], r["action"], r["cap"]) for r in conn.execute("select * from caps")]

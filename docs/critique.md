@@ -706,7 +706,7 @@ Six reviewers who hadn't written a5s each took a part and tested the running sta
 | B8 | An instance's page said level 2 where a cap held it at 1, and showed nothing of the way there | Medium | | Deferred, Small to Medium |
 | B9 | An approval while the instance was suspended was accepted, then dropped | Medium | It's refused, saying to reject it now or approve it once the instance is at work | Fixed |
 | C3 | A grade chosen for a sample that lapsed jammed the grade page | Medium | A grade chosen for a sample no longer offered, which lapsed or someone else graded, goes from what's sent, saying so, and the rest go | Fixed |
-| C4 | One grader alone could raise level 2 in minutes | Medium | | Deferred, Medium: a cap on one grader's share, and a second grader for some |
+| C4 | One grader alone could raise level 2 in minutes | Medium | No grader's grades count toward a raise beyond everyone else's together, so one alone never raises a cap, though every error counts, whoever gave it; and one sample in five is drawn twice, for a second grader, counting once both are graded, as the worse of the two. A grader is offered one of the two, and whoever graded one never grades the other. The ledger's entry for a raise says how many items counted and how many were set aside | Fixed |
 | C5 | Shadow pairs show one message, without the conversation or the record | Medium | | Deferred, Medium |
 | C6 | A test case kept from a real run kept bank account numbers, dates of birth, national ids and addresses | Medium | Code masks those too in what's kept from a run: dates of birth, by what's said before them or a year at least fifteen back, in English, Thai and the Buddhist era; ids of letters and digits; numbers of six digits or more; street addresses and postcodes. A due date stays, as do amounts, and what graders and owners read is masked as before | Fixed |
 | C7 | A draft's pull request said who must sign, never what the agent may do | Medium | It says: its tools, by system, how far it may act, and what starts it besides people | Fixed |
@@ -762,8 +762,8 @@ The gaps they named, and their size:
 | Scanned invoices and other attachments, read | A | Large |
 | People outside the directory, such as customers in mail, exported and erased | F | Medium to Large: done, by their address; the changes and samples that name them stay as evidence, as anyone's do |
 | Resuming in an emergency | D | Medium |
-| What operators see of the ledger's copies and what waits | D | Medium |
-| A second grader checks some samples | C | Medium |
+| What operators see of the ledger's copies and what waits | D | Medium: the copies done, in the status and the figures (D8) |
+| A second grader checks some samples | C | Medium: done, one sample in five, which counts as the worse of its two grades; and no grader's grades count toward a raise beyond everyone else's (C4) |
 | The officer hears what became of each request | F | Medium |
 | Deciders: grouped, all at once, one reason for many; and what the asker said | B | Small to Medium |
 | What a5s keeps of someone, for them to see | A | Small to Medium |

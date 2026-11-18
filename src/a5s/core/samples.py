@@ -18,7 +18,8 @@ sign-in, which the core seals once it has checked, itself, that they may give ea
 anyone who owns, authors or drafted the agent, nor anyone from their teams or those of the
 instance's owner or deputy, nor anyone the change was for or who decided it, nor anyone who
 reports to whoever decided it, and only for records they may see. A sample nobody grades in a
-quarter lapses.
+quarter lapses. One sample in five is drawn twice, for a second grader: a grader is offered one
+of the two, and whoever graded one never grades the other (round 15, C4).
 
 A sequential test weighs the grades for each behaviour, part and type of action the core sealed
 since its cap last changed, so each change starts a fresh test, and a grade given before a change
@@ -30,7 +31,10 @@ with no threshold never earns level 2, and while the settings in force don't che
 test weighs nothing. The test is anytime-valid: a mixture likelihood ratio, a test
 supermartingale under the hypothesis it tests, so checking it after every grade keeps its
 error at 5%, by Ville's inequality. With no errors, a 98% threshold needs 224 graded items,
-and a 95% one 88. The core seals each cap with the ledger entry that set it, so a row written
+and a 95% one 88. A sample drawn twice is one item once both its grades are in, as the worse
+of the two, or its first alone if its twin lapsed. Toward a raise, no grader's items count
+beyond everyone else's together, so one grader alone never raises a cap, however many they
+grade; every error counts, whoever gave it (round 15, C4). The core seals each cap with the ledger entry that set it, so a row written
 into the database, or an old one put back, doesn't count, and anyone who may can lower a cap
 at once (`a5s caps lower`), never raise one.
 """
@@ -61,6 +65,8 @@ ALPHA = 0.05  # the test's error: 95% confidence
 PER_QUARTER = 100  # changes made at level 2 sampled, for each behaviour, part and type
 LAPSE = timedelta(days=91)  # a sample nobody grades in a quarter lapses
 MOST_GRADED = 20  # grades one sign-in gives, at most
+CHECKED_EVERY = 5  # one sample in so many is drawn twice, for a second grader (round 15, C4)
+WORSE = {"right": 0, "wrong": 1, "critical": 2}  # of a pair's two grades, the one that counts
 # what every grade one sign-in gave shares, as the gateway checks it: else the channels app
 # could record one sign-in's grades as another person's, or under another salt (round 13, A2)
 GIVEN_TOGETHER = ("graded_by", "grade_proof", "grade_salt", "grade_nonce", "grade_issuer")
@@ -290,9 +296,9 @@ def draw(conn: db.Connection, keys: tuple[str, ...], scenario: str, kind: str, r
         return False
     if kind == "action":
         starts = date(now.year, 3 * ((now.month - 1) // 3) + 1, 1)
-        drawn = conn.execute(
+        drawn = conn.execute(  # twins aside: they're second looks at what's drawn
             "select count(*) as n from samples where kind = 'action' and release = %s "
-            "and part = %s and action = %s and drawn_at >= %s",
+            "and part = %s and action = %s and drawn_at >= %s and twin_of is null",
             (release, part, action, starts)).fetchone()["n"]
         lately = conn.execute(
             "select coalesce(sum(records), 0) as n from action_counts where action = %s "
@@ -313,7 +319,34 @@ def draw(conn: db.Connection, keys: tuple[str, ...], scenario: str, kind: str, r
          Jsonb(flagged) if flagged is not None else None, asked,
          digest_of(asked))).fetchone()
     sealed_draw(conn, keys, row)
+    if row is not None and row["id"] % CHECKED_EVERY == 0:  # drawn twice, for a second grader
+        sealed_draw(conn, keys, conn.execute(
+            "insert into samples (scenario, kind, proposal_id, run_id, instance_id, release, "
+            "definition, part, action, said, records, acts_for, decided, decided_by, deciders, "
+            "drawn_at, flags, flagged, asked, asked_digest, twin_of) select scenario, kind, "
+            "proposal_id, run_id, instance_id, release, definition, part, action, said, records, "
+            "acts_for, decided, decided_by, deciders, drawn_at, flags, flagged, asked, "
+            "asked_digest, id from samples where id = %s returning *", (row["id"],)).fetchone())
     return True
+
+
+def _pairs(conn: db.Connection, ids: Iterable[int]) -> dict[int, dict]:
+    """The other of each pair a sample drawn twice makes, of these samples, by each one's id
+    (round 15, C4)."""
+    found: dict[int, dict] = {}
+    for twin in conn.execute(
+            "select t.*, row_to_json(f) as first from samples t join samples f on f.id = "
+            "t.twin_of where t.id = any(%(ids)s) or t.twin_of = any(%(ids)s)",
+            {"ids": sorted(set(ids))}):
+        first = twin.pop("first")
+        found[first["id"]], found[twin["id"]] = dict(twin), first
+    return found
+
+
+def mates(conn: db.Connection, rows: Iterable[dict]) -> dict[int, str | None]:
+    """Who graded the other of each sample drawn twice, of these: None where nobody has yet."""
+    return {sample: other.get("graded_by")
+            for sample, other in _pairs(conn, (r["id"] for r in rows)).items()}
 
 
 def asked_in(conn: db.Connection, run: str) -> str | None:
@@ -341,8 +374,9 @@ def asked_of(sample: dict) -> str | None:
 
 def _drawn(row: dict) -> tuple[str, ...]:
     """What a sample's seal covers: with what its graders are told to know of it as a5s keeps
-    those words, where it does (round 15, B6)."""
-    return (*_SEALED_DRAW, "flagged") if row.get("flagged") is not None else _SEALED_DRAW
+    those words, where it does (round 15, B6), and the sample it's the twin of, if it is one
+    (round 15, C4)."""
+    return (*_SEALED_DRAW, *(name for name in ("flagged", "twin_of") if row.get(name) is not None))
 
 
 def draw_seal(keys: tuple[str, ...], row: dict) -> str:
@@ -382,12 +416,16 @@ def drafted(conn: db.Connection, agent: str) -> frozenset[str]:
 
 
 def may_grade(scenario: Scenario, sample: dict, person: Person,
-              minders: Iterable[str] = (), drafters: Iterable[str] = ()) -> str | None:
+              minders: Iterable[str] = (), drafters: Iterable[str] = (),
+              mate: str | None = None) -> str | None:
     """Why someone may not grade a sample, if they may not. `minders` are the owner and the
     deputy of the sample's instance, and `drafters` whoever drafted its agent in the studio:
-    with its owners and authors, they built it."""
+    with its owners and authors, they built it. `mate` graded its twin, if it has one: a
+    second grader grades it (round 15, C4)."""
     if GRADER not in person.roles:
         return f"{person.name} doesn't grade agents' work"
+    if mate is not None and mate == person.id:
+        return "a second grader grades a sample drawn twice, and you graded the other"
     agent = sample["definition"]
     roles = (f"{AGENT_OWNER}:{agent}", f"{AGENT_AUTHOR}:{agent}")
     built = {p.id: p.team for role in roles for p in scenario.holders(role)}
@@ -424,6 +462,7 @@ def gradeable(conn: db.Connection, scenario: Scenario, person: Person,
         "select id, owner, deputy from instances")}
     drafters: dict[str, frozenset[str]] = {}
     found: list[dict] = []
+    offered: set[int] = set()
     after = 0
     while len(found) < most:
         rows = conn.execute(
@@ -435,12 +474,18 @@ def gradeable(conn: db.Connection, scenario: Scenario, person: Person,
         if not rows:
             break
         after = rows[-1]["id"]
+        pairs = _pairs(conn, (r["id"] for r in rows))
         for r in rows:
+            other = pairs.get(r["id"])
+            if other is not None and other["id"] in offered:
+                continue  # one of a pair at a time: a second grader grades the other (C4)
             if r["definition"] not in drafters:
                 drafters[r["definition"]] = drafted(conn, r["definition"])
             if may_grade(scenario, r, person, minders.get(r["instance_id"], ()),
-                         drafters[r["definition"]]) is None:
+                         drafters[r["definition"]],
+                         other.get("graded_by") if other else None) is None:
                 found.append(r)
+                offered.add(r["id"])
     return found[:most]
 
 
@@ -474,9 +519,10 @@ def refusing(conn: db.Connection, scenario: Scenario, given: list[dict]) -> str 
         "select id, owner, deputy from instances where id = any(%s)",
         (sorted({r["instance_id"] for r in given}),))}
     drafters = {agent: drafted(conn, agent) for agent in {r["definition"] for r in given}}
+    paired = mates(conn, given)
     for row in given:
         if why := may_grade(scenario, row, person, minders.get(row["instance_id"], ()),
-                            drafters[row["definition"]]):
+                            drafters[row["definition"]], paired.get(row["id"])):
             return f"sample {row['id']}: {why}"
     return None
 
@@ -606,6 +652,47 @@ def rested(grades: list[dict], since: datetime | None) -> dict:
             "from": since.isoformat() if since else None}
 
 
+def items(conn: db.Connection, fresh: list[dict]) -> list[dict]:
+    """The graded items a raise weighs, of the grades weighed (round 15, C4): each sample,
+    and a sample drawn twice as one item once both are graded, as the worse of the two, by
+    both its graders; one whose twin lapsed ungraded, alone. A sample whose twin still waits
+    for its second grader waits with it."""
+    by_id = {g["id"]: g for g in fresh}
+    ids, pairs = set(by_id), _pairs(conn, by_id)
+    found, taken = [], set()
+    for g in fresh:
+        if g["id"] in taken:
+            continue
+        other = pairs.get(g["id"])
+        if other is None or (other["id"] not in ids and other["lapsed_at"] is not None):
+            found.append({"grade": g["grade"], "graders": {g["graded_by"]}})
+        elif other["id"] in ids:  # both graded: the worse of the two counts, once
+            taken.add(other["id"])
+            worse = max(g["grade"], by_id[other["id"]]["grade"], key=WORSE.__getitem__)
+            found.append({"grade": worse, "graders": {g["graded_by"], other["graded_by"]},
+                          "twice": True})
+    return found
+
+
+def raising(found: list[dict]) -> tuple[int, int, int]:
+    """How many of the items count toward a raise, how many of them are errors, and how many
+    of one grader's own were set aside: no grader's grades count beyond everyone else's
+    together, so one alone never raises a cap, whatever they grade (round 15, C4). Errors
+    always count."""
+    errors = sum(i["grade"] != "right" for i in found)
+    if not found:
+        return 0, 0, 0
+    graders: dict[str, int] = {}
+    for i in found:
+        for who in i["graders"]:
+            graders[who] = graders.get(who, 0) + 1
+    top = max(graders, key=lambda who: (graders[who], who))
+    others = sum(1 for i in found if top not in i["graders"])
+    alone = sum(1 for i in found if i["graders"] == {top} and i["grade"] == "right")
+    aside = min(max(0, graders[top] - others), alone)
+    return len(found) - aside, errors, aside
+
+
 def assess(conn: db.Connection, keys: tuple[str, ...], kind: str, part: str, action: str,
            threshold: float | None, now: datetime) -> dict | None:
     """Raise or lower a cap for a type of action in a part, if the grades the core sealed since
@@ -644,9 +731,11 @@ def assess(conn: db.Connection, keys: tuple[str, ...], kind: str, part: str, act
             return set_cap(conn, keys, kind, part, action, 1, "graded samples show it falls short",
                            now, evidence, threshold)
         return None
-    if threshold is not None and shows(graded, errors, threshold, "up"):
+    counting, wrong, aside = raising(items(conn, fresh))  # (round 15, C4)
+    if threshold is not None and shows(counting, wrong, threshold, "up"):
         return set_cap(conn, keys, kind, part, action, 2, "graded samples show it meets the "
-                       "threshold", now, evidence, threshold, window_from=since)
+                       "threshold", now, {**evidence, "items": counting, "item_errors": wrong,
+                                          "set_aside": aside}, threshold, window_from=since)
     return None
 
 

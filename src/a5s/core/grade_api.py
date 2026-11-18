@@ -98,13 +98,19 @@ def router(gw: Any) -> APIRouter:
                 (gw.scenario.name, sorted(grades)))}
             minders = {r["id"]: (r["owner"], r["deputy"]) for r in conn.execute(
                 "select id, owner, deputy from instances")}
+            paired = samples.mates(conn, rows.values())  # a second grader for a twin (C4)
+            together = {rows[s]["twin_of"] for s in grades if s in rows and rows[s]["twin_of"]}
+            if together & set(grades):
+                raise HTTPException(403, "a second grader grades a sample drawn twice: grade "
+                                         "one of the two")
             for sample in sorted(grades):
                 row = rows.get(sample)
                 if row is None:
                     raise HTTPException(404, f"a5s has no sample {sample}")
                 if (why := samples.may_grade(gw.scenario, row, person,
                                              minders.get(row["instance_id"], ()),
-                                             samples.drafted(conn, row["definition"]))) is not None:
+                                             samples.drafted(conn, row["definition"]),
+                                             paired.get(sample))) is not None:
                     raise HTTPException(403, why)
                 if row["grade"] is not None or row["lapsed_at"] is not None:
                     raise HTTPException(409, f"sample {sample} has been graded already, or lapsed")

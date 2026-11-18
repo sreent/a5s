@@ -68,9 +68,9 @@ Master data's assistant, built again from nothing in the studio, as mdg-helper, 
 
    ![Mo finds it waiting for his decision, reads it in a5s's own words, with CR0000104 as it stood, and approves it, signed in afresh for that alone. a5s asks SAP to make it, and the request, which needed only that, goes back to its steward.](18-mo-finds-it-waiting-for-his-decision-reads-it-in.png)
 
-19. Over the quarter, each correction Mo decided is drawn as a sample, 88 of them here, made up like Raf's. Mel, who grades the agents' work in material data, from outside the team that built it, grades them on a5s's own page, twenty at a time: each is right.
+19. Over the quarter, each correction Mo decided is drawn as a sample, 88 of them here, made up like Raf's. Mel and Kit, who grade the agents' work in material data, from outside the team that built it, grade them on a5s's own page, twenty at a time, half each, since no grader's grades count beyond everyone else's: each is right.
 
-   ![Over the quarter, each correction Mo decided is drawn as a sample, 88 of them here, made up like Raf's. Mel, who grades the agents' work in material data, from outside the team that built it, grades them on a5s's own page, twenty at a time: each is right.](19-over-the-quarter-each-correction-mo-decided-is-d.png)
+   ![Over the quarter, each correction Mo decided is drawn as a sample, 88 of them here, made up like Raf's. Mel and Kit, who grade the agents' work in material data, from outside the team that built it, grade them on a5s's own page, twenty at a time, half each, since no grader's grades count beyond everyone else's: each is right.](19-over-the-quarter-each-correction-mo-decided-is-d.png)
 
 20. The evidence holds: a5s has raised its cap on corrections in material data to level 2. From its instance's page, Ines changes its settings to ask for it there, as a version of the settings: mdg-helper makes them on its own, within their limits.
 
