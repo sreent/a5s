@@ -35,8 +35,8 @@ tools:
     handles: [from]
     outside: [body]
     extract: {asks_for: "choice:a fix|a workaround|a release date|something else", date: date, issue: key}
-  # A change: a5s holds each for the owners of the pull request's repository, its part, below level
-  # 2, and makes it once they approve it, once for a5s's key, which the server honours
+  # A change: a5s holds each for the owners of the pull request's repository, its part, where the
+  # agent asks first, and makes it once they approve it, once for a5s's key, which the server honours
   request_review:
     server: forge
     calls: request_review

@@ -59,7 +59,7 @@ def test_a_call_works_at_the_level_of_its_records_part(stack):
                             signers=("ana", "omar")).refused
     _, token = stack.open_run(sender="omar")
     in_orders = tool(stack, token, "create_draft", title="Delivery", body="When?", record="Q-1003")
-    assert in_orders.status_code == 403 and reasons(in_orders) == ["level-0-only-observes"]
+    assert in_orders.status_code == 403 and reasons(in_orders) == ["reading-only-writes-nothing"]
     about_nothing = tool(stack, token, "create_draft", title="Note", body="Hello")
     assert about_nothing.status_code == 403  # at its own level, the lowest of its parts'
     _, token = stack.open_run(sender="ana")
@@ -119,7 +119,7 @@ def test_approvers_see_the_parts_a_version_changes_in_words(stack):
     found = approvals.changes(before, after, stack.gateway.definitions, stack.gateway.scenario.person)
     assert found == [
         {"text": "assistant-finance serves Omar Haddad as well.", "widens": True},
-        {"text": "assistant-finance works in orders as well, at level 0.", "widens": True}]
+        {"text": "assistant-finance works in orders as well, where it reads only.", "widens": True}]
     back = approvals.changes(after, before, stack.gateway.definitions, stack.gateway.scenario.person)
     assert {"text": "assistant-finance no longer works in orders.", "widens": False} in back
 

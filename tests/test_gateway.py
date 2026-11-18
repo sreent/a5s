@@ -145,9 +145,9 @@ def test_a_denied_call_says_why_in_words_and_never_runs(stack):
         denied = c.post("/run/tools/create_draft", json={"args": {"title": "t", "body": "b"}})
         unknown = c.post("/run/tools/delete_everything", json={"args": {}})
     assert denied.status_code == unknown.status_code == 403
-    assert denied.json()["reasons"] == ["level-0-only-observes"]
+    assert denied.json()["reasons"] == ["reading-only-writes-nothing"]
     assert denied.json()["explanations"] == [
-        "at level 0 the agent only observes, so it can't use a tool that writes"]
+        "the agent reads only here, so it can't use a tool that writes"]
     assert unknown.json()["explanations"] == [
         "nothing permits it, such as a tool outside the instance's grant"]
     recorded = [(e["action"], e["decision"]) for e in stack.ledger(run) if e["kind"] == "tool"]

@@ -14,8 +14,8 @@ export const BUILD: Record<string, string> = {
   "Or describe it": "หรืออธิบายเอเจนต์",
   "Describing it needs the sandbox, which drafts it there: {problem}":
     "การอธิบายต้องใช้แซนด์บ็อกซ์ ซึ่งเป็นที่ร่างเอเจนต์: {problem}",
-  "Say what it's for, in your own words. The sandbox's model proposes what it needs of what this scenario offers, and a5s gives it the least of that, never level 2, each with the reason, for you to check and change by hand. What you write goes to the model you choose, as what's said in the sandbox does.":
-    "บอกด้วยคำพูดของคุณว่าเอเจนต์มีไว้ทำอะไร โมเดลของแซนด์บ็อกซ์จะเสนอสิ่งที่เอเจนต์ต้องใช้จากสิ่งที่ซีนาริโอนี้มีให้ และ a5s จะให้เท่าที่จำเป็นน้อยที่สุด ไม่ให้ระดับ 2 เด็ดขาด พร้อมเหตุผลของแต่ละรายการ ให้คุณตรวจสอบและแก้ไขเอง สิ่งที่คุณเขียนจะส่งไปยังโมเดลที่คุณเลือก เช่นเดียวกับสิ่งที่พูดในแซนด์บ็อกซ์",
+  "Say what it's for, in your own words. The sandbox's model proposes what it needs of what this scenario offers, and a5s gives it the least of that, never acting on its own, each with the reason, for you to check and change by hand. What you write goes to the model you choose, as what's said in the sandbox does.":
+    "บอกด้วยคำพูดของคุณว่าเอเจนต์มีไว้ทำอะไร โมเดลของแซนด์บ็อกซ์จะเสนอสิ่งที่เอเจนต์ต้องใช้จากสิ่งที่ซีนาริโอนี้มีให้ และ a5s จะให้เท่าที่จำเป็นน้อยที่สุด ไม่ให้ทำเองได้เด็ดขาด พร้อมเหตุผลของแต่ละรายการ ให้คุณตรวจสอบและแก้ไขเอง สิ่งที่คุณเขียนจะส่งไปยังโมเดลที่คุณเลือก เช่นเดียวกับสิ่งที่พูดในแซนด์บ็อกซ์",
   "What it's for, and for whom": "มีไว้ทำอะไร และให้ใคร",
   "Tracks each new joiner's equipment and access requests in the ITSM against their start date, and answers their questions before day one.":
     "ติดตามคำขออุปกรณ์และสิทธิ์เข้าถึงของพนักงานใหม่แต่ละคนใน ITSM เทียบกับวันเริ่มงาน และตอบคำถามของพวกเขาก่อนวันแรก",
@@ -77,8 +77,8 @@ export const BUILD: Record<string, string> = {
   "By {who}. a5s deploys it once they have.": "โดย {who} a5s จะปรับใช้เมื่อลงนามครบแล้ว",
   "whoever its release needs": "ผู้ที่รีลีสนี้ต้องการ",
   "An instance runs it.": "มีอินสแตนซ์ทำงานอยู่",
-  "An instance in the settings, for a few people first, at level 0 or 1.":
-    "อินสแตนซ์ในการตั้งค่า สำหรับคนไม่กี่คนก่อน ที่ระดับ 0 หรือ 1",
+  "An instance in the settings, for a few people first, reading only or asking first.":
+    "อินสแตนซ์ในการตั้งค่า สำหรับคนไม่กี่คนก่อน แบบอ่านอย่างเดียวหรือขออนุมัติก่อน",
   "Watch it": "ติดตาม",
   "Its runs and how they end, on its page.": "การทำงานและผลลัพธ์ ในหน้าของเอเจนต์",
   "Watch it on its page": "ติดตามในหน้าของเอเจนต์",
@@ -193,8 +193,8 @@ export const BUILD: Record<string, string> = {
   "Works for": "ทำงานให้",
   "Its model is {model} now.": "ตอนนี้ใช้โมเดล {model}",
   "Of those the deployment approves.": "จากโมเดลที่ระบบนี้อนุมัติ",
-  "Level it starts at": "ระดับเริ่มต้น",
-  "Highest level": "ระดับสูงสุด",
+  "Where it starts": "เริ่มต้นแบบ",
+  "The most it may do": "ทำได้มากที่สุด",
   "Its first instance, as you plan it": "อินสแตนซ์แรกตามแผนของคุณ",
   "Kept with the draft, and never in force: where it works, and for whom, are the settings', which its parts' owners approve once its release is signed. Putting it to work starts from this.":
     "เก็บไว้กับฉบับร่าง และไม่มีผลบังคับใช้: ทำงานที่ไหนและให้ใครเป็นเรื่องของการตั้งค่า ซึ่งเจ้าของส่วนงานจะอนุมัติเมื่อรีลีสได้รับการลงนามแล้ว การนำไปใช้งานจะเริ่มจากแผนนี้",
@@ -216,8 +216,8 @@ export const BUILD: Record<string, string> = {
   "Tokens a task may spend": "โทเค็นที่งานหนึ่งใช้ได้",
   "Days a task has": "จำนวนวันของงาน",
   "No model judges its work now: people's grades alone.": "ตอนนี้ไม่มีโมเดลประเมินงาน: ใช้การให้คะแนนของคนเท่านั้น",
-  "{model} judges each sample of its work beside people's grades, never instead of them: no verdict moves a level.":
-    "{model} ประเมินตัวอย่างงานแต่ละชิ้นควบคู่กับการให้คะแนนของคน ไม่ใช่แทนที่: ผลการประเมินไม่เคยเปลี่ยนระดับ",
+  "{model} judges each sample of its work beside people's grades, never instead of them: no verdict changes what an agent may do.":
+    "{model} ประเมินตัวอย่างงานแต่ละชิ้นควบคู่กับการให้คะแนนของคน ไม่ใช่แทนที่: ผลการประเมินไม่เคยเปลี่ยนสิ่งที่เอเจนต์ทำได้",
   "through a5s's gateway": "ผ่านเกตเวย์ของ a5s",
   "Its model": "โมเดลที่ใช้",
   "Of those the deployment approves, for the data the settings say it may see.":
@@ -225,11 +225,11 @@ export const BUILD: Record<string, string> = {
   "Its judge, beside people's grades": "ผู้ประเมิน ควบคู่กับการให้คะแนนของคน",
   "none: people's grades alone": "ไม่มี: ใช้การให้คะแนนของคนเท่านั้น",
   "What a right change is, for its judge": "การเปลี่ยนแปลงที่ถูกต้องเป็นอย่างไร สำหรับผู้ประเมิน",
-  "In its owners' words. The judge never moves a level: people's grades do.":
-    "ตามคำของเจ้าของ ผู้ประเมินไม่เคยเปลี่ยนระดับ: การให้คะแนนของคนเท่านั้นที่เปลี่ยนได้",
+  "In its owners' words. The judge never changes what an agent may do: people's grades do.":
+    "ตามคำของเจ้าของ ผู้ประเมินไม่เคยเปลี่ยนสิ่งที่เอเจนต์ทำได้: การให้คะแนนของคนเท่านั้นที่เปลี่ยนได้",
   "every call to a tool passes them": "ทุกการเรียกใช้เครื่องมือต้องผ่าน",
-  "Its tool must be its release's, pinned as the scenario has it; the record in a part its instance works in, and one everyone the run acts for may see; and a change waits, or is made, as its level and the scenario's limits say.":
-    "เครื่องมือต้องเป็นของรีลีส และตรึงไว้ตามที่ซีนาริโอมี ระเบียนต้องอยู่ในส่วนงานที่อินสแตนซ์ทำงาน และทุกคนที่การทำงานทำแทนต้องเห็นได้ ส่วนการเปลี่ยนแปลงจะรอหรือทำได้ตามที่ระดับและขีดจำกัดของซีนาริโอกำหนด",
+  "Its tool must be its release's, pinned as the scenario has it; the record in a part its instance works in, and one everyone the run acts for may see; and a change waits, or is made, as what it may do there and the scenario's limits say.":
+    "เครื่องมือต้องเป็นของรีลีส และตรึงไว้ตามที่ซีนาริโอมี ระเบียนต้องอยู่ในส่วนงานที่อินสแตนซ์ทำงาน และทุกคนที่การทำงานทำแทนต้องเห็นได้ ส่วนการเปลี่ยนแปลงจะรอหรือทำได้ตามสิ่งที่เอเจนต์ทำได้ที่นั่นและขีดจำกัดของซีนาริโอ",
   "Tokens a run may spend": "โทเค็นที่การทำงานหนึ่งครั้งใช้ได้",
   "For each person a day": "ต่อคนต่อวัน",
   "Tokens of its conversation each run is given": "โทเค็นของบทสนทนาที่การทำงานแต่ละครั้งได้รับ",
@@ -248,20 +248,20 @@ export const BUILD: Record<string, string> = {
   "Change it under Files, in agent.yaml.": "แก้ไขได้ที่ไฟล์ ใน agent.yaml",
   "Who decides its changes": "ใครตัดสินใจการเปลี่ยนแปลง",
   "Nobody: it changes no records a part decides.": "ไม่มีใคร: เอเจนต์ไม่ได้เปลี่ยนระเบียนที่ส่วนงานต้องตัดสินใจ",
-  "Nobody yet: its release keeps it at level 0, which only observes, so a5s refuses every change it asks for, {actions}.":
-    "ยังไม่มีใคร: รีลีสกำหนดให้อยู่ที่ระดับ 0 ซึ่งสังเกตการณ์อย่างเดียว a5s จึงปฏิเสธทุกการเปลี่ยนแปลงที่เอเจนต์ขอ ได้แก่ {actions}",
-  "Below level 2, each change it asks for, {actions}, waits for a yes from a decider of its record's part, in the parts you plan its first instance in, and its release keeps it below level 2:":
-    "ต่ำกว่าระดับ 2 การเปลี่ยนแปลงแต่ละรายการที่เอเจนต์ขอ ได้แก่ {actions} จะรอให้ผู้ตัดสินใจของส่วนงานที่ระเบียนนั้นอยู่ตอบตกลง ในส่วนงานที่คุณวางแผนให้อินสแตนซ์แรกทำงาน และรีลีสกำหนดให้อยู่ต่ำกว่าระดับ 2:",
-  "Below level 2, each change it asks for, {actions}, waits for a yes from a decider of its record's part, in the parts you plan its first instance in:":
-    "ต่ำกว่าระดับ 2 การเปลี่ยนแปลงแต่ละรายการที่เอเจนต์ขอ ได้แก่ {actions} จะรอให้ผู้ตัดสินใจของส่วนงานที่ระเบียนนั้นอยู่ตอบตกลง ในส่วนงานที่คุณวางแผนให้อินสแตนซ์แรกทำงาน:",
-  "Below level 2, each change it asks for, {actions}, waits for a yes from a decider of its record's part, and its release keeps it below level 2:":
-    "ต่ำกว่าระดับ 2 การเปลี่ยนแปลงแต่ละรายการที่เอเจนต์ขอ ได้แก่ {actions} จะรอให้ผู้ตัดสินใจของส่วนงานที่ระเบียนนั้นอยู่ตอบตกลง และรีลีสกำหนดให้อยู่ต่ำกว่าระดับ 2:",
-  "Below level 2, each change it asks for, {actions}, waits for a yes from a decider of its record's part:":
-    "ต่ำกว่าระดับ 2 การเปลี่ยนแปลงแต่ละรายการที่เอเจนต์ขอ ได้แก่ {actions} จะรอให้ผู้ตัดสินใจของส่วนงานที่ระเบียนนั้นอยู่ตอบตกลง:",
+  "Nobody yet: its release lets it read only, so a5s refuses every change it asks for, {actions}.":
+    "ยังไม่มีใคร: รีลีสให้อ่านอย่างเดียว a5s จึงปฏิเสธทุกการเปลี่ยนแปลงที่เอเจนต์ขอ ได้แก่ {actions}",
+  "Each change it asks for, {actions}, waits for a yes from a decider of its record's part, in the parts you plan its first instance in, since its release lets it ask first at most:":
+    "การเปลี่ยนแปลงแต่ละรายการที่เอเจนต์ขอ ได้แก่ {actions} จะรอให้ผู้ตัดสินใจของส่วนงานที่ระเบียนนั้นอยู่ตอบตกลง ในส่วนงานที่คุณวางแผนให้อินสแตนซ์แรกทำงาน เพราะรีลีสให้ขออนุมัติก่อนเป็นอย่างมาก:",
+  "Unless it acts on its own, each change it asks for, {actions}, waits for a yes from a decider of its record's part, in the parts you plan its first instance in:":
+    "เว้นแต่จะทำเองได้ การเปลี่ยนแปลงแต่ละรายการที่เอเจนต์ขอ ได้แก่ {actions} จะรอให้ผู้ตัดสินใจของส่วนงานที่ระเบียนนั้นอยู่ตอบตกลง ในส่วนงานที่คุณวางแผนให้อินสแตนซ์แรกทำงาน:",
+  "Each change it asks for, {actions}, waits for a yes from a decider of its record's part, since its release lets it ask first at most:":
+    "การเปลี่ยนแปลงแต่ละรายการที่เอเจนต์ขอ ได้แก่ {actions} จะรอให้ผู้ตัดสินใจของส่วนงานที่ระเบียนนั้นอยู่ตอบตกลง เพราะรีลีสให้ขออนุมัติก่อนเป็นอย่างมาก:",
+  "Unless it acts on its own, each change it asks for, {actions}, waits for a yes from a decider of its record's part:":
+    "เว้นแต่จะทำเองได้ การเปลี่ยนแปลงแต่ละรายการที่เอเจนต์ขอ ได้แก่ {actions} จะรอให้ผู้ตัดสินใจของส่วนงานที่ระเบียนนั้นอยู่ตอบตกลง:",
   "its owners and their delegates, as the settings and the directory name them.":
     "เจ้าของส่วนงานและผู้ได้รับมอบหมาย ตามที่การตั้งค่าและไดเรกทอรีระบุ",
-  "{tools} run only at level 2, which only the settings give.":
-    "{tools} ทำงานได้เฉพาะที่ระดับ 2 ซึ่งมีแต่การตั้งค่าที่ให้ได้",
+  "{tools} run only where it acts on its own, which only the settings give.":
+    "{tools} ทำงานได้เฉพาะในส่วนที่ทำเองได้ ซึ่งมีแต่การตั้งค่าที่ให้ได้",
   "Who puts it to work": "ใครนำไปใช้งาน",
   "Its parts' owners approve it, as a version of the settings, once its release is signed: {owners}.":
     "เจ้าของส่วนงานจะอนุมัติในรูปเวอร์ชันของการตั้งค่า เมื่อรีลีสได้รับการลงนามแล้ว: {owners}",
@@ -333,43 +333,43 @@ export const BUILD: Record<string, string> = {
   "on weekdays": "ทุกวันจันทร์ถึงวันศุกร์",
   "on {days}": "ทุก{days}",
   "nobody yet, so none is made there": "ยังไม่มีใคร จึงไม่มีการเปลี่ยนแปลงที่นั่น",
-  "Its release keeps it at level 0, which only observes, so a5s refuses every change it asks for. At level 1, each would wait for a yes from a decider of its record's part.":
-    "รีลีสกำหนดให้อยู่ที่ระดับ 0 ซึ่งสังเกตการณ์อย่างเดียว a5s จึงปฏิเสธทุกการเปลี่ยนแปลงที่เอเจนต์ขอ ที่ระดับ 1 แต่ละรายการจะรอให้ผู้ตัดสินใจของส่วนงานที่ระเบียนนั้นอยู่ตอบตกลง",
+  "Its release lets it read only, so a5s refuses every change it asks for. Were it to ask first, each would wait for a yes from a decider of its record's part.":
+    "รีลีสให้อ่านอย่างเดียว a5s จึงปฏิเสธทุกการเปลี่ยนแปลงที่เอเจนต์ขอ หากให้ขออนุมัติก่อน แต่ละรายการจะรอให้ผู้ตัดสินใจของส่วนงานที่ระเบียนนั้นอยู่ตอบตกลง",
   "{who} in {part}": "{who} ใน {part}",
-  "Below level 2, each change it asks for waits for a yes from a decider of its record's part: {deciders}.":
-    "ต่ำกว่าระดับ 2 การเปลี่ยนแปลงแต่ละรายการที่เอเจนต์ขอจะรอให้ผู้ตัดสินใจของส่วนงานที่ระเบียนนั้นอยู่ตอบตกลง: {deciders}",
-  "Below level 2, each change it asks for waits for a yes from a decider of its record's part, its owners and their delegates.":
-    "ต่ำกว่าระดับ 2 การเปลี่ยนแปลงแต่ละรายการที่เอเจนต์ขอจะรอให้ผู้ตัดสินใจของส่วนงานที่ระเบียนนั้นอยู่ตอบตกลง คือเจ้าของส่วนงานและผู้ได้รับมอบหมาย",
+  "Unless it acts on its own, each change it asks for waits for a yes from a decider of its record's part: {deciders}.":
+    "เว้นแต่จะทำเองได้ การเปลี่ยนแปลงแต่ละรายการที่เอเจนต์ขอจะรอให้ผู้ตัดสินใจของส่วนงานที่ระเบียนนั้นอยู่ตอบตกลง: {deciders}",
+  "Unless it acts on its own, each change it asks for waits for a yes from a decider of its record's part, its owners and their delegates.":
+    "เว้นแต่จะทำเองได้ การเปลี่ยนแปลงแต่ละรายการที่เอเจนต์ขอจะรอให้ผู้ตัดสินใจของส่วนงานที่ระเบียนนั้นอยู่ตอบตกลง คือเจ้าของส่วนงานและผู้ได้รับมอบหมาย",
   "{n} in a run": "{n} รายการต่อการทำงานหนึ่งครั้ง",
   "{n} for each person in 30 days": "{n} รายการต่อคนใน 30 วัน",
-  "The settings allow {most}: past that, each waits for its decider, whatever the level.":
-    "การตั้งค่าอนุญาต {most}: เกินกว่านั้น แต่ละรายการจะรอผู้ตัดสินใจ ไม่ว่าจะอยู่ระดับใด",
-  "The settings set no limit for {action}, so at level 2 nothing caps how many it makes.":
-    "การตั้งค่าไม่ได้กำหนดขีดจำกัดของ {action} ที่ระดับ 2 จึงไม่มีอะไรจำกัดจำนวนที่ทำได้",
-  "Its release goes no higher than level {max}, so every one waits for its decider.":
-    "รีลีสให้สูงสุดแค่ระดับ {max} ทุกรายการจึงต้องรอผู้ตัดสินใจ",
+  "The settings allow {most}: past that, each waits for its decider, even where it acts on its own.":
+    "การตั้งค่าอนุญาต {most}: เกินกว่านั้น แต่ละรายการจะรอผู้ตัดสินใจ แม้ในส่วนที่ทำเองได้",
+  "The settings set no limit for {action}, so where it acts on its own nothing caps how many it makes.":
+    "การตั้งค่าไม่ได้กำหนดขีดจำกัดของ {action} ในส่วนที่ทำเองได้จึงไม่มีอะไรจำกัดจำนวนที่ทำได้",
+  "Its release lets it ask first at most, so every one waits for its decider.":
+    "รีลีสให้ขออนุมัติก่อนเป็นอย่างมาก ทุกรายการจึงต้องรอผู้ตัดสินใจ",
   "{share} in {part}": "{share} ใน {part}",
   "never in {part}, which sets no bar": "ไม่ทำเลยใน {part} ซึ่งไม่ได้กำหนดเกณฑ์",
-  "a5s makes one alone only at level 2, which the settings give for {action} in one part at a time, never in a run that has read outside content, and only once graded samples show enough of its changes there right: {bars}.":
-    "a5s จะทำการเปลี่ยนแปลงเองเฉพาะที่ระดับ 2 ซึ่งการตั้งค่าให้สำหรับ {action} ทีละส่วนงาน ไม่ทำในการทำงานที่อ่านเนื้อหาจากภายนอกมาแล้ว และทำเฉพาะเมื่อตัวอย่างที่ให้คะแนนแล้วแสดงว่าการเปลี่ยนแปลงในส่วนงานนั้นถูกต้องมากพอ: {bars}",
-  "a5s makes one alone only at level 2, which the settings give for {action} in one part at a time, never in a run that has read outside content, and only once graded samples show enough of its changes there right.":
-    "a5s จะทำการเปลี่ยนแปลงเองเฉพาะที่ระดับ 2 ซึ่งการตั้งค่าให้สำหรับ {action} ทีละส่วนงาน ไม่ทำในการทำงานที่อ่านเนื้อหาจากภายนอกมาแล้ว และทำเฉพาะเมื่อตัวอย่างที่ให้คะแนนแล้วแสดงว่าการเปลี่ยนแปลงในส่วนงานนั้นถูกต้องมากพอ",
-  "What it does can't be undone, so a5s lets it run only at level 2, which only the settings give, and never in a run that has read outside content.":
-    "สิ่งที่เครื่องมือนี้ทำย้อนกลับไม่ได้ a5s จึงให้ทำงานเฉพาะที่ระดับ 2 ซึ่งมีแต่การตั้งค่าที่ให้ได้ และไม่ทำในการทำงานที่อ่านเนื้อหาจากภายนอกมาแล้ว",
-  "It sends outside the organisation, so a5s lets it run only at level 2, which only the settings give, and never in a run that has read outside content.":
-    "เครื่องมือนี้ส่งข้อมูลออกนอกองค์กร a5s จึงให้ทำงานเฉพาะที่ระดับ 2 ซึ่งมีแต่การตั้งค่าที่ให้ได้ และไม่ทำในการทำงานที่อ่านเนื้อหาจากภายนอกมาแล้ว",
-  "Its release goes no higher than level {max}, so a5s refuses every call to it.":
-    "รีลีสให้สูงสุดแค่ระดับ {max} a5s จึงปฏิเสธทุกการเรียกใช้เครื่องมือนี้",
-  "It writes, but changes nothing a part decides: from level 1 it runs without anyone's yes, and the ledger keeps each call. At level 0, which only observes, a5s refuses it.":
-    "เครื่องมือนี้เขียนข้อมูล แต่ไม่ได้เปลี่ยนสิ่งที่ส่วนงานต้องตัดสินใจ: ตั้งแต่ระดับ 1 จะทำงานได้โดยไม่ต้องรอใครตอบตกลง และเลดเจอร์จะเก็บทุกการเรียกใช้ ที่ระดับ 0 ซึ่งสังเกตการณ์อย่างเดียว a5s จะปฏิเสธ",
-  "Its release keeps it at level 0, so a5s refuses every call to it.":
-    "รีลีสกำหนดให้อยู่ที่ระดับ 0 a5s จึงปฏิเสธทุกการเรียกใช้เครื่องมือนี้",
+  "a5s makes one on its own only where the settings let it act on its own, for {action} in one part at a time, never in a run that has read outside content, and only once graded samples show enough of its changes there right: {bars}.":
+    "a5s จะทำการเปลี่ยนแปลงเองเฉพาะในส่วนที่การตั้งค่าให้ทำเองได้ สำหรับ {action} ทีละส่วนงาน ไม่ทำในการทำงานที่อ่านเนื้อหาจากภายนอกมาแล้ว และทำเฉพาะเมื่อตัวอย่างที่ให้คะแนนแล้วแสดงว่าการเปลี่ยนแปลงในส่วนงานนั้นถูกต้องมากพอ: {bars}",
+  "a5s makes one on its own only where the settings let it act on its own, for {action} in one part at a time, never in a run that has read outside content, and only once graded samples show enough of its changes there right.":
+    "a5s จะทำการเปลี่ยนแปลงเองเฉพาะในส่วนที่การตั้งค่าให้ทำเองได้ สำหรับ {action} ทีละส่วนงาน ไม่ทำในการทำงานที่อ่านเนื้อหาจากภายนอกมาแล้ว และทำเฉพาะเมื่อตัวอย่างที่ให้คะแนนแล้วแสดงว่าการเปลี่ยนแปลงในส่วนงานนั้นถูกต้องมากพอ",
+  "What it does can't be undone, so a5s lets it run only where it acts on its own, which only the settings give, and never in a run that has read outside content.":
+    "สิ่งที่เครื่องมือนี้ทำย้อนกลับไม่ได้ a5s จึงให้ทำงานเฉพาะในส่วนที่ทำเองได้ ซึ่งมีแต่การตั้งค่าที่ให้ได้ และไม่ทำในการทำงานที่อ่านเนื้อหาจากภายนอกมาแล้ว",
+  "It sends outside the organisation, so a5s lets it run only where it acts on its own, which only the settings give, and never in a run that has read outside content.":
+    "เครื่องมือนี้ส่งข้อมูลออกนอกองค์กร a5s จึงให้ทำงานเฉพาะในส่วนที่ทำเองได้ ซึ่งมีแต่การตั้งค่าที่ให้ได้ และไม่ทำในการทำงานที่อ่านเนื้อหาจากภายนอกมาแล้ว",
+  "Its release never lets it act on its own, so a5s refuses every call to it.":
+    "รีลีสไม่ให้ทำเองได้ a5s จึงปฏิเสธทุกการเรียกใช้เครื่องมือนี้",
+  "It writes, but changes nothing a part decides: unless the agent reads only, it runs without anyone's yes, and the ledger keeps each call. Where it reads only, a5s refuses it.":
+    "เครื่องมือนี้เขียนข้อมูล แต่ไม่ได้เปลี่ยนสิ่งที่ส่วนงานต้องตัดสินใจ: เว้นแต่เอเจนต์จะอ่านอย่างเดียว ก็ทำงานได้โดยไม่ต้องรอใครตอบตกลง และเลดเจอร์จะเก็บทุกการเรียกใช้ ในส่วนที่อ่านอย่างเดียว a5s จะปฏิเสธ",
+  "Its release lets it read only, so a5s refuses every call to it.":
+    "รีลีสให้อ่านอย่างเดียว a5s จึงปฏิเสธทุกการเรียกใช้เครื่องมือนี้",
   "It reads: a5s passes on only the records everyone the run acts for may see, in the parts its instance works in.":
     "เครื่องมือนี้อ่านข้อมูล: a5s ส่งต่อเฉพาะระเบียนที่ทุกคนที่การทำงานนั้นทำแทนเห็นได้ ในส่วนงานที่อินสแตนซ์ทำงานอยู่",
-  "What it brings from outside the organisation, its {what}, goes to a5s's reader first: the agent reads only what the reader takes from it, and the run is marked, so it never acts at level 2.":
-    "สิ่งที่เครื่องมือนี้นำเข้ามาจากภายนอกองค์กร ได้แก่ {what} จะผ่านตัวอ่านของ a5s ก่อน: เอเจนต์อ่านเฉพาะสิ่งที่ตัวอ่านดึงออกมา และการทำงานนั้นจะถูกทำเครื่องหมายไว้ จึงไม่ทำงานที่ระดับ 2",
-  "What it brings holds a few words written outside the organisation, such as titles, which the agent reads as they are: so the run is marked, and never acts at level 2.":
-    "สิ่งที่เครื่องมือนี้นำมามีถ้อยคำสั้น ๆ ที่เขียนขึ้นภายนอกองค์กร เช่น ชื่อเอกสาร ซึ่งเอเจนต์อ่านตามที่เป็นอยู่ การทำงานนั้นจึงถูกทำเครื่องหมายไว้ และไม่ทำงานที่ระดับ 2",
+  "What it brings from outside the organisation, its {what}, goes to a5s's reader first: the agent reads only what the reader takes from it, and the run is marked, so it never acts on its own.":
+    "สิ่งที่เครื่องมือนี้นำเข้ามาจากภายนอกองค์กร ได้แก่ {what} จะผ่านตัวอ่านของ a5s ก่อน: เอเจนต์อ่านเฉพาะสิ่งที่ตัวอ่านดึงออกมา และการทำงานนั้นจะถูกทำเครื่องหมายไว้ จึงไม่ทำเองเลย",
+  "What it brings holds a few words written outside the organisation, such as titles, which the agent reads as they are: so the run is marked, and never acts on its own.":
+    "สิ่งที่เครื่องมือนี้นำมามีถ้อยคำสั้น ๆ ที่เขียนขึ้นภายนอกองค์กร เช่น ชื่อเอกสาร ซึ่งเอเจนต์อ่านตามที่เป็นอยู่ การทำงานนั้นจึงถูกทำเครื่องหมายไว้ และไม่ทำเองเลย",
   "It hands {what} over as handles: the model never sees the values, and a5s puts them back where they go.":
     "เครื่องมือนี้ส่ง {what} เป็นตัวอ้างอิง: โมเดลไม่เคยเห็นค่าจริง และ a5s จะใส่ค่ากลับไปในที่ที่ควรอยู่",
   "no time yet": "ยังไม่ได้กำหนดเวลา",
@@ -382,15 +382,15 @@ export const BUILD: Record<string, string> = {
   "People write to it on {channels}. Each run acts for whoever wrote, sees only what they may see, and writes to them alone.":
     "ผู้คนเขียนถึงเอเจนต์ทาง {channels} การทำงานแต่ละครั้งทำแทนผู้ที่เขียนมา เห็นเฉพาะสิ่งที่ผู้นั้นเห็นได้ และเขียนตอบผู้นั้นเท่านั้น",
   "no channel yet": "ยังไม่มีช่องทาง",
-  "Its instances start at level {start}: it only observes: a5s refuses any tool that writes.":
-    "อินสแตนซ์เริ่มที่ระดับ {start}: สังเกตการณ์อย่างเดียว a5s ปฏิเสธเครื่องมือใดก็ตามที่เขียนข้อมูล",
-  "Its instances start at level {start}: it may write, and each change it asks for waits for its decider.":
-    "อินสแตนซ์เริ่มที่ระดับ {start}: เขียนข้อมูลได้ และการเปลี่ยนแปลงแต่ละรายการที่ขอจะรอผู้ตัดสินใจ",
+  "Its instances start reading only: a5s refuses any tool that writes.":
+    "อินสแตนซ์เริ่มแบบอ่านอย่างเดียว: a5s ปฏิเสธเครื่องมือใดก็ตามที่เขียนข้อมูล",
+  "Its instances start asking first: it may write, and each change it asks for waits for its decider.":
+    "อินสแตนซ์เริ่มแบบขออนุมัติก่อน: เขียนข้อมูลได้ และการเปลี่ยนแปลงแต่ละรายการที่ขอจะรอผู้ตัดสินใจ",
   "It goes no higher.": "ไม่สูงไปกว่านี้",
-  "It may go as far as level 1, so a person decides every change it asks for.":
-    "ขึ้นได้สูงสุดถึงระดับ 1 คนจึงเป็นผู้ตัดสินใจทุกการเปลี่ยนแปลงที่เอเจนต์ขอ",
-  "It may reach level 2, making changes alone, only where the settings give it for a type of change in a part, and graded samples of its work there bear it out.":
-    "ขึ้นถึงระดับ 2 ซึ่งทำการเปลี่ยนแปลงเองได้ เฉพาะเมื่อการตั้งค่าให้สำหรับการเปลี่ยนแปลงประเภทหนึ่งในส่วนงานหนึ่ง และตัวอย่างงานที่ให้คะแนนแล้วในส่วนงานนั้นยืนยันได้",
+  "At most it asks first, so a person decides every change it asks for.":
+    "อย่างมากก็ขออนุมัติก่อน คนจึงเป็นผู้ตัดสินใจทุกการเปลี่ยนแปลงที่เอเจนต์ขอ",
+  "It may come to act on its own, making changes itself, only where the settings give it for a type of change in a part, and graded samples of its work there bear it out.":
+    "อาจทำเองได้ คือทำการเปลี่ยนแปลงเอง เฉพาะเมื่อการตั้งค่าให้สำหรับการเปลี่ยนแปลงประเภทหนึ่งในส่วนงานหนึ่ง และตัวอย่างงานที่ให้คะแนนแล้วในส่วนงานนั้นยืนยันได้",
   "Each run may spend {run}, and its instance {person} for each person a day, a fifth of it kept for chases and reminders.":
     "การทำงานแต่ละครั้งใช้ได้ {run} และอินสแตนซ์ใช้ได้ {person} ต่อคนต่อวัน โดยกันไว้หนึ่งในห้าสำหรับการติดตามและการเตือน",
   "Each run is given {tokens} of its conversation, split by part.":
@@ -521,31 +521,32 @@ export const BUILD: Record<string, string> = {
   "Publish as a pull request": "เผยแพร่เป็น pull request",
 
   // The settings: the version in force, those waiting, the forms and the text, and asking for a change
-  "level 0, suggests: it reads and drafts, and people do the rest":
-    "ระดับ 0 เสนอแนะ: อ่านและร่าง ส่วนที่เหลือคนเป็นผู้ทำ",
-  "level 1, asks: its changes wait for a person's yes": "ระดับ 1 ขออนุญาต: การเปลี่ยนแปลงจะรอให้คนตอบตกลง",
+  "reads only: it reads and drafts, and people do the rest":
+    "อ่านอย่างเดียว: อ่านและร่าง ส่วนที่เหลือคนเป็นผู้ทำ",
+  "asks first: its changes wait for a person's yes":
+    "ขออนุมัติก่อน: การเปลี่ยนแปลงจะรอให้คนตอบตกลง",
   "What you'd changed and hadn't asked for is back, from before you signed in again.":
     "สิ่งที่คุณแก้ไขไว้และยังไม่ได้ขอกลับมาแล้ว จากก่อนที่คุณลงชื่อเข้าใช้อีกครั้ง",
   "No settings are in force yet.": "ยังไม่มีการตั้งค่าที่มีผลบังคับใช้",
   "Settings": "การตั้งค่า",
   "everyone in the {team} team": "ทุกคนในทีม {team}",
   "everyone who holds the {role} role": "ทุกคนที่มีบทบาท {role}",
-  "whatever level its release starts at, now level {level}": "ระดับที่รีลีสกำหนดให้เริ่ม ตอนนี้คือระดับ {level}",
-  "whatever level its release starts at": "ระดับที่รีลีสกำหนดให้เริ่ม",
-  "level 2, as written: a5s holds it at level 1 in a part, and gives level 2 only to a type of change, below":
-    "ระดับ 2 ตามที่เขียนไว้: a5s คงไว้ที่ระดับ 1 ในส่วนงาน และให้ระดับ 2 เฉพาะการเปลี่ยนแปลงบางประเภทด้านล่าง",
+  "as its release starts it, now {level}": "ตามที่รีลีสกำหนดให้เริ่ม ตอนนี้คือ{level}",
+  "as its release starts it": "ตามที่รีลีสกำหนดให้เริ่ม",
+  "acts on its own, as written: a5s holds it to asking first in a part, and lets it act on its own only for a type of change, below":
+    "ทำเองได้ ตามที่เขียนไว้: a5s ให้ขออนุมัติก่อนในส่วนงาน และให้ทำเองได้เฉพาะการเปลี่ยนแปลงบางประเภทด้านล่าง",
   "It works at": "ทำงานที่",
-  "its release allows level {level} at most": "รีลีสอนุญาตสูงสุดระดับ {level}",
+  "its release goes no further than “{level}”": "รีลีสอนุญาตได้ไม่เกิน “{level}”",
   "In {part}, it works at": "ใน {part} ทำงานที่",
-  "{id}'s level in {part}": "ระดับของ {id} ใน {part}",
-  "the level above": "ระดับข้างต้น",
-  "It makes these changes on its own, at level 2": "ทำการเปลี่ยนแปลงเหล่านี้เองที่ระดับ 2",
-  "its release, {agent}, allows level {level} at most": "รีลีส {agent} อนุญาตสูงสุดระดับ {level}",
-  "{part} needs no accuracy below, so it never earns level 2":
-    "{part} ไม่ได้กำหนดความแม่นยำด้านล่าง จึงไม่มีทางได้ระดับ 2",
+  "what {id} may do in {part}": "สิ่งที่ {id} ทำได้ใน {part}",
+  "as above": "ตามข้างต้น",
+  "It makes these changes on its own": "ทำการเปลี่ยนแปลงเหล่านี้เอง",
+  "its release, {agent}, goes no further than “{level}”": "รีลีส {agent} อนุญาตได้ไม่เกิน “{level}”",
+  "{part} needs no accuracy below, so it never acts on its own there":
+    "{part} ไม่ได้กำหนดความแม่นยำด้านล่าง จึงไม่มีทางทำเองได้ที่นั่น",
   "{action} in {part}": "{action} ใน {part}",
-  "Each within its limits, below. a5s holds it at level 1 until graded samples of its work show the accuracy its part needs.":
-    "แต่ละรายการอยู่ภายในขีดจำกัดด้านล่าง a5s คงไว้ที่ระดับ 1 จนกว่าตัวอย่างงานที่ให้คะแนนแล้วจะแสดงความแม่นยำที่ส่วนงานต้องการ",
+  "Each within its limits, below. a5s holds it to asking first until graded samples of its work show the accuracy its part needs.":
+    "แต่ละรายการอยู่ภายในขีดจำกัดด้านล่าง a5s ให้ขออนุมัติก่อนจนกว่าตัวอย่างงานที่ให้คะแนนแล้วจะแสดงความแม่นยำที่ส่วนงานต้องการ",
   "It serves": "ให้บริการ",
   "an id, team:… or role:…": "id, team:… หรือ role:…",
   "Someone else {id} serves": "ผู้อื่นที่ {id} ให้บริการ",
@@ -561,8 +562,8 @@ export const BUILD: Record<string, string> = {
   "{id} is in the forms: review it, with any other change, and ask its approvers.":
     "{id} อยู่ในแบบฟอร์มแล้ว: ตรวจทานพร้อมการเปลี่ยนแปลงอื่น แล้วขอผู้อนุมัติ",
   "Put an agent to work": "นำเอเจนต์ไปใช้งาน",
-  "A new instance of an agent, for a few people first, at level 0 or 1, so it suggests, or asks before each change. Its part's owner approves it, as any change there; with no part, someone who approves instances does.":
-    "อินสแตนซ์ใหม่ของเอเจนต์ สำหรับคนไม่กี่คนก่อน ที่ระดับ 0 หรือ 1 จึงทำได้แค่เสนอแนะ หรือขออนุญาตก่อนการเปลี่ยนแปลงแต่ละครั้ง เจ้าของส่วนงานจะอนุมัติเช่นเดียวกับการเปลี่ยนแปลงอื่นในส่วนงานนั้น หากไม่มีส่วนงาน ผู้อนุมัติอินสแตนซ์จะเป็นผู้อนุมัติ",
+  "A new instance of an agent, for a few people first, reading only or asking first, so it suggests, or asks before each change. Its part's owner approves it, as any change there; with no part, someone who approves instances does.":
+    "อินสแตนซ์ใหม่ของเอเจนต์ สำหรับคนไม่กี่คนก่อน แบบอ่านอย่างเดียวหรือขออนุมัติก่อน จึงทำได้แค่เสนอแนะ หรือขออนุญาตก่อนการเปลี่ยนแปลงแต่ละครั้ง เจ้าของส่วนงานจะอนุมัติเช่นเดียวกับการเปลี่ยนแปลงอื่นในส่วนงานนั้น หากไม่มีส่วนงาน ผู้อนุมัติอินสแตนซ์จะเป็นผู้อนุมัติ",
   "no part's records": "ไม่ใช้ระเบียนของส่วนงานใด",
   "Its name here": "ชื่ออินสแตนซ์",
   "It starts at": "เริ่มที่",
@@ -574,13 +575,13 @@ export const BUILD: Record<string, string> = {
   "Deputy of the new instance": "ผู้แทนของอินสแตนซ์ใหม่",
   "Add it to the settings": "เพิ่มลงในการตั้งค่า",
   "Each type of change's limits": "ขีดจำกัดของการเปลี่ยนแปลงแต่ละประเภท",
-  "How many one run may make, and how many for each person in 30 days. Past either, a change waits for a person to decide it, whatever the level. Empty means no limit.":
-    "จำนวนที่การทำงานหนึ่งครั้งทำได้ และจำนวนต่อคนใน 30 วัน เมื่อเกินอย่างใดอย่างหนึ่ง การเปลี่ยนแปลงจะรอให้คนตัดสินใจ ไม่ว่าจะอยู่ระดับใด เว้นว่างไว้หมายถึงไม่จำกัด",
+  "How many one run may make, and how many for each person in 30 days. Past either, a change waits for a person to decide it, even where the agent acts on its own. Empty means no limit.":
+    "จำนวนที่การทำงานหนึ่งครั้งทำได้ และจำนวนต่อคนใน 30 วัน เมื่อเกินอย่างใดอย่างหนึ่ง การเปลี่ยนแปลงจะรอให้คนตัดสินใจ แม้ในส่วนที่เอเจนต์ทำเองได้ เว้นว่างไว้หมายถึงไม่จำกัด",
   "In one run": "ในการทำงานหนึ่งครั้ง",
   "For each person, in 30 days": "ต่อคน ใน 30 วัน",
-  "The accuracy level 2 needs": "ความแม่นยำที่ระดับ 2 ต้องการ",
-  "How accurate an agent's changes in a part must be, as graded samples show, before a5s raises its cap there to level 2. Empty means it never does.":
-    "การเปลี่ยนแปลงของเอเจนต์ในส่วนงานต้องแม่นยำเพียงใด ตามที่ตัวอย่างที่ให้คะแนนแล้วแสดง ก่อนที่ a5s จะยกเพดานในส่วนงานนั้นเป็นระดับ 2 เว้นว่างไว้หมายถึงไม่ยกเลย",
+  "The accuracy acting on its own needs": "ความแม่นยำที่ต้องมีก่อนทำเองได้",
+  "How accurate an agent's changes in a part must be, as graded samples show, before a5s lets it act on its own there. Empty means it never does.":
+    "การเปลี่ยนแปลงของเอเจนต์ในส่วนงานต้องแม่นยำเพียงใด ตามที่ตัวอย่างที่ให้คะแนนแล้วแสดง ก่อนที่ a5s จะให้ทำเองได้ในส่วนงานนั้น เว้นว่างไว้หมายถึงไม่ให้เลย",
   "The accuracy {part} needs, in percent": "ความแม่นยำที่ {part} ต้องการ เป็นเปอร์เซ็นต์",
   "a month": "ต่อเดือน",
   "The monthly budget for the {agent}": "งบประมาณรายเดือนของ {agent}",

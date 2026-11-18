@@ -107,12 +107,12 @@ function Fact({ what, value }: { what: string; value: ReactNode }) {
 
 // The ladder's rungs, in the language spoken when they're drawn
 const steps = () => [
-  { name: t("Suggests"), about: t("Reads and drafts. A person does the rest.") },
-  { name: t("Asks"), about: t("Changes wait for a person's yes.") },
-  { name: t("Acts"), about: t("One type of change on its own, within limits, sampled and graded.") },
+  { name: t("Reads only"), about: t("Reads and drafts. A person does the rest.") },
+  { name: t("Asks first"), about: t("Changes wait for a person's yes.") },
+  { name: t("Acts on its own"), about: t("One type of change on its own, within limits, sampled and graded.") },
 ];
 
-/** A level's rung in words: Suggests, Asks or Acts. */
+/** A level's rung in words: Reads only, Asks first or Acts on its own. */
 export function rung(level: number): string {
   const rungs = steps();
   return rungs[Math.max(0, Math.min(level, rungs.length - 1))].name;
@@ -129,8 +129,8 @@ export function AutonomyLadder({ level, max, toward }: {
         {steps().map((step, i) => (
           <li key={step.name} aria-current={i === level ? "step" : undefined}
               className={i > max ? "barred" : i > level ? "beyond" : undefined}>
-            <span className="lvl">{i === level ? t("level {n} · now", { n: i })
-              : i > max ? t("level {n} · not in its release", { n: i }) : t("level {n}", { n: i })}</span>
+            <span className="lvl">{i === level ? t("now")
+              : i > max ? t("not in its release") : t("within its release")}</span>
             <strong>{step.name}</strong>
             <p>{step.about}</p>
           </li>
@@ -138,9 +138,9 @@ export function AutonomyLadder({ level, max, toward }: {
       </ol>
       {toward && (
         <>
-          <p className="note">{t("{what} toward level {level}: {graded} of {needed} graded samples. The part's owner decides.",
-            { what: toward.what, level: level + 1, graded: toward.graded, needed: toward.needed })}</p>
-          <div className="meter" role="meter" aria-label={t("{what} toward level {level}", { what: toward.what, level: level + 1 })}
+          <p className="note">{t("{what} toward acting on its own: {graded} of {needed} graded samples. The part's owner decides.",
+            { what: toward.what, graded: toward.graded, needed: toward.needed })}</p>
+          <div className="meter" role="meter" aria-label={t("{what} toward acting on its own", { what: toward.what })}
                aria-valuemin={0} aria-valuemax={toward.needed} aria-valuenow={toward.graded}>
             <span style={{ width: `${Math.min(100, (100 * toward.graded) / toward.needed)}%` }} />
           </div>

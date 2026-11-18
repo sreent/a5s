@@ -8,8 +8,8 @@ does: >-
 scope: none
 model: default
 autonomy:
-  start: 0
-  max: 0
+  start: reads only
+  max: reads only
 tools: {}
 triggers:
   - message: from the people it works for

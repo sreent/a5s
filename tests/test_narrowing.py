@@ -229,8 +229,7 @@ def test_a_thai_approver_reads_a_whole_version_in_thai(stack, approving, provide
         [card] = conn.execute("select text from outbox where person = 'ana' and text like %s",
                               (f"%{settings['serial']}%",)).fetchall()
     assert card["text"].startswith(f"การตั้งค่า a5s เวอร์ชัน {settings['serial']} รอให้ผู้อนุมัติอนุมัติ")
-    assert "เพิ่ม assistant-ops: assistant ไม่อยู่ในส่วนงานใด" in card["text"] or \
-        "เพิ่ม assistant-ops: assistant ทำงานใน orders ที่ระดับ" in card["text"], card["text"]
+    assert "เพิ่ม assistant-ops: assistant ขออนุมัติก่อนใน orders" in card["text"], card["text"]
     [said] = approve(approving, provider, asked, "ana")
     english = "the owner of orders hasn't approved it"
     missing = [words.say("th", "the owner of {part} hasn't approved it", part="orders")]
@@ -239,7 +238,7 @@ def test_a_thai_approver_reads_a_whole_version_in_thai(stack, approving, provide
     assert shown["needs"] == missing
     assert [c["text"].split(":")[0] for c in shown["changes"]] == ["เพิ่ม assistant-ops"]
     assert shown["whole"][0].startswith("ข้อมูลของซีนาริโอเป็น synthetic")
-    assert any(line.startswith("assistant-ops: assistant ทำงานใน orders") for line in shown["whole"])
+    assert any(line.startswith("assistant-ops: assistant ขออนุมัติก่อนใน orders") for line in shown["whole"])
     provider.person = "ana"
     page = browser.new_page()
     page.goto(f"{approving}/studio/approve?settings={asked['digest']}")

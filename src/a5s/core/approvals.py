@@ -42,7 +42,7 @@ from a5s.core.identity import (
 )
 from a5s.core.languages import ENGLISH
 from a5s.core.ledger import canonical
-from a5s.core.words import say
+from a5s.core.words import doing, level, say
 from a5s.definitions import Definition
 
 log = logging.getLogger(__name__)
@@ -180,6 +180,10 @@ class Words:
     def say(self, text: str, **given: object) -> str:
         return say(self.language, text, **given)
 
+    def level(self, value: int | None) -> str:
+        """What an instance may do, by name: reads only, asks first or acts on its own."""
+        return level(self.language, value)
+
     def names(self, people: Any) -> str:
         return names_of([self.name(pid) for pid in sorted(people)], self.language)
 
@@ -216,12 +220,20 @@ class Words:
         return registry.levels(instance, release)
 
     def where(self, instance: InstanceSettings) -> str:
+        """What it does where it works: "asking first in billing and orders", or "asking first
+        in billing, and reading only in orders", or "reading only, in no part"."""
         level, parts = self.levels(instance)
         if not parts:
-            return self.say("in no part, at level {level}", level=level)
-        return self.say("working in {parts}", parts=names_of(
-            [self.say("{part} at level {level}", part=p, level=lv) for p, lv in parts.items()],
-            self.language))
+            return self.say("{level}, in no part", level=doing(self.language, level))
+        by: dict[int | None, list[str]] = {}
+        for part, lv in parts.items():
+            by.setdefault(lv, []).append(part)
+        said = [self.say("{level} in {parts}", level=doing(self.language, lv),
+                         parts=names_of(found, self.language))
+                for lv, found in sorted(by.items(), key=lambda kv: -1 if kv[0] is None else kv[0],
+                                        reverse=True)]
+        return said[0] if len(said) == 1 else self.say(
+            "{first}, and {last}", first=", ".join(said[:-1]), last=said[-1])
 
     def owner(self, instance: InstanceSettings, who: str) -> str | None:
         release = self.definitions.get(instance.definition)
@@ -264,12 +276,12 @@ def changes(before: Settings | None, after: Settings, definitions: dict[str, Def
     for part in sorted(set(thresholds_was) | set(after.thresholds)):
         a, b = thresholds_was.get(part), after.thresholds.get(part)
         if a != b:
-            share = _percent(b) if b else said("none, so none earns it")
-            found.append({"text": said("The accuracy {part} needs before an agent earns level 2 "
-                                       "there becomes {share}, instead of {was}.", part=part,
+            share = _percent(b) if b else said("none, so none acts on its own")
+            found.append({"text": said("The accuracy {part} needs before an agent may act on its "
+                                       "own there becomes {share}, instead of {was}.", part=part,
                                        share=share, was=_percent(a)) if a else
-                          said("The accuracy {part} needs before an agent earns level 2 there "
-                               "becomes {share}.", part=part, share=share),
+                          said("The accuracy {part} needs before an agent may act on its own "
+                               "there becomes {share}.", part=part, share=share),
                           "widens": b is not None and (a is None or b < a)})
     found += _spending(before.spending if before else Spending(), after.spending, language)
     asked = {i.id: i.definition for i in after.instances}
@@ -315,32 +327,34 @@ def changes(before: Settings | None, after: Settings, definitions: dict[str, Def
                                        whom=words.names(fewer)), "widens": False})
         (a, was_in), (b, now_in) = words.levels(old), words.levels(new)
         if not was_in and not now_in and a != b:
-            found.append({"text": said("{id}'s level goes from {was} to {now}.", id=new.id,
-                                       was=a, now=b), "widens": (b or 0) > (a or 0)})
+            found.append({"text": said("{id} goes from “{was}” to “{now}”.", id=new.id,
+                                       was=words.level(a), now=words.level(b)),
+                          "widens": (b or 0) > (a or 0)})
         for part in sorted(set(now_in) - set(was_in)):
-            found.append({"text": said("{id} works in {part} as well, at level {level}.",
-                                       id=new.id, part=part, level=now_in[part]),
+            found.append({"text": said("{id} works in {part} as well, where it {level}.",
+                                       id=new.id, part=part, level=words.level(now_in[part])),
                           "widens": True})
         for part in sorted(set(was_in) - set(now_in)):
             found.append({"text": said("{id} no longer works in {part}.", id=new.id, part=part),
                           "widens": False})
         for part in sorted(set(was_in) & set(now_in)):
             if (a := was_in[part]) != (b := now_in[part]):
-                found.append({"text": said("{id}'s level in {part} goes from {was} to {now}.",
-                                           id=new.id, part=part, was=a, now=b),
+                found.append({"text": said("In {part}, {id} goes from “{was}” to “{now}”.",
+                                           id=new.id, part=part, was=words.level(a),
+                                           now=words.level(b)),
                               "widens": (b or 0) > (a or 0)})
         acts_was, acts_now = words.actions(old), words.actions(new)
         for part, action in sorted(set(acts_was) | set(acts_now)):
             a = acts_was.get((part, action), min(was_in.get(part) or 0, 1) if part in was_in else None)
             b = acts_now.get((part, action), min(now_in.get(part) or 0, 1) if part in now_in else None)
             if a != b and b is not None:
-                given = {"id": new.id, "action": action, "part": part, "now": b,
-                         "was": a if a is not None else said("none")}
-                found.append({"text": said("{id}'s level for {action} in {part} goes from {was} "
-                                           "to {now}, where it acts and reports, once samples "
-                                           "show it's accurate enough.", **given) if b >= 2 else
-                              said("{id}'s level for {action} in {part} goes from {was} to "
-                                   "{now}.", **given),
+                given = {"id": new.id, "action": action, "part": part,
+                         "now": words.level(b), "was": words.level(a)}
+                found.append({"text": said("For {action} in {part}, {id} goes from “{was}” to "
+                                           "“{now}”, once samples show it's accurate enough.",
+                                           **given) if b >= 2 else
+                              said("For {action} in {part}, {id} goes from “{was}” to "
+                                   "“{now}”.", **given),
                               "widens": b > (a or 0)})
         for who in ("owner", "deputy"):
             if (a := words.owner(old, who)) != (b := words.owner(new, who)):
@@ -537,19 +551,19 @@ def described(settings: Settings, definitions: dict[str, Definition],
         else:
             first = said("{id}: the {agent}, {where}, serving {whom}.", **given)
         told.append(" ".join([first, *_reaches(words, i, asked)]))
-        told += [said("{id} works at level {level} for {action} in {part}, where it acts and "
-                      "reports, once graded samples show it's accurate enough: until then a5s "
-                      "holds it at level 1.", id=i.id, level=lv, action=action, part=part)
+        told += [said("{id} acts on its own for {action} in {part} once graded samples show "
+                      "it's accurate enough: until then it asks first.", id=i.id, action=action,
+                      part=part)
                  if lv >= 2 else
-                 said("{id} works at level {level} for {action} in {part}.", id=i.id, level=lv,
+                 said("For {action} in {part}, {id} {level}.", id=i.id, level=words.level(lv),
                       action=action, part=part)
                  for (part, action), lv in sorted(words.actions(i).items())]
     if not settings.instances:
         told.append(said("No instances: every agent here is retired."))
     told += [said("Limit for {action}: {limit}.", action=action, limit=limit)
              for action, limit in words.limits(settings).items()]
-    told += [said("An agent earns level 2 in {part} once graded samples show it's {share} "
-                  "accurate.", part=part, share=_percent(share))
+    told += [said("An agent may act on its own in {part} once graded samples show it's "
+                  "{share} accurate.", part=part, share=_percent(share))
              for part, share in sorted(settings.thresholds.items())]
     told += [said(HOLDS, group=group, roles=names_of(list(roles), language))
              for group, roles in sorted(settings.groups.items())]

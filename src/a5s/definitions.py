@@ -5,10 +5,12 @@ from __future__ import annotations
 import hashlib
 import re
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator, model_validator
+
+from a5s import levels
 
 DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 # a5s's own tools: for an agent whose release records reminders (core/reminders.py), for the
@@ -48,10 +50,21 @@ def _time(value: Any) -> str:
 
 
 class Autonomy(BaseModel):
+    """Where an agent's instances start, and the most they may do: reads only, asks first or
+    acts on its own, by name or, as before, by number (levels.py)."""
+
     model_config = ConfigDict(extra="forbid")
 
-    start: int = Field(default=1, ge=0, le=1)  # level 2 only ever comes from the settings
-    max: int = Field(default=1, ge=0, le=2)
+    start: Annotated[int, BeforeValidator(levels.parse)] = levels.ASKS_FIRST
+    max: Annotated[int, BeforeValidator(levels.parse), Field(ge=0, le=2)] = levels.ASKS_FIRST
+
+    @field_validator("start")
+    @classmethod
+    def _starts(cls, value: int) -> int:
+        if not levels.READS_ONLY <= value <= levels.ASKS_FIRST:
+            raise ValueError("an agent starts reading only or asking first: acting on its own "
+                             "only ever comes from the settings")
+        return value
 
 
 class Schedule(BaseModel):

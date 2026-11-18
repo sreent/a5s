@@ -40,7 +40,7 @@ The studio's home, at `/studio/`, says what waits on whoever signed in, and wher
 
 ### The agents
 
-Each agent shows its release, model, autonomy levels and how many of its tools change records, write or only read, and the instances that run it, with each one's status, level, part and the people it serves.
+Each agent shows its release, model, autonomy and how many of its tools change records, write or only read, and the instances that run it, with each one's status and part, what it may do there, and the people it serves.
 
 ![The studio's agents, each with its tools by what they do and the instance that runs it](images/a5s-studio-catalogue.png)
 
@@ -83,7 +83,7 @@ The studio's settings, and its pages for approving, deciding, grading, the noteb
 
 The studio now keeps drafts: an agent's owner starts a new agent from a template, or a change to one they own, and edits it, its tools and its instructions, with what would stop its release, who would sign it, and its map shown as they go. They try it in [the sandbox](studio.md#the-sandbox), a deployment of its own, as one of the scenario's made-up people, and see what it answered, each call it made with the policy's decision, and what its model was sent. What they said there, they can keep as one of its test cases, and they run its cases there, as its suite would, to see which pass. They [publish it](studio.md#publishing) as a pull request to the agents' repository, which says who must sign its release: they open it themselves, on whichever git host, with its folder and the words the page gives, or, where a GitHub App is set up for it, a5s opens it on GitHub as them.
 
-Once it's released and no instance runs it, its page offers its owners to put it to work: the studio's settings open with a form for its first instance, the agent chosen, for a few people at level 0 or 1, which its part's owner approves as any version of the settings.
+Once it's released and no instance runs it, its page offers its owners to put it to work: the studio's settings open with a form for its first instance, the agent chosen, for a few people, reading only or asking first, which its part's owner approves as any version of the settings.
 
 A draft's page leads with that way as a path, from shaping and trying it to publishing it, its release signed, putting it to work and watching it, each stage marked done, to do now, or later, with the one thing to do next. It follows the draft past publishing: once the release here holds it as it is, the path says it's released and deployed, and leads to the agent's page, to put it to work, then to watch it.
 

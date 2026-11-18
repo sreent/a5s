@@ -37,7 +37,7 @@ def test_the_map_joins_each_part_instance_agent_tool_system_and_model(stack, app
     assert keys(found)[:3] == ["part:billing", "instance:assistant-finance", "agent:assistant"]
     assert keys(found)[-2:] == ["system:sample", "model:fake"]  # in its columns' order
     said = edges(found)
-    assert said[("instance:assistant-finance", "part:billing")] == "{from} works in {to}, at level 1"
+    assert said[("instance:assistant-finance", "part:billing")] == "{from} works in {to}, where it asks first"
     assert said[("instance:assistant-finance", "agent:assistant")].startswith(
         "{from} runs {to}'s version ")  # whole, with each end where the page names it
     assert said[("instance:assistant-finance", "model:fake")] == "{from} calls {to}"
@@ -182,8 +182,9 @@ def test_a_judge_a_model_it_lacks_level_two_and_a_shadow_are_on_the_map(stack):
                      "where id = 'assistant-finance'")
     said = edges(drawn(stack))  # as a5s's cap, which no graded samples raised, holds it
     assert said[("instance:assistant-finance", "part:billing")] == (
-        "{from} works in {to}, at level 1; the settings set level 2 for change-due-date, which "
-        "a5s's cap holds at level 1 until graded samples show it's accurate enough")
+        "{from} works in {to}, where it asks first; the settings let it act on its own for "
+        "change-due-date, which a5s holds to asking first until graded samples show it's "
+        "accurate enough")
     with db.transaction(stack.admin) as conn:  # an instance answering beside it, as a shadow
         conn.execute("insert into instances (id, definition, release, level, parts, actions, "
                      "grants, model, serves, owner, status, shadows) select 'assistant-next', "
@@ -224,11 +225,12 @@ def test_the_map_says_where_level_two_counts_and_where_it_doesnt_yet(stack):
     levelled(stack, cap=0)  # Ana, who owns billing, signs level 2 for changing due dates there
     edge = ("instance:assistant-finance", "part:billing")
     assert edges(drawn(stack))[edge] == (
-        "{from} works in {to}, at level 1; the settings set level 2 for change-due-date, which "
-        "a5s's cap holds at level 1 until graded samples show it's accurate enough")
+        "{from} works in {to}, where it asks first; the settings let it act on its own for "
+        "change-due-date, which a5s holds to asking first until graded samples show it's "
+        "accurate enough")
     raise_cap(stack, cap=2)  # as graded samples raise it
     assert edges(drawn(stack))[edge] == (
-        "{from} works in {to}, at level 1, and at level 2 for change-due-date")
+        "{from} works in {to}, where it asks first, and acts on its own for change-due-date")
     with db.transaction(stack.admin) as conn:  # had nobody who approved it owned billing now
         found = dependencies.drawn(conn, stack.gateway.scenario, stack.gateway.definitions,
                                    stack.gateway.scenario.tools(), stack.gateway.models,
@@ -236,8 +238,9 @@ def test_the_map_says_where_level_two_counts_and_where_it_doesnt_yet(stack):
                                    caps_of=lambda release: samples.shown_caps(
                                        conn, stack.gateway.cfg.seal_keys, release))
     assert edges(found)[edge] == (
-        "{from} works in {to}, at level 1; the settings set level 2 for change-due-date, which "
-        "counts only once an owner of {to} approves the settings in force")
+        "{from} works in {to}, where it asks first; the settings let it act on its own for "
+        "change-due-date, which counts only once an owner of {to} approves the settings in "
+        "force")
 
 
 def test_on_a_phone_the_map_is_a_list_of_what_it_holds(stack, approving, provider, browser):

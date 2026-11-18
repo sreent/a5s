@@ -5,9 +5,9 @@
 // changes nothing: a5s proposes the new version to everyone who must approve it, and they
 // approve it on its own page, signing in afresh.
 //
-// A change is written in forms, for what people change most: an instance's level, the types of
-// change it makes on its own at level 2, whom it serves and who runs it, a new instance of an
-// agent, each type of change's limits, and the accuracy each part needs for level 2. Or in the
+// A change is written in forms, for what people change most: what an instance may do, the types
+// of change it makes on its own, whom it serves and who runs it, a new instance of an agent, each
+// type of change's limits, and the accuracy each part needs before it acts on its own. Or in the
 // whole text, for anything else. The forms send the version as JSON, which a5s reads as the
 // YAML it is, and the review says in words what it would change, either way.
 
@@ -17,6 +17,7 @@ import { useToast } from "../design";
 import { t } from "../i18n";
 import { Icon } from "../icons";
 import { ImpactPreview } from "../Impact";
+import { levelName, writtenLevel } from "../levels";
 import { PageHead, sentence, To, Waiting, when } from "../ui";
 import { keepUnkept, keptNow, unkept } from "../unkept";
 
@@ -38,8 +39,8 @@ type Adding = { agent: string; id: string | null; part: string; level: number; s
 type Plan = { agent: string; parts: string[]; serves: string[]; asks: string[] };
 
 const levelWords = (): Record<number, string> => ({
-  0: t("level 0, suggests: it reads and drafts, and people do the rest"),
-  1: t("level 1, asks: its changes wait for a person's yes"),
+  0: t("reads only: it reads and drafts, and people do the rest"),
+  1: t("asks first: its changes wait for a person's yes"),
 });
 const ID = /^[a-z0-9][a-z0-9-]{0,62}$/;
 // whom an instance serves, as the settings write it: someone's id, or a team or a role
@@ -82,6 +83,26 @@ function changePart(inst: Inst, part: string,
   const kept: { level?: number; actions?: Record<string, number> } = { ...entry };
   if (!Object.keys(entry.actions).length) delete kept.actions;
   parts[part] = Object.keys(kept).length ? kept : null;
+}
+
+/** The version as the forms hold it, each level by its name, as people read and sign it: a5s
+ * reads a name as it reads the number the forms keep (src/a5s/levels.py). */
+function named(data: Data | null): Data | null {
+  if (!data?.instances) return data;
+  const name = (n: unknown) => (typeof n === "number" ? writtenLevel(n) : n);
+  const instances = Object.fromEntries(Object.entries(data.instances).map(([id, inst]) => {
+    const parts = inst.parts && !Array.isArray(inst.parts)
+      ? Object.fromEntries(Object.entries(inst.parts).map(([part, entry]) => [part,
+          entry && typeof entry === "object"
+            ? { ...entry, ...(entry.level !== undefined ? { level: name(entry.level) } : {}),
+                ...(entry.actions ? { actions: Object.fromEntries(Object.entries(entry.actions)
+                  .map(([action, n]) => [action, name(n)])) } : {}) }
+            : name(entry)]))
+      : inst.parts;
+    return [id, { ...inst, ...(inst.level !== undefined ? { level: name(inst.level) } : {}),
+                  ...(parts !== undefined ? { parts } : {}) }];
+  }));
+  return { ...data, instances } as Data;
 }
 
 /** A box or button beside its words, which wrap beside it; one that can't be chosen says why. */
@@ -240,7 +261,7 @@ export function SettingsPage() {
 
   function freshAdding(agent: string, before: Partial<Adding> | null = null,
                        releases = settings.releases): Adding {
-    // It starts as low as its release does, at level 1 at most, serving whoever's adding it,
+    // It starts as low as its release does, asking first at most, serving whoever's adding it,
     // run by them; or, for another agent, what they'd chosen
     return { agent, id: null, part: before?.part ?? "", level: Math.min(releases[agent]?.starts ?? 1, 1),
              serves: before?.serves ?? new Set([settings.me]), owner: before?.owner ?? settings.me,
@@ -270,9 +291,9 @@ export function SettingsPage() {
     const release = settings.releases[inst.definition];
     const words = levelWords();
     const options: [number | null, string][] = [[0, words[0]], [1, words[1]], [null, release
-      ? t("whatever level its release starts at, now level {level}", { level: release.starts }) : t("whatever level its release starts at")]];
+      ? t("as its release starts it, now {level}", { level: levelName(release.starts) }) : t("as its release starts it")]];
     if (inst.level === 2) {
-      options.push([2, t("level 2, as written: a5s holds it at level 1 in a part, and gives level 2 only to a type of change, below")]);
+      options.push([2, t("acts on its own, as written: a5s holds it to asking first in a part, and lets it act on its own only for a type of change, below")]);
     }
     const was = inForce?.instances?.[id];
     return (
@@ -281,7 +302,7 @@ export function SettingsPage() {
         <div className="choices">{options.map(([n, about]) => (
           <Choice key={String(n)} type="radio" name={`level-${id}`} checked={(inst.level ?? null) === n} label={about}
                   why={release && n !== null && n > release.most && inst.level !== n
-                    ? t("its release allows level {level} at most", { level: release.most }) : undefined}
+                    ? t("its release goes no further than “{level}”", { level: levelName(release.most) }) : undefined}
                   onChange={() => {
                     if (n === null) delete inst.level;
                     else inst.level = n;
@@ -293,7 +314,7 @@ export function SettingsPage() {
           if (own === null && partLevel(was, part) === null) return null;
           return (
             <Setting key={part} words={t("In {part}, it works at", { part })}>
-              <select aria-label={t("{id}'s level in {part}", { id, part })} value={own === null ? "" : String(own)}
+              <select aria-label={t("what {id} may do in {part}", { id, part })} value={own === null ? "" : String(own)}
                       onChange={(e) => {
                         const level = e.target.value === "" ? null : Number(e.target.value);
                         changePart(inst, part, (entry) => {
@@ -302,8 +323,8 @@ export function SettingsPage() {
                         });
                         touched();
                       }}>
-                <option value="">{t("the level above")}</option>
-                {(own === 2 ? [0, 1, 2] : [0, 1]).map((n) => <option key={n} value={String(n)}>{words[n] || t("level {n}", { n })}</option>)}
+                <option value="">{t("as above")}</option>
+                {(own === 2 ? [0, 1, 2] : [0, 1]).map((n) => <option key={n} value={String(n)}>{words[n] || levelName(n)}</option>)}
               </select>
             </Setting>
           );
@@ -320,12 +341,12 @@ export function SettingsPage() {
     const allowed = !release || release.most >= 2;
     return (
       <>
-        <p className="lead">{t("It makes these changes on its own, at level 2")}</p>
+        <p className="lead">{t("It makes these changes on its own")}</p>
         <div className="choices">{parts.flatMap((part) => kinds.map((action) => {
           const on = actionLevel(inst, part, action) === 2;
           const earns = w?.thresholds?.[part] !== undefined;
-          const why = !allowed ? t("its release, {agent}, allows level {level} at most", { agent: inst.definition, level: String(release?.most) })
-            : !earns ? t("{part} needs no accuracy below, so it never earns level 2", { part }) : undefined;
+          const why = !allowed ? t("its release, {agent}, goes no further than “{level}”", { agent: inst.definition, level: levelName(release?.most) })
+            : !earns ? t("{part} needs no accuracy below, so it never acts on its own there", { part }) : undefined;
           return (
             <Choice key={`${part}:${action}`} type="checkbox" name={`own-${id}`} checked={on}
                     label={t("{action} in {part}", { action, part })} why={on ? undefined : why}
@@ -341,7 +362,7 @@ export function SettingsPage() {
                     }} />
           );
         }))}</div>
-        <p className="note">{t("Each within its limits, below. a5s holds it at level 1 until graded samples of its work show the accuracy its part needs.")}</p>
+        <p className="note">{t("Each within its limits, below. a5s holds it to asking first until graded samples of its work show the accuracy its part needs.")}</p>
       </>
     );
   }
@@ -433,7 +454,7 @@ export function SettingsPage() {
     return (
       <fieldset className="form-card adding" id="add-instance">
         <legend>{t("Put an agent to work")}</legend>
-        <p className="note">{t("A new instance of an agent, for a few people first, at level 0 or 1, so it suggests, or asks before each change. Its part's owner approves it, as any change there; with no part, someone who approves instances does.")}</p>
+        <p className="note">{t("A new instance of an agent, for a few people first, reading only or asking first, so it suggests, or asks before each change. Its part's owner approves it, as any change there; with no part, someone who approves instances does.")}</p>
         <div className="choices">
           <Setting words={t("Agent")}>
             <select id="add-agent" value={a.agent} onChange={(e) => {
@@ -457,7 +478,7 @@ export function SettingsPage() {
         <p className="lead">{t("It starts at")}</p>
         <div className="choices">{[0, 1].map((n) => (
           <Choice key={n} type="radio" name="add-level" checked={a.level === n} label={levelWords()[n]}
-                  why={release && n > release.most ? t("its release allows level {level} at most", { level: release.most }) : undefined}
+                  why={release && n > release.most ? t("its release goes no further than “{level}”", { level: levelName(release.most) }) : undefined}
                   onChange={() => change({ level: n })} />
         ))}</div>
         {(a.more.length > 0 || a.asks.length > 0) && (  // as its draft's authors planned it, beyond the form
@@ -496,7 +517,7 @@ export function SettingsPage() {
     return (
       <fieldset className="form-card">
         <legend>{t("Each type of change's limits")}</legend>
-        <p className="note">{t("How many one run may make, and how many for each person in 30 days. Past either, a change waits for a person to decide it, whatever the level. Empty means no limit.")}</p>
+        <p className="note">{t("How many one run may make, and how many for each person in 30 days. Past either, a change waits for a person to decide it, even where the agent acts on its own. Empty means no limit.")}</p>
         {[...new Set([...settings.actions, ...Object.keys(data.limits || {})])].map((action) => (
           <div key={action} className="limit">
             <p className="limit-name">{action}</p>
@@ -524,8 +545,8 @@ export function SettingsPage() {
     const data = w as Data;
     return (
       <fieldset className="form-card">
-        <legend>{t("The accuracy level 2 needs")}</legend>
-        <p className="note">{t("How accurate an agent's changes in a part must be, as graded samples show, before a5s raises its cap there to level 2. Empty means it never does.")}</p>
+        <legend>{t("The accuracy acting on its own needs")}</legend>
+        <p className="note">{t("How accurate an agent's changes in a part must be, as graded samples show, before a5s lets it act on its own there. Empty means it never does.")}</p>
         <div className="choices">{parts.map((part) => {
           const share = data.thresholds?.[part];
           return (
@@ -604,8 +625,9 @@ export function SettingsPage() {
     );
   }
 
-  // The version as written: the forms' as JSON, which a5s reads as YAML, or the text
-  const draft = () => (mode === "text" ? text : JSON.stringify(w));
+  // The version as written: the forms' as JSON, which a5s reads as YAML, with each level by its
+  // name, or the text
+  const draft = () => (mode === "text" ? text : JSON.stringify(named(w)));
 
   const review = async () => {
     setReviewed(undefined);

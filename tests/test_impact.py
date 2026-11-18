@@ -44,8 +44,8 @@ def test_a_held_change_a_version_would_make_alone_is_shown_once_samples_earn_it(
     capped = reviewed(approving, provider, written(approving, provider, parts=LEVEL_2))
     assert capped["calls"] == 1 and capped["shifts"] == [] and capped["days"] == 28
     [held_back] = capped["capped"]  # set to level 2, but graded samples haven't earned it
-    assert held_back.startswith("assistant-finance is set to make change-due-date in billing "
-                                "alone, at level 2, but a5s's cap holds it at level 1")
+    assert held_back.startswith("assistant-finance is set to act on its own for change-due-date "
+                                "in billing, but a5s holds it to asking first")
     raise_cap(stack)
     earned = reviewed(approving, provider, written(approving, provider, parts=LEVEL_2))
     assert earned["capped"] == []

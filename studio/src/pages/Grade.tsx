@@ -46,7 +46,7 @@ function Card({ sample, chosen, choose }: {
   const [what, ...rest] = sample.said.split("\n");
   const asked = sample.kind === "proposal";
   const [outcome, tone] = asked ? (outcomes()[sample.decided ?? ""] ?? [sample.decided ?? "", "idle"])
-    : [t("made at level 2"), "changes"];
+    : [t("made on its own"), "changes"];
   const links = Object.entries(sample.records).flatMap(([key, record]) => {
     const link = linkOf(record);
     return link ? [{ key, link }] : [];

@@ -1,5 +1,5 @@
 # Synthetic service-desk settings. Sign changes with the part owners and instance approver.
-serial: 1
+serial: 2
 data_class: synthetic
 classified: {contact: personal, from: personal}
 
@@ -8,6 +8,6 @@ instances:
     definition: desk-assistant
     serves: [team:sales, pat, rae, hal]
     parts: [access, hardware]
-    level: 1
+    level: asks first
     owner: ivy
     deputy: ola

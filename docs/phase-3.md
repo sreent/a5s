@@ -32,7 +32,7 @@ Each step ends with something running and its tests passing.
 2. **Agent to agent.**
    - An instance's settings name the instances it may ask, which their part owners approve. A typed tool asks one of them a question.
    - The core opens a run of the instance asked, acting for the same people as the caller's run, with the question as a5s's notice. Its answer comes back as the tool's result, carrying its run's mark. An agent that's asked can't ask another, and the ledger links the two runs.
-   - What the instance asked proposes or does, it proposes or does for those people, within its own grant and level, and nobody the call acts for decides what it holds.
+   - What the instance asked proposes or does, it proposes or does for those people, within its own grant and what it may do, and nobody the call acts for decides what it holds.
    - The question and the answer take A2A's shapes for a message and a task, so agents outside a5s can come later without a second way of asking.
 3. **The notebook.**
    - A typed tool notes something learned, naming the records and tool results it comes from. Code keeps the entry only if every key, amount and date in it is in those sources, and a marked run can't use the tool.

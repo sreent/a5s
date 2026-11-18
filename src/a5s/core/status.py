@@ -159,7 +159,7 @@ def report(conn: db.Connection, breakers: list[str], keys: tuple[str, ...] = (),
                     "stuck": changes["stuck"], "not_made": changes["not_made"],
                     "lapsed": changes["lapsed"]},
         "samples": {"to_grade": graded["waiting"], "lapsed": graded["lapsed"],
-                    "level_2": [{"part": r["part"], "action": r["action"],
+                    "on_its_own": [{"part": r["part"], "action": r["action"],
                                  "since": r["since"].isoformat()} for r in raised],
                     "caps_lowered": lowered["n"],
                     "rubber_stamps": samples.rubber_stamps(conn) if rubber_stamps else None},
@@ -262,8 +262,8 @@ def told(status: dict[str, Any]) -> str:
                                               if status["samples"]["to_grade"] else "none")
         + (f"; {status['samples']['lapsed']} lapsed ungraded this quarter"
            if status["samples"]["lapsed"] else "") + ".",
-        "  Earned level 2: " + ("; ".join(f"{r['action']} in {r['part']}"
-                                          for r in status["samples"]["level_2"]) or "nothing")
+        "  Acting on its own: " + ("; ".join(f"{r['action']} in {r['part']}"
+                                          for r in status["samples"]["on_its_own"]) or "nothing")
         + (f"; {status['samples']['caps_lowered']} caps lowered in the last day"
            if status["samples"]["caps_lowered"] else "") + ".",
         *(["  Approvals graded wrong far more than others': " + (

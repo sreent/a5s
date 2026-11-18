@@ -61,7 +61,7 @@ def asked(api: str, alias: str, rubric: str, sample: dict) -> dict[str, Any]:
         "What code flagged to its decider: " + ("; ".join(map(str, flags)) if flags else "nothing"),
         f"The records it named, as they stood when it was asked for:\n<<<\n{records}\n>>>",
         "What became of it: " + DECIDED.get(sample.get("decided") or "",
-                                            "a5s made it, at level 2, with no decider")))
+                                            "a5s made it on its own, with no decider")))
     return extractor.asked(api, alias, SYSTEM, user)
 
 

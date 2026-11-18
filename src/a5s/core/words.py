@@ -14,9 +14,15 @@ from __future__ import annotations
 
 import re
 
+from a5s import levels
+
 THAI = "th"
 
 TH: dict[str, str] = {
+    # What an agent may do in a part, by name, never by number (a5s/levels.py)
+    "reads only": "อ่านอย่างเดียว",
+    "asks first": "ขออนุมัติก่อน",
+    "acts on its own": "ทำเองได้",
     # What waits on someone, on their home (core/home.py)
     # What a5s says of values the agent wrote itself, beside its answer (core/provenance.py)
     "(a5s: {which} came from the {agent} itself, not from the records or from you, so check "
@@ -110,22 +116,16 @@ TH: dict[str, str] = {
     "{to} judges {from}'s work": "{to} ประเมินงานของ {from}",
     "{from} runs {to}'s version {release}": "{from} ใช้งาน {to} เวอร์ชัน {release}",
     "{from} calls {to}": "{from} เรียกใช้ {to}",
-    "{from} works in {to}, at level {level}": "{from} ทำงานใน {to} ที่ระดับ {level}",
-    "{from} works in {to}, at level {level}, and at level 2 for {types}":
-        "{from} ทำงานใน {to} ที่ระดับ {level} และที่ระดับ 2 สำหรับ {types}",
-    "{from} works in {to}, at level {level}; the settings set level 2 for {held}, which a5s's "
-    "cap holds at level 1 until graded samples show it's accurate enough":
-        "{from} ทำงานใน {to} ที่ระดับ {level} การตั้งค่ากำหนดระดับ 2 สำหรับ {held} "
-        "ซึ่งเพดานของ a5s ยังคงไว้ที่ระดับ 1 จนกว่าตัวอย่างที่ให้คะแนนแล้วจะแสดงว่าแม่นยำพอ",
-    "{from} works in {to}, at level {level}, and at level 2 for {types}; the settings set "
-    "level 2 for {held} too, which a5s's cap holds at level 1 until graded samples show it's "
-    "accurate enough":
-        "{from} ทำงานใน {to} ที่ระดับ {level} และที่ระดับ 2 สำหรับ {types} การตั้งค่ากำหนดระดับ 2 "
-        "สำหรับ {held} ด้วย ซึ่งเพดานของ a5s ยังคงไว้ที่ระดับ 1 จนกว่าตัวอย่างที่ให้คะแนนแล้วจะแสดงว่าแม่นยำพอ",
-    "{from} works in {to}, at level {level}; the settings set level 2 for {held}, which counts "
-    "only once an owner of {to} approves the settings in force":
-        "{from} ทำงานใน {to} ที่ระดับ {level} การตั้งค่ากำหนดระดับ 2 สำหรับ {held} "
-        "ซึ่งจะมีผลเมื่อเจ้าของ {to} อนุมัติการตั้งค่าที่ใช้อยู่แล้วเท่านั้น",
+    "{from} works in {to}, where it {level}":
+        "{from} ทำงานใน {to} โดย{level}",
+    "{from} works in {to}, where it {level}, and acts on its own for {types}":
+        "{from} ทำงานใน {to} โดย{level} และทำเองได้สำหรับ {types}",
+    "{from} works in {to}, where it {level}; the settings let it act on its own for {held}, which a5s holds to asking first until graded samples show it's accurate enough":
+        "{from} ทำงานใน {to} โดย{level} การตั้งค่าให้ทำเองได้สำหรับ {held} ซึ่งa5s ยังให้ขออนุมัติก่อนจนกว่าตัวอย่างที่ให้คะแนนแล้วจะแสดงว่าแม่นยำพอ",
+    "{from} works in {to}, where it {level}, and acts on its own for {types}; the settings let it act on its own for {held} too, which a5s holds to asking first until graded samples show it's accurate enough":
+        "{from} ทำงานใน {to} โดย{level} และทำเองได้สำหรับ {types} การตั้งค่าให้ทำเองได้สำหรับ {held} ด้วย ซึ่งa5s ยังให้ขออนุมัติก่อนจนกว่าตัวอย่างที่ให้คะแนนแล้วจะแสดงว่าแม่นยำพอ",
+    "{from} works in {to}, where it {level}; the settings let it act on its own for {held}, which counts only once an owner of {to} approves the settings in force":
+        "{from} ทำงานใน {to} โดย{level} การตั้งค่าให้ทำเองได้สำหรับ {held} ซึ่งจะมีผลเมื่อเจ้าของ {to} อนุมัติการตั้งค่าที่ใช้อยู่แล้วเท่านั้น",
     "{from} may ask {to}": "{from} ถาม {to} ได้",
     "(a5s: what the {agent} just changed can be undone until {until}, on its page: {link})":
         "(a5s: สิ่งที่ {agent} เพิ่งเปลี่ยนยกเลิกได้จนถึง {until} ที่หน้าของรายการนี้: {link})",
@@ -241,8 +241,8 @@ TH: dict[str, str] = {
     "see how the {scope} is built, read only: its instructions and skills":
         "ดูว่า {scope} สร้างขึ้นอย่างไร แบบอ่านอย่างเดียว: คำสั่งและทักษะ",
     "start new agents, and draft them": "เริ่มสร้างเอเจนต์ใหม่ และร่างเอเจนต์",
-    "approve the instances that work in no part, and set their levels":
-        "อนุมัติอินสแตนซ์ที่ไม่ได้ทำงานในส่วนงานใด และกำหนดระดับของอินสแตนซ์เหล่านั้น",
+    "approve the instances that work in no part, and say what each may do":
+        "อนุมัติอินสแตนซ์ที่ไม่ได้ทำงานในส่วนงานใด และกำหนดว่าแต่ละอินสแตนซ์ทำอะไรได้",
     "approve releases, from outside the team that runs a5s": "อนุมัติรีลีส ในฐานะผู้อยู่นอกทีมที่ดูแล a5s",
     "grade agents' work, never your own team's": "ให้คะแนนงานของเอเจนต์ ยกเว้นงานของทีมคุณเอง",
     "read the ledger: find what was done and decided, and export it":
@@ -275,9 +275,13 @@ TH: dict[str, str] = {
     "{n} in one run": "{n} รายการต่อการทำงานหนึ่งครั้ง",
     "{n} for one person in 30 days": "{n} รายการต่อบุคคลใน 30 วัน",
     "no limit": "ไม่มีขีดจำกัด",
-    "in no part, at level {level}": "ไม่อยู่ในส่วนงานใด ที่ระดับ {level}",
-    "working in {parts}": "ทำงานใน {parts}",
-    "{part} at level {level}": "{part} ที่ระดับ {level}",
+    # what an instance does where it works, as "asking first in billing and orders"
+    "reading only": "อ่านอย่างเดียว",
+    "asking first": "ขออนุมัติก่อน",
+    "acting on its own": "ทำเองได้",
+    "{level} in {parts}": "{level}ใน {parts}",
+    "{level}, in no part": "{level} ไม่อยู่ในส่วนงานใด",
+    "{first}, and {last}": "{first} และ{last}",
     "{field} is {data_class}": "{field} เป็น {data_class}",
     "{data_class}, except that {own}": "{data_class} ยกเว้น {own}",
     "{n} days": "{n} วัน",
@@ -289,12 +293,12 @@ TH: dict[str, str] = {
     "The limit for {action} becomes {now}.": "ขีดจำกัดของ {action} เปลี่ยนเป็น {now}",
     "{action} has no limit any more, instead of {was}.":
         "{action} ไม่มีขีดจำกัดอีกต่อไป จากเดิม {was}",
-    "none, so none earns it": "ไม่มี จึงไม่มีเอเจนต์ใดได้ระดับ 2",
-    "The accuracy {part} needs before an agent earns level 2 there becomes {share}, instead of "
-    "{was}.":
-        "ความแม่นยำที่ {part} ต้องการก่อนเอเจนต์จะได้ระดับ 2 ที่นั่น เปลี่ยนเป็น {share} จากเดิม {was}",
-    "The accuracy {part} needs before an agent earns level 2 there becomes {share}.":
-        "ความแม่นยำที่ {part} ต้องการก่อนเอเจนต์จะได้ระดับ 2 ที่นั่น เปลี่ยนเป็น {share}",
+    "none, so none acts on its own":
+        "ไม่มี จึงไม่มีเอเจนต์ใดทำเองได้",
+    "The accuracy {part} needs before an agent may act on its own there becomes {share}, instead of {was}.":
+        "ความแม่นยำที่ {part} ต้องการก่อนเอเจนต์จะทำเองได้ที่นั่น เปลี่ยนเป็น {share} จากเดิม {was}",
+    "The accuracy {part} needs before an agent may act on its own there becomes {share}.":
+        "ความแม่นยำที่ {part} ต้องการก่อนเอเจนต์จะทำเองได้ที่นั่น เปลี่ยนเป็น {share}",
     "the currency models.yaml prices models in": "สกุลเงินที่ models.yaml ใช้กำหนดราคาโมเดล",
     "Budgets are in {now}, instead of {was}.": "งบประมาณใช้ {now} จากเดิม {was}",
     "There's no budget for the {name} any more, instead of {was} a month.":
@@ -343,17 +347,17 @@ TH: dict[str, str] = {
     "{id} becomes the {agent}, instead of the {was}.": "{id} เปลี่ยนเป็น {agent} จากเดิม {was}",
     "{id} serves {whom} as well.": "{id} ให้บริการ {whom} ด้วย",
     "{id} no longer serves {whom}.": "{id} ไม่ให้บริการ {whom} อีกต่อไป",
-    "{id}'s level goes from {was} to {now}.": "ระดับของ {id} เปลี่ยนจาก {was} เป็น {now}",
-    "{id} works in {part} as well, at level {level}.": "{id} ทำงานใน {part} ด้วย ที่ระดับ {level}",
+    "{id} goes from “{was}” to “{now}”.":
+        "{id} เปลี่ยนจาก “{was}” เป็น “{now}”",
+    "{id} works in {part} as well, where it {level}.":
+        "{id} ทำงานใน {part} ด้วย โดย{level}",
     "{id} no longer works in {part}.": "{id} ไม่ทำงานใน {part} อีกต่อไป",
-    "{id}'s level in {part} goes from {was} to {now}.":
-        "ระดับของ {id} ใน {part} เปลี่ยนจาก {was} เป็น {now}",
-    "{id}'s level for {action} in {part} goes from {was} to {now}, where it acts and reports, "
-    "once samples show it's accurate enough.":
-        "ระดับของ {id} สำหรับ {action} ใน {part} เปลี่ยนจาก {was} เป็น {now} "
-        "ซึ่งจะลงมือทำแล้วรายงาน เมื่อตัวอย่างแสดงว่าแม่นยำพอ",
-    "{id}'s level for {action} in {part} goes from {was} to {now}.":
-        "ระดับของ {id} สำหรับ {action} ใน {part} เปลี่ยนจาก {was} เป็น {now}",
+    "In {part}, {id} goes from “{was}” to “{now}”.":
+        "ใน {part} {id} เปลี่ยนจาก “{was}” เป็น “{now}”",
+    "For {action} in {part}, {id} goes from “{was}” to “{now}”, once samples show it's accurate enough.":
+        "สำหรับ {action} ใน {part} {id} เปลี่ยนจาก “{was}” เป็น “{now}” เมื่อตัวอย่างแสดงว่าแม่นยำพอ",
+    "For {action} in {part}, {id} goes from “{was}” to “{now}”.":
+        "สำหรับ {action} ใน {part} {id} เปลี่ยนจาก “{was}” เป็น “{now}”",
     "{id}'s owner changes from {was} to {now}.": "เจ้าของ {id} เปลี่ยนจาก {was} เป็น {now}",
     "{id}'s deputy changes from {was} to {now}.": "ผู้แทนของ {id} เปลี่ยนจาก {was} เป็น {now}",
     "Retires {id}, which served {whom}.": "เลิกใช้ {id} ซึ่งเคยให้บริการ {whom}",
@@ -413,16 +417,14 @@ TH: dict[str, str] = {
     "{id}: the {agent}, {where}, serving {whom}, with {deputy} as deputy.":
         "{id}: {agent} {where} ให้บริการ {whom} โดยมี {deputy} เป็นผู้แทน",
     "{id}: the {agent}, {where}, serving {whom}.": "{id}: {agent} {where} ให้บริการ {whom}",
-    "{id} works at level {level} for {action} in {part}, where it acts and reports, once graded "
-    "samples show it's accurate enough: until then a5s holds it at level 1.":
-        "{id} ทำงานที่ระดับ {level} สำหรับ {action} ใน {part} ซึ่งจะลงมือทำแล้วรายงาน "
-        "เมื่อตัวอย่างที่ให้คะแนนแล้วแสดงว่าแม่นยำพอ: ระหว่างนี้ a5s คงไว้ที่ระดับ 1",
-    "{id} works at level {level} for {action} in {part}.":
-        "{id} ทำงานที่ระดับ {level} สำหรับ {action} ใน {part}",
+    "{id} acts on its own for {action} in {part} once graded samples show it's accurate enough: until then it asks first.":
+        "{id} ทำเองได้สำหรับ {action} ใน {part} เมื่อตัวอย่างที่ให้คะแนนแล้วแสดงว่าแม่นยำพอ: ระหว่างนี้ยังขออนุมัติก่อน",
+    "For {action} in {part}, {id} {level}.":
+        "สำหรับ {action} ใน {part} {id} {level}",
     "No instances: every agent here is retired.": "ไม่มีอินสแตนซ์: เอเจนต์ทุกตัวที่นี่เลิกใช้แล้ว",
     "Limit for {action}: {limit}.": "ขีดจำกัดของ {action}: {limit}",
-    "An agent earns level 2 in {part} once graded samples show it's {share} accurate.":
-        "เอเจนต์จะได้ระดับ 2 ใน {part} เมื่อตัวอย่างที่ให้คะแนนแล้วแสดงความแม่นยำ {share}",
+    "An agent may act on its own in {part} once graded samples show it's {share} accurate.":
+        "เอเจนต์จะทำเองได้ใน {part} เมื่อตัวอย่างที่ให้คะแนนแล้วแสดงความแม่นยำ {share}",
     "The budget for the {name} is {amount} a month: what its model calls may cost, which a5s "
     "shows spending against.":
         "งบประมาณของ {name} คือ {amount} ต่อเดือน: ค่าใช้จ่ายที่การเรียกโมเดลใช้ได้ "
@@ -493,10 +495,10 @@ TH: dict[str, str] = {
     "Your day from a5s, {day}.": "สรุปวันของคุณจาก a5s {day}",
     "From a5s:": "จาก a5s:",
     "From the {agent}:": "จาก {agent}:",
-    "The {agent} made a change itself, at level 2, for {whom}: {change}":
-        "{agent} ดำเนินการเปลี่ยนแปลงเองที่ระดับ 2 แทน {whom}: {change}",
-    "a5s made the change the {agent} asked for, at level 2: {change}":
-        "a5s ดำเนินการเปลี่ยนแปลงที่ {agent} ขอ ที่ระดับ 2 แล้ว: {change}",
+    "The {agent} made a change on its own, for {whom}: {change}":
+        "{agent} ดำเนินการเปลี่ยนแปลงเองแทน {whom}: {change}",
+    "a5s made the change the {agent} asked for, which it may make on its own: {change}":
+        "a5s ดำเนินการเปลี่ยนแปลงที่ {agent} ขอแล้ว ซึ่งเอเจนต์ทำเองได้: {change}",
     "a5s didn't undo the change the {agent} made, as you asked on its page: {why}. {said}":
         "a5s ไม่ได้ยกเลิกการเปลี่ยนแปลงที่ {agent} ทำ ตามที่คุณขอที่หน้าของรายการนี้: {why} {said}",
     "a5s couldn't undo the change the {agent} made, as you asked: the records system didn't "
@@ -694,6 +696,18 @@ def say(language: str, text: str, /, **given: object) -> str:
     name, {text} and {language} among them, as its own two are given only by place."""
     said = TH.get(text, text) if language == THAI else text
     return said.format(**given) if given else said
+
+
+def level(language: str, value: int | None, /) -> str:
+    """What an agent may do, by the name of its level, in someone's language: reads only,
+    asks first or acts on its own, or none, where nothing is set (a5s/levels.py)."""
+    return say(language, "none" if value is None else levels.name(value))
+
+
+def doing(language: str, value: int | None, /) -> str:
+    """The same, as what an agent is doing: reading only, asking first or acting on its own,
+    or none, where nothing is set."""
+    return say(language, "none" if value is None else levels.doing(value))
 
 
 def kept(text: str, /, **given: object) -> dict:

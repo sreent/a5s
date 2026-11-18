@@ -69,20 +69,22 @@ def test_only_what_the_scenario_offers_each_with_a_reason_is_given():
                            "agents": "it's no ability a description gives: add it by hand, if it needs it"}
 
 
-def test_an_agent_that_only_reads_is_drafted_at_level_0():
+def test_an_agent_that_only_reads_is_drafted_reading_only():
     files, notes = describing.drafted(blank(), "reader", {
         "tools": [{"name": "get_record", "why": "to answer about a ticket"}]}, desk_tools(), ["records"])
-    assert yaml.safe_load(files["agent.yaml"])["autonomy"] == {"start": 0, "max": 0}
-    assert given(notes)["level 0 at most"].startswith("it only reads, which level 0 allows")
+    assert yaml.safe_load(files["agent.yaml"])["autonomy"] == {"start": "reads only",
+                                                               "max": "reads only"}  # by name
+    assert given(notes)["reads only, at most"].startswith("it only reads; never acts on its own")
 
 
-def test_a_change_it_asks_for_is_given_at_level_1_where_its_decider_decides_it():
+def test_a_change_it_asks_for_is_given_asking_first_where_its_decider_decides_it():
     files, notes = describing.drafted(blank(), "replier", {
         "tools": [{"name": "reply_on_ticket", "why": "to post replies"}]}, desk_tools(), ["records"])
     spec = yaml.safe_load(files["agent.yaml"])
-    assert spec["tools"] == {"changes": ["reply_on_ticket"]} and spec["autonomy"] == {"start": 1, "max": 1}
-    assert "a change waits for its part's decider there" in given(notes)["level 1 at most"]
-    assert "never 2" in given(notes)["level 1 at most"]
+    assert spec["tools"] == {"changes": ["reply_on_ticket"]}
+    assert spec["autonomy"] == {"start": "asks first", "max": "asks first"}
+    assert "so it asks first: a change waits for its part's decider" in given(notes)["asks first, at most"]
+    assert "never acts on its own" in given(notes)["asks first, at most"]
 
 
 def test_what_it_drafts_passes_a5s_checks():

@@ -69,7 +69,7 @@ a5s is built to stop safely: when it can't run as it should, it stops and says s
 
 **Shows as:** samples waiting to be graded, samples that lapsed ungraded, or caps lowered in the last day.
 
-1. Samples are graded in the studio, `/studio/grade`, by people who hold the grader role, from outside the teams that build and run the agent. A backlog only slows level 2: ask the scenario's owners for graders. A sample nobody grades in a quarter lapses, and goes after a year.
+1. Samples are graded in the studio, `/studio/grade`, by people who hold the grader role, from outside the teams that build and run the agent. A backlog only slows an agent coming to act on its own: ask the scenario's owners for graders. A sample nobody grades in a quarter lapses, and goes after a year.
 2. A cap falls on a critical error, on grades that show accuracy below the part's threshold, when the threshold rises past what the grades show, or when someone lowers it. The ledger's `cap` entries give the evidence, and the instance's owner and deputy hear in their digest. It rises again only on new grades.
 3. To lower a cap at once, such as while a fault is looked into: `a5s caps lower <agent> <part> <type of action>`, as one of the part's owners, an instance approver, the agent's owner or assurance. Nobody raises a cap by hand.
 4. While the settings in force don't check out, nothing is weighed, and caps stand.
@@ -163,7 +163,7 @@ The core seals what people approve, decide and grade, the caps it raises, the ch
 3. Run `a5s seal-again` where the core runs, with its settings, such as `kubectl exec deploy/a5s-gateway -- a5s seal-again`. It seals again with the new key everything the old one sealed that still checks out, and retires the old key. What checks out under no key stays as it is, and counts for nothing, as before. It refuses until the core at work seals with the new key.
 4. Take the old key out of `A5S_SEAL_KEYS` and restart the core.
 
-If the key may have leaked, sealing again would make anything its holder sealed count. Run `a5s seal-again --leaked` instead at step 3: it retires the old key without sealing anything again, and says what stops counting with it. Then the settings must be approved again, caps earn level 2 again from graded samples, decisions still waiting are decided again, and people connect their accounts again. A key retired as leaked never comes back: the core won't start with it.
+If the key may have leaked, sealing again would make anything its holder sealed count. Run `a5s seal-again --leaked` instead at step 3: it retires the old key without sealing anything again, and says what stops counting with it. Then the settings must be approved again, graded samples must raise the caps again before an agent acts on its own, decisions still waiting are decided again, and people connect their accounts again. A key retired as leaked never comes back: the core won't start with it.
 
 ## The operators' token
 
@@ -179,7 +179,7 @@ The scheduler calls the core with the service token, `A5S_SERVICE_TOKEN`, to ope
 
 **Shows as:** the core exiting with "A5S_SEAL_KEYS no longer holds a key the core sealed with", or "holds a key retired as leaked".
 
-1. Someone took a key out of `A5S_SEAL_KEYS` before `a5s seal-again` retired it. What it sealed would stop counting unsaid: the approvals of the settings in force, so every run would be refused, and the caps, so level 2 would go.
+1. Someone took a key out of `A5S_SEAL_KEYS` before `a5s seal-again` retired it. What it sealed would stop counting unsaid: the approvals of the settings in force, so every run would be refused, and the caps, so no agent would act on its own.
 2. Put the key back after the first, start the core, and rotate as above. If the key is lost, or leaked, put back any key you still hold and run `a5s seal-again --leaked`, which retires the keys after the first and says what stops counting.
 3. A key retired as leaked is in `A5S_SEAL_KEYS` again: take it out.
 
@@ -207,7 +207,7 @@ The scheduler calls the core with the service token, `A5S_SERVICE_TOKEN`, to ope
 3. `models-see-only-data-they-are-approved-for`: the instance's model isn't approved for the class of data the settings name. Approve a model for it, or use one that is.
 4. `messages-go-only-to-the-audience`: an agent tried to write to someone a5s may not write to. That's usually right: check what it was asked.
 5. `settings-must-check-out`: the settings in force don't match their signatures or their rows, so every call is denied until they do. See [settings or the release don't check out](#settings-or-the-release-dont-check-out).
-6. `lasting-or-outside-effects-need-level-2`: a tool the scenario marks as destructive, or as sending outside the organisation, was called below level 2. Tell the agent owner: below level 2, agents draft and people act.
+6. `lasting-or-outside-effects-only-on-its-own`: a tool the scenario marks as destructive, or as sending outside the organisation, was called where the agent may not act on its own. Tell the agent owner: unless an agent may act on its own, it drafts and people act.
 7. `arguments-fit-the-schema` or `records-are-named-by-key`: the agent called a tool with arguments it doesn't take. Once in a while is the model's mistake. Many in a row may mean the tool's description misleads it: tell the agent owner.
 8. `records-can-be-read`: a change named records a5s couldn't read just then, so nobody could decide it as they stood, and a5s asked for nothing. Its records system, or the scenario's code that reads it, is failing: the log says which records and why. The change can be asked for again once they read.
 9. `a-change-names-few-records`: one call named more than 20 records to change. a5s reads each as it stands before deciding, so it reads none of so many, and asks the agent to ask for the rest apart. Many in a row may mean its instructions ask it to change records in bulk: tell the agent owner.

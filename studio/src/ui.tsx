@@ -7,6 +7,7 @@ import { type DependencyList, type ReactNode, useEffect, useRef, useState } from
 import type { AgentUses, Instance, Tool, Waiting as Wait } from "./api";
 import { Badge, type Tone } from "./design/controls";
 import { Loading, Skeleton } from "./design/feedback";
+import { levelName } from "./levels";
 import { inside, justMoved, Link, type Route } from "./router";
 
 /** What a page shows, once loaded; while it loads again, as for another period, what it
@@ -205,14 +206,14 @@ export const format = (style: Intl.DateTimeFormatOptions) => {
 export const when = (at: string) => format({ dateStyle: "medium", timeStyle: "short" }).format(new Date(at));
 export const time = (at: string) => format({ timeStyle: "medium" }).format(new Date(at));
 
-export function levels(autonomy: { start: number; max: number }): string {
-  return autonomy.start === autonomy.max ? t("level {level}", { level: autonomy.start })
-    : t("levels {start}–{max}", { start: autonomy.start, max: autonomy.max });
+export function levels(autonomy: { start: number; max: number }): string {  // by name (levels.ts)
+  return autonomy.start === autonomy.max ? levelName(autonomy.start)
+    : t("{start}, at most {max}", { start: levelName(autonomy.start), max: levelName(autonomy.max) });
 }
 
 export function aboutInstance(inst: Instance): string {
   const parts = Object.keys(inst.parts).join(", ") || t("no part");
-  return t("level {level} · {parts} · serving {people}", { level: inst.level, parts, people: people(inst.people) });
+  return t("{level} · {parts} · serving {people}", { level: levelName(inst.level), parts, people: people(inst.people) });
 }
 
 /** Names one after another, as a sentence says them: "Ana and Ben and Cleo". */

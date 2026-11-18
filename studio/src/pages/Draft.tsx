@@ -227,7 +227,7 @@ function Journey({ draft, said, files, plan, open }: { draft: Draft; said: Said;
       about: released ? t("It's released here as it is, and a5s deployed it.")
         : t("By {who}. a5s deploys it once they have.", { who: signers.length ? and(signers) : t("whoever its release needs") }) },
     { name: t("Put it to work"), state: released && atWork ? "done" : released ? "now" : "later",
-      about: released && atWork ? t("An instance runs it.") : t("An instance in the settings, for a few people first, at level 0 or 1.") },
+      about: released && atWork ? t("An instance runs it.") : t("An instance in the settings, for a few people first, reading only or asking first.") },
     { name: t("Watch it"), state: released && atWork ? "now" : "later", about: t("Its runs and how they end, on its page.") },
   ];
   const page = { page: "agent" as const, agent: draft.agent };

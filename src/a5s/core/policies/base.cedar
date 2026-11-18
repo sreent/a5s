@@ -10,11 +10,12 @@ when {
   && (resource.action == "" || (context.level >= 2 && !context.over_limit))
 };
 
-// A change to a part's data, below level 2 or past the scenario's limits, waits for a person:
-// the owner of the part its record is in decides it, on the core's own page, and the gateway
-// makes it once approved.
-@id("level-1-changes-wait-for-their-decider")
-@reason("below level 2, a change waits for the owner of the record's part to decide it")
+// A change to a part's data, where the agent asks first or past the scenario's limits, waits
+// for a person: the owner of the part its record is in decides it, on the core's own page, and
+// the gateway makes it once approved. context.level is what the agent may do for the call:
+// 0 reads only, 1 asks first, 2 acts on its own (a5s/levels.py).
+@id("changes-wait-for-their-decider")
+@reason("the agent asks first here: the owner of the record's part decides the change")
 @hold("true")
 permit (principal is Instance, action == Action::"call_tool", resource is Tool)
 when {
@@ -23,7 +24,7 @@ when {
 };
 
 @id("changes-past-a-limit-wait-for-their-decider")
-@reason("past the scenario's limit for its type of action, a change waits for the owner of the record's part to decide it, whatever the level")
+@reason("past the scenario's limit for its type of action, a change waits for the owner of the record's part to decide it, even where the agent may act on its own")
 @hold("true")
 permit (principal is Instance, action == Action::"call_tool", resource is Tool)
 when {
@@ -36,18 +37,18 @@ when {
 forbid (principal is Instance, action == Action::"call_tool", resource is Tool)
 when { resource.known && !resource.pinned };
 
-@id("level-0-only-observes")
-@reason("at level 0 the agent only observes, so it can't use a tool that writes")
+@id("reading-only-writes-nothing")
+@reason("the agent reads only here, so it can't use a tool that writes")
 forbid (principal is Instance, action == Action::"call_tool", resource is Tool)
 when { resource.writes && context.level < 1 };
 
-@id("lasting-or-outside-effects-need-level-2")
-@reason("a tool that can't be undone, or that sends outside the organisation, needs level 2")
+@id("lasting-or-outside-effects-only-on-its-own")
+@reason("a tool that can't be undone, or that sends outside the organisation, runs only where the agent acts on its own")
 forbid (principal is Instance, action == Action::"call_tool", resource is Tool)
 when { (resource.destructive || resource.sends_outside) && context.level < 2 && resource.action == "" };
 
-@id("marked-runs-never-act-at-level-2")
-@reason("a run that has read outside content can't act at level 2")
+@id("marked-runs-never-act-on-their-own")
+@reason("a run that has read outside content never acts on its own")
 forbid (principal is Instance, action == Action::"call_tool", resource is Tool)
 when {
   (resource.writes || resource.destructive || resource.sends_outside)

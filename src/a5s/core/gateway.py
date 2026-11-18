@@ -746,12 +746,12 @@ class Gateway:
         for instance in settings.instances:
             for part, levels in sorted(instance.actions.items()):
                 if unknown := sorted(set(levels) - set(taken)):
-                    problems.append(f"{instance.id} sets a level in {part} for "
+                    problems.append(f"{instance.id} says what it may do in {part} for "
                                     f"{', '.join(unknown)}, which no tool here takes: the types "
                                     f"of action are {', '.join(taken) or 'none'}")
                 if unlimited := sorted(a for a, lv in levels.items()
                                        if lv >= 2 and a in taken and a not in settings.limits):
-                    problems.append(f"{instance.id} works at level 2 in {part} for "
+                    problems.append(f"{instance.id} acts on its own in {part} for "
                                     f"{', '.join(unlimited)}, which has no limit: give it one, "
                                     "under limits, so a run can't make any number of them")
             release = self.definitions.get(instance.definition)
@@ -3097,7 +3097,7 @@ def create_app(gw: Gateway) -> FastAPI:
                 language, who = gw.spoken(conn, person), gw.scenario.person(person)
                 offer = undoing.offered(kept["until"], gw.public_url, kept["id"], language,
                                         who.timezone if who else "UTC") if kept else None
-                return words.say(language, "The {agent} made a change itself, at level 2, for "
+                return words.say(language, "The {agent} made a change on its own, for "
                                  "{whom}: {change}", agent=row["definition"],
                                  whom=approvals.names_of(named, language), change=change) + (
                     f" {before}" if before else "") + (f" {offer}" if offer else "")
@@ -3114,8 +3114,8 @@ def create_app(gw: Gateway) -> FastAPI:
             group = row["trigger"].get("conversation")  # and its next run knows a5s made it:
             for person in ([group] if groups.of(group) else row["acts_for"]):  # the group's, in one
                 noted(conn, person, row["definition"],
-                      f"a5s made the change the {row['definition']} asked for, at level 2: "
-                      f"{change}", keys[0] if keys else None,
+                      f"a5s made the change the {row['definition']} asked for, which it may "
+                      f"make on its own: {change}", keys[0] if keys else None,
                       heard_by=list(row["acts_for"]) if groups.of(group) else None)
             for part in sorted({p for k in keys if (p := gw.scenario.part_of(k))}):
                 samples.draw(conn, gw.cfg.seal_keys, gw.scenario.name, "action", row["release"],

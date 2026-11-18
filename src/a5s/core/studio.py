@@ -34,7 +34,7 @@ import psycopg
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import Query
 
-from a5s import db
+from a5s import db, levels
 from a5s.config import ModelConfig
 from a5s.contract import (
     AGENT_AUTHOR,
@@ -695,13 +695,16 @@ def run(conn: db.Connection, scenario: Scenario, run_id: str,
 
 
 def _levels(found: dict) -> str:
+    """What an agent's instances may do, by name: where they start, and the most."""
     start, most = found["autonomy"]["start"], found["autonomy"]["max"]
-    return f"level {start}" if start == most else f"levels {start} to {most}"
+    return levels.name(start) if start == most else (
+        f"{levels.name(start)}, at most {levels.name(most)}")
 
 
 def _instance_line(inst: dict) -> str:
     parts = ", ".join(inst["parts"]) or "no part"
-    return (f"{inst['id']}: {inst['status']}, level {inst['level']}, in {parts}, serving "
+    may = levels.name(inst["level"]) if inst["level"] is not None else "nothing set"
+    return (f"{inst['id']}: {inst['status']}, {may}, in {parts}, serving "
             f"{inst['people']} {'person' if inst['people'] == 1 else 'people'}, run by "
             f"{inst['owner'] or 'nobody'}" + (f" and {inst['deputy']}" if inst["deputy"] else "")
             + ("" if inst["current"] else f", still on release {inst['release']}"))

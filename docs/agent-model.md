@@ -22,7 +22,7 @@ For example, a5s's own assistant is a definition, and its release 0.3.0 a releas
 | Part owner | Approves agents to act in the part, and how far. Decides their proposals there, or names delegates to. |
 | Scope | The parts an instance may act in: one, several, or none, for an agent that acts on no part's data |
 | Grant | The tools, data and models an instance may use: what its release lists, as far as its parts' owners approve |
-| Type of action | A kind of action that a level is set for, as the scenario defines it, such as a change type or a catalogue item |
+| Type of action | A kind of action for which the settings say what an agent may do, as the scenario defines it, such as a change type or a catalogue item |
 | Acts for | Everyone whose words a run serves: whoever sent the message, set the reminder, or wrote the reply a request came from, whoever a reminder of an obligation is for, and whoever a report on their own records is for. A run started only by a schedule acts for nobody, and one started by another system's event acts for the person it names, where the instance serves them, or else for nobody. A run writes only to the people it acts for. |
 
 The [scenario contract](architecture.md#the-scenario-contract) says where the settings, the governed process and the decision surface come from. Each scenario's page maps these terms, as the [IT service desk](../scenarios/it-service-desk.md) does.
@@ -34,9 +34,9 @@ Roles are held by people, never by job titles. An organisation assigns people to
 | Role | Does |
 | --- | --- |
 | Platform owner | Accountable for a5s and the agents it runs. Names each agent owner and deputy, and can suspend any instance or withdraw any release. |
-| Agent owner, with a deputy | Builds and runs a definition and its instances. Reviews level-2 actions and can reverse them. Can suspend the agent's instances, lower their cap and withdraw its releases. |
+| Agent owner, with a deputy | Builds and runs a definition and its instances. Reviews the actions the agent takes on its own and can reverse them. Can suspend the agent's instances, lower their cap and withdraw its releases. |
 | Part owner, and delegates | The part owner, who holds `part-owner:<part>` in the directory, approves an instance for the part, sets how far it may act there, and moves it up or down. They or their delegates decide its proposals, as the scenario allows. Decisions about the agent itself are never a delegate's. |
-| Instance approver | For each part in an instance's scope, its owner. For an instance with no parts, whoever the scenario names, who also sets its level. |
+| Instance approver | For each part in an instance's scope, its owner. For an instance with no parts, whoever the scenario names, who also sets what it may do. |
 | Release approver | Approves what loosens a5s: releases that change a tool or widen what an agent may do, such as more tools, another model, long tasks or more for them, another owner or deputy, or listing it for everyone, changes to the trusted core, and anything else the scenario names nobody else for. Never from the team that runs a5s, or its manager's reporting line. |
 | Graders | Grade samples of an agent's work. Never anyone who owns, authors or drafted it, nor anyone from their teams, nor anyone a change was for or who decided it. |
 | Assurance | Holds the ledger's anchor, reads the ledger, and is told of everything that loosens a5s |
@@ -63,35 +63,35 @@ Each organisation approves a release for its own deployment, with its own people
 - A part owner can stop an instance acting in their part at any time, by withdrawing its approval in the settings.
 - If the agent owner and the deputy both leave, the instances are suspended until the platform owner names a new owner.
 - An instance moves to another approved release when its agent owner moves it. Runs start fresh, so nothing needs migrating, and it can always go straight back to the release it ran before.
-- a5s keeps its caps for a behaviour, not a release: the agent, its model, and the tools of a type of action it may use, as pinned. A release that changes only instructions or skills keeps its caps, after its regression suite, and for an agent that may work at level 2 the release approver signs it too, from outside the team, since nobody decides its changes there before they're made (round 15); one that changes a tool of that type, or the model, starts again at level 1 for what it widens.
+- a5s keeps its caps for a behaviour, not a release: the agent, its model, and the tools of a type of action it may use, as pinned. A release that changes only instructions or skills keeps its caps, after its regression suite, and for an agent that may act on its own the release approver signs it too, from outside the team, since nobody decides its changes there before they're made (round 15); one that changes a tool of that type, or the model, starts again by asking first for what it widens.
 
 ## Autonomy
 
-| Level | The agent may | People |
+| What it may do | The agent may | People |
 | --- | --- | --- |
-| 0. Observe | Read, measure and report | Read what it reports |
-| 1. Propose | Prepare drafts, raise requests in a governed process, and, from phase 2, hold proposals ([how](architecture.md#proposals-and-approvals)) | A person decides each one |
-| 2. Act and notify, from phase 2 | Take actions of a type the part owner has approved, within the scenario's limits, through the governed process where there is one | The agent owner reviews them and can reverse any |
+| Reads only | Read, measure and report | Read what it reports |
+| Asks first | Prepare drafts, raise requests in a governed process, and, from phase 2, hold proposals ([how](architecture.md#proposals-and-approvals)) | A person decides each one |
+| Acts on its own, from phase 2 | Take actions of a type the part owner has approved, within the scenario's limits, through the governed process where there is one | The agent owner reviews them and can reverse any |
 
-- The level is set for each instance, part and type of action, in the settings. Where none is set, the release's starting level applies, which can only be 0 or 1, so level 2 always comes from the settings, never from the release. The release's maximum caps whatever the settings say. A part's own level applies to drafts and requests, and is never above 1; a change of a type the settings don't set for the part works at level 1 at most, so level 2 is always for a type of action, such as `parts: {billing: {level: 1, actions: {change-due-date: 2}}}`, and the settings must give that type a limit.
-- An instance works only on records in its parts, and only on those everyone it acts for may see. A call about records works at the lowest level it has in their parts, and one about no record in particular at the lowest of all its parts.
+- What an agent may do is set for each instance, part and type of action, in the settings. Where none is set, it starts where the release says, and a release can only start it reading only or asking first, so acting on its own always comes from the settings, never from the release. The release's maximum caps whatever the settings say. What it may do in a part as a whole applies to drafts and requests, and never goes beyond asking first; a change of a type the settings don't set for the part goes no further either, so acting on its own is always for a type of action, such as `parts: {billing: {level: asks first, actions: {change-due-date: acts on its own}}}`, and the settings must give that type a limit. Settings and agent definitions also take the old numbers 0, 1 and 2, as before, and inside a5s the ledger and the API keep the numbers.
+- An instance works only on records in its parts, and only on those everyone it acts for may see. A call about records does only what the strictest of their parts allows, and one about no record in particular what the strictest of all its parts allows.
 - What an agent hears of a record it may not work on, read or change, is what it hears of a record there isn't: that there's no such record, or the people it's for may not see it, and that they can ask whoever runs the assistant, its owner or else its deputy. So nothing it says tells anyone that a record is there, nor in which part, and it never names a part's owner, whom the part would give away. The ledger keeps which rule refused it, as the run's page shows. A run for nobody but a mailbox's, such as an event's or a schedule's, which nobody's words steer, hears from the system itself of a record there isn't, since nobody's sight decides what it may see.
-- A level-2 setting counts only while someone who approved the settings in force still owns the part: who approved the version in force, or, where it only narrowed what agents may do in other parts, the versions before it, back to the last that didn't, since a narrowing changes nothing in any other part. If the part's owner changes, no run opens until the new owner approves the version in force, and level 2 counts again only once they have.
-- a5s also keeps a cap for each behaviour, part and type of action, which starts at 1, and the instance works at the lower of the cap and the setting. The cap rises only when samples pass ([starting values](starting-values.md)), and falls when they fail or someone who may lowers it, such as the agent owner or the part's owner (`a5s caps lower`). Nobody raises it by hand.
-- A change about no record, about a record in no part, or from a run that has read content from outside, or whose conversation holds what such a run passed on, works at level 1 at most, and so does any change past the scenario's limits for its type.
-- An action that touches several parts works at the lowest of their levels.
-- Reminding, chasing and routing are allowed at every level, within the contact rules, because they change no data.
-- A scenario's policy pack can rule out level 2 for some actions, such as anything a person asked for in their own words, or narrow it, such as to self-service that the identity provider verifies.
-- There's no level above 2. An agent that acts always tells someone.
+- A setting to act on its own counts only while someone who approved the settings in force still owns the part: who approved the version in force, or, where it only narrowed what agents may do in other parts, the versions before it, back to the last that didn't, since a narrowing changes nothing in any other part. If the part's owner changes, no run opens until the new owner approves the version in force, and acting on its own counts again only once they have.
+- a5s also keeps a cap for each behaviour, part and type of action, which at the start holds the agent to asking first, and the instance does only what both the cap and the setting allow. The cap rises only when samples pass ([starting values](starting-values.md)), and falls when they fail or someone who may lowers it, such as the agent owner or the part's owner (`a5s caps lower`). Nobody raises it by hand.
+- A change about no record, about a record in no part, or from a run that has read content from outside, or whose conversation holds what such a run passed on, goes no further than asking first, and nor does any change past the scenario's limits for its type.
+- An action that touches several parts does only what the strictest of them allows.
+- Reminding, chasing and routing are allowed whatever an agent may do, within the contact rules, because they change no data.
+- A scenario's policy pack can rule out acting on its own for some actions, such as anything a person asked for in their own words, or narrow it, such as to self-service that the identity provider verifies.
+- Nothing goes beyond acting on its own, and an agent that acts always tells someone.
 
 ### Undoing a change
 
 A tool that changes a record can say how the change is reversed (`undo`, [`core/undoing.py`](../src/a5s/core/undoing.py)): by calling a tool of the scenario's, often the same one, with arguments from the change's own (`args.<name>`) and from the record as it stood before it (`before.<field>`, a field of the record as the scenario gives it), for as long after it's made as the tool says, a day unless it says otherwise and a week at most. The sample's `change_due_date` is undone by setting the due date the question had before, for a day. How a tool is undone is part of what its approvers pin, in its hash, and the core doesn't start with an undo that names a tool it hasn't, or doesn't name the record the change did.
 
-- **What a5s keeps.** When a5s makes such a change, at level 2 or once its deciders approve it, it keeps the call that reverses it, worked out then, and, read again just after, the fields it restores and every field the change itself altered, as the change left them. A change about more than one record, or to a record a5s couldn't read before, can't be undone this way.
-- **Who may undo it.** Whoever it was for, and whoever decides that type of change in its record's part, so long as they may see the record, until its time is up. Whoever it was for finds it on their home, and a5s tells them how and until when itself, by their own clock and in the language they read (in Thai, by its month's Thai name and the Buddhist era's year): in its own note beside the agent's next message to them, for a change at level 2, since its link is a5s's, which no agent's message may carry, and in its own message for one its deciders approved. The instance's owner reads it in their digest. Each undoes it on its page in the studio, `/studio/undo?change=<id>`, signing in afresh for that act alone, as for deciding: the channels app records it with the sign-in and can undo nothing, and the core checks the sign-in again, and whether they may now, then makes the call that reverses it, within a minute.
+- **What a5s keeps.** When a5s makes such a change, for an agent acting on its own or once its deciders approve it, it keeps the call that reverses it, worked out then, and, read again just after, the fields it restores and every field the change itself altered, as the change left them. A change about more than one record, or to a record a5s couldn't read before, can't be undone this way.
+- **Who may undo it.** Whoever it was for, and whoever decides that type of change in its record's part, so long as they may see the record, until its time is up. Whoever it was for finds it on their home, and a5s tells them how and until when itself, by their own clock and in the language they read (in Thai, by its month's Thai name and the Buddhist era's year): in its own note beside the agent's next message to them, for a change the agent made on its own, since its link is a5s's, which no agent's message may carry, and in its own message for one its deciders approved. The instance's owner reads it in their digest. Each undoes it on its page in the studio, `/studio/undo?change=<id>`, signing in afresh for that act alone, as for deciding: the channels app records it with the sign-in and can undo nothing, and the core checks the sign-in again, and whether they may now, then makes the call that reverses it, within a minute.
 - **Only as the change left it.** A record someone has changed since, in any field the change altered or the undo restores, such as a question they closed after the agent put it on hold, is left as it is: putting it right is for whoever changed it, in the records system. So is one that can't be read just then. A tool that has changed since undoes nothing.
-- **It counts against the agent.** An undone change counts as a wrong grade of the agent's work, which the core seals at once, whether or not it was drawn as a sample, so an agent whose changes people undo loses level 2 sooner, and earns it later ([samples](#autonomy)). A critical grade stays critical.
+- **It counts against the agent.** An undone change counts as a wrong grade of the agent's work, which the core seals at once, whether or not it was drawn as a sample, so an agent whose changes people undo stops acting on its own sooner, and comes to it later ([samples](#autonomy)). A critical grade stays critical.
 - **Everyone hears.** The ledger records each undo and who asked for it, never what the record held. Whoever the change was for, and the instance's owner and deputy, hear of it in their digest, and the agent's next run knows, from the conversation. Whoever asked hears in their digest of one a5s couldn't undo, and why.
 
 A tool from an MCP server says the same in `mcp.yaml`, as `undo: {tool, args, hours}` ([connectors](connectors.md#declaring-them)).
@@ -164,8 +164,8 @@ does: >-
 scope: none                      # it changes no part's data
 model: deepseek-v4-pro           # from config/models.yaml, the approved list
 autonomy:
-  start: 1
-  max: 1                         # it drafts, and people decide
+  start: asks first
+  max: asks first                # it drafts, and people decide
 tools:
   records: [search_records, get_record]    # the scenario's records, read only
   documents: [create_draft]
@@ -203,7 +203,7 @@ A report names a kind of record, such as `{source: records}`, as the [watcher's]
 
 The preferences a release lists are those people may set through the agent, such as `digest-time`, the time their daily digest comes, which a5s's own tool sets when they ask.
 
-The register adds what changes without a release: each instance, its identity and its status. Each deployment's signed settings name who an instance serves, by name or as a team or a role's holders, such as `team:sales`, which the directory resolves when each run opens, its level, and its owner and deputy, who are people in that deployment's directory, so the same definition serves any scenario.
+The register adds what changes without a release: each instance, its identity and its status. Each deployment's signed settings name who an instance serves, by name or as a team or a role's holders, such as `team:sales`, which the directory resolves when each run opens, what it may do, and its owner and deputy, who are people in that deployment's directory, so the same definition serves any scenario.
 
 ## The judge
 

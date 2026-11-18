@@ -57,7 +57,7 @@ MAY = {
                     "its owners to sign",
     "agent-viewer": "see how the {scope} is built, read only: its instructions and skills",
     releases.ENGINEER: "start new agents, and draft them",
-    INSTANCE_APPROVER: "approve the instances that work in no part, and set their levels",
+    INSTANCE_APPROVER: "approve the instances that work in no part, and say what each may do",
     RELEASE_APPROVER: "approve releases, from outside the team that runs a5s",
     samples.GRADER: "grade agents' work, never your own team's",
     audit.AUDITOR: "read the ledger: find what was done and decided, and export it",

@@ -412,8 +412,8 @@ ADMIN = {"approve": "approved settings", "propose": "proposed settings",
          "choose-language": "chose the language they read, which agents answer them in"}
 
 
-CAPS = {"raise": "a cap raised to level 2, from graded samples",
-        "lower": "a cap lowered to level 1"}
+CAPS = {"raise": "let an agent act on its own, from graded samples",
+        "lower": "made an agent ask first again"}
 
 
 def roles_of(scenario: Any, parts: Iterable[str], agents: Iterable[str]) -> list[dict]:

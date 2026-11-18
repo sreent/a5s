@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
-from a5s import db
+from a5s import db, levels
 from a5s.contract import Person, parse_settings
 from a5s.core import approvals, impact, languages, memberships, registry, settings_app, web
 from a5s.core import studio_models as shapes  # what each route answers, as the studio's types say
@@ -99,7 +99,8 @@ def router(gw: Any) -> APIRouter:
             asked = conn.execute("select * from settings_requests where scenario = %s and "
                                  "person = %s order by id desc limit 5",
                                  (gw.scenario.name, person.id)).fetchall()
-        data = (yaml.safe_load(bytes(last["raw"])) or {}) if last and in_force else None
+        data = levels.numbered(yaml.safe_load(bytes(last["raw"])) or {}) if last and in_force \
+            else None  # each level as its number, for the forms, whichever the version says
         tools = gw.scenario.tools()
         return {
             "you": person.name, "me": person.id,

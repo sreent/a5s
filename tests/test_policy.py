@@ -55,7 +55,7 @@ def test_a_suspended_instance_is_denied(engine):
 
 def test_level_0_only_observes(engine):
     d = call(engine, instance(level=0), tool("create_draft", writes=True))
-    assert not d.allowed and "level-0-only-observes" in d.reasons
+    assert not d.allowed and "reading-only-writes-nothing" in d.reasons
 
 
 @pytest.mark.parametrize("risk", [{"destructive": True}, {"sends_outside": True}])
@@ -64,13 +64,13 @@ def test_what_cant_be_undone_or_goes_outside_needs_level_2(engine, risk):
     someone outside, isn't a draft, whatever the grant says."""
     grants = ("search_records", "create_draft", "send_email")
     d = call(engine, instance(grants=grants), tool("send_email", writes=True, **risk))
-    assert not d.allowed and "lasting-or-outside-effects-need-level-2" in d.reasons
+    assert not d.allowed and "lasting-or-outside-effects-only-on-its-own" in d.reasons
     assert call(engine, instance(level=2, grants=grants), tool("send_email", writes=True, **risk)).allowed
 
 
 def test_a_call_works_at_the_level_of_the_part_its_record_is_in(engine):
     d = call(engine, instance(level=1), tool("create_draft", writes=True), level=0)
-    assert not d.allowed and "level-0-only-observes" in d.reasons
+    assert not d.allowed and "reading-only-writes-nothing" in d.reasons
     assert call(engine, instance(level=0), tool("create_draft", writes=True), level=1).allowed
 
 
@@ -117,14 +117,14 @@ def test_a_change_below_level_2_is_held_for_a_person(engine):
     grants = ("search_records", "change_due_date")
     held = call(engine, instance(grants=grants), tool("change_due_date", action="change-due-date"))
     assert held.held and not held.allowed and held.label == "hold"
-    assert held.reasons == ("level-1-changes-wait-for-their-decider",)
-    assert "waits for the owner of the record's part" in held.explanations[0]
+    assert held.reasons == ("changes-wait-for-their-decider",)
+    assert "the owner of the record's part decides the change" in held.explanations[0]
     at_two = call(engine, instance(level=2, grants=grants),
                   tool("change_due_date", action="change-due-date"))
     assert at_two.allowed and not at_two.held
     at_zero = call(engine, instance(level=0, grants=grants),
                    tool("change_due_date", action="change-due-date"))
-    assert not at_zero.allowed and not at_zero.held and "level-0-only-observes" in at_zero.reasons
+    assert not at_zero.allowed and not at_zero.held and "reading-only-writes-nothing" in at_zero.reasons
 
 
 def test_a_hold_never_outweighs_a_forbid(engine):

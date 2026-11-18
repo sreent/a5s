@@ -11,6 +11,8 @@ Every change to the design gets an adversarial review before it settles. Reviewe
 - **Removed** means a later round removed the control the finding was about.
 - **Kept by design** means the round's reviewers proposed a change, and it isn't worth what it costs.
 
+The rounds name what an agent may do by number, as a5s did when they were written. a5s now names it everywhere people read: level 0 is *reads only*, level 1 *asks first*, and level 2 *acts on its own* ([autonomy](agent-model.md#autonomy)). The ledger and the API still keep the numbers, and settings still take them.
+
 ## How we critique
 
 | Angle | Asks |

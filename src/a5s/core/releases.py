@@ -402,9 +402,8 @@ def needs(new: dict, old: dict | None, advisory: str | None = None) -> list[Need
             if _told(after) != _told(before) and (
                     after["may"].get("autonomy") or {}).get("max", 1) >= 2:  # what it does
                 found.append(Need(RELEASE_APPROVER,  # unattended changes too (round 15, C2)
-                                  f"the {name}'s instructions changed, and it may work at "
-                                  "level 2, where nobody decides its changes before they're "
-                                  "made"))
+                                  f"the {name}'s instructions changed, and it may act on its "
+                                  "own, where nobody decides its changes before they're made"))
     first: dict[str, Need] = {}
     for need in found:  # one of each is enough, with the first reason for it
         first.setdefault(need.role, need)
