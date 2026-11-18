@@ -277,7 +277,8 @@ def draw(conn: db.Connection, keys: tuple[str, ...], scenario: str, kind: str, r
          definition: str, instance: str, run: str, part: str, action: str, said: str,
          records: dict[str, dict | None], acts_for: list[str], now: datetime,
          proposal: int | None = None, decided: str | None = None,
-         decided_by: list[str] | None = None, flags: list[str] | None = None) -> bool:
+         decided_by: list[str] | None = None, flags: list[str] | None = None,
+         flagged: list[dict] | None = None) -> bool:
     """Draw a change as a sample for grading, if it's one a5s samples now: a decided held
     change while the cap is still 1, or, at level 2, a change made, at random, at a rate that
     spreads about 100 through the quarter, by how many the last 30 days made. Whether it drew
@@ -304,11 +305,12 @@ def draw(conn: db.Connection, keys: tuple[str, ...], scenario: str, kind: str, r
     row = conn.execute(
         "insert into samples (scenario, kind, proposal_id, run_id, instance_id, release, "
         "definition, part, action, said, records, acts_for, decided, decided_by, deciders, "
-        "drawn_at, flags, asked, asked_digest) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
-        "%s, %s, %s, %s, %s, %s, %s, %s, %s) returning *",
+        "drawn_at, flags, flagged, asked, asked_digest) values (%s, %s, %s, %s, %s, %s, %s, %s, "
+        "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) returning *",
         (scenario, kind, proposal, run, instance, release, definition, part, action, said,
          Jsonb(records), acts_for, decided, decided_by[0] if decided_by else None,
-         list(dict.fromkeys(decided_by or [])), now, Jsonb(list(flags or [])), asked,
+         list(dict.fromkeys(decided_by or [])), now, Jsonb(list(flags or [])),
+         Jsonb(flagged) if flagged is not None else None, asked,
          digest_of(asked))).fetchone()
     sealed_draw(conn, keys, row)
     return True
@@ -337,9 +339,15 @@ def asked_of(sample: dict) -> str | None:
     return asked if asked and digest_of(asked) == sample.get("asked_digest") else None
 
 
+def _drawn(row: dict) -> tuple[str, ...]:
+    """What a sample's seal covers: with what its graders are told to know of it as a5s keeps
+    those words, where it does (round 15, B6)."""
+    return (*_SEALED_DRAW, "flagged") if row.get("flagged") is not None else _SEALED_DRAW
+
+
 def draw_seal(keys: tuple[str, ...], row: dict) -> str:
     """The core's seal on a sample it drew, with the first of its keys."""
-    return _mac(keys[0], row, _SEALED_DRAW)
+    return _mac(keys[0], row, _drawn(row))
 
 
 def sealed_draw(conn: db.Connection, keys: tuple[str, ...], row: dict | None) -> None:
@@ -352,7 +360,7 @@ def sealed_draw(conn: db.Connection, keys: tuple[str, ...], row: dict | None) ->
 
 def drawn_by_core(keys: tuple[str, ...], row: dict) -> bool:
     """Whether a sample is one the core drew, as it drew it."""
-    return _sealed(keys, row, _SEALED_DRAW, row.get("drawn_seal"))
+    return _sealed(keys, row, _drawn(row), row.get("drawn_seal"))
 
 
 # Grading

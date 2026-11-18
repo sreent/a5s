@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from a5s import db
 from a5s.contract import INSTANCE_APPROVER, PART_DELEGATE, PART_OWNER
-from a5s.core import approvals, ledger, proposals, web
+from a5s.core import approvals, languages, ledger, proposals, web, words
 from a5s.core import studio_models as shapes  # what each route answers, as the studio's types say
 
 log = logging.getLogger(__name__)
@@ -63,6 +63,7 @@ def router(gw: Any) -> APIRouter:
                 {"who": who, "scenario": gw.scenario.name, "parts": mine,
                  "approver": INSTANCE_APPROVER in roles,
                  "week": gw.clock() - timedelta(days=7)}).fetchall()
+            spoken = languages.of(conn, person) if person else languages.ENGLISH  # (B6)
         shown = []
         for row in rows:
             waits = row["status"] == "waiting"
@@ -81,14 +82,15 @@ def router(gw: Any) -> APIRouter:
                           "agent": row["definition"],  # who asked, and for whom, as recorded
                           "for": [p.name if (p := gw.scenario.person(i)) else i
                                   for i in row["acts_for"]],
-                          "flags": row["flags"], "sensitive": row["sensitive"],
+                          "flags": words.flags(row, spoken), "sensitive": row["sensitive"],
                           "status": row["status"], "yours": row["yours"], "may_decide": decides,
                           "outcome": row["outcome"], "proposed_at": row["proposed_at"].isoformat(),
                           "lapses_at": row["lapses_at"].isoformat(),
                           "links": [r["link"] for r in standing.values() if r and r.get("link")],
                           "records": [{"key": k, "link": r["link"]} for k, r in standing.items()
                                       if r and r.get("link")],
-                          "changed": [f"{k} has changed since it was asked for" for k in changed]})
+                          "changed": [words.say(spoken, proposals.CHANGED, key=k)
+                                      for k in changed]})
         return {"you": person.name if person else who, "proposals": shown}
 
     @pages.post("/decide/proposals", **shapes.answers(shapes.Decided))

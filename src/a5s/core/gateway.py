@@ -3133,41 +3133,40 @@ def create_app(gw: Gateway) -> FastAPI:
 
     def held(conn: db.Connection, row: dict, tool: Tool, args: dict, standing: dict,
              deciding: list[Person], seq: int, traced: list[dict], change: str | None,
-             over: str | None, settings: Settings,
+             over: dict | None, settings: Settings,
              steered: list[str] | None = None, marked_only: bool = False) -> tuple[dict, list]:
         """Keep a held call for its deciders, and ask each of them, where they work with the
         agent, to decide it on the core's page, as an urgent message: past their five a day,
         it waits for their next batch. Where only the run's mark holds it, whoever asked hears
         why, once a run, and how to start afresh (round 15, A4). The proposal, and what to send
         once the transaction is done."""
-        whom = approvals.names_of([p.name if (p := gw.scenario.person(w)) else w
-                                   for w in row["acts_for"]])
-        flags = []
-        for t in traced:
+        whom = [p.name if (p := gw.scenario.person(w)) else w for w in row["acts_for"]]
+        agent, flagged = row["definition"], []  # as words a5s keeps, said to each in their
+        for t in traced:  # language, and kept in English too (round 15, B6)
             if t["from"] is None:
-                flags.append(f"{t['value']} came from the {row['definition']} itself, not from "
-                             f"the records or from {whom}")
+                flagged.append(words.kept(proposals.OWN_VALUE, value=t["value"], agent=agent,
+                                          whom=whom))
             elif t["from"].startswith(provenance.TEAM):
                 who = gw.scenario.person(t["from"].removeprefix(provenance.TEAM))
-                flags.append(f"{t['value']} came from what {who.name if who else 'someone'} "
-                             "of a team answered them while the conversation was handed over, "
-                             f"not from the records or from {whom}")
+                flagged.append(words.kept(proposals.TEAM_VALUE, value=t["value"], who=who.name,
+                                          whom=whom) if who else
+                               words.kept(proposals.SOMEONE_VALUE, value=t["value"], whom=whom))
             elif t["from"].startswith(provenance.OUTSIDE):
-                flags.append(f"{t['value']} came from a document from outside the organisation "
-                             f"({t['from'].removeprefix(provenance.OUTSIDE).strip()}), such as a "
-                             "customer's email, not from the records")
+                flagged.append(words.kept(proposals.OUTSIDE_VALUE, value=t["value"], document=t[
+                    "from"].removeprefix(provenance.OUTSIDE).strip()))
         if row["read_outside"]:
-            flags.append(f"the {row['definition']} read content from outside the organisation "
-                         "before it asked for this")
-        if after := proposals.after(row["trigger"]):  # another system's word, not a person's
-            flags.append(f"nobody asked for it: the {row['definition']} asked for it {after}"
-                         + (f", about {whom}" if row["acts_for"] else ""))
+            flagged.append(words.kept(proposals.READ_OUTSIDE, agent=agent))
+        if after := proposals.after_kept(row["trigger"]):  # another system's word, not a
+            flagged.append(words.kept(proposals.UNASKED_ABOUT, agent=agent, after=after,  # person's
+                                      whom=whom) if row["acts_for"] else
+                           words.kept(proposals.UNASKED, agent=agent, after=after))
         if over is not None:
-            flags.append(f"it waits because {over}")
+            flagged.append(words.kept(proposals.OVER, over=over))
+        flags = [words.said(languages.ENGLISH, f) for f in flagged]
         proposal = proposals.hold(conn, gw.scenario, row, tool, args, standing, deciding, seq,
                                   flags, gw.clock(), change, bool(flags) or proposals.sensitive(
                                       conn, row["run"], tool, args, settings.classified),
-                                  steered or [])  # one flagged is decided alone (round 15, B5)
+                                  steered or [], flagged)  # one flagged is decided alone (B5)
         sends = [ask(conn, proposal, person.id) for person in deciding]
         conn.execute("update proposals set asked = %s where id = %s",
                      ([p.id for p in deciding], proposal["id"]))
@@ -3186,7 +3185,8 @@ def create_app(gw: Gateway) -> FastAPI:
         """Ask, or remind, a decider to decide a held change, where they work with its agent,
         as an urgent message. What to push once the transaction is done."""
         link = f"{gw.public_url}/studio/decide?proposal={p['digest']}"
-        text = proposals.asking(p, link, again)
+        spoken = gw.spoken(conn, person)  # in the language they read (round 15, B6)
+        text = proposals.asking(p, link, again, spoken)
         route = gw.at_once(conn, person, p["definition"])
         ledger.append(conn, {
             "kind": "notice", "action": "remind-decision" if again else "ask-decision",
@@ -3198,7 +3198,7 @@ def create_app(gw: Gateway) -> FastAPI:
             urgent.hold(conn, person, None, p["instance_id"], None, text, gw.clock())
             return None
         return outbound(conn, route, person, text, instance=p["instance_id"],
-                        agent=p["definition"], card=proposals.card(p, link, again))
+                        agent=p["definition"], card=proposals.card(p, link, again, spoken))
 
 
     def read_outside(row: dict, token: str, tool: Tool, result: Any) -> tuple[Any, int]:
@@ -4015,7 +4015,8 @@ def create_app(gw: Gateway) -> FastAPI:
                              p["standing"] or {r: None for r in p["records"]},
                              list(p["acts_for"]), now, proposal=p["id"],
                              decided="reject" if became == "rejected" else "approve",
-                             decided_by=deciders_, flags=p["flags"])
+                             decided_by=deciders_, flags=p["flags"],
+                             flagged=p.get("flagged"))
         ledger.append(conn, {"kind": "proposal", "action": became, "run": str(p["run_id"]),
                              "instance": p["instance_id"], "acts_for": list(p["acts_for"]),
                              "decision": "record", "of": p["seq"],

@@ -65,6 +65,8 @@ export const DECIDE: Record<string, string> = {
   "asked {day}": "ขอเมื่อ {day}",
   "The {agent} asks": "{agent} ขออนุมัติ",
   "What to know": "สิ่งที่ควรรู้",
+  "The change and its records are in their system's words, which a5s seals with your decision.":
+    "การเปลี่ยนแปลงและระเบียนของรายการนี้เป็นถ้อยคำของระบบที่รายการอยู่ ซึ่ง a5s ผนึกไว้กับการตัดสินใจของคุณ",
   "It's decided on its own, never with others.": "ต้องตัดสินใจรายการนี้แยกต่างหาก ไม่รวมกับรายการอื่น",
   "Open {record}": "เปิด {record}",
   "It lapses on {day} unless someone decides it.": "จะหมดอายุในวันที่ {day} หากไม่มีใครตัดสินใจ",

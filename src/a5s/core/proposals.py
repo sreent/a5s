@@ -52,12 +52,12 @@ from a5s.contract import (
     Tool,
     record_of,
 )
-from a5s.core import approvals, languages, outgoing, sealing
+from a5s.core import approvals, languages, outgoing, sealing, words
 from a5s.core.handles import TOKEN
 from a5s.core.identity import Verifier
 from a5s.core.ledger import canonical
 from a5s.core.obligations import a_working_day_after
-from a5s.core.words import say
+from a5s.core.words import kept, say
 
 REMIND, ESCALATE, LAPSE = 2, 5, 10  # working days: remind its deciders, tell their managers, lapse [starting value]
 AFTER_RESET = timedelta(days=1)  # how long a decision waits after its decider's authenticator was reset
@@ -120,13 +120,39 @@ def working_days_after(person: Person, at: datetime, days: int) -> datetime:
     return at
 
 
-def after(trigger: dict | None) -> str:
-    """What a run nobody asked for came after, in words, if another system's event started it:
-    its system and type, as a5s received it."""
+# What a held change's deciders, and its sample's graders, are told to know of it, as words a5s
+# keeps, so each reads them in the language they read (core/gateway.py's held; round 15, B6)
+OWN_VALUE = "{value} came from the {agent} itself, not from the records or from {whom}"
+TEAM_VALUE = ("{value} came from what {who} of a team answered them while the conversation was "
+              "handed over, not from the records or from {whom}")
+SOMEONE_VALUE = ("{value} came from what someone of a team answered them while the conversation "
+                 "was handed over, not from the records or from {whom}")
+OUTSIDE_VALUE = ("{value} came from a document from outside the organisation ({document}), such "
+                 "as a customer's email, not from the records")
+READ_OUTSIDE = "the {agent} read content from outside the organisation before it asked for this"
+UNASKED = "nobody asked for it: the {agent} asked for it {after}"
+UNASKED_ABOUT = "nobody asked for it: the {agent} asked for it {after}, about {whom}"
+AFTER_EVENT = "after {source} said {type} happened"
+OVER = "it waits because {over}"
+# and of a change, and of its words, beside them
+CHANGED = "{key} has changed since it was asked for"
+SEALED = ("The change and its records are in their system's words, which a5s seals with your "
+          "decision.")
+
+
+def after_kept(trigger: dict | None) -> dict | None:
+    """What a run nobody asked for came after, as words a5s keeps, if another system's event
+    started it: its system and type, as a5s received it."""
     found = trigger or {}
     if found.get("kind") != "event":
-        return ""
-    return f"after {found.get('source')} said {found.get('type')} happened"
+        return None
+    return kept(AFTER_EVENT, source=str(found.get("source")), type=str(found.get("type")))
+
+
+def after(trigger: dict | None) -> str:
+    """The same, in words."""
+    found = after_kept(trigger)
+    return say(languages.ENGLISH, AFTER_EVENT, **found["given"]) if found else ""
 
 
 def said(scenario: Scenario, tool: Tool, args: dict, records: dict[str, dict | None],
@@ -220,7 +246,7 @@ def not_deciding(proposal: dict) -> list[str]:
 def hold(conn: db.Connection, scenario: Scenario, run: dict, tool: Tool, args: dict,
          standing: dict[str, dict | None], who: list[Person], seq: int, flags: list[str],
          now: datetime, change: str | None, is_sensitive: bool,
-         steered: list[str] | None = None) -> dict:
+         steered: list[str] | None = None, flagged: list[dict] | None = None) -> dict:
     """Keep a held call for its deciders, in the transaction that decided it, with its records
     as they stood, read before it began, and `steered`, whose answers from a team its run was
     given, who decide nothing of it either."""
@@ -238,8 +264,8 @@ def hold(conn: db.Connection, scenario: Scenario, run: dict, tool: Tool, args: d
         "insert into proposals (scenario, digest, run_id, instance_id, definition, release, tool, "
         "schema_hash, action, args, records, parts, acts_for, deciders, said, flags, sensitive, "
         "read_outside, seq, proposed_at, lapses_at, change, remind_at, escalate_at, standing, "
-        "steered_by, nonce) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
-        "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) returning *",
+        "steered_by, nonce, flagged) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, "
+        "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) returning *",
         (scenario.name, hashlib.sha256(canonical(body).encode()).hexdigest(), run["run"], run["id"],
          run["definition"], run["release"], tool.name, tool.schema_hash, tool.action, Jsonb(args),
          Jsonb(body["records"]), sorted({p for r in standing if (p := scenario.part_of(r))}),
@@ -247,7 +273,8 @@ def hold(conn: db.Connection, scenario: Scenario, run: dict, tool: Tool, args: d
          Jsonb(flags), is_sensitive, bool(run["read_outside"]), seq, now,
          working_days_after(first, now, LAPSE), change,
          working_days_after(first, now, REMIND), working_days_after(first, now, ESCALATE),
-         Jsonb(standing), sorted(set(steered or ())), body["nonce"])).fetchone()
+         Jsonb(standing), sorted(set(steered or ())), body["nonce"],
+         Jsonb(flagged) if flagged is not None else None)).fetchone()
     for handle, value in kept.items():  # the values they stand for, kept until it's decided
         conn.execute("insert into proposal_values (proposal_id, handle, value) values (%s, %s, %s)",
                      (row["id"], handle, value))
@@ -559,33 +586,43 @@ def first(proposal: dict) -> str:
     return proposal["said"].split("\n", 1)[0]
 
 
-def asking(proposal: dict, link: str, again: bool = False) -> str:
+def asking(proposal: dict, link: str, again: bool = False,
+           language: str = languages.ENGLISH) -> str:
     """The message asking a decider to decide a held change, for chats without cards, or
-    reminding them of it."""
-    flags = "".join(f"\n- {f}" for f in proposal["flags"])
-    opening = (f"Still waiting for your decision: {key(proposal)}, since "
-               f"{proposal['proposed_at']:%d %b}." if again
-               else f"{key(proposal)} waits for your decision.")
-    return (f"{opening}\n{proposal['said']}" + (f"\nWhat to know:{flags}" if flags else "")
-            + f"\nDecide it on a5s's page, and approve it only if you mean it: {link}")
+    reminding them of it, in the language they read: the change itself stays in the words its
+    deciders seal, which a reader of another language is told (round 15, B6)."""
+    flags = "".join(f"\n- {f}" for f in words.flags(proposal, language))
+    opening = (say(language, "Still waiting for your decision: {key}, since {day}.",
+                   key=key(proposal), day=languages.day(proposal["proposed_at"], language))
+               if again else say(language, "{key} waits for your decision.", key=key(proposal)))
+    sealed = f"\n{say(language, SEALED)}" if language != languages.ENGLISH else ""
+    return (f"{opening}\n{proposal['said']}{sealed}"
+            + (f"\n{say(language, 'What to know:')}{flags}" if flags else "")
+            + "\n" + say(language, "Decide it on a5s's page, and approve it only if you mean it: "
+                                    "{link}", link=link))
 
 
-def card(proposal: dict, link: str, again: bool = False) -> dict:
-    """The card a decider gets in Teams or Slack. It only opens the core's page, where they
-    decide."""
-    title = (f"Still waiting for your decision: {key(proposal)}" if again
-             else f"{key(proposal)}: a change to decide")
+def card(proposal: dict, link: str, again: bool = False,
+         language: str = languages.ENGLISH) -> dict:
+    """The card a decider gets in Teams or Slack, in the language they read, as `asking`. It
+    only opens the core's page, where they decide."""
+    title = (say(language, "Still waiting for your decision: {key}", key=key(proposal)) if again
+             else say(language, "{key}: a change to decide", key=key(proposal)))
     body = [{"type": "TextBlock", "text": title, "weight": "Bolder", "size": "Medium", "wrap": True},
             {"type": "TextBlock", "wrap": True, "text": proposal["said"]}]
-    if proposal["flags"]:
-        body.append({"type": "TextBlock", "wrap": True, "text": "What to know:\n"
-                     + "\n".join(f"- {f}" for f in proposal["flags"])})
+    if language != languages.ENGLISH:
+        body.append({"type": "TextBlock", "wrap": True, "isSubtle": True,
+                     "text": say(language, SEALED)})
+    if flags := words.flags(proposal, language):
+        body.append({"type": "TextBlock", "wrap": True, "text": say(language, "What to know:")
+                     + "\n" + "\n".join(f"- {f}" for f in flags)})
     body.append({"type": "TextBlock", "wrap": True, "isSubtle": True, "size": "Small",
-                 "text": "You decide on a5s's page, after signing in again. Telling an agent "
-                         "decides nothing."})
+                 "text": say(language, "You decide on a5s's page, after signing in again. "
+                                       "Telling an agent decides nothing.")})
     return {"type": "AdaptiveCard", "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
             "version": "1.4", "body": body,
-            "actions": [{"type": "Action.OpenUrl", "title": "Review and decide", "url": link}]}
+            "actions": [{"type": "Action.OpenUrl", "title": say(language, "Review and decide"),
+                         "url": link}]}
 
 
 def told(proposal: dict, became: str, by: str | None = None, extra: str = "",

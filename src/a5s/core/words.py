@@ -12,6 +12,8 @@ tests/test_languages.py holds each Thai to its English's {name}s.
 
 from __future__ import annotations
 
+import re
+
 THAI = "th"
 
 TH: dict[str, str] = {
@@ -612,6 +614,57 @@ TH: dict[str, str] = {
     "one to one.":
         "ฉันไม่ได้รับอนุญาตให้เขียนถึง {who} จึงช่วยในแชตนี้ไม่ได้ ถามฉันในแชตที่ไม่มีพวกเขา "
         "หรือคุยกันแบบตัวต่อตัว",
+    # what a held change's deciders, and its sample's graders, are told to know of it, and the
+    # message and card asking a decider (core/proposals.py, core/counts.py; round 15, B6)
+    "{value} came from the {agent} itself, not from the records or from {whom}":
+        "{value} มาจาก {agent} เอง ไม่ได้มาจากระเบียนหรือจาก {whom}",
+    "{value} came from what {who} of a team answered them while the conversation was handed "
+    "over, not from the records or from {whom}":
+        "{value} มาจากสิ่งที่ {who} ของทีมตอบระหว่างที่ส่งต่อการสนทนา ไม่ได้มาจากระเบียนหรือจาก {whom}",
+    "{value} came from what someone of a team answered them while the conversation was handed "
+    "over, not from the records or from {whom}":
+        "{value} มาจากสิ่งที่คนในทีมตอบระหว่างที่ส่งต่อการสนทนา ไม่ได้มาจากระเบียนหรือจาก {whom}",
+    "{value} came from a document from outside the organisation ({document}), such as a "
+    "customer's email, not from the records":
+        "{value} มาจากเอกสารจากภายนอกองค์กร ({document}) เช่น อีเมลของลูกค้า ไม่ได้มาจากระเบียน",
+    "the {agent} read content from outside the organisation before it asked for this":
+        "{agent} อ่านเนื้อหาจากภายนอกองค์กรก่อนที่จะขอการเปลี่ยนแปลงนี้",
+    "nobody asked for it: the {agent} asked for it {after}": "ไม่มีใครขอ: {agent} ขอเอง{after}",
+    "nobody asked for it: the {agent} asked for it {after}, about {whom}":
+        "ไม่มีใครขอ: {agent} ขอเอง{after} เกี่ยวกับ {whom}",
+    "after {source} said {type} happened": "หลังจากที่ {source} แจ้งว่าเกิด {type}",
+    "it waits because {over}": "รอเพราะ{over}",
+    "it's past the scenario's limit of {most} {action} a run, which a task's runs share: this run "
+    "asked for {made} already, and this one changes {weight}":
+        "เกินขีดจำกัดของสถานการณ์ที่ {most} {action} ต่อการทำงานหนึ่งครั้ง ซึ่งการทำงานของงานหนึ่งใช้ร่วมกัน: "
+        "การทำงานนี้ขอไปแล้ว {made} และครั้งนี้เปลี่ยน {weight}",
+    "it's past the scenario's limit of {most} {action} a run, which a task's runs share: this "
+    "task, in its runs and its parts', asked for {made} already, and this one changes {weight}":
+        "เกินขีดจำกัดของสถานการณ์ที่ {most} {action} ต่อการทำงานหนึ่งครั้ง ซึ่งการทำงานของงานหนึ่งใช้ร่วมกัน: "
+        "งานนี้ ทั้งการทำงานและส่วนย่อย ขอไปแล้ว {made} และครั้งนี้เปลี่ยน {weight}",
+    "it's past the scenario's limit of {most} {action} in 30 days for each person: {person} has "
+    "had {made} already":
+        "เกินขีดจำกัดของสถานการณ์ที่ {most} {action} ใน 30 วันต่อคน: {person} ได้ไปแล้ว {made}",
+    "it's past the scenario's limit of {most} {action} in 30 days, which {instance} has for runs "
+    "that act for nobody: it's had {made} already":
+        "เกินขีดจำกัดของสถานการณ์ที่ {most} {action} ใน 30 วัน ซึ่ง {instance} "
+        "มีสำหรับการทำงานที่ไม่ได้ทำแทนใคร: ได้ไปแล้ว {made}",
+    "{key} has changed since it was asked for": "{key} เปลี่ยนไปแล้วตั้งแต่มีการขอ",
+    "The change and its records are in their system's words, which a5s seals with your "
+    "decision.":
+        "การเปลี่ยนแปลงและระเบียนของรายการนี้เป็นถ้อยคำของระบบที่รายการอยู่ "
+        "ซึ่ง a5s ผนึกไว้กับการตัดสินใจของคุณ",
+    "Still waiting for your decision: {key}, since {day}.":
+        "ยังรอการตัดสินใจของคุณ: {key} ตั้งแต่ {day}",
+    "{key} waits for your decision.": "{key} รอการตัดสินใจของคุณ",
+    "What to know:": "สิ่งที่ควรรู้:",
+    "Decide it on a5s's page, and approve it only if you mean it: {link}":
+        "ตัดสินใจได้ที่หน้าของ a5s และอนุมัติเฉพาะเมื่อคุณตั้งใจจริง: {link}",
+    "Still waiting for your decision: {key}": "ยังรอการตัดสินใจของคุณ: {key}",
+    "{key}: a change to decide": "{key}: การเปลี่ยนแปลงที่ต้องตัดสินใจ",
+    "You decide on a5s's page, after signing in again. Telling an agent decides nothing.":
+        "คุณตัดสินใจที่หน้าของ a5s หลังจากลงชื่อเข้าใช้อีกครั้ง การบอกเอเจนต์ไม่ถือเป็นการตัดสินใจ",
+    "Review and decide": "ตรวจสอบและตัดสินใจ",
     # why someone may not undo a change, on its page (core/undoing.py)
     "it's undone already": "ยกเลิกไปแล้ว",
     "a5s is undoing it already, as someone asked": "a5s กำลังยกเลิกอยู่แล้ว ตามที่มีผู้ขอ",
@@ -641,3 +694,36 @@ def say(language: str, text: str, /, **given: object) -> str:
     name, {text} and {language} among them, as its own two are given only by place."""
     said = TH.get(text, text) if language == THAI else text
     return said.format(**given) if given else said
+
+
+def kept(text: str, /, **given: object) -> dict:
+    """Words a5s keeps, to say later in the language whoever reads them then reads: one of its
+    sentences, with what changes in it, any of which may be kept words too, or a list of names
+    (round 15, B6)."""
+    return {"says": text, "given": given}
+
+
+def said(language: str, found: object, /) -> str:
+    """Words a5s kept, in someone's language, with what changes in them put in by name alone:
+    a list of names in words, and words kept before a5s kept them so, as they are."""
+    says = found.get("says") if isinstance(found, dict) else None
+    if not isinstance(found, dict) or not isinstance(says, str):
+        return str(found)
+    given = {k: said(language, v) if isinstance(v, dict) else _names(language, v)
+             if isinstance(v, list) else v for k, v in (found.get("given") or {}).items()}
+    words = TH.get(says, says) if language == THAI else says
+    return re.sub(r"\{(\w+)\}", lambda m: str(given.get(m.group(1), m.group(0))), words)
+
+
+def flags(row: dict, language: str, /) -> list[str]:
+    """What a held change's deciders, or its sample's graders, are told to know of it, in the
+    language they read: as a5s kept them, or, kept before, in English."""
+    return [said(language, f) for f in row.get("flagged") or row.get("flags") or []]
+
+
+def _names(language: str, found: list) -> str:
+    names = [str(n) for n in found]
+    if not names:
+        return say(language, "nobody")
+    return names[0] if len(names) == 1 else say(language, "{first} and {last}",
+                                                 first=", ".join(names[:-1]), last=names[-1])

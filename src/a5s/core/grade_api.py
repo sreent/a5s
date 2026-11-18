@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from a5s import db
 from a5s.contract import Person
-from a5s.core import approvals, ledger, masking, proposals, samples, web
+from a5s.core import approvals, languages, ledger, masking, proposals, samples, web, words
 from a5s.core import studio_models as shapes  # what each route answers, as the studio's types say
 
 
@@ -49,6 +49,7 @@ def router(gw: Any) -> APIRouter:
         with db.transaction(gw.url) as conn:
             rows = samples.gradeable(conn, gw.scenario, person)
             names = gw.data_protection(conn).studio_names  # as a shadow's pairs are masked
+            spoken = languages.of(conn, person)  # what to know, in their language (round 15, B6)
             everyone = [] if names else masking.known(conn, gw.scenario)
 
         def heard(r: dict) -> str | None:  # what was asked, masked until names are agreed
@@ -60,7 +61,8 @@ def router(gw: Any) -> APIRouter:
         return {"you": person.name, "samples": [
             {"id": r["id"], "kind": r["kind"], "agent": r["definition"], "part": r["part"],
              "action": r["action"], "said": r["said"], "records": r["records"],
-             "flags": r["flags"], "decided": r["decided"], "drawn_at": r["drawn_at"].isoformat(),
+             "flags": words.flags(r, spoken), "decided": r["decided"],
+             "drawn_at": r["drawn_at"].isoformat(),
              "asked": heard(r)}  # (round 15, C1)
             for r in rows]}
 
