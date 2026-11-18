@@ -81,6 +81,7 @@ from a5s.core import (
     models,
     narrowing,
     notebook,
+    notices,
     obligations,
     officer,
     parts,
@@ -1386,7 +1387,9 @@ class Answer(BaseModel):
 
 class Notice(BaseModel):
     inbound: str  # the message it answers
-    text: str
+    text: str  # in English, as a core that says it in none other sends it (round 15, A12)
+    notice: str | None = None  # the same, as one of a5s's notices (core/notices.py), and
+    given: dict[str, str | list[str]] | None = None  # what changes in it
     instance: str | None = None
 
 
@@ -4678,17 +4681,27 @@ def create_app(gw: Gateway) -> FastAPI:
 
     @services.post("/notices")
     def notice(body: Notice) -> dict:
-        """a5s's own words, such as "the assistant is suspended", only ever in answer to someone."""
-        text, _ = sanitize(body.text, ())
+        """a5s's own words, such as "the assistant is suspended", only ever in answer to someone:
+        in the language they read, or, in a group chat, the one everyone in it reads (round 15,
+        A12)."""
         try:
             inbound = str(uuid.UUID(body.inbound))
         except ValueError:
             raise HTTPException(404, "no such message") from None
+        text = body.text
         with db.transaction(gw.url) as conn:
             row = conn.execute(
                 "update inbound set notices = notices + 1 where id = %s and notices < 3 "
                 "returning person, agent, channel, reply_to, members", (inbound,)).fetchone()
             if row is not None:
+                spoken = languages.shared(conn, [gw.scenario.person(m) for m in row["members"]]) \
+                    if row["members"] else gw.spoken(conn, row["person"])
+                if body.notice in notices.SAID:
+                    try:
+                        text = notices.said(spoken, body.notice, body.given)
+                    except ValueError as exc:  # said in English, as the scheduler wrote it
+                        log.warning("a notice for message %s isn't whole: %s", inbound, exc)
+                text, _ = sanitize(text, ())
                 ledger.append(conn, {"kind": "notice", "action": "send", "run": None,
                                      "instance": body.instance,
                                      "acts_for": list(row["members"] or [row["person"]]),

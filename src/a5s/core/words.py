@@ -564,6 +564,75 @@ TH: dict[str, str] = {
         "การลงชื่อเข้าใช้ไม่ได้ใช้การยืนยันตัวตนขั้นที่สอง ซึ่งระบบนี้กำหนดไว้",
     "the sign-in is more than a day old": "การลงชื่อเข้าใช้เก่ากว่าหนึ่งวัน",
     "the sign-in is someone else's": "การลงชื่อเข้าใช้นี้เป็นของคนอื่น",
+    # a5s's own words in answer to someone's message (core/notices.py, core/groups.py; round 15,
+    # A12), with an instance's status and whom to ask
+    "Something went wrong on my side, so I couldn't answer that. Try again in a few minutes.":
+        "เกิดข้อผิดพลาดทางฝั่งของฉัน จึงตอบเรื่องนี้ไม่ได้ ลองใหม่อีกครั้งในอีกสักครู่",
+    "a5s couldn't start on that. Try again, or ask {who}.":
+        "a5s เริ่มทำเรื่องนี้ไม่ได้ ลองใหม่อีกครั้ง หรือสอบถาม {who}",
+    "I couldn't send you my reply, sorry.": "ขออภัย ฉันส่งคำตอบให้คุณไม่ได้",
+    "The model I use isn't answering right now, so I couldn't finish that. Try again in a few "
+    "minutes.":
+        "โมเดลที่ฉันใช้ไม่ตอบสนองในขณะนี้ จึงทำเรื่องนี้ไม่เสร็จ ลองใหม่อีกครั้งในอีกสักครู่",
+    "The {agent} has used its budget for you today, so it can't help with that until tomorrow. "
+    "Ask {who} if it can't wait.":
+        "{agent} ใช้งบประมาณสำหรับคุณของวันนี้หมดแล้ว จึงช่วยเรื่องนี้ไม่ได้จนถึงพรุ่งนี้ "
+        "หากรอไม่ได้ โปรดสอบถาม {who}",
+    "That took more work than one run may do, so I stopped. Try asking for less at once, or ask "
+    "{who}.":
+        "เรื่องนี้ใช้งานมากกว่าที่ทำได้ในครั้งเดียว ฉันจึงหยุดไว้ ลองขอให้น้อยลงในแต่ละครั้ง "
+        "หรือสอบถาม {who}",
+    "I couldn't finish that. Try again, or ask {who}.":
+        "ฉันทำเรื่องนี้ไม่เสร็จ ลองใหม่อีกครั้ง หรือสอบถาม {who}",
+    "I couldn't finish your last message, so I stopped. Send it again if you still need it.":
+        "ฉันทำข้อความล่าสุดของคุณไม่เสร็จ จึงหยุดไว้ หากยังต้องการ โปรดส่งอีกครั้ง",
+    "There's no {agent} for you.": "ไม่มี {agent} สำหรับคุณ",
+    "There's no {agent} for you yet. Ask for it on its page in the studio.":
+        "ยังไม่มี {agent} สำหรับคุณ ขอใช้งานได้ที่หน้าของเอเจนต์นี้ในสตูดิโอ",
+    "The {agent} is suspended, because you suspended it. Resume it to carry on.":
+        "{agent} ถูกระงับอยู่ เพราะคุณระงับไว้ เปิดให้กลับมาทำงานเพื่อใช้งานต่อ",
+    "The {agent} is suspended at the moment, so it can't help. {by} suspended it and can resume "
+    "it.":
+        "ขณะนี้ {agent} ถูกระงับอยู่ จึงช่วยไม่ได้ {by} เป็นผู้ระงับและเปิดให้กลับมาทำงานได้",
+    "The {agent} is {status}, so it can't help. Ask {who}.":
+        "{agent} อยู่ในสถานะ{status} จึงช่วยไม่ได้ โปรดสอบถาม {who}",
+    "The {agent} can't help you at the moment. Ask {who}.":
+        "ขณะนี้ {agent} ช่วยคุณไม่ได้ โปรดสอบถาม {who}",
+    "whoever runs a5s": "ผู้ดูแล a5s",
+    "Whoever approves the agents here can add them.": "ผู้อนุมัติเอเจนต์ที่นี่เพิ่มพวกเขาได้",
+    "I don't work for {who} yet, so I can't help in this chat. {add} Or ask me in a chat without "
+    "them, or one to one.":
+        "ฉันยังไม่ได้ทำงานให้ {who} จึงช่วยในแชตนี้ไม่ได้ {add} หรือถามฉันในแชตที่ไม่มีพวกเขา "
+        "หรือคุยกันแบบตัวต่อตัว",
+    "I can't work for everyone here at once, so I can't help in this chat. Ask me in a smaller "
+    "chat, or one to one.":
+        "ฉันทำงานให้ทุกคนที่นี่พร้อมกันไม่ได้ จึงช่วยในแชตนี้ไม่ได้ ถามฉันในแชตที่เล็กลง "
+        "หรือคุยกันแบบตัวต่อตัว",
+    "I may not write to {who}, so I can't help in this chat. Ask me in a chat without them, or "
+    "one to one.":
+        "ฉันไม่ได้รับอนุญาตให้เขียนถึง {who} จึงช่วยในแชตนี้ไม่ได้ ถามฉันในแชตที่ไม่มีพวกเขา "
+        "หรือคุยกันแบบตัวต่อตัว",
+    # why someone may not undo a change, on its page (core/undoing.py)
+    "it's undone already": "ยกเลิกไปแล้ว",
+    "a5s is undoing it already, as someone asked": "a5s กำลังยกเลิกอยู่แล้ว ตามที่มีผู้ขอ",
+    "it can no longer be undone here: the time to undo it has passed":
+        "ยกเลิกที่นี่ไม่ได้อีกแล้ว: เลยเวลาที่ยกเลิกได้แล้ว",
+    "you may not see its record": "คุณไม่มีสิทธิ์ดูระเบียนของการเปลี่ยนแปลงนี้",
+    "undoing it is for whoever it was for, and whoever decides changes like it in its record's "
+    "part":
+        "การยกเลิกเป็นของผู้ที่การเปลี่ยนแปลงนี้ทำให้ และผู้ที่ตัดสินใจการเปลี่ยนแปลงแบบนี้ "
+        "ในส่วนงานของระเบียนนั้น",
+    "who asked isn't in the directory now": "ผู้ที่ขอไม่อยู่ในไดเรกทอรีแล้ว",
+    "the tool that made it has changed since, so a5s can't undo it as it was made":
+        "เครื่องมือที่ทำการเปลี่ยนแปลงนี้เปลี่ยนไปแล้ว a5s จึงยกเลิกตามที่ทำไว้ไม่ได้",
+    # files sent in the web chat past what a5s keeps (core/inbox.py)
+    "a5s holds {waiting} of your messages with files that wait for an answer: send more once it "
+    "has answered them":
+        "a5s เก็บข้อความที่มีไฟล์ของคุณซึ่งยังรอคำตอบอยู่ {waiting} ข้อความ: "
+        "ส่งเพิ่มได้เมื่อตอบข้อความเหล่านั้นแล้ว",
+    "you've sent {today} MB of files here today, and a5s keeps {most} MB of them a day: send "
+    "more tomorrow":
+        "วันนี้คุณส่งไฟล์มาที่นี่แล้ว {today} MB และ a5s เก็บได้วันละ {most} MB: ส่งเพิ่มได้พรุ่งนี้",
 }
 
 

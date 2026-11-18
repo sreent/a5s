@@ -248,7 +248,8 @@ def found(conn: db.Connection, change: int) -> dict | None:
 
 def shown(conn: db.Connection, scenario: Scenario, person: Person, change: int) -> dict | None:
     """A change as its page shows someone it's theirs to see: whoever it was for, and whoever
-    may undo it. None for anyone else, as if there were no such change."""
+    may undo it, with why they may not, and how it ended, in the language they read (round 15,
+    A12). None for anyone else, as if there were no such change."""
     row = found(conn, change)
     if row is None or not scenario.sees(person.id, row["record"]):
         return None
@@ -258,12 +259,13 @@ def shown(conn: db.Connection, scenario: Scenario, person: Person, change: int) 
         return None
     named = [p.name if (p := scenario.person(w)) else w for w in row["acts_for"]]
     by = scenario.person(row["undone_by"] or row["asked_by"] or "")
+    spoken = languages.of(conn, person)
     return {"id": row["id"], "agent": row["definition"], "instance": row["instance_id"],
             "record": row["record"], "said": row["said"], "made_at": row["made_at"].isoformat(),
             "until": row["until"].isoformat(), "whom": named, "may": why is None,
-            "why_not": why, "state": row["state"] or "kept",
+            "why_not": words.say(spoken, why) if why else None, "state": row["state"] or "kept",
             "by": by.name if by else (row["undone_by"] or row["asked_by"]),
-            "outcome": row["outcome"]}
+            "outcome": words.say(spoken, row["outcome"]) if row["outcome"] else None}
 
 
 def check(verifier: Any, scenario: Scenario, client_id: str, token: str, change: int, salt: str,
