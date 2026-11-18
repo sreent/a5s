@@ -65,6 +65,8 @@ export const DECIDE: Record<string, string> = {
   "asked {day}": "ขอเมื่อ {day}",
   "The {agent} asks": "{agent} ขออนุมัติ",
   "What to know": "สิ่งที่ควรรู้",
+  "The change and its records are in their system's words, which a5s seals with your decision.":
+    "การเปลี่ยนแปลงและระเบียนของรายการนี้เป็นถ้อยคำของระบบที่รายการอยู่ ซึ่ง a5s ผนึกไว้กับการตัดสินใจของคุณ",
   "It's decided on its own, never with others.": "ต้องตัดสินใจรายการนี้แยกต่างหาก ไม่รวมกับรายการอื่น",
   "Open {record}": "เปิด {record}",
   "It lapses on {day} unless someone decides it.": "จะหมดอายุในวันที่ {day} หากไม่มีใครตัดสินใจ",
@@ -107,7 +109,7 @@ export const DECIDE: Record<string, string> = {
   "Graded {samples}.": "ให้คะแนน {samples}แล้ว",
   "approved": "อนุมัติแล้ว",
   "rejected": "ปฏิเสธแล้ว",
-  "made at level 2": "ทำเองที่ระดับ 2",
+  "made on its own": "ทำเองแล้ว",
   "The {agent} asked": "{agent} ขออนุมัติไว้",
   "The {agent} acted on its own": "{agent} ดำเนินการเอง",
   "{action} in {part} · sampled {day}": "{action} ใน {part} · สุ่มเมื่อ {day}",
@@ -116,6 +118,10 @@ export const DECIDE: Record<string, string> = {
   "Your grade for: {what}": "การให้คะแนนของคุณสำหรับ: {what}",
   "{n} chosen: send them when you're ready.": "เลือกไว้ {n} รายการ: ส่งได้เมื่อคุณพร้อม",
   "Choose a grade for a sample first.": "เลือกการให้คะแนนให้ตัวอย่างก่อน",
+  "A sample you chose no longer waits for a grade: it lapsed, or someone else graded it, so it's out of your grades.":
+    "ตัวอย่างที่คุณเลือกไว้ไม่รอการให้คะแนนแล้ว เพราะหมดเวลาหรือมีผู้อื่นให้คะแนนไปแล้ว จึงนำออกจากการให้คะแนนของคุณ",
+  "{samples} you chose no longer wait for a grade: they lapsed, or someone else graded them, so they're out of your grades.":
+    "{samples}ที่คุณเลือกไว้ไม่รอการให้คะแนนแล้ว เพราะหมดเวลาหรือมีผู้อื่นให้คะแนนไปแล้ว จึงนำออกจากการให้คะแนนของคุณ",
   "Signing you in again, to give this grade alone…": "กำลังลงชื่อเข้าใช้อีกครั้ง เพื่อส่งการให้คะแนนนี้เท่านั้น…",
   "Signing you in again, to give these grades alone…": "กำลังลงชื่อเข้าใช้อีกครั้ง เพื่อส่งการให้คะแนนเหล่านี้เท่านั้น…",
   "Nothing waits for you to grade.": "ไม่มีสิ่งใดรอให้คุณให้คะแนน",
@@ -168,7 +174,8 @@ export const DECIDE: Record<string, string> = {
   "Someone from the team that runs a5s carries it out, once, within {lasts}: {command}":
     "สมาชิกในทีมที่ดูแล a5s จะดำเนินการให้ครั้งเดียวภายใน {lasts}: {command}",
   "a5s didn't take your request: {why}": "a5s ไม่รับคำขอของคุณ: {why}",
-  "Name the person, by their id in the directory, or an archive's name.": "ระบุบุคคลด้วยรหัสในไดเรกทอรี หรือชื่อของข้อมูลที่เก็บถาวร",
+  "Name the person: by their id in the directory, an archive's name, or, for someone outside the directory, such as a customer who wrote to a shared mailbox, their address.":
+    "ระบุบุคคล: ด้วยรหัสในไดเรกทอรี ชื่อของข้อมูลที่เก็บถาวร หรือสำหรับบุคคลภายนอกไดเรกทอรี เช่น ลูกค้าที่เขียนถึงกล่องจดหมายที่ใช้ร่วมกัน ให้ใช้ที่อยู่อีเมลของบุคคลนั้น",
   "Type their id again, the same, to confirm it: an erasure can't be undone.":
     "พิมพ์รหัสของบุคคลนั้นอีกครั้งให้ตรงกันเพื่อยืนยัน เพราะการลบย้อนกลับไม่ได้",
   "A request for someone's data": "คำขอเกี่ยวกับข้อมูลของบุคคล",
@@ -177,7 +184,7 @@ export const DECIDE: Record<string, string> = {
   "Ask about someone else": "ส่งคำขอสำหรับบุคคลอื่น",
   "Ask to": "ขอ",
   "all a5s keeps about": "ข้อมูลทั้งหมดที่ a5s เก็บเกี่ยวกับ",
-  "an id, or an archive's name": "รหัส หรือชื่อของข้อมูลที่เก็บถาวร",
+  "an id, an archive's name, or an address": "รหัส ชื่อของข้อมูลที่เก็บถาวร หรือที่อยู่อีเมล",
   "Their id again, since an erasure can't be undone:": "รหัสของบุคคลนั้นอีกครั้ง เพราะการลบย้อนกลับไม่ได้:",
   "You sign in afresh, for this request alone. Someone from the team that runs a5s then carries it out, once, within ten minutes: your sign-in does nothing else.":
     "คุณลงชื่อเข้าใช้ใหม่สำหรับคำขอนี้เท่านั้น จากนั้นสมาชิกในทีมที่ดูแล a5s จะดำเนินการให้ครั้งเดียวภายใน 10 นาที การลงชื่อเข้าใช้ของคุณไม่ได้ใช้ทำสิ่งอื่น",
@@ -189,6 +196,37 @@ export const DECIDE: Record<string, string> = {
   "Exported {n} entries. Check them yourself, against the ledger's locked copies, with: a5s audit verify a5s-audit.jsonl":
     "ส่งออกแล้ว {n} รายการ ตรวจสอบเองเทียบกับสำเนาที่ล็อกไว้ของเลดเจอร์ได้ด้วยคำสั่ง: a5s audit verify a5s-audit.jsonl",
   "Audit trail": "บันทึกการตรวจสอบ",
+  // Whether the trail checks out (round 15, E8)
+  "Whether the trail checks out": "บันทึกการตรวจสอบถูกต้องหรือไม่",
+  "It checks out": "ถูกต้อง",
+  "It doesn't check out": "ไม่ถูกต้อง",
+  "Not checked yet": "ยังไม่ได้ตรวจ",
+  "a5s keeps no locked copies of the ledger here, so nothing shows whether anyone rewrote it.":
+    "ที่นี่ a5s ไม่ได้เก็บสำเนาที่ล็อกไว้ของเลดเจอร์ จึงไม่มีสิ่งใดแสดงว่ามีใครเขียนทับเลดเจอร์หรือไม่",
+  "What a5s found wrong with the ledger and its locked copies:":
+    "สิ่งที่ a5s พบว่าผิดปกติในเลดเจอร์และสำเนาที่ล็อกไว้:",
+  "Tell assurance and the team that runs a5s: until they know why, take what this page shows as unproven.":
+    "แจ้งผู้ตรวจรับรองและทีมที่ดูแล a5s จนกว่าจะทราบสาเหตุ ให้ถือว่าสิ่งที่หน้านี้แสดงยังพิสูจน์ไม่ได้",
+  "Every entry follows the one before it, and the ledger matched its locked copies when a5s last checked it whole, {when}.":
+    "ทุกรายการต่อเนื่องจากรายการก่อนหน้า และเลดเจอร์ตรงกับสำเนาที่ล็อกไว้เมื่อ a5s ตรวจทั้งหมดครั้งล่าสุด {when}",
+  "{n} ago": "เมื่อ {n} ที่แล้ว",
+  "just now": "เมื่อสักครู่",
+  "Not checked lately": "ไม่ได้ตรวจมาสักพัก",
+  "a5s last checked the whole ledger against its locked copies {when}, though it checks once a day: its copier may have stopped. Tell the team that runs a5s.":
+    "a5s ตรวจเลดเจอร์ทั้งหมดเทียบกับสำเนาที่ล็อกไว้ครั้งล่าสุด{when} ทั้งที่ตรวจวันละครั้ง ตัวคัดลอกอาจหยุดทำงาน โปรดแจ้งทีมที่ดูแล a5s",
+  "Those entries have waited longer than they should: tell the team that runs a5s.":
+    "รายการเหล่านั้นรอนานกว่าที่ควร โปรดแจ้งทีมที่ดูแล a5s",
+  "a5s checks the whole ledger against its locked copies when its copier starts, and once a day: it hasn't yet.":
+    "a5s ตรวจเลดเจอร์ทั้งหมดเทียบกับสำเนาที่ล็อกไว้เมื่อตัวคัดลอกเริ่มทำงาน และวันละครั้ง แต่ยังไม่ได้ตรวจ",
+  "Nothing is copied yet.": "ยังไม่มีการคัดลอก",
+  "The locked copies hold every entry through #{seq}, copied {when}.":
+    "สำเนาที่ล็อกไว้มีทุกรายการจนถึง #{seq} คัดลอก{when}",
+  "Entries written since aren't copied yet: what people decided is copied within a minute, and the rest within 15 minutes. Until they are, someone with the database's own powers could rewrite them unseen.":
+    "รายการที่เขียนหลังจากนั้นยังไม่ได้คัดลอก สิ่งที่ผู้คนตัดสินใจจะถูกคัดลอกภายในหนึ่งนาที และรายการอื่นภายใน 15 นาที จนกว่าจะคัดลอกแล้ว ผู้ที่มีสิทธิ์ระดับฐานข้อมูลอาจเขียนทับได้โดยไม่มีใครเห็น",
+  "The copier's last try failed: it tries again each minute.":
+    "ตัวคัดลอกพยายามครั้งล่าสุดไม่สำเร็จ และจะลองใหม่ทุกนาที",
+  "doesn't check out": "ตรวจแล้วไม่ถูกต้อง",
+  "not copied yet": "ยังไม่ได้คัดลอก",
   "The ledger, as an auditor reads it: everything a5s did and decided, in the order it happened, and never what anyone said, which it keeps by hash alone. Whoever approved, decided, signed or read the trail shows as themselves. Each search here is itself in the ledger.":
     "เลดเจอร์ในแบบที่ผู้ตรวจสอบอ่าน: ทุกสิ่งที่ a5s ทำและตัดสินใจ ตามลำดับที่เกิดขึ้น โดยไม่มีสิ่งที่ใครพูด ซึ่งเก็บไว้เป็นค่าแฮชเท่านั้น ผู้ที่อนุมัติ ตัดสินใจ ลงนาม หรืออ่านบันทึกนี้จะแสดงเป็นตัวตนจริง การค้นหาแต่ละครั้งที่นี่ก็อยู่ในเลดเจอร์ด้วย",
   "Whom agents acted for shows by name, as the data protection officer agreed.":
@@ -257,20 +295,20 @@ export const DECIDE: Record<string, string> = {
   "Your decision is signed and kept in the ledger.": "การตัดสินใจของคุณได้รับการลงนามและเก็บไว้ในเลดเจอร์",
   "{name}'s facts": "ข้อมูลของ {name}",
   "Agent facts": "ข้อมูลเอเจนต์",
-  "Suggests": "เสนอแนะ",
+  "Reads only": "อ่านอย่างเดียว",
   "Reads and drafts. A person does the rest.": "อ่านและร่างให้ คนทำส่วนที่เหลือ",
-  "Asks": "ขออนุมัติ",
+  "Asks first": "ขออนุมัติก่อน",
   "Changes wait for a person's yes.": "การเปลี่ยนแปลงต้องรอให้คนตอบตกลง",
-  "Acts": "ลงมือทำ",
+  "Acts on its own": "ทำเองได้",
   "One type of change on its own, within limits, sampled and graded.":
     "ทำการเปลี่ยนแปลงประเภทเดียวได้เองภายในขอบเขต โดยมีการสุ่มตัวอย่างและให้คะแนน",
   "Autonomy": "ความเป็นอิสระ",
-  "level {n} · now": "ระดับ {n} · ตอนนี้",
-  "level {n} · not in its release": "ระดับ {n} · ไม่อยู่ในรีลีส",
-  "level {n}": "ระดับ {n}",
-  "{what} toward level {level}: {graded} of {needed} graded samples. The part's owner decides.":
-    "{what} สู่ระดับ {level}: ให้คะแนนตัวอย่างแล้ว {graded} จาก {needed} ตัวอย่าง เจ้าของส่วนงานเป็นผู้ตัดสินใจ",
-  "{what} toward level {level}": "{what} สู่ระดับ {level}",
+  "now": "ตอนนี้",
+  "not in its release": "ไม่อยู่ในรีลีส",
+  "within its release": "อยู่ในรีลีส",
+  "{what} toward acting on its own: {graded} of {needed} graded samples. The part's owner decides.":
+    "{what} สู่การทำเองได้: ให้คะแนนตัวอย่างแล้ว {graded} จาก {needed} ตัวอย่าง เจ้าของส่วนงานเป็นผู้ตัดสินใจ",
+  "{what} toward acting on its own": "{what} สู่การทำเองได้",
   ", done": " เสร็จแล้ว",
   ", to do now": " ต้องทำตอนนี้",
   "From a draft to an agent at work": "จากฉบับร่างสู่เอเจนต์ที่ทำงานจริง",

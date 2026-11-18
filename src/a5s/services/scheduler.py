@@ -38,7 +38,7 @@ import psycopg
 from a5s import config, db, definitions, reach
 from a5s.config import Config
 from a5s.contract import Scenario
-from a5s.core import groups, registry, studio, tasking
+from a5s.core import groups, notices, registry, studio, tasking
 from a5s.services import context, summaries
 from a5s.worker import BudgetSpent, ModelDown, TaskStopped, run_agent
 
@@ -129,7 +129,7 @@ def remote_worker(url: str, within: float = reach.WITHIN) -> Worker:
 
 
 # What a5s says to a message to an agent there isn't, or that its sender may not know of
-NO_SUCH = "There's no {agent} for you."
+NO_SUCH = notices.NO_SUCH
 
 
 class Scheduler:
@@ -147,15 +147,24 @@ class Scheduler:
         """Where an agent's runs go: its own worker pool, or the shared one."""
         return self.pools.get(agent, self.worker)
 
-    def _tell(self, inbound: str, text: str, instance: str | None = None) -> None:
-        """a5s's own words, in answer to a message. They go through the core, like any message."""
-        try:
-            sent = self.gw.post("/notices", headers=self.service,
-                                json={"inbound": inbound, "text": text, "instance": instance})
+    def _tell(self, inbound: str, text: str, instance: str | None = None,
+              **given: str | list[str]) -> str:
+        """a5s's own words, in answer to a message: one of its notices, with what changes in it
+        (core/notices.py). They go through the core, like any message, which says them in the
+        language their reader reads (round 15, A12): what it said, or, if it couldn't, the
+        English."""
+        said = notices.said("en", text, given)
+        try:  # in English too, for a core that says it in no other
+            sent = self.gw.post("/notices", headers=self.service, json={
+                "inbound": inbound, "text": said, "notice": text, "given": given,
+                "instance": instance})
             if sent.status_code >= 400:
                 log.warning("a notice for message %s wasn't sent: %s", inbound, sent.text[:200])
+            else:
+                said = sent.json().get("text") or said
         except httpx.HTTPError:
             log.exception("the gateway can't be reached, so message %s goes unanswered", inbound)
+        return said
 
     def _ask(self, inst: dict, asker: str) -> str:
         """Who to ask about an instance: its owner, or its deputy when the owner is asking."""
@@ -163,7 +172,7 @@ class Scheduler:
             person = self.scenario.person(candidate) if candidate and candidate != asker else None
             if person:
                 return person.name
-        return "whoever runs a5s"
+        return notices.ANYONE
 
     def _serving(self, instances: list[dict], people: list[str], text: str) -> dict | None:
         """The instance of an agent that answers someone: one that serves them, and everyone
@@ -178,23 +187,28 @@ class Scheduler:
                 return fit[0]
         return theirs[0] if theirs else None
 
-    def _nobody_serves(self, agent: str, asker: str, others: list[str] | None = None) -> str:
+    def _nobody_serves(self, agent: str, asker: str,
+                       others: list[str] | None = None) -> tuple[str, dict]:
         """What a5s tells someone an agent doesn't serve, or, with `others`, the people in a
         group chat with them it doesn't: to ask for it on its page in the studio, where those
         it waits on answer (core/asks.py). It names nobody, and says nothing of where the agent
         works. To someone who may not know of the agent, it says what it says of one there
         isn't (core/studio.py's layers)."""
         if others:  # its page may be one they may not see: nobody named, nothing more said
-            return groups.UNSERVED.format(who=groups.names(self.scenario, others),
-                                          add="Whoever approves the agents here can add them.")
+            return groups.UNSERVED, {"who": self._named(others), "add": notices.ADD}
         definition = definitions.load_all(self.cfg.agents_dir).get(agent)
         person = self.scenario.person(asker)
         if definition is not None and person is not None:
             with db.transaction(self.cfg.database_url) as conn:
                 every = studio.instances(conn)
             if studio.layers(agent, definition, every, person, self.scenario):
-                return f"There's no {agent} for you yet. Ask for it on its page in the studio."
-        return NO_SUCH.format(agent=agent)
+                return notices.NOT_YET, {"agent": agent}
+        return notices.NO_SUCH, {"agent": agent}
+
+    def _named(self, people: list[str]) -> list[str]:
+        """People by their names, for a notice, which puts them in words in its reader's
+        language."""
+        return [p.name if (p := self.scenario.person(who)) else who for who in people]
 
     def _turn(self, claim: dict, text: str, run: str, topic: str) -> None:
         """Note in the conversation what a5s told someone, so a later run knows."""
@@ -316,8 +330,7 @@ class Scheduler:
         except Exception:
             log.exception("couldn't work on %s", what(claim))
             if message:
-                self._tell(claim["id"], "Something went wrong on my side, so I couldn't answer "
-                                        "that. Try again in a few minutes.")
+                self._tell(claim["id"], notices.WENT_WRONG)
                 self._later(claim, never=True)
         finally:
             stop.set()
@@ -342,15 +355,17 @@ class Scheduler:
         members = list(claim["members"]) if group else [person]
         if group and (unwritten := [m for m in members if (p := self.scenario.person(m))
                                     and not p.in_audience]):  # before a run, not after it
-            self._tell(inbound, groups.UNWRITTEN.format(who=groups.names(self.scenario, unwritten)))
+            self._tell(inbound, groups.UNWRITTEN, who=self._named(unwritten))
             self._later(claim, never=True)
             return
         inst = self._serving(instances, members, claim["text"])
         if inst is None:
             unserved = [m for m in members if not any(
                 registry.serving(self.scenario, i["serves"], m) for i in instances)]
-            self._tell(inbound, self._nobody_serves(agent, person) if not group else
-                       self._nobody_serves(agent, person, unserved) if unserved else groups.APART)
+            said, given = (self._nobody_serves(agent, person) if not group else
+                           self._nobody_serves(agent, person, unserved) if unserved else
+                           (groups.APART, {}))
+            self._tell(inbound, said, **given)
             self._later(claim, never=True)
             return
         try:
@@ -364,32 +379,33 @@ class Scheduler:
         if opened.status_code == 409:
             detail = opened.json()["detail"]
             if not detail.get("answered"):  # answered already, by someone else: nothing to do
-                self._tell(inbound, self._why_not(agent, inst, detail, person), inst["id"])
+                said, given = self._why_not(agent, inst, detail, person)
+                self._tell(inbound, said, inst["id"], **given)
             return
         if opened.status_code >= 400:
             log.error("the gateway refused to open a run: %s", opened.text[:200])
-            self._tell(inbound, "a5s couldn't start on that. Try again, or ask "
-                                f"{self._ask(inst, person)}.", inst["id"])
+            self._tell(inbound, notices.NOT_STARTED, inst["id"], who=self._ask(inst, person))
             self._later(claim, never=True)
             return
         self._run(claim, inst, opened.json())
 
-    def _why_not(self, agent: str, inst: dict, detail: dict, asker: str) -> str:
+    def _why_not(self, agent: str, inst: dict, detail: dict, asker: str) -> tuple[str, dict]:
+        """Why an instance can't answer someone, as one of a5s's notices, with what changes in
+        it."""
         status, by = detail.get("status", "active"), detail.get("suspended_by")
         if detail.get("out_of_budget"):
             return self._spent(agent, inst, asker)
         if status == "suspended" and by == asker:
-            return f"The {agent} is suspended, because you suspended it. Resume it to carry on."
+            return notices.YOU_SUSPENDED, {"agent": agent}
         if status == "suspended" and (suspender := self.scenario.person(by) if by else None):
-            return (f"The {agent} is suspended at the moment, so it can't help. "
-                    f"{suspender.name} suspended it and can resume it.")
+            return notices.SUSPENDED, {"agent": agent, "by": suspender.name}
         if status != "active":
-            return f"The {agent} is {status}, so it can't help. Ask {self._ask(inst, asker)}."
-        return f"The {agent} can't help you at the moment. Ask {self._ask(inst, asker)}."
+            return notices.NOT_AT_WORK, {"agent": agent, "status": status,
+                                         "who": self._ask(inst, asker)}
+        return notices.CANT_HELP, {"agent": agent, "who": self._ask(inst, asker)}
 
-    def _spent(self, agent: str, inst: dict, asker: str) -> str:
-        return (f"The {agent} has used its budget for you today, so it can't help with that until "
-                f"tomorrow. Ask {self._ask(inst, asker)} if it can't wait.")
+    def _spent(self, agent: str, inst: dict, asker: str) -> tuple[str, dict]:
+        return notices.SPENT, {"agent": agent, "who": self._ask(inst, asker)}
 
     def _run(self, claim: dict, inst: dict, opened: dict) -> None:
         person, agent, inbound = claim["person"], claim["agent"], claim["id"]
@@ -397,16 +413,10 @@ class Scheduler:
         topic = opened.get("topic") or context.GENERAL  # the core decides it
         conversation = claim.get("conversation") or person  # theirs, or their group chat's
         members = list(claim["members"]) if groups.of(conversation) else None
-        heard = {"speaker": person, "heard_by": members} if members else {}
         outcome, history, behind = "failed", [], set[str]()
         try:
-            with db.transaction(self.cfg.database_url) as conn:
-                context.add_turn(conn, person=conversation, agent=agent, role="person",
-                                 content=claim["text"], run=run, topic=topic, **heard)
-                for note in opened.get("notes") or []:  # a5s's own words to the agent on what
-                    context.add_turn(conn, person=conversation, agent=agent, role="task",
-                                     content=note, run=run, topic=topic,  # came with it, such
-                                     heard_by=members or None)  # as files, after their words
+            with db.transaction(self.cfg.database_url) as conn:  # with what they said, and
+                # a5s's notes on what came with it, which the core wrote as it opened (F10)
                 history = context.history(
                     conn, person=conversation, agent=agent, topic=topic,
                     chars=opened.get("history_chars") or context.CHARS, members=members,
@@ -420,8 +430,7 @@ class Scheduler:
                                 json={"to": conversation, "text": reply})
             if sent.status_code == 403:
                 outcome = "reply denied"
-                self._tell(inbound, told := "I couldn't send you my reply, sorry.", inst["id"])
-                self._turn(claim, told, run, topic)
+                self._turn(claim, self._tell(inbound, notices.NOT_SENT, inst["id"]), run, topic)
                 return
             sent.raise_for_status()
             heard = [person] if sent.json().get("kept_back") else members  # whoever asked
@@ -436,21 +445,16 @@ class Scheduler:
         except ModelDown:
             log.warning("the model for run %s isn't answering", run)
             outcome = "model unavailable"
-            self._tell(inbound, told := "The model I use isn't answering right now, so I couldn't "
-                                        "finish that. Try again in a few minutes.", inst["id"])
-            self._turn(claim, told, run, topic)
+            self._turn(claim, self._tell(inbound, notices.MODEL_DOWN, inst["id"]), run, topic)
         except BudgetSpent as exc:
             outcome = "budget spent"
-            told = self._spent(agent, inst, person) if "today" in str(exc) else (
-                "That took more work than one run may do, so I stopped. Try asking for less at "
-                f"once, or ask {self._ask(inst, person)}.")
-            self._tell(inbound, told, inst["id"])
-            self._turn(claim, told, run, topic)
+            said, given = self._spent(agent, inst, person) if "today" in str(exc) else (
+                notices.TOO_MUCH, {"who": self._ask(inst, person)})
+            self._turn(claim, self._tell(inbound, said, inst["id"], **given), run, topic)
         except Exception:
             log.exception("run %s failed", run)
-            self._tell(inbound, told := "I couldn't finish that. Try again, or ask "
-                                        f"{self._ask(inst, person)}.", inst["id"])
-            self._turn(claim, told, run, topic)
+            self._turn(claim, self._tell(inbound, notices.UNFINISHED, inst["id"],
+                                         who=self._ask(inst, person)), run, topic)
         finally:
             self._close(run, outcome)
         if outcome == "done":  # once they have their answer
@@ -523,7 +527,8 @@ class Scheduler:
                 break
             taken.append(turn)
             size += len(turn["content"])
-        turns = taken
+        turns = [{**t, "content": context.OUTSIDE} if t.get("outside") else t  # none of it,
+                 for t in taken]  # so the summary marks no run it's given (round 15, A4)
         trigger = {"kind": "summary", "person": person, "topic": topic,
                    **({"message": inbound} if members is not None else {})}
         try:
@@ -546,7 +551,8 @@ class Scheduler:
                                                names)
             with db.transaction(self.cfg.database_url) as conn:  # folded, either way, once
                 summaries.keep(conn, person, agent, topic, body, turns[-1]["id"], run,
-                               summaries.heard_by(previous, turns))
+                               summaries.heard_by(previous, turns),
+                               bool(previous and previous.get("outside")))
             if problems:  # how many, never what: they're what someone said
                 log.warning("kept %s's summary for %s without %d things code couldn't trace",
                             topic, person, len(problems))
@@ -774,8 +780,7 @@ class Scheduler:
             return
         for run in stale.json():
             if run.get("inbound") and not run.get("answered"):
-                self._tell(run["inbound"], "I couldn't finish your last message, so I stopped. "
-                                           "Send it again if you still need it.", run["instance"])
+                self._tell(run["inbound"], notices.STOPPED, run["instance"])
 
     def listen(self, stop: threading.Event, workers: int = 8, sweep_every: float = 60,
                retain_every: float = 3600) -> None:

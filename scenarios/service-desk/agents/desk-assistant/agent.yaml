@@ -9,8 +9,8 @@ does: >-
 scope: none
 model: deepseek-v4-pro
 autonomy:
-  start: 1
-  max: 2  # level 2 only for self-service, where the settings and graded samples give it
+  start: asks first
+  max: acts on its own  # only for self-service, where the settings and graded samples give it
 tools:
   records: [search_records, get_record, get_messages]
   knowledge: [search_knowledge, read_knowledge]

@@ -63,7 +63,7 @@ def test_at_level_2_a_change_is_made_and_reported_to_the_instances_owner(stack, 
         [item] = conn.execute("select * from digest_items where person = 'ana'").fetchall()
         assert conn.execute("select count(*) from proposals").fetchone()["count"] == 0
     assert item["text"].startswith(
-        "The assistant made a change itself, at level 2, for Ben Okafor: Change a customer "
+        "The assistant made a change on its own, for Ben Okafor: Change a customer "
         "question's due date: Q-1002, with due 2026-11-13. Q-1002, Refund for a duplicate "
         "payment, as it stood before: status waiting on finance, due date 2026-11-06, customer "
         "Contoso. https://sample.a5s.dev/records/Q-1002 It can be undone until ")  # its tool says how
@@ -73,7 +73,7 @@ def test_level_2_waits_for_samples_to_raise_a5s_cap(stack, approving):
     levelled(stack, cap=0)  # no samples yet: the cap is 1
     asked(stack)
     assert due_of(stack) == "2026-11-06"
-    assert decisions(stack) == [("hold", ["level-1-changes-wait-for-their-decider"])]
+    assert decisions(stack) == [("hold", ["changes-wait-for-their-decider"])]
 
 
 def test_only_the_types_of_action_set_to_level_2_act(stack, approving):
@@ -170,13 +170,12 @@ def test_approvers_read_level_2_and_limits_in_words(stack):
     assert {"text": "The limit for change-due-date becomes 3 in one run and 20 for one person "
                     "in 30 days, instead of 5 in one run and 20 for one person in 30 days.",
             "widens": False} in found  # a tighter limit narrows
-    assert {"text": "assistant-finance's level for change-due-date in billing goes from 1 to 2, "
-                    "where it acts and reports, once samples show it's accurate enough.",
+    assert {"text": "For change-due-date in billing, assistant-finance goes from “asks first” to "
+                    "“acts on its own”, once samples show it's accurate enough.",
             "widens": True} in found
     whole = approvals.described(after, stack.gateway.definitions, stack.gateway.scenario.person)
-    assert ("assistant-finance works at level 2 for change-due-date in billing, where it acts "
-            "and reports, once graded samples show it's accurate enough: until then a5s holds "
-            "it at level 1.") in whole
+    assert ("assistant-finance acts on its own for change-due-date in billing once graded "
+            "samples show it's accurate enough: until then it asks first.") in whole
 
 
 def test_the_core_refuses_an_instance_whose_action_levels_were_edited(stack):

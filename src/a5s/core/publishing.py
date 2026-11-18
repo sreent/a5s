@@ -26,7 +26,7 @@ from urllib.parse import quote
 import httpx
 import yaml
 
-from a5s import definitions
+from a5s import definitions, levels
 from a5s.config import Config
 
 GRANT = "urn:ietf:params:oauth:grant-type:device_code"
@@ -116,10 +116,10 @@ NOBODY = (". Nobody holds that role in the directory yet: the release can't be a
           "directory names someone")
 
 
-LEVELS = {0: "observes and reports, and changes nothing",
-          1: "drafts changes, which people decide before they're made",
-          2: ("may work at level 2, making a type of change on its own, where a part's settings "
-              "and graded samples give it")}
+LEVELS = {0: "reads only: it observes and reports, and changes nothing",  # by name (levels.py)
+          1: "asks first: it drafts changes, which people decide before they're made",
+          2: ("may act on its own, making a type of change itself, where a part's settings and "
+              "graded samples give it")}
 
 
 def may_do(files: dict[str, str]) -> list[str]:
@@ -138,7 +138,10 @@ def may_do(files: dict[str, str]) -> list[str]:
               in (sorted(tools.items()) if isinstance(tools, dict) else [])
               if isinstance(names, list) and names]
     autonomy = spec.get("autonomy")
-    most = autonomy.get("max", 1) if isinstance(autonomy, dict) else 1
+    try:  # by name, such as acts on its own, or by number, as a5s reads it (a5s/levels.py)
+        most = levels.parse(autonomy.get("max", 1)) if isinstance(autonomy, dict) else 1
+    except ValueError:
+        most = 1
     lines.append(f"- It {LEVELS.get(most, LEVELS[1])}.")
     starts = [f"{len(spec[key])} {what}" for key, what in (
         ("schedules", "schedules"), ("events", "kinds of event from other systems"),

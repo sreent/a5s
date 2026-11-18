@@ -51,6 +51,102 @@ spec:
   activeDeadlineSeconds: 1800
   template:
     {{- include "a5s.adminPod" (dict "root" . "args" (list "setup") "passwords" true "approval" false) | nindent 4 }}
+{{- with .Values.restore.id }}
+{{/* After the database is restored from a backup: `a5s restore` puts back what the ledger's
+copies hold beyond it, and the rest, before setup, which writes to the ledger, so the copies never
+fork (docs/runbooks.md#restoring-from-a-backup). It runs as the core's database role, and reaches
+the copies as the copier does, under an account of its own, made first, with the copier's
+annotations and labels, since the copier's own may not exist yet, as in a new cluster. Once for
+each backup it names. */}}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ printf "%s-restore" $.Release.Name }}
+  labels:
+    {{- include "a5s.labels" $ | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation
+    {{- with (get $.Values.serviceAccounts.annotations "anchor") }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+automountServiceAccountToken: false
+{{- if $.Values.networkPolicies.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ printf "%s-restore" $.Release.Name }}
+  labels:
+    {{- include "a5s.labels" $ | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-10"
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "a5s.selector" (dict "root" $ "part" "restore") | nindent 6 }}
+  policyTypes: [Ingress, Egress]
+  egress:
+    {{- include "a5s.policy.dns" $ | nindent 4 }}
+    {{- include "a5s.policy.database" $ | nindent 4 }}
+    {{- include "a5s.policy.outside" $ | nindent 4 }}
+{{- end }}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ printf "%s-restore" $.Release.Name }}
+  labels:
+    {{- include "a5s.labels" $ | nindent 4 }}
+  annotations:
+    helm.sh/hook: pre-install,pre-upgrade
+    helm.sh/hook-weight: "-5"  # before setup, at 0
+    helm.sh/hook-delete-policy: before-hook-creation
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 1800
+  template:
+    metadata:
+      labels:
+        {{- include "a5s.podLabels" (dict "root" $ "part" "restore") | nindent 8 }}
+        {{- with omit (get ($.Values.podLabels | default dict) "anchor" | default dict) "app.kubernetes.io/name" "app.kubernetes.io/instance" "app.kubernetes.io/component" "app.kubernetes.io/version" "app.kubernetes.io/managed-by" "helm.sh/chart" }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ printf "%s-restore" $.Release.Name }}
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      {{- with $.Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsNonRoot: true
+        fsGroup: 10001
+      containers:
+        - name: restore
+          image: {{ include "a5s.image" $ }}
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          args: {{ toJson (list "restore" "--id" (toString .)) }}
+          securityContext:
+            {{- include "a5s.securityContext" $ | nindent 12 }}
+          env:
+            {{- include "a5s.scratch" $ | nindent 12 }}
+            {{- include "a5s.env.restore" $ | nindent 12 }}
+          resources:
+            {{- toYaml $.Values.resources.jobs | nindent 12 }}
+          volumeMounts:
+            - name: scratch
+              mountPath: /tmp
+      volumes:
+        - name: scratch
+          emptyDir: {}
+{{- end }}
 {{- if .Values.release.approval }}
 ---
 apiVersion: batch/v1

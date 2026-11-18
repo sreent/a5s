@@ -14,9 +14,9 @@ The desk's resolver assistant, which it planned and never built, built in the st
 
    ![He gives it reminders and its conversation, and what starts its runs: messages from its resolver, on Matrix too, and what they owe in the ITSM's tickets, which it chases as their targets near.](03-he-gives-it-reminders-and-its-conversation-and-w.png)
 
-4. On the agent itself: whom it works for, what it does, and its levels. It may ask for a reply, which waits for a decider: it goes no further.
+4. On the agent itself: whom it works for, what it does, and how far it may act. It may ask for a reply, which waits for a decider: it goes no further.
 
-   ![On the agent itself: whom it works for, what it does, and its levels. It may ask for a reply, which waits for a decider: it goes no further.](04-on-the-agent-itself-whom-it-works-for-what-it-do.png)
+   ![On the agent itself: whom it works for, what it does, and how far it may act. It may ask for a reply, which waits for a decider: it goes no further.](04-on-the-agent-itself-whom-it-works-for-what-it-do.png)
 
 5. He plans its first instance: in access, serving Rae, a resolver there. Each reply it asks for there waits for Ola, who owns access.
 
@@ -34,7 +34,7 @@ The desk's resolver assistant, which it planned and never built, built in the st
 
    ![Nothing stops its release. It needs Ren, the release approver, and its owner, whom the directory doesn't name yet; Dev publishes its pull request.](08-nothing-stops-its-release-it-needs-ren-the-relea.png)
 
-9. What it may do is what Dev gave it on its canvas, and no more: the desk's reads, a draft, and a reply, which waits for a decider, at level 1 at most.
+9. What it may do is what Dev gave it on its canvas, and no more: the desk's reads, a draft, and a reply, which waits for a decider, asking first at most.
 
 10. The team merges its pull request, and the directory names Dev its owner, as the identity provider's administrator would.
 

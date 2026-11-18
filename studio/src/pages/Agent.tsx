@@ -8,6 +8,7 @@ import { AgentMap } from "../AgentMap";
 import { SaidWrong } from "../SaidWrong";
 import { AgentFacts, AutonomyLadder, useToast } from "../design";
 import { locale, t } from "../i18n";
+import { levelName } from "../levels";
 import { go, Link } from "../router";
 import { mayUse, shellOf } from "../Sidebar";
 import { aboutInstance, levels, PageHead, people, type Risk, risk, RISK_NAMES, runners, StatusBadge,
@@ -147,13 +148,13 @@ function Where({ agent }: { agent: AgentKnown }) {
       {agent.instances.length === 0 && <p className="note">{t("No instance you may watch runs it.")}</p>}
       {agent.instances.length > 0 && (
         <Wide label={t("Where it runs")}><table className="grid-table">
-          <thead><tr><th>{t("Instance")}</th><th>{t("Status")}</th><th>{t("Level")}</th><th>{t("Parts")}</th><th>{t("Serves")}</th><th>{t("Run by")}</th><th>{t("Release")}</th></tr></thead>
+          <thead><tr><th>{t("Instance")}</th><th>{t("Status")}</th><th>{t("What it may do")}</th><th>{t("Parts")}</th><th>{t("Serves")}</th><th>{t("Run by")}</th><th>{t("Release")}</th></tr></thead>
           <tbody>
             {agent.instances.map((inst) => (
               <tr key={inst.id}>
                 <td><Link to={{ page: "instance", instance: inst.id }}>{inst.id}</Link></td>
                 <td><StatusBadge status={inst.status} /></td>
-                <td>{inst.level}</td>
+                <td>{levelName(inst.level)}</td>
                 <td>{Object.keys(inst.parts).join(", ") || t("none")}</td>
                 <td>{people(inst.people)}</td>
                 <td>{runners(inst)}</td>
@@ -214,7 +215,7 @@ function Seen({ agent }: { agent: AgentKnown }) {
 }
 
 // Putting an agent to work, for its owners and authors, once it's released and no instance runs
-// it: a first instance in the settings, for a few people, at level 0 or 1. Those who approve
+// it: a first instance in the settings, for a few people, reading only or asking first. Those who approve
 // versions of the settings go there with the agent chosen; others are told who can.
 
 // Released, and no instance runs it, to its owners and authors, who see every one that does
@@ -226,7 +227,7 @@ function PutToWork({ agent }: { agent: AgentKnown }) {
   return (
     <section className="card" id="put-to-work">
       <h2>{t("Put it to work")}</h2>
-      <p>{t("No instance runs it yet. Its first is an instance in the settings, for a few people first, at level 0 or 1, so it suggests, or asks before each change. Its part's owner approves it, as any change there.")}</p>
+      <p>{t("No instance runs it yet. Its first is an instance in the settings, for a few people first, reading only or asking first, so it suggests, or asks before each change. Its part's owner approves it, as any change there.")}</p>
       {may
         ? <div className="actions"><Link className="button primary" id="put-it-to-work"
             to={{ page: "settings", search: `?add=${encodeURIComponent(agent.id)}` }}>{t("Put it to work in the settings")}</Link></div>
@@ -337,7 +338,7 @@ export function AgentPage({ id }: { id: string }) {
           {uses && (
             <section className="card map-card">
               <h2>{t("How it's wired")}</h2>
-              <p className="note">{t("What starts its runs, and the tools it may call, each through a5s's checks. Changes to records wait for a person to decide at level 1.")}</p>
+              <p className="note">{t("What starts its runs, and the tools it may call, each through a5s's checks. Where it asks first, changes to records wait for a person to decide.")}</p>
               <AgentMap agent={uses} />
             </section>
           )}

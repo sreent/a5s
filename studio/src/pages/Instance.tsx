@@ -7,8 +7,9 @@ import { useEffect, useState } from "react";
 import { type Catalogue, type Figures, get, type Instance, type RunLine, type RunsPage, send,
          type Standing, type StatusAsked } from "../api";
 import { hashed, salted, signInFor, takeAct } from "../auth";
-import { Confirm, rung, Skeleton, useToast } from "../design";
+import { Confirm, Skeleton, useToast } from "../design";
 import { locale, t } from "../i18n";
+import { levelName } from "../levels";
 import { Link } from "../router";
 import { mayUse, shellOf } from "../Sidebar";
 import { RunsByDay } from "../RunsByDay";
@@ -76,24 +77,24 @@ function Reach({ inst }: { inst: Instance }) {
   return (
     <section className="card" id="reach">
       <h2>{t("How far it may act")}</h2>
-      {parts.length === 0 ? <p>{t("Level {level}, {rung}, in no part.", { level: inst.level, rung: rung(inst.level) })}</p> : (
+      {parts.length === 0 ? <p>{t("It {level}, in no part.", { level: levelName(inst.level) })}</p> : (
         <Wide label={t("How far it may act")}><table className="grid-table compact">
-          <thead><tr><th>{t("Part")}</th><th>{t("Level")}</th><th>{t("Each type of change at its own")}</th></tr></thead>
+          <thead><tr><th>{t("Part")}</th><th>{t("What it may do")}</th><th>{t("By type of change")}</th></tr></thead>
           <tbody>{parts.map(([part, level]) => {
             const own = Object.entries(acts[part] ?? {});
             return (
               <tr key={part}>
                 <td>{part}</td>
-                <td>{level} · {rung(level)}</td>
+                <td>{levelName(level)}</td>
                 <td>{own.length === 0 ? <span className="faint">{t("none")}</span> : own.map(([action, at]) => (
-                  <div key={action}><span className="mono">{action}</span> {t("at {level} · {rung}", { level: at, rung: rung(at) })}</div>
+                  <div key={action}><span className="mono">{action}</span> {levelName(at)}</div>
                 ))}</td>
               </tr>
             );
           })}</tbody>
         </table></Wide>
       )}
-      <p className="note">{t("As the settings its parts' owners signed give it. A type of change at level 2 is made on its own only where graded samples have raised a5s's cap on it; until they do, a person decides each.")}</p>
+      <p className="note">{t("As the settings its parts' owners signed give it. A type of change it may make on its own is made so only once graded samples show it's accurate enough there; until they do, a person decides each.")}</p>
     </section>
   );
 }

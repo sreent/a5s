@@ -67,6 +67,8 @@ A Teams bot's secret expires: put its date in the on-call calendar, since a bot 
 | Google Cloud | GKE | Cloud SQL for PostgreSQL | `gs://<bucket>/<prefix>`, a bucket with object retention | `serviceAccounts.annotations.anchor: {iam.gke.io/gcp-service-account: <a service account that may write the bucket>}` |
 | On premises, or anywhere else | Any | Any Postgres 16 | `s3://<bucket>/<prefix>` on a store with S3's object lock, such as MinIO, with `anchor.s3Endpoint` and `anchor.s3Region` | The Secret's `anchor-s3-access-key-id` and `anchor-s3-secret-access-key` |
 
+After the database is restored from a backup, `a5s restore` runs in a job of the chart's as `a5s-restore`, an account with the copier's annotations and labels ([runbook](runbooks.md#restoring-from-a-backup)): give it the copier's right too, as a second federated credential on AKS, the role's trust in it on EKS, or its binding on GKE. With keys in the Secret, it has them already.
+
 ## 5. The deployment's own image: the sample, with the test accounts
 
 The directory finds each person by the id the provider sends, so the sample's made-up ids give way to the test accounts'. That makes the sample's folder the deployment's own, which goes in an image built on the release's, so the release this deployment approves covers it ([agent model](agent-model.md)):
@@ -196,6 +198,10 @@ az role assignment create --assignee "$copier" --role "Storage Blob Data Owner" 
     --query id -o tsv)/blobServices/default/containers/ledger"
 az identity federated-credential create --resource-group a5s-test --identity-name a5s-anchor \
   --name a5s-anchor --issuer "$issuer" --subject system:serviceaccount:a5s:a5s-anchor \
+  --audiences api://AzureADTokenExchange
+# and for `a5s restore`'s job, after the database is restored from a backup, which reads there
+az identity federated-credential create --resource-group a5s-test --identity-name a5s-anchor \
+  --name a5s-restore --issuer "$issuer" --subject system:serviceaccount:a5s:a5s-restore \
   --audiences api://AzureADTokenExchange
 ```
 

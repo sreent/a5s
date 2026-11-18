@@ -557,6 +557,9 @@ def build_root(tmp: Path, model_alias: str, models_yaml: str) -> Path:
     for spec in (root / "agents").glob("*/agent.yaml"):
         lines = [f"model: {model_alias}" if line.startswith("model:") else line
                  for line in spec.read_text().splitlines()]
+        if spec.parent.name == "assistant":  # the tests work it up to acting on its own, which
+            lines = ["  max: acts on its own" if line.startswith("  max:") else line  # the
+                     for line in lines]  # pilot's release keeps from it
         spec.write_text("\n".join(lines) + "\n")
     instances = {k: v for k, v in SAMPLE_SETTINGS["instances"].items() if k != "watcher-finance"}
     signed(root / "scenarios" / "sample", {**SAMPLE_SETTINGS, "instances": instances})

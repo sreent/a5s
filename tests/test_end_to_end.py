@@ -96,9 +96,9 @@ def test_a_call_policy_would_deny_never_runs_and_the_agent_hears_why(stack):
     assert reply == "I can't save drafts at the moment."
     # Denied, and never run: a call that ran has a second entry, with its outcome.
     assert [(e["decision"], e["reasons"]) for e in tool_calls(stack, "create_draft")] == [
-        ("deny", ["level-0-only-observes"])]
+        ("deny", ["reading-only-writes-nothing"])]
     told = str(stack.model.requests[1]["body"]["messages"])
-    assert "at level 0 the agent only observes" in told
+    assert "the agent reads only here" in told
 
 
 def test_agents_get_no_shell_files_or_subagents(stack):

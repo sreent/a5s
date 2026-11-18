@@ -28,12 +28,12 @@ Each stage ends when what it shows is written down, here and in the phase it ser
    - Each runbook is tried once: suspending and resuming an instance, a chat that won't take a message, a model that's down, and a release.
    - Shows: replies within the objective, nine in ten within two minutes, nothing lost, and what a run costs on the approved model, once its prices are in the approved list (`a5s measures`).
 2. **One team, reading** (weeks 3 to 6).
-   - The watcher at level 0, and the assistant at level 1 at most: they read, remind and chase, and people make the changes.
+   - The watcher reading only, and the assistant asking first at most: they read, remind and chase, and people make the changes.
    - The data protection officer signs off the assessment before any of the team's data reaches a model, from what a5s keeps about people, where, for how long and who sees it ([data protection](data-protection.md)).
    - Shows: the baseline, the second half of phase 1's Done means. Promises and reminders met on time, time from something falling due to it being done, people who come back, and cost per run, from `a5s measures` each week, beside what each person says in a short conversation at the end. Four weeks hold two fortnights but not two months, so who came back is over a fortnight here (`a5s measures --days 14`), and over a month from the end of stage 3.
 3. **Held changes** (weeks 7 to 10).
    - One type of action the team does often, such as moving a due date, held for the part's owner to decide on the core's page.
-   - Graders grade a sample each week. Level 2 only if samples earn it ([phase 2](phase-2.md)).
+   - Graders grade a sample each week. The assistant's release lets it ask first at most, so it acts on its own nowhere in the pilot; to let it, a later release raises its maximum to acts on its own, which the release approver signs, and graded samples must still earn it ([phase 2](phase-2.md)).
    - Shows: how long decisions take and how many are approved, how often the agent's changes are right (`a5s measures`), and graders' time, which they note, against its estimate of five hours a quarter.
 4. **Groups, asking and the notebook** (weeks 11 and 12).
    - The team's own group chat with the assistant, the assistant asking the watcher, and a weekly schedule that notes what it learns from the records ([phase 3](phase-3.md)).

@@ -1,6 +1,6 @@
 # Synthetic software delivery settings. Sign changes with the part owners and the instance
 # approver.
-serial: 1
+serial: 2
 data_class: synthetic
 classified: {from: personal}
 
@@ -9,6 +9,6 @@ instances:
     definition: dev-assistant
     serves: [team:backend-team, team:frontend-team, team:security-team, kai]
     parts: [backend, frontend]
-    level: 1
+    level: asks first
     owner: mia
     deputy: leo

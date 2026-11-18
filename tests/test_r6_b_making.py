@@ -127,7 +127,7 @@ def test_a_level_2_change_the_records_system_refused_isnt_reported_as_made(stack
     with db.transaction(stack.admin) as conn:
         told = [r["text"] for r in conn.execute("select text from digest_items where person = 'ana'")]
         drawn = conn.execute("select count(*) from samples").fetchone()["count"]
-    assert not any("made a change itself" in t for t in told), told
+    assert not any("made a change on its own" in t for t in told), told
     assert drawn == 0  # nothing to grade: no change was made
 
 

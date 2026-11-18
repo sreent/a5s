@@ -96,7 +96,7 @@ def built(walk: Walk, stack, url: str, forge: FakeGitHub, on: On) -> tuple[dict,
             page.wait_for_selector(f".flow-canvas [data-step='tool:{tool}']", timeout=30000)
             kept(page)
         page.click(".wb-inspector button:has-text('The draft as a whole')")
-        assert "refuses every change it asks for, reply" in page.inner_text("#decides")  # at level 0, yet
+        assert "refuses every change it asks for, reply" in page.inner_text("#decides")  # reading only, yet
     with walk.step("He gives it reminders and its conversation, and what starts its runs: messages "
                    "from its resolver, on Matrix too, and what they owe in the ITSM's tickets, which "
                    "it chases as their targets near.", page):
@@ -109,8 +109,8 @@ def built(walk: Walk, stack, url: str, forge: FakeGitHub, on: On) -> tuple[dict,
         page.click(".fd-palette [data-owed=records]")
         page.wait_for_selector(".flow-canvas [data-step=obligations]", timeout=30000)
         kept(page)
-    with walk.step("On the agent itself: whom it works for, what it does, and its levels. It may ask "
-                   "for a reply, which waits for a decider: it goes no further.", page):
+    with walk.step("On the agent itself: whom it works for, what it does, and how far it may act. It "
+                   "may ask for a reply, which waits for a decider: it goes no further.", page):
         page.click("[data-step=agent]")
         page.fill("#works-for", "Service-desk resolvers, each in their own service area, within their "
                                 "ticket and knowledge permissions")
@@ -289,9 +289,10 @@ def test_the_resolver_assistant_is_built_in_the_studio_and_its_replies_wait_for_
                 with deciding(stack, provider) as url:
                     rebuilt, draft, pull = built(walk, stack, url, forge, on)
         with walk.step("What it may do is what Dev gave it on its canvas, and no more: the desk's reads, "
-                       "a draft, and a reply, which waits for a decider, at level 1 at most."):
+                       "a draft, and a reply, which waits for a decider, asking first at most."):
             assert able(rebuilt)["tools"] == sorted(TOOLS)
-            assert able(rebuilt)["levels"] == (1, 1) and able(rebuilt)["owed"] == ["records"]
+            assert able(rebuilt)["levels"] == ("asks first", "asks first")  # by name
+            assert able(rebuilt)["owed"] == ["records"]
         with walk.step("The team merges its pull request, and the directory names Dev its owner, as the "
                        "identity provider's administrator would."):
             merged(stack, forge.files(pull["head"]), AGENT)

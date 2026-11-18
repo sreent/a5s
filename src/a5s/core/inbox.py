@@ -60,6 +60,7 @@ from a5s.core import (
     files,
     grade_api,
     groups,
+    languages,
     ledger,
     matrix,
     notebook_api,
@@ -71,6 +72,7 @@ from a5s.core import (
     tasks_api,
     topics,
     web,
+    words,
 )
 from a5s.core.slack import CHANNELS as SLACK_CHANNELS
 from a5s.core.slack import Refused as SlackRefused
@@ -150,11 +152,19 @@ def record(conn: Any, *, channel: str, source_id: str, person: str, agent: str, 
     return inbound
 
 
-def holding(conn: Any, person: str, adding: int) -> str | None:
+# Why a5s won't keep another message with files, in the words someone reads (core/words.py)
+HOLDS = ("a5s holds {waiting} of your messages with files that wait for an answer: send more once "
+         "it has answered them")
+SENT_TODAY = ("you've sent {today} MB of files here today, and a5s keeps {most} MB of them a day: "
+              "send more tomorrow")
+
+
+def holding(conn: Any, person: str, adding: int, language: str = languages.ENGLISH) -> str | None:
     """Why a5s won't keep another message with files someone sends through the local channel,
-    such as from the web chat, if it won't, in the caller's transaction: it holds
-    WAITING_FILES of theirs unanswered, or this would take what they've sent today past
-    FILES_A_DAY. Their messages are counted one at a time, so two sent at once count as two."""
+    such as from the web chat, if it won't, in the caller's transaction, in the language they
+    read (round 15, A12): it holds WAITING_FILES of theirs unanswered, or this would take what
+    they've sent today past FILES_A_DAY. Their messages are counted one at a time, so two sent
+    at once count as two."""
     conn.execute("select pg_advisory_xact_lock(hashtext(%s))", (f"a5s local files {person}",))
     held = conn.execute(
         "select count(distinct i.id) filter (where i.answered_at is null) as waiting, "
@@ -164,11 +174,10 @@ def holding(conn: Any, person: str, adding: int) -> str | None:
         (person,)).fetchone() or {"waiting": 0, "today": 0}
     mb = 1024 * 1024
     if held["waiting"] >= WAITING_FILES:
-        return (f"a5s holds {held['waiting']} of your messages with files that wait for an "
-                "answer: send more once it has answered them")
+        return words.say(language, HOLDS, waiting=held["waiting"])
     if held["today"] + adding > FILES_A_DAY:
-        return (f"you've sent {held['today'] / mb:.0f} MB of files here today, and a5s keeps "
-                f"{FILES_A_DAY // mb} MB of them a day: send more tomorrow")
+        return words.say(language, SENT_TODAY, today=f"{held['today'] / mb:.0f}",
+                         most=FILES_A_DAY // mb)
     return None
 
 
@@ -631,7 +640,9 @@ def create_app(gw: Any) -> FastAPI:
             raise HTTPException(400, "a file's data is its bytes in base64") from None
         text = body.text if body.text.strip() or not sent else files.WORDS_ONLY
         with db.transaction(gw.url) as conn:
-            if sent and (why := holding(conn, person, sum(len(f.data or b"") for f in sent))):
+            who = gw.scenario.person(person)
+            if sent and (why := holding(conn, person, sum(len(f.data or b"") for f in sent),
+                                        languages.of(conn, who) if who else languages.ENGLISH)):
                 raise HTTPException(429, why)
             inbound = record(conn, channel="local", source_id=str(uuid.uuid4()), person=person,
                              agent=body.agent, text=text, reply_to={}, identity=identity,

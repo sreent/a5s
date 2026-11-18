@@ -44,8 +44,8 @@ host_path() { if command -v cygpath >/dev/null 2>&1; then cygpath -m "$1"; else 
 chmod a+rx "$work"  # for the containers that sign and record the release
 random() { head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9'; }
 password=$(random)
-printf 'A5S_DB_PASSWORD=%s\nA5S_SERVICE_TOKEN=%s\nA5S_SEAL_KEYS=%s\n' \
-  "$(random)" "$(random)" "$(random)" > "$env_file"
+printf 'A5S_DB_PASSWORD=%s\nA5S_SERVICE_TOKEN=%s\nA5S_SEAL_KEYS=%s\nA5S_OPERATOR_TOKEN=%s\n' \
+  "$(random)" "$(random)" "$(random)" "$(random)" > "$env_file"
 for part in GATEWAY CHANNELS SCHEDULER ANCHOR; do
   echo "A5S_DB_${part}_PASSWORD=$(random)" >> "$env_file"
 done

@@ -231,12 +231,13 @@ def test_compose_sets_no_setting_to_its_default():
     assert found == [], f"leave these unset, so a5s's own default holds: {found}"
 
 
-def rendered(*values: str, sandbox: bool = False) -> list[dict]:
-    """The chart, as helm renders it with these values files, as a5s's release or the
-    sandbox's."""
+def rendered(*values: str, sandbox: bool = False, sets: tuple[str, ...] = ()) -> list[dict]:
+    """The chart, as helm renders it with these values files, and these values set, as a5s's
+    release or the sandbox's."""
     charts = ROOT / "deploy" / "helm"
     args = ["template", "a5s", "/charts/a5s", *(a for v in values for a in ("-f", f"/charts/{v}")),
-            *(["--set", "mode=sandbox"] if sandbox else [])]
+            *(["--set", "mode=sandbox"] if sandbox else []),
+            *(a for s in sets for a in ("--set", s))]
     if shutil.which("helm"):
         command = ["helm", *[a.replace("/charts", str(charts)) for a in args]]
     elif shutil.which("docker") and subprocess.run(["docker", "info"], capture_output=True,
@@ -318,13 +319,13 @@ def test_the_charts_pods_are_given_no_service_links():
     assert pods and all(p.get("enableServiceLinks") is False for p in pods)
 
 
-def test_the_copier_copies_every_hour_unless_its_told_otherwise(monkeypatch, tmp_path):
+def test_the_copier_copies_within_15_minutes_unless_its_told_otherwise(monkeypatch, tmp_path):
     every: list[int | None] = []
     monkeypatch.setattr(cli, "_anchor", lambda cfg, n: every.append(n))
     monkeypatch.chdir(tmp_path)
     for args in (["anchor", "--every"], ["anchor", "--every", "60"], ["anchor"]):
         cli.main(args)
-    assert every == [cli.ANCHOR_EVERY, 60, None] and cli.ANCHOR_EVERY == 3600  # once, alone
+    assert every == [cli.ANCHOR_EVERY, 60, None] and cli.ANCHOR_EVERY == 900  # once, alone
 
 
 def test_no_value_in_the_code_waits_on_where_it_lives():

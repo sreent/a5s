@@ -19,6 +19,7 @@ import yaml
 from pydantic import (
     AfterValidator,
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
     StrictInt,
@@ -28,6 +29,7 @@ from pydantic import (
     model_validator,
 )
 
+from a5s import levels
 from a5s.core.ledger import canonical
 
 INSTANCE_APPROVER = "instance-approver"  # approves instances with no parts, and sets their level
@@ -394,7 +396,8 @@ _PERSON = Annotated[str, StringConstraints(strict=True,
 _WHO = Annotated[str, StringConstraints(strict=True, pattern=(
     r"^(?:(?:team|role):[A-Za-z0-9][A-Za-z0-9._@:-]{0,127}|[A-Za-z0-9][A-Za-z0-9._@-]{0,127})$"))]
 _FIELD = Annotated[str, StringConstraints(strict=True, pattern=r"^[A-Za-z][A-Za-z0-9 _-]{0,62}$")]
-_LEVEL = Annotated[StrictInt, Field(ge=0, le=2)]
+# reads only, asks first or acts on its own, by name or, as before, by number (levels.py)
+_LEVEL = Annotated[StrictInt, BeforeValidator(levels.parse), Field(ge=0, le=2)]
 _COUNT = Annotated[StrictInt, Field(ge=1, le=100_000)]
 _THRESHOLD = Annotated[float, Field(strict=True, ge=0.5, le=0.999)]
 # A month's budget, in the currency models.yaml prices models in: more than nothing, and at most
@@ -494,8 +497,9 @@ class _Spending(BaseModel):
 
 
 class _Version(BaseModel):
-    """a5s's own settings format, checked strictly: names are plain words, levels are whole
-    numbers from 0 to 2, and nothing else may be there."""
+    """a5s's own settings format, checked strictly: names are plain words, levels are reads
+    only, asks first or acts on its own, or their numbers, 0 to 2, and nothing else may be
+    there."""
 
     model_config = ConfigDict(extra="forbid", strict=True)
 

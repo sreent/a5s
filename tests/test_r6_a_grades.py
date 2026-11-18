@@ -25,7 +25,7 @@ from a5s import db
 from a5s.core import samples
 from conftest import seal_grades
 from test_levels import asked, due_of, levelled
-from test_samples import cap, graded, release, weigh
+from test_samples import cap, graded, release, turn, weigh
 
 
 def graded_at(stack, when: str, n: int, grade: str = "right", part: str = "billing") -> None:
@@ -37,8 +37,8 @@ def graded_at(stack, when: str, n: int, grade: str = "right", part: str = "billi
                 "insert into samples (scenario, kind, run_id, instance_id, release, definition, "
                 "part, action, said, records, acts_for, drawn_at, grade, graded_by, graded_at) "
                 "values ('sample', 'action', gen_random_uuid(), 'assistant-finance', %s, "
-                "'assistant', %s, 'change-due-date', 'a change', '{}', '{ben}', %s, %s, 'dana', %s)",
-                (release(stack), part, when, grade, when))
+                "'assistant', %s, 'change-due-date', 'a change', '{}', '{ben}', %s, %s, %s, %s)",
+                (release(stack), part, when, grade, turn(conn), when))
     seal_grades(stack)  # as the grading page has the core seal them
 
 

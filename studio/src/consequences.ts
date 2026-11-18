@@ -34,7 +34,7 @@ export function dayWords(days: string[]): string {
   return t("on {days}", { days: and(Object.keys(names).filter((d) => set.has(d)).map((d) => names[d])) });
 }
 
-/** Who decides a change in a part below level 2, in words. */
+/** Who decides a change in a part where the agent asks first, in words. */
 export function deciders(part: PartRule): string {
   return part.deciders.length ? or(part.deciders) : t("nobody yet, so none is made there");
 }
@@ -49,50 +49,50 @@ export function changers(spec: Spec, offer: Offer): Offered[] {
 export function toolLines(tool: Offered, spec: Spec, offer: Offer): string[] {
   const max = spec.autonomy.max;
   const lines: string[] = [];
-  if (tool.changes && max < 1) {  // no permit covers a change at level 0: a5s refuses it
-    lines.push(t("Its release keeps it at level 0, which only observes, so a5s refuses every change it asks for. At level 1, each would wait for a yes from a decider of its record's part."));
+  if (tool.changes && max < 1) {  // no permit covers a change where it reads only: a5s refuses it
+    lines.push(t("Its release lets it read only, so a5s refuses every change it asks for. Were it to ask first, each would wait for a yes from a decider of its record's part."));
   } else if (tool.changes) {
     const parts = offer.parts.map((p) => t("{who} in {part}", { who: deciders(p), part: p.name }));
     lines.push(parts.length
-      ? t("Below level 2, each change it asks for waits for a yes from a decider of its record's part: {deciders}.", { deciders: parts.join("; ") })
-      : t("Below level 2, each change it asks for waits for a yes from a decider of its record's part, its owners and their delegates."));
+      ? t("Unless it acts on its own, each change it asks for waits for a yes from a decider of its record's part: {deciders}.", { deciders: parts.join("; ") })
+      : t("Unless it acts on its own, each change it asks for waits for a yes from a decider of its record's part, its owners and their delegates."));
     const limit = offer.limits[tool.changes];
     const most = [limit?.per_run && t("{n} in a run", { n: limit.per_run }),
                   limit?.per_person_30_days && t("{n} for each person in 30 days", { n: limit.per_person_30_days })]
       .filter((x): x is string => Boolean(x));
     if (most.length) {
-      lines.push(t("The settings allow {most}: past that, each waits for its decider, whatever the level.", { most: and(most) }));
+      lines.push(t("The settings allow {most}: past that, each waits for its decider, even where it acts on its own.", { most: and(most) }));
     } else if (offer.parts.length) {
-      lines.push(t("The settings set no limit for {action}, so at level 2 nothing caps how many it makes.", { action: tool.changes }));
+      lines.push(t("The settings set no limit for {action}, so where it acts on its own nothing caps how many it makes.", { action: tool.changes }));
     }
     if (max < 2) {
-      lines.push(t("Its release goes no higher than level {max}, so every one waits for its decider.", { max }));
+      lines.push(t("Its release lets it ask first at most, so every one waits for its decider."));
     } else {
       const bars = offer.parts.map((p) => p.threshold ? t("{share} in {part}", { share: percent(p.threshold), part: p.name })
         : t("never in {part}, which sets no bar", { part: p.name }));
       lines.push(bars.length
-        ? t("a5s makes one alone only at level 2, which the settings give for {action} in one part at a time, never in a run that has read outside content, and only once graded samples show enough of its changes there right: {bars}.",
+        ? t("a5s makes one on its own only where the settings let it act on its own, for {action} in one part at a time, never in a run that has read outside content, and only once graded samples show enough of its changes there right: {bars}.",
             { action: tool.changes, bars: and(bars) })
-        : t("a5s makes one alone only at level 2, which the settings give for {action} in one part at a time, never in a run that has read outside content, and only once graded samples show enough of its changes there right.",
+        : t("a5s makes one on its own only where the settings let it act on its own, for {action} in one part at a time, never in a run that has read outside content, and only once graded samples show enough of its changes there right.",
             { action: tool.changes }));
     }
   } else if (tool.destructive || tool.sends_outside) {
     lines.push(tool.destructive
-      ? t("What it does can't be undone, so a5s lets it run only at level 2, which only the settings give, and never in a run that has read outside content.")
-      : t("It sends outside the organisation, so a5s lets it run only at level 2, which only the settings give, and never in a run that has read outside content."));
-    if (max < 2) lines.push(t("Its release goes no higher than level {max}, so a5s refuses every call to it.", { max }));
+      ? t("What it does can't be undone, so a5s lets it run only where it acts on its own, which only the settings give, and never in a run that has read outside content.")
+      : t("It sends outside the organisation, so a5s lets it run only where it acts on its own, which only the settings give, and never in a run that has read outside content."));
+    if (max < 2) lines.push(t("Its release never lets it act on its own, so a5s refuses every call to it."));
   } else if (tool.writes) {
-    lines.push(t("It writes, but changes nothing a part decides: from level 1 it runs without anyone's yes, and the ledger keeps each call. At level 0, which only observes, a5s refuses it."));
-    if (max < 1) lines.push(t("Its release keeps it at level 0, so a5s refuses every call to it."));
+    lines.push(t("It writes, but changes nothing a part decides: unless the agent reads only, it runs without anyone's yes, and the ledger keeps each call. Where it reads only, a5s refuses it."));
+    if (max < 1) lines.push(t("Its release lets it read only, so a5s refuses every call to it."));
   } else {
     lines.push(t("It reads: a5s passes on only the records everyone the run acts for may see, in the parts its instance works in."));
   }
   if (tool.outside.length) {
-    lines.push(t("What it brings from outside the organisation, its {what}, goes to a5s's reader first: the agent reads only what the reader takes from it, and the run is marked, so it never acts at level 2.",
+    lines.push(t("What it brings from outside the organisation, its {what}, goes to a5s's reader first: the agent reads only what the reader takes from it, and the run is marked, so it never acts on its own.",
                  { what: and(tool.outside) }));
   }
   if (tool.marks) {
-    lines.push(t("What it brings holds a few words written outside the organisation, such as titles, which the agent reads as they are: so the run is marked, and never acts at level 2."));
+    lines.push(t("What it brings holds a few words written outside the organisation, such as titles, which the agent reads as they are: so the run is marked, and never acts on its own."));
   }
   if (tool.handles.length) {
     lines.push(t("It hands {what} over as handles: the model never sees the values, and a5s puts them back where they go.",
@@ -122,11 +122,11 @@ export function messageLines(spec: Spec): string[] {
 export function levelLines(spec: Spec): string[] {
   const { start, max } = spec.autonomy;
   const lines = [start < 1
-    ? t("Its instances start at level {start}: it only observes: a5s refuses any tool that writes.", { start })
-    : t("Its instances start at level {start}: it may write, and each change it asks for waits for its decider.", { start })];
+    ? t("Its instances start reading only: a5s refuses any tool that writes.")
+    : t("Its instances start asking first: it may write, and each change it asks for waits for its decider.")];
   if (max <= start) lines.push(t("It goes no higher."));
-  else if (max === 1) lines.push(t("It may go as far as level 1, so a person decides every change it asks for."));
-  else lines.push(t("It may reach level 2, making changes alone, only where the settings give it for a type of change in a part, and graded samples of its work there bear it out."));
+  else if (max === 1) lines.push(t("At most it asks first, so a person decides every change it asks for."));
+  else lines.push(t("It may come to act on its own, making changes itself, only where the settings give it for a type of change in a part, and graded samples of its work there bear it out."));
   return lines;
 }
 

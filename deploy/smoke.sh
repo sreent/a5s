@@ -36,6 +36,7 @@ for part in GATEWAY CHANNELS SCHEDULER ANCHOR; do
 done
 echo "A5S_ANCHOR_STORE=s3://a5s-ledger/sample" >> "$env_file"
 echo "A5S_SEAL_KEYS=$(random)" >> "$env_file"
+echo "A5S_OPERATOR_TOKEN=$(random)" >> "$env_file"  # operators' own, apart from the scheduler's
 python3 deploy/matrix/configure.py "$work/matrix" >> "$env_file"
 compose() { docker compose -p a5s-smoke --env-file "$env_file" -f deploy/compose.yaml \
               -f deploy/compose.stub.yaml -f deploy/compose.identity.yaml \

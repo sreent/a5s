@@ -36,10 +36,9 @@ export const WATCH: Record<string, string> = {
   "hold": "พักไว้",
   "{type} from {source}: {task}": "{type} จาก {source}: {task}",
   "none yet": "ยังไม่มี",
-  "level {level}": "ระดับ {level}",
-  "levels {start}–{max}": "ระดับ {start}–{max}",
+  "{start}, at most {max}": "{start} อย่างมาก{max}",
   "no part": "ไม่มีส่วนงาน",
-  "level {level} · {parts} · serving {people}": "ระดับ {level} · {parts} · ให้บริการ {people}",
+  "{level} · {parts} · serving {people}": "{level} · {parts} · ให้บริการ {people}",
   "{all} and {name}": "{all} และ {name}",
 
   // The agents (pages/Agents.tsx)
@@ -63,6 +62,10 @@ export const WATCH: Record<string, string> = {
 
   // An agent (pages/Agent.tsx)
   "none": "ไม่มี",
+  // what an agent may do in a part, by name (levels.ts)
+  "reads only": "อ่านอย่างเดียว",
+  "asks first": "ขออนุมัติก่อน",
+  "acts on its own": "ทำเองได้",
   "Model": "โมเดล",
   "Only reads": "อ่านอย่างเดียว",
   "Changes": "เปลี่ยนแปลง",
@@ -103,7 +106,7 @@ export const WATCH: Record<string, string> = {
   "up to {tokens} tokens": "สูงสุด {tokens} โทเค็น",
   "Each person, each day": "ต่อคนต่อวัน",
   "Status": "สถานะ",
-  "Level": "ระดับ",
+  "What it may do": "สิ่งที่ทำได้",
   "Parts": "ส่วนงาน",
   "Serves": "ให้บริการ",
   "Run by": "ผู้ดูแล",
@@ -122,8 +125,8 @@ export const WATCH: Record<string, string> = {
   "What it may do is for the people it serves and those who run it: to have it serve you, ask for it.":
     "สิ่งที่เอเจนต์นี้ทำได้มีไว้สำหรับผู้ที่เอเจนต์ให้บริการและผู้ดูแลเท่านั้น หากต้องการให้เอเจนต์นี้ให้บริการคุณ ให้ขอใช้",
   "Put it to work": "เริ่มใช้งาน",
-  "No instance runs it yet. Its first is an instance in the settings, for a few people first, at level 0 or 1, so it suggests, or asks before each change. Its part's owner approves it, as any change there.":
-    "ยังไม่มีอินสแตนซ์ใดใช้งานเอเจนต์นี้ อินสแตนซ์แรกจะอยู่ในการตั้งค่า ให้บริการคนจำนวนไม่มากก่อน ที่ระดับ 0 หรือ 1 เพื่อให้เอเจนต์แนะนำ หรือถามก่อนการเปลี่ยนแปลงแต่ละครั้ง เจ้าของส่วนงานเป็นผู้อนุมัติ เช่นเดียวกับการเปลี่ยนแปลงอื่นในส่วนงานนั้น",
+  "No instance runs it yet. Its first is an instance in the settings, for a few people first, reading only or asking first, so it suggests, or asks before each change. Its part's owner approves it, as any change there.":
+    "ยังไม่มีอินสแตนซ์ใดใช้งานเอเจนต์นี้ อินสแตนซ์แรกจะอยู่ในการตั้งค่า ให้บริการคนจำนวนไม่มากก่อน แบบอ่านอย่างเดียวหรือขออนุมัติก่อน เพื่อให้เอเจนต์แนะนำ หรือถามก่อนการเปลี่ยนแปลงแต่ละครั้ง เจ้าของส่วนงานเป็นผู้อนุมัติ เช่นเดียวกับการเปลี่ยนแปลงอื่นในส่วนงานนั้น",
   "Put it to work in the settings": "เริ่มใช้งานในการตั้งค่า",
   "Those who approve versions of the settings put it to work there: a part's owner, or someone who approves instances. To have it serve you, ask for it.":
     "ผู้อนุมัติเวอร์ชันของการตั้งค่าเป็นผู้เริ่มใช้งานเอเจนต์ที่นั่น ได้แก่ เจ้าของส่วนงาน หรือผู้ที่อนุมัติอินสแตนซ์ หากต้องการให้เอเจนต์นี้ให้บริการคุณ ให้ขอใช้",
@@ -142,8 +145,8 @@ export const WATCH: Record<string, string> = {
   "Serve them through {instance}": "ให้บริการผ่าน {instance}",
   "What depends on it": "สิ่งที่ขึ้นอยู่กับสิ่งนี้",
   "How it's wired": "เชื่อมต่ออย่างไร",
-  "What starts its runs, and the tools it may call, each through a5s's checks. Changes to records wait for a person to decide at level 1.":
-    "สิ่งที่เริ่มการทำงานของเอเจนต์ และเครื่องมือที่เรียกใช้ได้ ซึ่งแต่ละครั้งต้องผ่านการตรวจสอบของ a5s การเปลี่ยนแปลงระเบียนที่ระดับ 1 จะรอให้คนตัดสินใจ",
+  "What starts its runs, and the tools it may call, each through a5s's checks. Where it asks first, changes to records wait for a person to decide.":
+    "สิ่งที่เริ่มการทำงานของเอเจนต์ และเครื่องมือที่เรียกใช้ได้ ซึ่งแต่ละครั้งต้องผ่านการตรวจสอบของ a5s ในส่วนที่ขออนุมัติก่อน การเปลี่ยนแปลงระเบียนจะรอให้คนตัดสินใจ",
   "What it does": "สิ่งที่เอเจนต์นี้ทำ",
   "Its instructions": "คำสั่งของเอเจนต์",
 
@@ -168,13 +171,12 @@ export const WATCH: Record<string, string> = {
     "อินสแตนซ์จะกลับมาทำงานตามการตั้งค่าตั้งแต่ข้อความถัดไป คุณจะลงชื่อเข้าใช้อีกครั้งสำหรับการนี้โดยเฉพาะ พร้อมปัจจัยที่สองหากองค์กรของคุณกำหนด",
   "Sign in and resume it": "ลงชื่อเข้าใช้และให้กลับมาทำงานต่อ",
   "How far it may act": "ขอบเขตที่ทำได้",
-  "Level {level}, {rung}, in no part.": "ระดับ {level} · {rung} · ไม่อยู่ในส่วนงานใด",
+  "It {level}, in no part.": "เอเจนต์นี้{level} โดยไม่อยู่ในส่วนงานใด",
   "Part": "ส่วนงาน",
   "Team": "ทีม",
-  "Each type of change at its own": "การเปลี่ยนแปลงแต่ละประเภทที่มีระดับของตนเอง",
-  "at {level} · {rung}": "ที่ระดับ {level} · {rung}",
-  "As the settings its parts' owners signed give it. A type of change at level 2 is made on its own only where graded samples have raised a5s's cap on it; until they do, a person decides each.":
-    "ตามการตั้งค่าที่เจ้าของส่วนงานลงนามไว้ การเปลี่ยนแปลงประเภทใดที่ระดับ 2 จะทำได้เองก็ต่อเมื่อตัวอย่างที่ให้คะแนนแล้วยกเพดานของ a5s สำหรับประเภทนั้นขึ้น จนกว่าจะถึงตอนนั้น คนจะเป็นผู้ตัดสินแต่ละรายการ",
+  "By type of change": "ตามประเภทการเปลี่ยนแปลง",
+  "As the settings its parts' owners signed give it. A type of change it may make on its own is made so only once graded samples show it's accurate enough there; until they do, a person decides each.":
+    "ตามการตั้งค่าที่เจ้าของส่วนงานลงนามไว้ การเปลี่ยนแปลงประเภทที่ทำเองได้จะทำเองก็ต่อเมื่อตัวอย่างที่ให้คะแนนแล้วแสดงว่าแม่นยำพอที่นั่น จนกว่าจะถึงตอนนั้น คนจะเป็นผู้ตัดสินแต่ละรายการ",
   "{n} called a model": "เรียกใช้โมเดล {n} ครั้ง",
   "Ended done": "จบแบบเสร็จสิ้น",
   "{done} of {runs}": "{done} จาก {runs}",

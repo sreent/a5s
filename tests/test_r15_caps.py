@@ -21,5 +21,5 @@ def test_a_cap_raised_says_what_it_rested_on_and_the_report_lists_it(stack):
     with db.transaction(stack.admin) as conn:
         found = audit.report(conn, stack.gateway.scenario, ["assistant"])
     [act] = [a for a in found["acts"] if a["action"] == "raise"]
-    assert act["what"] == "a cap raised to level 2, from graded samples"
+    assert act["what"] == "let an agent act on its own, from graded samples"
     assert act["about"]["samples"] == rested["samples"]

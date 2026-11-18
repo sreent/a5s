@@ -246,5 +246,6 @@ def test_a_version_of_the_settings_reads_whole_in_thai():
     assert "assistant-finance ส่งต่อการสนทนาให้คนในทีม financeได้" in " ".join(th)
     whole = approvals.described(after, {}, people.get, "th")
     assert all(re.search(r"[ก-๙]", line) for line in whole), whole
-    assert whole[1].startswith("assistant-finance: assistant ทำงานใน billing ที่ระดับ 1 และ orders "
-                               "ที่ระดับ 1 ให้บริการ Ana Silva และ ทุกคนในทีม finance ดูแลโดย Ana Silva")
+    assert whole[1].startswith("assistant-finance: assistant ขออนุมัติก่อนใน billing และ orders "
+                               "ให้บริการ Ana Silva และ ทุกคนในทีม finance ดูแลโดย Ana Silva")
+    assert not any(re.search(r"ระดับ\s*\d", line) for line in whole + th), whole  # by name

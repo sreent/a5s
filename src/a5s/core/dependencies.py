@@ -45,19 +45,20 @@ SAYS = {
     "judge": "{to} judges {from}'s work",
     "runs": "{from} runs {to}'s version {release}",
     "calls": "{from} calls {to}",
-    "works": "{from} works in {to}, at level {level}",
-    "works2": "{from} works in {to}, at level {level}, and at level 2 for {types}",
-    # Level 2 the settings set that doesn't count yet (round 14, C16): a5s's cap holds it at 1
-    # until graded samples show the type's accurate enough, or nobody who approved the settings
-    # in force owns the part now
-    "capped": ("{from} works in {to}, at level {level}; the settings set level 2 for {held}, "
-               "which a5s's cap holds at level 1 until graded samples show it's accurate "
-               "enough"),
-    "capped2": ("{from} works in {to}, at level {level}, and at level 2 for {types}; the "
-                "settings set level 2 for {held} too, which a5s's cap holds at level 1 until "
-                "graded samples show it's accurate enough"),
-    "unowned": ("{from} works in {to}, at level {level}; the settings set level 2 for {held}, "
-                "which counts only once an owner of {to} approves the settings in force"),
+    # what it may do there, by name: reads only, asks first or acts on its own (a5s/levels.py)
+    "works": "{from} works in {to}, where it {level}",
+    "works2": "{from} works in {to}, where it {level}, and acts on its own for {types}",
+    # Acting on its own the settings give that doesn't count yet (round 14, C16): a5s holds it
+    # to asking first until graded samples show the type's accurate enough, or nobody who
+    # approved the settings in force owns the part now
+    "capped": ("{from} works in {to}, where it {level}; the settings let it act on its own for "
+               "{held}, which a5s holds to asking first until graded samples show it's "
+               "accurate enough"),
+    "capped2": ("{from} works in {to}, where it {level}, and acts on its own for {types}; the "
+                "settings let it act on its own for {held} too, which a5s holds to asking "
+                "first until graded samples show it's accurate enough"),
+    "unowned": ("{from} works in {to}, where it {level}; the settings let it act on its own for "
+                "{held}, which counts only once an owner of {to} approves the settings in force"),
     "asks": "{from} may ask {to}",
     "shadows": "{from} answers beside {to}, and sends nothing",
     "hands": "{from} may hand a conversation to {to}, whose people answer it",
@@ -144,20 +145,21 @@ def drawn(conn: db.Connection, scenario: Scenario, definitions: dict[str, Any],
         actions = inst.get("actions") or {}
         for part, level in sorted((inst["parts"] or {}).items()):
             there = actions.get(part) if isinstance(actions, dict) else None
-            second = sorted(a for a, n in (there or {}).items() if n == 2)  # level 2's types
+            named = words.level(language, level)  # by name, never by number
+            second = sorted(a for a, n in (there or {}).items() if n == 2)  # acting on its own
             target = node("part", part, say("part"), "/studio/settings")
             caps = caps_of(str(inst["release"])) if second else {}
             earned = [a for a in second if caps.get((part, a), 1) >= 2]
             held = ", ".join(a for a in second if a not in earned)
             if second and not parts.owned(scenario, part, approved):  # until an owner approves
-                edge(key, target, "unowned", level=level, held=", ".join(second))
+                edge(key, target, "unowned", level=named, held=", ".join(second))
             elif held:
-                edge(key, target, "capped2" if earned else "capped", level=level,
+                edge(key, target, "capped2" if earned else "capped", level=named,
                      types=", ".join(earned), held=held)
             elif second:
-                edge(key, target, "works2", level=level, types=", ".join(second))
+                edge(key, target, "works2", level=named, types=", ".join(second))
             else:
-                edge(key, target, "works", level=level)
+                edge(key, target, "works", level=named)
     shadowing = {r["id"]: r["shadows"] for r in conn.execute(
         "select id, shadows from instances where shadows is not null").fetchall()}
     for inst in watched:  # whom each may ask, and answers beside, of the instances they may see,

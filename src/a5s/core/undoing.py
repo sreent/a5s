@@ -133,6 +133,11 @@ def _mac(key: str, row: dict) -> str:
     return hmac.new(key.encode(), ledger.canonical(shown).encode(), hashlib.sha256).hexdigest()
 
 
+def seal_of(keys: tuple[str, ...], row: dict) -> str:
+    """The core's seal over a change kept to undo, with the first of its keys."""
+    return _mac(keys[0], row)
+
+
 def intact(keys: tuple[str, ...], row: dict) -> bool:
     """Whether a change kept to undo is as the core kept it: its undo, how it left its record,
     whom it was for, until when (round 15, B1)."""
@@ -243,7 +248,8 @@ def found(conn: db.Connection, change: int) -> dict | None:
 
 def shown(conn: db.Connection, scenario: Scenario, person: Person, change: int) -> dict | None:
     """A change as its page shows someone it's theirs to see: whoever it was for, and whoever
-    may undo it. None for anyone else, as if there were no such change."""
+    may undo it, with why they may not, and how it ended, in the language they read (round 15,
+    A12). None for anyone else, as if there were no such change."""
     row = found(conn, change)
     if row is None or not scenario.sees(person.id, row["record"]):
         return None
@@ -253,12 +259,13 @@ def shown(conn: db.Connection, scenario: Scenario, person: Person, change: int) 
         return None
     named = [p.name if (p := scenario.person(w)) else w for w in row["acts_for"]]
     by = scenario.person(row["undone_by"] or row["asked_by"] or "")
+    spoken = languages.of(conn, person)
     return {"id": row["id"], "agent": row["definition"], "instance": row["instance_id"],
             "record": row["record"], "said": row["said"], "made_at": row["made_at"].isoformat(),
             "until": row["until"].isoformat(), "whom": named, "may": why is None,
-            "why_not": why, "state": row["state"] or "kept",
+            "why_not": words.say(spoken, why) if why else None, "state": row["state"] or "kept",
             "by": by.name if by else (row["undone_by"] or row["asked_by"]),
-            "outcome": row["outcome"]}
+            "outcome": words.say(spoken, row["outcome"]) if row["outcome"] else None}
 
 
 def check(verifier: Any, scenario: Scenario, client_id: str, token: str, change: int, salt: str,

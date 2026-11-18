@@ -124,6 +124,7 @@ export type AdminNow = gen.AdminNow;  // the administrators' page
 export type AdminAct = gen.AdminAct;
 export type AuditNow = gen.AuditNow;  // the audit trail, for auditors and assurance
 export type AuditEntries = gen.AuditEntries;
+export type AuditTrail = gen.AuditTrail;  // whether the trail checks out (round 15, E8)
 export type AuditReport = gen.AuditReport;
 export type AuditExport = gen.AuditExport;
 export type DecideNow = gen.DecideNow;  // the held changes someone may decide, and lately decided
@@ -148,7 +149,7 @@ export type Signer = gen.Signer;  // whose signature a draft's release would nee
 export type Defined = gen.Defined;  // an agent as its folder defines it: a draft's preview
 export type Offered = gen.Offered;
 export type Offer = gen.Offer;
-export type PartRule = gen.PartRule;  // who decides a part's changes, and its threshold for level 2
+export type PartRule = gen.PartRule;  // who decides a part's changes, and its threshold for acting on its own
 export type Limit = gen.Limit;
 export type Plan = Required<gen.Plan>;  // its authors' plan for a draft's first instance, never in force
 /** A plan as the API gives it, which leaves out what's empty, whole. */

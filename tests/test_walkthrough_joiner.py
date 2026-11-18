@@ -75,17 +75,17 @@ def described(walk: Walk, stack, url: str, forge: FakeGitHub, on: On) -> tuple[d
         page.click("#describe-it")
         page.wait_for_selector("#described li", timeout=180000)
     with walk.step("The draft says what it was given, each with the reason, of what the desk offers, "
-                   "at the lowest level each needs, never 2: on the stand-in, the tools that only "
-                   "read whose words match his, at level 0, which only reads.", page):
+                   "with the least each needs, never acting on its own: on the stand-in, the tools "
+                   "that only read whose words match his, so it reads only.", page):
         page.locator("#described").scroll_into_view_if_needed()
         given = page.locator("#described li[data-given]").all_inner_texts()
-        assert given and not any("level 2" in g for g in given), given
+        assert given and not any(g.startswith("acts on its own") for g in given), given
         spec = definition(stack, page)
         if not on.live:  # the stand-in's, which thinks nothing: a model's may ask for more
             assert any("search_records" in g for g in given) and any("get_account" in g for g in given), given
             assert not any(t in " ".join(given) for t in ("reply_on_ticket", "reset_password", "create_draft"))
-            assert any("level 0 at most" in g for g in given), given
-            assert spec["autonomy"] == {"start": 0, "max": 0}
+            assert any("reads only, at most" in g for g in given), given
+            assert spec["autonomy"] == {"start": "reads only", "max": "reads only"}  # by name
     with walk.step("He takes away what it doesn't need: what requesters wrote, which the joiner's own "
                    "questions don't call for, and anything that writes, changes or sends.", page):
         for tool in ("get_messages", "reply_on_ticket", "reset_password", "reset_authenticators",
@@ -95,7 +95,7 @@ def described(walk: Walk, stack, url: str, forge: FakeGitHub, on: On) -> tuple[d
                 page.click("#take-away")
                 kept(page)
     with walk.step("He adds by hand what it does need: what people owe in the ITSM's tickets, which it "
-                   "chases, and reminders; and level 1, since chasing writes.", page):
+                   "chases, and reminders; and asking first, since chasing writes.", page):
         for tool in ("search_records", "get_account"):  # what a model's draft may not have given it
             if tool not in str(spec["tools"]):
                 page.click(f".fd-palette [data-tool={tool}]")
@@ -213,10 +213,11 @@ def test_the_joiner_coordinator_is_described_drafted_least_privilege_and_refined
                 with deciding(stack, provider) as url:
                     refined, draft, pull = described(walk, stack, url, forge, on)
         with walk.step("What it may do is what its description gave it, less what Dev took away, and what "
-                       "he added by hand: reads, what people owe, and reminders, at level 1 at most."):
+                       "he added by hand: reads, what people owe, and reminders, asking first at most."):
             found = able(refined)
             assert "get_messages" not in found["tools"] and {"search_records", "get_account"} <= set(found["tools"])
-            assert found["levels"] == (1, 1) and found["owed"] == ["records"] and found["reminders"]
+            assert found["levels"] == ("asks first", "asks first") and found["owed"] == ["records"]
+            assert found["reminders"]
         with walk.step("The team merges its pull request, and the directory names Dev its owner."):
             merged(stack, forge.files(pull["head"]), AGENT)
             owned(stack.cfg.scenario_dir, "dev", AGENT)

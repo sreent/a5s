@@ -21,7 +21,13 @@ from a5s.core import groups
 
 
 class Refused(Exception):
-    """Why a5s won't do what the agent asked, in words the agent passes on."""
+    """Why a5s won't do what the agent asked, in words the agent passes on; and, where those
+    keep something from it, such as that a record is there at all, why in truth, for the
+    ledger alone (round 15, A14)."""
+
+    def __init__(self, said: str, why: str | None = None):
+        super().__init__(said)
+        self.why = why
 
 
 @dataclass(frozen=True)

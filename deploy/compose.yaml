@@ -96,6 +96,7 @@ services:
       <<: [*people, *scenario]
       A5S_DATABASE_URL: postgresql://a5s_gateway:${A5S_DB_GATEWAY_PASSWORD}@postgres:5432/postgres
       A5S_SERVICE_TOKEN: ${A5S_SERVICE_TOKEN:?set A5S_SERVICE_TOKEN}
+      A5S_OPERATOR_TOKEN:  # operators' own, for `a5s status` and the like: the scheduler's token then does none of it
       A5S_SEAL_KEYS:  # the core's own, sealing what people approve, decide and grade: the gateway alone holds it
       # and a5s's client secret in each system A5S_DELEGATION names, as A5S_DELEGATION_<NAME>_SECRET,
       # and, where the scenario names mailboxes, A5S_MAIL_TENANT, A5S_MAIL_CLIENT_ID and A5S_MAIL_CLIENT_SECRET

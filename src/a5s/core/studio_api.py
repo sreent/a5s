@@ -62,6 +62,7 @@ from a5s.core import (
     typescript,
     undoing,
     web,
+    words,
 )
 from a5s.core import home as homes  # the studio's home: `home` is the site's
 from a5s.core import studio_models as shapes  # what each route answers
@@ -450,7 +451,7 @@ def router(gw: Any) -> APIRouter:
                 if row is None or undoing.shown(conn, gw.scenario, who, change) is None:
                     raise HTTPException(404, "there's no such change of yours to undo")
                 if why := undoing.may(gw.scenario, who, row, bool(row["open"])):
-                    raise HTTPException(409, why)
+                    raise HTTPException(409, words.say(languages.of(conn, who), why))
                 asked = undoing.record(conn, change, who.id, token, body.salt, claims)
         except approvals.Refused as exc:
             raise web.refusal(gw, exc) from None

@@ -1,6 +1,6 @@
 # The master data assistant, built again in the studio
 
-Master data's assistant, built again from nothing in the studio, as mdg-helper, by the data team's own people, SAP behind its MCP server: a test case its judge grades, a correction waiting for its data object's owner, and then, once graded samples showed the accuracy the owners asked for, corrections in material data made at level 2, as their settings gave it. tests/test_walkthrough_master_data.py takes these steps, and made these pictures.
+Master data's assistant, built again from nothing in the studio, as mdg-helper, by the data team's own people, SAP behind its MCP server: a test case its judge grades, a correction waiting for its data object's owner, and then, once graded samples showed the accuracy the owners asked for, corrections in material data made on their own, as their settings gave it. tests/test_walkthrough_master_data.py takes these steps, and made these pictures.
 
 1. Ines, who owns the data team's agents, starts a new one, mdg-helper, from the blank start.
 
@@ -14,13 +14,13 @@ Master data's assistant, built again from nothing in the studio, as mdg-helper, 
 
    ![She gives it a5s's abilities the team needs, long tasks among them, and what starts its runs: messages, on Matrix too, and the next steps and quality fixes people owe.](03-she-gives-it-a5s-s-abilities-the-team-needs-long.png)
 
-4. On the agent itself: whom it works for, what it does, and its levels. It starts at level 1, and its release allows level 2, which only its owners' settings and graded samples give, a type of change in a part at a time.
+4. On the agent itself: whom it works for, what it does, and how far it may act. It starts by asking first, and its release lets it act on its own, which only its owners' settings and graded samples give, a type of change in a part at a time.
 
-   ![On the agent itself: whom it works for, what it does, and its levels. It starts at level 1, and its release allows level 2, which only its owners' settings and graded samples give, a type of change in a part at a time.](04-on-the-agent-itself-whom-it-works-for-what-it-do.png)
+   ![On the agent itself: whom it works for, what it does, and how far it may act. It starts by asking first, and its release lets it act on its own, which only its owners' settings and graded samples give, a type of change in a part at a time.](04-on-the-agent-itself-whom-it-works-for-what-it-do.png)
 
-5. Its judge, beside people's grades: the team's approved model, with what a right correction is, in her words. A judge never moves a level: people's grades do.
+5. Its judge, beside people's grades: the team's approved model, with what a right correction is, in her words. A judge never changes what an agent may do: people's grades do.
 
-   ![Its judge, beside people's grades: the team's approved model, with what a right correction is, in her words. A judge never moves a level: people's grades do.](05-its-judge-beside-people-s-grades-the-team-s-appr.png)
+   ![Its judge, beside people's grades: the team's approved model, with what a right correction is, in her words. A judge never changes what an agent may do: people's grades do.](05-its-judge-beside-people-s-grades-the-team-s-appr.png)
 
 6. She plans its first instance in material data, serving the plant: each correction it asks for there waits for Mo, who owns material data.
 
@@ -52,9 +52,9 @@ Master data's assistant, built again from nothing in the studio, as mdg-helper, 
 
 14. Deployed again, Rhea and Ines sign the release that adds it, and the team records it: it's approved, and a5s runs it.
 
-15. Its release signed and deployed, Ines puts it to work from its plan, in material data. She asks there for 95% accuracy before a5s would ever raise its cap on a type of change: a part with none never earns level 2.
+15. Its release signed and deployed, Ines puts it to work from its plan, in material data. She asks there for 95% accuracy before a5s would ever raise its cap on a type of change: in a part with none, no agent ever acts on its own.
 
-   ![Its release signed and deployed, Ines puts it to work from its plan, in material data. She asks there for 95% accuracy before a5s would ever raise its cap on a type of change: a part with none never earns level 2.](15-its-release-signed-and-deployed-ines-puts-it-to.png)
+   ![Its release signed and deployed, Ines puts it to work from its plan, in material data. She asks there for 95% accuracy before a5s would ever raise its cap on a type of change: in a part with none, no agent ever acts on its own.](15-its-release-signed-and-deployed-ines-puts-it-to.png)
 
 16. Carl Dunn, who owns customer data, approves it, signed in afresh for that version alone, and so do Mo, Una and Pia, who own the other data objects: a version counts once the owner of each part its instances work in has.
 
@@ -68,22 +68,22 @@ Master data's assistant, built again from nothing in the studio, as mdg-helper, 
 
    ![Mo finds it waiting for his decision, reads it in a5s's own words, with CR0000104 as it stood, and approves it, signed in afresh for that alone. a5s asks SAP to make it, and the request, which needed only that, goes back to its steward.](18-mo-finds-it-waiting-for-his-decision-reads-it-in.png)
 
-19. Over the quarter, each correction Mo decided is drawn as a sample, 88 of them here, made up like Raf's. Mel, who grades the agents' work in material data, from outside the team that built it, grades them on a5s's own page, twenty at a time: each is right.
+19. Over the quarter, each correction Mo decided is drawn as a sample, 88 of them here, made up like Raf's. Mel and Kit, who grade the agents' work in material data, from outside the team that built it, grade them on a5s's own page, twenty at a time, half each, since no grader's grades count beyond everyone else's: each is right.
 
-   ![Over the quarter, each correction Mo decided is drawn as a sample, 88 of them here, made up like Raf's. Mel, who grades the agents' work in material data, from outside the team that built it, grades them on a5s's own page, twenty at a time: each is right.](19-over-the-quarter-each-correction-mo-decided-is-d.png)
+   ![Over the quarter, each correction Mo decided is drawn as a sample, 88 of them here, made up like Raf's. Mel and Kit, who grade the agents' work in material data, from outside the team that built it, grade them on a5s's own page, twenty at a time, half each, since no grader's grades count beyond everyone else's: each is right.](19-over-the-quarter-each-correction-mo-decided-is-d.png)
 
-20. The evidence holds: a5s has raised its cap on corrections in material data to level 2. From its instance's page, Ines changes its settings to ask for it there, as a version of the settings: mdg-helper makes them on its own, within their limits.
+20. The evidence holds: a5s has raised its cap on corrections in material data, so they may be made on their own. From its instance's page, Ines changes its settings to ask for it there, as a version of the settings: mdg-helper makes them on its own, within their limits.
 
-   ![The evidence holds: a5s has raised its cap on corrections in material data to level 2. From its instance's page, Ines changes its settings to ask for it there, as a version of the settings: mdg-helper makes them on its own, within their limits.](20-the-evidence-holds-a5s-has-raised-its-cap-on-cor.png)
+   ![The evidence holds: a5s has raised its cap on corrections in material data, so they may be made on their own. From its instance's page, Ines changes its settings to ask for it there, as a version of the settings: mdg-helper makes them on its own, within their limits.](20-the-evidence-holds-a5s-has-raised-its-cap-on-cor.png)
 
 21. Carl Dunn, who owns customer data, approves it, signed in afresh for that version alone, and so do Mo, Una and Pia, who own the other data objects: a version counts once the owner of each part its instances work in has.
 
    ![Carl Dunn, who owns customer data, approves it, signed in afresh for that version alone, and so do Mo, Una and Pia, who own the other data objects: a version counts once the owner of each part its instances work in has.](21-carl-dunn-who-owns-customer-data-approves-it-sig.png)
 
-22. Raf gives it what his next request lacks. At level 2, a5s makes the correction itself, through SAP, and tells him; Mo hears of it in his daily digest.
+22. Raf gives it what his next request lacks. Now it acts on its own there, a5s makes the correction itself, through SAP, and tells him; Mo hears of it in his daily digest.
 
-   ![Raf gives it what his next request lacks. At level 2, a5s makes the correction itself, through SAP, and tells him; Mo hears of it in his daily digest.](22-raf-gives-it-what-his-next-request-lacks-at-leve.png)
+   ![Raf gives it what his next request lacks. Now it acts on its own there, a5s makes the correction itself, through SAP, and tells him; Mo hears of it in his daily digest.](22-raf-gives-it-what-his-next-request-lacks-now-it.png)
 
-23. Ken, of assurance, follows it in the audit trail: the correction it asked for, held, decided by Mo and made through SAP, and the one it made alone at level 2.
+23. Ken, of assurance, follows it in the audit trail: the correction it asked for, held, decided by Mo and made through SAP, and the one it made on its own.
 
-   ![Ken, of assurance, follows it in the audit trail: the correction it asked for, held, decided by Mo and made through SAP, and the one it made alone at level 2.](23-ken-of-assurance-follows-it-in-the-audit-trail-t.png)
+   ![Ken, of assurance, follows it in the audit trail: the correction it asked for, held, decided by Mo and made through SAP, and the one it made on its own.](23-ken-of-assurance-follows-it-in-the-audit-trail-t.png)

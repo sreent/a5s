@@ -136,9 +136,10 @@ CHANGES = {
         {RELEASE_APPROVER}),
     "a model withdrawn": (lambda d: (d["parts"]["models"].update({"config/models.yaml": "x"}),
                                      d["models"].pop("qwen3.7-max")), {ENGINEER}),
-    "the assistant's instructions": (  # it may work at level 2 (round 15, C2)
+    "the assistant's instructions": (  # it asks first at most, as the pilot's ships: one that
+        # may act on its own needs the release approver too (round 15, C2: test_r15_levels.py)
         lambda d: agent(d)["files"].update({"agents/assistant/AGENTS.md": "x"}),
-        {OWNER, ENGINEER, RELEASE_APPROVER}),
+        {OWNER, ENGINEER}),
     "a tool for the assistant": (lambda d: agent(d)["may"]["tools"].append("send_email"),
                                  {RELEASE_APPROVER}),
     "a tool the assistant uses": (lambda d: agent(d)["may"]["pins"].update({"get_record": "x"}),
@@ -250,11 +251,11 @@ def test_a_release_is_weighed_against_the_one_approved_before_it(deployed):
     instructions = deployed.cfg.agents_dir / "assistant" / "AGENTS.md"
     instructions.write_text(instructions.read_text() + "- Be brief.\n")
     second = this(deployed).raw
-    verdict = record(deployed, second, "priya", "tomas", "rosa")  # it may work at level 2
+    verdict = record(deployed, second, "priya", "tomas", "rosa")  # it may act on its own here
     assert verdict.ok and {n.role for n in verdict.needs} == {OWNER, ENGINEER, RELEASE_APPROVER}
 
     spec = deployed.cfg.agents_dir / "watcher" / "agent.yaml"
-    spec.write_text(spec.read_text().replace("  max: 0", "  max: 1"))
+    spec.write_text(spec.read_text().replace("  max: reads only", "  max: asks first"))
     third = this(deployed).raw
     widened = record(deployed, third, "priya", "tomas")
     assert not widened.ok and widened.missing[0].startswith(

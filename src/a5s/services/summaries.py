@@ -114,15 +114,16 @@ def checked(reply: str, previous: dict | None, turns: list[dict], person: str,
 
 
 def keep(conn: db.Connection, person: str, agent: str, topic: str, body: dict,
-         through: int, run: str, heard: list[str] | None = None) -> None:
+         through: int, run: str, heard: list[str] | None = None, outside: bool = False) -> None:
     """Keep the topic's summary, in place of the one before: in a group chat's conversation,
-    with who heard everything it holds."""
+    with who heard everything it holds; and whether it holds content from outside, as one kept
+    before round 15 may."""
     conn.execute(
-        "insert into summaries (person, agent, topic, body, through, run_id, heard_by) "
-        "values (%s, %s, %s, %s, %s, %s, %s) on conflict (person, agent, topic) do update "
+        "insert into summaries (person, agent, topic, body, through, run_id, heard_by, outside) "
+        "values (%s, %s, %s, %s, %s, %s, %s, %s) on conflict (person, agent, topic) do update "
         "set body = excluded.body, through = excluded.through, run_id = excluded.run_id, "
-        "heard_by = excluded.heard_by, updated_at = now()",
-        (person, agent, topic, Jsonb(body), through, run, heard))
+        "heard_by = excluded.heard_by, outside = excluded.outside, updated_at = now()",
+        (person, agent, topic, Jsonb(body), through, run, heard, outside))
 
 
 def _said_by(turn: dict) -> bool:

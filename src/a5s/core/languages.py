@@ -74,6 +74,13 @@ THAI_MONTHS = ("ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.",
                "พ.ย.", "ธ.ค.")
 
 
+def day(at: datetime, language: str) -> str:
+    """A day as someone reads it, by its date in UTC: in Thai by its month's Thai name, and
+    otherwise as 03 Nov."""
+    found = at.astimezone(ZoneInfo("UTC"))
+    return f"{found.day} {THAI_MONTHS[found.month - 1]}" if language == "th" else f"{found:%d %b}"
+
+
 def when(at: datetime, language: str, timezone: str = "UTC") -> str:
     """A moment as someone reads it, in their own time zone, which it names: in Thai by its
     month's Thai name and the Buddhist era's year, as Thai readers write a date, and otherwise

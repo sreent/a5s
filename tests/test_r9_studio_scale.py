@@ -74,7 +74,7 @@ def test_an_instances_denials_arent_lost_behind_another_instances(stack):
     with db.transaction(stack.admin) as conn:
         top = conn.execute("select coalesce(max(seq), 0) as n from ledger").fetchone()["n"]
     deny = ("json_build_object('kind', 'tool', 'action', 'change_due_date', 'decision', 'deny', "
-            "'reasons', json_build_array('lasting-or-outside-effects-need-level-2'), "
+            "'reasons', json_build_array('lasting-or-outside-effects-only-on-its-own'), "
             "'run', md5(g::text), 'instance', '{inst}', 'at', '2026-10-27T12:00:00+00:00')")
     seed_ledger(stack.admin, top + 1, 3, deny.format(inst="assistant-finance"))  # its own
     seed_ledger(stack.admin, top + 10, 10_000, deny.format(inst="assistant-ops"))  # newer

@@ -21,6 +21,7 @@ import hashlib
 from datetime import datetime, timedelta
 
 from a5s import db
+from a5s.core import words
 from a5s.core.ledger import canonical
 
 WINDOW = timedelta(days=30)
@@ -68,10 +69,23 @@ def before(conn: db.Connection, run: dict, action: str, change_digest: str) -> d
                         (run["run"], change_digest)).fetchone()
 
 
+# Why a change goes past the scenario's limits, as its decider is told (core/words.py)
+RUN_LIMIT = ("it's past the scenario's limit of {most} {action} a run, which a task's runs "
+             "share: this run asked for {made} already, and this one changes {weight}")
+TASK_LIMIT = ("it's past the scenario's limit of {most} {action} a run, which a task's runs "
+              "share: this task, in its runs and its parts', asked for {made} already, and this "
+              "one changes {weight}")
+PERSON_LIMIT = ("it's past the scenario's limit of {most} {action} in 30 days for each person: "
+                "{person} has had {made} already")
+NOBODY_LIMIT = ("it's past the scenario's limit of {most} {action} in 30 days, which {instance} "
+                "has for runs that act for nobody: it's had {made} already")
+
+
 def over(conn: db.Connection, run: dict, action: str, weight: int,
-         limits: dict[str, dict], now: datetime) -> str | None:
+         limits: dict[str, dict], now: datetime) -> dict | None:
     """Why a change of `weight` records goes past the scenario's limits for its type, if it
-    does, in words for its decider. Call `before` first, in the same transaction."""
+    does, as words a5s keeps for its decider, to say in the language they read (round 15, B6).
+    Call `before` first, in the same transaction."""
     limit = limits.get(action) or {}
     if (most := limit.get("per_run")) is not None:
         if (whole := work(run)) != str(run["run"]):  # a task's slices and parts share it
@@ -79,30 +93,29 @@ def over(conn: db.Connection, run: dict, action: str, weight: int,
                 "select coalesce(sum(a.records), 0) as n from action_counts a join runs r on "
                 f"r.id = a.run_id where a.action = %s and r.trigger ->> 'kind' = 'task' and "
                 f"{_OF_WORK} = %s", (action, whole)).fetchone()["n"]
-            asked = "this task, in its runs and its parts', asked"
+            says = TASK_LIMIT
         else:
             made = conn.execute("select coalesce(sum(records), 0) as n from action_counts "
                                 "where run_id = %s and action = %s",
                                 (run["run"], action)).fetchone()["n"]
-            asked = "this run asked"
+            says = RUN_LIMIT
         if made + weight > most:
-            return (f"it's past the scenario's limit of {most} {action} a run, which a task's "
-                    f"runs share: {asked} for {made} already, and this one changes {weight}")
+            return words.kept(says, most=most, action=action, made=made, weight=weight)
     if (most := limit.get("per_person_30_days")) is not None:
         for person in run["acts_for"]:
             made = conn.execute("select coalesce(sum(records), 0) as n from action_counts "
                                 "where action = %s and %s = any(acts_for) and at > %s",
                                 (action, person, now - WINDOW)).fetchone()["n"]
             if made + weight > most:
-                return (f"it's past the scenario's limit of {most} {action} in 30 days for "
-                        f"each person: {person} has had {made} already")
+                return words.kept(PERSON_LIMIT, most=most, action=action, person=person,
+                                  made=made)
         if not run["acts_for"]:  # a run for nobody counts against its instance
             made = conn.execute("select coalesce(sum(records), 0) as n from action_counts "
                                 "where action = %s and instance_id = %s and acts_for = '{}' "
                                 "and at > %s", (action, run["id"], now - WINDOW)).fetchone()["n"]
             if made + weight > most:
-                return (f"it's past the scenario's limit of {most} {action} in 30 days, which "
-                        f"{run['id']} has for runs that act for nobody: it's had {made} already")
+                return words.kept(NOBODY_LIMIT, most=most, action=action, instance=run["id"],
+                                  made=made)
     return None
 
 

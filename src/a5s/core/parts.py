@@ -17,6 +17,12 @@ from a5s.contract import PART_OWNER, Scenario
 from a5s.core import groups
 
 UNSEEN = "there's no such record, or the people this run is for may not see it"
+NOWHERE = "there's no such record, or this run may not work on it"  # for a run for nobody
+# Policy's two rules on the records a run may work on (core/policies/base.cedar): what the run
+# hears when either refuses a call is the same as for a record there isn't, so it tells nobody
+# that a record is there, nor in which part (round 15, A14)
+RULES = frozenset({"instances-work-only-in-their-parts", "people-see-only-what-they-may"})
+REFUSED = "runs-work-only-on-records-they-may-see"  # the one reason the run hears for both
 
 
 def about(scenario: Scenario, run: dict, records: list[str], action: str | None = None,
@@ -113,6 +119,29 @@ def workable(scenario: Scenario, run: dict, record: str) -> bool:
     return found["in_scope"] and found["visible"]
 
 
+def unseen(reasons: Iterable[str]) -> bool:
+    """Whether policy refused a call, by its reasons, for a record the run may not work on, or
+    for one there isn't: one in a part its instance doesn't work in, or one someone it acts for
+    may not see, as the directory says of a record there isn't."""
+    return not RULES.isdisjoint(reasons)
+
+
+def told(scenario: Scenario, run: dict) -> str:
+    """What a run hears of a record it may not work on, whichever rule refused it, and of a
+    record there isn't: the same words for each, which only the run decides, never the record,
+    so they tell nobody that a record is there, nor in which part (round 15, A14). Whoever it
+    acts for is pointed to someone who runs its assistant, the instance's owner or else its
+    deputy, never a part's owner, whom the part would give away. The ledger keeps the rules
+    that refused it, as a run's page shows them."""
+    whom = list(run.get("acts_for") or [])
+    if not whom:
+        return NOWHERE
+    ask = next((who for pid in (run.get("owner"), run.get("deputy"))
+                if pid and pid not in whom and (who := scenario.person(pid))), None)
+    return UNSEEN + (f". If they think they should, they can ask {ask.name}, who runs this "
+                     "assistant" if ask else "")
+
+
 def kept(scenario: Scenario, run: dict, field: str | None, result: Any) -> tuple[Any, int]:
     """What a tool returned, less the records in it the run may not work on, at any depth, by
     the field that names each, and how many it left out. A record whose key isn't a string
@@ -146,10 +175,10 @@ def kept(scenario: Scenario, run: dict, field: str | None, result: Any) -> tuple
     if not field:
         return result, 0
     if isinstance(result, dict) and field in result and not fits(result):
-        return {"error": UNSEEN}, 1
+        return {"error": told(scenario, run)}, 1
     found = walk(result)
     if isinstance(result, dict) and field in result and withheld:  # a record holding records
-        return {"error": UNSEEN}, withheld + 1
+        return {"error": told(scenario, run)}, withheld + 1
     return found, withheld
 
 

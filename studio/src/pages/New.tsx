@@ -76,7 +76,7 @@ export function NewPage() {
             {sandbox.error && <p className="note" id="no-describing">{t("Describing it needs the sandbox, which drafts it there: {problem}", { problem: sandbox.error })}</p>}
             {sandbox.data && (
               <>
-                <p className="note">{t("Say what it's for, in your own words. The sandbox's model proposes what it needs of what this scenario offers, and a5s gives it the least of that, never level 2, each with the reason, for you to check and change by hand. What you write goes to the model you choose, as what's said in the sandbox does.")}</p>
+                <p className="note">{t("Say what it's for, in your own words. The sandbox's model proposes what it needs of what this scenario offers, and a5s gives it the least of that, never acting on its own, each with the reason, for you to check and change by hand. What you write goes to the model you choose, as what's said in the sandbox does.")}</p>
                 <label className="field"><span>{t("What it's for, and for whom")}</span>
                   <textarea id="describe" rows={4} value={words} maxLength={2000}
                             placeholder={t("Tracks each new joiner's equipment and access requests in the ITSM against their start date, and answers their questions before day one.")}

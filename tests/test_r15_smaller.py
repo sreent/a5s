@@ -103,5 +103,5 @@ def test_a_drafts_pull_request_says_what_the_agent_may_do(stack, approving, prov
     may = body.split("## What it may do", 1)[1]
     assert "- It uses change_due_date, close_question in changes." in may
     assert "- It uses create_draft in documents." in may
-    assert "- It may work at level 2, making a type of change on its own" in may
+    assert "- It may act on its own, making a type of change itself" in may
     assert "- It takes on long tasks, over days, once someone says yes." in may

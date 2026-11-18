@@ -11,12 +11,12 @@ a5s keeps each value with whoever decides it, so the default can be the safe one
 | Layer | Who decides | What's in it | Where |
 | --- | --- | --- | --- |
 | The deployment's configuration | The team that runs a5s | Addresses, the database, timeouts, workers, channels, sign-in, publishing: what differs between one deployment and another | `A5S_` environment variables, from compose or the chart. Every one is below |
-| The signed settings | Part owners, agent owners, instance approvers and the data protection officer, each for what's theirs | What agents may do and the rules for people's data: levels, limits, thresholds, classes of data, the roles groups give, and what each agent may cost a month | Versions people sign and approve, which the ledger records ([administration](administration.md)) |
+| The signed settings | Part owners, agent owners, instance approvers and the data protection officer, each for what's theirs | What agents may do and the rules for people's data: whether each reads only, asks first or acts on its own, limits, thresholds, classes of data, the roles groups give, and what each agent may cost a month | Versions people sign and approve, which the ledger records ([administration](administration.md)) |
 | An agent's definition | The agent's owner, through a release | Its model, tools, schedules, context and budgets | `agent.yaml` in the agent's folder, checked with bounds, released and signed |
 | People's preferences | Each person | What an agent offers them to set, with it | Their own, in the chat |
 | a5s's code | A release, which its approvers sign, assurance among them | The starting values nobody needs to change between deployments, and the rules that keep a5s safe | [Starting values](starting-values.md) lists each, with its owner |
 
-Some rules stay out of every layer, whoever asks: level 2 comes only from the signed settings, agents speak only as their own bots, and SQL is only ever text in the code. A setting for one of those would be a way to turn it off.
+Some rules stay out of every layer, whoever asks: only the signed settings let an agent act on its own, agents speak only as their own bots, and SQL is only ever text in the code. A setting for one of those would be a way to turn it off.
 
 ## Checked as each part starts
 
@@ -57,7 +57,8 @@ The tests check that neither compose nor the chart sets a setting to its default
 | --- | --- | --- | --- |
 | `A5S_ROOT` | none | a folder | The folder a5s's own files are in: its agents, config and scenarios |
 | `A5S_SERVICE_TOKEN` | none, or `.a5s/service-token` under `A5S_ROOT` | a token | The token a5s's parts call the core with |
-| `A5S_SEAL_KEYS` | none, or `.a5s/seal-key` under `A5S_ROOT` | keys, by commas | The core's own keys, sealing what people approve, decide and grade: the first seals, the others are ones it's moving from |
+| `A5S_OPERATOR_TOKEN` | none | a token | The token operators' commands call the core with, such as a5s status: where it's set, the core takes it alone for theirs, and the service token alone for the scheduler's work (round 15) |
+| `A5S_SEAL_KEYS` | none, or `.a5s/seal-key` under `A5S_ROOT` | keys, by commas | The core's own keys, sealing what people approve, decide and grade: the first seals, the others are ones it's moving from, until `a5s seal-again` retires them (docs/runbooks.md#rotating-the-seal-key) |
 | `A5S_GATEWAY_URL` | `http://127.0.0.1:8700` | an http(s):// address | Where the other parts reach the core |
 | `A5S_CHANNELS_URL` | `http://127.0.0.1:8703` | an http(s):// address | Where people's messages reach the core's channels |
 | `A5S_PUBLIC_URL` | none | an http(s):// address | Where people reach the channels, for links, if not A5S_CHANNELS_URL |
@@ -140,7 +141,7 @@ The tests check that neither compose nor the chart sets a setting to its default
 
 | Variable | Default | Takes | What it sets |
 | --- | --- | --- | --- |
-| `A5S_ANCHOR_STORE` | none | s3://, azure://, gs:// or file://, such as s3://bucket/a5s | Where the ledger's locked copies go |
+| `A5S_ANCHOR_STORE` | none | s3://, azure://, gs:// or file://, such as s3://bucket/a5s | Where the ledger's locked copies go, which the copier writes and `a5s restore` reads; the core, given it to read too, won't start on a database restored from a backup until `a5s restore` runs |
 | `A5S_ANCHOR_RETAIN_DAYS` | `365` | a whole number of days from 365 to 36,500 | Days each copy stays locked: longer here, and shorter only by a release, which assurance signs |
 
 ### The studio, its sandbox and publishing

@@ -14,7 +14,7 @@ import yaml
 
 from a5s import db, definitions
 from a5s.config import load_models
-from a5s.core import notebook
+from a5s.core import notebook, parts, provenance
 from conftest import ROOT, FakeModel, build_root, live_image, running
 
 LEARN = {"name": "learn", "at": "09:00", "days": "weekdays",
@@ -215,3 +215,29 @@ def test_a_real_model_notes_what_records_show_on_its_schedule(database, tmp_path
         print(f"--> {[(e['text'], e['sources']) for e in entries(stack)]}")
         assert entries(stack), "it noted nothing that its records hold"
         assert stack.verify().ok
+
+
+def test_a_note_on_another_parts_record_is_refused_as_one_on_a_record_there_isnt(stack):
+    """A record the run read may name others, one in a part the agent doesn't work in or one
+    there isn't: a note on either is refused in the same words, and the ledger keeps which
+    (round 15, A14)."""
+    with_notebook(stack)
+
+    def named(n: int) -> None:  # as if a record it read named both
+        if n == 1:
+            with db.transaction(stack.admin) as conn:
+                [run] = conn.execute("select id::text from runs where closed_at is null")
+                provenance.read_records(conn, run["id"], "get_record", "key",
+                                        [{"key": "Q-1003"}, {"key": "Q-9999"}],
+                                        stack.gateway.scenario.record_pattern)
+
+    stack.model.on_request = named
+    learn(stack, ("note_learned", {"note": "Q-1003 is late.", "sources": ["Q-1003"]}),
+          ("note_learned", {"note": "Q-9999 is late.", "sources": ["Q-9999"]}))
+    elsewhere, none = [e["outcome"] for e in stack.ledger()
+                       if e["action"] == "note_learned" and e["decision"] == "record"]
+    assert elsewhere["reason"] == f"Q-1003: {parts.NOWHERE}"
+    assert none["reason"] == f"Q-9999: {parts.NOWHERE}"
+    assert (elsewhere["why"], none["why"]) == ("Q-1003 isn't in a part this agent works in",
+                                               "the records have no Q-9999")
+    assert entries(stack) == []

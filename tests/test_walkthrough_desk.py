@@ -127,9 +127,9 @@ def built(walk: Walk, stack, url: str, forge: FakeGitHub) -> tuple[dict, str, di
         page.click(".fd-palette [data-owed=records]")
         page.wait_for_selector(".flow-canvas [data-step=obligations]", timeout=30000)
         kept(page)
-    with walk.step("On the agent itself: whom it works for, what it does, and its levels. It asks "
-                   "for changes, and may make a reset alone, at level 2, only where the settings "
-                   "and graded samples give it, as the desk's own assistant.", page):
+    with walk.step("On the agent itself: whom it works for, what it does, and how far it may act. "
+                   "It asks first for changes, and may make a reset on its own only where the "
+                   "settings and graded samples give it, as the desk's own assistant.", page):
         page.click("[data-step=agent]")
         page.fill("#works-for", "Employees and service-desk resolvers, within their ticket and knowledge permissions")
         page.fill("#does", "Answers questions about ITSM tickets and approved knowledge articles, saves draft "

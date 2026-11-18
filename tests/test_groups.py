@@ -22,6 +22,7 @@ from a5s.core.matrix import Matrix, MatrixConfig
 from a5s.core.teams import Bot, Teams, TeamsConfig
 from a5s.services import context
 from conftest import ROOT, FakeModel, build_root, eventually, free_port, live_image, running, serve
+from test_languages import reads
 from test_matrix import AS_TOKEN, BOT, HS_TOKEN, Homeserver, deliver, invite, said
 from test_teams import ANA as ANA_ENTRA
 from test_teams import APP_ID, TENANT, WATCHER_APP, FakeBotFramework, activity
@@ -212,6 +213,19 @@ def test_a_group_the_agent_doesnt_serve_everyone_in_hears_so(stack, homeserver):
     assert homeserver.sent[-1]["body"] == groups.UNSERVED.format(  # whom, naming nobody else
         who="Chen Wei", add="Whoever approves the agents here can add them.")
     assert stack.model.requests == []
+
+
+def test_a_group_whose_people_all_read_thai_hears_a5s_in_thai(stack, homeserver):
+    """Round 15, A12: a5s's own words in a group chat are in the language everyone in it
+    reads, and in English where they don't all read one."""
+    reads(stack, "ana", "th")
+    reads(stack, "chen", "th")
+    homeserver.rooms[ROOM] = {ANA, CHEN, BOT}
+    deliver(homeserver, mention(ASKED))
+    stack.scheduler().answer_waiting()
+    assert homeserver.sent[-1]["body"] == (
+        "ฉันยังไม่ได้ทำงานให้ Chen Wei จึงช่วยในแชตนี้ไม่ได้ ผู้อนุมัติเอเจนต์ที่นี่เพิ่มพวกเขาได้ "
+        "หรือถามฉันในแชตที่ไม่มีพวกเขา หรือคุยกันแบบตัวต่อตัว")
 
 
 @pytest.mark.parametrize("case", ["history shown", "shown from invitation", "a stranger",

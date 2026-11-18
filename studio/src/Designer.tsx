@@ -20,6 +20,7 @@ import { DAYS, read, type Schedule, type Spec, Unreadable, withMap, withMessages
 import { breakable, type Flow, FlowMap, type Step } from "./FlowMap";
 import { t } from "./i18n";
 import { Icon } from "./icons";
+import { levelName, writtenLevel } from "./levels";
 import { levels, plural, type Risk, risk, RISK_NAMES, ToolBadges, useView, Views } from "./ui";
 
 type Files = Record<string, string>;
@@ -304,7 +305,7 @@ function AgentPanel({ name, text, spec, offer, edit, ability, planning }: { name
   edit: Edit; ability: (key: Ability, on: boolean) => void; planning: Planning }) {
   const level = (end: "start" | "max", n: number) => {
     const next = { ...spec, autonomy: { ...spec.autonomy, [end]: n } };
-    edit(withValue(text, ["autonomy", end], n), levelLines(next).join(" "));
+    edit(withValue(text, ["autonomy", end], writtenLevel(n)), levelLines(next).join(" "));  // by name
   };
   const models = [...new Set([spec.model, ...offer.models].filter(Boolean))];
   return (
@@ -320,13 +321,13 @@ function AgentPanel({ name, text, spec, offer, edit, ability, planning }: { name
         </select>
         <span className="wb-hint">{t("Of those the deployment approves.")}</span></label>
       <div className="wb-pair">
-        <label className="wb-field"><span className="wb-label">{t("Level it starts at")}</span>
+        <label className="wb-field"><span className="wb-label">{t("Where it starts")}</span>
           <select id="level-start" value={spec.autonomy.start} onChange={(e) => level("start", Number(e.target.value))}>
-            {[0, 1].map((n) => <option key={n} value={n}>{n}</option>)}
+            {[0, 1].map((n) => <option key={n} value={n}>{levelName(n)}</option>)}
           </select></label>
-        <label className="wb-field"><span className="wb-label">{t("Highest level")}</span>
+        <label className="wb-field"><span className="wb-label">{t("The most it may do")}</span>
           <select id="level-max" value={spec.autonomy.max} onChange={(e) => level("max", Number(e.target.value))}>
-            {[0, 1, 2].map((n) => <option key={n} value={n}>{n}</option>)}
+            {[0, 1, 2].map((n) => <option key={n} value={n}>{levelName(n)}</option>)}
           </select></label>
       </div>
       <Follows lines={levelLines(spec)} />
@@ -428,7 +429,7 @@ function ModelPanel({ text, spec, offer, edit }: { text: string; spec: Spec; off
   const judge = (alias: string) => {
     if (!alias) edit(without(text, ["evaluation"]), t("No model judges its work now: people's grades alone."));
     else edit(spec.evaluation ? withValue(text, ["evaluation", "judge"], alias) : withMap(text, ["evaluation"], { judge: alias, rubric: "" }),
-              t("{model} judges each sample of its work beside people's grades, never instead of them: no verdict moves a level.", { model: alias }));
+              t("{model} judges each sample of its work beside people's grades, never instead of them: no verdict changes what an agent may do.", { model: alias }));
   };
   const models = [...new Set([spec.model, ...offer.models].filter(Boolean))];
   return (
@@ -448,7 +449,7 @@ function ModelPanel({ text, spec, offer, edit }: { text: string; spec: Spec; off
         <label className="wb-field"><span className="wb-label">{t("What a right change is, for its judge")}</span>
           <textarea id="design-rubric" rows={3} value={spec.evaluation.rubric}
                     onChange={(e) => edit(withValue(text, ["evaluation", "rubric"], e.target.value))} />
-          <span className="wb-hint">{t("In its owners' words. The judge never moves a level: people's grades do.")}</span></label>
+          <span className="wb-hint">{t("In its owners' words. The judge never changes what an agent may do: people's grades do.")}</span></label>
       )}
     </>
   );
@@ -459,7 +460,7 @@ function ChecksPanel({ text, spec, offer, edit }: { text: string; spec: Spec; of
   return (
     <>
       <Head icon="shield" tone="own" title={t("a5s's checks")} kind={t("every call to a tool passes them")} />
-      <p className="note">{t("Its tool must be its release's, pinned as the scenario has it; the record in a part its instance works in, and one everyone the run acts for may see; and a change waits, or is made, as its level and the scenario's limits say.")}</p>
+      <p className="note">{t("Its tool must be its release's, pinned as the scenario has it; the record in a part its instance works in, and one everyone the run acts for may see; and a change waits, or is made, as what it may do there and the scenario's limits say.")}</p>
       <div className="wb-pair">
         <label className="wb-field"><span className="wb-label">{t("Tokens a run may spend")}</span>
           <input id="budget-run" type="number" min={1000} step={10000} value={spec.budget.per_run} onChange={number(["budget", "per_run"])} /></label>
@@ -519,21 +520,21 @@ export function Consequences({ spec, offer, signers, plan }: { spec: Spec; offer
       <section id="decides" aria-labelledby="decides-title">
         <h2 id="decides-title">{t("Who decides its changes")}</h2>
         {!changing.length ? <p>{t("Nobody: it changes no records a part decides.")}</p>
-          : spec.autonomy.max < 1 ? <p>{t("Nobody yet: its release keeps it at level 0, which only observes, so a5s refuses every change it asks for, {actions}.", waits)}</p> : (
+          : spec.autonomy.max < 1 ? <p>{t("Nobody yet: its release lets it read only, so a5s refuses every change it asks for, {actions}.", waits)}</p> : (
           <>
             <p>{plan.parts.length
               ? (spec.autonomy.max < 2
-                ? t("Below level 2, each change it asks for, {actions}, waits for a yes from a decider of its record's part, in the parts you plan its first instance in, and its release keeps it below level 2:", waits)
-                : t("Below level 2, each change it asks for, {actions}, waits for a yes from a decider of its record's part, in the parts you plan its first instance in:", waits))
+                ? t("Each change it asks for, {actions}, waits for a yes from a decider of its record's part, in the parts you plan its first instance in, since its release lets it ask first at most:", waits)
+                : t("Unless it acts on its own, each change it asks for, {actions}, waits for a yes from a decider of its record's part, in the parts you plan its first instance in:", waits))
               : (spec.autonomy.max < 2
-                ? t("Below level 2, each change it asks for, {actions}, waits for a yes from a decider of its record's part, and its release keeps it below level 2:", waits)
-                : t("Below level 2, each change it asks for, {actions}, waits for a yes from a decider of its record's part:", waits))}</p>
+                ? t("Each change it asks for, {actions}, waits for a yes from a decider of its record's part, since its release lets it ask first at most:", waits)
+                : t("Unless it acts on its own, each change it asks for, {actions}, waits for a yes from a decider of its record's part:", waits))}</p>
             {planned.length
               ? <ul className="plain">{planned.map((p) => <li key={p.name}><strong>{p.name}</strong>: {deciders(p)}</li>)}</ul>
               : <p className="note">{t("its owners and their delegates, as the settings and the directory name them.")}</p>}
           </>
         )}
-        {alone.length > 0 && <p>{t("{tools} run only at level 2, which only the settings give.", { tools: and(alone.map((tool) => tool.name)) })}</p>}
+        {alone.length > 0 && <p>{t("{tools} run only where it acts on its own, which only the settings give.", { tools: and(alone.map((tool) => tool.name)) })}</p>}
       </section>
       <section id="to-work" aria-labelledby="to-work-title">
         <h2 id="to-work-title">{t("Who puts it to work")}</h2>

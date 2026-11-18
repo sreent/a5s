@@ -6,14 +6,15 @@ import httpx
 import yaml
 from playwright.sync_api import expect
 
+from a5s import db, levels
 from a5s.contract import DataProtection
 from a5s.core import approvals
 from conftest import accessible
 from test_approvals import in_force_serial
 from test_ui_pages import shot
 
-ASSISTANT = ("assistant-finance: the assistant, working in billing at level 1, serving Ana Ortiz "
-             "and Ben Okafor, run by Ana Ortiz with Ben Okafor as deputy.")
+ASSISTANT = ("assistant-finance: the assistant, asking first in billing, serving Ana Ortiz and Ben "
+             "Okafor, run by Ana Ortiz with Ben Okafor as deputy.")
 
 
 def api(url: str, provider, path: str, person: str = "ana", **body) -> httpx.Response:
@@ -39,15 +40,18 @@ def test_an_approver_sees_the_whole_version_in_force(stack, approving, provider)
         "The scenario's data is synthetic.", ASSISTANT,
         "Limit for change-due-date: 5 in one run and 20 for one person in 30 days.",
         "Limit for close-question: 5 in one run and 20 for one person in 30 days.",
-        "An agent earns level 2 in billing once graded samples show it's 98% accurate.",
-        "An agent earns level 2 in orders once graded samples show it's 95% accurate.",
+        "An agent may act on its own in billing once graded samples show it's 98% accurate.",
+        "An agent may act on its own in orders once graded samples show it's 95% accurate.",
         *approvals.protection(DataProtection())]  # the officer's choices, as a5s starts them
     written = yaml.safe_load(body["in_force"]["text"])
     assert written["instances"]["assistant-finance"]["parts"] == ["billing"]
     assert body["waiting"] == [] and body["requests"] == []
     # What the page's forms change, and what they offer: the people the settings name, the
     # types of change the tools make, and what each release starts at and allows
-    assert body["in_force"]["data"] == written
+    # each level by name as written, which the forms get as its number
+    assert written["instances"]["assistant-finance"]["level"] == "asks first"
+    assert body["in_force"]["data"] == levels.numbered(written)
+    assert body["in_force"]["data"]["instances"]["assistant-finance"]["level"] == levels.ASKS_FIRST
     assert body["names"] == {"ana": "Ana Ortiz", "ben": "Ben Okafor"}
     assert body["actions"] == ["change-due-date", "close-question"]
     assert body["releases"]["assistant"] == {"starts": 1, "most": 2,
@@ -65,9 +69,9 @@ def test_a_change_is_reviewed_in_words_before_anyone_asks_for_it(stack, approvin
     body = found.json()
     assert body["serial"] == in_force_serial(stack) + 1 and body["problems"] == []
     assert body["changes"] == [
-        {"text": "assistant-finance works in orders as well, at level 1.", "widens": True}]
+        {"text": "assistant-finance works in orders as well, where it asks first.", "widens": True}]
     assert body["approvers"] == ["Ana Ortiz", "Omar Haddad"]
-    assert "working in billing at level 1 and orders at level 1" in body["whole"][1]
+    assert "asking first in billing and orders" in body["whole"][1]
     broken = api(approving, provider, "/settings/api/review", text="instances: [").json()
     assert broken["problems"][0].startswith("a5s can't read it as settings")
     unknown = yaml.safe_dump({"instances": {"x": {"definition": "nobody", "serves": []}}})
@@ -123,8 +127,8 @@ FORMS_CHANGES = [
     ("The limit for change-due-date becomes 3 in one run and 20 for one person in 30 days, "
      "instead of 5 in one run and 20 for one person in 30 days."),
     "assistant-finance serves Chen Wei as well. widens what agents do",
-    ("assistant-finance's level for change-due-date in billing goes from 1 to 2, where it acts "
-     "and reports, once samples show it's accurate enough. widens what agents do")]
+    ("For change-due-date in billing, assistant-finance goes from “asks first” to “acts on its "
+     "own”, once samples show it's accurate enough. widens what agents do")]
 
 
 def test_an_approver_changes_the_settings_in_forms_in_the_browser(stack, approving, provider,
@@ -134,8 +138,8 @@ def test_an_approver_changes_the_settings_in_forms_in_the_browser(stack, approvi
     page.wait_for_selector("#forms fieldset", timeout=30000)
     assert page.get_attribute("#by-forms", "aria-pressed") == "true" and page.is_hidden("#as-text")
     assistant = page.locator("fieldset", has_text="assistant-finance, the assistant")
-    assert assistant.get_by_label("level 1, asks").is_checked()
-    # Chen, by their id; due dates in billing on its own, at level 2; three in one run at most
+    assert assistant.get_by_label("asks first: its changes wait").is_checked()
+    # Chen, by their id; due dates in billing on its own; three in one run at most
     assistant.get_by_label("Someone else assistant-finance serves").fill("chen")
     page.keyboard.press("Enter")
     assert assistant.get_by_label("chen", exact=True).is_checked()
@@ -158,6 +162,12 @@ def test_an_approver_changes_the_settings_in_forms_in_the_browser(stack, approvi
     # What it asked for is the version in force with those changes and nothing else
     stack.scheduler().apply_approved()
     [waiting] = api(approving, provider, "/settings/api").json()["waiting"]
+    with db.transaction(stack.admin) as conn:  # as the forms wrote it: each level by its name
+        raw = bytes(conn.execute("select raw from settings_proposals where serial = %s",
+                                 (waiting["serial"],)).fetchone()["raw"]).decode()
+    finance = yaml.safe_load(raw)["instances"]["assistant-finance"]
+    assert finance["level"] == "asks first", raw
+    assert finance["parts"]["billing"]["actions"] == {"change-due-date": "acts on its own"}, raw
     widens = " widens what agents do"  # as the page marks what the API marks
     assert [c["text"] + (widens if c["widens"] else "") for c in waiting["changes"]] == FORMS_CHANGES
     # Its approvers' page says who asked for it, and what it changes in the same words
@@ -190,7 +200,7 @@ def test_an_agent_is_put_to_work_from_its_page_in_the_studio(stack, approving, p
     page.click("#review")
     page.wait_for_selector("#reviewed-changes li", timeout=30000)
     assert page.locator("#reviewed-changes li").all_inner_texts() == [(
-        "Adds watcher-billing: the watcher, working in billing at level 0, serving Priya Nair, run by "
+        "Adds watcher-billing: the watcher, reading only in billing, serving Priya Nair, run by "
         "Priya Nair. widens what agents do")]
     assert page.inner_text("#reviewed-approvers") == "It needs the approval of Ana Ortiz."
     page.click("#send")

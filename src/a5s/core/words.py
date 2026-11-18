@@ -12,9 +12,17 @@ tests/test_languages.py holds each Thai to its English's {name}s.
 
 from __future__ import annotations
 
+import re
+
+from a5s import levels
+
 THAI = "th"
 
 TH: dict[str, str] = {
+    # What an agent may do in a part, by name, never by number (a5s/levels.py)
+    "reads only": "อ่านอย่างเดียว",
+    "asks first": "ขออนุมัติก่อน",
+    "acts on its own": "ทำเองได้",
     # What waits on someone, on their home (core/home.py)
     # What a5s says of values the agent wrote itself, beside its answer (core/provenance.py)
     "(a5s: {which} came from the {agent} itself, not from the records or from you, so check "
@@ -24,6 +32,17 @@ TH: dict[str, str] = {
     "them before you rely on them.)":
         "(a5s: {which} มาจาก {agent} เอง ไม่ได้มาจากระเบียนหรือจากคุณ โปรดตรวจสอบก่อนนำไปใช้)",
     "{first} and {last}": "{first} และ {last}",
+    # starting a conversation afresh, and why a change waits where only a run's mark holds it
+    # (core/afresh.py, core/gateway.py; round 15, A4)
+    "Started afresh: the {agent} won't read what came before in this chat, though a5s keeps it "
+    "on record as before.":
+        "เริ่มใหม่แล้ว: {agent} จะไม่อ่านสิ่งที่คุยกันก่อนหน้านี้ในแชตนี้ แต่ a5s ยังเก็บบันทึกไว้เหมือนเดิม",
+    "(a5s: {key} waits for a person to decide it, because this chat holds what a5s read from "
+    "outside, such as a file or an email. Once that's further back than the {agent} reads, or "
+    "after you say \"start afresh\", a change like it needn't wait.)":
+        "(a5s: {key} รอให้มีคนตัดสินใจ เพราะแชตนี้มีสิ่งที่ a5s อ่านจากภายนอก เช่น ไฟล์หรืออีเมล "
+        "เมื่อสิ่งนั้นอยู่ไกลเกินกว่าที่ {agent} อ่าน หรือหลังจากคุณพิมพ์ \"เริ่มใหม่\" "
+        "การเปลี่ยนแปลงแบบนี้ก็ไม่ต้องรอ)",
     # what a5s tells of a held change that waits still, or lapsed, in a digest (round 15)
     "What became of {key}, which waited for your decision: {text}":
         "ผลของ {key} ที่รอการตัดสินใจของคุณ: {text}",
@@ -97,22 +116,16 @@ TH: dict[str, str] = {
     "{to} judges {from}'s work": "{to} ประเมินงานของ {from}",
     "{from} runs {to}'s version {release}": "{from} ใช้งาน {to} เวอร์ชัน {release}",
     "{from} calls {to}": "{from} เรียกใช้ {to}",
-    "{from} works in {to}, at level {level}": "{from} ทำงานใน {to} ที่ระดับ {level}",
-    "{from} works in {to}, at level {level}, and at level 2 for {types}":
-        "{from} ทำงานใน {to} ที่ระดับ {level} และที่ระดับ 2 สำหรับ {types}",
-    "{from} works in {to}, at level {level}; the settings set level 2 for {held}, which a5s's "
-    "cap holds at level 1 until graded samples show it's accurate enough":
-        "{from} ทำงานใน {to} ที่ระดับ {level} การตั้งค่ากำหนดระดับ 2 สำหรับ {held} "
-        "ซึ่งเพดานของ a5s ยังคงไว้ที่ระดับ 1 จนกว่าตัวอย่างที่ให้คะแนนแล้วจะแสดงว่าแม่นยำพอ",
-    "{from} works in {to}, at level {level}, and at level 2 for {types}; the settings set "
-    "level 2 for {held} too, which a5s's cap holds at level 1 until graded samples show it's "
-    "accurate enough":
-        "{from} ทำงานใน {to} ที่ระดับ {level} และที่ระดับ 2 สำหรับ {types} การตั้งค่ากำหนดระดับ 2 "
-        "สำหรับ {held} ด้วย ซึ่งเพดานของ a5s ยังคงไว้ที่ระดับ 1 จนกว่าตัวอย่างที่ให้คะแนนแล้วจะแสดงว่าแม่นยำพอ",
-    "{from} works in {to}, at level {level}; the settings set level 2 for {held}, which counts "
-    "only once an owner of {to} approves the settings in force":
-        "{from} ทำงานใน {to} ที่ระดับ {level} การตั้งค่ากำหนดระดับ 2 สำหรับ {held} "
-        "ซึ่งจะมีผลเมื่อเจ้าของ {to} อนุมัติการตั้งค่าที่ใช้อยู่แล้วเท่านั้น",
+    "{from} works in {to}, where it {level}":
+        "{from} ทำงานใน {to} โดย{level}",
+    "{from} works in {to}, where it {level}, and acts on its own for {types}":
+        "{from} ทำงานใน {to} โดย{level} และทำเองได้สำหรับ {types}",
+    "{from} works in {to}, where it {level}; the settings let it act on its own for {held}, which a5s holds to asking first until graded samples show it's accurate enough":
+        "{from} ทำงานใน {to} โดย{level} การตั้งค่าให้ทำเองได้สำหรับ {held} ซึ่งa5s ยังให้ขออนุมัติก่อนจนกว่าตัวอย่างที่ให้คะแนนแล้วจะแสดงว่าแม่นยำพอ",
+    "{from} works in {to}, where it {level}, and acts on its own for {types}; the settings let it act on its own for {held} too, which a5s holds to asking first until graded samples show it's accurate enough":
+        "{from} ทำงานใน {to} โดย{level} และทำเองได้สำหรับ {types} การตั้งค่าให้ทำเองได้สำหรับ {held} ด้วย ซึ่งa5s ยังให้ขออนุมัติก่อนจนกว่าตัวอย่างที่ให้คะแนนแล้วจะแสดงว่าแม่นยำพอ",
+    "{from} works in {to}, where it {level}; the settings let it act on its own for {held}, which counts only once an owner of {to} approves the settings in force":
+        "{from} ทำงานใน {to} โดย{level} การตั้งค่าให้ทำเองได้สำหรับ {held} ซึ่งจะมีผลเมื่อเจ้าของ {to} อนุมัติการตั้งค่าที่ใช้อยู่แล้วเท่านั้น",
     "{from} may ask {to}": "{from} ถาม {to} ได้",
     "(a5s: what the {agent} just changed can be undone until {until}, on its page: {link})":
         "(a5s: สิ่งที่ {agent} เพิ่งเปลี่ยนยกเลิกได้จนถึง {until} ที่หน้าของรายการนี้: {link})",
@@ -228,8 +241,8 @@ TH: dict[str, str] = {
     "see how the {scope} is built, read only: its instructions and skills":
         "ดูว่า {scope} สร้างขึ้นอย่างไร แบบอ่านอย่างเดียว: คำสั่งและทักษะ",
     "start new agents, and draft them": "เริ่มสร้างเอเจนต์ใหม่ และร่างเอเจนต์",
-    "approve the instances that work in no part, and set their levels":
-        "อนุมัติอินสแตนซ์ที่ไม่ได้ทำงานในส่วนงานใด และกำหนดระดับของอินสแตนซ์เหล่านั้น",
+    "approve the instances that work in no part, and say what each may do":
+        "อนุมัติอินสแตนซ์ที่ไม่ได้ทำงานในส่วนงานใด และกำหนดว่าแต่ละอินสแตนซ์ทำอะไรได้",
     "approve releases, from outside the team that runs a5s": "อนุมัติรีลีส ในฐานะผู้อยู่นอกทีมที่ดูแล a5s",
     "grade agents' work, never your own team's": "ให้คะแนนงานของเอเจนต์ ยกเว้นงานของทีมคุณเอง",
     "read the ledger: find what was done and decided, and export it":
@@ -262,9 +275,13 @@ TH: dict[str, str] = {
     "{n} in one run": "{n} รายการต่อการทำงานหนึ่งครั้ง",
     "{n} for one person in 30 days": "{n} รายการต่อบุคคลใน 30 วัน",
     "no limit": "ไม่มีขีดจำกัด",
-    "in no part, at level {level}": "ไม่อยู่ในส่วนงานใด ที่ระดับ {level}",
-    "working in {parts}": "ทำงานใน {parts}",
-    "{part} at level {level}": "{part} ที่ระดับ {level}",
+    # what an instance does where it works, as "asking first in billing and orders"
+    "reading only": "อ่านอย่างเดียว",
+    "asking first": "ขออนุมัติก่อน",
+    "acting on its own": "ทำเองได้",
+    "{level} in {parts}": "{level}ใน {parts}",
+    "{level}, in no part": "{level} ไม่อยู่ในส่วนงานใด",
+    "{first}, and {last}": "{first} และ{last}",
     "{field} is {data_class}": "{field} เป็น {data_class}",
     "{data_class}, except that {own}": "{data_class} ยกเว้น {own}",
     "{n} days": "{n} วัน",
@@ -276,12 +293,12 @@ TH: dict[str, str] = {
     "The limit for {action} becomes {now}.": "ขีดจำกัดของ {action} เปลี่ยนเป็น {now}",
     "{action} has no limit any more, instead of {was}.":
         "{action} ไม่มีขีดจำกัดอีกต่อไป จากเดิม {was}",
-    "none, so none earns it": "ไม่มี จึงไม่มีเอเจนต์ใดได้ระดับ 2",
-    "The accuracy {part} needs before an agent earns level 2 there becomes {share}, instead of "
-    "{was}.":
-        "ความแม่นยำที่ {part} ต้องการก่อนเอเจนต์จะได้ระดับ 2 ที่นั่น เปลี่ยนเป็น {share} จากเดิม {was}",
-    "The accuracy {part} needs before an agent earns level 2 there becomes {share}.":
-        "ความแม่นยำที่ {part} ต้องการก่อนเอเจนต์จะได้ระดับ 2 ที่นั่น เปลี่ยนเป็น {share}",
+    "none, so none acts on its own":
+        "ไม่มี จึงไม่มีเอเจนต์ใดทำเองได้",
+    "The accuracy {part} needs before an agent may act on its own there becomes {share}, instead of {was}.":
+        "ความแม่นยำที่ {part} ต้องการก่อนเอเจนต์จะทำเองได้ที่นั่น เปลี่ยนเป็น {share} จากเดิม {was}",
+    "The accuracy {part} needs before an agent may act on its own there becomes {share}.":
+        "ความแม่นยำที่ {part} ต้องการก่อนเอเจนต์จะทำเองได้ที่นั่น เปลี่ยนเป็น {share}",
     "the currency models.yaml prices models in": "สกุลเงินที่ models.yaml ใช้กำหนดราคาโมเดล",
     "Budgets are in {now}, instead of {was}.": "งบประมาณใช้ {now} จากเดิม {was}",
     "There's no budget for the {name} any more, instead of {was} a month.":
@@ -330,17 +347,17 @@ TH: dict[str, str] = {
     "{id} becomes the {agent}, instead of the {was}.": "{id} เปลี่ยนเป็น {agent} จากเดิม {was}",
     "{id} serves {whom} as well.": "{id} ให้บริการ {whom} ด้วย",
     "{id} no longer serves {whom}.": "{id} ไม่ให้บริการ {whom} อีกต่อไป",
-    "{id}'s level goes from {was} to {now}.": "ระดับของ {id} เปลี่ยนจาก {was} เป็น {now}",
-    "{id} works in {part} as well, at level {level}.": "{id} ทำงานใน {part} ด้วย ที่ระดับ {level}",
+    "{id} goes from “{was}” to “{now}”.":
+        "{id} เปลี่ยนจาก “{was}” เป็น “{now}”",
+    "{id} works in {part} as well, where it {level}.":
+        "{id} ทำงานใน {part} ด้วย โดย{level}",
     "{id} no longer works in {part}.": "{id} ไม่ทำงานใน {part} อีกต่อไป",
-    "{id}'s level in {part} goes from {was} to {now}.":
-        "ระดับของ {id} ใน {part} เปลี่ยนจาก {was} เป็น {now}",
-    "{id}'s level for {action} in {part} goes from {was} to {now}, where it acts and reports, "
-    "once samples show it's accurate enough.":
-        "ระดับของ {id} สำหรับ {action} ใน {part} เปลี่ยนจาก {was} เป็น {now} "
-        "ซึ่งจะลงมือทำแล้วรายงาน เมื่อตัวอย่างแสดงว่าแม่นยำพอ",
-    "{id}'s level for {action} in {part} goes from {was} to {now}.":
-        "ระดับของ {id} สำหรับ {action} ใน {part} เปลี่ยนจาก {was} เป็น {now}",
+    "In {part}, {id} goes from “{was}” to “{now}”.":
+        "ใน {part} {id} เปลี่ยนจาก “{was}” เป็น “{now}”",
+    "For {action} in {part}, {id} goes from “{was}” to “{now}”, once samples show it's accurate enough.":
+        "สำหรับ {action} ใน {part} {id} เปลี่ยนจาก “{was}” เป็น “{now}” เมื่อตัวอย่างแสดงว่าแม่นยำพอ",
+    "For {action} in {part}, {id} goes from “{was}” to “{now}”.":
+        "สำหรับ {action} ใน {part} {id} เปลี่ยนจาก “{was}” เป็น “{now}”",
     "{id}'s owner changes from {was} to {now}.": "เจ้าของ {id} เปลี่ยนจาก {was} เป็น {now}",
     "{id}'s deputy changes from {was} to {now}.": "ผู้แทนของ {id} เปลี่ยนจาก {was} เป็น {now}",
     "Retires {id}, which served {whom}.": "เลิกใช้ {id} ซึ่งเคยให้บริการ {whom}",
@@ -400,16 +417,14 @@ TH: dict[str, str] = {
     "{id}: the {agent}, {where}, serving {whom}, with {deputy} as deputy.":
         "{id}: {agent} {where} ให้บริการ {whom} โดยมี {deputy} เป็นผู้แทน",
     "{id}: the {agent}, {where}, serving {whom}.": "{id}: {agent} {where} ให้บริการ {whom}",
-    "{id} works at level {level} for {action} in {part}, where it acts and reports, once graded "
-    "samples show it's accurate enough: until then a5s holds it at level 1.":
-        "{id} ทำงานที่ระดับ {level} สำหรับ {action} ใน {part} ซึ่งจะลงมือทำแล้วรายงาน "
-        "เมื่อตัวอย่างที่ให้คะแนนแล้วแสดงว่าแม่นยำพอ: ระหว่างนี้ a5s คงไว้ที่ระดับ 1",
-    "{id} works at level {level} for {action} in {part}.":
-        "{id} ทำงานที่ระดับ {level} สำหรับ {action} ใน {part}",
+    "{id} acts on its own for {action} in {part} once graded samples show it's accurate enough: until then it asks first.":
+        "{id} ทำเองได้สำหรับ {action} ใน {part} เมื่อตัวอย่างที่ให้คะแนนแล้วแสดงว่าแม่นยำพอ: ระหว่างนี้ยังขออนุมัติก่อน",
+    "For {action} in {part}, {id} {level}.":
+        "สำหรับ {action} ใน {part} {id} {level}",
     "No instances: every agent here is retired.": "ไม่มีอินสแตนซ์: เอเจนต์ทุกตัวที่นี่เลิกใช้แล้ว",
     "Limit for {action}: {limit}.": "ขีดจำกัดของ {action}: {limit}",
-    "An agent earns level 2 in {part} once graded samples show it's {share} accurate.":
-        "เอเจนต์จะได้ระดับ 2 ใน {part} เมื่อตัวอย่างที่ให้คะแนนแล้วแสดงความแม่นยำ {share}",
+    "An agent may act on its own in {part} once graded samples show it's {share} accurate.":
+        "เอเจนต์จะทำเองได้ใน {part} เมื่อตัวอย่างที่ให้คะแนนแล้วแสดงความแม่นยำ {share}",
     "The budget for the {name} is {amount} a month: what its model calls may cost, which a5s "
     "shows spending against.":
         "งบประมาณของ {name} คือ {amount} ต่อเดือน: ค่าใช้จ่ายที่การเรียกโมเดลใช้ได้ "
@@ -480,10 +495,10 @@ TH: dict[str, str] = {
     "Your day from a5s, {day}.": "สรุปวันของคุณจาก a5s {day}",
     "From a5s:": "จาก a5s:",
     "From the {agent}:": "จาก {agent}:",
-    "The {agent} made a change itself, at level 2, for {whom}: {change}":
-        "{agent} ดำเนินการเปลี่ยนแปลงเองที่ระดับ 2 แทน {whom}: {change}",
-    "a5s made the change the {agent} asked for, at level 2: {change}":
-        "a5s ดำเนินการเปลี่ยนแปลงที่ {agent} ขอ ที่ระดับ 2 แล้ว: {change}",
+    "The {agent} made a change on its own, for {whom}: {change}":
+        "{agent} ดำเนินการเปลี่ยนแปลงเองแทน {whom}: {change}",
+    "a5s made the change the {agent} asked for, which it may make on its own: {change}":
+        "a5s ดำเนินการเปลี่ยนแปลงที่ {agent} ขอแล้ว ซึ่งเอเจนต์ทำเองได้: {change}",
     "a5s didn't undo the change the {agent} made, as you asked on its page: {why}. {said}":
         "a5s ไม่ได้ยกเลิกการเปลี่ยนแปลงที่ {agent} ทำ ตามที่คุณขอที่หน้าของรายการนี้: {why} {said}",
     "a5s couldn't undo the change the {agent} made, as you asked: the records system didn't "
@@ -553,6 +568,126 @@ TH: dict[str, str] = {
         "การลงชื่อเข้าใช้ไม่ได้ใช้การยืนยันตัวตนขั้นที่สอง ซึ่งระบบนี้กำหนดไว้",
     "the sign-in is more than a day old": "การลงชื่อเข้าใช้เก่ากว่าหนึ่งวัน",
     "the sign-in is someone else's": "การลงชื่อเข้าใช้นี้เป็นของคนอื่น",
+    # a5s's own words in answer to someone's message (core/notices.py, core/groups.py; round 15,
+    # A12), with an instance's status and whom to ask
+    "Something went wrong on my side, so I couldn't answer that. Try again in a few minutes.":
+        "เกิดข้อผิดพลาดทางฝั่งของฉัน จึงตอบเรื่องนี้ไม่ได้ ลองใหม่อีกครั้งในอีกสักครู่",
+    "a5s couldn't start on that. Try again, or ask {who}.":
+        "a5s เริ่มทำเรื่องนี้ไม่ได้ ลองใหม่อีกครั้ง หรือสอบถาม {who}",
+    "I couldn't send you my reply, sorry.": "ขออภัย ฉันส่งคำตอบให้คุณไม่ได้",
+    "The model I use isn't answering right now, so I couldn't finish that. Try again in a few "
+    "minutes.":
+        "โมเดลที่ฉันใช้ไม่ตอบสนองในขณะนี้ จึงทำเรื่องนี้ไม่เสร็จ ลองใหม่อีกครั้งในอีกสักครู่",
+    "The {agent} has used its budget for you today, so it can't help with that until tomorrow. "
+    "Ask {who} if it can't wait.":
+        "{agent} ใช้งบประมาณสำหรับคุณของวันนี้หมดแล้ว จึงช่วยเรื่องนี้ไม่ได้จนถึงพรุ่งนี้ "
+        "หากรอไม่ได้ โปรดสอบถาม {who}",
+    "That took more work than one run may do, so I stopped. Try asking for less at once, or ask "
+    "{who}.":
+        "เรื่องนี้ใช้งานมากกว่าที่ทำได้ในครั้งเดียว ฉันจึงหยุดไว้ ลองขอให้น้อยลงในแต่ละครั้ง "
+        "หรือสอบถาม {who}",
+    "I couldn't finish that. Try again, or ask {who}.":
+        "ฉันทำเรื่องนี้ไม่เสร็จ ลองใหม่อีกครั้ง หรือสอบถาม {who}",
+    "I couldn't finish your last message, so I stopped. Send it again if you still need it.":
+        "ฉันทำข้อความล่าสุดของคุณไม่เสร็จ จึงหยุดไว้ หากยังต้องการ โปรดส่งอีกครั้ง",
+    "There's no {agent} for you.": "ไม่มี {agent} สำหรับคุณ",
+    "There's no {agent} for you yet. Ask for it on its page in the studio.":
+        "ยังไม่มี {agent} สำหรับคุณ ขอใช้งานได้ที่หน้าของเอเจนต์นี้ในสตูดิโอ",
+    "The {agent} is suspended, because you suspended it. Resume it to carry on.":
+        "{agent} ถูกระงับอยู่ เพราะคุณระงับไว้ เปิดให้กลับมาทำงานเพื่อใช้งานต่อ",
+    "The {agent} is suspended at the moment, so it can't help. {by} suspended it and can resume "
+    "it.":
+        "ขณะนี้ {agent} ถูกระงับอยู่ จึงช่วยไม่ได้ {by} เป็นผู้ระงับและเปิดให้กลับมาทำงานได้",
+    "The {agent} is {status}, so it can't help. Ask {who}.":
+        "{agent} อยู่ในสถานะ{status} จึงช่วยไม่ได้ โปรดสอบถาม {who}",
+    "The {agent} can't help you at the moment. Ask {who}.":
+        "ขณะนี้ {agent} ช่วยคุณไม่ได้ โปรดสอบถาม {who}",
+    "whoever runs a5s": "ผู้ดูแล a5s",
+    "Whoever approves the agents here can add them.": "ผู้อนุมัติเอเจนต์ที่นี่เพิ่มพวกเขาได้",
+    "I don't work for {who} yet, so I can't help in this chat. {add} Or ask me in a chat without "
+    "them, or one to one.":
+        "ฉันยังไม่ได้ทำงานให้ {who} จึงช่วยในแชตนี้ไม่ได้ {add} หรือถามฉันในแชตที่ไม่มีพวกเขา "
+        "หรือคุยกันแบบตัวต่อตัว",
+    "I can't work for everyone here at once, so I can't help in this chat. Ask me in a smaller "
+    "chat, or one to one.":
+        "ฉันทำงานให้ทุกคนที่นี่พร้อมกันไม่ได้ จึงช่วยในแชตนี้ไม่ได้ ถามฉันในแชตที่เล็กลง "
+        "หรือคุยกันแบบตัวต่อตัว",
+    "I may not write to {who}, so I can't help in this chat. Ask me in a chat without them, or "
+    "one to one.":
+        "ฉันไม่ได้รับอนุญาตให้เขียนถึง {who} จึงช่วยในแชตนี้ไม่ได้ ถามฉันในแชตที่ไม่มีพวกเขา "
+        "หรือคุยกันแบบตัวต่อตัว",
+    # what a held change's deciders, and its sample's graders, are told to know of it, and the
+    # message and card asking a decider (core/proposals.py, core/counts.py; round 15, B6)
+    "{value} came from the {agent} itself, not from the records or from {whom}":
+        "{value} มาจาก {agent} เอง ไม่ได้มาจากระเบียนหรือจาก {whom}",
+    "{value} came from what {who} of a team answered them while the conversation was handed "
+    "over, not from the records or from {whom}":
+        "{value} มาจากสิ่งที่ {who} ของทีมตอบระหว่างที่ส่งต่อการสนทนา ไม่ได้มาจากระเบียนหรือจาก {whom}",
+    "{value} came from what someone of a team answered them while the conversation was handed "
+    "over, not from the records or from {whom}":
+        "{value} มาจากสิ่งที่คนในทีมตอบระหว่างที่ส่งต่อการสนทนา ไม่ได้มาจากระเบียนหรือจาก {whom}",
+    "{value} came from a document from outside the organisation ({document}), such as a "
+    "customer's email, not from the records":
+        "{value} มาจากเอกสารจากภายนอกองค์กร ({document}) เช่น อีเมลของลูกค้า ไม่ได้มาจากระเบียน",
+    "the {agent} read content from outside the organisation before it asked for this":
+        "{agent} อ่านเนื้อหาจากภายนอกองค์กรก่อนที่จะขอการเปลี่ยนแปลงนี้",
+    "nobody asked for it: the {agent} asked for it {after}": "ไม่มีใครขอ: {agent} ขอเอง{after}",
+    "nobody asked for it: the {agent} asked for it {after}, about {whom}":
+        "ไม่มีใครขอ: {agent} ขอเอง{after} เกี่ยวกับ {whom}",
+    "after {source} said {type} happened": "หลังจากที่ {source} แจ้งว่าเกิด {type}",
+    "it waits because {over}": "รอเพราะ{over}",
+    "it's past the scenario's limit of {most} {action} a run, which a task's runs share: this run "
+    "asked for {made} already, and this one changes {weight}":
+        "เกินขีดจำกัดของสถานการณ์ที่ {most} {action} ต่อการทำงานหนึ่งครั้ง ซึ่งการทำงานของงานหนึ่งใช้ร่วมกัน: "
+        "การทำงานนี้ขอไปแล้ว {made} และครั้งนี้เปลี่ยน {weight}",
+    "it's past the scenario's limit of {most} {action} a run, which a task's runs share: this "
+    "task, in its runs and its parts', asked for {made} already, and this one changes {weight}":
+        "เกินขีดจำกัดของสถานการณ์ที่ {most} {action} ต่อการทำงานหนึ่งครั้ง ซึ่งการทำงานของงานหนึ่งใช้ร่วมกัน: "
+        "งานนี้ ทั้งการทำงานและส่วนย่อย ขอไปแล้ว {made} และครั้งนี้เปลี่ยน {weight}",
+    "it's past the scenario's limit of {most} {action} in 30 days for each person: {person} has "
+    "had {made} already":
+        "เกินขีดจำกัดของสถานการณ์ที่ {most} {action} ใน 30 วันต่อคน: {person} ได้ไปแล้ว {made}",
+    "it's past the scenario's limit of {most} {action} in 30 days, which {instance} has for runs "
+    "that act for nobody: it's had {made} already":
+        "เกินขีดจำกัดของสถานการณ์ที่ {most} {action} ใน 30 วัน ซึ่ง {instance} "
+        "มีสำหรับการทำงานที่ไม่ได้ทำแทนใคร: ได้ไปแล้ว {made}",
+    "{key} has changed since it was asked for": "{key} เปลี่ยนไปแล้วตั้งแต่มีการขอ",
+    "The change and its records are in their system's words, which a5s seals with your "
+    "decision.":
+        "การเปลี่ยนแปลงและระเบียนของรายการนี้เป็นถ้อยคำของระบบที่รายการอยู่ "
+        "ซึ่ง a5s ผนึกไว้กับการตัดสินใจของคุณ",
+    "Still waiting for your decision: {key}, since {day}.":
+        "ยังรอการตัดสินใจของคุณ: {key} ตั้งแต่ {day}",
+    "{key} waits for your decision.": "{key} รอการตัดสินใจของคุณ",
+    "What to know:": "สิ่งที่ควรรู้:",
+    "Decide it on a5s's page, and approve it only if you mean it: {link}":
+        "ตัดสินใจได้ที่หน้าของ a5s และอนุมัติเฉพาะเมื่อคุณตั้งใจจริง: {link}",
+    "Still waiting for your decision: {key}": "ยังรอการตัดสินใจของคุณ: {key}",
+    "{key}: a change to decide": "{key}: การเปลี่ยนแปลงที่ต้องตัดสินใจ",
+    "You decide on a5s's page, after signing in again. Telling an agent decides nothing.":
+        "คุณตัดสินใจที่หน้าของ a5s หลังจากลงชื่อเข้าใช้อีกครั้ง การบอกเอเจนต์ไม่ถือเป็นการตัดสินใจ",
+    "Review and decide": "ตรวจสอบและตัดสินใจ",
+    # why someone may not undo a change, on its page (core/undoing.py)
+    "it's undone already": "ยกเลิกไปแล้ว",
+    "a5s is undoing it already, as someone asked": "a5s กำลังยกเลิกอยู่แล้ว ตามที่มีผู้ขอ",
+    "it can no longer be undone here: the time to undo it has passed":
+        "ยกเลิกที่นี่ไม่ได้อีกแล้ว: เลยเวลาที่ยกเลิกได้แล้ว",
+    "you may not see its record": "คุณไม่มีสิทธิ์ดูระเบียนของการเปลี่ยนแปลงนี้",
+    "undoing it is for whoever it was for, and whoever decides changes like it in its record's "
+    "part":
+        "การยกเลิกเป็นของผู้ที่การเปลี่ยนแปลงนี้ทำให้ และผู้ที่ตัดสินใจการเปลี่ยนแปลงแบบนี้ "
+        "ในส่วนงานของระเบียนนั้น",
+    "who asked isn't in the directory now": "ผู้ที่ขอไม่อยู่ในไดเรกทอรีแล้ว",
+    "the tool that made it has changed since, so a5s can't undo it as it was made":
+        "เครื่องมือที่ทำการเปลี่ยนแปลงนี้เปลี่ยนไปแล้ว a5s จึงยกเลิกตามที่ทำไว้ไม่ได้",
+    # files sent in the web chat past what a5s keeps (core/inbox.py)
+    "a5s holds {waiting} of your messages with files that wait for an answer: send more once it "
+    "has answered them":
+        "a5s เก็บข้อความที่มีไฟล์ของคุณซึ่งยังรอคำตอบอยู่ {waiting} ข้อความ: "
+        "ส่งเพิ่มได้เมื่อตอบข้อความเหล่านั้นแล้ว",
+    "you've sent {today} MB of files here today, and a5s keeps {most} MB of them a day: send "
+    "more tomorrow":
+        "วันนี้คุณส่งไฟล์มาที่นี่แล้ว {today} MB และ a5s เก็บได้วันละ {most} MB: ส่งเพิ่มได้พรุ่งนี้",
 }
 
 
@@ -561,3 +696,48 @@ def say(language: str, text: str, /, **given: object) -> str:
     name, {text} and {language} among them, as its own two are given only by place."""
     said = TH.get(text, text) if language == THAI else text
     return said.format(**given) if given else said
+
+
+def level(language: str, value: int | None, /) -> str:
+    """What an agent may do, by the name of its level, in someone's language: reads only,
+    asks first or acts on its own, or none, where nothing is set (a5s/levels.py)."""
+    return say(language, "none" if value is None else levels.name(value))
+
+
+def doing(language: str, value: int | None, /) -> str:
+    """The same, as what an agent is doing: reading only, asking first or acting on its own,
+    or none, where nothing is set."""
+    return say(language, "none" if value is None else levels.doing(value))
+
+
+def kept(text: str, /, **given: object) -> dict:
+    """Words a5s keeps, to say later in the language whoever reads them then reads: one of its
+    sentences, with what changes in it, any of which may be kept words too, or a list of names
+    (round 15, B6)."""
+    return {"says": text, "given": given}
+
+
+def said(language: str, found: object, /) -> str:
+    """Words a5s kept, in someone's language, with what changes in them put in by name alone:
+    a list of names in words, and words kept before a5s kept them so, as they are."""
+    says = found.get("says") if isinstance(found, dict) else None
+    if not isinstance(found, dict) or not isinstance(says, str):
+        return str(found)
+    given = {k: said(language, v) if isinstance(v, dict) else _names(language, v)
+             if isinstance(v, list) else v for k, v in (found.get("given") or {}).items()}
+    words = TH.get(says, says) if language == THAI else says
+    return re.sub(r"\{(\w+)\}", lambda m: str(given.get(m.group(1), m.group(0))), words)
+
+
+def flags(row: dict, language: str, /) -> list[str]:
+    """What a held change's deciders, or its sample's graders, are told to know of it, in the
+    language they read: as a5s kept them, or, kept before, in English."""
+    return [said(language, f) for f in row.get("flagged") or row.get("flags") or []]
+
+
+def _names(language: str, found: list) -> str:
+    names = [str(n) for n in found]
+    if not names:
+        return say(language, "nobody")
+    return names[0] if len(names) == 1 else say(language, "{first} and {last}",
+                                                 first=", ".join(names[:-1]), last=names[-1])

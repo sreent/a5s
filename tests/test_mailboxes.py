@@ -24,7 +24,7 @@ from a5s import build, db
 from a5s.connectors import mailboxes
 from a5s.connectors.rest import ConnectorError
 from a5s.contract import ToolCall
-from a5s.core import events, studio
+from a5s.core import events, parts, studio
 from a5s.definitions import Event
 from conftest import (
     FAKE_MODELS,
@@ -384,6 +384,23 @@ def test_a_mail_run_sees_only_the_records_every_reader_may_see(stack, exchange):
     seen = agents(stack, 1)
     assert "Northwind" not in seen and "northwind" not in seen  # Q-1001's customer
     assert [d["comment"] for d in found.drafts] == ["We'll be in touch."]
+
+
+def test_a_mail_run_hears_the_same_of_another_parts_record_as_of_one_there_isnt(stack, exchange):
+    """A stranger's mail names a record in orders, a part the assistant doesn't work in: what
+    its run hears tells it no more than of a record there isn't (round 15, A14)."""
+    found, _ = exchange
+    assert swept(stack) == 0
+    message = found.arrives("pat@fabrikam.example", "Order 7781", "Where is the delivery for Q-1003?")
+    key = mailboxes.key_of("requests", message)
+    stack.model.reply(None, ("read_requests", {"key": key}))
+    stack.model.reply('{"record": "Q-1003", "amount": null, "asks": "other"}')
+    stack.model.reply(None, ("get_record", {"key": "Q-1003"}))
+    stack.model.reply(None, ("get_record", {"key": "Q-9999"}))
+    stack.model.reply("Done.")
+    assert swept(stack) == 1
+    elsewhere, none = (stack.model.requests[n]["body"]["messages"][-1]["content"] for n in (3, 4))
+    assert elsewhere == none == f"Not allowed: {parts.NOWHERE}."
 
 
 def test_a_search_before_the_cores_next_look_swallows_no_new_mail(stack, exchange):

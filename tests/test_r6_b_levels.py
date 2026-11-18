@@ -35,7 +35,7 @@ def test_a_change_to_a_record_in_no_part_works_at_level_1_at_most(stack, approvi
         caps = conn.execute("select count(*) from caps").fetchone()["count"]
     assert caps == 0  # nothing has earned level 2
     assert record_of(scenario, "Q-1005").fields["due date"] == "2026-11-06", (
-        "made at level 2, with no level for its type of action and no cap earned")
+        "made on its own, with nothing set for its type of action and no cap earned")
 
 
 def test_a_change_made_at_level_2_is_reported_to_someone_when_the_instance_has_no_owner(stack):
@@ -53,8 +53,8 @@ def test_a_change_made_at_level_2_is_reported_to_someone_when_the_instance_has_n
     _, token = stack.open_run(sender="ben")
     with stack.client(token) as c:
         assert c.post("/run/tools/change_due_date", json={"args": MOVE[1]}).status_code == 200
-    assert due_of(stack) == "2026-11-13"  # made at level 2
+    assert due_of(stack) == "2026-11-13"  # made on its own
     with db.transaction(stack.admin) as conn:
         told = [r["text"] for r in conn.execute(
             "select text from digest_items union all select text from outbox")]
-    assert any("made a change itself" in t for t in told), "a5s told nobody of a change it made"
+    assert any("made a change on its own" in t for t in told), "a5s told nobody of a change it made"

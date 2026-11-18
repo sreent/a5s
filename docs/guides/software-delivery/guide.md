@@ -14,9 +14,9 @@ Software delivery's dev assistant, built again from nothing in the studio, as de
 
    ![She gives it a5s's abilities the team needs, long tasks among them, and what starts its runs: messages, on Matrix too, and the reviews and fixes people owe.](03-she-gives-it-a5s-s-abilities-the-team-needs-long.png)
 
-4. On the agent itself: whom it works for, what it does, and its levels, as the team's own assistant.
+4. On the agent itself: whom it works for, what it does, and how far it may act, as the team's own assistant.
 
-   ![On the agent itself: whom it works for, what it does, and its levels, as the team's own assistant.](04-on-the-agent-itself-whom-it-works-for-what-it-do.png)
+   ![On the agent itself: whom it works for, what it does, and how far it may act, as the team's own assistant.](04-on-the-agent-itself-whom-it-works-for-what-it-do.png)
 
 5. She plans its first instance in the backend and the frontend, serving the backend team: each review it asks for waits for that repository's owner.
 

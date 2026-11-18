@@ -71,7 +71,7 @@ export function DesignPage() {
       <section className="card wide" data-piece="type">
         <h2>Type</h2>
         <p className="type-sample big">Waiting on you</p>
-        <p className="type-sample">Changes to records wait for a person to decide at level 1.</p>
+        <p className="type-sample">Where it asks first, changes to records wait for a person to decide.</p>
         <p className="type-sample mono">0.1.0+f0a5fd78a056 · run r-8f3a2c</p>
       </section>
 
@@ -106,7 +106,7 @@ export function DesignPage() {
           <div className="chips">
             <Who name="Priya Nair" kind="person" about="owns 2 agents" />
             <Who name="assistant" kind="agent" about="works in billing" />
-            <Who name="watcher" kind="agent" about="level 0" />
+            <Who name="watcher" kind="agent" about="reads only" />
           </div>
           <p className="label">A value, traced to its record</p>
           <p data-piece="traced">The due date it read: <Traced value="15 Nov" trail={[
@@ -129,7 +129,7 @@ export function DesignPage() {
         <section className="card" data-piece="facts">
           <h2>Agent facts</h2>
           <AgentFacts name="assistant" version="0.1.0"
-            facts={[["Works for", "billing, 2 people"], ["Autonomy", "level 1: changes wait for a yes"],
+            facts={[["Works for", "billing, 2 people"], ["Autonomy", "asks first: changes wait for a yes"],
               ["Reads", "records, messages"], ["Writes", "drafts"], ["Changes", "due dates, with a yes"],
               ["Outside content", "none"], ["Data", "personal"]]}
             more={{ title: "Per run, last 30 days", aside: "median", rows: [["Model calls", "3"],
@@ -166,7 +166,7 @@ export function DesignPage() {
           { name: "Have its release signed", state: "later",
             about: "By the scout's owner and assurance. a5s deploys it once they have." },
           { name: "Put it to work", state: "later",
-            about: "An instance in the settings, for a few people first, at level 0 or 1." },
+            about: "An instance in the settings, for a few people first, reading only or asking first." },
           { name: "Watch it", state: "later", about: "Its runs and how they end, on its page." },
         ]} next={<button type="button" className="primary">Publish it</button>} />
       </section>

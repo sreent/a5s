@@ -342,8 +342,8 @@ def _over(settings: Settings | None, action: str, weight: int, work: str, whom: 
 
 
 def capped(gw: Any, before: Settings | None, after: Settings, caps_of: Any) -> list[str]:
-    """The types of action a version raises to level 2 that a5s's caps still hold at 1, in
-    words: where graded samples haven't earned it yet."""
+    """The types of action a version lets act on its own that a5s still holds to asking
+    first, in words: where graded samples haven't earned it yet."""
     found = []
     for inst in after.instances:
         release = gw.definitions.get(inst.definition)
@@ -355,7 +355,7 @@ def capped(gw: Any, before: Settings | None, after: Settings, caps_of: Any) -> l
             for action, level in sorted(acts.items()):
                 if level >= 2 > earlier.get(action, 0) and caps_of(release.release_id).get(
                         (part, action), 1) < 2:
-                    found.append(f"{inst.id} is set to make {action} in {part} alone, at level "
-                                 "2, but a5s's cap holds it at level 1 until graded samples "
-                                 "show it's accurate enough, so it makes none alone yet.")
+                    found.append(f"{inst.id} is set to act on its own for {action} in {part}, "
+                                 "but a5s holds it to asking first until graded samples show "
+                                 "it's accurate enough, so it makes none on its own yet.")
     return found

@@ -250,8 +250,13 @@ DB_CONNECT_TIMEOUT = Var("A5S_DB_CONNECT_TIMEOUT", "seconds a part waits to conn
                          "a whole number of seconds from 1 to 60", area=DATABASE)
 SERVICE_TOKEN = Var("A5S_SERVICE_TOKEN", "the token a5s's parts call the core with", "",
                     secret=True, area=CORE, takes="a token", file=".a5s/service-token")
+OPERATOR_TOKEN = Var("A5S_OPERATOR_TOKEN", "the token operators' commands call the core with, "
+                     "such as a5s status: where it's set, the core takes it alone for theirs, and "
+                     "the service token alone for the scheduler's work (round 15)", "",
+                     secret=True, area=CORE, takes="a token")
 SEAL_KEYS = Var("A5S_SEAL_KEYS", "the core's own keys, sealing what people approve, decide and "
-                "grade: the first seals, the others are ones it's moving from", (), _items,
+                "grade: the first seals, the others are ones it's moving from, until `a5s "
+                "seal-again` retires them (docs/runbooks.md#rotating-the-seal-key)", (), _items,
                 "keys, by commas", secret=True, area=CORE, file=".a5s/seal-key")
 GATEWAY_URL = Var("A5S_GATEWAY_URL", "where the other parts reach the core",
                   DEFAULT_GATEWAY_URL, _url(*_WEB), "an http(s):// address", area=CORE)
@@ -352,7 +357,9 @@ MATRIX_AS_TOKEN = Var("A5S_MATRIX_AS_TOKEN", "a5s's token there, to speak as its
 MATRIX_HS_TOKEN = Var("A5S_MATRIX_HS_TOKEN", "the homeserver's, which comes with every delivery",
                       None, secret=True, area=MATRIX, takes="a token")
 
-ANCHOR_STORE = Var("A5S_ANCHOR_STORE", "where the ledger's locked copies go", None,
+ANCHOR_STORE = Var("A5S_ANCHOR_STORE", "where the ledger's locked copies go, which the copier "
+                   "writes and `a5s restore` reads; the core, given it to read too, won't start on "
+                   "a database restored from a backup until `a5s restore` runs", None,
                    _matching(r"(s3|azure|gs|file)://\S+"),  # as core/stores.py keeps them
                    "s3://, azure://, gs:// or file://, such as s3://bucket/a5s", area=LEDGER)
 ANCHOR_RETAIN_DAYS = Var("A5S_ANCHOR_RETAIN_DAYS", "days each copy stays locked: longer here, "
@@ -586,6 +593,7 @@ def check(env: Mapping[str, str] | None = None, serving: bool = True) -> tuple[l
 
     development, issuer = read(DEVELOPMENT, False), read(OIDC_ISSUER, None)  # round 15 (D12,
     keys, token = read(SEAL_KEYS, ()), read(SERVICE_TOKEN, "")  # D16)
+    operating = read(OPERATOR_TOKEN, "")  # and D3
     if development and issuer:
         problems.append("A5S_DEVELOPMENT takes people's word for who they are, and turns checks "
                         "off that an identity provider's deployment needs: with A5S_OIDC_ISSUER "
@@ -596,6 +604,12 @@ def check(env: Mapping[str, str] | None = None, serving: bool = True) -> tuple[l
     if serving and token and len(token) < LEAST_SECRET:  # as each part that serves holds it
         problems.append(f"A5S_SERVICE_TOKEN has {len(token)} characters: it takes at least "
                         f"{LEAST_SECRET}, made at random, as `a5s up` makes it")
+    if serving and operating and len(operating) < LEAST_SECRET:
+        problems.append(f"A5S_OPERATOR_TOKEN has {len(operating)} characters: it takes at least "
+                        f"{LEAST_SECRET}, made at random")
+    if operating and operating == token:
+        problems.append("A5S_OPERATOR_TOKEN is the service token: make it apart, at random, or "
+                        "operators hold the scheduler's")
     for given, needed, what in NEEDS:
         if given.is_set(env) and (missing := [n.name for n in needed if not n.is_set(env)]):
             problems.append(f"{what} needs {_and(missing)} as well as {given.name}")
@@ -866,6 +880,7 @@ class Config:
     # The core's own keys, which seal the approvals it has checked, such as of settings. Only
     # the core holds them. The first seals; any others are ones it's moving away from.
     seal_keys: tuple[str, ...] = ()
+    operator_token: str = ""  # operators' own, apart from the scheduler's service token
     public_url: str | None = None  # where people reach the channels, for links: else channels_url
     # The sandbox, where the studio tries the agents people are making: a deployment of its own,
     # at this address, by a token they share (a5s/sandbox.py). None if there isn't one
@@ -912,7 +927,7 @@ class Config:
             anchor_retain_days=ANCHOR_RETAIN_DAYS.read(env), team=TEAM.read(env),
             scenario=SCENARIO_CLASS.read(env), scenario_folder=SCENARIO_DIR.read(env),
             agents_folder=AGENTS_DIR.read(env), library_root=LIBRARY_ROOT.read(env),
-            seal_keys=SEAL_KEYS.read(env),
+            seal_keys=SEAL_KEYS.read(env), operator_token=OPERATOR_TOKEN.read(env),
             public_url=PUBLIC_URL.read(env), sandbox_url=SANDBOX_URL.read(env), sandbox_token=SANDBOX_TOKEN.read(env),
             github_client_id=GITHUB_CLIENT_ID.read(env), github_repo=GITHUB_REPO.read(env),
             github_base=GITHUB_BASE.read(env), github_url=GITHUB_URL.read(env),
