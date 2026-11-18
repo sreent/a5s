@@ -81,7 +81,8 @@ def test_every_act_refuses_someone_not_signed_in(approving):
 def test_the_sidebar_lists_exactly_the_pages_whose_api_lets_each_person_in(approving, provider):
     for person in PEOPLE:
         headers = {"Authorization": f"Bearer {provider.id_token(person=person)}"}
-        listed = httpx.get(f"{approving}/shell/api", headers=headers, timeout=30).json()["pages"]
+        listed = [place["page"] for place in httpx.get(
+            f"{approving}/shell/api", headers=headers, timeout=30).json()["pages"]]
         for page, api in PAGES.items():
             answer = httpx.get(f"{approving}{api}", headers=headers, timeout=30)
             assert answer.status_code in (200, 403), (person, api, answer.text)

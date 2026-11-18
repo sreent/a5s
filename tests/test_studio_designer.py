@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 
 import yaml
+from playwright.sync_api import TimeoutError as NotYet
 from playwright.sync_api import expect
 
 from a5s import db
@@ -76,13 +77,13 @@ def test_each_tool_says_who_decides_its_changes_and_what_limits_them(stack, appr
 
 def test_a_tool_dragged_onto_the_canvas_says_what_follows_and_who_must_sign(stack, approving, provider,
                                                                           browser):
-    page, refused = drafted(browser, approving, provider, agent="watcher")  # it reads, at level 0
+    page, refused = drafted(browser, approving, provider, agent="watcher")  # it reads only
     assert "Nobody: it changes no records" in page.inner_text("#decides")
     # a tool dragged from the picker, as people do, onto the canvas
     page.locator(".fd-palette [data-tool=change_due_date]").drag_to(page.locator(".flow-canvas .react-flow__pane"))
     page.wait_for_selector("#what-changed >> text=Added change_due_date", timeout=30000)
     kept(page)
-    assert "Its release keeps it at level 0, which only observes, so a5s refuses every change" in page.inner_text(
+    assert "Its release lets it read only, so a5s refuses every change" in page.inner_text(
         ".wb-inspector .follows")
     page.wait_for_selector("#what-changed >> text=must sign its release", timeout=30000)  # once it's kept
     assert "change_due_date" in yaml.safe_load(definition(stack, page))["tools"]["changes"]
@@ -90,7 +91,7 @@ def test_a_tool_dragged_onto_the_canvas_says_what_follows_and_who_must_sign(stac
     page.select_option("#level-max", "1")  # a person decides each one, then
     kept(page)
     page.click("[data-step='tool:change_due_date']")
-    assert "Its release goes no higher than level 1, so every one waits for its decider" in page.inner_text(
+    assert "Its release lets it ask first at most, so every one waits for its decider" in page.inner_text(
         ".wb-inspector .follows")
     assert refused == []
 
@@ -106,9 +107,16 @@ def test_the_canvas_works_from_the_keyboard(stack, approving, provider, browser)
     page.keyboard.press("Enter")  # opens it, the inspector taking the keyboard's focus
     expect(page.locator("#inspector-title")).to_be_focused()
     assert page.inner_text("#inspector-title") == "A message"
-    page.focus("[data-step='tool:get_messages']")
-    page.keyboard.press("Delete")  # taken away, as n8n takes a step away
-    page.wait_for_selector("[data-step='tool:get_messages']", state="detached", timeout=30000)
+    step = page.locator("[data-step='tool:get_messages']")
+    for _ in range(3):  # taken away, as n8n takes a step away: pressed on the step itself, and
+        if step.count():  # again while it's there, as a slow runner can draw the canvas afresh
+            step.press("Delete")  # between focusing the step and the key, which then goes nowhere
+        try:
+            step.wait_for(state="detached", timeout=10000)
+            break
+        except NotYet:
+            continue
+    assert step.count() == 0
     assert "Took get_messages away" in page.inner_text("#what-changed")
     kept(page)
     text = definition(stack, page)

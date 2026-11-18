@@ -104,8 +104,8 @@ def built(walk: Walk, stack, url: str, forge: FakeGitHub, on) -> tuple[dict, str
         page.click(".fd-palette [data-owed=records]")
         page.wait_for_selector(".flow-canvas [data-step=obligations]", timeout=30000)
         kept(page)
-    with walk.step("On the agent itself: whom it works for, what it does, and its levels, as the "
-                   "team's own assistant.", page):
+    with walk.step("On the agent itself: whom it works for, what it does, and how far it may act, "
+                   "as the team's own assistant.", page):
         page.click("[data-step=agent]")
         page.fill("#works-for", "Engineers, their leads and product, within their teams' issues and pull requests")
         page.fill("#does", "Answers questions about issues, pull requests, their checks and reviews, and the "

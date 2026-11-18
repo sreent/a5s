@@ -15,7 +15,7 @@ from __future__ import annotations
 from typing import Any, Literal
 
 from a5s import db
-from a5s.core import samples, sealing
+from a5s.core import anchor, rotation, samples, sealing
 
 # a5s's starting objectives [starting value]: set from the first users' baseline
 OBJECTIVES = {"reply_seconds_p90": 120, "chased_on_time": 0.95}
@@ -99,6 +99,7 @@ def report(conn: db.Connection, breakers: list[str], keys: tuple[str, ...] = (),
         "count(*) filter (where lapsed_at > now() - interval '91 days') as lapsed from samples"
     ).fetchone()
     unsealed = sealing.waiting(conn, "5 minutes")  # the gateway seals each minute
+    moving = rotation.waiting(conn, keys)  # seals under a key it moves away from (round 15, D2)
     raised = sorted(samples.standing_caps(conn, keys, "cap >= 2"),
                     key=lambda r: (r["part"], r["action"]))
     lowered = conn.execute("select count(*) as n from ledger where kind = 'cap' and action = "
@@ -136,6 +137,7 @@ def report(conn: db.Connection, breakers: list[str], keys: tuple[str, ...] = (),
         "count(*) filter (where status = 'failed' and updated_at > now() - interval '1 day') "
         "  as failed "
         "from tasks where parent is null").fetchone()
+    copies = anchor.state(conn)  # as the copier records it (round 15, D8)
     refused = conn.execute(  # what counts, refused for want of a second factor
         "select doing, sum(n) as n from second_factor_refusals "
         "where day >= current_date - 1 group by doing order by doing").fetchall()
@@ -157,11 +159,12 @@ def report(conn: db.Connection, breakers: list[str], keys: tuple[str, ...] = (),
                     "stuck": changes["stuck"], "not_made": changes["not_made"],
                     "lapsed": changes["lapsed"]},
         "samples": {"to_grade": graded["waiting"], "lapsed": graded["lapsed"],
-                    "level_2": [{"part": r["part"], "action": r["action"],
+                    "on_its_own": [{"part": r["part"], "action": r["action"],
                                  "since": r["since"].isoformat()} for r in raised],
                     "caps_lowered": lowered["n"],
                     "rubber_stamps": samples.rubber_stamps(conn) if rubber_stamps else None},
         "unsealed": unsealed,
+        "seals_waiting": moving,
         "sign_ins": None if sign_ins is False else {  # what counts, with a second factor
             "second_factor": f"{sign_ins[0]}:{','.join(sign_ins[1])}" if sign_ins else None,
             "refused": {r["doing"]: int(r["n"]) for r in refused}},
@@ -170,6 +173,7 @@ def report(conn: db.Connection, breakers: list[str], keys: tuple[str, ...] = (),
                   "blocked": tasked["blocked"], "done": tasked["done"],
                   "failed": tasked["failed"]},
         "missing": missing["n"],
+        "copies": copies,
         "not_active": [dict(r) for r in stopped],
         "breakers_open": breakers,
         "objectives": {
@@ -258,8 +262,8 @@ def told(status: dict[str, Any]) -> str:
                                               if status["samples"]["to_grade"] else "none")
         + (f"; {status['samples']['lapsed']} lapsed ungraded this quarter"
            if status["samples"]["lapsed"] else "") + ".",
-        "  Earned level 2: " + ("; ".join(f"{r['action']} in {r['part']}"
-                                          for r in status["samples"]["level_2"]) or "nothing")
+        "  Acting on its own: " + ("; ".join(f"{r['action']} in {r['part']}"
+                                          for r in status["samples"]["on_its_own"]) or "nothing")
         + (f"; {status['samples']['caps_lowered']} caps lowered in the last day"
            if status["samples"]["caps_lowered"] else "") + ".",
         *(["  Approvals graded wrong far more than others': " + (
@@ -269,6 +273,10 @@ def told(status: dict[str, Any]) -> str:
         *([(f"  Approvals, decisions and grades the gateway hasn't sealed in 5 minutes: "
             f"{status['unsealed']}, which don't count until it does (see A5S_SEAL_KEYS).")]
           if status.get("unsealed") else []),
+        *([("  Sealed with a key A5S_SEAL_KEYS is moving away from: " + "; ".join(
+            f"{kind}, {n}" for kind, n in status["seals_waiting"].items()) + ". Run `a5s "
+            "seal-again` as the core, then drop the old key (docs/runbooks.md#rotating-the-seal"
+            "-key).")] if status.get("seals_waiting") else []),
         *([("  Approvals, decisions, grades and the officer's requests count with a second "
             f"factor only: {status['sign_ins']['second_factor']}." if status["sign_ins"][
                 "second_factor"] else
@@ -286,6 +294,7 @@ def told(status: dict[str, Any]) -> str:
         *([(f"  People the directory no longer names, not yet archived: {status['missing']}"
             " (many at once wait a week, in case it's the directory).")]
           if status.get("missing") else []),
+        _copies_told(status.get("copies")),
         "  Not active: " + (", ".join(f"{i['id']}, {i['status']}"
                                       + (f" by {i['suspended_by']}" if i["suspended_by"] else "")
                                       for i in status["not_active"]) or "none") + ".",
@@ -293,6 +302,27 @@ def told(status: dict[str, Any]) -> str:
         *([_configuration_told(status["configuration"])] if status.get("configuration") else []),
     ]
     return "\n".join(lines)
+
+
+def _copies_told(found: dict[str, Any] | None) -> str:
+    """How the ledger's copies stand, as the copier last recorded it (round 15, D8)."""
+    if found is None:
+        return ("  The ledger's copies: none recorded, as no copier has run here "
+                "(A5S_ANCHOR_STORE).")
+    if found["stopped"]:
+        return (f"  The ledger's copies: stopped, until someone acts: {found['problem']} "
+                "(docs/runbooks.md#the-ledgers-copies-stop).")
+    age = found["copied_seconds_ago"]
+    held = (f"through entry {found['through']}, {found['behind']} entries behind, copied "
+            f"{age / 60:.0f} minutes ago" if found["through"] is not None and age is not None
+            else "nothing copied yet")
+    full = found.get("checked")  # the copier's check of the whole ledger (round 15, E8)
+    checked = ("; the whole ledger not checked yet" if not full else
+               f"; the whole ledger checked {full['seconds_ago'] / 3600:.0f} hours ago: "
+               + ("; ".join(full["problems"]) if full["problems"] else "it checks out"))
+    return (f"  The ledger's copies: {held}"
+            + (f"; the last try failed: {found['problem']}" if found["problem"] else "")
+            + checked + ".")
 
 
 def _configuration_told(found: dict[str, Any]) -> str:

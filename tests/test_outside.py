@@ -49,8 +49,9 @@ def test_an_agent_gets_the_extractors_form_never_the_emails_words(stack):
     [email] = found["messages"]
     assert email["document"] == "D-1" and email["from"].startswith("[h:")
     form = email[extractor.OUTSIDE]
-    assert {k: form[k] for k in ("asks_for", "amount", "date", "question")} == {
-        "asks_for": "a refund", "amount": "£860.00", "date": "2026-11-06", "question": "Q-1002"}
+    assert {k: form[k] for k in ("asks_for", "amount", "date", "question")} == {  # as code
+        "asks_for": "a refund", "amount": "GBP 860.00", "date": "2026-11-06",  # reads each,
+        "question": "Q-1002"}  # never as written, which may carry words (round 15, F7)
     assert marked(stack) == [True]
 
 

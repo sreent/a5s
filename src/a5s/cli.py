@@ -14,7 +14,7 @@ import sys
 import threading
 import time
 from dataclasses import replace
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from urllib.parse import quote
 
@@ -32,8 +32,11 @@ from a5s.core import (
     inbox,
     ledger,
     measures,
+    narrowing,
     registry,
     releases,
+    restoring,
+    rotation,
     signing,
     status,
     studio,
@@ -86,9 +89,12 @@ def _migrate(cfg: Config, url: str | None = None) -> None:
 
 def _apply(cfg: Config) -> None:
     sc = build.scenario(cfg)
+    found, settings = definitions.load_all(cfg.agents_dir), sc.settings()
     with db.transaction(cfg.database_url) as conn:
-        result = registry.apply(conn, definitions.load_all(cfg.agents_dir), sc.settings(),
-                                sc.tools(), sc.person, sc.name)
+        result = registry.apply(conn, found, settings, sc.tools(), sc.person, sc.name)
+        if not result.refused:  # one that only narrows tells others, as it does where people
+            narrowing.told(conn, sc, found, settings, result.before,  # approve it (round 14)
+                           result.signers, datetime.now(UTC))
     if result.refused:
         sys.exit("Not applied, because " + "; ".join(result.refused) + ".")
     print(f"Applied {', '.join(result.instances)}, signed by {', '.join(result.signers)}.")
@@ -256,13 +262,62 @@ def _summaries(cfg: Config, person: str, agent: str) -> None:
 
 
 def _service(cfg: Config, name: str):
-    if name != "worker":  # never against a schema a later release made
+    if name == "channels" and cfg.seal_keys:  # the core's alone (round 15, D5)
+        raise RuntimeError("A5S_SEAL_KEYS is the core's alone, which seals what people approve, "
+                           "decide and grade: unset it for the channels app, which never holds "
+                           "it, and would take itself for the core")
+    if name != "worker":  # never against a schema another release made, nor as another's role
         db.known(cfg.database_url)
+        db.own_role(cfg.database_url, "gateway" if name == "gateway" else "channels")
     if name == "gateway":
+        if (store := build.store(cfg)) is not None:  # where it reads the ledger's copies, never
+            with db.transaction(cfg.database_url) as conn:  # on a database restored from a
+                if lacking := anchor.behind(conn, store):  # backup before `a5s restore` puts
+                    raise RuntimeError(anchor.RESTORED.format(  # back what it lacks (round 15,
+                        first=lacking[0], last=lacking[1]))  # D1), so the copies never fork
+        if cfg.seal_keys:  # never without a key it sealed with, unretired (round 15, D2)
+            with db.transaction(cfg.database_url) as conn:
+                rotation.started(conn, cfg.seal_keys)
         return build.app(cfg)
     if name == "worker":
         return worker.create_app(cfg.gateway_url, cfg.worker_agents, cfg.worker_pooled)
     return inbox.create_app(build.gateway(cfg))  # the channels' endpoints, in the core
+
+
+def _seal_again(cfg: Config, leaked: bool) -> None:
+    """Rotate the seal key, as the core, with its settings (core/rotation.py)."""
+    if not cfg.seal_keys:
+        sys.exit("Run this where the core runs, with its A5S_SEAL_KEYS, the new key first.")
+    db.known(cfg.database_url)
+    db.own_role(cfg.database_url, "gateway")
+    try:
+        with db.transaction(cfg.database_url) as conn:
+            done = rotation.again(conn, cfg.seal_keys, leaked=leaked)
+    except rotation.Refused as exc:
+        sys.exit(str(exc))
+    print(rotation.told(done))
+
+
+def _restore(cfg: Config, backup: str | None = None) -> None:
+    """Restore what a5s keeps after its database was restored from a backup, as the core, with
+    the ledger's copies as the copier reads them (core/restoring.py): with the core's database
+    address, such as in the copier's container, which reaches the store. Once for a backup it
+    names, as the chart's job does at each install or upgrade while its settings name one."""
+    store = build.store(cfg)
+    if store is None:
+        sys.exit("Set A5S_ANCHOR_STORE to the ledger's copies, as the copier has it.")
+    db.known(cfg.database_url)
+    db.own_role(cfg.database_url, "gateway")
+    try:
+        with db.transaction(cfg.database_url) as conn:
+            if backup and (seq := restoring.restored(conn, backup)) is not None:
+                print(f"a5s restored after the backup {backup} already, as entry {seq} of the "
+                      "ledger says: nothing to do.")
+                return
+            done = restoring.restore(conn, store, backup)
+    except anchor.AnchorError as exc:
+        sys.exit(str(exc))
+    print(restoring.told(done))
 
 
 def _stopping() -> threading.Event:
@@ -275,7 +330,8 @@ def _stopping() -> threading.Event:
 
 
 def _scheduler(cfg: Config) -> None:
-    db.known(cfg.database_url)  # never against a schema a later release made
+    db.known(cfg.database_url)  # never against a schema another release made
+    db.own_role(cfg.database_url, "scheduler")  # nor as another part's role
     hand_off = remote_worker(cfg.worker_url) if cfg.worker_url else worker.run_agent
     pools = {agent: remote_worker(url) for agent, url in cfg.worker_urls.items()}
     Scheduler(cfg, build.scenario(cfg), worker=hand_off, pools=pools).listen(_stopping())
@@ -297,25 +353,37 @@ def _dev(cfg: Config) -> None:
 
 
 def _anchor(cfg: Config, every: int | None) -> None:
+    """The copier: once, copying everything new and checking the whole ledger, or, `every`
+    given, for good, looking each minute, copying what people decided within a minute and the
+    rest within `every` seconds, and checking the whole ledger once a day (round 15, E8)."""
     store = build.store(cfg)
     if store is None:
         sys.exit("Set A5S_ANCHOR_STORE to a locked store, such as s3://bucket/a5s.")
+    copier = anchor.Copier(store)
+    within = timedelta(seconds=every) if every else anchor.COPY_WITHIN
     while True:
         try:
             with db.transaction(cfg.database_url) as conn:
-                made = anchor.anchor(conn, store)
-            print(f"Copied entries {made[0].first} to {made[-1].seq}." if made
-                  else "Nothing new to copy.", flush=True)
+                made = copier.copy(conn) if every is None else copier.tick(conn, within)
+            if made or every is None:
+                print(f"Copied entries {made[0].first} to {made[-1].seq}." if made
+                      else "Nothing new to copy.", flush=True)
+            with db.transaction(cfg.database_url) as conn:
+                if problems := copier.checking(conn, within):
+                    log.error("the ledger doesn't check out: %s", "; ".join(problems))
         except anchor.AnchorError as exc:  # the ledger doesn't match its copies: stop, loudly
             log.error("%s", exc)
+            anchor.stuck(cfg.database_url, str(exc), stopped=True)  # for the status (D8)
             sys.exit(1)
-        except Exception:
+        except Exception as exc:  # such as the store being down: try again
+            anchor.stuck(cfg.database_url, f"{type(exc).__name__}, as the copier's log says",
+                         stopped=False)  # its words, which might name the store, stay there
             if every is None:
                 raise
-            log.exception("copying the ledger failed")  # such as the store being down: try again
+            log.exception("copying the ledger failed")
         if every is None:
             return
-        time.sleep(every)
+        time.sleep(min(anchor.LOOK_EVERY.total_seconds(), every))
 
 
 def _verify(cfg: Config) -> None:
@@ -560,7 +628,8 @@ def _approves(approval: releases.Approval) -> str:
 
 def _core(cfg: Config, call, timeout: float = 30):
     """A call to the core's API, through its client (a5s/client.py), or the reason it's refused."""
-    with Client(cfg.gateway_url, cfg.service_token, timeout=timeout) as core:
+    with Client(cfg.gateway_url, cfg.operator_token or cfg.service_token,  # operators' own
+                timeout=timeout) as core:
         try:
             return call(core)
         except Refused as exc:
@@ -572,8 +641,9 @@ def _admin(cfg: Config, path: str, body: dict | None = None, timeout: float = 30
                  timeout)
 
 
-# How often the copier copies the ledger, when it keeps copying: assurance's, by a release
-ANCHOR_EVERY = 3600
+# How long an entry waits to be copied at most, when the copier keeps copying: assurance's, by
+# a release. What people decided is copied within a minute, whatever it says (round 15, E8)
+ANCHOR_EVERY = int(anchor.COPY_WITHIN.total_seconds())
 
 # The commands that run one of a5s's parts, or set it up: each stops at once on a setting it
 # can't use, or an A5S_ name that isn't a setting, which elsewhere it's only told of
@@ -698,6 +768,19 @@ def main(argv: list[str] | None = None) -> None:
     erased.add_argument("--by", help="in development, the officer, who asks nowhere else")
     sub.add_parser("status", help="how a5s is doing: its queue, runs, denials, budgets and "
                                   "objectives")
+    restore = sub.add_parser("restore", help="after the database is restored from a backup, "
+                                             "as the core, before any part starts: put back "
+                                             "the ledger's entries its copies hold, take as "
+                                             "done what their runs were for, hold what a5s "
+                                             "would send again, and start mailboxes afresh")
+    restore.add_argument("--id", dest="backup", help="the backup's name, as the chart's "
+                         "restore.id gives it: once a5s has restored after it, nothing more")
+    again = sub.add_parser("seal-again", help="to rotate the seal key: seal again with the "
+                                              "first of A5S_SEAL_KEYS what the others sealed, "
+                                              "and retire them, as the core, where it runs")
+    again.add_argument("--leaked", action="store_true",
+                       help="for a key that leaked: retire the keys after the first, sealing "
+                            "nothing again, so what they sealed stops counting")
     measured = sub.add_parser("measures", help="the measures its first users baseline, and the "
                                                "pilot's later stages show: what fell due and "
                                                "was met, who came back, what runs cost, how "
@@ -729,8 +812,8 @@ def main(argv: list[str] | None = None) -> None:
     caps.add_argument("--by", help="who you are, in development; else your sign-in in A5S_TOKEN")
     copy = sub.add_parser("anchor", help="copy the ledger to locked storage")
     copy.add_argument("--every", type=int, nargs="?", const=ANCHOR_EVERY, metavar="SECONDS",
-                      help=f"keep copying, this often: every {ANCHOR_EVERY // 60} minutes if it "
-                           "doesn't say")
+                      help=f"keep copying, each entry within this long: {ANCHOR_EVERY // 60} "
+                           "minutes if it doesn't say, and what people decided within a minute")
     rel = sub.add_parser("release", help="approve a release of a5s for this deployment")
     rel_sub = rel.add_subparsers(dest="what", required=True)
     manifest = rel_sub.add_parser("manifest", help="print the manifest of a source tree, as an "
@@ -898,6 +981,10 @@ def main(argv: list[str] | None = None) -> None:
         _anchor(cfg, args.every)
     elif args.command == "status":
         print(status.told(_admin(cfg, "/status")))
+    elif args.command == "seal-again":
+        _seal_again(cfg, args.leaked)
+    elif args.command == "restore":
+        _restore(cfg, args.backup)
     elif args.command == "measures":
         print(measures.told(_core(cfg, lambda core: core.measures(
             args.days, agent=args.agent, instance=args.instance))))

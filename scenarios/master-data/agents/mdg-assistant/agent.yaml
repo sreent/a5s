@@ -10,8 +10,8 @@ does: >-
 scope: none
 model: deepseek-v4-pro
 autonomy:
-  start: 1
-  max: 2  # a type of correction, in a part, only as its owners' settings and graded samples give it
+  start: asks first
+  max: acts on its own  # a type of correction, in a part, only as its owners' settings and graded samples give it
 tools:
   records: [search_records, get_record, get_letters, check_request, check_quality]
   knowledge: [search_knowledge, read_knowledge]

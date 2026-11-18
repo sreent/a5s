@@ -8,6 +8,9 @@ turns, whatever their topic, and in a case, the case's older turns too, each
 within its share of the budget the agent's release gives it. Turns that no
 longer fit are folded into the summary (services/summaries.py).
 
+Someone can start a conversation afresh (core/afresh.py): no run of it is given what came
+before, which stays on record as before.
+
 A group chat's conversation is kept the same way, under the group's name (core/groups.py),
 with who said each turn and who was there to hear it. A run in the group is given only the
 turns everyone now in it heard, each with the name of whoever said it, and the topic's summary
@@ -15,6 +18,9 @@ only if everyone now in it heard all it holds.
 """
 
 from __future__ import annotations
+
+import re
+from datetime import datetime
 
 from a5s import db
 from a5s.core.topics import render
@@ -24,6 +30,30 @@ GENERAL = "general"
 CHARS = 120_000  # a run's budget for its conversation, if it isn't given one: about 30,000 tokens
 LATEST = 2 / 3  # in a case, the latest turns' share of the budget; the case's older turns get the rest
 FOLD = 0.1  # turns that no longer fit are folded into the summary once they're this share of it
+# What a summary is given in place of what a run wrote after it read content from outside: a
+# summary keeps none of it, so it marks no run it's given (round 15, A4)
+OUTSIDE = ("(what a5s read from outside, such as a file or an email, and what was said of it "
+           "then: a summary keeps none of it)")
+# A turn that carries outside content: a5s's words marked as carrying it, or anything but a
+# person's own words in a run that read it
+CARRIES = "(t.marked or (r.read_outside and t.role <> 'person'))"
+
+
+def fresh(conn: db.Connection, person: str, agent: str) -> int:
+    """The conversation's last turn before it last started afresh: 0 if it never did."""
+    found = conn.execute("select through from fresh_starts where person = %s and agent = %s",
+                         (person, agent)).fetchone()
+    return found["through"] if found else 0
+
+
+def given(conn: db.Connection, *, person: str, agent: str, topic: str = GENERAL,
+          chars: int = CHARS, members: list[str] | None = None) -> tuple[dict | None, list[int]]:
+    """What a run of the conversation is given of it, as `history` gives it: the topic's
+    summary, if it's given one, and the ids of the turns it's given (round 15, A4)."""
+    summary = summaries.load(conn, person, agent, topic, members)
+    told = _told(summary, chars)
+    return (summary if told else None), sorted(_kept(conn, person, agent, topic, chars - len(told),
+                                                     members))
 
 
 def add_turn(
@@ -37,29 +67,43 @@ def add_turn(
     topic: str = GENERAL,
     speaker: str | None = None,
     heard_by: list[str] | None = None,
+    at: datetime | None = None,
 ) -> None:
-    """A turn of the conversation: in a group's, with who said it and who heard it."""
+    """A turn of the conversation: in a group's, with who said it and who heard it; and when,
+    if it wasn't just now, such as what someone wrote while it was handed over."""
     conn.execute(
-        "insert into turns (person, agent, topic, role, content, run_id, speaker, heard_by) "
-        "values (%s, %s, %s, %s, %s, %s, %s, %s)",
-        (person, agent, topic, role, content, run, speaker, heard_by),
+        "insert into turns (person, agent, topic, role, content, run_id, speaker, heard_by, at) "
+        "values (%s, %s, %s, %s, %s, %s, %s, %s, coalesce(%s, now()))",
+        (person, agent, topic, role, content, run, speaker, heard_by, at),
     )
 
 
 def history(
     conn: db.Connection, *, person: str, agent: str, topic: str = GENERAL,
     chars: int = CHARS, members: list[str] | None = None, names: dict[str, str] | None = None,
+    behind: set[str] | None = None,
 ) -> list[dict]:
     """What a run is given of the conversation, oldest first, with when each was and its
     topic: the topic's summary, if it has one, then the conversation's latest turns that fit
     the rest of the budget, or in a case, their share of it, and the case's older turns that
     fit what's left. In a group, only what all of `members` heard, each turn people said with
-    the name of whoever said it, from `names`."""
+    the name of whoever said it, from `names`. Into `behind` go the runs whose words it gives,
+    each turn's and those of the turns the summary holds, which the run then takes what they
+    read from (core/studio.py)."""
     summary = summaries.load(conn, person, agent, topic, members)
     told = _told(summary, chars)
+    kept = _kept(conn, person, agent, topic, chars - len(told), members)
     turns = [{"role": t["role"], "content": _said(t, names), "at": t["at"].isoformat(),
-              "topic": t["topic"]} for _, t in sorted(_kept(conn, person, agent, topic,
-                                                             chars - len(told), members).items())]
+              "topic": t["topic"]} for _, t in sorted(kept.items())]
+    if behind is not None:
+        behind.update(str(t["run_id"]) for t in kept.values() if t.get("run_id"))
+        if told and summary:
+            heard = "" if members is None else " and heard_by @> %(members)s::text[]"
+            behind.update(r["run"] for r in conn.execute(
+                "select distinct run_id::text as run from turns where person = %(person)s and "
+                f"agent = %(agent)s and topic = %(topic)s{heard} and id <= %(through)s and "
+                "run_id is not null", {"person": person, "agent": agent, "topic": topic,
+                                       "members": members, "through": summary["through"]}))
     return ([{"role": "summary", "content": told, "at": summary["updated_at"].isoformat(),
               "topic": topic, **({"group": True} if members is not None else {})}]
             if told else []) + turns
@@ -75,12 +119,15 @@ def dropped(conn: db.Connection, *, person: str, agent: str, topic: str,
     shown = [i for i, t in _kept(conn, person, agent, topic, chars - len(told), members).items()
              if t["topic"] == topic]
     first = min(shown) if shown else None
-    heard = "" if members is None else " and heard_by @> %(members)s::text[]"
-    return summary, conn.execute(
-        "select id, role, content, at, topic, speaker, heard_by from turns where person = "
-        f"%(person)s and agent = %(agent)s and topic = %(topic)s{heard} and id > %(through)s "
-        "and (%(first)s::bigint is null or id < %(first)s) order by id",
+    heard = "" if members is None else " and t.heard_by @> %(members)s::text[]"
+    return summary, conn.execute(  # each with whether it carries outside content (round 15)
+        "select t.id, t.role, t.content, t.at, t.topic, t.speaker, t.heard_by, "
+        f"coalesce({CARRIES}, false) as outside from turns t left join runs r on r.id = t.run_id "
+        f"where t.person = %(person)s and t.agent = %(agent)s and t.topic = %(topic)s{heard} "
+        "and t.id > greatest(%(through)s, %(after)s) "
+        "and (%(first)s::bigint is null or t.id < %(first)s) order by t.id",
         {"person": person, "agent": agent, "topic": topic, "members": members,
+         "after": fresh(conn, person, agent),
          "through": summary["through"] if summary else 0, "first": first}).fetchall()
 
 
@@ -104,12 +151,21 @@ def speakers(conn: db.Connection, group: str, agent: str) -> list[str]:
         "and speaker is not null", (group, agent))]
 
 
+# A mark a5s puts on what it says to an agent, such as [from a5s, not the person], as someone
+# may copy one into their own words
+_MARK = re.compile(r"(?i)\[[^\[\]\n]{0,160}\ba\s*5\s*s\b[^\[\]\n]{0,160}\]")
+
+
 def _said(turn: dict, names: dict[str, str] | None) -> str:
     """A turn's words, and in a group, who said them, each later line of theirs quoted, so
-    none of it reads as someone else's turn, or a5s's."""
-    if turn.get("speaker") and turn["role"] == "person":
-        words = turn["content"].replace("\r", "").replace("\n", "\n> ")
-        return f"{(names or {}).get(turn['speaker'], turn['speaker'])}: {words}"
+    none of it reads as someone else's turn, or a5s's. One person's own words, one to one,
+    each later line quoted too, and any mark of a5s's in them shown as theirs (round 15)."""
+    if turn["role"] == "person":
+        words = _MARK.sub("[a mark they wrote]", turn["content"]).replace("\r", "")
+        words = words.replace("\n", "\n> ")
+        if turn.get("speaker"):
+            return f"{(names or {}).get(turn['speaker'], turn['speaker'])}: {words}"
+        return words
     return turn["content"]
 
 
@@ -118,18 +174,21 @@ def _kept(conn: db.Connection, person: str, agent: str, topic: str, chars: int,
     """The turns that fit, by id: the conversation's latest, and in a case, its older ones.
     In a group, only the turns all of `members` heard."""
     heard = "" if members is None else " and heard_by @> %(members)s::text[]"
-    given = {"person": person, "agent": agent, "members": members, "topic": topic}
-    kept, used = _fit(conn.execute(  # never another task's own topic (core/tasking.py)
-        "select id, role, content, at, topic, speaker from turns where person = %(person)s "
-        f"and agent = %(agent)s{heard} and (topic = %(topic)s or topic not like 'task %%') "
+    given = {"person": person, "agent": agent, "members": members, "topic": topic,
+             "after": fresh(conn, person, agent)}  # nothing from before a fresh start
+    kept, used = _fit(conn.execute(  # never another task's own topic (core/tasking.py), nor an
+        "select id, role, content, at, topic, speaker, run_id from turns where person = %(person)s "  # event's
+        f"and agent = %(agent)s{heard} and (topic = %(topic)s or (topic not like 'task %%' and "
+        "topic not like 'event %%')) and id > %(after)s "
         "order by id desc limit 500", given),
         chars if topic == GENERAL else int(chars * LATEST))
     if topic != GENERAL:
         before = min(kept) if kept else None
         older, _ = _fit(conn.execute(
-            "select id, role, content, at, topic, speaker from turns where person = %(person)s "
-            f"and agent = %(agent)s and topic = %(topic)s{heard} and (%(before)s::bigint is null "
-            "or id < %(before)s) order by id desc limit 500", {**given, "before": before}),
+            "select id, role, content, at, topic, speaker, run_id from turns where person = %(person)s "
+            f"and agent = %(agent)s and topic = %(topic)s{heard} and id > %(after)s and "
+            "(%(before)s::bigint is null or id < %(before)s) order by id desc limit 500",
+            {**given, "before": before}),
             chars - used, keep_one=False)
         kept |= older
     return kept

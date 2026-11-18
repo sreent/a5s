@@ -31,15 +31,29 @@ _FIELDS = {
 }
 
 
-def screen(api: str, body: dict[str, Any]) -> tuple[dict[str, Any], list[str], str | None]:
-    """The request as a5s would forward it, the fields it leaves out, and why it refuses it."""
+def screen(api: str, body: dict[str, Any], images: bool = False) -> tuple[dict[str, Any],
+                                                                          list[str], str | None]:
+    """The request as a5s would forward it, the fields it leaves out, and why it refuses it:
+    `images` whether the model is approved to be sent an image (config/models.yaml)."""
     kept = _for_minutes({k: v for k, v in body.items() if k in _FIELDS[api]})
     dropped = sorted(set(body) - set(kept))
     for tool in body.get("tools") or []:
         kind = tool.get("type") if isinstance(tool, dict) else None
         if (api == "openai" and kind != "function") or (api == "anthropic" and kind not in (None, "custom")):
             return kept, dropped, f"agents use only their own tools, not the provider's {kind}"
+    if not images and any(_image(block) for message in body.get("messages") or []
+                          if isinstance(message, dict) and isinstance(message.get("content"), list)
+                          for block in message["content"]):
+        return kept, dropped, "this model isn't approved to be sent images"
     return kept, dropped, None
+
+
+def _image(block: Any) -> bool:
+    """Whether a block of a message is an image, or holds one, in either API's style."""
+    if not isinstance(block, dict):
+        return False
+    return block.get("type") in ("image", "image_url", "input_image") or any(
+        _image(b) for b in block.get("content") or [] if isinstance(block.get("content"), list))
 
 
 def _for_minutes(block: Any) -> Any:

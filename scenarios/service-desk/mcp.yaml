@@ -43,8 +43,8 @@ tools:
     handles: [from]
     outside: [body]
     extract: {asks_for: "choice:a reset|access|equipment|something else"}
-  # A change: a5s holds each for the decider of the ticket's service area, below level 2, and
-  # makes it once they approve it, once for a5s's key, which the server honours
+  # A change: a5s holds each for the decider of the ticket's service area, where the agent asks
+  # first, and makes it once they approve it, once for a5s's key, which the server honours
   reply_on_ticket:
     server: itsm
     calls: add_reply
@@ -59,8 +59,8 @@ tools:
     text_fields: [body]
   # Self-service, through the identity provider: each account is ACC- and its holder's id. A reset
   # is the provider's own flow, which its holder finishes there, verifying themselves, so the
-  # agent never sees a secret. The desk's pack lets a reset run alone, at level 2, only for the
-  # person asking, and never an authenticator change (service_desk.py's PACK)
+  # agent never sees a secret. The desk's pack lets a reset run on its own only for the person
+  # asking, and never an authenticator change (service_desk.py's PACK)
   get_account:
     server: idp
     calls: get_account
@@ -93,9 +93,9 @@ tools:
     record_field: key
     action: reset-authenticators
   # Devices, through device management: each person's, by its asset tag, LT- for a laptop and PH-
-  # for a phone, in hardware. A remote lock is a change a5s holds for hardware's decider below level
-  # 2, and makes once they approve it, once for a5s's key. The desk's pack lets it run alone, at
-  # level 2, only for the person asking, on their own device, as a reset does
+  # for a phone, in hardware. A remote lock is a change a5s holds for hardware's decider where the
+  # agent asks first, and makes once they approve it, once for a5s's key. The desk's pack lets it
+  # run on its own only for the person asking, on their own device, as a reset does
   search_devices:
     server: mdm
     calls: search_devices
@@ -114,9 +114,10 @@ tools:
   lock_device:
     server: mdm
     calls: lock_device
-    description: Lock a device remotely, such as one that's lost, so nobody can use it until its holder signs in to it again.
+    description: Lock a device remotely, such as one that's lost, so nobody can use it, at once if it's connected, else once it next connects.
     arguments: {type: object, required: [key], properties: {key: {type: string}}}
-    returns: [key, locked, link]
+    returns: [key, locked, state, link]
+    made: {locked: true}  # else device management has it in hand, until the device connects
     writes: true
     idempotent: true
     record_arg: key

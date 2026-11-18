@@ -22,15 +22,8 @@ from typing import Any
 from a5s import db
 from a5s.contract import DATA_PROTECTION, Person
 from a5s.core import groups, sealing
-from a5s.core.approvals import FRESH, HASHED, Refused
-from a5s.core.identity import (
-    IdentityError,
-    UnknownPerson,
-    Verifier,
-    second_factor,
-    whose,
-    without_second_factor,
-)
+from a5s.core.approvals import HASHED, Refused, afresh
+from a5s.core.identity import Verifier
 
 ACTIONS = ("export", "erase")
 LASTS = "10 minutes"  # how long a request waits for the team to carry it out
@@ -52,28 +45,8 @@ def check(verifier: Verifier, scenario: Any, client_id: str, token: str, action:
         raise Refused(404, f"the officer asks to {' or '.join(ACTIONS)} what a5s keeps")
     if not person or groups.of(person):
         raise Refused(400, "a group chat's conversation is nobody's own: name a person")
-    try:
-        claims = verifier.claims(token)
-    except IdentityError as exc:
-        raise Refused(401, f"your sign-in doesn't check out: {exc}") from None
-    audience = claims.get("aud")
-    if client_id not in ([audience] if isinstance(audience, str) else audience or []):
-        raise Refused(401, "that sign-in is for something else")
-    if not 16 <= len(salt) <= 128 or claims.get("nonce") != nonce(action, person, salt):
-        raise Refused(403, f"your sign-in wasn't to {action} what a5s keeps about {person}")
-    if not isinstance(claims.get("auth_time"), int | float) or any(
-            not isinstance(claims.get(c), int | float) or now - claims[c] > FRESH
-            for c in ("iat", "auth_time")):  # a session's silent sign-in asks for nothing
-        raise Refused(401, "asking needs you to sign in again, from the last ten minutes, not a "
-                           "sign-in your browser kept")
-    if not second_factor(verifier.cfg, claims):
-        raise Refused(401, without_second_factor("ask for this"), "ask")
-    try:
-        officer = whose(verifier, scenario, claims)
-    except UnknownPerson as exc:
-        raise Refused(403, str(exc)) from None
-    except IdentityError as exc:
-        raise Refused(401, f"your sign-in doesn't check out: {exc}") from None
+    officer, claims = afresh(verifier, scenario, client_id, token, nonce(action, person, salt),
+                             salt, now, f"{action} what a5s keeps about {person}", "ask for this")
     if DATA_PROTECTION not in officer.roles:
         raise Refused(403, f"only the data protection officer asks for this, and {officer.name} "
                            "isn't")
@@ -111,7 +84,8 @@ def take(conn: db.Connection, verifier: Verifier | None, scenario: Any,
                  (row["id"],))
     try:
         why = sealing.check(verifier, scenario, client_id, row["proof"],
-                            nonce(action, person, row["salt"]), row["officer"])
+                            nonce(action, person, row["salt"]), row["officer"],
+                            recorded=(row["token"], row["nonce"]), salt=row["salt"])
     except sealing.Unchecked:
         raise Refused(503, "the identity provider can't be reached just now to check the "
                            "officer's request: they ask again, on the core's page, once it can") from None

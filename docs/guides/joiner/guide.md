@@ -6,17 +6,17 @@ The desk's joiner coordinator, which it planned and never built, described in pl
 
    ![Dev starts the joiner coordinator the desk planned and never built, joiner-coordinator, by describing it in his own words, on the sandbox's model, rather than from a template.](01-dev-starts-the-joiner-coordinator-the-desk-plann.png)
 
-2. The draft says what it was given, each with the reason, of what the desk offers, at the lowest level each needs, never 2: on the stand-in, the tools that only read whose words match his, at level 0, which only reads.
+2. The draft says what it was given, each with the reason, of what the desk offers, with the least each needs, never acting on its own: on the stand-in, the tools that only read whose words match his, so it reads only.
 
-   ![The draft says what it was given, each with the reason, of what the desk offers, at the lowest level each needs, never 2: on the stand-in, the tools that only read whose words match his, at level 0, which only reads.](02-the-draft-says-what-it-was-given-each-with-the-r.png)
+   ![The draft says what it was given, each with the reason, of what the desk offers, with the least each needs, never acting on its own: on the stand-in, the tools that only read whose words match his, so it reads only.](02-the-draft-says-what-it-was-given-each-with-the-r.png)
 
 3. He takes away what it doesn't need: what requesters wrote, which the joiner's own questions don't call for, and anything that writes, changes or sends.
 
    ![He takes away what it doesn't need: what requesters wrote, which the joiner's own questions don't call for, and anything that writes, changes or sends.](03-he-takes-away-what-it-doesn-t-need-what-requeste.png)
 
-4. He adds by hand what it does need: what people owe in the ITSM's tickets, which it chases, and reminders; and level 1, since chasing writes.
+4. He adds by hand what it does need: what people owe in the ITSM's tickets, which it chases, and reminders; and asking first, since chasing writes.
 
-   ![He adds by hand what it does need: what people owe in the ITSM's tickets, which it chases, and reminders; and level 1, since chasing writes.](04-he-adds-by-hand-what-it-does-need-what-people-ow.png)
+   ![He adds by hand what it does need: what people owe in the ITSM's tickets, which it chases, and reminders; and asking first, since chasing writes.](04-he-adds-by-hand-what-it-does-need-what-people-ow.png)
 
 5. He plans its first instance in access and hardware, where joiners' requests are, serving the sales team, where Jo joins: in force nowhere until both parts' owners approve it.
 
@@ -30,7 +30,7 @@ The desk's joiner coordinator, which it planned and never built, described in pl
 
    ![Nothing stops its release. Dev publishes its pull request.](07-nothing-stops-its-release-dev-publishes-its-pull.png)
 
-8. What it may do is what its description gave it, less what Dev took away, and what he added by hand: reads, what people owe, and reminders, at level 1 at most.
+8. What it may do is what its description gave it, less what Dev took away, and what he added by hand: reads, what people owe, and reminders, asking first at most.
 
 9. The team merges its pull request, and the directory names Dev its owner.
 

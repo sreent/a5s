@@ -24,9 +24,10 @@ import httpx
 
 from a5s import config
 from a5s.contract import Person, Scenario
-from a5s.core import groups
+from a5s.core import feedback, files, groups
 
 MEMBERS_KEPT = 60.0  # seconds a room's members, as last read, stand for who's in it
+SENT = ("m.file", "m.image")  # what someone sends a5s's reader reads
 UNKNOWN = "a5s doesn't know who you are. Ask an instance approver to add your Matrix id to the directory."
 ENCRYPTED = ("I can't read encrypted messages yet. Start a direct chat with me with encryption "
              "turned off.")
@@ -65,6 +66,7 @@ class Message:
     reply_to: dict[str, str]
     members: tuple[str, ...] = ()  # in a group's room, everyone in it, by their ids
     place: str | None = None  # in a group's room, the room
+    files: tuple[files.File, ...] = ()  # a file or an image they sent, for a5s's reader
 
 
 class Matrix:
@@ -129,6 +131,18 @@ class Matrix:
         if made.status_code != 200 and made.json().get("errcode") != "M_USER_IN_USE":
             made.raise_for_status()
         self._registered.add(bot)
+
+    def download(self, where: dict[str, Any]) -> bytes:
+        """A file or an image someone sent, from the organisation's own homeserver, as the bot
+        it was sent to: by its mxc:// address there, and nowhere else."""
+        server, _, media = str(where.get("mxc") or "").removeprefix("mxc://").partition("/")
+        if not server or not media or "/" in media or ".." in server:
+            raise ValueError("a5s fetches what's sent from the homeserver's media alone")
+        return files.download(
+            self.http, f"{self.cfg.homeserver}/_matrix/client/v1/media/download/"
+                       f"{quote(server, safe='')}/{quote(media, safe='')}?user_id="
+                       f"{quote(str(where.get('bot') or ''), safe='')}",
+            {"Authorization": f"Bearer {self.cfg.as_token}"})
 
     def join(self, room: str, bot: str) -> None:
         self.register(bot)
@@ -230,21 +244,30 @@ class Matrix:
         self._rooms.setdefault(made.json()["room_id"], set()).add(bot)
         return {"room": made.json()["room_id"], "bot": bot}
 
-    def send(self, reply_to: dict[str, str], text: str, card: dict | None = None) -> None:
+    def send(self, reply_to: dict[str, str], text: str, card: dict | None = None,
+             feedback: bool = False) -> str | None:
         """Send text into a room, as the bot that's in it. A card is Teams's alone: Matrix
-        sends the text, which says what the card would."""
+        sends the text, which says what the card would. The event's id, by which a reaction
+        to it is known (`feedback` is Teams' alone: a 👎 reaction says it in Matrix)."""
         if self.agent_of(reply_to.get("bot", "")) is None:
             raise ValueError("a5s speaks only as its own bots")
-        self._call("PUT", f"/rooms/{quote(reply_to['room'], safe='')}/send/m.room.message/"
-                          f"{uuid.uuid4().hex}", reply_to["bot"],
-                   json={"msgtype": "m.text", "body": text}).raise_for_status()
+        sent = self._call("PUT", f"/rooms/{quote(reply_to['room'], safe='')}/send/m.room.message/"
+                                 f"{uuid.uuid4().hex}", reply_to["bot"],
+                          json={"msgtype": "m.text", "body": text})
+        sent.raise_for_status()
+        try:
+            found = sent.json()
+        except ValueError:
+            return None
+        return str(found.get("event_id") or "") or None if isinstance(found, dict) else None
 
     # What the homeserver sends
 
     def event(self, event: dict[str, Any], scenario: Scenario, agents: list[str]) -> tuple[str, Any]:
         """What to do about one event: ("join", (room, bot)), ("message", Message),
         ("turn away", (reason, people, reply, reply_to)), ("left", (person, agent, reply_to)),
-        ("shared", (person, agent, reply_to)), or ("ignore", None)."""
+        ("shared", (person, agent, reply_to)), ("wrong", (person, event, room)), a 👎 on what
+        a bot said, or ("ignore", None)."""
         sender, room, kind = event.get("sender", ""), event.get("room_id", ""), event.get("type")
         content = event.get("content") or {}
         if event.get("state_key") is not None:  # who's in it, or its rules, changed: read
@@ -273,11 +296,20 @@ class Matrix:
                 if owner is not None:  # them first in a new one
                     return "shared", (owner.id, self.agent_of(bot), {"room": room, "bot": bot})
             return "ignore", None
+        if kind == "m.reaction":  # a 👎 on what a bot said: an answer someone says is wrong
+            relates = content.get("m.relates_to")
+            relates = relates if isinstance(relates, dict) else {}
+            person = self.person_of(sender, scenario)
+            if (relates.get("rel_type") == "m.annotation" and relates.get("event_id")
+                    and person is not None
+                    and feedback.wrong("matrix", str(relates.get("key") or ""))):
+                return "wrong", (person.id, str(relates["event_id"]), room)
+            return "ignore", None
         if kind not in ("m.room.message", "m.room.encrypted"):
             return "ignore", None
-        if kind == "m.room.message" and (content.get("msgtype") != "m.text"
+        if kind == "m.room.message" and (content.get("msgtype") not in ("m.text", *SENT)
                                           or (content.get("m.relates_to") or {}).get("rel_type") == "m.replace"):
-            return "ignore", None  # notices, files and edits
+            return "ignore", None  # notices and edits
         bots = self.bots_in(room, agents)
         if not bots:
             return "ignore", None
@@ -305,8 +337,23 @@ class Matrix:
             return "turn away", ("a5s can't read encrypted messages yet", [person.id], ENCRYPTED,
                                  reply_to)
         if not group:
-            return "message", Message(person.id, self.agent_of(bot), content.get("body", ""),
-                                      reply_to)
+            if content.get("msgtype") in SENT:  # a file or an image, in their own chat
+                info: dict[str, Any] = (content.get("info") if isinstance(content.get("info"),
+                                                                         dict) else None) or {}
+                given = content.get("filename") or content.get("body")  # each as the sender
+                name = given.strip()[:files.NAME] if isinstance(given, str) and given.strip() \
+                    else "a file"  # says it: of any type, or none
+                kind, size = info.get("mimetype"), info.get("size")
+                sent = files.File(name=name, media_type=files.media_type(
+                    name, kind if isinstance(kind, str) else None),
+                    size=size if isinstance(size, int) and not isinstance(size, bool)
+                    and size >= 0 else None,
+                    fetch={"channel": "matrix", "bot": bot, "mxc": str(content.get("url") or "")})
+                return "message", Message(person.id, self.agent_of(bot) or "", files.WORDS_ONLY,
+                                          reply_to, files=(sent,))
+            body = content.get("body")
+            return "message", Message(person.id, self.agent_of(bot),
+                                      body if isinstance(body, str) else "", reply_to)
         joined = self.members(room, bot)  # a mention in a group's room: who's in it now,
         if joined is None:  # afresh, since a run there acts for them all
             return "ignore", None
@@ -324,6 +371,8 @@ class Matrix:
             # what was said while they were only invited, which the run wasn't for
             return "turn away", ("the room shows people what was said before they joined",
                                  [person.id], groups.HISTORY, reply_to)
+        if content.get("msgtype") in SENT:  # a file can't mention a bot, so in a group's room
+            return "ignore", None  # it hears none
         return "message", Message(person.id, self.agent_of(bot),
                                   self.unmentioned(content.get("body", ""), bot), reply_to,
                                   members=members, place=room)

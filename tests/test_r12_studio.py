@@ -45,6 +45,8 @@ WIDENING = {
     "tasks": lambda d: d.update(tasks={"budget_tokens": 9_000_000, "days": 30}),
     "evaluation": lambda d: d.update(evaluation={"judge": "other-model"}),
     "listed": lambda d: d.update(listed=True),
+    "events": lambda d: d.update(events=[{"type": "ticket-opened", "source": "crm",
+                                          "task": "Say what it's about."}]),
 }
 WORDS = {  # what it says, or how, not what it may do
     "works_for": lambda d: d.update(works_for="Everyone in finance"),

@@ -101,15 +101,15 @@ def test_a_value_a_part_cant_use_stops_it_as_it_starts_saying_which_and_what_it_
     run = subprocess.run(
         [sys.executable, "-m", "a5s.cli", "scheduler"], capture_output=True, text=True,
         timeout=120, check=False, env=bare_env(A5S_DB_POOL_SIZE="ten", A5S_DB_POOLSIZE="20",
-                                  A5S_DEVELOPMENT="ture", A5S_TEAMS_APP_ID="app",
+                                  A5S_DEVELOPMENT="ture", A5S_SLACK_BOTS="[]", A5S_TEAMS_APP_ID="app",
                                   A5S_SERVICE_TOKEN="a secret"))
     assert run.returncode == 1, run.stderr
     said = run.stderr
     assert "a5s scheduler can't start, as its settings need changing:" in said
     assert "A5S_DB_POOL_SIZE is 'ten': it takes a whole number from 1 to 200" in said
     assert "A5S_DEVELOPMENT is 'ture': it takes true or false" in said
-    assert ("Teams needs A5S_TEAMS_APP_SECRET and A5S_TEAMS_TENANT_ID as well as "
-            "A5S_TEAMS_APP_ID") in said
+    assert "Slack needs A5S_SLACK_TEAM as well as A5S_SLACK_BOTS" in said
+    assert "A5S_TEAMS_APP_ID has moved to A5S_TEAMS_BOTS, a bot for each agent" in said
     assert "A5S_DB_POOLSIZE isn't one of a5s's settings: did you mean A5S_DB_POOL_SIZE?" in said
     assert "a secret" not in said  # nor any secret's value
 
@@ -146,7 +146,7 @@ def test_a_bot_whose_secret_isnt_set_stops_teams_as_it_starts():
 
 def test_what_a_part_runs_with_is_shown_with_its_secrets_masked(monkeypatch, capsys, tmp_path):
     env = {"A5S_DATABASE_URL": "postgresql://a5s_gateway:hunter2@db:5432/a5s",
-           "A5S_SERVICE_TOKEN": "s3cret", "A5S_DB_POOL_SIZE": "20",
+           "A5S_SERVICE_TOKEN": "s3cret-" * 6, "A5S_DB_POOL_SIZE": "20",  # as long as one must be
            "A5S_OIDC_ISSUER": "https://login.example/tenant/", "A5S_OIDC_GROUPS_CLAIM": ""}
     assert config.set_here(env) == {
         "A5S_SERVICE_TOKEN": "•••", "A5S_DATABASE_URL": "postgresql://a5s_gateway:•••@db:5432/a5s",
@@ -231,12 +231,13 @@ def test_compose_sets_no_setting_to_its_default():
     assert found == [], f"leave these unset, so a5s's own default holds: {found}"
 
 
-def rendered(*values: str, sandbox: bool = False) -> list[dict]:
-    """The chart, as helm renders it with these values files, as a5s's release or the
-    sandbox's."""
+def rendered(*values: str, sandbox: bool = False, sets: tuple[str, ...] = ()) -> list[dict]:
+    """The chart, as helm renders it with these values files, and these values set, as a5s's
+    release or the sandbox's."""
     charts = ROOT / "deploy" / "helm"
     args = ["template", "a5s", "/charts/a5s", *(a for v in values for a in ("-f", f"/charts/{v}")),
-            *(["--set", "mode=sandbox"] if sandbox else [])]
+            *(["--set", "mode=sandbox"] if sandbox else []),
+            *(a for s in sets for a in ("--set", s))]
     if shutil.which("helm"):
         command = ["helm", *[a.replace("/charts", str(charts)) for a in args]]
     elif shutil.which("docker") and subprocess.run(["docker", "info"], capture_output=True,
@@ -318,13 +319,13 @@ def test_the_charts_pods_are_given_no_service_links():
     assert pods and all(p.get("enableServiceLinks") is False for p in pods)
 
 
-def test_the_copier_copies_every_hour_unless_its_told_otherwise(monkeypatch, tmp_path):
+def test_the_copier_copies_within_15_minutes_unless_its_told_otherwise(monkeypatch, tmp_path):
     every: list[int | None] = []
     monkeypatch.setattr(cli, "_anchor", lambda cfg, n: every.append(n))
     monkeypatch.chdir(tmp_path)
     for args in (["anchor", "--every"], ["anchor", "--every", "60"], ["anchor"]):
         cli.main(args)
-    assert every == [cli.ANCHOR_EVERY, 60, None] and cli.ANCHOR_EVERY == 3600  # once, alone
+    assert every == [cli.ANCHOR_EVERY, 60, None] and cli.ANCHOR_EVERY == 900  # once, alone
 
 
 def test_no_value_in_the_code_waits_on_where_it_lives():

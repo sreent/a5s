@@ -4,6 +4,7 @@
 // editor, or the other way round.
 
 import { Document, isMap, isScalar, isSeq, parseDocument, Scalar, type YAMLMap, type YAMLSeq } from "yaml";
+import { levelOf } from "./levels";
 
 export const DAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] as const;
 const WEEKDAYS = DAYS.slice(0, 5);
@@ -63,7 +64,7 @@ export function read(text: string): Spec | null {
     works_for: String(found.works_for ?? ""),
     does: String(found.does ?? ""),
     model: String(found.model ?? ""),
-    autonomy: { start: num(autonomy.start, 1), max: num(autonomy.max, 1) },
+    autonomy: { start: levelOf(autonomy.start, 1), max: levelOf(autonomy.max, 1) },  // by name or number
     tools: Object.fromEntries(Object.entries(tools).map(([group, names]) =>
       [group, Array.isArray(names) ? names.map(String) : []])),
     triggers: list(found.triggers).flatMap((t) => Object.entries(record(t)).map(([kind, about]) =>

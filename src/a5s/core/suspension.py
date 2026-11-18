@@ -3,10 +3,12 @@ afresh for that act alone: the sign-in's nonce commits to the act and the instan
 identity provider signs it.
 
 Who may: suspend it, which makes a5s safer, those who run it, as its owner or deputy, the owners
-of its agent, and the team that runs a5s; resume it, which loosens a5s, whoever suspended it,
-with a second factor where the deployment asks for one, as core/registry.py's set_status keeps
-the first suspender's suspension and lets only them resume it. The team can do either at the
-command line too, at once (`a5s suspend`).
+of its agent, the owners and delegates of each part it works in, and the team that runs a5s;
+resume it, which loosens a5s, whoever suspended it, or someone else's suspension, the release
+approver, from outside the team, who may watch it while it's suspended to judge it: each with
+a second factor where the deployment asks for one, as core/registry.py's set_status keeps the
+first suspender's suspension (round 15, D6, B7). The team can do either at the command line
+too, at once (`a5s suspend`), resuming only its own suspensions.
 
 The channels app checks the sign-in as it arrives, so people hear at once when it doesn't check
 out or isn't theirs to make, and records it with the sign-in. It can change no instance. The
@@ -23,21 +25,15 @@ import hashlib
 from typing import Any
 
 from a5s import db
-from a5s.contract import Person
+from a5s.contract import PART_DELEGATE, PART_OWNER, RELEASE_APPROVER, Person
 from a5s.core import ledger, registry, sealing
-from a5s.core.approvals import FRESH, HASHED, Refused
-from a5s.core.identity import (
-    IdentityError,
-    UnknownPerson,
-    Verifier,
-    second_factor,
-    whose,
-    without_second_factor,
-)
+from a5s.core.approvals import HASHED, Refused, afresh
+from a5s.core.identity import Verifier
 from a5s.core.releases import agent_owner
 
 ACTIONS = ("suspend", "resume")
-COLUMNS = "id, definition, owner, deputy, status, suspended_by"  # what deciding who may reads
+COLUMNS = "id, definition, owner, deputy, status, suspended_by, parts"  # what deciding who
+# may reads
 
 
 def nonce(action: str, instance: str, salt: str) -> str:
@@ -62,18 +58,27 @@ def may(scenario: Any, person: Person, inst: dict, action: str,
     if action == "suspend":
         if not (person.id in (inst["owner"], inst["deputy"])
                 or agent_owner(inst["definition"]) in person.roles
+                or any(f"{PART_OWNER}:{p}" in person.roles or f"{PART_DELEGATE}:{p}" in person.roles
+                       for p in inst.get("parts") or {})  # its parts' own (round 15, B7)
                 or (team is not None and person.team == team)):
             return Refused(403, "suspending it is for those who run it, as its owner or deputy, "
-                                "the owners of its agent, and the team that runs a5s")
+                                "the owners of its agent, the owners and delegates of its parts, "
+                                "and the team that runs a5s")
         if inst["status"] == "suspended":
             return Refused(409, f"{inst['id']} is suspended already, by {suspender}")
         return None
     if inst["status"] != "suspended":
         return Refused(409, f"{inst['id']} isn't suspended")
-    if inst["suspended_by"] != person.id:
-        return Refused(403, f"only {suspender}, who suspended it, can resume it. Resuming someone "
-                            "else's suspension needs the release approver, at the command line")
+    if inst["suspended_by"] != person.id and not lifts(person, team):
+        return Refused(403, f"only {suspender}, who suspended it, can resume it, or the release "
+                            "approver, from outside the team that runs a5s, on its page")
     return None
+
+
+def lifts(person: Person, team: str | None) -> bool:
+    """Whether someone may resume another's suspension: the release approver, from outside the
+    team that runs a5s, since resuming loosens a5s (round 15, D6)."""
+    return RELEASE_APPROVER in person.roles and (team is None or person.team != team)
 
 
 def check(verifier: Verifier, scenario: Any, client_id: str, token: str, action: str,
@@ -83,29 +88,8 @@ def check(verifier: Verifier, scenario: Any, client_id: str, token: str, action:
     Otherwise, Refused. Whether they may is for `may`, as the instance stands."""
     if action not in ACTIONS:
         raise Refused(404, "an instance is suspended or resumed, and nothing else, from its page")
-    try:
-        claims = verifier.claims(token)
-    except IdentityError as exc:
-        raise Refused(401, f"your sign-in doesn't check out: {exc}") from None
-    audience = claims.get("aud")
-    if client_id not in ([audience] if isinstance(audience, str) else audience or []):
-        raise Refused(401, "that sign-in is for something else")
-    if not 16 <= len(salt) <= 128 or claims.get("nonce") != nonce(action, instance, salt):
-        raise Refused(403, f"your sign-in wasn't to {action} {instance}")
-    if not isinstance(claims.get("auth_time"), int | float) or any(
-            not isinstance(claims.get(c), int | float) or now - claims[c] > FRESH
-            for c in ("iat", "auth_time")):  # a session's silent sign-in asks for nothing
-        raise Refused(401, f"to {action} it, sign in again, from the last ten minutes, not with "
-                           "a sign-in your browser kept")
-    if action == "resume" and not second_factor(verifier.cfg, claims):
-        raise Refused(401, without_second_factor("resume it"), "resume")
-    try:
-        person = whose(verifier, scenario, claims)
-    except UnknownPerson as exc:
-        raise Refused(403, str(exc)) from None
-    except IdentityError as exc:
-        raise Refused(401, f"your sign-in doesn't check out: {exc}") from None
-    return person, claims
+    return afresh(verifier, scenario, client_id, token, nonce(action, instance, salt), salt, now,
+                  f"{action} {instance}", "resume it" if action == "resume" else None)
 
 
 def record(conn: db.Connection, action: str, instance: str, person: str, token: str,
@@ -121,7 +105,7 @@ def record(conn: db.Connection, action: str, instance: str, person: str, token: 
          claims["iss"])).fetchone()
     if row is None:
         raise Refused(409, "that sign-in has been used: sign in again")
-    ledger.append(conn, {"kind": "admin", "action": "ask", "run": None, "instance": instance,
+    ledger.append(conn, {"kind": "admin", "action": "ask-status", "run": None, "instance": instance,
                          "acts_for": [], "decision": "record",
                          "args": {"to": action, "by": person, "identity": verified(action),
                                   "issuer": claims["iss"], "token_sha256": hashed}})
@@ -147,7 +131,8 @@ def carry_out(conn: db.Connection, verifier: Verifier | None, scenario: Any,
         try:
             why = sealing.check(verifier, scenario, client_id, row["proof"],
                                 nonce(action, instance, row["salt"]), who,
-                                factor=action == "resume")  # suspending only makes a5s safer
+                                factor=action == "resume",  # suspending only makes a5s safer
+                                recorded=(row["token"], row["nonce"]), salt=row["salt"])
         except sealing.Unchecked:
             continue
         inst = conn.execute(f"select {COLUMNS} from instances where id = %s for update",
@@ -162,12 +147,15 @@ def carry_out(conn: db.Connection, verifier: Verifier | None, scenario: Any,
         if why is None:
             why = registry.set_status(
                 conn, instance, by=who, suspend=action == "suspend", identity=verified(action),
-                proof={"issuer": row["issuer"], "token_sha256": row["token"].removeprefix(HASHED)}
-            ) or None
+                proof={"issuer": row["issuer"], "token_sha256": row["token"].removeprefix(HASHED)},
+                others=person is not None and lifts(person, team)) or None
         conn.execute("update status_requests set ended_at = now(), outcome = %s, proof = null "
                      "where id = %s", (why or "made", row["id"]))
         if why:
             refused.append(sealing.Refusal(
                 who, f"{action} {instance}: {why}",
-                f"a5s didn't {action} {instance}, as you asked on its page in the studio: {why}."))
+                ("a5s didn't suspend {instance}, as you asked on its page in the studio: {why}."
+                 if action == "suspend" else
+                 "a5s didn't resume {instance}, as you asked on its page in the studio: {why}.",
+                 {"instance": instance, "why": why})))
     return refused

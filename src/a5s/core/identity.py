@@ -11,6 +11,7 @@ sender itself, so no service can claim that a message came from someone else.
 
 from __future__ import annotations
 
+import json
 import threading
 import time
 from dataclasses import dataclass
@@ -110,6 +111,18 @@ def without_second_factor(doing: str) -> str:
             "in, signing in again won't change that: your organisation's sign-in policy decides "
             "when it asks, so ask whoever runs sign-ins for your organisation, such as your IT "
             "team, to ask for a second factor when you sign in to a5s.")
+
+
+def asked_claims(cfg: IdentityConfig) -> str | None:
+    """The claims a page asks the identity provider for as someone signs in to do what counts,
+    where the deployment's second factor is an authentication context, `acrs`, as Entra ID shows
+    one: so Conditional Access asks them for what that context needs then, which `amr` in a
+    v2.0 token may never show (round 13, D3). None where it's anything else."""
+    if not cfg.mfa or cfg.mfa[0] != "acrs":
+        return None
+    values = list(cfg.mfa[1])
+    wanted = {"essential": True, **({"value": values[0]} if len(values) == 1 else {"values": values})}
+    return json.dumps({"id_token": {"acrs": wanted}}, separators=(",", ":"))
 
 
 def asked_level(cfg: IdentityConfig) -> str | None:

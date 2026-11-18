@@ -130,6 +130,9 @@ def agent_part(folder: Path) -> dict:
             "tasks": d.tasks.model_dump() if d.tasks else None,  # long work, over days
             "owner": d.owner, "deputy": d.deputy,  # who answers for it where the settings name none
             "listed": d.listed,  # whether everyone signed in may know of it
+            # what other systems may start its runs with: only where it takes any, so a
+            # release made before events keeps its manifest
+            **({"events": [e.model_dump() for e in d.events]} if d.events else {}),
         },
     }
 
@@ -287,9 +290,24 @@ class Need:
     why: str
 
 
+# What an agent's part of a manifest holds only where it has any, so a release made before a5s
+# recorded them keeps its manifest: its absence means the agent had none
+WHEN_ANY = ("events",)
+
+
+def _told(part: dict) -> dict:
+    """What an agent's part of a release tells it to do, its instructions and its skills, by
+    their hashes: not its tests, which no run reads, nor its agent.yaml, whose effect on what
+    it may do `may` holds."""
+    return {k: v for k, v in (part.get("files") or {}).items()
+            if (path := k.split("/", 2)[-1]) == "AGENTS.md" or path.startswith("skills/")}
+
+
 def _widens_agent(old: dict, new: dict) -> list[str]:
     """What an agent may do now that it couldn't before."""
     found = []
+    if any(event not in old.get("events", []) for event in new.get("events", [])):
+        found.append("takes new events from other systems")
     if set(new["tools"]) - set(old["tools"]):
         found.append("uses more tools")
     if any(old["pins"].get(tool) not in (None, pin) for tool, pin in new["pins"].items()):
@@ -365,8 +383,10 @@ def needs(new: dict, old: dict | None, advisory: str | None = None) -> list[Need
                      else Need(ENGINEER, "the approved models changed, and none may do more"))
     for name in sorted(set(new["agents"]) | set(old["agents"])):
         before, after = old["agents"].get(name), new["agents"].get(name)
-        if before is not None and after is not None:  # by what the release before recorded of it
-            after = {**after, "may": {k: v for k, v in after["may"].items() if k in before["may"]}}
+        if before is not None and after is not None:  # by what the release before recorded of it,
+            after = {**after, "may": {k: v for k, v in after["may"].items()  # but for what a
+                                      if k in before["may"] or k in WHEN_ANY}}  # manifest holds
+            # only where an agent has any, whose absence before means it had none
         if before == after:
             continue
         if after is None:
@@ -379,6 +399,11 @@ def needs(new: dict, old: dict | None, advisory: str | None = None) -> list[Need
         else:
             found += [Need(agent_owner(name), f"the {name}'s instructions changed"),
                       Need(ENGINEER, f"the {name}'s instructions changed")]
+            if _told(after) != _told(before) and (
+                    after["may"].get("autonomy") or {}).get("max", 1) >= 2:  # what it does
+                found.append(Need(RELEASE_APPROVER,  # unattended changes too (round 15, C2)
+                                  f"the {name}'s instructions changed, and it may act on its "
+                                  "own, where nobody decides its changes before they're made"))
     first: dict[str, Need] = {}
     for need in found:  # one of each is enough, with the first reason for it
         first.setdefault(need.role, need)

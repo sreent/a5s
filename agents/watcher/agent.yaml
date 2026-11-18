@@ -8,8 +8,8 @@ does: >-
 scope: none                      # it changes no part's data
 model: deepseek-v4-pro           # from config/models.yaml, the approved list
 autonomy:
-  start: 0
-  max: 0                         # it observes and reports
+  start: reads only
+  max: reads only                # it observes and reports
 tools:
   records: [search_records, get_record]    # the scenario's records, read only
 triggers:

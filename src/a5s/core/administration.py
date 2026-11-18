@@ -21,7 +21,7 @@ from a5s.contract import (
     Person,
     parse_settings,
 )
-from a5s.core import approvals, audit, memberships, proposals, registry, studio
+from a5s.core import approvals, audit, languages, memberships, proposals, registry, studio, words
 from a5s.core.releases import agent_owner
 
 LATEST = 20  # administrative acts the page shows, newest first
@@ -36,12 +36,13 @@ SCOPED = {PART_OWNER: "Owner of {scope}", PART_DELEGATE: "Delegate in {scope}",
           "agent-viewer": "Viewer of the {scope}"}
 
 
-def named(role: str) -> str:
-    """A role's name, in words: its id stays beside it where groups are given it."""
+def named(role: str, language: str = "en") -> str:
+    """A role's name, in words, in the language someone reads: its id stays beside it where
+    groups are given it."""
     kind, _, scope = role.partition(":")
     if scope and kind in SCOPED:
-        return SCOPED[kind].format(scope=scope)
-    return role.replace("-", " ").capitalize()
+        return words.say(language, SCOPED[kind], scope=scope)
+    return words.say(language, role.replace("-", " ").capitalize())
 
 
 def administers(person: Person | None, team: str) -> bool:
@@ -51,9 +52,10 @@ def administers(person: Person | None, team: str) -> bool:
         for r in person.roles))
 
 
-def held(scenario: Any, conn: db.Connection, roles: list[str]) -> list[dict[str, Any]]:
+def held(scenario: Any, conn: db.Connection, roles: list[str],
+         language: str = languages.ENGLISH) -> list[dict[str, Any]]:
     """Who holds each role, and by what: the directory, or a group, as their latest sign-in
-    showed it and the settings in force map it."""
+    showed it and the settings in force map it, in the language someone reads."""
     own = memberships.rooted(scenario)
     state = getattr(scenario, "_a5s_roles", None)
     if state is not None:
@@ -62,13 +64,13 @@ def held(scenario: Any, conn: db.Connection, roles: list[str]) -> list[dict[str,
     kept = memberships.stored(conn) if mapping else {}
     found = []
     for role in roles:
-        holders = {p.id: {"id": p.id, "name": p.name, "by": ["the directory"]}
+        holders = {p.id: {"id": p.id, "name": p.name, "by": [words.say(language, "the directory")]}
                    for p in own.holders(role)}
         for pid, groups in sorted(kept.items()):
             for group in groups:
                 if role in mapping.get(group, ()) and (p := own.person(pid)) is not None:
                     holders.setdefault(pid, {"id": pid, "name": p.name, "by": []})["by"].append(
-                        f"group {group}")
+                        words.say(language, "group {group}", group=group))
         found.append({"role": role, "held_by": sorted(holders.values(), key=lambda h: h["id"])})
     return found
 
@@ -100,10 +102,10 @@ def waiting(conn: db.Connection, gw: Any) -> dict[str, Any]:
                          "needs": registry.missing(settings, gw.scenario.person, valid, before,
                                                    memberships.rooted(gw.scenario).person)})
     by_part: dict[str, dict[str, Any]] = {}  # who may decide each now, as the directory stands
-    for held_change in conn.execute("select parts, records, acts_for from proposals "
-                                    "where status = 'waiting'"):
+    for held_change in conn.execute("select parts, records, acts_for, steered_by from "
+                                    "proposals where status = 'waiting'"):
         who = {p.id for p in proposals.everyone(proposals.deciders(
-            gw.scenario, list(held_change["records"]), list(held_change["acts_for"])))}
+            gw.scenario, list(held_change["records"]), proposals.not_deciding(held_change)))}
         for part in held_change["parts"]:
             found = by_part.setdefault(part, {"n": 0, "deciders": set()})
             found["n"] += 1
@@ -149,6 +151,22 @@ def ownerless(conn: db.Connection, gw: Any) -> dict[str, list[dict[str, Any]]]:
     return {"agents": agents, "instances": instances, "parts": parts}
 
 
+def _seen(act: dict, conn: db.Connection, known: set[str], viewer: Person | None) -> dict | None:
+    """An act as the viewer may see it: none of an agent they may not know of, an act on an
+    instance by its agent as much as one naming it; and what it did to an instance, such as a
+    grade, the settings applied or who suspended it, only for those who may watch it (round 13,
+    B1). Without a viewer, the whole of it."""
+    about, instance = act["about"] or {}, act.get("instance")
+    inst = conn.execute("select id, definition, owner, deputy, parts from instances where id = %s",
+                        (instance,)).fetchone() if instance else None
+    agent = about.get("agent") or (inst["definition"] if inst else None)
+    if agent is not None and agent not in known:
+        return None
+    if instance and viewer is not None and (inst is None or not studio.watches(inst, viewer)):
+        return {**act, "about": {}}  # that it happened, not what it did
+    return act
+
+
 def page(conn: db.Connection, gw: Any, now: datetime, days: int = DAYS,
          viewer: Person | None = None) -> dict[str, Any]:
     """All the page shows: to a viewer, only of the agents they may know of (core/studio.py's
@@ -163,8 +181,9 @@ def page(conn: db.Connection, gw: Any, now: datetime, days: int = DAYS,
         "select distinct jsonb_object_keys(parts) as part from instances")]
     roles = [row["role"] for row in audit.roles_of(gw.scenario, parts, sorted(known))]
     report = audit.report(conn, gw.scenario, sorted(known), since=now - timedelta(days=days))
-    acts = [a for a in report["acts"] if (a["about"] or {}).get("agent") in (None, *known)]
-    shown = audit.Shown(gw.scenario, audit.key(conn), names=gw.data_protection(conn).audit_names)
+    acts = [a for a in (_seen(a, conn, known, viewer) for a in report["acts"]) if a is not None]
+    shown = audit.Shown(gw.scenario, audit.key(conn), names=gw.data_protection(conn).audit_names,
+                        left=audit.left(conn))
     gone = ownerless(conn, gw)
     gone = {**gone, "agents": [a for a in gone["agents"] if a["agent"] in known],
             "instances": [i for i in gone["instances"] if i["agent"] in known]}

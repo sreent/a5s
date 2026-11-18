@@ -11,7 +11,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Protocol, cast
 
@@ -19,13 +19,17 @@ import yaml
 from pydantic import (
     AfterValidator,
     BaseModel,
+    BeforeValidator,
     ConfigDict,
     Field,
     StrictInt,
     StringConstraints,
     ValidationError,
+    field_validator,
+    model_validator,
 )
 
+from a5s import levels
 from a5s.core.ledger import canonical
 
 INSTANCE_APPROVER = "instance-approver"  # approves instances with no parts, and sets their level
@@ -71,6 +75,9 @@ class Person:
     # When their authenticator was last reset, if the directory says: how a stolen identity
     # usually starts, so their decisions wait a day after it
     reset_at: datetime | None = None
+    # The language they read, as a BCP 47 code, such as th, which they can choose otherwise on
+    # their own page in the studio (core/languages.py)
+    language: str = "en"
 
     @classmethod
     def listed(cls, entry: Mapping[str, Any], folder: Path) -> Person:
@@ -125,6 +132,39 @@ class ToolCall:
     # For a change, or a tool marked idempotent, the same whenever the same effect is asked for
     # in a run or task: a system that adds something makes it once for each key
     key: str | None = None
+    # For a run that acts for nobody, such as one a system's event or a schedule started:
+    # everyone its instance serves, as the directory says now, whom what it finds may reach
+    serves: tuple[str, ...] = ()
+
+
+UNDO_WITHIN = timedelta(days=7)  # the longest a change may be undone after it's made [starting value]
+
+
+@dataclass(frozen=True)
+class Undo:
+    """How a change a tool makes is reversed (core/undoing.py): by calling `tool`, one of the
+    scenario's own, such as the same one, with each of its arguments from the change's own
+    (`args.<name>`) or from its record as it stood before it (`before.<field>`, a field of the
+    record, as the scenario gives it), within `within` of its being made."""
+
+    tool: str
+    args: tuple[tuple[str, str], ...]
+    within: timedelta = timedelta(hours=24)
+
+    def __post_init__(self) -> None:
+        if not self.args:
+            raise ValueError(f"undoing with {self.tool} takes the arguments that reverse it")
+        for name, source in self.args:
+            kind, _, of = source.partition(".")
+            if kind not in ("args", "before") or not of:
+                raise ValueError(f"undoing with {self.tool}: {name} comes from args.<name> or "
+                                 f"before.<field>, not {source}")
+        if not timedelta(minutes=1) <= self.within <= UNDO_WITHIN:
+            raise ValueError(f"undoing with {self.tool}: a change may be undone for a minute to "
+                             f"{UNDO_WITHIN.days} days after it's made")
+
+    def described(self) -> dict[str, Any]:
+        return {"tool": self.tool, "args": dict(self.args), "within": self.within.total_seconds()}
 
 
 @dataclass(frozen=True)
@@ -159,8 +199,25 @@ class Tool:
     # gets the form, never the content, and its run is marked as having read outside content.
     outside: tuple[str, ...] = ()
     extract: dict[str, str] = field(default_factory=dict)
+    # Whether what it returns holds a few words written outside the organisation as they are,
+    # such as the titles and links of an outside library's documents, which the agent reads to
+    # choose one: its run is marked once it's had them, as if it had read outside content
+    marks: bool = False
+    # For text it writes that people check before it goes to someone outside the organisation,
+    # such as a reply left among a shared mailbox's drafts: who checks it (people,
+    # team:<team> or role:<role>), and where, in a few words. a5s's notes on what the agent
+    # wrote, such as a date it gave itself, go to them, in a5s's own words, never into the
+    # text, which someone outside would read; and a5s puts no value a handle stands for in it,
+    # such as another customer's address: only they add what's needed (round 15)
+    checked_by: tuple[str, ...] = ()
+    checked_in: str = ""
+    # How a change it makes is reversed, if it says: someone it was for, or who decides its
+    # changes in the record's part, may undo it for a while after it's made (core/undoing.py)
+    undo: Undo | None = None
 
     def __post_init__(self) -> None:
+        if self.undo is not None and not (self.action and self.record_arg):
+            raise ValueError(f"{self.name}: only a tool that changes a record says how to undo it")
         if bool(self.outside) != bool(self.extract):
             raise ValueError(f"{self.name}: a tool that returns outside content names the form "
                              "a5s's extractor fills from it, and only such a tool names one")
@@ -195,6 +252,10 @@ class Tool:
             payload["idempotent"] = True
         if self.outside:  # or reads outside content another way
             payload["outside"] = [list(self.outside), self.extract]
+        if self.marks:  # or stops marking its run
+            payload["marks"] = True
+        if self.undo:  # or is undone another way, or for longer
+            payload["undo"] = self.undo.described()
         return hashlib.sha256(canonical(payload).encode()).hexdigest()
 
     def definition(self) -> dict[str, Any]:
@@ -226,6 +287,12 @@ class InstanceSettings:
     actions: dict[str, dict[str, int]] = field(default_factory=dict)
     # The instances it may ask a question, for the people it acts for (core/asking.py)
     asks: tuple[str, ...] = ()
+    # The directory's teams it may hand a conversation over to, whose people answer the person
+    # in the same chat until they hand it back (core/handover.py)
+    hands_to: tuple[str, ...] = ()
+    # The instance it answers beside, if it's a shadow: it answers what that one is asked,
+    # sending and changing nothing, for graders to compare (core/shadows.py)
+    shadows: str | None = None
 
     def level_in(self, part: str, start: int, most: int) -> int:
         """How far it may act in a part, between a release's starting level and its maximum."""
@@ -261,6 +328,30 @@ class DataProtection:
     # Whether the status names deciders whose approvals are graded wrong far more often than
     # others': profiling people
     flag_rubber_stamps: bool = False
+    # Whether those who author an agent may keep one of its runs as a test case, where every
+    # one of them may see the run: what someone said to it, masked by code and checked by whoever
+    # keeps it, in the agent's folder from then, which every author reads, and once released, the
+    # agents' repository (core/run_cases.py)
+    cases_from_runs: bool = False
+    # Whether a shadow may answer what people ask the instance it shadows, beside it, sending
+    # nothing: it reads what they say and what their records hold, and graders read what it
+    # answered beside what was sent (core/shadows.py)
+    shadow_runs: bool = False
+
+
+@dataclass(frozen=True)
+class Spending:
+    """What each agent's model calls may cost a calendar month, in whole cents of the currency
+    it names, which the studio's forms take from models.yaml: a budget a5s shows spending
+    against, with a forecast to the month's end, and tells its owners of once the forecast
+    passes it, never one that stops work, which the token budgets each release sets do
+    (core/spending.py). One in a currency models.yaml doesn't price models in, a5s compares
+    with nothing. Without a currency, it's in the one models.yaml prices models in. An agent's
+    owner approves its budget. A part has none: a run's cost is its instance's and its
+    agent's, whole, never shared out among parts, a figure few could check."""
+
+    agents: dict[str, float] = field(default_factory=dict)
+    currency: str | None = None  # as its ISO 4217 code, such as GBP
 
 
 @dataclass(frozen=True)
@@ -288,6 +379,9 @@ class Settings:
     # A version's own map gives nothing towards its approval: the one in force before it does.
     groups: dict[str, tuple[str, ...]] = field(default_factory=dict)
     data_protection: DataProtection = field(default_factory=DataProtection)
+    # What each agent's model calls may cost a month, such as {"agents": {"assistant": 300}}:
+    # a run's cost is its instance's and its agent's, whole, so no part has a budget
+    spending: Spending = field(default_factory=Spending)
 
 
 class SettingsError(ValueError):
@@ -302,9 +396,14 @@ _PERSON = Annotated[str, StringConstraints(strict=True,
 _WHO = Annotated[str, StringConstraints(strict=True, pattern=(
     r"^(?:(?:team|role):[A-Za-z0-9][A-Za-z0-9._@:-]{0,127}|[A-Za-z0-9][A-Za-z0-9._@-]{0,127})$"))]
 _FIELD = Annotated[str, StringConstraints(strict=True, pattern=r"^[A-Za-z][A-Za-z0-9 _-]{0,62}$")]
-_LEVEL = Annotated[StrictInt, Field(ge=0, le=2)]
+# reads only, asks first or acts on its own, by name or, as before, by number (levels.py)
+_LEVEL = Annotated[StrictInt, BeforeValidator(levels.parse), Field(ge=0, le=2)]
 _COUNT = Annotated[StrictInt, Field(ge=1, le=100_000)]
 _THRESHOLD = Annotated[float, Field(strict=True, ge=0.5, le=0.999)]
+# A month's budget, in the currency models.yaml prices models in: more than nothing, and at most
+# ten million, a whole number or one with cents
+_AMOUNT = Annotated[float, Field(gt=0, le=10_000_000, allow_inf_nan=False)]
+_CURRENCY = Annotated[str, StringConstraints(strict=True, pattern=r"^[A-Z]{3}$")]  # ISO 4217
 # A group, by the id its sign-ins show it by: an Entra ID object id, or a group's name or path
 _GROUP = Annotated[str, StringConstraints(strict=True, pattern=(
     r"^[A-Za-z0-9/_](?:[A-Za-z0-9._@:/ -]{0,254}[A-Za-z0-9._@:/-])?$"))]
@@ -332,6 +431,8 @@ class _Instance(BaseModel):
     deputy: _PERSON | None = None
     parts: list[_ID] | dict[_ID, _LEVEL | _Part | None] = Field(default_factory=list)
     asks: list[_ID] = Field(default_factory=list)
+    hands_to: list[_ID] = Field(default_factory=list)  # teams of the directory
+    shadows: _ID | None = None  # the instance it answers beside, as a shadow
 
 
 class _Limit(BaseModel):
@@ -363,11 +464,42 @@ class _DataProtection(BaseModel):
     studio_names: bool = DataProtection.studio_names
     audit_names: bool = DataProtection.audit_names
     flag_rubber_stamps: bool = DataProtection.flag_rubber_stamps
+    cases_from_runs: bool = DataProtection.cases_from_runs
+    shadow_runs: bool = DataProtection.shadow_runs
+
+
+class _Spending(BaseModel):
+    """What each agent's model calls may cost a month, in whole cents, so the words approvers
+    read are the amount itself, and the currency they're in."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    agents: dict[_ID, _AMOUNT] = Field(default_factory=dict)
+    currency: _CURRENCY | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _no_parts(cls, found: Any) -> Any:
+        if isinstance(found, dict) and "parts" in found:
+            raise ValueError("a5s budgets each agent, not each part: a run's cost is its "
+                             "instance's and its agent's, whole, so a budget goes in "
+                             "spending.agents, which the agent's owner approves")
+        return found
+
+    @field_validator("agents")
+    @classmethod
+    def _cents(cls, found: dict[str, float]) -> dict[str, float]:
+        for name, amount in found.items():
+            if abs(amount * 100 - round(amount * 100)) > 1e-6:
+                raise ValueError(f"{name}'s budget is in whole cents, such as 520.40, "
+                                 f"not {amount!r}")
+        return found
 
 
 class _Version(BaseModel):
-    """a5s's own settings format, checked strictly: names are plain words, levels are whole
-    numbers from 0 to 2, and nothing else may be there."""
+    """a5s's own settings format, checked strictly: names are plain words, levels are reads
+    only, asks first or acts on its own, or their numbers, 0 to 2, and nothing else may be
+    there."""
 
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -379,6 +511,7 @@ class _Version(BaseModel):
     instances: dict[_ID, _Instance] = Field(default_factory=dict)
     groups: dict[_GROUP, list[_GROUP_ROLE]] = Field(default_factory=dict)
     data_protection: _DataProtection = Field(default_factory=_DataProtection)
+    spending: _Spending = Field(default_factory=_Spending)
 
 
 def _plain_yaml(raw: bytes) -> Any:
@@ -432,11 +565,14 @@ def parse_settings(raw: bytes, signatures: tuple[Signature, ...] = ()) -> Settin
         thresholds=dict(version.thresholds),
         groups={g: tuple(sorted(set(roles))) for g, roles in version.groups.items() if roles},
         data_protection=DataProtection(**version.data_protection.model_dump()),
+        spending=Spending(agents={a: float(v) for a, v in version.spending.agents.items()},
+                          currency=version.spending.currency),
         instances=tuple(
             InstanceSettings(id=iid, definition=i.definition, serves=tuple(i.serves),
                              level=i.level, owner=i.owner, deputy=i.deputy,
                              parts=_part_levels(i.parts), actions=_action_levels(i.parts),
-                             asks=tuple(i.asks))
+                             asks=tuple(i.asks), hands_to=tuple(dict.fromkeys(i.hands_to)),
+                             shadows=i.shadows)
             for iid, i in version.instances.items()
         ),
     )
@@ -458,7 +594,9 @@ class Scenario(Protocol):
     """What a scenario gives a5s. One may also have record(key) -> Record | None, which reads
     one record, as watched() stands to it, or None if there's no such record; a5s reads that
     one record with it, such as for a case's brief, and without it reads every record with
-    watched() to find the one."""
+    watched() to find the one. And sees_part(person, part) -> bool, whether someone may read
+    what's in a part, for documents that name their readers by part, such as a docs
+    repository's (connectors/libraries.py): without it, no part names a reader."""
 
     name: str
     record_links: tuple[str, ...]  # the only link prefixes agents' messages may carry

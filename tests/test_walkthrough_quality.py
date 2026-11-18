@@ -2,7 +2,7 @@
 in the studio, from nothing, by the owner of the data team's agents, with what it may do held to the
 hand-written watcher's, on a5s as the data team deploys it, SAP behind its MCP server.
 
-Ines builds quality-helper: it only reads, at level 0, and tells each person it serves, every
+Ines builds quality-helper: it reads only, and tells each person it serves, every
 working morning, how their data object stands against its target, and what changed in the change
 requests that wait on them, from what code works out. Rhea and Ines sign the release that adds it.
 The owners of the data objects put it to work in material data, serving Mo, who owns it. On a
@@ -88,8 +88,8 @@ def built(walk: Walk, stack, url: str, forge: FakeGitHub) -> tuple[dict, str, di
             page.click(f".fd-palette [data-report={kind}]")
             page.wait_for_selector(f".flow-canvas [data-step='report:{n}']", timeout=30000)
             kept(page)
-    with walk.step("On the agent itself: whom it works for, what it does, and its level: 0, so it "
-                   "only reads, and a5s refuses anything else it asks for.", page):
+    with walk.step("On the agent itself: whom it works for, what it does, and how far it may act: it "
+                   "reads only, and a5s refuses anything else it asks for.", page):
         page.click("[data-step=agent]")
         page.fill("#works-for", "The owners of each data object, and the data stewards")
         page.fill("#does", "Tells each data object's owner, in their daily digest, how its quality stands "
@@ -193,8 +193,8 @@ def reported_to_mo(walk: Walk, stack, url: str, on: On) -> str:
 
 def read_run(walk: Walk, url: str, instance: str) -> None:
     page = walk.as_("ken", f"{url}/audit/")
-    with walk.step("Ken, of assurance, reads the run in the audit trail: a report, at level 0, which "
-                   "called no tool that changes anything.", page):
+    with walk.step("Ken, of assurance, reads the run in the audit trail: a report, by an agent that "
+                   "reads only, which called no tool that changes anything.", page):
         page.wait_for_selector("#find:not([hidden])", timeout=30000)
         page.fill("#instance", instance)
         page.click("#search")

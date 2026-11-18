@@ -33,6 +33,7 @@ TOP = {
     "thresholds": lambda v: v["thresholds"].update(billing=0.9),
     "instances": lambda v: v["instances"].pop("watcher-finance"),
     "groups": lambda v: v.update(groups={"graders": ["grader"]}),
+    "spending": lambda v: v.update(spending={"agents": {"assistant": 30}}),
 }
 INSTANCE = {
     "definition": lambda i: i.update(definition="watcher"),
@@ -42,6 +43,8 @@ INSTANCE = {
     "deputy": lambda i: i.update(deputy="ana"),
     "parts": lambda i: i.update(parts=["billing", "orders"]),
     "asks": lambda i: i.update(asks=["watcher-finance"]),
+    "hands_to": lambda i: i.update(hands_to=["operations"]),
+    "shadows": lambda i: i.update(shadows="watcher-finance"),
 }
 PROTECTION = {
     "kept_for": "120 months",
@@ -49,6 +52,8 @@ PROTECTION = {
     "studio_names": True,
     "audit_names": True,
     "flag_rubber_stamps": True,
+    "cases_from_runs": True,
+    "shadow_runs": True,
 }
 
 
@@ -94,14 +99,15 @@ def test_each_of_the_officers_choices_is_said_and_whether_it_widens(choice):
 def test_the_officers_choices_are_in_the_whole_version():
     after = copy.deepcopy(SAMPLE_SETTINGS)
     after["data_protection"] = {"kept_for": "120 months", "studio_names": True,
-                                "audit_names": True, "flag_rubber_stamps": True}
+                                "audit_names": True, "flag_rubber_stamps": True,
+                                "cases_from_runs": True, "shadow_runs": True}
     whole = described(version(after), AGENTS, PEOPLE)
     assert "a5s keeps what's said for 120 months after a conversation's last message, and what " \
            "goes with it." in whole
     for name, (on, _) in approvals.NAMING.items():
         assert on in whole, name
     said = [c["text"] for c in changes(version(SAMPLE_SETTINGS), version(after), AGENTS, PEOPLE)]
-    assert NOTHING not in said and len(said) == 4
+    assert NOTHING not in said and len(said) == 6
 
 
 def test_what_a_version_of_the_officers_choices_still_needs_names_her_from_the_start():

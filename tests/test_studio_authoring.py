@@ -78,6 +78,7 @@ def test_an_agents_owner_makes_an_agent_in_the_studio(stack, approving, provider
     page.click("#draft-change")  # a change to the assistant, from its folder as released
     page.wait_for_selector("#problems >> text=Nothing would stop its release", timeout=30000)
     page.click("button:has-text('Drop the draft')")
+    page.click("dialog[open] button.danger:text-is('Drop the draft')")  # asked first
     page.wait_for_selector("#drafts >> text=finance-helper", timeout=30000)
     assert page.locator("#drafts li").count() == 1  # the change dropped, the new one kept
 

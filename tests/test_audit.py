@@ -19,9 +19,12 @@ from test_approvals import sign_in as sign_in_to_approve
 AUDITOR = "kofi"  # the sample's assurance
 
 
-def read(stack, path: str, by: str = AUDITOR, **params):
+def read(stack, path: str, by: str = AUDITOR, identity: str | None = None, **params):
+    """A read of the trail through the core, with the reader's own sign-in where people sign in
+    (round 15, D3)."""
     with stack.client() as c:
-        return c.get(f"/audit/{path}", params={"by": by, **params})
+        return c.get(f"/audit/{path}", params={"by": by, **params},
+                     headers={"X-A5S-Identity": identity} if identity else None)
 
 
 def found(stack, by: str = AUDITOR, **params) -> dict:
@@ -112,7 +115,7 @@ def test_the_report_names_who_holds_each_role_and_who_did_what(stack, approving,
     lower = proposed(stack, level=0)
     assert approve(approving, lower["digest"],
                    *sign_in_to_approve(approving, provider, lower["digest"])).status_code == 200
-    r = read(stack, "report")
+    r = read(stack, "report", identity=provider.id_token(person=AUDITOR))
     assert r.status_code == 200, r.text
     roles = {row["role"]: row["held_by"] for row in r.json()["roles"]}
     assert "ana" in roles["instance-approver"] and roles["assurance"] == [AUDITOR]

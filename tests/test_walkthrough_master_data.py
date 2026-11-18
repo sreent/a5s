@@ -1,16 +1,16 @@
 """Phase 5's walk-through of master data (docs/phase-5.md, step 5): its assistant built again in the
 studio, from nothing, by its owner, with what it may do held to the hand-written one's, on a5s as
 the data team deploys it, SAP behind its MCP server; a test case its judge grades; and one type of
-correction, in one part, taken to level 2 from graded samples, as its owners' settings give it.
+correction, in one part, made on its own once graded samples earn it, as its owners' settings give it.
 
 Ines owns the team's agents and builds mdg-helper. She tries it in the sandbox as Raf, and keeps
 what he said as a test case, with what a right answer is, which its judge grades. Rhea approves
 releases from outside the team that runs a5s, and signs the release that adds it, with Ines. The
 owners of the data objects put it to work in material data, which then needs 95% accuracy
-before level 2. Raf gives it the base unit his new material lacks:
+before it may act on its own. Raf gives it the base unit his new material lacks:
 the correction waits for Mo, who owns material data, who approves it, and SAP makes it. Over the
-quarter, Mel, who grades the agents' work in material data, grades its corrections there, and the
-evidence raises a5s's cap; the owners give it level 2 for corrections in material, as a version of
+quarter, Mel and Kit, who grade the agents' work in material data, grade its corrections there,
+half each, and the evidence raises a5s's cap; the owners let it act on its own for corrections in material, as a version of
 the settings; and Raf's next correction is made alone, and Mo hears of it. Ken, of assurance,
 follows it all in the audit trail.
 
@@ -28,7 +28,7 @@ import yaml
 from a5s import cases, db, sandbox
 from a5s.config import Config
 from a5s.core import drafts, judging
-from conftest import PROVIDER_KEY, ROOT, build_root, deciding, free_port, serve
+from conftest import PROVIDER_KEY, ROOT, build_root, deciding, free_port, seal_draws, serve
 from fake_github import FakeGitHub
 from scenario_stack import running_scenario
 from test_studio_authoring import kept
@@ -114,9 +114,10 @@ def built(walk: Walk, stack, url: str, forge: FakeGitHub, on: On) -> tuple[dict,
             page.click(f".fd-palette [data-owed={kind}]")
             page.wait_for_selector(".flow-canvas [data-step=obligations]", timeout=30000)
             kept(page)
-    with walk.step("On the agent itself: whom it works for, what it does, and its levels. It starts at "
-                   "level 1, and its release allows level 2, which only its owners' settings and "
-                   "graded samples give, a type of change in a part at a time.", page):
+    with walk.step("On the agent itself: whom it works for, what it does, and how far it may act. It "
+                   "starts by asking first, and its release lets it act on its own, which only its "
+                   "owners' settings and graded samples give, a type of change in a part at a time.",
+                   page):
         page.click("[data-step=agent]")
         page.fill("#works-for", "Requesters, data stewards and data object owners, within SAP master "
                                 "data governance")
@@ -129,7 +130,8 @@ def built(walk: Walk, stack, url: str, forge: FakeGitHub, on: On) -> tuple[dict,
         page.select_option("#level-start", "1")
         kept(page)
     with walk.step("Its judge, beside people's grades: the team's approved model, with what a right "
-                   "correction is, in her words. A judge never moves a level: people's grades do.", page):
+                   "correction is, in her words. A judge never changes what an agent may do: "
+                   "people's grades do.", page):
         page.click("[data-step=model]")
         page.select_option("#design-judge", on.alias)
         kept(page)
@@ -221,12 +223,12 @@ def approve(page, asker: str) -> None:
 
 
 def at_work(walk: Walk, stack, url: str, draft: str) -> str:
-    """Ines puts it to work from its plan, asking for 95% accuracy in material data before level
-    2, and the owners approve it: its instance's id."""
+    """Ines puts it to work from its plan, asking for 95% accuracy in material data before it may
+    act on its own, and the owners approve it: its instance's id."""
     page = walk.as_("ines", f"{url}{draft}")
     with walk.step("Its release signed and deployed, Ines puts it to work from its plan, in material "
                    "data. She asks there for 95% accuracy before a5s would ever raise its cap on a "
-                   "type of change: a part with none never earns level 2.", page):
+                   "type of change: in a part with none, no agent ever acts on its own.", page):
         page.click("#put-to-work")
         page.wait_for_selector("#add-instance", timeout=30000)
         assert page.input_value("#add-agent") == AGENT
@@ -281,32 +283,36 @@ def quarter(stack) -> None:
                 "select scenario, kind, proposal_id, run_id, instance_id, release, definition, part, "
                 "action, said, records, acts_for, decided, decided_by, drawn_at, flags from samples "
                 "where id = %s", (real["id"],))
+    seal_draws(stack)  # each drawn, and sealed, by the core, as his was
 
 
 def graded(walk: Walk, stack, url: str) -> None:
-    """Mel grades the quarter's corrections, twenty at a time, and the evidence raises a5s's cap
-    on them in material data to level 2."""
+    """Mel and Kit grade the quarter's corrections, half each, twenty at a time, taking turns,
+    and the evidence raises a5s's cap on them in material data, so it may act on its own: neither's grades
+    count beyond the other's (round 15, C4)."""
     quarter(stack)
-    rounds = 0
+    rounds, done = 0, {"mel": 0, "kit": 0}
     while True:
-        page = walk.as_("mel", f"{url}/studio/grade")
+        grader = ("mel", "kit")[rounds % 2]
+        page = walk.as_(grader, f"{url}/studio/grade")
         page.wait_for_selector("#status:not(:empty), [data-sample]", timeout=30000)
-        cards = page.locator("[data-sample]").all()
+        cards = page.locator("[data-sample]").all()[:GRADED // 2 - done[grader]]
         if not cards:
             break
         for card in cards:
             card.get_by_role("button", name="Right").click()
         if rounds == 0:
             with walk.step(f"Over the quarter, each correction Mo decided is drawn as a sample, {GRADED} "
-                           "of them here, made up like Raf's. Mel, who grades the agents' work in "
-                           "material data, from outside the team that built it, grades them on a5s's "
-                           "own page, twenty at a time: each is right.", page):
+                           "of them here, made up like Raf's. Mel and Kit, who grade the agents' work "
+                           "in material data, from outside the team that built it, grade them on "
+                           "a5s's own page, twenty at a time, half each, since no grader's grades "
+                           "count beyond everyone else's: each is right.", page):
                 pass
         page.click("#send")
         page.wait_for_selector("#status >> text=Graded", timeout=30000)
-        rounds += 1
+        rounds, done[grader] = rounds + 1, done[grader] + len(cards)
         page.close()
-    assert rounds == 5
+    assert rounds == 6 and done == {"mel": GRADED // 2, "kit": GRADED // 2}
     stack.scheduler().decided()  # the core seals them, and weighs the evidence
     with db.transaction(stack.admin) as conn:
         caps = [(r["part"], r["action"], r["cap"]) for r in conn.execute("select * from caps")]
@@ -314,10 +320,12 @@ def graded(walk: Walk, stack, url: str) -> None:
 
 
 def raised(walk: Walk, stack, url: str, instance: str) -> None:
-    """Ines asks for level 2 for corrections in material data, and the owners approve it."""
+    """Ines asks for corrections in material data to be made on their own, and the owners approve
+    it."""
     page = walk.as_("ines", f"{url}/studio/instances/{instance}")
-    with walk.step("The evidence holds: a5s has raised its cap on corrections in material data to "
-                   "level 2. From its instance's page, Ines changes its settings to ask for it "
+    with walk.step("The evidence holds: a5s has raised its cap on corrections in material data, "
+                   "so they may be made on their own. From its instance's page, Ines changes its "
+                   "settings to ask for it "
                    "there, as a version of the settings: mdg-helper makes them on its own, within "
                    "their limits.", page):
         page.click("#its-settings")
@@ -335,34 +343,35 @@ def raised(walk: Walk, stack, url: str, instance: str) -> None:
 
 
 def alone(walk: Walk, stack, url: str) -> None:
-    """Raf's next correction is made alone, at level 2, and Mo hears of it."""
+    """Raf's next correction is made on its own, and Mo hears of it."""
     stack.model.reply(None, ("correct_value", {"key": "CR0000111", "base_unit": "EA",
                                                "material_type": "ROH"}))
-    stack.model.reply("Done: CR0000111's base unit is EA and its type ROH now, which a5s made at "
-                      "level 2. It goes back to Tess Moran, its steward.")
+    stack.model.reply("Done: CR0000111's base unit is EA and its type ROH now, which a5s made on "
+                      "its own. It goes back to Tess Moran, its steward.")
     page = walk.as_("raf", f"{url}/chat/")
-    with walk.step("Raf gives it what his next request lacks. At level 2, a5s makes the correction "
-                   "itself, through SAP, and tells him; Mo hears of it in his daily digest.", page):
+    with walk.step("Raf gives it what his next request lacks. Now it acts on its own there, a5s makes "
+                   "the correction itself, through SAP, and tells him; Mo hears of it in his daily "
+                   "digest.", page):
         says(page, AGENT, "CR0000111's bolts are counted in each, EA, and it's a raw material, ROH.",
-             "which a5s made at level 2")
+             "which a5s made on its own")
     now = stack.gateway.scenario.request("CR0000111")
     asked = [(e["action"], e["decision"], e.get("reasons"), e.get("level"), e.get("outcome"))
              for e in stack.ledger() if e["kind"] == "tool"][-6:]
     assert (now["values"]["base_unit"], now["values"]["material_type"], now["status"]) == (
         "EA", "ROH", "in review"), (now, page.locator("li.agent").last.inner_text(), asked)
     made = [e for e in stack.ledger() if e["kind"] == "tool" and e["action"] == "correct_value"
-            and e["decision"] == "record" and e.get("level") == 2]  # what came of it, at its level
+            and e["decision"] == "record" and e.get("level") == 2]  # made on its own, as recorded
     assert [e["outcome"]["status"] for e in made] == ["ok"], made
     with db.transaction(stack.admin) as conn:  # the notice of this change, not an earlier item
         told = [r["text"] for r in conn.execute("select text from digest_items where person = 'mo' "
-                                                "and text like '%%made a change itself, at level 2%%'")]
+                                                "and text like '%%made a change on its own%%'")]
     assert len(told) == 1 and "CR0000111" in told[0], told
 
 
 def audited(walk: Walk, url: str, instance: str) -> None:
     page = walk.as_("ken", f"{url}/audit/")
     with walk.step("Ken, of assurance, follows it in the audit trail: the correction it asked for, "
-                   "held, decided by Mo and made through SAP, and the one it made alone at level 2.",
+                   "held, decided by Mo and made through SAP, and the one it made on its own.",
                    page):
         page.wait_for_selector("#find:not([hidden])", timeout=30000)
         page.fill("#instance", instance)
@@ -431,6 +440,6 @@ def test_the_master_data_assistant_is_built_again_and_takes_one_correction_to_le
     walk.guide("Master data's assistant, built again from nothing in the studio, as mdg-helper, by the "
                "data team's own people, SAP behind its MCP server: a test case its judge grades, a "
                "correction waiting for its data object's owner, and then, once graded samples showed "
-               "the accuracy the owners asked for, corrections in material data made at level 2, as "
+               "the accuracy the owners asked for, corrections in material data made on their own, as "
                "their settings gave it. tests/test_walkthrough_master_data.py takes these steps, and "
                "made these pictures.")

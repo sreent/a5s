@@ -10,11 +10,12 @@ when {
   && (resource.action == "" || (context.level >= 2 && !context.over_limit))
 };
 
-// A change to a part's data, below level 2 or past the scenario's limits, waits for a person:
-// the owner of the part its record is in decides it, on the core's own page, and the gateway
-// makes it once approved.
-@id("level-1-changes-wait-for-their-decider")
-@reason("below level 2, a change waits for the owner of the record's part to decide it")
+// A change to a part's data, where the agent asks first or past the scenario's limits, waits
+// for a person: the owner of the part its record is in decides it, on the core's own page, and
+// the gateway makes it once approved. context.level is what the agent may do for the call:
+// 0 reads only, 1 asks first, 2 acts on its own (a5s/levels.py).
+@id("changes-wait-for-their-decider")
+@reason("the agent asks first here: the owner of the record's part decides the change")
 @hold("true")
 permit (principal is Instance, action == Action::"call_tool", resource is Tool)
 when {
@@ -23,7 +24,7 @@ when {
 };
 
 @id("changes-past-a-limit-wait-for-their-decider")
-@reason("past the scenario's limit for its type of action, a change waits for the owner of the record's part to decide it, whatever the level")
+@reason("past the scenario's limit for its type of action, a change waits for the owner of the record's part to decide it, even where the agent may act on its own")
 @hold("true")
 permit (principal is Instance, action == Action::"call_tool", resource is Tool)
 when {
@@ -36,18 +37,18 @@ when {
 forbid (principal is Instance, action == Action::"call_tool", resource is Tool)
 when { resource.known && !resource.pinned };
 
-@id("level-0-only-observes")
-@reason("at level 0 the agent only observes, so it can't use a tool that writes")
+@id("reading-only-writes-nothing")
+@reason("the agent reads only here, so it can't use a tool that writes")
 forbid (principal is Instance, action == Action::"call_tool", resource is Tool)
 when { resource.writes && context.level < 1 };
 
-@id("lasting-or-outside-effects-need-level-2")
-@reason("a tool that can't be undone, or that sends outside the organisation, needs level 2")
+@id("lasting-or-outside-effects-only-on-its-own")
+@reason("a tool that can't be undone, or that sends outside the organisation, runs only where the agent acts on its own")
 forbid (principal is Instance, action == Action::"call_tool", resource is Tool)
 when { (resource.destructive || resource.sends_outside) && context.level < 2 && resource.action == "" };
 
-@id("marked-runs-never-act-at-level-2")
-@reason("a run that has read outside content can't act at level 2")
+@id("marked-runs-never-act-on-their-own")
+@reason("a run that has read outside content never acts on its own")
 forbid (principal is Instance, action == Action::"call_tool", resource is Tool)
 when {
   (resource.writes || resource.destructive || resource.sends_outside)
@@ -82,4 +83,28 @@ when { principal.status == "active" && resource.in_audience };
 @id("only-active-instances-act")
 @reason("the instance is suspended or retired")
 forbid (principal is Instance, action, resource)
-unless { principal.status == "active" };
+unless { principal.status == "active" || principal.status == "shadow" };
+
+// A shadow answers what the instance it shadows is asked, beside it, for graders to compare
+// (core/shadows.py): it reads with the tools of its grant that only read, and its own model,
+// and nothing it does writes, changes or sends. No permit lets it send a message.
+@id("shadows-only-read")
+@reason("a shadow reads with the tools in its grant that change nothing, and sends nothing")
+permit (principal is Instance, action == Action::"call_tool", resource is Tool)
+when {
+  principal.status == "shadow" && resource.known && principal.grants.contains(resource.name)
+  && resource.action == "" && !resource.writes && !resource.destructive && !resource.sends_outside
+};
+
+@id("shadows-change-nothing")
+@reason("a shadow changes nothing, and sends nothing: it answers for graders alone")
+forbid (principal is Instance, action == Action::"call_tool", resource is Tool)
+when {
+  principal.status == "shadow"
+  && (resource.action != "" || resource.writes || resource.destructive || resource.sends_outside)
+};
+
+@id("shadows-use-their-model")
+@reason("the model is approved, and is the shadow's own")
+permit (principal is Instance, action == Action::"call_model", resource is Model)
+when { principal.status == "shadow" && resource.approved && principal.model == resource.name };

@@ -12,8 +12,10 @@ people:
   - {id: vic, name: Vic Santos, team: procurement-data, timezone: Europe/London, identities: ["matrix:@vic:a5s.test"]}
   - {id: fay, name: Fay Okafor, team: finance-data, timezone: Europe/London, identities: ["matrix:@fay:a5s.test"]}
   - {id: gus, name: Gus Lindqvist, team: commercial-data, timezone: Europe/London, identities: ["matrix:@gus:a5s.test"]}
-  # Mel grades the agents' corrections in material data, from outside the team that built them
+  # Mel and Kit grade the agents' corrections in material data, from outside the team that built
+  # them: two, since no grader's grades count beyond everyone else's toward a raise of the cap
   - {id: mel, name: Mel Tran, team: manufacturing-data, roles: [grader], timezone: Europe/London, identities: ["matrix:@mel:a5s.test"]}
+  - {id: kit, name: Kit Ward, team: manufacturing-data, manager: mel, roles: [grader], timezone: Europe/London, identities: ["matrix:@kit:a5s.test"]}
   # People who raise change requests
   - {id: bea, name: Bea Fox, team: procurement, manager: vic, timezone: Europe/London, identities: ["matrix:@bea:a5s.test"]}
   - {id: ada, name: Ada Kim, team: accounts-payable, manager: fay, timezone: Europe/London, identities: ["matrix:@ada:a5s.test"]}

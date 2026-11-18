@@ -15,12 +15,13 @@ import pytest
 import yaml
 from fastapi.testclient import TestClient
 
-from a5s import authoring, cases, sandbox
+from a5s import authoring, cases, db, sandbox
 from a5s.core import drafts, retention, signing
 from a5s.sample import SampleScenario
 from conftest import FAKE_MODELS, PROVIDER_KEY, ROOT, FakeModel, build_root, deployment
 
 TOOLS = SampleScenario(ROOT / "scenarios" / "sample", "postgresql://nobody@127.0.0.1:1/none").tools()
+CASE_NAME = "finds a question by what it's about"  # one of the assistant template's cases
 
 
 def drafted(name: str = "finance-helper") -> dict[str, str]:
@@ -197,6 +198,39 @@ def test_a_drafts_test_cases_run_there_as_its_suite_runs_them(box):
     assert len([i for i in box.standing["instances"] if i.startswith("case-")]) == 1
 
 
+
+def test_a_case_kept_from_a_real_run_goes_only_where_its_data_may(box):
+    """What someone really said, masked, is given only to the stand-in, which never leaves the
+    sandbox, or to a model approved for every class of the deployment's data: never to one
+    approved for made-up data alone, whatever file it's in, if it says it's from a run."""
+    kept = [{"name": "kept", "as": "ana", "from_run": True,
+             "steps": [{"say": "Which questions mention an invoice?"}]}]
+    for where in (cases.FROM_RUNS, "tests/mine.yaml"):
+        files = {**drafted(), where: yaml.safe_dump(kept)}
+        n = next(i for i, c in enumerate(cases.found(files)) if c["file"] == where)
+        ran = box.case("3f2a9c1d", files, "deepseek-v4-pro", n, ["internal"])
+        assert ran["ran"] is False and "kept from a real run" in ran["why"], where
+        assert "deepseek-v4-pro isn't" in ran["why"]
+        assert box.case("3f2a9c1d", files, "stand-in", n, ["internal"])["ran"], where
+    made_up = {**drafted(), "tests/mine.yaml": yaml.safe_dump([{**kept[0], "from_run": False}])}
+    assert not cases.real(next(c for c in cases.found(made_up) if c["file"] == "tests/mine.yaml"))
+    assert cases.for_real(["synthetic", "internal"], {"internal"})
+    assert not cases.for_real(["synthetic"], {"internal"})
+    assert cases.for_real(["synthetic"], {"synthetic"})  # a deployment of made-up data
+
+def test_a_case_kept_from_a_run_that_read_outside_content_is_marked_as_it_was(box):
+    """The run it was kept from read content from outside, which the case can't keep: the
+    sandbox sends its step with a file in its place, so its run is marked as that one was."""
+    kept = [{"name": "outside", "as": "ana", "from_run": "k-0123456789ab", "read_outside": True,
+             "steps": [{"say": "Which questions mention an invoice?"}]}]
+    files = {**drafted(), cases.FROM_RUNS: yaml.safe_dump(kept)}
+    n = next(i for i, c in enumerate(cases.found(files)) if c["file"] == cases.FROM_RUNS)
+    assert box.case("3f2a9c1d", files, "stand-in", n, ["internal"])["ran"]
+    with db.transaction(box.admin) as conn:
+        assert conn.execute("select read_outside from runs order by opened_at desc limit 1"
+                            ).fetchone()["read_outside"] is True
+
+
 def test_the_sandbox_says_which_cases_it_cant_run(box):
     stranger = {**drafted(), "tests/stranger.yaml": "- name: as someone it hasn't got\n  as: zed\n"
                                                     "  steps: [{say: Hello}]\n"}
@@ -247,3 +281,289 @@ def test_a_change_a_draft_asks_for_waits_there_for_its_made_up_decider(sandbox_d
         assert sandbox.used(said["run"]) == ["change_due_date"]
         sent = model.requests[-1]["body"]["messages"][-1]["content"]
         assert '"held": "P-1"' in sent and "Ana Ortiz" in sent  # what the agent heard
+
+
+@pytest.fixture
+def costly(stack):
+    """A sandbox whose tries and cases each take tokens on a real model, as one's would, so the
+    studio counts them towards whoever tried: what it was asked, on which models."""
+    from dataclasses import replace
+
+    from fastapi import FastAPI
+
+    from conftest import free_port, serve
+    app, asked = FastAPI(), []
+
+    @app.post("/sandbox/cases")
+    def case(body: dict) -> dict:
+        asked.append(body["model"])
+        return {"name": "a case", "file": "tests/cases.yaml", "ran": True, "passed": True,
+                "problems": [], "steps": [], "model": body["model"], "seconds": 1.0,
+                "tokens": 400_000, "cost": None, "judge_tokens": 200_000}
+
+    @app.post("/sandbox/tries")
+    def tried(body: dict) -> dict:
+        asked.append(body["model"])
+        return {"agent": "try-x", "reply": "Hello", "run": None, "model_calls": [],
+                "tokens": 300_000}
+
+    with serve(app, free_port()) as url:
+        stack.cfg = replace(stack.cfg, sandbox_url=url, sandbox_token="a-token")
+        yield asked
+
+
+def test_a_days_tries_on_real_models_stop_at_its_tokens_whatever_each_case_runs_as(
+        stack, costly, approving, provider):
+    """Each case runs in the sandbox as an instance of its own, whose budget for a person's day
+    starts afresh, and a judge's calls count towards none: the studio holds each person to a
+    day's tokens across them all, the stand-in aside, which costs nothing."""
+    from a5s.core import export
+    from a5s.core.studio_api import SANDBOX_DAY
+    from test_drafts import as_, started
+
+    priya = as_(approving, provider, "priya")
+    draft = started(priya)["id"]
+    real = {"model": "deepseek-v4-pro"}
+    assert priya("POST", f"/studio/api/drafts/{draft}/cases/0", real).status_code == 200
+    assert priya("POST", f"/studio/api/drafts/{draft}/try",
+                 {"person": "ana", "text": "Hi", **real}).status_code == 200
+    with db.transaction(stack.admin) as conn:
+        [day] = conn.execute("select person, tokens from sandbox_spend").fetchall()
+    assert (day["person"], day["tokens"]) == ("priya", 900_000)  # its runs, its judge, the try
+    assert 900_000 < SANDBOX_DAY  # so the next runs, and takes the day past it
+    assert priya("POST", f"/studio/api/drafts/{draft}/cases/0", real).status_code == 200
+    over = priya("POST", f"/studio/api/drafts/{draft}/cases/0", real)
+    assert over.status_code == 429 and "a day's may take on real models" in over.json()["detail"]
+    assert priya("POST", f"/studio/api/drafts/{draft}/try",
+                 {"person": "ana", "text": "Hi", **real}).status_code == 429
+    assert priya("POST", f"/studio/api/drafts/{draft}/cases/0",
+                 {"model": "stand-in"}).status_code == 200  # which costs nothing
+    assert costly == ["deepseek-v4-pro"] * 3 + ["stand-in"]  # refused before it was asked
+    with db.transaction(stack.cfg.database_url) as conn:  # theirs, in their export
+        [kept] = export.gather(conn, "priya")["days"]["sandbox"]
+    assert kept["tokens"] == 1_500_000
+
+
+def test_a_cases_cost_prices_what_its_runs_wrote_to_the_cache_as_the_provider_does(box):
+    """A model whose provider charges more to write a prompt to its cache than to read it, as
+    Anthropic's do: what a case's runs wrote counts at that price, never at the input's."""
+    from a5s.config import ModelConfig, Prices
+    model = ModelConfig(alias="priced", provider="anthropic", api="anthropic",
+                        base_url="https://models.test", model="m",
+                        prices=Prices(3.0, 15.0, cached_input=0.3, cache_write=3.75))
+    spent = {"in": 1_000_000, "out": 0, "cached": 0, "cache_written": 1_000_000}
+    assert sandbox.cost(model, spent) == 3.75  # every token in was written to the cache
+    assert sandbox.cost(model, {**spent, "cache_written": 0}) == 3.0
+
+
+def test_a_runs_page_gives_what_it_wrote_to_the_cache(stack):
+    stack.model.reply("Hello.")
+    stack.say("hello")
+    with db.transaction(stack.admin) as conn:
+        run = conn.execute("update runs set tokens_cache_written = 7 returning id::text as id"
+                           ).fetchone()["id"]
+        from a5s.core import studio
+        assert studio.run(conn, stack.gateway.scenario, run)["tokens_cache_written"] == 7
+
+
+@pytest.fixture
+def classes_asked(stack):
+    """A sandbox that says which classes of data the studio told it a case's models must be
+    approved for."""
+    from dataclasses import replace
+
+    from fastapi import FastAPI
+
+    from conftest import free_port, serve
+    app, asked = FastAPI(), []
+
+    @app.post("/sandbox/cases")
+    def case(body: dict) -> dict:
+        asked.append(body.get("classes"))
+        return {"name": "a case", "file": "tests/cases.yaml", "ran": True, "passed": True,
+                "problems": [], "steps": [], "model": body["model"], "seconds": 1.0,
+                "tokens": 0, "cost": None, "judge_tokens": 0}
+
+    with serve(app, free_port()) as url:
+        stack.cfg = replace(stack.cfg, sandbox_url=url, sandbox_token="a-token")
+        yield asked
+
+
+def test_while_the_settings_cant_be_read_a_real_case_goes_to_the_stand_in_alone(
+        stack, classes_asked, approving, provider, monkeypatch):
+    """Round 14 (D11): until the channels app can read the settings in force, such as before a
+    new version is sealed, a5s doesn't know the deployment's classes of data, so it tells the
+    sandbox one no model is approved for, and a case kept from a real run runs on the stand-in
+    alone, rather than on any model approved for internal data."""
+    from a5s.core.gateway import Gateway
+    from test_drafts import as_, started
+
+    priya = as_(approving, provider, "priya")
+    draft = started(priya)["id"]
+    monkeypatch.setattr(Gateway, "settings_in_force", lambda self, *a, **k: (None, None))
+    monkeypatch.setattr(Gateway, "sealed_in_force", lambda self, *a, **k: None)
+    assert priya("POST", f"/studio/api/drafts/{draft}/cases/0", {}).status_code == 200
+    assert classes_asked == [[cases.UNKNOWN]]
+    assert not any(cases.for_real(m.data_classes, {cases.UNKNOWN})
+                   for m in stack.gateway.models.values())
+
+
+@pytest.fixture
+def held(stack):
+    """A sandbox whose first try waits until the test lets it go, as one at work on a real model
+    does, and answers the rest at once: the keys of the drafts it was asked to try."""
+    import threading
+    from dataclasses import replace
+
+    from fastapi import FastAPI
+
+    from conftest import free_port, serve
+    app, asked, go = FastAPI(), [], threading.Event()
+
+    @app.post("/sandbox/tries")
+    def tried(body: dict) -> dict:
+        asked.append(body["key"])
+        if len(asked) == 1:
+            go.wait(60)
+        return {"agent": "try-x", "reply": "Hello", "run": None, "model_calls": [], "tokens": 0}
+
+    with serve(app, free_port()) as url:
+        stack.cfg = replace(stack.cfg, sandbox_url=url, sandbox_token="a-token")
+        yield asked, go
+        go.set()
+
+
+def test_someone_has_one_try_in_the_sandbox_at_a_time_and_the_studio_a_few_in_all(
+        stack, held, approving, provider, monkeypatch):
+    """Round 14 (D3, D4): a try holds one of the channels app's threads, which its chats are
+    answered on too, for as long as the sandbox takes, and a day's tokens are checked before
+    each: so someone has one try there at a time, and the app a few at a time in all, and the
+    rest are refused at once, rather than waiting on threads the chats need, or passing a day's
+    tokens many times over with tries sent together."""
+    import threading
+    import time
+
+    from a5s.core import studio_api
+    from test_drafts import as_, started
+    from test_run_cases import owning
+
+    asked, go = held
+    owning(stack, "priya", "ana")  # so each may draft a new agent
+    priya, ana = as_(approving, provider, "priya"), as_(approving, provider, "ana")
+    mine, hers = started(priya)["id"], started(ana)["id"]
+    said = {"person": "ana", "text": "Hi"}
+    first: list = []
+    at_work = threading.Thread(target=lambda: first.append(
+        priya("POST", f"/studio/api/drafts/{mine}/try", said)))
+    at_work.start()
+    for _ in range(200):  # until the sandbox has it
+        if asked:
+            break
+        time.sleep(0.05)
+    again = priya("POST", f"/studio/api/drafts/{mine}/try", said)
+    assert again.status_code == 429 and "a try in the sandbox already" in again.json()["detail"]
+    monkeypatch.setattr(studio_api, "SANDBOX_AT_ONCE", 1)
+    others = ana("POST", f"/studio/api/drafts/{hers}/try", said)
+    assert others.status_code == 429 and "busy with others' tries" in others.json()["detail"]
+    go.set()
+    at_work.join(30)
+    assert first[0].status_code == 200 and len(asked) == 1  # the rest went no further
+    assert priya("POST", f"/studio/api/drafts/{mine}/try", said).status_code == 200  # once done
+
+
+@pytest.fixture
+def failing(stack):
+    """A sandbox that refuses a description once its model has answered, which took 600,000
+    tokens, and that fails at work on a case, as one that dies or times out does."""
+    from dataclasses import replace
+    from typing import Any
+
+    from fastapi import FastAPI
+    from fastapi.responses import JSONResponse
+
+    from conftest import free_port, serve
+    app = FastAPI()
+
+    @app.post("/sandbox/descriptions")
+    def described(body: dict) -> Any:
+        return JSONResponse({"detail": f"what {body['model']} answered doesn't read as a proposal",
+                             "tokens": 600_000}, status_code=400)
+
+    @app.post("/sandbox/cases")
+    def case(body: dict) -> Any:
+        return JSONResponse({"detail": "it stopped at work"}, status_code=500)
+
+    with serve(app, free_port()) as url:
+        stack.cfg = replace(stack.cfg, sandbox_url=url, sandbox_token="a-token")
+        yield
+
+
+def test_what_a_try_took_counts_towards_the_day_however_it_ends(stack, failing, approving,
+                                                                  provider):
+    """Round 14 (D4): a try on a real model counts towards someone's day of tokens however it
+    ends: one the sandbox refused, with what it says it took before it knew, and one it didn't
+    answer, which for all a5s knows was at work there all the same, as a tenth of a day."""
+    from a5s.core.studio_api import SANDBOX_UNSAID
+    from test_drafts import as_, started
+
+    priya = as_(approving, provider, "priya")
+    refused = priya("POST", "/studio/api/drafts", {
+        "name": "question-finder", "describe": "Finds customer questions by what they mention.",
+        "model": "deepseek-v4-pro"})
+    assert refused.status_code == 400 and "doesn't read as a proposal" in refused.json()["detail"]
+    draft = started(priya)["id"]
+    failed = priya("POST", f"/studio/api/drafts/{draft}/cases/0", {"model": "deepseek-v4-pro"})
+    assert failed.status_code == 502
+    with db.transaction(stack.admin) as conn:
+        [day] = conn.execute("select tokens from sandbox_spend where person = 'priya'").fetchall()
+    assert day["tokens"] == 600_000 + SANDBOX_UNSAID
+
+
+def test_the_sandbox_runs_a_case_of_a_few_steps_for_a_few_minutes(box, monkeypatch):
+    """Round 14 (D3): nothing but a draft's size bounds a case's steps, and the sandbox runs one
+    request at a time: so it runs a case of STEPS steps at most, and stops one before its next
+    step once it's taken TOOK seconds, so the studio has its answer, with what it took, before
+    it stops waiting."""
+    files = drafted()
+    files["tests/long.yaml"] = yaml.safe_dump([{"name": "goes on", "steps": [
+        {"say": f"Hello {n}"} for n in range(sandbox.STEPS + 1)]}])
+    listed = cases.found(files)
+    long = next(n for n, c in enumerate(listed) if c["name"] == "goes on")
+    ran = box.case("3f2a9c1d", files, "stand-in", long)
+    assert not ran["ran"] and f"a case of {sandbox.STEPS} at most" in ran["why"]
+    short = next(n for n, c in enumerate(listed) if c["name"] == CASE_NAME)
+    monkeypatch.setattr(sandbox, "TOOK", 0.0)
+    stopped = box.case("3f2a9c1d", files, "stand-in", short)
+    assert stopped["ran"] and not stopped["passed"] and stopped["steps"] == []
+    assert stopped["problems"][0].startswith("step 1: not run, nor any after it")
+
+
+def test_the_sandbox_refuses_a_try_that_has_waited_for_another(box, monkeypatch):
+    """Round 14 (D3): one request has the sandbox at a time, and one that has waited WAIT seconds
+    for another is refused, saying so, rather than waiting on a queue of others'."""
+    import threading
+
+    monkeypatch.setattr(sandbox, "WAIT", 0.2)
+    client = TestClient(sandbox.create_app(box, "the-studios-token"))
+    box.lock.acquire()  # another's, at work for three seconds more
+    threading.Timer(3, box.lock.release).start()
+    said = client.post("/sandbox/tries", headers={"Authorization": "Bearer the-studios-token"},
+                       json={"key": "7c1e9a52", "files": drafted(), "person": "ana", "text": "Hi"})
+    assert said.status_code == 429 and "busy with someone else's try" in said.json()["detail"]
+
+
+def test_a_judge_grades_only_a_step_the_agent_answered(box, monkeypatch):
+    """Round 14 (D4): a step whose run didn't end in an answer of the agent's own fails as
+    unanswered, and its judge isn't asked: there's nothing of the agent's to judge, and it costs."""
+    files = drafted()
+    files["agent.yaml"] = files["agent.yaml"].rstrip("\n") + "\nevaluation:\n  judge: deepseek-v4-pro\n"
+    files["tests/judged.yaml"] = yaml.safe_dump([{"name": "judged", "steps": [
+        {"say": "Hello", "judged": 'It says "hello".'}]}])
+    number = next(n for n, c in enumerate(cases.found(files)) if c["name"] == "judged")
+    asked: list = []
+    monkeypatch.setattr(sandbox.Sandbox, "_said", lambda self, *a, **k: ("", None, []))
+    monkeypatch.setattr(sandbox.Sandbox, "_judged", lambda self, *a, **k: asked.append(a) or {
+        "grade": "right", "why": "it says hello", "judge": "stand-in"})
+    ran = box.case("3f2a9c1d", files, "stand-in", number)
+    assert ran["ran"] and not ran["passed"] and asked == []
+    assert "never ran for it" in ran["problems"][0]

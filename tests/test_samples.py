@@ -31,8 +31,19 @@ def release(stack) -> str:
                             ).fetchone()["release"]
 
 
-def graded(stack, n: int, wrong: int = 0, critical: int = 0, part: str = "billing") -> None:
-    """n graded samples of the assistant's changes of due dates, as graders would grade them."""
+GRADERS = ("dana", "eli")  # two, as no grader's grades count beyond everyone else's (C4)
+
+
+def turn(conn, by: tuple[str, ...] = GRADERS) -> str:
+    """Whose turn it is to grade, of graders taking turns, by the grades given so far."""
+    given = conn.execute("select count(*) as n from samples where grade is not null").fetchone()
+    return by[given["n"] % len(by)]
+
+
+def graded(stack, n: int, wrong: int = 0, critical: int = 0, part: str = "billing",
+           by: tuple[str, ...] = GRADERS) -> None:
+    """n graded samples of the assistant's changes of due dates, as graders would grade them,
+    taking turns."""
     with db.transaction(stack.admin) as conn:
         for i in range(n):
             grade = "critical" if i < critical else "wrong" if i < critical + wrong else "right"
@@ -41,7 +52,7 @@ def graded(stack, n: int, wrong: int = 0, critical: int = 0, part: str = "billin
                 "part, action, said, records, acts_for, drawn_at, grade, graded_by, graded_at) "
                 "values ('sample', 'proposal', gen_random_uuid(), 'assistant-finance', %s, "
                 "'assistant', %s, 'change-due-date', 'a change', '{}', '{ben}', now(), %s, "
-                "'dana', %s)", (release(stack), part, grade, stack.gateway.clock()))
+                "%s, %s)", (release(stack), part, grade, turn(conn, by), stack.gateway.clock()))
     seal_grades(stack)
 
 
@@ -60,19 +71,26 @@ def cap(stack, part: str = "billing") -> int:
 
 def grade(url: str, provider, sample: int, how: str, person: str = "dana") -> httpx.Response:
     """A grade, given as the studio gives it, with a sign-in made afresh to give it."""
+    return given(url, provider, {sample: how}, person)
+
+
+def given(url: str, provider, grades: dict[int, str], person: str = "dana") -> httpx.Response:
+    """Grades, given together as the studio gives them, with one sign-in made afresh to give
+    them."""
     salt, verifier = secrets.token_urlsafe(32), secrets.token_urlsafe(32)
     challenge = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=")
     provider.person = person
     query = {"client_id": CLIENT, "redirect_uri": f"{url}/studio/", "state": "s",
-             "nonce": samples.nonce({sample: how}, salt), "code_challenge": challenge.decode(),
+             "nonce": samples.nonce(grades, salt), "code_challenge": challenge.decode(),
              "code_challenge_method": "S256", "max_age": "0"}
     went = httpx.get(f"{provider.url}/auth", params=query)
     code = parse_qs(went.headers["location"].split("?", 1)[1])["code"][0]
     token = httpx.post(f"{url}/studio/sign-in/token", json={  # as the studio signs in
         "grant_type": "authorization_code", "code": code, "code_verifier": verifier,
         "redirect_uri": f"{url}/studio/"}).json()["id_token"]
-    return httpx.post(f"{url}/grade/samples", json={"grades": {str(sample): how}, "salt": salt},
-                      headers={"Authorization": f"Bearer {token}"})
+    return httpx.post(f"{url}/grade/samples", json={
+        "grades": {str(s): g for s, g in grades.items()}, "salt": salt},
+        headers={"Authorization": f"Bearer {token}"})
 
 
 @pytest.mark.parametrize("threshold, errors, items", [(0.98, 0, 224), (0.95, 0, 88),
@@ -257,3 +275,29 @@ def test_a_grader_grades_in_the_browser(stack, approving, provider, browser):
     page.click("#send")
     page.wait_for_selector("#status >> text=Graded right", timeout=30000)
     assert drawn(stack)[0]["grade"] == "right"
+
+
+def test_a_grade_chosen_for_a_sample_that_lapsed_leaves_the_rest_to_send(stack, approving,
+                                                                           provider, browser):
+    """Round 15, the grader's finding (C3): a grade chosen for a sample that lapsed, or someone
+    else graded, before it was sent, was refused each time it went, with no card left to take
+    it back by, and every other grade with it. It goes, saying so, and the rest go."""
+    for key, due in (("Q-1002", "2026-11-13"), ("Q-1001", "2026-11-20")):
+        asked(stack, ("change_due_date", {"key": key, "due": due}),
+              said=f"Please move {key} to {due}.")
+    decide(approving, provider, [p["digest"] for p in held(stack)])
+    sweep(stack)
+    provider.person = "dana"
+    page = browser.new_page()
+    page.goto(f"{approving}/studio/grade")
+    page.wait_for_selector("[data-sample] >> nth=1", timeout=30000)
+    for card in page.locator("[data-sample]").all():
+        card.get_by_role("button", name="Right").click()
+    first, second = (s["id"] for s in drawn(stack))
+    with db.transaction(stack.admin) as conn:  # as the page waits, one lapses
+        conn.execute("update samples set lapsed_at = now() where id = %s", (first,))
+    page.click("#send")
+    page.wait_for_selector("#status >> text=out of your grades", timeout=30000)
+    page.click("#send")  # what's left goes
+    page.wait_for_selector("#status >> text=Graded right", timeout=30000)
+    assert {s["id"]: s["grade"] for s in drawn(stack)} == {first: None, second: "right"}

@@ -15,9 +15,9 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
-from a5s import db
+from a5s import db, levels
 from a5s.contract import Person, parse_settings
-from a5s.core import approvals, memberships, registry, settings_app, web
+from a5s.core import approvals, impact, languages, memberships, registry, settings_app, web
 from a5s.core import studio_models as shapes  # what each route answers, as the studio's types say
 
 
@@ -78,8 +78,9 @@ def router(gw: Any) -> APIRouter:
     def settings_now(person: Annotated[Person, Depends(settling)]) -> dict:
         """The whole version in force, in words and as written, the versions waiting for
         approval, and what the person asked for lately."""
-        words = (gw.definitions, gw.scenario.person)
         with db.transaction(gw.url) as conn:
+            spoken = languages.of(conn, person)  # in their language, where a5s has the words
+            words = (gw.definitions, gw.scenario.person, spoken)
             last = approvals.latest(conn, gw.scenario.name)
             in_force = parse_settings(bytes(last["raw"])) if last else None
             waiting = []
@@ -94,11 +95,12 @@ def router(gw: Any) -> APIRouter:
                     "changes": approvals.changes(in_force, settings, *words),
                     "approved_by": [p.name if (p := gw.scenario.person(a)) else a for a in valid],
                     "needs": registry.missing(settings, gw.scenario.person, valid, in_force,
-                                              memberships.rooted(gw.scenario).person)})
+                                              memberships.rooted(gw.scenario).person, spoken)})
             asked = conn.execute("select * from settings_requests where scenario = %s and "
                                  "person = %s order by id desc limit 5",
                                  (gw.scenario.name, person.id)).fetchall()
-        data = (yaml.safe_load(bytes(last["raw"])) or {}) if last and in_force else None
+        data = levels.numbered(yaml.safe_load(bytes(last["raw"])) or {}) if last and in_force \
+            else None  # each level as its number, for the forms, whichever the version says
         tools = gw.scenario.tools()
         return {
             "you": person.name, "me": person.id,
@@ -116,6 +118,7 @@ def router(gw: Any) -> APIRouter:
                                                    if t in tools and tools[t].action})}
                          for name, d in sorted(gw.definitions.items())},
             "waiting": waiting,
+            "currency": gw.currency,  # which budgets the forms set are in
             "requests": [{"asked_at": r["asked_at"].isoformat(),
                           "serial": parse_settings(bytes(r["raw"])).serial,
                           "outcome": r["outcome"] or "waiting for a5s to ask its approvers",
@@ -124,17 +127,20 @@ def router(gw: Any) -> APIRouter:
         }
 
     @api.post("/settings/api/review", **shapes.answers(shapes.SettingsReview))
-    def settings_review(body: Written) -> dict:
+    def settings_review(body: Written, person: Annotated[Person, Depends(settling)]) -> dict:
         """What a version someone wrote would change, the whole of it in words, and who'd
         have to approve it, before they ask for it."""
         with db.transaction(gw.url) as conn:
             last = approvals.latest(conn, gw.scenario.name)
+            spoken = languages.of(conn, person)
         settings, _, problems = settings_app.drafted(gw, body.text, last)
         if settings is None:
             return {"problems": problems}
         before = parse_settings(bytes(last["raw"])) if last else None
-        words = (gw.definitions, gw.scenario.person)
+        words = (gw.definitions, gw.scenario.person, spoken)
+        preview = impact.shown(gw, before, settings, person) if not problems else None
         return {"serial": settings.serial, "problems": problems,
+                **({"impact": preview} if preview is not None else {}),
                 "in_force": last["serial"] if last else None,  # what it's reviewed against
                 "changes": approvals.changes(before, settings, *words),
                 "whole": approvals.described(settings, *words),

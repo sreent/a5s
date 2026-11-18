@@ -28,4 +28,4 @@ def test_a_limit_for_a_type_of_action_no_tool_takes_is_refused(stack):
     problems = stack.gateway.unusable(wrong, last)
     assert any("change-duedate" in p for p in problems), (
         f"a5s would ask Ana to approve a version whose limit names no type of action, so "
-        f"change-due-date, at level 2, has no limit: {problems}")
+        f"change-due-date, which it may make on its own, has no limit: {problems}")

@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from psycopg.types.json import Jsonb
 
-from a5s.core import groups, values
+from a5s.core import groups, studio, values
 from a5s.core.coretools import Call, CoreTool, Refused
 from a5s.core.obligations import day
 from a5s.core.reminders import say
@@ -35,12 +35,14 @@ def search(call: Call) -> dict:
     like = "%" + query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
     heard = " and heard_by @> %(members)s::text[]" if group else ""
     rows = call.conn.execute(  # a5s's tasks for the agent aren't what anyone said
-        "select role, content, at, speaker from turns where person = %(whose)s "
+        "select role, content, at, speaker, run_id from turns where person = %(whose)s "
         f"and agent = %(agent)s and role <> 'task'{heard} and (to_tsvector('simple', content) "
         "@@ websearch_to_tsquery('simple', %(query)s) or content ilike %(like)s) "
         "order by id desc limit %(found)s",
         {"whose": group or person.id, "agent": call.run["definition"], "query": query,
          "like": like, "members": list(call.run["acts_for"]), "found": FOUND}).fetchall()
+    studio.given_from(call.conn, call.run["run"], [r["run_id"] for r in rows])  # and what
+    # the runs behind what it found handled and read, so the studio shows it as it shows them
     return {"found": [{"when": say(person, r["at"]), "who": _who(call, r),
                        "said": r["content"][:LONGEST]} for r in rows]}
 

@@ -146,8 +146,8 @@ def test_the_command_line_says_the_same(stack, monkeypatch, capsys):
     monkeypatch.setenv("A5S_SERVICE_TOKEN", SERVICE_TOKEN)
     cli.main(["agents"])
     said = capsys.readouterr().out
-    assert ("assistant-finance: active, level 1, in billing, serving 2 people, run by Ana Ortiz "
-            "and Ben Okafor") in said
+    assert ("assistant-finance: active, asks first, in billing, serving 2 people, run by Ana "
+            "Ortiz and Ben Okafor") in said
     cli.main(["agents", "show", "assistant"])
     said = capsys.readouterr().out
     assert "changes: change_due_date (reads, writes, changes change-due-date)" in said

@@ -1,14 +1,36 @@
 // The people's studio API in the channels app, as the signed-in person may read it: each call
-// carries their sign-in, kept in memory alone while the studio is open.
+// carries their sign-in, kept in memory alone while the studio is open. A sign-in runs out, as
+// the identity provider sets it, and then the studio asks them to sign in again (round 13, C1).
 
 let token = "";
+let until = 0;  // when it runs out, in seconds, as the sign-in itself says
+const outListeners = new Set<() => void>();
 
 export function signedIn(idToken: string): void {
   token = idToken;
+  try {
+    const part = idToken.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+    const exp = JSON.parse(atob(part)).exp;
+    until = typeof exp === "number" ? exp : 0;
+  } catch {
+    until = 0;
+  }
 }
 
-export function bearer(): string {
-  return token;
+/** Whether the sign-in has run out, as it says itself. */
+export function runOut(): boolean {
+  return until > 0 && Date.now() / 1000 >= until;
+}
+
+/** When the sign-in runs out, in milliseconds, or 0 if it doesn't say. */
+export function runsOutAt(): number {
+  return until * 1000;
+}
+
+/** Hear when a call is refused because the sign-in has run out. */
+export function onRunOut(then: () => void): () => void {
+  outListeners.add(then);
+  return () => outListeners.delete(then);
 }
 
 export class ApiError extends Error {
@@ -28,6 +50,7 @@ export async function send<T>(method: string, path: string, body?: unknown): Pro
   const answer = await fetch(path, { method, headers, body: body === undefined ? undefined : JSON.stringify(body) });
   const found = await answer.json().catch(() => ({}));
   if (!answer.ok) {
+    if (answer.status === 401 && runOut()) outListeners.forEach((then) => then());
     const detail = found.detail;  // words, or, from the settings, the problems a version has
     const said = typeof detail === "string" ? detail
       : Array.isArray(detail?.problems) ? detail.problems.join(" ") : `a5s said ${answer.status}.`;
@@ -67,7 +90,7 @@ export type Layer = "exists" | "uses" | "built" | "doing" | "did" | "changing";
 export type AgentKnown = gen.Agent;
 // What it may do: for the people it serves, those who watch its instances, and its makers
 export type AgentUses = AgentKnown & Required<Pick<AgentKnown,
-  "tools" | "a5s_tools" | "model" | "autonomy" | "triggers" | "schedules" | "reports" |
+  "tools" | "a5s_tools" | "model" | "autonomy" | "triggers" | "schedules" | "events" | "reports" |
   "obligations" | "reminders" | "preferences" | "channels" | "context" | "budget">>;
 // How it's built: for its owners, authors, engineers, release approvers, auditors and viewers
 export type Agent = AgentUses & Required<Pick<AgentKnown, "skills">>;
@@ -79,6 +102,11 @@ export const builtOf = (agent: AgentKnown): agent is Agent => "skills" in agent;
 export type Ask = gen.Ask;
 export type Asked = gen.Asked;
 export type Catalogue = gen.Catalogue;
+
+// Every sidebar's pages, and who signed in (core/shell_api.py)
+export type Shell = gen.Shell;
+export type Impact = gen.Impact;  // what a version of the settings would have done differently
+export type Place = gen.Place;
 
 // Someone's home and roles (core/home.py)
 export type Home = gen.Home;
@@ -96,6 +124,7 @@ export type AdminNow = gen.AdminNow;  // the administrators' page
 export type AdminAct = gen.AdminAct;
 export type AuditNow = gen.AuditNow;  // the audit trail, for auditors and assurance
 export type AuditEntries = gen.AuditEntries;
+export type AuditTrail = gen.AuditTrail;  // whether the trail checks out (round 15, E8)
 export type AuditReport = gen.AuditReport;
 export type AuditExport = gen.AuditExport;
 export type DecideNow = gen.DecideNow;  // the held changes someone may decide, and lately decided
@@ -120,7 +149,7 @@ export type Signer = gen.Signer;  // whose signature a draft's release would nee
 export type Defined = gen.Defined;  // an agent as its folder defines it: a draft's preview
 export type Offered = gen.Offered;
 export type Offer = gen.Offer;
-export type PartRule = gen.PartRule;  // who decides a part's changes, and its threshold for level 2
+export type PartRule = gen.PartRule;  // who decides a part's changes, and its threshold for acting on its own
 export type Limit = gen.Limit;
 export type Plan = Required<gen.Plan>;  // its authors' plan for a draft's first instance, never in force
 /** A plan as the API gives it, which leaves out what's empty, whole. */

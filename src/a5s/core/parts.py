@@ -17,6 +17,12 @@ from a5s.contract import PART_OWNER, Scenario
 from a5s.core import groups
 
 UNSEEN = "there's no such record, or the people this run is for may not see it"
+NOWHERE = "there's no such record, or this run may not work on it"  # for a run for nobody
+# Policy's two rules on the records a run may work on (core/policies/base.cedar): what the run
+# hears when either refuses a call is the same as for a record there isn't, so it tells nobody
+# that a record is there, nor in which part (round 15, A14)
+RULES = frozenset({"instances-work-only-in-their-parts", "people-see-only-what-they-may"})
+REFUSED = "runs-work-only-on-records-they-may-see"  # the one reason the run hears for both
 
 
 def about(scenario: Scenario, run: dict, records: list[str], action: str | None = None,
@@ -32,18 +38,42 @@ def about(scenario: Scenario, run: dict, records: list[str], action: str | None 
     in each record's part, or else at most at level 1. Level 2 counts only while someone who
     approved the settings in force still owns the part, and only up to a5s's cap for the
     release, part and type, which is 1 until graded samples raise it. A change about no record,
-    or in a run that has read content from outside, works at level 1 at most."""
+    or in a run that has read content from outside, works at level 1 at most.
+
+    A run for nobody that a mailbox's new mail started sees only what every reader of the
+    mailbox may see, since its draft waits where they all read it (`audience`, round 15)."""
     parts = run.get("parts") or {}
     touched = {scenario.part_of(r) for r in records}
     levels = [_level(scenario, run, p, action, set(approved), caps or {})
               for p in touched if p in parts]
     level = min(levels) if levels else run["level"]
-    if action and (not levels or None in touched or run.get("read_outside")):
+    if action and (not levels or None in touched or run.get("read_outside")
+                   or run.get("steered")):  # nor for a run a team's words steered (round 15)
         level = min(level, 1)  # level 2 is for a type set in a record's part, and nothing else
+    reaching = audience(scenario, run)
+    whom = list(run["acts_for"]) if reaching is None else reaching
     return {"level": level,
             "in_scope": all(p is None or p in parts for p in touched),
-            "visible": all(scenario.sees(who, r) for r in records for who in run["acts_for"]),
+            "visible": all(scenario.sees(who, r) for r in records for who in whom) and not (
+                reaching == [] and records),  # a mailbox nobody reads: none, failing closed
             "for_self": bool(action) and for_self(run, records, standing or {})}
+
+
+def audience(scenario: Scenario, run: dict) -> list[str] | None:
+    """Whom a run's work reaches, for a run for nobody that a mailbox's new mail started:
+    everyone who reads the mailbox, as the directory says now, where its draft waits for them
+    all (connectors/mailboxes.py); None for any other run, whose work reaches whom it acts
+    for."""
+    trigger = run.get("trigger") or {}
+    readers = getattr(scenario, "mail_readers", None)
+    if run["acts_for"] or trigger.get("kind") != "event" or not callable(readers):
+        return None
+    found = readers(trigger.get("source"))
+    if not isinstance(found, tuple):
+        return None
+    from a5s.core import registry  # who's in a team or holds a role, now
+
+    return registry.served(scenario, found)
 
 
 def for_self(run: dict, records: list[str], standing: dict[str, dict | None]) -> bool:
@@ -55,7 +85,8 @@ def for_self(run: dict, records: list[str], standing: dict[str, dict | None]) ->
     so a pack's restriction holds: it fails closed."""
     trigger, acts_for = run.get("trigger") or {}, list(run["acts_for"])
     if (trigger.get("kind") != "message" or groups.of(trigger.get("conversation"))
-            or len(acts_for) != 1 or run.get("read_outside") or not records):
+            or len(acts_for) != 1 or run.get("read_outside") or run.get("steered")
+            or not records):
         return False
     return all((kept := standing.get(r)) is not None and kept.get("person") == acts_for[0]
                for r in records)
@@ -69,17 +100,46 @@ def _level(scenario: Scenario, run: dict, part: str, action: str | None, approve
     chosen = ((run.get("actions") or {}).get(part) or {}).get(action)
     level = min(level, 1) if chosen is None else chosen
     if level >= 2:
-        role = f"{PART_OWNER}:{part}"
-        if not any(role in who.roles for a in approved if (who := scenario.person(a))):
+        if not owned(scenario, part, approved):
             return 1  # nobody who approved it owns the part now: until the new owner does
         level = min(level, caps.get((part, action), 1))
     return level
+
+
+def owned(scenario: Scenario, part: str, approved: Iterable[str]) -> bool:
+    """Whether someone who approved the settings in force owns a part now, so level 2 there
+    counts."""
+    role = f"{PART_OWNER}:{part}"
+    return any(role in who.roles for a in approved if (who := scenario.person(a)))
 
 
 def workable(scenario: Scenario, run: dict, record: str) -> bool:
     """Whether a run may work on a record."""
     found = about(scenario, run, [record])
     return found["in_scope"] and found["visible"]
+
+
+def unseen(reasons: Iterable[str]) -> bool:
+    """Whether policy refused a call, by its reasons, for a record the run may not work on, or
+    for one there isn't: one in a part its instance doesn't work in, or one someone it acts for
+    may not see, as the directory says of a record there isn't."""
+    return not RULES.isdisjoint(reasons)
+
+
+def told(scenario: Scenario, run: dict) -> str:
+    """What a run hears of a record it may not work on, whichever rule refused it, and of a
+    record there isn't: the same words for each, which only the run decides, never the record,
+    so they tell nobody that a record is there, nor in which part (round 15, A14). Whoever it
+    acts for is pointed to someone who runs its assistant, the instance's owner or else its
+    deputy, never a part's owner, whom the part would give away. The ledger keeps the rules
+    that refused it, as a run's page shows them."""
+    whom = list(run.get("acts_for") or [])
+    if not whom:
+        return NOWHERE
+    ask = next((who for pid in (run.get("owner"), run.get("deputy"))
+                if pid and pid not in whom and (who := scenario.person(pid))), None)
+    return UNSEEN + (f". If they think they should, they can ask {ask.name}, who runs this "
+                     "assistant" if ask else "")
 
 
 def kept(scenario: Scenario, run: dict, field: str | None, result: Any) -> tuple[Any, int]:
@@ -115,10 +175,10 @@ def kept(scenario: Scenario, run: dict, field: str | None, result: Any) -> tuple
     if not field:
         return result, 0
     if isinstance(result, dict) and field in result and not fits(result):
-        return {"error": UNSEEN}, 1
+        return {"error": told(scenario, run)}, 1
     found = walk(result)
     if isinstance(result, dict) and field in result and withheld:  # a record holding records
-        return {"error": UNSEEN}, withheld + 1
+        return {"error": told(scenario, run)}, withheld + 1
     return found, withheld
 
 

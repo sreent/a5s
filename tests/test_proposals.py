@@ -334,7 +334,8 @@ def test_a_decider_reviews_and_approves_in_the_browser(stack, approving, provide
         f"Change a customer question's due date: Q-1002, with due {day}.")
     assert "as it stood when it was asked for: status waiting on finance" in page.inner_text(
         ".approval .said")
-    assert page.locator(".approval .flags li").all_inner_texts() == [
+    assert page.locator(".approval .flags li").all_inner_texts() == [  # flagged: alone (B5)
+        "It's decided on its own, never with others.",
         f"{day} came from the assistant itself, not from the records or from Ben Okafor"]
     assert page.get_by_role("link", name="Open Q-1002").get_attribute("href").endswith("/Q-1002")
     accessible(page)

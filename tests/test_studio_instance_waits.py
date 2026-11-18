@@ -7,6 +7,7 @@ where they may act on it. Only those who may watch the instance see any of it.""
 from __future__ import annotations
 
 from a5s import db
+from a5s.core import languages
 from test_group_roles import MAP, OWNERS, mapped
 from test_proposals import asked, held
 from test_samples import release
@@ -48,8 +49,8 @@ def test_it_says_what_of_an_instance_waits_and_for_whom(stack, approving, provid
     assert (ana["decide"]["what"], ana["decide"]["go"]) == (
         "1 change it asked for waits for your decision", "/studio/decide")
     assert ana["decide"]["since"].startswith(change["proposed_at"].isoformat()[:19])
-    assert ana["graded"] == {
-        "kind": "graded", "go": None, "why": [], "since": ana["graded"]["since"],
+    assert ana["graded"] == {  # others' to grade: since when isn't hers to know (round 13, B5)
+        "kind": "graded", "go": None, "why": [],
         "what": "1 sample of its work waits for a grade, from graders outside the team that "
                 "built it"}
     assert (ana["notebook"]["what"], ana["notebook"]["go"]) == (
@@ -83,3 +84,18 @@ def test_a_grader_who_watches_it_is_sent_to_grade_its_samples(stack, approving, 
 def test_nothing_waits_on_a_quiet_instance(stack, approving, provider):
     assert waits(approving, provider, "ana") == {}
     assert api(approving, provider, "ana", "instances/nobodys/standing").status_code == 404
+
+
+def test_what_waits_on_an_instance_is_said_in_the_language_they_read(stack, approving, provider):
+    """Round 14 (E-L3): Ana, who reads Thai, reads what of the instance waits in Thai."""
+    asked(stack)
+    sample(stack)
+    note(stack)
+    with db.transaction(stack.admin) as conn:
+        languages.choose(conn, stack.gateway.scenario.person("ana"), "th", stack.gateway.clock())
+    ana = waits(approving, provider, "ana")
+    assert ana["decide"]["what"] == "การเปลี่ยนแปลง 1 รายการที่เอเจนต์ขอรอการตัดสินใจของคุณ"
+    assert ana["graded"]["what"] == ("ตัวอย่างงาน 1 รายการรอการให้คะแนนจากผู้ให้คะแนนนอกทีมที่"
+                                     "สร้างเอเจนต์")
+    assert ana["notebook"]["what"] == ("บันทึก 1 รายการที่เอเจนต์เก็บจากสิ่งที่เรียนรู้ "
+                                       "ซึ่งคุณอ่านและลบได้")

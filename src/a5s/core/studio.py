@@ -34,7 +34,7 @@ import psycopg
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import Query
 
-from a5s import db
+from a5s import db, levels
 from a5s.config import ModelConfig
 from a5s.contract import (
     AGENT_AUTHOR,
@@ -52,12 +52,13 @@ from a5s.core import audit, ledger, measures, registry, values
 from a5s.core.releases import ENGINEER, agent_owner
 from a5s.core.status import outcome
 from a5s.definitions import Definition
+from a5s.knowledge import READERS
 
 RUNS = 50  # runs to a page, newest first
 MOST_RUNS = 200  # the most to a page
 DENIALS = 10_000  # each set of instances' newest denials looked through, by their own index
 COLUMNS = ("id, definition, release, status, level, model, serves, owner, deputy, parts, "
-           "actions, asks")
+           "actions, asks, hands_to")
 SERVING = ("active", "suspended")  # the instances whom an agent serves through
 REASON = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")  # a policy's own id: never words
 LAST = "ffffffff-ffff-ffff-ffff-ffffffffffff"  # after every run opened at the same moment
@@ -69,12 +70,14 @@ def parts_of(inst: dict) -> list[str]:
 
 def watches(inst: dict, person: Person) -> bool:
     """Whether someone may watch an instance: they run it, as its owner or deputy, own its
-    agent, own or decide for one of its parts, or approve instances."""
+    agent, own or decide for one of its parts, or approve instances; or, while it's suspended,
+    approve releases, to judge whether to resume it (round 15, D6)."""
     roles = set(person.roles)
     return (person.id in (inst.get("owner"), inst.get("deputy"))
             or agent_owner(inst["definition"]) in roles or INSTANCE_APPROVER in roles
             or any(f"{PART_OWNER}:{p}" in roles or f"{PART_DELEGATE}:{p}" in roles
-                   for p in parts_of(inst)))
+                   for p in parts_of(inst))
+            or (RELEASE_APPROVER in roles and inst.get("status") == "suspended"))
 
 
 def instances(conn: db.Connection, viewer: Person | None = None, *,
@@ -125,6 +128,7 @@ def _tools(definition: Definition, tools: dict[str, Tool]) -> list[dict]:
                           "changes": tool.action if tool else None,
                           "handles": list(tool.handles) if tool else [],
                           "outside": list(tool.outside) if tool else [],
+                          "marks": bool(tool and tool.marks),
                           "pinned": definition.pins.get(name),
                           "missing": tool is None})
     return found
@@ -134,7 +138,7 @@ def offered(tools: dict[str, Tool]) -> list[dict]:
     """Each of the scenario's tools an agent may be given, with what it reads, writes or
     changes, as an agent's page shows its own."""
     return [{"name": name, "description": tool.description, **tool.risk, "changes": tool.action,
-             "handles": list(tool.handles), "outside": list(tool.outside)}
+             "handles": list(tool.handles), "outside": list(tool.outside), "marks": tool.marks}
             for name, tool in sorted(tools.items())]
 
 
@@ -206,8 +210,7 @@ def _instance(scenario: Scenario, definition: Definition | None, inst: dict) -> 
             "level": inst["level"], "parts": inst["parts"] or {},
             "actions": inst["actions"] or {}, "model": inst["model"],
             "people": len(registry.served(scenario, inst["serves"])),
-            "owner": _name(scenario, inst["owner"]), "deputy": _name(scenario, inst["deputy"]),
-            "asks": list(inst["asks"] or [])}
+            "owner": _name(scenario, inst["owner"]), "deputy": _name(scenario, inst["deputy"])}
 
 
 def agent(scenario: Scenario, definition: Definition, tools: dict[str, Tool],
@@ -225,6 +228,7 @@ def agent(scenario: Scenario, definition: Definition, tools: dict[str, Tool],
         "skills": sorted(definition.skills),
         "triggers": definition.triggers,
         "schedules": [s.model_dump() for s in definition.schedules],
+        "events": [e.model_dump() for e in definition.events],
         "reports": [r.source for r in definition.reports],
         "obligations": list(definition.obligations),
         "reminders": definition.reminders, "preferences": list(definition.preferences),
@@ -282,7 +286,8 @@ def seen_by(name: str, insts: list[dict], viewer: Person) -> list[str]:
 LAYERS = ("exists", "uses", "built", "doing", "did", "changing")
 # What each layer adds to an agent as someone sees it
 SHOWN = {"exists": ("id", "release", "works_for", "does", "owners"),
-         "uses": ("tools", "a5s_tools", "model", "autonomy", "triggers", "schedules", "reports",
+         "uses": ("tools", "a5s_tools", "model", "autonomy", "triggers", "schedules", "events",
+                  "reports",
                   "obligations", "reminders", "preferences", "channels", "context", "budget"),
          "built": ("skills", "instructions"),
          "doing": ("instances",)}
@@ -465,6 +470,53 @@ def handled(conn: db.Connection, run: str, keys: Iterable[str]) -> None:
                      "select %s::uuid, unnest(%s::text[]) on conflict do nothing", (run, found))
 
 
+# Who may read what a run read, beside its records (migrations/0090_run_readers.sql): a
+# document's readers, as it names them, or ALONE, for what only those it acted for may read, a
+# document read with their own permissions, a file they sent, or what a system gave it as them
+ALONE = {"alone": True}
+
+
+def readers(conn: db.Connection, run: str, rules: Iterable[dict]) -> None:
+    """Keep, as long as the run, who may read what it read."""
+    found = sorted({json.dumps(r, sort_keys=True, separators=(",", ":"))
+                    for r in rules if isinstance(r, dict) and r})
+    if found:
+        conn.execute("insert into run_readers (run_id, rule) "
+                     "select %s::uuid, unnest(%s::text[]) on conflict do nothing", (run, found))
+
+
+def taken(result: Any) -> tuple[Any, list[dict]]:
+    """A tool's answer without who may read each document it gave (knowledge.READERS), which
+    a5s keeps for the run rather than the agent reading it, and those readers."""
+    rules: list[dict] = []
+
+    def take(item: Any) -> Any:
+        if not isinstance(item, dict):
+            return item
+        if isinstance(item.get(READERS), dict):
+            rules.append(item[READERS])
+        return {k: v for k, v in item.items() if k != READERS}
+
+    if isinstance(result, dict):
+        result = take(result)
+        if isinstance(result.get("matches"), list):
+            result = {**result, "matches": [take(m) for m in result["matches"]]}
+    return result, rules
+
+
+def given_from(conn: db.Connection, run: str, others: Iterable[str]) -> None:
+    """What a run takes from the runs whose words it's given, its conversation's turns, a
+    question's or an answer's words, or what a search of past turns found: the records they
+    handled, and who may read what they read, so a5s shows it to nobody who may not see them."""
+    found = sorted({str(o) for o in others if o and str(o) != run})
+    if not found:
+        return
+    conn.execute("insert into run_records (run_id, record) select %s::uuid, record from "
+                 "run_records where run_id = any(%s::uuid[]) on conflict do nothing", (run, found))
+    conn.execute("insert into run_readers (run_id, rule) select %s::uuid, rule from "
+                 "run_readers where run_id = any(%s::uuid[]) on conflict do nothing", (run, found))
+
+
 def _handled(conn: db.Connection, runs: list[str]) -> dict[str, set[str]]:
     found: dict[str, set[str]] = {r: set() for r in runs}
     for row in conn.execute("select run_id::text as run, record from run_records "
@@ -473,10 +525,54 @@ def _handled(conn: db.Connection, runs: list[str]) -> dict[str, set[str]]:
     return found
 
 
-def _sees(scenario: Scenario, viewer: Person, run: dict, keys: set[str]) -> bool:
-    """Whether someone may see a run: a5s kept its records, and they may see every one."""
+def _readers(conn: db.Connection, runs: list[str]) -> dict[str, list[dict]]:
+    found: dict[str, list[dict]] = {r: [] for r in runs}
+    for row in conn.execute("select run_id::text as run, rule from run_readers "
+                            "where run_id = any(%s::uuid[])", (runs,)):
+        try:
+            rule = json.loads(row["rule"])
+        except ValueError:
+            rule = {}
+        found[row["run"]].append(rule if isinstance(rule, dict) else {})  # unread: nobody's
+    return found
+
+
+def _may_read(scenario: Scenario, viewer: Person, run: dict, rule: dict) -> bool:
+    """Whether someone may read what a run read, by one of its readers' rules."""
+    if rule.get("alone"):
+        return viewer.id in (run.get("acts_for") or [])
+    if viewer.id in (rule.get("people") or []) or (viewer.team and viewer.team in (
+            rule.get("teams") or [])) or set(viewer.roles) & set(rule.get("roles") or []):
+        return True
+    sees_part = getattr(scenario, "sees_part", None)
+    return callable(sees_part) and any(bool(sees_part(viewer.id, part))
+                                       for part in rule.get("parts") or [])
+
+
+def _sees(scenario: Scenario, viewer: Person, run: dict, keys: set[str],
+          rules: Iterable[dict] = ()) -> bool:
+    """Whether someone may see a run: a5s kept its records, and they may see every one, and
+    read all it read."""
     return bool(run["records_kept"]) and all(
-        scenario.sees(viewer.id, k) for k in keys | _trigger_records(run["trigger"]))
+        scenario.sees(viewer.id, k) for k in keys | _trigger_records(run["trigger"])) and all(
+        _may_read(scenario, viewer, run, r) for r in rules)
+
+
+def seeable(conn: db.Connection, scenario: Scenario, viewer: Person, runs: list[str]) -> set[str]:
+    """Of these runs, those someone may see: a5s kept their records, and they may see every
+    one, and read all it read, as an instance's runs show them."""
+    if not runs:
+        return set()
+    rows = conn.execute("select id::text as run, trigger, acts_for, records_kept from runs "
+                        "where id = any(%s::uuid[])", (runs,)).fetchall()
+    keys = _handled(conn, [r["run"] for r in rows])
+    rules = _readers(conn, [r["run"] for r in rows])
+    return {r["run"] for r in rows if _sees(scenario, viewer, r, keys[r["run"]], rules[r["run"]])}
+
+
+def name_of(scenario: Scenario, who: str | None) -> str | None:
+    """Someone's name, as the directory knows them, or as they were given."""
+    return _name(scenario, who)
 
 
 def _shown(scenario: Scenario, run: dict, names: bool) -> dict:
@@ -535,7 +631,9 @@ def runs(conn: db.Connection, scenario: Scenario, inst: dict,
         "order by opened_at desc, id desc limit %s",
         (inst["id"], after and after[0], after and after[0], after and after[1], page)).fetchall()
     keys = _handled(conn, [r["run"] for r in rows])
-    shown = [r for r in rows if viewer is None or _sees(scenario, viewer, r, keys[r["run"]])]
+    rules = _readers(conn, [r["run"] for r in rows])
+    shown = [r for r in rows if viewer is None or _sees(scenario, viewer, r, keys[r["run"]],
+                                                        rules[r["run"]])]
     last = rows[-1] if len(rows) == page else None
     where = f"{last['opened_at'].isoformat()}|{last['run']}" if last else None
     if where is not None and key is not None:
@@ -564,8 +662,9 @@ def run(conn: db.Connection, scenario: Scenario, run_id: str,
     try:
         row = conn.execute(
             "select id::text as run, instance_id, trigger, acts_for, read_outside, opened_at, "
-            "closed_at, outcome, tokens, tokens_in, tokens_out, tokens_cached, model, "
-            "records_kept from runs where id = %s::uuid", (run_id,)).fetchone()
+            "closed_at, outcome, tokens, tokens_in, tokens_out, tokens_cached, "
+            "tokens_cache_written, model, records_kept from runs where id = %s::uuid",
+            (run_id,)).fetchone()
     except psycopg.errors.InvalidTextRepresentation:
         return None
     if row is None:
@@ -575,7 +674,8 @@ def run(conn: db.Connection, scenario: Scenario, run_id: str,
     if viewer is not None and (inst is None or not watches(inst, viewer)):
         return None
     keys = _handled(conn, [row["run"]])[row["run"]]
-    if viewer is not None and not _sees(scenario, viewer, row, keys):
+    if viewer is not None and not _sees(scenario, viewer, row, keys,
+                                        _readers(conn, [row["run"]])[row["run"]]):
         return None
     entries = ledger.entries(conn, run=row["run"])
     named = viewer is None or names
@@ -583,6 +683,7 @@ def run(conn: db.Connection, scenario: Scenario, run_id: str,
              "started_by": row["trigger"] if named else {"kind": (row["trigger"] or {}).get("kind")},
              "tokens_in": row["tokens_in"], "tokens_out": row["tokens_out"],
              "tokens_cached": row["tokens_cached"],
+             "tokens_cache_written": row["tokens_cache_written"],  # priced as the provider does
              "records": sorted(keys | _trigger_records(row["trigger"])),
              "calls": _calls(entries)}
     if viewer is None:  # the team's: every entry, what was said by hash
@@ -594,13 +695,16 @@ def run(conn: db.Connection, scenario: Scenario, run_id: str,
 
 
 def _levels(found: dict) -> str:
+    """What an agent's instances may do, by name: where they start, and the most."""
     start, most = found["autonomy"]["start"], found["autonomy"]["max"]
-    return f"level {start}" if start == most else f"levels {start} to {most}"
+    return levels.name(start) if start == most else (
+        f"{levels.name(start)}, at most {levels.name(most)}")
 
 
 def _instance_line(inst: dict) -> str:
     parts = ", ".join(inst["parts"]) or "no part"
-    return (f"{inst['id']}: {inst['status']}, level {inst['level']}, in {parts}, serving "
+    may = levels.name(inst["level"]) if inst["level"] is not None else "nothing set"
+    return (f"{inst['id']}: {inst['status']}, {may}, in {parts}, serving "
             f"{inst['people']} {'person' if inst['people'] == 1 else 'people'}, run by "
             f"{inst['owner'] or 'nobody'}" + (f" and {inst['deputy']}" if inst["deputy"] else "")
             + ("" if inst["current"] else f", still on release {inst['release']}"))

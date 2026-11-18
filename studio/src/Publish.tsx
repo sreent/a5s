@@ -6,6 +6,7 @@
 
 import { useEffect, useState } from "react";
 import { download, get, type Publish as Publishing, type PullRequest, send } from "./api";
+import { t } from "./i18n";
 import { useLoad } from "./ui";
 
 
@@ -25,24 +26,24 @@ function ByHand({ draft, name, revision }: { draft: string; name: string; revisi
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(pull.data?.body ?? "");
-      setSaid("The description is copied.");
+      setSaid(t("The description is copied."));
     } catch {
-      setSaid("Select the description and copy it.");
+      setSaid(t("Select the description and copy it."));
     }
   };
   if (!pull.data) return <p className="note">{pull.error ?? "…"}</p>;
   return (
     <div className="publish">
-      <p className="note">You open its pull request: download its folder, put it in the agents' repository as <span className="mono" id="pull-folder">{pull.data.folder}/</span> on a branch of your own, and open a pull request from it, titled as below, with this description, which tells its reviewers who must sign its release.</p>
-      {!pull.data.ready && <p className="problem">Put right what would stop its release first: its description says what, as it stands.</p>}
-      <label className="field"><span>Its title</span>
+      <p className="note">{t("You open its pull request: download its folder, put it in the agents' repository as")} <span className="mono" id="pull-folder">{pull.data.folder}/</span> {t("on a branch of your own, and open a pull request from it, titled as below, with this description, which tells its reviewers who must sign its release.")}</p>
+      {!pull.data.ready && <p className="problem">{t("Put right what would stop its release first: its description says what, as it stands.")}</p>}
+      <label className="field"><span>{t("Its title")}</span>
         <input id="pull-title" readOnly value={pull.data.title} /></label>
-      <label className="field"><span>Its description</span>
+      <label className="field"><span>{t("Its description")}</span>
         <textarea id="pull-body" readOnly rows={9} value={pull.data.body} /></label>
       {said && <p className="note">{said}</p>}
       <div className="meta">
-        <button type="button" className="primary" id="download" onClick={save}>Download its folder</button>
-        <button type="button" id="copy-body" onClick={copy}>Copy the description</button>
+        <button type="button" className="primary" id="download" onClick={save}>{t("Download its folder")}</button>
+        <button type="button" id="copy-body" onClick={copy}>{t("Copy the description")}</button>
       </div>
     </div>
   );
@@ -93,25 +94,24 @@ function OnGitHub({ draft, name, ready, published }: {
   return (
     <div className="publish">
       {pull && (
-        <p id="published"><span className="badge good">published</span> As <a href={pull} target="_blank" rel="noopener noreferrer">its pull request</a>.
-          CI runs its checks and test cases there, and the people above sign its release. Publishing it again adds a commit to it.</p>
+        <p id="published"><span className="badge good">{t("published")}</span> {t("As")} <a href={pull} target="_blank" rel="noopener noreferrer">{t("its pull request")}</a>{t(". CI runs its checks and test cases there, and the people above sign its release. Publishing it again adds a commit to it.")}</p>
       )}
       {!pull && !waiting && (
-        <p className="note">A pull request to the agents' repository, opened as you: a5s asks GitHub to let it act as you, for this alone, and keeps no token of yours.</p>
+        <p className="note">{t("A pull request to the agents' repository, opened as you: a5s asks GitHub to let it act as you, for this alone, and keeps no token of yours.")}</p>
       )}
       {waiting && now && (
         <div className="sign-in-code">
-          <p>Let a5s publish it as you: at <a href={now.verify_at ?? "#"} target="_blank" rel="noopener noreferrer">GitHub's sign-in</a>, enter</p>
+          <p>{t("Let a5s publish it as you: at")} <a href={now.verify_at ?? "#"} target="_blank" rel="noopener noreferrer">{t("GitHub's sign-in")}</a>{t(", enter")}</p>
           <p className="user-code mono" id="user-code">{now.user_code}</p>
-          <p className="note">a5s waits for GitHub for {Math.max(1, Math.round(now.expires_in / 60))} minutes at most.</p>
+          <p className="note">{t("a5s waits for GitHub for {minutes} minutes at most.", { minutes: Math.max(1, Math.round(now.expires_in / 60)) })}</p>
         </div>
       )}
       {now && (now.status === "refused" || now.status === "lapsed") && <p className="problem">{now.problem}</p>}
       {problem && <p className="problem">{problem}</p>}
       <div className="meta">
         <button type="button" className="primary" id="publish" disabled={!ready || waiting} onClick={start}>
-          {waiting ? "Waiting for GitHub…" : pull ? "Publish again" : "Publish as a pull request"}</button>
-        <button type="button" id="download" onClick={save}>Download its folder</button>
+          {waiting ? t("Waiting for GitHub…") : pull ? t("Publish again") : t("Publish as a pull request")}</button>
+        <button type="button" id="download" onClick={save}>{t("Download its folder")}</button>
       </div>
     </div>
   );

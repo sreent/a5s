@@ -14,12 +14,13 @@ from typing import Any
 
 from a5s import db
 from a5s.contract import Scenario
-from a5s.core import groups, values
+from a5s.core import groups, languages, values, words
 from a5s.core.values import Value
 
 THEY = "they said it"
 A5S = "a5s"
 OUTSIDE = "outside"  # a document from outside the organisation, as a5s's reader read it
+TEAM = "team: "  # then whose: someone of a team who answered them while it was handed over
 
 
 def read(conn: db.Connection, run: str, source: str, said: Any, pattern: str | None) -> None:
@@ -95,12 +96,13 @@ def sources(conn: db.Connection, scenario: Scenario, run: dict) -> list[tuple[Va
         found += [(v, THEY) for v in values.found(row["text"] if row else "", pattern)]
     heard = " and heard_by @> %(members)s::text[]" if group else ""
     for row in conn.execute(  # not the agent's words, nor a5s's notes on them, which name
-            "select role, content from turns where person = %(who)s and agent = %(agent)s "
+            "select role, content, speaker from turns where person = %(who)s and agent = %(agent)s "
             "and role <> 'agent' and not (role = 'notice' and content like '(a5s:%%')"
             f"{heard} order by id desc limit 500",  # its own values
             {"who": who, "agent": run["definition"], "members": list(run["acts_for"])}):
-        found += [(v, THEY if row["role"] == "person" else A5S)
-                  for v in values.found(row["content"], pattern)]
+        said = (A5S if row["role"] != "person" else THEY if group or not row["speaker"]
+                else f"{TEAM}{row['speaker']}")  # in their own chat, a team's answer to them
+        found += [(v, said) for v in values.found(row["content"], pattern)]
     for row in conn.execute(  # in a group, the summaries everyone it acts for heard all of
             "select body, heard_by from summaries where person = %s and agent = %s",
             (who, run["definition"])):
@@ -124,9 +126,16 @@ def traced(conn: db.Connection, scenario: Scenario, run: dict, text: str) -> lis
             for v in values.found(text, getattr(scenario, "record_pattern", None))]
 
 
-def note(agent: str, own: list[str]) -> str:
-    """a5s's words on what the agent wrote itself, for people to see apart from its own."""
-    which = own[0] if len(own) == 1 else f"{', '.join(own[:-1])} and {own[-1]}"
-    them = "it" if len(own) == 1 else "them"
-    return (f"(a5s: {which} came from the {agent} itself, not from the records or from you, "
-            f"so check {them} before you rely on {them}.)")
+NOTE = ("(a5s: {which} came from the {agent} itself, not from the records or from you, so check "
+        "it before you rely on it.)")
+NOTES = ("(a5s: {which} came from the {agent} itself, not from the records or from you, so check "
+         "them before you rely on them.)")
+
+
+def note(agent: str, own: list[str], language: str = languages.ENGLISH) -> str:
+    """a5s's words on what the agent wrote itself, for people to see apart from its own, in the
+    language they read."""
+    if len(own) == 1:
+        return words.say(language, NOTE, which=own[0], agent=agent)
+    which = words.say(language, "{first} and {last}", first=", ".join(own[:-1]), last=own[-1])
+    return words.say(language, NOTES, which=which, agent=agent)

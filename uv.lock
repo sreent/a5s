@@ -15,6 +15,7 @@ dependencies = [
     { name = "azure-storage-blob" },
     { name = "boto3" },
     { name = "cedarpy" },
+    { name = "cryptography" },
     { name = "deepagents" },
     { name = "fastapi" },
     { name = "google-cloud-storage" },
@@ -29,6 +30,7 @@ dependencies = [
     { name = "psycopg-pool" },
     { name = "pydantic" },
     { name = "pyjwt", extra = ["crypto"] },
+    { name = "pypdf" },
     { name = "pyyaml" },
     { name = "tzdata" },
     { name = "uvicorn" },
@@ -51,6 +53,7 @@ requires-dist = [
     { name = "azure-storage-blob", specifier = ">=12.31.0" },
     { name = "boto3", specifier = ">=1.43.121" },
     { name = "cedarpy", specifier = "==4.12.2" },
+    { name = "cryptography", specifier = ">=50" },
     { name = "deepagents", specifier = "==0.7.32" },
     { name = "fastapi" },
     { name = "google-cloud-storage", specifier = ">=3.17.1" },
@@ -65,6 +68,7 @@ requires-dist = [
     { name = "psycopg-pool", specifier = ">=3.2.6" },
     { name = "pydantic", specifier = ">=2" },
     { name = "pyjwt", extras = ["crypto"], specifier = ">=2.15.1" },
+    { name = "pypdf", specifier = ">=6" },
     { name = "pyyaml" },
     { name = "tzdata", specifier = ">=2026.6" },
     { name = "uvicorn" },
@@ -2055,6 +2059,15 @@ wheels = [
 [package.optional-dependencies]
 crypto = [
     { name = "cryptography" },
+]
+
+[[package]]
+name = "pypdf"
+version = "7.1.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/60/d3/367aa9baefaededd3321cde46bbcb9f008bb51cef3a6b745608352a99534/pypdf-7.1.0.tar.gz", hash = "sha256:ca3fa902369e98a6d2cb7b56396de902b72ef9bb3c1e8706c1bfc7d8bd0cf0d7", size = 7215190, upload-time = "2026-11-13T12:23:18.629Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/ed/4c/d19f91b743c8579b67e3d8b001e095745dec5bb13a9b4b9eadc235a85d9e/pypdf-7.1.0-py3-none-any.whl", hash = "sha256:47cca6b24bdcf4c4d65b5f7b8b972535c61710a061261e737688777cfd9a7bfb", size = 418698, upload-time = "2026-11-13T12:23:16.777Z" },
 ]
 
 [[package]]

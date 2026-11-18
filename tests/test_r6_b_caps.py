@@ -19,7 +19,7 @@ from a5s import db, definitions
 from a5s.core import registry
 from conftest import seal_grades, signed
 from test_levels import asked, due_of, levelled
-from test_samples import cap, release, weigh
+from test_samples import cap, release, turn, weigh
 
 
 def grades(stack, n: int, wrong: int = 0, critical: int = 0, part: str = "orders") -> None:
@@ -31,8 +31,9 @@ def grades(stack, n: int, wrong: int = 0, critical: int = 0, part: str = "orders
                 "insert into samples (scenario, kind, run_id, instance_id, release, definition, "
                 "part, action, said, records, acts_for, drawn_at, grade, graded_by, graded_at) "
                 "values ('sample', 'proposal', gen_random_uuid(), 'assistant-finance', %s, "
-                "'assistant', %s, 'change-due-date', 'a change', '{}', '{ben}', %s, %s, 'dana', "
-                "%s)", (release(stack), part, stack.gateway.clock(), grade, stack.gateway.clock()))
+                "'assistant', %s, 'change-due-date', 'a change', '{}', '{ben}', %s, %s, %s, "
+                "%s)", (release(stack), part, stack.gateway.clock(), grade, turn(conn),
+                        stack.gateway.clock()))
     seal_grades(stack)  # as the grading page has the core seal them
 
 
@@ -76,7 +77,7 @@ def test_raising_a_parts_threshold_lowers_a_cap_its_grades_no_longer_earn(stack)
         assert not registry.apply(conn, stack.gateway.definitions, scenario.settings(),
                                   scenario.tools(), scenario.person, scenario.name).refused
     weigh(stack)
-    assert cap(stack, "orders") == 1, "level 2 stands on grades that don't meet the threshold"
+    assert cap(stack, "orders") == 1, "acting on its own stands on grades that don't meet the threshold"
 
 
 def test_earned_caps_stand_while_the_settings_dont_check_out(stack, monkeypatch):
@@ -109,4 +110,4 @@ def test_a_release_that_widens_nothing_keeps_the_level_its_grades_earned(stack, 
     assert release(stack) != before
     asked(stack, ("change_due_date", {"key": "Q-1002", "due": "2026-11-20"}),
           said="Now move Q-1002 to 2026-11-20.")
-    assert due_of(stack) == "2026-11-20", "a release that widened nothing lost level 2"
+    assert due_of(stack) == "2026-11-20", "a release that widened nothing stopped it acting on its own"

@@ -95,6 +95,24 @@ def verify(conn: db.Connection) -> Verification:
     return Verification(True, count, prev.hex())
 
 
+def unchained(conn: db.Connection, seqs: list[int]) -> list[int]:
+    """Which of these entries don't check out as the ledger holds them, for whoever reads
+    them, without recomputing the whole chain (round 15, E8): one whose hash isn't of its own
+    words and the hash it follows, whose number isn't its own, or that doesn't follow the
+    entry before it."""
+    found = conn.execute(
+        "select l.seq, l.entry, l.prev_hash, l.hash, p.hash as before from ledger l left join "
+        "ledger p on p.seq = l.seq - 1 where l.seq = any(%s)", (sorted(set(seqs)),))
+    broken = []
+    for row in found:
+        before = GENESIS if row["seq"] == 1 else row["before"] and bytes(row["before"])
+        prev = bytes(row["prev_hash"])
+        if (prev != before or json.loads(row["entry"]).get("seq") != row["seq"]
+                or bytes(row["hash"]) != hashlib.sha256(prev + row["entry"].encode()).digest()):
+            broken.append(row["seq"])
+    return sorted(broken)
+
+
 def entries(conn: db.Connection, *, run: str | None = None, limit: int = 100) -> list[dict]:
     if run:
         rows = conn.execute(

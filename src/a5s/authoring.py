@@ -20,6 +20,7 @@ from pydantic import ValidationError
 
 from a5s import cases, definitions
 from a5s.config import ModelConfig
+from a5s.connectors import libraries
 from a5s.contract import Tool
 
 NAME = re.compile(r"[a-z][a-z0-9]*(?:-[a-z0-9]+)*")  # such as finance-assistant
@@ -111,6 +112,12 @@ def check(folder: Path, tools: dict[str, Tool], models: dict[str, ModelConfig]) 
     if unused := sorted(set(found.pins) - set(found.tool_names)):
         problems.append(f"its tools.lock pins {', '.join(unused)}, which it doesn't use: pin its "
                         f"tools again, with `a5s pin {folder.name}`")
+    if not found.context.documents and (read := [t for t in found.tool_names if t in tools
+                                                 and isinstance(tools[t], libraries.Shelved)
+                                                 and tools[t].outside]):
+        problems.append(f"{', '.join(read)} {'reads' if len(read) == 1 else 'read'} a library "
+                        "through a5s's reader alone, which it asks with ask_about: give it "
+                        "context.documents")
     if found.model not in models:
         problems.append(f"its model, {found.model}, isn't one config/models.yaml approves")
     if found.evaluation and found.evaluation.judge not in models:

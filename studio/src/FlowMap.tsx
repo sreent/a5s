@@ -13,6 +13,7 @@ import { type Edge, Handle, type Node, type NodeProps, Position, ReactFlow, Reac
   useReactFlow } from "@xyflow/react";
 import "@xyflow/react/dist/base.css";  // React Flow's own, never its style.css: Ocean draws the rest
 import { type DragEvent, Fragment, type KeyboardEvent, type ReactNode } from "react";
+import { t } from "./i18n";
 import { Icon } from "./icons";
 
 export type Tone = "reads" | "writes" | "changes" | "outside" | "own" | "refused" | "agent";  // agent: another agent
@@ -39,7 +40,7 @@ type Kind = "trigger" | "agent" | "end" | "hanging" | "stub";
 type Data = { step: Step; kind: Kind; chosen: boolean; pick?: (key: string, keyboard: boolean) => void };
 
 const STATES = { good: "check", warn: "clock", bad: "cross" } as const;
-const SLOTS: [Slot, string][] = [["model", "Model"], ["checks", "Checks"], ["tools", "Tools"]];
+const SLOTS: [Slot, () => string][] = [["model", () => t("Model")], ["checks", () => t("Checks")], ["tools", () => t("Tools")]];
 // Where steps stand, in pixels at a rem of 15: a column of what starts it, the agent, its end,
 // and below them, in rows of five, what hangs from it
 const STEP = 120, GAP_Y = 150, AGENT_X = 250, AGENT_W = 210, END_X = 590, HANG_GAP = 140, HANG_Y = 210;
@@ -58,9 +59,9 @@ function FlowStep({ data }: NodeProps<Node<Data>>) {
           <Icon name={STATES[step.state]} />
         </span>
       )}
-      {!!step.problems && <span className="flow-problems" role="img" aria-label={`${step.problems} refused`}>{step.problems}</span>}
+      {!!step.problems && <span className="flow-problems" role="img" aria-label={t("{n} refused", { n: step.problems })}>{step.problems}</span>}
       {kind === "agent" && (
-        <span className="flow-slots">{SLOTS.map(([slot, label]) => <span key={slot} className="flow-slot"><span>{label}</span></span>)}</span>
+        <span className="flow-slots">{SLOTS.map(([slot, label]) => <span key={slot} className="flow-slot"><span>{label()}</span></span>)}</span>
       )}
     </>
   );
@@ -103,9 +104,9 @@ function Zoom() {
   const flow = useReactFlow();
   return (
     <div className="flow-tools">
-      <button type="button" aria-label="Zoom in" onClick={() => flow.zoomIn()}>+</button>
-      <button type="button" aria-label="Zoom out" onClick={() => flow.zoomOut()}>−</button>
-      <button type="button" onClick={() => flow.fitView({ padding: 0.12 })}>Show it all</button>
+      <button type="button" aria-label={t("Zoom in")} onClick={() => flow.zoomIn()}>+</button>
+      <button type="button" aria-label={t("Zoom out")} onClick={() => flow.zoomOut()}>−</button>
+      <button type="button" onClick={() => flow.fitView({ padding: 0.12 })}>{t("Show it all")}</button>
     </div>
   );
 }
@@ -138,12 +139,15 @@ function placed(flow: Flow, chosen: string | null, pick: Data["pick"], stubs: St
                                                        : node(s, kind, at(i).x, at(i).y))),
     ...stubs.filter((s) => !s.slot).map((s) => node(s, "stub", 46, foot + 4)),
   ];
-  const edges: Edge[] = [
-    ...flow.starts.map((s) => ({ id: `in-${s.key}`, source: s.key, target: flow.agent.key,
+  const said = (from: Step, to: Step) => t("From {from} to {to}", { from: from.name, to: to.name });  // read
+  const edges: Edge[] = [  // aloud in the language spoken, never React Flow's own English
+    ...flow.starts.map((s) => ({ id: `in-${s.key}`, source: s.key, target: flow.agent.key, ariaLabel: said(s, flow.agent),
                                  className: [s.dim ? "dim" : "", s.path ?? ""].filter(Boolean).join(" ") })),
-    ...(flow.end ? [{ id: "out", source: flow.agent.key, sourceHandle: "end", target: flow.end.key }] : []),
+    ...(flow.end ? [{ id: "out", source: flow.agent.key, sourceHandle: "end", target: flow.end.key,
+                      ariaLabel: said(flow.agent, flow.end) }] : []),
     ...flow.hanging.map((s) => ({ id: `hangs-${s.key}`, source: flow.agent.key, sourceHandle: s.slot ?? "tools",
-                                  target: s.key, className: ["hangs", s.dim ? "dim" : "", s.path ?? ""].filter(Boolean).join(" ") })),
+                                  target: s.key, ariaLabel: said(flow.agent, s),
+                                  className: ["hangs", s.dim ? "dim" : "", s.path ?? ""].filter(Boolean).join(" ") })),
   ];
   return { nodes, edges };
 }

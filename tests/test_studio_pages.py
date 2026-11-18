@@ -131,10 +131,11 @@ def test_someone_watches_an_instance_in_the_browser(stack, approving, provider, 
     page.wait_for_selector(".agent-map .flow-step >> text=change_due_date", timeout=30000)
     assert page.evaluate("location.pathname") == "/studio/agents/assistant"
     assert "Changes records" in page.locator(".tool-group").first.text_content()
-    # its facts, from its release, and its ladder: its one instance works at level 1
+    # its facts, from its release, and its ladder: its one instance asks first
     facts = page.locator("section[aria-label='Agent facts']")
     assert "change_due_date, close_question" in facts.inner_text()
-    assert page.locator(".ladder li[aria-current='step']").inner_text().startswith("level 1 · now")
+    now = page.locator(".ladder li[aria-current='step']").inner_text()
+    assert now.startswith("now") and "Asks first" in now and "level" not in now.lower()
     accessible(page)
     shot(page, "studio-agent")
 
@@ -143,7 +144,7 @@ def test_someone_watches_an_instance_in_the_browser(stack, approving, provider, 
     assert "done" in page.inner_text("section.card:has(h2:text-is('How runs ended')) table")
     # what of it waits, which is nothing yet, and how far it may act: it asks, in billing
     page.wait_for_selector("#instance-waiting >> text=Nothing of it waits now.", timeout=30000)
-    assert page.inner_text("#reach tbody tr").split("\t")[:2] == ["billing", "1 · Asks"]
+    assert page.inner_text("#reach tbody tr").split("\t")[:2] == ["billing", "asks first"]
     # Its runs by day, on his own days: today's, as it says on hover and on focus
     today = page.locator(".runs-chart .day[tabindex='0']")
     assert today.get_attribute("aria-label").endswith(": 1 run, 1 done")
@@ -198,6 +199,8 @@ def test_a_runs_path_shows_what_a5s_refused_it(stack, approving, provider, brows
     assert "called once" in page.inner_text(".agent-map [data-key='tool:search_records'] .flow-about")
     assert "2 calls, 1 refused" in page.inner_text(".agent-map [data-key=checks]")
     assert page.locator(".agent-map .react-flow__edge.refused").count() == 1
+    labels = page.eval_on_selector_all(".agent-map .react-flow__edge", "es => es.map((e) => e.getAttribute('aria-label'))")
+    assert labels and all(label.startswith("From ") for label in labels)  # never React Flow's own
 
 
 def test_the_studio_serves_its_one_page_and_its_own_files_alone(approving, monkeypatch, tmp_path):

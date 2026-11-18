@@ -2,14 +2,15 @@
 // any page. The browser's own dialog, a combobox over a listbox: what it found, grouped, the arrows
 // choosing, Enter opening, Escape closing with the focus back where it was.
 
+import { t } from "../i18n";
 import { type KeyboardEvent, useEffect, useId, useRef, useState } from "react";
 import { Icon } from "../icons";
 
 export type PaletteOption = { id: string; name: string; where: string; group: string; icon: string };
 
-export function Palette({ open, onClose, query, onQuery, options, onChoose }: {
+export function Palette({ open, onClose, query, onQuery, options, onChoose, looking = false }: {
   open: boolean; onClose: () => void; query: string; onQuery: (query: string) => void;
-  options: PaletteOption[]; onChoose: (option: PaletteOption) => void;
+  options: PaletteOption[]; onChoose: (option: PaletteOption) => void; looking?: boolean;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const list = useId();
@@ -48,17 +49,17 @@ export function Palette({ open, onClose, query, onQuery, options, onChoose }: {
     else groups.push({ name: option.group, options: [[option, n]] });
   });
   return (
-    <dialog ref={dialog} className="dialog palette" aria-label="Find anything" onClose={onClose}
+    <dialog ref={dialog} className="dialog palette" aria-label={t("Find anything")} onClose={onClose}
             onCancel={(event) => { event.preventDefault(); onClose(); }}>
       <div className="palette-find">
         <Icon name="find" />
         <input role="combobox" aria-expanded="true" aria-controls={list} aria-autocomplete="list"
                aria-activedescendant={chosen >= 0 ? optionId(chosen) : undefined}
-               aria-label="Find a page, an agent, an instance or a draft" placeholder="Find anything"
+               aria-label={t("Find a page, an agent, an instance or a draft")} placeholder={t("Find anything")}
                autoComplete="off" spellCheck={false} value={query} autoFocus
                onChange={(event) => onQuery(event.target.value)} onKeyDown={keys} />
       </div>
-      <div id={list} className="palette-list" role="listbox" aria-label="What it found">
+      <div id={list} className="palette-list" role="listbox" aria-label={t("What it found")}>
         {groups.map((group, g) => (
           <div key={group.name} role="group" aria-labelledby={`${list}-g${g}`}>
             <p className="label" id={`${list}-g${g}`}>{group.name}</p>
@@ -73,10 +74,10 @@ export function Palette({ open, onClose, query, onQuery, options, onChoose }: {
           </div>
         ))}
       </div>
-      {!options.length && <p className="palette-none" role="status">{query.trim()
-        ? `Nothing you may open is called “${query.trim()}”.` : "Looking for what you may open…"}</p>}
+      {!options.length && <p className="palette-none" role="status">{query.trim() && !looking
+        ? t("Nothing you may open is called “{query}”.", { query: query.trim() }) : t("Looking for what you may open…")}</p>}
       <p className="palette-keys">
-        <span><kbd>↑</kbd> <kbd>↓</kbd> to choose</span><span><kbd>Enter</kbd> to open</span><span><kbd>Esc</kbd> to close</span>
+        <span><kbd>↑</kbd> <kbd>↓</kbd> {t("to choose")}</span><span><kbd>Enter</kbd> {t("to open")}</span><span><kbd>Esc</kbd> {t("to close")}</span>
       </p>
     </dialog>
   );

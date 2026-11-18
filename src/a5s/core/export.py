@@ -2,7 +2,8 @@
 
 The data protection officer, signed in with the role, names someone, and gets all a5s keeps
 that names them: their conversations with each agent, with what a5s and the agents said to
-them there, and the summaries of those; their notes, preferences and reminders; what they
+them there, and the summaries of those; their notes, preferences and reminders; the accounts
+they connected, so agents acted as them, by system and scopes, never a token; what they
 owed; the changes asked for them, and those they could decide or did; samples of those, and
 the grades they gave; the questions agents asked each other for them alone; the chats a5s writes to them
 in; what reports told them; their use of each day's budget, and their digests.
@@ -26,7 +27,7 @@ from __future__ import annotations
 from typing import Any, LiteralString
 
 from a5s import db
-from a5s.core import departures, proposals, topics
+from a5s.core import departures, proposals, run_cases, topics
 
 FIRST_LINE = "split_part(said, E'\\n', 1)"  # what a change does: the rest is records and people
 # What each kind of the ledger's entries is, in words the officer can pass on
@@ -38,7 +39,8 @@ LEDGER = {"admin": "what the team that runs a5s and the officer did",
           "obligation": "chases and escalations", "reminder": "reminders",
           "schedule": "schedules", "report": "reports", "notebook": "notes kept",
           "budget": "budget warnings", "cap": "caps", "breaker": "models turned off and on",
-          "retention": "deletions"}
+          "retention": "deletions", "event": "what other systems said happened",
+          "feedback": "answers people said were wrong, and their grades"}
 LEDGER_AT = "(entry::jsonb ->> 'at')::timestamptz"  # when an entry was written
 
 
@@ -81,6 +83,7 @@ def gather(conn: db.Connection, person: str) -> dict[str, Any]:
 
     samples = rows(  # with the judge's verdict, and its reason where the change was for them
         f"select id, action, case when acts_for && %(ids)s then {FIRST_LINE} end as said, "
+        "case when acts_for && %(ids)s and acts_for <@ %(ids)s then asked end as asked, "
         "decided, grade, drawn_at, graded_at, acts_for && %(ids)s as for_them, "
         "(coalesce(decided_by = any(%(ids)s), false) or deciders && %(ids)s) as decided_it, "
         "coalesce(graded_by = any(%(ids)s), false) as graded_it, "
@@ -123,8 +126,11 @@ def gather(conn: db.Connection, person: str) -> dict[str, Any]:
             "answers": count("select count(*) as n from outbox o join inbound i "  # to the group
                              "on i.id = o.inbound_id where o.person = any(%(names)s) "
                              "and i.conversation is not null")},
-        "messages_received": rows(
-            "select channel, agent, text, received_at, conversation is not null as in_group "
+        "messages_received": rows(  # with the files they sent, by name, while a5s keeps them
+            "select channel, agent, text, received_at, conversation is not null as in_group, "
+            "(select coalesce(jsonb_agg(jsonb_build_object('name', f.name, 'kind', f.media_type, "
+            "'refused', f.refused) order by f.number), '[]'::jsonb) from inbound_files f "
+            "where f.inbound_id = inbound.id) as files "
             "from inbound where person = any(%(names)s) order by received_at"),
         "messages_sent": rows(  # in their own conversations: what a group was told is counted
             "select o.channel, o.agent, o.text, o.at, o.delivered_at from outbox o "
@@ -133,6 +139,17 @@ def gather(conn: db.Connection, person: str) -> dict[str, Any]:
         "digest_items": rows(
             "select agent, text, at, digest_due from digest_items where person = any(%(names)s) "
             "order by at, id"),
+        "said_wrong": rows(  # agents' answers they said were wrong (core/feedback.py), and
+            "select f.agent, f.channel, f.said, f.at, f.grade, "  # how they were graded: the
+            "case when o.person = any(%(names)s) and i.conversation is null then o.text end "
+            "as answer from answer_feedback f left join outbox o on o.id = f.outbox_id "  # answer,
+            "left join inbound i on i.id = o.inbound_id "  # if it was to them, never a group
+            "where f.person = any(%(names)s) order by f.at, f.id"),  # chat's, sent to its asker
+        "answers_they_graded": count(  # others' words, which aren't theirs to have, counted
+            "select count(*) as n from answer_feedback where graded_by = any(%(names)s)"),
+        "events": rows(  # what other systems said happened about them (core/events.py)
+            "select source, type, records, received_at, outcome from events "
+            "where person = any(%(names)s) order by received_at"),
         "held_urgent": rows(
             "select agent, text, at, sent_at from urgent_held where person = any(%(names)s) "
             "order by at, id"),
@@ -142,6 +159,29 @@ def gather(conn: db.Connection, person: str) -> dict[str, Any]:
         "preferences": rows(
             "select name, value, set_at from preferences where person = any(%(names)s) "
             "order by name"),
+        "handovers": rows(  # their conversations handed to people, with what was said there
+            "select h.agent, h.team, h.brief, h.said, h.started_at, h.taken_by, h.ended_at, "
+            "coalesce((select jsonb_agg(jsonb_build_object('by', r.by_person, 'text', r.text, "
+            "'at', r.at) order by r.id) from handover_replies r where r.handover_id = h.id), "
+            "'[]'::jsonb) as answers from handovers h where h.person = any(%(names)s) "
+            "order by h.started_at"),
+        "handover_answers": count(  # what they answered others, as one of a team, counted
+            "select count(*) as n from handover_replies where by_person = any(%(names)s)"),
+        "shadow_answers": rows(  # what shadows answered them, beside what was sent, for graders,
+            "select definition as shadow, shadows, asked, sent, answer, at, grade from "  # in
+            "shadow_answers where person = any(%(names)s) order by at"),  # their own chats
+        "shadow_answers_in_groups": count(  # and in group chats they were in, where others
+            "select count(*) as n from shadow_answers where acts_for && %(names)s::text[] "  # spoke
+            "and not (person = any(%(names)s))"),  # too, counted
+        "shadow_grades": count(  # what they graded, as a grader, counted
+            "select count(*) as n from shadow_answers where graded_by = any(%(names)s)"),
+        "changes_to_undo": rows(  # changes made for them, or they undid, while kept to undo
+            "select definition as agent, record, said, made_at, until, state, undone_at, "
+            "asked_by = any(%(names)s) as asked_by_them from changes_made where "
+            "acts_for && %(names)s::text[] or asked_by = any(%(names)s) order by made_at"),
+        "connections": rows(  # the accounts they connected, so agents acted as them there
+            "select system, scopes, connected_at, used_at from delegations "  # never a token
+            "where person = any(%(names)s) order by system"),
         "groups": rows(  # those their latest sign-in showed, of the ones the settings name
             "select groups, seen_at from sign_in_groups where person = any(%(names)s)"),
         "asks": rows(  # the agents they asked for in the studio, and how each ask ended
@@ -184,8 +224,8 @@ def gather(conn: db.Connection, person: str) -> dict[str, Any]:
             f"and {within('d.decided_at')} order by d.id")],
         "samples": [{"sample": r["id"], "as": [role for role, held in (
             ("for", r["for_them"]), ("decider", r["decided_it"]), ("grader", r["graded_it"]))
-            if held], **{k: r[k] for k in ("action", "said", "decided", "grade", "drawn_at",
-                                           "graded_at", "judged", "judged_why")}}
+            if held], **{k: r[k] for k in ("action", "said", "asked", "decided", "grade",
+                                           "drawn_at", "graded_at", "judged", "judged_why")}}
             for r in samples],
         "questions": rows(  # which an archive takes, as it does their conversations
             "select asker, asked, text, answer, asked_at, answered_at, problem from questions "
@@ -217,6 +257,8 @@ def gather(conn: db.Connection, person: str) -> dict[str, Any]:
         "days": {
             "budget": rows("select instance_id, day, tokens from spend "
                            "where person = any(%(names)s) order by day, instance_id"),
+            "sandbox": rows("select day, tokens from sandbox_spend "  # their tries of drafts
+                            "where person = any(%(names)s) order by day"),
             "digests": rows("select due_at, sent_at, items, channel from digests "
                             "where person = any(%(names)s) order by due_at")},
         "settings": {
@@ -226,6 +268,7 @@ def gather(conn: db.Connection, person: str) -> dict[str, Any]:
             "approved": rows("select digest, approved_at, refused is not null as refused "
                              "from settings_approvals where person = any(%(ids)s) "
                              f"and {within('approved_at')} order by approved_at")},
+        "cases_from_runs": run_cases.held(conn, [person]),  # test cases that hold their words
         "instances_they_run": [r["id"] for r in rows(
             "select id from instances where owner = any(%(names)s) or deputy = any(%(names)s) "
             "order by id")],

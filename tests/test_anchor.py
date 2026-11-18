@@ -212,9 +212,9 @@ def test_a_planted_head_neither_stops_the_copying_nor_hides_anything(database, f
     assert (second.first, second.seq) == (4, 5)
     result = check(database, folder)
     assert result.copied_through == 5
-    assert sorted(result.problems) == [
-        "heads/000000000005.json doesn't continue the copies before it",
-        "heads/999999999999.json doesn't continue the copies before it"]
+    assert sorted(result.problems) == [  # the copier marks its own (round 15, D1)
+        "heads/000000000005.json isn't a copy a5s made",
+        "heads/999999999999.json isn't a copy a5s made"]
     assert copy(database, folder) == []  # and the next copy carries on from entry 5
 
 
@@ -222,10 +222,10 @@ def test_a_copier_that_finds_a_rewritten_history_stops_loudly(database, folder, 
     from a5s import cli
     from a5s.config import Config
 
-    def rewritten(conn, store):
+    def rewritten(self, conn, **kwargs):
         raise anchor.AnchorError("the ledger no longer matches its copy heads/000000000006.json")
 
-    monkeypatch.setattr(anchor, "anchor", rewritten)
+    monkeypatch.setattr(anchor.Copier, "copy", rewritten)
     cfg = Config(database_url=database, gateway_url="http://unused", service_token="",
                  root=folder, anchor_store=folder.path.as_uri())
     with pytest.raises(SystemExit) as stopped:

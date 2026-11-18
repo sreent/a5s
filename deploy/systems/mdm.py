@@ -2,8 +2,10 @@
 devices, from the desk's synthetic data, by their asset tag, LT- for a laptop and PH- for a phone,
 with whether each meets the organisation's rules for devices, and why not, offered over MCP's
 Streamable HTTP as an organisation's device management offers its tools
-(docs/connectors.md#mcp-servers); and locking a device remotely, a change, which its holder undoes
-by signing in to it again, as they do once it's found.
+(docs/connectors.md#mcp-servers); and locking a device remotely, a change, made at once if the
+device is connected, and taken in hand until it next connects if it isn't, as a real device
+management queues it, but not for a device that was never enrolled, which it can't reach. IT
+undoes a lock, as device management allows for each kind of device.
 
 Like the other made-up systems, it reads the data afresh for each call, keeps what's done through
 it over the data, makes each change once for a5s's key, and runs beside the gateway, sharing its
@@ -82,16 +84,23 @@ def make(data: Path, state: Path | None = None) -> FastAPI:
     def get(args: dict, _: dict) -> dict | None:
         return one(args.get("key"))
 
-    def lock(args: dict, meta: dict) -> dict | None:
-        """Lock a device, so nobody can use it until its holder signs in to it again."""
+    def lock(args: dict, meta: dict) -> dict | str | None:
+        """Lock a device, so nobody can use it: at once, if it's connected; if it isn't, such as
+        a phone that's lost and off, the lock waits for it to connect again, and says so; and a
+        device that was never enrolled, which has never checked in, can't be locked at all."""
         found = one(args.get("key"))
         if found is None:
             return None
+        if not found.get("last_seen"):
+            return f"{found['key']} isn't enrolled in device management, so it can't be locked remotely."
 
         def locking() -> dict:
-            written.changed.setdefault(found["key"], {})["locked"] = True
-            return {"key": found["key"], "locked": True, "link": found["link"],
-                    "at": datetime.now(UTC).isoformat(timespec="seconds")}
+            at = datetime.now(UTC).isoformat(timespec="seconds")
+            if found.get("reachable", True):
+                written.changed.setdefault(found["key"], {})["locked"] = True
+                return {"key": found["key"], "locked": True, "link": found["link"], "at": at}
+            written.changed.setdefault(found["key"], {})["lock"] = "pending"  # until it connects
+            return {"key": found["key"], "locked": False, "state": "pending", "link": found["link"], "at": at}
 
         made = once(written.made, meta, f"lock {found['key']}", locking)
         written.save()
@@ -102,7 +111,7 @@ def make(data: Path, state: Path | None = None) -> FastAPI:
                            {"readOnlyHint": True}, search),
         "get_device": (("Get a device by its tag: its holder, whether it meets the rules and why not, "
                         "and whether it's locked."), KEY, {"readOnlyHint": True}, get),
-        "lock_device": ("Lock a device remotely, until its holder signs in to it again.", KEY,
+        "lock_device": ("Lock a device remotely: at once if it's connected, else once it next connects.", KEY,
                         {"readOnlyHint": False, "destructiveHint": False, "idempotentHint": True,
                          "openWorldHint": False}, lock),
     }

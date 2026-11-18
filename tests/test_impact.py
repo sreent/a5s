@@ -1,0 +1,251 @@
+"""What a version of the settings would do differently: the tool calls agents made in the last
+weeks, decided again as the version in force decides them and as the new one would, shown to
+whoever reviews it in the settings and to its approvers before they sign (core/impact.py)."""
+
+from collections import Counter, defaultdict
+from datetime import UTC, datetime, timedelta
+
+import yaml
+
+from a5s import db
+from a5s.contract import InstanceSettings, parse_settings
+from a5s.core import impact, words
+from conftest import raise_cap
+from test_levels import asked, levelled
+from test_settings_app import api
+
+MOVE_ANOTHER = ("change_due_date", {"key": "Q-1001", "due": "2026-11-20"})
+
+
+def written(approving, provider, parts=None, limits=None) -> str:
+    """The version in force, as written, with the assistant's parts or the limits changed."""
+    edited = yaml.safe_load(api(approving, provider, "/settings/api").json()["in_force"]["text"])
+    if parts is not None:
+        edited["instances"]["assistant-finance"]["parts"] = parts
+    if limits is not None:
+        edited["limits"] = limits
+    return yaml.safe_dump(edited)
+
+
+def reviewed(approving, provider, text: str) -> dict:
+    found = api(approving, provider, "/settings/api/review", text=text)
+    assert found.status_code == 200, found.text
+    body = found.json()
+    assert body["problems"] == [], body["problems"]
+    return body["impact"]
+
+
+LEVEL_2 = {"billing": {"level": 1, "actions": {"change-due-date": 2}}}
+
+
+def test_a_held_change_a_version_would_make_alone_is_shown_once_samples_earn_it(
+        stack, approving, provider):
+    asked(stack)  # Ben asks to move Q-1002: at level 1, it's held for Ana
+    capped = reviewed(approving, provider, written(approving, provider, parts=LEVEL_2))
+    assert capped["calls"] == 1 and capped["shifts"] == [] and capped["days"] == 28
+    [held_back] = capped["capped"]  # set to level 2, but graded samples haven't earned it
+    assert held_back.startswith("assistant-finance is set to act on its own for change-due-date "
+                                "in billing, but a5s holds it to asking first")
+    raise_cap(stack)
+    earned = reviewed(approving, provider, written(approving, provider, parts=LEVEL_2))
+    assert earned["capped"] == []
+    assert earned["shifts"] == [{
+        "instance": "assistant-finance", "tool": "change_due_date", "parts": ["billing"],
+        "was": "hold", "would": "allow", "calls": 1, "why": "the tool is in the instance's grant"}]
+
+
+def test_a_version_that_takes_a_part_away_shows_the_calls_it_would_refuse(
+        stack, approving, provider):
+    asked(stack)
+    narrowed = reviewed(approving, provider, written(approving, provider, parts=["orders"]))
+    [shift] = narrowed["shifts"]
+    assert (shift["was"], shift["would"], shift["calls"]) == ("hold", "deny", 1)
+    assert shift["why"] == "the record is in a part the instance doesn't work in"
+
+
+def test_a_tighter_limit_shows_the_changes_it_would_have_held(stack, approving, provider):
+    levelled(stack)  # level 2 for due dates in billing, earned
+    asked(stack, ("change_due_date", {"key": "Q-1002", "due": "2026-11-13"}), MOVE_ANOTHER,
+          said="Please move Q-1002 to the 13th and Q-1001 to the 20th.")
+    made = [e for e in stack.ledger() if e["kind"] == "tool" and e["action"] == "change_due_date"
+            and e["decision"] == "allow"]
+    assert len(made) == 2  # both made alone, within the scenario's limits
+    tighter = {"change-due-date": {"per_run": 5, "per_person_30_days": 1},
+               "close-question": {"per_run": 5, "per_person_30_days": 20}}
+    shown = reviewed(approving, provider, written(approving, provider, parts=LEVEL_2,
+                                                  limits=tighter))
+    [shift] = shown["shifts"]  # Ben's second would have waited for a person, past the limit
+    assert (shift["was"], shift["would"], shift["calls"]) == ("allow", "hold", 1)
+    assert shift["why"].startswith("past the scenario's limit for its type of action")
+
+
+def test_its_approvers_see_it_while_it_waits(stack, approving, provider):
+    asked(stack)
+    raise_cap(stack)
+    asking = api(approving, provider, "/settings/api/requests",
+                 text=written(approving, provider, parts=LEVEL_2))
+    assert asking.status_code == 202, asking.text
+    stack.scheduler().apply_approved()  # the gateway proposes it
+    with db.transaction(stack.admin) as conn:
+        [row] = conn.execute("select digest from settings_proposals where outcome is null "
+                             "order by serial desc limit 1").fetchall()
+    shown = api(approving, provider, f"/approve/settings/{row['digest']}").json()
+    assert shown["status"] == "waiting"
+    assert [(s["was"], s["would"]) for s in shown["impact"]["shifts"]] == [("hold", "allow")]
+
+
+def test_a_call_refused_for_what_no_version_decides_isnt_decided_again(stack, approving,
+                                                                        provider):
+    asked(stack, ("change_due_date", {"key": "Q-1002"}))  # no due date: it doesn't fit the tool
+    shown = reviewed(approving, provider, written(approving, provider, parts=LEVEL_2))
+    assert shown["calls"] == 0 and shown["shifts"] == []
+
+
+def test_the_approve_page_shows_it_beside_what_the_version_says(stack, approving, provider,
+                                                                browser):
+    from conftest import accessible
+
+    asked(stack)
+    raise_cap(stack)
+    asking = api(approving, provider, "/settings/api/requests",
+                 text=written(approving, provider, parts=LEVEL_2))
+    assert asking.status_code == 202, asking.text
+    stack.scheduler().apply_approved()
+    with db.transaction(stack.admin) as conn:
+        [row] = conn.execute("select digest from settings_proposals where outcome is null "
+                             "order by serial desc limit 1").fetchall()
+    provider.person = "ana"
+    page = browser.new_page()
+    page.goto(f"{approving}/studio/approve?settings={row['digest']}")
+    shown = page.wait_for_selector("#impact table", timeout=30000)
+    text = shown.inner_text()
+    assert "change_due_date" in text and "held for a person" in text and "made alone" in text
+    accessible(page)
+
+
+def test_whoever_reviews_it_sees_only_the_instances_they_may_watch(stack, approving, provider):
+    """Omar owns orders, and may not watch billing's assistant: a version he writes that would
+    change what it does shows him nothing of its calls, only how many it left out."""
+    asked(stack)
+    raise_cap(stack)
+    text = written(approving, provider, parts=LEVEL_2)
+    mine = reviewed(approving, provider, text)  # Ana's, who runs it and owns billing
+    assert mine["shifts"] and mine["hidden"] == 0
+    found = api(approving, provider, "/settings/api/review", person="omar", text=text)
+    assert found.status_code == 200, found.text
+    his = found.json()["impact"]
+    assert (his["shifts"], his["calls"]) == ([], 0) and his["hidden"] == mine["calls"]
+
+
+def test_a_run_for_nobody_counts_against_its_instance_and_a_shadow_as_a_shadow(stack):
+    """As core/counts.py counts them: a run for nobody, such as one an event started, against
+    its instance's other runs for nobody, of each type's limit for each person in 30 days. And
+    a shadow is decided as a shadow, which changes nothing."""
+    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text())
+    settings["limits"]["change-due-date"]["per_person_30_days"] = 1
+    version = parse_settings(yaml.safe_dump(settings).encode())
+    now = datetime.now(UTC)
+    call = impact.Call(seq=1, at=now, instance="assistant-finance", tool="change_due_date",
+                       keys=("Q-1002",), decision="allow",
+                       run={"id": "r", "trigger": {"kind": "event"}, "acts_for": [],
+                            "read_outside": False})
+    nobody = [f"{impact.NOBODY}assistant-finance"]
+    earlier = defaultdict(list, {(nobody[0], "change-due-date"): [(now - timedelta(days=2), 1)]})
+    assert impact._over(version, "change-due-date", 1, "w", nobody, call, Counter(), earlier)
+    assert not impact._over(version, "change-due-date", 1, "w", nobody, call, Counter(),
+                            defaultdict(list))
+    shadow = InstanceSettings(id="assistant-finance", definition="assistant", serves=("ana",),
+                              parts={"billing": 1}, shadows="assistant-other")
+    assert impact._row(stack.gateway, shadow, call)["status"] == "shadow"
+
+
+def test_each_tool_call_keeps_whether_its_run_had_read_outside_content(stack):
+    """So a call decided before its run read anything from outside is decided again as it was,
+    not as the run stood once it had."""
+    asked(stack)
+    calls = [e for e in stack.ledger() if e["kind"] == "tool"]
+    assert calls and all(e["read_outside"] is False for e in calls)
+
+
+def test_it_reads_in_the_language_its_reviewer_reads(stack, approving, provider):
+    from test_languages import reads
+    reads(stack, "ana", "th")
+    found = reviewed(approving, provider, written(approving, provider, parts=LEVEL_2))
+    assert found["about"] == words.TH[impact.ABOUT]  # in the language Ana reads
+
+
+def test_it_says_what_a_version_changes_that_it_doesnt_decide_again(stack, approving, provider):
+    """Round 14 (C10): the preview decides the agents' tool calls again and nothing else, and
+    says so, and names what else a version changes that it doesn't decide again, such as whom
+    an instance serves."""
+    edited = yaml.safe_load(written(approving, provider))
+    edited["instances"]["assistant-finance"]["serves"] = ["ana"]
+    found = reviewed(approving, provider, yaml.safe_dump(edited))
+    assert found["about"] == impact.ABOUT and found["about"].startswith(
+        "It decides again the agents' tool calls, and nothing else")
+    assert found["beyond"] == [
+        "It changes whom assistant-finance serves, which it doesn't decide again."]
+
+
+def test_a_preview_is_worked_out_once_while_the_ledger_stands(stack, approving, provider,
+                                                               monkeypatch):
+    """Round 14 (C11): a preview takes a few seconds of the channels app, so it's worked out
+    once for a version, its reader and the ledger as it stands, and kept a while: a look again
+    costs nothing, and a call more is worked out afresh."""
+    asked(stack)
+    worked = []
+    real = impact.preview
+    monkeypatch.setattr(impact, "preview", lambda *a, **k: worked.append(1) or real(*a, **k))
+    text = written(approving, provider, parts=LEVEL_2)
+    first = reviewed(approving, provider, text)
+    assert reviewed(approving, provider, text) == first and len(worked) == 1
+    asked(stack, MOVE_ANOTHER, said="Please move Q-1001 to the 20th.")
+    assert reviewed(approving, provider, text)["calls"] == 2 and len(worked) == 2
+
+
+def test_on_a_phone_nothing_the_approve_page_says_is_cut_off(stack, approving, provider, browser):
+    """Round 14 (E-M1): on a phone, the preview's table scrolls in a frame of its own, and the
+    card cuts nothing of what it says off: what the version changes, what's missing, the whole
+    of it, and the button that approves it (Ocean's approval card)."""
+    from conftest import PHONE
+    asked(stack)
+    raise_cap(stack)
+    asking = api(approving, provider, "/settings/api/requests",
+                 text=written(approving, provider, parts=LEVEL_2))
+    assert asking.status_code == 202, asking.text
+    stack.scheduler().apply_approved()
+    with db.transaction(stack.admin) as conn:
+        [row] = conn.execute("select digest from settings_proposals where outcome is null "
+                             "order by serial desc limit 1").fetchall()
+    provider.person = "ana"
+    page = browser.new_page(viewport=PHONE)
+    page.goto(f"{approving}/studio/approve?settings={row['digest']}")
+    page.wait_for_selector("#impact table", timeout=30000)
+    cut = page.evaluate("""() => {
+        const card = document.querySelector('.approval');
+        const edge = card.getBoundingClientRect().right;
+        const framed = (el) => {
+            for (let p = el.parentElement; p && p !== card; p = p.parentElement) {
+                if (/(auto|scroll)/.test(getComputedStyle(p).overflowX)) return true;
+            }
+            return false;
+        };
+        return [...card.querySelectorAll('.approval-body *')].filter((el) => !framed(el)
+            && el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().right > edge + 1)
+            .map((el) => el.tagName + (el.id ? '#' + el.id : ''));
+    }""")
+    assert cut == []
+
+
+def test_the_preview_leaves_every_call_the_gateway_refused_itself_as_it_was():
+    """Round 14's deferral: the refusals the preview never decides again are the gateway's own,
+    as the gateway names them, every one, so none it adds is missed."""
+    import re
+    from pathlib import Path
+
+    from a5s.core import gateway, policy
+    source = Path(gateway.__file__).read_text()
+    assert not re.findall(r'Decision\(\s*False,\s*\("', source)  # each by its name, Own's
+    used = set(re.findall(r"Own\.([A-Z_]+)", source)) | {"TASK_WRITES"}  # tasking.HELD is one
+    assert {getattr(policy.Own, name) for name in used} == policy.OWN
+    assert impact.NOT_POLICY is policy.OWN

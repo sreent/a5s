@@ -77,10 +77,10 @@ def test_its_deputy_suspends_it_from_its_page_and_resumes_it(stack, approving, p
     sweep(stack)
     assert status(stack) == ("active", None)
     kept = [(e["action"], e["args"]["by"], e["args"]["identity"]) for e in stack.ledger()
-            if e["kind"] == "admin" and e["action"] in ("ask", "suspend", "resume")]
-    assert kept == [("ask", "ben", "verified: a sign-in to suspend it alone"),
+            if e["kind"] == "admin" and e["action"] in ("ask-status", "suspend", "resume")]
+    assert kept == [("ask-status", "ben", "verified: a sign-in to suspend it alone"),
                     ("suspend", "ben", "verified: a sign-in to suspend it alone"),
-                    ("ask", "ben", "verified: a sign-in to resume it alone"),
+                    ("ask-status", "ben", "verified: a sign-in to resume it alone"),
                     ("resume", "ben", "verified: a sign-in to resume it alone")]
     [made] = [e for e in stack.ledger() if e["action"] == "suspend"]
     assert len(made["args"]["token_sha256"]) == 64 and made["args"]["issuer"] == provider.url

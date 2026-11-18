@@ -8,8 +8,8 @@ does: >-
 scope: none
 model: deepseek-v4-pro
 autonomy:
-  start: 0
-  max: 0
+  start: reads only
+  max: reads only
 tools:
   records: [search_records, get_record, check_quality]
 triggers:

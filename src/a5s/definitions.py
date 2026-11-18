@@ -5,10 +5,12 @@ from __future__ import annotations
 import hashlib
 import re
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, BeforeValidator, ConfigDict, Field, field_validator, model_validator
+
+from a5s import levels
 
 DAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 # a5s's own tools: for an agent whose release records reminders (core/reminders.py), for the
@@ -26,6 +28,8 @@ DOCUMENT_TOOLS = ("ask_about",)
 ASKING_TOOLS = ("ask_agent",)
 # and for noting what it learns from records, in a run that acts for nobody (core/notebook.py)
 NOTEBOOK_TOOLS = ("note_learned",)
+# and for handing a conversation over to the people of a team the settings name (core/handover.py)
+HANDOVER_TOOLS = ("hand_over",)
 # and for the long tasks people ask it for, over more than one run (core/tasking.py): offered,
 # confirmed, listed, cancelled and resumed in a person's own chat, and kept, in each run of
 # a task
@@ -46,10 +50,21 @@ def _time(value: Any) -> str:
 
 
 class Autonomy(BaseModel):
+    """Where an agent's instances start, and the most they may do: reads only, asks first or
+    acts on its own, by name or, as before, by number (levels.py)."""
+
     model_config = ConfigDict(extra="forbid")
 
-    start: int = Field(default=1, ge=0, le=1)  # level 2 only ever comes from the settings
-    max: int = Field(default=1, ge=0, le=2)
+    start: Annotated[int, BeforeValidator(levels.parse)] = levels.ASKS_FIRST
+    max: Annotated[int, BeforeValidator(levels.parse), Field(ge=0, le=2)] = levels.ASKS_FIRST
+
+    @field_validator("start")
+    @classmethod
+    def _starts(cls, value: int) -> int:
+        if not levels.READS_ONLY <= value <= levels.ASKS_FIRST:
+            raise ValueError("an agent starts reading only or asking first: acting on its own "
+                             "only ever comes from the settings")
+        return value
 
 
 class Schedule(BaseModel):
@@ -83,6 +98,25 @@ class Schedule(BaseModel):
         return days
 
 
+class Event(BaseModel):
+    """What the agent does when another system says something happened, such as a ticket
+    opened (core/events.py): the kind of event, the system that sends it, as the deployment
+    names it, and what the agent's asked to do each time.
+
+    An event names its records, and the person it's about, if any: nothing else, so nothing a
+    system was told can reach a run as words. The run reads the records itself, through its
+    tools, as any run does. It acts for the person the event names, where the directory knows
+    them and the instance serves them, and writes to them; else for nobody, as a schedule run
+    does, and works through its tools alone.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,62}$")  # such as ticket-opened
+    source: str = Field(pattern=r"^[a-z0-9][a-z0-9-]{0,30}$")  # such as itsm
+    task: str = Field(min_length=1, max_length=2000)
+
+
 class Report(BaseModel):
     """What the agent tells each person it serves about their own records of a kind, once a
     day, in their digest: what changed since it last told them, and what fell due.
@@ -112,6 +146,9 @@ class Context(BaseModel):
     agents: bool = False
     # whether it notes what it learns from records, on its schedules, for its later runs
     notebook: bool = False
+    # whether it may hand a conversation over to the people of a team its settings name, such
+    # as the service desk, who answer the person in the same chat until they hand it back
+    handover: bool = False
 
 
 class Tasks(BaseModel):
@@ -175,6 +212,7 @@ class Definition(BaseModel):
     tools: dict[str, list[str]] = {}
     triggers: list[dict[str, Any]] = []
     schedules: list[Schedule] = []
+    events: list[Event] = []  # what it does when another system says something happened
     obligations: list[str] = []  # the kinds of obligation it chases, such as records
     reports: list[Report] = []  # what it tells each person about their own records, daily
     reminders: bool = False
@@ -234,6 +272,7 @@ class Definition(BaseModel):
                 *(DOCUMENT_TOOLS if self.context.documents else ()),
                 *(ASKING_TOOLS if self.context.agents else ()),
                 *(NOTEBOOK_TOOLS if self.context.notebook else ()),
+                *(HANDOVER_TOOLS if self.context.handover else ()),
                 *(TASK_TOOLS + SLICE_TOOLS if self.tasks else ())]
 
     @property

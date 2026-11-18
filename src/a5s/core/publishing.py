@@ -24,7 +24,9 @@ from typing import Any
 from urllib.parse import quote
 
 import httpx
+import yaml
 
+from a5s import definitions, levels
 from a5s.config import Config
 
 GRANT = "urn:ietf:params:oauth:grant-type:device_code"
@@ -114,6 +116,43 @@ NOBODY = (". Nobody holds that role in the directory yet: the release can't be a
           "directory names someone")
 
 
+LEVELS = {0: "reads only: it observes and reports, and changes nothing",  # by name (levels.py)
+          1: "asks first: it drafts changes, which people decide before they're made",
+          2: ("may act on its own, making a type of change itself, where a part's settings and "
+              "graded samples give it")}
+
+
+def may_do(files: dict[str, str]) -> list[str]:
+    """What the agent a draft makes may do, as its agent.yaml says, for whoever reviews it and
+    signs its release: the tools it may use, by system, how far it may act, and what starts it
+    besides people (round 15, C7). Nothing, for an agent.yaml that doesn't load."""
+    try:
+        spec = definitions.spec_of(files.get("agent.yaml") or "")
+    except yaml.YAMLError:  # its checks say why
+        return []
+    if not isinstance(spec, dict):
+        return []
+    lines = ["", "## What it may do", ""]
+    tools = spec.get("tools")
+    lines += [f"- It uses {', '.join(map(str, names))} in {system}." for system, names
+              in (sorted(tools.items()) if isinstance(tools, dict) else [])
+              if isinstance(names, list) and names]
+    autonomy = spec.get("autonomy")
+    try:  # by name, such as acts on its own, or by number, as a5s reads it (a5s/levels.py)
+        most = levels.parse(autonomy.get("max", 1)) if isinstance(autonomy, dict) else 1
+    except ValueError:
+        most = 1
+    lines.append(f"- It {LEVELS.get(most, LEVELS[1])}.")
+    starts = [f"{len(spec[key])} {what}" for key, what in (
+        ("schedules", "schedules"), ("events", "kinds of event from other systems"),
+        ("reports", "reports")) if isinstance(spec.get(key), list) and spec[key]]
+    if starts:
+        lines.append(f"- It starts on its own too: {', '.join(starts)}.")
+    if spec.get("tasks"):
+        lines.append("- It takes on long tasks, over days, once someone says yes.")
+    return lines
+
+
 def described(draft: dict, person: Any, signers: list[dict], new: bool,
               problems: list[str] | None = None,
               drafted: list[dict] | None = None) -> tuple[str, str, str]:
@@ -130,6 +169,7 @@ def described(draft: dict, person: Any, signers: list[dict], new: bool,
     lines += [f"- **{s['who']}**, because {s['why']}" + (NOBODY if s.get("held_by") == [] else "")
               for s in signers] or [
         "- Nobody more than for any release: it changes nothing a person must sign for."]
+    lines += may_do(draft.get("files") or {})
     lines += planned(draft.get("plan") or {})
     checks = ("As `a5s release` works it out, from what it changes of the agents released where "
               "it was drafted. Nothing a5s checks there would stop its release: its definition "

@@ -2,8 +2,8 @@
 
 Each run that acts for one person is given their profile, built by code: their name,
 working hours, working days and time zone from the directory, their typed preferences,
-such as their digest's time, and a short note, in their own words, on how they like to
-work.
+such as their digest's time and the language they read, which it answers them in, and a
+short note, in their own words, on how they like to work.
 
 An agent whose release lets people set the note offers one with a typed tool, showing it to
 them as it will be kept, and a5s keeps it only once they say yes in a later message of their
@@ -20,7 +20,7 @@ from datetime import timedelta
 
 from a5s import db
 from a5s.contract import Person
-from a5s.core import digests
+from a5s.core import digests, languages
 from a5s.core.coretools import Call, CoreTool, Refused, one_to_one
 
 CONFIRM_WITHIN = timedelta(days=1)  # an offer they don't confirm by then lapses [starting value]
@@ -48,6 +48,8 @@ def section(conn: db.Connection, person: Person) -> dict:
     """The person's profile, as a run that acts for them is given it."""
     told = [(f"{person.name} works {person.hours[0]} to {person.hours[1]}, {workdays(person)}, "
              f"in {person.timezone} time. Their digest comes at {digests.chosen(conn, person)}.")]
+    if language := languages.told(languages.of(conn, person)):
+        told.append(language)
     if kept := note(conn, person.id):
         told.append(f"How they like to work, in their own words: {kept}")
     return {"title": f"Who you're working for: {person.name}", "text": "\n".join(told)}

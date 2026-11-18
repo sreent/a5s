@@ -114,8 +114,9 @@ def test_an_auditor_follows_a_reply_from_who_asked_to_the_ticket(desk, approving
     [p] = held(desk)
     decide(approving, provider, [p["digest"]], person="ola")
     sweep(desk)
-    with desk.client() as c:
-        r = c.get("/audit/entries", params={"by": "zia", "person": "rae", "limit": 200})
+    with desk.client() as c:  # signed in, as the auditor reads it where people sign in
+        r = c.get("/audit/entries", params={"by": "zia", "person": "rae", "limit": 200},
+                  headers={"X-A5S-Identity": provider.id_token(person="zia")})
     assert r.status_code == 200, r.text
     trail = [(e["kind"], e["action"], e.get("decision")) for e in r.json()["entries"]]
     assert ("tool", "reply_on_ticket", "hold") in trail  # who asked, and what for

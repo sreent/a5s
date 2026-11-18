@@ -2,25 +2,42 @@
 // loading, in the shape it will have, still; and what was just done, said once at the foot of the
 // window, beside the page's own status line, with Undo while it can still be undone.
 
+import { t } from "../i18n";
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useRef, useState } from "react";
 import { Icon } from "../icons";
+
+type Shaped = { lines?: number; title?: boolean; rows?: number; columns?: number; block?: boolean };
+
+/** The shapes of what's loading, hidden from screen readers: a title and lines, a table's rows,
+ * or a block for a chart or a canvas. */
+export function Shapes({ lines = 3, title = true, rows, columns = 3, block = false }: Shaped) {
+  return (
+    <div className="skeleton" aria-hidden="true">
+      {title && <div className="skeleton-title" />}
+      {rows ? Array.from({ length: rows }, (_, row) => (
+        <div key={row} className="skeleton-row">{Array.from({ length: columns }, (_, cell) => <div key={cell} />)}</div>
+      )) : block ? <div className="skeleton-block" /> : Array.from({ length: lines }, (_, line) => <div key={line} className="skeleton-line" />)}
+    </div>
+  );
+}
+
+/** A region that's loading, laid out as what it loads will be, such as a grid of cards or a
+ * row of figures, each of Shapes: it says it's busy, and "Loading…" in words for screen
+ * readers, and its layout is hidden from them with its shapes. */
+export function Loading({ children }: { children: ReactNode }) {
+  return (
+    <div aria-busy="true">
+      <p className="skeleton-words" role="status">{t("Loading…")}</p>
+      <div aria-hidden="true">{children}</div>
+    </div>
+  );
+}
 
 /** What's loading, in the shape it will have: a card's title and lines, a table's rows, or a
  * block for a chart. The region says it's busy, and "Loading…" in words for screen readers; on
  * a card of its own, or `bare` inside one that's already there. */
-export function Skeleton({ lines = 3, title = true, rows, columns = 3, block = false, bare = false }:
-  { lines?: number; title?: boolean; rows?: number; columns?: number; block?: boolean; bare?: boolean }) {
-  const shapes = (
-    <>
-      <p className="skeleton-words" role="status">Loading…</p>
-      <div className="skeleton" aria-hidden="true">
-        {title && <div className="skeleton-title" />}
-        {rows ? Array.from({ length: rows }, (_, row) => (
-          <div key={row} className="skeleton-row">{Array.from({ length: columns }, (_, cell) => <div key={cell} />)}</div>
-        )) : block ? <div className="skeleton-block" /> : Array.from({ length: lines }, (_, line) => <div key={line} className="skeleton-line" />)}
-      </div>
-    </>
-  );
+export function Skeleton({ bare = false, ...shaped }: Shaped & { bare?: boolean }) {
+  const shapes = <><p className="skeleton-words" role="status">{t("Loading…")}</p><Shapes {...shaped} /></>;
   return bare ? <div aria-busy="true">{shapes}</div> : <section className="card" aria-busy="true">{shapes}</section>;
 }
 
@@ -54,7 +71,7 @@ function One({ toast, gone }: { toast: Toast; gone: (id: number) => void }) {
       {toast.undo && (
         <button type="button" className="small" onClick={() => { toast.undo?.(); gone(toast.id); }}>Undo</button>
       )}
-      <button type="button" aria-label="Dismiss" onClick={() => gone(toast.id)}><Icon name="cross" /></button>
+      <button type="button" aria-label={t("Dismiss")} onClick={() => gone(toast.id)}><Icon name="cross" /></button>
     </div>
   );
 }

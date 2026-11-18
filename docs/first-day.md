@@ -33,7 +33,7 @@ Fills: `people.oidcIssuer`, `people.webchatClientId` (the client's id), `people.
 
 | Provider | `oidcIssuer` | `oidcPersonClaim` | `oidcMfa`: how it shows a second factor | Groups |
 | --- | --- | --- | --- | --- |
-| Entra ID | `https://login.microsoftonline.com/<tenant>/v2.0` | `oid`, with `oidcDirectoryPrefix: entra` | `amr:mfa`, with a Conditional Access policy that requires multifactor authentication for the client, and `amr` and `auth_time` as optional claims | `groups`, once the client sends the groups assigned to it; past 200, Entra ID sends none, and a5s gives nothing it can't see |
+| Entra ID | `https://login.microsoftonline.com/<tenant>/v2.0` | `oid`, with `oidcDirectoryPrefix: entra` | `amr:mfa`, with a Conditional Access policy that requires multifactor authentication for the client, and `amr` and `auth_time` as optional claims. Check first, on the test tenant, that a sign-in's token carries `amr`, which Microsoft documents for its v1.0 tokens: if it doesn't, use an authentication context, `acrs:c1`, with a Conditional Access policy that requires multifactor authentication for authentication context `c1`, which the pages ask for as people sign in to do what counts | `groups`, once the client sends the groups assigned to it; past 200, Entra ID sends none, and a5s gives nothing it can't see |
 | Okta | Its authorization server's, such as `https://<org>.okta.com/oauth2/default` | `sub`, or the claim the directory knows people by | `amr:mfa`, with a sign-on policy that asks for a second factor: Okta lists the methods used in `amr` | `groups`, with a groups claim on the authorization server |
 | Keycloak | `https://<host>/realms/<realm>` | `preferred_username` | `acr:<level>`, with a step-up flow that gives the level what counts needs, which the pages then ask for (`acr_values`) | `groups`, with a group membership mapper |
 | Google | `https://accounts.google.com` | `sub` or `email` | `none`: its tokens show no second factor, so require one in the Admin console, which a5s can't check, as `a5s status` says | None in its tokens: roles come from the directory alone |
@@ -47,9 +47,10 @@ A deployment whose people chat in Teams signs them in with Entra ID too, since T
 | --- | --- | --- |
 | Matrix | a5s's application service, registered on the organisation's homeserver, as [`deploy/matrix`](../deploy/matrix) registers it on the test stack's | `matrix.homeserver`, `matrix.serverName`, and the Secret's `matrix-as-token` and `matrix-hs-token` |
 | Teams | A bot for each agent, the assistant and the watcher, so each talks to people as itself: a single-tenant bot registration in the tenant's Entra ID, with Teams turned on, whose messaging endpoint is `https://<host>/channels/teams/messages`, made a Teams app in the personal and group chat scopes, but not a team's, which a5s turns away | `teams.tenantId`, `teams.bots: [{agent: assistant, appId: <its id>}, {agent: watcher, appId: <its id>}]`, and the Secret's `teams-secret-assistant` and `teams-secret-watcher` |
+| Slack | An app for each agent, the assistant and the watcher, so each talks to people as itself: made in the organisation's workspace and installed there, with Socket Mode and token rotation off, people allowed to write to it from its Messages tab, and its scopes, events and request URLs, `https://<host>/channels/slack/events` and `https://<host>/channels/slack/actions`, as [the README](../README.md#chats) lists them. a5s answers in direct messages and group DMs, and turns a channel away | `slack.teamId`, `slack.apps: [{agent: assistant, appId: <its id>}, {agent: watcher, appId: <its id>}]`, and the Secret's `slack-secret-<agent>` and `slack-token-<agent>` for each, its signing secret and bot token |
 | The web chat | Nothing more: the core serves it, at `https://<host>/chat/` | |
 
-A bot's secret expires: put its date in the on-call calendar, since a bot whose secret has expired can't answer.
+A Teams bot's secret expires: put its date in the on-call calendar, since a bot whose secret has expired can't answer. A Slack app's bot token lasts until the app is uninstalled, as long as its token rotation stays off, since a5s doesn't renew it. The directory names each person in Slack as `slack:<team id>/<user id>`, as Slack's own profile shows the user id.
 
 ## 4. The cluster, Postgres and locked storage
 
@@ -65,6 +66,8 @@ A bot's secret expires: put its date in the on-call calendar, since a bot whose 
 | Azure | AKS | Azure Database for PostgreSQL | `azure://<account>/<container>/<prefix>`, a container with version-level immutability | `serviceAccounts.annotations.anchor: {azure.workload.identity/client-id: <its identity>}`, and `podLabels.anchor: {azure.workload.identity/use: "true"}`, which AKS needs on the pod as well |
 | Google Cloud | GKE | Cloud SQL for PostgreSQL | `gs://<bucket>/<prefix>`, a bucket with object retention | `serviceAccounts.annotations.anchor: {iam.gke.io/gcp-service-account: <a service account that may write the bucket>}` |
 | On premises, or anywhere else | Any | Any Postgres 16 | `s3://<bucket>/<prefix>` on a store with S3's object lock, such as MinIO, with `anchor.s3Endpoint` and `anchor.s3Region` | The Secret's `anchor-s3-access-key-id` and `anchor-s3-secret-access-key` |
+
+After the database is restored from a backup, `a5s restore` runs in a job of the chart's as `a5s-restore`, an account with the copier's annotations and labels ([runbook](runbooks.md#restoring-from-a-backup)): give it the copier's right too, as a second federated credential on AKS, the role's trust in it on EKS, or its binding on GKE. With keys in the Secret, it has them already.
 
 ## 5. The deployment's own image: the sample, with the test accounts
 
@@ -117,8 +120,8 @@ The core opens no run until the release is approved here, as [the chart's README
 | Check | How | Passes when |
 | --- | --- | --- |
 | Signing in | As Ana's test account, open `https://<host>/chat/`, and say hello to the assistant. Then approve new settings: `a5s propose` asks her, in her chat | She's answered by name, the ledger names her, and the approval page asks her to sign in afresh, with her second factor, and is sealed and applied |
-| The chat | In the chat, as Ana, write to each agent. Add the assistant to a group chat with Ben and mention it; in Teams, try it in a team's channel too | Each agent answers as itself; in the group, it knows who's there; a team's channel is turned away with a reason |
-| The cluster | Read the setup job's log; let the copier run an hour, then try to delete a copy with the store's own tools; run the worker's reach check from [`deploy/helm/test.sh`](../deploy/helm/test.sh) against the cluster | The migrations ran as the server's administrator; the copy is there and its deletion is refused; the worker reaches the gateway and nothing else |
+| The chat | In the chat, as Ana, write to each agent. Add the assistant to a group chat with Ben and mention it | Each agent answers as itself; in the group, it knows who's there. The app has no team scope, so no team's channel can add it: to see a5s turn one away with a reason, give the test tenant's app alone the team scope, and take it away after |
+| The cluster | Read the setup job's log; let the copier run an hour, then, as someone allowed to delete in the store, try to delete a version of a copy with the store's own tools; run the worker's reach check from [`deploy/helm/test.sh`](../deploy/helm/test.sh) against the cluster | The migrations ran as the server's administrator; the copy is there, and its deletion is refused by the lock itself, `BlobImmutableDueToPolicy` on Azure or Object Lock's `AccessDenied` on S3, not for want of a role or a key, which proves nothing; the worker reaches the gateway and nothing else |
 | What they sent | Save a token from the web chat, a message from the chat as it reached the channels, and an approval's answer | They're kept in the suite, with the test accounts' ids replaced by made-up ones and their signatures by the tests' keys, so CI checks the real shapes from then on |
 
 What each check showed goes in [phase 1's progress](phase-1.md#progress) and [stage 0](pilot.md#stages), and what didn't work goes in the runbooks, before stage 1 starts.
@@ -142,7 +145,7 @@ az ad app update --id $web --set groupMembershipClaims=ApplicationGroup  # if gr
 az ad group show --group "a5s billing owners" --query id -o tsv  # a group's id, for the settings
 ```
 
-Fills: `people.oidcIssuer: https://login.microsoftonline.com/<tenant>/v2.0`, `people.webchatClientId: <web>`, `people.oidcPersonClaim: oid`, `people.oidcDirectoryPrefix: entra`, `people.publicUrl: https://<host>` and `people.oidcMfa: amr:mfa`, with a Conditional Access policy that requires multifactor authentication for the `a5s` app. Assign each group the settings name to the app's enterprise application; Privileged Identity Management can then make someone an auditor, say, for a fortnight, which a5s counts from their next sign-in.
+Fills: `people.oidcIssuer: https://login.microsoftonline.com/<tenant>/v2.0`, `people.webchatClientId: <web>`, `people.oidcPersonClaim: oid`, `people.oidcDirectoryPrefix: entra`, `people.publicUrl: https://<host>` and `people.oidcMfa: amr:mfa`, with a Conditional Access policy that requires multifactor authentication for the `a5s` app; or, where the test sign-in's token carries no `amr`, `people.oidcMfa: acrs:c1`, with the policy on authentication context `c1` instead, which the pages ask for. Assign each group the settings name to the app's enterprise application; Privileged Identity Management can then make someone an auditor, say, for a fortnight, which a5s counts from their next sign-in.
 
 **A bot for each agent** (step 3). For the assistant, and likewise the watcher:
 
@@ -196,6 +199,10 @@ az role assignment create --assignee "$copier" --role "Storage Blob Data Owner" 
 az identity federated-credential create --resource-group a5s-test --identity-name a5s-anchor \
   --name a5s-anchor --issuer "$issuer" --subject system:serviceaccount:a5s:a5s-anchor \
   --audiences api://AzureADTokenExchange
+# and for `a5s restore`'s job, after the database is restored from a backup, which reads there
+az identity federated-credential create --resource-group a5s-test --identity-name a5s-anchor \
+  --name a5s-restore --issuer "$issuer" --subject system:serviceaccount:a5s:a5s-restore \
+  --audiences api://AzureADTokenExchange
 ```
 
 The Burstable B2s server takes enough connections, where B1ms's 50 are too few. Here it takes connections only from the cluster's outbound address, over TLS, which the test's made-up data allows: a deployment with real data reaches it privately, through the cluster's network. The copier's identity has the container alone, as Storage Blob Data Owner, since locking a copy needs more than a contributor may do.
@@ -211,4 +218,4 @@ az acr build --registry a5stest --image a5s:0.1.0-test deployment
 az aks update --resource-group a5s-test --name a5s-test --attach-acr a5stest
 ```
 
-Fills: `image.repository: a5stest.azurecr.io/a5s` and `image.digest`. In the check of the cluster, `az storage blob delete` tries to delete a copy, and is refused.
+Fills: `image.repository: a5stest.azurecr.io/a5s` and `image.digest`. In the check of the cluster, someone given Storage Blob Data Owner on the container for it runs `az storage blob delete --auth-mode login --version-id <a copy's version>`, and is refused with `BlobImmutableDueToPolicy`: the lock refuses it, not the lack of a role or the account's shared keys being off. On S3, `aws s3api delete-object --version-id`, refused by Object Lock, does the same: a plain delete only adds a delete marker.

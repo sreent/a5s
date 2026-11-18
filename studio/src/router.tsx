@@ -2,7 +2,9 @@
 // their home, what they may do, all the agents, one agent, an instance's dashboard, a run, a
 // new agent, a draft of one, the settings, the notebook, someone's tasks, the administrators'
 // page, the audit trail, the changes to decide, the work to grade, the officer's requests, a
-// version of the settings to approve, or the design system's showcase.
+// version of the settings to approve, the map of what depends on what, a month's spending, the
+// way back from connecting an account, a change to undo, the conversations handed to someone's
+// teams, or the design system's showcase.
 
 import { type MouseEvent, type ReactNode, useEffect, useState } from "react";
 
@@ -24,6 +26,13 @@ export type Route =
   | { page: "grade" }
   | { page: "officer" }
   | { page: "approve"; settings: string }  // the version, by its digest
+  | { page: "map"; at?: string }  // and what's chosen on it, such as agent:assistant
+  | { page: "spending"; month?: string }  // such as 2026-10, or this month
+  | { page: "connections" }  // back from connecting an account, so agents act as them there
+  | { page: "undo"; change: string }  // a change an agent made, to undo, by its id
+  | { page: "handovers" }  // the conversations handed to someone's teams
+  | { page: "handover"; id: string }  // one of them
+  | { page: "shadows" }  // what new versions answered beside those at work, for graders
   | { page: "design" };
 
 export function parse(path: string, search = ""): Route {
@@ -32,6 +41,9 @@ export function parse(path: string, search = ""): Route {
   if (kind === "instances" && id) return { page: "instance", instance: id };
   if (kind === "runs" && id) return { page: "run", run: id };
   if (kind === "drafts" && id) return { page: "draft", draft: id };
+  if (kind === "handovers" && id) return { page: "handover", id };
+  if (kind === "handovers") return { page: "handovers" };
+  if (kind === "shadows") return { page: "shadows" };
   if (kind === "new") return { page: "new" };
   if (kind === "agents") return { page: "agents" };
   if (kind === "you") return { page: "you" };
@@ -44,6 +56,16 @@ export function parse(path: string, search = ""): Route {
   if (kind === "decide") return { page: "decide" };
   if (kind === "grade") return { page: "grade" };
   if (kind === "officer") return { page: "officer" };
+  if (kind === "map") {
+    const at = new URLSearchParams(search).get("at");
+    return at ? { page: "map", at } : { page: "map" };
+  }
+  if (kind === "spending") {
+    const month = new URLSearchParams(search).get("month");
+    return month ? { page: "spending", month } : { page: "spending" };
+  }
+  if (kind === "connections") return { page: "connections" };
+  if (kind === "undo") return { page: "undo", change: new URLSearchParams(search).get("change") ?? "" };
   if (kind === "approve") return { page: "approve", settings: new URLSearchParams(search).get("settings") ?? "" };
   return { page: "home" };
 }
@@ -66,7 +88,14 @@ export function href(route: Route): string {
     case "decide": return "/studio/decide";
     case "grade": return "/studio/grade";
     case "officer": return "/studio/officer";
+    case "map": return `/studio/map${route.at ? `?at=${encodeURIComponent(route.at)}` : ""}`;
+    case "spending": return `/studio/spending${route.month ? `?month=${encodeURIComponent(route.month)}` : ""}`;
     case "approve": return `/studio/approve?settings=${encodeURIComponent(route.settings)}`;
+    case "connections": return "/studio/connections";
+    case "undo": return `/studio/undo?change=${encodeURIComponent(route.change)}`;
+    case "handovers": return "/studio/handovers";
+    case "handover": return `/studio/handovers/${encodeURIComponent(route.id)}`;
+    case "shadows": return "/studio/shadows";
     default: return "/studio/";
   }
 }
@@ -78,8 +107,19 @@ export function reread(): void {
   listeners.forEach((then) => then());
 }
 
+let moved = false;  // went to another page within the studio: its heading takes the focus
+
+/** Whether the studio has just gone to another page, once: its heading takes the keyboard's
+ * focus, so a screen reader says where they are, as a page loaded afresh would (round 13, C7). */
+export function justMoved(): boolean {
+  const was = moved;
+  moved = false;
+  return was;
+}
+
 export function go(route: Route): void {
   history.pushState(null, "", href(route));
+  moved = true;
   listeners.forEach((then) => then());
   window.scrollTo(0, 0);
 }
@@ -87,12 +127,16 @@ export function go(route: Route): void {
 export function useRoute(): Route {
   const [route, setRoute] = useState(() => parse(location.pathname, location.search));
   useEffect(() => {
-    const moved = () => setRoute(parse(location.pathname, location.search));
-    listeners.add(moved);
-    window.addEventListener("popstate", moved);
+    const back = () => {  // back or forward, as a link
+      moved = true;
+      setRoute(parse(location.pathname, location.search));
+    };
+    const reread = () => setRoute(parse(location.pathname, location.search));
+    listeners.add(reread);
+    window.addEventListener("popstate", back);
     return () => {
-      listeners.delete(moved);
-      window.removeEventListener("popstate", moved);
+      listeners.delete(reread);
+      window.removeEventListener("popstate", back);
     };
   }, []);
   return route;

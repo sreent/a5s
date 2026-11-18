@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from a5s import db
 from a5s.contract import INSTANCE_APPROVER, PART_DELEGATE, PART_OWNER
-from a5s.core import ledger, proposals, web
+from a5s.core import approvals, languages, ledger, proposals, web, words
 from a5s.core import studio_models as shapes  # what each route answers, as the studio's types say
 
 log = logging.getLogger(__name__)
@@ -63,6 +63,7 @@ def router(gw: Any) -> APIRouter:
                 {"who": who, "scenario": gw.scenario.name, "parts": mine,
                  "approver": INSTANCE_APPROVER in roles,
                  "week": gw.clock() - timedelta(days=7)}).fetchall()
+            spoken = languages.of(conn, person) if person else languages.ENGLISH  # (B6)
         shown = []
         for row in rows:
             waits = row["status"] == "waiting"
@@ -81,14 +82,15 @@ def router(gw: Any) -> APIRouter:
                           "agent": row["definition"],  # who asked, and for whom, as recorded
                           "for": [p.name if (p := gw.scenario.person(i)) else i
                                   for i in row["acts_for"]],
-                          "flags": row["flags"], "sensitive": row["sensitive"],
+                          "flags": words.flags(row, spoken), "sensitive": row["sensitive"],
                           "status": row["status"], "yours": row["yours"], "may_decide": decides,
                           "outcome": row["outcome"], "proposed_at": row["proposed_at"].isoformat(),
                           "lapses_at": row["lapses_at"].isoformat(),
                           "links": [r["link"] for r in standing.values() if r and r.get("link")],
                           "records": [{"key": k, "link": r["link"]} for k, r in standing.items()
                                       if r and r.get("link")],
-                          "changed": [f"{k} has changed since it was asked for" for k in changed]})
+                          "changed": [words.say(spoken, proposals.CHANGED, key=k)
+                                      for k in changed]})
         return {"you": person.name if person else who, "proposals": shown}
 
     @pages.post("/decide/proposals", **shapes.answers(shapes.Decided))
@@ -97,7 +99,7 @@ def router(gw: Any) -> APIRouter:
         """A decision on held changes, signed through the identity provider for that decision on
         exactly those changes. It's recorded once, and sealed. The gateway makes what's approved."""
         digests = sorted(set(body.proposals))
-        if not 1 <= len(digests) <= 20 or not all(re.fullmatch(r"[0-9a-f]{64}", d)
+        if not 1 <= len(digests) <= proposals.MOST_DECIDED or not all(re.fullmatch(r"[0-9a-f]{64}", d)
                                                   for d in digests):
             raise HTTPException(400, "name from one to 20 changes to decide, by their digests")
         reason = None  # as the decider wrote it, which their sign-in covers: the core cleans it
@@ -115,6 +117,9 @@ def router(gw: Any) -> APIRouter:
         except proposals.Refused as exc:
             raise web.refusal(gw, exc) from None
         with db.transaction(gw.url) as conn:
+            for digest in digests:  # one decision on a change at a time, in order, so a second
+                conn.execute(  # hears whether the first settled it (round 15, B3)
+                    "select pg_advisory_xact_lock(hashtextextended(%s, 0))", (digest,))
             rows = conn.execute("select * from proposals where scenario = %s and digest = any(%s) "
                                 "order by id", (gw.scenario.name, digests)).fetchall()
             if len(rows) != len(digests):
@@ -125,6 +130,18 @@ def router(gw: Any) -> APIRouter:
                                              f"it's {row['status']}")
                 if not proposals.may_decide(gw.scenario, row, person.id):
                     raise HTTPException(403, f"{person.name} may not decide {proposals.key(row)}")
+                if first := proposals.settled(conn, gw.scenario, row):
+                    raise HTTPException(409, f"{approvals.names_of(first)} decided "
+                                             f"{proposals.key(row)} already, and the first "
+                                             "decision is the one that counts: yours isn't "
+                                             "recorded")
+                at_work = conn.execute("select status from instances where id = %s",
+                                       (row["instance_id"],)).fetchone()
+                if body.decision == "approve" and at_work and at_work["status"] != "active":
+                    raise HTTPException(409, f"{row['instance_id']} is {at_work['status']}, and "
+                                             "a5s makes none of its changes until it's at work "
+                                             f"again: approve {proposals.key(row)} then, or "
+                                             "reject it now")
             if len(rows) > 1 and any(r["sensitive"] for r in rows):
                 raise HTTPException(409, "a sensitive change is decided on its own, with a sign-in "
                                          "of its own")

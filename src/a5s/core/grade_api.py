@@ -15,7 +15,7 @@ from pydantic import BaseModel
 
 from a5s import db
 from a5s.contract import Person
-from a5s.core import approvals, ledger, proposals, samples, web
+from a5s.core import approvals, languages, ledger, masking, proposals, samples, web, words
 from a5s.core import studio_models as shapes  # what each route answers, as the studio's types say
 
 
@@ -48,10 +48,22 @@ def router(gw: Any) -> APIRouter:
         person = grader(authorization)
         with db.transaction(gw.url) as conn:
             rows = samples.gradeable(conn, gw.scenario, person)
+            names = gw.data_protection(conn).studio_names  # as a shadow's pairs are masked
+            spoken = languages.of(conn, person)  # what to know, in their language (round 15, B6)
+            everyone = [] if names else masking.known(conn, gw.scenario)
+
+        def heard(r: dict) -> str | None:  # what was asked, masked until names are agreed
+            asked = samples.asked_of(r)
+            if not asked or names:
+                return asked
+            return masking.mask(asked, gw.scenario, [*(r["acts_for"] or []), *everyone])[0]
+
         return {"you": person.name, "samples": [
             {"id": r["id"], "kind": r["kind"], "agent": r["definition"], "part": r["part"],
              "action": r["action"], "said": r["said"], "records": r["records"],
-             "flags": r["flags"], "decided": r["decided"], "drawn_at": r["drawn_at"].isoformat()}
+             "flags": words.flags(r, spoken), "decided": r["decided"],
+             "drawn_at": r["drawn_at"].isoformat(),
+             "asked": heard(r)}  # (round 15, C1)
             for r in rows]}
 
     @pages.post("/grade/samples", **shapes.answers(shapes.Graded))
@@ -86,13 +98,19 @@ def router(gw: Any) -> APIRouter:
                 (gw.scenario.name, sorted(grades)))}
             minders = {r["id"]: (r["owner"], r["deputy"]) for r in conn.execute(
                 "select id, owner, deputy from instances")}
+            paired = samples.mates(conn, rows.values())  # a second grader for a twin (C4)
+            together = {rows[s]["twin_of"] for s in grades if s in rows and rows[s]["twin_of"]}
+            if together & set(grades):
+                raise HTTPException(403, "a second grader grades a sample drawn twice: grade "
+                                         "one of the two")
             for sample in sorted(grades):
                 row = rows.get(sample)
                 if row is None:
                     raise HTTPException(404, f"a5s has no sample {sample}")
                 if (why := samples.may_grade(gw.scenario, row, person,
                                              minders.get(row["instance_id"], ()),
-                                             samples.drafted(conn, row["definition"]))) is not None:
+                                             samples.drafted(conn, row["definition"]),
+                                             paired.get(sample))) is not None:
                     raise HTTPException(403, why)
                 if row["grade"] is not None or row["lapsed_at"] is not None:
                     raise HTTPException(409, f"sample {sample} has been graded already, or lapsed")

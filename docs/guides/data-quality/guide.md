@@ -14,9 +14,9 @@ Master data's data quality watcher, built again from nothing in the studio, as q
 
    ![What starts its runs: messages, on Matrix too, and a daily report on each data object's quality, and on the change requests, which tells each person it serves what changed in their own.](03-what-starts-its-runs-messages-on-matrix-too-and.png)
 
-4. On the agent itself: whom it works for, what it does, and its level: 0, so it only reads, and a5s refuses anything else it asks for.
+4. On the agent itself: whom it works for, what it does, and how far it may act: it reads only, and a5s refuses anything else it asks for.
 
-   ![On the agent itself: whom it works for, what it does, and its level: 0, so it only reads, and a5s refuses anything else it asks for.](04-on-the-agent-itself-whom-it-works-for-what-it-do.png)
+   ![On the agent itself: whom it works for, what it does, and how far it may act: it reads only, and a5s refuses anything else it asks for.](04-on-the-agent-itself-whom-it-works-for-what-it-do.png)
 
 5. Its budgets, in a5s's checks: less than an assistant's, since each report only puts what code worked out into words.
 
@@ -52,6 +52,6 @@ Master data's data quality watcher, built again from nothing in the studio, as q
 
    ![On a working morning, Mo reads its report in his day from a5s, in the chat: how material data stands against its target, from what code measured, and that nothing waits on him.](14-on-a-working-morning-mo-reads-its-report-in-his.png)
 
-15. Ken, of assurance, reads the run in the audit trail: a report, at level 0, which called no tool that changes anything.
+15. Ken, of assurance, reads the run in the audit trail: a report, by an agent that reads only, which called no tool that changes anything.
 
-   ![Ken, of assurance, reads the run in the audit trail: a report, at level 0, which called no tool that changes anything.](15-ken-of-assurance-reads-the-run-in-the-audit-trai.png)
+   ![Ken, of assurance, reads the run in the audit trail: a report, by an agent that reads only, which called no tool that changes anything.](15-ken-of-assurance-reads-the-run-in-the-audit-trai.png)

@@ -154,7 +154,8 @@ def test_only_an_instance_approvers_fresh_sign_in_for_this_approves(stack, appro
     forged = provider.id_token(bound, "ana")
     forged = forged.rsplit(".", 1)[0] + "." + base64.urlsafe_b64encode(b"x" * 256).rstrip(b"=").decode()
     assert decide(approving, version, forged, salt).status_code == 401
-    assert decide(approving, "f" * 64, provider.id_token(bound, "ana"), salt).status_code == 403
+    fresh = provider.id_token(bound, "ana", signed_in_at=int(time.time()))  # for another version
+    assert decide(approving, "f" * 64, fresh, salt).status_code == 403
 
     stack.scheduler().apply_approved()
     assert serves(stack) == ["ana", "ben"]
@@ -286,17 +287,17 @@ def test_an_approver_reviews_and_approves_in_the_browser(stack, approving, provi
     assert page.inner_text("#standing") == "waiting for you"
     assert page.locator("#changes li").all_inner_texts() == [
         "assistant-finance serves Chen Wei as well. widens what agents do",
-        "assistant-finance's level in billing goes from 1 to 0."]
+        "In billing, assistant-finance goes from “asks first” to “reads only”."]
     assert page.inner_text("#approvals") == "nobody yet"
     assert page.inner_text("#needs") == "the owner of billing hasn't approved it"
     assert page.locator("#whole li").all_inner_texts() == [  # and all of it, before deciding
         "The scenario's data is synthetic.",
-        ("assistant-finance: the assistant, working in billing at level 0, serving Ana Ortiz, "
+        ("assistant-finance: the assistant, reading only in billing, serving Ana Ortiz, "
          "Ben Okafor and Chen Wei, run by Ana Ortiz with Ben Okafor as deputy."),
         "Limit for change-due-date: 5 in one run and 20 for one person in 30 days.",
         "Limit for close-question: 5 in one run and 20 for one person in 30 days.",
-        "An agent earns level 2 in billing once graded samples show it's 98% accurate.",
-        "An agent earns level 2 in orders once graded samples show it's 95% accurate.",
+        "An agent may act on its own in billing once graded samples show it's 98% accurate.",
+        "An agent may act on its own in orders once graded samples show it's 95% accurate.",
         *approvals.protection(DataProtection())]  # the officer's choices, as a5s starts them
     assert "code=" not in page.evaluate("window.location.search")  # the code doesn't linger
     accessible(page)

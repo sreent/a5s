@@ -23,6 +23,7 @@ from typing import Any
 
 import yaml
 
+from a5s import levels
 from a5s.contract import Tool
 from a5s.core import extractor
 
@@ -172,17 +173,17 @@ def drafted(files: dict[str, str], name: str, proposed: dict, tools: dict[str, T
         elif what not in abilities:
             abilities.append(what)
             notes.append({"what": what, "given": True, "why": why})
-    # The least level that work needs: 1 for anything that writes, else 0, which only reads
+    # The least that work needs: asking first for anything that writes, else reading only
     acting = sorted(t for group, names in groups.items() if group != "reads" for t in names)
     writes = acting or obligations or any(a in abilities for a in ("reminders", "how-i-work", "digest-time"))
-    level = 1 if writes else 0
-    notes.append({"what": f"level {level} at most", "given": True, "why": (
+    level = levels.ASKS_FIRST if writes else levels.READS_ONLY
+    notes.append({"what": f"{levels.name(level)}, at most", "given": True, "why": (
         f"{', '.join(acting)} {'writes' if len(acting) == 1 else 'write'} or "
-        "change something, which needs level 1, and a change waits for its part's decider there"
-        if acting else "it writes what people ask it to keep, which needs level 1" if writes
-        else "it only reads, which level 0 allows") + "; never 2, which only the settings and "
-        "graded samples give a type of change"})
-    spec["autonomy"] = {"start": level, "max": level}
+        "change something, so it asks first: a change waits for its part's decider"
+        if acting else "it writes what people ask it to keep, so it asks first" if writes
+        else "it only reads") + "; never acts on its own, which only the settings and graded "
+        "samples give a type of change"})
+    spec["autonomy"] = {"start": levels.name(level), "max": levels.name(level)}
     spec["tools"] = groups
     if obligations:
         spec["obligations"] = obligations

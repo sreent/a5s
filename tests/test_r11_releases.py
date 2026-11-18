@@ -86,7 +86,7 @@ def test_a_record_that_follows_nothing_once_others_are_approved_is_refused(deplo
     instructions = deployed.cfg.agents_dir / "assistant" / "AGENTS.md"
     instructions.write_text(instructions.read_text() + "- Be brief.\n")
     second = this(deployed).raw
-    assert record(deployed, second, "priya", "tomas").ok
+    assert record(deployed, second, "priya", "tomas", "rosa").ok
     digest = hashlib.sha256(second).hexdigest()
     with db.transaction(deployed.admin) as conn:  # the administrator edits one column
         conn.execute("update releases set previous = null where digest = %s", (digest,))

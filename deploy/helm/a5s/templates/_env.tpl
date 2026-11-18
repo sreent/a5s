@@ -3,6 +3,7 @@
 {{- define "a5s.env.gateway" -}}
 {{ include "a5s.secretEnv" (dict "root" . "name" "A5S_DATABASE_URL" "key" "database-gateway-url") }}
 {{ include "a5s.secretEnv" (dict "root" . "name" "A5S_SERVICE_TOKEN" "key" "service-token") }}
+{{ include "a5s.secretEnv" (dict "root" . "name" "A5S_OPERATOR_TOKEN" "key" "operator-token" "optional" true) }}
 {{ include "a5s.secretEnv" (dict "root" . "name" "A5S_SEAL_KEYS" "key" "seal-keys") }}
 {{- range $name, $key := .Values.models.keys }}
 {{ include "a5s.secretEnv" (dict "root" $ "name" $name "key" $key "optional" true) }}
@@ -10,6 +11,9 @@
 {{ include "a5s.teamEnv" . }}
 {{ include "a5s.peopleEnv" . }}
 {{ include "a5s.scenarioEnv" . }}
+{{- range .Values.delegation.systems }}
+{{ include "a5s.secretEnv" (dict "root" $ "name" (printf "A5S_DELEGATION_%s_SECRET" (upper (replace "-" "_" .name))) "key" (printf "delegation-secret-%s" .name)) }}
+{{- end }}
 {{- with .Values.telemetry.endpoint }}
 - name: OTEL_EXPORTER_OTLP_ENDPOINT
   value: {{ . | quote }}
@@ -25,6 +29,13 @@
 {{ include "a5s.secretEnv" (dict "root" $ "name" "A5S_REGISTRY_SECRET" "key" "registry-secret") }}
 - name: A5S_REGISTRY_IDENTITIES
   value: {{ $.Values.registry.identities | quote }}
+{{- end }}
+{{- with .Values.mail.tenant }}
+- name: A5S_MAIL_TENANT  # the shared mailboxes: the core alone reads them
+  value: {{ . | quote }}
+- name: A5S_MAIL_CLIENT_ID
+  value: {{ required "mail.clientId names the app the core reads the mailboxes as" $.Values.mail.clientId | quote }}
+{{ include "a5s.secretEnv" (dict "root" $ "name" "A5S_MAIL_CLIENT_SECRET" "key" "mail-secret") }}
 {{- end }}
 {{- end }}
 
@@ -70,6 +81,18 @@
 
 {{- define "a5s.env.anchor" -}}
 {{ include "a5s.secretEnv" (dict "root" . "name" "A5S_DATABASE_URL" "key" "database-anchor-url") }}
+{{ include "a5s.env.copies" . }}
+{{- end }}
+
+{{/* `a5s restore`'s, after the database is restored from a backup: the core's database, as its
+role, and the ledger's copies, as the copier reaches them (docs/runbooks.md#restoring-from-a-backup) */}}
+{{- define "a5s.env.restore" -}}
+{{ include "a5s.secretEnv" (dict "root" . "name" "A5S_DATABASE_URL" "key" "database-gateway-url") }}
+{{ include "a5s.env.copies" . }}
+{{- end }}
+
+{{/* Where the ledger's copies are, and how to reach them and the database */}}
+{{- define "a5s.env.copies" -}}
 - name: A5S_ANCHOR_STORE
   value: {{ required "set anchor.store, where the ledger's locked copies go" .Values.anchor.store | quote }}
 {{- with .Values.anchor.retainDays }}

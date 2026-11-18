@@ -3,6 +3,7 @@ provider and talk to the agents through the local channel."""
 
 import base64
 import hashlib
+import json
 import secrets
 import threading
 import time
@@ -14,7 +15,7 @@ import pytest
 
 from a5s.core import inbox
 from a5s.core.identity import IdentityConfig, Verifier
-from conftest import CLIENT, free_port, serve
+from conftest import CLIENT, PHONE, accessible, free_port, serve
 from test_ui_pages import shot
 
 
@@ -172,6 +173,30 @@ def test_a_person_chats_in_the_browser_in_development(stack, browser, answering)
     assert said[1].startswith("assistant") and "wrong address" in said[1]
 
 
+def test_a_person_attaches_a_file_and_the_agent_asks_a5s_reader_about_it(stack, browser, answering):
+    stack.model.reply(None, ("ask_about", {"document": "D-1", "question": "What's the total?"}))
+    stack.model.reply("The total row says 860.00.")  # a5s's reader
+    stack.model.reply("Your costs come to 860.00, as the total says.")
+    with channels(stack) as url:
+        page = browser.new_page()
+        page.goto(f"{url}/chat/")
+        page.fill("#person", "ana")
+        page.click("#name button")
+        with page.expect_file_chooser() as chosen:
+            page.click("#attach")
+        chosen.value.set_files([{"name": "costs.csv", "mimeType": "text/csv",
+                                 "buffer": b"item,amount\nhotel,612.00\ntaxi,248.00\ntotal,860.00\n"}])
+        assert page.inner_text("#attached li span") == "costs.csv, 1 KB"
+        page.fill("#text", "Do these add up?")
+        page.keyboard.press("Enter")
+        page.wait_for_selector("li.agent >> text=as the total says", timeout=30000)
+        said = page.locator("#conversation li").all_inner_texts()
+        assert not page.is_visible("#attached")  # sent with it, and gone from the box
+    assert "Do these add up?" in said[0] and "Sent costs.csv" in said[0]
+    assert "hotel,612.00" in json.dumps(stack.model.requests[1]["body"])  # a5s's reader read it
+    assert "hotel,612.00" not in json.dumps(stack.model.requests[0]["body"])  # the agent didn't
+
+
 def test_a_person_signs_in_chats_and_hears_reminders_in_the_browser(stack, browser, answering,
                                                                      signing_in, provider):
     stack.model.reply("Hello, **Ana**. See https://sample.a5s.dev/records/Q-1001")
@@ -202,3 +227,87 @@ def test_a_person_signs_in_chats_and_hears_reminders_in_the_browser(stack, brows
     page.reload()  # and the conversation is still there
     page.wait_for_selector("li.agent >> text=Q-1001 is due on Wednesday", timeout=30000)
     assert [f["grant_type"] for f in provider.forms] == ["authorization_code"]
+
+
+def test_a_message_the_conversation_and_the_inbox_both_give_shows_once(stack, browser):
+    """Round 14 (E-L6): a message a5s wrote someone, such as that their conversation was handed
+    over, can come both in their conversation and from their inbox: it shows once."""
+    with channels(stack) as url:
+        page = browser.new_page()
+        page.goto(f"{url}/chat/")
+        page.fill("#person", "ana")
+        page.click("#name button")
+        page.wait_for_selector(".welcome-name", timeout=30000)  # its conversation is open
+        page.evaluate("""() => {
+            const told = {by: "a5s", from: "a5s", id: 7, text: "Handed over.", at: new Date().toISOString()};
+            say(told);
+            say({...told});
+        }""")
+        assert page.locator("#conversation li", has_text="Handed over.").count() == 1
+
+
+def test_why_a_file_wont_go_is_said_beside_what_they_write(stack, browser):
+    """Round 14 (E-M6): on a phone, in a conversation that's going, why a file wasn't attached is
+    said beside what they write, where they're looking, never only at the top of the page; and
+    it goes once they attach one the web chat takes."""
+    with channels(stack) as url:
+        page = browser.new_page(viewport=PHONE)
+        page.goto(f"{url}/chat/")
+        page.fill("#person", "ana")
+        page.click("#name button")
+        page.wait_for_selector(".welcome-name", timeout=30000)  # its conversation is open
+        page.evaluate("""() => { for (let n = 0; n < 40; n += 1) say({by: "a5s", from: "a5s",
+            id: 100 + n, text: `Earlier, ${n}`, at: new Date().toISOString()}); }""")
+        with page.expect_file_chooser() as chosen:
+            page.click("#attach")
+        chosen.value.set_files([{"name": "setup.zip", "mimeType": "application/zip",
+                                 "buffer": b"PK\x03\x04"}])
+        said = page.locator("#refused")
+        assert said.inner_text() == "setup.zip: a5s reads text files, PDFs and images."
+        box = said.bounding_box()
+        assert box is not None and 0 <= box["y"] and box["y"] + box["height"] <= PHONE["height"]
+        accessible(page)
+        with page.expect_file_chooser() as chosen:
+            page.click("#attach")
+        chosen.value.set_files([{"name": "costs.csv", "mimeType": "text/csv",
+                                 "buffer": b"item,amount\nhotel,612.00\n"}])
+        assert not said.is_visible() and page.inner_text("#attached li span") == "costs.csv, 1 KB"
+
+
+def test_on_a_phone_the_newest_message_is_above_what_they_write(stack, browser):
+    """Round 14 (E-L7): the web chat scrolls to its end, so the newest message, with its
+    "That's wrong", is above the composer at the foot of a phone's screen, never under it."""
+    with channels(stack) as url:
+        page = browser.new_page(viewport=PHONE)
+        page.goto(f"{url}/chat/")
+        page.fill("#person", "ana")
+        page.click("#name button")
+        page.wait_for_selector(".welcome-name", timeout=30000)  # its conversation is open
+        page.evaluate("""() => { for (let n = 0; n < 30; n += 1) say({by: "a5s", from: "a5s",
+            id: 200 + n, text: `Earlier, ${n}`, at: new Date().toISOString()}); }""")
+        newest = page.locator("#conversation li").last.bounding_box()
+        composer = page.locator("footer").bounding_box()
+        assert newest is not None and composer is not None
+        assert newest["y"] + newest["height"] <= composer["y"] + 1
+
+
+def test_what_the_web_chat_writes_itself_is_in_the_language_they_read(stack, browser):
+    """Round 14 (E-L4): the web chat's own words beside what it shows are in the language
+    someone reads: a message of theirs that was only a file, and what another agent wrote
+    them, which it says is about that agent."""
+    from a5s import db
+
+    with channels(stack) as url:
+        page = browser.new_page()
+        page.goto(f"{url}/chat/")
+        page.fill("#person", "ana")
+        page.click("#name button")
+        page.wait_for_selector(".welcome-name", timeout=30000)  # its conversation is open
+        page.evaluate("""() => { speak("th"); say({by: "person", from: "you",
+            text: "(a file, with no words)", at: new Date().toISOString()}); }""")
+        assert page.locator("#conversation li.you", has_text="(ไฟล์ ไม่มีข้อความ)").count() == 1
+        with db.transaction(stack.admin) as conn:  # the watcher writes her, unasked
+            conn.execute("insert into outbox (person, channel, agent, text) "
+                         "values ('ana', 'local', 'watcher', 'Q-1001 is overdue.')")
+        page.wait_for_selector("#conversation li >> text=(เกี่ยวกับ watcher) Q-1001 is overdue.",
+                               timeout=40000)

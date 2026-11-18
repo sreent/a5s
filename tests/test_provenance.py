@@ -4,6 +4,7 @@ is the agent's own, which a5s says apart from the agent's words."""
 
 from a5s import db
 from a5s.core import handles, values
+from test_languages import reads
 
 PATTERN = r"\bQ-\d{4}\b"
 
@@ -23,6 +24,31 @@ def test_values_are_found_and_matched_however_they_are_written():
     assert values.unmatched(values.found("2025-11-04", PATTERN),
                             values.found("2026-11-04", PATTERN)) != []  # two years, two dates
 
+
+
+def test_thai_dates_and_amounts_are_found_as_english_ones_are():
+    """As agents answer people who read Thai: a date by its month's Thai name or as it's cut
+    short, its year in the Buddhist era, or two digits of it, Thai digits, and amounts by their
+    Thai names, or ฿, each matched as the same value in English would be."""
+    said = values.found("คืนเงิน 860 ปอนด์ ภายใน 6 พฤศจิกายน 2569 สำหรับ Q-1002", PATTERN)
+    assert [(v.kind, v.text, v.norm) for v in said] == [
+        ("amount", "860 ปอนด์", "GBP 860.00"), ("date", "6 พฤศจิกายน 2569", "2026-11-06"),
+        ("key", "Q-1002", "Q-1002")]
+    assert [v.norm for v in values.found("฿860.00, 860 บาท และ ๑,๒๔๐.๕๐ บาท", PATTERN)] == [
+        "THB 860.00", "THB 1240.50"]
+    assert [v.norm for v in values.found("4 พ.ย. 69 หรือ ๒๐ ธ.ค.", PATTERN)] == [
+        "2026-11-04", "--12-20"]
+    assert values.found("ปี 2026 พ.ย.", PATTERN) == []  # a year, never the 26th
+    assert values.unmatched(values.found("Refund £860 by 6 Nov", PATTERN), said) == []
+
+
+def test_what_the_agent_wrote_itself_is_said_apart_in_thai_to_whoever_reads_it(stack):
+    reads(stack, "ben", "th")
+    stack.model.reply(None, ("get_record", {"key": "Q-1002"}))
+    stack.model.reply("Q-1002 คืนเงิน 999 ปอนด์ ภายใน 6 พ.ย. 69")
+    told = stack.say("ขอยอดคืนเงินหน่อย ภายใน 6 พฤศจิกายน", person="ben")
+    assert told.endswith("(a5s: 999 ปอนด์ มาจาก assistant เอง ไม่ได้มาจากระเบียนหรือจากคุณ "
+                         "โปรดตรวจสอบก่อนนำไปใช้)")  # the date was theirs, in Thai
 
 def test_what_the_agent_read_from_the_records_carries_its_source(stack):
     stack.model.reply(None, ("get_record", {"key": "Q-1001"}))
@@ -135,3 +161,18 @@ def test_what_a_search_found_is_read_but_the_agents_own_words_are_not(stack):
             "select kind, text from run_reads where source = 'search_conversation'")}
     assert ("amount", "£50") not in read and ("key", "Q-1001") in read
     assert any(kind == "date" for kind, _ in read)  # when each was said, which a5s knows
+
+
+def test_thai_dates_and_amounts_are_found_as_people_write_them():
+    """Round 14 (E-M4): a formal date names its era, a time or a count after a month is no
+    year, and an amount in millions is one."""
+    def norms(text: str) -> list[str]:
+        return [v.norm for v in values.found(text, PATTERN)]
+    assert norms("ครบกำหนด 6 พฤศจิกายน พ.ศ. 2568") == ["2025-11-06"]
+    assert norms("6 พ.ย. 10:00 น.") == ["--11-06"]
+    assert norms("นัดวันที่ 6 พ.ย. 10.00 น.") == ["--11-06"]
+    [count] = values.found("6 พ.ย. 15 รายการ", PATTERN)
+    assert (count.norm, count.text) == ("--11-06", "6 พ.ย.")  # never quoted with the count
+    assert norms("4 พ.ย. 69 หรือ ๒๐ ธ.ค.") == ["2026-11-04", "--12-20"]  # as before
+    assert norms("วงเงิน 1.5 ล้านบาท") == ["THB 1500000.00"]
+    assert norms("5 แสนบาท และ 860 บาท") == ["THB 500000.00", "THB 860.00"]

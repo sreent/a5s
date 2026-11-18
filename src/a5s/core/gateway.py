@@ -27,7 +27,7 @@ from typing import Any
 import httpx
 import psycopg
 import yaml
-from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException
+from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel
@@ -45,12 +45,14 @@ from a5s.contract import (
     Scenario,
     Settings,
     Signature,
+    Spending,
     Tool,
     ToolCall,
     parse_settings,
     record_of,
 )
 from a5s.core import (
+    afresh,
     approvals,
     asking,
     asks,
@@ -59,19 +61,28 @@ from a5s.core import (
     chats,
     coretools,
     counts,
+    customers,
+    delegation,
     departures,
     digests,
     erasure,
+    events,
     export,
     extractor,
+    feedback,
+    files,
     groups,
     handles,
+    handover,
     judging,
+    languages,
     ledger,
     measures,
     memberships,
     models,
+    narrowing,
     notebook,
+    notices,
     obligations,
     officer,
     parts,
@@ -86,19 +97,24 @@ from a5s.core import (
     repeats,
     reports,
     retention,
+    run_cases,
     samples,
     schedules,
     sealing,
+    shadows,
     status,
     studio,
     suspension,
     tasking,
     topics,
     traces,
+    undoing,
     urgent,
     values,
+    words,
 )
 from a5s.core.breakers import FAILURES, Breakers
+from a5s.core.events import EventsConfig
 from a5s.core.identity import (
     IdentityError,
     UnknownPerson,
@@ -108,41 +124,72 @@ from a5s.core.identity import (
     without_second_factor,
 )
 from a5s.core.matrix import Matrix
-from a5s.core.policy import Decision, PolicyEngine
+from a5s.core.outgoing import cleaned, sanitize
+from a5s.core.policy import Decision, Own, PolicyEngine
+from a5s.core.slack import Slack
 from a5s.core.teams import Teams
 from a5s.core.values import Value
 from a5s.definitions import Context, Definition
+from a5s.services import context
 
 log = logging.getLogger(__name__)
 CORE_TOOLS = {**reminders.TOOLS, **digests.TOOLS, **profiles.TOOLS,  # a5s's own, on its
               **recall.TOOLS, extractor.ASK: extractor.TOOL,  # own records, and asking
               asking.ASK: asking.TOOL,  # another agent (core/asking.py), and the notebook
               notebook.NOTE: notebook.TOOL,  # of what it learns from records, and long tasks
-              **tasking.TOOLS}  # people ask it for (core/tasking.py)
+              **tasking.TOOLS,  # people ask it for (core/tasking.py), and handing a
+              **handover.TOOLS}  # conversation over to people (core/handover.py)
 LAPSED = 120  # seconds past its time a scheduler's lease on a run's work is, once it's gone
 CHARS_PER_TOKEN = 4  # roughly, for a run's budget for its conversation
+# The routes operators' commands call, such as `a5s status`: where A5S_OPERATOR_TOKEN is set,
+# each takes it alone, and every other route of the core's services the service token alone,
+# the scheduler's, so an operator's token opens no run and writes to nobody, and the scheduler's
+# does none of an operator's work (round 15, D3)
+OPERATING = frozenset({
+    "/status", "/measures", "/proposals", "/proposals/{key}/end", "/caps/lower",
+    "/instances/{instance}/suspend", "/instances/{instance}/resume", "/settings/proposals",
+    "/people/{person}/export", "/people/{person}/erase", "/audit/entries", "/audit/export",
+    "/audit/report", "/studio/agents", "/studio/agents/{agent}", "/studio/agents/{agent}/measures",
+    "/studio/instances/{instance}/measures", "/studio/instances/{instance}/runs",
+    "/studio/runs/{run_id}"})
+
+
+def credential(token: str) -> str:
+    """What the ledger keeps of the token that called the core: enough to tell one from
+    another, once it's changed, nothing to make it from (round 15, D3)."""
+    return hashlib.sha256(b"a5s credential\n" + token.encode()).hexdigest()[:12]
+
+
+# What whoever asked hears where only a run's mark holds a change for a person (round 15, A4)
+MARK_HOLDS = ("(a5s: {key} waits for a person to decide it, because this chat holds what a5s "
+              "read from outside, such as a file or an email. Once that's further back than the "
+              "{agent} reads, or after you say \"start afresh\", a change like it needn't wait.)")
 OWN_RUNS = ("summary",)  # a5s's own work on a conversation: no tools, and it writes to nobody
 TRIES = 5  # deliveries to a chat before what it didn't take is left in the person's inbox
+FELL_BACK = timedelta(days=1)  # how long that's tried again, hourly, and when the chat's back
 MOST_NAMED = 20  # records one change may name: a5s reads each as it stands before deciding
+# Why a5s didn't make a held change whose call, values or words differ from what its digest,
+# and so its deciders, signed: the database was changed (round 15, B1)
+ALTERED = "it has changed in a5s's records since it was asked for, so it isn't what was approved"
+
+# What a5s tells each who might have decided a held change that lapsed, and whoever asked for
+# one that waits still once its deciders' managers, or the instance's owner, hear (round 15, B4)
+WAITED = "What became of {key}, which waited for your decision: {text}"
+STILL = ("{key}, which you asked for, waits still for {names} to decide it, after {days} working "
+         "days. It lapses on {day} unless it's decided before then.")
+
+# a5s's notes on what an agent left for people to check before it goes outside (round 15)
+CHECKED = "Before anyone sends what the {agent} left in {where}: {note}"
+
 WHY = {  # why an agent's run didn't get its message through, in words people read
     "model unavailable": "its model isn't answering", "budget spent": "it has used its budget "
     "for today", "reply denied": "a5s didn't let its message through", "abandoned": "it stopped "
     "before it finished"}
 # The chats a5s writes to itself, as each agent's bot. People collect from the local
 # channel, the command line's and the web chat's, instead.
-PUSHED = ("teams", "matrix")
+PUSHED = ("teams", "matrix", "slack")
 _STATUS_AFTER = {"suspend": "suspended", "retire": "retired"}  # resume and restore: active
-# Outgoing text keeps only words and the scenario's own record links. Anything that
-# could fetch or point somewhere else goes: images, HTML, and links in any form,
-# whatever their case, slashes or scheme.
-_IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
-_TAG = re.compile(r"</?[A-Za-z][^>]*>")  # HTML, and autolinks such as <https://...>
-# A link's target, and an address, end where a page's would end one: at a quote, a backtick or a
-# <, as well as at a space or a bracket, so what a5s checks is all a page links (round 11, E-2)
-_MARKDOWN_LINK = re.compile(r"\[([^\]]*)\]\(\s*([^)\s'\"`<]*)[^)]*\)")
-_URL = re.compile(r"(?i)(?:\b[a-z][a-z0-9+.-]*:[/\\]+|(?<![\w:/\\])//|\bwww\.)[^\s)>\]'\"`<]*")
-# a5s's own note on values, which only a5s writes: an agent's copy of one is dropped
-_FORGED_NOTE = re.compile(r"(?is)\(\s*a5s\s*:.*?\)")
+# Outgoing text keeps only words and the scenario's own record links (core/outgoing.py)
 
 
 def held_by(holder: Any) -> str | None:
@@ -159,49 +206,18 @@ def token_hash(token: str) -> bytes:
     return hashlib.sha256(token.encode()).digest()
 
 
-def sanitize(text: str, allowed: tuple[str, ...], notes: bool = True) -> tuple[str, int]:
-    """Keep text and the scenario's own record links. Drop images, HTML and other links, and,
-    unless `notes` is False, copies of a5s's own notes, which only a5s writes."""
-    removed = 0
-
-    def kept(url: str) -> bool:
-        return any(url.startswith(prefix) for prefix in allowed)
-
-    def link(match: re.Match) -> str:
-        nonlocal removed
-        label = _URL.sub(url, match.group(1))  # whose words may hold an address too
-        if kept(match.group(2)):  # the link alone: nothing else it carries past its target
-            return f"[{label}]({match.group(2)})"
-        removed += 1
-        return f"{label} [link removed]"
-
-    def url(match: re.Match) -> str:
-        nonlocal removed
-        if kept(match.group(0)):
-            return match.group(0)
-        removed += 1
-        return "[link removed]"
-
-    text, forged = _FORGED_NOTE.subn("", text) if notes else (text, 0)
-    text, images = _IMAGE.subn("[image removed]", text)
-    text, tags = _TAG.subn("[removed]", text)
-    text = _MARKDOWN_LINK.sub(link, text)
-    parts = re.split(r"(\[[^\]]*\]\([^)]*\))", text)  # record links already kept stay whole
-    text = "".join(p if _MARKDOWN_LINK.fullmatch(p) else _URL.sub(url, p) for p in parts)
-    return text.strip() if forged else text, removed + images + tags + forged
+# The runs their people asked for themselves: their own message, a task or a reminder they asked
+# for, a shadow of their message, and a question such a run asked another agent. Only these act
+# as them in another system, or read what they may read there, with their own permissions
+# (core/delegation.py): never one nobody asked for, such as an event's, a report's or a chase's
+ASKED = frozenset({"message", "reminder", tasking.KIND, shadows.KIND})
 
 
-def cleaned(value: Any, allowed: tuple[str, ...], notes: bool = True) -> tuple[Any, int]:
-    """Text at any depth of a value, sanitized, and how many things were removed."""
-    if isinstance(value, str):
-        return sanitize(value, allowed, notes)
-    if isinstance(value, list):
-        found = [cleaned(item, allowed, notes) for item in value]
-        return [v for v, _ in found], sum(n for _, n in found)
-    if isinstance(value, dict):
-        found = {k: cleaned(v, allowed, notes) for k, v in value.items()}
-        return {k: v for k, (v, _) in found.items()}, sum(n for _, n in found.values())
-    return value, 0
+def asked_for(trigger: dict) -> bool:
+    """Whether the people a run is for asked for it themselves, as ASKED says."""
+    if trigger.get("kind") == asking.KIND:
+        return bool(trigger.get("asked"))
+    return trigger.get("kind") in ASKED
 
 
 def strings(value: Any) -> list[str]:
@@ -213,6 +229,30 @@ def strings(value: Any) -> list[str]:
     if isinstance(value, dict):
         return [s for v in value.values() for s in strings(v)]
     return []
+
+
+# The forms a string's schema may name, which a5s checks, as a model can write anything: a value
+# in its form alone, never one with words after it (round 15, F1)
+_FORMS = {"date": (r"\d{4}-\d{2}-\d{2}", "2026-11-04"),
+          "date-time": (r"\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})?",
+                        "2026-11-04T09:30:00Z"),
+          "email": (r"[^@\s]{1,64}@[^@\s]{1,255}\.[^@\s.]{2,63}", "pat@example.com")}
+
+
+def _formed(form: str, value: str) -> bool:
+    """Whether a value is in the form its schema names: a date, a date and time, or an address,
+    and a real one; any other form a5s doesn't check."""
+    found = _FORMS.get(form)
+    if found is None:
+        return True
+    if not re.fullmatch(found[0], value):
+        return False
+    if form in ("date", "date-time"):
+        try:
+            datetime.fromisoformat(value)  # Z too, as Python reads it
+        except ValueError:
+            return False
+    return True
 
 
 _TYPES = {"string": str, "integer": int, "number": int | float, "boolean": bool, "object": dict,
@@ -240,6 +280,9 @@ def misfit(schema: dict[str, Any], value: Any, where: str = "") -> str | None:
             return f"{named} is longer than {schema['maxLength']} characters"
         if "pattern" in schema and not re.search(str(schema["pattern"]), value):
             return f"{named} isn't in the form it takes"
+        if (form := schema.get("format")) and not _formed(str(form), value):
+            return f"{named} isn't a {form}, such as {_FORMS[str(form)][1]}" if str(
+                form) in _FORMS else f"{named} isn't in the form it takes"
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         if "minimum" in schema and value < schema["minimum"]:
             return f"{named} is less than {schema['minimum']}"
@@ -267,6 +310,7 @@ def misfit(schema: dict[str, Any], value: Any, where: str = "") -> str | None:
     return None
 
 
+
 @dataclass
 class Gateway:
     cfg: Config
@@ -278,10 +322,15 @@ class Gateway:
     identity: Verifier | None = None  # for the local channel's sign-in; else development only
     teams: Teams | None = None
     matrix: Matrix | None = None
+    slack: Slack | None = None
+    events: EventsConfig | None = None  # other systems that tell a5s what happened
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)  # when obligations and schedules are due
     releases: releases.Releases | None = None  # the release a5s is, which must be approved here
     breakers: Breakers = field(default_factory=Breakers)  # models not called for now (core/breakers.py)
     registry: Any = None  # the Microsoft tenant its instances are listed in, if any (core/registration.py)
+    currency: str | None = None  # the one models.yaml prices models in, if it names one
+    delegation: Any = None  # the systems people connect, to be acted as there (core/delegation.py)
+    mail: Any = None  # the scenario's mailboxes, which the core asks for new mail (connectors/mailboxes.py)
 
     @property
     def url(self) -> str:
@@ -301,6 +350,14 @@ class Gateway:
         if settings is None and not self.cfg.seal_keys:
             settings = self.sealed_in_force(conn)
         return settings.data_protection if settings is not None else DataProtection()
+
+    def spending_in_force(self, conn: db.Connection) -> Spending:
+        """What parts and agents may cost a month, as the settings in force say, read as the
+        data protection officer's choices are: or no budgets, while none can be used."""
+        settings, _ = self.settings_in_force(conn, seal=False)
+        if settings is None and not self.cfg.seal_keys:
+            settings = self.sealed_in_force(conn)
+        return settings.spending if settings is not None else Spending()
 
     def settings_in_force(self, conn: db.Connection,
                           seal: bool = True) -> tuple[Any, str | None]:
@@ -382,10 +439,12 @@ class Gateway:
         expected = (signed.definition, sorted(signed.serves), level, scope,
                     registry.action_levels(signed, release), sorted(release.grants),
                     release.model, release.pins, signed.owner or release.owner,
-                    signed.deputy or release.deputy, sorted(signed.asks))
+                    signed.deputy or release.deputy, sorted(signed.asks), signed.shadows,
+                    sorted(signed.hands_to))
         actual = (inst["definition"], sorted(inst["serves"]), inst["level"], inst["parts"] or {},
                   inst["actions"] or {}, sorted(inst["grants"]), inst["model"], inst["pins"],
-                  inst["owner"], inst["deputy"], sorted(inst["asks"] or []))
+                  inst["owner"], inst["deputy"], sorted(inst["asks"] or []), inst["shadows"],
+                  sorted(inst["hands_to"] or []))
         if expected != actual:
             log.error("instance %s doesn't match its signed settings and release", inst["id"])
             return [f"{inst['id']}'s record doesn't match its signed settings and release"]
@@ -393,9 +452,10 @@ class Gateway:
             "select action, entry from ledger where instance_id = %s and kind = 'admin' "
             "and action in ('suspend', 'resume', 'retire', 'restore') order by seq desc limit 1",
             (inst["id"],)).fetchone()
-        expected = _STATUS_AFTER.get(last["action"] if last else "", "active")
+        working = "shadow" if signed.shadows else "active"  # a shadow does no work of its own
+        expected = _STATUS_AFTER.get(last["action"] if last else "", working)
         if last and last["action"] == "restore":  # as it was before it was retired
-            expected = (json.loads(last["entry"]).get("args") or {}).get("status", "active")
+            expected = (json.loads(last["entry"]).get("args") or {}).get("status", working)
         if inst["status"] != expected:
             log.error("instance %s's status doesn't match the ledger", inst["id"])
             return [f"{inst['id']}'s status doesn't match the ledger"]
@@ -469,6 +529,10 @@ class Gateway:
                 and who is not None and (user := self.matrix.user_of(who))):
             return {"channel": "matrix", "reply_to": {},
                     "start": {"person": person, "agent": agent, "user": user}}
+        if (latest is not None and latest["channel"] == "slack" and self.slack is not None
+                and who is not None and (user := self.slack.user_of(who))):
+            return {"channel": "slack", "reply_to": {},  # its app opens a direct message
+                    "start": {"person": person, "agent": agent, "user": user}}
         return local  # such as in Teams, where only people who added the agent's app can hear it
 
     def at_once(self, conn: db.Connection, person: str, agent: str | None, *,
@@ -487,8 +551,9 @@ class Gateway:
         if (channel not in PUSHED or self.chat(channel) is None
                 or chats.gone(conn, channel, conversation["reply_to"], conversation["at"])):
             return None
-        return {"channel": channel,
-                "reply_to": {k: v for k, v in conversation["reply_to"].items() if k != "activity"}}
+        return {"channel": channel,  # a new message, never a reply to one, nor in its thread
+                "reply_to": {k: v for k, v in conversation["reply_to"].items()
+                             if k not in ("activity", "ts", "thread")}}
 
     def able(self, conn: db.Connection) -> dict[str, bool]:
         """Which instances can act now: active, as signed and released, in a release this
@@ -549,9 +614,9 @@ class Gateway:
 
         return is_open
 
-    def chat(self, channel: str) -> Teams | Matrix | None:
+    def chat(self, channel: str) -> Teams | Matrix | Slack | None:
         """A chat a5s writes to itself, if it's on here."""
-        return {"teams": self.teams, "matrix": self.matrix}.get(channel)
+        return {"teams": self.teams, "matrix": self.matrix, "slack": self.slack}.get(channel)
 
     @property
     def public_url(self) -> str:
@@ -575,31 +640,46 @@ class Gateway:
 
     @staticmethod
     def reads_outside(conn: db.Connection, agent: str, acts_for: list[str],
-                      topic: str, conversation: str | None = None) -> bool:
-        """Whether a run opens marked: whether the conversation it reads holds a turn from a
-        run that read outside content, in its topic, which its summary may have folded, or
-        among the conversation's latest turns. In a group chat's conversation, among the
-        turns everyone it acts for heard, which are all it's given. What a marked run passed
-        on stays marked."""
+                      topic: str, conversation: str | None = None,
+                      chars: int = context.CHARS) -> bool:
+        """Whether a run opens marked: whether what it's given of its conversation, as the
+        context service gives it, holds what a run that read outside content wrote, or a5s's
+        words carrying it, or a summary kept before summaries folded none of it. Once that's
+        further back than a run is given, or the conversation started afresh since, a run opens
+        unmarked: one file or one mail no longer marks it for good (round 15, A4). In a group
+        chat's conversation, of the turns everyone it acts for heard, which are all it's
+        given."""
         group = conversation if groups.of(conversation) else None
         if group is None and len(acts_for) != 1:
             return False
-        heard = " and heard_by @> %(members)s::text[]" if group else ""  # the latest turns'
-        it_heard = " and t.heard_by @> %(members)s::text[]" if group else ""  # and the turn's
-        return bool(conn.execute(  # a task's own topic, which no other run reads, aside
-            "select 1 from turns t join runs r on r.id = t.run_id where r.read_outside "
-            "and t.person = %(person)s and t.agent = %(agent)s and (t.topic = %(topic)s or t.id in "
-            f"(select id from turns where person = %(person)s and agent = %(agent)s{heard} "
-            "and (topic = %(topic)s or topic not like 'task %%') "
-            f"order by id desc limit 200)){it_heard} limit 1",
-            {"person": group or acts_for[0], "agent": agent, "topic": topic,
-             "members": list(acts_for)}).fetchone())
+        summary, turns = context.given(conn, person=group or acts_for[0], agent=agent,
+                                       topic=topic, chars=chars,
+                                       members=list(acts_for) if group else None)
+        if summary is not None and summary.get("outside"):
+            return True
+        return bool(turns) and conn.execute(
+            "select 1 from turns t left join runs r on r.id = t.run_id where t.id = any(%s) "
+            f"and {context.CARRIES} limit 1", (turns,)).fetchone() is not None
+
+    def spoken(self, conn: db.Connection, person: str) -> str:
+        """The language someone reads, as a5s writes to them: English for anyone it doesn't
+        know."""
+        found = self.scenario.person(person)
+        return languages.of(conn, found) if found else languages.ENGLISH
 
     def approvers_in_force(self, conn: db.Connection) -> list[str]:
-        """Who approved the settings in force, by key or on a card the core sealed."""
-        row = conn.execute("select signers from settings_versions where scenario = %s "
-                           "order by serial desc limit 1", (self.scenario.name,)).fetchone()
-        return list(row["signers"]) if row else []
+        """Who approved the settings in force, by key or on a card the core sealed: who signed
+        the version in force, and, where it only narrowed what agents may do in some parts, who
+        signed the versions before it, back to the last that didn't, since a narrowing changes
+        nothing in any other part, so its owner's approval stands there (round 14)."""
+        found: list[str] = []
+        for row in conn.execute("select signers, narrows from settings_versions where "
+                                "scenario = %s order by serial desc limit 100",
+                                (self.scenario.name,)).fetchall():
+            found += [s for s in row["signers"] if s not in found]
+            if row["narrows"] is None:
+                break
+        return found
 
     def caps(self, conn: db.Connection, release: str) -> dict[tuple[str, str], int]:
         """a5s's caps for a release's types of action in each part, as the core sealed them
@@ -640,7 +720,10 @@ class Gateway:
                                  "instance": None, "acts_for": [], "decision": "record",
                                  "args": {"what": refused.what}})
             if refused.person and refused.told:  # so they can do it again, signing in afresh
-                digests.keep(conn, refused.person, None, None, None, refused.told, self.clock())
+                spoken, (said, given) = self.spoken(conn, refused.person), refused.told
+                digests.keep(conn, refused.person, None, None, None, words.say(spoken, said, **{
+                    k: words.say(spoken, v) if k == "why" else v for k, v in given.items()}),
+                    self.clock())
 
     def reason_told(self, said: str) -> str:
         """A rejection's reason as whoever asked is told it: on one line, with no link but to
@@ -663,12 +746,12 @@ class Gateway:
         for instance in settings.instances:
             for part, levels in sorted(instance.actions.items()):
                 if unknown := sorted(set(levels) - set(taken)):
-                    problems.append(f"{instance.id} sets a level in {part} for "
+                    problems.append(f"{instance.id} says what it may do in {part} for "
                                     f"{', '.join(unknown)}, which no tool here takes: the types "
                                     f"of action are {', '.join(taken) or 'none'}")
                 if unlimited := sorted(a for a, lv in levels.items()
                                        if lv >= 2 and a in taken and a not in settings.limits):
-                    problems.append(f"{instance.id} works at level 2 in {part} for "
+                    problems.append(f"{instance.id} acts on its own in {part} for "
                                     f"{', '.join(unlimited)}, which has no limit: give it one, "
                                     "under limits, so a run can't make any number of them")
             release = self.definitions.get(instance.definition)
@@ -686,6 +769,13 @@ class Gateway:
             if empty := sorted(g for g in groups if not registry.served(self.scenario, [g])):
                 problems.append(f"{instance.id} serves groups nobody in the directory is in: "
                                 f"{', '.join(empty)}")
+            if nobody := [t for t in instance.hands_to if not self.scenario.team(t)]:
+                problems.append(f"{instance.id} hands conversations to teams nobody in the "
+                                f"directory is in: {', '.join(nobody)}")
+            if instance.hands_to and release is not None and not release.context.handover:
+                problems.append(f"{instance.id} hands conversations to {', '.join(instance.hands_to)}"
+                                f", but the {instance.definition}'s release doesn't hand any over")
+        problems += shadows.problems(settings)  # the officer's choice, and each shadow narrower
         for group, roles in sorted(settings.groups.items()):  # an agent's role, for one here
             if wrong := [r for r in roles if r.partition(":")[0] in GROUP_AGENT_ROLES
                          and r.partition(":")[2] not in self.definitions]:
@@ -723,6 +813,65 @@ class Gateway:
         if message and message["agent"] != inst["definition"]:
             opening.reasons.append(f"the message is for the {message['agent']}, "
                                    f"not the {inst['definition']}")
+        elif message and afresh.asked(message["text"]):  # theirs to say: no run (round 15, A4)
+            afresh.start(conn, group or str(sender), inst["definition"], inst["id"], acts_for)
+            opening.reasons.append("the conversation started afresh")
+            opening.used = True
+            opening.said = words.say(self.spoken(conn, str(sender)), afresh.SAID,
+                                     agent=inst["definition"])
+            return opening
+        if message and conn.execute("select 1 from inbound_files where inbound_id = %s limit 1",
+                                    (inbound,)).fetchone():  # any file they sent with it, kept
+            opening.marked = True  # or not: its name, at least, is from outside (core/files.py)
+        return opening
+
+    def _unfit_shadow(self, settings: Settings | None, inst: dict,
+                      shadowed: dict | None) -> str | None:
+        """Why a shadow's model may not read the conversation of the instance it shadows: it
+        must be approved for the settings' class of data, and for each class of field the
+        live instance's model may read, which that conversation may hold."""
+        mine = self.definitions.get(inst["definition"])
+        theirs = self.definitions.get(shadowed["definition"]) if shadowed else None
+        model = self.models.get(mine.model) if mine else None
+        live = self.models.get(theirs.model) if theirs else None
+        if settings is None or model is None or live is None:
+            return f"{inst['id']}'s model, or that of {inst['shadows']}, isn't one a5s knows"
+        needed = {settings.data_class} | (set(settings.classified.values())
+                                          & set(live.data_classes))
+        if missing := sorted(needed - set(model.data_classes)):
+            return (f"{inst['id']}'s model isn't approved for {', '.join(missing)} data, which "
+                    f"what people say to {inst['shadows']} may hold")
+        return None
+
+    def shadowing(self, conn: db.Connection, inst: dict, trigger: dict,
+                  _now: datetime) -> Opening:
+        """A shadow's run, answering the message a run of the instance it shadows answered,
+        beside it: as the same people, in the same conversation and topic, sending nothing
+        (core/shadows.py). Only while the officer's choice in the settings in force lets it."""
+        settings, _ = self.settings_in_force(conn, seal=False)
+        live = str(trigger.get("live") or "")
+        try:
+            given = shadows.opening(conn, inst, trigger, bool(
+                settings is not None and settings.data_protection.shadow_runs))
+        except shadows.Refused as e:
+            return Opening({"kind": shadows.KIND, "live": live}, [], {"live": live}, [str(e)],
+                           used=True)
+        acts_for = given.pop("acts_for")
+        opening = Opening(trigger=given, acts_for=acts_for, reasons=[],
+                          args={"shadows": inst["shadows"], "live": live})
+        shadowed = conn.execute("select definition from instances where id = %s",
+                                (inst["shadows"],)).fetchone()
+        if why := self._unfit_shadow(settings, inst, shadowed):  # what its run is given
+            opening.reasons.append(why)  # of the live run's conversation is for its model too
+            opening.used = True
+        if shadowed and self.reads_outside(conn, shadowed["definition"], acts_for,  # its
+                                           given.get("topic", topics.GENERAL),  # conversation's
+                                           given.get("conversation")):  # mark, as it stands
+            opening.marked = True
+        if given.get("inbound") and conn.execute(
+                "select 1 from inbound_files where inbound_id = %s limit 1",
+                (given["inbound"],)).fetchone():
+            opening.marked = True  # what they sent with it, kept or not, is from outside
         return opening
 
     def reminding(self, conn: db.Connection, inst: dict, trigger: dict,
@@ -780,6 +929,46 @@ class Gateway:
             opening.used = True
         return opening
 
+    def fetch_file(self, where: dict) -> bytes:
+        """A file someone sent, from the chat that keeps it, as the agent's own bot there."""
+        chat = {"slack": self.slack, "teams": self.teams, "matrix": self.matrix}.get(
+            str(where.get("channel")))
+        if chat is None:
+            raise ValueError(f"{where.get('channel')} isn't set up in this gateway")
+        return chat.download(where)
+
+    def evented(self, conn: db.Connection, inst: dict, trigger: dict,
+                now: datetime) -> Opening:
+        """A run for an event another system sent (core/events.py): acting for the person it
+        names, where the directory knows them and the instance serves them, else for nobody,
+        with what its release says to do, and the event as a5s received it. Once for each."""
+        try:
+            event = str(uuid.UUID(str(trigger.get("event"))))
+        except ValueError:
+            raise HTTPException(400, "name the event the run works on") from None
+        row = conn.execute("select * from events where id = %s for update", (event,)).fetchone()
+        if row is None:
+            raise HTTPException(404, "a5s has no such event")
+        definition = self.definitions.get(inst["definition"])
+        said = events.taken(definition, row["source"], row["type"]) if (
+            definition and definition.release_id == inst["release"]) else None
+        person = row["person"]
+        acts_for = [person] if person and registry.serving(self.scenario, inst["serves"],
+                                                           person) else []
+        about = {"event": event, "source": row["source"], "type": row["type"],
+                 "records": list(row["records"])}
+        opening = Opening(trigger={"kind": events.KIND, **about, "topic": events.topic(row),
+                                   **({"person": person} if acts_for else
+                                      {"payer": events.payer(row["source"])})},
+                          acts_for=acts_for, args=about, reasons=[],
+                          task=events.task(said, row) if said else None,
+                          used=row["taken_at"] is not None)
+        if opening.used:
+            opening.reasons.append("the event has been worked on already")
+        elif why := events.refuses(self.scenario, self.definitions, inst, row):  # as the sweep
+            opening.reasons.append(why)  # that picked it found, unless it changed since
+        return opening
+
     def questioned(self, conn: db.Connection, inst: dict, trigger: dict,
                    now: datetime) -> Opening:
         """A run that answers another agent's question, acting for the same people as the run
@@ -806,7 +995,10 @@ class Gateway:
         opening = Opening(trigger={"kind": asking.KIND, **by, **({"payer": payer} if payer else {}),
                                    **({"asker_model": asker["model"]} if asker else {}),
                                    # a task's question is paid as its task is, short of their own
-                                   **({"for_task": True} if for_task else {})},
+                                   **({"for_task": True} if for_task else {}),
+                                   # and acts as them only where the run that asked could
+                                   **({"asked": True} if asking_run and asked_for(
+                                       asking_run["trigger"] or {}) else {})},
                           acts_for=list(row["acts_for"]),
                           args=by, reasons=[], marked=bool(row["read_outside"]),
                           used=bool(row["run_id"] or row["answered_at"] or row["problem"]))
@@ -1119,7 +1311,9 @@ class Opening:
     due: datetime | None = None  # the time a schedule or a report fires for
     seen: dict | None = None  # a report's records as it tells them, kept once they have it
     marked: bool = False  # it starts as a run that has read content from outside
+    said: str | None = None  # a5s's own answer in a run's place, such as to a fresh start
     told: list = field(default_factory=list)  # (source, text): more it reads as it opens
+    notes: list = field(default_factory=list)  # a5s's own words the run's agent hears first
 
 
 def values_of(traced: list[dict]) -> dict:
@@ -1180,6 +1374,13 @@ class Message(BaseModel):
     text: str
 
 
+class Given(BaseModel):
+    runs: list[str] = []  # the runs whose turns, or whose summary's, a run was given
+
+
+GIVEN_MOST = 2000  # runs a run may be given the words of at once
+
+
 class Answer(BaseModel):
     text: str = ""
     problem: str | None = None  # why there's no answer, such as its model being down
@@ -1187,7 +1388,9 @@ class Answer(BaseModel):
 
 class Notice(BaseModel):
     inbound: str  # the message it answers
-    text: str
+    text: str  # in English, as a core that says it in none other sends it (round 15, A12)
+    notice: str | None = None  # the same, as one of a5s's notices (core/notices.py), and
+    given: dict[str, str | list[str]] | None = None  # what changes in it
     instance: str | None = None
 
 
@@ -1196,6 +1399,8 @@ class Proposal(BaseModel):
 
 
 def create_app(gw: Gateway) -> FastAPI:
+    if wrong := undoing.problems(gw.scenario.tools()):  # how its tools say they're undone
+        raise RuntimeError("; ".join(wrong))
     explorer = gw.cfg.development  # FastAPI's explorer pages load scripts from a CDN
     app = FastAPI(title="a5s gateway", docs_url="/docs" if explorer else None,
                   redoc_url="/redoc" if explorer else None)
@@ -1208,9 +1413,15 @@ def create_app(gw: Gateway) -> FastAPI:
                      "detail": str(exc)[:200]},
         )
 
-    def service(authorization: str = Header(default="")) -> None:
-        if not secrets.compare_digest(authorization, f"Bearer {gw.cfg.service_token}"):
-            raise HTTPException(401, "service token required")
+    def service(request: Request, authorization: str = Header(default="")) -> None:
+        """The service token, for the scheduler's work; for an operator's, their own token,
+        where the deployment sets one (round 15, D3)."""
+        operator = gw.cfg.operator_token and getattr(
+            request.scope.get("route"), "path", None) in OPERATING
+        token = gw.cfg.operator_token if operator else gw.cfg.service_token
+        if not secrets.compare_digest(authorization, f"Bearer {token}"):
+            raise HTTPException(401, "the operators' token required" if operator
+                                else "service token required")
 
     def counted(doing: str) -> None:
         """Count a refusal for want of a second factor, for the status."""
@@ -1248,12 +1459,14 @@ def create_app(gw: Gateway) -> FastAPI:
         kind = body.trigger.get("kind")
         opens = {"message": gw.answering, "obligation": gw.reminding, "schedule": gw.scheduled,
                  "report": gw.reporting, "reminder": gw.following_up, "summary": gw.summarising,
-                 asking.KIND: gw.questioned, tasking.KIND: gw.slicing}
+                 asking.KIND: gw.questioned, tasking.KIND: gw.slicing, events.KIND: gw.evented,
+                 shadows.KIND: gw.shadowing}
         if kind not in opens:
             raise HTTPException(400, "a run answers a message, reminds someone of an obligation "
                                      "or of what they asked, works on a schedule, tells someone "
                                      "about their records, keeps a topic's summary, answers "
-                                     "another agent's question, or works on someone's task")
+                                     "another agent's question, works on someone's task, or "
+                                     "works on what another system says happened")
         token = secrets.token_urlsafe(32)
         run_id = str(uuid.uuid4())
         now = gw.clock()
@@ -1265,7 +1478,9 @@ def create_app(gw: Gateway) -> FastAPI:
             if holder := held_by(body.trigger.get("holder")):  # the scheduler's lease on it
                 opening.trigger["holder"] = holder
             reasons = opening.reasons
-            if inst["status"] != "active":
+            if kind == shadows.KIND:  # a shadow's own status is shadow: its opening says why not
+                pass
+            elif inst["status"] != "active":
                 reasons.append(f"{body.instance} is {inst['status']}")
             if any(not registry.serving(gw.scenario, inst["serves"], p) for p in opening.acts_for):
                 reasons.append(f"{body.instance} doesn't serve {', '.join(opening.acts_for)}")
@@ -1295,6 +1510,12 @@ def create_app(gw: Gateway) -> FastAPI:
                 if fired is None:
                     reasons.append(f"{opening.trigger['schedule']} has fired already")
                     opening.used = True
+            if kind == events.KIND and not opening.used and not reasons:  # once for each
+                conn.execute("update events set taken_at = %s, instance_id = %s, run_id = %s, "
+                             "outcome = 'run' where id = %s and taken_at is null",
+                             (now, body.instance, run_id, opening.trigger["event"]))
+            if kind == events.KIND and not opening.used and reasons:  # it waits, for a while
+                events.put_off(conn, opening.trigger["event"], body.instance, "; ".join(reasons))
             if kind == "reminder" and not reasons:
                 conn.execute("update reminders set reminded_at = %s where id = %s",
                              (now, opening.trigger["reminder"]))
@@ -1333,11 +1554,26 @@ def create_app(gw: Gateway) -> FastAPI:
                      opening.marked or gw.reads_outside(
                          conn, inst["definition"], opening.acts_for,
                          opening.trigger.get("topic", topics.GENERAL),
-                         opening.trigger.get("conversation"))),
+                         opening.trigger.get("conversation"), CHARS_PER_TOKEN * (
+                             release.context.budget_tokens if release
+                             else Context().budget_tokens))),
                 )
                 if kind == asking.KIND:  # whose run answers it, at work on it now
                     conn.execute("update questions set run_id = %s where id = %s",
                                  (run_id, opening.trigger["question"]))
+                if kind == "message":  # the files it came with, as the run's documents, unread
+                    opening.notes = [n for n in [files.attach(conn, run_id,
+                                                               opening.trigger["inbound"])] if n]
+                    if opening.notes:  # what they sent is theirs alone to read in the studio
+                        studio.readers(conn, run_id, [studio.ALONE])
+                    turns_at_open(conn, inst["definition"], opening, run_id)
+                if kind == shadows.KIND and opening.trigger.get("inbound") and files.attach(
+                        conn, run_id, opening.trigger["inbound"]):  # and a shadow's, as its
+                    studio.readers(conn, run_id, [studio.ALONE])  # notes said
+                if kind == asking.KIND:  # the question's words are the run's that asked
+                    asked = conn.execute("select asked_by_run from questions where id = %s",
+                                         (opening.trigger["question"],)).fetchone()
+                    studio.given_from(conn, run_id, [asked["asked_by_run"]] if asked else [])
                 if kind == tasking.KIND:  # what its task's earlier runs read, as they read it
                     tasking.given(conn, opening.trigger["task"], run_id)
                 elif opening.task:  # what a5s asks it, from the records: something it has read,
@@ -1357,8 +1593,14 @@ def create_app(gw: Gateway) -> FastAPI:
                 "kind": "run", "action": "open", "run": None if reasons else run_id,
                 "instance": body.instance, "acts_for": opening.acts_for,
                 "decision": "deny" if reasons else "allow", "reasons": reasons,
-                "args": {"trigger": kind, **opening.args},
+                "args": {"trigger": kind, **opening.args,  # and the token behind it (round 15)
+                         "credential": credential(gw.cfg.service_token)},
             })
+            if opening.said and (to := gw.message_of(conn, opening.trigger.get("inbound"))):
+                sent = outbound(conn, {"channel": to["channel"], "reply_to": to["reply_to"]},
+                                to["person"], opening.said, instance=body.instance,
+                                agent=inst["definition"], inbound=to["id"])  # in a run's place
+                pushing += [sent] if sent is not None else []
         traces.note(current, **{"a5s.run.id": None if reasons else run_id,
                                 "a5s.decision": "deny" if reasons else "allow"})
         push(pushing)
@@ -1367,9 +1609,28 @@ def create_app(gw: Gateway) -> FastAPI:
                                       "owner": inst["owner"], "suspended_by": inst["suspended_by"],
                                       "answered": opening.used, "out_of_budget": bool(spent)})
         return {"run": run_id, "token": token, "task": opening.task,
+                **({"notes": opening.notes} if opening.notes else {}),
                 "topic": opening.trigger.get("topic", topics.GENERAL),
                 "history_chars": CHARS_PER_TOKEN * (release.context.budget_tokens if release
                                                     else Context().budget_tokens)}
+
+    def turns_at_open(conn: db.Connection, agent: str, opening: Opening, run: str) -> None:
+        """What someone said, as the message arrived, and a5s's notes on what came with it, in
+        the conversation of the run that answers it, for it and later runs to read: the core's
+        alone to write, so no other part puts words in anyone's mouth (round 15, F10)."""
+        said = conn.execute("select person, text, conversation, members from inbound where "
+                            "id = %s", (opening.trigger["inbound"],)).fetchone()
+        if said is None:
+            return
+        group = said["conversation"] if groups.of(said["conversation"]) else None
+        members = list(said["members"] or []) if group else None
+        topic = opening.trigger.get("topic", topics.GENERAL)
+        heard = {"speaker": said["person"], "heard_by": members} if members else {}
+        context.add_turn(conn, person=group or said["person"], agent=agent, role="person",
+                         content=said["text"], run=run, topic=topic, **heard)
+        for note in opening.notes:  # after their words, as heard by whoever heard them
+            context.add_turn(conn, person=group or said["person"], agent=agent, role="task",
+                             content=note, run=run, topic=topic, heard_by=members or None)
 
     @services.post("/runs/sweep")
     def sweep() -> list[dict]:
@@ -1440,8 +1701,19 @@ def create_app(gw: Gateway) -> FastAPI:
             sends = [] if ended.startswith("done") else give_instead(conn, row["trigger"],
                                                                       WHY.get(ended))
             sends += slice_closed(conn, run_id, row, ended)
+            if ended == "model unavailable" and (row["trigger"] or {}).get("kind") == events.KIND:
+                tried(conn, run_id, row["trigger"])
         push(sends)
         return {"closed": run_id}
+
+    def tried(conn: db.Connection, run_id: str, trigger: dict) -> None:
+        """An event whose run its model didn't answer, and which wrote, changed and sent
+        nothing, waits to be tried again, as one that can't be worked on now does, rather
+        than being lost, such as a customer's mail with no reply (round 15)."""
+        if not any(not shadow_may(r["action"]) for r in conn.execute(
+                "select action from ledger where run_id = %s and kind = 'tool' and decision in "
+                "('allow', 'hold')", (run_id,))):
+            events.again(conn, str(trigger.get("event")), run_id)
 
     def slice_closed(conn: db.Connection, run_id: str, row: dict,
                      outcome: str) -> list[int | None]:
@@ -1488,7 +1760,10 @@ def create_app(gw: Gateway) -> FastAPI:
             if row is None or row["cancelled_at"] or person is None or not person.in_audience:
                 return []
             conn.execute("update reminders set reminded_at = %s where id = %s", (now, row["id"]))
-            text = reminders.notice(row, person, f"unable to write to you just now, as {why}")
+            spoken = gw.spoken(conn, person.id)
+            text = reminders.notice(row, person, words.say(
+                spoken, "unable to write to you just now, as {why}", why=words.say(spoken, why)),
+                spoken)
             ledger.append(conn, {"kind": "notice", "action": "remind", "run": None,
                                  "instance": row["instance_id"], "acts_for": [person.id],
                                  "decision": "record", "args": {
@@ -1509,7 +1784,7 @@ def create_app(gw: Gateway) -> FastAPI:
                 return []
             conn.execute("update obligations set chased_at = %s, updated_at = %s where id = %s",
                          (now, now, row["id"]))
-            text = obligations.instead(row, person, why)
+            text = obligations.instead(row, person, why, gw.spoken(conn, person.id))
             ledger.append(conn, {"kind": "notice", "action": "chase", "run": None,
                                  "instance": row["instance_id"], "acts_for": [person.id],
                                  "decision": "record", "args": {
@@ -1622,6 +1897,16 @@ def create_app(gw: Gateway) -> FastAPI:
                                      "due": at.isoformat()}})
         return due
 
+    @services.post("/events/sweep")
+    def sweep_events() -> list[dict]:
+        """The events other systems sent that wait for a run, for the scheduler to run, each
+        with the instance at work that takes it (core/events.py): the scenario's mailboxes'
+        new mail among them, which a5s asks each for first, at most once a minute."""
+        if gw.mail is not None:
+            gw.mail.sweep(gw.scenario, gw.clock())
+        with db.transaction(gw.url) as conn:
+            return events.due(conn, gw, gw.clock())
+
     @services.post("/reports/sweep")
     def sweep_reports() -> list[dict]:
         """The reports due now that have something to tell, for the scheduler to run. A day
@@ -1697,7 +1982,8 @@ def create_app(gw: Gateway) -> FastAPI:
                     continue
                 conn.execute("update reminders set reminded_at = %s where id = %s", (now, row["id"]))
                 status = inst["status"] if inst["status"] != "active" else "unable to act"
-                text = reminders.notice(row, person, status)
+                spoken = gw.spoken(conn, person.id)
+                text = reminders.notice(row, person, words.say(spoken, status), spoken)
                 if row["in_digest"]:  # a5s's own item in their digest
                     digests.keep(conn, person.id, None, inst["id"], None, text, now)
                     noted(conn, person.id, row["agent"], text, row["record"])
@@ -1767,7 +2053,8 @@ def create_app(gw: Gateway) -> FastAPI:
                 for agent, group in groups.items():
                     one = group[0] if len(group) == 1 else None
                     writer = agent or (one["agent"] if one else None)
-                    text = one["text"] if one else digests.compose(person, group, due, agent)
+                    text = one["text"] if one else digests.compose(person, group, due, agent,
+                                                                    gw.spoken(conn, who))
                     route = gw.reach(conn, who, writer)
                     ledger.append(conn, {
                         "kind": "notice", "action": "digest", "run": None,
@@ -1832,9 +2119,12 @@ def create_app(gw: Gateway) -> FastAPI:
                                  "args": {"settings": settings.version, "serial": settings.serial,
                                           "digest": row["digest"], **asker,
                                           "widens": any(c["widens"] for c in found)}})
-            text = approvals.text(settings.serial, found, link)
             for approver in registry.approvers(settings, gw.scenario.holders, before,
                                                memberships.rooted(gw.scenario).holders):
+                spoken = languages.of(conn, approver)  # each in the language they read
+                theirs = found if spoken == languages.ENGLISH else approvals.changes(
+                    before, settings, gw.definitions, gw.scenario.person, spoken)
+                text = approvals.text(settings.serial, theirs, link, spoken)
                 route = gw.reach(conn, approver.id, None)
                 ledger.append(conn, {
                     "kind": "notice", "action": "ask-approval", "run": None, "instance": None,
@@ -1843,7 +2133,7 @@ def create_app(gw: Gateway) -> FastAPI:
                              "channel": route["channel"], "chars": len(text),
                              "sha256": hashlib.sha256(text.encode()).hexdigest()}})
                 sends.append(outbound(conn, route, approver.id, text,
-                                      card=approvals.card(settings.serial, found, link)))
+                                      card=approvals.card(settings.serial, theirs, link, spoken)))
                 asked.append(approver.id)
         return {"refused": [], "row": row, "new": new, "changes": found, "link": link,
                 "asked": asked, "sends": sends}
@@ -1921,8 +2211,11 @@ def create_app(gw: Gateway) -> FastAPI:
                                  "reasons": refused, "args": {"settings": settings.version,
                                                               "serial": settings.serial}})
         else:
-            refused = registry.apply(conn, gw.definitions, settings, gw.scenario.tools(),
-                                     gw.scenario.person, gw.scenario.name, approved).refused
+            applied = registry.apply(conn, gw.definitions, settings, gw.scenario.tools(),
+                                     gw.scenario.person, gw.scenario.name, approved)
+            if not (refused := applied.refused):  # a version that only narrows tells others
+                narrowing.told(conn, gw.scenario, gw.definitions, settings, applied.before,
+                               valid, gw.clock())
         return ("refused: " + "; ".join(refused)) if refused else "applied", approved
 
     @services.post("/settings/sweep")
@@ -1987,10 +2280,13 @@ def create_app(gw: Gateway) -> FastAPI:
 
     def auditor(by: str, identity: str | None) -> tuple[str, str]:
         """Who reads the trail through the core's API, and through what: their own sign-in,
-        checked here, with a second factor where the deployment asks for one, or the service
-        token, which names them, and says so in the ledger, since whoever holds it could
-        name anyone."""
+        checked here, with a second factor where the deployment asks for one, which it takes
+        wherever people sign in; or, where nobody does, the token, which names them, and says
+        so in the ledger, since whoever holds it could name anyone."""
         through = "the service token"
+        if gw.identity is not None and not identity:  # a token names anyone (round 15, D3)
+            raise HTTPException(401, "sign in to read the audit trail: send your sign-in as "
+                                     "X-A5S-Identity, as `a5s audit` does from A5S_TOKEN")
         if identity:
             if gw.identity is None:
                 raise HTTPException(400, "a5s uses no identity provider here: name the reader "
@@ -2151,6 +2447,8 @@ def create_app(gw: Gateway) -> FastAPI:
         if groups.of(person):
             raise HTTPException(400, "a group chat's conversation is nobody's own: name a person")
         by, identity = officer_asked("export", person, body)
+        if customers.is_address(person) and gw.scenario.person(person) is None:
+            return export_customer(person, by, identity)  # someone outside the directory
         with db.transaction(gw.url) as conn:  # as of one moment, so that a sweep that
             conn.execute("set transaction isolation level repeatable read read only")  # archives
             found = export.gather(conn, person)  # them meanwhile moves nothing it reads
@@ -2176,6 +2474,8 @@ def create_app(gw: Gateway) -> FastAPI:
             raise HTTPException(400, "send the id again as confirm, so that a mistyped id erases "
                                      "nobody")
         here = gw.scenario.person(person) is not None
+        if customers.is_address(person) and not here:
+            return erase_customer(person, body)  # someone outside the directory
         with db.transaction(gw.url) as conn:  # the request is used only if the erasure is made
             by, identity = officer_asked("erase", person, body, conn)
             try:
@@ -2193,6 +2493,48 @@ def create_app(gw: Gateway) -> FastAPI:
                                           "erased": gone, "archives_left": len(archives)}})
         return {"erased": person, "by": by, "gone": gone, "archives": archives}
 
+    def export_customer(address: str, by: str, identity: dict | str) -> dict:
+        """Where a5s keeps the address of someone outside the directory, such as a customer
+        who writes to a shared mailbox, and how much (core/customers.py). The ledger records it
+        by a digest of their address, in counts."""
+        with db.transaction(gw.url) as conn:
+            conn.execute("set transaction isolation level repeatable read read only")
+            found = customers.gather(conn, address)
+        if not customers.holds(found):
+            raise HTTPException(404, f"a5s keeps nothing that names {address}: check the address")
+        with db.transaction(gw.url) as conn:
+            ledger.append(conn, {"kind": "admin", "action": "export", "run": None,
+                                 "instance": None, "acts_for": [], "decision": "record",
+                                 "args": {"person": customers.subject(address), "by": by,
+                                          "identity": identity, "counts": customers.counts(found)}})
+        return found
+
+    def erase_customer(address: str, body: Erasure) -> dict:
+        """Erase the address of someone outside the directory from what a5s keeps, leaving
+        what's evidence of what agents did (core/customers.py). The ledger records it by a
+        digest of their address, in counts."""
+        with db.transaction(gw.url) as conn:  # the request is used only if the erasure is made
+            by, identity = officer_asked("erase", address, body, conn)
+            try:
+                done = customers.erase(conn, address)
+            except customers.Busy:
+                raise HTTPException(409, f"a run holds {address} now, and might write it out "
+                                         "after the erasure: try again in a minute or two") from None
+            except customers.Waiting as exc:
+                raise HTTPException(409, f"{', '.join(exc.keys)} name {address} and wait for a "
+                                         "decision, or are being made: their deciders decide "
+                                         "them first, then ask again") from None
+            if not done["gone"] and not done["kept"]:
+                raise HTTPException(404, f"a5s keeps nothing that names {address}: check the "
+                                         "address")
+            ledger.append(conn, {"kind": "admin", "action": "erase", "run": None,
+                                 "instance": None, "acts_for": [], "decision": "record",
+                                 "args": {"person": customers.subject(address), "by": by,
+                                          "identity": identity, "erased": done["gone"],
+                                          "kept": len(done["kept"])}})
+        return {"erased": address, "by": by, "gone": done["gone"], "kept": done["kept"],
+                "archives": []}
+
     @services.post("/retention/sweep")
     def sweep_retention() -> dict:
         """Delete what's past its time to keep (core/retention.py), and record how much went.
@@ -2202,7 +2544,8 @@ def create_app(gw: Gateway) -> FastAPI:
             asks.settle(conn, gw.scenario, studio.instances(conn))
         with db.transaction(gw.url) as conn:
             gone = retention.sweep(conn, gw.clock(), gw.scenario.name,
-                                   kept=gw.data_protection(conn).kept_for)
+                                   kept=gw.data_protection(conn).kept_for,
+                                   released=run_cases.released(gw.cfg.agents_dir))
             if gone:
                 ledger.append(conn, {"kind": "retention", "action": "delete", "run": None,
                                      "instance": None, "acts_for": [], "decision": "record",
@@ -2320,8 +2663,12 @@ def create_app(gw: Gateway) -> FastAPI:
                                             gw.hidden_from(conn, row)))
                 provenance.read(conn, row["run"], f"the records, on {topic}", context[-1]["text"],
                                 gw.scenario.record_pattern)
-                if waiting := proposals.brief(conn, row["id"], list(row["acts_for"]), [topic],
-                                              group):
+                waiting, outside = proposals.brief(conn, row["id"], list(row["acts_for"]),
+                                                   [topic], group)
+                if outside:  # a change a marked run asked for: its words mark this one too
+                    conn.execute("update runs set read_outside = true where id = %s",
+                                 (row["run"],))
+                if waiting:
                     context.append({  # a5s's own, not the records': so it says it waits
                         "title": f"Changes to {topic} waiting for a decision",
                         "text": "a5s holds these, as they were asked for, until their deciders "
@@ -2382,6 +2729,7 @@ def create_app(gw: Gateway) -> FastAPI:
         model = gw.models.get(row["model"])
         tools = {**gw.scenario.tools(), **CORE_TOOLS}  # a5s's own first
         own = row["trigger"].get("kind") in OWN_RUNS  # a5s's own work, with one model call
+        shadow = row["trigger"].get("kind") == shadows.KIND  # only what reads
         return {
             "run": row["run"],
             "instance": row["id"],
@@ -2392,7 +2740,8 @@ def create_app(gw: Gateway) -> FastAPI:
             "model": {"alias": model.alias, "api": model.api} if model else None,
             "tools": [] if own else [tools[n].definition() for n in row["grants"] if n in tools
                                      and (n not in CORE_TOOLS or not CORE_TOOLS[n].offered
-                                          or CORE_TOOLS[n].offered(row))],  # only those that
+                                          or CORE_TOOLS[n].offered(row))
+                                     and (not shadow or shadow_may(n))],  # only those that
             # can work for the run: nothing that could only refuse it
             "plain": own,
             "skills": {} if own else definition.skills,  # read-only, from the release
@@ -2415,10 +2764,44 @@ def create_app(gw: Gateway) -> FastAPI:
                 "a5s.tool.own": name in CORE_TOOLS or None}) as current:
             return calling_tool(name, body, token, current)
 
+    def shadow_may(name: str) -> bool:
+        """Whether a shadow may call a tool: one of a5s's own that only reads, or one of its
+        scenario's that changes, writes and sends nothing (core/shadows.py)."""
+        if name in CORE_TOOLS:
+            return name in shadows.READS
+        tool = gw.scenario.tools().get(name)
+        return tool is not None and not (tool.action or tool.writes or tool.destructive
+                                         or tool.sends_outside)
+
     def calling_tool(name: str, body: ToolArgs, token: str, current: Any) -> Any:
         core = CORE_TOOLS.get(name)
         tool = None if core else gw.scenario.tools().get(name)
         args, removed = dict(body.args), 0
+        apart: list[str] = []  # the values it wrote itself, for whoever checks its text
+        if not shadow_may(name):  # a shadow's run calls it for nothing, before anything's read
+            with db.transaction(gw.url) as conn:
+                early = load_run(conn, token)
+                if early["trigger"].get("kind") == shadows.KIND:
+                    why = "a shadow changes, writes and sends nothing: it only reads"
+                    ledger.append(conn, gw.entry(early, "tool", name, Decision(
+                        False, (Own.SHADOW_CHANGES,), explanations=(why,)),
+                        args=ledger.mask(args)))
+                    return JSONResponse(status_code=403, content={
+                        "denied": True, "reasons": [Own.SHADOW_CHANGES],
+                        "explanations": [why]})
+        if getattr(tool, "as_person", "") or getattr(tool, "library", ""):  # as someone, or
+            with db.transaction(gw.url) as conn:  # what they may read in a library
+                early = load_run(conn, token)
+                if not asked_for(early["trigger"] or {}):
+                    why = ("nobody asked for this run, such as an event's or a report's, so it "
+                           "never acts as anyone in another system, nor reads a library for "
+                           "them: only what they ask themselves does")
+                    ledger.append(conn, gw.entry(early, "tool", name, Decision(
+                        False, (Own.UNASKED,), explanations=(why,)),
+                        args=ledger.mask(args)))
+                    return JSONResponse(status_code=403, content={
+                        "denied": True, "reasons": [Own.UNASKED],
+                        "explanations": [why]})
         for field_name in (core or tool).text_fields if (core or tool) else ():
             if field_name in args:  # outgoing text, at any depth
                 args[field_name], dropped = cleaned(args[field_name], gw.scenario.record_links)
@@ -2433,11 +2816,12 @@ def create_app(gw: Gateway) -> FastAPI:
         # that can't be read now is asked for no further: nobody could decide it as they stand.
         # Only for a run there is, with arguments that fit, naming a few: nothing's read for less
         unreadable = False
-        if action:
+        given = args  # as the system would get them: each handle as the value it stands for,
+        if action:  # which a string's form, such as a date's, is checked on (round 15)
             with db.transaction(gw.url) as conn:
-                load_run(conn, token)
+                given = handles.resolved_args(conn, load_run(conn, token)["run"], args)
         readable = (tool is not None and bool(action) and len(keys) <= MOST_NAMED
-                    and misfit(tool.schema, args) is None)
+                    and misfit(tool.schema, given) is None)
         try:
             standing = proposals.snapshot({k: record_of(gw.scenario, k) for k in keys}) if readable else {}
         except Exception:  # the records system's own failure, never the run's
@@ -2469,58 +2853,80 @@ def create_app(gw: Gateway) -> FastAPI:
                 if change:
                     over = counts.over(conn, requested, action, max(len(keys), 1), found[0].limits,
                                        gw.clock())
-                about = parts.about(gw.scenario, row, keys, action, gw.approvers_in_force(conn),
+                steered = handover.steered(conn, row["acts_for"][0], row["definition"]) if (
+                    len(row["acts_for"]) == 1 and not groups.of(
+                        row["trigger"].get("conversation"))) else []
+                weighed = {**row, "steered": bool(steered)}  # a team's words: level 1 at most
+                about = parts.about(gw.scenario, weighed, keys, action, gw.approvers_in_force(conn),
                                     gw.caps(conn, row["release"]), standing) if action else parts.about(
-                    gw.scenario, row, keys)
+                    gw.scenario, weighed, keys)
                 decision = gw.decide(row, "call_tool", entity, [], **about,
                                      over_limit=over is not None)
                 if found[0] is None:  # fail closed
-                    decision = Decision(False, ("settings-must-check-out",), explanations=(
+                    decision = Decision(False, (Own.SETTINGS,), explanations=(
                         f"a5s can't use the settings in force: {found[1]}",))
-                elif problem := misfit((core or tool).schema if (core or tool) else {}, args):
-                    decision = Decision(False, ("arguments-fit-the-schema",), explanations=(
+                elif problem := misfit((core or tool).schema if (core or tool) else {},
+                                       handles.resolved_args(conn, row["run"], args)):
+                    decision = Decision(False, (Own.ARGUMENTS,), explanations=(
                         f"the arguments don't fit the tool: {problem}",))
                 elif any(not isinstance(r, str) or not r for r in records):
-                    decision = Decision(False, ("records-are-named-by-key",), explanations=(
+                    decision = Decision(False, (Own.KEYS,), explanations=(
                         "a record is named by its key, in words",))
                 elif action and len(keys) > MOST_NAMED:
-                    decision = Decision(False, ("a-change-names-few-records",), explanations=(
+                    decision = Decision(False, (Own.FEW,), explanations=(
                         f"one call changes {MOST_NAMED} records at most: ask for the rest apart",))
-                elif unreadable:
-                    decision = Decision(False, ("records-can-be-read",), explanations=(
+                elif unreadable and not parts.unseen(decision.reasons):  # one it may not work
+                    decision = Decision(False, (Own.READABLE,), explanations=(  # on is refused,
                         ("the records it names can't be read just now, so a5s asked for nothing: "
-                         "try again later"),))
+                         "try again later"),))  # read or not, as one there isn't (A14)
                 if row["trigger"].get("kind") in OWN_RUNS:
-                    decision = Decision(False, ("a5s-runs-call-no-tools",), explanations=(
+                    decision = Decision(False, (Own.OWN_RUNS_CALL,), explanations=(
                         "a5s's own runs, such as keeping a summary, call no tools",))
                 if why := tasking.stopped(conn, row):  # cancelled, as a suspension stops runs
-                    decision = Decision(False, ("tasks-stop-when-stopped",), explanations=(why,))
-                deciding = holding(decision, records, requested)
+                    decision = Decision(False, (Own.STOPPED,), explanations=(why,))
+                deciding = holding(decision, records, requested, steered)
                 if isinstance(deciding, str):  # nobody may decide it, or nothing can here
-                    decision = Decision(False, ("someone-else-decides",), explanations=(deciding,))
+                    decision = Decision(False, (Own.DECIDER,), explanations=(deciding,))
                 texts = [s for f in tool.text_fields for s in strings(args.get(f))] if tool else []
                 if decision.held:  # what deciders should know: every value the agent wrote itself
                     texts = strings(args)
                 traced = provenance.traced(conn, gw.scenario, row, "\n".join(texts))
                 last = next((f for f in reversed(tool.text_fields)
                              if isinstance(args.get(f), str)), None) if tool else None
-                if (own := [t["value"] for t in traced if t["from"] is None]) and last:
+                own = [t["value"] for t in traced if t["from"] is None]
+                if getattr(tool, "checked_by", ()):  # a5s's notes go to whoever checks it, and
+                    apart = own  # never into what someone outside reads (round 15)
+                elif own and last:
                     args[last] += "\n\n" + provenance.note(row["definition"], own)  # apart
-                if row["read_outside"] and last and decision.allowed:  # and what it drew on
+                if (row["read_outside"] and last and decision.allowed  # and what it drew on
+                        and not getattr(tool, "checked_by", ())):
                     args[last] += "\n\n" + extractor.DREW
                 plain = (*((arg,) if arg else ()), *(core.plain if core else ()))
                 seq = ledger.append(conn, gw.entry(row, "tool", name, decision,
                                                    args=ledger.mask(args, plain),
                                                    links_removed=removed,
+                                                   read_outside=bool(row["read_outside"]),
+                                                   **({"steered_by": steered} if steered else {}),
                                                    **({"values": values_of(traced)} if traced else {})))
                 studio.handled(conn, row["run"], keys)  # the records it named, whatever came of it
+                # Of a record it may not work on, the run hears what it would of one there
+                # isn't, whichever rule refused it: the ledger keeps which, as its page shows
+                if not decision.allowed and parts.unseen(decision.reasons):  # (round 15, A14)
+                    decision = Decision(False, (parts.REFUSED,),
+                                        explanations=(parts.told(gw.scenario, row),))
                 if change and (decision.allowed or decision.held):  # made or held: it counts
                     counts.count(conn, requested, action, change, max(len(keys), 1),
                                  over is not None, "making" if decision.allowed else "held",
                                  gw.clock())
                 if decision.held:  # it waits for a person: the exact call, kept for its deciders
+                    marked_only = bool(row["read_outside"] and action and gw.decide(
+                        {**row, "read_outside": False}, "call_tool", entity, [], **parts.about(
+                            gw.scenario, {**weighed, "read_outside": False}, keys, action,
+                            gw.approvers_in_force(conn), gw.caps(conn, row["release"]),
+                            standing), over_limit=over is not None).allowed)  # (round 15, A4)
                     proposal, sends = held(conn, requested, tool, args, standing, deciding or [],
-                                           seq, traced, change, over, found[0])
+                                           seq, traced, change, over, found[0], steered,
+                                           marked_only)
         if waits is not None or (again and again["state"] != "held"):
             where = "task" if counts.work(row) != row["run"] else "run"
             return {"result": {"held": proposals.key(waits), "status": (
@@ -2552,6 +2958,11 @@ def create_app(gw: Gateway) -> FastAPI:
             return asking_agent(args, row, seq)
         if core is not None:
             return call_core_tool(core, args, row, seq)
+        assert tool is not None  # one of the scenario's: policy refused any tool there isn't
+        given, run = dict(args), tool.run
+        if tool.checked_by and any(handles.TOKEN.search(s) for f in tool.text_fields
+                                   for s in strings(args.get(f))):
+            run = unhandled(tool)  # what goes outside carries no handle's value (round 15)
         try:
             with db.transaction(gw.url) as conn:  # a system gets the values handles stand for
                 given = handles.resolved_args(conn, row["run"], args)
@@ -2560,10 +2971,22 @@ def create_app(gw: Gateway) -> FastAPI:
                     given[field_name], _ = cleaned(given[field_name], gw.scenario.record_links,
                                                    notes=False)
             effect = change or (counts.change(name, keys, args) if tool.idempotent else None)
-            result = tool.run(ToolCall(args=given, instance=row["id"], run=row["run"],
-                                       acts_for=tuple(row["acts_for"]),
-                                       key=counts.key(counts.work(row), effect) if effect
-                                       else None))  # once for the run, or for its task
+            result = run(ToolCall(args=given, instance=row["id"], run=row["run"],
+                                  acts_for=tuple(row["acts_for"]),
+                                  serves=() if row["acts_for"] else tuple(  # whom it may reach
+                                      registry.served(gw.scenario, row["serves"])),
+                                  key=counts.key(counts.work(row), effect) if effect
+                                  else None))  # once for the run, or for its task
+            result, read_by = studio.taken(result)  # who may read each document it gave
+            if getattr(tool, "as_person", "") and not (isinstance(result, dict)
+                                                       and result.get("error")):
+                read_by.append(studio.ALONE)  # what a system gave as them is theirs alone
+            if read_by:
+                with db.transaction(gw.url) as conn:  # kept before the run has it, so the
+                    studio.readers(conn, row["run"], read_by)  # studio shows it to no one else
+            if apart and not (isinstance(result, dict) and result.get("error")):
+                with db.transaction(gw.url) as conn:  # a5s's notes, to whoever checks it
+                    checked(conn, row, tool, apart)
             refused = result.get("error") if action and isinstance(result, dict) else None
             outcome = ({"status": "error", "error": str(refused)[:200], "answered": True}
                        if refused else {"status": "ok", "result_sha256": ledger.digest(result)})
@@ -2572,6 +2995,11 @@ def create_app(gw: Gateway) -> FastAPI:
                 outcome["withheld"] = withheld
             if tool.outside:  # never the content itself: the extractor's form, checked by code
                 result, outcome["documents"] = read_outside(row, token, tool, result)
+            elif tool is not None and tool.marks and not (isinstance(result, dict)
+                                                          and result.get("error")):
+                with db.transaction(gw.url) as conn:  # a few words from outside, as they are
+                    conn.execute("update runs set read_outside = true where id = %s",
+                                 (row["run"],))
             with db.transaction(gw.url) as conn:  # the agent gets handles for sensitive values,
                 hidden = (*tool.handles, *sorted(gw.hidden_from(conn, row)))  # and classified
                 result = handles.issue(conn, row["run"], name, result, hidden)  # ones it can't see
@@ -2603,9 +3031,11 @@ def create_app(gw: Gateway) -> FastAPI:
                         conn, row["run"], change)
             except psycopg.Error:
                 log.exception("couldn't settle the count of %s's change", row["run"])
-        if action and outcome["status"] == "ok":  # a change made at level 2: someone's told
+        if action and tool is not None and outcome["status"] == "ok":  # made at level 2: told
             try:
-                acted(row, tool, args, keys, standing)
+                kept = acted(row, tool, args, keys, standing, given)
+                if kept and isinstance(result, dict):  # so the agent knows, and says no link
+                    result = {**result, "a5s_undo": undoing.for_agent(kept["until"])}
             except Exception:  # it's made: the agent hears so, whatever else fails
                 log.exception("couldn't report the change %s made", row["run"])
         traces.note(current, **{"error.type": "tool_error" if outcome["status"] != "ok" else None})
@@ -2613,25 +3043,64 @@ def create_app(gw: Gateway) -> FastAPI:
             return JSONResponse(status_code=502, content={"error": outcome["error"]})
         return {"result": result, "recorded": recorded}
 
-    def acted(row: dict, tool: Tool, args: dict, keys: list[str], standing: dict) -> None:
+    def unhandled(tool: Tool) -> Callable[[ToolCall], dict]:
+        """What a tool whose text people check before it goes outside says, in place of
+        writing it, when the agent put a handle in it: a5s puts no value a handle stands for,
+        such as someone's address, in what someone outside would read (round 15)."""
+        where = tool.checked_in or "what goes outside"
+        return lambda call: {"error": (
+            f"a5s puts no value a handle stands for, such as someone's address, in {where}, "
+            "which someone outside would read: write it without them, and the team adds what's "
+            "needed")}
+
+    def checked(conn: db.Connection, row: dict, tool: Tool, own: list[str]) -> None:
+        """a5s's notes on the values an agent wrote itself in text people check before it goes
+        outside, such as a reply among a shared mailbox's drafts: in the digest of each who
+        checks it, in the language they read, never in what a customer would read (round 15)."""
+        for pid in registry.served(gw.scenario, tool.checked_by):
+            if gw.scenario.person(pid) is None:
+                continue
+            spoken = gw.spoken(conn, pid)
+            digests.keep(conn, pid, None, row["id"], row["run"], words.say(
+                spoken, CHECKED, agent=row["definition"], where=tool.checked_in,
+                note=provenance.note(row["definition"], own, spoken)), gw.clock())
+
+    def acted(row: dict, tool: Tool, args: dict, keys: list[str], standing: dict,
+              given: dict) -> dict | None:
         """Report a change an agent made at level 2, in words code works out, with each record
         as it stood before, and a link to it, so it can be reversed through the scenario's own
         process if it needs to be: in the digest of the instance's owner and deputy who may see
         its records, or, with neither, of the owners of its parts. Tell whoever it was for, in
-        their conversation with the agent. And draw it as a sample, for grading."""
+        their conversation with the agent. And draw it as a sample, for grading. Where its tool
+        says how it's undone, keep how (core/undoing.py): what whoever it was for can do, and
+        until when, which a5s tells them itself, beside the agent's next message to them. What
+        it keeps to undo it, if anything."""
         asked = groups.requesters(row)  # whose words asked for it: in a group, not everyone
-        whom = approvals.names_of([p.name if (p := gw.scenario.person(w)) else w
-                                   for w in asked]) if asked else "nobody"
+        undo, as_left = undone_by(tool, keys, given, standing)
         with db.transaction(gw.url) as conn:
             values = {r["handle"]: r["value"] for r in conn.execute(
                 "select handle, value from run_handles where run_id = %s", (row["run"],))}
             said = proposals.said(gw.scenario, tool, args, standing, asked,
-                                  row["definition"], values)
+                                  row["definition"], values, row["trigger"])
             change = said.split("\n", 1)[0]
             before = " ".join(proposals.stood(standing)).replace(
                 "as it stood when it was asked for", "as it stood before")
-            text = (f"The {row['definition']} made a change itself, at level 2, for {whom}: "
-                    f"{change}" + (f" {before}" if before else ""))
+            parts_of = sorted({p for k in keys if (p := gw.scenario.part_of(k))})
+            kept = undoing.keep(conn, row, tool, keys[0], parts_of, said, undo, as_left, asked,
+                                keys=gw.cfg.seal_keys) \
+                if undo is not None and as_left is not None else None
+            named = [p.name if (p := gw.scenario.person(w)) else w for w in asked]
+
+            def made(person: str) -> str:
+                """The change, as someone it's reported to reads it: in their language, and how
+                to undo it by their clock."""
+                language, who = gw.spoken(conn, person), gw.scenario.person(person)
+                offer = undoing.offered(kept["until"], gw.public_url, kept["id"], language,
+                                        who.timezone if who else "UTC") if kept else None
+                return words.say(language, "The {agent} made a change on its own, for "
+                                 "{whom}: {change}", agent=row["definition"],
+                                 whom=approvals.names_of(named, language), change=change) + (
+                    f" {before}" if before else "") + (f" {offer}" if offer else "")
             inst = conn.execute("select owner, deputy from instances where id = %s",
                                 (row["id"],)).fetchone()
             told = [p for p in (inst["owner"], inst["deputy"])
@@ -2640,13 +3109,13 @@ def create_app(gw: Gateway) -> FastAPI:
                 told = [p.id for p in proposals.everyone(proposals.deciders(
                     gw.scenario, keys, []))]
             for person in dict.fromkeys(told):
-                digests.keep(conn, person, row["definition"], row["id"], row["run"], text,
-                             gw.clock())
+                digests.keep(conn, person, row["definition"], row["id"], row["run"],
+                             made(person), gw.clock())
             group = row["trigger"].get("conversation")  # and its next run knows a5s made it:
             for person in ([group] if groups.of(group) else row["acts_for"]):  # the group's, in one
                 noted(conn, person, row["definition"],
-                      f"a5s made the change the {row['definition']} asked for, at level 2: "
-                      f"{change}", keys[0] if keys else None,
+                      f"a5s made the change the {row['definition']} asked for, which it may "
+                      f"make on its own: {change}", keys[0] if keys else None,
                       heard_by=list(row["acts_for"]) if groups.of(group) else None)
             for part in sorted({p for k in keys if (p := gw.scenario.part_of(k))}):
                 samples.draw(conn, gw.cfg.seal_keys, gw.scenario.name, "action", row["release"],
@@ -2657,17 +3126,39 @@ def create_app(gw: Gateway) -> FastAPI:
                                  "instance": row["id"], "acts_for": asked,
                                  "decision": "record", "args": {"to": sorted(set(told)),
                                                                 "tool": tool.name,
-                                                                "records": keys}})
+                                                                "records": keys,
+                                                                **({"undo": kept["id"]} if kept else {})}})
+        return kept
 
-    def holding(decision: Decision, records: list[str], row: dict) -> list[Person] | str:
-        """Who may decide a call policy holds, if it holds it: or why nobody may, in words."""
+    def undone_by(tool: Tool, keys: list[str], given: dict,
+                  standing: dict) -> tuple[dict | None, dict | None]:
+        """How a change just made is undone, if its tool says and it names one record a5s read
+        before: the call that reverses it, and the fields it restores as the change left them,
+        from the record read again now. Nothing, if it can't be read."""
+        if tool.undo is None or len(keys) != 1:
+            return None, None
+        undo = undoing.planned(tool, given, standing.get(keys[0]))
+        if undo is None:
+            return None, None
+        try:  # outside any transaction, as every read of the records is
+            after = proposals.snapshot({keys[0]: record_of(gw.scenario, keys[0])})[keys[0]]
+        except Exception:  # the records system's own failure: it can't be undone here
+            log.exception("couldn't read %s again, to undo it", keys[0])
+            return None, None
+        return undo, undoing.left(tool, after, standing.get(keys[0]))
+
+    def holding(decision: Decision, records: list[str], row: dict,
+                steered: list[str]) -> list[Person] | str:
+        """Who may decide a call policy holds, if it holds it: or why nobody may, in words.
+        Never anyone whose words it may have asked for: whom it's for, and `steered`."""
         if not decision.held:
             return []
         # In the sandbox, whose people are made up and sign nobody in, a change waits for its
         # made-up deciders, who never decide it: as it would wait where people work
         if (problem := gw.approving()) is not None and not gw.cfg.sandboxed:
             return f"a change can't wait for a decision here, since {problem}"
-        asked = groups.requesters(row)  # in a group, whoever asked and whoever spoke of it
+        asked = groups.requesters(row)  # in a group, whoever asked and whoever spoke of it,
+        asked = [*asked, *steered]  # and whoever of a team answered them in what it was given
         by_part = proposals.deciders(gw.scenario, records, asked)
         if not (nobody := proposals.undecidable(by_part)):
             return proposals.everyone(by_part)
@@ -2689,40 +3180,60 @@ def create_app(gw: Gateway) -> FastAPI:
 
     def held(conn: db.Connection, row: dict, tool: Tool, args: dict, standing: dict,
              deciding: list[Person], seq: int, traced: list[dict], change: str | None,
-             over: str | None, settings: Settings) -> tuple[dict, list]:
+             over: dict | None, settings: Settings,
+             steered: list[str] | None = None, marked_only: bool = False) -> tuple[dict, list]:
         """Keep a held call for its deciders, and ask each of them, where they work with the
         agent, to decide it on the core's page, as an urgent message: past their five a day,
-        it waits for their next batch. The proposal, and what to send once the transaction is
-        done."""
-        whom = approvals.names_of([p.name if (p := gw.scenario.person(w)) else w
-                                   for w in row["acts_for"]])
-        flags = []
-        for t in traced:
+        it waits for their next batch. Where only the run's mark holds it, whoever asked hears
+        why, once a run, and how to start afresh (round 15, A4). The proposal, and what to send
+        once the transaction is done."""
+        whom = [p.name if (p := gw.scenario.person(w)) else w for w in row["acts_for"]]
+        agent, flagged = row["definition"], []  # as words a5s keeps, said to each in their
+        for t in traced:  # language, and kept in English too (round 15, B6)
             if t["from"] is None:
-                flags.append(f"{t['value']} came from the {row['definition']} itself, not from "
-                             f"the records or from {whom}")
+                flagged.append(words.kept(proposals.OWN_VALUE, value=t["value"], agent=agent,
+                                          whom=whom))
+            elif t["from"].startswith(provenance.TEAM):
+                who = gw.scenario.person(t["from"].removeprefix(provenance.TEAM))
+                flagged.append(words.kept(proposals.TEAM_VALUE, value=t["value"], who=who.name,
+                                          whom=whom) if who else
+                               words.kept(proposals.SOMEONE_VALUE, value=t["value"], whom=whom))
             elif t["from"].startswith(provenance.OUTSIDE):
-                flags.append(f"{t['value']} came from a document from outside the organisation "
-                             f"({t['from'].removeprefix(provenance.OUTSIDE).strip()}), such as a "
-                             "customer's email, not from the records")
+                flagged.append(words.kept(proposals.OUTSIDE_VALUE, value=t["value"], document=t[
+                    "from"].removeprefix(provenance.OUTSIDE).strip()))
         if row["read_outside"]:
-            flags.append(f"the {row['definition']} read content from outside the organisation "
-                         "before it asked for this")
+            flagged.append(words.kept(proposals.READ_OUTSIDE, agent=agent))
+        if after := proposals.after_kept(row["trigger"]):  # another system's word, not a
+            flagged.append(words.kept(proposals.UNASKED_ABOUT, agent=agent, after=after,  # person's
+                                      whom=whom) if row["acts_for"] else
+                           words.kept(proposals.UNASKED, agent=agent, after=after))
         if over is not None:
-            flags.append(f"it waits because {over}")
+            flagged.append(words.kept(proposals.OVER, over=over))
+        flags = [words.said(languages.ENGLISH, f) for f in flagged]
         proposal = proposals.hold(conn, gw.scenario, row, tool, args, standing, deciding, seq,
-                                  flags, gw.clock(), change, proposals.sensitive(
-                                      conn, row["run"], tool, args, settings.classified))
+                                  flags, gw.clock(), change, bool(flags) or proposals.sensitive(
+                                      conn, row["run"], tool, args, settings.classified),
+                                  steered or [], flagged)  # one flagged is decided alone (B5)
         sends = [ask(conn, proposal, person.id) for person in deciding]
         conn.execute("update proposals set asked = %s where id = %s",
                      ([p.id for p in deciding], proposal["id"]))
+        first = conn.execute("select count(*) = 1 as one from proposals where run_id = %s",
+                             (row["run"],)).fetchone()  # once a run
+        if marked_only and first and first["one"] and (
+                to := gw.message_of(conn, row["trigger"].get("inbound"))):
+            said = words.say(gw.spoken(conn, to["person"]), MARK_HOLDS,
+                             key=proposals.key(proposal), agent=row["definition"])
+            sends.append(outbound(conn, {"channel": to["channel"], "reply_to": to["reply_to"]},
+                                  to["person"], said, run=row["run"], instance=row["id"],
+                                  agent=row["definition"], inbound=to["id"]))
         return proposal, sends
 
     def ask(conn: db.Connection, p: dict, person: str, again: bool = False) -> int | None:
         """Ask, or remind, a decider to decide a held change, where they work with its agent,
         as an urgent message. What to push once the transaction is done."""
         link = f"{gw.public_url}/studio/decide?proposal={p['digest']}"
-        text = proposals.asking(p, link, again)
+        spoken = gw.spoken(conn, person)  # in the language they read (round 15, B6)
+        text = proposals.asking(p, link, again, spoken)
         route = gw.at_once(conn, person, p["definition"])
         ledger.append(conn, {
             "kind": "notice", "action": "remind-decision" if again else "ask-decision",
@@ -2734,7 +3245,7 @@ def create_app(gw: Gateway) -> FastAPI:
             urgent.hold(conn, person, None, p["instance_id"], None, text, gw.clock())
             return None
         return outbound(conn, route, person, text, instance=p["instance_id"],
-                        agent=p["definition"], card=proposals.card(p, link, again))
+                        agent=p["definition"], card=proposals.card(p, link, again, spoken))
 
 
     def read_outside(row: dict, token: str, tool: Tool, result: Any) -> tuple[Any, int]:
@@ -2783,13 +3294,16 @@ def create_app(gw: Gateway) -> FastAPI:
                     model.api, row["model"], tool.extract, text), token)
                 reply = extractor.reply_text(model.api, json.loads(bytes(answer.body)))
                 if answer.status_code < 400:
-                    filled, dropped = extractor.checked(reply, text, tool.extract,
-                                                        gw.scenario.record_pattern)
+                    filled, dropped = extractor.checked(
+                        reply, text, tool.extract, gw.scenario.record_pattern,
+                        lambda k: gw.scenario.part_of(k) is not None)  # records it knows
+            # how long it is whole, though its system gave a part, as a mailbox's long message
+            total = max(len(whole), item["length"] if isinstance(item.get("length"), int) else 0)
             shown = {**(filled if filled is not None else dict.fromkeys(tool.extract)),
                      **({"unread": why} if filled is None else {}),
                      **({"left_out": dropped} if dropped else {}),
-                     **({"cut": f"a5s read the first {len(text):,} characters of {len(whole):,}"}
-                        if len(whole) > len(text) else {})}
+                     **({"cut": f"a5s read the first {len(text):,} characters of {total:,}"}
+                        if total > len(text) else {})}
             with db.transaction(gw.url) as conn:
                 number = conn.execute(
                     "insert into run_documents (run_id, number, text, digest, form) values (%s, "
@@ -2813,22 +3327,65 @@ def create_app(gw: Gateway) -> FastAPI:
 
         return walk(result), read
 
+    def reading_file(row: dict, number: int, found: dict) -> dict | JSONResponse:
+        """A file a run's message came with, fetched as the agent's own bot, or as the web
+        chat sent it, and read by a5s's reader, once, outside any transaction: its text, or
+        the image as it is, kept as the run's document from then (core/files.py)."""
+        source = found["source"]
+        with db.transaction(gw.url) as conn:
+            kept = conn.execute("select * from inbound_files where inbound_id = %s and "
+                                "number = %s", (source["inbound"], source["number"])).fetchone()
+        try:
+            data = bytes(kept["data"]) if kept and kept["data"] is not None else (
+                gw.fetch_file(kept["origin"] or {}) if kept else None)
+        except (httpx.HTTPError, ValueError) as exc:  # its kind alone: what httpx says of it
+            log.warning("couldn't fetch a file someone sent: %s", type(exc).__name__)  # names
+            data = None  # where it is, and a chat's link to it may carry a key
+        if data is None:
+            return JSONResponse(status_code=502, content={
+                "error": "a5s couldn't fetch the file now: ask them to send it again"})
+        kind = files.kind(data, found["media_type"])  # an image's, by its own bytes
+        text, image, cut = files.read(data, kind)
+        text = text[:extractor.MOST] + (f"\n\n(a5s: {cut}.)" if cut else "")
+        with db.transaction(gw.url) as conn:
+            conn.execute("update run_documents set text = %s, image = %s, digest = %s, "
+                         "media_type = %s, source = null where run_id = %s and number = %s",
+                         (text, image, hashlib.sha256(data).hexdigest(), kind, row["run"],
+                          number))
+        return {**found, "text": text, "image": image, "media_type": kind, "source": None}
+
     def asking_about(args: dict, row: dict, seq: int, token: str) -> Any:
         """a5s's reader's answer to a question about a document the run has read: in free
         text, marked as outside content, never as an instruction."""
         number = str(args.get("document", "")).removeprefix("D-")
         with db.transaction(gw.url) as conn:
-            found = conn.execute("select text from run_documents where run_id = %s and number = %s",
+            found = conn.execute("select text, source, media_type, image from run_documents "
+                                 "where run_id = %s and number = %s",
                                  (row["run"], int(number) if number.isdigit() else -1)).fetchone()
         model = gw.models.get(row["model"])
+        if found is not None and found["source"]:  # a file its message came with, read now
+            found = reading_file(row, int(number), found)
+            if isinstance(found, JSONResponse):
+                return found
+        if found is not None and found["image"] is not None and model is not None \
+                and not model.images:  # a screenshot, for a model that can't be sent one
+            record({"kind": "tool", "action": extractor.ASK, "run": row["run"],
+                    "instance": row["id"], "decision": "record", "of": seq,
+                    "outcome": {"status": "refused"}})
+            return JSONResponse(status_code=403, content={"denied": True, "explanations": [(
+                "it's an image, and the model here isn't approved for images, so a5s's reader "
+                "can't look at it: ask them what it shows")]})
         if found is None or model is None:
             record({"kind": "tool", "action": extractor.ASK, "run": row["run"],
                     "instance": row["id"], "decision": "record", "of": seq,
                     "outcome": {"status": "refused"}})
             return JSONResponse(status_code=403, content={
                 "denied": True, "explanations": ["this run has read no such document"]})
-        answer = model_call(model.api, extractor.answer_request(
-            model.api, row["model"], found["text"], str(args.get("question", ""))[:500]), token)
+        question = str(args.get("question", ""))[:500]
+        answer = model_call(model.api, extractor.image_request(
+            model.api, row["model"], bytes(found["image"]), found["media_type"], question)
+            if found["image"] is not None else extractor.answer_request(
+                model.api, row["model"], found["text"], question), token)
         said = extractor.reply_text(model.api, json.loads(bytes(answer.body)))
         status_now = "ok" if answer.status_code < 400 and said else "error"
         recorded = record({"kind": "tool", "action": extractor.ASK, "run": row["run"],
@@ -2884,6 +3441,23 @@ def create_app(gw: Gateway) -> FastAPI:
         return {"answer_with": {"token": opened["token"], "task": opened["task"],
                                 "question": question, "agent": agent}, "recorded": True}
 
+    @runs.post("/run/given")
+    def given_runs(body: Given, token: str = Depends(run_token)) -> dict:
+        """The runs whose words a run was given, its conversation's turns and those its topic's
+        summary holds, as the scheduler names them before the agent reads them: the run takes
+        the records they handled, and who may read what they read, so the studio shows it to
+        nobody who may not see them (core/studio.py). It can only narrow who may see it."""
+        if len(body.runs) > GIVEN_MOST:
+            raise HTTPException(422, f"a run is given the words of {GIVEN_MOST} runs at most")
+        try:
+            given = {str(uuid.UUID(r)) for r in body.runs}
+        except ValueError as exc:
+            raise HTTPException(422, "a run is named by its id") from exc
+        with db.transaction(gw.url) as conn:
+            row = load_run(conn, token)
+            studio.given_from(conn, row["run"], given)
+        return {"given": len(given - {row["run"]})}
+
     @runs.post("/run/answer")
     def answer_question(body: Answer, token: str = Depends(run_token)) -> dict:
         """A run's answer to the question it was opened for, back to the run that asked: with
@@ -2916,6 +3490,8 @@ def create_app(gw: Gateway) -> FastAPI:
             to_run = str(asked["asked_by_run"])
             if why is None and marked:  # the mark follows the answer
                 conn.execute("update runs set read_outside = true where id = %s", (to_run,))
+            if why is None:  # and what it handled and read, whom the studio may show it to
+                studio.given_from(conn, to_run, [row["run"]])
             for source, said in carried:  # what it found, as found, and outside as outside
                 provenance.read(conn, to_run, source, said, gw.scenario.record_pattern)
             ledger.append(conn, gw.entry(row, "message", "answer", Decision(True, ()), args={
@@ -2969,7 +3545,8 @@ def create_app(gw: Gateway) -> FastAPI:
         except coretools.Refused as exc:
             record({"kind": "tool", "action": core.name, "run": row["run"], "instance": row["id"],
                     "decision": "record", "of": seq,
-                    "outcome": {"status": "refused", "reason": str(exc)}})
+                    "outcome": {"status": "refused", "reason": str(exc),
+                                **({"why": exc.why} if exc.why else {})}})
             return JSONResponse(status_code=403, content={"denied": True, "reasons": [str(exc)],
                                                           "explanations": [str(exc)]})
         except Exception as exc:  # noqa: BLE001 - recorded and reported, as for any tool
@@ -2990,6 +3567,28 @@ def create_app(gw: Gateway) -> FastAPI:
             with db.transaction(gw.url) as conn:  # the records it names, as for the scenario's
                 studio.handled(conn, row["run"], studio.named(gw.scenario, core.sourced(result)))
         return {"result": result, "recorded": recorded}
+
+    @runs.post("/run/shadow")
+    def shadow_answer(body: Answer, token: str = Depends(run_token)) -> dict:
+        """What a shadow answered, kept beside what the instance it shadows answered, for
+        graders, and sent to nobody (core/shadows.py): cleaned as any message is, with its
+        handles as the agent wrote them. Once a run."""
+        text, removed = sanitize(body.text, gw.scenario.record_links)
+        with db.transaction(gw.url) as conn:
+            row = load_run(conn, token)
+            if row["trigger"].get("kind") != shadows.KIND:
+                raise HTTPException(403, "only a shadow's run keeps an answer for graders")
+            if body.problem or not text.strip():
+                raise HTTPException(409, "there's no answer to keep")
+            try:
+                kept = shadows.keep(conn, gw.scenario, row, text)
+            except shadows.Refused as e:
+                raise HTTPException(409, str(e)) from None
+            ledger.append(conn, gw.entry(row, "message", "shadow answer", Decision(True, ()), args={
+                "answer": kept, "shadows": row["shadows"], "live": row["trigger"].get("live"),
+                "chars": len(text), "sha256": hashlib.sha256(text.encode()).hexdigest(),
+                "links_removed": removed}))
+        return {"kept": kept}
 
     @runs.post("/run/messages")
     def send_message(body: Message, token: str = Depends(run_token)) -> Any:
@@ -3012,24 +3611,27 @@ def create_app(gw: Gateway) -> FastAPI:
             group = groups.of(body.to) and body.to == row["trigger"].get("conversation")
             owner = row["trigger"].get("sender") if group else body.to
             route = None
-            if row["trigger"].get("kind") in OWN_RUNS:
-                decision = Decision(False, ("a5s-runs-write-to-nobody",), explanations=(
+            if row["trigger"].get("kind") == shadows.KIND:
+                decision = Decision(False, (Own.SHADOW_SENDS,), explanations=(
+                    "a shadow sends nothing: what it answers is kept for graders",))
+            elif row["trigger"].get("kind") in OWN_RUNS:
+                decision = Decision(False, (Own.OWN_RUNS_WRITE,), explanations=(
                     "a5s's own runs, such as keeping a summary, write to nobody",))
             elif row["trigger"].get("kind") == tasking.KIND and (
                     why := tasking.stopped(conn, row) or tasking.held(conn, row)):  # a part,
                 # a task still at work, or one cancelled meanwhile
                 decision = Decision(False, (tasking.HELD,), explanations=(why,))
             elif row["trigger"].get("kind") == asking.KIND:
-                decision = Decision(False, ("answers-go-to-the-asker",), explanations=(
+                decision = Decision(False, (Own.ASKER,), explanations=(
                     ("a run that answers another agent's question writes to nobody: its answer "
                      "goes back to that agent"),))
             elif groups.of(row["trigger"].get("conversation")) and not group:
-                decision = Decision(False, ("a-group-run-writes-to-the-group",), explanations=(
+                decision = Decision(False, (Own.GROUP,), explanations=(
                     ("a run in a group chat writes only to the chat, so to everyone in it"),))
             elif not group and body.to not in row["acts_for"]:
                 why = ("a run writes only to the people it acts for, such as whoever sent the "
                        "message it answers")
-                decision = Decision(False, ("writes-to-whom-it-acts-for",), explanations=(why,))
+                decision = Decision(False, (Own.WHOM,), explanations=(why,))
             else:
                 decisions = [gw.decide(row, "send_message", recipient(who), [])
                              for who in (row["acts_for"] if group else [body.to])]
@@ -3047,9 +3649,17 @@ def create_app(gw: Gateway) -> FastAPI:
                 route["members"] = list(row["acts_for"])
             traced = provenance.traced(conn, gw.scenario, row, text) if decision.allowed else []
             said, note = text, None  # the agent's words, apart from a5s's own note on them
-            if own := [t["value"] for t in traced if t["from"] is None]:  # people see it apart
-                note = provenance.note(row["definition"], own)
+            reader = None if groups.of(body.to) else gw.scenario.person(body.to)  # a5s's notes
+            spoken = languages.of(conn, reader) if reader else languages.shared(  # are in the
+                conn, [gw.scenario.person(p) for p in row["acts_for"]])  # language they read
+            if own := [t["value"] for t in traced if t["from"] is None]:  # one they read, apart
+                note = provenance.note(row["definition"], own, spoken)
                 text += "\n\n" + note
+            if decision.allowed and reader and (offer := undoing.offers(  # how to undo what
+                    conn, row["run"], body.to, row["definition"], gw.public_url, spoken,  # it
+                    reader.timezone)):
+                note = f"{note}\n\n{offer}" if note else offer  # changed for them, beside it
+                text += "\n\n" + offer
             ledger.append(conn, gw.entry(row, "message", "send", decision, args={
                 "to": body.to, "chars": len(text), "sha256": hashlib.sha256(text.encode()).hexdigest(),
                 "links_removed": removed, **({"channel": route["channel"]} if route else {}),
@@ -3088,11 +3698,13 @@ def create_app(gw: Gateway) -> FastAPI:
                    if row["trigger"].get("kind") == tasking.KIND else {})}
 
     def deliver(route: dict, text: str, run: str | None, instance: str | None,
-                card: dict | None = None) -> str | None:
+                card: dict | None = None, answer: bool = False) -> tuple[str | None, str | None]:
         """Send text through a chat a5s writes to itself, such as Teams or Matrix, starting the
         conversation first if the route says to, and record whether it got there. The problem,
-        if not. In Teams, a card goes instead of the text, if there is one: elsewhere, the text."""
-        channel, problem, started = route["channel"], None, False
+        if not, and the chat's own id for it, by which someone saying an agent's `answer` was
+        wrong is known (core/feedback.py). In Teams and Slack, a card goes with or instead of
+        the text, if there is one: elsewhere, the text."""
+        channel, problem, started, sent_as = route["channel"], None, False, None
         chat = gw.chat(channel)
         if chat is None:
             problem = f"{channel} isn't set up in this gateway"
@@ -3101,43 +3713,50 @@ def create_app(gw: Gateway) -> FastAPI:
                 reply_to = route["reply_to"]
                 if "start" in route:
                     reply_to, started = start(channel, chat, **route["start"])
-                chat.send(reply_to, text, card=card)
+                sent_as = chat.send(reply_to, text, card=card, feedback=answer)
             except (httpx.HTTPError, ValueError) as exc:
                 problem = f"{channel} didn't take it: {type(exc).__name__}: {exc}"[:200]
         record({"kind": "message", "action": "deliver", "run": run, "instance": instance,
                 "decision": "record", "outcome": {"status": "error", "error": problem} if problem
                 else {"status": "ok", "channel": channel, **({"started": True} if started else {})}})
-        return problem
+        return problem, sent_as
 
     def outbound(conn: db.Connection, route: dict, person: str, text: str, *,
                  run: str | None = None, instance: str | None = None, agent: str | None = None,
-                 inbound: str | None = None, card: dict | None = None) -> int | None:
+                 inbound: str | None = None, card: dict | None = None,
+                 written_by: str | None = None) -> int | None:
         """Keep what a5s will write to someone, in the transaction that decides it: in the
         local channel's inbox, or, for a chat a5s writes to itself, to deliver once the
         transaction is done. The row's id, to push, for a chat."""
         pushed = route["channel"] in PUSHED
         row = conn.execute(
             "insert into outbox (run_id, instance_id, agent, inbound_id, person, channel, text, "
-            "route, card) values (%s, %s, %s, %s, %s, %s, %s, %s, %s) returning id",
+            "route, card, written_by) values (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s) returning id",
             (run, instance, agent, inbound, person, route["channel"], text,
-             Jsonb(route) if pushed else None, Jsonb(card) if card else None)).fetchone()
+             Jsonb(route) if pushed else None, Jsonb(card) if card else None,
+             written_by)).fetchone()
         return row["id"] if pushed else None
 
     def noted(conn: db.Connection, person: str, agent: str | None, text: str,
-              topic: str | None, heard_by: list[str] | None = None) -> None:
+              topic: str | None, heard_by: list[str] | None = None,
+              marked: bool = False) -> None:
         """a5s's own words to someone, in their conversation with the agent whose chat they
         go in, so the agent's next run knows what the person is answering: or in a group
-        chat's conversation, as heard by everyone in it then, though not sent there."""
+        chat's conversation, as heard by everyone in it then, though not sent there. Words
+        that carry what a run that read content from outside wrote, such as a held change's,
+        are marked, so a run given them is marked too (round 15, F1)."""
         if agent:
-            conn.execute("insert into turns (person, agent, topic, role, content, heard_by) "
-                         "values (%s, %s, %s, 'notice', %s, %s)",
-                         (person, agent, topic or topics.GENERAL, text, heard_by))
+            conn.execute("insert into turns (person, agent, topic, role, content, heard_by, "
+                         "marked) values (%s, %s, %s, 'notice', %s, %s, %s)",
+                         (person, agent, topic or topics.GENERAL, text, heard_by, marked))
 
     def push(ids: list[int | None] | None = None) -> None:
         """Deliver what waits for a chat a5s writes to itself: the rows given, or every one
         that's due again. Each is taken for five minutes while it's tried, so two gateways
         don't send it twice. One the chat doesn't take is tried again, after a minute, then
-        two, four and eight, and after five tries it's left in the person's local inbox."""
+        two, four and eight, and after five tries it's left in the person's local inbox. From
+        there it's tried again for a day, unless they read it there first: at once when the
+        chat takes something else for them, else hourly (round 15, D13)."""
         wanted = None if ids is None else [i for i in ids if i is not None]
         if wanted == []:
             return
@@ -3145,12 +3764,15 @@ def create_app(gw: Gateway) -> FastAPI:
         with db.transaction(gw.url) as conn:
             rows = conn.execute(
                 "update outbox set attempts = attempts + 1, retry_at = %s where id in ("
-                "  select id from outbox where delivered_at is null and channel = any(%s) "
+                "  select id from outbox where delivered_at is null "
+                "  and (channel = any(%s) or (channel = 'local' and fell_back_at > %s)) "
                 "  and (retry_at is null or retry_at <= %s) "
                 "  and (%s::bigint[] is null or id = any(%s)) "
                 "  order by id limit 100 for update skip locked) returning *",
-                (now + timedelta(minutes=5), list(PUSHED), now, wanted, wanted)).fetchall()
+                (now + timedelta(minutes=5), list(PUSHED), now - FELL_BACK, now, wanted,
+                 wanted)).fetchall()
         later: list[int | None] = []
+        back: list[int | None] = []  # what fell back to the inbox, from a chat that's back
         for row in sorted(rows, key=lambda r: r["id"]):  # in the order a5s wrote them
             run = str(row["run_id"]) if row["run_id"] else None
             expected = (row["route"] or {}).get("members")  # a group's answer: for whom it was
@@ -3158,17 +3780,29 @@ def create_app(gw: Gateway) -> FastAPI:
             if now_in is not None and not set(now_in) <= set(expected):
                 later += kept_back(row, run, now_in)
                 continue
-            problem = ("a5s couldn't read who's in the chat" if expected is not None
-                       and now_in is None else deliver(row["route"], row["text"], run,
-                                                       row["instance_id"], card=row["card"]))
+            problem, sent_as = (("a5s couldn't read who's in the chat", None)
+                                if expected is not None and now_in is None else
+                                deliver(row["route"], row["text"], run, row["instance_id"],
+                                        card=row["card"], answer=feedback.answer(row)))
             with db.transaction(gw.url) as conn:
-                if problem is None:
+                if problem is None:  # in its chat, once more, if it had fallen back
                     conn.execute("update outbox set delivered_at = now(), retry_at = null, "
-                                 "problem = null where id = %s", (row["id"],))
-                elif row["attempts"] >= TRIES:  # the chat won't take it: the inbox will
+                                 "problem = null, sent_as = %s, channel = %s, fell_back_at = null "
+                                 "where id = %s", (sent_as, row["route"]["channel"], row["id"]))
+                    back += [r["id"] for r in conn.execute(  # the chat's back for them: what
+                        "update outbox set retry_at = %s where person = %s and channel = "  # fell
+                        "'local' and fell_back_at > %s and delivered_at is null and route ->> "
+                        "'channel' = %s and not (retry_at > %s and retry_at <= %s) returning id",
+                        (now, row["person"], now - FELL_BACK, row["route"]["channel"], now,
+                         now + timedelta(minutes=5)))]  # back goes now, but none another core
+                    # has taken for its five minutes
+                elif row["fell_back_at"] is not None:  # not yet: again in an hour, for a day
+                    conn.execute("update outbox set retry_at = %s, problem = %s where id = %s",
+                                 (now + timedelta(hours=1), problem, row["id"]))
+                elif row["attempts"] >= TRIES:  # the chat won't take it: the inbox will, while
                     conn.execute("update outbox set channel = 'local', inbound_id = null, "
-                                 "retry_at = null, problem = %s where id = %s",
-                                 (problem, row["id"]))
+                                 "retry_at = %s, problem = %s, fell_back_at = %s where id = %s",
+                                 (now + timedelta(hours=1), problem, now, row["id"]))
                     ledger.append(conn, {
                         "kind": "message", "action": "fallback", "run": run,
                         "instance": row["instance_id"], "acts_for": [row["person"]],
@@ -3181,6 +3815,8 @@ def create_app(gw: Gateway) -> FastAPI:
                                   row["id"]))
         if [i for i in later if i is not None]:  # an answer kept back, where it goes instead,
             push(later)  # and the notice of it in the chat
+        if back:  # in the order a5s wrote them, after what the chat just took
+            push(back)
 
     def present(route: dict) -> list[str | None] | None:
         """Who's in a group chat now, by their ids in the directory, None for anyone it doesn't
@@ -3194,6 +3830,8 @@ def create_app(gw: Gateway) -> FastAPI:
                     for u in joined if not matrix.agent_of(u)]
             if route["channel"] == "teams" and (teams := gw.teams) is not None:
                 return teams.members(reply_to, gw.scenario)
+            if route["channel"] == "slack" and (slack := gw.slack) is not None:
+                return slack.members(reply_to, gw.scenario)
         except (httpx.HTTPError, ValueError, KeyError):
             log.warning("couldn't read who's in a %s chat", route["channel"])
         return None
@@ -3299,6 +3937,18 @@ def create_app(gw: Gateway) -> FastAPI:
         """What becomes of a held change once the people who may decide it have: whether it's
         made. An approved one is marked as making, so it's never made twice."""
         rows = found["rows"]
+        if proposals.ended_before(conn, p):  # a decision counts once (round 15, B1)
+            log.warning("%s was set waiting again after a5s ended it: it stays ended",
+                        proposals.key(p))
+            conn.execute("update proposals set status = 'not made', ended_at = coalesce(ended_at, "
+                         "%s) where id = %s", (now, p["id"]))
+            ledger.append(conn, {"kind": "proposal", "action": "refuse-again",
+                                 "run": str(p["run_id"]), "instance": p["instance_id"],
+                                 "decision": "deny", "of": p["seq"],
+                                 "args": {"proposal": proposals.key(p)}})
+            return {}
+        if not proposals.intact(conn, p):  # it isn't what its deciders signed (round 15, B1)
+            return ended(conn, p, "refused", rows, now, ALTERED)
         if found["decision"] == "reject":
             return ended(conn, p, "rejected", rows, now, reason=rows[0].get("reason"))
         if changed := proposals.changed(gw.scenario, p):
@@ -3352,6 +4002,10 @@ def create_app(gw: Gateway) -> FastAPI:
                        else {"status": "ok", "result_sha256": ledger.digest(result)})
         except Exception as exc:  # noqa: BLE001 - the system's own failure, recorded and told
             outcome = {"status": "error", "error": f"{type(exc).__name__}"}
+        keys = list(p["records"])
+        undo, as_left = undone_by(tool, keys, proposals.resolved(p["args"], values),
+                                  p["standing"] or {}) if outcome["status"] == "ok" else (None, None)
+        offer = None
         with db.transaction(gw.url) as conn:  # what happened, first, whatever comes after
             ledger.append(conn, {"kind": "tool", "action": p["tool"], "run": str(p["run_id"]),
                                  "instance": p["instance_id"], "acts_for": list(p["acts_for"]),
@@ -3359,22 +4013,41 @@ def create_app(gw: Gateway) -> FastAPI:
                                  "args": {"proposal": proposals.key(p)}})
             conn.execute("update proposals set status = %s, ended_at = %s where id = %s",
                          ("made" if outcome["status"] == "ok" else "not made", gw.clock(), p["id"]))
+            if undo is not None and as_left is not None:  # and how to undo it, as its tool says
+                kept = undoing.keep(conn, {"run": str(p["run_id"]), "id": p["instance_id"],
+                                           "definition": p["definition"], "release": p["release"]},
+                                    tool, keys[0], list(p["parts"]), p["said"], undo, as_left,
+                                    list(p["acts_for"]), proposal=p["id"],
+                                    offered=True,  # in a5s's own message that it's made
+                                    keys=gw.cfg.seal_keys)
+                offer = {"until": kept["until"], "id": kept["id"]}
         with db.transaction(gw.url) as conn:
             if outcome["status"] == "ok":
-                going = ended(conn, p, "made", rows, gw.clock())
+                going = ended(conn, p, "made", rows, gw.clock(), offer=offer)
             else:
                 going = ended(conn, p, "failed", rows, gw.clock(), outcome["error"])
         return going["sends"]
 
     def ended(conn: db.Connection, p: dict, became: str, rows: list[dict],
-              now: datetime, extra: str = "", reason: str | None = None) -> dict:
+              now: datetime, extra: str = "", reason: str | None = None,
+              offer: dict | None = None) -> dict:
         """End a held change, let go of the values it kept, and tell whoever it was for, in the
         conversation with its agent, so its next run knows too, and, in their digest, everyone
         who decided it. Its records as they stood when it was asked for go to graders."""
         deciders_ = [r["person"] for r in rows]
-        names = approvals.names_of([who.name if (who := gw.scenario.person(d)) else d
-                                    for d in deciders_]) if deciders_ else None
-        text = proposals.told(p, became, names, extra, reason)
+        named = [who.name if (who := gw.scenario.person(d)) else d for d in deciders_]
+
+        def said(person: str | None = None) -> str:
+            """What became of it, as someone reads it: in their language, and how to undo it, if
+            it's made, by their clock; as the records keep it, in English, for nobody."""
+            language = gw.spoken(conn, person) if person else languages.ENGLISH
+            who = gw.scenario.person(person) if person else None
+            undo = undoing.offered(offer["until"], gw.public_url, offer["id"], language,
+                                   who.timezone if who else "UTC") if offer else ""
+            return proposals.told(p, became, approvals.names_of(named, language) if named else None,
+                                  extra, reason, language, undo)
+
+        text = said()
         conn.execute("update proposals set status = %s, decided_by = coalesce(decided_by, %s), "
                      "ended_at = %s, outcome = %s where id = %s",
                      ("made" if became == "made" else "not made" if became in (
@@ -3389,36 +4062,50 @@ def create_app(gw: Gateway) -> FastAPI:
                              p["standing"] or {r: None for r in p["records"]},
                              list(p["acts_for"]), now, proposal=p["id"],
                              decided="reject" if became == "rejected" else "approve",
-                             decided_by=deciders_, flags=p["flags"])
+                             decided_by=deciders_, flags=p["flags"],
+                             flagged=p.get("flagged"))
         ledger.append(conn, {"kind": "proposal", "action": became, "run": str(p["run_id"]),
                              "instance": p["instance_id"], "acts_for": list(p["acts_for"]),
                              "decision": "record", "of": p["seq"],
                              "args": {"proposal": proposals.key(p), "by": deciders_}})
+        asked, group, told_to = whom_to_tell(conn, p)
+        marked = bool(p.get("read_outside"))  # its words, as a marked run wrote them
+        sends = []
+        for person in told_to:
+            route = gw.reach(conn, person, p["definition"])  # what they're waiting for: at once
+            theirs = said(person)
+            sends.append(outbound(conn, route, person, theirs, instance=p["instance_id"],
+                                  agent=p["definition"]))
+            noted(conn, person, p["definition"], theirs, next(iter(p["records"]), None),
+                  marked=marked)
+        if group and asked:  # and the group's next run knows, as everyone there heard it asked
+            noted(conn, group, p["definition"], text, next(iter(p["records"]), None),
+                  heard_by=list(asked["acts_for"]), marked=marked)
+        waited = [d for d in p["deciders"] or [] if gw.scenario.person(d) is not None] \
+            if became == "lapsed" else []  # nobody decided it: those it waited for hear too
+        for person in dict.fromkeys([*deciders_, *waited]):  # (round 15, B4), as those who
+            if person not in told_to:  # decided it do, in their digest
+                digests.keep(conn, person, p["definition"], p["instance_id"], str(p["run_id"]),
+                             words.say(gw.spoken(conn, person), WAITED if person in waited else
+                                       "What became of {key}, which you decided: {text}",
+                                       key=proposals.key(p), text=said(person)), now)
+        return {"sends": sends}
+
+    def whom_to_tell(conn: db.Connection, p: dict) -> tuple[dict | None, str | None, list[str]]:
+        """The run that asked for a held change, the group chat it was asked in, if any, and
+        whom a5s tells what becomes of it: whoever asked, in a group chat, where a5s never
+        writes first; else whom it was for; else, for a run for nobody, its instance's owner."""
         asked = conn.execute("select trigger, acts_for from runs where id = %s",
                              (p["run_id"],)).fetchone()
         group = asked["trigger"].get("conversation") if asked and groups.of(
             asked["trigger"].get("conversation")) else None
         told_to = [asked["trigger"]["sender"]] if group and asked["trigger"].get("sender") \
-            else list(p["acts_for"])  # in a group chat, whoever asked: a5s never writes there first
-        if not told_to:  # a run for nobody: its instance's owner hears instead
+            else list(p["acts_for"])
+        if not told_to:
             owner = conn.execute("select owner from instances where id = %s",
                                  (p["instance_id"],)).fetchone()
             told_to = [owner["owner"]] if owner and owner["owner"] else []
-        sends = []
-        for person in told_to:
-            route = gw.reach(conn, person, p["definition"])  # what they're waiting for: at once
-            sends.append(outbound(conn, route, person, text, instance=p["instance_id"],
-                                  agent=p["definition"]))
-            noted(conn, person, p["definition"], text, next(iter(p["records"]), None))
-        if group:  # and the group's next run knows, as everyone there then heard it asked
-            noted(conn, group, p["definition"], text, next(iter(p["records"]), None),
-                  heard_by=list(asked["acts_for"]))
-        for person in dict.fromkeys(deciders_):  # and those who decided it, in their digest
-            if person not in told_to:
-                digests.keep(conn, person, p["definition"], p["instance_id"], str(p["run_id"]),
-                             f"What became of {proposals.key(p)}, which you decided: {text}",
-                             now)
-        return {"sends": sends}
+        return asked, group, told_to
 
     def chasing(conn: db.Connection, p: dict, now: datetime) -> dict:
         """Remind each of a held change's deciders once, in their own working hours, after
@@ -3426,7 +4113,7 @@ def create_app(gw: Gateway) -> FastAPI:
         managers, each in their own hours, or the instance's owner if nobody is above them:
         they can see what waits, and nudge, but only its deciders decide it."""
         later = now + timedelta(hours=1)  # when to look again for someone off shift
-        by_part = proposals.deciders(gw.scenario, list(p["records"]), list(p["acts_for"]))
+        by_part = proposals.deciders(gw.scenario, list(p["records"]), proposals.not_deciding(p))
         current = proposals.everyone(by_part)
         sends: list = []
         if p["remind_at"] is not None and now >= p["remind_at"]:
@@ -3444,6 +4131,7 @@ def create_app(gw: Gateway) -> FastAPI:
                                      "of": p["seq"], "args": {"proposal": proposals.key(p),
                                                               "to": [d.id for d in working]}})
             p = {**p, "reminded": reminded}
+        deciding_now = {d.id for d in current}
         if p["escalate_at"] is not None and now >= p["escalate_at"] and (p["reminded"] or not current):
             above: dict[str, Person] = {}  # each decider's manager, who may hear of the record
             for decider in current:
@@ -3451,12 +4139,16 @@ def create_app(gw: Gateway) -> FastAPI:
                 if (boss is not None and boss.in_audience and boss.id not in p["acts_for"]
                         and all(gw.scenario.sees(boss.id, r) for r in p["records"])):
                     above.setdefault(boss.id, boss)
-            if not above:  # nobody above them: the instance's owner hears instead
-                inst = conn.execute("select owner from instances where id = %s",
-                                    (p["instance_id"],)).fetchone()
-                owner = gw.scenario.person(inst["owner"]) if inst and inst["owner"] else None
-                if owner is not None and all(gw.scenario.sees(owner.id, r) for r in p["records"]):
-                    above[owner.id] = owner
+            if not above:  # nobody above them: the instance's owner hears instead, or its
+                inst = conn.execute("select owner, deputy from instances where id = %s",  # deputy,
+                                    (p["instance_id"],)).fetchone()  # never one who may decide
+                for who in (inst["owner"], inst["deputy"]) if inst else ():  # it, nor whom it's
+                    other = gw.scenario.person(who) if who else None  # for (round 15, B4)
+                    if (other is not None and other.id not in deciding_now
+                            and other.id not in proposals.not_deciding(p)
+                            and all(gw.scenario.sees(other.id, r) for r in p["records"])):
+                        above[other.id] = other
+                        break
             due = [b for b in above.values() if b.id not in (p["escalated"] or [])]
             working = [b for b in due if obligations.working(b, now)]
             names = approvals.names_of([d.name for d in current]) or "its deciders"
@@ -3477,6 +4169,18 @@ def create_app(gw: Gateway) -> FastAPI:
                          "escalated_at, %s), escalate_at = %s where id = %s",
                          (escalated, now if working else None,
                           later if len(working) < len(due) else None, p["id"]))
+            if len(working) == len(due) and current and p["acts_for"]:  # once, as it's done:
+                for person in whom_to_tell(conn, p)[2]:  # whoever asked hears it still waits,
+                    who = gw.scenario.person(person)  # and until when (round 15, B4)
+                    if who is None or person in deciding_now:
+                        continue
+                    language = gw.spoken(conn, person)
+                    digests.keep(conn, person, p["definition"], p["instance_id"],
+                                 str(p["run_id"]), words.say(
+                                     language, STILL, key=proposals.key(p),
+                                     names=approvals.names_of([d.name for d in current], language),
+                                     days=proposals.ESCALATE,
+                                     day=obligations.day(who, p["lapses_at"], language)), now)
             if working:
                 ledger.append(conn, {"kind": "proposal", "action": "escalate",
                                      "run": str(p["run_id"]), "instance": p["instance_id"],
@@ -3517,6 +4221,250 @@ def create_app(gw: Gateway) -> FastAPI:
                     capped(conn, found, now)
         return {"changed": changed, "lapsed": lapsed}
 
+    @services.post("/delegation/sweep")
+    def sweep_delegation() -> dict:
+        """Exchange the codes people came back with from connecting their accounts for their
+        tokens, which the core alone keeps, sealed (core/delegation.py), and let go of starts
+        nobody came back to."""
+        if gw.delegation is None or not gw.cfg.seal_keys:
+            with db.transaction(gw.url) as conn:  # nothing to connect: nothing waits, either
+                conn.execute("delete from delegation_starts")
+            return {"connected": 0, "failed": 0}
+        with db.transaction(gw.url) as conn:
+            return delegation.sweep(conn, gw.delegation, gw.cfg.seal_keys,
+                                    f"{gw.public_url}{delegation.BACK}", delegation.client(),
+                                    gw.scenario.person)  # whose each account is, the directory says
+
+    @services.post("/handovers/sweep")
+    def sweep_handovers() -> dict:
+        """Tell each person whose conversation was handed over who takes it from there, put
+        each answer the team gave in the studio in their chat, as the agent's bot, with the
+        answerer's name, keeping it and what the person said in the conversation, and hand
+        back what nobody answered or handed back in time (core/handover.py), telling them."""
+        done, sending = {"told": 0, "answered": 0, "back": 0}, []
+        with db.transaction(gw.url) as conn:
+            for row in handover.lapsing(conn):
+                ledger.append(conn, {"kind": "admin", "action": "hand-back", "run": None,
+                                     "instance": row["instance_id"], "acts_for": [row["person"]],
+                                     "decision": "record",
+                                     "args": {"handover": row["id"], "lapsed": True}})
+            for row in conn.execute("select * from handovers where told_at is null "
+                                    "for update skip locked").fetchall():
+                said = handover.words(row, gw.scenario, gw.spoken(conn, row["person"]))
+                sending.append(outbound(conn, where_to(conn, row), row["person"], said["to"],
+                                        agent=row["agent"], instance=row["instance_id"]))
+                noted(conn, row["person"], row["agent"], f"a5s handed this conversation to the "
+                      f"{row['team']} team, at the person's word.", None)
+                conn.execute("update handovers set told_at = now() where id = %s", (row["id"],))
+                done["told"] += 1
+            for reply in conn.execute(
+                    "select r.*, h.person, h.agent, h.team, h.instance_id, h.started_at from "
+                    "handover_replies r join handovers h on h.id = r.handover_id where "
+                    "r.sent_at is null order by r.id for update of r skip locked").fetchall():
+                waits = conn.execute(  # what it answers: what they wrote since, until then
+                    "select id::text as id, text from inbound where person = %s and agent = %s "
+                    "and conversation is null and answered_at is null and received_at > %s and "
+                    "received_at <= %s order by received_at",
+                    (reply["person"], reply["agent"], reply["started_at"], reply["at"])).fetchall()
+                for asked in waits:  # the conversation the agent reads, once it's back
+                    context.add_turn(conn, person=reply["person"], agent=reply["agent"],
+                                     role="person", content=asked["text"])
+                who = gw.scenario.person(reply["by_person"])
+                name = who.name if who else reply["by_person"]
+                # what a person of the team wrote, as any message a5s sends: the scenario's own
+                # links alone, and never a5s's own notes, which a5s alone writes
+                text, _ = sanitize(reply["text"], gw.scenario.record_links)
+                context.add_turn(  # theirs, not a5s's nor the agent's: the next run reads it as
+                    conn, person=reply["person"], agent=reply["agent"], role="person",  # theirs
+                    speaker=reply["by_person"], content=f"{name}, of the {reply['team']} team, "
+                    f"answered them while the conversation was handed over: {text}")
+                route = where_to(conn, reply, waits[-1]["id"] if waits else None)
+                sending.append(outbound(conn, route, reply["person"], words.say(  # in the
+                                            gw.spoken(conn, reply["person"]),  # language they
+                                            "{name}, of the {team} team: {said}",  # read
+                                            name=name, team=reply["team"], said=text),
+                                        agent=reply["agent"], instance=reply["instance_id"],
+                                        inbound=waits[-1]["id"] if waits else None,
+                                        written_by=reply["by_person"]))
+                if waits:
+                    conn.execute("update inbound set answered_at = now() where id = any(%s)",
+                                 ([w["id"] for w in waits],))
+                conn.execute("update handover_replies set sent_at = now() where id = %s",
+                             (reply["id"],))
+                ledger.append(conn, {"kind": "message", "action": "hand-over answer", "run": None,
+                                     "instance": reply["instance_id"],
+                                     "acts_for": [reply["person"]], "decision": "record",
+                                     "args": {"handover": reply["handover_id"],
+                                              "by": reply["by_person"],
+                                              "chars": len(reply["text"])}})
+                done["answered"] += 1
+            for row in conn.execute("select * from handovers where ended_at is not null and "
+                                    "back_told_at is null for update skip locked").fetchall():
+                meanwhile = conn.execute(  # what they wrote that nobody answered: the agent
+                    "select id::text as id, text, received_at from inbound where person = %s "  # answers
+                    "and agent = %s and conversation is null and answered_at is null and "  # the last,
+                    "received_at > %s order by received_at",  # once, given the rest as said then
+                    (row["person"], row["agent"], row["started_at"])).fetchall()[:-1]
+                for asked in meanwhile:
+                    context.add_turn(conn, person=row["person"], agent=row["agent"], role="person",
+                                     content=asked["text"], at=asked["received_at"])
+                if meanwhile:
+                    conn.execute("update inbound set answered_at = now() where id = any(%s)",
+                                 ([m["id"] for m in meanwhile],))
+                said = handover.words(row, gw.scenario, gw.spoken(conn, row["person"]))
+                sending.append(outbound(conn, where_to(conn, row), row["person"], said["back"],
+                                        agent=row["agent"], instance=row["instance_id"]))
+                noted(conn, row["person"], row["agent"], f"The {row['team']} team handed this "
+                      "conversation back: you answer the person again.", None)
+                conn.execute("update handovers set back_told_at = now() where id = %s",
+                             (row["id"],))
+                if row["ended_by"]:
+                    ledger.append(conn, {"kind": "admin", "action": "hand-back", "run": None,
+                                         "instance": row["instance_id"],
+                                         "acts_for": [row["person"]], "decision": "record",
+                                         "args": {"handover": row["id"], "by": row["ended_by"]}})
+                done["back"] += 1
+        push([i for i in sending if i is not None])
+        return done
+
+    def where_to(conn: db.Connection, row: dict, inbound: str | None = None) -> dict:
+        """Where to write to someone about a conversation handed over: as an answer to what
+        they wrote, if it answers that, or in their own chat with the agent, as reach says."""
+        asked = gw.message_of(conn, inbound) if inbound else None
+        if asked is not None:
+            return {"channel": asked["channel"], "reply_to": asked["reply_to"]}
+        last = conn.execute("select id::text from inbound where person = %s and agent = %s and "
+                            "conversation is null order by received_at desc limit 1",
+                            (row["person"], row["agent"])).fetchone()
+        found = gw.message_of(conn, last["id"]) if last else None
+        if found is not None:
+            return {"channel": found["channel"], "reply_to": found["reply_to"]}
+        return gw.reach(conn, row["person"], row["agent"])
+
+    @services.post("/undo/sweep")
+    def sweep_undo() -> dict:
+        """Check again each undo people asked for on a change's page, signed in afresh for that
+        alone (core/undoing.py), and whether they may now, then make the call that reverses
+        the change, while its record is as the change left it. An undone change counts as a
+        wrong grade of it, which the core seals. Whoever asked hears in their digest of one it
+        couldn't undo."""
+        done = {"undone": 0, "refused": 0, "failed": 0}
+        if gw.approving() is not None:  # it checks sign-ins, and seals the grade
+            return done
+        doing = []
+        with db.transaction(gw.url) as conn:
+            for row in undoing.asked(conn):
+                try:
+                    why = sealing.check(gw.identity, gw.scenario, gw.cfg.webchat_client_id,
+                                        row["proof"], undoing.nonce(row["id"], row["salt"]),
+                                        row["asked_by"], recorded=(row["token"], row["nonce"]),
+                                        salt=row["salt"])
+                except sealing.Unchecked:
+                    continue  # checked again at the next sweep
+                person = gw.scenario.person(row["asked_by"])
+                tools = gw.scenario.tools()
+                made, by = tools.get(row["tool"]), tools.get(row["undo"]["tool"])
+                if why is None:
+                    why = ("who asked isn't in the directory now" if person is None else
+                           undoing.may(gw.scenario, person, {**row, "state": None},
+                                       bool(row["open"])))
+                if why is None and (made is None or made.schema_hash != row["schema_hash"]
+                                    or by is None):
+                    why = "the tool that made it has changed since, so a5s can't undo it as it was made"
+                if why:
+                    refused_undo(conn, row, why)
+                    done["refused"] += 1
+                else:
+                    conn.execute("update changes_made set state = 'undoing' where id = %s",
+                                 (row["id"],))
+                    doing.append(row)
+        for row in doing:
+            done[undo_one(row)] += 1
+        return done
+
+    def refused_undo(conn: db.Connection, row: dict, why: str) -> None:
+        undoing.end(conn, row["id"], "refused", why)
+        ledger.append(conn, {"kind": "admin", "action": "refuse-undo", "run": str(row["run_id"]),
+                             "instance": row["instance_id"], "acts_for": [row["asked_by"]],
+                             "decision": "record", "args": {"change": row["id"], "why": why}})
+        spoken = gw.spoken(conn, row["asked_by"])
+        digests.keep(conn, row["asked_by"], row["definition"], row["instance_id"],
+                     str(row["run_id"]), words.say(
+                         spoken, "a5s didn't undo the change the {agent} made, as you asked on its "
+                         "page: {why}. {said}", agent=row["definition"],
+                         why=words.say(spoken, why), said=row["said"]), gw.clock())
+
+    def undo_one(row: dict) -> str:
+        """Undo one change, while its record is as the change left it, and count it, as a wrong
+        grade of it, against its agent's accuracy; tell whoever it was for, and the instance's
+        owner and deputy, and the ledger. Whether it was undone, refused or failed."""
+        if not undoing.intact(gw.cfg.seal_keys, row):  # not as the core kept it (round 15)
+            with db.transaction(gw.url) as conn:
+                refused_undo(conn, row, "how to undo it has changed in a5s's records since a5s "
+                             "kept it, so a5s undoes nothing: putting it right is for whoever "
+                             "decides it, in the records system")
+            return "refused"
+        by = gw.scenario.tools()[row["undo"]["tool"]]
+        try:  # the record as it stands, outside any transaction, in each field the change left
+            now = undoing.still(row["as_left"], proposals.snapshot(
+                {row["record"]: record_of(gw.scenario, row["record"])})[row["record"]])
+        except Exception:  # the records system's own failure
+            log.exception("couldn't read %s, to undo a change", row["record"])
+            now = None
+        if now != row["as_left"]:
+            with db.transaction(gw.url) as conn:
+                refused_undo(conn, row, "its record has changed since the change was made, so "
+                             "putting it right is for whoever changed it, in the records system"
+                             if now is not None else "its record can't be read just now")
+            return "refused"
+        try:
+            result = by.run(ToolCall(args=dict(row["undo"]["args"]), instance=row["instance_id"],
+                                     run=str(row["run_id"]), acts_for=(row["asked_by"],),
+                                     key=f"undo-{row['id']}" if by.idempotent else None))
+            failed = result.get("error") if isinstance(result, dict) else None
+        except Exception as exc:  # noqa: BLE001 - the system's own failure, recorded and told
+            failed = type(exc).__name__
+        who = gw.scenario.person(row["asked_by"])
+        name = who.name if who else row["asked_by"]
+        with db.transaction(gw.url) as conn:
+            ledger.append(conn, {"kind": "tool", "action": by.name, "run": str(row["run_id"]),
+                                 "instance": row["instance_id"], "acts_for": [row["asked_by"]],
+                                 "decision": "record",
+                                 "args": {"undo": row["id"], "record": row["record"],
+                                          "by": row["asked_by"]},
+                                 "outcome": {"status": "error", "error": str(failed)[:200]}
+                                 if failed else {"status": "ok"}})
+            if failed:
+                undoing.end(conn, row["id"], "failed",
+                            f"the records system didn't take it: {str(failed)[:200]}")
+                digests.keep(conn, row["asked_by"], row["definition"], row["instance_id"],
+                             str(row["run_id"]), words.say(
+                                 gw.spoken(conn, row["asked_by"]), "a5s couldn't undo the change "
+                                 "the {agent} made, as you asked: the records system didn't take "
+                                 "it. {said}", agent=row["definition"], said=row["said"]),
+                             gw.clock())
+                return "failed"
+            undoing.end(conn, row["id"], "undone", "undone", by=row["asked_by"])
+            graded = samples.undone(conn, gw.cfg.seal_keys, gw.scenario.name, row, gw.clock())
+            for person in row["acts_for"]:  # their conversation: the agent's next run knows
+                noted(conn, person, row["definition"], f"{name} undid the change a5s made: "
+                      f"{row['said']}", row["record"])
+            inst = conn.execute("select owner, deputy from instances where id = %s",
+                                (row["instance_id"],)).fetchone()
+            told = [p for p in (*row["acts_for"], *((inst["owner"], inst["deputy"]) if inst else ()))
+                    if p and p != row["asked_by"] and gw.scenario.sees(p, row["record"])]
+            for person in dict.fromkeys(told):
+                digests.keep(conn, person, row["definition"], row["instance_id"],
+                             str(row["run_id"]), words.say(
+                                 gw.spoken(conn, person), "{name} undid a change the {agent} "
+                                 "made: {said}", name=name, agent=row["definition"],
+                                 said=row["said"]), gw.clock())
+            ledger.append(conn, {"kind": "admin", "action": "undone", "run": str(row["run_id"]),
+                                 "instance": row["instance_id"], "acts_for": [row["asked_by"]],
+                                 "decision": "record",
+                                 "args": {"change": row["id"], "samples": graded}})
+        return "undone"
+
     @services.post("/registry/sweep")
     def sweep_registry() -> dict:
         """Bring the Microsoft tenant's agent registry into line with the instances a5s runs,
@@ -3540,6 +4488,74 @@ def create_app(gw: Gateway) -> FastAPI:
                                                       gw.cfg.seal_keys)}
             finally:
                 held.execute("select pg_advisory_unlock(hashtext('a5s registry'))")
+
+    @services.post("/shadows/sweep")
+    def sweep_shadows() -> dict:
+        """Put each grade people gave a shadow's answer in the ledger, and ask each shadow's
+        judge, if its agent has one, about a few of its answers a sweep, apart from people's
+        grades (core/shadows.py). A judge reads what the person said and both answers, which
+        may say what any field of a record holds, so one not approved for the settings' class
+        of data, every class they give a field, and every class the shadow's own model is,
+        judges nothing."""
+        done: dict[str, Any] = {"noted": 0, "judged": []}
+        with db.transaction(gw.url) as conn:
+            for row in conn.execute("select * from shadow_answers where grade is not null and "
+                                    "grade_noted_at is null for update skip locked").fetchall():
+                ledger.append(conn, {"kind": "admin", "action": "shadow-grade", "run": None,
+                                     "instance": row["instance_id"], "acts_for": [],
+                                     "decision": "record",
+                                     "args": {"answer": row["id"], "grade": row["grade"],
+                                              "by": row["graded_by"]}})
+                conn.execute("update shadow_answers set grade_noted_at = now() where id = %s",
+                             (row["id"],))
+                done["noted"] += 1
+            locked = conn.execute("select pg_try_advisory_xact_lock(hashtext('a5s shadow "
+                                  "judging')) as got").fetchone()
+            settings, _ = gw.settings_in_force(conn, seal=False)
+            judged_by = {}
+            for name, release in gw.definitions.items():
+                judge = gw.models.get(release.evaluation.judge) if release.evaluation else None
+                own = gw.models.get(release.model)
+                if (settings is not None and locked and locked["got"] and judge is not None
+                        and own is not None and settings.data_class in judge.data_classes
+                        and set(own.data_classes) <= set(judge.data_classes)
+                        and set(settings.classified.values()) <= set(judge.data_classes)):
+                    judged_by[name] = judge.alias  # what both answers may say of any field
+            due = shadows.pending(conn, judged_by)
+        for pair in due:
+            release = gw.definitions[pair["definition"]]
+            judge = gw.models[judged_by[pair["definition"]]]
+            body = shadows.judge_request(judge.api, judge.alias, release.evaluation.rubric
+                                         if release.evaluation else "", pair)
+            if not gw.breakers.allow(judge.alias):
+                continue  # it failed lately: asked again at a later sweep
+            try:
+                status, data = models.forward(judge, models.screen(judge.api, body)[0], gw.http)
+            except models.ModelUnavailable:
+                status, data = 503, {}
+            reported = data.get("model") if isinstance(data, dict) else None
+            if status < 400 and reported != (judge.reported_model or judge.model):
+                status = 502  # another model answered than the one approved
+            if status >= 500 or status == 429:
+                gw.breakers.failed(judge.alias)
+            elif status < 400:
+                gw.breakers.worked(judge.alias)
+            found = shadows.judged(extractor.reply_text(judge.api, data)) if status < 400 else None
+            with db.transaction(gw.url) as conn:
+                ledger.append(conn, {
+                    "kind": "model", "action": judge.alias, "run": None,
+                    "instance": pair["instance_id"], "acts_for": [], "decision": "record",
+                    "args": {"judging_shadow": pair["id"], "prompt_sha256": ledger.digest(body)},
+                    "outcome": {"status": status, "reported_model": reported,
+                                "verdict": found[0] if found else None}})
+                if status < 400:  # else it's asked again at a later sweep
+                    grade, why = found or (None, "its answer couldn't be read as a grade")
+                    conn.execute("update shadow_answers set judged = %s, judged_why = %s, "
+                                 "judged_at = now() where id = %s and judged_at is null",
+                                 (grade, why, pair["id"]))  # once, if two sweeps asked
+                    if found:
+                        done["judged"].append({"answer": pair["id"], "verdict": grade})
+        return done
 
     @services.post("/samples/judge")
     def judge_samples() -> dict:
@@ -3611,12 +4627,18 @@ def create_app(gw: Gateway) -> FastAPI:
             "b.release = i.release where b.behaviour = %s and b.action = %s and i.status = 'active'",
             (found["behaviour"], found["action"])).fetchall()
         for inst in rows:
-            text = (f"a5s's cap on {inst['id']} for {found['action']} in {found['part']} is now "
-                    f"{found['cap']}: {found['why']}" + (
-                        f", on {found['graded']} grades, {found['errors']} of them wrong."
-                        if "graded" in found else "."))
             for person in dict.fromkeys(p for p in (inst["owner"], inst["deputy"]) if p):
-                digests.keep(conn, person, inst["definition"], inst["id"], None, text, now)
+                spoken = gw.spoken(conn, person)  # each in the language they read
+                given = {"instance": inst["id"], "action": found["action"], "part": found["part"],
+                         "cap": found["cap"], "why": words.say(spoken, "lowered by {by}",
+                                                               by=found["by"])
+                         if "by" in found else words.say(spoken, found["why"])}
+                digests.keep(conn, person, inst["definition"], inst["id"], None, words.say(
+                    spoken, "a5s's cap on {instance} for {action} in {part} is now {cap}: {why}, "
+                    "on {graded} grades, {errors} of them wrong.", graded=found["graded"],
+                    errors=found["errors"], **given) if "graded" in found else words.say(
+                    spoken, "a5s's cap on {instance} for {action} in {part} is now {cap}: {why}.",
+                    **given), now)
 
     @services.get("/proposals")
     def list_proposals() -> dict:
@@ -3707,17 +4729,27 @@ def create_app(gw: Gateway) -> FastAPI:
 
     @services.post("/notices")
     def notice(body: Notice) -> dict:
-        """a5s's own words, such as "the assistant is suspended", only ever in answer to someone."""
-        text, _ = sanitize(body.text, ())
+        """a5s's own words, such as "the assistant is suspended", only ever in answer to someone:
+        in the language they read, or, in a group chat, the one everyone in it reads (round 15,
+        A12)."""
         try:
             inbound = str(uuid.UUID(body.inbound))
         except ValueError:
             raise HTTPException(404, "no such message") from None
+        text = body.text
         with db.transaction(gw.url) as conn:
             row = conn.execute(
                 "update inbound set notices = notices + 1 where id = %s and notices < 3 "
                 "returning person, agent, channel, reply_to, members", (inbound,)).fetchone()
             if row is not None:
+                spoken = languages.shared(conn, [gw.scenario.person(m) for m in row["members"]]) \
+                    if row["members"] else gw.spoken(conn, row["person"])
+                if body.notice in notices.SAID:
+                    try:
+                        text = notices.said(spoken, body.notice, body.given)
+                    except ValueError as exc:  # said in English, as the scheduler wrote it
+                        log.warning("a notice for message %s isn't whole: %s", inbound, exc)
+                text, _ = sanitize(text, ())
                 ledger.append(conn, {"kind": "notice", "action": "send", "run": None,
                                      "instance": body.instance,
                                      "acts_for": list(row["members"] or [row["person"]]),
@@ -3759,7 +4791,7 @@ def create_app(gw: Gateway) -> FastAPI:
             "parents": [],
         }
         prompt = {"system": body.get("system"), "messages": body.get("messages")}
-        forwarded, dropped, refusal = models.screen(api, body)
+        forwarded, dropped, refusal = models.screen(api, body, bool(model and model.images))
         with db.transaction(gw.url) as conn:
             row = load_run(conn, token)
             release = gw.definitions.get(row["definition"])
@@ -3767,13 +4799,14 @@ def create_app(gw: Gateway) -> FastAPI:
                 conn, gw.scenario, release.budget, row["id"], list(row["acts_for"]),
                 row["trigger"].get("kind"), row["tokens"], gw.clock(), tasking.capped(row))
             if refusal:
-                decision = Decision(False, ("agents-use-their-own-tools",), explanations=(refusal,))
+                decision = Decision(False, (Own.IMAGES,) if "images" in (
+                    refusal) else (Own.TOOLS,), explanations=(refusal,))
             elif why := tasking.stopped(conn, row):  # its task was cancelled meanwhile
-                decision = Decision(False, ("tasks-stop-when-stopped",), explanations=(why,))
+                decision = Decision(False, (Own.STOPPED,), explanations=(why,))
             elif spent:
-                decision = Decision(False, ("budgets",), explanations=(spent,))
+                decision = Decision(False, (Own.BUDGETS,), explanations=(spent,))
             elif (found := gw.settings_in_force(conn))[0] is None:
-                decision = Decision(False, ("settings-must-check-out",), explanations=(
+                decision = Decision(False, (Own.SETTINGS,), explanations=(
                     f"a5s can't use the settings in force: {found[1]}",))
             else:
                 decision = gw.decide(row, "call_model", approved, [],

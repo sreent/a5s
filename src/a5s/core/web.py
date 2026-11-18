@@ -24,7 +24,7 @@ from pydantic import BaseModel
 from a5s import db
 from a5s.contract import Person
 from a5s.core import status
-from a5s.core.identity import IdentityError, UnknownPerson, asked_level, signed_in
+from a5s.core.identity import IdentityError, UnknownPerson, asked_claims, asked_level, signed_in
 
 log = logging.getLogger(__name__)
 
@@ -165,10 +165,11 @@ def signing(gw: Any, at: str) -> APIRouter:
             where = gw.identity.endpoints()
         except Exception as exc:  # the provider's down: the page says so, and nothing else
             raise HTTPException(503, "the identity provider can't be reached") from exc
-        level = asked_level(gw.identity.cfg)
+        level, claims = asked_level(gw.identity.cfg), asked_claims(gw.identity.cfg)
         return {"signin": {"authorization_endpoint": where["authorization_endpoint"],
                            "client_id": gw.cfg.webchat_client_id, "scope": "openid profile",
-                           **({"acr_values": level} if level else {})}}
+                           **({"acr_values": level} if level else {}),
+                           **({"claims": claims} if claims else {})}}
 
     @pages.post(f"{at}/token")
     def sign_in_token(body: TokenRequest) -> JSONResponse:
@@ -201,38 +202,5 @@ def acting(gw: Any, name: str) -> APIRouter:
         asked = request.url.query
         return RedirectResponse(f"/studio/{name}{'?' + asked if asked else ''}", status_code=303,
                                 headers=PAGE_HEADERS)
-
-    return pages
-
-    @pages.get(f"/{name}/", include_in_schema=False)
-    def act_page() -> Response:
-        return page(gw, f"{name}.html")
-
-    @pages.get(f"/{name}/{name}.js", include_in_schema=False)
-    def act_script() -> Response:
-        return page(gw, f"{name}.js")
-
-    @pages.get(f"/{name}/config")
-    def act_config() -> dict:
-        """Where the page signs someone in, at the level what counts asks the provider for."""
-        try:
-            where = gw.identity.endpoints()
-        except Exception as exc:  # the provider's down: the page says so, and nothing else
-            raise HTTPException(503, "the identity provider can't be reached") from exc
-        level = asked_level(gw.identity.cfg)
-        return {"signin": {"authorization_endpoint": where["authorization_endpoint"],
-                           "client_id": gw.cfg.webchat_client_id, "scope": "openid profile",
-                           **({"acr_values": level} if level else {})}}
-
-    @pages.post(f"/{name}/token")
-    def act_token(body: TokenRequest) -> JSONResponse:
-        """The page's sign-in, passed on to the identity provider: the signed sign-in alone."""
-        if body.grant_type != "authorization_code" or not (body.code and body.code_verifier
-                                                            and body.redirect_uri):
-            raise HTTPException(400, "send a code and its verifier")
-        return exchange(gw, {"grant_type": "authorization_code",
-                             "client_id": gw.cfg.webchat_client_id, "code": body.code,
-                             "code_verifier": body.code_verifier,
-                             "redirect_uri": body.redirect_uri}, ("id_token",))
 
     return pages
