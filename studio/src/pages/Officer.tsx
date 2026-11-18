@@ -54,7 +54,7 @@ export function OfficerPage() {
     event.preventDefault();
     const whom = person.trim();
     if (!whom) {
-      setStatus(t("Name the person, by their id in the directory, or an archive's name."));
+      setStatus(t("Name the person: by their id in the directory, an archive's name, or, for someone outside the directory, such as a customer who wrote to a shared mailbox, their address."));
       return;
     }
     if (action === "erase" && again.trim() !== whom) {
@@ -86,7 +86,7 @@ export function OfficerPage() {
               <option value="erase">{t("erase")}</option>
             </select>{" "}
             <label htmlFor="person">{t("all a5s keeps about")}</label>{" "}
-            <input id="person" autoComplete="off" spellCheck={false} placeholder={t("an id, or an archive's name")}
+            <input id="person" autoComplete="off" spellCheck={false} placeholder={t("an id, an archive's name, or an address")}
                    value={person} onChange={(e) => setPerson(e.target.value)} />
           </p>
           {action === "erase" && (

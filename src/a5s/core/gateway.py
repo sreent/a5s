@@ -61,6 +61,7 @@ from a5s.core import (
     chats,
     coretools,
     counts,
+    customers,
     delegation,
     departures,
     digests,
@@ -2446,6 +2447,8 @@ def create_app(gw: Gateway) -> FastAPI:
         if groups.of(person):
             raise HTTPException(400, "a group chat's conversation is nobody's own: name a person")
         by, identity = officer_asked("export", person, body)
+        if customers.is_address(person) and gw.scenario.person(person) is None:
+            return export_customer(person, by, identity)  # someone outside the directory
         with db.transaction(gw.url) as conn:  # as of one moment, so that a sweep that
             conn.execute("set transaction isolation level repeatable read read only")  # archives
             found = export.gather(conn, person)  # them meanwhile moves nothing it reads
@@ -2471,6 +2474,8 @@ def create_app(gw: Gateway) -> FastAPI:
             raise HTTPException(400, "send the id again as confirm, so that a mistyped id erases "
                                      "nobody")
         here = gw.scenario.person(person) is not None
+        if customers.is_address(person) and not here:
+            return erase_customer(person, body)  # someone outside the directory
         with db.transaction(gw.url) as conn:  # the request is used only if the erasure is made
             by, identity = officer_asked("erase", person, body, conn)
             try:
@@ -2487,6 +2492,48 @@ def create_app(gw: Gateway) -> FastAPI:
                                  "args": {"person": person, "by": by, "identity": identity,
                                           "erased": gone, "archives_left": len(archives)}})
         return {"erased": person, "by": by, "gone": gone, "archives": archives}
+
+    def export_customer(address: str, by: str, identity: dict | str) -> dict:
+        """Where a5s keeps the address of someone outside the directory, such as a customer
+        who writes to a shared mailbox, and how much (core/customers.py). The ledger records it
+        by a digest of their address, in counts."""
+        with db.transaction(gw.url) as conn:
+            conn.execute("set transaction isolation level repeatable read read only")
+            found = customers.gather(conn, address)
+        if not customers.holds(found):
+            raise HTTPException(404, f"a5s keeps nothing that names {address}: check the address")
+        with db.transaction(gw.url) as conn:
+            ledger.append(conn, {"kind": "admin", "action": "export", "run": None,
+                                 "instance": None, "acts_for": [], "decision": "record",
+                                 "args": {"person": customers.subject(address), "by": by,
+                                          "identity": identity, "counts": customers.counts(found)}})
+        return found
+
+    def erase_customer(address: str, body: Erasure) -> dict:
+        """Erase the address of someone outside the directory from what a5s keeps, leaving
+        what's evidence of what agents did (core/customers.py). The ledger records it by a
+        digest of their address, in counts."""
+        with db.transaction(gw.url) as conn:  # the request is used only if the erasure is made
+            by, identity = officer_asked("erase", address, body, conn)
+            try:
+                done = customers.erase(conn, address)
+            except customers.Busy:
+                raise HTTPException(409, f"a run holds {address} now, and might write it out "
+                                         "after the erasure: try again in a minute or two") from None
+            except customers.Waiting as exc:
+                raise HTTPException(409, f"{', '.join(exc.keys)} name {address} and wait for a "
+                                         "decision, or are being made: their deciders decide "
+                                         "them first, then ask again") from None
+            if not done["gone"] and not done["kept"]:
+                raise HTTPException(404, f"a5s keeps nothing that names {address}: check the "
+                                         "address")
+            ledger.append(conn, {"kind": "admin", "action": "erase", "run": None,
+                                 "instance": None, "acts_for": [], "decision": "record",
+                                 "args": {"person": customers.subject(address), "by": by,
+                                          "identity": identity, "erased": done["gone"],
+                                          "kept": len(done["kept"])}})
+        return {"erased": address, "by": by, "gone": done["gone"], "kept": done["kept"],
+                "archives": []}
 
     @services.post("/retention/sweep")
     def sweep_retention() -> dict:

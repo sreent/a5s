@@ -174,7 +174,8 @@ export const DECIDE: Record<string, string> = {
   "Someone from the team that runs a5s carries it out, once, within {lasts}: {command}":
     "สมาชิกในทีมที่ดูแล a5s จะดำเนินการให้ครั้งเดียวภายใน {lasts}: {command}",
   "a5s didn't take your request: {why}": "a5s ไม่รับคำขอของคุณ: {why}",
-  "Name the person, by their id in the directory, or an archive's name.": "ระบุบุคคลด้วยรหัสในไดเรกทอรี หรือชื่อของข้อมูลที่เก็บถาวร",
+  "Name the person: by their id in the directory, an archive's name, or, for someone outside the directory, such as a customer who wrote to a shared mailbox, their address.":
+    "ระบุบุคคล: ด้วยรหัสในไดเรกทอรี ชื่อของข้อมูลที่เก็บถาวร หรือสำหรับบุคคลภายนอกไดเรกทอรี เช่น ลูกค้าที่เขียนถึงกล่องจดหมายที่ใช้ร่วมกัน ให้ใช้ที่อยู่อีเมลของบุคคลนั้น",
   "Type their id again, the same, to confirm it: an erasure can't be undone.":
     "พิมพ์รหัสของบุคคลนั้นอีกครั้งให้ตรงกันเพื่อยืนยัน เพราะการลบย้อนกลับไม่ได้",
   "A request for someone's data": "คำขอเกี่ยวกับข้อมูลของบุคคล",
@@ -183,7 +184,7 @@ export const DECIDE: Record<string, string> = {
   "Ask about someone else": "ส่งคำขอสำหรับบุคคลอื่น",
   "Ask to": "ขอ",
   "all a5s keeps about": "ข้อมูลทั้งหมดที่ a5s เก็บเกี่ยวกับ",
-  "an id, or an archive's name": "รหัส หรือชื่อของข้อมูลที่เก็บถาวร",
+  "an id, an archive's name, or an address": "รหัส ชื่อของข้อมูลที่เก็บถาวร หรือที่อยู่อีเมล",
   "Their id again, since an erasure can't be undone:": "รหัสของบุคคลนั้นอีกครั้ง เพราะการลบย้อนกลับไม่ได้:",
   "You sign in afresh, for this request alone. Someone from the team that runs a5s then carries it out, once, within ten minutes: your sign-in does nothing else.":
     "คุณลงชื่อเข้าใช้ใหม่สำหรับคำขอนี้เท่านั้น จากนั้นสมาชิกในทีมที่ดูแล a5s จะดำเนินการให้ครั้งเดียวภายใน 10 นาที การลงชื่อเข้าใช้ของคุณไม่ได้ใช้ทำสิ่งอื่น",

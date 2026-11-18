@@ -760,7 +760,7 @@ The gaps they named, and their size:
 | What a5s is worth: time saved and cost for each outcome, against a baseline | B | Large |
 | An author without Python takes an agent to work in five handoffs, and a second team needs 14 steps and two to four engineer-weeks | C | Large |
 | Scanned invoices and other attachments, read | A | Large |
-| People outside the directory, such as customers in mail, exported and erased | F | Medium to Large |
+| People outside the directory, such as customers in mail, exported and erased | F | Medium to Large: done, by their address; the changes and samples that name them stay as evidence, as anyone's do |
 | Resuming in an emergency | D | Medium |
 | What operators see of the ledger's copies and what waits | D | Medium |
 | A second grader checks some samples | C | Medium |

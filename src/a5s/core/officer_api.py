@@ -12,7 +12,7 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
 from a5s import db
-from a5s.core import approvals, ledger, officer, web
+from a5s.core import approvals, customers, ledger, officer, web
 from a5s.core import studio_models as shapes  # what each route answers, as the studio's types say
 
 
@@ -42,10 +42,11 @@ def router(gw: Any) -> APIRouter:
                                         token, body.action, person, body.salt, time.time())
             with db.transaction(gw.url) as conn:
                 officer.record(conn, body.action, person, who.id, token, body.salt, claims)
+                whom = customers.subject(person)  # an address by its digest alone
                 ledger.append(conn, {
                     "kind": "admin", "action": "ask", "run": None, "instance": None,
-                    "acts_for": [person], "decision": "record",
-                    "args": {"to": body.action, "person": person, "by": who.id,
+                    "acts_for": [] if whom != person else [person], "decision": "record",
+                    "args": {"to": body.action, "person": whom, "by": who.id,
                              "identity": "verified: a sign-in to ask for this alone",
                              "issuer": claims["iss"],
                              "token_sha256": hashlib.sha256(token.encode()).hexdigest()}})
