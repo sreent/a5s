@@ -80,11 +80,13 @@ def note(call: Call) -> dict:
     if unread := [k for k in keys if _norm(call.scenario, k) not in read]:
         raise Refused(f"it comes only from records this run read with its tools, and it didn't "
                       f"read {', '.join(unread)}")
-    if outside := [k for k in keys if not parts.workable(call.scenario, run, k)]:
-        raise Refused(f"{', '.join(outside)} isn't in a part this agent works in")
-    standing = {k: record_of(call.scenario, k) for k in keys}
+    # one it may not work on is refused as one there isn't, for all but the ledger (A14)
+    outside = [k for k in keys if not parts.workable(call.scenario, run, k)]
+    standing = {k: None if k in outside else record_of(call.scenario, k) for k in keys}
     if gone := [k for k, r in standing.items() if r is None]:
-        raise Refused(f"the records have no {', '.join(gone)}")
+        why = [f"{k} isn't in a part this agent works in" if k in outside else
+               f"the records have no {k}" for k in gone]
+        raise Refused(f"{', '.join(gone)}: {parts.told(call.scenario, run)}", why="; ".join(why))
     held = [v for k in keys for v in read[_norm(call.scenario, k)][1]] + [
         v for k, r in standing.items() for v in values.found(
             json.dumps({k: r.fields}, ensure_ascii=False, default=str), call.scenario.record_pattern)]

@@ -2825,10 +2825,10 @@ def create_app(gw: Gateway) -> FastAPI:
                 elif action and len(keys) > MOST_NAMED:
                     decision = Decision(False, (Own.FEW,), explanations=(
                         f"one call changes {MOST_NAMED} records at most: ask for the rest apart",))
-                elif unreadable:
-                    decision = Decision(False, (Own.READABLE,), explanations=(
+                elif unreadable and not parts.unseen(decision.reasons):  # one it may not work
+                    decision = Decision(False, (Own.READABLE,), explanations=(  # on is refused,
                         ("the records it names can't be read just now, so a5s asked for nothing: "
-                         "try again later"),))
+                         "try again later"),))  # read or not, as one there isn't (A14)
                 if row["trigger"].get("kind") in OWN_RUNS:
                     decision = Decision(False, (Own.OWN_RUNS_CALL,), explanations=(
                         "a5s's own runs, such as keeping a summary, call no tools",))
@@ -2859,6 +2859,11 @@ def create_app(gw: Gateway) -> FastAPI:
                                                    **({"steered_by": steered} if steered else {}),
                                                    **({"values": values_of(traced)} if traced else {})))
                 studio.handled(conn, row["run"], keys)  # the records it named, whatever came of it
+                # Of a record it may not work on, the run hears what it would of one there
+                # isn't, whichever rule refused it: the ledger keeps which, as its page shows
+                if not decision.allowed and parts.unseen(decision.reasons):  # (round 15, A14)
+                    decision = Decision(False, (parts.REFUSED,),
+                                        explanations=(parts.told(gw.scenario, row),))
                 if change and (decision.allowed or decision.held):  # made or held: it counts
                     counts.count(conn, requested, action, change, max(len(keys), 1),
                                  over is not None, "making" if decision.allowed else "held",
@@ -3490,7 +3495,8 @@ def create_app(gw: Gateway) -> FastAPI:
         except coretools.Refused as exc:
             record({"kind": "tool", "action": core.name, "run": row["run"], "instance": row["id"],
                     "decision": "record", "of": seq,
-                    "outcome": {"status": "refused", "reason": str(exc)}})
+                    "outcome": {"status": "refused", "reason": str(exc),
+                                **({"why": exc.why} if exc.why else {})}})
             return JSONResponse(status_code=403, content={"denied": True, "reasons": [str(exc)],
                                                           "explanations": [str(exc)]})
         except Exception as exc:  # noqa: BLE001 - recorded and reported, as for any tool

@@ -5,7 +5,7 @@ everyone its run acts for may see. In the sample, Ana owns billing and Omar owns
 import yaml
 
 from a5s import db
-from a5s.core import approvals, registry
+from a5s.core import approvals, parts, registry
 from conftest import SAMPLE_SETTINGS, signed
 
 OMAR_TOO = ["ana", "ben", "omar"]
@@ -20,21 +20,26 @@ def reasons(response) -> list[str]:
     return response.json()["reasons"]
 
 
+def refused(stack, run: str) -> list[str]:
+    """Why the ledger says policy refused a run's last call: the run hears only that there's
+    no such record, or it may not see it (tests/test_r15_unseen.py)."""
+    return [e for e in stack.ledger(run) if e["decision"] == "deny"][-1]["reasons"]
+
+
 def test_an_instance_works_only_on_records_in_its_parts(stack):
     assert not stack.settle(serves=OMAR_TOO).refused  # billing alone: Ana's to approve
-    _, token = stack.open_run(sender="omar")
+    run, token = stack.open_run(sender="omar")
     out_of_scope = tool(stack, token, "get_record", key="Q-1003")  # orders: Omar may see it
-    assert out_of_scope.status_code == 403
-    assert reasons(out_of_scope) == ["instances-work-only-in-their-parts"]
-    assert out_of_scope.json()["explanations"] == [
-        "the record is in a part the instance doesn't work in"]
+    assert out_of_scope.status_code == 403 and reasons(out_of_scope) == [parts.REFUSED]
+    assert refused(stack, run) == ["instances-work-only-in-their-parts"]
 
 
 def test_a_run_works_only_on_records_everyone_it_acts_for_may_see(stack):
     assert not stack.settle(serves=OMAR_TOO).refused
-    _, token = stack.open_run(sender="omar")
+    run, token = stack.open_run(sender="omar")
     unseen = tool(stack, token, "get_record", key="Q-1001")  # billing's team is finance
-    assert unseen.status_code == 403 and reasons(unseen) == ["people-see-only-what-they-may"]
+    assert unseen.status_code == 403 and reasons(unseen) == [parts.REFUSED]
+    assert refused(stack, run) == ["people-see-only-what-they-may"]
     _, token = stack.open_run(sender="ben")
     seen = tool(stack, token, "get_record", key="Q-1001")  # Ana's, and Ben is in finance
     assert seen.status_code == 200 and seen.json()["result"]["key"] == "Q-1001"

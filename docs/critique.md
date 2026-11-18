@@ -732,7 +732,7 @@ Six reviewers who hadn't written a5s each took a part and tested the running sta
 | F10 | The scheduler's role could write turns into a person's conversation as theirs | Medium | A person's words are the core's alone to keep: it writes them, from the message as it arrived, as the run that answers it opens, and the database refuses the scheduler's role a person's turn. The scheduler still writes the agent's words and a5s's own, and gives each run its conversation: R17 | Fixed in part |
 | A12 | a5s's own chat words were English for a Thai reader | Low | | Deferred, Small |
 | A13 | A second "That's wrong" said Noted but dropped its words | Low | | Deferred, Small |
-| A14 | A record in another part could be told from one that doesn't exist | Low | | Deferred, Small |
+| A14 | A record in another part could be told from one that doesn't exist | Low | The agent hears the same of a record in another part, one its people may not see and one there isn't, read or changed, and is pointed to whoever runs the assistant, never a part's owner; the ledger keeps which rule refused it | Fixed |
 | A15 | A draft kept the records' internal links | Low | | Deferred, Small |
 | A16 | Some senders' addresses weren't read, a cut named the wrong length, and the same mail twice made two drafts | Low | Addresses with apostrophes or other alphabets are read, and a cut tells the message's whole length | Fixed in part |
 | A17 | A mail run's page can't be tied to its mail or its draft | Low | | Deferred, Small |
