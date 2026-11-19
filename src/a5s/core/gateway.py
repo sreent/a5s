@@ -113,7 +113,7 @@ from a5s.core import (
     values,
     words,
 )
-from a5s.core.breakers import FAILURES, Breakers
+from a5s.core.breakers import Breakers
 from a5s.core.events import EventsConfig
 from a5s.core.identity import (
     IdentityError,
@@ -4878,50 +4878,74 @@ def create_app(gw: Gateway) -> FastAPI:
         if not decision.allowed:
             return JSONResponse(status_code=403, content=models.error_body(
                 api, "denied by policy: " + "; ".join(decision.explanations)))
-        called = gw.breakers.allow(alias)
-        with traces.span(f"chat {alias}", **{
-                "gen_ai.operation.name": "chat", "gen_ai.provider.name": model.provider,
-                "gen_ai.request.model": alias, "a5s.run.id": row["run"],
-                "a5s.instance": row["id"]}) as current:
-            if not called:  # it failed in a row lately: it isn't called for a few minutes
-                status, data = 503, models.error_body(
-                    api, f"{alias} failed {FAILURES} times in a row, so a5s isn't calling it for "
-                         "a few minutes", "model_unavailable")
-            else:
+        # Its own model first, and, once that one fails this call, each fallback its release
+        # names that speaks its API style and may see its data, in order: the same call is
+        # re-issued in the same run, so nothing of the run is lost, and each attempt is in
+        # the ledger, by the call's sequence. The worker sees only the last attempt's answer.
+        tried_here: list[str] = []  # this call's attempts, in order
+        served = alias
+        recorded, status, data = None, 503, models.error_body(
+            api, "no model in its chain can answer this call", "model_unavailable")
+        for candidate in [alias, *(release.fallbacks if release else [])]:
+            if candidate in tried_here:
+                continue
+            fallback = gw.models.get(candidate)
+            if fallback is None or fallback.api != api:  # the worker speaks one API style
+                continue
+            if model and candidate != alias and not set(model.data_classes) <= set(
+                    fallback.data_classes):  # never sees more than its own model may
+                continue
+            if not gw.breakers.allow(candidate):  # failed in a row lately: not called for a while
+                record({"kind": "model", "action": candidate, "run": row["run"],
+                        "instance": row["id"], "decision": "record", "of": seq,
+                        "outcome": {"status": 503, "reported_model": None, "usage": None}})
+                tried_here.append(candidate)
+                continue
+            with traces.span(f"chat {candidate}", **{
+                    "gen_ai.operation.name": "chat", "gen_ai.provider.name": fallback.provider,
+                    "gen_ai.request.model": candidate, "a5s.run.id": row["run"],
+                    "a5s.instance": row["id"]}) as current:
                 try:
-                    status, data = models.forward(model, forwarded, gw.http)
+                    status, data = models.forward(fallback, forwarded, gw.http)
                 except models.ModelUnavailable as exc:
                     status, data = 503, models.error_body(api, str(exc), "model_unavailable")
-            usage = data.get("usage") if isinstance(data, dict) else None
-            current.set_attributes({k: v for k, v in {
-                "gen_ai.response.model": data.get("model") if isinstance(data, dict) else None,
-                "gen_ai.usage.input_tokens": (usage or {}).get("prompt_tokens",
-                                                               (usage or {}).get("input_tokens")),
-                "gen_ai.usage.output_tokens": (usage or {}).get("completion_tokens",
-                                                                (usage or {}).get("output_tokens")),
-                "error.type": str(status) if status >= 400 else None}.items() if v is not None})
-        reported = data.get("model") if isinstance(data, dict) else None
-        expected = model.reported_model or model.model
-        if called and status < 400 and reported != expected:
-            status, data = 502, models.error_body(
-                api, f"the provider reported {reported}, not the approved {expected}",
-                "model_mismatch")
-        if called and (change := "open" if (status >= 500 or status == 429)
-                       and gw.breakers.failed(alias) else "close" if status < 400
-                       and gw.breakers.worked(alias) else None):
-            log.warning("the breaker for %s is %s", alias, "open" if change == "open" else "closed again")
-            record({"kind": "breaker", "action": change, "run": row["run"], "instance": row["id"],
-                    "decision": "record", "args": {"model": alias, "status": status}})
-        recorded = record({"kind": "model", "action": alias, "run": row["run"], "instance": row["id"],
-                           "decision": "record", "of": seq,
-                           "outcome": {"status": status, "reported_model": reported,
-                                       "usage": data.get("usage") if isinstance(data, dict) else None}})
+                usage = data.get("usage") if isinstance(data, dict) else None
+                current.set_attributes({k: v for k, v in {
+                    "gen_ai.response.model": data.get("model") if isinstance(data, dict) else None,
+                    "gen_ai.usage.input_tokens": (usage or {}).get("prompt_tokens",
+                                                                   (usage or {}).get("input_tokens")),
+                    "gen_ai.usage.output_tokens": (usage or {}).get("completion_tokens",
+                                                                    (usage or {}).get("output_tokens")),
+                    "error.type": str(status) if status >= 400 else None}.items() if v is not None})
+            reported = data.get("model") if isinstance(data, dict) else None
+            expected = fallback.reported_model or fallback.model
+            if status < 400 and reported != expected:
+                status, data = 502, models.error_body(
+                    api, f"the provider reported {reported}, not the approved {expected}",
+                    "model_mismatch")
+            if change := ("open" if (status >= 500 or status == 429)
+                          and gw.breakers.failed(candidate) else "close" if status < 400
+                          and gw.breakers.worked(candidate) else None):
+                log.warning("the breaker for %s is %s", candidate,
+                            "open" if change == "open" else "closed again")
+                record({"kind": "breaker", "action": change, "run": row["run"],
+                        "instance": row["id"], "decision": "record",
+                        "args": {"model": candidate, "status": status}})
+            recorded = record({"kind": "model", "action": candidate, "run": row["run"],
+                               "instance": row["id"], "decision": "record", "of": seq,
+                               "outcome": {"status": status, "reported_model": reported,
+                                           "usage": data.get("usage") if isinstance(data, dict)
+                                           else None}})
+            tried_here.append(candidate)
+            served = candidate
+            if status < 400:
+                break
         tokens = budgets.tokens_of(data.get("usage")) if isinstance(data, dict) else 0
         if tokens and release is not None:
             try:
                 with db.transaction(gw.url) as conn:
                     if warning := budgets.spent(conn, gw.scenario, release.budget, row, tokens,
-                                                gw.clock(), data.get("usage"), alias):
+                                                gw.clock(), data.get("usage"), served):
                         log.warning("%s has used %s of its %s tokens for %s today", row["id"],
                                     warning["used"], warning["budget"], warning["person"])
                         ledger.append(conn, {

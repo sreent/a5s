@@ -13,17 +13,22 @@ Nothing about how far the agent acts changes: the release approves the chain as 
 the model, the gateway refuses any alias `config/models.yaml` doesn't list, and every call, on
 whichever model serves it, goes through the same policy, budgets and ledger.
 
-## How a run picks its model
+## Two layers: the call, then the run
 
-At the moment a run opens, the core picks the instance's model, or, when that one's circuit
-breaker is open, or the same work just failed on it, the first fallback the breakers let
-through, and keeps the choice on the run (`core/gateway.py`'s `model_for`). Every call of the
-run goes to that one model. When a run ends with its model not answering, the scheduler tries
-the message again, and the next attempt skips the model that failed, so each model in the
-chain gets one go. Only when every one has failed does the person hear a5s's own words for a
-model that isn't answering (`services/scheduler.py`). The failed model's breaker still opens
-after three failures in a row, as before, so a provider that's down isn't asked for a few
-minutes.
+A stalled model call is a bug in a5s, not an outage to tolerate: a run that answers someone
+must survive one call's failure. So resilience is two layers.
+
+**In the run:** when a model call fails, the gateway re-issues the same call on the next model
+its release names that speaks its API style and may see its data (`core/gateway.py`'s
+`calling`), all within the same run: the agent keeps its thread, its tool results and its
+place, and the worker never sees the failure. Each attempt is in the ledger, by the call's
+sequence and alias, and the call is bounded by the chain.
+
+**After the run:** if every model failed a run's calls — a provider-wide outage — the
+scheduler tries the message again on the next model, each tried once, and only once every one
+has failed does the person hear a5s's own words for a model that isn't answering
+(`services/scheduler.py`, `model_for` at run-open). The failed model's breaker still opens
+after three failures in a row, so a provider that's down isn't asked for a few minutes.
 
 Each attempt is in the ledger as before: the run's `model` records which model served it, and
 each call's entry names its alias, so the evidence shows which model answered what.

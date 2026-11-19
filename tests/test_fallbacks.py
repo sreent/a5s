@@ -78,28 +78,31 @@ def models_called(stack) -> list[str]:
 
 
 def test_a_message_runs_on_its_fallback_once_its_model_isnt_answering(fallback_stack):
+    """The run-level retry, for when every model failed a run's calls: the next attempt takes
+    the next model. A single call's failure is already recovered within the run, below."""
     stack, primary, spare = fallback_stack
-    primary.failing = 1  # its next call: the model isn't answering
+    primary.failing = 2  # its calls fail, this run and the next attempt's
+    spare.failing = 1  # the fallback fails once, then answers
     spare.reply("On spare: Q-1001 is open.")
     message = stack.send("What's the key of the open question?")
     assert stack.scheduler().answer_waiting() == 1
-    assert stack.answers(message) == []  # nothing told yet: the next model gets a go
+    assert stack.answers(message) == []  # nothing told yet: the next attempt gets a go
     soon(stack)
     assert stack.scheduler().answer_waiting() == 1
     [said] = stack.answers(message)  # with a5s's note on where the key came from
     assert said.startswith("On spare: Q-1001 is open.")
-    assert set(models_called(stack)) == {"fake", "spare"}  # each served, in its turn
     with db.transaction(stack.admin) as conn:
-        [kept] = conn.execute("select tried_models from inbound where id = %s",
+        [kept] = conn.execute("select attempts, tried_models from inbound where id = %s",
                               (message,)).fetchall()
         served = {r["model"] for r in conn.execute(
             "select model from runs where model is not null").fetchall()}
-    assert kept["tried_models"] == ["fake"] and served == {"fake", "spare"}  # kept, and named
+    assert kept["attempts"] == 1 and kept["tried_models"] == ["fake"]  # kept, and named
+    assert served == {"fake", "spare"}
 
 
 def test_only_once_every_model_has_failed_does_the_person_hear_a5s_words(fallback_stack):
     stack, primary, spare = fallback_stack
-    primary.failing, spare.failing = 1, 1
+    primary.failing, spare.failing = 6, 6  # both down, run after run
     message = stack.send("What's the key of the open question?")
     assert stack.scheduler().answer_waiting() == 1
     soon(stack)
@@ -112,6 +115,26 @@ def test_only_once_every_model_has_failed_does_the_person_hear_a5s_words(fallbac
         [kept] = conn.execute("select attempts, tried_models from inbound where id = %s",
                               (message,)).fetchall()
     assert kept["attempts"] == 2 and kept["tried_models"] == ["fake", "spare"]
+
+
+def test_a_run_survives_its_model_stalling_on_one_call(fallback_stack):
+    """The bug this fixes: a model call that isn't answered used to kill the run and lose its
+    state. Now the same call is re-issued on the next model in the run itself, so the person
+    is answered once, the run is the same one, and the ledger shows each attempt."""
+    stack, primary, spare = fallback_stack
+    primary.failing = 1  # its first call: the model isn't answering; the run goes on
+    spare.reply("On spare: Q-1001 is open.")
+    message = stack.send("What's the key of the open question?")
+    assert stack.scheduler().answer_waiting() == 1
+    [said] = stack.answers(message)  # answered once, in the same run, on the next model
+    assert said.startswith("On spare: Q-1001 is open.")
+    with db.transaction(stack.admin) as conn:
+        [count] = conn.execute("select count(*) as n from runs").fetchall()
+        [kept] = conn.execute("select attempts, tried_models from inbound where id = %s",
+                              (message,)).fetchall()
+    assert count["n"] == 1 and kept["attempts"] == 0 and kept["tried_models"] == []
+    served = {e["action"] for e in stack.ledger() if e["kind"] == "model"}
+    assert served == {"fake", "spare"}  # the same call, on each in its turn
 
 
 def test_a_fallback_the_models_file_doesnt_approve_is_never_called(fallback_stack):

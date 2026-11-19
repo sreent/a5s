@@ -14,12 +14,12 @@ a5s's own defect.
 
 The fix is two layers:
 
-1. **Call-level replay, in the run.** Each model call is already a recorded, sequenced unit
-   (the ledger's model entries carry their sequence). When a call fails, the worker asks the
-   gateway to re-issue it on the next healthy approved model — same run, same thread, same
-   tool results, nothing re-read. Only when every model in the chain has failed the same call
-   does the run end, as today. The release's fallbacks bound the chain, and each attempt is
-   in the ledger by sequence and alias, so the evidence shows which model answered what.
+1. **Call-level replay, in the run — built.** Each model call is already a recorded,
+   sequenced unit (the ledger's model entries carry their sequence). When a call fails, the
+   gateway re-issues it on the next healthy approved model that speaks the run's API style —
+   same run, same thread, same tool results, nothing re-read. Only when every model in the
+   chain has failed the same call does the run end. The release's fallbacks bound the chain,
+   and each attempt is in the ledger by sequence and alias.
 2. **Run-level retry, after the run.** The committed fallback work remains as the last resort:
    a provider-wide outage, where every call failed, is recovered by retrying the message or
    slice later, as the scheduler already does.
