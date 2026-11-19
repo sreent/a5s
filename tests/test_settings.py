@@ -23,9 +23,11 @@ def sample(tmp_path, database):
     return folder, keys, database
 
 
-def write(folder, serial, level=1):
+def write(folder, serial, level=1, model=None):
     settings = {"serial": serial, "instances": {"assistant-finance": {
         "definition": "assistant", "serves": ["ana", "ben"], "level": level}}}
+    if model:
+        settings["instances"]["assistant-finance"]["model"] = model
     (folder / "settings.yaml").write_text(yaml.safe_dump(settings), encoding="utf-8")
     (folder / "settings.sig").unlink(missing_ok=True)
 
@@ -37,6 +39,39 @@ def sign(folder, person, private):
     signed["signatures"].append({"signer": person, "value": value})
     sig_file.write_text(yaml.safe_dump(signed), encoding="utf-8")
 
+
+
+def test_an_instance_runs_on_the_model_its_settings_name(sample):
+    """The studio's model picker, in effect: a signed version may put an instance on another
+    approved model than its release's own, and that's the model its runs call."""
+    from a5s.config import load_models
+    folder, keys, database = sample
+    write(folder, 1, model="qwen3.7-max")
+    sign(folder, "ana", keys["ana"])
+    scenario = SampleScenario(folder, database)
+    with db.transaction(database) as conn:
+        applied = registry.apply(conn, definitions.load_all(ROOT / "agents"),
+                                 scenario.settings(), scenario.tools(), scenario.person,
+                                 scenario.name, models=load_models(ROOT / "config" / "models.yaml"))
+    assert not applied.refused, applied.refused
+    with db.transaction(database) as conn:
+        [inst] = conn.execute("select model from instances where id = 'assistant-finance'").fetchall()
+    assert inst["model"] == "qwen3.7-max"
+
+
+def test_settings_name_only_models_the_deployment_approves(sample):
+    """A version that puts an instance on a model config/models.yaml doesn't approve is
+    refused, fail closed, whoever signed it."""
+    from a5s.config import load_models
+    folder, keys, database = sample
+    write(folder, 1, model="nobody-approved")
+    sign(folder, "ana", keys["ana"])
+    scenario = SampleScenario(folder, database)
+    with pytest.raises(ValueError, match="isn't one config/models.yaml approves"), \
+            db.transaction(database) as conn:
+        registry.apply(conn, definitions.load_all(ROOT / "agents"), scenario.settings(),
+                       scenario.tools(), scenario.person, scenario.name,
+                       models=load_models(ROOT / "config" / "models.yaml"))
 
 def apply(folder, database):
     scenario = SampleScenario(folder, database)

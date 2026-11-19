@@ -113,6 +113,7 @@ def router(gw: Any) -> APIRouter:
             # it allows, and the types of change its own tools make
             "names": named(data, person, gw.scenario.person),
             "actions": sorted({t.action for t in tools.values() if t.action}),
+            "models": sorted(gw.models),  # what the forms may put an instance on
             "releases": {name: {"starts": d.autonomy.start, "most": d.autonomy.max,
                                 "actions": sorted({tools[t].action for t in d.tool_names
                                                    if t in tools and tools[t].action})}

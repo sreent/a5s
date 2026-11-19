@@ -275,6 +275,9 @@ class InstanceSettings:
     id: str
     definition: str
     serves: tuple[str, ...]
+    # The approved model it runs on: none, and it runs its release's own. It can only name
+    # one config/models.yaml approves, and never sees more than that model may.
+    model: str | None = None
     level: int | None = None  # the release's starting level, if the settings set none
     owner: str | None = None  # who runs it here, and their deputy: people in this directory
     deputy: str | None = None
@@ -396,6 +399,9 @@ _PERSON = Annotated[str, StringConstraints(strict=True,
 _WHO = Annotated[str, StringConstraints(strict=True, pattern=(
     r"^(?:(?:team|role):[A-Za-z0-9][A-Za-z0-9._@:-]{0,127}|[A-Za-z0-9][A-Za-z0-9._@-]{0,127})$"))]
 _FIELD = Annotated[str, StringConstraints(strict=True, pattern=r"^[A-Za-z][A-Za-z0-9 _-]{0,62}$")]
+# A model's alias, as config/models.yaml names it: lowercase words, hyphens and, where the
+# provider dates one, dots and digits, such as qwen3.7-max
+_MODEL = Annotated[str, StringConstraints(strict=True, pattern=r"^[a-z0-9][a-z0-9.-]{0,62}$")]
 # reads only, asks first or acts on its own, by name or, as before, by number (levels.py)
 _LEVEL = Annotated[StrictInt, BeforeValidator(levels.parse), Field(ge=0, le=2)]
 _COUNT = Annotated[StrictInt, Field(ge=1, le=100_000)]
@@ -426,6 +432,7 @@ class _Instance(BaseModel):
 
     definition: _ID
     serves: list[_WHO]
+    model: _MODEL | None = None  # the approved model it runs on: none, its release's own
     level: _LEVEL | None = None
     owner: _PERSON | None = None
     deputy: _PERSON | None = None
@@ -569,7 +576,7 @@ def parse_settings(raw: bytes, signatures: tuple[Signature, ...] = ()) -> Settin
                           currency=version.spending.currency),
         instances=tuple(
             InstanceSettings(id=iid, definition=i.definition, serves=tuple(i.serves),
-                             level=i.level, owner=i.owner, deputy=i.deputy,
+                             model=i.model, level=i.level, owner=i.owner, deputy=i.deputy,
                              parts=_part_levels(i.parts), actions=_action_levels(i.parts),
                              asks=tuple(i.asks), hands_to=tuple(dict.fromkeys(i.hands_to)),
                              shadows=i.shadows)

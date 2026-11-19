@@ -65,6 +65,7 @@ UNDECIDED = {
     "classes": ("It changes the classes of data, which decide which models may answer: it "
                 "doesn't decide the agents' model calls again."),
     "serves": "It changes whom {instance} serves, which it doesn't decide again.",
+    "model": "It changes which model {instance} runs on, which it doesn't decide again.",
     "asks": "It changes whom {instance} may ask, which it doesn't decide again.",
     "hands_to": "It changes whom {instance} may hand conversations to, which it doesn't decide again.",
     "shadows": "It changes what {instance} shadows, which it doesn't decide again.",
@@ -178,7 +179,7 @@ def undecided(before: Settings | None, after: Settings) -> list[tuple[str, dict[
         if (then := was.get(inst.id)) is None:
             continue  # a new instance has made no calls to decide again
         found += [(UNDECIDED[name], {"instance": inst.id})
-                  for name in ("serves", "asks", "hands_to", "shadows")
+                  for name in ("serves", "asks", "hands_to", "shadows", "model")
                   if getattr(then, name) != getattr(inst, name)]
     if before.spending != after.spending:
         found.append((UNDECIDED["spending"], {}))
@@ -287,7 +288,8 @@ def _row(gw: Any, inst: InstanceSettings, call: Call) -> dict[str, Any] | None:
     return {"id": inst.id, "run": call.run["id"],
             "status": "shadow" if inst.shadows else "active", "level": level,
             "parts": levels, "actions": registry.action_levels(inst, release),
-            "grants": list(release.grants), "model": release.model, "serves": list(inst.serves),
+            "grants": list(release.grants), "model": inst.model or release.model,
+            "serves": list(inst.serves),
             "pins": dict(release.pins), "release": release.release_id,
             "trigger": call.run["trigger"], "acts_for": call.run["acts_for"],
             "read_outside": call.run["read_outside"]}
@@ -314,7 +316,7 @@ def _decide(gw: Any, tool: Any, call: Call, settings: Settings | None, approved:
     def deciding(for_self: bool) -> Decision:
         context = {**about, "for_self": for_self, "over_limit": over}
         key = json.dumps([row["release"], row["level"], row["grants"], row["serves"],
-                          row["read_outside"], row["acts_for"], call.tool, context],
+                          row["model"], row["read_outside"], row["acts_for"], call.tool, context],
                          sort_keys=True, default=str)
         if key not in memo:
             memo[key] = gw.decide(row, "call_tool", entity, [], **context)

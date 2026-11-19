@@ -486,7 +486,8 @@ class Stack:
         scenario = self.gateway.scenario
         with db.transaction(self.admin) as conn:
             return registry.apply(conn, self.gateway.definitions, scenario.settings(),
-                                  scenario.tools(), scenario.person, scenario.name)
+                                  scenario.tools(), scenario.person, scenario.name,
+                                  models=self.gateway.models)
 
     def with_watcher(self, serves: tuple[str, ...] = ("ana", "ben"),
                      signers: tuple[str, ...] = ("ana",), **changes: Any) -> None:
@@ -689,7 +690,7 @@ def running(database: str, root: Path, http: httpx.Client, model: FakeModel,
                  delegation=systems, mail=mailboxes.of(scenario))
     with db.transaction(database) as conn:
         applied = registry.apply(conn, gw.definitions, scenario.settings(), scenario.tools(),
-                                 scenario.person, scenario.name)
+                                 scenario.person, scenario.name, models=gw.models)
     assert not applied.refused, applied.refused
     channels = replace(gw, cfg=replace(cfg, database_url=db.as_role(database, "channels")))
     app = create_app(gw)

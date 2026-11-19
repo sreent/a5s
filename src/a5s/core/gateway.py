@@ -766,6 +766,14 @@ class Gateway:
             release = self.definitions.get(instance.definition)
             if release is None:
                 problems.append(f"{instance.id} names {instance.definition}, which no release here has")
+            elif instance.model and instance.model not in self.models:
+                problems.append(f"{instance.id} runs on {instance.model}, which config/models.yaml "
+                                "doesn't approve")
+            elif instance.model and settings.data_class not in (
+                    (self.models.get(instance.model) or (None,)).data_classes if
+                    self.models.get(instance.model) else ()):
+                problems.append(f"{instance.id}'s model isn't approved for the settings' class "
+                                f"of data, {settings.data_class}")
             elif missing := [t for t in release.tool_names if t not in tools]:
                 problems.append(f"{instance.definition} names tools the scenario doesn't have: "
                                 f"{', '.join(missing)}")
@@ -2264,7 +2272,8 @@ def create_app(gw: Gateway) -> FastAPI:
                                                               "serial": settings.serial}})
         else:
             applied = registry.apply(conn, gw.definitions, settings, gw.scenario.tools(),
-                                     gw.scenario.person, gw.scenario.name, approved)
+                                     gw.scenario.person, gw.scenario.name, approved,
+                                     models=gw.models)
             if not (refused := applied.refused):  # a version that only narrows tells others
                 narrowing.told(conn, gw.scenario, gw.definitions, settings, applied.before,
                                valid, gw.clock())
