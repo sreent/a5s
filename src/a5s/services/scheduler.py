@@ -433,6 +433,16 @@ class Scheduler:
                 raise RuntimeError("the agent's reply was empty")
             sent = self.gw.post("/run/messages", headers={"Authorization": f"Bearer {token}"},
                                 json={"to": conversation, "text": reply})
+            if sent.status_code == 409 and (keys := sent.json().get("detail", {}).get("keys")):
+                # it named record keys its run never read: one bounded correction, asked once
+                reply = self._worker(agent)(self.cfg.gateway_url, token, [*history, {
+                    "role": "task",
+                    "content": f"[from a5s, not the person] Your answer names {', '.join(keys)}, "
+                               "which this run never read. Write it again with only what you "
+                               "read, or leave the key out."}])
+                sent = self.gw.post("/run/messages", headers={"Authorization": f"Bearer {token}"},
+                                    json={"to": conversation, "text": reply,
+                                          "checked_once": True})
             if sent.status_code == 403:
                 outcome = "reply denied"
                 self._turn(claim, self._tell(inbound, notices.NOT_SENT, inst["id"]), run, topic)

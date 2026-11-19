@@ -83,6 +83,7 @@ from a5s.core import (
     memberships,
     models,
     narrowing,
+    verify,
     notebook,
     notices,
     obligations,
@@ -1417,6 +1418,7 @@ class ToolArgs(BaseModel):
 class Message(BaseModel):
     to: str
     text: str
+    checked_once: bool = False  # the run already re-wrote it after a5s's correction
 
 
 class Given(BaseModel):
@@ -3674,6 +3676,9 @@ def create_app(gw: Gateway) -> FastAPI:
 
         with db.transaction(gw.url) as conn:
             row = load_run(conn, token)
+            if not body.checked_once and (made_up := verify.unknown_keys(
+                    conn, row["run"], text, gw.scenario.record_pattern)):
+                raise HTTPException(409, {"error": "unknown_keys", "keys": made_up})
             inbound = row["trigger"].get("inbound")
             # In a group chat, an answer goes to the chat, so to everyone in it, and it's kept
             # as the asker's, such as for their inbox, if the chat won't take it

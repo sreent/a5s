@@ -85,7 +85,7 @@ def test_a_message_runs_on_its_fallback_once_its_model_isnt_answering(fallback_s
     primary.failing = 2  # its calls fail, this run and the next attempt's
     spare.failing = 1  # the fallback fails once, then answers
     spare.reply("On spare: Q-1001 is open.")
-    message = stack.send("What's the key of the open question?")
+    message = stack.send("What's the key of the open question Q-1001?")  # named, so it's read
     assert stack.scheduler().answer_waiting() == 1
     assert stack.answers(message) == []  # nothing told yet: the next attempt gets a go
     soon(stack)
@@ -104,7 +104,7 @@ def test_a_message_runs_on_its_fallback_once_its_model_isnt_answering(fallback_s
 def test_only_once_every_model_has_failed_does_the_person_hear_a5s_words(fallback_stack):
     stack, primary, spare = fallback_stack
     primary.failing, spare.failing = 6, 6  # both down, run after run
-    message = stack.send("What's the key of the open question?")
+    message = stack.send("What's the key of the open question Q-1001?")  # named, so it's read
     assert stack.scheduler().answer_waiting() == 1
     soon(stack)
     assert stack.scheduler().answer_waiting() == 1
@@ -125,7 +125,7 @@ def test_a_run_survives_its_model_stalling_on_one_call(fallback_stack):
     stack, primary, spare = fallback_stack
     primary.failing = 2  # asked once more on its own model, then the next one takes the call
     spare.reply("On spare: Q-1001 is open.")
-    message = stack.send("What's the key of the open question?")
+    message = stack.send("What's the key of the open question Q-1001?")  # named, so it's read
     assert stack.scheduler().answer_waiting() == 1
     [said] = stack.answers(message)  # answered once, in the same run, on the next model
     assert said.startswith("On spare: Q-1001 is open.")
@@ -147,7 +147,7 @@ def test_a_gated_model_is_passed_over_for_its_fallback(fallback_stack):
         for i in range(20):
             health.record(conn, stack.gateway.scenario.name, "fake", 503 if i < 11 else 200, 0.5)
     spare.reply("On spare: Q-1001 is open.")
-    message = stack.send("What's the key of the open question?")
+    message = stack.send("What's the key of the open question Q-1001?")  # named, so it's read
     assert stack.scheduler().answer_waiting() == 1
     [said] = stack.answers(message)
     assert said.startswith("On spare: Q-1001 is open.")  # the gated model was never called
@@ -170,7 +170,7 @@ def test_a_model_whose_breaker_is_open_is_passed_over_for_the_next(fallback_stac
     for _ in range(3):  # three failures in a row: its breaker is open (core/breakers.py)
         stack.gateway.breakers.failed("fake")
     spare.reply("On spare, from the start.")
-    message = stack.send("What's the key of the open question?")
+    message = stack.send("What's the key of the open question Q-1001?")  # named, so it's read
     assert stack.scheduler().answer_waiting() == 1
     assert stack.answers(message) == ["On spare, from the start."]
     assert set(models_called(stack)) == {"spare"}  # never the open one, though nothing failed
