@@ -180,7 +180,7 @@ def declared(folder: Path) -> Declaration | None:
     if not path.is_file():
         return None
     try:
-        return Declaration.model_validate(definitions.spec_of(path.read_text()) or {})
+        return Declaration.model_validate(definitions.spec_of(path.read_text(encoding="utf-8")) or {})
     except (ValidationError, ValueError, yaml.YAMLError) as e:
         raise ValueError(f"{path}: {e}") from None
 
@@ -433,7 +433,7 @@ class _Made(_Box):
 
     def _messages(self) -> Iterator[tuple[str, dict]]:
         for path in sorted(self.folder.glob("*.yaml")) if self.folder.is_dir() else ():
-            found = yaml.safe_load(path.read_text()) or {}
+            found = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
             if isinstance(found, dict):
                 yield key_of(self.name, path.name), found
 

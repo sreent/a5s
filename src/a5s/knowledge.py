@@ -70,7 +70,7 @@ class MarkdownKnowledge:
 
     def _load(self, path: Path) -> dict[str, Any] | None:
         try:
-            raw = path.read_text()
+            raw = path.read_text(encoding="utf-8")
             meta, text = {}, raw
             if raw.startswith("---\n"):
                 found = raw.split("\n---\n", 1)

@@ -486,7 +486,7 @@ def test_a_real_model_answers_a_group_and_knows_who_said_what(database, tmp_path
         if os.environ.get("A5S_REGRESSION") == "required":
             pytest.fail(f"{model.key_env} isn't set, and a release needs its agents' suites")
         pytest.skip(f"{model.key_env} isn't set")
-    root = build_root(tmp_path, release.model, (ROOT / "config" / "models.yaml").read_text())
+    root = build_root(tmp_path, release.model, (ROOT / "config" / "models.yaml").read_text(encoding="utf-8"))
     with (running(database, root, httpx.Client(), FakeModel(), worker_image=live_image()) as stack,
           group_room(stack) as room):
         deliver(room, mention("Which of our customer questions mention an invoice?"))

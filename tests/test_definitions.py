@@ -21,14 +21,14 @@ def test_any_change_to_the_folder_is_a_new_release(tmp_path):
     folder = tmp_path / "assistant"
     shutil.copytree(ROOT / "agents" / "assistant", folder)
     before = definitions.load(folder).release_id
-    (folder / "AGENTS.md").write_text((folder / "AGENTS.md").read_text() + "\n- One more rule.\n")
+    (folder / "AGENTS.md").write_text((folder / "AGENTS.md").read_text(encoding="utf-8") + "\n- One more rule.\n")
     assert definitions.load(folder).release_id != before
 
 
 def test_unknown_fields_are_refused(tmp_path):
     folder = tmp_path / "assistant"
     shutil.copytree(ROOT / "agents" / "assistant", folder)
-    (folder / "agent.yaml").write_text((folder / "agent.yaml").read_text() + "autonomous: true\n")
+    (folder / "agent.yaml").write_text((folder / "agent.yaml").read_text(encoding="utf-8") + "autonomous: true\n")
     with pytest.raises(ValidationError):
         definitions.load(folder)
 
@@ -37,9 +37,9 @@ def test_unknown_fields_are_refused(tmp_path):
 def test_acting_on_its_own_never_comes_from_the_release(tmp_path, starts):
     folder = tmp_path / "assistant"
     shutil.copytree(ROOT / "agents" / "assistant", folder)
-    spec = (folder / "agent.yaml").read_text().replace("start: asks first", f"start: {starts}")
+    spec = (folder / "agent.yaml").read_text(encoding="utf-8").replace("start: asks first", f"start: {starts}")
     assert f"start: {starts}" in spec
-    (folder / "agent.yaml").write_text(spec)
+    (folder / "agent.yaml").write_text(spec, encoding="utf-8")
     with pytest.raises(ValidationError):
         definitions.load(folder)
 

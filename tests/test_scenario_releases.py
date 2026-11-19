@@ -41,7 +41,7 @@ def first_release(folder: str) -> tuple[bytes, list[releases.Need]]:
 
 def signed(folder: str, raw: bytes, *people: str) -> list[Signature]:
     keys = ROOT / "scenarios" / folder / "keys"
-    return [Signature(p, releases.sign((keys / f"{p}.key").read_text().strip(),
+    return [Signature(p, releases.sign((keys / f"{p}.key").read_text(encoding="utf-8").strip(),
                                        releases.Approval.of(raw))) for p in people]
 
 
@@ -81,14 +81,14 @@ def test_each_keyed_person_has_the_pair_and_no_private_key_ships(folder):
     found = scenario(folder)
     for pub in keys.glob("*.pub"):
         person = found.person(pub.stem)
-        assert person is not None and person.public_key == pub.read_text().strip()
+        assert person is not None and person.public_key == pub.read_text(encoding="utf-8").strip()
         assert (keys / f"{pub.stem}.key").exists()
     raw, _ = first_release(folder)
     assert not [p for p in yaml.safe_load(raw)["parts"]["scenario"] if p.endswith(".key")]
 
 
 def test_the_image_holds_every_scenario_and_no_private_key():
-    copied = [line.split()[1] for line in (ROOT / "Dockerfile").read_text().splitlines()
+    copied = [line.split()[1] for line in (ROOT / "Dockerfile").read_text(encoding="utf-8").splitlines()
               if line.startswith("COPY ") and "scenarios" in line]
     assert copied == ["scenarios"], copied  # each scenario, chosen with A5S_SCENARIO
-    assert "**/*.key" in (ROOT / ".dockerignore").read_text().splitlines()
+    assert "**/*.key" in (ROOT / ".dockerignore").read_text(encoding="utf-8").splitlines()

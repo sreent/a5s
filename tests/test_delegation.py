@@ -170,9 +170,9 @@ def stack(database: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     monkeypatch.setenv("A5S_DELEGATION_DESK_SECRET", SECRET)
     model = FakeModel()
     root = build_root(tmp_path, "fake", FAKE_MODELS)
-    (root / "scenarios" / "sample" / mcp.FILE).write_text(yaml.safe_dump(declared(url)))
+    (root / "scenarios" / "sample" / mcp.FILE).write_text(yaml.safe_dump(declared(url)), encoding="utf-8")
     spec = root / "agents" / "assistant" / "agent.yaml"
-    spec.write_text(spec.read_text().replace(
+    spec.write_text(spec.read_text(encoding="utf-8").replace(
         "records: [search_records, get_record, get_messages]",
         "records: [search_records, get_record, get_messages, search_tickets]"))
     with running(database, root, httpx.Client(transport=httpx.MockTransport(model.handler)),
@@ -403,7 +403,7 @@ def test_a_declaration_says_whose_access_a_server_calls_with():
 def test_the_core_starts_only_with_what_acting_as_people_needs(tmp_path, monkeypatch):
     folder = tmp_path / "scenario"
     folder.mkdir()
-    (folder / mcp.FILE).write_text(yaml.safe_dump(declared("https://desk.example/mcp")))
+    (folder / mcp.FILE).write_text(yaml.safe_dump(declared("https://desk.example/mcp")), encoding="utf-8")
     core = Config(database_url="postgresql://unused", gateway_url="http://unused",
                   service_token="t", root=tmp_path, scenario_folder=folder, seal_keys=("k",))
     monkeypatch.delenv("A5S_DELEGATION", raising=False)

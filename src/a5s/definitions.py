@@ -208,6 +208,10 @@ class Definition(BaseModel):
     deputy: str | None = None
     scope: str = "none"
     model: str
+    # Other approved models a run falls back to when its model isn't answering: tried in
+    # order, each after the one before it failed, so one provider's outage costs a retry,
+    # not the work. Approved with the release, like the model itself.
+    fallbacks: list[str] = []
     autonomy: Autonomy = Autonomy()
     tools: dict[str, list[str]] = {}
     triggers: list[dict[str, Any]] = []
@@ -315,12 +319,12 @@ def spec_of(text: str) -> Any:
 
 
 def load(folder: Path) -> Definition:
-    spec = spec_of((folder / "agent.yaml").read_text())
+    spec = spec_of((folder / "agent.yaml").read_text(encoding="utf-8"))
     lock = folder / "tools.lock"
     return Definition(
         **spec,
-        instructions=(folder / "AGENTS.md").read_text(),
-        pins=yaml.safe_load(lock.read_text()) or {} if lock.exists() else {},
+        instructions=(folder / "AGENTS.md").read_text(encoding="utf-8"),
+        pins=yaml.safe_load(lock.read_text(encoding="utf-8")) or {} if lock.exists() else {},
         digest=_folder_digest(folder),
         skills=skills_of(folder / "skills"),
     )
@@ -342,7 +346,7 @@ def skills_of(folder: Path) -> dict[str, str]:
         told = skill / "SKILL.md"
         if not told.is_file():
             raise ValueError(f"the skill {skill.name} has no SKILL.md")
-        head = _FRONT.match(told.read_text())
+        head = _FRONT.match(told.read_text(encoding="utf-8"))
         try:
             meta = yaml.safe_load(head.group(1)) if head else None
         except yaml.YAMLError:
@@ -361,7 +365,7 @@ def skills_of(folder: Path) -> dict[str, str]:
                                  "run: a skill holds instructions, and text they refer to, as "
                                  + ", ".join(SKILL_FILES))
             try:
-                found[f"/skills/{path.relative_to(folder).as_posix()}"] = path.read_text()
+                found[f"/skills/{path.relative_to(folder).as_posix()}"] = path.read_text(encoding="utf-8")
             except UnicodeDecodeError:
                 raise ValueError(f"the skill {skill.name}'s {path.name} isn't text") from None
     return found
@@ -388,7 +392,7 @@ def pin(folder: Path, schema_hashes: dict[str, str]) -> Path:
     if missing:
         raise ValueError(f"the scenario doesn't provide: {', '.join(missing)}")
     lock = folder / "tools.lock"
-    lock.write_text(lock_text({t: schema_hashes[t] for t in definition.tool_names}))
+    lock.write_text(lock_text({t: schema_hashes[t] for t in definition.tool_names}), encoding="utf-8")
     return lock
 
 

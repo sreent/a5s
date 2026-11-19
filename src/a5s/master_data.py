@@ -128,7 +128,7 @@ class MasterDataScenario:
     def __init__(self, folder: Path, database_url: str):
         self.folder = folder
         self.database_url = database_url
-        data = yaml.safe_load((folder / "data.yaml").read_text())
+        data = yaml.safe_load((folder / "data.yaml").read_text(encoding="utf-8"))
         self._people = {p["id"]: Person.listed(p, folder) for p in data["people"]}
         self._objects: dict[str, dict] = data["objects"]
         self._records = {r["key"]: r for r in data["records"]}
@@ -346,7 +346,7 @@ class MasterDataScenario:
 
     def settings(self) -> Settings:
         sig = self.folder / "settings.sig"
-        signed = (yaml.safe_load(sig.read_text()) or {}).get("signatures", []) if sig.exists() else []
+        signed = (yaml.safe_load(sig.read_text(encoding="utf-8")) or {}).get("signatures", []) if sig.exists() else []
         return parse_settings((self.folder / "settings.yaml").read_bytes(),
                               tuple(Signature(s["signer"], s["value"]) for s in signed))
 

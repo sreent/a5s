@@ -28,13 +28,13 @@ class HelpdeskScenario:
 
     def __init__(self, folder: Path, database_url: str):
         self.folder = folder
-        data = yaml.safe_load((folder / "data.yaml").read_text())
+        data = yaml.safe_load((folder / "data.yaml").read_text(encoding="utf-8"))
         self._people = {}
         for p in data["people"]:
             key = folder / "keys" / f"{p['id']}.pub"
             self._people[p["id"]] = Person(
                 **{k: tuple(v) if isinstance(v, list) else v for k, v in p.items()},
-                public_key=key.read_text().strip() if key.exists() else None)
+                public_key=key.read_text(encoding="utf-8").strip() if key.exists() else None)
         self._tickets = {str(t["key"]): t for t in data["tickets"]}
 
     def person(self, person_id: str) -> Person | None:
@@ -73,7 +73,7 @@ class HelpdeskScenario:
 
     def settings(self) -> Settings:
         sig = self.folder / "settings.sig"
-        signed = (yaml.safe_load(sig.read_text()) or {}).get("signatures", []) if sig.exists() else []
+        signed = (yaml.safe_load(sig.read_text(encoding="utf-8")) or {}).get("signatures", []) if sig.exists() else []
         return parse_settings((self.folder / "settings.yaml").read_bytes(),
                               tuple(Signature(s["signer"], s["value"]) for s in signed))
 

@@ -14,7 +14,7 @@ def call(question: str = "authentication") -> ToolCall:
 
 def test_a_graphify_query_is_local_read_only_and_bounded(tmp_path, monkeypatch):
     graph = tmp_path / "graph.json"
-    graph.write_text("{}")
+    graph.write_text("{}", encoding="utf-8")
     commands = []
 
     def run(cmd, **kwargs):
@@ -49,7 +49,7 @@ def test_a_graphify_query_reports_what_it_finds_without_calling_the_cli(tmp_path
 @pytest.mark.parametrize("code, expected", [(3, "several"), (4, "no code concept"), (1, "couldn't")])
 def test_graphify_query_results_have_useful_errors(tmp_path, monkeypatch, code, expected):
     graph = tmp_path / "graph.json"
-    graph.write_text("{}")
+    graph.write_text("{}", encoding="utf-8")
     monkeypatch.setattr(subprocess, "run", lambda cmd, **kwargs:
                         subprocess.CompletedProcess(cmd, code, "Graphify said", ""))
     found = Graphify(graph).tools()["query_code"].run(call())["error"]
@@ -58,7 +58,7 @@ def test_graphify_query_results_have_useful_errors(tmp_path, monkeypatch, code, 
 
 def test_a_graphify_query_that_cant_run_says_so(tmp_path, monkeypatch):
     graph = tmp_path / "graph.json"
-    graph.write_text("{}")
+    graph.write_text("{}", encoding="utf-8")
     monkeypatch.setattr(subprocess, "run", lambda cmd, **kwargs: (_ for _ in ()).throw(
         FileNotFoundError(cmd)))
     assert Graphify(graph).tools()["query_code"].run(call()) == {"error": "Graphify couldn't answer now"}
@@ -74,11 +74,11 @@ def test_graphify_tool_is_pinned_into_an_agent_release(tmp_path):
 
     agent = tmp_path / "assistant"
     shutil.copytree(ROOT / "agents" / "assistant", agent)
-    spec = yaml.safe_load((agent / "agent.yaml").read_text())
+    spec = yaml.safe_load((agent / "agent.yaml").read_text(encoding="utf-8"))
     spec["tools"]["knowledge"] = ["query_code"]
-    (agent / "agent.yaml").write_text(yaml.safe_dump(spec, sort_keys=False))
+    (agent / "agent.yaml").write_text(yaml.safe_dump(spec, sort_keys=False), encoding="utf-8")
     tool = Graphify(tmp_path / "graph.json").tools()["query_code"]
     hashes = {name: f"pin-{name}" for name in definitions.load(agent).tool_names}
     hashes["query_code"] = tool.schema_hash
     definitions.pin(agent, hashes)
-    assert yaml.safe_load((agent / "tools.lock").read_text())["query_code"] == tool.schema_hash
+    assert yaml.safe_load((agent / "tools.lock").read_text(encoding="utf-8"))["query_code"] == tool.schema_hash

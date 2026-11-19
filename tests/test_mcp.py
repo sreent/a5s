@@ -259,14 +259,14 @@ def test_a_scenario_gains_only_what_it_declares_and_never_a_name_it_has(tickets,
     assert mcp.served(Scenario(), folder) is not None  # no mcp.yaml: as it was
     spec = {"servers": {"tickets": {"url": tickets}},
             "tools": {"search_tickets": declaration(tickets).tools["search_tickets"].model_dump()}}
-    (folder / mcp.FILE).write_text(yaml.safe_dump(spec))
+    (folder / mcp.FILE).write_text(yaml.safe_dump(spec), encoding="utf-8")
     found = mcp.served(Scenario(), folder).tools()
     assert sorted(found) == ["search_records", "search_tickets"]  # never `wipe`, nor `browse`
     spec["tools"] = {"search_records": spec["tools"]["search_tickets"]}
-    (folder / mcp.FILE).write_text(yaml.safe_dump(spec))
+    (folder / mcp.FILE).write_text(yaml.safe_dump(spec), encoding="utf-8")
     with pytest.raises(ValueError, match="which the scenario or a5s has already"):
         mcp.served(Scenario(), folder)
-    (folder / mcp.FILE).write_text(yaml.safe_dump(spec).replace("servers:", "servers:\nservers:"))
+    (folder / mcp.FILE).write_text(yaml.safe_dump(spec).replace("servers:", "servers:\nservers:"), encoding="utf-8")
     with pytest.raises(ValueError):
         mcp.served(Scenario(), folder)  # each key once, as agent.yaml
 
@@ -280,9 +280,9 @@ def ticketed(database: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
     root = build_root(tmp_path, "fake", FAKE_MODELS)
     (root / "scenarios" / "sample" / mcp.FILE).write_text(yaml.safe_dump({
         "servers": {"tickets": {"url": tickets}},
-        "tools": {"search_tickets": declaration(tickets).tools["search_tickets"].model_dump()}}))
+        "tools": {"search_tickets": declaration(tickets).tools["search_tickets"].model_dump()}}), encoding="utf-8")
     spec = root / "agents" / "assistant" / "agent.yaml"
-    spec.write_text(spec.read_text().replace(
+    spec.write_text(spec.read_text(encoding="utf-8").replace(
         "records: [search_records, get_record, get_messages]",
         "records: [search_records, get_record, get_messages, search_tickets]"))
     with running(database, root, httpx.Client(transport=httpx.MockTransport(model.handler)),

@@ -65,15 +65,15 @@ def folder(tmp_path: Path, name: str, change=None, file: tuple[str, str] | None 
     found = tmp_path / name / "assistant"
     shutil.rmtree(found, ignore_errors=True)
     shutil.copytree(ROOT / "agents" / "assistant", found)
-    spec = yaml.safe_load((found / "agent.yaml").read_text())
+    spec = yaml.safe_load((found / "agent.yaml").read_text(encoding="utf-8"))
     spec.pop("tasks", None)
     spec["reminders"], spec["autonomy"] = False, {"start": 0, "max": 1}
     if change:
         change(spec)
-    (found / "agent.yaml").write_text(yaml.safe_dump(spec, sort_keys=False))
+    (found / "agent.yaml").write_text(yaml.safe_dump(spec, sort_keys=False), encoding="utf-8")
     if file:
         (found / file[0]).parent.mkdir(parents=True, exist_ok=True)
-        (found / file[0]).write_text(file[1])
+        (found / file[0]).write_text(file[1], encoding="utf-8")
     return found
 
 
@@ -147,7 +147,7 @@ def test_an_alias_bomb_is_refused_before_it_grows():
 def test_an_unreadable_case_file_stops_an_agents_release(tmp_path):
     found = folder(tmp_path, "unreadable")
     (found / "tests").mkdir(exist_ok=True)
-    (found / "tests" / "broken.yml").write_text(ILL["a key it doesn't take"])
+    (found / "tests" / "broken.yml").write_text(ILL["a key it doesn't take"], encoding="utf-8")
     problems = authoring.check(found, {}, {})
     assert any("its test cases don't read as a5s runs them" in p for p in problems), problems
 

@@ -62,8 +62,8 @@ def test_no_agent_is_called_you_or_a5s(name, tmp_path: Path):  # E-5
         authoring.new(ROOT / "agents" / "assistant", name, tmp_path, {})
     folder = tmp_path / "copied"
     folder.mkdir()
-    (folder / "AGENTS.md").write_text("Help.\n")
-    spec = (ROOT / "agents" / "assistant" / "agent.yaml").read_text()
-    (folder / "agent.yaml").write_text(spec.replace("id: assistant", f"id: {name}", 1))
+    (folder / "AGENTS.md").write_text("Help.\n", encoding="utf-8")
+    spec = (ROOT / "agents" / "assistant" / "agent.yaml").read_text(encoding="utf-8")
+    (folder / "agent.yaml").write_text(spec.replace("id: assistant", f"id: {name}", 1), encoding="utf-8")
     with pytest.raises(ValueError, match=f"an agent can't be called {name}"):
         definitions.load(folder)

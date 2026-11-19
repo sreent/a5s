@@ -29,7 +29,7 @@ def locks_alone(desk: Stack) -> None:  # noqa: F811
     """The service owner's settings give the desk assistant level 2 for locking devices in
     hardware, as Ivy, Ola and Hugo signed them, and graded samples have raised a5s's cap there."""
     folder = desk.cfg.scenario_dir
-    settings = yaml.safe_load((folder / "settings.yaml").read_text())
+    settings = yaml.safe_load((folder / "settings.yaml").read_text(encoding="utf-8"))
     settings["instances"]["desk-access"]["parts"] = {
         "access": {"level": 1}, "hardware": {"level": 1, "actions": {"lock-device": 2}}}
     signed(folder, settings, ("ivy", "ola", "hugo"))

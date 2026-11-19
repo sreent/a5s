@@ -21,7 +21,7 @@ from test_approvals import decide, sign_in
 
 # The sample's settings, with an instance in orders beside those in billing: Ana owns
 # billing, Omar orders
-BASE = yaml.safe_load((ROOT / "scenarios" / "sample" / "settings.yaml").read_text())
+BASE = yaml.safe_load((ROOT / "scenarios" / "sample" / "settings.yaml").read_text(encoding="utf-8"))
 BASE["instances"]["assistant-finance"]["parts"] = {
     "billing": {"level": 1, "actions": {"change-due-date": 1, "close-question": 0}}}
 BASE["instances"]["assistant-ops"] = {"definition": "assistant", "serves": ["chen", "omar"],
@@ -136,7 +136,7 @@ def level(stack) -> int:
 
 
 def test_billings_owner_narrows_it_alone_and_orders_owner_hears(stack, approving, provider):
-    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text())
+    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text(encoding="utf-8"))
     settings["serial"] += 1
     settings["instances"]["assistant-ops"] = copy.deepcopy(BASE["instances"]["assistant-ops"])
     asked = propose(stack, settings)
@@ -192,14 +192,14 @@ def test_a_narrowing_keeps_level_2_in_every_other_part_and_tells_whoever_it_appl
         stack.say(f"Please move Q-1002 to {due}.", person="ben")
         return record_of(stack.gateway.scenario, "Q-1002").fields["due date"]
 
-    s = yaml.safe_load((folder / "settings.yaml").read_text())
+    s = yaml.safe_load((folder / "settings.yaml").read_text(encoding="utf-8"))
     finance(s)["parts"] = {"billing": {"level": 1, "actions": {"change-due-date": 2}}}
     s["instances"]["assistant-ops"] = copy.deepcopy(BASE["instances"]["assistant-ops"])
     signed(folder, s, ("ana", "omar"))
     cli._apply(stack.cfg)
     raise_cap(stack, cap=2)
     assert move("2026-11-13") == "2026-11-13"  # made alone, at level 2
-    s = yaml.safe_load((folder / "settings.yaml").read_text())
+    s = yaml.safe_load((folder / "settings.yaml").read_text(encoding="utf-8"))
     s["instances"]["assistant-ops"]["level"] = 0  # Omar narrows orders, alone
     signed(folder, s, ("omar",))
     cli._apply(stack.cfg)
@@ -221,7 +221,7 @@ def test_a_thai_approver_reads_a_whole_version_in_thai(stack, approving, provide
     from test_settings_app import api
 
     reads(stack, "ana", "th")
-    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text())
+    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text(encoding="utf-8"))
     settings["serial"] += 1
     settings["instances"]["assistant-ops"] = copy.deepcopy(BASE["instances"]["assistant-ops"])
     asked = propose(stack, settings)

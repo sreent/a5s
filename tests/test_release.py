@@ -45,7 +45,7 @@ def signed(stack, raw: bytes, *people: str, domain: bytes = signing.RELEASE,
            approved: releases.Approval | None = None) -> list[Signature]:
     keys = stack.cfg.scenario_dir / "keys"
     signs = (approved or releases.Approval.of(raw)).signed()
-    return [Signature(p, signing.sign((keys / f"{p}.key").read_text().strip(), signs, domain))
+    return [Signature(p, signing.sign((keys / f"{p}.key").read_text(encoding="utf-8").strip(), signs, domain))
             for p in people]
 
 
@@ -91,7 +91,7 @@ def test_a_release_lists_every_file_it_runs_and_what_its_agents_may_do():
     assert "deepseek-v4-pro" in data["models"]
     # who may sign the next: everyone the directory gives a key, and what they may sign for
     signers = data["signers"]
-    assert signers["rosa"] == {"key": (ROOT / "scenarios/sample/keys/rosa.pub").read_text().strip(),
+    assert signers["rosa"] == {"key": (ROOT / "scenarios/sample/keys/rosa.pub").read_text(encoding="utf-8").strip(),
                                "team": "risk", "roles": [RELEASE_APPROVER], "above": []}
     assert signers["lena"]["above"] == ["platform"]  # above the team that runs a5s
     assert "dana" not in signers  # she has no key, so nothing she signed would count
@@ -101,7 +101,7 @@ def test_an_image_whose_code_changed_after_it_was_built_wont_run(stack):
     built = yaml.safe_load(this(stack).raw)
     assert this(stack).problems == ()
     built["parts"]["core"]["a5s/core/gateway.py"] = "0" * 64
-    (stack.cfg.root / "release.yaml").write_text(yaml.safe_dump(built))
+    (stack.cfg.root / "release.yaml").write_text(yaml.safe_dump(built), encoding="utf-8")
     [problem] = this(stack).problems
     assert problem == "its code isn't what its image was built with: a5s/core/gateway.py"
 
@@ -249,13 +249,13 @@ def test_a_release_is_weighed_against_the_one_approved_before_it(deployed):
     first = this(deployed).raw
     assert record(deployed, first, "priya", "tomas", "rosa", "kofi").ok
     instructions = deployed.cfg.agents_dir / "assistant" / "AGENTS.md"
-    instructions.write_text(instructions.read_text() + "- Be brief.\n")
+    instructions.write_text(instructions.read_text(encoding="utf-8") + "- Be brief.\n")
     second = this(deployed).raw
     verdict = record(deployed, second, "priya", "tomas", "rosa")  # it may act on its own here
     assert verdict.ok and {n.role for n in verdict.needs} == {OWNER, ENGINEER, RELEASE_APPROVER}
 
     spec = deployed.cfg.agents_dir / "watcher" / "agent.yaml"
-    spec.write_text(spec.read_text().replace("  max: reads only", "  max: asks first"))
+    spec.write_text(spec.read_text(encoding="utf-8").replace("  max: reads only", "  max: asks first"))
     third = this(deployed).raw
     widened = record(deployed, third, "priya", "tomas")
     assert not widened.ok and widened.missing[0].startswith(
@@ -285,35 +285,35 @@ def test_people_sign_and_the_administrator_records_with_the_command_line(deploye
 
 def test_everything_a5s_is_built_and_tested_with_is_pinned():
     unpinned = []
-    for line in (ROOT / "Dockerfile").read_text().splitlines():
+    for line in (ROOT / "Dockerfile").read_text(encoding="utf-8").splitlines():
         # scratch is no image, only the empty start of one, so there's nothing to pin
         if line.startswith("FROM ") and "@sha256:" not in line and line.split()[1] != "scratch":
             unpinned.append(line)
     # The studio's packages: each at one version, each locked by its hash, and none runs a
     # script of its own as it installs
-    studio = json.loads((ROOT / "studio" / "package.json").read_text())
+    studio = json.loads((ROOT / "studio" / "package.json").read_text(encoding="utf-8"))
     for name, version in {**studio["dependencies"], **studio["devDependencies"]}.items():
         if not re.fullmatch(r"\d+\.\d+\.\d+", version):
             unpinned.append(f"studio/package.json: {name}@{version}")
-    locked = json.loads((ROOT / "studio" / "package-lock.json").read_text())
+    locked = json.loads((ROOT / "studio" / "package-lock.json").read_text(encoding="utf-8"))
     unpinned += [f"studio/package-lock.json: {path}" for path, package in locked["packages"].items()
                  if path and not package.get("integrity")]  # each but the studio itself
-    assert "ignore-scripts=true" in (ROOT / "studio" / ".npmrc").read_text().splitlines()
+    assert "ignore-scripts=true" in (ROOT / "studio" / ".npmrc").read_text(encoding="utf-8").splitlines()
     for workflow in (ROOT / ".github" / "workflows").glob("*.yml"):
-        for used in re.findall(r"uses:\s*(\S+)", workflow.read_text()):
+        for used in re.findall(r"uses:\s*(\S+)", workflow.read_text(encoding="utf-8")):
             if not used.startswith("./") and not re.search(r"@[0-9a-f]{40}$", used):
                 unpinned.append(f"{workflow.name}: {used}")
-        text = workflow.read_text()
+        text = workflow.read_text(encoding="utf-8")
         images = re.findall(r"(?m)^\s*image:[ \t]+(\S+)", text) + re.findall(  # services, and docker run
             r"docker run[^\n]*?\s((?:[\w.-]+/)+[\w.-]+:[\w.-]+(?:@sha256:[0-9a-f]{64})?)", text)
         unpinned += [f"{workflow.name}: {image}" for image in images if "@sha256:" not in image]
     for script in (ROOT / "deploy").rglob("*.sh"):  # the images the tests' scripts start
         for image in re.findall(r"(?m)^[A-Z0-9_]+=([a-z0-9.-]+(?:/[a-z0-9._-]+)*:[\w.-]+\S*)$",
-                                script.read_text()):
+                                script.read_text(encoding="utf-8")):
             if "@sha256:" not in image:
                 unpinned.append(f"{script.name}: {image}")
     for compose in (ROOT / "deploy").glob("compose*.yaml"):
-        for image in re.findall(r"(?m)^\s*image:[ \t]+(\S+)", compose.read_text()):
+        for image in re.findall(r"(?m)^\s*image:[ \t]+(\S+)", compose.read_text(encoding="utf-8")):
             if "@sha256:" not in image and not image.startswith("${A5S_IMAGE"):
                 unpinned.append(f"{compose.name}: {image}")
     assert unpinned == []
@@ -326,9 +326,9 @@ def joins(stack, person: str, line: str) -> str:
     and their key. Their private key, which stays with them."""
     folder = stack.cfg.scenario_dir
     private, public = signing.keypair()
-    (folder / "keys" / f"{person}.pub").write_text(public + "\n")
+    (folder / "keys" / f"{person}.pub").write_text(public + "\n", encoding="utf-8")
     data = folder / "data.yaml"
-    data.write_text(data.read_text().replace("  - {id: rosa,", f"  {line}\n  - {{id: rosa,"))
+    data.write_text(data.read_text(encoding="utf-8").replace("  - {id: rosa,", f"  {line}\n  - {{id: rosa,"))
     return private
 
 
@@ -336,7 +336,7 @@ def leaves(stack, person: str) -> None:
     folder = stack.cfg.scenario_dir
     (folder / "keys" / f"{person}.pub").unlink()
     data = folder / "data.yaml"
-    data.write_text(re.sub(rf"  - \{{id: {person},.*\n", "", data.read_text()))
+    data.write_text(re.sub(rf"  - \{{id: {person},.*\n", "", data.read_text(encoding="utf-8")))
 
 
 def by(raw: bytes, person: str, private: str,

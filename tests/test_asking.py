@@ -25,7 +25,7 @@ ASKED = "What changed on Q-1001 lately?"
 def may_ask(stack, serves: tuple[str, ...] = ("ana", "ben"), asks: bool = True,
             watcher_serves: tuple[str, ...] | None = None) -> None:
     """The watcher, beside the assistant, which may ask it."""
-    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text())
+    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text(encoding="utf-8"))
     instances = settings["instances"]
     instances["assistant-finance"]["serves"] = list(serves)
     if asks:
@@ -182,7 +182,7 @@ def test_a_question_whose_run_fails_says_why_and_its_run_is_over(stack):
 
 
 def test_settings_name_only_other_instances_to_ask_and_say_so_in_words(stack):
-    raw = (stack.cfg.scenario_dir / "settings.yaml").read_text()
+    raw = (stack.cfg.scenario_dir / "settings.yaml").read_text(encoding="utf-8")
     settings = yaml.safe_load(raw)
     settings["instances"]["assistant-finance"]["asks"] = ["nobody-here"]
     with pytest.raises(SettingsError, match="isn't another instance"):
@@ -205,7 +205,7 @@ def test_a_real_model_asks_the_watcher_for_the_person(database, tmp_path):
         if os.environ.get("A5S_REGRESSION") == "required":
             pytest.fail(f"{model.key_env} isn't set, and a release needs its agents' suites")
         pytest.skip(f"{model.key_env} isn't set")
-    root = build_root(tmp_path, release.model, (ROOT / "config" / "models.yaml").read_text())
+    root = build_root(tmp_path, release.model, (ROOT / "config" / "models.yaml").read_text(encoding="utf-8"))
     with running(database, root, httpx.Client(), FakeModel(), worker_image=live_image()) as stack:
         may_ask(stack)
         with questions_answered(stack):

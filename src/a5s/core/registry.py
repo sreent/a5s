@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -379,6 +379,7 @@ def apply(
     directory: Directory,
     scenario: str,
     approved: Iterable[str] = (),
+    models: Mapping[str, Any] | None = None,
 ) -> Applied:
     """Bring instances in line with a signed version of the settings and the current releases.
 
@@ -399,6 +400,8 @@ def apply(
     refused = [*needs, *problems] if needs else []
     for s in settings.instances:
         definition = definitions.get(s.definition)
+        if s.model and models is not None and s.model not in models:
+            raise ValueError(f"instance {s.id}: {s.model} isn't one config/models.yaml approves")
         absent = [t for t in definition.tool_names if t not in tools] if definition else []
         if absent:
             refused.append(f"{s.definition} names tools the scenario doesn't have: "
@@ -461,7 +464,7 @@ def apply(
             """,
             (
                 s.id, definition.id, definition.release_id, level, Jsonb(parts), Jsonb(actions),
-                grants, definition.model,
+                grants, s.model or definition.model,
                 list(s.serves), s.owner or definition.owner, s.deputy or definition.deputy,
                 Jsonb(definition.pins),
                 settings.version, list(s.asks), list(s.hands_to), s.shadows, working,

@@ -109,7 +109,7 @@ def deployment(folder: Path, before: Path | None = None) -> dict[str, str]:
     as `before` has its folder, its values then: a pull request doesn't choose who judges it."""
     judged = before if before is not None and ran(before) else _environment(folder)
     _environment(folder)
-    found = yaml.safe_load((judged / "values.yaml").read_text()) or {}
+    found = yaml.safe_load((judged / "values.yaml").read_text(encoding="utf-8")) or {}
     scenario = found.get("scenario") or {}
     return {k: v for k, v in (("scenario", scenario.get("class")),
                               ("scenario_folder", scenario.get("folder")),
@@ -119,7 +119,7 @@ def deployment(folder: Path, before: Path | None = None) -> dict[str, str]:
 
 def image_of(folder: Path) -> str:
     """The image an environment runs, as REPOSITORY@sha256:..."""
-    found = yaml.safe_load((_environment(folder) / VALUES).read_text())["image"]
+    found = yaml.safe_load((_environment(folder) / VALUES).read_text(encoding="utf-8"))["image"]
     return f"{found['repository']}@{found['digest']}"
 
 
@@ -135,17 +135,17 @@ def promote(folder: Path, raw: bytes, image: str, signed: str | None = None, *,
     sig = folder / SIGNATURES
     ran_before = (folder / MANIFEST).read_bytes() if ran(folder) else None
     if ran_before == raw and sig.is_file():  # promoted again: it follows what it followed
-        follows = (yaml.safe_load(sig.read_text()) or {}).get("follows")
+        follows = (yaml.safe_load(sig.read_text(encoding="utf-8")) or {}).get("follows")
     else:
         follows = _sha256(ran_before) if ran_before is not None else None
     approval = releases.Approval.of(raw, image=image, follows=follows, advisory=advisory,
                                     baseline=baseline)
-    kept = signatures(approval, sig.read_text() if sig.is_file() else None, signed)
+    kept = signatures(approval, sig.read_text(encoding="utf-8") if sig.is_file() else None, signed)
     written = values(image, kept)  # before anything changes, so a bad image changes nothing
     (folder / MANIFEST).write_bytes(raw)
-    sig.write_text(kept)
-    (folder / VALUES).write_text(written)
-    (folder / SOURCE).write_text(source(version))  # the release's own chart, as tagged
+    sig.write_text(kept, encoding="utf-8")
+    (folder / VALUES).write_text(written, encoding="utf-8")
+    (folder / SOURCE).write_text(source(version), encoding="utf-8")  # the release's own chart, as tagged
     return approval
 
 
@@ -153,7 +153,7 @@ def resigned(folder: Path) -> None:
     """After someone signs an environment's release: its values' hash of the signatures, so
     their signature is an upgrade, which records it."""
     _environment(folder)
-    (folder / VALUES).write_text(values(image_of(folder), (folder / SIGNATURES).read_text()))
+    (folder / VALUES).write_text(values(image_of(folder), (folder / SIGNATURES).read_text(encoding="utf-8")))
 
 
 def consistent(folder: Path) -> list[str]:
@@ -163,8 +163,8 @@ def consistent(folder: Path) -> list[str]:
     _environment(folder)
     raw = (folder / MANIFEST).read_bytes()
     problems = []
-    signed = (folder / SIGNATURES).read_text()
-    if (folder / VALUES).read_text() != values(image_of(folder), signed):
+    signed = (folder / SIGNATURES).read_text(encoding="utf-8")
+    if (folder / VALUES).read_text(encoding="utf-8") != values(image_of(folder), signed):
         problems.append(f"{VALUES} isn't what its signatures make: run `a5s release sign "
                         f"--environment {folder}`, or promote it again")
     try:
@@ -174,13 +174,13 @@ def consistent(folder: Path) -> list[str]:
     if approved is None or approved.image != image_of(folder):  # the image it runs, signed
         problems.append(f"its signatures approve it as another image than {VALUES} runs: "
                         "promote it again, and have it signed again")
-    helm = (yaml.safe_load((folder / HELMRELEASE).read_text()) or {}).get("spec") or {} if (
+    helm = (yaml.safe_load((folder / HELMRELEASE).read_text(encoding="utf-8")) or {}).get("spec") or {} if (
         folder / HELMRELEASE).is_file() else {}
     if helm.get("values") or helm.get("postRenderers"):  # which Flux merges over the release's
         problems.append(f"{HELMRELEASE} sets values or post-renderers of its own, which could "
                         f"run another image than its release: give the chart its values in "
                         "values.yaml, and its release's in release-values.yaml alone")
-    own = yaml.safe_load((folder / "values.yaml").read_text()) or {} if (
+    own = yaml.safe_load((folder / "values.yaml").read_text(encoding="utf-8")) or {} if (
         folder / "values.yaml").is_file() else {}
     if ((own.get("models") or {}).get("configMap")):  # which the manifest people sign hasn't
         problems.append("values.yaml approves models with a ConfigMap of its own, which the "
@@ -188,10 +188,10 @@ def consistent(folder: Path) -> list[str]:
                         "into the image, in config/models.yaml, to deploy it from git")
     version = yaml.safe_load(raw)["version"]
     tagged = folder / SOURCE
-    if not tagged.is_file() or tagged.read_text() != source(version):
+    if not tagged.is_file() or tagged.read_text(encoding="utf-8") != source(version):
         problems.append(f"{SOURCE} isn't the release's own tag, v{version}, as `a5s release "
                         "promote` writes it")
-    if ((yaml.safe_load((folder / REPOSITORY).read_text()) or {}).get("spec") or {}).get("ref"):
+    if ((yaml.safe_load((folder / REPOSITORY).read_text(encoding="utf-8")) or {}).get("spec") or {}).get("ref"):
         problems.append(f"{REPOSITORY} names a ref of its own, where the chart is the release's, "
                         f"at the tag {SOURCE} gives it")
     return problems

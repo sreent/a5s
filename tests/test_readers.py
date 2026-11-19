@@ -34,15 +34,15 @@ def stack(database: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Ite
     folder = root / "scenarios" / "sample"
     (folder / libraries.FILE).write_text(yaml.safe_dump({"libraries": {
         "runbooks": {"title": "Finance runbooks", "kind": "repository", "outside": False,
-                     "site": "https://forge.example.test/finance/runbooks/blob/main"}}}))
+                     "site": "https://forge.example.test/finance/runbooks/blob/main"}}}), encoding="utf-8")
     document(root / "libraries" / "runbooks", "month-end.md", "Month end closes on the third "
              "working day; the bonus pool this year is 4.2% of payroll.", teams=["finance"])
     spec = root / "agents" / "assistant" / "agent.yaml"
-    spec.write_text(spec.read_text().replace("  documents: [create_draft]\n", LIBS))
+    spec.write_text(spec.read_text(encoding="utf-8").replace("  documents: [create_draft]\n", LIBS))
     candidate = root / "agents" / "assistant-next"
     shutil.copytree(root / "agents" / "assistant", candidate)
     nspec = candidate / "agent.yaml"
-    nspec.write_text(nspec.read_text().replace("id: assistant\n", "id: assistant-next\n"))
+    nspec.write_text(nspec.read_text(encoding="utf-8").replace("id: assistant\n", "id: assistant-next\n"))
     sample = SampleScenario(folder, database)
     tools = {**sample.tools(), **libraries.tools(libraries.declared(folder), folder, sample,
                                                  root=root / "libraries")}
@@ -53,7 +53,7 @@ def stack(database: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Ite
 
 
 def shadowed(stack: Stack) -> None:
-    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text())
+    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text(encoding="utf-8"))
     applied = stack.settle(instances={**settings["instances"], "assistant-next-finance": {
         "definition": "assistant-next", "serves": ["ana", "ben"], "parts": ["billing"],
         "level": 1, "owner": "ana", "deputy": "ben", "shadows": "assistant-finance"}},

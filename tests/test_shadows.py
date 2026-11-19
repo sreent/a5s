@@ -55,9 +55,9 @@ def stack(database: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Ite
     candidate = root / "agents" / "assistant-next"
     shutil.copytree(root / "agents" / "assistant", candidate)
     spec = candidate / "agent.yaml"
-    spec.write_text(spec.read_text().replace("id: assistant\n", "id: assistant-next\n")
+    spec.write_text(spec.read_text(encoding="utf-8").replace("id: assistant\n", "id: assistant-next\n")
                     + "evaluation:\n  judge: fake\n  rubric: It says when a record falls due.\n")
-    (candidate / "AGENTS.md").write_text((candidate / "AGENTS.md").read_text() + f"\n\n{NEXT}\n")
+    (candidate / "AGENTS.md").write_text((candidate / "AGENTS.md").read_text(encoding="utf-8") + f"\n\n{NEXT}\n")
     tools = SampleScenario(root / "scenarios" / "sample", database).tools()
     definitions.pin(candidate, {n: t.schema_hash for n, t in tools.items()})
     with running(database, root, httpx.Client(transport=httpx.MockTransport(model.handler)),
@@ -69,7 +69,7 @@ def shadowed(stack: Stack, lets: bool = True, names: bool = True, **more) -> obj
     """A version with the assistant's next version shadowing assistant-finance, which Ana,
     billing's owner, and Noor, the officer, sign: with names in the studio, unless not
     `names`, so graders read the pairs of an instance serving two people."""
-    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text())
+    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text(encoding="utf-8"))
     return stack.settle(instances={**settings["instances"], "assistant-next-finance": {
         "definition": "assistant-next", "serves": ["ana", "ben"], "parts": ["billing"],
         "level": 1, "owner": "ana", "deputy": "ben", "shadows": "assistant-finance", **more}},
@@ -196,7 +196,7 @@ def test_a_shadow_answers_only_while_the_officer_lets_it(stack, approving, provi
 
 def test_approvers_read_what_a_shadow_is_and_the_core_checks_it(stack):
     folder = stack.cfg.scenario_dir
-    settings = yaml.safe_load((folder / "settings.yaml").read_text())
+    settings = yaml.safe_load((folder / "settings.yaml").read_text(encoding="utf-8"))
     before = parse_settings((folder / "settings.yaml").read_bytes())
     settings["serial"] += 1
     settings["data_protection"] = {"shadow_runs": True}
@@ -308,7 +308,7 @@ def test_a_judge_reads_no_pair_with_data_of_a_class_it_isnt_approved_for(stack):
     stack.model.reply(SHADOWED)
     stack.say(ASKED, person="ben")
     folder = stack.cfg.scenario_dir
-    signed(folder, {**yaml.safe_load((folder / "settings.yaml").read_text()),
+    signed(folder, {**yaml.safe_load((folder / "settings.yaml").read_text(encoding="utf-8")),
                     "classified": {"customer": "personal"}})
     scenario = stack.gateway.scenario
     with db.transaction(stack.admin) as conn:
@@ -447,7 +447,7 @@ def test_once_shadows_may_not_answer_graders_read_none_they_answered(stack, appr
     stack.model.reply(SENT)
     stack.model.reply(SHADOWED)
     stack.say(ASKED, person="ben")
-    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text())
+    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text(encoding="utf-8"))
     assert not stack.settle(instances=settings["instances"], data_protection={
         "shadow_runs": False, "studio_names": True}, signers=("ana", "noor")).refused
     page = as_person(stack, approving, provider, "dana", "GET", "/studio/api/shadows")

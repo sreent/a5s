@@ -11,7 +11,7 @@ from a5s.knowledge import MarkdownKnowledge
 def document(root, name: str, text: str, **meta) -> None:
     path = root / name
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(f"---\n{yaml.safe_dump(meta)}---\n{text}")
+    path.write_text(f"---\n{yaml.safe_dump(meta)}---\n{text}", encoding="utf-8")
 
 
 def call(query: str = "refund", people=("ana",)) -> ToolCall:
@@ -48,7 +48,7 @@ def test_deleted_hidden_and_malformed_documents_do_not_return(tmp_path):
     (tmp_path / "gone.md").unlink()
     assert tools["search_knowledge"].run(call("temporary")) == {"matches": []}
     assert tools["search_knowledge"].run(call("private")) == {"matches": []}
-    (tmp_path / "broken.md").write_text("---\npeople: [not: valid\n---\nSecret")
+    (tmp_path / "broken.md").write_text("---\npeople: [not: valid\n---\nSecret", encoding="utf-8")
     assert tools["search_knowledge"].run(call("secret")) == {"matches": []}
 
 
@@ -87,12 +87,12 @@ def test_sample_scenario_enables_optional_knowledge_tools_with_part_permissions(
                    {"id": "chen", "name": "Chen", "team": "operations"}],
         "parts": {"billing": {"team": "finance"}, "orders": {"team": "operations"}},
         "records": [],
-    }))
+    }), encoding="utf-8")
     document(tmp_path / "knowledge", "refund.md", "Use the reviewed refund procedure.",
              parts=["billing"])
     graph = tmp_path / "graphify-out" / "graph.json"
     graph.parent.mkdir()
-    graph.write_text("{}")
+    graph.write_text("{}", encoding="utf-8")
     tools = SampleScenario(tmp_path, "postgresql://unused").tools()
     assert {"query_code", "search_knowledge", "read_knowledge"} <= set(tools)
     assert tools["search_knowledge"].run(call(people=("ana",)))["matches"][0]["id"] == "refund.md"

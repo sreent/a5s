@@ -28,7 +28,8 @@ const WORKING = "settings";
 
 type PartEntry = number | null | { level?: number; actions?: Record<string, number> };
 type Inst = { definition: string; serves?: string[]; parts?: string[] | Record<string, PartEntry>;
-              level?: number; owner?: string; deputy?: string; asks?: string[]; [key: string]: unknown };
+              level?: number; model?: string; owner?: string; deputy?: string; asks?: string[];
+              [key: string]: unknown };
 type Limit = { per_run?: number; per_person_30_days?: number };
 type Spending = { agents?: Record<string, number>; currency?: string };
 type Data = { instances?: Record<string, Inst>; limits?: Record<string, Limit>;
@@ -407,6 +408,21 @@ export function SettingsPage() {
     );
   }
 
+  function modelOf(id: string, inst: Inst): ReactNode {
+    return (
+      <Setting words={t("Its model")}>
+        <select aria-label={t("Model of {id}", { id })} value={inst.model || ""} onChange={(e) => {
+          if (e.target.value) inst.model = e.target.value;
+          else delete inst.model;
+          touched();
+        }}>
+          <option value="">{t("its release's own")}</option>
+          {(settings.models || []).map((name) => <option key={name} value={name}>{name}</option>)}
+        </select>
+      </Setting>
+    );
+  }
+
   function runsOf(id: string, inst: Inst): ReactNode {
     return (
       <>
@@ -614,7 +630,7 @@ export function SettingsPage() {
         {Object.entries(w.instances || {}).map(([id, inst]) => (
           <fieldset key={id} className="form-card" data-instance={id} tabIndex={-1}>
             <legend>{t("{id}, the {agent}", { id, agent: inst.definition })}</legend>
-            {levelsOf(id, inst)}{ownChanges(id, inst)}{servesOf(id, inst)}{runsOf(id, inst)}
+            {levelsOf(id, inst)}{ownChanges(id, inst)}{servesOf(id, inst)}{modelOf(id, inst)}{runsOf(id, inst)}
           </fieldset>
         ))}
         {addForm([...parts].sort())}

@@ -43,6 +43,6 @@ def changed_through(system: str) -> dict[str, dict]:
     stamp = (seen.st_ino, seen.st_mtime_ns, seen.st_size)  # each write replaces it whole
     if (cached := _READ.get(path)) is not None and cached[0] == stamp:
         return cached[1]
-    found = (json.loads(path.read_text()) or {}).get("changed") or {}
+    found = (json.loads(path.read_text(encoding="utf-8")) or {}).get("changed") or {}
     _READ[path] = (stamp, found)
     return found

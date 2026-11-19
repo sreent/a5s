@@ -7,6 +7,7 @@ does: >-
   falls due.
 scope: none                      # it changes no part's data
 model: deepseek-v4-pro           # from config/models.yaml, the approved list
+fallbacks: [deepseek-v4-pro-anthropic]  # the same model, its other API, on the same key
 autonomy:
   start: asks first
   max: asks first                # it drafts, and people decide its changes: for the pilot, it

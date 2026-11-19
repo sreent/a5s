@@ -24,13 +24,13 @@ CHEN_TOO = ["ana", "ben", "chen"]
 
 
 def in_force_serial(stack) -> int:
-    return yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text())["serial"]
+    return yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text(encoding="utf-8"))["serial"]
 
 
 def proposed(stack, **changes) -> dict:
     """Ask the instance approvers to approve the next version of the sample's settings, with
     these changes to assistant-finance."""
-    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text())
+    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text(encoding="utf-8"))
     settings["instances"]["assistant-finance"].update(changes)
     raw = yaml.safe_dump({**settings, "serial": settings["serial"] + 1}).encode()
     with stack.client() as c:
@@ -222,7 +222,7 @@ def test_a_version_waiting_for_approval_is_let_go_once_a_newer_one_is_in_force(s
 
 
 def test_the_core_asks_nobody_about_a_version_it_couldnt_apply(stack, approving):
-    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text())
+    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text(encoding="utf-8"))
     unknown = {**settings, "serial": settings["serial"] + 1,
                "instances": {"helper": {"definition": "helper", "serves": ["ana"]}}}
     with stack.client() as c:

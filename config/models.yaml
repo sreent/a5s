@@ -57,3 +57,13 @@ models:
     key_env: DEEPSEEK_API_KEY
     region: provider-hosted
     data_classes: [synthetic]
+
+  glm-5.3:                        # Zhipu's model, served by DashScope, on the same key
+    provider: zhipu
+    api: openai
+    base_url: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+    model: glm-5.3
+    reported_model: glm-5.3
+    key_env: QWEN_API_KEY
+    region: provider-hosted
+    data_classes: [synthetic]

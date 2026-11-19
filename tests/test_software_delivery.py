@@ -11,7 +11,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from conftest import FAKE_MODELS, ROOT, SYSTEMS, FakeModel, Stack, build_root, live_image
+from conftest import FAKE_MODELS, ROOT, SYSTEMS, FakeModel, Stack, build_root, judged, live_image
 from scenario_stack import opened, running_scenario
 
 SCENARIO = "a5s.software_delivery:SoftwareDeliveryScenario"
@@ -133,7 +133,7 @@ def test_a_real_model_answers_for_the_team(database: str, tmp_path: Path):
         if os.environ.get("A5S_REGRESSION") == "required":  # a release covers its agents
             pytest.fail("DEEPSEEK_API_KEY isn't set, and a release needs its scenarios' suites")
         pytest.skip("DEEPSEEK_API_KEY isn't set")
-    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text())
+    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text(encoding="utf-8"))
     with running_scenario(database, root, FakeModel(), SCENARIO, "software-delivery",
                           alias="deepseek-v4-pro", worker_image=live_image()) as found:
         fix = say(found, "Where's my fix for DEV-101? Name the pull request, its checks and "
@@ -231,7 +231,7 @@ def test_a_real_model_handles_hard_software_delivery_questions(
 
     if not os.environ.get("DEEPSEEK_API_KEY"):
         pytest.skip("DEEPSEEK_API_KEY isn't set")
-    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text())
+    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text(encoding="utf-8"))
     with running_scenario(database, root, FakeModel(), SCENARIO, "software-delivery",
                           alias="deepseek-v4-pro", worker_image=live_image()) as found:
         def ask(case: str, text: str, person: str = "raj") -> str:
@@ -309,7 +309,7 @@ def test_a_real_model_resumes_a_task_without_repeating_its_draft(database: str, 
     alias = os.environ.get("A5S_EVAL_MODEL", "deepseek-v4-pro")
     if models[alias].key_env and not os.environ.get(models[alias].key_env):
         pytest.skip(f"{models[alias].key_env} isn't set")
-    root = build_root(tmp_path, alias, (ROOT / "config" / "models.yaml").read_text())
+    root = build_root(tmp_path, alias, (ROOT / "config" / "models.yaml").read_text(encoding="utf-8"))
     asked = (
         "Do this as a task in two slices. In the first slice, call create_draft with title "
         "'DEV-106 readiness', body 'PR-21 needs review before release', and record 'PR-21'; "
@@ -350,5 +350,7 @@ def test_a_real_model_resumes_a_task_without_repeating_its_draft(database: str, 
         with db.transaction(found.admin) as conn:
             told = [r["text"] for r in conn.execute(
                 "select text from outbox where person = 'raj' and inbound_id is null")]
-        assert len(told) == 1 and "done" in told[0].casefold()
+        assert len(told) == 1  # the owner hears once, from the task's runs alone
+        assert judged(alias, "the agent told Raj that the task is done and that the draft "
+                             "for PR-21 was saved", told[0])
         assert found.verify().ok

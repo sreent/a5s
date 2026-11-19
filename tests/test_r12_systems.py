@@ -68,8 +68,8 @@ def test_a_review_the_forge_was_asked_for_reaches_the_delivery_scenarios_view(mo
 @pytest.mark.parametrize("scenario", SERVERS)
 def test_the_sandbox_has_its_own_copy_of_each_system(scenario):
     overlay, names = SERVERS[scenario]
-    declared = yaml.safe_load((ROOT / "scenarios" / scenario / "mcp.yaml").read_text())["servers"]
-    compose = yaml.safe_load((ROOT / "deploy" / f"compose.{overlay}.yaml").read_text())["services"]
+    declared = yaml.safe_load((ROOT / "scenarios" / scenario / "mcp.yaml").read_text(encoding="utf-8"))["servers"]
+    compose = yaml.safe_load((ROOT / "deploy" / f"compose.{overlay}.yaml").read_text(encoding="utf-8"))["services"]
     for name in names:
         server = declared[name]
         assert server["sandbox"] != server["url"], name  # nothing tried there reaches the deployment's
@@ -87,7 +87,7 @@ def test_the_sandbox_has_its_own_copy_of_each_system(scenario):
 
 
 def test_the_sandbox_reads_its_own_copies_state():
-    compose = yaml.safe_load((ROOT / "deploy" / "compose.sandbox.yaml").read_text())["services"]
+    compose = yaml.safe_load((ROOT / "deploy" / "compose.sandbox.yaml").read_text(encoding="utf-8"))["services"]
     sandbox = compose["sandbox"]
     assert sandbox["environment"]["A5S_SYSTEMS_STATE"] == "/systems-state"
     assert "sandbox-systems-state:/systems-state:ro" in sandbox["volumes"]
@@ -98,6 +98,6 @@ def test_in_tests_the_sandbox_calls_its_own_copies():
     found = scenario_systems("master-data")
     assert {"sap", "sandbox-sap"} <= set(found)
     assert found["sap"] is not found["sandbox-sap"]
-    declared = yaml.safe_load((ROOT / "scenarios" / "master-data" / "mcp.yaml").read_text())["servers"]
+    declared = yaml.safe_load((ROOT / "scenarios" / "master-data" / "mcp.yaml").read_text(encoding="utf-8"))["servers"]
     assert declared["sap"]["sandbox"] == f"http://127.0.0.1:{9204 + SPARE}/mcp"
     assert Path(found["sandbox-sap"].state) != Path(found["sap"].state or "/nowhere")

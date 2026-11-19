@@ -54,7 +54,7 @@ def test_a_threshold_needs_its_parts_owner(stack):
     from a5s.core import registry
     from conftest import signed
     folder = stack.cfg.scenario_dir
-    settings = yaml.safe_load((folder / "settings.yaml").read_text())
+    settings = yaml.safe_load((folder / "settings.yaml").read_text(encoding="utf-8"))
     settings["thresholds"]["orders"] = 0.9  # no instance works in orders, but its owner decides
     signed(folder, settings, ("ana",))
     scenario = stack.gateway.scenario

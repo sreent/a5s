@@ -37,11 +37,11 @@ def a_desk(tmp_path, monkeypatch) -> tuple[ServiceDeskScenario, TestClient, obje
 
 def given(folder, key: str, **fields) -> None:
     """IT changes a device in device management, such as giving it to someone else."""
-    data = yaml.safe_load((folder / "data.yaml").read_text())
+    data = yaml.safe_load((folder / "data.yaml").read_text(encoding="utf-8"))
     for device in data["devices"]:
         if device["key"] == key:
             device.update(fields)
-    (folder / "data.yaml").write_text(yaml.safe_dump(data))
+    (folder / "data.yaml").write_text(yaml.safe_dump(data), encoding="utf-8")
 
 
 def test_a_phone_given_to_pat_is_pats_for_a5s_too(tmp_path, monkeypatch):
@@ -101,5 +101,5 @@ def test_the_made_up_system_queues_a_lock_for_a_phone_away_and_refuses_one_never
 
 
 def test_the_desk_declares_its_lock_made_only_once_locked():
-    declared = yaml.safe_load((ROOT / "scenarios" / "service-desk" / "mcp.yaml").read_text())
+    declared = yaml.safe_load((ROOT / "scenarios" / "service-desk" / "mcp.yaml").read_text(encoding="utf-8"))
     assert declared["tools"]["lock_device"]["made"] == {"locked": True}

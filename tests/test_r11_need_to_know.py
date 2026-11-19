@@ -65,7 +65,7 @@ def test_an_instance_serving_fewer_than_the_officer_chose_shows_no_run_alone(  #
     from test_studio_pages import signed_in
     ops = {"definition": "assistant", "serves": ["chen"], "parts": ["orders"], "level": 1,
            "owner": "omar"}  # Chen's own assistant, which Omar runs
-    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text())
+    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text(encoding="utf-8"))
     assert not stack.settle(instances={**settings["instances"], "assistant-ops": ops},
                             signers=("ana", "omar")).refused
     stack.model.reply("Q-1003 is due on Monday.")

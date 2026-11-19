@@ -113,7 +113,7 @@ from a5s.core import (
     values,
     words,
 )
-from a5s.core.breakers import FAILURES, Breakers
+from a5s.core.breakers import Breakers
 from a5s.core.events import EventsConfig
 from a5s.core.identity import (
     IdentityError,
@@ -468,11 +468,20 @@ class Gateway:
         return self.releases.problems(conn, self.scenario, self.cfg.team)
 
     @staticmethod
-    def take_message(conn: db.Connection, inbound: str) -> tuple[dict | None, str | None]:
+    def take_message(conn: db.Connection, inbound: str,
+                     keep: bool = False) -> tuple[dict | None, str | None]:
         """The message a run will answer, which the core received and checked, used once.
 
-        It names the sender, so no service can. The problem, if it can't be used.
+        It names the sender, so no service can. The problem, if it can't be used. With
+        `keep`, it stays unanswered, so a run whose model isn't answering is tried again on
+        the next model its release names (model_for), which then takes it for good.
         """
+        if keep:
+            found = conn.execute(
+                "select id::text, person, channel, agent, text, conversation, members "
+                "from inbound where id = %s", (inbound,)).fetchone()
+            return (found, None) if found else (
+                None, "the message it answers isn't one the core received")
         taken = conn.execute(
             "update inbound set answered_at = now() where id = %s and answered_at is null "
             "returning id::text, person, channel, agent, text, conversation, members",
@@ -757,6 +766,14 @@ class Gateway:
             release = self.definitions.get(instance.definition)
             if release is None:
                 problems.append(f"{instance.id} names {instance.definition}, which no release here has")
+            elif instance.model and instance.model not in self.models:
+                problems.append(f"{instance.id} runs on {instance.model}, which config/models.yaml "
+                                "doesn't approve")
+            elif instance.model and settings.data_class not in (
+                    (self.models.get(instance.model) or (None,)).data_classes if
+                    self.models.get(instance.model) else ()):
+                problems.append(f"{instance.id}'s model isn't approved for the settings' class "
+                                f"of data, {settings.data_class}")
             elif missing := [t for t in release.tool_names if t not in tools]:
                 problems.append(f"{instance.definition} names tools the scenario doesn't have: "
                                 f"{', '.join(missing)}")
@@ -793,7 +810,13 @@ class Gateway:
             inbound = str(uuid.UUID(str(trigger.get("inbound"))))
         except ValueError:
             raise HTTPException(400, "name the message the run answers") from None
-        message, problem = self.take_message(conn, inbound)
+        definition = self.definitions.get(inst["definition"])
+        tried = list(trigger.get("tried_models") or [])
+        # while its release names models not tried, the message stays unanswered, so the
+        # scheduler's next attempt can take it again; the last attempt takes it for good
+        message, problem = self.take_message(
+            conn, inbound, keep=len(tried) < len((definition.fallbacks if definition else [])
+                                                  or []))
         sender = message["person"] if message else None
         group = message["conversation"] if message and groups.of(message["conversation"]) else None
         topic = topics.of_message(conn, self.scenario, group or sender, inst["definition"],
@@ -1268,6 +1291,24 @@ class Gateway:
         classes = model.data_classes if model else ()
         return {f for f, cls in settings.classified.items() if cls not in classes}
 
+    def model_for(self, conn: db.Connection, row: dict, definition: Any,
+                   tried: list[str] | None = None) -> Any:
+        """The model this run calls: its instance's, or, when that one's breaker is open or a
+        run of the same work just failed on it, the first of its release's fallbacks the
+        breakers let through. Kept on the run, so every call of the run goes to the same
+        model, and measures and the ledger name it. Each is an alias config/models.yaml
+        approves; the rest are never called. With every candidate refused, the run keeps its
+        own model, whose breaker says so again at each call."""
+        refused = set(self.breakers.open())  # choosing never spends a breaker's trial:
+        for alias in dict.fromkeys([row["model"], *definition.fallbacks]):  # each call still does
+            if alias in (tried or []) or alias in refused:
+                continue
+            model = self.models.get(alias)
+            if model is None:
+                continue
+            return model
+        return self.models.get(row["model"])
+
     def hidden_from(self, conn: db.Connection, row: dict) -> set[str]:
         """The fields of a class a run's model isn't approved for, which it never sees: for a
         run that answers another agent's question, the asking model's too, since the answer
@@ -1327,7 +1368,7 @@ def load_run(conn: db.Connection, token: str) -> dict:
     row = conn.execute(
         """
         select r.id::text as run, r.acts_for, r.read_outside, r.trigger, r.tokens, r.task_cap,
-               i.*
+               i.*, coalesce(r.model, i.model) as model  -- the run's, as it opened, or its instance's
         from runs r join instances i on i.id = r.instance_id
         where r.token_hash = %s and r.closed_at is null and r.expires_at > now()
         """,
@@ -1470,6 +1511,7 @@ def create_app(gw: Gateway) -> FastAPI:
         token = secrets.token_urlsafe(32)
         run_id = str(uuid.uuid4())
         now = gw.clock()
+        chosen = None  # the model the run calls, as its release names it, breakers allowing
         with db.transaction(gw.url) as conn:
             inst = conn.execute("select * from instances where id = %s", (body.instance,)).fetchone()
             if inst is None:
@@ -1542,13 +1584,16 @@ def create_app(gw: Gateway) -> FastAPI:
                     opening.trigger["task"], "; ".join(reasons), within=conn)
                 if put_off and put_off["status"] == "failed":  # or fails, past its deadline
                     pushing += tell_of_task(conn, put_off)
+            chosen = gw.model_for(conn, {"model": inst["model"], "run": run_id}, release,
+                                  list(body.trigger.get("tried_models") or [])) \
+                if release else gw.models.get(inst["model"])
             if not reasons:
                 for who in sorted(set(opening.acts_for)):  # not while they're erased or archived
                     departures.hold(conn, who, shared=True)
                 conn.execute(
                     "insert into runs (id, instance_id, token_hash, trigger, acts_for, expires_at, "
-                    "read_outside) values (%s, %s, %s, %s, %s, now() + make_interval(mins => %s), "
-                    "%s)",
+                    "read_outside, model) values (%s, %s, %s, %s, %s, "
+                    "now() + make_interval(mins => %s), %s, %s)",
                     (run_id, body.instance, token_hash(token), Jsonb(opening.trigger),
                      opening.acts_for, config.RUN_MINUTES.read(),
                      opening.marked or gw.reads_outside(
@@ -1556,7 +1601,8 @@ def create_app(gw: Gateway) -> FastAPI:
                          opening.trigger.get("topic", topics.GENERAL),
                          opening.trigger.get("conversation"), CHARS_PER_TOKEN * (
                              release.context.budget_tokens if release
-                             else Context().budget_tokens))),
+                             else Context().budget_tokens)),
+                     chosen.alias if chosen else inst["model"]),
                 )
                 if kind == asking.KIND:  # whose run answers it, at work on it now
                     conn.execute("update questions set run_id = %s where id = %s",
@@ -1610,6 +1656,8 @@ def create_app(gw: Gateway) -> FastAPI:
                                       "answered": opening.used, "out_of_budget": bool(spent)})
         return {"run": run_id, "token": token, "task": opening.task,
                 **({"notes": opening.notes} if opening.notes else {}),
+                "model": chosen.alias if chosen else None,  # its run's, once it reads it
+                "fallbacks": list(release.fallbacks) if release else [],  # others it may try
                 "topic": opening.trigger.get("topic", topics.GENERAL),
                 "history_chars": CHARS_PER_TOKEN * (release.context.budget_tokens if release
                                                     else Context().budget_tokens)}
@@ -1698,6 +1746,18 @@ def create_app(gw: Gateway) -> FastAPI:
             ledger.append(conn, {"kind": "run", "action": "close", "run": run_id,
                                  "instance": row["instance_id"], "decision": "record",
                                  "outcome": ended})
+            keep_open = False  # a message whose run found its model not answering, while
+            if row["trigger"].get("kind") == "message" and ended == "model unavailable":
+                inst = conn.execute("select definition from instances where id = %s",
+                                    (row["instance_id"],)).fetchone()
+                definition = gw.definitions.get(inst["definition"]) if inst else None
+                tried = list(row["trigger"].get("tried_models") or [])
+                keep_open = len(tried) < len((definition.fallbacks if definition else [])
+                                             or [])  # its release names models not tried:
+                # the scheduler tries the message again on the next, which then takes it
+            if not keep_open and row["trigger"].get("inbound"):
+                conn.execute("update inbound set answered_at = now() where id = %s "
+                             "and answered_at is null", (row["trigger"]["inbound"],))
             sends = [] if ended.startswith("done") else give_instead(conn, row["trigger"],
                                                                       WHY.get(ended))
             sends += slice_closed(conn, run_id, row, ended)
@@ -2212,7 +2272,8 @@ def create_app(gw: Gateway) -> FastAPI:
                                                               "serial": settings.serial}})
         else:
             applied = registry.apply(conn, gw.definitions, settings, gw.scenario.tools(),
-                                     gw.scenario.person, gw.scenario.name, approved)
+                                     gw.scenario.person, gw.scenario.name, approved,
+                                     models=gw.models)
             if not (refused := applied.refused):  # a version that only narrows tells others
                 narrowing.told(conn, gw.scenario, gw.definitions, settings, applied.before,
                                valid, gw.clock())
@@ -4826,50 +4887,76 @@ def create_app(gw: Gateway) -> FastAPI:
         if not decision.allowed:
             return JSONResponse(status_code=403, content=models.error_body(
                 api, "denied by policy: " + "; ".join(decision.explanations)))
-        called = gw.breakers.allow(alias)
-        with traces.span(f"chat {alias}", **{
-                "gen_ai.operation.name": "chat", "gen_ai.provider.name": model.provider,
-                "gen_ai.request.model": alias, "a5s.run.id": row["run"],
-                "a5s.instance": row["id"]}) as current:
-            if not called:  # it failed in a row lately: it isn't called for a few minutes
-                status, data = 503, models.error_body(
-                    api, f"{alias} failed {FAILURES} times in a row, so a5s isn't calling it for "
-                         "a few minutes", "model_unavailable")
-            else:
+        # Its own model first, and, once that one fails this call, each fallback its release
+        # names that speaks its API style and may see its data, in order: the same call is
+        # re-issued in the same run, so nothing of the run is lost, and each attempt is in
+        # the ledger, by the call's sequence. The worker sees only the last attempt's answer.
+        tried_here: list[str] = []  # this call's attempts, in order
+        served = alias
+        recorded, status, data = None, 503, models.error_body(
+            api, "no model in its chain can answer this call", "model_unavailable")
+        # Its own model twice: a provider's moment of slowness is asked again before the next
+        # model is tried, so a stall that passes costs nothing but a moment.
+        for candidate in [alias, alias, *(release.fallbacks if release else [])]:
+            if tried_here.count(candidate) >= (2 if candidate == alias else 1):
+                continue
+            fallback = gw.models.get(candidate)
+            if fallback is None or fallback.api != api:  # the worker speaks one API style
+                continue
+            if model and candidate != alias and not set(model.data_classes) <= set(
+                    fallback.data_classes):  # never sees more than its own model may
+                continue
+            if not gw.breakers.allow(candidate):  # failed in a row lately: not called for a while
+                record({"kind": "model", "action": candidate, "run": row["run"],
+                        "instance": row["id"], "decision": "record", "of": seq,
+                        "outcome": {"status": 503, "reported_model": None, "usage": None}})
+                tried_here.append(candidate)
+                continue
+            with traces.span(f"chat {candidate}", **{
+                    "gen_ai.operation.name": "chat", "gen_ai.provider.name": fallback.provider,
+                    "gen_ai.request.model": candidate, "a5s.run.id": row["run"],
+                    "a5s.instance": row["id"]}) as current:
                 try:
-                    status, data = models.forward(model, forwarded, gw.http)
+                    status, data = models.forward(fallback, forwarded, gw.http)
                 except models.ModelUnavailable as exc:
                     status, data = 503, models.error_body(api, str(exc), "model_unavailable")
-            usage = data.get("usage") if isinstance(data, dict) else None
-            current.set_attributes({k: v for k, v in {
-                "gen_ai.response.model": data.get("model") if isinstance(data, dict) else None,
-                "gen_ai.usage.input_tokens": (usage or {}).get("prompt_tokens",
-                                                               (usage or {}).get("input_tokens")),
-                "gen_ai.usage.output_tokens": (usage or {}).get("completion_tokens",
-                                                                (usage or {}).get("output_tokens")),
-                "error.type": str(status) if status >= 400 else None}.items() if v is not None})
-        reported = data.get("model") if isinstance(data, dict) else None
-        expected = model.reported_model or model.model
-        if called and status < 400 and reported != expected:
-            status, data = 502, models.error_body(
-                api, f"the provider reported {reported}, not the approved {expected}",
-                "model_mismatch")
-        if called and (change := "open" if (status >= 500 or status == 429)
-                       and gw.breakers.failed(alias) else "close" if status < 400
-                       and gw.breakers.worked(alias) else None):
-            log.warning("the breaker for %s is %s", alias, "open" if change == "open" else "closed again")
-            record({"kind": "breaker", "action": change, "run": row["run"], "instance": row["id"],
-                    "decision": "record", "args": {"model": alias, "status": status}})
-        recorded = record({"kind": "model", "action": alias, "run": row["run"], "instance": row["id"],
-                           "decision": "record", "of": seq,
-                           "outcome": {"status": status, "reported_model": reported,
-                                       "usage": data.get("usage") if isinstance(data, dict) else None}})
+                usage = data.get("usage") if isinstance(data, dict) else None
+                current.set_attributes({k: v for k, v in {
+                    "gen_ai.response.model": data.get("model") if isinstance(data, dict) else None,
+                    "gen_ai.usage.input_tokens": (usage or {}).get("prompt_tokens",
+                                                                   (usage or {}).get("input_tokens")),
+                    "gen_ai.usage.output_tokens": (usage or {}).get("completion_tokens",
+                                                                    (usage or {}).get("output_tokens")),
+                    "error.type": str(status) if status >= 400 else None}.items() if v is not None})
+            reported = data.get("model") if isinstance(data, dict) else None
+            expected = fallback.reported_model or fallback.model
+            if status < 400 and reported != expected:
+                status, data = 502, models.error_body(
+                    api, f"the provider reported {reported}, not the approved {expected}",
+                    "model_mismatch")
+            if change := ("open" if (status >= 500 or status == 429)
+                          and gw.breakers.failed(candidate) else "close" if status < 400
+                          and gw.breakers.worked(candidate) else None):
+                log.warning("the breaker for %s is %s", candidate,
+                            "open" if change == "open" else "closed again")
+                record({"kind": "breaker", "action": change, "run": row["run"],
+                        "instance": row["id"], "decision": "record",
+                        "args": {"model": candidate, "status": status}})
+            recorded = record({"kind": "model", "action": candidate, "run": row["run"],
+                               "instance": row["id"], "decision": "record", "of": seq,
+                               "outcome": {"status": status, "reported_model": reported,
+                                           "usage": data.get("usage") if isinstance(data, dict)
+                                           else None}})
+            tried_here.append(candidate)
+            served = candidate
+            if status < 400:
+                break
         tokens = budgets.tokens_of(data.get("usage")) if isinstance(data, dict) else 0
         if tokens and release is not None:
             try:
                 with db.transaction(gw.url) as conn:
                     if warning := budgets.spent(conn, gw.scenario, release.budget, row, tokens,
-                                                gw.clock(), data.get("usage"), alias):
+                                                gw.clock(), data.get("usage"), served):
                         log.warning("%s has used %s of its %s tokens for %s today", row["id"],
                                     warning["used"], warning["budget"], warning["person"])
                         ledger.append(conn, {

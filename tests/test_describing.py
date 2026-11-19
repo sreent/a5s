@@ -97,7 +97,7 @@ def test_what_it_drafts_passes_a5s_checks():
         folder = Path(there) / "joiner-coordinator"
         folder.mkdir()
         for path, text in files.items():
-            (folder / path).write_text(text)
+            (folder / path).write_text(text, encoding="utf-8")
         tools = desk_tools()
         definitions.pin(folder, {n: t.schema_hash for n, t in tools.items()})
         assert authoring.check(folder, tools, {"fake": object()}) == []

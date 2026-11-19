@@ -71,7 +71,7 @@ def cases() -> list:
         tests = folder / "tests"
         paths = sorted([*tests.glob("*.yaml"), *tests.glob("*.yml")]) if tests.is_dir() else []
         for path in paths:
-            for case in read(path.read_text(), path.relative_to(ROOT).as_posix()):
+            for case in read(path.read_text(encoding="utf-8"), path.relative_to(ROOT).as_posix()):
                 where = f"{scenario}/" if scenario else ""
                 case = {**case, "file": path.relative_to(folder).as_posix()}  # as the studio's
                 found.append(pytest.param(scenario, folder.name, case,
@@ -83,13 +83,13 @@ def serving(folder: Path, scenario: Any, agent: str, person: str) -> None:
     """The settings in `folder` with an instance of `agent` serving `person`, if they name none:
     in every part the scenario's instances work in, at level 1, signed by everyone there who
     approves settings, as its owners would sign one."""
-    settings = yaml.safe_load((folder / "settings.yaml").read_text())
+    settings = yaml.safe_load((folder / "settings.yaml").read_text(encoding="utf-8"))
     instances = settings.setdefault("instances", {})
     if any(i.get("definition") == agent for i in instances.values()):
         return
     parts = sorted({p for i in instances.values() for p in (i.get("parts") or [])})
     instances[f"{agent}-suite"] = {"definition": agent, "serves": [person], "parts": parts, "level": 1}
-    people = (yaml.safe_load((folder / "data.yaml").read_text()) or {}).get("people") or []
+    people = (yaml.safe_load((folder / "data.yaml").read_text(encoding="utf-8")) or {}).get("people") or []
     signers = tuple(p["id"] for p in people if (folder / "keys" / f"{p['id']}.key").exists()
                     and (found := scenario.person(p["id"])) is not None and registry.approves(found))
     signed(folder, settings, signers)
@@ -205,7 +205,7 @@ def test_each_agents_regression_suite(database: str, tmp_path: Path, monkeypatch
             pytest.fail(f"it was kept from a real run, and {', '.join(barred)} isn't approved "
                         f"for {', '.join(sorted(needed))} data, the deployment's "
                         "(A5S_DATA_CLASSES): a real run's case goes only to models that are")
-    root = build_root(tmp_path, release.model, (ROOT / "config" / "models.yaml").read_text())
+    root = build_root(tmp_path, release.model, (ROOT / "config" / "models.yaml").read_text(encoding="utf-8"))
     with stack_for(database, root, tmp_path, scenario, agent, case.get("as", "ana"),
                    release.model) as stack:
         if scenario is None and (agent == "watcher" or case.get("with_watcher")):

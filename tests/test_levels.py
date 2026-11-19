@@ -21,7 +21,7 @@ def levelled(stack, actions: dict | None = None, limits: dict | None = None, cap
     """The assistant at level 2 for changing due dates in billing, as Ana, who owns billing,
     signed it, with a5s's cap for its release raised, as samples would raise it."""
     folder = stack.cfg.scenario_dir
-    settings = yaml.safe_load((folder / "settings.yaml").read_text())
+    settings = yaml.safe_load((folder / "settings.yaml").read_text(encoding="utf-8"))
     settings["instances"]["assistant-finance"]["parts"] = {
         "billing": {"level": 1, "actions": actions or {"change-due-date": 2}}}
     if limits is not None:

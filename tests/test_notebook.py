@@ -27,10 +27,10 @@ NOTED = "Q-1001 is Northwind's question about an invoice."
 def with_notebook(stack) -> None:
     """A new release of the assistant, with a schedule and a notebook, applied."""
     spec = stack.cfg.agents_dir / "assistant" / "agent.yaml"
-    data = yaml.safe_load(spec.read_text())
+    data = yaml.safe_load(spec.read_text(encoding="utf-8"))
     data["schedules"] = [LEARN]
     data["context"]["notebook"] = True
-    spec.write_text(yaml.safe_dump(data, sort_keys=False))
+    spec.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     stack.gateway.definitions = definitions.load_all(stack.cfg.agents_dir)
     assert not stack.settle().refused
 
@@ -204,7 +204,7 @@ def test_a_real_model_notes_what_records_show_on_its_schedule(database, tmp_path
         if os.environ.get("A5S_REGRESSION") == "required":
             pytest.fail(f"{model.key_env} isn't set, and a release needs its agents' suites")
         pytest.skip(f"{model.key_env} isn't set")
-    root = build_root(tmp_path, release.model, (ROOT / "config" / "models.yaml").read_text())
+    root = build_root(tmp_path, release.model, (ROOT / "config" / "models.yaml").read_text(encoding="utf-8"))
     with running(database, root, httpx.Client(), FakeModel(), worker_image=live_image()) as stack:
         with_notebook(stack)
         stack.at("2026-10-29T09:00:30+00:00")

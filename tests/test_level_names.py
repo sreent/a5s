@@ -77,7 +77,7 @@ def test_every_file_a5s_ships_names_each_level():
     files = shipped()
     assert len(files) >= 12
     for path in files:
-        text = path.read_text()
+        text = path.read_text(encoding="utf-8")
         assert not re.search(r"^\s*(?:level|start|max):\s*\d", text, re.MULTILINE), path
         assert not re.search(r"actions:\s*\{[^}]*:\s*\d", text), path  # nor a type of change's
         assert not NUMBERED.search(text), path  # nor what its comments say
@@ -91,7 +91,7 @@ def test_every_file_a5s_ships_names_each_level():
                               "src/a5s/templates/**/*.md", "scenarios/*/knowledge/**/*.md",
                               "scenarios/*/README.md", "scenarios/*/mcp.yaml", "scenarios/*.md")
             for p in ROOT.glob(pattern)]
-    assert len(told) >= 10 and not [p for p in told if NUMBERED.search(p.read_text())]
+    assert len(told) >= 10 and not [p for p in told if NUMBERED.search(p.read_text(encoding="utf-8"))]
 
 
 def test_the_pilots_assistant_asks_first_at_most_whatever_the_settings_give_it():
@@ -136,7 +136,7 @@ def said(tree: ast.AST) -> list[tuple[int, str]]:
 def test_what_a5s_says_names_each_level_never_its_number():
     code = [*(ROOT / "src" / "a5s").rglob("*.py"), *ROOT.glob("scenarios/**/*.py")]
     numbered = [f"{path.relative_to(ROOT)}:{line}: {text}" for path in code
-                for line, text in said(ast.parse(path.read_text())) if NUMBERED.search(text)]
+                for line, text in said(ast.parse(path.read_text(encoding="utf-8"))) if NUMBERED.search(text)]
     assert numbered == []
     for english, thai in words.TH.items():  # the catalogue, in both languages
         assert not NUMBERED.search(english) and not THAI_NUMBERED.search(thai), english
@@ -150,16 +150,16 @@ def test_the_policies_reasons_and_names_never_number_a_level():
              *ROOT.glob("scenarios/*/*.cedar")]
     assert len(packs) >= 2
     for pack in packs:  # the agent and people read each reason, and the pages show each name
-        for annotation in re.findall(r'@(?:id|reason)\("([^"]*)"\)', pack.read_text()):
+        for annotation in re.findall(r'@(?:id|reason)\("([^"]*)"\)', pack.read_text(encoding="utf-8")):
             assert not NUMBERED.search(annotation), (pack.name, annotation)
 
 
 def test_the_studio_names_each_level_in_both_languages():
     source = [p for p in (ROOT / "studio" / "src").rglob("*.ts*") if "i18n" not in p.parts]
     keys = {key for path in source
-            for key in re.findall(r'\bt\(\s*"((?:[^"\\]|\\.)*)"', path.read_text())}
+            for key in re.findall(r'\bt\(\s*"((?:[^"\\]|\\.)*)"', path.read_text(encoding="utf-8"))}
     assert keys and not [k for k in keys if NUMBERED.search(k)]
     for path in (ROOT / "studio" / "src" / "i18n" / "th").glob("*.ts"):
         for english, thai in re.findall(r'^\s*"((?:[^"\\]|\\.)*)":\s*"((?:[^"\\]|\\.)*)"',
-                                        path.read_text(), re.MULTILINE):
+                                        path.read_text(encoding="utf-8"), re.MULTILINE):
             assert not NUMBERED.search(english) and not THAI_NUMBERED.search(thai), english

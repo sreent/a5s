@@ -69,7 +69,7 @@ def test_raising_a_parts_threshold_lowers_a_cap_its_grades_no_longer_earn(stack)
     weigh(stack)
     assert cap(stack, "orders") == 2
     folder = stack.cfg.scenario_dir  # the owners raise orders' threshold to 98%
-    settings = yaml.safe_load((folder / "settings.yaml").read_text())
+    settings = yaml.safe_load((folder / "settings.yaml").read_text(encoding="utf-8"))
     settings["thresholds"]["orders"] = 0.98
     signed(folder, settings, ("ana", "omar"))  # orders' owner approves its threshold (round 6)
     scenario = stack.gateway.scenario
@@ -101,7 +101,7 @@ def test_a_release_that_widens_nothing_keeps_the_level_its_grades_earned(stack, 
     before = release(stack)
     agents = stack.cfg.agents_dir  # a release that changes one sentence of the instructions
     instructions = agents / "assistant" / "AGENTS.md"
-    instructions.write_text(instructions.read_text() + "\nThank people when they help you.\n")
+    instructions.write_text(instructions.read_text(encoding="utf-8") + "\nThank people when they help you.\n")
     stack.gateway.definitions.update(definitions.load_all(agents))
     scenario = stack.gateway.scenario
     with db.transaction(stack.admin) as conn:

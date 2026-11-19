@@ -68,5 +68,5 @@ def test_the_measures_price_what_runs_read_from_the_cache(stack):
 def test_an_approved_model_may_say_what_its_cache_costs(tmp_path):
     path = tmp_path / "models.yaml"
     path.write_text(FAKE_MODELS + "    prices: {input: 3, output: 15, cached_input: 0.3, "
-                                  "cache_write: 3.75}\n")
+                                  "cache_write: 3.75}\n", encoding="utf-8")
     assert load_models(path)["fake"].prices == Prices(3.0, 15.0, 0.3, 3.75)

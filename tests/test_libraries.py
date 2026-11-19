@@ -11,7 +11,9 @@ own, answering each person by whose token their call carries."""
 from __future__ import annotations
 
 import json
+import os
 import re
+import shutil
 from collections.abc import Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -362,7 +364,7 @@ class Directory:
 def document(folder: Path, name: str, text: str, **readers: Any) -> None:
     path = folder / name
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(f"---\n{yaml.safe_dump(readers)}---\n{text}" if readers else text)
+    path.write_text(f"---\n{yaml.safe_dump(readers)}---\n{text}" if readers else text, encoding="utf-8")
 
 
 def test_a_docs_repository_reads_each_document_for_the_readers_it_names(tmp_path):
@@ -376,7 +378,10 @@ def test_a_docs_repository_reads_each_document_for_the_readers_it_names(tmp_path
     document(first, "unmarked.md", "Nobody may read the month end draft.")
     root = tmp_path / "libraries"
     root.mkdir()
-    (root / "runbooks").symlink_to(first)  # as git-sync keeps a checkout
+    if os.name == "nt":  # a symlink needs a privilege Windows doesn't give everyone:
+        shutil.copytree(first, root / "runbooks")  # the same checkout, copied
+    else:
+        (root / "runbooks").symlink_to(first)  # as git-sync keeps a checkout
     tools = shelf("runbooks", root=root, scenario=Directory(), title="Finance runbooks",
                   kind="repository", site="https://forge.example.test/finance/runbooks/blob/main",
                   outside=False)
@@ -396,10 +401,17 @@ def test_a_docs_repository_reads_each_document_for_the_readers_it_names(tmp_path
     second = tmp_path / ".git-sync" / "rev-2"
     document(second, "close/month-end.md", "Month end closes on the fifth working day now.",
              teams=["finance"])
-    (root / "runbooks").unlink()
-    (root / "runbooks").symlink_to(second)
+    if os.name == "nt":  # the same checkout moved on, copied as before
+        shutil.rmtree(root / "runbooks")
+        shutil.copytree(second, root / "runbooks")
+    else:
+        (root / "runbooks").unlink()
+        (root / "runbooks").symlink_to(second)
     assert "fifth working day" in tools["read_runbooks"].run(call("ana", id="close/month-end.md"))["text"]
-    (root / "runbooks").unlink()
+    if os.name == "nt":
+        shutil.rmtree(root / "runbooks")
+    else:
+        (root / "runbooks").unlink()
     with pytest.raises(ConnectorError, match="aren't here"):
         tools["search_runbooks"].run(call("ana", query="month end"))
 
@@ -448,11 +460,11 @@ def test_what_a_library_tools_pin_and_the_core_checks(tmp_path, monkeypatch):
     for changed in ({"site": f"{SITE}/Policies"}, {"as_person": "graph"}, {"outside": False},
                     {"extract": {"effective": "date"}}, {"api": "https://graph.example.test/v1.0"}):
         assert hashes(**{**base, **changed}) != pinned, changed
-    (tmp_path / libraries.FILE).write_text("libraries:\n  policies: {}\n  policies: {}\n")
+    (tmp_path / libraries.FILE).write_text("libraries:\n  policies: {}\n  policies: {}\n", encoding="utf-8")
     with pytest.raises(ValueError, match="libraries.yaml"):
         libraries.declared(tmp_path)  # each key once
     (tmp_path / libraries.FILE).write_text(yaml.safe_dump({"libraries": {"records": {
-        "title": "HR policies", "kind": "repository", "site": SITE}}}))
+        "title": "HR policies", "kind": "repository", "site": SITE}}}), encoding="utf-8")
 
     class Scenario:
         record_links = ("https://records.example.test/",)
@@ -463,7 +475,7 @@ def test_what_a_library_tools_pin_and_the_core_checks(tmp_path, monkeypatch):
     with pytest.raises(ValueError, match="search_records, which the scenario or a5s has already"):
         libraries.served(Scenario(), tmp_path, root=tmp_path)
     (tmp_path / libraries.FILE).write_text(yaml.safe_dump({"libraries": {"policies": {
-        "title": "HR policies", "kind": "sharepoint", "site": SITE, "as_person": "entra"}}}))
+        "title": "HR policies", "kind": "sharepoint", "site": SITE, "as_person": "entra"}}}), encoding="utf-8")
     served = libraries.served(Scenario(), tmp_path, root=tmp_path)
     assert set(served.tools()) == {"search_records", "search_policies", "read_policies"}
     assert served.record_links == ("https://records.example.test/", f"{SITE}/")  # its links
@@ -487,12 +499,12 @@ def test_an_agent_given_a_library_only_a5s_reader_reads_can_ask_it(tmp_path):
     tools = sharepoint(Graph())
     folder = tmp_path / "assistant"
     shutil.copytree(ROOT / "agents" / "assistant", folder)
-    spec = (folder / "agent.yaml").read_text()
+    spec = (folder / "agent.yaml").read_text(encoding="utf-8")
     spec = re.sub(r"tools:\n(  .*\n)+", "tools:\n  libraries: [search_policies, read_policies]\n", spec)
 
     def problems(asks: bool) -> list[str]:
         (folder / "agent.yaml").write_text(spec.replace(
-            "  documents: true ", f"  documents: {str(asks).lower()} "))
+            "  documents: true ", f"  documents: {str(asks).lower()} "), encoding="utf-8")
         definitions.pin(folder, {n: t.schema_hash for n, t in tools.items()})
         return authoring.check(folder, tools, {})
 
@@ -530,13 +542,13 @@ def stack(database: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
         "policies": {"title": "HR policies", "about": "HR's policies", "kind": "sharepoint",
                      "site": SITE, "api": f"{url}/v1.0", "as_person": "entra"},
         "runbooks": {"title": "Finance runbooks", "kind": "repository", "outside": False,
-                     "site": "https://forge.example.test/finance/runbooks/blob/main"}}}))
+                     "site": "https://forge.example.test/finance/runbooks/blob/main"}}}), encoding="utf-8")
     document(root / "libraries" / "runbooks", "month-end.md",
              "Month end closes on the third working day.", teams=["finance"])
     document(root / "libraries" / "runbooks", "orders.md", "Orders close weekly.",
              teams=["operations"])
     spec = root / "agents" / "assistant" / "agent.yaml"
-    spec.write_text(spec.read_text().replace(
+    spec.write_text(spec.read_text(encoding="utf-8").replace(
         "  documents: [create_draft]\n",
         "  documents: [create_draft]\n  libraries: [search_policies, read_policies, "
         "search_runbooks, read_runbooks]\n"))

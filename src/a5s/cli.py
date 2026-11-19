@@ -66,7 +66,7 @@ def _dev_up(root: Path) -> None:
     for name in ("service-token", "seal-key"):  # the core's own secrets, for development
         secret = state / name
         if not secret.exists():
-            secret.write_text(secrets.token_urlsafe(32))
+            secret.write_text(secrets.token_urlsafe(32), encoding="utf-8")
             secret.chmod(0o600)
     url = devdb.start(state / "pg", 54329)
     _migrate(Config.from_env(), url)
@@ -104,9 +104,9 @@ def _keygen(person: str, folder: Path) -> None:
     private, public = signing.keypair()
     folder.mkdir(parents=True, exist_ok=True)
     key = folder / f"{person}.key"
-    key.write_text(private + "\n")
+    key.write_text(private + "\n", encoding="utf-8")
     key.chmod(0o600)
-    (folder / f"{person}.pub").write_text(public + "\n")
+    (folder / f"{person}.pub").write_text(public + "\n", encoding="utf-8")
     print(f"Wrote {key}, which stays with {person}, and {person}.pub for the directory.")
 
 
@@ -114,16 +114,16 @@ def _sign(cfg: Config, person: str, key: Path | None) -> None:
     folder = cfg.scenario_dir
     key = key or folder / "keys" / f"{person}.key"
     raw = (folder / "settings.yaml").read_bytes()
-    value = signing.sign(key.read_text().strip(), raw)
+    value = signing.sign(key.read_text(encoding="utf-8").strip(), raw)
     sig_file = folder / "settings.sig"
-    current = yaml.safe_load(sig_file.read_text()) if sig_file.exists() else None
+    current = yaml.safe_load(sig_file.read_text(encoding="utf-8")) if sig_file.exists() else None
     others = [s for s in (current or {}).get("signatures", []) if s["signer"] != person]
     sig_file.write_text(
         "# Signatures over settings.yaml, made with `a5s sign`. Change the settings,\n"
         "# and these no longer match: the new version needs signing again.\n"
         + yaml.safe_dump({"signatures": [*others, {"signer": person, "value": value}]},
                          sort_keys=False)
-    )
+    , encoding="utf-8")
     print(f"{person} signed this version of the settings.")
 
 
@@ -406,7 +406,7 @@ def _audit(cfg: Config, args: argparse.Namespace) -> None:
     if args.what == "verify":
         if not args.file:
             sys.exit("name the export to check")
-        lines = [json.loads(line) for line in Path(args.file).read_text().splitlines() if line]
+        lines = [json.loads(line) for line in Path(args.file).read_text(encoding="utf-8").splitlines() if line]
         bounds = lines.pop(0)["export"] if lines and "export" in lines[0] else None
         store = build.store(cfg)
         why = audit.checks(lines) or (audit.bounded(bounds, lines) if bounds else None)
@@ -452,7 +452,7 @@ def _audit(cfg: Config, args: argparse.Namespace) -> None:
         bounds, lines = _core(cfg, lambda core: core.audit_period(args.by, **period),
                               timeout=300)
         Path(args.out).write_text("".join(json.dumps(line) + "\n"
-                                          for line in [{"export": bounds}, *lines]))
+                                          for line in [{"export": bounds}, *lines]), encoding="utf-8")
         print(f"Wrote {len(lines)} entries to {args.out}"
               + (f", {lines[0]['seq']} to {lines[-1]['seq']}" if lines else "")
               + f". Check it with: a5s audit verify {args.out}")
@@ -481,7 +481,7 @@ def _release(cfg: Config, args: argparse.Namespace) -> None:
         raw = args.manifest.read_bytes()
         digest = hashlib.sha256(raw).hexdigest()
         key = args.key or cfg.scenario_dir / "keys" / f"{args.person}.key"
-        text = args.out.read_text() if args.out.exists() else ""
+        text = args.out.read_text(encoding="utf-8") if args.out.exists() else ""
         signed = yaml.safe_load(text) if text else None
         if signed and signed.get("release") != digest:
             sys.exit(f"{args.out} holds signatures for another release.")
@@ -492,12 +492,12 @@ def _release(cfg: Config, args: argparse.Namespace) -> None:
         if signed and any(getattr(approval, k) != getattr(asked, k) for k in given):
             sys.exit(f"{args.out} approves it as {_approves(approval)}: sign that, or start "
                      "its signatures afresh")
-        value = releases.sign(key.read_text().strip(), approval)
+        value = releases.sign(key.read_text(encoding="utf-8").strip(), approval)
         others = [s for s in (signed or {}).get("signatures", []) if s["signer"] != args.person]
         args.out.write_text(
             "# Signatures over a release of a5s, made with `a5s release sign`.\n"
             + yaml.safe_dump({**approval.shown(), "signatures": [
-                *others, {"signer": args.person, "value": value}]}, sort_keys=False))
+                *others, {"signer": args.person, "value": value}]}, sort_keys=False), encoding="utf-8")
         print(f"{args.person} signed release {yaml.safe_load(raw)['version']} ({digest[:12]}), "
               f"approving it as {_approves(approval)}.")
         if args.environment is not None:
@@ -512,7 +512,7 @@ def _release(cfg: Config, args: argparse.Namespace) -> None:
     if args.what == "approve":  # as the database's administrator, with what they approved
         raw = args.manifest.read_bytes()
         try:
-            text = args.signatures.read_text()
+            text = args.signatures.read_text(encoding="utf-8")
             signatures = releases.signatures_in(raw, text)
             approval = releases.approval_in(raw, text)
         except ValueError:
@@ -568,7 +568,7 @@ def _deploying(cfg: Config, sc: Scenario, args: argparse.Namespace) -> None:
             assert folder is not None  # argparse requires it
             ran = folder / gitops.MANIFEST
             before = ran.read_bytes() if ran.is_file() else None
-            signed = args.signatures.read_text() if args.signatures else None
+            signed = args.signatures.read_text(encoding="utf-8") if args.signatures else None
             gitops.promote(folder, args.manifest.read_bytes(), args.image, signed,
                            advisory=args.advisory, baseline=args.baseline)
             problems: list[str] = []
@@ -582,9 +582,9 @@ def _deploying(cfg: Config, sc: Scenario, args: argparse.Namespace) -> None:
             problems = gitops.consistent(folder) if folder is not None else []
             if folder is not None and was is not None:
                 problems += gitops.alongside(folder, was)
-            roots = releases.roots_in(args.roots.read_text()) if args.roots else None
+            roots = releases.roots_in(args.roots.read_text(encoding="utf-8")) if args.roots else None
             ran_sig = was / gitops.SIGNATURES if was is not None and gitops.ran(was) else None
-            ran = (releases.approval_in(before, ran_sig.read_text())
+            ran = (releases.approval_in(before, ran_sig.read_text(encoding="utf-8"))
                    if before is not None and ran_sig is not None and ran_sig.is_file() else None)
             if was is not None and before is None and roots is None:  # its first, by whom?
                 problems.append("an environment's first release is judged by the approvers "
@@ -594,8 +594,8 @@ def _deploying(cfg: Config, sc: Scenario, args: argparse.Namespace) -> None:
         manifest = folder / gitops.MANIFEST if folder is not None else args.manifest
         sigs = folder / gitops.SIGNATURES if folder is not None else args.signatures
         raw = manifest.read_bytes()
-        signatures = releases.signatures_in(raw, sigs.read_text())
-        approval = releases.approval_in(raw, sigs.read_text())
+        signatures = releases.signatures_in(raw, sigs.read_text(encoding="utf-8"))
+        approval = releases.approval_in(raw, sigs.read_text(encoding="utf-8"))
     except (gitops.NotAnEnvironment, ValueError, OSError, KeyError) as e:
         sys.exit(str(e))
     verdict = releases.verify(raw, signatures, sc, cfg.team, before, approval, roots, ran)

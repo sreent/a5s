@@ -1260,6 +1260,7 @@ export type SettingsNow = {
   in_force: InForce | null;
   names: Record<string, string>;
   actions: string[];
+  models: string[];
   releases: Record<string, ReleaseLevels>;
   waiting: VersionWaiting[];
   requests: SettingsRequest[];

@@ -1192,6 +1192,7 @@ class SettingsNow(Shape):
     in_force: InForce | None
     names: dict[str, str]  # the people the settings name, and whoever signed in, by their names
     actions: list[str]  # the types of change this deployment's tools make
+    models: list[str]  # the approved models the forms may put an instance on
     releases: dict[str, ReleaseLevels]
     waiting: list[VersionWaiting]
     requests: list[SettingsRequest]

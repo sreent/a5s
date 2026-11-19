@@ -43,7 +43,7 @@ TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=u
 # Ocean, the look a5s shares, as a5s copies it from sreent/ocean (deploy/ocean.sh): its tokens,
 # its pieces, its chart colours and IBM Plex, each by its path there, as ocean.json pins them
 OCEAN = WEBCHAT / "ocean"
-OCEAN_FILES = tuple(path for path in json.loads((OCEAN / "ocean.json").read_text())["files"]
+OCEAN_FILES = tuple(path for path in json.loads((OCEAN / "ocean.json").read_text(encoding="utf-8"))["files"]
                     if Path(path).suffix in (".css", ".woff2"))
 
 

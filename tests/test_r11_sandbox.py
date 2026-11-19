@@ -62,8 +62,8 @@ def test_the_sandbox_spends_no_more_than_its_own_budget(box):  # C-4
 def test_an_agent_yaml_names_each_key_once(tmp_path: Path):
     folder = tmp_path / "helper"
     folder.mkdir()
-    (folder / "AGENTS.md").write_text("Help.\n")
-    (folder / "agent.yaml").write_text("id: helper\nmodel: one\nmodel: another\n")
+    (folder / "AGENTS.md").write_text("Help.\n", encoding="utf-8")
+    (folder / "agent.yaml").write_text("id: helper\nmodel: one\nmodel: another\n", encoding="utf-8")
     with pytest.raises(Exception, match="it names model twice"):
         definitions.load(folder)
 
@@ -77,8 +77,8 @@ def test_a_folder_of_agents_refuses_one_named_for_another(tmp_path: Path):
         for path, text in drafted(name).items():
             target = drafted_folder / path
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(text)
+            target.write_text(text, encoding="utf-8")
     spec = tmp_path / "second" / "agent.yaml"
-    spec.write_text(spec.read_text().replace("id: second", "id: first"))
+    spec.write_text(spec.read_text(encoding="utf-8").replace("id: second", "id: first"))
     with pytest.raises(ValueError, match="the agent in second names itself first"):
         definitions.load_all(tmp_path)

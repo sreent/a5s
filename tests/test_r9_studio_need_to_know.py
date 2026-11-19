@@ -18,7 +18,7 @@ OPS = {"definition": "assistant", "serves": ["chen", "omar", "dana"], "parts": [
 def with_ops(stack) -> None:
     """A second assistant, in orders, which Omar owns and runs, serving Chen (as in
     tests/test_studio_pages.py)."""
-    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text())
+    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text(encoding="utf-8"))
     assert not stack.settle(instances={**settings["instances"], "assistant-ops": OPS},
                             signers=("ana", "omar")).refused
 

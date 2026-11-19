@@ -108,7 +108,7 @@ def test_it_registers_again_only_what_changed_and_takes_a_retired_instance_away(
     sweep(stack)
     made = len(tenant.calls)
     assert sweep(stack) == [] and len(tenant.calls) == made  # as registered
-    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text())
+    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text(encoding="utf-8"))
     instance = {**settings["instances"]["assistant-finance"], "level": 0}
     assert not stack.settle(instances={**settings["instances"], "assistant-finance": instance},
                             signers=("ana",)).refused

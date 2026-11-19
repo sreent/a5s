@@ -62,13 +62,13 @@ def test_the_sandbox_says_why_it_wont_try_a_draft(box):
 def test_it_signs_its_own_settings_with_keys_it_made_and_keeps_none_on_disk(box, tmp_path):
     folder = box.cfg.scenario_dir
     raw = (folder / "settings.yaml").read_bytes()
-    signed = yaml.safe_load((folder / "settings.sig").read_text())["signatures"]
+    signed = yaml.safe_load((folder / "settings.sig").read_text(encoding="utf-8"))["signatures"]
     theirs = {s["signer"] for s in signed}
     assert theirs >= {"ana", "omar"}  # who approves instances, and owns each part
     for s in signed:
-        mine = (folder / "keys" / f"{s['signer']}.pub").read_text().strip()
+        mine = (folder / "keys" / f"{s['signer']}.pub").read_text(encoding="utf-8").strip()
         assert signing.verify(mine, raw, s["value"])
-        assert mine != (ROOT / "scenarios" / "sample" / "keys" / f"{s['signer']}.pub").read_text().strip()
+        assert mine != (ROOT / "scenarios" / "sample" / "keys" / f"{s['signer']}.pub").read_text(encoding="utf-8").strip()
     assert not list(tmp_path.rglob("*.key"))  # its private keys are in memory alone
 
 
@@ -78,7 +78,7 @@ def test_a_scenario_whose_records_are_real_gets_no_sandbox(sandbox_database, tmp
     shutil.copytree(ROOT / "agents", root / "agents")
     shutil.copytree(ROOT / "config", root / "config")
     settings = root / "scenarios" / "sample" / "settings.yaml"
-    settings.write_text(settings.read_text().replace("data_class: synthetic", "data_class: internal"))
+    settings.write_text(settings.read_text(encoding="utf-8").replace("data_class: synthetic", "data_class: internal"))
     with (pytest.raises(sandbox.Refused, match="only a scenario whose records are all made up"),
           sandbox.opened(deployment(root), sandbox_database, tmp_path / "work")):
         pass

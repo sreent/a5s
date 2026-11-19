@@ -72,12 +72,12 @@ def new(template: Path, name: str, into: Path, tools: dict[str, Tool], model: st
     shutil.copytree(template, target, ignore=shutil.ignore_patterns(*LEFT_OUT))
     try:
         spec = target / "agent.yaml"
-        text = spec.read_text()
+        text = spec.read_text(encoding="utf-8")
         for field, value in (("id", name), ("release", FIRST), *((("model", model),) if model else ())):
             text, found = re.subn(rf"(?m)^{field}:[ \t]*\S+", f"{field}: {value}", text, count=1)
             if not found:
                 raise ValueError(f"{template.name}'s agent.yaml has no {field} to set")
-        spec.write_text(text)
+        spec.write_text(text, encoding="utf-8")
         definitions.pin(target, {n: t.schema_hash for n, t in tools.items()})
     except BaseException:
         shutil.rmtree(target)
@@ -124,7 +124,7 @@ def check(folder: Path, tools: dict[str, Tool], models: dict[str, ModelConfig]) 
         problems.append(f"its judge, {found.evaluation.judge}, isn't one config/models.yaml "
                         "approves")
     try:  # a case that can't be read as a5s runs it checks nothing, so it stops a release
-        listed = cases.found({p.relative_to(folder).as_posix(): p.read_text()
+        listed = cases.found({p.relative_to(folder).as_posix(): p.read_text(encoding="utf-8")
                               for p in sorted((folder / "tests").glob("*.y*ml"))})
     except cases.Unreadable as e:
         problems.append(f"its test cases don't read as a5s runs them: {e}")

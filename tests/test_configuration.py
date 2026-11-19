@@ -61,7 +61,7 @@ def test_a_part_reads_no_setting_but_through_the_list():
     for path in sorted(SRC.rglob("*.py")):
         if path == SRC / "config.py":
             continue
-        for node in ast.walk(ast.parse(path.read_text())):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
             key = None
             if isinstance(node, ast.Subscript) and environ(node.value):
                 key = node.slice
@@ -85,7 +85,7 @@ def test_every_A5S_name_anywhere_is_a_setting_a_family_or_said_not_to_be_one():
                                        ".txt", "") or path.name.startswith(".")):
             continue
         try:
-            text = path.read_text()
+            text = path.read_text(encoding="utf-8")
         except (UnicodeDecodeError, OSError):
             continue
         for name in set(re.findall(r"\bA5S_[A-Z0-9_]*[A-Z0-9]\b", text)):
@@ -184,7 +184,7 @@ def test_the_core_says_what_it_runs_with_in_its_status(stack, monkeypatch):
 
 
 def test_the_docs_list_every_setting_as_the_code_does():
-    doc = (ROOT / "docs" / "configuration.md").read_text()
+    doc = (ROOT / "docs" / "configuration.md").read_text(encoding="utf-8")
     start, end = "<!-- a5s config --markdown -->", "<!-- end of a5s config --markdown -->"
     assert start in doc and end in doc
     listed = doc.split(start, 1)[1].split(end, 1)[0].strip()
@@ -213,7 +213,7 @@ def repeated(name: str, value: str) -> bool:
 def test_compose_sets_no_setting_to_its_default():
     found = []
     for path in sorted((ROOT / "deploy").glob("compose*.yaml")):
-        stack = yaml.safe_load(path.read_text())
+        stack = yaml.safe_load(path.read_text(encoding="utf-8"))
         envs = [v for k, v in stack.items() if k.startswith("x-") and isinstance(v, dict)]
         envs += [s.get("environment") or {} for s in (stack.get("services") or {}).values()]
         for env in envs:
@@ -333,5 +333,5 @@ def test_no_value_in_the_code_waits_on_where_it_lives():
     saying where it's set and who owns it, or the code's alone, such as a page's length: none
     is marked as waiting for a decision about where it lives."""
     waiting = [f"{path.relative_to(ROOT)}:{n}" for path in sorted(SRC.rglob("*.py"))
-               for n, line in enumerate(path.read_text().splitlines(), 1) if "[TBC" in line]
+               for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1) if "[TBC" in line]
     assert waiting == [], f"say where each lives (docs/configuration.md): {waiting}"

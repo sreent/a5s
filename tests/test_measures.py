@@ -128,9 +128,9 @@ def test_an_approved_model_may_say_what_it_costs(tmp_path):
     from a5s.config import load_models
     from conftest import FAKE_MODELS
     path = tmp_path / "models.yaml"
-    path.write_text(FAKE_MODELS + "    prices: {input: 3, output: 15}\n")
+    path.write_text(FAKE_MODELS + "    prices: {input: 3, output: 15}\n", encoding="utf-8")
     assert load_models(path)["fake"].prices == Prices(3.0, 15.0)
-    path.write_text(FAKE_MODELS)
+    path.write_text(FAKE_MODELS, encoding="utf-8")
     assert load_models(path)["fake"].prices is None
 
 

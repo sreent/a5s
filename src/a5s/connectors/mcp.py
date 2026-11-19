@@ -260,7 +260,7 @@ def declared(folder: Path) -> Declaration | None:
     if not path.is_file():
         return None
     try:
-        return Declaration.model_validate(definitions.spec_of(path.read_text()) or {})
+        return Declaration.model_validate(definitions.spec_of(path.read_text(encoding="utf-8")) or {})
     except (ValidationError, ValueError, yaml.YAMLError) as e:
         raise ValueError(f"{path}: {e}") from None
 

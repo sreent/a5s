@@ -17,7 +17,7 @@ NORTHWIND = "Northwind"
 def resettle(stack, **changes) -> None:
     """A new version of the settings, signed by Ana, an instance approver, and applied."""
     folder = stack.cfg.scenario_dir
-    signed(folder, {**yaml.safe_load((folder / "settings.yaml").read_text()), **changes})
+    signed(folder, {**yaml.safe_load((folder / "settings.yaml").read_text(encoding="utf-8")), **changes})
     scenario = stack.gateway.scenario
     with db.transaction(stack.admin) as conn:
         assert not registry.apply(conn, stack.gateway.definitions, scenario.settings(),

@@ -49,7 +49,7 @@ def stack(database: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Ite
     candidate = root / "agents" / "assistant-next"
     shutil.copytree(root / "agents" / "assistant", candidate)
     spec = candidate / "agent.yaml"
-    spec.write_text(spec.read_text().replace("id: assistant\n", "id: assistant-next\n")
+    spec.write_text(spec.read_text(encoding="utf-8").replace("id: assistant\n", "id: assistant-next\n")
                     .replace("model: fake\n", "model: fake-next\n"))
     tools = SampleScenario(root / "scenarios" / "sample", database).tools()
     definitions.pin(candidate, {n: t.schema_hash for n, t in tools.items()})
@@ -63,7 +63,7 @@ def test_a_shadow_on_a_model_not_approved_for_what_its_conversation_holds_never_
     next version's may not, so the shadow's run is never opened: no call goes to its model,
     with what Ben was told, and the ledger says why."""
     folder = stack.cfg.scenario_dir
-    settings = yaml.safe_load((folder / "settings.yaml").read_text())
+    settings = yaml.safe_load((folder / "settings.yaml").read_text(encoding="utf-8"))
     settings["classified"] = {"customer": "personal"}
     settings["data_protection"] = {"shadow_runs": True}
     settings["instances"]["assistant-next-finance"] = {

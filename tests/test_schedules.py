@@ -20,9 +20,9 @@ MORNING = {"name": "morning", "at": "09:00", "days": "weekdays",
 def with_schedule(stack, **schedule) -> None:
     """A new release of the assistant with a schedule, signed in and applied."""
     spec = stack.cfg.agents_dir / "assistant" / "agent.yaml"
-    data = yaml.safe_load(spec.read_text())
+    data = yaml.safe_load(spec.read_text(encoding="utf-8"))
     data["schedules"] = [{**MORNING, **schedule}]
-    spec.write_text(yaml.safe_dump(data, sort_keys=False))
+    spec.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
     stack.gateway.definitions = definitions.load_all(stack.cfg.agents_dir)
     assert not stack.settle().refused
 

@@ -280,11 +280,11 @@ def test_the_spending_page_shows_each_budget_as_ocean_draws_cost_against_plan(pr
 
 def test_models_yaml_names_the_currency_it_prices_in(tmp_path):
     named = tmp_path / "models.yaml"
-    named.write_text("currency: THB\nmodels: {}\n")
+    named.write_text("currency: THB\nmodels: {}\n", encoding="utf-8")
     assert load_currency(named) == "THB"
-    named.write_text("models: {}\n")
+    named.write_text("models: {}\n", encoding="utf-8")
     assert load_currency(named) is None
-    named.write_text("currency: baht\nmodels: {}\n")
+    named.write_text("currency: baht\nmodels: {}\n", encoding="utf-8")
     with pytest.raises(ValueError, match="a code such as GBP"):
         load_currency(named)
 

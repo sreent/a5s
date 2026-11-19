@@ -57,7 +57,7 @@ def test_what_a_marked_run_passed_on_marks_the_next_run(stack, approving):
 
 def test_the_reader_sends_no_model_a_class_it_isnt_approved_for(stack):
     folder = stack.cfg.scenario_dir  # the emails' words are personal: the fake model isn't for that
-    signed(folder, {**yaml.safe_load((folder / "settings.yaml").read_text()),
+    signed(folder, {**yaml.safe_load((folder / "settings.yaml").read_text(encoding="utf-8")),
                     "classified": {"body": "personal"}})
     scenario = stack.gateway.scenario
     with db.transaction(stack.admin) as conn:

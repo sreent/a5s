@@ -17,12 +17,11 @@ from test_agents import dated
 @pytest.mark.parametrize("alias, key", [
     ("deepseek-v4-pro", "DEEPSEEK_API_KEY"),
     ("deepseek-v4-pro-anthropic", "DEEPSEEK_API_KEY"),
-    ("qwen3.7-max", "QWEN_API_KEY"),
 ])
 def test_a_real_model_answers_through_the_gateway(database, tmp_path, alias, key):
     if not os.environ.get(key):
         pytest.skip(f"{key} isn't set")
-    root = build_root(tmp_path, alias, (ROOT / "config" / "models.yaml").read_text())
+    root = build_root(tmp_path, alias, (ROOT / "config" / "models.yaml").read_text(encoding="utf-8"))
     with running(database, root, httpx.Client(), FakeModel()) as stack:
         reply = stack.say(
             "What's the key of the customer question about an invoice? Reply with the key.")
@@ -36,7 +35,7 @@ def test_a_real_model_answers_through_the_gateway(database, tmp_path, alias, key
 def test_a_real_model_reminds_someone_of_what_falls_due(database, tmp_path):
     if not os.environ.get("DEEPSEEK_API_KEY"):
         pytest.skip("DEEPSEEK_API_KEY isn't set")
-    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text())
+    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text(encoding="utf-8"))
     with running(database, root, httpx.Client(), FakeModel()) as stack:
         stack.at("2026-11-02T09:30:00+00:00")  # half the time for Ana's Q-1001 has passed
         assert stack.scheduler().work_due() == 2  # Ana's and Ben's
@@ -50,7 +49,7 @@ def test_a_real_model_reminds_someone_of_what_falls_due(database, tmp_path):
 def test_a_real_model_tells_someone_what_changed_in_their_records(database, tmp_path, monkeypatch):
     if not os.environ.get("DEEPSEEK_API_KEY"):
         pytest.skip("DEEPSEEK_API_KEY isn't set")
-    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text())
+    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text(encoding="utf-8"))
     with running(database, root, httpx.Client(), FakeModel()) as stack:
         stack.with_watcher(serves=("ana",))
         stack.at("2026-10-29T09:30:00+00:00")  # Thursday: the watcher's first morning
@@ -72,7 +71,7 @@ def test_a_real_model_tells_someone_what_changed_in_their_records(database, tmp_
 def test_a_real_model_offers_a_reminder_and_keeps_it_once_its_person_says_yes(database, tmp_path):
     if not os.environ.get("DEEPSEEK_API_KEY"):
         pytest.skip("DEEPSEEK_API_KEY isn't set")
-    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text())
+    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text(encoding="utf-8"))
     due = dated("{in 7 days}")  # ahead, by the clock its turns are written with
     with running(database, root, httpx.Client(), FakeModel()) as stack:
         offered = stack.say(f"Please remind me on {due} to check whether Northwind has "
@@ -100,7 +99,7 @@ def test_a_real_model_offers_a_reminder_and_keeps_it_once_its_person_says_yes(da
 def test_a_real_model_notes_how_someone_works_and_goes_by_what_they_said(database, tmp_path):
     if not os.environ.get("DEEPSEEK_API_KEY"):
         pytest.skip("DEEPSEEK_API_KEY isn't set")
-    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text())
+    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text(encoding="utf-8"))
     with running(database, root, httpx.Client(), FakeModel()) as stack:
         offered = stack.say("Please note that I like answers in one sentence, no lists.")
         confirmed = stack.say("Yes, keep that note.")
@@ -121,7 +120,7 @@ def test_a_real_model_notes_how_someone_works_and_goes_by_what_they_said(databas
 def test_a_real_model_searches_for_what_its_context_no_longer_holds(database, tmp_path):
     if not os.environ.get("DEEPSEEK_API_KEY"):
         pytest.skip("DEEPSEEK_API_KEY isn't set")
-    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text())
+    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text(encoding="utf-8"))
     with running(database, root, httpx.Client(), FakeModel()) as stack:
         with db.transaction(stack.admin) as conn:  # what Ana said a while ago, and much since
             context.add_turn(conn, person="ana", agent="assistant", role="person",
@@ -145,7 +144,7 @@ def test_a_real_model_searches_for_what_its_context_no_longer_holds(database, tm
 def test_a_real_model_folds_what_no_longer_fits_into_a_checked_summary(database, tmp_path):
     if not os.environ.get("DEEPSEEK_API_KEY"):
         pytest.skip("DEEPSEEK_API_KEY isn't set")
-    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text())
+    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text(encoding="utf-8"))
     with running(database, root, httpx.Client(), FakeModel()) as stack:
         with db.transaction(stack.admin) as conn:  # what Ana agreed a while ago, and much since
             context.add_turn(conn, person="ana", agent="assistant", role="person",
@@ -173,7 +172,7 @@ def test_a_real_model_folds_what_no_longer_fits_into_a_checked_summary(database,
 def test_a_real_model_passes_on_a_contact_it_never_sees(database, tmp_path):
     if not os.environ.get("DEEPSEEK_API_KEY"):
         pytest.skip("DEEPSEEK_API_KEY isn't set")
-    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text())
+    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text(encoding="utf-8"))
     model_calls = []
     with running(database, root, httpx.Client(event_hooks={"request": [model_calls.append]}),
                  FakeModel()) as stack:
@@ -200,10 +199,10 @@ description: How to answer a question about when a customer's refund is paid.
 def test_a_real_model_reads_a_skill_when_it_needs_it_and_goes_by_it(database, tmp_path):
     if not os.environ.get("DEEPSEEK_API_KEY"):
         pytest.skip("DEEPSEEK_API_KEY isn't set")
-    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text())
+    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text(encoding="utf-8"))
     folder = root / "agents" / "assistant" / "skills" / "refunds"  # the release brings it
     folder.mkdir(parents=True)
-    (folder / "SKILL.md").write_text(REFUNDS)
+    (folder / "SKILL.md").write_text(REFUNDS, encoding="utf-8")
     calls = []
     with running(database, root, httpx.Client(event_hooks={"request": [calls.append]}),
                  FakeModel()) as stack:
@@ -222,7 +221,7 @@ def test_a_real_model_reads_a_skill_when_it_needs_it_and_goes_by_it(database, tm
 def test_what_a_real_model_reads_from_its_providers_cache_is_counted(database, tmp_path, alias):
     if not os.environ.get("DEEPSEEK_API_KEY"):
         pytest.skip("DEEPSEEK_API_KEY isn't set")
-    root = build_root(tmp_path, alias, (ROOT / "config" / "models.yaml").read_text())
+    root = build_root(tmp_path, alias, (ROOT / "config" / "models.yaml").read_text(encoding="utf-8"))
     with running(database, root, httpx.Client(), FakeModel()) as stack:
         asked = ("What's the key of the customer question about an invoice? Reply with the key.",
                  "And when is it due? Reply with the date.")

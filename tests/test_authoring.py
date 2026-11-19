@@ -48,10 +48,10 @@ def test_a_blank_start_fits_every_scenario_and_runs_on_the_deployments_own_model
 def test_a_new_agent_is_its_templates_copy_with_its_own_id_release_and_pins(tmp_path):
     folder = made(tmp_path)
     assert folder == tmp_path / "finance-helper"
-    theirs, ours = (ASSISTANT / "agent.yaml").read_text(), (folder / "agent.yaml").read_text()
+    theirs, ours = (ASSISTANT / "agent.yaml").read_text(encoding="utf-8"), (folder / "agent.yaml").read_text(encoding="utf-8")
     assert ours.splitlines()[:2] == ["id: finance-helper", "release: 0.1.0"]
     assert ours.splitlines()[2:] == theirs.splitlines()[2:]  # the rest as it was, comments too
-    assert (folder / "AGENTS.md").read_text() == (ASSISTANT / "AGENTS.md").read_text()
+    assert (folder / "AGENTS.md").read_text(encoding="utf-8") == (ASSISTANT / "AGENTS.md").read_text(encoding="utf-8")
     assert sorted(p.name for p in (folder / "tests").iterdir()) == sorted(
         p.name for p in (ASSISTANT / "tests").iterdir())  # its test cases, to start from
     found = definitions.load(folder)
@@ -79,7 +79,7 @@ def test_a_new_agent_needs_a_free_folder_and_a_template_this_scenario_can_run(tm
 
 def changed(folder, field: str, value: str) -> None:
     spec = folder / "agent.yaml"
-    spec.write_text(re.sub(rf"(?m)^{field}:.*$", f"{field}: {value}", spec.read_text(), count=1))
+    spec.write_text(re.sub(rf"(?m)^{field}:.*$", f"{field}: {value}", spec.read_text(encoding="utf-8"), count=1))
 
 
 def test_the_checks_say_what_stops_a_release(tmp_path):
@@ -93,8 +93,8 @@ def test_the_checks_say_what_stops_a_release(tmp_path):
         "its model, a-model-nobody-approved, isn't one config/models.yaml approves"]
     changed(folder, "model", "deepseek-v4-pro")
     lock = folder / "tools.lock"
-    pins = yaml.safe_load(lock.read_text())
-    lock.write_text(yaml.safe_dump({**pins, "get_record": "0" * 64, "close_enough": "1" * 64}))
+    pins = yaml.safe_load(lock.read_text(encoding="utf-8"))
+    lock.write_text(yaml.safe_dump({**pins, "get_record": "0" * 64, "close_enough": "1" * 64}), encoding="utf-8")
     again = "pin its tools again, with `a5s pin finance-helper`"
     assert authoring.check(folder, TOOLS, MODELS) == [
         f"get_record isn't pinned as the scenario has it now: {again}",
@@ -102,7 +102,7 @@ def test_the_checks_say_what_stops_a_release(tmp_path):
     definitions.pin(folder, {n: t.schema_hash for n, t in TOOLS.items()})
     assert authoring.check(folder, TOOLS, MODELS) == []
     spec = folder / "agent.yaml"
-    spec.write_text(spec.read_text().replace("documents: [create_draft]", "documents: [shred_it]"))
+    spec.write_text(spec.read_text(encoding="utf-8").replace("documents: [create_draft]", "documents: [shred_it]"))
     problems = authoring.check(folder, TOOLS, MODELS)
     assert "the scenario hasn't got shred_it" in problems
 
@@ -110,15 +110,15 @@ def test_the_checks_say_what_stops_a_release(tmp_path):
 def test_the_checks_say_why_a_definition_doesnt_load(tmp_path):
     folder = made(tmp_path)
     spec = folder / "agent.yaml"
-    good = spec.read_text()
-    spec.write_text(good.replace("  per_run: 200000", "  per_run: 1000"))
+    good = spec.read_text(encoding="utf-8")
+    spec.write_text(good.replace("  per_run: 200000", "  per_run: 1000"), encoding="utf-8")
     [problem] = authoring.check(folder, TOOLS, MODELS)
     assert problem.startswith("budget.per_run must fit 6 model calls")
-    spec.write_text(good + "colour: blue\n")
+    spec.write_text(good + "colour: blue\n", encoding="utf-8")
     assert authoring.check(folder, TOOLS, MODELS) == ["colour: Extra inputs are not permitted"]
-    spec.write_text("id: [finance-helper\n")
+    spec.write_text("id: [finance-helper\n", encoding="utf-8")
     assert authoring.check(folder, TOOLS, MODELS)[0].startswith("its YAML doesn't read")
-    spec.write_text(good)
+    spec.write_text(good, encoding="utf-8")
     (folder / "AGENTS.md").unlink()
     assert authoring.check(folder, TOOLS, MODELS) == ["it has no AGENTS.md"]
 

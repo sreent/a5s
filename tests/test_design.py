@@ -17,8 +17,8 @@ from test_ui_pages import shot
 from test_webchat import channels
 
 OCEAN = ROOT / "src" / "a5s" / "core" / "webchat" / "ocean"
-CSS = (OCEAN / "css" / "tokens.css").read_text()
-OWN = (ROOT / "src" / "a5s" / "core" / "webchat" / "app.css").read_text()  # a5s's own, beside it
+CSS = (OCEAN / "css" / "tokens.css").read_text(encoding="utf-8")
+OWN = (ROOT / "src" / "a5s" / "core" / "webchat" / "app.css").read_text(encoding="utf-8")  # a5s's own, beside it
 DECLARED = re.compile(r"--([\w-]+):\s*([^;]+);")
 DARK = "@media (prefers-color-scheme: dark)"
 
@@ -85,10 +85,10 @@ def test_the_meanings_name_only_primitives_so_a_brand_changes_the_primitives_alo
 
 
 def test_the_copy_of_ocean_is_oceans_as_its_pinned_commit_has_it():
-    pinned = json.loads((OCEAN / "ocean.json").read_text())
+    pinned = json.loads((OCEAN / "ocean.json").read_text(encoding="utf-8"))
     assert pinned["repository"] == "https://github.com/sreent/ocean"
     assert re.fullmatch(r"[0-9a-f]{40}", pinned["commit"])
-    found = {str(p.relative_to(OCEAN)): hashlib.sha256(p.read_bytes()).hexdigest()
+    found = {p.relative_to(OCEAN).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
              for p in OCEAN.rglob("*") if p.is_file() and p.name != "ocean.json"}
     assert found == pinned["files"]  # changed in sreent/ocean, and taken with deploy/ocean.sh
 
@@ -102,9 +102,9 @@ def _selectors(text: str) -> set[str]:
 def test_a5s_restyles_none_of_oceans_pieces_so_ocean_stays_the_one_source():
     """The studio's and the chat's own stylesheets compose Ocean's pieces into their pages and
     style none of them: a piece a5s needs, or a change to one, is made in sreent/ocean first."""
-    ocean = _selectors((OCEAN / "css" / "components.css").read_text() + (OCEAN / "css" / "charts.css").read_text())
+    ocean = _selectors((OCEAN / "css" / "components.css").read_text(encoding="utf-8") + (OCEAN / "css" / "charts.css").read_text(encoding="utf-8"))
     for own in (ROOT / "studio" / "src" / "studio.css", ROOT / "src" / "a5s" / "core" / "webchat" / "app.css"):
-        both = sorted(_selectors(own.read_text()) & ocean)
+        both = sorted(_selectors(own.read_text(encoding="utf-8")) & ocean)
         assert both == [], f"{own.name} restyles Ocean's {both}: change them in sreent/ocean"
 
 
@@ -113,7 +113,7 @@ def test_the_pages_load_their_type_from_a5s_and_nowhere_else(stack):
         f"fonts/plex-{face}.woff2" for face in ("mono-400", "mono-500", "sans-400", "sans-500",
                                                 "sans-600", "sans-700", "sans-thai-400",
                                                 "sans-thai-500", "sans-thai-600", "sans-thai-700")]
-    for css in (CSS, (OCEAN / "css" / "components.css").read_text(), OWN):
+    for css in (CSS, (OCEAN / "css" / "components.css").read_text(encoding="utf-8"), OWN):
         assert "https:" not in css and "//" not in re.sub(r"/\*.*?\*/", "", css, flags=re.DOTALL)
     with channels(stack) as url:
         font = httpx.get(f"{url}/chat/ocean/fonts/plex-sans-400.woff2")

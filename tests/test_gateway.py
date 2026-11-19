@@ -239,7 +239,7 @@ def test_a_response_must_report_the_approved_version(stack, reports):
 def test_an_undated_model_must_say_what_its_provider_reports(tmp_path):
     path = tmp_path / "models.yaml"
     path.write_text("models:\n  latest:\n    provider: p\n    api: openai\n"
-                    "    base_url: https://p.test\n    model: something-latest\n    key_env: K\n")
+                    "    base_url: https://p.test\n    model: something-latest\n    key_env: K\n", encoding="utf-8")
     with pytest.raises(ValueError, match="isn't a dated version"):
         load_models(path)
 

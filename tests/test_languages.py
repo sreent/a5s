@@ -92,8 +92,8 @@ def test_the_catalogue_has_every_word_the_studio_puts_through_it():
         if path.name == "i18n.ts" or path in catalogues:
             continue  # the catalogue, and its own example, in a comment
         said |= {m.group(1).replace('\\"', '"')
-                 for m in re.finditer(r'\bt\(\s*"((?:[^"\\]|\\.)*)"', path.read_text())}
-    catalogue = "\n".join(path.read_text() for path in catalogues)
+                 for m in re.finditer(r'\bt\(\s*"((?:[^"\\]|\\.)*)"', path.read_text(encoding="utf-8"))}
+    catalogue = "\n".join(path.read_text(encoding="utf-8") for path in catalogues)
     keys = {m.group(1).replace('\\"', '"')
             for m in re.finditer(r'^\s*"((?:[^"\\]|\\.)*)":', catalogue, re.MULTILINE)}
     assert said, "the studio says nothing through t()"
@@ -150,7 +150,7 @@ def test_the_studio_and_the_web_chat_speak_thai_to_those_who_read_it(stack, appr
 
 
 def test_ocean_gives_thai_its_own_faces_for_its_letters_alone():
-    tokens = (ROOT / "src" / "a5s" / "core" / "webchat" / "ocean" / "css" / "tokens.css").read_text()
+    tokens = (ROOT / "src" / "a5s" / "core" / "webchat" / "ocean" / "css" / "tokens.css").read_text(encoding="utf-8")
     faces = re.findall(r'@font-face \{ font-family: "IBM Plex Sans Thai";[^}]*\}', tokens)
     assert len(faces) == 4 and all("unicode-range: U+0E01-0E5B" in f for f in faces)
     assert '--font-sans: "IBM Plex Sans", "IBM Plex Sans Thai",' in tokens

@@ -48,10 +48,10 @@ def desk_with_tasks(database: str, root: Path, model: FakeModel) -> Iterator[Sta
     shutil.copytree(ROOT / "scenarios" / "service-desk" / "agents", agents)
     for spec in agents.glob("*/agent.yaml"):
         lines = [("model: fake" if line.startswith("model:") else line)
-                 for line in spec.read_text().splitlines()]
-        spec.write_text("\n".join(lines) + "\n" + TASKS)
+                 for line in spec.read_text(encoding="utf-8").splitlines()]
+        spec.write_text("\n".join(lines) + "\n" + TASKS, encoding="utf-8")
     for told in agents.glob("*/AGENTS.md"):
-        told.write_text(told.read_text() + LINES)
+        told.write_text(told.read_text(encoding="utf-8") + LINES)
     cfg = Config(database_url=db.as_role(database, "gateway"),
                  gateway_url=f"http://127.0.0.1:{port}", service_token=SERVICE_TOKEN,
                  root=root, development=True, seal_keys=(SEAL_KEY,),

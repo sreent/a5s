@@ -141,7 +141,7 @@ def test_a_run_for_nobody_counts_against_its_instance_and_a_shadow_as_a_shadow(s
     """As core/counts.py counts them: a run for nobody, such as one an event started, against
     its instance's other runs for nobody, of each type's limit for each person in 30 days. And
     a shadow is decided as a shadow, which changes nothing."""
-    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text())
+    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text(encoding="utf-8"))
     settings["limits"]["change-due-date"]["per_person_30_days"] = 1
     version = parse_settings(yaml.safe_dump(settings).encode())
     now = datetime.now(UTC)
@@ -244,7 +244,7 @@ def test_the_preview_leaves_every_call_the_gateway_refused_itself_as_it_was():
     from pathlib import Path
 
     from a5s.core import gateway, policy
-    source = Path(gateway.__file__).read_text()
+    source = Path(gateway.__file__).read_text(encoding="utf-8")
     assert not re.findall(r'Decision\(\s*False,\s*\("', source)  # each by its name, Own's
     used = set(re.findall(r"Own\.([A-Z_]+)", source)) | {"TASK_WRITES"}  # tasking.HELD is one
     assert {getattr(policy.Own, name) for name in used} == policy.OWN
