@@ -551,6 +551,8 @@ export const BUILD: Record<string, string> = {
   "an id, team:… or role:…": "id, team:… หรือ role:…",
   "Someone else {id} serves": "ผู้อื่นที่ {id} ให้บริการ",
   "Who runs it here": "ผู้ดูแล",
+  "Model of {id}": "โมเดลของ {id}",
+  "its release's own": "ตามที่รีลีสกำหนด",
   "Owner": "เจ้าของ",
   "Deputy": "ผู้แทน",
   "Owner of {id}": "เจ้าของ {id}",

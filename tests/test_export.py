@@ -188,7 +188,11 @@ def test_the_officer_writes_it_to_a_file_only_they_may_read(stack, tmp_path, mon
         system = Path(os.environ["SystemRoot"]) / "System32"
         who = subprocess.check_output([str(system / "whoami.exe")], text=True).strip()
         acl = subprocess.check_output([str(system / "icacls.exe"), str(out)], text=True)
-        entries = [line.strip() for line in acl.splitlines() if ":(" in line]
+        # icacls always shows SYSTEM's, Administrators' and the owner-rights entries beside
+        # the grants: what the officer's export gives, after inheritance is removed, is their
+        # one full grant, and nobody else's
+        entries = [line.strip() for line in acl.splitlines()
+                   if ":(" in line and who.casefold() in line.casefold()]
         assert len(entries) == 1
         assert entries[0].casefold().endswith(f"{who}:(F)".casefold())
     else:
