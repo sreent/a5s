@@ -4,6 +4,45 @@
 `fallbacks`, the scheduler's retry, the tests' `judged()`) are the shallow version this
 replaces, kept until its first slice lands.
 
+
+## A stalled model call is a bug in a5s, not an outage to tolerate
+
+a5s promises runs that pick up where they left off and tasks that lose no work. Today one
+model call that doesn't answer destroys the run: its thread, its tool results and its place
+are thrown away, and the work restarts. The provider failing is the trigger; the run dying is
+a5s's own defect.
+
+The fix is two layers:
+
+1. **Call-level replay, in the run.** Each model call is already a recorded, sequenced unit
+   (the ledger's model entries carry their sequence). When a call fails, the worker asks the
+   gateway to re-issue it on the next healthy approved model — same run, same thread, same
+   tool results, nothing re-read. Only when every model in the chain has failed the same call
+   does the run end, as today. The release's fallbacks bound the chain, and each attempt is
+   in the ledger by sequence and alias, so the evidence shows which model answered what.
+2. **Run-level retry, after the run.** The committed fallback work remains as the last resort:
+   a provider-wide outage, where every call failed, is recovered by retrying the message or
+   slice later, as the scheduler already does.
+
+## Reliability and measurement: the control loop
+
+Reliability is five properties, each with its own mechanism:
+
+- **Availability** — call-level replay, circuit breakers, the fallback chain.
+- **Correctness** — code-checked invariants (keys, amounts, links) and a verifier model
+  before anything reaches a person; human decisions for changes, as today.
+- **Latency** — per-operation latency budgets, recorded in measures; degrade before failing.
+- **Drift** — a fixed, versioned canary set of scripted cases with exact expected behaviour,
+  run on every model change and nightly, scored into the ledger. Non-negotiable for a model
+  that ships no dated version, where a change behind the name can't otherwise be seen.
+- **Safety** — already structural: gateway, policy, caps, ledger.
+
+The signals exist (breakers, measures, graded samples, per-call ledger entries); the missing
+piece is making them attributable per model and per operation, and letting them act: a model
+whose stall rate breaches its SLO is routed away from automatically — tightening is always
+automatic — while putting it back, or approving a new model for an operation, is a signed
+release change, as every loosening is.
+
 ## The problem, as the incident showed it
 
 A model stalled in the middle of a run and the run died with it: the agent's state was
