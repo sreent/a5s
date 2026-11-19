@@ -111,7 +111,8 @@ export type Place = gen.Place;
 // Someone's home and roles (core/home.py)
 export type Home = gen.Home;
 export type Waiting = gen.Waiting;
-export type SettingsNow = gen.SettingsNow;  // the settings, for someone who approves versions of them
+export type SettingsNow = gen.SettingsNow;
+export type HealthNow = gen.HealthNow;  // each model's day, measured (core/health_api.py)  // the settings, for someone who approves versions of them
 export type SettingsReview = gen.SettingsReview;
 export type SettingsAsked = gen.SettingsAsked;
 export type Change = gen.Change;  // a change a version makes, in words, and whether it widens what agents do

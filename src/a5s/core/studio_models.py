@@ -1226,6 +1226,26 @@ class Impact(Shape):
     beyond: list[str] = []  # what the version changes that it doesn't decide again, in words
 
 
+class HealthModel(Shape):
+    """One model's day, for the health page: how its calls went, and whether it's gated."""
+
+    model: str
+    calls: int
+    failed: int
+    stalls: int
+    mean_seconds: float | None = None
+    gated_at: str | None = None  # as a time, or None when it may answer
+    canary_passed: int = 0  # its canaries' latest day, for the drift it might hide
+    canary_failed: int = 0
+
+
+class HealthNow(Shape):
+    """The health page: each model's day, measured rather than argued about."""
+
+    days: int
+    models: list[HealthModel]
+
+
 class SettingsReview(Shape):
     """A version someone wrote, reviewed before they ask for it: why a5s couldn't propose it, or
     what it would change, all of it in words, and whose approval it needs."""

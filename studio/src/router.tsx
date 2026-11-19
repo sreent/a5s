@@ -28,6 +28,7 @@ export type Route =
   | { page: "approve"; settings: string }  // the version, by its digest
   | { page: "map"; at?: string }  // and what's chosen on it, such as agent:assistant
   | { page: "spending"; month?: string }  // such as 2026-10, or this month
+  | { page: "health" }  // each model's day, measured (core/health_api.py)
   | { page: "connections" }  // back from connecting an account, so agents act as them there
   | { page: "undo"; change: string }  // a change an agent made, to undo, by its id
   | { page: "handovers" }  // the conversations handed to someone's teams
