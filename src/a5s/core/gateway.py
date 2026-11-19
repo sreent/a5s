@@ -769,11 +769,11 @@ class Gateway:
             elif instance.model and instance.model not in self.models:
                 problems.append(f"{instance.id} runs on {instance.model}, which config/models.yaml "
                                 "doesn't approve")
-            elif instance.model and settings.data_class not in (
-                    (self.models.get(instance.model) or (None,)).data_classes if
-                    self.models.get(instance.model) else ()):
-                problems.append(f"{instance.id}'s model isn't approved for the settings' class "
-                                f"of data, {settings.data_class}")
+            elif instance.model:  # it is approved: may it see the settings' data?
+                chosen = self.models.get(instance.model)
+                if chosen is None or settings.data_class not in chosen.data_classes:
+                    problems.append(f"{instance.id}'s model isn't approved for the settings' "
+                                    f"class of data, {settings.data_class}")
             elif missing := [t for t in release.tool_names if t not in tools]:
                 problems.append(f"{instance.definition} names tools the scenario doesn't have: "
                                 f"{', '.join(missing)}")
@@ -1751,9 +1751,9 @@ def create_app(gw: Gateway) -> FastAPI:
                 inst = conn.execute("select definition from instances where id = %s",
                                     (row["instance_id"],)).fetchone()
                 definition = gw.definitions.get(inst["definition"]) if inst else None
-                tried = list(row["trigger"].get("tried_models") or [])
-                keep_open = len(tried) < len((definition.fallbacks if definition else [])
-                                             or [])  # its release names models not tried:
+                tried_models = list(row["trigger"].get("tried_models") or [])
+                keep_open = len(tried_models) < len((definition.fallbacks if definition else [])
+                                                    or [])  # its release names models not tried:
                 # the scheduler tries the message again on the next, which then takes it
             if not keep_open and row["trigger"].get("inbound"):
                 conn.execute("update inbound set answered_at = now() where id = %s "
@@ -1762,7 +1762,7 @@ def create_app(gw: Gateway) -> FastAPI:
                                                                       WHY.get(ended))
             sends += slice_closed(conn, run_id, row, ended)
             if ended == "model unavailable" and (row["trigger"] or {}).get("kind") == events.KIND:
-                tried(conn, run_id, row["trigger"])
+                tried(conn, run_id, row["trigger"])  # the nested function, not the list above
         push(sends)
         return {"closed": run_id}
 
