@@ -58,16 +58,6 @@ models:
     region: provider-hosted
     data_classes: [synthetic]
 
-  qwen3.8-max:                    # the Qwen key's newer model, same DashScope endpoint
-    provider: alibaba
-    api: openai
-    base_url: https://dashscope-intl.aliyuncs.com/compatible-mode/v1
-    model: qwen3.8-max
-    reported_model: qwen3.8-max
-    key_env: QWEN_API_KEY
-    region: singapore
-    data_classes: [synthetic]
-
   glm-5.3:                        # Zhipu's model, served by DashScope, on the same key
     provider: zhipu
     api: openai

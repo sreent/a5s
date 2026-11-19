@@ -6,7 +6,7 @@ An agent's release may name other approved models beside its own, in its `agent.
 
 ```yaml
 model: deepseek-v4-pro           # its own, as before
-fallbacks: [qwen3.8-max]          # tried in order when its model isn't answering
+fallbacks: [deepseek-v4-pro-anthropic]  # tried in order when its model isn't answering
 ```
 
 Nothing about how far the agent acts changes: the release approves the chain as it approves
