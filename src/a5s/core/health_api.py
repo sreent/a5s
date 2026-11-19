@@ -3,8 +3,7 @@ failures, stalls, mean time, whether its SLO gates it, and its canary scores —
 engineers and the release approver, whose evidence a model change or a restore is."""
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, Header
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Depends, Header, HTTPException
 
 from a5s.contract import RELEASE_APPROVER, Person
 from a5s.core import canaries, health, web
@@ -39,9 +38,8 @@ def router(gw: Any) -> APIRouter:
         person = web.known(gw, authorization)
         if not ({RELEASE_APPROVER, ENGINEER} & set(person.roles)) and not any(
                 role.startswith(ENGINEER + ":") for role in person.roles):
-            raise JSONResponse(status_code=403,
-                               content={"error": "the health page is for the engineers and the "
-                                                 "release approver"})
+            raise HTTPException(403, "the health page is for the engineers and the "
+                                     "release approver")
         return person
 
     api = APIRouter()
