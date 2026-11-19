@@ -18,6 +18,8 @@ from test_agents import dated
     ("deepseek-v4-pro", "DEEPSEEK_API_KEY"),
     ("deepseek-v4-pro-anthropic", "DEEPSEEK_API_KEY"),
     ("qwen3.7-max", "QWEN_API_KEY"),
+    ("qwen3.8-max", "QWEN_API_KEY"),
+    ("glm-5.3", "QWEN_API_KEY"),
 ])
 def test_a_real_model_answers_through_the_gateway(database, tmp_path, alias, key):
     if not os.environ.get(key):
@@ -218,7 +220,8 @@ def test_a_real_model_reads_a_skill_when_it_needs_it_and_goes_by_it(database, tm
 
 
 @pytest.mark.live
-@pytest.mark.parametrize("alias", ["deepseek-v4-pro", "deepseek-v4-pro-anthropic"])
+@pytest.mark.parametrize("alias", ["deepseek-v4-pro", "deepseek-v4-pro-anthropic",
+                                           "qwen3.8-max", "glm-5.3"])
 def test_what_a_real_model_reads_from_its_providers_cache_is_counted(database, tmp_path, alias):
     if not os.environ.get("DEEPSEEK_API_KEY"):
         pytest.skip("DEEPSEEK_API_KEY isn't set")
