@@ -4895,8 +4895,10 @@ def create_app(gw: Gateway) -> FastAPI:
         served = alias
         recorded, status, data = None, 503, models.error_body(
             api, "no model in its chain can answer this call", "model_unavailable")
-        for candidate in [alias, *(release.fallbacks if release else [])]:
-            if candidate in tried_here:
+        # Its own model twice: a provider's moment of slowness is asked again before the next
+        # model is tried, so a stall that passes costs nothing but a moment.
+        for candidate in [alias, alias, *(release.fallbacks if release else [])]:
+            if tried_here.count(candidate) >= (2 if candidate == alias else 1):
                 continue
             fallback = gw.models.get(candidate)
             if fallback is None or fallback.api != api:  # the worker speaks one API style

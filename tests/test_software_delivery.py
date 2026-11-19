@@ -351,6 +351,6 @@ def test_a_real_model_resumes_a_task_without_repeating_its_draft(database: str, 
             told = [r["text"] for r in conn.execute(
                 "select text from outbox where person = 'raj' and inbound_id is null")]
         assert len(told) == 1  # the owner hears once, from the task's runs alone
-        assert judged(alias, "the agent told Raj that the draft for PR-21 is ready for him "
-                             "to read, change and post", told[0])
+        assert judged(alias, "the agent told Raj that the task is done and that the draft "
+                             "for PR-21 was saved", told[0])
         assert found.verify().ok

@@ -56,7 +56,8 @@ def fallback_stack(database, tmp_path, monkeypatch, models):
     primary, spare = models
     root = build_root(tmp_path, "fake", TWO_MODELS)
     for spec in (root / "agents").glob("*/agent.yaml"):
-        lines = spec.read_text(encoding="utf-8").splitlines()
+        lines = [line for line in spec.read_text(encoding="utf-8").splitlines()
+                 if not line.startswith("fallbacks:")]
         if spec.parent.name == "assistant":
             lines.append("fallbacks: [spare]")
         spec.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -122,7 +123,7 @@ def test_a_run_survives_its_model_stalling_on_one_call(fallback_stack):
     state. Now the same call is re-issued on the next model in the run itself, so the person
     is answered once, the run is the same one, and the ledger shows each attempt."""
     stack, primary, spare = fallback_stack
-    primary.failing = 1  # its first call: the model isn't answering; the run goes on
+    primary.failing = 2  # asked once more on its own model, then the next one takes the call
     spare.reply("On spare: Q-1001 is open.")
     message = stack.send("What's the key of the open question?")
     assert stack.scheduler().answer_waiting() == 1

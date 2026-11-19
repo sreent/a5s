@@ -582,7 +582,8 @@ def build_root(tmp: Path, model_alias: str, models_yaml: str) -> Path:
     (root / "config" / "models.yaml").write_text(models_yaml, encoding="utf-8")
     for spec in (root / "agents").glob("*/agent.yaml"):
         lines = [f"model: {model_alias}" if line.startswith("model:") else line
-                 for line in spec.read_text(encoding="utf-8").splitlines()]
+                 for line in spec.read_text(encoding="utf-8").splitlines()
+                 if not line.startswith("fallbacks:")]  # each test sets its own chain
         if spec.parent.name == "assistant":  # the tests work it up to acting on its own, which
             lines = ["  max: acts on its own" if line.startswith("  max:") else line  # the
                      for line in lines]  # pilot's release keeps from it
