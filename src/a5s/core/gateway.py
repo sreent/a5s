@@ -27,6 +27,7 @@ from typing import Any
 import httpx
 import psycopg
 import yaml
+import time
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from psycopg.types.json import Jsonb
@@ -74,6 +75,7 @@ from a5s.core import (
     groups,
     handles,
     handover,
+    health,
     judging,
     languages,
     ledger,
@@ -1303,6 +1305,8 @@ class Gateway:
         for alias in dict.fromkeys([row["model"], *definition.fallbacks]):  # each call still does
             if alias in (tried or []) or alias in refused:
                 continue
+            if health.gated(conn, self.scenario.name, alias):  # its SLO was breached: it's out
+                continue  # until a person puts it back, as every loosening needs one
             model = self.models.get(alias)
             if model is None:
                 continue
@@ -2813,6 +2817,10 @@ def create_app(gw: Gateway) -> FastAPI:
         try:
             with db.transaction(gw.url) as conn:
                 ledger.append(conn, entry)
+                if entry.get("kind") == "model" and "of" in entry:
+                    outcome = entry.get("outcome") or {}
+                    health.record(conn, gw.scenario.name, entry["action"],
+                                  outcome.get("status", 500), outcome.get("seconds", 0))
             return True
         except psycopg.Error:
             log.exception("couldn't record the outcome of %s %s", entry["kind"], entry["action"])
@@ -4906,6 +4914,15 @@ def create_app(gw: Gateway) -> FastAPI:
             if model and candidate != alias and not set(model.data_classes) <= set(
                     fallback.data_classes):  # never sees more than its own model may
                 continue
+            with db.connect(gw.url) as health_conn:
+                if gate := health.gated(health_conn, gw.scenario.name, candidate):
+                    log.warning("%s", gate)
+                    record({"kind": "model", "action": candidate, "run": row["run"],
+                            "instance": row["id"], "decision": "record", "of": seq,
+                            "outcome": {"status": 503, "reported_model": None,
+                                        "seconds": 0, "usage": None}})
+                    tried_here.append(candidate)
+                    continue
             if not gw.breakers.allow(candidate):  # failed in a row lately: not called for a while
                 record({"kind": "model", "action": candidate, "run": row["run"],
                         "instance": row["id"], "decision": "record", "of": seq,
@@ -4916,10 +4933,12 @@ def create_app(gw: Gateway) -> FastAPI:
                     "gen_ai.operation.name": "chat", "gen_ai.provider.name": fallback.provider,
                     "gen_ai.request.model": candidate, "a5s.run.id": row["run"],
                     "a5s.instance": row["id"]}) as current:
+                started = time.perf_counter()
                 try:
                     status, data = models.forward(fallback, forwarded, gw.http)
                 except models.ModelUnavailable as exc:
                     status, data = 503, models.error_body(api, str(exc), "model_unavailable")
+                seconds = time.perf_counter() - started
                 usage = data.get("usage") if isinstance(data, dict) else None
                 current.set_attributes({k: v for k, v in {
                     "gen_ai.response.model": data.get("model") if isinstance(data, dict) else None,
@@ -4945,6 +4964,7 @@ def create_app(gw: Gateway) -> FastAPI:
             recorded = record({"kind": "model", "action": candidate, "run": row["run"],
                                "instance": row["id"], "decision": "record", "of": seq,
                                "outcome": {"status": status, "reported_model": reported,
+                                           "seconds": round(seconds, 3),
                                            "usage": data.get("usage") if isinstance(data, dict)
                                            else None}})
             tried_here.append(candidate)

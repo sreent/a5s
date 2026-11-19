@@ -138,6 +138,21 @@ def test_a_run_survives_its_model_stalling_on_one_call(fallback_stack):
     assert served == {"fake", "spare"}  # the same call, on each in its turn
 
 
+def test_a_gated_model_is_passed_over_for_its_fallback(fallback_stack):
+    """The reliability ledger's gate (core/health.py): a model whose SLO was breached is
+    stopped from answering, without a word to the person, and its fallback serves the run."""
+    from a5s.core import health
+    stack, _, spare = fallback_stack
+    with db.transaction(stack.admin) as conn:
+        for i in range(20):
+            health.record(conn, stack.gateway.scenario.name, "fake", 503 if i < 11 else 200, 0.5)
+    spare.reply("On spare: Q-1001 is open.")
+    message = stack.send("What's the key of the open question?")
+    assert stack.scheduler().answer_waiting() == 1
+    [said] = stack.answers(message)
+    assert said.startswith("On spare: Q-1001 is open.")  # the gated model was never called
+
+
 def test_a_fallback_the_models_file_doesnt_approve_is_never_called(fallback_stack):
     stack, _, _ = fallback_stack  # only the gateway's choice matters here
     assistant = stack.gateway.definitions["assistant"]
