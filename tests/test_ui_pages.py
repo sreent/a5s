@@ -103,6 +103,7 @@ def test_the_health_page_shows_each_models_day(stack, approving, provider, brows
                        headers={"Authorization": f"Bearer {token}"})
     assert answer.status_code == 200, answer.text
     assert answer.json() == {"days": 1, "models": []}  # this stack's models haven't been called
+    provider.person = "rosa"  # the page signs her in through the provider, as any page does
     page = browser.new_page()
     page.goto(f"{approving}/studio/health")
     page.wait_for_selector("table.health", timeout=30000)
