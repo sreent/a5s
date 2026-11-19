@@ -59,7 +59,7 @@ def authors(person: Person) -> bool:
 
 def folder_files(folder: Path) -> dict[str, str]:
     """An agent's folder as a draft keeps it: each of its files' text, by its path in it."""
-    return {p.relative_to(folder).as_posix(): p.read_text() for p in sorted(folder.rglob("*"))
+    return {p.relative_to(folder).as_posix(): p.read_text(encoding="utf-8") for p in sorted(folder.rglob("*"))
             if p.is_file() and "__pycache__" not in p.parts and p.suffix != ".pyc"}
 
 
@@ -99,7 +99,7 @@ def _written(files: dict[str, str], folder: Path) -> None:
     for path, text in files.items():
         target = folder / path
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(text)
+        target.write_text(text, encoding="utf-8")
 
 
 def pinned(agent: str, files: dict[str, str], tools: dict[str, Tool]) -> dict[str, str]:

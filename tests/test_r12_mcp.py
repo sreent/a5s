@@ -51,9 +51,9 @@ def asked(database, tmp_path, monkeypatch, app, person: str = "ana", **tool: Any
                     "arguments": SEARCH, "returns": ["items", "key", "title", "status"],
                     "record_field": "key", **tool}
         (root / "scenarios" / "sample" / mcp.FILE).write_text(yaml.safe_dump({
-            "servers": {"tickets": {"url": f"{url}/mcp"}}, "tools": {"search_tickets": declared}}))
+            "servers": {"tickets": {"url": f"{url}/mcp"}}, "tools": {"search_tickets": declared}}), encoding="utf-8")
         spec = root / "agents" / "assistant" / "agent.yaml"
-        spec.write_text(spec.read_text().replace(
+        spec.write_text(spec.read_text(encoding="utf-8").replace(
             "records: [search_records, get_record, get_messages]",
             "records: [search_records, get_record, get_messages, search_tickets]"))
         with running(database, root, httpx.Client(transport=httpx.MockTransport(model.handler)),

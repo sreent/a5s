@@ -243,6 +243,7 @@ class Scheduler:
             row = conn.execute(
                 """
                 select i.id::text as id, i.channel, i.person, i.agent, i.text, i.attempts,
+                       i.tried_models,
                        coalesce(i.conversation, i.person) as conversation, i.members,
                        coalesce(i.conversation, i.person) || '/' || i.agent || '/' || %(topic)s
                          as lease
@@ -304,14 +305,17 @@ class Scheduler:
             conn.execute("delete from leases where key = %s and holder = %s",
                          (claim["lease"], claim["holder"]))
 
-    def _later(self, claim: dict, *, never: bool = False) -> None:
-        """Try a message again after a while, longer each time, or never."""
+    def _later(self, claim: dict, *, never: bool = False, model: str | None = None) -> None:
+        """Try a message again after a while, longer each time, or never: with the model whose
+        run just failed, which its next attempt won't take again (its release's fallbacks)."""
         with db.transaction(self.cfg.database_url) as conn:
             conn.execute(
                 "update inbound set attempts = attempts + 1, retry_at = case when %s "
                 "then 'infinity'::timestamptz "
-                "else now() + make_interval(secs => least(300, 15 * power(2, attempts))) end "
-                "where id = %s", (never, claim["id"]))
+                "else now() + make_interval(secs => least(300, 15 * power(2, attempts))) end, "
+                "tried_models = case when %s::text is null then tried_models "
+                "else tried_models || array[%s]::text[] end "
+                "where id = %s", (never, model, model, claim["id"]))
 
     def _answer(self, claim: dict) -> None:
         stop = threading.Event()
@@ -371,7 +375,8 @@ class Scheduler:
         try:
             opened = self.gw.post("/runs", headers=self.service, json={
                 "instance": inst["id"], "trigger": {"kind": "message", "inbound": inbound,
-                                                    "holder": claim.get("holder")}})
+                                                    "holder": claim.get("holder"),
+                                                    "tried_models": list(claim.get("tried_models") or [])}})
         except httpx.HTTPError as exc:
             raise Retry from exc
         if opened.status_code >= 500:
@@ -445,7 +450,13 @@ class Scheduler:
         except ModelDown:
             log.warning("the model for run %s isn't answering", run)
             outcome = "model unavailable"
-            self._turn(claim, self._tell(inbound, notices.MODEL_DOWN, inst["id"]), run, topic)
+            tried = [*(claim.get("tried_models") or []),
+                     *([opened["model"]] if opened.get("model") else [])]  # this one
+            if len(tried) < 1 + len(opened.get("fallbacks") or []):  # the next model gets a go
+                self._later(claim, model=opened.get("model"))
+            else:  # each of its models was tried: the person hears it, once
+                self._turn(claim, self._tell(inbound, notices.MODEL_DOWN, inst["id"]), run, topic)
+                self._later(claim, never=True, model=opened.get("model"))
         except BudgetSpent as exc:
             outcome = "budget spent"
             said, given = self._spent(agent, inst, person) if "today" in str(exc) else (

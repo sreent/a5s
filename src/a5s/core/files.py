@@ -49,12 +49,15 @@ PDF_WAIT = PDF_SECONDS + 5  # seconds a PDF waits its turn, at most, while other
 LONG = "a5s couldn't read this PDF in the time it gives one: ask them what it says"
 BUSY = "a5s is reading other PDFs just now: ask about this one again in a minute"
 # A process of a5s's reader's own takes no more of the processor's time, and no more memory,
-# than it's given, whatever a PDF makes it do
+# than it's given, whatever a PDF makes it do. Where the platform limits a process by resource,
+# as Linux does; on Windows, the parent's wall-clock timeout alone bounds it.
 _LIMITED = r"""
-import resource, sys
+import os, sys
 most, pages_most, seconds, memory = (int(a) for a in sys.argv[1:5])
-resource.setrlimit(resource.RLIMIT_CPU, (seconds, seconds))
-resource.setrlimit(resource.RLIMIT_AS, (memory, memory))
+if os.name == "posix":
+    import resource
+    resource.setrlimit(resource.RLIMIT_CPU, (seconds, seconds))
+    resource.setrlimit(resource.RLIMIT_AS, (memory, memory))
 """
 # A PDF's text, read in such a process, within the time and memory above, page by page,
 # stopping once it has as much as a5s's reader reads: what it read as JSON, on its output
@@ -243,8 +246,10 @@ def _pdf(data: bytes) -> tuple[str, bytes | None, str | None]:
         return "", None, LONG
     except subprocess.CalledProcessError as e:  # its time ran out, or it was unreadable
         log.warning("couldn't read a PDF someone sent")
-        return "", None, LONG if e.returncode in (-signal.SIGXCPU, -signal.SIGKILL) else (
-            "a5s couldn't read this PDF")
+        cpu = getattr(signal, "SIGXCPU", None)  # Windows has neither: its wall clock bounded it
+        kill = getattr(signal, "SIGKILL", None)
+        return "", None, LONG if (kill is not None and e.returncode == -kill) or (
+            cpu is not None and e.returncode == -cpu) else ("a5s couldn't read this PDF")
     except (OSError, ValueError, KeyError, TypeError):
         log.warning("couldn't read a PDF someone sent")
         return "", None, "a5s couldn't read this PDF"

@@ -21,15 +21,15 @@ def test_the_graphify_cli_runs_without_the_cores_secrets(tmp_path, monkeypatch):
     cli = tmp_path / "bin" / "graphify"  # any binary of that name, as a deployment installs it
     cli.parent.mkdir()
     payload = (f"import json, os\n"
-               f"json.dump(sorted(k for k in os.environ if k.startswith('A5S_')), open({str(seen)!r}, 'w'))\n"
+               f"json.dump(sorted(k for k in os.environ if k.startswith('A5S_')), open({str(seen)!r}, 'w')\n"
                "print('NODE Client [src=app.py]')\n")
     if os.name == "nt":
         runner = tmp_path / "graphify_fake.py"
-        runner.write_text(payload)
+        runner.write_text(payload, encoding="utf-8")
         cli = cli.with_suffix(".cmd")  # the command shim an installed CLI has on Windows
-        cli.write_text(f'@"{sys.executable}" "{runner}"\n')
+        cli.write_text(f'@"{sys.executable}" "{runner}"\n', encoding="utf-8")
     else:
-        cli.write_text(f"#!{sys.executable}\n" + payload)
+        cli.write_text(f"#!{sys.executable}\n" + payload, encoding="utf-8")
         cli.chmod(cli.stat().st_mode | stat.S_IEXEC)
     monkeypatch.setenv("PATH", f"{cli.parent}{os.pathsep}{os.environ['PATH']}")
     for name, value in (("A5S_SEAL_KEYS", "synthetic-seal-key"),  # as the chart gives the
@@ -37,13 +37,13 @@ def test_the_graphify_cli_runs_without_the_cores_secrets(tmp_path, monkeypatch):
                         ("A5S_DATABASE_URL", "postgresql://a5s_gateway:synthetic@db/a5s")):
         monkeypatch.setenv(name, value)  # only the gateway
     graph = tmp_path / "graph.json"
-    graph.write_text("{}")
+    graph.write_text("{}", encoding="utf-8")
     tool = Graphify(graph)
     # Windows preserves neither the extension's case nor POSIX's path case rules.
     assert os.path.normcase(tool.command) == os.path.normcase(str(cli))
     answer = tool.tools()["query_code"].run(call("authentication"))
     assert answer["answer"].startswith("NODE")
-    assert json.loads(seen.read_text()) == []  # none of the core's secrets, nor anything a5s's
+    assert json.loads(seen.read_text(encoding="utf-8")) == []  # none of the core's secrets, nor anything a5s's
 
 
 def test_a_question_that_starts_with_a_dash_is_a_question_not_an_option(tmp_path, monkeypatch):
@@ -51,7 +51,7 @@ def test_a_question_that_starts_with_a_dash_is_a_question_not_an_option(tmp_path
     monkeypatch.setattr(subprocess, "run", lambda cmd, **kw: commands.append(cmd) or
                         subprocess.CompletedProcess(cmd, 0, "ok", ""))
     graph = tmp_path / "graph.json"
-    graph.write_text("{}")
+    graph.write_text("{}", encoding="utf-8")
     question = "--graph=/srv/other-repo/graphify-out/graph.json"
     Graphify(graph).tools()["query_code"].run(call(question))
     assert commands[0][-2:] == ["--", question], commands[0]  # after every option of a5s's

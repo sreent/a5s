@@ -77,11 +77,11 @@ def as_it_runs(env: Path, tmp_path: Path) -> Path:
 def next_release(manifest: Path) -> Path:
     """The next release, which changes only the assistant's instructions: it needs the
     assistant's owner and an engineer."""
-    changed = yaml.safe_load(manifest.read_text())
+    changed = yaml.safe_load(manifest.read_text(encoding="utf-8"))
     changed["agents"]["assistant"]["files"] = {**changed["agents"]["assistant"].get("files", {}),
                                                "instructions.md": "0" * 64}
     changed["version"] = f"{changed['version']}-next"
-    manifest.write_text(yaml.safe_dump(changed, sort_keys=False))
+    manifest.write_text(yaml.safe_dump(changed, sort_keys=False), encoding="utf-8")
     return manifest
 
 
@@ -97,13 +97,13 @@ def test_a_release_deploys_once_everyone_it_needs_has_signed_it_in_the_environme
     sign(env, EVERYONE[-1])
     capsys.readouterr()
     assert verify(env, capsys).rstrip().endswith("Ready to deploy: its signatures meet what it needs.")
-    values = yaml.safe_load((env / "release-values.yaml").read_text())
+    values = yaml.safe_load((env / "release-values.yaml").read_text(encoding="utf-8"))
     assert values["image"] == {"repository": "ghcr.io/owner/a5s", "digest": "sha256:" + "a" * 64}
     assert values["release"]["approval"] == "a5s-release"
-    version = yaml.safe_load((env / "release.yaml").read_text())["version"]
-    tagged = yaml.safe_load((env / "release-source.yaml").read_text())
+    version = yaml.safe_load((env / "release.yaml").read_text(encoding="utf-8"))["version"]
+    tagged = yaml.safe_load((env / "release-source.yaml").read_text(encoding="utf-8"))
     assert tagged["spec"] == {"ref": {"tag": f"v{version}"}}  # the release's own chart
-    source = yaml.safe_load((env / "source.yaml").read_text())
+    source = yaml.safe_load((env / "source.yaml").read_text(encoding="utf-8"))
     assert source["spec"]["url"] == "https://github.com/OWNER/a5s"  # as the environment said
     assert tagged["metadata"] == source["metadata"]  # which the tag patches
 
@@ -126,7 +126,7 @@ def test_a_release_is_weighed_against_the_one_the_environment_ran(env, capsys, t
     before = as_it_runs(env, tmp_path)
     said = promote(env, next_release(manifest), capsys)
     assert "It needs the assistant's owner" in said and "the release approver" not in said
-    assert yaml.safe_load((env / "release.sig").read_text())["signatures"] == []  # the last's
+    assert yaml.safe_load((env / "release.sig").read_text(encoding="utf-8"))["signatures"] == []  # the last's
     sign(env, "priya", "tomas")
     capsys.readouterr()
     assert "Ready to deploy" in verify(env, capsys, before)
@@ -144,14 +144,14 @@ def test_a_pull_request_that_deploys_a_release_changes_nothing_else_in_its_envir
     before = as_it_runs(env, tmp_path)
     promote(env, next_release(manifest), capsys)
     sign(env, "priya", "tomas")
-    (env / "patch.yaml").write_text("kind: Deployment\n")
+    (env / "patch.yaml").write_text("kind: Deployment\n", encoding="utf-8")
     capsys.readouterr()
     assert "this one changes patch.yaml too" in refused(env, capsys, before)
     (env / "patch.yaml").unlink()
     assert "Ready to deploy" in verify(env, capsys, before)
     shutil.rmtree(env)
     shutil.copytree(before, env)  # no release, and how it runs changes
-    (env / "values.yaml").write_text((env / "values.yaml").read_text() + "# more replicas\n")
+    (env / "values.yaml").write_text((env / "values.yaml").read_text(encoding="utf-8") + "# more replicas\n")
     assert "Ready to deploy" in verify(env, capsys, before)
 
 
@@ -159,9 +159,9 @@ def test_a_release_is_judged_with_the_environments_values_as_it_runs_now(env, ca
     """So a pull request can't choose who judges it, such as by naming another team as the one
     that runs a5s, or another scenario's directory. Its first release is judged with its own."""
     before = as_it_runs(env, tmp_path)
-    values = yaml.safe_load((env / "values.yaml").read_text())
+    values = yaml.safe_load((env / "values.yaml").read_text(encoding="utf-8"))
     values["team"] = "risk"
-    (env / "values.yaml").write_text(yaml.safe_dump(values))
+    (env / "values.yaml").write_text(yaml.safe_dump(values), encoding="utf-8")
     assert gitops.deployment(env, before) == {"team": "risk"}  # it runs no release yet
     promote(before, released(capsys), capsys)
     assert gitops.deployment(env, before) == {}  # as it runs that one
@@ -173,12 +173,12 @@ def test_a_release_takes_its_chart_from_its_own_tag_alone(env, capsys):
     promote(env, released(capsys), capsys)
     sign(env, *EVERYONE)
     tagged = env / "release-source.yaml"
-    kept = tagged.read_text()
-    tagged.write_text(kept.replace("  ref:\n", "  ref:\n    commit: " + "0" * 40 + "\n"))
+    kept = tagged.read_text(encoding="utf-8")
+    tagged.write_text(kept.replace("  ref:\n", "  ref:\n    commit: " + "0" * 40 + "\n"), encoding="utf-8")
     assert "isn't the release's own tag" in refused(env, capsys)
-    tagged.write_text(kept)
+    tagged.write_text(kept, encoding="utf-8")
     repository = env / "source.yaml"
-    repository.write_text(repository.read_text().replace(
+    repository.write_text(repository.read_text(encoding="utf-8").replace(
         "  interval: 30m\n", "  interval: 30m\n  ref:\n    branch: main\n"))
     assert "names a ref of its own" in refused(env, capsys)
 
@@ -189,17 +189,17 @@ def test_an_environment_shows_and_judges_its_release_as_it_deploys_a5s(env, caps
     holds, is the one they run, and that directory and team judge it."""
     folder = tmp_path / "scenario"
     shutil.copytree(ROOT / "scenarios" / "sample", folder)
-    (folder / "handbook.yaml").write_text("deliveries: by noon\n")  # the deployment's own
-    values = yaml.safe_load((env / "values.yaml").read_text())
+    (folder / "handbook.yaml").write_text("deliveries: by noon\n", encoding="utf-8")  # the deployment's own
+    values = yaml.safe_load((env / "values.yaml").read_text(encoding="utf-8"))
     values["scenario"]["folder"] = str(folder)
     values["team"] = "risk"  # Rosa's: her signature is the team's, not a release approver's
-    (env / "values.yaml").write_text(yaml.safe_dump(values))
-    sample = released(capsys).read_text()
+    (env / "values.yaml").write_text(yaml.safe_dump(values), encoding="utf-8")
+    sample = released(capsys).read_text(encoding="utf-8")
     cli.main(["release", "show", "--environment", str(env)])
     shown = capsys.readouterr().out
     assert "scenario/handbook.yaml" in shown and "scenario/handbook.yaml" not in sample
     manifest = tmp_path / "deployed.yaml"
-    manifest.write_text(shown)
+    manifest.write_text(shown, encoding="utf-8")
     promote(env, manifest, capsys)
     sign(env, *EVERYONE)
     capsys.readouterr()
@@ -211,10 +211,10 @@ def test_promoting_the_same_release_again_keeps_its_signatures_for_the_same_imag
     promote(env, manifest, capsys)
     sign(env, "rosa")
     promote(env, manifest, capsys)
-    assert [s["signer"] for s in yaml.safe_load((env / "release.sig").read_text())["signatures"]
+    assert [s["signer"] for s in yaml.safe_load((env / "release.sig").read_text(encoding="utf-8"))["signatures"]
             ] == ["rosa"]
     promote(env, manifest, capsys, image="ghcr.io/owner/a5s@sha256:" + "b" * 64)  # rebuilt
-    assert yaml.safe_load((env / "release.sig").read_text())["signatures"] == []  # not over it
+    assert yaml.safe_load((env / "release.sig").read_text(encoding="utf-8"))["signatures"] == []  # not over it
 
 
 @pytest.mark.parametrize("image", ["ghcr.io/owner/a5s:1.2.3", "ghcr.io/owner/a5s@sha256:abc"])
@@ -236,17 +236,17 @@ def test_the_environment_is_what_flux_and_kustomize_deploy(env, capsys):
     HelmRelease takes its values from the ConfigMaps the kustomization makes, the release's
     last, so they win."""
     promote(env, released(capsys), capsys)
-    kustomization = yaml.safe_load((env / "kustomization.yaml").read_text())
+    kustomization = yaml.safe_load((env / "kustomization.yaml").read_text(encoding="utf-8"))
     named = [*kustomization["resources"], *kustomization["configurations"],
              *(p["path"] for p in kustomization["patches"]),
              *(f.split("=")[-1] for g in kustomization["configMapGenerator"] for f in g["files"])]
     assert all((env / f).is_file() for f in named), named
     generated = {g["name"] for g in kustomization["configMapGenerator"]}
-    release = yaml.safe_load((env / "helmrelease.yaml").read_text())
+    release = yaml.safe_load((env / "helmrelease.yaml").read_text(encoding="utf-8"))
     assert [v["name"] for v in release["spec"]["valuesFrom"]] == ["a5s-values", "a5s-release-values"]
     assert {v["name"] for v in release["spec"]["valuesFrom"]} <= generated
     assert release["spec"]["chart"]["spec"]["sourceRef"]["name"] == yaml.safe_load(
-        (env / "source.yaml").read_text())["metadata"]["name"] == gitops.CHART
+        (env / "source.yaml").read_text(encoding="utf-8"))["metadata"]["name"] == gitops.CHART
 
 
 def test_the_chart_runs_the_environments_release_and_its_job_records_its_signatures(env, capsys):
@@ -268,7 +268,7 @@ def test_the_chart_runs_the_environments_release_and_its_job_records_its_signatu
     assert run.returncode == 0, run.stderr
     docs = [d for d in yaml.safe_load_all(run.stdout) if d]
     approve = next(d for d in docs if d["kind"] == "Job" and d["metadata"]["name"] == "a5s-approve")
-    signed = yaml.safe_load((env / "release-values.yaml").read_text())["release"]["signatures"]
+    signed = yaml.safe_load((env / "release-values.yaml").read_text(encoding="utf-8"))["release"]["signatures"]
     assert approve["metadata"]["annotations"]["a5s.dev/signatures"] == signed
     images = {c["image"] for d in docs if d["kind"] == "Deployment"
               for c in d["spec"]["template"]["spec"]["containers"]}

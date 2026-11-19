@@ -255,7 +255,7 @@ def released_with(stack, files: dict) -> None:
     """A draft of the assistant, published and merged: its folder as released holds its cases."""
     tests = stack.cfg.agents_dir / "assistant" / "tests"
     tests.mkdir(exist_ok=True)
-    (tests / "from-runs.yaml").write_text(files[run_cases.FILE])
+    (tests / "from-runs.yaml").write_text(files[run_cases.FILE], encoding="utf-8")
 
 
 def test_a_case_is_kept_only_where_everyone_who_authors_its_agent_may_see_the_run(

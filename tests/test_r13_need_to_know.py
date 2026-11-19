@@ -67,13 +67,13 @@ def test_the_admin_page_names_no_act_on_an_instance_of_an_agent_its_reader_may_n
 
 def test_every_administrative_act_has_words_of_its_own():
     recorded = set(re.findall(r'"kind": "admin", "action": "([a-z-]+)"',
-                              "".join(p.read_text() for p in SRC.rglob("*.py"))))
+                              "".join(p.read_text(encoding="utf-8") for p in SRC.rglob("*.py"))))
     assert recorded <= set(audit.ADMIN), recorded - set(audit.ADMIN)
     assert len(set(audit.ADMIN.values())) == len(audit.ADMIN)
 
 
 def test_the_catalogue_names_no_instance_another_may_ask(stack, approving, provider):
-    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text())
+    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text(encoding="utf-8"))
     ops = {"definition": "assistant", "serves": ["chen"], "parts": ["orders"], "level": 1,
            "owner": "omar", "deputy": "chen", "asks": ["watcher-finance"]}
     applied = stack.settle(instances={**settings["instances"], "watcher-finance": WATCHER,
@@ -106,6 +106,6 @@ def test_what_waits_on_someone_else_gives_no_time(stack, approving, provider):
 
 
 def test_finding_anything_reads_the_pages_afresh_each_time_it_opens():
-    script = (ROOT / "studio" / "src" / "Find.tsx").read_text()
+    script = (ROOT / "studio" / "src" / "Find.tsx").read_text(encoding="utf-8")
     assert "shellOf(true)" in script and "shellOf()" not in script
-    assert "afresh" in Path(ROOT / "studio" / "src" / "Sidebar.tsx").read_text()
+    assert "afresh" in Path(ROOT / "studio" / "src" / "Sidebar.tsx").read_text(encoding="utf-8")

@@ -408,7 +408,7 @@ def test_an_instance_approver_gets_a_card_that_opens_the_cores_page(stack, bot, 
     stack.gateway.identity = Verifier(IdentityConfig(issuer=provider.url, audience=("a5s", CLIENT)))
     stack.gateway.cfg = replace(stack.gateway.cfg, webchat_client_id=CLIENT,
                                 public_url="https://a5s.example.test")
-    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text())
+    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text(encoding="utf-8"))
     settings["instances"]["assistant-finance"]["serves"] = ["ana", "ben", "chen"]
     raw = yaml.safe_dump({**settings, "serial": settings["serial"] + 1}).encode()
     with stack.client() as c:

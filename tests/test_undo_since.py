@@ -68,11 +68,11 @@ def stack(database: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Ite
     model = FakeModel()
     root = build_root(tmp_path, "fake", FAKE_MODELS)
     with serve(holds(database), free_port()) as server:
-        (root / "scenarios" / "sample" / mcp.FILE).write_text(yaml.safe_dump(declared(f"{server}/mcp")))
+        (root / "scenarios" / "sample" / mcp.FILE).write_text(yaml.safe_dump(declared(f"{server}/mcp")), encoding="utf-8")
         spec = root / "agents" / "assistant" / "agent.yaml"
         spec.write_text(re.sub(r"changes: \[change_due_date, close_question\]",
                                "changes: [change_due_date, close_question, hold_question, "
-                               "release_question]", spec.read_text()))
+                               "release_question]", spec.read_text(encoding="utf-8")))
         with running(database, root, httpx.Client(transport=httpx.MockTransport(model.handler)),
                      model) as s:
             yield s

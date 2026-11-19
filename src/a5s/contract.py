@@ -86,7 +86,7 @@ class Person:
         given: dict[str, Any] = {k: tuple(v) if isinstance(v, list) else v
                                  for k, v in entry.items()}
         key = folder / "keys" / f"{entry['id']}.pub"
-        return cls(**given, public_key=key.read_text().strip() if key.exists() else None)
+        return cls(**given, public_key=key.read_text(encoding="utf-8").strip() if key.exists() else None)
 
 
 @dataclass(frozen=True)

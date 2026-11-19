@@ -394,7 +394,7 @@ def main() -> None:
     report["answerer"] = {"calls": answerer.calls, "tokens": answerer.tokens}
     output = Path(".a5s/graphiti-evaluation.json")
     output.parent.mkdir(exist_ok=True)
-    output.write_text(json.dumps(report, indent=2, default=str))
+    output.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
     for name in ("postgres", "graphiti"):
         print(name, json.dumps(report[name].get("summary"), indent=2))
         print("access", report[name].get("access"))

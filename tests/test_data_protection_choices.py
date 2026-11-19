@@ -126,7 +126,7 @@ def test_the_data_protection_page_says_each_choice_as_a5s_starts_it():
     from dataclasses import fields
 
     from conftest import ROOT
-    page = (ROOT / "docs" / "data-protection.md").read_text()
+    page = (ROOT / "docs" / "data-protection.md").read_text(encoding="utf-8")
     for choice in fields(DataProtection):
         start = getattr(DataProtection, choice.name)
         shown = str(start).lower() if isinstance(start, bool) else str(start)

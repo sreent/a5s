@@ -52,12 +52,12 @@ def at_of(line: dict) -> datetime:
 def export(cli, out, **period) -> tuple[dict, list[dict]]:
     flags = [x for k, v in period.items() for x in (f"--{k}", v.isoformat())]
     cli(["audit", "export", "--by", AUDITOR, *flags, "--out", str(out)])
-    header, *lines = [json.loads(line) for line in out.read_text().splitlines()]
+    header, *lines = [json.loads(line) for line in out.read_text(encoding="utf-8").splitlines()]
     return header["export"], lines
 
 
 def write(out, bounds: dict, lines: list[dict]) -> None:
-    out.write_text("".join(json.dumps(x) + "\n" for x in [{"export": bounds}, *lines]))
+    out.write_text("".join(json.dumps(x) + "\n" for x in [{"export": bounds}, *lines]), encoding="utf-8")
 
 
 def test_an_export_holds_its_period_with_the_entries_either_side(stack, tmp_path, cli, capsys):

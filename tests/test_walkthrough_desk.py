@@ -252,7 +252,7 @@ def test_the_desk_assistant_is_built_again_in_the_studio_from_nothing(database, 
                 stack.cfg = replace(stack.cfg, sandbox_url=box_url, sandbox_token="shared-token")
                 with deciding(stack, provider) as url:
                     rebuilt, draft, pull = built(walk, stack, url, forge, on)
-        hand_written = yaml.safe_load((agents / "desk-assistant" / "agent.yaml").read_text())
+        hand_written = yaml.safe_load((agents / "desk-assistant" / "agent.yaml").read_text(encoding="utf-8"))
         with walk.step("What desk-helper may do, and what starts it, is what the hand-written desk "
                        "assistant's definition gives it, in the studio's words: nothing more, and "
                        "nothing missing."):

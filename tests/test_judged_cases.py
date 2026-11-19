@@ -85,11 +85,11 @@ def test_a_draft_whose_cases_ask_a_judge_names_one():
     with tempfile.TemporaryDirectory() as there:
         folder = authoring.new(ROOT / "agents" / "assistant", "finance-helper", Path(there), TOOLS)
         assert authoring.check(folder, TOOLS, models) == []
-        (folder / "tests" / "judged.yaml").write_text(judged(FINDS)["tests/judged.yaml"])
+        (folder / "tests" / "judged.yaml").write_text(judged(FINDS)["tests/judged.yaml"], encoding="utf-8")
         assert authoring.check(folder, TOOLS, models) == [(
             "its test cases ask its judge whether an answer is right, and it names no judge: give "
             "it one, under evaluation")]
         spec = folder / "agent.yaml"
-        spec.write_text(spec.read_text() + JUDGE)
+        spec.write_text(spec.read_text(encoding="utf-8") + JUDGE)
         assert authoring.check(folder, TOOLS, models) == []
         assert "judged" in drafts.folder_files(folder)["tests/judged.yaml"]

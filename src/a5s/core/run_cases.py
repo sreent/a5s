@@ -254,7 +254,7 @@ def released(agents_dir: Any) -> str:
     found: set[str] = set()
     for path in sorted(agents_dir.glob("*/tests/*.y*ml")) if agents_dir.is_dir() else []:
         try:
-            found |= set(TOKEN.findall(path.read_text()))
+            found |= set(TOKEN.findall(path.read_text(encoding="utf-8")))
         except (OSError, UnicodeDecodeError):
             continue
     return " ".join(sorted(found))

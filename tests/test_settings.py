@@ -18,7 +18,7 @@ def sample(tmp_path, database):
     keys = {}
     for person in ("ana", "ben"):  # ana is an instance approver, ben isn't
         private, public = signing.keypair()
-        (folder / "keys" / f"{person}.pub").write_text(public)
+        (folder / "keys" / f"{person}.pub").write_text(public, encoding="utf-8")
         keys[person] = private
     return folder, keys, database
 
@@ -26,16 +26,16 @@ def sample(tmp_path, database):
 def write(folder, serial, level=1):
     settings = {"serial": serial, "instances": {"assistant-finance": {
         "definition": "assistant", "serves": ["ana", "ben"], "level": level}}}
-    (folder / "settings.yaml").write_text(yaml.safe_dump(settings))
+    (folder / "settings.yaml").write_text(yaml.safe_dump(settings), encoding="utf-8")
     (folder / "settings.sig").unlink(missing_ok=True)
 
 
 def sign(folder, person, private):
     sig_file = folder / "settings.sig"
-    signed = yaml.safe_load(sig_file.read_text()) if sig_file.exists() else {"signatures": []}
+    signed = yaml.safe_load(sig_file.read_text(encoding="utf-8")) if sig_file.exists() else {"signatures": []}
     value = signing.sign(private, (folder / "settings.yaml").read_bytes())
     signed["signatures"].append({"signer": person, "value": value})
-    sig_file.write_text(yaml.safe_dump(signed))
+    sig_file.write_text(yaml.safe_dump(signed), encoding="utf-8")
 
 
 def apply(folder, database):
@@ -76,9 +76,9 @@ def test_a_signature_for_another_version_doesnt_count(sample):
     folder, keys, database = sample
     write(folder, 1, level=0)
     sign(folder, "ana", keys["ana"])
-    signature = (folder / "settings.sig").read_text()
+    signature = (folder / "settings.sig").read_text(encoding="utf-8")
     write(folder, 1, level=1)  # someone raises the level after Ana signed
-    (folder / "settings.sig").write_text(signature)
+    (folder / "settings.sig").write_text(signature, encoding="utf-8")
     result = apply(folder, database)
     assert "ana's signature isn't for this version" in result.refused
 
@@ -96,12 +96,12 @@ def test_an_older_version_cant_be_replayed(sample):
     folder, keys, database = sample
     write(folder, 1, level=1)
     sign(folder, "ana", keys["ana"])
-    old_settings, old_signature = (folder / "settings.yaml").read_text(), (folder / "settings.sig").read_text()
+    old_settings, old_signature = (folder / "settings.yaml").read_text(encoding="utf-8"), (folder / "settings.sig").read_text(encoding="utf-8")
     write(folder, 2, level=0)
     sign(folder, "ana", keys["ana"])
     assert not apply(folder, database).refused
-    (folder / "settings.yaml").write_text(old_settings)  # the old, looser version, still signed
-    (folder / "settings.sig").write_text(old_signature)
+    (folder / "settings.yaml").write_text(old_settings, encoding="utf-8")  # the old, looser version, still signed
+    (folder / "settings.sig").write_text(old_signature, encoding="utf-8")
     assert "version 1 is older than version 2, the one in force" in apply(folder, database).refused
     assert instances(database)[0]["level"] == 0
 

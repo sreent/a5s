@@ -171,9 +171,9 @@ def stack(database: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
         monkeypatch.setenv(name, value)
     model = FakeModel()
     root = build_root(tmp_path, "fake", FAKE_MODELS)
-    (root / "scenarios" / "sample" / mailboxes.FILE).write_text(yaml.safe_dump(declared(readers)))
+    (root / "scenarios" / "sample" / mailboxes.FILE).write_text(yaml.safe_dump(declared(readers)), encoding="utf-8")
     spec = root / "agents" / "assistant" / "agent.yaml"
-    spec.write_text(spec.read_text().replace(
+    spec.write_text(spec.read_text(encoding="utf-8").replace(
         "  documents: [create_draft]\n",
         "  documents: [create_draft]\n  mail: [search_requests, read_requests, draft_requests]\n"))
     with running(database, root, httpx.Client(transport=httpx.MockTransport(model.handler)),
@@ -281,7 +281,7 @@ def test_only_the_core_reads_mail_and_the_sandbox_reads_its_stand_in(tmp_path):
     folder.mkdir(parents=True)
     (folder / "refund.yaml").write_text(yaml.safe_dump({
         "from": "pat@customer.example", "received": "2026-11-02T09:00:00Z",
-        "subject": "Refund on Q-1002", "text": "Please refund the duplicate payment."}))
+        "subject": "Refund on Q-1002", "text": "Please refund the duplicate payment."}), encoding="utf-8")
     scenario = type("Scenario", (), {"person": staticmethod(lambda pid: None)})()
     call = ToolCall(args={"query": "refund"}, instance="i", run="r", acts_for=("ana",))
     elsewhere = mailboxes.Mail(declaration, tmp_path, scenario, database="", app=None,
@@ -334,7 +334,7 @@ def test_the_channels_app_starts_without_the_cores_mail_secret(tmp_path, monkeyp
     for name in ("A5S_MAIL_TENANT", "A5S_MAIL_CLIENT_ID", "A5S_MAIL_CLIENT_SECRET"):
         monkeypatch.delenv(name, raising=False)
     cfg = deployment(tmp_path)
-    (cfg.scenario_dir / mailboxes.FILE).write_text(yaml.safe_dump(MAILBOXES))
+    (cfg.scenario_dir / mailboxes.FILE).write_text(yaml.safe_dump(MAILBOXES), encoding="utf-8")
     assert mailboxes.of(build.gateway(cfg).scenario) is not None  # the channels app's own
     with pytest.raises(RuntimeError, match="A5S_MAIL_TENANT"):
         build.app(cfg)  # the core's

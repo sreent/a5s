@@ -64,7 +64,7 @@ def test_the_letters_form_carries_the_warning_signs_the_handbook_names():
     folder = ROOT / "scenarios" / "master-data"
     scenario = mcp.served(MasterDataScenario(folder, "postgresql://unused"), folder)
     form = scenario.tools()["get_letters"].extract  # as SAP's server's tool is declared
-    policy = (Path(scenario.folder) / "knowledge/supplier-bank/bank-change-policy.md").read_text()
+    policy = (Path(scenario.folder) / "knowledge/supplier-bank/bank-change-policy.md").read_text(encoding="utf-8")
     assert "Urgency, pressure to skip the callback, a claim that someone has already" in policy
     assert {n for n, kind in form.items() if kind == "flag"} == {
         "says_it_is_urgent", "asks_to_skip_the_callback", "says_someone_approved_it_already"}
@@ -104,5 +104,5 @@ def test_a_bank_account_written_as_a_handle_goes_from_the_run_and_stays_with_the
     assert handles == 0  # the run's handles went, as the data protection page says
     assert not any(IBAN in t for t in said)  # what the agent wrote keeps the handle
     assert any(IBAN in t for t in kept)  # and the message, as Tess read it, the value,
-    inventory = (ROOT / "docs" / "data-protection.md").read_text()  # as the inventory says
+    inventory = (ROOT / "docs" / "data-protection.md").read_text(encoding="utf-8")  # as the inventory says
     assert "the message a5s sent keeps it filled in, as the person read it" in inventory

@@ -71,6 +71,31 @@ def eventually(check, seconds: float = 10.0) -> bool:
     return bool(found)
 
 
+JUDGED = ("You check what one message an AI agent wrote to a person says, for a test. "
+          'Answer with JSON alone: {"yes": true} or {"yes": false}. The message must say: ')
+
+
+def judged(alias: str, claim: str, said: str) -> bool:
+    """Whether an approved model, asked plainly, agrees `claim` holds of the message `said`:
+    live tests' wording checks go through this, so a model that says the same in other words
+    still passes, and one that says the opposite fails however well it's worded. It asks the
+    provider directly, as scorecards measure, and skips where the model's key isn't set."""
+    from a5s.core import models as models_mod
+    found = load_models(ROOT / "config" / "models.yaml")[alias]
+    if found.key_env and not os.environ.get(found.key_env):
+        pytest.skip(f"{found.key_env} isn't set")
+    body = {"model": alias, "messages": [{"role": "user", "content": JUDGED + claim +
+                                          "\n\nThe agent wrote:\n<<<\n" + said + "\n>>>"}]}
+    status, data = models_mod.forward(found, body, httpx.Client(timeout=120))
+    assert status < 400, data
+    content = data["choices"][0]["message"]["content"]
+    try:
+        answer = json.loads(content[content.index("{"):content.rindex("}") + 1])
+    except ValueError:
+        answer = {"yes": "yes" in content.casefold()}
+    return bool(answer.get("yes"))
+
+
 @pytest.fixture(scope="session")
 def database_url() -> Iterator[str]:
     url = os.environ.get("A5S_TEST_DATABASE_URL")
@@ -101,7 +126,7 @@ def database(database_url: str) -> str:
 # The pages' redirects, as the first day's app registration lists them (docs/first-day.md):
 # the provider refuses any other, as the organisation's does
 REGISTERED = frozenset(re.findall(r"https://\$host(/[a-z]+/)",
-                                  (ROOT / "docs" / "first-day.md").read_text()))
+                                  (ROOT / "docs" / "first-day.md").read_text(encoding="utf-8")))
 
 
 @dataclass
@@ -448,7 +473,7 @@ class Stack:
         `spending` what agents may cost a month, which their owners sign for.
         """
         folder = self.cfg.scenario_dir
-        settings = yaml.safe_load((folder / "settings.yaml").read_text())
+        settings = yaml.safe_load((folder / "settings.yaml").read_text(encoding="utf-8"))
         if data_protection is not None:
             settings["data_protection"] = data_protection
         if spending is not None:
@@ -468,7 +493,7 @@ class Stack:
         """The sample's watcher, which the tests leave out unless they ask, as its settings
         name it, with `changes`: it tells its people each working morning what changed in
         their records."""
-        settings = yaml.safe_load((self.cfg.scenario_dir / "settings.yaml").read_text())
+        settings = yaml.safe_load((self.cfg.scenario_dir / "settings.yaml").read_text(encoding="utf-8"))
         assert not self.settle(instances={**settings["instances"], "watcher-finance": {
             **WATCHER, "serves": list(serves), **changes}}, signers=signers).refused
 
@@ -537,12 +562,12 @@ def signed(folder: Path, settings: dict, signers: tuple[str, ...] = ("ana",)) ->
     raw = yaml.safe_dump({**settings, "serial": settings["serial"] + 1}).encode()
     (folder / "settings.yaml").write_bytes(raw)
     (folder / "settings.sig").write_text(yaml.safe_dump({"signatures": [
-        {"signer": who, "value": signing.sign((folder / "keys" / f"{who}.key").read_text().strip(),
+        {"signer": who, "value": signing.sign((folder / "keys" / f"{who}.key").read_text(encoding="utf-8").strip(),
                                                raw)}
         for who in signers]}))
 
 
-SAMPLE_SETTINGS = yaml.safe_load((ROOT / "scenarios" / "sample" / "settings.yaml").read_text())
+SAMPLE_SETTINGS = yaml.safe_load((ROOT / "scenarios" / "sample" / "settings.yaml").read_text(encoding="utf-8"))
 WATCHER = SAMPLE_SETTINGS["instances"]["watcher-finance"]
 
 
@@ -553,14 +578,14 @@ def build_root(tmp: Path, model_alias: str, models_yaml: str) -> Path:
     shutil.copytree(ROOT / "agents", root / "agents")
     shutil.copytree(ROOT / "scenarios" / "sample", root / "scenarios" / "sample")
     (root / "config").mkdir()
-    (root / "config" / "models.yaml").write_text(models_yaml)
+    (root / "config" / "models.yaml").write_text(models_yaml, encoding="utf-8")
     for spec in (root / "agents").glob("*/agent.yaml"):
         lines = [f"model: {model_alias}" if line.startswith("model:") else line
-                 for line in spec.read_text().splitlines()]
+                 for line in spec.read_text(encoding="utf-8").splitlines()]
         if spec.parent.name == "assistant":  # the tests work it up to acting on its own, which
             lines = ["  max: acts on its own" if line.startswith("  max:") else line  # the
                      for line in lines]  # pilot's release keeps from it
-        spec.write_text("\n".join(lines) + "\n")
+        spec.write_text("\n".join(lines) + "\n", encoding="utf-8")
     instances = {k: v for k, v in SAMPLE_SETTINGS["instances"].items() if k != "watcher-finance"}
     signed(root / "scenarios" / "sample", {**SAMPLE_SETTINGS, "instances": instances})
     return root

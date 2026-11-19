@@ -40,7 +40,7 @@ def test_a_change_to_a_record_in_no_part_works_at_level_1_at_most(stack, approvi
 
 def test_a_change_made_at_level_2_is_reported_to_someone_when_the_instance_has_no_owner(stack):
     folder = stack.cfg.scenario_dir  # level 2 for due dates in billing, as levelled() sets it,
-    settings = yaml.safe_load((folder / "settings.yaml").read_text())  # with no owner named
+    settings = yaml.safe_load((folder / "settings.yaml").read_text(encoding="utf-8"))  # with no owner named
     instance = settings["instances"]["assistant-finance"]
     instance["parts"] = {"billing": {"level": 1, "actions": {"change-due-date": 2}}}
     del instance["owner"], instance["deputy"]

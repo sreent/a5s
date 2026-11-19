@@ -35,7 +35,7 @@ def stack(database: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Ite
     model = FakeModel()
     root = build_root(tmp_path, "fake", FAKE_MODELS)
     spec = root / "agents" / "assistant" / "agent.yaml"
-    spec.write_text(re.sub(r"^(  agents: true)", r"  handover: true\n\1", spec.read_text(),
+    spec.write_text(re.sub(r"^(  agents: true)", r"  handover: true\n\1", spec.read_text(encoding="utf-8"),
                            flags=re.MULTILINE))
     with running(database, root, httpx.Client(transport=httpx.MockTransport(model.handler)),
                  model) as s:
@@ -174,7 +174,7 @@ def test_a_conversation_nobody_answers_is_handed_back(stack, approving):
 
 def test_approvers_read_whom_it_may_hand_conversations_to_and_the_core_checks_them(stack):
     folder = stack.cfg.scenario_dir
-    settings = yaml.safe_load((folder / "settings.yaml").read_text())
+    settings = yaml.safe_load((folder / "settings.yaml").read_text(encoding="utf-8"))
     before = parse_settings((folder / "settings.yaml").read_bytes())
     settings["serial"] += 1
     settings["instances"]["assistant-finance"]["hands_to"] = ["operations"]

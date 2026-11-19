@@ -64,11 +64,11 @@ class Decision:
 
 
 def base_pack() -> str:
-    return files("a5s.core").joinpath("policies/base.cedar").read_text()
+    return files("a5s.core").joinpath("policies/base.cedar").read_text(encoding="utf-8")
 
 
 def schema() -> str:
-    return files("a5s.core").joinpath("policies/schema.cedarschema").read_text()
+    return files("a5s.core").joinpath("policies/schema.cedarschema").read_text(encoding="utf-8")
 
 
 def _statements(text: str) -> dict[str, dict]:

@@ -168,7 +168,7 @@ def test_an_identitys_sponsors_follow_its_instances_owners(stack):
     tenant = Strict()
     stack.gateway.registry = registry(tenant, identities=True)
     sweep(stack)
-    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text())
+    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text(encoding="utf-8"))
     moved = {**settings["instances"]["assistant-finance"], "owner": "chen", "deputy": "dana"}
     assert not stack.settle(instances={**settings["instances"], "assistant-finance": moved}).refused
     sweep(stack)

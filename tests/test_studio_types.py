@@ -15,7 +15,7 @@ REMAKE = "uv run python -m a5s.core.studio_api > studio/src/api.gen.ts"
 
 
 def test_the_studios_types_are_what_the_code_makes():
-    assert MADE.read_text() == typescript.types(studio_api.described()), (
+    assert MADE.read_text(encoding="utf-8") == typescript.types(studio_api.described()), (
         f"the studio's types aren't what the code makes: {REMAKE}")
 
 

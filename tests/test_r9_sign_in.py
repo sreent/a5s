@@ -20,7 +20,7 @@ def _pages() -> set[str]:
     studio = ROOT / "studio" / "src"
     for script in [*(ROOT / "src" / "a5s" / "core" / "webchat").glob("*.js"),
                    *studio.rglob("*.ts"), *studio.rglob("*.tsx")]:
-        if m := re.search(r"const BACK = `\$\{location\.origin\}(/[a-z]+/)`", script.read_text()):
+        if m := re.search(r"const BACK = `\$\{location\.origin\}(/[a-z]+/)`", script.read_text(encoding="utf-8")):
             found.add(m.group(1))
     return found
 
@@ -32,7 +32,7 @@ def test_the_first_days_app_registration_lists_every_pages_redirect():
 
 
 def test_the_development_realm_lists_every_pages_redirect():
-    realm = json.loads((ROOT / "deploy" / "identity" / "realm.json").read_text())
+    realm = json.loads((ROOT / "deploy" / "identity" / "realm.json").read_text(encoding="utf-8"))
     uris = {u for client in realm.get("clients", []) for u in client.get("redirectUris", [])}
     listed = {re.sub(r"^https?://[^/]+", "", u).rstrip("*") for u in uris}
     assert _pages() <= listed, sorted(_pages() - listed)

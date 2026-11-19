@@ -20,7 +20,7 @@ OPS = {"definition": "assistant", "serves": ["chen", "omar", "dana"], "parts": [
 def with_ops(stack, serves: list[str] | None = None) -> None:
     """A second assistant, in orders, which Omar owns and runs, serving Chen and two others, or
     whom `serves` names."""
-    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text())
+    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text(encoding="utf-8"))
     ops = {**OPS, "serves": serves} if serves is not None else OPS
     assert not stack.settle(instances={**settings["instances"], "assistant-ops": ops},
                             signers=("ana", "omar")).refused

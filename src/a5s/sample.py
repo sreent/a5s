@@ -43,7 +43,7 @@ class SampleScenario:
     def __init__(self, folder: Path, database_url: str):
         self.folder = folder
         self.database_url = database_url
-        data = yaml.safe_load((folder / "data.yaml").read_text())
+        data = yaml.safe_load((folder / "data.yaml").read_text(encoding="utf-8"))
         self._people = {p["id"]: Person.listed(p, self.folder) for p in data["people"]}
         self._parts = data.get("parts") or {}
         self._records = {r["key"]: r for r in data["records"]}
@@ -158,7 +158,7 @@ class SampleScenario:
 
     def settings(self) -> Settings:
         sig_file = self.folder / "settings.sig"
-        signed = yaml.safe_load(sig_file.read_text()) if sig_file.exists() else None
+        signed = yaml.safe_load(sig_file.read_text(encoding="utf-8")) if sig_file.exists() else None
         return parse_settings(
             (self.folder / "settings.yaml").read_bytes(),
             tuple(Signature(s["signer"], s["value"]) for s in (signed or {}).get("signatures", [])),
@@ -166,7 +166,7 @@ class SampleScenario:
 
     def policy_pack(self) -> str | None:
         pack = self.folder / "pack.cedar"
-        return pack.read_text() if pack.exists() else None
+        return pack.read_text(encoding="utf-8") if pack.exists() else None
 
     # Tools
 

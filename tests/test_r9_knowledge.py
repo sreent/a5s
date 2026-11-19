@@ -44,7 +44,7 @@ def test_an_article_for_a_team_or_a_role_is_theirs_alone(tmp_path):
     from a5s.contract import Person
     from a5s.knowledge import MarkdownKnowledge
     (tmp_path / "guide.md").write_text("---\ntitle: For finance\nteams: [finance]\n"
-                                       "roles: [auditor]\n---\nHow month end works.\n")
+                                       "roles: [auditor]\n---\nHow month end works.\n", encoding="utf-8")
     people = {"ana": Person("ana", "Ana", team="finance"), "kofi": Person(
         "kofi", "Kofi", team="audit", roles=("auditor",)), "chen": Person("chen", "Chen",
                                                                         team="operations")}

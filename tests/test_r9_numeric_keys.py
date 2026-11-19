@@ -28,9 +28,9 @@ def help_desk(database: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     (folder / "keys").mkdir()
     for who in ("ida", "olu"):
         private, public = signing.keypair()
-        (folder / "keys" / f"{who}.key").write_text(private + "\n")
-        (folder / "keys" / f"{who}.pub").write_text(public + "\n")
-    signed(folder, yaml.safe_load((folder / "settings.yaml").read_text()), ("olu", "ida"))
+        (folder / "keys" / f"{who}.key").write_text(private + "\n", encoding="utf-8")
+        (folder / "keys" / f"{who}.pub").write_text(public + "\n", encoding="utf-8")
+    signed(folder, yaml.safe_load((folder / "settings.yaml").read_text(encoding="utf-8")), ("olu", "ida"))
     model = FakeModel()
     root = build_root(tmp_path, "fake", FAKE_MODELS)
     with running_scenario(database, root, model, "helpdesk_scenario:HelpdeskScenario",

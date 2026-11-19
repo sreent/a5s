@@ -45,7 +45,7 @@ MORNING = "2026-11-04T09:30:00+00:00"  # a working morning, at Mo's digest time
 TOLD = ("Mo, material data has 2 of 3 records passing, 66.6%, below its target of 95%, and owes "
         "a fix by Fri 20 Nov. Nothing waits on you in the requests.")
 INSTRUCTIONS = (ROOT / "scenarios" / "master-data" / "agents" / "mdg-watcher" / "AGENTS.md"
-                ).read_text().replace("# Data quality watcher", "# Quality helper", 1)
+                ).read_text(encoding="utf-8").replace("# Data quality watcher", "# Quality helper", 1)
 
 
 def reported(body: dict) -> str | None:
@@ -223,7 +223,7 @@ def test_the_data_quality_watcher_is_built_again_and_reports_to_its_owner(
             assert said.rstrip().endswith("Approved here."), said
             with deciding(stack, provider) as url:
                 rebuilt, draft, pull = built(walk, stack, url, forge)
-        hand_written = yaml.safe_load((agents / "mdg-watcher" / "agent.yaml").read_text())
+        hand_written = yaml.safe_load((agents / "mdg-watcher" / "agent.yaml").read_text(encoding="utf-8"))
         with walk.step("What quality-helper may do, what starts it and what it reports on is what the "
                        "hand-written watcher's definition gives it, in the studio's words: nothing "
                        "more, and nothing missing."):

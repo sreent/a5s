@@ -63,7 +63,7 @@ RUBRIC = "A correction proposes only what the requester or a steward gave, for a
 APPROVERS = (("carl", "Carl Dunn"), ("mo", "Mo Hassan"), ("una", "Una Novak"), ("pia", "Pia Weber"))
 GRADED = 88  # what a 95% threshold needs, with no errors (core/samples.py)
 INSTRUCTIONS = (ROOT / "scenarios" / "master-data" / "agents" / "mdg-assistant" / "AGENTS.md"
-                ).read_text().replace("# Master data assistant", "# Master data helper", 1)
+                ).read_text(encoding="utf-8").replace("# Master data assistant", "# Master data helper", 1)
 
 
 def judged(body: dict) -> str | None:
@@ -410,7 +410,7 @@ def test_the_master_data_assistant_is_built_again_and_takes_one_correction_to_le
                 stack.cfg = replace(stack.cfg, sandbox_url=box_url, sandbox_token="shared-token")
                 with deciding(stack, provider) as url:
                     rebuilt, draft, pull = built(walk, stack, url, forge, on)
-        hand_written = yaml.safe_load((agents / "mdg-assistant" / "agent.yaml").read_text())
+        hand_written = yaml.safe_load((agents / "mdg-assistant" / "agent.yaml").read_text(encoding="utf-8"))
         with walk.step("What mdg-helper may do, and what starts it, is what the hand-written master data "
                        "assistant's definition gives it, in the studio's words: nothing more, and "
                        "nothing missing."):

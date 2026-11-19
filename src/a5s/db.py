@@ -121,7 +121,7 @@ def migrations() -> list[tuple[int, str, str]]:
     found = []
     for entry in files("a5s").joinpath("migrations").iterdir():
         if entry.name.endswith(".sql"):
-            found.append((int(entry.name.split("_", 1)[0]), entry.name, entry.read_text()))
+            found.append((int(entry.name.split("_", 1)[0]), entry.name, entry.read_text(encoding="utf-8")))
     return sorted(found)
 
 

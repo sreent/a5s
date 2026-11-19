@@ -261,7 +261,7 @@ def test_the_dev_assistant_is_built_again_in_the_studio_and_its_review_waits_for
                 stack.cfg = replace(stack.cfg, sandbox_url=box_url, sandbox_token="shared-token")
                 with deciding(stack, provider) as url:
                     rebuilt, draft, pull = built(walk, stack, url, forge, on)
-        hand_written = yaml.safe_load((agents / "dev-assistant" / "agent.yaml").read_text())
+        hand_written = yaml.safe_load((agents / "dev-assistant" / "agent.yaml").read_text(encoding="utf-8"))
         with walk.step("What dev-helper may do, and what starts it, is what the hand-written dev "
                        "assistant's definition gives it, in the studio's words: nothing more, and "
                        "nothing missing."):

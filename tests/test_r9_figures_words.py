@@ -92,7 +92,7 @@ def test_an_instances_figures_count_group_chats_of_the_agents_other_instances(
     import yaml
     ops = {"definition": "assistant", "serves": ["chen"], "parts": ["orders"], "level": 1,
            "owner": "omar"}
-    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text())
+    settings = yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text(encoding="utf-8"))
     assert not stack.settle(instances={**settings["instances"], "assistant-ops": ops},
                             signers=("ana", "omar")).refused
     with db.transaction(stack.admin) as conn:  # finance's own group chat, with assistant-finance

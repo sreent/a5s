@@ -46,7 +46,7 @@ def running_scenario(database: str, root: Path, model: FakeModel, scenario: str,
         shutil.copytree(ROOT / "scenarios" / folder / "agents", agents)
     for spec in agents.glob("*/agent.yaml"):
         spec.write_text("\n".join(f"model: {alias}" if line.startswith("model:") else line
-                                  for line in spec.read_text().splitlines()) + "\n")
+                                  for line in spec.read_text(encoding="utf-8").splitlines()) + "\n")
     cfg = Config(database_url=db.as_role(database, "gateway"),
                  gateway_url=f"http://127.0.0.1:{port}", service_token=SERVICE_TOKEN,
                  root=root, development=True, seal_keys=(SEAL_KEY,), scenario=scenario,

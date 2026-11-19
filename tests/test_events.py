@@ -141,7 +141,7 @@ def test_a_suspended_instances_events_wait_for_nobody(stack, system):
 
 
 def settings_of(stack) -> dict:
-    return yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text())
+    return yaml.safe_load((stack.cfg.scenario_dir / "settings.yaml").read_text(encoding="utf-8"))
 
 
 def test_what_an_events_run_read_marks_its_own_topic_never_their_own_chat(stack, system):

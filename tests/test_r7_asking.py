@@ -99,11 +99,11 @@ def two_models(database, tmp_path, monkeypatch):
         "    data_classes: [synthetic, personal]\n")
     root = build_root(tmp_path, "fake", models)
     spec = root / "agents" / "watcher" / "agent.yaml"
-    spec.write_text(spec.read_text().replace("model: fake\n", "model: fake-personal\n"))
+    spec.write_text(spec.read_text(encoding="utf-8").replace("model: fake\n", "model: fake-personal\n"))
     with running(database, root, httpx.Client(transport=httpx.MockTransport(model.handler)),
                  model) as stack:
         folder = stack.cfg.scenario_dir
-        signed(folder, {**yaml.safe_load((folder / "settings.yaml").read_text()),
+        signed(folder, {**yaml.safe_load((folder / "settings.yaml").read_text(encoding="utf-8")),
                         "classified": {"customer": "personal"}})
         scenario = stack.gateway.scenario
         with db.transaction(stack.admin) as conn:

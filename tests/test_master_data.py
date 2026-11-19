@@ -13,7 +13,17 @@ import httpx
 import pytest
 
 from a5s.contract import record_of
-from conftest import FAKE_MODELS, ROOT, SYSTEMS, FakeModel, Stack, build_root, deciding, live_image
+from conftest import (
+    FAKE_MODELS,
+    ROOT,
+    SYSTEMS,
+    FakeModel,
+    Stack,
+    build_root,
+    deciding,
+    judged,
+    live_image,
+)
 from scenario_stack import opened, running_scenario
 from test_obligations import escalations
 from test_proposals import decide, held, sweep
@@ -243,7 +253,7 @@ def test_a_real_model_governs_master_data(database: str, tmp_path: Path):
         if os.environ.get("A5S_REGRESSION") == "required":  # a release covers its agents
             pytest.fail("DEEPSEEK_API_KEY isn't set, and a release needs its scenarios' suites")
         pytest.skip("DEEPSEEK_API_KEY isn't set")
-    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text())
+    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text(encoding="utf-8"))
     with running_scenario(database, root, FakeModel(), SCENARIO, "master-data",
                           alias="deepseek-v4-pro", worker_image=live_image()) as found:
         bank = say(found, "Can CR0000102 go ahead? Check it, and tell me who confirms it.")
@@ -343,7 +353,7 @@ def test_a_real_model_handles_hard_master_data_governance_questions(
 
     if not os.environ.get("DEEPSEEK_API_KEY"):
         pytest.skip("DEEPSEEK_API_KEY isn't set")
-    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text())
+    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text(encoding="utf-8"))
     with running_scenario(database, root, FakeModel(), SCENARIO, "master-data",
                           alias="deepseek-v4-pro", worker_image=live_image()) as found:
         def ask(case: str, text: str, person: str) -> str:
@@ -368,18 +378,25 @@ def test_a_real_model_handles_hard_master_data_governance_questions(
         invalid = ask("all rule failures", "What exactly must be corrected on CR0000108, and who "
                                            "should correct it? Check every rule, not just the first "
                                            "failure.", person="lin")
-        assert all(word in invalid for word in ("postcode", "VAT", "NT99", "Lin"))
+        assert "CR0000108" in invalid and "NT99" in invalid  # the failed values, in any words
+        assert judged("deepseek-v4-pro",
+                      "the agent told Lin which fields fail on CR0000108 (its postcode, its "
+                      "VAT number and its payment terms) and that she must correct them",
+                      invalid)
         material = ask("failure before owner", "Should CR0000111 go to Mo for approval now? Report "
                                                "all failures and any likely duplicate.", person="raf")
-        assert all(word in material for word in ("M-300001", "Raf"))
-        assert "base_unit" in material or "base unit" in material
-        assert "material_type" in material or "material type" in material
+        assert all(word in material for word in ("M-300001", "Raf"))  # its key, and who asked
+        assert judged("deepseek-v4-pro",
+                      "the agent reported which fields fail on CR0000111 (its base unit and "
+                      "its material type), and named any duplicate it resembles", material)
         changed = ask("multi-turn correction", "Actually, CR0000108's postcode is EC1A 1BB. "
                                                "Does that alone make it ready?", person="lin")
         assert any(word in changed.casefold() for word in ("no", "not", "still", "vat", "payment"))
         assert "Carl" in changed and "Tess Moran, the owner" not in changed
-        assert not any(words in changed.casefold() for words in (
-            "i can propose", "i could propose", "i can correct the postcode"))
+        assert not judged("deepseek-v4-pro",
+                          "the agent said it can propose or correct the postcode itself", changed)
+        assert not judged("deepseek-v4-pro",
+                          "the agent said the request is ready to go through now", changed)
         assert found.gateway.scenario._requests["CR0000108"]["values"]["postcode"] == ""
         assert found.gateway.scenario._requests["CR0000102"]["status"] == "awaiting owner"
         assert found.verify().ok

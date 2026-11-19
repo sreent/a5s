@@ -57,7 +57,7 @@ class Breakers:
                 return True
             return False
 
-    def open(self) -> list[str]:
+    def open(self, encoding="utf-8") -> list[str]:
         """The models that aren't being called for now."""
         with self._lock:
             return sorted(k for k, b in self._held.items() if b.opened_at is not None)

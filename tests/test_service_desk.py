@@ -47,13 +47,13 @@ def running_desk(database: str, root: Path, model: FakeModel,
     shutil.copytree(ROOT / "scenarios" / "service-desk" / "agents", agents)
     for spec in agents.glob("*/agent.yaml"):
         lines = [f"model: {alias}" if line.startswith("model:") else line
-                 for line in spec.read_text().splitlines()]
+                 for line in spec.read_text(encoding="utf-8").splitlines()]
         if more:
             at = lines.index("tools:") + 1
             lines[at:at] = more.splitlines()
         if most is not None:
             lines[lines.index("autonomy:") + 2] = f"  max: {most}"
-        spec.write_text("\n".join(lines) + "\n")
+        spec.write_text("\n".join(lines) + "\n", encoding="utf-8")
     cfg = Config(database_url=db.as_role(database, "gateway"),
                  gateway_url=f"http://127.0.0.1:{port}", service_token=SERVICE_TOKEN,
                  root=root, development=True, seal_keys=(SEAL_KEY,),
@@ -173,7 +173,7 @@ def test_service_desk_answers_with_a_real_model(database: str, tmp_path: Path):
         if os.environ.get("A5S_REGRESSION") == "required":  # a release covers its agents
             pytest.fail("DEEPSEEK_API_KEY isn't set, and a release needs its scenarios' suites")
         pytest.skip("DEEPSEEK_API_KEY isn't set")
-    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text())
+    root = build_root(tmp_path, "deepseek-v4-pro", (ROOT / "config" / "models.yaml").read_text(encoding="utf-8"))
     with running_desk(database, root, FakeModel(), alias="deepseek-v4-pro",
                       worker_image=live_image()) as found:
         ticket = say(found, "What's happening with INC0000001?")

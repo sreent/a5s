@@ -176,7 +176,7 @@ class Var:
             return self.empty
         if given is None or not given.strip():
             if self.file and (kept := _root(env) / self.file).exists():
-                given = kept.read_text()
+                given = kept.read_text(encoding="utf-8")
             else:
                 return self.default
         try:
@@ -716,6 +716,8 @@ def shown(var: Var, env: Mapping[str, str] | None = None) -> tuple[str, str]:
         value = ",".join(_one(i) for i in items)
     elif isinstance(value, float):
         value = f"{value:g}"
+    elif isinstance(value, Path):  # its folders read the same on every platform, as docs show them
+        value = value.as_posix()
     return masked(str(value)) or "empty", source
 
 
@@ -804,7 +806,7 @@ class ModelConfig:
 
 
 def load_models(path: Path) -> dict[str, ModelConfig]:
-    data = yaml.safe_load(path.read_text())
+    data = yaml.safe_load(path.read_text(encoding="utf-8"))
     models = {}
     for alias, m in data["models"].items():
         if m["api"] not in ("openai", "anthropic"):
@@ -834,7 +836,7 @@ def load_models(path: Path) -> dict[str, ModelConfig]:
 def load_currency(path: Path) -> str | None:
     """The currency models.yaml prices models in, as its ISO 4217 code, such as GBP, if it
     names one: the one budgets in the settings are in too (core/spending.py)."""
-    found = (yaml.safe_load(path.read_text()) or {}).get("currency")
+    found = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("currency")
     if found is None:
         return None
     if not isinstance(found, str) or not re.fullmatch(r"[A-Z]{3}", found):

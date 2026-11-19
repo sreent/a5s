@@ -205,13 +205,13 @@ def _serve(app: Any) -> tuple[uvicorn.Server, str]:
 def _fresh(folder: Path) -> dict[str, str]:
     """New keys for each of a scenario's made-up people: their public keys where the scenario
     reads them, and their private keys, which only the sandbox holds, to sign its settings."""
-    people = (yaml.safe_load((folder / "data.yaml").read_text()) or {}).get("people") or []
+    people = (yaml.safe_load((folder / "data.yaml").read_text(encoding="utf-8")) or {}).get("people") or []
     keys = folder / "keys"
     keys.mkdir(exist_ok=True)
     held = {}
     for person in people:
         private, public = signing.keypair()
-        (keys / f"{person['id']}.pub").write_text(public + "\n")
+        (keys / f"{person['id']}.pub").write_text(public + "\n", encoding="utf-8")
         held[person["id"]] = private
     return held
 
@@ -243,7 +243,7 @@ class Sandbox:
         return build.scenario(self.cfg)
 
     def people(self) -> list[dict]:
-        found = (yaml.safe_load((self.cfg.scenario_dir / "data.yaml").read_text()) or {}).get("people") or []
+        found = (yaml.safe_load((self.cfg.scenario_dir / "data.yaml").read_text(encoding="utf-8")) or {}).get("people") or []
         return [{"id": p["id"], "name": p.get("name") or p["id"]} for p in found]
 
     def models(self) -> list[str]:
@@ -264,7 +264,7 @@ class Sandbox:
                    if (p := scenario.person(who)) and any(r.startswith(SIGNERS) for r in p.roles)]
         (folder / "settings.yaml").write_bytes(raw)
         (folder / "settings.sig").write_text(yaml.safe_dump({"signatures": [
-            {"signer": who, "value": signing.sign(self.keys[who], raw)} for who in signers]}))
+            {"signer": who, "value": signing.sign(self.keys[who], raw)} for who in signers]}), encoding="utf-8")
         with db.transaction(self.admin) as conn:
             applied = registry.apply(conn, self.gateway.definitions, scenario.settings(),
                                      scenario.tools(), scenario.person, scenario.name)
@@ -310,15 +310,15 @@ class Sandbox:
                 continue
             target = folder / path
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(text)
+            target.write_text(text, encoding="utf-8")
         spec = folder / "agent.yaml"
-        text = spec.read_text() if spec.exists() else ""
+        text = spec.read_text(encoding="utf-8") if spec.exists() else ""
         for name, value in (("id", agent), ("model", model)):  # its value on the line, or the next
             text, found = re.subn(rf"(?m)^{name}:[ \t]*(?:\n[ \t]+)?[^\s#]+", f"{name}: {value}",
                                   text, count=1)
             if not found:
                 raise Refused(f"its agent.yaml names no {name}")
-        spec.write_text(text)
+        spec.write_text(text, encoding="utf-8")
         tools = self.scenario.tools()
         try:
             definitions.pin(folder, {n: t.schema_hash for n, t in tools.items()})
@@ -594,19 +594,19 @@ def opened(deployment: Config, admin: str, work: Path,
     scenario_dir = root / "scenarios" / deployment.scenario_dir.name
     shutil.copytree(deployment.scenario_dir, scenario_dir,
                     ignore=shutil.ignore_patterns("*.key", "settings.sig", "__pycache__", "*.pyc"))
-    standing = yaml.safe_load((scenario_dir / "settings.yaml").read_text()) or {}
+    standing = yaml.safe_load((scenario_dir / "settings.yaml").read_text(encoding="utf-8")) or {}
     if standing.get("data_class") != "synthetic":  # before it touches anything
         raise Refused("the sandbox runs only a scenario whose records are all made up "
                       "(data_class: synthetic): give it the scenario's fakes")
     _own(admin)
     shutil.copytree(deployment.agents_dir, root / "agents",
                     ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-    models = yaml.safe_load(deployment.models_file.read_text()) or {}
+    models = yaml.safe_load(deployment.models_file.read_text(encoding="utf-8")) or {}
     models.setdefault("models", {})[STAND_IN] = {
         "provider": "sandbox", "api": "openai", "base_url": STAND_IN_URL, "model": "stand-in-1",
         "reported_model": "stand-in-1", "region": "the sandbox itself", "data_classes": ["synthetic"]}
     (root / "config").mkdir(parents=True)
-    (root / "config" / "models.yaml").write_text(yaml.safe_dump(models, sort_keys=False))
+    (root / "config" / "models.yaml").write_text(yaml.safe_dump(models, sort_keys=False), encoding="utf-8")
     keys = _fresh(scenario_dir)
     # Each of its parts connects as its database's administrator, by its own password: the
     # roles a5s gives each part belong to a whole database server, and a deployment's may share it

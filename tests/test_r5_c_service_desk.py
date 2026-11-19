@@ -94,7 +94,7 @@ class Desk:
     def __init__(self, folder: Path, database_url: str):
         self.folder, self.database_url = folder, database_url
         keys = folder / "keys"
-        self._people = {p.id: replace(p, public_key=(keys / f"{p.id}.pub").read_text().strip()
+        self._people = {p.id: replace(p, public_key=(keys / f"{p.id}.pub").read_text(encoding="utf-8").strip()
                                       if (keys / f"{p.id}.pub").exists() else None)
                         for p in PEOPLE}
         self._tickets = {t["key"]: t for t in TICKETS}
@@ -147,7 +147,7 @@ class Desk:
 
     def settings(self) -> Settings:
         sig = self.folder / "settings.sig"
-        signed_by = (yaml.safe_load(sig.read_text()) or {}).get("signatures", []) if sig.exists() else []
+        signed_by = (yaml.safe_load(sig.read_text(encoding="utf-8")) or {}).get("signatures", []) if sig.exists() else []
         return parse_settings((self.folder / "settings.yaml").read_bytes(),
                               tuple(Signature(s["signer"], s["value"]) for s in signed_by))
 
@@ -234,16 +234,16 @@ def desk_running(database: str, tmp: Path, model: FakeModel, kind: type[Desk]) -
     root = tmp / "root"
     shutil.copytree(ROOT / "agents", root / "agents")
     (root / "config").mkdir()
-    (root / "config" / "models.yaml").write_text(FAKE_MODELS)
+    (root / "config" / "models.yaml").write_text(FAKE_MODELS, encoding="utf-8")
     for spec in (root / "agents").glob("*/agent.yaml"):
         spec.write_text("\n".join("model: fake" if line.startswith("model:") else line
-                                  for line in spec.read_text().splitlines()) + "\n")
+                                  for line in spec.read_text(encoding="utf-8").splitlines()) + "\n")
     folder = root / "scenarios" / "desk"
     (folder / "keys").mkdir(parents=True)
     for p in PEOPLE:
         private, public = signing.keypair()
-        (folder / "keys" / f"{p.id}.key").write_text(private)
-        (folder / "keys" / f"{p.id}.pub").write_text(public)
+        (folder / "keys" / f"{p.id}.key").write_text(private, encoding="utf-8")
+        (folder / "keys" / f"{p.id}.pub").write_text(public, encoding="utf-8")
     signed(folder, {**SETTINGS, "serial": SETTINGS["serial"] - 1}, SIGNERS)
     port = free_port()
     cfg = Config(database_url=db.as_role(database, "gateway"), gateway_url=f"http://127.0.0.1:{port}",

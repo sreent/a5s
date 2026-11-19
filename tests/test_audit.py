@@ -141,11 +141,11 @@ def test_the_command_line_exports_a_period_and_checks_it(stack, monkeypatch, cap
     cli.main(["audit", "verify", str(out)])
     said = capsys.readouterr().out  # without the locked copies, it says how little that proves
     assert "hold together, which alone proves little" in said and "A5S_ANCHOR_STORE" in said
-    lines = out.read_text().splitlines()
+    lines = out.read_text(encoding="utf-8").splitlines()
     assert "export" in json.loads(lines[0])  # what it says of the period, first
     entry = json.loads(lines[1])
     lines[1] = json.dumps({**entry, "entry": entry["entry"].replace('"seq"', '"seq" ', 1)})
-    out.write_text("\n".join(lines) + "\n")
+    out.write_text("\n".join(lines) + "\n", encoding="utf-8")
     with pytest.raises(SystemExit, match="doesn't check out"):
         cli.main(["audit", "verify", str(out)])
     cli.main(["audit", "report", "--by", AUDITOR])

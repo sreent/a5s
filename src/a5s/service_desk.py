@@ -78,7 +78,7 @@ class ServiceDeskScenario:
         with self._reading:
             seen = path.stat()
             if self._held is None or (seen.st_mtime_ns, seen.st_size) != self._seen:
-                data = yaml.safe_load(path.read_text())
+                data = yaml.safe_load(path.read_text(encoding="utf-8"))
                 self._held = _Held(
                     people={p["id"]: Person.listed(p, self.folder) for p in data["people"]},
                     tickets={t["key"]: t for t in data["tickets"]},
@@ -184,13 +184,13 @@ class ServiceDeskScenario:
 
     def settings(self) -> Settings:
         sig = self.folder / "settings.sig"
-        signed = (yaml.safe_load(sig.read_text()) or {}).get("signatures", []) if sig.exists() else []
+        signed = (yaml.safe_load(sig.read_text(encoding="utf-8")) or {}).get("signatures", []) if sig.exists() else []
         return parse_settings((self.folder / "settings.yaml").read_bytes(),
                               tuple(Signature(s["signer"], s["value"]) for s in signed))
 
     def policy_pack(self) -> str | None:
         pack = self.folder / "pack.cedar"
-        return pack.read_text() if pack.exists() else None
+        return pack.read_text(encoding="utf-8") if pack.exists() else None
 
     def tools(self) -> dict[str, Tool]:
         def draft(call: ToolCall) -> dict:

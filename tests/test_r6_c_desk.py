@@ -146,20 +146,20 @@ def desk_running(database: str, tmp: Path, kind: type[Desk6]) -> Iterator[Stack]
     root = tmp / "root"
     shutil.copytree(ROOT / "agents", root / "agents")
     (root / "config").mkdir()
-    (root / "config" / "models.yaml").write_text(FAKE_MODELS)
+    (root / "config" / "models.yaml").write_text(FAKE_MODELS, encoding="utf-8")
     for spec in (root / "agents").glob("*/agent.yaml"):
         spec.write_text("\n".join("model: fake" if line.startswith("model:") else line
-                                  for line in spec.read_text().splitlines()) + "\n")
+                                  for line in spec.read_text(encoding="utf-8").splitlines()) + "\n")
     spec_file = root / "agents" / "assistant" / "agent.yaml"
-    spec = yaml.safe_load(spec_file.read_text())
+    spec = yaml.safe_load(spec_file.read_text(encoding="utf-8"))
     spec["tools"]["desk"] = GRANTS
-    spec_file.write_text(yaml.safe_dump(spec, sort_keys=False))
+    spec_file.write_text(yaml.safe_dump(spec, sort_keys=False), encoding="utf-8")
     folder = root / "scenarios" / "desk"
     (folder / "keys").mkdir(parents=True)
     for p in PEOPLE:
         private, public = signing.keypair()
-        (folder / "keys" / f"{p.id}.key").write_text(private)
-        (folder / "keys" / f"{p.id}.pub").write_text(public)
+        (folder / "keys" / f"{p.id}.key").write_text(private, encoding="utf-8")
+        (folder / "keys" / f"{p.id}.pub").write_text(public, encoding="utf-8")
     signed_settings(folder, {**SETTINGS, "serial": SETTINGS["serial"] - 1}, SIGNERS)
     port = free_port()
     cfg = Config(database_url=db.as_role(database, "gateway"),

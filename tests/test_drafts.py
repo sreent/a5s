@@ -54,8 +54,8 @@ def test_who_may_author_what():
 def test_a_draft_is_released_once_a_later_release_here_holds_it_as_it_is(tmp_path):
     folder = tmp_path / "helper"
     (folder / "tests").mkdir(parents=True)
-    (folder / "agent.yaml").write_text("id: helper\n")
-    (folder / "tests" / "cases.yaml").write_text("[]\n")
+    (folder / "agent.yaml").write_text("id: helper\n", encoding="utf-8")
+    (folder / "tests" / "cases.yaml").write_text("[]\n", encoding="utf-8")
     files = drafts.folder_files(folder)
     here = {"helper": type("Released", (), {"release_id": "0.1.0+bbb"})()}
 
@@ -77,7 +77,7 @@ def test_an_agents_owner_starts_a_new_one_from_a_template(stack, approving, prov
     assert (draft["released"], draft["at_work"]) == (False, False)  # nothing here has it yet
     spec = yaml.safe_load(draft["files"]["agent.yaml"])
     assert (spec["id"], spec["release"]) == ("finance-helper", "0.1.0")
-    assert draft["files"]["AGENTS.md"] == (ROOT / "agents" / "assistant" / "AGENTS.md").read_text()
+    assert draft["files"]["AGENTS.md"] == (ROOT / "agents" / "assistant" / "AGENTS.md").read_text(encoding="utf-8")
     assert yaml.safe_load(draft["files"]["tools.lock"])["get_record"]  # its tools pinned
     assert [d["agent"] for d in priya("GET", "/studio/api/drafts").json()["drafts"]] == ["finance-helper"]
     [entry] = recorded(stack, "draft")
@@ -91,7 +91,7 @@ def test_a_change_to_an_agent_starts_from_its_folder_as_released(stack, approvin
     r = as_(approving, provider, "priya")("POST", "/studio/api/drafts", {"agent": "assistant"})
     assert r.status_code == 200, r.text
     folder = stack.cfg.agents_dir / "assistant"  # as this deployment released it
-    assert r.json()["files"]["agent.yaml"] == (folder / "agent.yaml").read_text()
+    assert r.json()["files"]["agent.yaml"] == (folder / "agent.yaml").read_text(encoding="utf-8")
     assert r.json()["based_on"].startswith("assistant 0.1.0+") and r.json()["problems"] == []
     # The release it was drafted from holds it as it is, but a change nobody's made yet isn't
     # released; its agent is at work, through assistant-finance

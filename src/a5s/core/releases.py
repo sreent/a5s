@@ -121,6 +121,7 @@ def agent_part(folder: Path) -> dict:
         "files": _files(folder, f"agents/{folder.name}"),
         "may": {  # what widening it would change
             "tools": sorted(d.tool_names), "pins": dict(sorted(d.pins.items())), "model": d.model,
+            "fallbacks": d.fallbacks,  # other approved models a run falls back to
             "triggers": d.triggers, "schedules": [s.model_dump() for s in d.schedules],
             "reports": [r.model_dump() for r in d.reports],
             "obligations": sorted(d.obligations), "autonomy": d.autonomy.model_dump(),
@@ -142,7 +143,7 @@ def _signers(scenario_dir: Path) -> dict:
     directory gives a key, with their team, their roles, and the teams of everyone below
     them in their reporting lines, which keep them from approving that team's releases."""
     path = scenario_dir / "data.yaml"
-    people = ((yaml.safe_load(path.read_text()) or {}).get("people") or []) if path.exists() else []
+    people = ((yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("people") or []) if path.exists() else []
     teams = {p["id"]: p.get("team") for p in people}
     managers = {p["id"]: p.get("manager") for p in people}
     above: dict[str, set[str]] = {}
@@ -157,7 +158,7 @@ def _signers(scenario_dir: Path) -> dict:
     for p in people:
         key = scenario_dir / "keys" / f"{p['id']}.pub"
         if key.exists():
-            found[p["id"]] = {"key": key.read_text().strip(), "team": p.get("team"),
+            found[p["id"]] = {"key": key.read_text(encoding="utf-8").strip(), "team": p.get("team"),
                               "roles": sorted(p.get("roles") or []),
                               "above": sorted(above.get(p["id"], ()))}
     return found
@@ -165,7 +166,7 @@ def _signers(scenario_dir: Path) -> dict:
 
 def _models(config: Path) -> dict:
     path = config / "models.yaml"
-    listed = (yaml.safe_load(path.read_text()) or {}).get("models") or {} if path.exists() else {}
+    listed = (yaml.safe_load(path.read_text(encoding="utf-8")) or {}).get("models") or {} if path.exists() else {}
     keep = ("provider", "api", "base_url", "model", "reported_model", "region", "data_classes")
     return {alias: {k: m.get(k) for k in keep} for alias, m in sorted(listed.items())}
 
@@ -314,6 +315,8 @@ def _widens_agent(old: dict, new: dict) -> list[str]:
         found.append("uses a tool that changed")
     if new["model"] != old["model"]:
         found.append("uses another model")
+    if new.get("fallbacks") != old.get("fallbacks"):
+        found.append("may fall back to other models")
     found += [f"has new {key}" for key in ("triggers", "schedules", "reports")
               if any(item not in old.get(key, []) for item in new.get(key, []))]
     if set(new["obligations"]) - set(old["obligations"]):

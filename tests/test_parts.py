@@ -168,7 +168,7 @@ def test_only_an_instance_approver_sets_the_classes_of_data(stack):
               "serves": ["chen", "omar"]}
     assert not stack.settle(instances={"assistant-finance": orders}, signers=("ana", "omar")).refused
 
-    in_force = yaml.safe_load((folder / "settings.yaml").read_text())
+    in_force = yaml.safe_load((folder / "settings.yaml").read_text(encoding="utf-8"))
 
     def as_omar(**changes) -> list[str]:  # he owns orders, and holds no other role
         signed(folder, {**in_force, **changes}, ("omar",))

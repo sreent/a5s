@@ -30,7 +30,7 @@ def test_an_approver_hears_what_a_version_still_waits_for(stack, approving, prov
 
 
 def test_the_page_says_in_force_within_a_minute_only_when_nothing_more_is_missing():
-    script = PAGE.read_text()
+    script = PAGE.read_text(encoding="utf-8")
     words = "puts it in force within a minute"
     assert script.count(words) == 1, f"the page says {words!r} other than where it weighs what's missing"
     weighs = script[script.index("const missing = (needs: string[]) => (needs.length"):]
