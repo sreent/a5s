@@ -760,6 +760,12 @@ def main(argv: list[str] | None = None) -> None:
     canaries.add_argument("--database", help="the database (default: this environment's)")
     canaries.add_argument("--model", help="only this approved model")
     canaries.add_argument("--scenario", default="sample", help="whose scores they are")
+    health = sub.add_parser("health", help="each model's day, measured, and putting a gated "
+                                          "model back")
+    health.add_argument("--database", help="the database (default: this environment's)")
+    health.add_argument("--scenario", default="sample", help="whose scores they are")
+    health.add_argument("--days", type=int, default=1, help="how many days to measure")
+    health.add_argument("--restore", metavar="MODEL", help="put a gated model back, as a person")
     exported.add_argument("--by", help="in development, the officer, who asks nowhere else")
     exported.add_argument("--out", type=Path, help="write it to this file, which only you may "
                                                    "read, rather than print it")
@@ -910,6 +916,20 @@ def main(argv: list[str] | None = None) -> None:
             print(f"{row['at']:%H:%M} {row['canary']} {row['model']} "
                   f"{'pass' if row['passed'] else 'FAIL'} ({row['seconds']}s)")
         raise SystemExit(1 if failed else 0)
+
+    if args.command == "health":
+        from a5s.core import health as health_mod
+        cfg = Config.from_env()
+        url = args.database or DEFAULT_DATABASE_URL
+        with db.transaction(url) as conn:
+            if args.restore:
+                health_mod.restore(conn, args.scenario, args.restore)
+                print(f"{args.restore} is back: a person put it there.")
+            else:
+                for row in health_mod.report(url, args.scenario, days=args.days):
+                    state = "stopped" if row["gated_at"] else "answering"
+                    print(f"{row['model']} {row['calls']} calls, {row['failed']} failed, "
+                          f"{row['stalls']} stalls, {row['mean_seconds']}s each: {state}")
 
     if args.command == "config":
         return _config(args)
