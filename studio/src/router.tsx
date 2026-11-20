@@ -65,6 +65,7 @@ export function parse(path: string, search = ""): Route {
     const month = new URLSearchParams(search).get("month");
     return month ? { page: "spending", month } : { page: "spending" };
   }
+  if (kind === "health") return { page: "health" };
   if (kind === "connections") return { page: "connections" };
   if (kind === "undo") return { page: "undo", change: new URLSearchParams(search).get("change") ?? "" };
   if (kind === "approve") return { page: "approve", settings: new URLSearchParams(search).get("settings") ?? "" };
