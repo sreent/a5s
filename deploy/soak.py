@@ -348,6 +348,28 @@ def grew(samples: list, measure) -> tuple[float, float]:
     return (statistics.mean(warm) if warm else 0.0), (statistics.mean(last) if last else 0.0)
 
 
+def repeated_message_runs() -> list[dict]:
+    """Every run for a message with more than one, so a fallback's expected retry can be told
+    from a crash that made overlapping work."""
+    query = """
+      with each as (
+        select id::text as run, trigger->>'inbound' as inbound, model, outcome,
+               opened_at, closed_at from runs where trigger->>'kind' = 'message'
+      ), repeated as (
+        select * from each where inbound in (
+          select inbound from each group by inbound having count(*) > 1)
+      )
+      select coalesce(json_agg(json_build_object(
+        'inbound', inbound, 'run', run, 'model', model, 'outcome', outcome,
+        'opened_at', opened_at, 'closed_at', closed_at) order by inbound, opened_at), '[]'::json)
+      from repeated
+    """
+    found = subprocess.run(["docker", "exec", f"{PROJECT}-postgres-1", "psql", "-U", "a5s",
+                            "-d", "postgres", "-Atc", query], capture_output=True, text=True,
+                           check=False).stdout.strip()
+    return json.loads(found) if found else []
+
+
 def main() -> None:
     minutes, found_at = float(sys.argv[1]), sys.argv[2]
     began, killed, away = time.time(), [], []
@@ -435,6 +457,7 @@ def main() -> None:
                              "settled": (round(settled_connections, 1)
                                          if settled_connections is not None else None)},
              "recovery_connections": recovery,
+             "repeated_message_runs": repeated_message_runs(),
              "tasks": {"started": len(started), **tasks}, "killed": killed,
              "away": away, "cut_off": len(cut), "tried_again": len(again),
              "errors_after_kills": {p: {"errors": n, "last_after_seconds": round(s)}
