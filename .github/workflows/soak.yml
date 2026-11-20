@@ -29,3 +29,11 @@ jobs:
       - run: sh deploy/soak.sh "${MINUTES:-30}"
         env:
           MINUTES: ${{ inputs.minutes }}
+          A5S_SOAK_FOUND: ${{ github.workspace }}/soak-results.json
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: soak-results
+          path: soak-results.json
+          if-no-files-found: ignore
+          retention-days: 14

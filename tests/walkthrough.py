@@ -113,7 +113,7 @@ def watched(walk: Walk, stack: Any, url: str, instance: str, person: str, name: 
         assert int(page.locator(".tile", has=page.locator(".tile-label:text-is('Runs')")
                               ).locator(".tile-value").inner_text()) >= 1
         assert "done" in page.inner_text("section.card:has(h2:text-is('How runs ended'))")
-        assert "Asks" in page.inner_text("#reach")
+        assert "asks first" in page.inner_text("#reach")
     used = next(e["run"] for e in reversed(stack.ledger())
                 if e["kind"] == "tool" and e["action"] == tool and e["instance"] == instance)
     with walk.step(f"They open that run: {tool} on {record}, from its message to its outcome. "
