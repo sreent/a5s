@@ -39,6 +39,8 @@ def gated(conn: db.Connection, scenario: str, alias: str,
         "from model_health where scenario = %s and model = %s and "
         "day > current_date - make_interval(days => %s)",
         (scenario, alias, slo["window_days"])).fetchone()
+    if row is None:
+        return None  # no calls recorded for it: nothing to gate
     if row["gate"] is not None:
         return f"{alias} failed too much, and a person hasn't put it back"
     if row["restored_today"]:
