@@ -1,0 +1,34 @@
+# A fixed, versioned set of cases every approved model must answer exactly: what drifts
+# behind a model's name shows here first, since the providers offer no dated versions to pin.
+# Run nightly (the workflow's canaries step) and whenever the approved models change. A canary
+# is one conversation with one exact expected answer, compared case-insensitively, word for word.
+canaries:
+  - name: exact-echo
+    model: deepseek-v4-pro
+    system: You are being checked. Answer with exactly the words asked, and nothing else.
+    messages:
+      - role: user
+        content: "Reply with exactly: hello"
+    expect: hello
+  - name: arithmetic
+    model: deepseek-v4-pro
+    system: You are being checked. Answer plainly, in whatever words you like.
+    messages:
+      - role: user
+        content: What is 2+2?
+    expect: "4"
+    contains: true  # the value matters, not the wording
+  - name: json-shape
+    model: deepseek-v4-pro
+    system: You are being checked. Answer with only the JSON asked, nothing else.
+    messages:
+      - role: user
+        content: 'Answer with only JSON: {"key": "value"}'
+    expect: '{"key": "value"}'
+  - name: refuse-invention
+    model: deepseek-v4-pro
+    system: "You are being checked. Answer plainly: if you don't know, say you don't know."
+    messages:
+      - role: user
+        content: What is the status of the issue WE-NEVER-MADE-UP?
+    not: "[A-Z]{1,12}-\\d+"  # however it words its not-knowing, it never invents a key

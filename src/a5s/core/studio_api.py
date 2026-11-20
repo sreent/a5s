@@ -42,6 +42,7 @@ from a5s.core import (
     feedback,
     grade_api,
     handover,
+    health_api,
     languages,
     ledger,
     memberships,
@@ -289,6 +290,7 @@ def router(gw: Any) -> APIRouter:
     @pages.get("/studio/design", include_in_schema=False)
     @pages.get("/studio/map", include_in_schema=False)
     @pages.get("/studio/spending", include_in_schema=False)
+    @pages.get("/studio/health", include_in_schema=False)
     @pages.get("/studio/connections", include_in_schema=False)
     @pages.get("/studio/undo", include_in_schema=False)
     @pages.get("/studio/handovers", include_in_schema=False)
@@ -1366,6 +1368,7 @@ def described() -> dict:
     app.include_router(audit_api.router(SimpleNamespace(cfg=None)))  # and the audit trail
     app.include_router(decide_api.router(SimpleNamespace(cfg=None)))  # and deciding held changes
     app.include_router(grade_api.router(SimpleNamespace(cfg=None)))  # and grading samples
+    app.include_router(health_api.router(SimpleNamespace(cfg=None)))  # and the model health
     app.include_router(officer_api.router(SimpleNamespace(cfg=None)))  # and the officer's requests
     app.include_router(approve_api.router(SimpleNamespace(cfg=None)))  # and approving settings
     app.include_router(shell_api.router(SimpleNamespace(cfg=None)))  # and every page's sidebar

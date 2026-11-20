@@ -646,6 +646,24 @@ export type Handovers = {
   handovers: HandoverLine[];
 };
 
+// One model's day, for the health page: how its calls went, and whether it's gated.
+export type HealthModel = {
+  model: string;
+  calls: number;
+  failed: number;
+  stalls: number;
+  mean_seconds?: number | null;
+  gated_at?: string | null;
+  canary_passed?: number;
+  canary_failed?: number;
+};
+
+// The health page: each model's day, measured rather than argued about.
+export type HealthNow = {
+  days: number;
+  models: HealthModel[];
+};
+
 export type Held = {
   held: number;
   approved: number;

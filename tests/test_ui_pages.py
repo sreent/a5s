@@ -88,8 +88,42 @@ def test_the_sidebar_lists_only_the_pages_each_person_may_use(stack, approving, 
                              "admin", "spending"]
     assert listed("ben") == ["chat", "tasks", "notebook", "studio", "map", "spending"]
     assert "audit" in listed("kofi")
+    assert "health" in listed("rosa")  # the release approver: whose evidence a model change is
     assert listed("chen") == ["chat", "tasks", "studio", "map"]
     assert httpx.get(f"{approving}/shell/api", timeout=30).status_code == 401
+
+
+def test_the_health_page_shows_each_models_day(stack, approving, provider, browser):
+    """Engineers and the release approver see each model's day, measured (core/health_api.py):
+    its calls, failures, stalls, mean time, whether its SLO gates it, and its canary scores."""
+    import httpx
+
+    token = provider.id_token(person="rosa")
+    answer = httpx.get(f"{approving}/health/api", timeout=30,
+                       headers={"Authorization": f"Bearer {token}"})
+    assert answer.status_code == 200, answer.text
+    assert answer.json() == {"days": 1, "models": []}  # this stack's models haven't been called
+    provider.person = "rosa"  # the page signs her in through the provider, as any page does
+    page = browser.new_page()
+    page.goto(f"{approving}/studio/health")
+    try:
+        page.wait_for_selector("table.health", timeout=30000)
+    except Exception as exc:  # noqa: BLE001 - what the page said instead, for the failure's words
+        raise AssertionError(f"the health page didn't render: {page.inner_text('body')[:600]}"
+                             ) from exc
+    assert "Model health" in page.inner_text("body")
+
+
+def test_the_health_page_is_for_the_release_approver_and_engineers_alone(approving, provider):
+    """Nobody else reads it: a model's health is the evidence for a model change, not a
+    public chart (core/health_api.py)."""
+    import httpx
+
+    for person in ("ana", "ben", "chen", "kofi"):
+        token = provider.id_token(person=person)
+        answer = httpx.get(f"{approving}/health/api", timeout=30,
+                           headers={"Authorization": f"Bearer {token}"})
+        assert answer.status_code == 403, person
 
 
 def test_every_sidebar_and_the_palette_show_the_pages_as_a5s_lists_them(seen, approving, provider,

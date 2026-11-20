@@ -8,7 +8,14 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Header
 
 from a5s import db
-from a5s.contract import DATA_PROTECTION, INSTANCE_APPROVER, PART_DELEGATE, PART_OWNER, Person
+from a5s.contract import (
+    DATA_PROTECTION,
+    INSTANCE_APPROVER,
+    PART_DELEGATE,
+    PART_OWNER,
+    RELEASE_APPROVER,
+    Person,
+)
 from a5s.core import (
     administration,
     audit,
@@ -22,6 +29,7 @@ from a5s.core import (
     web,
 )
 from a5s.core import studio_models as shapes
+from a5s.core.releases import ENGINEER
 
 # Each page, in the order the sidebars show it: its key, its name, its icon, the heading it's
 # under, and its address, in the studio for most. The studio's sidebar and its palette, and every
@@ -41,6 +49,7 @@ PAGES = (
     ("audit", "Audit trail", "audit", "Oversee", "/studio/audit"),
     ("admin", "Administration", "admin", "Oversee", "/studio/admin"),
     ("spending", "Spending", "spend", "Oversee", "/studio/spending"),
+    ("health", "Model health", "health", "Oversee", "/studio/health"),
     ("officer", "Data protection", "officer", "Oversee", "/studio/officer"),
 )
 
@@ -49,7 +58,7 @@ THAI = {"chat": "แชท", "handovers": "บทสนทนาที่ส่�
         "map": "แผนผัง", "decide": "การตัดสินใจ", "grade": "การให้คะแนน",
         "shadows": "เวอร์ชันทดลอง",
         "settings": "การตั้งค่า", "audit": "บันทึกการตรวจสอบ", "admin": "การดูแลระบบ",
-        "spending": "ค่าใช้จ่าย", "officer": "การคุ้มครองข้อมูล"}
+        "spending": "ค่าใช้จ่าย", "officer": "การคุ้มครองข้อมูล", "health": "สุขภาพโมเดล"}
 THAI_HEADINGS = {"Work": "ทำงาน", "Build": "สร้าง", "Decide": "ตัดสินใจ", "Oversee": "กำกับดูแล"}
 
 
@@ -73,7 +82,9 @@ def router(gw: Any) -> APIRouter:
                  "settings": registry.approves(person), "audit": audit.reads(person),
                  "admin": administration.administers(person, gw.cfg.team),
                  "spending": spending.sees_any(gw.url, person),
-                 "officer": DATA_PROTECTION in roles}
+                 "officer": DATA_PROTECTION in roles,
+                 "health": bool(roles & {RELEASE_APPROVER, ENGINEER}) or any(
+                     r.startswith(ENGINEER + ":") for r in roles)}
         with db.transaction(gw.url) as conn:
             language = languages.of(conn, person)
             found["handovers"] = handover.answers_any(conn, gw.scenario, person)

@@ -755,6 +755,17 @@ def main(argv: list[str] | None = None) -> None:
                                              "asked for it in the studio, /studio/officer")
     exported.add_argument("--person", required=True, help="their id in the directory, or an "
                                                            "archive's name")
+    canaries = sub.add_parser("canaries", help="run the fixed canary set on the approved models "
+                                               "and show their scores: what drifted shows here")
+    canaries.add_argument("--database", help="the database (default: this environment's)")
+    canaries.add_argument("--model", help="only this approved model")
+    canaries.add_argument("--scenario", default="sample", help="whose scores they are")
+    health = sub.add_parser("health", help="each model's day, measured, and putting a gated "
+                                          "model back")
+    health.add_argument("--database", help="the database (default: this environment's)")
+    health.add_argument("--scenario", default="sample", help="whose scores they are")
+    health.add_argument("--days", type=int, default=1, help="how many days to measure")
+    health.add_argument("--restore", metavar="MODEL", help="put a gated model back, as a person")
     exported.add_argument("--by", help="in development, the officer, who asks nowhere else")
     exported.add_argument("--out", type=Path, help="write it to this file, which only you may "
                                                    "read, rather than print it")
@@ -892,6 +903,34 @@ def main(argv: list[str] | None = None) -> None:
     logging.basicConfig(level=logging.WARNING,
                         format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     logging.getLogger("a5s").setLevel(logging.INFO)
+
+    if args.command == "canaries":
+        from a5s.core import canaries as canary_runs
+        cfg = Config.from_env()
+        approved = load_models(cfg.models_file)
+        if args.model:
+            approved = {k: v for k, v in approved.items() if k == args.model}
+        url = args.database or DEFAULT_DATABASE_URL
+        failed = canary_runs.run(url, args.scenario, approved)
+        for row in canary_runs.scorecard(url, args.scenario):
+            print(f"{row['at']:%H:%M} {row['canary']} {row['model']} "
+                  f"{'pass' if row['passed'] else 'FAIL'} ({row['seconds']}s)")
+        raise SystemExit(1 if failed else 0)
+
+    if args.command == "health":
+        from a5s.core import health as health_mod
+        cfg = Config.from_env()
+        url = args.database or DEFAULT_DATABASE_URL
+        with db.transaction(url) as conn:
+            if args.restore:
+                health_mod.restore(conn, args.scenario, args.restore)
+                print(f"{args.restore} is back: a person put it there.")
+            else:
+                for row in health_mod.report(url, args.scenario, days=args.days):
+                    state = "stopped" if row["gated_at"] else "answering"
+                    print(f"{row['model']} {row['calls']} calls, {row['failed']} failed, "
+                          f"{row['stalls']} stalls, {row['mean_seconds']}s each: {state}")
+
     if args.command == "config":
         return _config(args)
     _checked(args.command)

@@ -60,6 +60,7 @@ from a5s.core import (
     files,
     grade_api,
     groups,
+    health_api,
     languages,
     ledger,
     matrix,
@@ -779,7 +780,8 @@ def create_app(gw: Any) -> FastAPI:
     # The pages people sign in to for one thing, each a router whose API checks who's signed in:
     # the studio's (core/studio_api.py), the settings app's, the notebook's, people's own tasks',
     # the auditors' and the administrators'
-    for pages in (studio_api, settings_api, notebook_api, tasks_api, audit_api, admin_api):
+    for pages in (studio_api, settings_api, notebook_api, tasks_api, audit_api, admin_api,
+                   health_api):
         app.include_router(pages.router(gw))
 
     # Every page's sidebar: who signed in, and the pages they may use (core/shell_api.py)
