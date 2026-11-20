@@ -65,6 +65,11 @@ addopts = "-m 'not live'"
 include = ["src/a5s"]
 pythonVersion = "3.13"
 typeCheckingMode = "standard"
+# The project's own environment, named rather than discovered: on machines with another
+# Python registered (such as a base Anaconda), discovery picks the wrong one and reports
+# the whole tree's imports as missing. uv sync puts the environment here, in CI and locally.
+venvPath = "."
+venv = ".venv"
 
 [tool.ruff]
 line-length = 100
