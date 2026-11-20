@@ -31,7 +31,8 @@ def gated(conn: db.Connection, scenario: str, alias: str,
           slo: dict[str, Any] | None = None) -> str | None:
     """Why the model isn't answerable, or None: over its window, with at least its SLO's
     calls, more than its share failed, and a person hasn't restored it since."""
-    slo = slo or SLO
+    if slo is None:
+        slo = SLO
     row = conn.execute(
         "select sum(calls)::int as calls, sum(stalls)::int as stalls, max(gated_at) as gate, "
         "(max(restored_at) >= date_trunc('day', now())) as restored_today "
