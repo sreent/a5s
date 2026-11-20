@@ -290,6 +290,7 @@ def router(gw: Any) -> APIRouter:
     @pages.get("/studio/design", include_in_schema=False)
     @pages.get("/studio/map", include_in_schema=False)
     @pages.get("/studio/spending", include_in_schema=False)
+    @pages.get("/studio/health", include_in_schema=False)
     @pages.get("/studio/connections", include_in_schema=False)
     @pages.get("/studio/undo", include_in_schema=False)
     @pages.get("/studio/handovers", include_in_schema=False)
