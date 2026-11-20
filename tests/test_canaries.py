@@ -75,6 +75,32 @@ def test_a_model_whose_key_isnt_set_is_skipped_not_failed(database):
     assert rows == []
 
 
+
+
+
+
+def test_a_canary_may_require_only_the_value_however_worded():
+    found, handler = fake([{"choices": [{"message": {"content": "2+2 = 4."}}]}])
+    canary = {"name": "sum", "model": "fake", "messages": [{"role": "user", "content": "x"}],
+              "expect": "4", "contains": True}
+    assert canaries.ask(found, canary, httpx.Client(transport=httpx.MockTransport(handler)))[0]
+
+    found, handler = fake([{"choices": [{"message": {"content": "2+2 = 5."}}]}])
+    assert not canaries.ask(found, canary,
+                            httpx.Client(transport=httpx.MockTransport(handler)))[0]
+
+
+def test_a_canary_may_require_a_pattern_never_to_appear():
+    found, handler = fake([{"choices": [{"message": {"content": "I don't know that issue."}}]}])
+    canary = {"name": "refuse", "model": "fake", "messages": [{"role": "user", "content": "x"}],
+              "not": "[A-Z]{1,12}-\\d+"}
+    assert canaries.ask(found, canary, httpx.Client(transport=httpx.MockTransport(handler)))[0]
+
+    found, handler = fake([{"choices": [{"message": {"content": "The issue is Q-9999."}}]}])
+    assert not canaries.ask(found, canary,
+                            httpx.Client(transport=httpx.MockTransport(handler)))[0]
+
+
 def test_load_refuses_a_canary_without_an_expected_answer(tmp_path):
     file = tmp_path / "canaries.yaml"
     file.write_text(yaml.safe_dump({"canaries": [{"name": "none", "messages": [

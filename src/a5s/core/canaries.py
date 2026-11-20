@@ -4,6 +4,7 @@ ledger, so a model that changes behind its name shows here first. Each canary is
 conversation with one exact expected answer, compared case-insensitively, word for word."""
 from __future__ import annotations
 
+import re
 import time
 from pathlib import Path
 from typing import Any
@@ -15,7 +16,7 @@ from a5s import db
 from a5s.config import ModelConfig
 from a5s.core import models
 
-CANARIES = Path(__file__).resolve().parents[2] / "config" / "canaries.yaml"
+CANARIES = Path(__file__).resolve().parents[3] / "config" / "canaries.yaml"
 
 
 def load(path: Path = CANARIES) -> list[dict[str, Any]]:
@@ -23,7 +24,8 @@ def load(path: Path = CANARIES) -> list[dict[str, Any]]:
     data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     out = []
     for canary in data.get("canaries") or []:
-        if not isinstance(canary, dict) or not canary.get("name") or "expect" not in canary:
+        if not isinstance(canary, dict) or not canary.get("name") or not (
+                canary.get("expect") or canary.get("not")):
             raise ValueError(f"a canary needs a name and an expect: {canary}")
         if not canary.get("messages"):
             raise ValueError(f"canary {canary.get('name')} has no messages")
@@ -46,7 +48,13 @@ def ask(found: ModelConfig, canary: dict[str, Any],
         answer = data.get("choices", [{}])[0].get("message", {}).get("content", "")
     else:  # anthropic's messages style
         answer = "".join(block.get("text", "") for block in data.get("content", []))
-    passed = answer.strip().casefold() == str(canary["expect"]).strip().casefold()
+    wanted = str(canary.get("expect", "")).strip().casefold()
+    if canary.get("not"):  # the answer must not contain this, such as a made-up key
+        passed = re.search(canary["not"], answer) is None
+    elif canary.get("contains"):  # the value, in whatever words: such as a sum
+        passed = wanted in answer.strip().casefold()
+    else:
+        passed = answer.strip().casefold() == wanted
     return passed, answer, seconds
 
 
@@ -67,7 +75,10 @@ def run(database: str, scenario: str, approved: dict[str, ModelConfig],
                     continue
                 if found.key_env and not found.api_key:  # its key isn't set: can't ask
                     continue
-                passed, answer, seconds = ask(found, canary, client)
+                try:
+                    passed, answer, seconds = ask(found, canary, client)
+                except models.ModelUnavailable as exc:  # the provider stalled: a failure
+                    passed, answer, seconds = False, str(exc)[:200], 0.0
                 failed += 0 if passed else 1
                 conn.execute(
                     "insert into canary_scores (scenario, canary, model, passed, answered, "
