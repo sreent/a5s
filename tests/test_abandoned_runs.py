@@ -77,6 +77,38 @@ def test_a_run_that_names_no_lease_waits_for_its_time_as_before(stack):
     assert open_runs(stack) == [run]
 
 
+def test_a_replacement_scheduler_cant_overlap_its_open_message_run(stack):
+    definition = stack.gateway.definitions["assistant"]
+    stack.gateway.definitions["assistant"] = definition.model_copy(update={"fallbacks": ["spare"]})
+    # A fallback leaves its message available for the replacement run, as the sample's does
+    message, first = stopped(stack)
+    lapsed(stack)  # a fresh scheduler can now take the conversation, as in the soak's kill
+    claim = stack.scheduler()._claim()
+    assert claim["id"] == message
+    with stack.client() as c:
+        overlap = c.post("/runs", json={"instance": "assistant-finance", "trigger": {
+            "kind": "message", "inbound": message, "holder": claim["holder"]}})
+    assert overlap.status_code == 500  # the old run is still at work: no overlapping model calls
+    assert open_runs(stack) == [first["run"]]
+
+    stack.scheduler().sweep()  # the old scheduler's lease is gone, so its run ends first
+    assert open_runs(stack) == []
+    with stack.client() as c:
+        replacement = c.post("/runs", json={"instance": "assistant-finance", "trigger": {
+            "kind": "message", "inbound": message, "holder": claim["holder"]}})
+    assert replacement.status_code == 200, replacement.text
+    with db.transaction(stack.admin) as conn:
+        outcomes = conn.execute("select outcome from runs where trigger->>'inbound' = %s "
+                                "order by opened_at", (message,)).fetchall()
+    assert [r["outcome"] for r in outcomes] == ["abandoned", None]
+    assert stack.answers(message) == [STOPPED]  # the abandoned run's one notice, not another's
+    with stack.client(first["token"]) as c:
+        assert c.get("/run").status_code == 401
+    with stack.client(replacement.json()["token"]) as c:
+        assert c.get("/run").status_code == 200
+    assert stack.verify().ok
+
+
 def test_a_slice_whose_scheduler_was_killed_ends_at_the_next_sweep_and_its_task_goes_on(stack):
     a_task(stack)
     stack.model.reply(None, ("checkpoint_task", {"step": 1, "progress": 0.5,

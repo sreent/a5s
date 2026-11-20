@@ -303,6 +303,25 @@ def mebibytes(usage: str) -> float:
                             "GiB": 1024, "GB": 1024}[unit]
 
 
+def connection_count() -> int | None:
+    counted = subprocess.run(
+        ["docker", "exec", f"{PROJECT}-postgres-1", "psql", "-U", "a5s", "-d", "postgres",
+         "-tAc", "select count(*) from pg_stat_activity where backend_type = 'client backend'"],
+        capture_output=True, text=True, check=False).stdout.strip()
+    return int(counted) if counted else None
+
+
+def cool_down(seconds: int = 330) -> list[int | None]:
+    """Connections after work has settled and idle pooled connections have had five minutes to
+    close, with the recovery visible rather than mistaken for growth under load."""
+    end = time.monotonic() + seconds
+    found = []
+    while (left := end - time.monotonic()) > 0:
+        time.sleep(min(30, left))
+        found.append(connection_count())
+    return found
+
+
 def sample(until: float, samples: list) -> None:
     """The memory of each part, and Postgres's connections, every 30 seconds."""
     while time.monotonic() < until:
@@ -316,11 +335,7 @@ def sample(until: float, samples: list) -> None:
             part = re.sub(r"-\d+$", "", name.removeprefix(f"{PROJECT}-"))
             if part in PARTS:
                 memory[part] = round(mebibytes(usage.split("/")[0]), 1)
-        counted = subprocess.run(
-            ["docker", "exec", f"{PROJECT}-postgres-1", "psql", "-U", "a5s", "-d", "postgres",
-             "-tAc", "select count(*) from pg_stat_activity where backend_type = 'client backend'"],
-            capture_output=True, text=True, check=False).stdout.strip()
-        samples.append({"memory": memory, "connections": int(counted) if counted else None})
+        samples.append({"memory": memory, "connections": connection_count()})
         time.sleep(max(0.0, 30 - (time.monotonic() - at)))
 
 
@@ -331,6 +346,28 @@ def grew(samples: list, measure) -> tuple[float, float]:
     last = [measure(s) for s in samples[-max(1, int(n * WARMED)):]]
     warm, last = [v for v in warm if v is not None], [v for v in last if v is not None]
     return (statistics.mean(warm) if warm else 0.0), (statistics.mean(last) if last else 0.0)
+
+
+def repeated_message_runs() -> list[dict]:
+    """Every run for a message with more than one, so a fallback's expected retry can be told
+    from a crash that made overlapping work."""
+    query = """
+      with each as (
+        select id::text as run, trigger->>'inbound' as inbound, model, outcome,
+               opened_at, closed_at from runs where trigger->>'kind' = 'message'
+      ), repeated as (
+        select * from each where inbound in (
+          select inbound from each group by inbound having count(*) > 1)
+      )
+      select coalesce(json_agg(json_build_object(
+        'inbound', inbound, 'run', run, 'model', model, 'outcome', outcome,
+        'opened_at', opened_at, 'closed_at', closed_at) order by inbound, opened_at), '[]'::json)
+      from repeated
+    """
+    found = subprocess.run(["docker", "exec", f"{PROJECT}-postgres-1", "psql", "-U", "a5s",
+                            "-d", "postgres", "-Atc", query], capture_output=True, text=True,
+                           check=False).stdout.strip()
+    return json.loads(found) if found else []
 
 
 def main() -> None:
@@ -381,9 +418,15 @@ def main() -> None:
         if part != "postgres" and last - warm > allowed:
             problems.append(f"the {part}'s memory grew from {warm:.0f} MiB to {last:.0f} MiB")
     warm, last = grew(samples, lambda s: s["connections"])
-    if last > warm + 3:
-        problems.append(f"Postgres's connections grew from {warm:.1f} to {last:.1f}")
     tasks = settled()
+    recovery = cool_down()
+    readable = [v for v in recovery[-2:] if v is not None]
+    settled_connections = statistics.mean(readable) if readable else None
+    if settled_connections is None:
+        problems.append("Postgres's connections couldn't be read after its pools sat idle")
+    elif settled_connections > warm + 3:
+        problems.append(f"Postgres's connections stayed at {settled_connections:.1f} after its "
+                        f"pools sat idle, from {warm:.1f} just after warming up")
     each = tasks["each"]
     for number in started:  # each task Ana started, by its number
         task = each.get(number)
@@ -410,7 +453,11 @@ def main() -> None:
 
     found = {"minutes": minutes, "messages": len(said), "answered": len(seconds),
              "p50_seconds": p50, "p90_seconds": p90, "memory": memory,
-             "connections": {"warm": round(warm, 1), "last": round(last, 1)},
+             "connections": {"warm": round(warm, 1), "last": round(last, 1),
+                             "settled": (round(settled_connections, 1)
+                                         if settled_connections is not None else None)},
+             "recovery_connections": recovery,
+             "repeated_message_runs": repeated_message_runs(),
              "tasks": {"started": len(started), **tasks}, "killed": killed,
              "away": away, "cut_off": len(cut), "tried_again": len(again),
              "errors_after_kills": {p: {"errors": n, "last_after_seconds": round(s)}
@@ -423,7 +470,9 @@ def main() -> None:
           + (f", nine in ten within {p90:.1f}s." if p90 is not None else "."))
     print("Memory, just after warming up and at the end: " + "; ".join(
         f"{part} {m['warm_mib']:.0f} to {m['last_mib']:.0f} MiB" for part, m in memory.items()))
-    print(f"Postgres's connections: {warm:.1f} to {last:.1f}.")
+    settled_said = f"{settled_connections:.1f}" if settled_connections is not None else "unreadable"
+    print(f"Postgres's connections: {warm:.1f} to {last:.1f} under load; "
+          f"{settled_said} after its pools sat idle.")
     print(f"Tasks Ana started: {len(started)}; how they ended: {tasks['tasks']}; times she "
           f"was told one had: {tasks['told']}; leases left: {tasks['leases_left']}.")
     for k in killed:
