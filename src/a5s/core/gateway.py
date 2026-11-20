@@ -18,6 +18,7 @@ import json
 import logging
 import re
 import secrets
+import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
@@ -27,7 +28,6 @@ from typing import Any
 import httpx
 import psycopg
 import yaml
-import time
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from psycopg.types.json import Jsonb
@@ -83,7 +83,6 @@ from a5s.core import (
     memberships,
     models,
     narrowing,
-    verify,
     notebook,
     notices,
     obligations,
@@ -114,6 +113,7 @@ from a5s.core import (
     undoing,
     urgent,
     values,
+    verify,
     words,
 )
 from a5s.core.breakers import Breakers

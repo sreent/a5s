@@ -108,7 +108,7 @@ def test_the_health_page_shows_each_models_day(stack, approving, provider, brows
     page.goto(f"{approving}/studio/health")
     try:
         page.wait_for_selector("table.health", timeout=30000)
-    except Exception as exc:  # noqa: BLE001 - what the page said instead, for the failure's words
+    except Exception as exc:  # what the page said instead, for the failure's words
         raise AssertionError(f"the health page didn't render: {page.inner_text('body')[:600]}"
                              ) from exc
     assert "Model health" in page.inner_text("body")
