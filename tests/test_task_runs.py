@@ -307,7 +307,8 @@ def test_reworded_offers_in_one_answer_are_one_pending_task(stack):
     stack.model.reply("Shall I take that on as a task?")
     stack.say("Could you go through my open questions?")
     [offered] = tasks_of(stack)
-    assert (offered["task"], offered["status"]) == (ASKED, "offered")
+    assert offered["task"] in (ASKED, "Go through every open question and report its blocker")
+    assert offered["status"] == "offered"  # either parallel call may take the offer lock first
     results = [m["content"] for request in stack.model.requests
                for m in request["body"]["messages"] if m["role"] == "tool"]
     assert any("you already made this offer in this answer" in result for result in results)
