@@ -117,14 +117,18 @@ def offer(call: Call) -> dict:
                 "offered": "you offered this already: if they've said yes, start it with "
                            "confirm_task"}
     before = call.conn.execute(
-        "select number, task from tasks where owner = %s and instance_id = %s and status = %s "
-        "and parent is null and offered_run <> %s and asked_at < %s and asked_at > %s "
+        "select number, task, offered_run from tasks where owner = %s and instance_id = %s "
+        "and status = %s and parent is null and asked_at > %s "
         "order by asked_at desc, number desc limit 1",
-        (person.id, call.run["id"], OFFERED, call.run["run"], call.asked_at,
-         call.asked_at - CONFIRM_WITHIN)).fetchone()
+        (person.id, call.run["id"], OFFERED, call.asked_at - CONFIRM_WITHIN)).fetchone()
     if before:
+        current = str(before["offered_run"]) == str(call.run["run"])
         return {"task": name(before), "what": before["task"],
-                "offered": "this earlier offer still waits for their yes: if this message says "
+                "offered": "you already made this offer in this answer: don't offer a replacement; "
+                           "it starts only once they say yes in their next message. If they asked "
+                           "for a different task, cancel this offer first, then offer the new task"
+                           if current else
+                           "this earlier offer still waits for their yes: if this message says "
                            "yes to it, start it now with confirm_task, and don't offer a "
                            "replacement. If they asked for a different task instead, cancel "
                            "this offer first, then offer the new task"}

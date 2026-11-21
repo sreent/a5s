@@ -301,6 +301,18 @@ def test_a_reworded_offer_on_their_yes_confirms_the_task_they_were_offered(stack
     assert f"T-{started['number']}" in told and "waiting for their yes" in told
 
 
+def test_reworded_offers_in_one_answer_are_one_pending_task(stack):
+    stack.model.reply(None, ("offer_task", {"task": ASKED}),
+                      ("offer_task", {"task": "Go through every open question and report its blocker"}))
+    stack.model.reply("Shall I take that on as a task?")
+    stack.say("Could you go through my open questions?")
+    [offered] = tasks_of(stack)
+    assert (offered["task"], offered["status"]) == (ASKED, "offered")
+    results = [m["content"] for request in stack.model.requests
+               for m in request["body"]["messages"] if m["role"] == "tool"]
+    assert any("you already made this offer in this answer" in result for result in results)
+
+
 def test_a_different_task_doesnt_displace_an_offer_that_waits_for_yes(stack):
     stack.model.reply(None, ("offer_task", {"task": ASKED}))
     stack.model.reply("Shall I?")
