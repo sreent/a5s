@@ -2,7 +2,7 @@
 
 **Status:** Draft, for confirmation · **Under:** [Architecture](architecture.md)
 
-Phases 1 to 3 are built, and tested against the sample scenario, which is a fake. Two things in [phase 1's Done means](phase-1.md#done-means) only real use can give: the suite passing in a cloud, and a baseline of the measures from the first users. The pilot gets both, with one team, in stages, each with what it shows before the next begins. What comes after phase 3 is chosen from what it shows, not before.
+The local phases are built and tested against synthetic scenarios. Two things in [phase 1's Done means](phase-1.md#done-means) only real use can give: the suite passing in a cloud, and a baseline of the measures from the first users. The pilot gets both, with one team, in stages, each with what it shows before the next begins. Later work is chosen from what it shows. A software team can rehearse its read-only repository and Matrix controls with [Forgejo and the software-delivery scenario](guides/software-delivery/pilot.md).
 
 ## Decide first
 
@@ -52,12 +52,11 @@ Any of these suspends the instance first, which anyone with the role can do, and
 
 - **Phase 1's Done means,** with the suite on the organisation's own cluster and the baseline written into [phase 1](phase-1.md#done-means).
 - **The starting values marked [TBC],** such as budgets, digest times and the reply objective, from what the team used ([starting values](starting-values.md)).
-- **Phase 4,** from the critique's deferrals and what the pilot shows:
+- **Later work,** from the critique's deferrals and what the pilot shows:
   - if agents keep few notes, or runs are rarely given them, notes from facts code works out from a5s's own records, such as which records keep coming up;
   - if group chats reach their limit of 20, or the team works in Teams channels, bigger rooms;
   - if the team works with agents outside the organisation, agent to agent beyond a5s, with what they say treated as content from outside;
   - if a deployment needs one, adapters for managed runtimes, phase 3's last step;
-  - resumable long-running tasks, whose build plan and Done means are in [phase 4](phase-4.md);
   - and any other cloud or cluster the organisation runs a5s on, each with its own first day.
 
 ## Costs

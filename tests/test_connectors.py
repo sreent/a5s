@@ -117,6 +117,53 @@ def test_github_tools_read_repository_records_files_and_diffs_without_executing(
     assert "root" in traversal["error"] and len(calls) == before
 
 
+def test_github_adapter_handles_forgejo_search_diff_and_standard_checks(monkeypatch):
+    monkeypatch.setenv("A5S_TEST_CONNECTOR_TOKEN", "synthetic-token")
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        path = request.url.path
+        if path == "/search/issues":
+            return httpx.Response(404, json={"message": "no global search in Forgejo"})
+        if path == "/repos/acme/repo/issues":
+            assert request.url.params["q"] == "checkout"
+            return httpx.Response(200, json=[{"number": 17, "title": "Fix checkout", "state": "open",
+                                             "pull_request": {}}])
+        if path == "/repos/acme/repo/issues/17":
+            return httpx.Response(200, json={"number": 17, "title": "Fix checkout", "state": "open",
+                                             "pull_request": {}})
+        if path == "/repos/acme/repo/pulls/17":
+            if "diff" in request.headers.get("Accept", ""):
+                return httpx.Response(200, json={"number": 17})
+            return httpx.Response(200, json={"number": 17, "title": "Fix checkout", "state": "open",
+                                             "head": {"sha": "abc123"}})
+        if path == "/repos/acme/repo/commits/abc123/status":
+            return httpx.Response(200, json={"state": "success", "statuses": [
+                {"context": "tests", "state": "success", "updated_at": "2026-11-21T00:00:00Z"}]})
+        if path == "/repos/acme/repo/commits/abc123/check-runs":
+            return httpx.Response(200, json={"check_runs": [
+                {"name": "review", "status": "completed", "conclusion": "success"}]})
+        if path == "/repos/acme/repo/pulls/17.diff":
+            return httpx.Response(200, text="diff --git a/app.py b/app.py")
+        return httpx.Response(404, json={"message": "not found"})
+
+    repo = GitHubRepository("acme/repo", authorize=lambda call: True, client=remote(handler))
+    tools = repo.tools()
+    found = tools["search_records"].run(replace(CALL, args={"query": "checkout"}))
+    assert [r["key"] for r in found["records"]] == ["acme/repo#17"]
+    record = tools["get_record"].run(replace(CALL, args={"key": "acme/repo#17"}))
+    assert record["checks"]["state"] == "success"
+    assert record["checks"]["statuses"][0]["status"] == "success"
+    assert record["checks"]["check_runs"][0]["name"] == "review"
+    assert tools["get_pr_diff"].run(replace(CALL, args={"key": "acme/repo#17"}))["diff"].startswith(
+        "diff --git")
+    assert tools["read_repository_file"].marks and tools["get_pr_diff"].marks
+    before = len(calls)
+    denied = tools["search_records"].run(replace(CALL, args={"query": "fix repo:other/private"}))
+    assert "this repository alone" in denied["error"] and len(calls) == before
+
+
 def test_the_gateway_filters_remote_records_by_who_may_see_them(stack, monkeypatch):
     app = FastAPI()
     seen_auth = []
@@ -189,3 +236,25 @@ def test_repository_freshness_changed_checks_deleted_files_and_other_repositorie
     before = len(calls)
     other = tools["get_record"].run(replace(CALL, args={"key": "other/repo#17"}))
     assert "name a record in acme/repo" in other["error"] and len(calls) == before
+
+
+def test_a_rate_limit_is_retried_once_then_reported_without_remote_content(monkeypatch):
+    monkeypatch.setenv("A5S_TEST_CONNECTOR_TOKEN", "synthetic-token")
+    calls = []
+
+    def recovering(request):
+        calls.append(request)
+        return httpx.Response(429 if len(calls) == 1 else 200,
+                              headers={"Retry-After": "0"}, json={"ok": True})
+
+    assert remote(recovering).get("/repos/acme/repo/issues/1") == {"ok": True}
+    assert len(calls) == 2
+    calls.clear()
+
+    def limited(request):
+        calls.append(request)
+        return httpx.Response(429, content=b"rate limit details that are not for an agent")
+
+    with pytest.raises(ConnectorError, match="HTTP 429") as failure:
+        remote(limited).get("/repos/acme/repo/issues/1")
+    assert len(calls) == 2 and "not for an agent" not in str(failure.value)

@@ -66,8 +66,16 @@ class GitHubRepository:
         query = " ".join(str(call.args.get("query", "")).split())
         if not query:
             return {"error": "say what to search the repository for"}
-        found = self.client.list("/search/issues", {"q": f"repo:{self.repository} {query}",
-                                                    "per_page": 100})
+        if any(word.casefold().startswith("repo:") for word in query.split()):
+            return {"error": "search this repository alone, without a repo: qualifier"}
+        try:
+            found = self.client.list("/search/issues", {"q": f"repo:{self.repository} {query}",
+                                                        "per_page": 100})
+        except ConnectorError as exc:  # Forgejo searches within the repository instead
+            if exc.status != 404:
+                raise
+            found = self.client.list(f"{self.root}/issues", {"state": "all", "q": query,
+                                                             "per_page": 100})
         return {"records": [self._record(r) for r in found.items],
                 "truncated": found.truncated, "total": found.total}
 
@@ -84,7 +92,29 @@ class GitHubRepository:
             pull = self.client.get(f"{self.root}/pulls/{number}")
             if isinstance(pull, dict):
                 issue = {**issue, **pull}
+                if "checks" not in issue and (sha := (pull.get("head") or {}).get("sha")):
+                    issue["checks"] = self._checks(str(sha))
         return self._record(issue)
+
+    def _checks(self, sha: str) -> dict:
+        combined = self.client.get(f"{self.root}/commits/{quote(sha, safe='')}/status")
+        combined = combined if isinstance(combined, dict) else {}
+        try:  # Forgejo has commit statuses; GitHub can have check runs beside them
+            runs = self.client.get(f"{self.root}/commits/{quote(sha, safe='')}/check-runs",
+                                   {"per_page": 100})
+        except ConnectorError as exc:
+            if exc.status != 404:
+                raise
+            runs = {}
+        return {"state": combined.get("state", "unknown"),
+                "statuses": [{"context": s.get("context"),
+                              "status": s.get("status", s.get("state")),
+                              "updated_at": s.get("updated_at")}
+                             for s in combined.get("statuses") or []],
+                "check_runs": [{"name": r.get("name"), "status": r.get("status"),
+                                "conclusion": r.get("conclusion"), "completed_at": r.get("completed_at")}
+                               for r in (runs.get("check_runs") or [] if isinstance(runs, dict)
+                                         else [])]}
 
     def comments(self, call: ToolCall) -> dict:
         if not self._allowed(call):
@@ -129,6 +159,8 @@ class GitHubRepository:
             return {"error": "name the pull request"}
         key, number = named
         text = self.client.text(f"{self.root}/pulls/{number}", accept="application/vnd.github.v3.diff")
+        if text.lstrip().startswith("{"):  # Forgejo answers JSON there; its .diff path is text
+            text = self.client.text(f"{self.root}/pulls/{number}.diff")
         return {"key": key, "diff": text[:FILE_BYTES], "truncated": len(text) > FILE_BYTES}
 
     def _allowed(self, call: ToolCall) -> bool:
@@ -151,9 +183,9 @@ class GitHubRepository:
                  extract={"asks_for": "choice:a fix|a workaround|a release date|something else",
                           "date": "date", "issue": "key"}),
             Tool("read_repository_file", "Read one UTF-8 repository file, without executing it. "
-                 + common, SCHEMA["file"], self.file),
+                 + common, SCHEMA["file"], self.file, marks=True),
             Tool("get_pr_diff", "Read one pull request's diff, without applying it. " + common,
-                 SCHEMA["key"], self.diff, record_arg="key"),
+                 SCHEMA["key"], self.diff, record_arg="key", marks=True),
         )}
 
 
