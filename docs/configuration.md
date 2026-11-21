@@ -205,6 +205,7 @@ The tests check that neither compose nor the chart sets a setting to its default
 | `A5S_SLACK_SECRET_<AGENT>` | An app's signing secret, where A5S_SLACK_BOTS names it |
 | `A5S_SLACK_TOKEN_<AGENT>` | An app's bot token, where A5S_SLACK_BOTS names it |
 | `A5S_MCP_<SERVER>_TOKEN` | An MCP server's bearer token, where the scenario's mcp.yaml names it as the server's token_env |
+| `A5S_REPOSITORY_<NAME>_TOKEN` | A repository's read-only bearer token, where the scenario's repositories.yaml names the repository: for the core alone |
 
 <!-- end of a5s config --markdown -->
 

@@ -468,6 +468,8 @@ FAMILIES = (
            area=SLACK),
     Family("A5S_MCP_<SERVER>_TOKEN", "an MCP server's bearer token, where the scenario's "
            "mcp.yaml names it as the server's token_env", area=SCENARIO),
+    Family("A5S_REPOSITORY_<NAME>_TOKEN", "a repository's read-only bearer token, where the "
+           "scenario's repositories.yaml names the repository: for the core alone", area=SCENARIO),
 )
 # Settings that moved, and where to: a part refuses one, rather than seem to obey it
 MOVED = {name: f"the signed settings' data_protection.{choice}, which the data protection "
