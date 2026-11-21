@@ -7,6 +7,7 @@ here is a fake of Microsoft Graph's preview APIs, as their docs describe them.""
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import httpx
@@ -141,6 +142,18 @@ def test_with_no_tenant_named_a5s_registers_nothing(stack):
     with stack.client() as c:
         found = c.post("/registry/sweep").json()
     assert found == {"changed": [], "registering": "nothing, since the deployment names no tenant"}
+
+
+def test_a_registrations_creation_time_is_the_same_after_a_utc_database_round_trip():
+    first = datetime(2026, 11, 1, 9, tzinfo=timezone(timedelta(hours=8)))
+    inst = {"id": "assistant-finance", "release": "release-1", "status": "active", "level": 1,
+            "parts": {}, "actions": {}, "updated_at": first}
+    agent = SimpleNamespace(id="assistant", does="Answer questions", works_for="Finance", skills={})
+    registry = registration.Registry("tenant-1", "a5s-app", "s3cret")
+    local = registration.said(inst, agent, [], registry, None, None, first)
+    stored = registration.said(inst, agent, [], registry, None, None, first.astimezone(UTC))
+    assert local == stored
+    assert local["sourceCreatedDateTime"] == "2026-11-01T01:00:00+00:00"
 
 
 def test_its_card_names_its_skills_by_their_own_words():

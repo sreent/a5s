@@ -1,7 +1,7 @@
 *.sh text eol=lf
 settings.yaml text eol=lf
 # Ocean's copy is pinned by each file's digest (ocean.json), computed on the files as the
-# source has them: a checkout must never convert them, on any platform. One file, its Thai
-# licence, is CRLF at the source, so its digest is of CRLF bytes.
-src/a5s/core/webchat/ocean/** text eol=lf
+# source has them: a checkout must never convert them, on any platform. The Thai licence's
+# explicit rule keeps its source's CRLF bytes under git's text handling.
+src/a5s/core/webchat/ocean/** -text whitespace=cr-at-eol
 src/a5s/core/webchat/ocean/fonts/OFL-plex-sans-thai.txt text eol=crlf

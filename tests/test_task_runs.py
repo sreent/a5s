@@ -183,7 +183,16 @@ def test_a_tasks_owner_hears_once_when_its_run_stops_after_writing_to_them(stack
     a_task(stack)
     stack.model.reply(None, ("finish_task", {"status": "done", "result": {"Q-1001": "an address"}}))
     stack.model.reply("Ana, your task is done: Q-1001 waits on the right address.")
+    stack.model.reply("Ana, your task is done: Q-1001 waits on the right address.")  # corrected once
     stopping = stack.scheduler()
+    answers = []
+
+    def capture(response) -> None:
+        if response.url.path == "/run/messages":
+            response.read()
+            answers.append(response.text)
+
+    stopping.gw.event_hooks["response"].append(capture)
     stopping._close = lambda run, outcome: None  # it stops once it has written, before closing
     assert stopping.work_due() == 1
     with db.transaction(stack.admin) as conn:
@@ -192,7 +201,7 @@ def test_a_tasks_owner_hears_once_when_its_run_stops_after_writing_to_them(stack
     [done] = tasks_of(stack)
     assert (done["status"], done["result"]) == ("done", {"Q-1001": "an address"})
     [heard] = told(stack)  # the assistant's own message, and no word of a5s's besides
-    assert heard.startswith("Ana, your task is done")
+    assert heard.startswith("Ana, your task is done"), answers
 
 
 def test_a_value_an_earlier_run_read_is_the_records_and_one_it_made_up_is_its_own(stack):
@@ -205,6 +214,7 @@ def test_a_value_an_earlier_run_read_is_the_records_and_one_it_made_up_is_its_ow
     stack.scheduler().work_due()
     stack.model.reply(None, ("finish_task", {"status": "done"}))
     stack.model.reply("Ana, your task is done: Q-1001 and Q-7777 wait on the right address.")
+    stack.model.reply("Ana, your task is done: Q-1001 and Q-7777 wait on the right address.")
     stack.scheduler().work_due()  # a later run, which read neither itself
     [heard] = told(stack)
     assert "(a5s: Q-7777 came from the assistant itself" in heard and "Q-1001 came" not in heard
@@ -212,6 +222,7 @@ def test_a_value_an_earlier_run_read_is_the_records_and_one_it_made_up_is_its_ow
 
 def test_what_the_agent_wrote_of_a_task_never_counts_as_read(stack):
     stack.model.reply(None, ("offer_task", {"task": "Chase Q-7777 with Northwind"}))
+    stack.model.reply("I can chase Q-7777 for you as a task: shall I start it?")
     stack.model.reply("I can chase Q-7777 for you as a task: shall I start it?")
     said = stack.say("Could you chase Northwind for me?")
     assert "(a5s: Q-7777 came from the assistant itself" in said
@@ -271,6 +282,49 @@ def test_an_offer_made_twice_is_one_and_lapses_unless_its_said_yes_to(stack):
     assert "offered, and lapsed" in listed
 
 
+def test_a_reworded_offer_on_their_yes_confirms_the_task_they_were_offered(stack):
+    stack.model.reply(None, ("offer_task", {"task": ASKED}))
+    stack.model.reply("Shall I take that on as a task?")
+    stack.say("Could you go through my open questions?")
+    stack.model.reply(None, ("offer_task", {"task": "Prepare a draft about my open questions"}),
+                      ("confirm_task", {}))
+    stack.model.reply("Started.")
+    stack.say("Yes, start it with confirm_task")
+    [started] = tasks_of(stack)
+    assert (started["task"], started["status"]) == (ASKED, "queued")
+    offered = next(m["content"] for request in stack.model.requests
+                   for m in request["body"]["messages"]
+                   if m["role"] == "tool" and "earlier offer" in m["content"])
+    assert "this earlier offer still waits for their yes" in offered
+    assert "don't offer a replacement" in offered
+    told = str(stack.model.requests[-2]["body"]["messages"])
+    assert f"T-{started['number']}" in told and "waiting for their yes" in told
+
+
+def test_reworded_offers_in_one_answer_are_one_pending_task(stack):
+    stack.model.reply(None, ("offer_task", {"task": ASKED}),
+                      ("offer_task", {"task": "Go through every open question and report its blocker"}))
+    stack.model.reply("Shall I take that on as a task?")
+    stack.say("Could you go through my open questions?")
+    [offered] = tasks_of(stack)
+    assert (offered["task"], offered["status"]) == (ASKED, "offered")
+    results = [m["content"] for request in stack.model.requests
+               for m in request["body"]["messages"] if m["role"] == "tool"]
+    assert any("you already made this offer in this answer" in result for result in results)
+
+
+def test_a_different_task_doesnt_displace_an_offer_that_waits_for_yes(stack):
+    stack.model.reply(None, ("offer_task", {"task": ASKED}))
+    stack.model.reply("Shall I?")
+    stack.say("Could you go through my open questions?")
+    stack.model.reply(None, ("offer_task", {"task": "Draft the release notes"}))
+    stack.model.reply("Cancel the first offer before I offer that instead.")
+    stack.say("Actually, draft the release notes instead")
+    [offered] = tasks_of(stack)
+    assert (offered["task"], offered["status"]) == (ASKED, "offered")
+    assert "cancel this offer first" in str(stack.model.requests[-1]["body"]["messages"][-1])
+
+
 def test_only_a_task_that_needs_its_owner_goes_on_with_what_they_say(stack):
     task = a_task(stack)
     stack.model.reply(None, ("resume_task", {"task": f"T-{task['number']}", "answer": "Go on"}))
@@ -302,6 +356,7 @@ def test_a_task_survives_a_scheduler_that_stops_mid_slice_and_goes_on_from_its_c
     stack.at((stack.gateway.clock() + timedelta(minutes=1)).isoformat())  # past its backoff
     stack.model.reply(None, ("finish_task", {"status": "done", "plan": DONE,
                                              "result": {"Q-1001": "the right address"}}))
+    stack.model.reply("Ana, your task is done: Q-1001 waits on the right address.")
     stack.model.reply("Ana, your task is done: Q-1001 waits on the right address.")
     assert stack.scheduler().work_due() == 1  # a fresh run, from what the task kept
     brief = str(stack.model.requests[-2]["body"]["messages"])

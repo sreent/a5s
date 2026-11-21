@@ -8,7 +8,10 @@ nothing serves someone, or that the model isn't answering.
 Run with `uv run pytest -m live tests/test_agents.py`, with the providers' keys set. With
 A5S_TEST_WORKER_IMAGE naming a5s's image, such as a5s:dev, each run goes to a worker from it,
 in a container of its own, as a pool's pods run, with no secrets and the model reached only
-through the core (conftest.py's `contained`), as a release runs every live suite. A case
+through the core (conftest.py's `contained`), as a release runs every live suite. Where the
+test process cannot call Docker, start that image separately and name its local address in
+A5S_TEST_WORKER_URL and its configured A5S_GATEWAY_URL in A5S_TEST_WORKER_GATEWAY; the fixture
+serves the core on that gateway URL's port, listening on A5S_TEST_BRIDGE. A case
 says what people say to the agent, or that what's due runs, and what must follow: the tools
 it uses and avoids, what it says, and what a5s keeps afterwards, and, where it can be right in
 more than one way, what a right answer is, which the agent's judge grades. Every reply is also checked

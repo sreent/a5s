@@ -28,7 +28,7 @@ def test_a_thai_reader_hears_that_the_assistant_is_suspended_in_thai(stack):
 
 def test_and_that_its_model_isnt_answering_as_the_conversation_keeps_it(stack):
     reads(stack, "ben", "th")
-    stack.model.failing = 1
+    stack.model.failing = 2  # its one retry fails too
     said = stack.say("สวัสดีค่ะ", person="ben")
     assert said == ("โมเดลที่ฉันใช้ไม่ตอบสนองในขณะนี้ จึงทำเรื่องนี้ไม่เสร็จ "
                     "ลองใหม่อีกครั้งในอีกสักครู่")

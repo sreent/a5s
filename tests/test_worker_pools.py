@@ -13,11 +13,28 @@ from dataclasses import replace
 
 import httpx
 import pytest
+from fastapi import FastAPI
 
 from a5s import cli, config, worker
 from a5s.services.scheduler import Slots, remote_worker
-from conftest import free_port, serve
+from conftest import contained, free_port, serve
 from test_asking import ASKED, may_ask
+
+
+def test_an_externally_started_worker_uses_the_same_http_pool(monkeypatch):
+    service = FastAPI()
+
+    @service.post("/work")
+    def answer(body: dict) -> dict:
+        return {"reply": f"{body['token']}:{len(body['history'])}"}
+
+    worker_port, gateway_port = free_port(), free_port()
+    monkeypatch.setattr("conftest.BRIDGE", "127.0.0.1")
+    monkeypatch.setenv("A5S_TEST_WORKER_URL", f"http://127.0.0.1:{worker_port}")
+    monkeypatch.setenv("A5S_TEST_WORKER_GATEWAY", f"http://host.docker.internal:{gateway_port}")
+    with serve(service, worker_port), contained(FastAPI(), "a5s:dev") as call:
+        assert call("unused", "run-token", [{"role": "user"}]) == "run-token:1"
+        assert httpx.get(f"http://127.0.0.1:{gateway_port}/openapi.json").status_code == 200
 
 
 def test_each_agent_runs_in_its_own_pool_and_any_other_in_the_shared_one(stack):

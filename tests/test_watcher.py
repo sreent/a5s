@@ -3,6 +3,7 @@ records since it last told them, and what fell due. Code works the facts out fro
 records, so the model only puts them into words, and a morning with nothing new starts no
 model at all. Each report acts for its person, so it writes to them and to nobody else."""
 
+import time
 from dataclasses import replace
 from datetime import UTC
 
@@ -116,6 +117,7 @@ def test_a_report_that_never_reached_its_person_is_told_next_time(watching):
     assert watching.inbox("ana") == []
 
     watching.model.on_request = None
+    watching.gateway.breakers.clock = lambda: time.monotonic() + 301  # past the breaker's wait
     watching.at(FRIDAY)
     watching.model.reply("Ana, you have Q-1001 open, due on Wednesday.")
     watching.model.reply("Ben, you have Q-1002 open, due next Friday.")

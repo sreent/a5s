@@ -482,7 +482,7 @@ class Gateway:
         if keep:
             found = conn.execute(
                 "select id::text, person, channel, agent, text, conversation, members "
-                "from inbound where id = %s", (inbound,)).fetchone()
+                "from inbound where id = %s and answered_at is null", (inbound,)).fetchone()
             return (found, None) if found else (
                 None, "the message it answers isn't one the core received")
         taken = conn.execute(
@@ -1707,6 +1707,9 @@ def create_app(gw: Gateway) -> FastAPI:
                 ledger.append(conn, {"kind": "run", "action": "close", "run": row["run"],
                                      "instance": row["instance_id"], "decision": "record",
                                      "outcome": "abandoned"})
+                if inbound := row["trigger"].get("inbound"):
+                    conn.execute("update inbound set answered_at = now() where id = %s "
+                                 "and answered_at is null", (inbound,))
                 sends += give_instead(conn, row["trigger"], WHY["abandoned"])
                 sends += slice_closed(conn, row["run"], row, "abandoned")
         push(sends)
@@ -2744,7 +2747,8 @@ def create_app(gw: Gateway) -> FastAPI:
             asker = gw.scenario.person(row["trigger"].get("sender") or "") if group else None
             if person and (offered := [  # so a yes in their next message finds what it's to
                     *profiles.waiting(conn, person, row["definition"]),
-                    *reminders.waiting_for_yes(conn, person, row["definition"])]):
+                    *reminders.waiting_for_yes(conn, person, row["definition"]),
+                    *tasking.waiting_for_yes(conn, gw.scenario, person, row["id"])]):
                 context.append({"title": "What you offered them, waiting for their yes",
                                 "text": "You offered these in an earlier message. If they say yes "
                                         "to one now, keep it with the tool named, at once, "

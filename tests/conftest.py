@@ -600,8 +600,15 @@ BRIDGE = os.environ.get("A5S_TEST_BRIDGE", "172.17.0.1")
 def live_image() -> str | None:
     """The image a live suite hands each run to a worker from, in a container of its own, as
     a release's suites do (.github/workflows/release.yml): A5S_TEST_WORKER_IMAGE, such as
-    a5s:dev. Unset, each run goes to a worker in this process."""
-    return os.environ.get("A5S_TEST_WORKER_IMAGE") or None
+    a5s:dev. Unset, each run goes to a worker in this process. Where the test process cannot
+    call Docker, A5S_TEST_WORKER_URL and A5S_TEST_WORKER_GATEWAY name that image's worker,
+    already started, and the gateway URL it was given."""
+    image = os.environ.get("A5S_TEST_WORKER_IMAGE") or None
+    url, gateway = (os.environ.get(k) for k in ("A5S_TEST_WORKER_URL", "A5S_TEST_WORKER_GATEWAY"))
+    if (url or gateway) and not (image and url and gateway):
+        raise RuntimeError("an external test worker needs A5S_TEST_WORKER_IMAGE, "
+                           "A5S_TEST_WORKER_URL and A5S_TEST_WORKER_GATEWAY")
+    return image
 
 
 @contextmanager
@@ -610,24 +617,36 @@ def contained(app: Any, image: str) -> Iterator[Any]:
     pods run: it holds no secrets, and reaches the core at the bridge's address, which the
     core is served on for it alone. The scheduler hands it each run over HTTP, as it hands a
     pool's (services/scheduler.py's remote_worker). What it yields counts the runs it took,
-    and a test that hands it none fails: it would have tested the worker in this process."""
+    and a test that hands it none fails: it would have tested the worker in this process.
+    An externally started worker is used at A5S_TEST_WORKER_URL instead; its configured
+    A5S_TEST_WORKER_GATEWAY supplies the port on which this fixture serves the core."""
     import subprocess
     import uuid
 
     from a5s.services.scheduler import remote_worker
 
-    port, name = free_port(), f"a5s-test-worker-{uuid.uuid4().hex[:8]}"
+    external = os.environ.get("A5S_TEST_WORKER_URL")
+    gateway = os.environ.get("A5S_TEST_WORKER_GATEWAY")
+    if bool(external) != bool(gateway):
+        raise RuntimeError("an external test worker needs both its URL and its gateway URL")
+    port = urlsplit(gateway).port if gateway else free_port()
+    if not port:
+        raise RuntimeError("the external worker's gateway URL must name its port")
+    name = external or f"a5s-test-worker-{uuid.uuid4().hex[:8]}"
     with serve(app, port, host=BRIDGE):
-        subprocess.run(["docker", "run", "-d", "--rm", "--name", name,
-                        "--add-host", "host.docker.internal:host-gateway",
-                        "-p", "127.0.0.1::8702",  # for the scheduler, on this machine alone
-                        "-e", f"A5S_GATEWAY_URL=http://host.docker.internal:{port}",
-                        image, "worker", "--host", "0.0.0.0"],
-                       check=True, capture_output=True, timeout=120)
         try:
-            mapped = subprocess.run(["docker", "port", name, "8702/tcp"], check=True,
-                                    capture_output=True, text=True).stdout.split()[0]
-            url = f"http://{mapped}"
+            if external:
+                url = external
+            else:
+                subprocess.run(["docker", "run", "-d", "--rm", "--name", name,
+                                "--add-host", "host.docker.internal:host-gateway",
+                                "-p", "127.0.0.1::8702",  # for the scheduler, on this machine alone
+                                "-e", f"A5S_GATEWAY_URL=http://host.docker.internal:{port}",
+                                image, "worker", "--host", "0.0.0.0"],
+                               check=True, capture_output=True, timeout=120)
+                mapped = subprocess.run(["docker", "port", name, "8702/tcp"], check=True,
+                                        capture_output=True, text=True).stdout.split()[0]
+                url = f"http://{mapped}"
             deadline = time.monotonic() + 60
             while True:  # it starts in a couple of seconds
                 try:
@@ -648,10 +667,11 @@ def contained(app: Any, image: str) -> Iterator[Any]:
             yield work
             assert work.runs, f"no run went to the worker container {name}"
         finally:
-            logs = subprocess.run(["docker", "logs", "--tail", "30", name], check=False,
-                                  capture_output=True, text=True).stdout
-            print(f"\n[the worker container's last lines]\n{logs}")
-            subprocess.run(["docker", "rm", "-f", name], check=False, capture_output=True)
+            if not external:
+                logs = subprocess.run(["docker", "logs", "--tail", "30", name], check=False,
+                                      capture_output=True, text=True).stdout
+                print(f"\n[the worker container's last lines]\n{logs}")
+                subprocess.run(["docker", "rm", "-f", name], check=False, capture_output=True)
 
 
 @contextmanager

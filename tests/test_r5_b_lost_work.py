@@ -32,7 +32,7 @@ def a_reminder_at(stack, when: str, *, in_digest: bool) -> int:
 def test_a_reminder_whose_run_fails_is_still_given(stack):
     a_reminder_at(stack, FRIDAY, in_digest=False)  # for a particular time: it goes at once
     stack.at(FRIDAY)
-    stack.model.failing = 1  # the provider fails this once
+    stack.model.failing = 2  # the call's one retry fails too
     stack.scheduler().work_due()
     [told] = stack.inbox("ana")  # the model wasn't answering, so a5s reminded her itself
     assert "Northwind" in told["text"] and "a5s is reminding you itself" in told["text"]
@@ -44,7 +44,7 @@ def test_a_reminder_whose_run_fails_is_still_given(stack):
 
 def test_a_chase_whose_run_fails_is_given_later_and_no_escalation_says_it_went(stack):
     stack.at("2026-11-02T09:30:00+00:00")  # half the time for Ana's and Ben's questions has passed
-    stack.model.failing = 2  # both chases' runs: the provider isn't answering
+    stack.model.failing = 4  # both chases' first calls and their retries fail
     stack.scheduler().work_due()
     [told] = stack.inbox("ben")  # so a5s chased him itself, in his digest
     assert "Q-1002" in told["text"] and "a5s is telling you itself" in told["text"]

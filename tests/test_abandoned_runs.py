@@ -96,16 +96,16 @@ def test_a_replacement_scheduler_cant_overlap_its_open_message_run(stack):
     with stack.client() as c:
         replacement = c.post("/runs", json={"instance": "assistant-finance", "trigger": {
             "kind": "message", "inbound": message, "holder": claim["holder"]}})
-    assert replacement.status_code == 200, replacement.text
+    assert replacement.status_code == 409, replacement.text  # an abandoned message isn't rerun
     with db.transaction(stack.admin) as conn:
         outcomes = conn.execute("select outcome from runs where trigger->>'inbound' = %s "
                                 "order by opened_at", (message,)).fetchall()
-    assert [r["outcome"] for r in outcomes] == ["abandoned", None]
+        answered = conn.execute("select answered_at is not null as answered from inbound "
+                                "where id = %s", (message,)).fetchone()
+    assert [r["outcome"] for r in outcomes] == ["abandoned"] and answered["answered"]
     assert stack.answers(message) == [STOPPED]  # the abandoned run's one notice, not another's
     with stack.client(first["token"]) as c:
         assert c.get("/run").status_code == 401
-    with stack.client(replacement.json()["token"]) as c:
-        assert c.get("/run").status_code == 200
     assert stack.verify().ok
 
 

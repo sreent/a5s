@@ -38,6 +38,7 @@ TOP = {
 INSTANCE = {
     "definition": lambda i: i.update(definition="watcher"),
     "serves": lambda i: i.update(serves=["ana"]),
+    "model": lambda i: i.update(model="qwen3.7-max"),
     "level": lambda i: i.update(level=0),
     "owner": lambda i: i.update(owner="ben"),
     "deputy": lambda i: i.update(deputy="ana"),
@@ -62,6 +63,16 @@ def test_every_choice_of_the_settings_format_is_one_these_tests_change():
     assert set(_Version.model_fields) - {"serial"} == set(TOP) | {"data_protection"}
     assert set(_Instance.model_fields) == set(INSTANCE)
     assert set(_DataProtection.model_fields) == set(PROTECTION)
+
+
+def test_an_instances_model_override_is_named_before_its_approvers():
+    before = copy.deepcopy(SAMPLE_SETTINGS)
+    after = copy.deepcopy(before)
+    after["instances"]["assistant-finance"]["model"] = "qwen3.7-max"
+    said = changes(version(before), version(after), AGENTS, PEOPLE)
+    assert any("qwen3.7-max" in change["text"] for change in said), said
+    whole = described(version(after), AGENTS, PEOPLE)
+    assert any("qwen3.7-max" in line for line in whole), whole
 
 
 @pytest.mark.parametrize("choice", sorted(TOP))

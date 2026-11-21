@@ -31,6 +31,7 @@ WIDENING = {
     "deputy": lambda d: d.update(deputy="ben"),
     "scope": lambda d: d.update(scope="billing"),
     "model": lambda d: d.update(model="other-model"),
+    "fallbacks": lambda d: d.update(fallbacks=["other-model"]),
     "autonomy": lambda d: d.update(autonomy={"start": 1, "max": 2}),
     "tools": lambda d: d["tools"].update(more=["shred_records"]),
     "triggers": lambda d: d["triggers"].append({"message": "from anyone at all"}),

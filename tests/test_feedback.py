@@ -138,6 +138,7 @@ def checks(approving, provider, person: str = "priya") -> dict:
 def test_a_record_the_answer_or_their_words_name_keeps_it_from_whoever_may_not_see_it(
         stack, approving, provider):
     listed_runs(stack)
+    stack.model.reply(None, ("get_record", {"key": "Q-1002"}))  # it reads the record it names
     stack.model.reply("Q-1002's refund went out on Monday.")  # billing's, from what it was told
     first = stack.send("Where's my refund?", "ana")
     assert stack.scheduler().answer_waiting() == 1

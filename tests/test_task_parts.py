@@ -86,6 +86,7 @@ def test_what_a_part_read_is_the_records_when_the_task_writes_it(stack):
     stack.scheduler().work_due()
     stack.model.reply(None, ("finish_task", {"status": "done"}))
     stack.model.reply("Ana, your task is done: Q-1001 and Q-7777 are open.")
+    stack.model.reply("Ana, your task is done: Q-1001 and Q-7777 are open.")
     stack.scheduler().work_due()
     [heard] = told(stack)  # Q-1001 is what its part read; Q-7777, nobody did
     assert "(a5s: Q-7777 came from the assistant itself" in heard and "Q-1001 came" not in heard

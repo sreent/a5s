@@ -274,12 +274,11 @@ def settled() -> dict:
             "leases_left": int(leases[0]) if leases else None}
 
 
-def errors(since: float, killed: list, away: list) -> tuple[list[str], dict]:
-    """What a5s's parts logged as errors since `since`: those no kill nor the database's
-    outage explains, and of those one does, such as a run it cut off, how many each part
-    logged, and how long after its cause the last came, so a part slow to recover shows."""
+def errors(since: float, killed: list, away: list) -> tuple[list[str], dict, dict]:
+    """Errors no kill nor the database explains, counts and latest times for the rest, and each
+    error's line for review, so a slow recovery can be diagnosed without the runner's logs."""
     stamp = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(since))
-    found, after = [], {}
+    found, after, lines = [], {}, {}
     for part in PARTS[:-1]:  # not Postgres's own
         logged = subprocess.run(["docker", "logs", "--timestamps", "--since", stamp,
                                  f"{PROJECT}-{part}-1"], capture_output=True, text=True,
@@ -287,6 +286,7 @@ def errors(since: float, killed: list, away: list) -> tuple[list[str], dict]:
         for line in (logged.stdout + logged.stderr).splitlines():
             if not re.search(r"Traceback|ERROR|CRITICAL", line):
                 continue
+            lines.setdefault(part, []).append(line[:300])
             at = re.match(r"(\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d)", line)
             when = calendar.timegm(time.strptime(at.group(1), "%Y-%m-%dT%H:%M:%S")) if at else 0
             if (late := since_cause(when, killed, away)) is not None:
@@ -294,7 +294,7 @@ def errors(since: float, killed: list, away: list) -> tuple[list[str], dict]:
                 after[part] = (n + 1, max(last, late))
             else:
                 found.append(f"{part}: {line[:300]}")
-    return found, after
+    return found, after, lines
 
 
 def mebibytes(usage: str) -> float:
@@ -443,7 +443,7 @@ def main() -> None:
     if len(killed) < len(KILLED) or not all(k["task"] for k in killed):
         problems.append("not every kill came as a task's slice was at work: "
                         + "; ".join(f"the {k['part']}" for k in killed if not k["task"]))
-    logged, after = errors(began, killed, away)
+    logged, after, error_lines = errors(began, killed, away)
     if logged:
         problems.append(f"a5s's parts logged {len(logged)} errors no kill explains, such as: "
                         + " | ".join(logged[:5]))
@@ -458,6 +458,7 @@ def main() -> None:
                                          if settled_connections is not None else None)},
              "recovery_connections": recovery,
              "repeated_message_runs": repeated_message_runs(),
+             "error_lines": error_lines,
              "tasks": {"started": len(started), **tasks}, "killed": killed,
              "away": away, "cut_off": len(cut), "tried_again": len(again),
              "errors_after_kills": {p: {"errors": n, "last_after_seconds": round(s)}

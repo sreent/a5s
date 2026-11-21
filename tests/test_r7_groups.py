@@ -119,6 +119,8 @@ def test_a_group_run_writes_only_to_the_group(stack, homeserver):  # noqa: F811
         opened = c.post("/runs", json={"instance": "assistant-finance",
                                        "trigger": {"kind": "message", "inbound": row["id"]}})
     with stack.client(opened.json()["token"]) as c:  # what a worker sends
+        read = c.post("/run/tools/get_record", json={"args": {"key": "Q-1001"}})
+        assert read.status_code == 200, read.text  # provenance passes; the audience still decides
         sent = c.post("/run/messages", json={"to": "ana", "text": "Q-1001 is an invoice."})
     assert sent.status_code == 403 and homeserver.sent == []
 

@@ -154,7 +154,7 @@ def said(inst: dict, definition: Any, owners: list[str], registry: Registry,
         "sourceAgentId": inst["id"],
         "originatingStore": ORIGIN,
         "managedByAppId": registry.client_id,
-        "sourceCreatedDateTime": first.isoformat(),
+        "sourceCreatedDateTime": first.astimezone(UTC).isoformat(),
         "sourceLastModifiedDateTime": inst["updated_at"].isoformat(),
         "agentCard": {
             "name": inst["id"], "version": inst["release"], "description": definition.does,
