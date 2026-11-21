@@ -4,8 +4,8 @@
 set -eu
 cd "$(dirname "$0")/.."
 FORGEJO_IMAGE=codeberg.org/forgejo/forgejo:12.0@sha256:dbb0f88677f0c65cd1b66fb83504225aa5a04c4bc4a5ffdf9fc9a3a6d5bb1c68
-name=${A5S_FORGEJO_CONTAINER:-a5s-forgejo-test}
-port=${A5S_FORGEJO_PORT:-3300}
+name=${A5S_TEST_FORGEJO_CONTAINER:-a5s-forgejo-test}
+port=${A5S_TEST_FORGEJO_PORT:-3300}
 password=$(head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')
 cleanup() { docker rm -f "$name" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
@@ -23,7 +23,7 @@ curl -fsS "http://127.0.0.1:$port/api/v1/version" >/dev/null
 docker exec -u git "$name" forgejo admin user create --admin --username pilot-admin \
   --password "$password" --email pilot-admin@a5s.test --must-change-password=false >/dev/null
 status=0
-A5S_FORGEJO_URL="http://127.0.0.1:$port" A5S_FORGEJO_ADMIN_PASSWORD="$password" \
+A5S_TEST_FORGEJO_URL="http://127.0.0.1:$port" A5S_TEST_FORGEJO_ADMIN_PASSWORD="$password" \
   uv run pytest -q -m forgejo tests/test_forgejo.py "$@" || status=$?
 if [ "$status" -ne 0 ]; then docker logs --tail 30 "$name"; fi
 exit "$status"

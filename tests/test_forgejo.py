@@ -22,7 +22,7 @@ from a5s.connectors.rest import RestClient
 from a5s.contract import ToolCall
 
 pytestmark = pytest.mark.forgejo
-TOKEN_ENV = "A5S_FORGEJO_TEST_TOKEN"
+TOKEN_ENV = "A5S_TEST_FORGEJO_TEST_TOKEN"
 
 
 def api(client: httpx.Client, method: str, path: str, **kwargs):
@@ -52,14 +52,14 @@ def invoke(tools, name: str, args: dict, person: str = "raj"):
 
 @pytest.fixture(scope="session")
 def forgejo():
-    url = os.environ.get("A5S_FORGEJO_URL")
-    password = os.environ.get("A5S_FORGEJO_ADMIN_PASSWORD")
+    url = os.environ.get("A5S_TEST_FORGEJO_URL")
+    password = os.environ.get("A5S_TEST_FORGEJO_ADMIN_PASSWORD")
     if not url or not password:
         pytest.fail("run this suite with `sh deploy/forgejo.sh`")
     root = url.rstrip("/")
     endpoint = root + "/api/v1"
     admin = httpx.Client(base_url=endpoint,
-                         auth=(os.environ.get("A5S_FORGEJO_ADMIN_USER", "pilot-admin"), password),
+                         auth=(os.environ.get("A5S_TEST_FORGEJO_ADMIN_USER", "pilot-admin"), password),
                          timeout=30)
     reader_http = None
     work_root = Path(tempfile.mkdtemp(prefix="a5s-forgejo-"))
