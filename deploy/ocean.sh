@@ -8,6 +8,9 @@
 #
 #   sh deploy/ocean.sh <commit>
 set -eu
+if ! python3 -c '' >/dev/null 2>&1; then
+  python3() { uv run python "$@"; }
+fi
 commit=${1:?name the commit of sreent/ocean to take, such as its latest on main}
 here=$(cd "$(dirname "$0")/.." && pwd)
 into="$here/src/a5s/core/webchat/ocean"
@@ -28,7 +31,7 @@ python3 - "$into" "$taken" <<'PY'
 import hashlib, json, sys
 from pathlib import Path
 into, commit = Path(sys.argv[1]), sys.argv[2]
-files = {str(p.relative_to(into)): hashlib.sha256(p.read_bytes()).hexdigest()
+files = {p.relative_to(into).as_posix(): hashlib.sha256(p.read_bytes()).hexdigest()
          for p in sorted(into.rglob("*")) if p.is_file() and p.name != "ocean.json"}
 (into / "ocean.json").write_text(json.dumps(
     {"repository": "https://github.com/sreent/ocean", "commit": commit, "files": files},

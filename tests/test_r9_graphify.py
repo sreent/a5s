@@ -21,7 +21,7 @@ def test_the_graphify_cli_runs_without_the_cores_secrets(tmp_path, monkeypatch):
     cli = tmp_path / "bin" / "graphify"  # any binary of that name, as a deployment installs it
     cli.parent.mkdir()
     payload = (f"import json, os\n"
-               f"json.dump(sorted(k for k in os.environ if k.startswith('A5S_')), open({str(seen)!r}, 'w')\n"
+               f"json.dump(sorted(k for k in os.environ if k.startswith('A5S_')), open({str(seen)!r}, 'w'))\n"
                "print('NODE Client [src=app.py]')\n")
     if os.name == "nt":
         runner = tmp_path / "graphify_fake.py"

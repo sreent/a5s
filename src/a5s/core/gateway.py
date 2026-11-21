@@ -2747,7 +2747,8 @@ def create_app(gw: Gateway) -> FastAPI:
             asker = gw.scenario.person(row["trigger"].get("sender") or "") if group else None
             if person and (offered := [  # so a yes in their next message finds what it's to
                     *profiles.waiting(conn, person, row["definition"]),
-                    *reminders.waiting_for_yes(conn, person, row["definition"])]):
+                    *reminders.waiting_for_yes(conn, person, row["definition"]),
+                    *tasking.waiting_for_yes(conn, gw.scenario, person, row["id"])]):
                 context.append({"title": "What you offered them, waiting for their yes",
                                 "text": "You offered these in an earlier message. If they say yes "
                                         "to one now, keep it with the tool named, at once, "

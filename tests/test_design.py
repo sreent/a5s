@@ -7,6 +7,7 @@ is Ocean's as that commit has it, never changed here."""
 import hashlib
 import json
 import re
+import subprocess
 
 import httpx
 from playwright.sync_api import expect
@@ -93,6 +94,13 @@ def test_the_copy_of_ocean_is_oceans_as_its_pinned_commit_has_it():
     assert found == pinned["files"]  # changed in sreent/ocean, and taken with deploy/ocean.sh
 
 
+def test_oceans_pinned_files_are_not_text_to_be_converted_on_checkout():
+    font = OCEAN / "fonts" / "plex-sans-700.woff2"
+    asked = subprocess.run(["git", "check-attr", "text", "--", str(font)], cwd=ROOT,
+                           capture_output=True, text=True, check=True)
+    assert "text: unset" in asked.stdout, asked.stdout
+
+
 def _selectors(text: str) -> set[str]:
     """Each selector a stylesheet styles, as it's written, whatever media it's for."""
     text = re.sub(r"@[^{;]+\{", "", re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL))
@@ -125,7 +133,7 @@ def test_the_pages_load_their_type_from_a5s_and_nowhere_else(stack):
         page = httpx.get(f"{url}/chat/")
     assert font.status_code == 200 and font.headers["content-type"] == "font/woff2"
     assert font.content[:4] == b"wOF2" and thai.content[:4] == b"wOF2"
-    assert tokens.status_code == 200 and tokens.text == CSS
+    assert tokens.status_code == 200 and tokens.content == (OCEAN / "css" / "tokens.css").read_bytes()
     assert "font-src 'self'" in page.headers["content-security-policy"]
     assert "default-src 'none'" in page.headers["content-security-policy"]
     assert page.text.index("/chat/ocean/css/tokens.css") < page.text.index("/chat/app.css")

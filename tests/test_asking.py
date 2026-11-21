@@ -167,10 +167,18 @@ def test_values_the_agent_asked_made_up_dont_count_as_found(stack, answering):
 def test_a_question_whose_run_fails_says_why_and_its_run_is_over(stack):
     may_ask(stack)
     stack.model.reply(None, ("ask_agent", {"agent": "watcher", "question": ASKED}))
-    stack.model.on_request = lambda n: setattr(stack.model, "failing", 1) if n == 2 else None
+    calls = []
+
+    def fail_on_nested(n: int) -> None:
+        calls.append((n, str(stack.model.requests[n - 1]["body"]["messages"][-1].get("content"))[:200]))
+        if n == 2:
+            stack.model.failing = 2  # the first call's retry fails too, so the run has no answer
+
+    stack.model.on_request = fail_on_nested
     stack.model.reply("The watcher didn't answer.")
     stack.say(ASKED)
-    assert "the watcher didn't answer: its model isn't answering" in said(stack, -1)
+    assert "the watcher didn't answer: its model isn't answering" in said(stack, -1), (
+        calls, questions(stack))
     [q] = questions(stack)
     assert q["problem"] == "its model isn't answering"
     assert asking.task(q)["status"]["state"] == "TASK_STATE_FAILED"

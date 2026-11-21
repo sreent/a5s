@@ -239,6 +239,11 @@ class Words:
         release = self.definitions.get(instance.definition)
         return getattr(instance, who) or (getattr(release, who) if release else None)
 
+    def model(self, instance: InstanceSettings) -> str | None:
+        """The model an instance uses: its signed override, or its release's own."""
+        release = self.definitions.get(instance.definition)
+        return instance.model or (release.model if release else None)
+
     def classes(self, settings: Settings) -> str:
         own = [self.say("{field} is {data_class}", field=field, data_class=cls)
                for field, cls in sorted(settings.classified.items())]
@@ -319,6 +324,12 @@ def changes(before: Settings | None, after: Settings, definitions: dict[str, Def
             found.append({"text": said("{id} becomes the {agent}, instead of the {was}.",
                                        id=new.id, agent=new.definition, was=old.definition),
                           "widens": True})
+        if (was_model := words.model(old)) != (now_model := words.model(new)):
+            found.append({"text": said("{id} uses its release's own model again, instead of {was}.",
+                                       id=new.id, was=was_model) if now_model is None else
+                          said("{id} uses {now} for its model calls, instead of {was}.",
+                               id=new.id, now=now_model, was=was_model),
+                          "widens": False})
         if more := set(new.serves) - set(old.serves):
             found.append({"text": said("{id} serves {whom} as well.", id=new.id,
                                        whom=words.names(more)), "widens": True})
@@ -550,6 +561,8 @@ def described(settings: Settings, definitions: dict[str, Definition],
                          deputy=words.names([deputy]), **given)
         else:
             first = said("{id}: the {agent}, {where}, serving {whom}.", **given)
+        if i.model:
+            first += said(" It uses {model} for its model calls.", model=words.model(i))
         told.append(" ".join([first, *_reaches(words, i, asked)]))
         told += [said("{id} acts on its own for {action} in {part} once graded samples show "
                       "it's accurate enough: until then it asks first.", id=i.id, action=action,

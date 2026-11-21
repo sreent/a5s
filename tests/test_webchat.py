@@ -200,6 +200,7 @@ def test_a_person_attaches_a_file_and_the_agent_asks_a5s_reader_about_it(stack, 
 def test_a_person_signs_in_chats_and_hears_reminders_in_the_browser(stack, browser, answering,
                                                                      signing_in, provider):
     stack.model.reply("Hello, **Ana**. See https://sample.a5s.dev/records/Q-1001")
+    stack.model.reply("Hello, **Ana**. See https://sample.a5s.dev/records/Q-1001")
     page = browser.new_page()
     page.goto(f"{signing_in}/chat/")  # to the provider, and straight back, signed in
     page.wait_for_selector("#who >> text=Ana Ortiz", timeout=30000)

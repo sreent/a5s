@@ -116,6 +116,18 @@ def offer(call: Call) -> dict:
         return {"task": name(again), "what": text,
                 "offered": "you offered this already: if they've said yes, start it with "
                            "confirm_task"}
+    before = call.conn.execute(
+        "select number, task from tasks where owner = %s and instance_id = %s and status = %s "
+        "and parent is null and offered_run <> %s and asked_at < %s and asked_at > %s "
+        "order by asked_at desc, number desc limit 1",
+        (person.id, call.run["id"], OFFERED, call.run["run"], call.asked_at,
+         call.asked_at - CONFIRM_WITHIN)).fetchone()
+    if before:
+        return {"task": name(before), "what": before["task"],
+                "offered": "this earlier offer still waits for their yes: if this message says "
+                           "yes to it, start it now with confirm_task, and don't offer a "
+                           "replacement. If they asked for a different task instead, cancel "
+                           "this offer first, then offer the new task"}
     deadline = call.now + timedelta(days=tasks_of.days)
     task_id = _tasks(call).create(
         TaskSpec(instance=call.run["id"], owner=person.id, task=text, audience=(person.id,),
@@ -126,6 +138,19 @@ def offer(call: Call) -> dict:
     row = call.conn.execute("select number from tasks where id = %s", (task_id,)).fetchone()
     return {"task": name(row), "what": text, "has until": say(person, deadline),
             "offered": "it starts only once they say yes, in their next message: ask them"}
+
+
+def waiting_for_yes(conn: db.Connection, scenario: Any, person: Person,
+                    instance: str) -> list[str]:
+    """The tasks awaiting their owner's yes, for the next message's context."""
+    rows = conn.execute(
+        "select number, task from tasks where owner = %s and instance_id = %s and status = %s "
+        "and parent is null and asked_at > now() - %s order by asked_at, number",
+        (person.id, instance, OFFERED, CONFIRM_WITHIN)).fetchall()
+    return [f"{name(r)}, a long task" + (f": {r['task']}" if all(
+        scenario.sees(person.id, key) for key in studio.named(scenario, r["task"])
+    ) else "") + f". If they say yes to it, start it with confirm_task, naming {name(r)}; "
+            "don't offer it again." for r in rows]
 
 
 def confirm(call: Call) -> dict:

@@ -328,7 +328,8 @@ def joins(stack, person: str, line: str) -> str:
     private, public = signing.keypair()
     (folder / "keys" / f"{person}.pub").write_text(public + "\n", encoding="utf-8")
     data = folder / "data.yaml"
-    data.write_text(data.read_text(encoding="utf-8").replace("  - {id: rosa,", f"  {line}\n  - {{id: rosa,"))
+    data.write_text(data.read_text(encoding="utf-8").replace("  - {id: rosa,", f"  {line}\n  - {{id: rosa,"),
+                    encoding="utf-8")
     return private
 
 
@@ -336,7 +337,8 @@ def leaves(stack, person: str) -> None:
     folder = stack.cfg.scenario_dir
     (folder / "keys" / f"{person}.pub").unlink()
     data = folder / "data.yaml"
-    data.write_text(re.sub(rf"  - \{{id: {person},.*\n", "", data.read_text(encoding="utf-8")))
+    data.write_text(re.sub(rf"  - \{{id: {person},.*\n", "", data.read_text(encoding="utf-8")),
+                    encoding="utf-8")
 
 
 def by(raw: bytes, person: str, private: str,

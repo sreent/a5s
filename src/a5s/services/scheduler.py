@@ -634,7 +634,8 @@ class Scheduler:
             if person and not reply.strip():
                 raise RuntimeError("the agent's reply was empty")
             if (kind == tasking.KIND and reply.strip()  # to its owner, once it's done or needs
-                    and not self._finished(claim, run, token, reply, topic)):  # them
+                    and not self._finished(claim, run, token, reply, topic,
+                                           history=[*history, asked])):  # them
                 outcome = "reply denied"
                 return
             if person:  # the agent writes to the person it reminds, and to nobody else
@@ -668,7 +669,7 @@ class Scheduler:
             self._fold(claim["instance"], person, agent, topic, opened.json().get("history_chars"))
 
     def _finished(self, claim: dict, run: str, token: str, reply: str,
-                  topic: str = context.GENERAL) -> bool:
+                  topic: str = context.GENERAL, history: list[dict] | None = None) -> bool:
         """Give a task's owner what its run wrote them, if the core lets it, now that the task
         is done or needs them: kept in their conversation, as the agent's, in the task's own
         topic. Whether nothing was denied: a task still at work writes to nobody, which isn't
@@ -676,6 +677,13 @@ class Scheduler:
         owner, agent = claim["owner"], claim["agent"]
         sent = self.gw.post("/run/messages", headers={"Authorization": f"Bearer {token}"},
                             json={"to": owner, "text": reply})
+        if sent.status_code == 409 and (keys := sent.json().get("detail", {}).get("keys")):
+            reply = self._worker(agent)(self.cfg.gateway_url, token, [*(history or []), {
+                "role": "assistant", "content": reply}, {"role": "task", "content":
+                f"[from a5s, not the person] Your answer names {', '.join(keys)}, which this run "
+                "never read. Write it again with only what you read, or leave the key out."}])
+            sent = self.gw.post("/run/messages", headers={"Authorization": f"Bearer {token}"},
+                                json={"to": owner, "text": reply, "checked_once": True})
         if sent.status_code == 403:
             return tasking.HELD in (sent.json().get("reasons") or [])
         sent.raise_for_status()

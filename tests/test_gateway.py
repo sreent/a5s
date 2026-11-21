@@ -107,6 +107,8 @@ def test_messages_keep_only_the_scenarios_record_links(stack):
     text = ("See https://sample.a5s.dev/records/Q-1001 and https://evil.example/x?d=secret "
             "![p](https://evil.example/pixel.png)")
     with stack.client(token) as c:
+        read = c.post("/run/tools/get_record", json={"args": {"key": "Q-1001"}})
+        assert read.status_code == 200, read.text  # the run read the key its answer names
         r = c.post("/run/messages", json={"to": "ana", "text": text})
     assert r.status_code == 200 and r.json()["links_removed"] == 2
     assert "https://sample.a5s.dev/records/Q-1001" in r.json()["text"]
