@@ -4,6 +4,12 @@
 
 A scenario's tools reach the systems its records are in. A scenario writes most of them in its own code, against the [contract](architecture.md), and a5s gives it two ways to reach a system without writing a client of its own: a read-only REST transport, with a GitHub adapter on it ([architecture](architecture.md)), the tools of MCP servers, which most of this page is about, the [document libraries](#document-libraries) its agents may search beyond the handbook in its release, and the [mailboxes](#mailboxes) its teams' work arrives in. Every tool, whichever way it's made, is offered to an agent only if its definition lists it, pinned by its hash, and every call goes through the core's checks: the policy, the parts and need-to-know, held changes, the extractor for content from outside, handles for sensitive values, and the ledger.
 
+## Read-only repository connectors
+
+A scenario can wrap the fixed-origin REST transport and GitHub adapter for issues, PRs, comments, source files and diffs ([architecture](architecture.md)). It works with GitHub and with Forgejo's compatible repository API, including Forgejo's repository-scoped search and `.diff` endpoint. PRs report standard commit statuses and any check runs. Files and diffs are evidence outside the release, so reading them marks the run; comments go through a5s's reader. Denied people, other repository keys, paths outside the repository, and searches containing another `repo:` qualifier make no HTTP request.
+
+Run `sh deploy/forgejo.sh` for the real Forgejo evaluation. It creates a disposable server and synthetic repositories with conflicting PRs, changing checks, malicious comments, and deleted and moved files; proves the API token read-only; and removes the server. The same run is a CI job. Rate-limit retry and refusal are deterministic transport tests; a deployment limits request rates at its HTTPS proxy. The [read-only software-team pilot](guides/software-delivery/pilot.md) separates this adapter proof from the scenario's synthetic MCP and Matrix rehearsal.
+
 ## MCP servers
 
 Many systems now offer their tools through an [MCP](https://modelcontextprotocol.io) server. a5s uses them as a scenario's own tools, governed as strictly: nothing of a server's is offered until a scenario declares it, in a5s's own words, and a release approves the declaration.
