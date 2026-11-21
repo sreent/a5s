@@ -14,7 +14,7 @@ import httpx
 
 from a5s import db, definitions
 from a5s.config import Config, load_models
-from a5s.connectors import mcp
+from a5s.connectors import mcp, repositories
 from a5s.core import inbox, memberships, registry
 from a5s.core.gateway import Gateway, create_app
 from conftest import (
@@ -55,6 +55,7 @@ def running_scenario(database: str, root: Path, model: FakeModel, scenario: str,
     scenario_systems(folder)  # the systems its mcp.yaml declares tools of, if it has any
     found = mcp.served(getattr(importlib.import_module(module), name)(cfg.scenario_dir, cfg.database_url),
                        cfg.scenario_dir)
+    found = repositories.served(found, cfg.scenario_dir)
     hashes = {n: t.schema_hash for n, t in found.tools().items()}
     for agent in agents.iterdir():
         definitions.pin(agent, hashes)

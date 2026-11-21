@@ -9,6 +9,7 @@ import httpx
 import pytest
 from fastapi import FastAPI, Request
 
+from a5s.connectors import repositories
 from a5s.connectors.github import GitHubRepository
 from a5s.connectors.rest import ConnectorError, RestClient
 from a5s.contract import ToolCall
@@ -258,3 +259,67 @@ def test_a_rate_limit_is_retried_once_then_reported_without_remote_content(monke
     with pytest.raises(ConnectorError, match="HTTP 429") as failure:
         remote(limited).get("/repos/acme/repo/issues/1")
     assert len(calls) == 2 and "not for an agent" not in str(failure.value)
+
+
+def test_a_scenario_declares_repository_tools_permissions_provenance_and_release_pins(
+        tmp_path, monkeypatch):
+    import re
+
+    class Scenario:
+        record_pattern = r"\bDEV-\d+\b"
+        record_links = ("https://records.test/",)
+
+        def tools(self):
+            return {}
+
+        def part_of(self, record):
+            return "backend" if record.startswith("DEV-") else None
+
+        def sees(self, person, record):
+            return person == "raj" and record.startswith("DEV-")
+
+        def sees_part(self, person, part):
+            return person == "raj" and part == "backend"
+
+    (tmp_path / "repositories.yaml").write_text("""repositories:
+  delivery:
+    kind: forgejo
+    repository: acme/repo
+    url: https://api.github.test
+    site: https://git.test/acme/repo
+    part: backend
+""", encoding="utf-8")
+    monkeypatch.setenv("A5S_REPOSITORY_DELIVERY_TOKEN", "synthetic-token")
+    calls = []
+
+    def handler(request):
+        calls.append(request)
+        return httpx.Response(200, json={"items": [
+            {"number": 1, "title": "DEV-101 Checkout", "state": "open"}], "total_count": 1})
+
+    http = httpx.Client(transport=httpx.MockTransport(handler))
+    scenario = repositories.served(Scenario(), tmp_path, http=http)
+    tools = scenario.tools()
+    assert set(tools) == {"search_delivery", "get_delivery", "get_delivery_comments",
+                          "read_delivery_file", "get_delivery_diff"}
+    found = tools["search_delivery"].run(replace(CALL, args={"query": "checkout"}))
+    assert found["records"][0]["key"] == "acme/repo#1"
+    assert calls[0].headers["Authorization"] == "Bearer synthetic-token"
+    before = len(calls)
+    denied = tools["search_delivery"].run(replace(CALL, args={"query": "checkout"},
+                                                 acts_for=("eva",)))
+    assert "isn't permitted" in denied["error"] and len(calls) == before
+    assert scenario.part_of("acme/repo#1") == "backend"
+    assert scenario.sees("raj", "acme/repo#1") and not scenario.sees("eva", "acme/repo#1")
+    assert re.search(scenario.record_pattern, "acme/repo#1")
+    assert re.search(scenario.record_pattern, "DEV-101")
+    assert "https://git.test/acme/repo/" in scenario.record_links
+    pinned = tools["get_delivery"].schema_hash
+    changed = repositories.Declaration.model_validate({
+        "repositories": {"delivery": {"repository": "acme/repo", "url": "https://api.github.test",
+                                      "site": "https://git.test/acme/repo", "part": "frontend"}}})
+    other = repositories.tools(changed, Scenario(), http=http)["get_delivery"]
+    assert other.schema_hash != pinned
+    sandbox = repositories.served(Scenario(), tmp_path, sandboxed=True, http=http)
+    result = sandbox.tools()["search_delivery"].run(replace(CALL, args={"query": "checkout"}))
+    assert "don't call the real service" in result["error"] and len(calls) == before

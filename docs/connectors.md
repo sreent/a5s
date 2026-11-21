@@ -6,9 +6,23 @@ A scenario's tools reach the systems its records are in. A scenario writes most 
 
 ## Read-only repository connectors
 
-A scenario can wrap the fixed-origin REST transport and GitHub adapter for issues, PRs, comments, source files and diffs ([architecture](architecture.md)). It works with GitHub and with Forgejo's compatible repository API, including Forgejo's repository-scoped search and `.diff` endpoint. PRs report standard commit statuses and any check runs. Files and diffs are evidence outside the release, so reading them marks the run; comments go through a5s's reader. Denied people, other repository keys, paths outside the repository, and searches containing another `repo:` qualifier make no HTTP request.
+A scenario declares repository tools in `repositories.yaml`, beside its settings. For example:
 
-Run `sh deploy/forgejo.sh` for the real Forgejo evaluation. It creates a disposable server and synthetic repositories with conflicting PRs, changing checks, malicious comments, and deleted and moved files; proves the API token read-only; and removes the server. The same run is a CI job. Rate-limit retry and refusal are deterministic transport tests; a deployment limits request rates at its HTTPS proxy. The [read-only software-team pilot](guides/software-delivery/pilot.md) separates this adapter proof from the scenario's synthetic MCP and Matrix rehearsal.
+```yaml
+repositories:
+  delivery:
+    kind: forgejo                 # or github
+    repository: pilot/delivery    # record keys are pilot/delivery#<number>
+    url: https://forgejo.example/api/v1
+    site: https://forgejo.example/pilot/delivery
+    part: backend                 # visibility follows the directory's sees_part
+```
+
+This gives `search_delivery`, `get_delivery`, `get_delivery_comments`, `read_delivery_file` and `get_delivery_diff`, which an agent lists and pins like any other tools. The declaration, endpoint, site and part are covered by the tool hash. The core alone holds the read-only token in `A5S_REPOSITORY_DELIVERY_TOKEN`; the studio sandbox offers the tools but refuses to call the real service. Repository keys join the scenario's provenance pattern and permitted links, and only people who may read the configured part may call them.
+
+The transport and adapter work with GitHub and Forgejo, including Forgejo's repository-scoped search and `.diff` endpoint. PRs report standard commit statuses and any check runs. Files and diffs mark the run as reading evidence outside the release; comments go through a5s's reader. Denied people, other repository keys, paths outside the repository, and searches containing another `repo:` qualifier make no HTTP request.
+
+Run `sh deploy/forgejo.sh` for the real Forgejo evaluation. It creates a disposable server and synthetic repositories with conflicting PRs, changing checks, malicious comments, and deleted and moved files; proves the API token read-only; and removes the server. The same run is a CI job. With `A5S_TEST_FORGEJO_LIVE=required`, it also starts PostgreSQL and an actual a5s worker, loads `.a5s/live.env`, and proves a real model through a copied, signed, backend-only, read-only scenario, the worker and the gateway, without giving the worker a provider key. Rate-limit retry and refusal are deterministic transport tests; a deployment limits request rates at its HTTPS proxy. The [read-only software-team pilot](guides/software-delivery/pilot.md) keeps the real repository/gateway proof distinct from the shipped scenario's synthetic MCP and Matrix rehearsal.
 
 ## MCP servers
 

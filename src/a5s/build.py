@@ -9,7 +9,7 @@ import httpx
 
 from a5s import db, definitions
 from a5s.config import Config, load_currency, load_models
-from a5s.connectors import libraries, mailboxes, mcp
+from a5s.connectors import libraries, mailboxes, mcp, repositories
 from a5s.contract import Scenario
 from a5s.core import delegation, memberships, metrics, registration, registry, status, traces
 from a5s.core.events import EventsConfig
@@ -26,14 +26,16 @@ from a5s.core.teams import Teams, TeamsConfig
 def scenario(cfg: Config, delegated: mcp.Delegated | None = None) -> Scenario:
     """The scenario a5s serves, such as its own sample: any class that meets the contract, with
     the tools of MCP servers' its folder's mcp.yaml declares beside its own (connectors/mcp.py),
-    and of the libraries its libraries.yaml names (connectors/libraries.py), those that act as
-    the person with their own tokens (`delegated`), in the core, and of the mailboxes its
-    mailboxes.yaml names (connectors/mailboxes.py), which the core alone reads, with the
-    deployment's app."""
+    declared repositories (connectors/repositories.py), and of the libraries its libraries.yaml
+    names (connectors/libraries.py), those that act as the person with their own tokens
+    (`delegated`), in the core, and of the mailboxes its mailboxes.yaml names
+    (connectors/mailboxes.py), which the core alone reads, with the deployment's app."""
     module, _, name = cfg.scenario.partition(":")
     found = getattr(importlib.import_module(module), name)(cfg.scenario_dir, cfg.database_url)
     found = mcp.served(found, cfg.scenario_dir, sandboxed=cfg.sandboxed,
                        reserved=frozenset(CORE_TOOLS), delegated=delegated)
+    found = repositories.served(found, cfg.scenario_dir, sandboxed=cfg.sandboxed,
+                                reserved=frozenset(CORE_TOOLS))
     found = libraries.served(found, cfg.scenario_dir, root=cfg.library_root,
                              sandboxed=cfg.sandboxed, reserved=frozenset(CORE_TOOLS),
                              delegated=delegated)
