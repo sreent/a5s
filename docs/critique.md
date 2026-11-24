@@ -778,6 +778,64 @@ The gaps they named, and their size:
 - **Proposed and kept:** masking that hides a word which is also someone's name (A18), and samples that name whom a change was for (C13): graders judge a change by whom it was for. C's call to drop caps to 1 when a level-2 agent's instructions change: a release approver signs instead, so a sentence of instructions throws away no grades, as round 6 settled (G7).
 - **Deferred, with their size:** each above, and the gaps.
 
+## Round 16: what was built since round 15
+
+Four reviewers read the code built since round 15, each from one side: how models are called, fall back and earn level 2 (A); held changes, their deciders, the outside mark and the new procure-to-pay scenario, which a5s was tested on as harder than any before it (B); people's data and conversations (C); and operations and security (D). They traced each finding from a caller through the code, and each was traced again before it was fixed. Each fix has a test that fails without it.
+
+| # | Finding | Severity | How the code answers it | Status |
+| --- | --- | --- | --- | --- |
+| B1 | One person could turn four eyes off: a version that took a part's rule away while it tightened the part's threshold counted as only narrowing, so its owner alone signed it, and its words never said the rule went | High | Any change to `two_deciders` needs every approval a version needs; taking the rule away or loosening it needs two people who approve settings, as one person holding two roles is still one; approvers read it, as widening where it loosens | Fixed |
+| B2 | An argument a tool's schema doesn't name carried the agent's words into a held change, unmarked and uncleaned | High | A change's call is refused an argument its schema doesn't name; where one is kept, its name counts as the agent's words, and every name reaches people as plain words | Fixed |
+| B3 | Keys and listed choices a change writes carried nothing of a marked run, so the order a supplier's mail chose for a correction could be made at level 2 by "ask again" | High | Only the record a change is about is exempt; every other value, a key or a listed choice included, is the agent's choice | Fixed |
+| B4 | The amount four eyes read wasn't bound by the held change's digest: the database's owner could lower it, and one approval made the change | High | The amount counts only from the snapshot the digest binds: one changed since counts as more than the rule's | Fixed |
+| A1 | A run that opened on its release's fallback could see what its own model may not, as a call's fallback can't | High | A run's fallback is approved for every class of data its own model is; a shadow's fitness reads the models the settings put each on | Fixed |
+| A2 | A message whose run made a draft before its model stopped answering ran again from the start on the next model: a second draft, and their words written twice | High | A run that wrote, changed or sent anything isn't run again: the core says whether it kept the message, and the person hears it stopped; their words are written once per message | Fixed |
+| A3 | A call's fallback was sent the images its own model was approved for | High where it applies | Each fallback is screened on its own approval | Fixed |
+| A4 | Level 2 could be gained by editing the behaviours table, whose rows say which earned behaviour a release has on a model | High | The gateway works each behaviour out from the release it loaded, for caps and draws, ignoring a row that disagrees, and may update only a row's model | Fixed |
+| C1 | Searching the conversation gave an unmarked run what marked runs wrote, from before a fresh start too | High | What search finds of a marked run marks the run that found it, and it finds only what the history would give | Fixed |
+| C2 | A group's answer kept through an erasure still named the erased person, in its route | High | A departure or an erasure names them there by the archive's name too | Fixed |
+| C3 | Erasing an archive by its name left what its holder asked in samples, and erasing an id took every past holder's | High | It goes by the id in the holder's time, whether by the id or the archive's name | Fixed |
+| C4 | An address with an apostrophe went into the ledger in clear, and its export and erasure found nothing | High | It's an address, as a mailbox takes it, where no leaver had it as an id | Fixed |
+| C5 | A customer's erasure left their address in tasks' plans and findings, repeats, reminders, notes, questions between agents, handovers and shadows' answers | High | Each takes a stand-in too, and the export counts each | Fixed |
+| D1 | `a5s restore` said it erased a customer again, though the ledger keeps them by a digest | High | It lists them for the officer to ask again, with the address | Fixed |
+| D2 | After `seal-again --leaked`, a plain `seal-again`, which the status told operators to run, sealed again with the new key what the leaked one sealed | High | It refuses while a leaked key is held; the status says to take it out and restart, and counts nothing of it as waiting | Fixed |
+| D3 | Seal keys' retirements lived only in the database: a lost key couldn't be retired, and a restore brought a leaked one back | High | Each retirement is in the ledger, and `a5s restore` retires again what was retired since; a lost key is retired as leaked by its fingerprint, without the core having started; the runbook says to keep retired keys while backups need them | Fixed |
+| D4 | `a5s restore` brought back the tokens of an account someone disconnected since the backup, and instances as they were before a suspension since | High | It lets go of each account connected or disconnected since, and sets each instance as the ledger's last word on it says | Fixed |
+| A5, D5 | `a5s health --restore` was refused wherever the operators' token is set, and didn't keep the release approver outside the team | Medium | It's an operator's route, and the approver must be from outside the team that runs a5s | Fixed |
+| A6 | Calls a5s skipped, for an open breaker or a stopped model, counted as the model's stalls, and could stop it for good | Medium | They're in the ledger, not in how the model did | Fixed |
+| A7 | A model that timed out was asked again though that took as long again, and the worker's own timeout failed the run rather than move it to the next model | Medium | The chain of models for a call answers within the worker's wait; a timed-out model isn't asked again in it; the worker's timeout counts as its model not answering | Fixed |
+| A8 | Which models answered rested on a ledger write that may fail, so a fallback's answer could make a change at the own model's level 2 | Medium | Another model's answer goes only once a5s recorded that it answered | Fixed |
+| B5 | The decide page read four eyes from settings the channels app can't check, so one approval settled a change needing two there | Medium | It reads them as the officer's choices are read, and counts every part as needing two while none can be read | Fixed |
+| B6 | The three-way match never compared an invoice's amount with the order's price, took one for nothing, and refused every second partial invoice | Medium | Each invoice is billed at the order's price, with those before it on the order, against what was ordered and received | Fixed |
+| B7 | Nothing tied a payment, or a correction, to the match, and the docs overclaimed it | Medium | The match's verdict is part of the invoice's record, so deciders read it and a change to the order or receipts stops the payment; the made-up ERP pays only an invoice that matches by its own check, and corrects one only to an order it can mean | Fixed |
+| C6 | Graders read what was asked where it named records they may not see | Medium | Such a sample isn't offered them | Fixed |
+| C7 | A fall-back's mark outlived a restore, a departure and an answer kept back: sends again, a sweep that failed, retries without end | Medium | Each clears it, and one with no chat stays in the inbox | Fixed |
+| C8 | A group's answer stopped being the group's once it fell back or its asker was erased | Medium | Its members and its chat are read from its route, and it's the group's again once delivered | Fixed |
+| C9 | Bringing forward what fell back used the batch's clock, so a message another core had in flight could go twice | Medium | The clock is read afresh first | Fixed |
+| C10 | Kept cases kept common ways of writing a date of birth | Medium | They're masked | Fixed |
+| D6 | With `restore.id` left set, every upgrade that brought a migration failed, and a first restore had no cluster path to migrate | Medium | The restore finds it ran before checking the schema, and the chart migrates before restoring | Fixed |
+| D7 | `--leaked` left connected accounts' tokens usable with the key and a backup, and every undo failed as if tampered with | Medium | It lets go of them, and the runbook says to revoke a5s's access at each system; an undo it can't trust any more says why | Fixed |
+| A9 | The one correction for keys a reply never read was only on a message's path, and a refusal in words crashed the scheduler | Low | It's on every path a run writes to someone | Fixed |
+| A10 | A key the person asked about was taken as made up when the agent said it back | Low | What they said counts as read | Fixed |
+| A11 | The docs said canaries go into the ledger, that tightening is always automatic, and that each model is tried once | Low | They say what the code does | Fixed |
+| A12 | The health gate opened a connection outside the pool for each candidate of each call | Low | It uses the pool | Fixed |
+| B8 | An instance's page said a change waited for a decider after they approved it | Low | It counts what they decided as theirs no more | Fixed |
+| B9 | The procure-to-pay settings set a level outside parts that did nothing, so the buyer's drafts were refused | Low | Drafts name the record they're about, whose part decides; the level lines are gone | Fixed |
+| B10 | Notes told agents without `ask_about` to use it | Low | Only a run its release grants it is told | Fixed |
+| C11 | The judge was told nobody asked for a change a task's run made | Low | It reads what the task's owner asked | Fixed |
+| C12 | The export left out fresh starts, and the docs said handover notices were in the reader's language | Low | Both say what the code does | Fixed |
+| D8 | Accepted risk R5 understated who could plant a marked copy | Low | It names the core's role too, and the restore reads the store with a right that only reads | Fixed |
+| D9 | A core that started on a restored database before `a5s restore` answered again what it had answered since the backup | Low | No run opens while the copier waits for a restore | Fixed |
+| | The status reads every seal-key kind while two keys are held, which may be slow on a large deployment | | | Deferred: measure first |
+| | The undo notice carries a held change's words from a marked run unmarked; a team member's erasure leaves their id in what they wrote for a handover | | | Deferred, Small |
+
+The suite caught what the procure-to-pay work had missed besides: the settings format's own test, the mailbox stack's fixture, and the sandbox's tests, which didn't expect the assistant's Thai case.
+
+- **Added:** two people to take four eyes away; arguments a change's schema doesn't name, refused; four eyes bound by the digest; a run's fallback fit for its data and images; a message tried again only where its run did nothing; one deadline for a call's chain of models; behaviours worked out from the loaded release; restores that redo disconnections, statuses, customers' erasures and key retirements; seal-key retirements in the ledger, and a lost key retired by its fingerprint; runs that wait for a restore; a match by price and receipts, its verdict on the invoice, and the ERP's own check.
+- **Removed:** a level outside parts that did nothing; a5s's skipped calls counted against a model; a second run of a message whose first had acted.
+- **Kept:** four eyes' requirement outside the held change's digest, read from the snapshot the digest binds instead, so the changes waiting as a5s upgrades are still made.
+- **Deferred, with their size:** the two above.
+
 ## Accepted risks
 
 Some risk no design removes. These remain, each accepted by its owner.
@@ -803,4 +861,4 @@ Some risk no design removes. These remain, each accepted by its owner.
 
 ## Next round
 
-Round 16 reads a5s deployed to the clouds and Teams on the test tenant, as the first day walks it, with every walk-through live each night, and settles what round 13 left to the tenant: which way Entra ID shows a second factor. It starts from the accepted risks and the deferrals of rounds 13 to 15, reads from all six angles, and reports what it removes.
+Round 17 reads a5s deployed to the clouds and Teams on the test tenant, as the first day walks it, with every walk-through live each night, and settles what round 13 left to the tenant: which way Entra ID shows a second factor. It starts from the accepted risks and the deferrals of rounds 13 to 16, reads from all six angles, and reports what it removes.
