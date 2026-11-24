@@ -24,6 +24,7 @@ SCENARIOS = {
     "software-delivery": ("a5s.software_delivery:SoftwareDeliveryScenario",
                           ("rue", "ash", "ugo", "pam")),
     "service-desk": ("a5s.service_desk:ServiceDeskScenario", ("ren", "zia", "max", "dev")),
+    "procure-to-pay": ("a5s.procure_to_pay:ProcureToPayScenario", ("ida", "ken", "lars", "tara")),
 }
 
 

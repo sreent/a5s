@@ -34,6 +34,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import re
 import secrets
 from collections.abc import Callable
 from datetime import datetime, timedelta
@@ -104,6 +105,39 @@ def deciders(scenario: Scenario, records: list[str],
     return found
 
 
+# An amount as a record holds it, such as 16000, "16,000.00" or "GBP 16,000.00"
+_AMOUNT = re.compile(r"\s*(?:[A-Z]{3}|[£$€¥฿])?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(?:[A-Z]{3})?\s*")
+
+
+def amount_of(value: object) -> float | None:
+    """A record's amount as a number, or None where it isn't one a5s can read."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    found = _AMOUNT.fullmatch(value) if isinstance(value, str) else None
+    return float(found.group(1).replace(",", "")) if found else None
+
+
+def twice(two: dict[str, tuple[str, float]], scenario: Scenario,
+          proposal: dict) -> dict[str, tuple[str, float]]:
+    """The parts where a held change needs two of the part's deciders, each with the record
+    and the amount that make it so: a part whose rule in the settings says so, where a record
+    the change names held more than the rule's amount when the change was asked for, or an
+    amount a5s can't read, so the rule never lapses on a misread."""
+    found: dict[str, tuple[str, float]] = {}
+    standing = proposal.get("standing") or {}
+    for key in proposal["records"]:
+        part = scenario.part_of(key)
+        if part is None or part not in two or part in found:
+            continue
+        field, above = two[part]
+        amount = amount_of(((standing.get(key) or {}).get("fields") or {}).get(field))
+        if amount is None or amount > above:
+            found[part] = (key, above)
+    return found
+
+
 def everyone(by_part: dict[str | None, list[Person]]) -> list[Person]:
     """Each person who may decide for any part, once."""
     return list({p.id: p for people in by_part.values() for p in people}.values())
@@ -134,6 +168,8 @@ UNASKED = "nobody asked for it: the {agent} asked for it {after}"
 UNASKED_ABOUT = "nobody asked for it: the {agent} asked for it {after}, about {whom}"
 AFTER_EVENT = "after {source} said {type} happened"
 OVER = "it waits because {over}"
+TWO_DECIDERS = ("it needs two of the deciders of {part}, as {record} holds more than {above}: "
+                "one approval alone doesn't make it")
 # and of a change, and of its words, beside them
 CHANGED = "{key} has changed since it was asked for"
 SEALED = ("The change and its records are in their system's words, which a5s seals with your "
@@ -517,14 +553,17 @@ def _mac(key: str, entry: dict) -> str:
 
 
 def decision(conn: db.Connection, keys: tuple[str, ...], scenario: Scenario,
-             proposal: dict) -> tuple[dict | None, list[str]]:
+             proposal: dict, two: dict[str, tuple[str, float]] | None = None
+             ) -> tuple[dict | None, list[str]]:
     """What counts of the decisions on a held change, in the order they were made: a rejection
     by anyone who may decide it, or an approval for every part it touches, each the core
-    sealed, by someone who may decide for that part now. And what's wrong with any other.
+    sealed, by someone who may decide for that part now, and by two of them where the part's
+    rule in `two`, the settings' two_deciders, says so. And what's wrong with any other.
     {"decision", "rows"}, or None while it still waits."""
     by_part = deciders(scenario, list(proposal["records"]), not_deciding(proposal))
+    need = twice(two or {}, scenario, proposal)
     problems: list[str] = []
-    approved: dict[str | None, dict] = {}
+    approved: dict[str | None, dict[str, dict]] = {}
     for row in conn.execute("select * from proposal_decisions where digest = %s and refused is "
                             "null and (seal is not null or proof is null) order by id",
                             (proposal["digest"],)):
@@ -537,21 +576,24 @@ def decision(conn: db.Connection, keys: tuple[str, ...], scenario: Scenario,
         elif row["decision"] == "reject":
             return {"decision": "reject", "rows": [row]}, problems
         else:
-            for part in parts:
-                approved.setdefault(part, row)
-            if all(part in approved for part in by_part):
-                rows = list({r["id"]: r for r in approved.values()}.values())
+            for part in parts:  # each decider once in a part: four eyes are two people
+                approved.setdefault(part, {}).setdefault(row["person"], row)
+            if all(len(approved.get(part, {})) >= (2 if part in need else 1) for part in by_part):
+                rows = list({r["id"]: r for got in approved.values() for r in got.values()}.values())
                 return {"decision": "approve", "rows": rows}, problems
     return None, problems
 
 
-def settled(conn: db.Connection, scenario: Scenario, proposal: dict) -> list[str]:
+def settled(conn: db.Connection, scenario: Scenario, proposal: dict,
+            two: dict[str, tuple[str, float]] | None = None) -> list[str]:
     """Who decided a held change already, by name, so that no other decision on it counts:
-    whoever rejected it first, or approved it for every part it touches, by the decisions
-    recorded on it that a5s hasn't refused, sealed yet or not. Nobody while another decision
-    may still count, as a rejection does in a part nobody has approved (round 15, B3)."""
+    whoever rejected it first, or approved it for every part it touches, twice where the
+    part's rule in `two` says so, by the decisions recorded on it that a5s hasn't refused,
+    sealed yet or not. Nobody while another decision may still count, as a rejection does in
+    a part nobody has approved (round 15, B3), or a second approval where two are needed."""
     by_part = deciders(scenario, list(proposal["records"]), not_deciding(proposal))
-    approved: dict[str | None, str] = {}
+    need = twice(two or {}, scenario, proposal)
+    approved: dict[str | None, list[str]] = {}
     first: list[str] = []
     for row in conn.execute("select person, decision from proposal_decisions where digest = %s "
                             "and refused is null order by id", (proposal["digest"],)):
@@ -563,9 +605,11 @@ def settled(conn: db.Connection, scenario: Scenario, proposal: dict) -> list[str
             first = [row["person"]]
             break
         for part in parts:
-            approved.setdefault(part, row["person"])
-        if all(part in approved for part in by_part):
-            first = list(dict.fromkeys(approved.values()))
+            got = approved.setdefault(part, [])
+            if row["person"] not in got:
+                got.append(row["person"])
+        if all(len(approved.get(part, [])) >= (2 if part in need else 1) for part in by_part):
+            first = list(dict.fromkeys(p for got in approved.values() for p in got))
             break
     return [who.name if (who := scenario.person(p)) else p for p in first]
 

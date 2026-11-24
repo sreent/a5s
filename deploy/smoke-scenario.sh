@@ -28,7 +28,11 @@ case "$folder" in
     class=a5s.service_desk:ServiceDeskScenario signers="ren zia max dev" assurance=zia
     asker=sam agent=desk-assistant expected=INC0000001
     question="Which tickets are about the VPN?" ;;
-  *) echo "Which scenario? master-data, software-delivery or service-desk"; exit 2 ;;
+  procure-to-pay)
+    class=a5s.procure_to_pay:ProcureToPayScenario signers="ida ken lars tara" assurance=ken
+    asker=hana agent=ap-assistant expected=INV-9002
+    question="Which invoices are from Litware?" ;;
+  *) echo "Which scenario? master-data, software-delivery, service-desk or procure-to-pay"; exit 2 ;;
 esac
 if command -v cygpath >/dev/null 2>&1; then
   export MSYS2_ARG_CONV_EXCL="${MSYS2_ARG_CONV_EXCL:+$MSYS2_ARG_CONV_EXCL;}/work;/keys;/config"
@@ -62,6 +66,7 @@ systems=""
 if [ "$folder" = service-desk ]; then systems="-f deploy/compose.desk.yaml"; fi
 if [ "$folder" = software-delivery ]; then systems="-f deploy/compose.delivery.yaml"; fi
 if [ "$folder" = master-data ]; then systems="-f deploy/compose.master.yaml"; fi
+if [ "$folder" = procure-to-pay ]; then systems="-f deploy/compose.p2p.yaml"; fi
 # shellcheck disable=SC2086 # $systems is one or no compose file, split on purpose
 compose() { docker compose -p "a5s-$folder" --env-file "$env_file" -f deploy/compose.yaml \
               -f deploy/compose.stub.yaml -f deploy/compose.storage.yaml \

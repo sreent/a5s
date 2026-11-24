@@ -18,7 +18,7 @@ from fastapi.testclient import TestClient
 from conftest import ROOT
 
 SERVERS = {"service-desk": ("desk", ("itsm", "idp", "mdm")), "software-delivery": ("delivery", ("forge",)),
-           "master-data": ("master", ("sap",))}
+           "master-data": ("master", ("sap",)), "procure-to-pay": ("p2p", ("erp",))}
 
 
 def system(name: str):

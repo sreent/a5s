@@ -3334,6 +3334,11 @@ def create_app(gw: Gateway) -> FastAPI:
                            words.kept(proposals.UNASKED, agent=agent, after=after))
         if over is not None:
             flagged.append(words.kept(proposals.OVER, over=over))
+        for part, (record, above) in proposals.twice(  # four eyes, by what its record holds
+                settings.two_deciders, gw.scenario,
+                {"records": list(standing), "standing": standing}).items():
+            flagged.append(words.kept(proposals.TWO_DECIDERS, part=part, record=record,
+                                      above=f"{above:,.2f}"))
         flags = [words.said(languages.ENGLISH, f) for f in flagged]
         proposal = proposals.hold(conn, gw.scenario, row, tool, args, standing, deciding, seq,
                                   flags, gw.clock(), change, bool(flags) or proposals.sensitive(
@@ -4036,7 +4041,9 @@ def create_app(gw: Gateway) -> FastAPI:
                              "for update skip locked", (pid,)).fetchone()
             if p is None:
                 return {}
-            found, problems = proposals.decision(conn, gw.cfg.seal_keys, gw.scenario, p)
+            in_force = gw.settings_in_force(conn)[0]  # where a part's four eyes need two
+            found, problems = proposals.decision(conn, gw.cfg.seal_keys, gw.scenario, p,
+                                                 in_force.two_deciders if in_force else None)
             last = conn.execute(  # up to the first decision still to be sealed, which, once it
                 # is, makes the change due again
                 "select coalesce(min(id) filter (where seal is null and refused is null and proof "

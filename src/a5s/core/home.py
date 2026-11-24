@@ -125,8 +125,10 @@ def waiting(conn: db.Connection, gw: Any, person: Person,
                               serial=row["serial"]),
                           "why": list(dict.fromkeys(why)),
                           "go": f"/studio/approve?settings={row['digest']}"})  # its own page
-    held = sum(1 for p in conn.execute("select records, acts_for from proposals "
-                                       "where status = 'waiting'")
+    held = sum(1 for p in conn.execute(  # not one they've decided, which waits for another
+                   "select records, acts_for from proposals p where status = 'waiting' and not "
+                   "exists (select 1 from proposal_decisions d where d.digest = p.digest and "
+                   "d.person = %s and d.refused is null)", (person.id,))
                if proposals.may_decide(scenario, p, person.id))  # as the directory stands now
     if held:
         found.append({"kind": "decide", "what": words.say(

@@ -514,6 +514,7 @@ MADE_UP: dict[str, tuple[tuple[str, str], ...]] = {
     "service-desk": (("itsm", "written"), ("idp", "done"), ("mdm", "written")),
     "software-delivery": (("forge", "written"),),
     "master-data": (("sap", "written"),),
+    "procure-to-pay": (("erp", "written"),),
 }
 SYSTEMS: dict[str, Any] = {}  # what's been written to each, by its scenario's folder
 RUNNING: list[Any] = []  # the systems themselves

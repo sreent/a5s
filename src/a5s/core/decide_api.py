@@ -130,7 +130,15 @@ def router(gw: Any) -> APIRouter:
                                              f"it's {row['status']}")
                 if not proposals.may_decide(gw.scenario, row, person.id):
                     raise HTTPException(403, f"{person.name} may not decide {proposals.key(row)}")
-                if first := proposals.settled(conn, gw.scenario, row):
+                if body.decision == "approve" and conn.execute(
+                        "select 1 from proposal_decisions where digest = %s and person = %s "
+                        "and decision = 'approve' and refused is null",
+                        (row["digest"], person.id)).fetchone():  # four eyes are two people
+                    raise HTTPException(409, f"{person.name} approved {proposals.key(row)} "
+                                             "already: it waits for another of its deciders")
+                in_force = gw.settings_in_force(conn)[0]
+                if first := proposals.settled(conn, gw.scenario, row,
+                                              in_force.two_deciders if in_force else None):
                     raise HTTPException(409, f"{approvals.names_of(first)} decided "
                                              f"{proposals.key(row)} already, and the first "
                                              "decision is the one that counts: yours isn't "

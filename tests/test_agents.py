@@ -56,6 +56,7 @@ SCENARIOS = {  # each scenario whose folder brings agents of its own, and its co
     "master-data": "a5s.master_data:MasterDataScenario",
     "software-delivery": "a5s.software_delivery:SoftwareDeliveryScenario",
     "service-desk": "a5s.service_desk:ServiceDeskScenario",
+    "procure-to-pay": "a5s.procure_to_pay:ProcureToPayScenario",
 }
 
 
