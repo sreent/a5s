@@ -770,13 +770,15 @@ def main(argv: list[str] | None = None) -> None:
     canaries.add_argument("--model", help="only this approved model")
     canaries.add_argument("--scenario", help="whose scores they are (default: the scenario "
                                              "this environment serves)")
-    health = sub.add_parser("health", help="each model's day, measured, and putting a gated "
+    health = sub.add_parser("health", help="each model's day, measured, and putting a stopped "
                                           "model back")
     health.add_argument("--database", help="the database (default: this environment's)")
     health.add_argument("--scenario", help="whose scores they are (default: the scenario this "
                                            "environment serves)")
     health.add_argument("--days", type=int, default=1, help="how many days to measure")
-    health.add_argument("--restore", metavar="MODEL", help="put a gated model back, as a person")
+    health.add_argument("--restore", metavar="MODEL", help="put a stopped model back, as the "
+                                                           "release approver, through the core")
+    health.add_argument("--by", help="who you are, in development; else your sign-in in A5S_TOKEN")
     exported.add_argument("--by", help="in development, the officer, who asks nowhere else")
     exported.add_argument("--out", type=Path, help="write it to this file, which only you may "
                                                    "read, rather than print it")
@@ -932,15 +934,15 @@ def main(argv: list[str] | None = None) -> None:
         from a5s.core import health as health_mod
         cfg = Config.from_env()
         url, scenario = args.database or cfg.database_url, args.scenario or _served(cfg)
-        with db.transaction(url) as conn:
-            if args.restore:
-                health_mod.restore(conn, scenario, args.restore)
-                print(f"{args.restore} is back: a person put it there.")
-            else:
-                for row in health_mod.report(url, scenario, days=args.days):
-                    state = "stopped" if row["gated_at"] else "answering"
-                    print(f"{row['model']} {row['calls']} calls, {row['failed']} failed, "
-                          f"{row['stalls']} stalls, {row['mean_seconds']}s each: {state}")
+        if args.restore:  # a loosening: the core checks who asks, and the ledger records it
+            put = _admin(cfg, f"/models/{quote(args.restore, safe='')}/restore",
+                         {"by": args.by, "identity": config.TOKEN.read()})
+            print(f"{put['restored']} is back, put there by {put['by']}.")
+        else:
+            for row in health_mod.report(url, scenario, days=args.days):
+                state = "stopped" if row["gated_at"] else "answering"
+                print(f"{row['model']} {row['calls']} calls, {row['failed']} failed, "
+                      f"{row['stalls']} stalls, {row['mean_seconds']}s each: {state}")
 
     if args.command == "config":
         return _config(args)

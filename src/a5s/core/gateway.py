@@ -41,6 +41,7 @@ from a5s.contract import (
     GROUP_AGENT_ROLES,
     INSTANCE_APPROVER,
     PART_OWNER,
+    RELEASE_APPROVER,
     DataProtection,
     Person,
     Scenario,
@@ -2664,9 +2665,11 @@ def create_app(gw: Gateway) -> FastAPI:
 
     # Instances: anyone with the role can make a5s safer alone.
 
-    def who_asks(body: StatusChange, loosens: bool = False) -> tuple[str, str]:
-        """Who's suspending or resuming, from their sign-in, and how a5s knows: with a second
-        factor, if what they ask loosens a5s and the deployment asks for one."""
+    def who_asks(body: StatusChange, loosens: bool = False,
+                 doing: str = "resume") -> tuple[str, str]:
+        """Who's asking to suspend, resume or put a model back, from their sign-in, and how
+        a5s knows: with a second factor, if what they ask loosens a5s and the deployment asks
+        for one, counted as `doing` when it's refused for want of one."""
         if gw.identity is not None:
             if not body.identity:
                 raise HTTPException(401, "sign in: send your token as identity")
@@ -2680,11 +2683,11 @@ def create_app(gw: Gateway) -> FastAPI:
             if body.by and body.by != person:
                 raise HTTPException(403, f"you're signed in as {person}, not {body.by}")
             if loosens and not second_factor(gw.identity.cfg, claims):
-                counted("resume")
+                counted(doing)
                 raise HTTPException(401, without_second_factor("do this"))
             return person, "verified"
         if not gw.cfg.development:
-            raise HTTPException(503, "suspending and resuming need sign-in: set A5S_OIDC_ISSUER")
+            raise HTTPException(503, "this needs sign-in: set A5S_OIDC_ISSUER")
         if not body.by or gw.scenario.person(body.by) is None:
             raise HTTPException(400, "say who you are, as someone in the directory")
         return body.by, "unverified (development)"
@@ -2706,6 +2709,28 @@ def create_app(gw: Gateway) -> FastAPI:
         if problem:
             raise HTTPException(403, problem)
         return {"resumed": instance, "by": by}
+
+    @services.post("/models/{alias}/restore")
+    def restore_model(alias: str, body: StatusChange) -> dict:
+        """Put back a model the health gate stopped (core/health.py). It loosens a5s, so only
+        the release approver does it, from outside the team that runs it, signed in as
+        themselves, with a second factor where the deployment asks for one; and the ledger
+        records who did, as it records every act."""
+        by, identity = who_asks(body, loosens=True, doing="put a model back")
+        person = gw.scenario.person(by)
+        if person is None or RELEASE_APPROVER not in person.roles:
+            raise HTTPException(403, f"only the release approver puts a stopped model back, "
+                                     f"and {by} isn't the release approver")
+        if alias not in gw.models:
+            raise HTTPException(404, f"{alias} isn't one of the approved models")
+        with db.transaction(gw.url) as conn:
+            if not health.stopped(conn, gw.scenario.name, alias):
+                raise HTTPException(409, f"{alias} isn't stopped, so there's nothing to put back")
+            health.restore(conn, gw.scenario.name, alias)
+            ledger.append(conn, {"kind": "admin", "action": "restore-model", "instance": None,
+                                 "decision": "record", "args": {"by": by, "identity": identity,
+                                                                "model": alias}})
+        return {"restored": alias, "by": by}
 
     # What a worker may ask, with its run token.
 

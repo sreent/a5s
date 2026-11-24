@@ -227,7 +227,7 @@ The same events go out as OpenTelemetry spans, using the GenAI conventions at a 
 
 The scenario's own processes work without agents. So when a5s can't run safely, it stops, says so, and people carry on there.
 
-- A run whose dependency fails ends, and its trigger waits. A circuit breaker pauses new runs while the dependency is down. A model call that fails is asked again in the same run, of its own model once more and then of each fallback its release names that speaks the same API, and a model whose calls fail more often than its objective allows is passed over until a person puts it back ([model fallbacks](model-fallbacks.md), [`core/health.py`](../src/a5s/core/health.py)).
+- A run whose dependency fails ends, and its trigger waits. A circuit breaker pauses new runs while the dependency is down. A model call that fails is asked again in the same run, of its own model once more and then of each fallback its release names that speaks the same API, and a model whose calls fail more often than its objective allows is passed over until the release approver puts it back ([model fallbacks](model-fallbacks.md), [`core/health.py`](../src/a5s/core/health.py)).
 - A message has at most one run at work at a time. One whose run was abandoned, as when its scheduler stopped part way, isn't run again: its person is told to send it again.
 - Budgets are kept per person and per source of triggers, with a share kept for obligations, and outside parties are rate-limited.
 - An instance can always go straight back to the release it ran before.

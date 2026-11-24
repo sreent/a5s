@@ -3,8 +3,9 @@
 **Status:** design for review. Some of it is built: call-level replay (`core/gateway.py`'s
 `calling`); drift canaries (`config/canaries.yaml`, `core/canaries.py`), which `a5s canaries`
 runs when asked, though no workflow runs them yet; a reliability ledger of each model's day,
-whose SLO gate stops a model until a person puts it back with `a5s health --restore`, which
-signs nothing (`core/health.py`), and a health page that shows both (`/studio/health`); and a
+whose SLO gate stops a model until the release approver puts it back with `a5s health
+--restore`, signed in, through the core, which records it in the ledger (`core/health.py`),
+and a health page that shows both (`/studio/health`); and a
 check that a reply names only record keys its run read, with one correction (`core/verify.py`).
 The rest isn't, and the release's `fallbacks`, the scheduler's retry and the tests' `judged()`
 are the shallow version this replaces, kept until their replacements land.
