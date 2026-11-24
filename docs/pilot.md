@@ -26,7 +26,8 @@ Each stage ends when what it shows is written down, here and in the phase it ser
 1. **Shadow** (week 2).
    - The team that runs a5s works with the assistant and the watcher on the sample scenario, in its chat, for a week, while the weekly [soak test](../deploy/soak.sh) passes beside them, on the containers' stack.
    - These runbooks are each tried once: suspending and resuming an instance, a chat that won't take a message, a model that's down, and a release.
-   - Shows: replies within the objective, nine in ten within two minutes, nothing lost, how the approved model's calls went (`a5s health`), and what a run costs on the approved model, once its prices are in the approved list (`a5s measures`).
+   - Two more are rehearsed for real, while the deployment holds only the sample's made-up records: [restoring from a backup](runbooks.md#restoring-from-a-backup) the organisation's own process took, with `a5s restore` before any part starts again; and [rotating the seal key](runbooks.md#rotating-the-seal-key), with `a5s seal-again`.
+   - Shows: replies within the objective, nine in ten within two minutes, nothing lost, how the approved model's calls went (`a5s health`), and what a run costs on the approved model, once its prices are in the approved list (`a5s measures`). After the restore, `a5s ledger verify` checks out against the locked copies, and no message is answered twice. After the rotation, what people approved, decided and graded still counts, and the status shows nothing sealed with the old key.
 2. **One team, reading** (weeks 3 to 6).
    - The watcher reading only, and the assistant asking first at most: they read, remind and chase, and people make the changes.
    - The data protection officer signs off the assessment before any of the team's data reaches a model, from what a5s keeps about people, where, for how long and who sees it ([data protection](data-protection.md)).
