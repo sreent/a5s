@@ -72,6 +72,8 @@ REPLY = "Thank you: INV-9002 has arrived, and it's being checked."
 BOOKED = {"id": "GR-7005-booked", "type": "goods-received", "records": ["PO-4503"]}  # as the ERP says
 MONTH_END = "Go through every invoice that waits, and say which can be paid and which can't"
 PARTS = [{"task": "Go through INV-9004"}, {"task": "Go through INV-9005"}]
+DISPUTE = "Ravi wants to talk to someone in payables about INV-9005, which invoices PO-4502 again."
+ANSWERED = "INV-9005 repeats INV-9002 on PO-4502, so it isn't paid: I've asked Litware for a credit note."
 
 pytestmark = pytest.mark.skipif(bool(LIVE), reason="scripted: what a5s holds, not what a model says")
 
@@ -86,6 +88,15 @@ def swept(stack: Stack) -> int:
     with db.transaction(stack.admin) as conn:
         conn.execute("update mail_state set polled_at = null")
     return stack.scheduler().work_due()
+
+
+def handed(stack: Stack) -> dict:
+    """The core's next sweep of conversations handed over: whom it told, what the team answered,
+    and what it handed back, as the scheduler sweeps them when deployed."""
+    with stack.client() as c:
+        answer = c.post("/handovers/sweep")
+    answer.raise_for_status()
+    return answer.json()
 
 
 def proposal(stack: Stack, key: str) -> dict:
@@ -301,6 +312,55 @@ def corrected(walk: Walk, stack: Stack, url: str) -> None:
     assert stack.gateway.scenario.match("INV-9004")["matched"]
 
 
+def disputed(walk: Walk, stack: Stack, url: str) -> None:
+    """Ravi asks why INV-9005 can't be paid, and for a person: the assistant hands the
+    conversation to payables, where Hana takes it, answers him in his own chat, and hands it
+    back."""
+    stack.model.reply(None, ("match_invoice", {"key": "INV-9005"}),
+                      ("hand_over", {"team": "payables", "brief": DISPUTE}))
+    stack.model.reply("INV-9005 invoices PO-4502 a second time. I've passed this to payables: "
+                      "someone there answers you here.")
+    with walk.step("Ravi asks why INV-9005 can't be paid, and to talk to someone. The assistant "
+                   "matches it, which shows it invoices PO-4502 a second time, and hands the "
+                   "conversation to payables, with a brief, as its settings let it."):
+        stack.say("Why can't INV-9005 be paid? I'd like to talk to someone in payables about it.",
+                  person="ravi", agent="ap-assistant")
+        with db.transaction(stack.admin) as conn:
+            row = conn.execute("select * from handovers order by id desc limit 1").fetchone()
+        assert (row["person"], row["team"], row["brief"]) == ("ravi", "payables", DISPUTE)
+        assert handed(stack)["told"] == 1
+    page = walk.as_("hana", f"{url}/studio/handovers")
+    with walk.step("Hana, of payables, finds it among the conversations handed to her team, reads "
+                   "the brief and Ravi's own words, takes it, and answers him in his own chat.",
+                   page):
+        page.wait_for_selector("#handovers a", timeout=30000)
+        page.click("#handovers a")
+        page.wait_for_selector("#answer button.primary", timeout=30000)
+        assert "INV-9005" in page.inner_text("#brief")  # payables may see every record it read
+        assert page.locator("#pages a[aria-current=page]").get_attribute("href") == (
+            "/studio/handovers")  # the sidebar marks where it is: among those handed over
+        page.click("#answer button.primary")  # takes it
+        page.wait_for_selector("#answer-text", timeout=30000)
+        page.fill("#answer-text", ANSWERED)
+        page.click("#answer button.primary")
+        page.wait_for_selector("#said >> text=asked Litware for a credit note", timeout=30000)
+    assert handed(stack)["answered"] == 1
+    with db.transaction(stack.admin) as conn:
+        said = [r["text"] for r in conn.execute("select text from outbox where person = 'ravi' "
+                                                "order by id")]
+    assert f"Hana Sato, of the payables team: {ANSWERED}" in said
+    with walk.step("She hands it back, and the assistant answers Ravi again, knowing what was said.",
+                   page):
+        page.click("#answer button:has-text('Hand it back')")  # it asks first
+        page.click("dialog[open] button.primary")
+        page.wait_for_selector("text=It's been handed back to the ap-assistant.", timeout=30000)
+        assert handed(stack)["back"] == 1
+        stack.model.reply("Glad Hana could help: INV-9005 stays unpaid until the credit note.")
+        stack.say("Thanks, that's clear.", person="ravi", agent="ap-assistant")
+        given = json.dumps(stack.model.requests[-1]["body"])
+        assert "asked Litware for a credit note" in given  # what Hana said, in its context
+
+
 def audited(walk: Walk, stack: Stack, url: str) -> None:
     page = walk.as_("ken", f"{url}/audit/")
     with walk.step("Ken, of internal audit, follows it all in the audit trail: the payment Jules "
@@ -362,6 +422,7 @@ def test_a_month_end_in_accounts_payable(database, tmp_path, provider, browser, 
                 deciding(stack, provider) as url:  # a5s started again, as after an upgrade
             after_the_restart(walk, stack, primary, spare)
             corrected(walk, stack, url)
+            disputed(walk, stack, url)
             audited(walk, stack, url)
     walk.guide("A month-end in a made-up distributor's accounts payable, on its ERP, its suppliers' "
                "mailbox and its chat. tests/test_walkthrough_procure_to_pay.py takes these steps, "

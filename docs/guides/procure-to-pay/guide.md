@@ -36,6 +36,16 @@ A month-end in a made-up distributor's accounts payable, on its ERP, its supplie
 
    ![Ravi approves the correction, and the ERP makes INV-9004 name PO-4504, which then matches.](13-ravi-approves-the-correction-and-the-erp-makes-i.png)
 
-14. Ken, of internal audit, follows it all in the audit trail: the payment Jules approved and Ravi rejected, the one Jules approved and a5s made, and the correction Ravi approved. The ledger checks out.
+14. Ravi asks why INV-9005 can't be paid, and to talk to someone. The assistant matches it, which shows it invoices PO-4502 a second time, and hands the conversation to payables, with a brief, as its settings let it.
 
-   ![Ken, of internal audit, follows it all in the audit trail: the payment Jules approved and Ravi rejected, the one Jules approved and a5s made, and the correction Ravi approved. The ledger checks out.](14-ken-of-internal-audit-follows-it-all-in-the-audi.png)
+15. Hana, of payables, finds it among the conversations handed to her team, reads the brief and Ravi's own words, takes it, and answers him in his own chat.
+
+   ![Hana, of payables, finds it among the conversations handed to her team, reads the brief and Ravi's own words, takes it, and answers him in his own chat.](15-hana-of-payables-finds-it-among-the-conversation.png)
+
+16. She hands it back, and the assistant answers Ravi again, knowing what was said.
+
+   ![She hands it back, and the assistant answers Ravi again, knowing what was said.](16-she-hands-it-back-and-the-assistant-answers-ravi.png)
+
+17. Ken, of internal audit, follows it all in the audit trail: the payment Jules approved and Ravi rejected, the one Jules approved and a5s made, and the correction Ravi approved. The ledger checks out.
+
+   ![Ken, of internal audit, follows it all in the audit trail: the payment Jules approved and Ravi rejected, the one Jules approved and a5s made, and the correction Ravi approved. The ledger checks out.](17-ken-of-internal-audit-follows-it-all-in-the-audi.png)

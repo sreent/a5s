@@ -52,11 +52,17 @@ function headed(pages: Place[]): [string, Place[]][] {
 const initials = (name: string) =>
   name.split(/\s+/).filter(Boolean).slice(0, 2).map((w) => w[0].toUpperCase()).join("");
 
+/** A page that's one of a sidebar page's own, such as one conversation handed over, which
+ * marks that page, not the studio's. */
+const WITHIN: Record<string, string> = { handover: "handovers", approve: "settings" };
+
 export function Sidebar({ signedIn, rail = false }: { signedIn: boolean; rail?: boolean }) {
   const [found, setFound] = useState<Shell | null>(null);
   const page = useRoute().page;
-  // the page it marks: the one whose address this is, or the studio, for its own pages
-  const here = found?.pages.find((place) => inside(place.at)?.page === page)?.page ?? "studio";
+  // the page it marks: the one whose address this is, or whose own page this is, or else the
+  // studio, for its own pages, such as an agent's or a run's
+  const here = found?.pages.find((place) => inside(place.at)?.page === (WITHIN[page] ?? page))
+    ?.page ?? "studio";
   useEffect(() => {
     if (!signedIn) return;
     shellOf().then(setFound).catch(() => setFound(null));
