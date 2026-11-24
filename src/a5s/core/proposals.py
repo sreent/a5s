@@ -171,6 +171,7 @@ AFTER_EVENT = "after {source} said {type} happened"
 OVER = "it waits because {over}"
 TWO_DECIDERS = ("it needs two of the deciders of {part}, as {record} holds more than {above}: "
                 "one approval alone doesn't make it")
+WAITS_ANOTHER = "{key}: you approved it, and it waits for another of its deciders."
 # and of a change, and of its words, beside them
 CHANGED = "{key} has changed since it was asked for"
 SEALED = ("The change and its records are in their system's words, which a5s seals with your "

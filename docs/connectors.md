@@ -174,12 +174,15 @@ mailboxes:
     title: Finance requests
     about: customers' questions about their invoices
     readers: [team:finance]                 # whom an agent may read it for, as `serves` names them
+    part: billing                           # the part whose work it holds, if one's
     drafts: true                            # agents may leave a reply among its drafts
     extract: {record: key, amount: amount, asks: "choice:refund|copy|date|other"}
     sandbox: mailboxes/requests             # made-up messages, a YAML file each, for the sandbox
 ```
 
-a5s offers `search_<mailbox>`, which finds messages by their words, `read_<mailbox>`, which reads one, and, where `drafts` is true, `draft_<mailbox>`. An agent's definition lists them as it lists any tool, and pins each by a hash that covers the mailbox's declaration: where it is, whom it's read for, whether agents draft there, and the form its messages are read through.
+a5s offers `search_<mailbox>`, which finds messages by their words, `read_<mailbox>`, which reads one, and, where `drafts` is true, `draft_<mailbox>`. An agent's definition lists them as it lists any tool, and pins each by a hash that covers the mailbox's declaration: where it is, whom it's read for, the part whose work it holds, whether agents draft there, and the form its messages are read through.
+
+A mailbox that holds one part's work names it (`part`): a call to its tools works at an instance's level in that part, and only for an instance that works there. So an instance that asks first in payables, and only reads purchasing and receiving, may still leave a draft in payables' own mailbox. Without one, a call to them names no record, and works at the instance's own level, which, with parts, is the lowest of theirs.
 
 ### How a5s reads them
 
@@ -193,7 +196,7 @@ a5s names each message by a key of its own, such as `M-3f2a9c0d41b7e8a6`, never 
 
 ### What a message says
 
-Everything a message says, its subject and its words, is content from outside. A search shows the agent when each message came and its subject, and marks the run, since a subject is written outside too. Whom a message came from, the agent gets as a [handle](architecture.md): its sender chose the address, and a5s alone keeps it. Reading one gives the agent the form a5s's [extractor](architecture.md) fills from it, by default the record it names, an amount, a date it gives and whether it says it's urgent, or the mailbox's own `extract`, with the message's number, and the agent asks a5s's reader about it with `ask_about`. Its run is marked, as for any content from outside: it never acts on its own, and what it drafts says it drew on outside content.
+Everything a message says, its subject and its words, is content from outside. A search shows the agent when each message came and its subject, and marks the run, since a subject is written outside too. Whom a message came from, the agent gets as a [handle](architecture.md): its sender chose the address, and a5s alone keeps it. Reading one gives the agent the form a5s's [extractor](architecture.md) fills from it, by default the record it names, an amount, a date it gives and whether it says it's urgent, or the mailbox's own `extract`, with the message's number. An agent whose release lets it ask a5s's reader, with `ask_about`, is told it may ask it more, and one whose release doesn't, such as one that must never read a supplier's words, isn't. Its run is marked, as for any content from outside: it never acts on its own, and what it drafts says it drew on outside content.
 
 ### New mail starts runs
 
@@ -210,11 +213,11 @@ events:                                     # in the agent's definition
 
 ### Replies wait for a person
 
-a5s sends no mail. `draft_<mailbox>` leaves a reply to a message among the mailbox's drafts, for someone of the team to read, change and send, or not: a5s writes nothing else there. A draft changes no record and sends nothing, so it waits for no decider, and an instance that reads only leaves none. Its words are the agent's outgoing text, cleaned as any is, and nothing else: a5s's notes on them, such as a date the agent gave itself, go to the mailbox's readers in their digests, never into what a customer would read. a5s puts no value a [handle](architecture.md) stands for in a draft, such as another customer's address: the agent is told to write without it, and the team adds what's needed. A draft is addressed to whom the message came from, never to a Reply-To the message names, and a message whose sender a5s can't tell gets none. The ledger keeps each draft by hash and length.
+a5s sends no mail. `draft_<mailbox>` leaves a reply to a message among the mailbox's drafts, for someone of the team to read, change and send, or not: a5s writes nothing else there. A draft changes no record and sends nothing, so it waits for no decider, and an instance that reads only leaves none: where the mailbox names its part, its level in that part decides. Its words are the agent's outgoing text, cleaned as any is, and nothing else: a5s's notes on them, such as a date the agent gave itself, go to the mailbox's readers in their digests, never into what a customer would read. a5s puts no value a [handle](architecture.md) stands for in a draft, such as another customer's address: the agent is told to write without it, and the team adds what's needed. A draft is addressed to whom the message came from, never to a Reply-To the message names, and a message whose sender a5s can't tell gets none. The ledger keeps each draft by hash and length.
 
 In the studio's sandbox, a mailbox reads its `sandbox` folder of made-up messages, each with `from`, `received`, `subject` and `text`, and a draft goes nowhere; one without a stand-in has its tools offered there, and each call refused.
 
-Tested against an Exchange of the test's own, which answers the deployment's app alone and records what a5s asks of it: new mail starting a run that reads it through a5s's reader and leaves a draft, sending nothing, and a mailbox read for its readers alone, its searches by words alone. Round 15's tests add the rest: mail going only to an instance whose people read it, its run seeing what every reader may, a search that swallows no mail, what was found shown to readers alone, notes to the readers' digests, no handle's value in a draft, a run its model failed tried again, a flood waiting in the inbox, and a look of bounded length (`tests/test_mailboxes.py`).
+Tested against an Exchange of the test's own, which answers the deployment's app alone and records what a5s asks of it: new mail starting a run that reads it through a5s's reader and leaves a draft, sending nothing, and a mailbox read for its readers alone, its searches by words alone. Round 15's tests add the rest: mail going only to an instance whose people read it, its run seeing what every reader may, a search that swallows no mail, what was found shown to readers alone, notes to the readers' digests, no handle's value in a draft, a run its model failed tried again, a flood waiting in the inbox, and a look of bounded length; and a mailbox's part deciding the level of a draft there (`tests/test_mailboxes.py`). Procure-to-pay's walk-through reads a supplier's mail with a planted note through payables' mailbox ([the scenario](../scenarios/procure-to-pay.md#supplier-mail)).
 
 ### Not yet
 

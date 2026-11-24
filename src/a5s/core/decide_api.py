@@ -64,6 +64,10 @@ def router(gw: Any) -> APIRouter:
                  "approver": INSTANCE_APPROVER in roles,
                  "week": gw.clock() - timedelta(days=7)}).fetchall()
             spoken = languages.of(person) if person else languages.ENGLISH  # (B6)
+            in_force = gw.settings_in_force(conn)[0]  # what they approved that waits for another
+            waits_another = {r["digest"] for r in rows if r["status"] == "waiting"
+                             and r["yours"] == "approve" and not proposals.settled(
+                                 conn, gw.scenario, r, in_force.two_deciders if in_force else None)}
         shown = []
         for row in rows:
             waits = row["status"] == "waiting"
@@ -84,7 +88,10 @@ def router(gw: Any) -> APIRouter:
                                   for i in row["acts_for"]],
                           "flags": words.flags(row, spoken), "sensitive": row["sensitive"],
                           "status": row["status"], "yours": row["yours"], "may_decide": decides,
-                          "outcome": row["outcome"], "proposed_at": row["proposed_at"].isoformat(),
+                          "outcome": row["outcome"] or (words.say(
+                              spoken, proposals.WAITS_ANOTHER, key=proposals.key(row))
+                              if row["digest"] in waits_another else None),
+                          "proposed_at": row["proposed_at"].isoformat(),
                           "lapses_at": row["lapses_at"].isoformat(),
                           "links": [r["link"] for r in standing.values() if r and r.get("link")],
                           "records": [{"key": k, "link": r["link"]} for k, r in standing.items()

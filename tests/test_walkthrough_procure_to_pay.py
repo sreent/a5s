@@ -1,4 +1,4 @@
-"""A month-end in accounts payable, walked end to end (docs/scenarios/procure-to-pay.md): a5s at work
+"""A month-end in accounts payable, walked end to end (scenarios/procure-to-pay.md): a5s at work
 on a made-up distributor's ERP, its suppliers' mailbox and its chat, through a restart and a model
 that stops answering, as no one would build it to be easy.
 
@@ -162,6 +162,8 @@ def four_eyes(walk: Walk, stack: Stack, url: str) -> None:
         page.click(".approval button >> text=Approve")
         page.wait_for_selector("#status >> text=P-1 waits for another of its deciders",
                                timeout=30000)
+        page.wait_for_selector("#decided >> text=P-1: you approved it, and it waits for another "
+                               "of its deciders", timeout=30000)
     stack.scheduler().decided()
     assert erp().record("INV-9002")["status"] == "received"  # not on Jules's word alone
     assert proposal(stack, "P-1")["status"] == "waiting"

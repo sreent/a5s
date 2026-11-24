@@ -113,7 +113,7 @@ sh deploy/smoke.sh          # or: sh deploy/smoke.sh --keep
 Each other scenario a5s ships runs on the same containers, from the same image, which holds them all. [`deploy/smoke-scenario.sh`](deploy/smoke-scenario.sh) starts the stack serving one, has the scenario's own people approve its release, with their made-up keys, and one of them ask its assistant in Matrix. It checks the answer comes from the scenario's records, and that the core works its obligations out, gives its assurance the audit trail, and copies its ledger to locked storage. CI runs it for each:
 
 ```sh
-sh deploy/smoke-scenario.sh master-data   # or software-delivery, or service-desk
+sh deploy/smoke-scenario.sh master-data   # or software-delivery, service-desk or procure-to-pay
 ```
 
 The [soak test](deploy/soak.sh) starts the same stack, then has the sample's people talk to its agents for half an hour, or as many minutes as you give it, while Ana also asks the assistant for long tasks, each worked on in two slices. Along the way, it breaks the stack:
@@ -227,6 +227,7 @@ The smoke test runs this way: Keycloak for sign-in, Synapse for Matrix, a model 
 | [IT service desk](scenarios/it-service-desk.md) | Synthetic tickets, accounts, devices and a knowledge vault behind MCP servers, replies on tickets held for each service area's decider, self-service the identity provider verifies, its desk assistant, and the two agents the desk never built, built in the studio |
 | [Software delivery](scenarios/software-delivery.md) | An engineering team's issues and pull requests behind the forge's MCP server, need-to-know for security issues, customers' comments through the reader, a review request held for its repository's owners, and its dev assistant; with a [read-only pilot](docs/guides/software-delivery/pilot.md) against a real Forgejo |
 | [SAP master data](scenarios/master-data.md) | Master data governance: change requests and data quality checked by code, bank details as handles, suppliers' letters through the reader, corrections each data object's owner decides, one kind made on its own once graded samples earn it, and daily reports to each owner |
+| [Procure-to-pay](scenarios/procure-to-pay.md) | Purchasing, the warehouse and accounts payable on a made-up ERP: invoices matched to orders and receipts by code, payments that wait for two deciders above an amount and never go on an agent's word, suppliers' mail through the reader, the ERP's signed events, and a month-end task [walked end to end](docs/guides/procure-to-pay/guide.md) through a restart and a model that stops answering |
 | [Connectors](docs/connectors.md) | The tools of the MCP servers a scenario declares, and how a5s governs each call; acting as the person, with their own permissions; document libraries; shared mailboxes; and the REST, GitHub and repository connectors |
 | [Critique](docs/critique.md) | What each adversarial review found, how the design answers it, and what each round removed |
 | [Starting values](docs/starting-values.md) | The numbers a5s starts from, by phase |
