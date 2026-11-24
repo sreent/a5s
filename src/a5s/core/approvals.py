@@ -288,6 +288,7 @@ def changes(before: Settings | None, after: Settings, definitions: dict[str, Def
                           said("The accuracy {part} needs before an agent may act on its own "
                                "there becomes {share}.", part=part, share=share),
                           "widens": b is not None and (a is None or b < a)})
+    found += _four_eyes(before.two_deciders if before else {}, after.two_deciders, language)
     found += _spending(before.spending if before else Spending(), after.spending, language)
     asked = {i.id: i.definition for i in after.instances}
     for new in after.instances:
@@ -436,6 +437,33 @@ def _in(currency: str | None, language: str = ENGLISH) -> str:
     return currency or say(language, "the currency models.yaml prices models in")
 
 
+FOUR_EYES = ("In {part}, a change to a record whose {field} is more than {above} needs two of "
+             "the part's deciders: one approval alone doesn't make it.")
+
+
+def _four_eyes(was: dict[str, tuple[str, float]], now: dict[str, tuple[str, float]],
+               language: str = ENGLISH) -> list[dict]:
+    """What a version changes of where a held change needs two deciders, in words: one taken
+    away or loosened, to another field or a higher amount, widens (round 16, B1)."""
+    found = []
+    for part in sorted(set(was) | set(now)):
+        a, b = was.get(part), now.get(part)
+        if a == b:
+            continue
+        if b is None:
+            assert a is not None  # one of them is, as they differ
+            text = say(language, "In {part}, one of its deciders alone decides every change "
+                       "again, instead of two above {above}.", part=part, above=money(a[1]))
+        else:
+            text = say(language, FOUR_EYES, part=part, field=b[0], above=money(b[1]))
+            if a is not None:
+                text += say(language, " Until now, that was above {above} in its {field}.",
+                            above=money(a[1]), field=a[0])
+        found.append({"text": text, "widens": b is None or (a is not None and (
+            b[0] != a[0] or b[1] > a[1]))})
+    return found
+
+
 def _spending(was: Spending, now: Spending, language: str = ENGLISH) -> list[dict]:
     """What a version changes of what agents may cost a month, in words: none widens what
     agents do, since a budget stops no work."""
@@ -578,6 +606,8 @@ def described(settings: Settings, definitions: dict[str, Definition],
     told += [said("An agent may act on its own in {part} once graded samples show it's "
                   "{share} accurate.", part=part, share=_percent(share))
              for part, share in sorted(settings.thresholds.items())]
+    told += [said(FOUR_EYES, part=part, field=field, above=money(above))
+             for part, (field, above) in sorted(settings.two_deciders.items())]
     told += [said(HOLDS, group=group, roles=names_of(list(roles), language))
              for group, roles in sorted(settings.groups.items())]
     currency = settings.spending.currency

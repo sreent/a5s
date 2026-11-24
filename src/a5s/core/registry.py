@@ -112,6 +112,26 @@ def _thresholds_change(settings: Settings, before: Settings | None) -> set[str]:
             if settings.thresholds.get(p) != before.thresholds.get(p)}
 
 
+def _four_eyes_change(settings: Settings, before: Settings | None) -> set[str]:
+    """The parts whose four eyes (`two_deciders`) a version changes from the one in force, or
+    for the first, sets: each needs its owner, as it decides who decides there."""
+    was = before.two_deciders if before else {}
+    return {p for p in set(settings.two_deciders) | set(was)
+            if settings.two_deciders.get(p) != was.get(p)}
+
+
+def four_eyes_loosened(settings: Settings, before: Settings | None) -> set[str]:
+    """The parts where a version takes four eyes away from the one in force, or loosens it: no
+    rule there any more, another field, or a higher amount. Each needs two people's approval,
+    its owner's and an instance approver's or another owner's, since four eyes there guards
+    against one person alone; a delegate approves no settings (round 16, B1)."""
+    if before is None:
+        return set()
+    return {part for part, (field_, above) in before.two_deciders.items()
+            if (now := settings.two_deciders.get(part)) is None or now[0] != field_
+            or now[1] > above}
+
+
 def _spending_change(settings: Settings, before: Settings | None) -> set[str]:
     """The agents whose monthly budget a version changes, from the version in force, or for the
     first, from none: each needs its owner, since it's theirs to say what it may cost."""
@@ -195,7 +215,8 @@ def narrowed(settings: Settings, before: Settings | None) -> set[str] | None:
     the scenario's limits, which are for every part at once."""
     if before is None:
         return None
-    for name in ("data_class", "classified", "limits", "groups", "data_protection", "spending"):
+    for name in ("data_class", "classified", "limits", "groups", "data_protection", "spending",
+                 "two_deciders"):
         if getattr(settings, name) != getattr(before, name):
             return None
     was = {i.id: i for i in before.instances}
@@ -266,8 +287,17 @@ def needed(settings: Settings, directory: Directory, valid: Iterable[str],
     budgeted_agents = _spending_change(settings, before)
     needs = [(f"{PART_OWNER}:{part}", say(language, OWNS_NOT, part=part), False)
              for part in sorted({p for i in covered for p in i.parts}
-                                | _thresholds_change(settings, before))
+                                | _thresholds_change(settings, before)
+                                | _four_eyes_change(settings, before))
              if f"{PART_OWNER}:{part}" not in held]
+    for part in sorted(four_eyes_loosened(settings, before)):  # two people, not two roles
+        two = {who for who in valid if (p := directory(who)) and {
+            f"{PART_OWNER}:{part}", INSTANCE_APPROVER} & set(p.roles)}
+        if len(two) < 2:
+            needs.append((INSTANCE_APPROVER, say(
+                language, "taking away or loosening the four eyes in {part} needs two people's "
+                "approval, its owner's and an instance approver's or another owner's, and it "
+                "has {count}", part=part, count=len(two)), False))
     needs += [(f"{AGENT_OWNER}:{agent}", say(language, "the owner of the {agent} hasn't approved "
                                              "its budget", agent=agent), False)
               for agent in sorted(budgeted_agents) if f"{AGENT_OWNER}:{agent}" not in held]
@@ -330,9 +360,11 @@ def _approvers(settings: Settings, holders: Holders, before: Settings | None = N
     covered = _covered(settings, before)
     budgeted_agents = _spending_change(settings, before)
     roles = [f"{PART_OWNER}:{p}" for p in sorted({p for i in covered for p in i.parts}
-                                                 | _thresholds_change(settings, before))]
+                                                 | _thresholds_change(settings, before)
+                                                 | _four_eyes_change(settings, before))]
     roles += [f"{AGENT_OWNER}:{a}" for a in sorted(budgeted_agents)]
-    if any(not i.parts for i in covered) or _classes_change(settings, before):
+    if (any(not i.parts for i in covered) or _classes_change(settings, before)
+            or four_eyes_loosened(settings, before)):
         roles.append(INSTANCE_APPROVER)
     found: dict[str, Person] = {}
     for role in roles:

@@ -34,6 +34,8 @@ TOP = {
     "instances": lambda v: v["instances"].pop("watcher-finance"),
     "groups": lambda v: v.update(groups={"graders": ["grader"]}),
     "spending": lambda v: v.update(spending={"agents": {"assistant": 30}}),
+    "two_deciders": lambda v: v.update(two_deciders={"billing": {"field": "amount",
+                                                                 "above": 1000}}),
 }
 INSTANCE = {
     "definition": lambda i: i.update(definition="watcher"),
