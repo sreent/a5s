@@ -410,7 +410,8 @@ ADMIN = {"approve": "approved settings", "propose": "proposed settings",
          "undone": "undid a change", "hand-back": "a conversation handed back to its agent",
          "shadow-grade": "graded a new version's answer beside the one sent",
          "choose-language": "chose the language they read, which agents answer them in",
-         "restore-model": "put back a model the health gate stopped"}
+         "restore-model": "put back a model the health gate stopped",
+         "retire-seal-key": "retired a seal key the core sealed with"}  # (round 16, D3)
 
 
 CAPS = {"raise": "let an agent act on its own, from graded samples",
