@@ -197,3 +197,24 @@ def test_the_preview_says_a_move_to_another_model_asks_first_there(fallback_stac
     assert said == ("assistant-finance moves to spare, which hasn't earned acting on its own "
                     "for change-due-date in billing: a5s holds it to asking first there until "
                     "graded samples on that model show it's accurate enough.")
+
+
+def test_a_behaviour_changed_in_the_database_earns_nothing(fallback_stack):
+    """Round 16, A4: the gateway's role could update behaviours, so a row for spare given the
+    digest fake earned counted as earned on spare. Now the gateway works each behaviour out
+    from the release it loaded, ignoring a row that disagrees, and may update only a row's
+    model, which a row kept before models were named needs."""
+    stack, _, _ = fallback_stack
+    levelled(stack)  # earned on its own model, fake
+    release = release_of(stack)
+    with db.transaction(stack.admin) as conn:
+        earned = samples.behaviour_of(conn, release, "change-due-date", "fake")
+        conn.execute("update behaviours set behaviour = %s where release = %s and model = "
+                     "'spare'", (earned, release))
+        assert stack.gateway.caps(conn, release, ["spare"]) == {}  # nothing earned on spare
+        assert stack.gateway.caps(conn, release, ["fake"]) == {("billing", "change-due-date"): 2}
+    with db.transaction(stack.cfg.database_url) as conn:  # as the gateway's role
+        privileges = {r["column_name"] for r in conn.execute(
+            "select column_name from information_schema.column_privileges where table_name = "
+            "'behaviours' and privilege_type = 'UPDATE' and grantee = current_user")}
+    assert privileges == {"model"}

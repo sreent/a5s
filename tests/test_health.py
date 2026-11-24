@@ -137,3 +137,27 @@ def test_a5s_health_puts_a_model_back_through_the_core_as_the_release_approver(
     assert capsys.readouterr().out == "fake is back, put there by rosa.\n"
     assert [e["args"]["by"] for e in stack.ledger() if e.get("action") == "restore-model"] == [
         "rosa"]
+
+
+def test_an_operator_puts_a_model_back_with_their_token_as_the_release_approver(
+        stack, monkeypatch, capsys):
+    """Round 16, A5 and D5: the command line sends the operators' token where one is set, as
+    it is on the chart, and the core refused it on this route alone, so only the scheduler's
+    token could put a model back. Now it's an operator's route, and the release approver who
+    asks must be from outside the team that runs a5s, as for resuming."""
+    from dataclasses import replace
+
+    from a5s import cli
+    from test_r15_credentials import OPERATOR
+
+    with db.transaction(stack.admin) as conn:
+        stopped(conn, stack.gateway.scenario.name)
+    stack.gateway.cfg = replace(stack.gateway.cfg, operator_token=OPERATOR, team="risk")
+    monkeypatch.setenv("A5S_ROOT", str(stack.cfg.root))
+    monkeypatch.setenv("A5S_GATEWAY_URL", stack.url)
+    monkeypatch.setenv("A5S_OPERATOR_TOKEN", OPERATOR)
+    with pytest.raises(SystemExit, match="outside the team"):  # Rosa's in the team, here
+        cli.main(["health", "--restore", "fake", "--by", "rosa"])
+    stack.gateway.cfg = replace(stack.gateway.cfg, team="platform")
+    cli.main(["health", "--restore", "fake", "--by", "rosa"])
+    assert capsys.readouterr().out.endswith("fake is back, put there by rosa.\n")

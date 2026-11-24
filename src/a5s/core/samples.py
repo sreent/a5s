@@ -52,7 +52,7 @@ import json
 import math
 import random
 import uuid
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, LiteralString
 
@@ -233,11 +233,17 @@ def standing_caps(conn: db.Connection, keys: tuple[str, ...],
             and last.get((r["behaviour"], r["part"], r["action"])) == r["seq"]]
 
 
-def _behaviours(conn: db.Connection, release: str,
-                models: Iterable[str] | None) -> dict[str, set[str]] | None:
+# What a release's behaviour on a type of action and a model should be, worked out from the
+# release a5s loaded (gateway's behaviour): None where a5s doesn't know the release
+Expected = Callable[[str, str | None], str | None]
+
+
+def _behaviours(conn: db.Connection, release: str, models: Iterable[str] | None,
+                expected: Expected | None = None) -> dict[str, set[str]] | None:
     """A release's behaviour for each type of action, on each of these models, or on its own
     model where none are named: None for a type where any of them has none kept, as one that
-    earned nothing there."""
+    earned nothing there. With `expected`, a row that isn't what the release a5s loaded works
+    out to counts as none kept, so a row changed in the database earns nothing (round 16, A4)."""
     named = None if models is None else sorted(set(models))
     if named == []:
         return {}
@@ -247,6 +253,8 @@ def _behaviours(conn: db.Connection, release: str,
         "model = any(%s)", (release, named))
     found: dict[str, dict[str | None, str]] = {}
     for r in rows:
+        if expected is not None and expected(r["action"], r["model"]) != r["behaviour"]:
+            continue
         found.setdefault(r["action"], {})[r["model"]] = r["behaviour"]
     return {action: set(per.values()) for action, per in found.items()
             if named is None or set(per) == set(named)}
@@ -265,11 +273,12 @@ def _lowest(kinds: dict[str, set[str]] | None,
 
 
 def caps(conn: db.Connection, keys: tuple[str, ...], release: str,
-         models: Iterable[str] | None = None) -> dict[tuple[str, str], int]:
+         models: Iterable[str] | None = None,
+         expected: Expected | None = None) -> dict[tuple[str, str], int]:
     """a5s's caps for a release's types of action in each part, on these models, or its own
     where none are named: for each, the lowest any of them earned, and 1 where any of them
-    earned none, which isn't listed (round 16, G3)."""
-    kinds = _behaviours(conn, release, models)
+    earned none, which isn't listed (round 16, G3). `expected` as for `_behaviours`."""
+    kinds = _behaviours(conn, release, models, expected)
     every = sorted({b for found in (kinds or {}).values() for b in found})
     if not every:
         return {}
@@ -340,14 +349,17 @@ def draw(conn: db.Connection, keys: tuple[str, ...], scenario: str, kind: str, r
          records: dict[str, dict | None], acts_for: list[str], now: datetime,
          proposal: int | None = None, decided: str | None = None,
          decided_by: list[str] | None = None, flags: list[str] | None = None,
-         flagged: list[dict] | None = None, model: str | None = None) -> bool:
+         flagged: list[dict] | None = None, model: str | None = None,
+         behaves: str | None = None) -> bool:
     """Draw a change as a sample for grading, if it's one a5s samples now: a decided held
     change while the cap is still 1, or, at level 2, a change made, at random, at a rate that
     spreads about 100 through the quarter, by how many the last 30 days made. Whether it drew
     one. `decided_by` is everyone who decided it, for each part it touched, so none of them
     grades it. `model` is the one that answered the run last before the change, whose
-    behaviour its grade is evidence of, its release's own where it's not named."""
-    behaves = behaviour_of(conn, release, action, model)
+    behaviour its grade is evidence of, its release's own where it's not named. `behaves` is
+    that behaviour as the release a5s loaded works it out, which the gateway gives: a sample
+    is then never evidence for a row changed in the database (round 16, A4)."""
+    behaves = behaves or behaviour_of(conn, release, action, model)
     current = _cap_row(conn, keys, behaves, part, action) if behaves else None
     if kind == "proposal" and current is not None and current["cap"] >= 2:
         return False

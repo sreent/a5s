@@ -41,15 +41,21 @@ Reliability is five properties, each with its own mechanism:
   before anything reaches a person; human decisions for changes, as today.
 - **Latency:** per-operation latency budgets, recorded in measures; degrade before failing.
 - **Drift:** a fixed, versioned canary set of scripted cases with exact expected behaviour,
-  run on every model change and nightly, scored into the ledger. Non-negotiable for a model
-  that ships no dated version, where a change behind the name can't otherwise be seen.
+  run on every model change and nightly, scored into a table of its own, the canaries'
+  scorecard, outside the ledger's chain. Non-negotiable for a model that ships no dated
+  version, where a change behind the name can't otherwise be seen.
 - **Safety:** already structural, in the gateway, policy, caps and ledger.
 
 The signals exist (breakers, measures, graded samples, per-call ledger entries, and each
 model's day in the reliability ledger); the missing piece is making them attributable per
 operation, and letting them act: a model whose stall rate breaches its SLO is routed away from
-automatically, since tightening is always automatic, while putting it back, or approving a new
-model for an operation, is a signed release change, as every loosening is.
+automatically, as tightening is, except on a day a person put it back, whose decision stands
+until midnight; putting it back takes the release approver, signed in, and approving a new
+model for an operation is a signed release change, as every loosening is. Only calls a5s sent
+a model count towards its stall rate: one a5s skipped, as its breaker was open or the gate had
+stopped it, is in the ledger, not in how the model did (round 16, A6). The chain of models for
+one call answers within the worker's wait for it, and a model that timed out isn't asked again
+in it (round 16, A7).
 
 ## The problem, as the incident showed it
 

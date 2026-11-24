@@ -29,9 +29,15 @@ aren't made again there within a run: the scheduler tries it next, after the run
 **After the run:** if every model failed a run's calls, as in a provider-wide outage, the
 scheduler tries the message again on the next model, each tried once, and only once every one
 has failed does the person hear a5s's own words for a model that isn't answering
-(`services/scheduler.py`, and `core/gateway.py`'s `model_for` at run-open). The failed model's
-breaker still opens after three failures in a row, so a provider that's down isn't asked for
-a few minutes.
+(`services/scheduler.py`, and `core/gateway.py`'s `model_for` at run-open). Only a run that
+wrote, changed and sent nothing yet is tried again: one that made a draft, or asked for a
+change, before its model stopped answering would do it twice, so a5s takes its message and
+tells the person it stopped, for them to send it again if they still need it. Their words are
+written into the conversation once, however many runs answer the message (round 16, A2). A
+run's fallback, like a call's, is one approved for every class of data its own model is
+(round 16, A1); where every model is refused at run-open, as its breaker is open, the run
+keeps its own, whose breaker says so again at each call. The failed model's breaker still
+opens after three failures in a row, so a provider that's down isn't asked for a few minutes.
 
 Each attempt is in the ledger as before: the run's `model` records the model it opened on, and
 each call's entry names its alias, so the evidence shows which model answered what. A call a

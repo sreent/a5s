@@ -41,7 +41,6 @@ from a5s.contract import (
     GROUP_AGENT_ROLES,
     INSTANCE_APPROVER,
     PART_OWNER,
-    RELEASE_APPROVER,
     DataProtection,
     Person,
     Scenario,
@@ -155,7 +154,7 @@ OPERATING = frozenset({
     "/people/{person}/export", "/people/{person}/erase", "/audit/entries", "/audit/export",
     "/audit/report", "/studio/agents", "/studio/agents/{agent}", "/studio/agents/{agent}/measures",
     "/studio/instances/{instance}/measures", "/studio/instances/{instance}/runs",
-    "/studio/runs/{run_id}"})
+    "/studio/runs/{run_id}", "/models/{alias}/restore"})
 
 
 def credential(token: str) -> str:
@@ -703,8 +702,21 @@ class Gateway:
              models: list[str] | None = None) -> dict[tuple[str, str], int]:
         """a5s's caps for a release's types of action in each part, on these models, or its own
         where none are named, as the core sealed them with the ledger's last word on each: the
-        lowest any of them earned, and 1 where any earned none (round 16, G3)."""
-        return samples.caps(conn, self.cfg.seal_keys, release, models)
+        lowest any of them earned, and 1 where any earned none (round 16, G3). Each model's
+        behaviour as the release a5s loaded works it out (round 16, A4)."""
+        return samples.caps(conn, self.cfg.seal_keys, release, models,
+                            lambda action, model: self.behaviour(release, action, model))
+
+    def behaviour(self, release: str, action: str, model: str | None) -> str | None:
+        """What decides how a release acts on a type of action on a model, its own where none
+        is named, worked out from the release a5s loaded, never read from the database, where a
+        row changed would earn what another model or release earned (round 16, A4). None for a
+        release a5s doesn't have."""
+        found = next((d for d in self.definitions.values() if d.release_id == release), None)
+        if found is None:
+            return None
+        return samples.behaviour(found.id, model or found.model, found.pins, found.tool_names,
+                                 self.scenario.tools(), action)
 
     def answered(self, conn: db.Connection, run: str, model: str | None,
                  before: int | None = None) -> list[str]:
@@ -2761,9 +2773,9 @@ def create_app(gw: Gateway) -> FastAPI:
         records who did, as it records every act."""
         by, identity = who_asks(body, loosens=True, doing="put a model back")
         person = gw.scenario.person(by)
-        if person is None or RELEASE_APPROVER not in person.roles:
-            raise HTTPException(403, f"only the release approver puts a stopped model back, "
-                                     f"and {by} isn't the release approver")
+        if person is None or not suspension.lifts(person, gw.cfg.team):  # as for resuming
+            raise HTTPException(403, f"only the release approver, from outside the team that "
+                                     f"runs a5s, puts a stopped model back, and {by} isn't")
         if alias not in gw.models:
             raise HTTPException(404, f"{alias} isn't one of the approved models")
         with db.transaction(gw.url) as conn:
@@ -3270,7 +3282,9 @@ def create_app(gw: Gateway) -> FastAPI:
                 samples.draw(conn, gw.cfg.seal_keys, gw.scenario.name, "action", row["release"],
                              row["definition"],
                              row["id"], row["run"], part, tool.action, said, standing,
-                             asked, gw.clock(), model=last[-1] if last else None)
+                             asked, gw.clock(), model=last[-1] if last else None,
+                             behaves=gw.behaviour(row["release"], str(tool.action),
+                                                  last[-1] if last else None))
             ledger.append(conn, {"kind": "tool", "action": "report", "run": row["run"],
                                  "instance": row["id"], "acts_for": asked,
                                  "decision": "record", "args": {"to": sorted(set(told)),
@@ -3781,7 +3795,9 @@ def create_app(gw: Gateway) -> FastAPI:
         with db.transaction(gw.url) as conn:
             row = load_run(conn, token)
             if not body.checked_once and (made_up := verify.unknown_keys(
-                    conn, row["run"], text, gw.scenario.record_pattern)):
+                    conn, row["run"], text, gw.scenario.record_pattern, {
+                        v.norm for v, _ in provenance.sources(conn, gw.scenario, row)
+                        if v.kind == "key"})):  # what they said too (round 16, A10)
                 raise HTTPException(409, {"error": "unknown_keys", "keys": made_up})
             inbound = row["trigger"].get("inbound")
             # In a group chat, an answer goes to the chat, so to everyone in it, and it's kept
@@ -4248,7 +4264,9 @@ def create_app(gw: Gateway) -> FastAPI:
                              list(p["acts_for"]), now, proposal=p["id"],
                              decided="reject" if became == "rejected" else "approve",
                              decided_by=deciders_, flags=p["flags"],
-                             flagged=p.get("flagged"), model=last[-1] if last else None)
+                             flagged=p.get("flagged"), model=last[-1] if last else None,
+                             behaves=gw.behaviour(p["release"], p["action"],
+                                                  last[-1] if last else None))
         ledger.append(conn, {"kind": "proposal", "action": became, "run": str(p["run_id"]),
                              "instance": p["instance_id"], "acts_for": list(p["acts_for"]),
                              "decision": "record", "of": p["seq"],
