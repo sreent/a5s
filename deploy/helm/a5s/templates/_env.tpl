@@ -14,6 +14,12 @@
 {{- range .Values.delegation.systems }}
 {{ include "a5s.secretEnv" (dict "root" $ "name" (printf "A5S_DELEGATION_%s_SECRET" (upper (replace "-" "_" .name))) "key" (printf "delegation-secret-%s" .name)) }}
 {{- end }}
+{{- range .Values.tokens.mcp }}
+{{ include "a5s.secretEnv" (dict "root" $ "name" (printf "A5S_MCP_%s_TOKEN" (upper .)) "key" (printf "mcp-token-%s" .)) }}
+{{- end }}
+{{- range .Values.tokens.repositories }}
+{{ include "a5s.secretEnv" (dict "root" $ "name" (printf "A5S_REPOSITORY_%s_TOKEN" (upper .)) "key" (printf "repository-token-%s" .)) }}
+{{- end }}
 {{- with .Values.telemetry.endpoint }}
 - name: OTEL_EXPORTER_OTLP_ENDPOINT
   value: {{ . | quote }}

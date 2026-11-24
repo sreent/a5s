@@ -25,8 +25,9 @@ imagePullSecrets: []
 #     apply the signed settings and record a release's approval;
 #   database-<part>-url and database-<part>-password, for gateway, channels, scheduler and anchor;
 #   service-token and seal-keys;
-#   and as the deployment needs them: operator-token, for the operators' commands, deepseek-api-key, qwen-api-key, teams-secret-<agent>,
-#   slack-secret-<agent>, slack-token-<agent>, event-secret-<source>,
+#   and as the deployment needs them: operator-token, for the operators' commands,
+#   deepseek-api-key, qwen-api-key, teams-secret-<agent>, slack-secret-<agent>,
+#   slack-token-<agent>, event-secret-<source>, mcp-token-<server>, repository-token-<name>,
 #   matrix-as-token and matrix-hs-token, and sandbox-token, which it shares with its sandbox.
 # The sandbox's release has its own, in its own namespace, with sandbox-database-url, its own
 # database server's administrator, and sandbox-token, and the models' keys if it has them.
@@ -109,6 +110,14 @@ events:
 # (docs/connectors.md#acting-as-the-person).
 delegation:
   systems: []
+
+# The scenario's MCP servers and repositories that take a bearer token of a5s's own: each named
+# as its mcp.yaml or repositories.yaml names it, with its token in the Secret as
+# mcp-token-<server> or repository-token-<name>, which the core alone reads, as
+# A5S_MCP_<SERVER>_TOKEN and A5S_REPOSITORY_<NAME>_TOKEN (docs/connectors.md).
+tokens:
+  mcp: []           # such as [tickets, devices]
+  repositories: []  # such as [delivery]
 
 # Matrix: a5s's registration on the organisation's homeserver, with its tokens in the Secret.
 matrix:

@@ -335,3 +335,24 @@ def test_no_value_in_the_code_waits_on_where_it_lives():
     waiting = [f"{path.relative_to(ROOT)}:{n}" for path in sorted(SRC.rglob("*.py"))
                for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1) if "[TBC" in line]
     assert waiting == [], f"say where each lives (docs/configuration.md): {waiting}"
+
+
+def test_the_chart_gives_the_core_alone_the_tokens_of_mcp_servers_and_repositories():
+    """Each MCP server and repository the values name, whose token is a5s's own, gets it from
+    the Secret, under the name its connector reads, in the core alone (docs/connectors.md)."""
+    held: dict[str, set[str]] = {}
+    for doc in rendered("ci-values.yaml", sets=("tokens.mcp={tickets,devices}",
+                                                "tokens.repositories={delivery}")):
+        for container in containers(doc):
+            for env in container.get("env") or []:
+                if env["name"].startswith(("A5S_MCP_", "A5S_REPOSITORY_")):
+                    key = env["valueFrom"]["secretKeyRef"]["key"]
+                    held.setdefault(f"{env['name']}={key}", set()).add(doc["metadata"]["name"])
+    assert held == {"A5S_MCP_TICKETS_TOKEN=mcp-token-tickets": {"a5s-gateway"},
+                    "A5S_MCP_DEVICES_TOKEN=mcp-token-devices": {"a5s-gateway"},
+                    "A5S_REPOSITORY_DELIVERY_TOKEN=repository-token-delivery": {"a5s-gateway"}}
+    assert all(config.known(name.split("=")[0]) for name in held)
+    for doc in rendered("ci-values.yaml"):  # and none, unless the values name them
+        for container in containers(doc):
+            assert not [e for e in container.get("env") or []
+                        if e["name"].startswith(("A5S_MCP_", "A5S_REPOSITORY_"))]
