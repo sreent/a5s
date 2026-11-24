@@ -255,10 +255,9 @@ TH: dict[str, str] = {
     "it names; and give a group your role":
         "ส่งออกหรือลบสิ่งที่ a5s เก็บไว้เกี่ยวกับบุคคล ครั้งละหนึ่งคำขอ หากไดเรกทอรีระบุชื่อคุณ อนุมัติตัวเลือกในการตั้งค่าเกี่ยวกับ"
         "ข้อมูลบุคคล ได้แก่ a5s เก็บไว้นานเท่าใด และระบุชื่อใครบ้าง และให้บทบาทของคุณแก่กลุ่มได้",
-    "run it, and make it safer alone: suspend an instance, lower a cap or withdraw a release, "
-    "never loosen it; sign its releases as an engineer":
-        "ดูแลระบบ และทำให้ปลอดภัยขึ้นได้เองลำพัง: ระงับอินสแตนซ์ ลดเพดาน หรือถอนรีลีส แต่ไม่ผ่อนคลาย "
-        "และลงนามรีลีสในฐานะวิศวกร",
+    "run it, and make it safer alone: suspend an instance, never loosen it; sign its releases as "
+    "an engineer":
+        "ดูแลระบบ และทำให้ปลอดภัยขึ้นได้เองลำพัง: ระงับอินสแตนซ์ แต่ไม่ผ่อนคลาย และลงนามรีลีสในฐานะวิศวกร",
     # a5s's notes in chat (core/feedback.py)
     "Noted: its owners will see that answer, the run behind it and what you said of it, to check "
     "it, and who you are only if the data protection officer lets them.":

@@ -11,8 +11,8 @@ a5s keeps each value with whoever decides it, so the default can be the safe one
 | Layer | Who decides | What's in it | Where |
 | --- | --- | --- | --- |
 | The deployment's configuration | The team that runs a5s | Addresses, the database, timeouts, workers, channels, sign-in, publishing: what differs between one deployment and another | `A5S_` environment variables, from compose or the chart. Every one is below |
-| The signed settings | Part owners, agent owners, instance approvers and the data protection officer, each for what's theirs | What agents may do and the rules for people's data: whether each reads only, asks first or acts on its own, limits, thresholds, classes of data, the roles groups give, and what each agent may cost a month | Versions people sign and approve, which the ledger records ([administration](administration.md)) |
-| An agent's definition | The agent's owner, through a release | Its model, tools, schedules, context and budgets | `agent.yaml` in the agent's folder, checked with bounds, released and signed |
+| The signed settings | Part owners, agent owners, instance approvers and the data protection officer, each for what's theirs | What agents may do and the rules for people's data: whether each reads only, asks first or acts on its own, limits, thresholds, classes of data, the roles groups give, the approved model each instance runs on, where it isn't its release's, and what each agent may cost a month | Versions people sign and approve, which the ledger records ([administration](administration.md)) |
+| An agent's definition | The agent's owner, through a release | Its model and the approved models it falls back to ([model fallbacks](model-fallbacks.md)), tools, schedules, context and budgets | `agent.yaml` in the agent's folder, checked with bounds, released and signed |
 | People's preferences | Each person | What an agent offers them to set, with it | Their own, in the chat |
 | a5s's code | A release, which its approvers sign, assurance among them | The starting values nobody needs to change between deployments, and the rules that keep a5s safe | [Starting values](starting-values.md) lists each, with its owner |
 
@@ -28,8 +28,8 @@ Each part checks all of them as it starts. It won't start with any of these, and
 - A setting missing beside another that needs it, such as Teams's tenant beside its app.
 - An `A5S_` name that isn't a setting, such as a misspelling of `A5S_OIDC_MFA`. Ignored, it would do nothing, so a second factor nobody is asked for would go unnoticed. Where it looks like a setting, the message says which.
 - A setting that has moved, such as to the signed settings. The message says where it went.
-- Settings that can't go together: `A5S_DEVELOPMENT`, which takes people's word for who they are, beside an identity provider in `A5S_OIDC_ISSUER`.
-- A secret anyone could guess: a seal key of fewer than 32 characters, or, in a part that serves, a service token so short. `a5s up` makes each of 43, at random.
+- Settings that can't go together: `A5S_DEVELOPMENT`, which takes people's word for who they are, beside an identity provider in `A5S_OIDC_ISSUER`; or waits that don't nest, since `A5S_PROVIDER_TIMEOUT`, `A5S_WORKER_TIMEOUT`, `A5S_WORKER_WAIT` and a run's `A5S_RUN_MINUTES` must each be longer than the one before.
+- A secret anyone could guess: a seal key of fewer than 32 characters, or, in a part that serves, a service token or operators' token so short, or an operators' token that's the service token. `a5s up` makes the seal key and the service token of 43 characters each, at random.
 
 Each part checks its database too, as it starts: it won't serve one a later release migrated, nor one nobody migrated to this release, and it won't connect as a superuser or as another part's role ([runbooks](runbooks.md)). The channels app won't start with the core's seal keys, which it never holds (round 15).
 
@@ -95,7 +95,7 @@ The tests check that neither compose nor the chart sets a setting to its default
 | `A5S_OIDC_AUDIENCE` | `a5s` | names, by commas | The audiences a5s takes tokens for |
 | `A5S_OIDC_PERSON_CLAIM` | `preferred_username` | text | The claim that says who someone is, as the directory knows them |
 | `A5S_OIDC_METADATA_URL` | none | an http(s):// address | Where the provider's metadata is, if not where the issuer says |
-| `A5S_OIDC_DIRECTORY_PREFIX` | none | text | What to take off the person claim to find someone in the directory |
+| `A5S_OIDC_DIRECTORY_PREFIX` | none | text | What to put before the person claim, with a colon, to find someone in the directory by that identity, such as `entra`, for `entra:<object id>` |
 | `A5S_OIDC_MFA` | none | claim:value,value, such as amr:mfa, acr:gold or acrs:c1 | The second factor what counts needs a sign-in to show, as the claim and the values that show it: a level (`acr`) or an authentication context (`acrs`) the pages ask the provider for |
 | `A5S_OIDC_GROUPS_CLAIM` | `groups` | text | The claim sign-ins show groups in, for the roles the settings give them; set empty for none |
 | `A5S_WEBCHAT_CLIENT_ID` | none | text | The web chat's client at the identity provider, a public one |
@@ -122,7 +122,7 @@ The tests check that neither compose nor the chart sets a setting to its default
 | --- | --- | --- | --- |
 | `A5S_MATRIX_HOMESERVER` | none | an http(s):// address | The organisation's Matrix homeserver, which turns Matrix on |
 | `A5S_MATRIX_SERVER_NAME` | none | text | Its people's domain, as in @ana:<it> |
-| `A5S_MATRIX_AS_TOKEN` | none | a token | A5s's token there, to speak as its bots |
+| `A5S_MATRIX_AS_TOKEN` | none | a token | a5s's token there, to speak as its bots |
 | `A5S_MATRIX_HS_TOKEN` | none | a token | The homeserver's, which comes with every delivery |
 
 ### Events from other systems
@@ -152,7 +152,7 @@ The tests check that neither compose nor the chart sets a setting to its default
 | `A5S_SANDBOX_TOKEN` | none | a token | The token the studio and the sandbox share |
 | `A5S_SANDBOX_DATABASE_URL` | none | a postgresql:// address | In the sandbox: its own database, as its administrator |
 | `A5S_SANDBOX_DIR` | none | a folder | In the sandbox: the folder it keeps people's tries in |
-| `A5S_GITHUB_CLIENT_ID` | none | text | A5s's GitHub App, by its client id, a public thing, for publishing drafts as pull requests |
+| `A5S_GITHUB_CLIENT_ID` | none | text | a5s's GitHub App, by its client id, a public thing, for publishing drafts as pull requests |
 | `A5S_GITHUB_REPO` | none | owner/name | The agents' repository, as owner/name |
 | `A5S_GITHUB_BASE` | `main` | text | The branch pull requests go to |
 | `A5S_GITHUB_URL` | `https://github.com` | an http(s):// address | GitHub, or a GitHub Enterprise server |
@@ -201,7 +201,7 @@ The tests check that neither compose nor the chart sets a setting to its default
 | `A5S_DB_<PART>_PASSWORD` | Each part's database password, which setup gives its role |
 | `A5S_TEAMS_SECRET_<AGENT>` | A bot's secret, where A5S_TEAMS_BOTS names it |
 | `A5S_EVENT_SECRET_<SOURCE>` | A system's signing secret for its events, where A5S_EVENT_SOURCES names it |
-| `A5S_DELEGATION_<NAME>_SECRET` | A5s's client secret in a system people connect, where A5S_DELEGATION names it: for the core alone |
+| `A5S_DELEGATION_<NAME>_SECRET` | a5s's client secret in a system people connect, where A5S_DELEGATION names it: for the core alone |
 | `A5S_SLACK_SECRET_<AGENT>` | An app's signing secret, where A5S_SLACK_BOTS names it |
 | `A5S_SLACK_TOKEN_<AGENT>` | An app's bot token, where A5S_SLACK_BOTS names it |
 | `A5S_MCP_<SERVER>_TOKEN` | An MCP server's bearer token, where the scenario's mcp.yaml names it as the server's token_env |

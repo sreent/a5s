@@ -306,8 +306,9 @@ OIDC_PERSON_CLAIM = Var("A5S_OIDC_PERSON_CLAIM", "the claim that says who someon
 OIDC_METADATA_URL = Var("A5S_OIDC_METADATA_URL", "where the provider's metadata is, if not "
                         "where the issuer says", None, _url(*_WEB), "an http(s):// address",
                         area=SIGN_IN)
-OIDC_DIRECTORY_PREFIX = Var("A5S_OIDC_DIRECTORY_PREFIX", "what to take off the person claim to "
-                            "find someone in the directory", None, area=SIGN_IN)
+OIDC_DIRECTORY_PREFIX = Var("A5S_OIDC_DIRECTORY_PREFIX", "what to put before the person claim, "
+                            "with a colon, to find someone in the directory by that identity, "
+                            "such as `entra`, for `entra:<object id>`", None, area=SIGN_IN)
 OIDC_MFA = Var("A5S_OIDC_MFA", "the second factor what counts needs a sign-in to show, as the "
                "claim and the values that show it: a level (`acr`) or an authentication context "
                "(`acrs`) the pages ask the provider for", None, second_factor,
@@ -759,6 +760,9 @@ def markdown() -> str:
         value = shown(var, {})[0]
         return f"`{value}`"
 
+    def opening(means: str) -> str:  # a sentence's first word, but a5s stays in lower case
+        return means if means.startswith("a5s") else means[0].upper() + means[1:]
+
     lines, area = [], None
     for var in VARS:
         if var.area != area:
@@ -766,9 +770,9 @@ def markdown() -> str:
             lines += ["", f"### {area}", "", "| Variable | Default | Takes | What it sets |",
                       "| --- | --- | --- | --- |"]
         lines.append(f"| `{var.name}` | {cell(default(var))} | {cell(var.takes)} | "
-                     f"{cell(var.means[0].upper() + var.means[1:])} |")
+                     f"{cell(opening(var.means))} |")
     lines += ["", "### Families", "", "| Variables | What they set |", "| --- | --- |"]
-    lines += [f"| `{f.pattern}` | {cell(f.means[0].upper() + f.means[1:])} |" for f in FAMILIES]
+    lines += [f"| `{f.pattern}` | {cell(opening(f.means))} |" for f in FAMILIES]
     return "\n".join(lines[1:]) + "\n"
 
 

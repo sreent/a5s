@@ -137,7 +137,7 @@ services:
     networks: [data, work, work-assistant, work-watcher]
     depends_on: [gateway, worker, worker-assistant, worker-watcher]
 
-  anchor:  # copies the ledger to locked storage every hour, so a rewritten history shows
+  anchor:  # copies the ledger to locked storage within minutes, so a rewritten history shows
     <<: *a5s
     command: ["anchor", "--every"]  # as often as a5s copies by default
     environment:

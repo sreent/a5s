@@ -37,7 +37,7 @@ uv run pytest tests/test_master_data.py -q
 uv run pytest tests/test_connectors.py -q
 ```
 
-The default marker configuration excludes live-provider tests. `-m 'not live'` makes that exclusion explicit when selecting a module.
+The default marker configuration excludes live-provider tests and those that need the disposable Forgejo (`-m 'not live and not forgejo'` in `pyproject.toml`). A `-m` of your own replaces it, so keep `not forgejo` in it unless `deploy/forgejo.sh` runs the tests.
 
 ### Static types
 
@@ -53,7 +53,7 @@ Some of what the checker holds a5s to:
 
 ### Postgres
 
-Tests use a real Postgres, not a mocked database. By default they start a throwaway Postgres in Docker on Windows and a local instance where the platform supports it. `A5S_TEST_DATABASE_URL` can name a test Postgres instead; the fixture resets its schemas, so never point it at a database containing anything to keep.
+Tests use a real Postgres, not a mocked database. By default they start a throwaway Postgres: in Docker on Windows, and elsewhere from the Postgres installed on the machine. `A5S_TEST_DATABASE_URL` can name a test Postgres instead; the fixture resets its schemas, so never point it at a database containing anything to keep.
 
 ### Browser pages
 
@@ -71,9 +71,9 @@ docker build --target studio-built --output src/a5s/core/webchat/studio .
 
 or, with Node 20.19 or later, `npm ci --prefix studio && npm run build --prefix studio`. Unbuilt, the studio answers 503 with how to build it, and its tests fail.
 
-Every page people use, the design system's showcase, the decisions page with a change waiting, the settings app's forms, the approval and grading cards, and the administrators', auditors' and data protection officer's pages with what they show are checked with [axe](https://github.com/dequelabs/axe-core) in light and dark, as wide as a desktop and as a phone, by WCAG's rules and its best practices (`accessible` in `tests/conftest.py`), and a page that axe finds anything amiss on fails its test, with axe's report of what and where. With `A5S_SCREENSHOTS` naming a folder, the browser tests save each page there as it looks, light and dark, and on a phone.
+Every page people use, the design system's showcase, the decisions page with a change waiting, the settings app's forms, the approval and grading cards, and the administrators', auditors' and data protection officer's pages with what they show are checked with [axe](https://github.com/dequelabs/axe-core) in light and dark, as wide as a desktop and as a phone, by WCAG's rules and its best practices (`accessible` in `tests/conftest.py`). A page that axe finds anything amiss on fails its test, with axe's report of what and where, and so does one that scrolls sideways. With `A5S_SCREENSHOTS` naming a folder, the browser tests save each page there as it looks, light and dark, and on a phone.
 
-A walk-through goes further: a scenario's people, each in a browser of their own, take an agent from an idea to work through a5s's own pages and its command line alone, on a deployment that isn't in development, so its release must be signed before it runs anything ([phase 5](phase-5.md), `tests/walkthrough.py`). The first, `tests/test_walkthrough.py`, takes a new agent on the sample through the studio, a pull request, `a5s release sign`, the settings app, the approval page, the chat, a decision and the audit trail. A step it can't take through a5s fails, naming the step, as a gap. With `A5S_GUIDE` naming a folder, it writes the scenario's guide there, a picture of each step beside its words: `A5S_GUIDE=docs/guides uv run pytest tests/test_walkthrough.py` makes [the sample's](guides/sample/guide.md). `tests/test_walkthrough_desk.py` builds the service desk's assistant again from nothing, and holds what it may do to the hand-written one's; it writes [the desk's guide](guides/service-desk/guide.md). `tests/test_walkthrough_resolver.py` builds the resolver assistant the desk planned and never built, keeps what it must never do as a test case in the sandbox, and follows a reply it asks for to the service area's decider and back; it writes [the resolver's guide](guides/resolver/guide.md). `tests/test_walkthrough_joiner.py` describes the joiner coordinator in plain words, checks the least it was given, and refines it by hand; it writes [the joiner's guide](guides/joiner/guide.md). `tests/test_walkthrough_delivery.py` builds software delivery's dev assistant again from nothing, follows a review it asks for to the repository's owner, and starts and stops a review task; it writes [its guide](guides/software-delivery/guide.md). `tests/test_walkthrough_master_data.py` builds master data's assistant again from nothing, keeps a test case its judge grades, follows a correction to its data object's owner, and then, once a grader has graded a quarter's corrections, lets it act on its own for corrections in material data through the settings app; it writes [its guide](guides/master-data/guide.md). `tests/test_walkthrough_quality.py` builds master data's data quality watcher again, with its daily reports, and follows one to its owner's day from a5s; it writes [its guide](guides/data-quality/guide.md).
+A walk-through goes further: a scenario's people, each in a browser of their own, take an agent from an idea to work through a5s's own pages and its command line alone, on a deployment that isn't in development, so its release must be signed before it runs anything ([phase 5](phase-5.md), `tests/walkthrough.py`). The first, `tests/test_walkthrough.py`, takes a new agent on the sample through the studio, a pull request, `a5s release sign`, the settings app, the approval page, the chat, a decision and the audit trail. A step it can't take through a5s fails, naming the step, as a gap. With `A5S_GUIDE` naming a folder, it writes the scenario's guide there, a picture of each step beside its words: `A5S_GUIDE=docs/guides uv run pytest tests/test_walkthrough.py` makes [the sample's](guides/sample/guide.md). `tests/test_walkthrough_desk.py` builds the service desk's assistant again from nothing, and holds what it may do to the hand-written one's; it writes [the desk's guide](guides/service-desk/guide.md). `tests/test_walkthrough_resolver.py` builds the resolver assistant the desk planned and never built, keeps what it must never do as a test case in the sandbox, and follows a reply it asks for to the service area's decider and back; it writes [the resolver's guide](guides/resolver/guide.md). `tests/test_walkthrough_joiner.py` describes the joiner coordinator in plain words, checks the least it was given, and refines it by hand; it writes [the joiner's guide](guides/joiner/guide.md). `tests/test_walkthrough_delivery.py` builds software delivery's dev assistant again from nothing, follows a review it asks for to the repository's owner, and starts and stops a review task; it writes [its guide](guides/software-delivery/guide.md). `tests/test_walkthrough_master_data.py` builds master data's assistant again from nothing, keeps a test case its judge grades, follows a correction to its data object's owner, and then, once two graders have graded a quarter's corrections, half each, lets it act on its own for corrections in material data through the settings app; it writes [its guide](guides/master-data/guide.md). `tests/test_walkthrough_quality.py` builds master data's data quality watcher again, with its daily reports, and follows one to its owner's day from a5s; it writes [its guide](guides/data-quality/guide.md).
 
 In CI, a walk-through's agents run on the stand-in model, scripted, so they answer the same every time. Each night, `.github/workflows/nightly.yml` runs every walk-through on DeepSeek instead, on the scenarios' synthetic data alone: with `A5S_TEST_WALK_MODEL` naming an approved model, the agents, the sandbox and the judges run on it, what the script would have said goes nowhere, and each step waits for whatever the agent answers and checks what came of it, a change held, decided and made, rather than its words. Where a walk-through tries an agent in the sandbox or describes one there, it picks that model on the page, as its author would, so the sandbox's cases and descriptions run on it too; what only the stand-in's script makes so, such as the reads a description of the joiner coordinator gives it, the night checks only as far as a5s promises it: nothing done on its own, and whatever writes taken away by hand. Each audit step checks who decided a held change and that a5s made it, as the ledger has them. A real model does what a script never does, and the walk-throughs allow for what a person would: someone confirms a change once when the agent asks them to first, though a5s holds it for its decider anyway, and the scheduler comes round again for a run that failed, as it does each minute in a deployment, before a day from a5s that waits on it. Run one that way by hand with `A5S_TEST_WALK_MODEL=deepseek-v4-pro uv run pytest tests/test_walkthrough_master_data.py`, with `DEEPSEEK_API_KEY` set.
 
@@ -92,31 +92,35 @@ On Windows, run shell commands and the `sh` deployment scripts from Git Bash.
 Use synthetic equivalents only, and keep provider keys outside git. A local `.a5s/live.env` is the usual place; do not print it or commit it.
 
 ```sh
-uv run --env-file .a5s/live.env pytest -m live
+uv run --env-file .a5s/live.env pytest -m 'live and not forgejo'
 ```
+
+The Forgejo evaluation's live case is marked `forgejo` too, and runs only through `deploy/forgejo.sh` ([below](#run-the-container-paths)).
 
 The approved model list names the key's environment variable for each provider, currently `DEEPSEEK_API_KEY` and `QWEN_API_KEY` for development models. A missing key normally skips the live test. For a release's required regression suites, it must fail instead:
 
 ```sh
-A5S_REGRESSION=required uv run --env-file .a5s/live.env pytest -m live
+A5S_REGRESSION=required uv run --env-file .a5s/live.env pytest -m 'live and not forgejo'
 ```
 
-The resume evaluation accepts `A5S_EVAL_MODEL`, such as `qwen3.7-max`, while defaulting to the release's DeepSeek alias. That changes the evaluation's model, not the production agent's approved model.
+The resume evaluation in `tests/test_software_delivery.py` accepts `A5S_EVAL_MODEL`, such as `qwen3.7-max`, while defaulting to the release's DeepSeek alias. That changes the evaluation's model, not the production agent's approved model.
 
 To exercise the actual worker image, rather than a worker in the test process:
 
 ```sh
 docker build -t a5s:dev .
-A5S_TEST_WORKER_IMAGE=a5s:dev uv run --env-file .a5s/live.env pytest -m live
+A5S_TEST_WORKER_IMAGE=a5s:dev uv run --env-file .a5s/live.env pytest -m 'live and not forgejo'
 ```
 
-The worker holds only its run token. The gateway holds provider credentials. The [release workflow](../.github/workflows/release.yml) runs the agents' and scenarios' live suites this way before publishing an image.
+The worker holds only its run token. The gateway holds provider credentials. The [release workflow](../.github/workflows/release.yml) runs the agents' and scenarios' live suites this way before publishing an image. Where the test process can't call Docker, start a worker from the image yourself, and name it beside `A5S_TEST_WORKER_IMAGE`: its address in `A5S_TEST_WORKER_URL`, and the gateway URL it was started with in `A5S_TEST_WORKER_GATEWAY`. The tests serve the core on that URL's port, at `A5S_TEST_BRIDGE`'s address, Docker's bridge unless it says (`live_image` and `contained` in `tests/conftest.py`).
 
 ### What a live evaluation should measure
 
-For each meaningful case, check the answer's correctness and sources, what the agent must not claim, permission and safety outcomes, effects made once, and ledger integrity. Measure latency, model calls and tokens beside those assertions.
+For each meaningful case, check the answer's correctness and sources, what the agent must not claim, permission and safety outcomes, effects made once, and ledger integrity. Measure latency, model calls and tokens beside those assertions. Check what the agent's words say through `judged()` in `tests/conftest.py`, which asks an approved model whether the message says what it must, so the same meaning in other words passes; what code enforces, such as drafts, task state, denials and the ledger, stays an exact check ([judged wording checks](model-fallbacks.md#judged-wording-checks-in-the-live-tests)).
 
 `tests/scorecards.py` prints those measurements for the hard scenario evaluations, including forbidden tool actions. Monetary cost is not inferred: if the approved model has no configured prices, the scorecard says so. Critical cases run more than once so a single fortunate response isn't presented as reliability.
+
+`a5s canaries` asks each approved model whose key is set the fixed cases in `config/canaries.yaml`, straight from its provider, keeps whether each gave the answer it must, and prints the day's scores, so a model that changes behind its name shows. `a5s health` shows each model's day, measured, and the studio's `/studio/health` shows both ([model execution](model-execution.md)).
 
 ## Run the container paths
 
@@ -137,13 +141,21 @@ sh deploy/smoke-scenario.sh service-desk
 
 These are separate scenario stacks. Stop an existing smoke stack first if it holds the same local ports. The scripts clean their own stacks on exit; `deploy/smoke.sh --keep` leaves the sample running to try it.
 
+Check the repository connector against a real Forgejo, on made-up repositories, as CI does:
+
+```sh
+sh deploy/forgejo.sh
+```
+
+It starts and removes its own containers. With `A5S_TEST_FORGEJO_LIVE=required` and the keys in `.a5s/live.env`, it also runs a real model through a worker from the image ([connectors](connectors.md#read-only-repository-connectors)).
+
 Run the longer recovery and leak check:
 
 ```sh
 sh deploy/soak.sh 30
 ```
 
-Its minutes can be changed. It needs Docker and time, and it kills and restarts its own test services, so run it on the test stack, not on a deployment people are using.
+Its minutes can be changed. It needs Docker and time, and it kills and restarts its own test services, so run it on the test stack, not on a deployment people are using. With `A5S_SOAK_FOUND` naming a file, it writes what it measured there, with every run of each message that ran more than once, so a fallback's retry can be told from work a crash made twice; the soak workflow keeps that file for 14 days.
 
 ## When something fails
 
@@ -152,9 +164,9 @@ Its minutes can be changed. It needs Docker and time, and it kills and restarts 
 - **The provider was unavailable:** an HTTP 502/503 or a timeout is not a completed evaluation. Check the provider with a small request and rerun the full case when it works; never count an outage as a correct answer.
 - **A browser or service was missing:** install or start it. Don't silently treat a required browser or integration check as optional.
 - **The failure predates the change:** reproduce it on unmodified `main` in isolation before setting it aside, and report it rather than hiding it in an unrelated fix.
-- **A test is timing-dependent:** control the boundary deterministically where possible, while retaining an end-to-end check of the real behavior.
+- **A test is timing-dependent:** control the boundary deterministically where possible, while retaining an end-to-end check of the real behaviour.
 
-CI runs the full suite, container and scenario smoke tests, and a Kubernetes install from the chart. The weekly and manually requested [soak workflow](../.github/workflows/soak.yml) runs the longer recovery test. A release also requires the real-model agent suites; see [the release workflow](../.github/workflows/release.yml).
+CI runs the full suite, the Forgejo evaluation, container and scenario smoke tests, and a Kubernetes install from the chart. The weekly and manually requested [soak workflow](../.github/workflows/soak.yml) runs the longer recovery test. A release also requires the real-model agent suites; see [the release workflow](../.github/workflows/release.yml).
 
 ## Add a useful test
 

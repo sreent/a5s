@@ -33,7 +33,7 @@ export function HealthPage() {
         ))}</tbody>
       </table>
       <p className="note">
-        <To go="/studio/decide">{t("Which model each instance runs on is a setting its owners approve.")}</To>
+        <To go="/studio/settings">{t("Which model each instance runs on is a setting its owners approve.")}</To>
       </p>
     </div>
   );

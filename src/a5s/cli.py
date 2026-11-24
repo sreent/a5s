@@ -685,6 +685,15 @@ def _checked(command: str) -> None:
                  ", ".join(f"{k}={v}" for k, v in here.items()) or "nothing set")
 
 
+def _served(cfg: Config) -> str:
+    """The name of the scenario this environment serves, such as master-data, as its class
+    gives it: what the core counts each model's calls and canaries under."""
+    import importlib
+
+    module, _, name = cfg.scenario.partition(":")
+    return getattr(importlib.import_module(module), name).name
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(prog="a5s", description="An agent OS on Deep Agents.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -759,11 +768,13 @@ def main(argv: list[str] | None = None) -> None:
                                                "and show their scores: what drifted shows here")
     canaries.add_argument("--database", help="the database (default: this environment's)")
     canaries.add_argument("--model", help="only this approved model")
-    canaries.add_argument("--scenario", default="sample", help="whose scores they are")
+    canaries.add_argument("--scenario", help="whose scores they are (default: the scenario "
+                                             "this environment serves)")
     health = sub.add_parser("health", help="each model's day, measured, and putting a gated "
                                           "model back")
     health.add_argument("--database", help="the database (default: this environment's)")
-    health.add_argument("--scenario", default="sample", help="whose scores they are")
+    health.add_argument("--scenario", help="whose scores they are (default: the scenario this "
+                                           "environment serves)")
     health.add_argument("--days", type=int, default=1, help="how many days to measure")
     health.add_argument("--restore", metavar="MODEL", help="put a gated model back, as a person")
     exported.add_argument("--by", help="in development, the officer, who asks nowhere else")
@@ -910,9 +921,9 @@ def main(argv: list[str] | None = None) -> None:
         approved = load_models(cfg.models_file)
         if args.model:
             approved = {k: v for k, v in approved.items() if k == args.model}
-        url = args.database or DEFAULT_DATABASE_URL
-        failed = canary_runs.run(url, args.scenario, approved)
-        for row in canary_runs.scorecard(url, args.scenario):
+        url, scenario = args.database or cfg.database_url, args.scenario or _served(cfg)
+        failed = canary_runs.run(url, scenario, approved)
+        for row in canary_runs.scorecard(url, scenario):
             print(f"{row['at']:%H:%M} {row['canary']} {row['model']} "
                   f"{'pass' if row['passed'] else 'FAIL'} ({row['seconds']}s)")
         raise SystemExit(1 if failed else 0)
@@ -920,13 +931,13 @@ def main(argv: list[str] | None = None) -> None:
     if args.command == "health":
         from a5s.core import health as health_mod
         cfg = Config.from_env()
-        url = args.database or DEFAULT_DATABASE_URL
+        url, scenario = args.database or cfg.database_url, args.scenario or _served(cfg)
         with db.transaction(url) as conn:
             if args.restore:
-                health_mod.restore(conn, args.scenario, args.restore)
+                health_mod.restore(conn, scenario, args.restore)
                 print(f"{args.restore} is back: a person put it there.")
             else:
-                for row in health_mod.report(url, args.scenario, days=args.days):
+                for row in health_mod.report(url, scenario, days=args.days):
                     state = "stopped" if row["gated_at"] else "answering"
                     print(f"{row['model']} {row['calls']} calls, {row['failed']} failed, "
                           f"{row['stalls']} stalls, {row['mean_seconds']}s each: {state}")

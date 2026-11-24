@@ -1,6 +1,6 @@
 # Design Critique
 
-**Status:** Rounds 1 to 11, 15 November 2026 · **Design:** [a5s](../README.md)
+**Status:** Rounds 1 to 15, 17 November 2026 · **Design:** [a5s](../README.md)
 
 Every change to the design gets an adversarial review before it settles. Reviewers who didn't write the design read it cold, each from one angle, and each finding is checked against the documents before it's accepted. This page records the findings about a5s, how the design answers them now, and what each round removed.
 

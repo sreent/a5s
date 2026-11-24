@@ -1,25 +1,31 @@
 # Models as components: execution, verification and routing
 
-**Status:** design for review. Nothing here is built; the pieces in the tree today (release
-`fallbacks`, the scheduler's retry, the tests' `judged()`) are the shallow version this
-replaces, kept until its first slice lands.
+**Status:** design for review. Some of it is built: call-level replay (`core/gateway.py`'s
+`calling`); drift canaries (`config/canaries.yaml`, `core/canaries.py`), which `a5s canaries`
+runs when asked, though no workflow runs them yet; a reliability ledger of each model's day,
+whose SLO gate stops a model until a person puts it back with `a5s health --restore`, which
+signs nothing (`core/health.py`), and a health page that shows both (`/studio/health`); and a
+check that a reply names only record keys its run read, with one correction (`core/verify.py`).
+The rest isn't, and the release's `fallbacks`, the scheduler's retry and the tests' `judged()`
+are the shallow version this replaces, kept until their replacements land.
 
 
 ## A stalled model call is a bug in a5s, not an outage to tolerate
 
-a5s promises runs that pick up where they left off and tasks that lose no work. Today one
-model call that doesn't answer destroys the run: its thread, its tool results and its place
-are thrown away, and the work restarts. The provider failing is the trigger; the run dying is
-a5s's own defect.
+a5s promises runs that pick up where they left off and tasks that lose no work. Before
+call-level replay, one model call that didn't answer destroyed the run: its thread, its tool
+results and its place were thrown away, and the work restarted. The provider failing is the
+trigger; the run dying is a5s's own defect.
 
 The fix is two layers:
 
-1. **Call-level replay, in the run — built.** Each model call is already a recorded,
+1. **Call-level replay, in the run: built.** Each model call is already a recorded,
    sequenced unit (the ledger's model entries carry their sequence). When a call fails, the
-   gateway re-issues it on the next healthy approved model that speaks the run's API style —
-   same run, same thread, same tool results, nothing re-read. Only when every model in the
-   chain has failed the same call does the run end. The release's fallbacks bound the chain,
-   and each attempt is in the ledger by sequence and alias.
+   gateway asks its own model once more, then re-issues it on the next healthy approved model
+   that speaks the run's API style: same run, same thread, same tool results, nothing
+   re-read. Only when every model in the chain has failed the same call does the run end.
+   The release's fallbacks bound the chain, and each attempt is in the ledger by sequence and
+   alias.
 2. **Run-level retry, after the run.** The committed fallback work remains as the last resort:
    a provider-wide outage, where every call failed, is recovered by retrying the message or
    slice later, as the scheduler already does.
@@ -28,27 +34,27 @@ The fix is two layers:
 
 Reliability is five properties, each with its own mechanism:
 
-- **Availability** — call-level replay, circuit breakers, the fallback chain.
-- **Correctness** — code-checked invariants (keys, amounts, links) and a verifier model
+- **Availability:** call-level replay, circuit breakers, the fallback chain.
+- **Correctness:** code-checked invariants (keys, amounts, links) and a verifier model
   before anything reaches a person; human decisions for changes, as today.
-- **Latency** — per-operation latency budgets, recorded in measures; degrade before failing.
-- **Drift** — a fixed, versioned canary set of scripted cases with exact expected behaviour,
+- **Latency:** per-operation latency budgets, recorded in measures; degrade before failing.
+- **Drift:** a fixed, versioned canary set of scripted cases with exact expected behaviour,
   run on every model change and nightly, scored into the ledger. Non-negotiable for a model
   that ships no dated version, where a change behind the name can't otherwise be seen.
-- **Safety** — already structural: gateway, policy, caps, ledger.
+- **Safety:** already structural, in the gateway, policy, caps and ledger.
 
-The signals exist (breakers, measures, graded samples, per-call ledger entries); the missing
-piece is making them attributable per model and per operation, and letting them act: a model
-whose stall rate breaches its SLO is routed away from automatically — tightening is always
-automatic — while putting it back, or approving a new model for an operation, is a signed
-release change, as every loosening is.
+The signals exist (breakers, measures, graded samples, per-call ledger entries, and each
+model's day in the reliability ledger); the missing piece is making them attributable per
+operation, and letting them act: a model whose stall rate breaches its SLO is routed away from
+automatically, since tightening is always automatic, while putting it back, or approving a new
+model for an operation, is a signed release change, as every loosening is.
 
 ## The problem, as the incident showed it
 
 A model stalled in the middle of a run and the run died with it: the agent's state was
 thrown away, the work restarted, and a5s's only answer was to try again on another model. A
-model giving a *wrong* answer would not even have been noticed: nothing checks a reply
-before it reaches a person. Changing models treats the symptom; the disease is that a5s
+model giving a *wrong* answer would not even have been noticed: nothing checked a reply
+before it reached a person. Changing models treats the symptom; the disease is that a5s
 holds a model as a monolithic, trusted dependency.
 
 The principles this design serves: policy decides, not the model; every action leaves
@@ -115,10 +121,10 @@ assertion.
 ## Open questions for review
 
 - The verifier's budget: what fraction of a run's tokens may verification take, and who
-  approves a model as a verifier — the release approver, as for the judge?
+  approves a model as a verifier: the release approver, as for the judge?
 - What per-operation evidence the health page shows, and what the least it may show is.
 - Whether an operation's model may be chosen per data class, per part, or per agent, and
   which of those the settings sign.
 - The first slice: call-level replay for a stalling model, or the verifier for replies,
-  or the operation split — each is useful alone.
+  or the operation split. Each is useful alone.
 
