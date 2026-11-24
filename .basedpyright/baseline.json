@@ -1446,14 +1446,6 @@
                     "endColumn": 68,
                     "lineCount": 4
                 }
-            },
-            {
-                "code": "reportArgumentType",
-                "range": {
-                    "startColumn": 31,
-                    "endColumn": 35,
-                    "lineCount": 1
-                }
             }
         ],
         "./src/a5s/core/status.py": [

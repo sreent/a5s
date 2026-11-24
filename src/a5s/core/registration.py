@@ -212,9 +212,11 @@ def sweep(conn_url: str, registry: Registry, scenario: Any, definitions: dict,
     A refusal of what's unchanged is asked again once an hour, and recorded as it changes."""
     with db.transaction(conn_url) as conn:
         insts = conn.execute("select id, definition, release, status, level, owner, deputy, "
-                             "parts, actions, updated_at from instances order by id").fetchall()
+                             "parts, actions, model, updated_at from instances order by id"
+                             ).fetchall()
         kept = {r["instance_id"]: r for r in conn.execute("select * from registrations")}
-        caps = {r: samples.caps(conn, keys, r) for r in {i["release"] for i in insts}}
+        caps = {(r, m): samples.caps(conn, keys, r, [m] if m else None)  # each model its own
+                for r, m in {(i["release"], i["model"]) for i in insts}}
         clock = conn.execute("select now() as at").fetchone()
         now = clock["at"] if clock else datetime.now(UTC)
     changed: list[dict] = []
@@ -233,7 +235,7 @@ def sweep(conn_url: str, registry: Registry, scenario: Any, definitions: dict,
         sponsors = list(row.get("sponsors") or []) if row and not moved else []
         first = row["first_registered"] if row else datetime.now().astimezone()
         body = said(inst, definition, owners, registry, public_url, identity, first,
-                    caps.get(inst["release"]))
+                    caps.get((inst["release"], inst["model"])))
         if row and not moved and row["said_sha"] == digest(body):
             if not row["problem"] and registration:
                 continue  # as registered
@@ -246,7 +248,7 @@ def sweep(conn_url: str, registry: Registry, scenario: Any, definitions: dict,
                 identity = found[0] if found else _identity(registry, inst, owners)
                 sponsors = sponsors or owners
                 body = said(inst, definition, owners, registry, public_url, identity, first,
-                            caps.get(inst["release"]))
+                            caps.get((inst["release"], inst["model"])))
             elif identity and owners and set(owners) != set(sponsors or owners):
                 _sponsored(registry, identity, owners, sponsors)  # they follow its owners
             sponsors = owners if identity else []

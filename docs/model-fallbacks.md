@@ -34,7 +34,21 @@ breaker still opens after three failures in a row, so a provider that's down isn
 a few minutes.
 
 Each attempt is in the ledger as before: the run's `model` records the model it opened on, and
-each call's entry names its alias, so the evidence shows which model answered what.
+each call's entry names its alias, so the evidence shows which model answered what. A call a
+fallback answered leaves the run on that model: its next call is its own model's again, which
+policy lets it make (round 16; before, the run took the fallback's name, and policy refused
+its next call). Its tokens count at the run's model's price.
+
+A message waits for the next model only when its run found its model not answering. When a5s
+refuses to open a run at all, as for a suspended instance, the person hears why once and the
+message is answered, whatever models remain (round 16; before, the scheduler took it again at
+once, for ever).
+
+**Acting on its own:** a fallback answers, but what the release's own model earned doesn't
+come with it. A change a run asks for after a fallback answered one of its calls is made on its
+own only where the fallback earned it too, from graded samples of changes made on it, and
+otherwise waits for its decider ([phase 2](phase-2.md)). The same holds for an instance its
+settings put on another approved model.
 
 ## Judged wording checks in the live tests
 

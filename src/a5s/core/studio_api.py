@@ -566,12 +566,14 @@ def router(gw: Any) -> APIRouter:
         """What depends on what, as far as someone may see it: the parts, instances, agents,
         tools, systems and models, each joined to what it depends on (core/dependencies.py)."""
         with db.transaction(gw.url) as conn:  # level 2, as policy weighs it, and the caps as
-            shown: dict[str, dict[tuple[str, str], int]] = {}  # a page shows them
+            shown: dict[tuple[str, str | None], dict[tuple[str, str], int]] = {}  # a page
+            # shows them, each release's on a model, as each model earns its own (round 16)
 
-            def caps_of(release: str) -> dict[tuple[str, str], int]:
-                if release not in shown:
-                    shown[release] = samples.shown_caps(conn, gw.cfg.seal_keys, release)
-                return shown[release]
+            def caps_of(release: str, model: str | None) -> dict[tuple[str, str], int]:
+                if (release, model) not in shown:
+                    shown[(release, model)] = samples.shown_caps(
+                        conn, gw.cfg.seal_keys, release, [model] if model else None)
+                return shown[(release, model)]
 
             return dependencies.drawn(conn, gw.scenario, gw.definitions, gw.scenario.tools(),
                                       gw.models, person, languages.of(person),

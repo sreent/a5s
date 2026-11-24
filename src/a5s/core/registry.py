@@ -427,7 +427,11 @@ def apply(
     )
 
     applied = Applied(signers=valid, before=before)
-    samples.note_behaviours(conn, definitions.values(), tools)  # what caps are kept for
+    on: dict[str, set[str]] = {}  # the models instances are set to, besides their releases'
+    for s in settings.instances:
+        if s.model:
+            on.setdefault(s.definition, set()).add(s.model)
+    samples.note_behaviours(conn, definitions.values(), tools, on)  # what caps are kept for
     for s in settings.instances:
         definition = definitions.get(s.definition)
         if definition is None:

@@ -442,7 +442,8 @@ class Gateway:
         level, scope = registry.levels(signed, release)
         expected = (signed.definition, sorted(signed.serves), level, scope,
                     registry.action_levels(signed, release), sorted(release.grants),
-                    release.model, release.pins, signed.owner or release.owner,
+                    signed.model or release.model,  # the settings' choice, else its release's
+                    release.pins, signed.owner or release.owner,
                     signed.deputy or release.deputy, sorted(signed.asks), signed.shadows,
                     sorted(signed.hands_to))
         actual = (inst["definition"], sorted(inst["serves"]), inst["level"], inst["parts"] or {},
@@ -694,10 +695,26 @@ class Gateway:
                 break
         return found
 
-    def caps(self, conn: db.Connection, release: str) -> dict[tuple[str, str], int]:
-        """a5s's caps for a release's types of action in each part, as the core sealed them
-        with the ledger's last word on each: 1 where there's none."""
-        return samples.caps(conn, self.cfg.seal_keys, release)
+    def caps(self, conn: db.Connection, release: str,
+             models: list[str] | None = None) -> dict[tuple[str, str], int]:
+        """a5s's caps for a release's types of action in each part, on these models, or its own
+        where none are named, as the core sealed them with the ledger's last word on each: the
+        lowest any of them earned, and 1 where any earned none (round 16, G3)."""
+        return samples.caps(conn, self.cfg.seal_keys, release, models)
+
+    def answered(self, conn: db.Connection, run: str, model: str | None,
+                 before: int | None = None) -> list[str]:
+        """The models that answered a run's calls, before a ledger entry where one is given,
+        the one that answered last at the end: what a change the run asks for is made on, so it
+        acts on its own only where each of them earned it, whether the run's own model, one its
+        instance's settings put it on, or one a call fell back to (round 16, G3). The run's own
+        model where none has answered yet."""
+        rows = conn.execute(
+            "select action, max(seq) as last from ledger where run_id = %s and kind = 'model' "
+            "and decision = 'record' and (entry::jsonb -> 'outcome' ->> 'status')::int < 400 "
+            "and seq < %s group by action order by last",
+            (run, before if before is not None else 2 ** 62)).fetchall()
+        return [r["action"] for r in rows] or ([model] if model else [])
 
     def approving(self, sealing: bool = True) -> str | None:
         """Why approvers can't approve settings where they work here, if they can't: it takes
@@ -1642,6 +1659,12 @@ def create_app(gw: Gateway) -> FastAPI:
             if reasons and kind == asking.KIND and not opening.used:  # so the asker hears why
                 conn.execute("update questions set problem = %s where id = %s",
                              ("; ".join(reasons)[:200], opening.trigger["question"]))
+            if reasons and kind == "message" and opening.trigger.get("inbound"):
+                # a message kept open for its release's next model is kept for a model that
+                # isn't answering, never for a run a5s refused: refused, it's taken for good,
+                # as without fallbacks, or the scheduler takes it again at once, for ever
+                conn.execute("update inbound set answered_at = now() where id = %s "
+                             "and answered_at is null", (opening.trigger["inbound"],))
             ledger.append(conn, {
                 "kind": "run", "action": "open", "run": None if reasons else run_id,
                 "instance": body.instance, "acts_for": opening.acts_for,
@@ -2957,8 +2980,9 @@ def create_app(gw: Gateway) -> FastAPI:
                     len(row["acts_for"]) == 1 and not groups.of(
                         row["trigger"].get("conversation"))) else []
                 weighed = {**row, "steered": bool(steered)}  # a team's words: level 1 at most
+                on = gw.answered(conn, row["run"], row["model"])  # each model earns its own
                 about = parts.about(gw.scenario, weighed, keys, action, gw.approvers_in_force(conn),
-                                    gw.caps(conn, row["release"]), standing) if action else parts.about(
+                                    gw.caps(conn, row["release"], on), standing) if action else parts.about(
                     gw.scenario, weighed, keys)
                 decision = gw.decide(row, "call_tool", entity, [], **about,
                                      over_limit=over is not None)
@@ -3022,7 +3046,7 @@ def create_app(gw: Gateway) -> FastAPI:
                     marked_only = bool(row["read_outside"] and action and gw.decide(
                         {**row, "read_outside": False}, "call_tool", entity, [], **parts.about(
                             gw.scenario, {**weighed, "read_outside": False}, keys, action,
-                            gw.approvers_in_force(conn), gw.caps(conn, row["release"]),
+                            gw.approvers_in_force(conn), gw.caps(conn, row["release"], on),
                             standing), over_limit=over is not None).allowed)  # (round 15, A4)
                     proposal, sends = held(conn, requested, tool, args, standing, deciding or [],
                                            seq, traced, change, over, found[0], steered,
@@ -3217,11 +3241,12 @@ def create_app(gw: Gateway) -> FastAPI:
                       f"a5s made the change the {row['definition']} asked for, which it may "
                       f"make on its own: {change}", keys[0] if keys else None,
                       heard_by=list(row["acts_for"]) if groups.of(group) else None)
+            last = gw.answered(conn, row["run"], row["model"])  # whose behaviour it shows
             for part in sorted({p for k in keys if (p := gw.scenario.part_of(k))}):
                 samples.draw(conn, gw.cfg.seal_keys, gw.scenario.name, "action", row["release"],
                              row["definition"],
                              row["id"], row["run"], part, tool.action, said, standing,
-                             asked, gw.clock())
+                             asked, gw.clock(), model=last[-1] if last else None)
             ledger.append(conn, {"kind": "tool", "action": "report", "run": row["run"],
                                  "instance": row["id"], "acts_for": asked,
                                  "decision": "record", "args": {"to": sorted(set(told)),
@@ -4072,17 +4097,19 @@ def create_app(gw: Gateway) -> FastAPI:
         """Why an approved change can't be made now, if it can't: the instance may no longer
         act, the tool has changed since, or policy would deny the call."""
         row = conn.execute(
-            "select r.id::text as run, r.acts_for, r.read_outside, r.trigger, r.tokens, i.* "
-            "from runs r join instances i on i.id = r.instance_id where r.id = %s",
-            (p["run_id"],)).fetchone()
+            "select r.id::text as run, r.acts_for, r.read_outside, r.trigger, r.tokens, i.*, "
+            "coalesce(r.model, i.model) as model from runs r join instances i on "
+            "i.id = r.instance_id where r.id = %s", (p["run_id"],)).fetchone()
         tool = gw.scenario.tools().get(p["tool"])
         if row is None or tool is None or tool.schema_hash != p["schema_hash"]:
             return "the tool has changed since it was asked for"
         if problems := gw.check_instance(conn, row) + gw.release_problems(conn):
             return "; ".join(problems)
+        on = gw.answered(conn, row["run"], row["model"], before=p["seq"])  # as it asked
         decision = gw.decide(row, "call_tool", gw.tool_entity(p["tool"], tool, row["pins"]), [],
                              **parts.about(gw.scenario, row, list(p["records"]), tool.action,
-                                           gw.approvers_in_force(conn), gw.caps(conn, row["release"])))
+                                           gw.approvers_in_force(conn),
+                                           gw.caps(conn, row["release"], on)))
         if not (decision.allowed or decision.held):
             return "; ".join(decision.explanations) or "policy denies it now"
         return None
@@ -4158,6 +4185,9 @@ def create_app(gw: Gateway) -> FastAPI:
                       ", ".join(deciders_) or None, now, text, p["id"]))
         conn.execute("delete from proposal_values where proposal_id = %s", (p["id"],))
         if became != "lapsed":  # someone decided it: a sample of the agent's work, for grading
+            ran = conn.execute("select model from runs where id = %s", (p["run_id"],)).fetchone()
+            last = gw.answered(conn, str(p["run_id"]), ran["model"] if ran else None,
+                               before=p["seq"])  # the model whose answer asked for it
             for part in p["parts"]:
                 samples.draw(conn, gw.cfg.seal_keys, gw.scenario.name, "proposal", p["release"],
                              p["definition"],
@@ -4166,7 +4196,7 @@ def create_app(gw: Gateway) -> FastAPI:
                              list(p["acts_for"]), now, proposal=p["id"],
                              decided="reject" if became == "rejected" else "approve",
                              decided_by=deciders_, flags=p["flags"],
-                             flagged=p.get("flagged"))
+                             flagged=p.get("flagged"), model=last[-1] if last else None)
         ledger.append(conn, {"kind": "proposal", "action": became, "run": str(p["run_id"]),
                              "instance": p["instance_id"], "acts_for": list(p["acts_for"]),
                              "decision": "record", "of": p["seq"],
@@ -4314,9 +4344,8 @@ def create_app(gw: Gateway) -> FastAPI:
             if settings is None:
                 return {"changed": [], "lapsed": lapsed, "weighed": f"nothing, since {problem}"}
             for row in conn.execute(
-                    "select distinct b.behaviour, s.part, s.action from samples s join behaviours b "
-                    "on b.release = s.release and b.action = s.action where s.grade is not null"
-                    ).fetchall():
+                    "select distinct b.behaviour, s.part, s.action from samples s join "
+                    f"behaviours b on {samples.OF_SAMPLE} where s.grade is not null").fetchall():
                 found = samples.assess(conn, gw.cfg.seal_keys, row["behaviour"], row["part"],
                                        row["action"], settings.thresholds.get(row["part"]), now)
                 if found:
@@ -4725,10 +4754,11 @@ def create_app(gw: Gateway) -> FastAPI:
     def capped(conn: db.Connection, found: dict, now: datetime) -> None:
         """Tell the owners and deputies of the instances a cap governs that it changed, in
         their digest."""
-        rows = conn.execute(
-            "select i.id, i.definition, i.owner, i.deputy from instances i join behaviours b on "
-            "b.release = i.release where b.behaviour = %s and b.action = %s and i.status = 'active'",
-            (found["behaviour"], found["action"])).fetchall()
+        rows = conn.execute(  # of its release, on whichever model it earned it on, since any
+            # of its instances may fall back to it
+            "select distinct i.id, i.definition, i.owner, i.deputy from instances i join "
+            "behaviours b on b.release = i.release where b.behaviour = %s and b.action = %s "
+            "and i.status = 'active' order by i.id", (found["behaviour"], found["action"])).fetchall()
         for inst in rows:
             for person in dict.fromkeys(p for p in (inst["owner"], inst["deputy"]) if p):
                 spoken = gw.spoken(conn, person)  # each in the language they read
@@ -4802,10 +4832,10 @@ def create_app(gw: Gateway) -> FastAPI:
             raise HTTPException(503, "the core has no key to seal caps with: see A5S_SEAL_KEYS")
         with db.transaction(gw.url) as conn:
             found = samples.lower(conn, gw.cfg.seal_keys, definition.release_id, body.part,
-                                  body.action, by, gw.clock())
-            if found:
-                found["identity"] = identity
-                capped(conn, found, gw.clock())
+                                  body.action, by, gw.clock())  # on every model it earned it on
+            for each in found:
+                each["identity"] = identity
+                capped(conn, each, gw.clock())
         return {"lowered": bool(found), "cap": 1}
 
     @services.post("/deliveries/sweep")
@@ -4934,7 +4964,6 @@ def create_app(gw: Gateway) -> FastAPI:
         # re-issued in the same run, so nothing of the run is lost, and each attempt is in
         # the ledger, by the call's sequence. The worker sees only the last attempt's answer.
         tried_here: list[str] = []  # this call's attempts, in order
-        served = alias
         recorded, status, data = None, 503, models.error_body(
             api, "no model in its chain can answer this call", "model_unavailable")
         # Its own model twice: a provider's moment of slowness is asked again before the next
@@ -5002,15 +5031,16 @@ def create_app(gw: Gateway) -> FastAPI:
                                            "usage": data.get("usage") if isinstance(data, dict)
                                            else None}})
             tried_here.append(candidate)
-            served = candidate
             if status < 400:
                 break
         tokens = budgets.tokens_of(data.get("usage")) if isinstance(data, dict) else 0
         if tokens and release is not None:
             try:
                 with db.transaction(gw.url) as conn:
+                    # counted on the run, which keeps the model it opened on whichever
+                    # answered, as policy weighs its next call by it (round 16)
                     if warning := budgets.spent(conn, gw.scenario, release.budget, row, tokens,
-                                                gw.clock(), data.get("usage"), served):
+                                                gw.clock(), data.get("usage")):
                         log.warning("%s has used %s of its %s tokens for %s today", row["id"],
                                     warning["used"], warning["budget"], warning["person"])
                         ledger.append(conn, {

@@ -742,6 +742,63 @@ def stack(database: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Ite
         yield s
 
 
+# Two approved models, each its own provider, for what a run does when its model isn't
+# answering (tests/test_fallbacks.py) and what each model earns (tests/test_caps_per_model.py)
+TWO_MODELS = """
+models:
+  fake:
+    provider: test
+    api: openai
+    base_url: https://fake.test/v1
+    model: fake-1
+    reported_model: fake-1
+    key_env: A5S_TEST_PROVIDER_KEY
+  spare:
+    provider: test
+    api: openai
+    base_url: https://fake.test/v2
+    model: spare-1
+    reported_model: spare-1
+    key_env: A5S_TEST_PROVIDER_KEY
+"""
+
+
+@pytest.fixture
+def two_models() -> tuple[FakeModel, FakeModel]:
+    return FakeModel(), FakeModel()
+
+
+def routed(primary: FakeModel, spare: FakeModel):
+    """Both providers behind one transport, each answering its own model's calls alone."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/v1/chat" in str(request.url):
+            return primary.handler(request)
+        if "/v2/chat" in str(request.url):
+            return spare.handler(request)
+        raise AssertionError(f"no model route for {request.url}")
+
+    return handler
+
+
+@pytest.fixture
+def fallback_stack(database, tmp_path, monkeypatch, two_models):
+    """a5s running, its assistant on 'fake' with 'spare' to fall back to, each its own model."""
+    monkeypatch.setenv("A5S_TEST_PROVIDER_KEY", PROVIDER_KEY)
+    primary, spare = two_models
+    root = build_root(tmp_path, "fake", TWO_MODELS)
+    for spec in (root / "agents").glob("*/agent.yaml"):
+        lines = [line for line in spec.read_text(encoding="utf-8").splitlines()
+                 if not line.startswith("fallbacks:")]
+        if spec.parent.name == "assistant":
+            lines.append("fallbacks: [spare]")
+        spec.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    with running(database, root,
+                 httpx.Client(transport=httpx.MockTransport(routed(primary, spare))),
+                 primary) as s:
+        yield s, primary, spare
+
+
 def listed_runs(stack: Stack) -> None:
     """The sample's instances, serving enough people for their runs to show one by one without
     names: the officer's fewest at its least, three, and the assistant serving Dana, who sees

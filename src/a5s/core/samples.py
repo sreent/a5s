@@ -7,7 +7,11 @@ decides how a release acts on a type of action: its agent, its model, and the to
 type it may use, as pinned. A release that changes only instructions keeps its behaviours,
 and the level their grades earned, as the release table says, since it needs the regression
 suite and a re-run of the last graded samples; one that changes a tool of that type, or the
-model, has a new behaviour, and starts again at 1 for what it widens.
+model, has a new behaviour, and starts again at 1 for what it widens. A release has a
+behaviour on each model it may run on: its own, another an instance's settings put it on, and
+each it falls back to. What one model earned never counts for another, so a change is made on
+its own only where every model that answered its run earned it, and a sample's grade is
+evidence of the model that answered last before the change (round 16, G3).
 
 Code draws samples of each behaviour's changes: every held change someone decided, while the
 cap is still 1, and at level 2 changes made, at random, about 100 a quarter, spread through
@@ -83,6 +87,10 @@ _SEALED_DRAW = ("id", "scenario", "kind", "proposal_id", "run_id", "instance_id"
 ASKED = 2_000  # characters of what was said to the run, kept with its sample
 _SEALED_CAP = ("behaviour", "part", "action", "cap", "since", "why", "threshold", "window_from",
                "seq")
+# A sample's behaviour: its release's on the model its change was made on, or, for one drawn
+# before the core named models, on its release's own (round 16, G3)
+OF_SAMPLE: LiteralString = ("b.release = s.release and b.action = s.action and "
+                            "(b.model = s.model or (s.model is null and b.own))")
 
 
 def behaviour(agent: str, model: str, pins: dict[str, str], tool_names: Iterable[str],
@@ -94,15 +102,28 @@ def behaviour(agent: str, model: str, pins: dict[str, str], tool_names: Iterable
                                      "tools": {n: pins.get(n) for n in used}}).encode()).hexdigest()
 
 
+def models_of(definition: Any, others: Iterable[str] = ()) -> list[str]:
+    """The models a release may run on: its own, each it falls back to, and `others`, such as
+    those its instances' settings put it on."""
+    return list(dict.fromkeys([definition.model, *(definition.fallbacks or ()), *others]))
+
+
 def note_behaviours(conn: db.Connection, definitions: Iterable[Any],
-                    tools: dict[str, Tool]) -> None:
-    """Keep each release's behaviour for each type of action its tools take."""
+                    tools: dict[str, Tool], on: dict[str, set[str]] | None = None) -> None:
+    """Keep each release's behaviour for each type of action its tools take, on each model it
+    may run on: its own, its fallbacks, and those `on` names for its definition, which its
+    instances' settings put it on. The first kept stays, as it was kept before."""
     for d in definitions:
-        for action in sorted({t.action for n in d.tool_names if (t := tools.get(n)) and t.action}):
-            conn.execute("insert into behaviours (release, action, behaviour) values (%s, %s, %s) "
-                         "on conflict do nothing",
-                         (d.release_id, action,
-                          behaviour(d.id, d.model, d.pins, d.tool_names, tools, action)))
+        actions = sorted({t.action for n in d.tool_names if (t := tools.get(n)) and t.action})
+        conn.execute("update behaviours set model = %s where release = %s and model is null "
+                     "and own", (d.model, d.release_id))  # kept before models were named
+        for model in models_of(d, sorted((on or {}).get(d.id, ()))):
+            for action in actions:
+                conn.execute(
+                    "insert into behaviours (release, action, model, own, behaviour) values "
+                    "(%s, %s, %s, %s, %s) on conflict (release, action, model) do nothing",
+                    (d.release_id, action, model, model == d.model,
+                     behaviour(d.id, model, d.pins, d.tool_names, tools, action)))
 
 
 # The test
@@ -212,35 +233,66 @@ def standing_caps(conn: db.Connection, keys: tuple[str, ...],
             and last.get((r["behaviour"], r["part"], r["action"])) == r["seq"]]
 
 
-def caps(conn: db.Connection, keys: tuple[str, ...], release: str) -> dict[tuple[str, str], int]:
-    """a5s's caps for a release's types of action in each part: 1 where there's none."""
-    mine = {r["action"]: r["behaviour"] for r in conn.execute(
-        "select action, behaviour from behaviours where release = %s", (release,))}
-    if not mine:
+def _behaviours(conn: db.Connection, release: str,
+                models: Iterable[str] | None) -> dict[str, set[str]] | None:
+    """A release's behaviour for each type of action, on each of these models, or on its own
+    model where none are named: None for a type where any of them has none kept, as one that
+    earned nothing there."""
+    named = None if models is None else sorted(set(models))
+    if named == []:
         return {}
-    return {(r["part"], r["action"]): r["cap"] for r in standing_caps(
-        conn, keys, "behaviour = any(%s)", (list(mine.values()),))
-        if mine.get(r["action"]) == r["behaviour"]}
+    rows = conn.execute("select action, model, behaviour from behaviours where release = %s "
+                        "and own", (release,)) if named is None else conn.execute(
+        "select action, model, behaviour from behaviours where release = %s and "
+        "model = any(%s)", (release, named))
+    found: dict[str, dict[str | None, str]] = {}
+    for r in rows:
+        found.setdefault(r["action"], {})[r["model"]] = r["behaviour"]
+    return {action: set(per.values()) for action, per in found.items()
+            if named is None or set(per) == set(named)}
 
 
-def shown_caps(conn: db.Connection, keys: tuple[str, ...],
-               release: str) -> dict[tuple[str, str], int]:
-    """a5s's caps for a release, as a page shows them: checked against the seal keys where the
-    part reading them holds them, as the core checks them; in the channels app, which holds
-    none, as the core sealed them, each with the ledger's last word on it. What a page shows,
-    never what decides a call: the gateway checks each seal itself (core/impact.py)."""
+def _lowest(kinds: dict[str, set[str]] | None,
+            rows: Iterable[dict]) -> dict[tuple[str, str], int]:
+    """Each part's cap for each type of action, of the caps that count: the lowest of each
+    behaviour's, where every one of them has one."""
+    earned: dict[tuple[str, str], dict[str, int]] = {}
+    for r in rows:
+        earned.setdefault((r["part"], r["action"]), {})[r["behaviour"]] = r["cap"]
+    return {(part, action): min(got[b] for b in kinds[action])
+            for (part, action), got in earned.items()
+            if kinds and action in kinds and kinds[action] <= set(got)}
+
+
+def caps(conn: db.Connection, keys: tuple[str, ...], release: str,
+         models: Iterable[str] | None = None) -> dict[tuple[str, str], int]:
+    """a5s's caps for a release's types of action in each part, on these models, or its own
+    where none are named: for each, the lowest any of them earned, and 1 where any of them
+    earned none, which isn't listed (round 16, G3)."""
+    kinds = _behaviours(conn, release, models)
+    every = sorted({b for found in (kinds or {}).values() for b in found})
+    if not every:
+        return {}
+    return _lowest(kinds, standing_caps(conn, keys, "behaviour = any(%s)", (every,)))
+
+
+def shown_caps(conn: db.Connection, keys: tuple[str, ...], release: str,
+               models: Iterable[str] | None = None) -> dict[tuple[str, str], int]:
+    """a5s's caps for a release on these models, as a page shows them: checked against the
+    seal keys where the part reading them holds them, as the core checks them; in the
+    channels app, which holds none, as the core sealed them, each with the ledger's last word
+    on it. What a page shows, never what decides a call: the gateway checks each seal itself
+    (core/impact.py)."""
     if keys:
-        return caps(conn, keys, release)
-    mine = {r["action"]: r["behaviour"] for r in conn.execute(
-        "select action, behaviour from behaviours where release = %s", (release,))}
-    if not mine:
+        return caps(conn, keys, release, models)
+    kinds = _behaviours(conn, release, models)
+    every = sorted({b for found in (kinds or {}).values() for b in found})
+    if not every:
         return {}
     last = _last_entries(conn)
-    return {(r["part"], r["action"]): r["cap"] for r in conn.execute(
-        "select * from caps where behaviour = any(%s) and seal is not null",
-        (list(mine.values()),)).fetchall()
-        if mine.get(r["action"]) == r["behaviour"]
-        and last.get((r["behaviour"], r["part"], r["action"])) == r["seq"]}
+    return _lowest(kinds, [r for r in conn.execute(
+        "select * from caps where behaviour = any(%s) and seal is not null", (every,)).fetchall()
+        if last.get((r["behaviour"], r["part"], r["action"])) == r["seq"]])
 
 
 def _cap_row(conn: db.Connection, keys: tuple[str, ...], kind: str, part: str,
@@ -250,9 +302,13 @@ def _cap_row(conn: db.Connection, keys: tuple[str, ...], kind: str, part: str,
     return found[0] if found else None
 
 
-def behaviour_of(conn: db.Connection, release: str, action: str) -> str | None:
-    row = conn.execute("select behaviour from behaviours where release = %s and action = %s",
-                       (release, action)).fetchone()
+def behaviour_of(conn: db.Connection, release: str, action: str,
+                 model: str | None = None) -> str | None:
+    """A release's behaviour for a type of action on a model, or on its own model."""
+    row = conn.execute("select behaviour from behaviours where release = %s and action = %s "
+                       "and own", (release, action)).fetchone() if model is None else conn.execute(
+        "select behaviour from behaviours where release = %s and action = %s and model = %s",
+        (release, action, model)).fetchone()
     return row["behaviour"] if row else None
 
 
@@ -284,13 +340,14 @@ def draw(conn: db.Connection, keys: tuple[str, ...], scenario: str, kind: str, r
          records: dict[str, dict | None], acts_for: list[str], now: datetime,
          proposal: int | None = None, decided: str | None = None,
          decided_by: list[str] | None = None, flags: list[str] | None = None,
-         flagged: list[dict] | None = None) -> bool:
+         flagged: list[dict] | None = None, model: str | None = None) -> bool:
     """Draw a change as a sample for grading, if it's one a5s samples now: a decided held
     change while the cap is still 1, or, at level 2, a change made, at random, at a rate that
     spreads about 100 through the quarter, by how many the last 30 days made. Whether it drew
     one. `decided_by` is everyone who decided it, for each part it touched, so none of them
-    grades it."""
-    behaves = behaviour_of(conn, release, action)
+    grades it. `model` is the one that answered the run last before the change, whose
+    behaviour its grade is evidence of, its release's own where it's not named."""
+    behaves = behaviour_of(conn, release, action, model)
     current = _cap_row(conn, keys, behaves, part, action) if behaves else None
     if kind == "proposal" and current is not None and current["cap"] >= 2:
         return False
@@ -311,22 +368,23 @@ def draw(conn: db.Connection, keys: tuple[str, ...], scenario: str, kind: str, r
     row = conn.execute(
         "insert into samples (scenario, kind, proposal_id, run_id, instance_id, release, "
         "definition, part, action, said, records, acts_for, decided, decided_by, deciders, "
-        "drawn_at, flags, flagged, asked, asked_digest) values (%s, %s, %s, %s, %s, %s, %s, %s, "
-        "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) returning *",
+        "drawn_at, flags, flagged, asked, asked_digest, model) values (%s, %s, %s, %s, %s, %s, "
+        "%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s) returning *",
         (scenario, kind, proposal, run, instance, release, definition, part, action, said,
          Jsonb(records), acts_for, decided, decided_by[0] if decided_by else None,
          list(dict.fromkeys(decided_by or [])), now, Jsonb(list(flags or [])),
          Jsonb(flagged) if flagged is not None else None, asked,
-         digest_of(asked))).fetchone()
+         digest_of(asked), model)).fetchone()
     sealed_draw(conn, keys, row)
     if row is not None and row["id"] % CHECKED_EVERY == 0:  # drawn twice, for a second grader
         sealed_draw(conn, keys, conn.execute(
             "insert into samples (scenario, kind, proposal_id, run_id, instance_id, release, "
             "definition, part, action, said, records, acts_for, decided, decided_by, deciders, "
-            "drawn_at, flags, flagged, asked, asked_digest, twin_of) select scenario, kind, "
-            "proposal_id, run_id, instance_id, release, definition, part, action, said, records, "
-            "acts_for, decided, decided_by, deciders, drawn_at, flags, flagged, asked, "
-            "asked_digest, id from samples where id = %s returning *", (row["id"],)).fetchone())
+            "drawn_at, flags, flagged, asked, asked_digest, model, twin_of) select scenario, "
+            "kind, proposal_id, run_id, instance_id, release, definition, part, action, said, "
+            "records, acts_for, decided, decided_by, deciders, drawn_at, flags, flagged, asked, "
+            "asked_digest, model, id from samples where id = %s returning *",
+            (row["id"],)).fetchone())
     return True
 
 
@@ -374,9 +432,10 @@ def asked_of(sample: dict) -> str | None:
 
 def _drawn(row: dict) -> tuple[str, ...]:
     """What a sample's seal covers: with what its graders are told to know of it as a5s keeps
-    those words, where it does (round 15, B6), and the sample it's the twin of, if it is one
-    (round 15, C4)."""
-    return (*_SEALED_DRAW, *(name for name in ("flagged", "twin_of") if row.get(name) is not None))
+    those words, where it does (round 15, B6), the sample it's the twin of, if it is one
+    (round 15, C4), and the model its change was made on, where the core named it (round 16)."""
+    return (*_SEALED_DRAW, *(name for name in ("flagged", "twin_of", "model")
+                             if row.get(name) is not None))
 
 
 def draw_seal(keys: tuple[str, ...], row: dict) -> str:
@@ -702,10 +761,9 @@ def assess(conn: db.Connection, keys: tuple[str, ...], kind: str, part: str, act
     current = _cap_row(conn, keys, kind, part, action)
     now_cap, since = (current["cap"], current["since"]) if current else (1, None)
     rows = conn.execute(
-        "select s.* from samples s join behaviours b on b.release = s.release "
-        "and b.action = s.action where b.behaviour = %s and s.part = %s and s.action = %s "
-        "and s.grade is not null order by coalesce(s.sealed_at, s.graded_at), s.id",
-        (kind, part, action)).fetchall()
+        f"select s.* from samples s join behaviours b on {OF_SAMPLE} where b.behaviour = %s "
+        "and s.part = %s and s.action = %s and s.grade is not null "
+        "order by coalesce(s.sealed_at, s.graded_at), s.id", (kind, part, action)).fetchall()
     grades = [r for r in rows if counted(keys, r)]
     fresh = [g for g in grades if since is None or _sealed_at(g) > since]
     graded, errors = len(fresh), sum(g["grade"] != "right" for g in fresh)
@@ -740,15 +798,17 @@ def assess(conn: db.Connection, keys: tuple[str, ...], kind: str, part: str, act
 
 
 def lower(conn: db.Connection, keys: tuple[str, ...], release: str, part: str, action: str,
-          by: str, now: datetime) -> dict | None:
-    """Lower a release's cap for a type of action in a part, at someone's word: never raise
-    one. What changed, or None if it was 1 already."""
-    kind = behaviour_of(conn, release, action)
-    current = _cap_row(conn, keys, kind, part, action) if kind else None
-    if current is None or current["cap"] < 2:
-        return None
-    return set_cap(conn, keys, kind, part, action, 1, f"lowered by {by}", now, {"by": by},
-                   threshold=current["threshold"])
+          by: str, now: datetime) -> list[dict]:
+    """Lower a release's cap for a type of action in a part, on every model it earned it on,
+    at someone's word: never raise one. What changed, none if each was 1 already."""
+    found = []
+    for row in conn.execute("select behaviour from behaviours where release = %s and "
+                            "action = %s order by own desc, model", (release, action)).fetchall():
+        current = _cap_row(conn, keys, row["behaviour"], part, action)
+        if current is not None and current["cap"] >= 2:
+            found.append(set_cap(conn, keys, row["behaviour"], part, action, 1, f"lowered by {by}",
+                                 now, {"by": by}, threshold=current["threshold"]))
+    return found
 
 
 def lapse(conn: db.Connection, now: datetime) -> int:
