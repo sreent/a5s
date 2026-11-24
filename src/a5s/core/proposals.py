@@ -128,12 +128,17 @@ def twice(two: dict[str, tuple[str, float]], scenario: Scenario,
     amount a5s can't read, so the rule never lapses on a misread."""
     found: dict[str, tuple[str, float]] = {}
     standing = proposal.get("standing") or {}
-    for key in proposal["records"]:
+    records = proposal["records"]
+    for key in records:
         part = scenario.part_of(key)
         if part is None or part not in two or part in found:
             continue
         field, above = two[part]
-        amount = amount_of(((standing.get(key) or {}).get("fields") or {}).get(field))
+        kept = standing.get(key)  # as the digest its deciders signed binds it, once held: a
+        bound = kept is not None and (not isinstance(records, dict)  # snapshot changed in the
+                                      or fingerprint_of(kept) == records[key])  # database since
+        # counts as more (round 16, B4). As it's held, the snapshot is the records system's own
+        amount = amount_of(((kept or {}).get("fields") or {}).get(field)) if bound else None
         if amount is None or amount > above:
             found[part] = (key, above)
     return found
@@ -201,8 +206,8 @@ def said(scenario: Scenario, tool: Tool, args: dict, records: dict[str, dict | N
     (samples.snapshot): never the agent's own account of it. One a run nobody asked for asked
     for, such as an event's, says so, rather than that it was for the person it's about."""
     named = [k for k in records]
-    shown = ", ".join(f"{k} {_plain(v, scenario.record_links)}" for k, v in args.items()
-                      if k != tool.record_arg)
+    shown = ", ".join(f"{_plain(k, scenario.record_links)} {_plain(v, scenario.record_links)}"
+                      for k, v in args.items() if k != tool.record_arg)  # names plain, too
     lines = [resolved(f"{tool.description.rstrip('.')}: {', '.join(named) or 'no record'}"
                       + (f", with {shown}" if shown else "") + ".", values or {})]
     lines += stood(records)
@@ -723,7 +728,8 @@ def chosen(schema: dict, value: Any, scenario: Scenario) -> bool:
                     and scenario.part_of(typed[0].norm) is not None)
     if isinstance(value, dict):
         props = schema.get("properties") or {}
-        return any(chosen(props.get(k) or {}, v, scenario) for k, v in value.items())
+        return any(k not in props or chosen(props[k] or {}, v, scenario)  # a name it made up
+                   for k, v in value.items())  # carries its words (round 16, B2)
     if isinstance(value, list):
         return any(chosen(schema.get("items") or {}, v, scenario) for v in value)
     return True
@@ -739,7 +745,16 @@ def carries(proposal: dict, scenario: Scenario) -> bool:
     if not proposal.get("read_outside"):
         return False
     tool = scenario.tools().get(proposal.get("tool") or "")
-    return tool is None or chosen(tool.schema, proposal.get("args") or {}, scenario)
+    if tool is None:
+        return True
+    props = tool.schema.get("properties") or {}
+    args = proposal.get("args") or {}
+    # Only the record the change is about is exempt, as a whole key of it: every other value,
+    # keys and the choices a tool lists included, is what the change writes, so the agent's
+    # choice, such as the order a correction points an invoice at (round 16, B3)
+    return any(k not in props or (chosen(props[k] or {}, v, scenario) if k == tool.record_arg
+                                  else v is not None and not isinstance(v, bool))
+               for k, v in args.items())
 
 
 def brief(conn: db.Connection, instance: str, acts_for: list[str],

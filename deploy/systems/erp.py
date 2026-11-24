@@ -128,13 +128,44 @@ def make(data: Path, state: Path | None = None) -> FastAPI:
         return {"key": key, "documents": [d for d in written.read().get("documents") or []
                                           if d["record"] == key]}
 
+    def unmatched(invoice: dict, order_key: object) -> str | None:
+        """Why the ERP's own three-way match refuses an invoice against an order, if it does,
+        as an ERP checks one before it pays it, whatever a5s allows: the order is its own
+        supplier's, and the invoice, with those on the order before it, bills no more than was
+        ordered and received, at the order's price (round 16, B7)."""
+        order = written.record(order_key)
+        if order is None or not ORDER.fullmatch(str(order["key"])):
+            return f"there's no purchase order {order_key}"
+        if order["supplier"] != invoice["supplier"]:
+            return f"{order['key']} is another supplier's order"
+        everything = written.records()
+        received = sum(int(r["received"]) for r in everything
+                       if str(r["key"]).startswith("GR-") and r.get("order") == order["key"])
+        billed = int(invoice["quantity"]) + sum(
+            int(r["quantity"]) for r in everything if str(r["key"]).startswith("INV-")
+            and r["key"] != invoice["key"] and r.get("order") == order["key"]
+            and r.get("status") != "rejected"
+            and (r["key"] < invoice["key"] or r.get("status") == "approved for payment"))
+        if int(invoice["quantity"]) <= 0 or billed > min(int(order["quantity"]), received):
+            return (f"{invoice['key']} bills {billed} on {order['key']}, of "
+                    f"{order['quantity']} ordered and {received} received")
+        price = float(str(order.get("price") or 0).replace(",", "")) or (
+            float(str(order["amount"]).replace(",", "")) / int(order["quantity"]))
+        if float(str(invoice["amount"]).replace(",", "")) > round(
+                int(invoice["quantity"]) * price, 2) + 0.005:
+            return f"{invoice['key']} charges more than {order['key']}'s price"
+        return None
+
     def approve(args: dict, meta: dict) -> dict | str | None:
-        """An invoice approved for payment, as its deciders decided: once for a5s's key."""
+        """An invoice approved for payment, as its deciders decided: once for a5s's key, and
+        only once it matches its order and receipts, by the ERP's own check."""
         found = written.record(args.get("key"))
         if found is None:
             return None
         if found["status"] != "received":
             return f"{found['key']} is {found['status']}: it can't be approved for payment now"
+        if why := unmatched(found, found.get("order")):
+            return f"{found['key']} doesn't match, so it isn't approved for payment: {why}"
 
         def change() -> dict:
             written.changed[found["key"]] = {**written.changed.get(found["key"], {}),
@@ -160,6 +191,11 @@ def make(data: Path, state: Path | None = None) -> FastAPI:
             return f"{order['key']} is another supplier's order: an invoice names its own supplier's"
         if found["status"] != "received":
             return f"{found['key']} is {found['status']}: nothing in it changes now"
+        if (int(order["quantity"]) != int(found["quantity"]) or float(str(order["amount"]).replace(
+                ",", "")) != float(str(found["amount"]).replace(",", ""))):  # one it can't mean,
+            return (f"{order['key']} is for {order['quantity']} at {order['amount']}, and "  # as
+                    f"{found['key']} invoices {found['quantity']} at {found['amount']}: it names "
+                    "an order it means")  # the match offers it (round 16, B7)
 
         def change() -> dict:
             written.changed[found["key"]] = {**written.changed.get(found["key"], {}),

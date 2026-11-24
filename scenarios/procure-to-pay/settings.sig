@@ -2,8 +2,8 @@
 # and these no longer match: the new version needs signing again.
 signatures:
 - signer: jules
-  value: kLdK44Fnq8qdFs4IExQmXciXFhBc/pYakr7mY4CX/Mgl//1dmhKVQ4mSOlqVkongjB7Bi2yWRk0QvihKnRWOCg==
+  value: dAJjP5q+2SqWUXXA2OwRRQ5s0sY+grj7HDBHRY3Ax392xaA9HiRiosUKCph/oeDfEBLj3DUwvyAn1qo8gN85AQ==
 - signer: marco
-  value: fTGV2f9QTgBCSJDGRVYCUTam8msPLEZlI1cfxj89M8adFQHlHG20ymE7zVK/CL0TdRdS+AZt1eYp/olfrL0bAw==
+  value: IdBixbScvI51xTIm2Tn51W3EpoKhWxasyxmRsyraqM0Cm5im4nn35982gNyXLX3yZulRPGwwCFOgxVTEuXneBg==
 - signer: wen
-  value: pxRyIjiQlHgbYF98VRCHW4uvwNIMP6/RsOfxXAWxTRJjQNrroaUUVmQCJ5lzB9MTHf/VZFCr/8SAcUCP8476CA==
+  value: EIoI4Anodzjcsxku/D4NyN6RoSVEqdbvu2GguPqDe7q8U2tovsOSJG23ZALnxXjVIiCe5Z3gNDQUxa6W3k5oAw==

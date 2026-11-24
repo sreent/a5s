@@ -217,10 +217,13 @@ def of_instance(conn: db.Connection, gw: Any, person: Person, inst: dict) -> lis
     def said(one: str, many: str, n: int) -> str:
         return words.say(language, one if n == 1 else many, n=n)
 
-    held = conn.execute("select records, acts_for, proposed_at from proposals where status = "
-                        "'waiting' and instance_id = %s order by proposed_at, id",
-                        (inst["id"],)).fetchall()
-    mine = [p for p in held if proposals.may_decide(scenario, p, person.id)]  # the directory now
+    held = conn.execute(  # with whether they decided it, which waits for another (round 16)
+        "select records, acts_for, proposed_at, exists (select 1 from proposal_decisions d where "
+        "d.digest = p.digest and d.person = %s and d.refused is null) as theirs from proposals p "
+        "where status = 'waiting' and instance_id = %s order by proposed_at, id",
+        (person.id, inst["id"])).fetchall()
+    mine = [p for p in held if not p["theirs"]
+            and proposals.may_decide(scenario, p, person.id)]  # the directory now
     others = [p for p in held if p not in mine]
     if mine:
         found.append({"kind": "decide", "what": said(

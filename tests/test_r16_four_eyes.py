@@ -83,3 +83,25 @@ def test_the_whole_version_names_four_eyes():
     whole = approvals.described(version(SETTINGS), AGENTS, P2P.person)
     assert ("In payables, a change to a record whose amount is more than 10,000 needs two of "
             "the part's deciders: one approval alone doesn't make it.") in whole
+
+
+def test_an_amount_changed_in_the_database_after_its_hold_still_needs_two():
+    """B4: four eyes read the amount from the held change's snapshot, which its digest doesn't
+    bind, so whoever owns the database could lower it and let one approval make the change.
+    Now a snapshot that isn't the one the digest bound counts as more than the amount."""
+    from a5s.core import decide_api, proposals
+    two = {"payables": ("amount", 10000.0)}
+    snap = {"title": "Litware's invoice", "fields": {"amount": "16,000.00"}, "link": None,
+            "person": "hana"}
+    held = {"records": {"INV-9002": proposals.fingerprint_of(snap)},
+            "standing": {"INV-9002": snap}}
+    assert proposals.twice(two, P2P, held) == {"payables": ("INV-9002", 10000.0)}
+    lowered = {**snap, "fields": {"amount": "9,000.00"}}
+    assert proposals.twice(two, P2P, {**held, "standing": {"INV-9002": lowered}}) == {
+        "payables": ("INV-9002", 10000.0)}  # as the digest its deciders signed binds it
+    small = {"records": {"INV-9002": proposals.fingerprint_of(lowered)},
+             "standing": {"INV-9002": lowered}}
+    assert proposals.twice(two, P2P, small) == {}  # held at 9,000: one decider
+    # B5: where the page can't read the settings in force, every part needs two there
+    assert proposals.twice(decide_api.unknown(None), P2P, small) == {
+        "payables": ("INV-9002", float("-inf"))}

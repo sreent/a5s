@@ -21,6 +21,25 @@ from a5s.contract import INSTANCE_APPROVER, PART_DELEGATE, PART_OWNER
 from a5s.core import approvals, languages, ledger, proposals, web, words
 from a5s.core import studio_models as shapes  # what each route answers, as the studio's types say
 
+
+class _EveryPart(dict):
+    """Four eyes in every part, at any amount: while no settings in force can be read, one
+    approval never settles a change on the page (round 16, B5)."""
+
+    def __contains__(self, part: object) -> bool:
+        return True
+
+    def __getitem__(self, part: object) -> tuple[str, float]:
+        return ("", float("-inf"))
+
+    def __bool__(self) -> bool:
+        return True
+
+
+def unknown(two: dict[str, tuple[str, float]] | None) -> dict[str, tuple[str, float]]:
+    """Four eyes as the settings in force say, or in every part where none can be read."""
+    return _EveryPart() if two is None else two
+
 log = logging.getLogger(__name__)
 
 
@@ -64,10 +83,10 @@ def router(gw: Any) -> APIRouter:
                  "approver": INSTANCE_APPROVER in roles,
                  "week": gw.clock() - timedelta(days=7)}).fetchall()
             spoken = languages.of(person) if person else languages.ENGLISH  # (B6)
-            in_force = gw.settings_in_force(conn)[0]  # what they approved that waits for another
+            two = unknown(gw.four_eyes(conn))  # what they approved that waits for another
             waits_another = {r["digest"] for r in rows if r["status"] == "waiting"
                              and r["yours"] == "approve" and not proposals.settled(
-                                 conn, gw.scenario, r, in_force.two_deciders if in_force else None)}
+                                 conn, gw.scenario, r, two)}
         shown = []
         for row in rows:
             waits = row["status"] == "waiting"
@@ -131,8 +150,7 @@ def router(gw: Any) -> APIRouter:
                                 "order by id", (gw.scenario.name, digests)).fetchall()
             if len(rows) != len(digests):
                 raise HTTPException(404, "a5s has no such change to decide")
-            in_force = gw.settings_in_force(conn)[0]
-            two = in_force.two_deciders if in_force else None  # four eyes above an amount
+            two = unknown(gw.four_eyes(conn))  # four eyes above an amount
             for row in rows:
                 if row["status"] != "waiting":
                     raise HTTPException(409, f"{proposals.key(row)} isn't waiting for a decision: "

@@ -267,10 +267,13 @@ _TYPES = {"string": str, "integer": int, "number": int | float, "boolean": bool,
           "array": list, "null": type(None)}
 
 
-def misfit(schema: dict[str, Any], value: Any, where: str = "") -> str | None:
+def misfit(schema: dict[str, Any], value: Any, where: str = "",
+           closed: bool = False) -> str | None:
     """Why a tool's arguments don't fit its pinned schema, if they don't: the types, required
     properties and items it names, the values it lists, and the lengths, patterns and bounds it
-    sets. A model can send anything, so a call must fit its schema before policy looks at it."""
+    sets. A model can send anything, so a call must fit its schema before policy looks at it.
+    `closed` for a tool that changes something: an argument its schema doesn't name is refused,
+    as its name could carry words of its own into what deciders read (round 16, B2)."""
     kind = schema.get("type")
     kinds = kind if isinstance(kind, list) else [kind] if kind else []
     named = where or "the arguments"
@@ -307,9 +310,10 @@ def misfit(schema: dict[str, Any], value: Any, where: str = "") -> str | None:
                 return f"{where}{'.' if where else ''}{name} is missing"
         for name, found in value.items():
             sub = (schema.get("properties") or {}).get(name)
-            if sub is None and schema.get("additionalProperties") is False:
+            if sub is None and (closed or schema.get("additionalProperties") is False):
                 return f"{where}{'.' if where else ''}{name} isn't one of its arguments"
-            if sub and (problem := misfit(sub, found, f"{where}{'.' if where else ''}{name}")):
+            if sub and (problem := misfit(sub, found, f"{where}{'.' if where else ''}{name}",
+                                          closed)):
                 return problem
     if isinstance(value, list) and isinstance(schema.get("items"), dict):
         for n, item in enumerate(value):
@@ -358,6 +362,16 @@ class Gateway:
         if settings is None and not self.cfg.seal_keys:
             settings = self.sealed_in_force(conn)
         return settings.data_protection if settings is not None else DataProtection()
+
+    def four_eyes(self, conn: db.Connection) -> dict[str, tuple[str, float]] | None:
+        """Where a held change needs two of its part's deciders, as the settings in force say,
+        read as the officer's choices are, in the channels app too, which can't count what was
+        approved on the page (round 16, B5): None while no settings can be used, and then the
+        decide page counts every part as needing two, so one approval never settles one."""
+        settings, _ = self.settings_in_force(conn, seal=False)
+        if settings is None and not self.cfg.seal_keys:
+            settings = self.sealed_in_force(conn)
+        return settings.two_deciders if settings is not None else None
 
     def spending_in_force(self, conn: db.Connection) -> Spending:
         """What parts and agents may cost a month, as the settings in force say, read as the
@@ -1656,8 +1670,9 @@ def create_app(gw: Gateway) -> FastAPI:
                     conn.execute("update questions set run_id = %s where id = %s",
                                  (run_id, opening.trigger["question"]))
                 if kind == "message":  # the files it came with, as the run's documents, unread
-                    opening.notes = [n for n in [files.attach(conn, run_id,
-                                                               opening.trigger["inbound"])] if n]
+                    opening.notes = [n for n in [files.attach(  # ask_about where it may
+                        conn, run_id, opening.trigger["inbound"],
+                        extractor.ASK in (inst["grants"] or []))] if n]
                     if opening.notes:  # what they sent is theirs alone to read in the studio
                         studio.readers(conn, run_id, [studio.ALONE])
                     turns_at_open(conn, inst["definition"], opening, run_id)
@@ -2990,7 +3005,7 @@ def create_app(gw: Gateway) -> FastAPI:
             with db.transaction(gw.url) as conn:
                 given = handles.resolved_args(conn, load_run(conn, token)["run"], args)
         readable = (tool is not None and bool(action) and len(keys) <= MOST_NAMED
-                    and misfit(tool.schema, given) is None)
+                    and misfit(tool.schema, given, closed=True) is None)
         try:
             standing = proposals.snapshot({k: record_of(gw.scenario, k) for k in keys}) if readable else {}
         except Exception:  # the records system's own failure, never the run's
@@ -3038,7 +3053,8 @@ def create_app(gw: Gateway) -> FastAPI:
                     decision = Decision(False, (Own.SETTINGS,), explanations=(
                         f"a5s can't use the settings in force: {found[1]}",))
                 elif problem := misfit((core or tool).schema if (core or tool) else {},
-                                       handles.resolved_args(conn, row["run"], args)):
+                                       handles.resolved_args(conn, row["run"], args),
+                                       closed=bool(tool and tool.action)):
                     decision = Decision(False, (Own.ARGUMENTS,), explanations=(
                         f"the arguments don't fit the tool: {problem}",))
                 elif any(not isinstance(r, str) or not r for r in records):

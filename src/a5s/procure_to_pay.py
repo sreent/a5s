@@ -154,9 +154,12 @@ class ProcureToPayScenario:
                  "orders": lambda r: f"{r['item']}, {r['quantity']} from {self._name(r['supplier'])}",
                  "receipts": lambda r: f"{r['received']} received on {r['order']}",
                  "invoices": lambda r: f"{self._name(r['supplier'])}'s invoice for {r['amount']} GBP"}
-        return Record(kind, key, str(found.get(OWNER[kind]) or ""), title[kind](found),
-                      {f: str(found[f]) for f in FIELDS[kind] if found.get(f) is not None},
-                      ERP + key)
+        fields = {f: str(found[f]) for f in FIELDS[kind] if found.get(f) is not None}
+        if kind == "invoices" and (matched := self.match(key)) is not None:  # as code matches
+            fields["match"] = ("it matches its order and what was received" if matched["matched"]
+                               else "; ".join(matched["problems"]))  # it: what deciders read,
+        return Record(kind, key, str(found.get(OWNER[kind]) or ""), title[kind](found),  # and
+                      fields, ERP + key)  # a change to its order or receipts changes it (B7)
 
     def _name(self, supplier: str) -> str:
         return (self._records.get(supplier) or {}).get("name", supplier)
@@ -202,21 +205,30 @@ class ProcureToPayScenario:
                      and o["supplier"] == invoice["supplier"] and int(o["quantity"]) == quantity
                      and _amount(o["amount"]) == amount]
         else:
-            if order["supplier"] != invoice["supplier"]:
-                problems.append(f"{order['key']} is another supplier's order")
-            if quantity > int(order["quantity"]):
-                problems.append(f"it invoices {quantity}, more than the {order['quantity']} ordered")
-            if amount > _amount(order["amount"]):
-                problems.append(f"it invoices {invoice['amount']} GBP, more than the order's "
-                                f"{order['amount']} GBP")
-            if received < quantity:
-                problems.append(f"the warehouse received {received} of the {quantity} invoiced")
-            before = sorted(  # one that came first, or that's approved already: a duplicate
+            ordered = int(order["quantity"])
+            price = (_amount(order["price"]) if order.get("price") else
+                     _amount(order["amount"]) / ordered if ordered else 0.0)
+            before = sorted(  # what came first on the order, or is approved already: billed
                 k for k, r in records.items() if k.startswith("INV-") and k != key
                 and r.get("order") == invoice["order"] and r.get("status") != "rejected"
                 and (k < key or r.get("status") in CLOSED))
-            if before:
-                problems.append(f"{invoice['order']} is invoiced already, by {', '.join(before)}")
+            billed = quantity + sum(int(records[k]["quantity"]) for k in before)
+            if order["supplier"] != invoice["supplier"]:
+                problems.append(f"{order['key']} is another supplier's order")
+            if quantity <= 0:
+                problems.append("it invoices nothing it names a quantity of")
+            if quantity > ordered:
+                problems.append(f"it invoices {quantity}, more than the {ordered} ordered")
+            elif billed > ordered:  # each invoice its share, and no more than was ordered
+                problems.append(f"{invoice['order']} is invoiced already, by "
+                                f"{', '.join(before)}: with this one, {billed} of the "
+                                f"{ordered} ordered")
+            elif received < billed:
+                problems.append(f"the warehouse received {received} of the {billed} invoiced")
+            if amount > round(quantity * price, 2) + 0.005:  # at the order's price (round 16)
+                problems.append(f"it invoices {invoice['amount']} GBP for {quantity}, more "
+                                f"than the {quantity * price:,.2f} GBP the order's price makes "
+                                "them")
         return {"invoice": key, "order": invoice["order"], "supplier": invoice["supplier"],
                 "invoiced": quantity, "amount": invoice["amount"],
                 "ordered": int(order["quantity"]) if order else None, "received": received,
@@ -259,8 +271,10 @@ class ProcureToPayScenario:
         def shortfalls(call: ToolCall) -> dict:
             return {"short": self.short()}
 
-        body = {"type": "object", "required": ["title", "body"], "properties": {
-            "title": {"type": "string"}, "body": {"type": "string"}, "record": {"type": "string"}}}
+        body = {"type": "object", "required": ["title", "body", "record"], "properties": {
+            "title": {"type": "string"}, "body": {"type": "string"}, "record": {
+                "type": "string", "description": "The record it's about, such as PO-4505 or "
+                "INV-9003: its part says whether the agent may write it"}}}  # (round 16, B9)
         invoice = {"type": "object", "required": ["key"], "additionalProperties": False,
                    "properties": {"key": {"type": "string", "pattern": r"^INV-\d{4}$",
                                           "description": "The invoice, such as INV-9001"}}}

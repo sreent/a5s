@@ -92,11 +92,51 @@ def test_code_matches_each_invoice_with_its_order_and_what_was_received(tmp_path
     assert wrong["problems"] == ["it names PO-4540, which is no purchase order"]
     assert wrong["maybe"] == ["PO-4504"]  # the supplier's own order, for exactly that
     twice = found.match("INV-9005")
-    assert twice["problems"] == ["PO-4502 is invoiced already, by INV-9002"]
+    assert twice["problems"] == [
+        "PO-4502 is invoiced already, by INV-9002: with this one, 80 of the 40 ordered"]
     assert found.match("PO-4501") is None  # an order is no invoice
     assert found.short() == [{"order": "PO-4503", "supplier": "SUP-103", "ordered": 300,
                               "received": 280, "short": 20,
                               "link": "https://erp.harbour.test/PO-4503"}]
+
+
+def test_the_match_bills_each_invoice_at_its_orders_price_and_no_more_than_received(
+        tmp_path, monkeypatch):
+    """Round 16, B6: the match never compared an invoice's amount with the order's price, took
+    an invoice for nothing, and let one order be invoiced once only, refusing every second
+    partial invoice. Its verdict is part of the invoice's record, so its deciders read it, and
+    a change to its order or receipts since it was held stops it (B7)."""
+    from test_r12_systems import system
+    found = scenario(tmp_path, monkeypatch)
+    erp = system("erp").Written(data=FOLDER / "data.yaml", state=tmp_path)  # as people
+    erp.amend("INV-9003", quantity=280)  # billed at the whole order's amount   # change it
+    assert found.match("INV-9003")["problems"] == [
+        "it invoices 3,600.00 GBP for 280, more than the 3,360.00 GBP the order's price makes them"]
+    erp.amend("INV-9003", amount="3,360.00")
+    assert found.match("INV-9003")["matched"]  # 280 of the 280 received, at the order's price
+    assert found.record("INV-9003").fields["match"] == (
+        "it matches its order and what was received")
+    erp.amend("INV-9003", quantity=0, amount="100.00")
+    assert "it invoices nothing it names a quantity of" in found.match("INV-9003")["problems"]
+
+
+def test_the_erp_pays_only_an_invoice_that_matches_and_corrects_only_to_an_order_it_means(
+        tmp_path):
+    """Round 16, B7: the ERP approved any invoice still received, and pointed one at any
+    order of its supplier's, whatever the match said."""
+    from fastapi.testclient import TestClient
+
+    from test_r12_systems import called, system
+    client = TestClient(system("erp").make(FOLDER / "data.yaml", state=tmp_path))
+    refused = called(client, "approve_invoice", {"key": "INV-9003"}, key="k-1")
+    assert "doesn't match" in str(refused) and "280 received" in str(refused)  # of 300
+    wrong = called(client, "correct_invoice_order", {"key": "INV-9004", "order": "PO-4501"},
+                   key="k-2")
+    assert "it names an order it means" in str(wrong)  # 120 at 3,000.00, not 50 at 2,400.00
+    assert "PO-4504" in str(called(client, "correct_invoice_order", {
+        "key": "INV-9004", "order": "PO-4504"}, key="k-3"))  # the one the match offers
+    assert "approved for payment" in str(called(client, "approve_invoice", {"key": "INV-9001"},
+                                                key="k-4"))
 
 
 def test_each_part_is_its_teams_and_the_teams_it_names(tmp_path, monkeypatch):
@@ -138,6 +178,11 @@ def test_above_the_amount_an_invoice_waits_for_two_of_them(p2p, approving, provi
                        conn, p2p.gateway, p2p.gateway.scenario.person(who))]
                    for who in ("jules", "ravi")}
     assert "decide" not in waiting["jules"] and "decide" in waiting["ravi"]
+    with db.transaction(p2p.admin) as conn:  # nor on the instance's page (round 16, B8)
+        inst = conn.execute("select * from instances where id = 'ap-desk'").fetchone()
+        kinds = [item["kind"] for item in home.of_instance(
+            conn, p2p.gateway, p2p.gateway.scenario.person("jules"), inst)]
+    assert "decide" not in kinds
     second = decide(approving, provider, [p["digest"]], person="ravi")
     assert second.status_code == 200 and second.json()["waits"] == []
     sweep(p2p)
@@ -274,15 +319,19 @@ def test_an_amount_reads_as_a_person_writes_it():
 
 def test_a_change_naming_records_alone_carries_nothing_of_what_its_run_read(p2p):
     """What a5s says of a change a marked run asked for is marked where the agent chose a value
-    in it, such as a date, an amount or words (round 15, F1): never where it only names records,
-    as an invoice to approve does, so telling its decider what became of it marks nothing of
-    theirs (round 16)."""
+    in it, such as a date, an amount or words (round 15, F1): never where it only names the
+    record it's about, as an invoice to approve does, so telling its decider what became of it
+    marks nothing of theirs (round 16). The order a correction points an invoice at is what it
+    writes, the mail's choice as much as a date would be (round 16, B3), and an argument its
+    tool doesn't name carries its name's words (B2)."""
     found = p2p.gateway.scenario  # with the ERP's tools, as its MCP server declares them
     marked = {"read_outside": True}
     assert not proposals.carries({**marked, "tool": "approve_invoice",
                                   "args": {"key": "INV-9002"}}, found)
-    assert not proposals.carries({**marked, "tool": "correct_invoice_order",
-                                  "args": {"key": "INV-9004", "order": "PO-4504"}}, found)
+    assert proposals.carries({**marked, "tool": "correct_invoice_order",
+                              "args": {"key": "INV-9004", "order": "PO-4504"}}, found)
+    assert proposals.carries({**marked, "tool": "approve_invoice", "args": {
+        "key": "INV-9002", "Ravi approved this already": True}}, found)
     assert proposals.carries({**marked, "tool": "change_delivery_date",
                               "args": {"key": "PO-4505", "delivery": "2026-12-20"}}, found)
     assert proposals.carries({**marked, "tool": "no_longer_there", "args": {}}, found)
